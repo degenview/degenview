@@ -4,6 +4,7 @@
 
 use super::ai::{Assistant, Entry, Notice, Proposal, ToolStep};
 use super::ai_models::{self, ModelList};
+use super::ai_plan::Plan;
 use super::ai_prompt::{self, Mode, Turn};
 use super::diff_view;
 use crate::service::llm::ProviderKind;
@@ -36,6 +37,11 @@ const ASK_EXAMPLES: [&str; 3] = [
     "What could go wrong with this logic?",
     "How would I add an alert to this?",
 ];
+const PLAN_EXAMPLES: [&str; 3] = [
+    "Find what makes this script slow",
+    "Plan how to add a stop loss",
+    "Suggest how to simplify this script",
+];
 const EDIT_EXAMPLES: [&str; 3] = [
     "Add an input for the length",
     "Plot a marker when the signal crosses",
@@ -67,6 +73,11 @@ pub enum PanelAction {
     SetMode(Mode),
     /// Carry out the plan in the last reply: switch to Edit and ask for it.
     Implement,
+    /// Carry out the plan the assistant submitted in Plan mode.
+    ApprovePlan,
+    /// Change the plan: the box takes the keyboard, ready for what to change.
+    RevisePlan,
+    DiscardPlan,
     /// Open the review sheet over the proposed change.
     Review,
     /// The model menu opened: fetch the current provider's models.
@@ -333,7 +344,7 @@ fn transcript(
     script_name: &str,
     actions: &mut Vec<PanelAction>,
 ) {
-    egui::ScrollArea::vertical()
+    let output = egui::ScrollArea::vertical()
         .id_salt("ai-transcript")
         .auto_shrink([false, false])
         // Follows a growing reply, but a card or hint on an empty panel stays at the top.
@@ -386,6 +397,9 @@ fn transcript(
                 steps_view(ui, Id::new("ai-streaming"), &ai.steps, true);
                 assistant_message(ui, Id::new("ai-streaming"), &ai.streaming, ai.mode, false);
             }
+            if let Some(plan) = &ai.plan {
+                plan_card(ui, plan, actions);
+            }
             if let Some(notice) = &ai.notice {
                 notice_banner(ui, notice, !ai.input.trim().is_empty(), actions);
             }
@@ -397,6 +411,9 @@ fn transcript(
                 ui.scroll_to_cursor(Some(Align::BOTTOM));
             }
         });
+    // For the tests: whether the end of the conversation is what is on screen.
+    let at_end = output.state.offset.y + output.inner_rect.height() >= output.content_size.y - 1.0;
+    ui.data_mut(|data| data.insert_temp(Id::new("ai-transcript-at-end"), at_end));
 }
 /// What to do before the first request, with the button under the text so it never crowds it.
 fn setup_card(ui: &mut Ui, problem: &str) -> bool {
@@ -438,8 +455,14 @@ fn empty_state(ui: &mut Ui, ai: &mut Assistant, script_name: &str) {
     ui.add_space(6.0);
     let (line, examples) = match ai.mode {
         Mode::Ask => (
-            format!("Ask about {script_name}, or plan a change. Nothing is edited in Ask mode."),
+            format!("Ask about {script_name}. Nothing is edited in Ask mode."),
             ASK_EXAMPLES,
+        ),
+        Mode::Plan => (
+            format!(
+                "Say what you want from {script_name}. The assistant looks at it and measures it, then gives you a plan to approve. Nothing is edited in Plan mode."
+            ),
+            PLAN_EXAMPLES,
         ),
         Mode::Edit => (
             format!("Describe a change to {script_name}."),
@@ -671,7 +694,7 @@ fn assistant_message(ui: &mut Ui, id: Id, text: &str, mode: Mode, done: bool) {
         thinking(ui);
         return;
     }
-    if mode == Mode::Ask {
+    if mode != Mode::Edit {
         markdown_view::show(ui, id, &markdown_view::parse(text));
         return;
     }
@@ -770,6 +793,60 @@ fn notice_banner(ui: &mut Ui, notice: &Notice, can_retry: bool, actions: &mut Ve
             });
         });
 }
+/// What the user does with a plan: the plan itself is the reply above it.
+fn plan_card(ui: &mut Ui, plan: &Plan, actions: &mut Vec<PanelAction>) {
+    egui::Frame::new()
+        .fill(theme::with_alpha(theme::text_primary(), 0.04))
+        .stroke(egui::Stroke::new(1.0, kit::hairline()))
+        .corner_radius(10.0)
+        .inner_margin(Margin::same(12))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.spacing_mut().item_spacing.y = 6.0;
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 8.0;
+                ui.label(kit::text(
+                    "Plan ready",
+                    kit::size::BODY,
+                    kit::SEMIBOLD,
+                    theme::text_primary(),
+                ));
+                let steps = plan.steps.len();
+                ui.label(kit::text(
+                    format!("{steps} step{}", if steps == 1 { "" } else { "s" }),
+                    kit::size::SUBHEADLINE,
+                    kit::REGULAR,
+                    theme::text_secondary(),
+                ));
+            });
+            ui.add(
+                egui::Label::new(kit::text(
+                    "Nothing has been changed. Approving switches to Edit and makes these changes as a proposal you review.",
+                    kit::size::SUBHEADLINE,
+                    kit::REGULAR,
+                    theme::text_secondary(),
+                ))
+                .wrap(),
+            );
+            ui.add_space(2.0);
+            ui.horizontal_wrapped(|ui| {
+                ui.spacing_mut().item_spacing = vec2(8.0, 6.0);
+                if kit::sheet_button(ui, "Approve and implement", true, true).clicked() {
+                    actions.push(PanelAction::ApprovePlan);
+                }
+                if kit::sheet_button(ui, "Revise", false, true)
+                    .on_hover_text("Tell the assistant what to change in the plan")
+                    .clicked()
+                {
+                    actions.push(PanelAction::RevisePlan);
+                }
+                if kit::sheet_button(ui, "Discard", false, true).clicked() {
+                    actions.push(PanelAction::DiscardPlan);
+                }
+            });
+        });
+}
+
 fn proposal_card(ui: &mut Ui, proposal: &Proposal, actions: &mut Vec<PanelAction>) {
     let hunks = proposal.changes.hunks();
     let added = proposal.changes.lines_added();
@@ -933,7 +1010,8 @@ fn composer(ui: &mut Ui, ai: &mut Assistant, setup: &Setup, actions: &mut Vec<Pa
                             .text_color(theme::text_primary())
                             .hint_text(kit::text(
                                 match ai.mode {
-                                    Mode::Ask => "Ask a question or plan a change",
+                                    Mode::Ask => "Ask a question about the script",
+                                    Mode::Plan => "What should be planned?",
                                     Mode::Edit => "Describe a change",
                                 },
                                 kit::size::BODY,
@@ -951,7 +1029,7 @@ fn composer(ui: &mut Ui, ai: &mut Assistant, setup: &Setup, actions: &mut Vec<Pa
             ui.add_space(6.0);
             ui.horizontal(|ui| {
                 // The mode cannot change while a request runs or a change waits for an answer.
-                let locked = ai.is_running() || ai.proposal.is_some();
+                let locked = ai.is_running() || ai.proposal.is_some() || ai.plan.is_some();
                 let mut mode = ai.mode;
                 ui.add_enabled_ui(!locked, |ui| {
                     kit::segmented(
@@ -959,13 +1037,18 @@ fn composer(ui: &mut Ui, ai: &mut Assistant, setup: &Setup, actions: &mut Vec<Pa
                         Id::new("ai-mode"),
                         &[
                             (Mode::Ask, Mode::Ask.title()),
+                            (Mode::Plan, Mode::Plan.title()),
                             (Mode::Edit, Mode::Edit.title()),
                         ],
                         &mut mode,
                     );
                 })
                 .response
-                .on_disabled_hover_text("Answer or discard the proposed change first.");
+                .on_disabled_hover_text(if ai.plan.is_some() {
+                    "Approve, revise or discard the plan first."
+                } else {
+                    "Answer or discard the proposed change first."
+                });
                 if mode != ai.mode {
                     actions.push(PanelAction::SetMode(mode));
                 }
@@ -995,6 +1078,10 @@ fn composer(ui: &mut Ui, ai: &mut Assistant, setup: &Setup, actions: &mut Vec<Pa
             match ai.mode {
                 Mode::Ask => format!(
                     "Sent to {}  ·  Ask never edits  ·  {}",
+                    setup.provider, setup.context
+                ),
+                Mode::Plan => format!(
+                    "Sent to {}  ·  Plan never edits  ·  {}",
                     setup.provider, setup.context
                 ),
                 Mode::Edit => format!("Sent to {}  ·  {}", setup.provider, setup.context),

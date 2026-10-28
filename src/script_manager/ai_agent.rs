@@ -5,6 +5,7 @@
 //! What the loop reports goes out as [`Progress`], one piece at a time, so the panel can show the
 //! reply as it streams and each tool call as it happens.
 
+use super::ai_plan::Plan;
 use super::ai_tools::{Outcome, ToolBox};
 use crate::service::llm::{ChatMessage, ChatRequest, LlmError, LlmProvider, Stop, ToolResult};
 use std::collections::HashMap;
@@ -62,6 +63,8 @@ pub struct Ended {
     pub limit: Option<Limit>,
     /// The server refused the tools, so this was answered without them.
     pub tools_refused: bool,
+    /// The plan the model submitted, which ended the request; `text` is its Markdown.
+    pub plan: Option<Plan>,
 }
 
 /// What a request needs beyond the conversation to use tools.
@@ -116,6 +119,7 @@ pub fn run(
                 truncated,
                 limit: None,
                 tools_refused,
+                plan: None,
             });
         };
         if !reply.text.trim().is_empty() {
@@ -139,6 +143,7 @@ pub fn run(
                     truncated: false,
                     limit: Some(Limit::Repeating),
                     tools_refused,
+                    plan: None,
                 });
             }
             emit(Progress::ToolStarted {
@@ -150,6 +155,7 @@ pub fn run(
                 content,
                 is_error,
                 summary,
+                plan,
             } = setup.tools.run(call, cancel);
             emit(Progress::ToolDone {
                 id: call.id.clone(),
@@ -157,6 +163,16 @@ pub fn run(
                 ok: !is_error,
                 content: content.clone(),
             });
+            // A plan ends the request: the user reads it, and the next stage is theirs to start.
+            if let Some(plan) = plan {
+                return Ok(Ended {
+                    text: plan.markdown(),
+                    truncated: false,
+                    limit: None,
+                    tools_refused,
+                    plan: Some(plan),
+                });
+            }
             results.push(ToolResult {
                 id: call.id.clone(),
                 content,
@@ -170,6 +186,7 @@ pub fn run(
         truncated: false,
         limit: Some(Limit::Rounds),
         tools_refused,
+        plan: None,
     })
 }
 
@@ -433,5 +450,61 @@ mod tests {
         })]);
         let (result, _) = go(&provider, &setup, &AtomicBool::new(false));
         assert!(result.unwrap().truncated);
+    }
+
+    #[test]
+    fn submitting_a_plan_ends_the_request_with_the_plan() {
+        let setup = setup(Mode::Plan);
+        let provider = MockProvider::turns(vec![
+            Ok(Scripted::call("a", "compile", json!({}))),
+            Ok(Scripted::say("Done looking.").then_call(
+                "b",
+                "submit_plan",
+                json!({"summary": "Two things.", "steps": [
+                    {"title": "One", "detail": "d"}, {"title": "Two", "detail": "d"}]}),
+            )),
+            Ok(Scripted::say("never asked for")),
+        ]);
+        let (result, seen) = go(&provider, &setup, &AtomicBool::new(false));
+        let ended = result.unwrap();
+        let plan = ended.plan.expect("the plan");
+        assert_eq!(plan.steps.len(), 2);
+        assert!(ended.text.starts_with("Two things.\n\n1. **One**"));
+        assert_eq!(provider.requests.lock().unwrap().len(), 2);
+        assert!(seen.iter().any(|p| matches!(
+            p,
+            Progress::ToolDone { summary, ok: true, .. } if summary.starts_with("Submitted the plan")
+        )));
+    }
+
+    #[test]
+    fn a_plan_that_is_refused_is_answered_and_the_model_may_try_again() {
+        let setup = setup(Mode::Plan);
+        let provider = MockProvider::turns(vec![
+            Ok(Scripted::call(
+                "a",
+                "submit_plan",
+                json!({"summary": "s", "steps": []}),
+            )),
+            Ok(Scripted::call(
+                "b",
+                "submit_plan",
+                json!({"summary": "s", "steps": [{"title": "t", "detail": "d"}]}),
+            )),
+        ]);
+        let (result, _) = go(&provider, &setup, &AtomicBool::new(false));
+        assert!(result.unwrap().plan.is_some());
+        let requests = provider.requests.lock().unwrap();
+        assert!(requests[1].messages[2].tool_results[0].is_error);
+    }
+
+    #[test]
+    fn answering_in_prose_in_plan_mode_is_a_plain_reply() {
+        let setup = setup(Mode::Plan);
+        let provider = MockProvider::turns(vec![Ok(Scripted::say("Nothing needs changing."))]);
+        let (result, _) = go(&provider, &setup, &AtomicBool::new(false));
+        let ended = result.unwrap();
+        assert!(ended.plan.is_none());
+        assert_eq!(ended.text, "Nothing needs changing.");
     }
 }

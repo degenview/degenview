@@ -974,3 +974,146 @@ fn the_assistant_can_profile_its_draft_on_the_preview_bars_in_ask_mode_too() {
     assert!(rig.manager.ai.proposal.is_none());
     rig.frame();
 }
+
+fn plan_turns() -> Vec<Result<Scripted, LlmError>> {
+    vec![
+        Ok(Scripted::call("r1", "read_script", serde_json::json!({}))),
+        Ok(Scripted::call(
+            "p1",
+            "submit_plan",
+            serde_json::json!({
+                "summary": "The script has no comment at the top.",
+                "steps": [
+                    {"title": "Add a comment", "detail": "Say what the script is for.", "lines": "1"},
+                    {"title": "Check it compiles", "detail": "Compile the result."},
+                ],
+                "expected_effect": "No change in behaviour."
+            }),
+        )),
+    ]
+}
+
+#[test]
+fn a_plan_is_shown_with_its_card_and_changes_nothing() {
+    let mut rig = Rig::new("ai-plan-card");
+    rig.screen = Some(egui::Rect::from_min_size(
+        egui::Pos2::ZERO,
+        egui::vec2(700.0, 420.0),
+    ));
+    open_panel(&mut rig);
+    let before = source(&rig);
+    ask_with_tools(&mut rig, Mode::Plan, plan_turns());
+    let plan = rig.manager.ai.plan.clone().expect("a plan");
+    assert_eq!(plan.steps.len(), 2);
+    assert_eq!(source(&rig), before);
+    assert!(rig.manager.ai.proposal.is_none());
+    // The mode cannot be switched under it.
+    assert!(!rig.manager.ai.set_mode(Mode::Edit));
+    rig.frame();
+    rig.frame();
+}
+
+#[test]
+fn approving_a_plan_switches_to_edit_asks_for_it_and_the_plan_stays_in_the_conversation() {
+    let mut rig = Rig::new("ai-plan-approve");
+    open_panel(&mut rig);
+    ask_with_tools(&mut rig, Mode::Plan, plan_turns());
+    rig.manager.cmds.push(Cmd::Ai(PanelAction::ApprovePlan));
+    rig.frame();
+    // The test key store is empty, so the request itself is refused; what matters is that it was
+    // made as an Edit request carrying the implement message, with the plan in the history.
+    assert!(rig.manager.ai.plan.is_none());
+    assert_eq!(rig.manager.ai.mode, Mode::Edit);
+    assert_eq!(rig.manager.ai.input, super::ai_prompt::IMPLEMENT_MESSAGE);
+    assert!(rig.manager.ai.notice.as_ref().unwrap().error);
+    assert!(matches!(
+        rig.manager.ai.turns.last(),
+        Some(super::ai_prompt::Turn::Assistant { text, mode: Mode::Plan }) if text.contains("**Add a comment**")
+    ));
+    // The implementing request then edits the draft as any Edit request does.
+    let before = source(&rig);
+    let first = before.lines().next().unwrap().to_owned();
+    ask_with_tools(
+        &mut rig,
+        Mode::Edit,
+        vec![
+            Ok(Scripted::call(
+                "e1",
+                "edit_script",
+                serde_json::json!({"old": first, "new": format!("// A script.\n{first}")}),
+            )),
+            Ok(Scripted::say("Added the comment.")),
+        ],
+    );
+    assert_eq!(source(&rig), before);
+    rig.manager.cmds.push(Cmd::Ai(PanelAction::Accept));
+    rig.frame();
+    assert!(source(&rig).starts_with("// A script.\n"));
+}
+
+#[test]
+fn revising_a_plan_puts_the_cursor_in_the_box_and_discarding_drops_it() {
+    let mut rig = Rig::new("ai-plan-revise");
+    open_panel(&mut rig);
+    ask_with_tools(&mut rig, Mode::Plan, plan_turns());
+    rig.manager.cmds.push(Cmd::Ai(PanelAction::RevisePlan));
+    rig.frame();
+    assert!(rig.manager.ai.plan.is_none());
+    assert_eq!(
+        rig.manager.ai.mode,
+        Mode::Plan,
+        "revising stays in Plan mode"
+    );
+    assert!(rig.manager.ai.input.starts_with("Revise the plan: "));
+    ask_with_tools(&mut rig, Mode::Plan, plan_turns());
+    rig.manager.cmds.push(Cmd::Ai(PanelAction::DiscardPlan));
+    rig.frame();
+    assert!(rig.manager.ai.plan.is_none());
+    assert!(rig.manager.ai.set_mode(Mode::Ask));
+}
+
+#[test]
+fn approving_with_no_plan_waiting_does_nothing() {
+    let mut rig = Rig::new("ai-plan-none");
+    open_panel(&mut rig);
+    rig.manager.cmds.push(Cmd::Ai(PanelAction::ApprovePlan));
+    rig.frame();
+    assert_eq!(rig.manager.ai.mode, Mode::Ask);
+    assert!(rig.manager.ai.notice.is_none());
+}
+
+fn transcript_at_end(rig: &Rig) -> bool {
+    rig.ctx
+        .data(|data| data.get_temp(egui::Id::new("ai-transcript-at-end")))
+        .expect("the transcript was drawn")
+}
+
+#[test]
+fn a_new_plan_or_proposal_scrolls_into_view_so_its_buttons_can_be_pressed() {
+    let mut rig = Rig::new("ai-scroll-end");
+    rig.screen = Some(egui::Rect::from_min_size(
+        egui::Pos2::ZERO,
+        egui::vec2(700.0, 520.0),
+    ));
+    open_panel(&mut rig);
+    ask_with_tools(&mut rig, Mode::Plan, plan_turns());
+    for _ in 0..40 {
+        rig.frame();
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(transcript_at_end(&rig), "the plan card is below the fold");
+    rig.manager.ai.clear();
+    let before = source(&rig);
+    ask(
+        &mut rig,
+        script_reply(&format!("{before}// by the assistant\n")),
+    );
+    for _ in 0..40 {
+        rig.frame();
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(
+        transcript_at_end(&rig),
+        "the proposal card is below the fold"
+    );
+}
