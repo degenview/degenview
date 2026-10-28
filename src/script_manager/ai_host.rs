@@ -165,6 +165,20 @@ impl ScriptManager {
             PanelAction::SetMode(mode) => {
                 self.ai.set_mode(mode);
             }
+            PanelAction::ApprovePlan => {
+                // The plan is in the conversation, so the next request carries it.
+                if self.ai.plan.take().is_some() && self.ai.set_mode(Mode::Edit) {
+                    self.ai.input = IMPLEMENT_MESSAGE.to_owned();
+                    self.ai_send(ctx);
+                }
+            }
+            PanelAction::RevisePlan => {
+                if self.ai.plan.take().is_some() {
+                    "Revise the plan: ".clone_into(&mut self.ai.input);
+                    self.ai.focus_input = true;
+                }
+            }
+            PanelAction::DiscardPlan => self.ai.plan = None,
             PanelAction::Implement => {
                 if self.ai.can_implement() && self.ai.set_mode(Mode::Edit) {
                     self.ai.input = IMPLEMENT_MESSAGE.to_owned();

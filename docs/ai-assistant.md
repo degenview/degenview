@@ -14,7 +14,7 @@ own API key**. This page records what exists, why it is shaped this way, and wha
 | Tool use in `service/llm` (wire formats, `stream_turn`); nothing calls a tool yet | Done (agent PR 1) |
 | Agent loop, private draft, `read_script`/`compile`/`edit_script`/`write_script`, tool steps in the panel | Done (agent PR 2) |
 | `profile` tool (profile the draft on frozen bars) | Done (agent PR 3) |
-| Plan mode (`submit_plan`, plan card) | Planned (agent PR 4) |
+| Plan mode (`submit_plan`, plan card with Approve / Revise / Discard) | Done (agent PR 4) |
 | Compile-and-repair loop, runtime-error context, selection edits | Superseded by the agent loop |
 
 ## Why a user-supplied key
@@ -202,20 +202,37 @@ the editor's Profile column or tab and a profile the user made is not disturbed.
 - Pictures for a person to look at: `DEGENVIEW_GALLERY_DIR=… cargo test --lib
   script_manager::ai_gallery -- --ignored` (both themes, wide and narrow).
 
-## Ask and Edit modes
+## Ask, Plan and Edit modes
 
-- A new conversation starts in **Ask**, and so does opening another script. The Ask | Edit switch
-  sits in the composer; it is locked while a request runs or a proposal waits, so Ask can never sit
-  beside an Apply button. Start over keeps the mode.
-- **Ask never changes the script, in code and not only in the prompt.** `Assistant::finish` makes no
-  `Proposal` for an Ask request even if the model returns a whole script, and `ai_accept` refuses
-  unless the mode is Edit. A script the model writes in Ask shows as a code block with a Copy
-  button. `ai_prompt::system_prompt(mode)` tells the model it cannot change the script, to answer
-  or give a short numbered plan, and to keep any snippet under about 15 lines.
-- Each assistant `Turn` keeps the mode it was made in. History resent to the model drops an Edit
-  reply's script (the current one is resent) but keeps an Ask reply whole.
-- An Ask reply with two or more numbered steps (`looks_like_plan`) gets an **Implement this plan**
-  button: it switches to Edit and sends `IMPLEMENT_MESSAGE`, with the plan already in history.
+- A new conversation starts in **Ask**, and so does opening another script. The Ask | Plan | Edit switch
+  sits in the composer; it is locked while a request runs or a proposal or plan waits, so Ask can never
+  sit beside an Apply button. Start over keeps the mode.
+- **Ask and Plan never change the script, in code and not only in the prompt.** `Assistant::finish` makes
+  no `Proposal` for either, even if the model returns a whole script; `ai_accept` and the review sheet
+  refuse unless the mode is Edit; and neither mode is offered a writing tool (`ToolBox` offers and runs
+  only the mode's own, so a call to `edit_script` in Ask or Plan is an error answer, never an edit).
+- **Ask** answers questions and may look: `read_script`, `compile`, `profile`. A script the model writes
+  in Ask shows as a code block with a Copy button. `ai_prompt::agent_system_prompt(Ask)` tells it to
+  answer, or give a short numbered plan, and to keep any snippet under about 15 lines. An Ask reply with
+  two or more numbered steps (`looks_like_plan`) still gets an **Implement this plan** button.
+- **Plan** is for "what should we do about this?" It has the same three reading tools and one more,
+  `submit_plan(summary, steps[{title, detail, lines?}], expected_effect?)` (`ai_plan`). The model looks
+  and measures, then calls it once; that **ends the request** (the loop returns at once, nothing more is
+  asked of the model). A plan is validated (a summary, 1 to 12 steps each with a title; long text is cut,
+  not refused); a plan that is not accepted is answered with why and the model may try again. A model
+  that answers in prose instead (nothing to change, or it cannot be done here) is a plain reply.
+- **The plan card** (`ai.plan`, like `proposal`, kept in memory only) sits under the plan, which is the
+  reply (its Markdown is the assistant turn, so it is in history and the transcript). **Approve and
+  implement** switches to Edit and sends `IMPLEMENT_MESSAGE` with the plan already in history, so the
+  Edit request makes those changes on a draft and ends in the usual proposal; **Revise** returns to the
+  box with "Revise the plan: " and stays in Plan; **Discard** drops it. The mode switch is locked while a
+  plan waits.
+- A plan is not saved across a restart: the conversation is (the plan's words, as a Plan reply), the card
+  is not. After a restart ask for the changes in Edit mode ("implement the plan above").
+- **Saved mode names**: `Plan` is stored as `"planning"`. `"plan"` was Ask's name before Plan mode
+  existed and still loads as Ask.
+- Each assistant `Turn` keeps the mode it was made in. History resent to the model drops an Edit reply's
+  script (the current one is resent) but keeps an Ask or Plan reply whole.
 - The user's message shows from the moment it is sent (`Assistant::pending_request`), not only
   when the reply ends, and the transcript scrolls to the end when a request starts or finishes.
 
@@ -300,6 +317,14 @@ rules on the Settings page.
 Also verified headlessly: a scripted provider driving the whole window (reply to proposal, accept,
 stale refusal, discard, switching scripts, a failed request, a missing key), and the applied script
 as one undo step and redo in the editor.
+
+**Not verified (agent features, PRs for tool use, the loop, `profile` and Plan mode)**: any of it against a real
+model. Tool calls and plans are driven by a scripted provider that returns what the wire formats say a model
+returns. How well real models use `read_script`/`edit_script`/`profile`/`submit_plan`, how many rounds a
+typical request takes, what it costs, and whether the text `profile` returns is what a model needs to act
+on were not measured. The panel (the trail, the plan card, the Ask | Plan | Edit switch) was exercised
+headlessly and photographed (`ai_gallery`: `tools`, `tools-incomplete`, `plan`, `plan-empty`), not driven by
+hand beyond opening the app.
 
 **Not verified**: the model menu against real provider lists (the OpenAI filter is a heuristic; the
 "Use …" row is the way out) and clicking in it; the review sheet in a real window (clicking rows and toggles, scrolling a very long

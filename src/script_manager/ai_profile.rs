@@ -129,6 +129,7 @@ impl ProfileTool {
             content,
             is_error: false,
             summary,
+            plan: None,
         }
     }
 

@@ -8,6 +8,7 @@
 
 use super::ai_agent::{self, AgentSetup, Ended, Progress};
 use super::ai_models::{self, ModelList};
+use super::ai_plan::Plan;
 use super::ai_prompt::{self, Mode, Turn};
 use super::ai_review::Review;
 use super::ai_tools::Draft;
@@ -154,6 +155,9 @@ pub struct Assistant {
     /// The tools the latest request called, and what the model said between them.
     pub steps: Vec<Entry>,
     pub proposal: Option<Proposal>,
+    /// The plan waiting for the user to approve, revise or discard it. Like a proposal it is kept in
+    /// memory only; the plan's words are in the conversation either way.
+    pub plan: Option<Plan>,
     /// The review sheet over `proposal`, while it is open.
     pub review: Option<Review>,
     pub notice: Option<Notice>,
@@ -198,14 +202,15 @@ impl Assistant {
         self.streaming.clear();
         self.steps.clear();
         self.proposal = None;
+        self.plan = None;
         self.review = None;
         self.notice = None;
     }
 
-    /// Switches mode. Refused while a request is running or a proposal waits, so Ask can never
-    /// sit beside an Apply button.
+    /// Switches mode. Refused while a request is running or a proposal or plan waits, so Ask can
+    /// never sit beside an Apply button.
     pub fn set_mode(&mut self, mode: Mode) -> bool {
-        if self.run.is_some() || self.proposal.is_some() {
+        if self.run.is_some() || self.proposal.is_some() || self.plan.is_some() {
             return false;
         }
         self.mode = mode;
@@ -234,6 +239,7 @@ impl Assistant {
         self.turns.truncate(at);
         self.steps.clear();
         self.proposal = None;
+        self.plan = None;
         self.review = None;
         self.notice = None;
         self.mode = mode;
@@ -325,6 +331,7 @@ impl Assistant {
             return;
         }
         self.proposal = None;
+        self.plan = None;
         self.review = None;
         self.notice = None;
         self.streaming.clear();
@@ -474,8 +481,11 @@ impl Assistant {
                         "This server does not accept tools, so the assistant answered without them.",
                     ));
                 }
-                // Ask only talks. Whatever the model wrote, no proposal comes of it.
-                if mode == Mode::Ask {
+                if mode == Mode::Plan {
+                    self.plan = ended.plan.clone();
+                }
+                // Ask and Plan only talk. Whatever the model wrote, no proposal comes of it.
+                if mode != Mode::Edit {
                     return;
                 }
                 if let Some(script) = drafted {
@@ -1319,5 +1329,61 @@ mod tests {
             MockProvider::turns(vec![Ok(Scripted::say("later"))]),
         );
         assert!(assistant.steps.is_empty());
+    }
+
+    fn plan_turn(id: &str) -> Scripted {
+        Scripted::call(
+            id,
+            "submit_plan",
+            json!({"summary": "Make the line red.", "steps": [
+                {"title": "Colour it", "detail": "Pass color.red.", "lines": "4"},
+                {"title": "Check", "detail": "Compile."}]}),
+        )
+    }
+
+    #[test]
+    fn a_submitted_plan_waits_for_the_user_and_changes_nothing() {
+        let assistant = run_agent(Mode::Plan, BASE, vec![Ok(plan_turn("p1"))]);
+        let plan = assistant.plan.clone().expect("a plan");
+        assert_eq!(plan.steps.len(), 2);
+        assert!(assistant.proposal.is_none());
+        // Its words are the reply, and so the history.
+        assert!(matches!(
+            assistant.turns.last(),
+            Some(Turn::Assistant { text, mode: Mode::Plan }) if text.starts_with("Make the line red.\n\n1. **Colour it**")
+        ));
+    }
+
+    #[test]
+    fn the_mode_is_locked_while_a_plan_waits_and_a_new_request_or_start_over_drops_it() {
+        let mut assistant = run_agent(Mode::Plan, BASE, vec![Ok(plan_turn("p1"))]);
+        assert!(!assistant.set_mode(Mode::Edit));
+        assert_eq!(
+            assistant.mode,
+            Mode::Ask,
+            "the mode is the one the test never set"
+        );
+        let mut kept = run_agent(Mode::Plan, BASE, vec![Ok(plan_turn("p1"))]);
+        kept.clear();
+        assert!(kept.plan.is_none());
+        start_agent(
+            &mut assistant,
+            Mode::Plan,
+            BASE,
+            MockProvider::turns(vec![Ok(Scripted::say("later"))]),
+        );
+        assert!(assistant.plan.is_none());
+    }
+
+    #[test]
+    fn plan_mode_never_proposes_even_if_the_model_writes_a_script() {
+        let new = "//@version=6\nindicator(\"x\")\nplot(close, color = color.red)\n";
+        let assistant = run_agent(
+            Mode::Plan,
+            BASE,
+            vec![Ok(Scripted::say(&format!("```pine\n{new}```\n")))],
+        );
+        assert!(assistant.proposal.is_none());
+        assert!(assistant.plan.is_none());
     }
 }

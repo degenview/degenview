@@ -9,6 +9,7 @@
 //! match for text it copied would never succeed on a CRLF file; the file's own endings come back when
 //! the proposal is built (`ai::match_line_endings`).
 
+use super::ai_plan::Plan;
 use super::ai_profile::ProfileTool;
 use super::ai_prompt::Mode;
 use super::debug::DebugFeed;
@@ -63,6 +64,8 @@ pub struct Outcome {
     pub content: String,
     pub is_error: bool,
     pub summary: String,
+    /// The plan `submit_plan` was given, which ends the request.
+    pub plan: Option<Plan>,
 }
 
 impl Outcome {
@@ -71,6 +74,7 @@ impl Outcome {
             content: cap(content),
             is_error: false,
             summary,
+            plan: None,
         }
     }
 
@@ -80,41 +84,60 @@ impl Outcome {
             summary: message.clone(),
             content: message,
             is_error: true,
+            plan: None,
         }
     }
 }
 
-struct Tool {
-    name: &'static str,
-    /// Changes the draft, so only Edit mode has it.
-    writes: bool,
+/// What a tool is for, which decides the modes that have it.
+#[derive(Clone, Copy, PartialEq)]
+enum Kind {
+    /// Looks, so every mode has it.
+    Read,
+    /// Changes the draft, so only Edit has it.
+    Write,
+    /// Hands the user a plan, so only Plan has it.
+    Plan,
 }
 
-const TOOLS: [Tool; 5] = [
+struct Tool {
+    name: &'static str,
+    kind: Kind,
+}
+
+const TOOLS: [Tool; 6] = [
     Tool {
         name: "read_script",
-        writes: false,
+        kind: Kind::Read,
     },
     Tool {
         name: "compile",
-        writes: false,
+        kind: Kind::Read,
     },
     Tool {
         name: "profile",
-        writes: false,
+        kind: Kind::Read,
     },
     Tool {
         name: "edit_script",
-        writes: true,
+        kind: Kind::Write,
     },
     Tool {
         name: "write_script",
-        writes: true,
+        kind: Kind::Write,
+    },
+    Tool {
+        name: "submit_plan",
+        kind: Kind::Plan,
     },
 ];
 
 fn allowed(tool: &Tool, mode: Mode) -> bool {
-    !tool.writes || mode == Mode::Edit
+    match tool.kind {
+        Kind::Read => true,
+        Kind::Write => mode == Mode::Edit,
+        Kind::Plan => mode == Mode::Plan,
+    }
 }
 
 /// The tools of one request, and the draft they work on.
@@ -166,6 +189,7 @@ impl ToolBox {
             },
             "compile" => "Compiling the draft".to_owned(),
             "profile" => "Profiling the draft".to_owned(),
+            "submit_plan" => "Writing up the plan".to_owned(),
             "edit_script" => "Editing the script".to_owned(),
             "write_script" => "Rewriting the script".to_owned(),
             other => format!("Calling {other}"),
@@ -204,6 +228,7 @@ impl ToolBox {
             "read_script" => self.read(&call.input),
             "compile" => self.compile_draft(),
             "profile" => self.profile_draft(cancel),
+            "submit_plan" => Self::submit(&call.input),
             "edit_script" => self.edit(&call.input),
             _ => self.write(&call.input),
         }
@@ -272,6 +297,23 @@ impl ToolBox {
             out.push_str(&format!("\n\u{2026} and {more} more."));
         }
         Outcome::ok(out, format!("Compiled \u{b7} {summary}"))
+    }
+
+    /// Takes the plan. It ends the request: the user reads it and decides.
+    fn submit(input: &Value) -> Outcome {
+        match Plan::parse(input) {
+            Ok(plan) => Outcome {
+                content: "Plan submitted. The user will review it. Say nothing more.".to_owned(),
+                is_error: false,
+                summary: format!(
+                    "Submitted the plan \u{b7} {} step{}",
+                    plan.steps.len(),
+                    if plan.steps.len() == 1 { "" } else { "s" }
+                ),
+                plan: Some(plan),
+            },
+            Err(reason) => Outcome::error(format!("The plan was not accepted. {reason}")),
+        }
     }
 
     /// Profiles the draft, which has to compile first: a script with errors has nothing to run.
@@ -437,6 +479,20 @@ Use it to find what is slow before changing anything, and again after a change t
 draft must compile. Takes no arguments.",
             json!({"type": "object", "properties": {}}),
         ),
+        "submit_plan" => (
+            "Gives the user your plan to approve, revise or discard. Call it once, when you have looked \
+enough, and say nothing after it.",
+            json!({"type": "object", "properties": {
+                "summary": {"type": "string", "description": "What you found, with the figures you measured, and what the plan comes to."},
+                "steps": {"type": "array", "description": "The steps, in order.", "items": {
+                    "type": "object", "properties": {
+                        "title": {"type": "string", "description": "A short name for the step."},
+                        "detail": {"type": "string", "description": "What to change and why."},
+                        "lines": {"type": "string", "description": "The lines it applies to, such as \"12-20\"."},
+                    }, "required": ["title", "detail"]}},
+                "expected_effect": {"type": "string", "description": "What the user should see afterwards, and whether that is measured or a guess."},
+            }, "required": ["summary", "steps"]}),
+        ),
         "edit_script" => (
             "Replaces one piece of the draft. `old` must match the draft exactly (spaces, indentation \
 and all) and exactly once, so include enough surrounding lines to be unique. Prefer several small \
@@ -515,6 +571,10 @@ mod tests {
         };
         assert_eq!(names(Mode::Ask), ["read_script", "compile", "profile"]);
         assert_eq!(
+            names(Mode::Plan),
+            ["read_script", "compile", "profile", "submit_plan"]
+        );
+        assert_eq!(
             names(Mode::Edit),
             [
                 "read_script",
@@ -524,6 +584,34 @@ mod tests {
                 "write_script"
             ]
         );
+    }
+
+    #[test]
+    fn plan_mode_reads_and_submits_but_cannot_write_and_edit_cannot_submit() {
+        let plan = ToolBox::new(Mode::Plan, SCRIPT, clean);
+        let refused = plan.run_for_test(&call(
+            "edit_script",
+            json!({"old": "len = 14", "new": "len = 20"}),
+        ));
+        assert!(refused.is_error);
+        assert_eq!(plan.draft().text(), SCRIPT);
+        let submit = json!({"summary": "s", "steps": [{"title": "t", "detail": "d"}]});
+        let edit = edit_box().run_for_test(&call("submit_plan", submit.clone()));
+        assert!(edit.is_error);
+        assert!(edit.plan.is_none());
+        let ok = plan.run_for_test(&call("submit_plan", submit));
+        assert!(!ok.is_error);
+        assert_eq!(ok.summary, "Submitted the plan \u{b7} 1 step");
+        assert_eq!(ok.plan.unwrap().steps[0].title, "t");
+    }
+
+    #[test]
+    fn a_plan_that_is_not_accepted_says_why() {
+        let plan = ToolBox::new(Mode::Plan, SCRIPT, clean);
+        let outcome = plan.run_for_test(&call("submit_plan", json!({"summary": "s", "steps": []})));
+        assert!(outcome.is_error);
+        assert!(outcome.content.contains("not accepted"));
+        assert!(outcome.plan.is_none());
     }
 
     #[test]
