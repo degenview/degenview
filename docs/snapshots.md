@@ -113,8 +113,8 @@ ships no server; its tests use a mock server on this computer.
 - Hosted rows are disabled, with the reason, until a host is set. Nothing is uploaded to any
   default.
 - The token is in the Keychain (`es.nico.degenview.snapshots`), read only when an upload needs it,
-  or `DEGENVIEW_SNAPSHOT_TOKEN`. Where there is no Keychain (Windows, Linux) it cannot be saved:
-  use the environment variable or a token-less host.
+  or `DEGENVIEW_SNAPSHOT_TOKEN`. On Linux it is in the Secret Service (see [Flatpak](flatpak.md)). Where there is no secret store
+  (Windows) it cannot be saved: use the environment variable or a token-less host.
 - Tweet image opens X's composer (`https://x.com/intent/post?text=…&url=<snapshot link>`) in the
   browser. **The image is not attached to the post**, only its link: attaching needs an authorised
   X API integration, which this is not. No X account or credentials are requested.

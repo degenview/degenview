@@ -42,6 +42,25 @@ therefore stays on and stays non-installable: `self_update::install_target` retu
 that names the release page when `sandbox::is_flatpak()` (`FLATPAK_ID` or `/.flatpak-info`). If
 the app is ever hosted on Flathub, hide the check there instead.
 
+## Secret storage
+
+API keys (Alpaca, CoinMarketCap, AI providers), the snapshot token and webhook secrets all go
+through `keychain_webhook_secrets::platform`. On Linux that is `service::secret_service`, built on
+the `oo7` crate: the desktop's Secret Service (GNOME Keyring, KWallet) outside a sandbox, and inside
+a Flatpak an app-private keyring file opened with a key from the Secret portal (no extra
+permission). `oo7` is async and this crate keeps async runtimes in `src/mcp/`, so the calls run on
+one worker thread with a private current-thread runtime.
+
+- The keyring opens on the first request; a failure to open (no Secret Service running) is
+  remembered for 30 seconds, so a machine without one is asked once, not every frame.
+- `exists` is answered from a cache that the app's own writes keep current: the webhook list asks
+  once per row per frame. A secret changed by another program is not noticed until restart.
+- `exists` and `delete` wait 10 seconds; `read` and `write` wait two minutes, because a locked
+  keyring prompts the user to unlock it.
+- `Scope::shared_group` is a Keychain access group and means nothing here: an item is its service
+  plus its account.
+- `DEGENVIEW_NO_KEYCHAIN` keeps secrets in memory, as on macOS.
+
 ## Not verified
 
 Written without a Linux machine; CI builds the bundle but nothing has run it.
@@ -53,12 +72,12 @@ Written without a Linux machine; CI builds the bundle but nothing has run it.
   test of this.
 - That `appstreamcli validate --pedantic` passes with no warnings (the screenshot is 5344 × 3044,
   which Flathub may want smaller).
-- Secret storage and file dialogs inside the sandbox: not part of this change, see the follow-ups.
+- Secret storage inside the sandbox (below): the worker and its caches are tested with a fake
+  keyring, but nothing has talked to a real Secret Service or portal.
+- File dialogs inside the sandbox: not part of this change, see the follow-ups.
 
 ## Follow-ups
 
-- API keys and webhook secrets cannot be saved on Linux (no Keychain; `keychain_*` return "no
-  Keychain on this platform"). A Secret Service backend through the Secret portal is the fix.
 - File dialogs are AppleScript (`service::file_dialog`), so CSV and image import and snapshot "save
   as" do nothing on Linux. The portal file chooser is the fix.
 - Flathub: a separate `flathub/es.nico.degenview` repository whose manifest builds a signed tag.

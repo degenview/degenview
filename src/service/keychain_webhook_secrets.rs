@@ -1,5 +1,5 @@
-//! The macOS Keychain behind `WebhookSecretStore`: one generic-password item per
-//! endpoint. Talks to the Security framework directly (a few C calls), so it adds no
+//! The macOS Keychain behind `WebhookSecretStore` (Linux: the Secret Service, see
+//! `secret_service`): one generic-password item per endpoint. Talks to the Security framework directly (a few C calls), so it adds no
 //! crate to the build.
 //!
 //! Items go in the shared `es.nico.degenview.shared` access group when this process is
@@ -465,8 +465,12 @@ pub(crate) mod platform {
     }
 }
 
-/// Other platforms have no Keychain: nothing is stored or read.
-#[cfg(not(target_os = "macos"))]
+/// Linux keeps secrets in the Secret Service, or the Secret portal inside a Flatpak.
+#[cfg(target_os = "linux")]
+pub(crate) use crate::service::secret_service as platform;
+
+/// Other platforms have no secret store: nothing is stored or read.
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 pub(crate) mod platform {
     use super::{Scope, SecretStoreError};
 
