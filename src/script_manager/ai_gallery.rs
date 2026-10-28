@@ -319,6 +319,58 @@ fn gallery_of_the_assistant() {
             }
             scene.rig.manager.ai.clear();
 
+            // Auto: a clean change is applied when the assistant finishes; anything else waits.
+            assert!(scene.rig.manager.ai.set_mode(Mode::Edit));
+            let ctx = scene.screen.ctx.clone();
+            scene
+                .rig
+                .manager
+                .ai_action(PanelAction::SetAuto(true), &ctx);
+            scene.frames(3);
+            scene.save("auto-on");
+            for (label, old, new) in [
+                ("auto-applied", "doubled + 10", "doubled + 20"),
+                ("auto-held", "plot(value)", "plot(value"),
+            ] {
+                scene.rig.set_source(&tools_base);
+                scene.frames(2);
+                let tools = ToolBox::new(Mode::Edit, &tools_base, super::ai_host::diagnostics_of);
+                let request = ChatRequest {
+                    model: "m".into(),
+                    system: String::new(),
+                    messages: vec![ChatMessage::user("x")],
+                    max_tokens: 10,
+                    tools: tools.specs(),
+                };
+                let turns = vec![Ok(edit("e1", old, new)), Ok(Scripted::say("Changed it."))];
+                scene.rig.manager.ai.start_agent(
+                    Box::new(MockProvider::turns(turns)),
+                    request,
+                    Some(AgentSetup {
+                        tools,
+                        fallback_system: String::new(),
+                    }),
+                    "Make the offset 20".to_owned(),
+                    tools_base.clone(),
+                    Mode::Edit,
+                    Arc::new(|| {}),
+                );
+                for _ in 0..200 {
+                    scene.frames(1);
+                    if !scene.rig.manager.ai.is_running() {
+                        break;
+                    }
+                }
+                scene.frames(30);
+                scene.save(label);
+            }
+            scene.rig.set_source(&tools_base);
+            scene
+                .rig
+                .manager
+                .ai_action(PanelAction::SetAuto(false), &ctx);
+            scene.rig.manager.ai.clear();
+
             // Plan mode: it looks, measures and hands over a plan to approve.
             assert!(scene.rig.manager.ai.set_mode(Mode::Plan));
             scene.frames(2);

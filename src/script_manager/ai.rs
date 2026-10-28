@@ -124,6 +124,8 @@ struct Run {
     mode: Mode,
     /// The assistant's working copy, if it has tools; read when the request is stopped.
     draft: Option<Draft>,
+    /// Auto was on when the request was sent. Flipping the switch while it runs changes nothing.
+    auto: bool,
 }
 
 impl Drop for Run {
@@ -139,6 +141,7 @@ pub struct Finished {
     typed: String,
     mode: Mode,
     draft: Option<Draft>,
+    auto: bool,
 }
 
 #[derive(Default)]
@@ -155,6 +158,8 @@ pub struct Assistant {
     /// The tools the latest request called, and what the model said between them.
     pub steps: Vec<Entry>,
     pub proposal: Option<Proposal>,
+    /// The request that made `proposal` was sent with Auto on, so the host may apply it.
+    pub auto_requested: bool,
     /// The plan waiting for the user to approve, revise or discard it. Like a proposal it is kept in
     /// memory only; the plan's words are in the conversation either way.
     pub plan: Option<Plan>,
@@ -331,6 +336,7 @@ impl Assistant {
             return;
         }
         self.proposal = None;
+        self.auto_requested = false;
         self.plan = None;
         self.review = None;
         self.notice = None;
@@ -345,6 +351,7 @@ impl Assistant {
             typed,
             mode,
             draft,
+            auto: self.prefs.auto_apply,
         });
     }
 
@@ -427,6 +434,7 @@ impl Assistant {
             typed: run.typed.clone(),
             mode: run.mode,
             draft: run.draft.clone(),
+            auto: run.auto,
         }
     }
 
@@ -439,8 +447,10 @@ impl Assistant {
             typed,
             mode,
             draft,
+            auto,
         } = finished;
         self.scroll_to_end = true;
+        self.auto_requested = auto && mode == Mode::Edit;
         // What the assistant changed in its draft, if anything. Only Edit has tools that write.
         let drafted = changed_draft(draft.as_ref(), &base);
         match result {
@@ -544,6 +554,28 @@ impl Assistant {
             note,
         });
     }
+}
+
+/// Whether Auto may apply `proposal` to an editor holding `editor_source`, or why it must wait for
+/// the user. Auto applies only what is clean: the request finished normally, the result has no
+/// compile errors (warnings are fine), and the editor still holds the text it was made from (a
+/// manual Apply would be refused otherwise, so there is nothing to apply). The reason finishes the
+/// sentence "Not applied automatically: …".
+pub fn auto_apply_check(proposal: &Proposal, editor_source: &str) -> Result<(), String> {
+    if proposal.note.is_some() {
+        return Err("it did not finish.".to_owned());
+    }
+    if proposal.errors > 0 {
+        let n = proposal.errors;
+        return Err(format!(
+            "it has {n} compile error{}.",
+            if n == 1 { "" } else { "s" }
+        ));
+    }
+    if editor_source != proposal.base {
+        return Err("the script changed while the assistant worked.".to_owned());
+    }
+    Ok(())
 }
 
 /// The draft as a script in the file's own line endings, if it differs from the script the request
@@ -1385,5 +1417,92 @@ mod tests {
         );
         assert!(assistant.proposal.is_none());
         assert!(assistant.plan.is_none());
+    }
+
+    fn proposal_for_check(errors: usize, warnings: usize, note: Option<&str>) -> Proposal {
+        Proposal {
+            base: BASE.to_owned(),
+            script: format!("{BASE}// x\n"),
+            changes: DiffSnapshot::compute(BASE, &format!("{BASE}// x\n")),
+            errors,
+            warnings,
+            note: note.map(str::to_owned),
+        }
+    }
+
+    #[test]
+    fn auto_applies_a_clean_result_made_from_the_text_in_the_editor() {
+        assert_eq!(
+            auto_apply_check(&proposal_for_check(0, 0, None), BASE),
+            Ok(())
+        );
+        // Warnings do not hold it.
+        assert_eq!(
+            auto_apply_check(&proposal_for_check(0, 3, None), BASE),
+            Ok(())
+        );
+    }
+
+    #[test]
+    fn auto_holds_what_is_not_clean_and_says_why() {
+        assert_eq!(
+            auto_apply_check(&proposal_for_check(1, 0, None), BASE),
+            Err("it has 1 compile error.".to_owned())
+        );
+        assert_eq!(
+            auto_apply_check(&proposal_for_check(2, 0, None), BASE),
+            Err("it has 2 compile errors.".to_owned())
+        );
+        assert_eq!(
+            auto_apply_check(
+                &proposal_for_check(0, 0, Some("Stopped before it finished.")),
+                BASE
+            ),
+            Err("it did not finish.".to_owned())
+        );
+        assert_eq!(
+            auto_apply_check(&proposal_for_check(0, 0, None), "typed since"),
+            Err("the script changed while the assistant worked.".to_owned())
+        );
+    }
+
+    #[test]
+    fn a_request_remembers_whether_auto_was_on_when_it_was_sent() {
+        let mut assistant = Assistant::default();
+        assistant.prefs.auto_apply = true;
+        start_agent(
+            &mut assistant,
+            Mode::Edit,
+            BASE,
+            MockProvider::turns(vec![Ok(red_edit("t1")), Ok(Scripted::say("Done."))]),
+        );
+        // Switched off while it runs: this request still counts as sent with Auto on.
+        assistant.prefs.auto_apply = false;
+        let finished = wait_for_end(&mut assistant);
+        assistant.finish(finished, &|_| Vec::new());
+        assert!(assistant.auto_requested);
+        assert!(assistant.proposal.is_some());
+        // The next request, sent with it off, is not.
+        let manual = run_agent(
+            Mode::Edit,
+            BASE,
+            vec![Ok(red_edit("t1")), Ok(Scripted::say("Done."))],
+        );
+        assert!(!manual.auto_requested);
+    }
+
+    #[test]
+    fn only_edit_requests_can_be_auto_applied() {
+        let mut assistant = Assistant::default();
+        assistant.prefs.auto_apply = true;
+        start_agent(
+            &mut assistant,
+            Mode::Plan,
+            BASE,
+            MockProvider::turns(vec![Ok(plan_turn("p1"))]),
+        );
+        let finished = wait_for_end(&mut assistant);
+        assistant.finish(finished, &|_| Vec::new());
+        assert!(!assistant.auto_requested);
     }
 }

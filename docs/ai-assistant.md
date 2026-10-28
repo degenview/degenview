@@ -15,6 +15,7 @@ own API key**. This page records what exists, why it is shaped this way, and wha
 | Agent loop, private draft, `read_script`/`compile`/`edit_script`/`write_script`, tool steps in the panel | Done (agent PR 2) |
 | `profile` tool (profile the draft on frozen bars) | Done (agent PR 3) |
 | Plan mode (`submit_plan`, plan card with Approve / Revise / Discard) | Done (agent PR 4) |
+| Manual and Auto: apply a clean change without a review click | Done (agent PR 5) |
 | Compile-and-repair loop, runtime-error context, selection edits | Superseded by the agent loop |
 
 ## Why a user-supplied key
@@ -51,7 +52,7 @@ completions API: OpenRouter, Ollama, LM Studio, Groq, ...).
   saved (developer convenience, like the other providers' variables).
 - **Off macOS** the Keychain write fails; the store still keeps the key for the session and the page
   says it is not saved for later.
-- **`ai.prefs`** (provider, models, compatible server URL) is a local `setting`; it is in the
+- **`ai.prefs`** (provider, models, compatible server URL, and the Manual/Auto switch) is a local `setting`; it is in the
   never-sync test in `sync::policy` because it names the user's own account and server.
 - **Base URLs** must be `https://`, or `http://` to `localhost`, `127.0.0.1` or `::1`
   (`validate_base_url`). A user name in the URL is rejected so `http://localhost@evil.example`
@@ -102,8 +103,9 @@ answers and asks again until it stops calling. It runs on the request's own thre
 - **The assistant never touches the editor.** `ai_send` copies the open script into a `Draft`
   (`ai_tools`); every tool reads or changes that copy. When the request ends the draft is compared with
   the script the request started from and becomes the usual `Proposal`: summary card, review sheet, Apply
-  as one undo step, refused if the editor no longer holds `proposal.base`. "Nothing changes until Apply"
-  and "Ask never edits" are unchanged.
+  as one undo step, refused if the editor no longer holds `proposal.base`. In Manual (the default),
+  "nothing changes until Apply" and "Ask never edits" are unchanged; Auto (below) is the one way a change
+  reaches the editor without that click, and only for a clean result.
 - **Tools** (`ToolBox::new(mode, …)` offers and runs only the mode's own): `read_script(start?, end?)` (numbered
   lines of the draft, 400 at a time), `compile()` (the draft's diagnostics, as the compiler words them),
   and in Edit `edit_script(old, new)` and `write_script(text)`. A call to a tool the mode does not have is
@@ -186,7 +188,7 @@ the editor's Profile column or tab and a profile the user made is not disturbed.
   A block still open when the stream ends, or a `length` stop, is refused: a cut-off script is never
   offered. A script equal to the current one (ignoring line endings and trailing blank space) is
   "nothing to change".
-- **Nothing changes until Apply.** A finished reply becomes a `Proposal` (base text, script, diff,
+- **Nothing changes until Apply (in Manual, the default).** A finished reply becomes a `Proposal` (base text, script, diff,
   and the error and warning counts from compiling it off-screen). `ai_accept` refuses if the editor
   no longer holds exactly `proposal.base`, so typing made while the model wrote is never overwritten.
   Apply goes through `editor::apply_script`, which shares `apply_undoable` with the change-marker
@@ -201,6 +203,37 @@ the editor's Profile column or tab and a profile the user made is not disturbed.
   button, and a missing key shows a setup card with Open Settings.
 - Pictures for a person to look at: `DEGENVIEW_GALLERY_DIR=… cargo test --lib
   script_manager::ai_gallery -- --ignored` (both themes, wide and narrow).
+
+## Manual and Auto
+
+An Edit request ends in a `Proposal` either way. The **Manual | Auto** switch (composer, shown in Edit
+only, disabled while a request runs) decides who applies it.
+
+- **Manual** (the default): the user reviews and applies, as described above.
+- **Auto**: when the request finishes, a *clean* proposal is applied to the editor straight away, through
+  the same `apply_proposal` the Apply button uses (`ai_host`): one undo step, caret on the first changed
+  line, a compile requested, **not saved** (the editor is dirty, as after Apply). The notice says what
+  happened: "Applied automatically · 2 changes (+3 −1). Undo brings the old script back."
+- **Clean** is one pure rule, `ai::auto_apply_check`: the request finished normally (the proposal has no
+  note: not "Incomplete", not "Stopped"), the result has **no compile errors** (warnings do not hold it),
+  and the editor still holds exactly the text the request started from. Anything else stays a proposal
+  on the card exactly as in Manual, and its note gains "Not applied automatically: it has 2 compile
+  errors." / "…it did not finish." / "…the script changed while the assistant worked." Text typed
+  meanwhile is never overwritten (a manual Apply would be refused as well).
+- **The setting is read when the request is sent** (`Run.auto`, `Assistant::auto_requested`): flipping the
+  switch cannot change a request already running. It is the local `ai.prefs` setting (`autoApply`,
+  absent reads as Manual) and **never syncs**: it is a safety choice about this user's scripts on this
+  Mac.
+- **Only Edit proposes**, so Ask and Plan are unaffected. **Approve and implement** on a plan is still a
+  click; the Edit request it starts follows the switch, so with Auto on a plan ends applied.
+- **What Auto trades**: the pause in which a person could notice a bad change. It is opt-in, never
+  applies what does not compile, is one undo, and the editor's change markers (gutter) still show what
+  differs from the saved file. A script comment that talks the model into a harmful edit would be applied
+  without a look (prompt injection through script text); that is the cost of the switch.
+- Not verified: Auto against a real model (how often a real result compiles first time), and the switch
+  driven by hand. Tests cover the rule, the window (apply, one undo restores it, held for errors /
+  incomplete / typed meanwhile, saved and reloaded, locked while running, Ask and Plan untouched, a plan
+  that ends applied) and pictures (`ai_gallery`: `auto-on`, `auto-applied`, `auto-held`).
 
 ## Ask, Plan and Edit modes
 
