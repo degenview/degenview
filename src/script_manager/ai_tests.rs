@@ -23,6 +23,7 @@ fn request() -> ChatRequest {
         system: "s".to_owned(),
         messages: vec![ChatMessage::user("hi")],
         max_tokens: 10,
+        tools: Vec::new(),
     }
 }
 

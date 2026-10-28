@@ -101,10 +101,43 @@ pub enum Role {
     Assistant,
 }
 
+/// A function the model may call: its name, what it does, and the JSON Schema of its arguments.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ToolSpec {
+    pub name: String,
+    pub description: String,
+    /// A JSON Schema object describing the arguments.
+    pub schema: Value,
+}
+
+/// A call the model made. The arguments are already parsed; one that was not valid JSON (or not an
+/// object) leaves `input` empty and says why in `malformed`, so the caller can tell the model
+/// instead of failing the whole request.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ToolCall {
+    pub id: String,
+    pub name: String,
+    pub input: Value,
+    pub malformed: Option<String>,
+}
+
+/// What a call came to, sent back so the model can go on.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ToolResult {
+    /// The id of the call this answers.
+    pub id: String,
+    pub content: String,
+    pub is_error: bool,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ChatMessage {
     pub role: Role,
     pub content: String,
+    /// The calls an assistant message made (after its text).
+    pub tool_calls: Vec<ToolCall>,
+    /// The answers a user message carries to the calls before it (before its text).
+    pub tool_results: Vec<ToolResult>,
 }
 
 impl ChatMessage {
@@ -112,6 +145,8 @@ impl ChatMessage {
         Self {
             role: Role::User,
             content: content.into(),
+            tool_calls: Vec::new(),
+            tool_results: Vec::new(),
         }
     }
 
@@ -119,16 +154,36 @@ impl ChatMessage {
         Self {
             role: Role::Assistant,
             content: content.into(),
+            tool_calls: Vec::new(),
+            tool_results: Vec::new(),
+        }
+    }
+
+    /// An assistant message that called tools, with whatever it said before calling them.
+    pub fn assistant_calling(content: impl Into<String>, calls: Vec<ToolCall>) -> Self {
+        Self {
+            tool_calls: calls,
+            ..Self::assistant(content)
+        }
+    }
+
+    /// The answers to every call of the assistant message before it.
+    pub fn tool_results(results: Vec<ToolResult>) -> Self {
+        Self {
+            tool_results: results,
+            ..Self::user(String::new())
         }
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct ChatRequest {
     pub model: String,
     pub system: String,
     pub messages: Vec<ChatMessage>,
     pub max_tokens: u32,
+    /// Empty: a plain chat, and the request is the one sent before tools existed.
+    pub tools: Vec<ToolSpec>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -232,6 +287,26 @@ impl std::fmt::Display for LlmError {
 
 impl std::error::Error for LlmError {}
 
+/// Why a turn ended.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Stop {
+    /// The model finished what it had to say.
+    End,
+    /// The model called tools and waits for their results.
+    ToolUse,
+    /// The reply hit the token limit, so text (and any call) may be cut off. A cut-off call is
+    /// dropped, never returned.
+    MaxTokens,
+}
+
+/// One whole reply: what the model said, and the calls it made.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TurnReply {
+    pub text: String,
+    pub calls: Vec<ToolCall>,
+    pub stop: Stop,
+}
+
 /// A provider that streams a reply. `on_text` gets each piece as it arrives; `cancel` is checked
 /// between pieces.
 pub trait LlmProvider: Send + Sync {
@@ -241,6 +316,30 @@ pub trait LlmProvider: Send + Sync {
         cancel: &AtomicBool,
         on_text: &mut dyn FnMut(&str),
     ) -> Result<Done, LlmError>;
+
+    /// One turn of a conversation that may call tools. A provider with no tool support answers as
+    /// `stream_chat` does and never calls one.
+    fn stream_turn(
+        &self,
+        request: &ChatRequest,
+        cancel: &AtomicBool,
+        on_text: &mut dyn FnMut(&str),
+    ) -> Result<TurnReply, LlmError> {
+        let mut text = String::new();
+        let done = self.stream_chat(request, cancel, &mut |piece| {
+            text.push_str(piece);
+            on_text(piece);
+        })?;
+        Ok(TurnReply {
+            text,
+            calls: Vec::new(),
+            stop: if done.truncated {
+                Stop::MaxTokens
+            } else {
+                Stop::End
+            },
+        })
+    }
 
     /// The model ids the key can use. Doubles as a cheap "does this key work" check, since it
     /// spends no tokens.
@@ -264,20 +363,54 @@ pub(crate) enum Step {
     Skip,
 }
 
-/// Turns a provider's stream frames into text.
+/// Turns a provider's stream frames into text and tool calls.
 pub(crate) trait Decoder {
     fn feed(&mut self, event: &Event) -> Result<Step, LlmError>;
     /// `Some(truncated)` once the provider said the reply is complete.
     fn finished(&self) -> Option<bool>;
+    /// The calls streamed so far, in the order the model made them. Taken once, at the end.
+    fn take_calls(&mut self) -> Vec<ToolCall> {
+        Vec::new()
+    }
 }
 
-/// Drives a decoder over a stream; shared by every provider.
-pub(crate) fn run_stream<R: std::io::BufRead>(
+/// Arguments as the model streamed them, parsed. Nothing at all is an empty object (a tool with no
+/// arguments arrives that way); text that is not a JSON object is reported, not guessed at.
+pub(crate) fn parse_arguments(text: &str) -> Result<Value, String> {
+    if text.trim().is_empty() {
+        return Ok(Value::Object(serde_json::Map::new()));
+    }
+    match serde_json::from_str::<Value>(text) {
+        Ok(value @ Value::Object(_)) => Ok(value),
+        Ok(_) => Err("The arguments were not a JSON object.".to_owned()),
+        Err(error) => Err(format!("The arguments were not valid JSON: {error}.")),
+    }
+}
+
+pub(crate) fn make_call(id: String, name: String, arguments: &str) -> ToolCall {
+    match parse_arguments(arguments) {
+        Ok(input) => ToolCall {
+            id,
+            name,
+            input,
+            malformed: None,
+        },
+        Err(reason) => ToolCall {
+            id,
+            name,
+            input: Value::Object(serde_json::Map::new()),
+            malformed: Some(reason),
+        },
+    }
+}
+
+/// Reads a stream to its end. Returns whether any text came and whether the reply was cut off.
+fn drive<R: std::io::BufRead>(
     reader: R,
-    mut decoder: impl Decoder,
+    decoder: &mut impl Decoder,
     cancel: &AtomicBool,
     on_text: &mut dyn FnMut(&str),
-) -> Result<Done, LlmError> {
+) -> Result<(bool, bool), LlmError> {
     let mut any_text = false;
     sse::read_events(reader, cancel, |event| match decoder.feed(&event)? {
         Step::Text(text) => {
@@ -293,10 +426,52 @@ pub(crate) fn run_stream<R: std::io::BufRead>(
             "The reply ended before the model finished it.".to_owned(),
         ));
     };
+    Ok((any_text, truncated))
+}
+
+/// Drives a decoder over a stream; shared by every provider.
+pub(crate) fn run_stream<R: std::io::BufRead>(
+    reader: R,
+    mut decoder: impl Decoder,
+    cancel: &AtomicBool,
+    on_text: &mut dyn FnMut(&str),
+) -> Result<Done, LlmError> {
+    let (any_text, truncated) = drive(reader, &mut decoder, cancel, on_text)?;
     if !any_text {
         return Err(LlmError::Protocol("The model returned no text.".to_owned()));
     }
     Ok(Done { truncated })
+}
+
+/// Like `run_stream`, but a reply made only of tool calls is a reply too.
+pub(crate) fn run_turn<R: std::io::BufRead>(
+    reader: R,
+    mut decoder: impl Decoder,
+    cancel: &AtomicBool,
+    on_text: &mut dyn FnMut(&str),
+) -> Result<TurnReply, LlmError> {
+    let mut text = String::new();
+    let (_, truncated) = drive(reader, &mut decoder, cancel, &mut |piece| {
+        text.push_str(piece);
+        on_text(piece);
+    })?;
+    // A call cut off by the token limit has arguments that cannot be trusted.
+    let calls = if truncated {
+        Vec::new()
+    } else {
+        decoder.take_calls()
+    };
+    if text.is_empty() && calls.is_empty() {
+        return Err(LlmError::Protocol("The model returned no text.".to_owned()));
+    }
+    let stop = if truncated {
+        Stop::MaxTokens
+    } else if calls.is_empty() {
+        Stop::End
+    } else {
+        Stop::ToolUse
+    };
+    Ok(TurnReply { text, calls, stop })
 }
 
 // MARK: Base URL
@@ -489,6 +664,18 @@ impl LlmProvider for HttpProvider {
         cancel: &AtomicBool,
         on_text: &mut dyn FnMut(&str),
     ) -> Result<Done, LlmError> {
+        let reply = self.stream_turn(request, cancel, on_text)?;
+        Ok(Done {
+            truncated: reply.stop == Stop::MaxTokens,
+        })
+    }
+
+    fn stream_turn(
+        &self,
+        request: &ChatRequest,
+        cancel: &AtomicBool,
+        on_text: &mut dyn FnMut(&str),
+    ) -> Result<TurnReply, LlmError> {
         if request.model.trim().is_empty() {
             return Err(LlmError::Config(
                 "Choose a model in Settings ▸ AI.".to_owned(),
@@ -498,13 +685,13 @@ impl LlmProvider for HttpProvider {
         let mut body = self.send(&wire)?;
         let reader = BufReader::new(body.with_config().limit(MAX_STREAM_BYTES).reader());
         let result = match self.kind {
-            ProviderKind::Anthropic => run_stream(
+            ProviderKind::Anthropic => run_turn(
                 reader,
                 anthropic::AnthropicDecoder::default(),
                 cancel,
                 on_text,
             ),
-            _ => run_stream(reader, openai::OpenAiDecoder::default(), cancel, on_text),
+            _ => run_turn(reader, openai::OpenAiDecoder::default(), cancel, on_text),
         };
         result.map_err(|error| self.scrub_error(error))
     }
@@ -580,15 +767,48 @@ fn request_id(headers: &ureq::http::HeaderMap) -> Option<String> {
     })
 }
 
-/// A scripted provider for tests: each call to `stream_chat` takes the next canned reply.
+/// A scripted provider for tests: each call to `stream_chat` or `stream_turn` takes the next
+/// canned reply.
 #[cfg(test)]
 pub mod mock {
     use super::*;
     use std::collections::VecDeque;
     use std::sync::Mutex;
 
+    /// One scripted turn: the pieces of text it streams, then the calls it makes.
+    #[derive(Clone, Debug, Default)]
+    pub struct Turn {
+        pub pieces: Vec<String>,
+        pub calls: Vec<ToolCall>,
+        pub truncated: bool,
+    }
+
+    impl Turn {
+        pub fn say(text: &str) -> Self {
+            Self {
+                pieces: vec![text.to_owned()],
+                ..Self::default()
+            }
+        }
+
+        /// A turn that calls one tool, with `input` as its arguments.
+        pub fn call(id: &str, name: &str, input: Value) -> Self {
+            Self::default().then_call(id, name, input)
+        }
+
+        pub fn then_call(mut self, id: &str, name: &str, input: Value) -> Self {
+            self.calls.push(ToolCall {
+                id: id.to_owned(),
+                name: name.to_owned(),
+                input,
+                malformed: None,
+            });
+            self
+        }
+    }
+
     pub struct MockProvider {
-        replies: Mutex<VecDeque<Result<Vec<String>, LlmError>>>,
+        replies: Mutex<VecDeque<Result<Turn, LlmError>>>,
         /// Every request seen, for assertions about what was sent.
         pub requests: Mutex<Vec<ChatRequest>>,
         pub models: Result<Vec<String>, LlmError>,
@@ -596,8 +816,22 @@ pub mod mock {
 
     impl MockProvider {
         pub fn replying(replies: Vec<Result<Vec<String>, LlmError>>) -> Self {
+            Self::turns(
+                replies
+                    .into_iter()
+                    .map(|reply| {
+                        reply.map(|pieces| Turn {
+                            pieces,
+                            ..Turn::default()
+                        })
+                    })
+                    .collect(),
+            )
+        }
+
+        pub fn turns(turns: Vec<Result<Turn, LlmError>>) -> Self {
             Self {
-                replies: Mutex::new(replies.into()),
+                replies: Mutex::new(turns.into()),
                 requests: Mutex::new(Vec::new()),
                 models: Ok(vec!["mock-1".to_owned()]),
             }
@@ -615,20 +849,45 @@ pub mod mock {
             cancel: &AtomicBool,
             on_text: &mut dyn FnMut(&str),
         ) -> Result<Done, LlmError> {
+            let reply = self.stream_turn(request, cancel, on_text)?;
+            Ok(Done {
+                truncated: reply.stop == Stop::MaxTokens,
+            })
+        }
+
+        fn stream_turn(
+            &self,
+            request: &ChatRequest,
+            cancel: &AtomicBool,
+            on_text: &mut dyn FnMut(&str),
+        ) -> Result<TurnReply, LlmError> {
             self.requests.lock().unwrap().push(request.clone());
-            let reply = self
+            let turn = self
                 .replies
                 .lock()
                 .unwrap()
                 .pop_front()
                 .unwrap_or_else(|| Err(LlmError::Protocol("no scripted reply".to_owned())))?;
-            for piece in reply {
+            let mut text = String::new();
+            for piece in turn.pieces {
                 if cancel.load(std::sync::atomic::Ordering::Relaxed) {
                     return Err(LlmError::Cancelled);
                 }
                 on_text(&piece);
+                text.push_str(&piece);
             }
-            Ok(Done { truncated: false })
+            let stop = if turn.truncated {
+                Stop::MaxTokens
+            } else if turn.calls.is_empty() {
+                Stop::End
+            } else {
+                Stop::ToolUse
+            };
+            Ok(TurnReply {
+                text,
+                calls: turn.calls,
+                stop,
+            })
         }
 
         fn list_models(&self) -> Result<Vec<String>, LlmError> {
@@ -788,6 +1047,124 @@ mod tests {
         assert_eq!(pieces, 1);
     }
 
+    fn turn_openai(input: &str) -> Result<TurnReply, LlmError> {
+        run_turn(
+            input.as_bytes(),
+            openai::OpenAiDecoder::default(),
+            &AtomicBool::new(false),
+            &mut |_| {},
+        )
+    }
+
+    const ONLY_A_CALL: &str = "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"c1\",\"function\":{\"name\":\"compile\",\"arguments\":\"\"}}]}}]}\n\n\
+         data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n\
+         data: [DONE]\n\n";
+
+    #[test]
+    fn a_turn_that_is_only_a_tool_call_is_a_reply() {
+        let reply = turn_openai(ONLY_A_CALL).unwrap();
+        assert_eq!(reply.text, "");
+        assert_eq!(reply.stop, Stop::ToolUse);
+        assert_eq!(reply.calls.len(), 1);
+        assert_eq!(reply.calls[0].name, "compile");
+        // The same stream is not a reply for a caller that asked for text only.
+        let (result, _) = stream_openai(ONLY_A_CALL);
+        assert!(matches!(result, Err(LlmError::Protocol(_))));
+    }
+
+    #[test]
+    fn a_turn_with_text_and_a_call_has_both() {
+        let reply = turn_openai(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"Checking.\"}}]}\n\n\
+             data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"c1\",\"function\":{\"name\":\"compile\",\"arguments\":\"{}\"}}]},\"finish_reason\":\"tool_calls\"}]}\n\n\
+             data: [DONE]\n\n",
+        )
+        .unwrap();
+        assert_eq!(reply.text, "Checking.");
+        assert_eq!(reply.stop, Stop::ToolUse);
+        assert_eq!(reply.calls.len(), 1);
+    }
+
+    #[test]
+    fn a_plain_reply_has_no_calls_and_stops_at_its_end() {
+        let reply = turn_openai(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"Hi\"},\"finish_reason\":\"stop\"}]}\n\n\
+             data: [DONE]\n\n",
+        )
+        .unwrap();
+        assert_eq!((reply.text.as_str(), reply.stop), ("Hi", Stop::End));
+        assert!(reply.calls.is_empty());
+    }
+
+    #[test]
+    fn a_call_cut_off_by_the_token_limit_is_dropped() {
+        let reply = turn_openai(
+            "data: {\"choices\":[{\"delta\":{\"content\":\"Let me\",\"tool_calls\":[{\"index\":0,\"id\":\"c1\",\"function\":{\"name\":\"edit\",\"arguments\":\"{\\\"old\\\": \\\"a\"}}]},\"finish_reason\":\"length\"}]}\n\n\
+             data: [DONE]\n\n",
+        )
+        .unwrap();
+        assert_eq!(reply.stop, Stop::MaxTokens);
+        assert!(reply.calls.is_empty());
+    }
+
+    #[test]
+    fn a_turn_with_neither_text_nor_calls_is_an_error() {
+        assert!(matches!(
+            turn_openai("data: [DONE]\n\n"),
+            Err(LlmError::Protocol(_))
+        ));
+    }
+
+    #[test]
+    fn a_whole_anthropic_tool_turn_assembles() {
+        let input = "event: message_start\ndata: {\"type\":\"message_start\"}\n\n\
+             event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"tool_use\",\"id\":\"t1\",\"name\":\"compile\",\"input\":{}}}\n\n\
+             event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"\"}}\n\n\
+             event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n\
+             event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\"}}\n\n\
+             event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n";
+        let reply = run_turn(
+            input.as_bytes(),
+            anthropic::AnthropicDecoder::default(),
+            &AtomicBool::new(false),
+            &mut |_| {},
+        )
+        .unwrap();
+        assert_eq!(reply.stop, Stop::ToolUse);
+        assert_eq!(reply.calls[0].id, "t1");
+        assert_eq!(reply.calls[0].input, serde_json::json!({}));
+    }
+
+    #[test]
+    fn a_real_request_sends_the_tools_and_returns_the_call() {
+        let (base, server) = serve_once("200 OK", "text/event-stream", ONLY_A_CALL);
+        let provider = HttpProvider::new(ProviderKind::Compatible, &base, None).unwrap();
+        let mut request = hello_request();
+        request.tools = vec![ToolSpec {
+            name: "compile".to_owned(),
+            description: "Compiles the script.".to_owned(),
+            schema: serde_json::json!({"type": "object", "properties": {}}),
+        }];
+        let reply = provider
+            .stream_turn(&request, &AtomicBool::new(false), &mut |_| {})
+            .unwrap();
+        assert_eq!(reply.stop, Stop::ToolUse);
+        assert_eq!(reply.calls[0].name, "compile");
+        let sent = server.join().unwrap();
+        assert!(sent.contains("\"tools\":[{"));
+        assert!(sent.contains("\"name\":\"compile\""));
+    }
+
+    #[test]
+    fn a_provider_that_only_chats_answers_a_turn_with_text() {
+        let provider = mock::MockProvider::replying(vec![mock::MockProvider::text(&["a", "b"])]);
+        let reply = provider
+            .stream_turn(&hello_request(), &AtomicBool::new(false), &mut |_| {})
+            .unwrap();
+        assert_eq!(reply.text, "ab");
+        assert_eq!(reply.stop, Stop::End);
+    }
+
     /// Serves one canned HTTP answer on a loopback port and returns the request it received.
     fn serve_once(
         status: &str,
@@ -850,6 +1227,7 @@ mod tests {
             system: "sys".to_owned(),
             messages: vec![ChatMessage::user("hi")],
             max_tokens: 64,
+            tools: Vec::new(),
         }
     }
 

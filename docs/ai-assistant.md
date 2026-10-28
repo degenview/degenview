@@ -11,7 +11,9 @@ own API key**. This page records what exists, why it is shaped this way, and wha
 | `service/keychain_ai_keys`: per-provider key store | Done (phase 1) |
 | Settings ▸ AI Assistant: provider, model, key, Test Connection | Done (phase 1) |
 | Assistant panel under the editor, proposal diff, accept as one undo step | Done (phase 2) |
-| Compile-and-repair loop, runtime-error context, selection edits | Not started (phase 3) |
+| Tool use in `service/llm` (wire formats, `stream_turn`); nothing calls a tool yet | Done (agent PR 1) |
+| Agent loop, draft editing, profiler tool, Plan mode | Planned: see "Tool use" below |
+| Compile-and-repair loop, runtime-error context, selection edits | Superseded by the agent loop |
 
 ## Why a user-supplied key
 
@@ -58,6 +60,37 @@ completions API: OpenRouter, Ollama, LM Studio, Groq, ...).
   should also detach from the worker when the user presses Stop.
 - The first time the assistant is used, the user must be told the script and prompt are sent to the
   provider (the Settings page already says so).
+
+## Tool use
+
+`ChatRequest::tools` (`ToolSpec`: name, description, JSON Schema) lets a model call functions, and
+`LlmProvider::stream_turn` returns a `TurnReply { text, calls, stop }` instead of text alone. A provider
+that only chats keeps the default `stream_turn`, which wraps `stream_chat` and never calls a tool.
+`HttpProvider` implements both over the same decoders. Nothing in the app sends tools yet; the agent
+loop (see the plan in the PR that follows) is the first caller.
+
+- **Messages carry blocks.** `ChatMessage` keeps its `content` string and gains `tool_calls` (on an
+  assistant message) and `tool_results` (on the user message that answers them). A message with neither
+  is built exactly as before, and a request with no tools has no `tools` field.
+- **Anthropic**: `tools[].input_schema`; a `tool_use` block arrives as `content_block_start` (its `input`
+  is a placeholder, ignored) and `input_json_delta` fragments, joined per block index; results are
+  `tool_result` blocks first in a user message, with `is_error` set when the call failed.
+- **OpenAI and compatible hosts**: `tools[].function.parameters`; `delta.tool_calls` fragments joined by
+  `index` (a host that sends each whole call at index 0 with a new id is split, and a missing id is
+  made up as `call_N`); results are one `role: "tool"` message each, with a failure marked "Error: "
+  in its text because the format has no flag. Arguments are a string of JSON there.
+- **Arguments** are parsed when the turn ends. Empty means `{}` (a tool with no arguments streams
+  nothing); text that is not a JSON object leaves `ToolCall::malformed` set so the caller answers the
+  model with an error instead of failing the request.
+- **A turn of calls only is a reply** (`run_turn`); `run_stream` still rejects a reply with no text. A
+  turn that stopped at the token limit returns `Stop::MaxTokens` and **no calls**: their arguments are
+  cut off and cannot be trusted.
+- Anthropic extended thinking is off. With it on, the thinking blocks of a tool turn would have to be
+  sent back unchanged, which nothing here does.
+- Tests: hand-written frames for both formats (fragments, two calls, no arguments, bad arguments,
+  placeholder input), the request bodies, and a real `HttpProvider` against a loopback server that
+  streams a call. **Not verified**: a real OpenAI or Anthropic tool round trip; the frame shapes come
+  from the providers' documentation.
 
 ## The panel (phase 2)
 
