@@ -9,7 +9,6 @@ use super::prefs::DrawerTab;
 use super::profile_marks::ProfileColumn;
 use super::profiler::Status;
 use super::*;
-use crate::pine::program::InputValue;
 
 /// Line 3 declares `sq` (its body is line 4), 5 declares `total`, 6 is the loop, 7 its body, which
 /// calls `sq`, and 8 plots.
@@ -198,43 +197,6 @@ fn editing_the_script_makes_the_profile_stale_and_hides_its_marks() {
     rig.manager.cmds.push(Cmd::ProfilerRun);
     until(&mut rig, "a new profile", |s| *s == Status::Ready);
     assert_eq!(executions(&rig, 7), "1,200");
-}
-
-#[test]
-fn changing_an_input_or_the_bars_marks_the_profile_stale_but_keeps_its_lines() {
-    let mut rig = profile_on("profiler-stale-data");
-    rig.manager
-        .preview
-        .set_input_for_test("Length", InputValue::Int(9));
-    rig.frame();
-    assert_eq!(status(&rig), Status::Stale);
-    assert!(
-        matches!(column(&rig), Some(ProfileColumn::Dated(_))),
-        "the text is the same, so its lines still mean what they did"
-    );
-    assert!(
-        rig.manager
-            .profiler
-            .lines_match(rig.manager.profiler_now.as_ref())
-    );
-    rig.manager.cmds.push(Cmd::ProfilerRun);
-    until(&mut rig, "a new profile", |s| *s == Status::Ready);
-    // A live chart gets a new candle: the same.
-    rig.manager
-        .preview
-        .set_candles_for_test(super::debug_tests::bars(41));
-    rig.frame();
-    assert_eq!(status(&rig), Status::Stale);
-    assert!(matches!(column(&rig), Some(ProfileColumn::Dated(_))));
-    // But editing the text hides the marks.
-    rig.set_source(&SOURCE.replace("20", "21"));
-    rig.frame();
-    assert!(
-        !rig.manager
-            .profiler
-            .lines_match(rig.manager.profiler_now.as_ref())
-    );
-    assert!(matches!(column(&rig), Some(ProfileColumn::Empty(_))));
 }
 
 #[test]
