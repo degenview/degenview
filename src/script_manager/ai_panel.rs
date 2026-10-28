@@ -75,6 +75,8 @@ pub enum PanelAction {
     Implement,
     /// Carry out the plan the assistant submitted in Plan mode.
     ApprovePlan,
+    /// Manual (false) or Auto (true): whether a clean change is applied without a review.
+    SetAuto(bool),
     /// Change the plan: the box takes the keyboard, ready for what to change.
     RevisePlan,
     DiscardPlan,
@@ -1052,6 +1054,26 @@ fn composer(ui: &mut Ui, ai: &mut Assistant, setup: &Setup, actions: &mut Vec<Pa
                 if mode != ai.mode {
                     actions.push(PanelAction::SetMode(mode));
                 }
+                // Only Edit proposes changes, so only Edit has something to apply by itself. One chip
+                // that names the current choice and flips it: a two-part switch beside the mode
+                // switch and Send does not fit the narrow panel.
+                if ai.mode == Mode::Edit {
+                    let auto = ai.prefs.auto_apply;
+                    let chip = ui
+                        .add_enabled_ui(!ai.is_running(), |ui| {
+                            kit::value_chip(ui, if auto { "Auto" } else { "Manual" }, auto)
+                        })
+                        .inner
+                        .on_hover_text(if auto {
+                            "Auto: a change that compiles is applied when the assistant finishes, as one undo step. Click to review each change yourself."
+                        } else {
+                            "Manual: you review and apply each change. Click to apply changes that compile automatically."
+                        })
+                        .on_disabled_hover_text("Wait for the assistant to finish.");
+                    if chip.clicked() {
+                        actions.push(PanelAction::SetAuto(!auto));
+                    }
+                }
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     if ai.is_running() {
                         if kit::sheet_button(ui, "Stop", false, true).clicked() {
@@ -1082,6 +1104,10 @@ fn composer(ui: &mut Ui, ai: &mut Assistant, setup: &Setup, actions: &mut Vec<Pa
                 ),
                 Mode::Plan => format!(
                     "Sent to {}  ·  Plan never edits  ·  {}",
+                    setup.provider, setup.context
+                ),
+                Mode::Edit if ai.prefs.auto_apply => format!(
+                    "Sent to {}  ·  Auto-applies clean changes  ·  {}",
                     setup.provider, setup.context
                 ),
                 Mode::Edit => format!("Sent to {}  ·  {}", setup.provider, setup.context),

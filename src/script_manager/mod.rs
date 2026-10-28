@@ -551,7 +551,7 @@ impl ScriptManager {
             self.refresh();
         }
         ctx.request_repaint_after(Duration::from_millis(1500));
-        self.ai_begin_frame();
+        self.ai_begin_frame(ctx);
         if let Some(rx) = &self.export_rx
             && let Ok((id, destination)) = rx.try_recv()
         {
