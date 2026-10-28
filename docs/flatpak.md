@@ -1,6 +1,6 @@
 # Flatpak
 
-Every release carries `DegenView-<tag>-linux-x64.flatpak` next to the Linux tarball. The app id is
+Every release carries `DegenView-<tag>-linux-x64.flatpak` and `DegenView-<tag>-linux-arm64.flatpak` next to the Linux tarballs. The app id is
 `es.nico.degenview`, the same as the window's `app_id` in `src/lib.rs`; it is permanent once
 published, so do not rename it.
 
@@ -20,7 +20,9 @@ The workflow runs in two jobs. `prepare` runs on the plain runner: it generates
 has no network, so every crate is listed with its checksum), stamps the build id and today's release
 into copies of the manifest and metainfo, and lints them with `desktop-file-validate` and
 `appstreamcli validate --pedantic --no-net`. `build` runs `flatpak-builder` in the Flathub
-`freedesktop-26.08` container and bundles the result. `cargo-sources.json` is never committed.
+`freedesktop-26.08` container and bundles the result, once per CPU in a matrix: x86_64 on
+`ubuntu-latest` and aarch64 natively on GitHub's free `ubuntu-24.04-arm` runner (the container
+image is multi-arch; no emulation). `cargo-sources.json` is the same for both and is never committed.
 
 Two values must move together when the runtime changes: `runtime-version` in the manifest and the
 container tag in `flatpak.yml`. The `rust-stable` extension must ship rustc at least as new as

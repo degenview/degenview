@@ -10,8 +10,8 @@ on:
         description: "Git ref to build; empty builds the ref that triggered the caller"
         type: string
         default: ""
-      bundle-name:
-        description: "File name of the bundle, e.g. DegenView-v0.1.0-linux-x64.flatpak"
+      bundle-prefix:
+        description: "Start of each bundle's file name; the CPU label and .flatpak follow, e.g. DegenView-v0.1.0-linux"
         type: string
         required: true
 
@@ -75,10 +75,21 @@ jobs:
           if-no-files-found: error
 
   build:
-    name: Build Flatpak
+    name: Build Flatpak ${{ matrix.label }}
     needs: prepare
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            label: x64
+            runner: ubuntu-latest
+          # GitHub's free arm64 runners build natively; the container image is multi-arch.
+          - arch: aarch64
+            label: arm64
+            runner: ubuntu-24.04-arm
     container:
       # The tag must match `runtime-version` in the manifest.
       image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-26.08
@@ -97,7 +108,8 @@ jobs:
       # so saving it would only use up space.
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
-          bundle: ${{ inputs.bundle-name }}
+          bundle: ${{ inputs.bundle-prefix }}-${{ matrix.label }}.flatpak
+          arch: ${{ matrix.arch }}
           manifest-path: ${{ env.MANIFEST_DIR }}/es.nico.degenview.yml
           repository-url: https://dl.flathub.org/repo/flathub.flatpakrepo
           cache: false
@@ -108,6 +120,6 @@ jobs:
       # The release job downloads every `DegenView-*` artifact into dist/.
       - uses: actions/upload-artifact@v7
         with:
-          name: DegenView-linux-x64-flatpak
-          path: ${{ inputs.bundle-name }}
+          name: DegenView-linux-${{ matrix.label }}-flatpak
+          path: ${{ inputs.bundle-prefix }}-${{ matrix.label }}.flatpak
           if-no-files-found: error
