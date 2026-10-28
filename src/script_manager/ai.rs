@@ -6,15 +6,17 @@
 //! network. Nothing here changes the script: a finished reply becomes a [`Proposal`] that the user
 //! accepts or discards, and accepting goes through the editor as one undo step.
 
+use super::ai_agent::{self, AgentSetup, Ended, Progress};
 use super::ai_models::{self, ModelList};
 use super::ai_prompt::{self, Mode, Turn};
 use super::ai_review::Review;
+use super::ai_tools::Draft;
 use super::diff::DiffSnapshot;
 use super::model::ScriptId;
 use crate::pine::token::{Diagnostic, DiagnosticSeverity};
 use crate::service::llm::prefs::AiPrefs;
 use crate::service::llm::report::ErrorReport;
-use crate::service::llm::{ChatRequest, Done, LlmError, LlmProvider, ProviderKind};
+use crate::service::llm::{ChatRequest, LlmError, LlmProvider, ProviderKind};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -74,11 +76,39 @@ pub struct Proposal {
     pub changes: DiffSnapshot,
     pub errors: usize,
     pub warnings: usize,
+    /// Set when the work is not all of what was asked: the assistant stopped, ran out of steps or
+    /// failed part-way. The changes are still reviewed before anything is applied.
+    pub note: Option<String>,
+}
+
+/// One tool call in the transcript: what it is doing, and what it came to.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ToolStep {
+    pub id: String,
+    pub label: String,
+    pub outcome: Option<StepOutcome>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StepOutcome {
+    pub summary: String,
+    pub ok: bool,
+    /// What the model was told.
+    pub detail: String,
+}
+
+/// What happened between a message and its reply, in order. Shown for the latest exchange only and
+/// never saved: history keeps the words.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum Entry {
+    /// What the model said before calling tools.
+    Said(String),
+    Tool(ToolStep),
 }
 
 enum Event {
-    Text(String),
-    Done(Result<Done, LlmError>),
+    Progress(Progress),
+    Done(Result<Ended, LlmError>),
 }
 
 /// The answer to a model-list request: the ids, or why they could not be had.
@@ -91,6 +121,8 @@ struct Run {
     base: String,
     typed: String,
     mode: Mode,
+    /// The assistant's working copy, if it has tools; read when the request is stopped.
+    draft: Option<Draft>,
 }
 
 impl Drop for Run {
@@ -101,11 +133,11 @@ impl Drop for Run {
 
 /// How a request ended.
 pub struct Finished {
-    result: Result<Done, LlmError>,
-    text: String,
+    result: Result<Ended, LlmError>,
     base: String,
     typed: String,
     mode: Mode,
+    draft: Option<Draft>,
 }
 
 #[derive(Default)]
@@ -119,6 +151,8 @@ pub struct Assistant {
     pub input: String,
     /// The reply so far, while one streams.
     pub streaming: String,
+    /// The tools the latest request called, and what the model said between them.
+    pub steps: Vec<Entry>,
     pub proposal: Option<Proposal>,
     /// The review sheet over `proposal`, while it is open.
     pub review: Option<Review>,
@@ -162,6 +196,7 @@ impl Assistant {
         self.run = None;
         self.turns.clear();
         self.streaming.clear();
+        self.steps.clear();
         self.proposal = None;
         self.review = None;
         self.notice = None;
@@ -197,6 +232,7 @@ impl Assistant {
             return None;
         };
         self.turns.truncate(at);
+        self.steps.clear();
         self.proposal = None;
         self.review = None;
         self.notice = None;
@@ -252,16 +288,35 @@ impl Assistant {
         mode: Mode,
         wake: Arc<dyn Fn() + Send + Sync>,
     ) {
+        self.start_agent(provider, request, None, typed, base, mode, wake);
+    }
+
+    /// Starts a request that may call tools (`setup`), or an ordinary one (`None`).
+    #[allow(clippy::too_many_arguments)]
+    pub fn start_agent(
+        &mut self,
+        provider: Box<dyn LlmProvider>,
+        request: ChatRequest,
+        setup: Option<AgentSetup>,
+        typed: String,
+        base: String,
+        mode: Mode,
+        wake: Arc<dyn Fn() + Send + Sync>,
+    ) {
         let (sender, rx) = mpsc::channel();
         let cancel = Arc::new(AtomicBool::new(false));
         let flag = cancel.clone();
+        let draft = setup.as_ref().map(|setup| setup.tools.draft().clone());
         let spawned = std::thread::Builder::new()
             .name("ai-assistant".to_owned())
             .spawn(move || {
-                let result = provider.stream_chat(&request, &flag, &mut |text| {
-                    let _ = sender.send(Event::Text(text.to_owned()));
-                    wake();
-                });
+                let progress = sender.clone();
+                let progress_wake = wake.clone();
+                let result =
+                    ai_agent::run(&*provider, request, setup.as_ref(), &flag, &mut |piece| {
+                        let _ = progress.send(Event::Progress(piece));
+                        progress_wake();
+                    });
                 let _ = sender.send(Event::Done(result));
                 wake();
             });
@@ -273,6 +328,7 @@ impl Assistant {
         self.review = None;
         self.notice = None;
         self.streaming.clear();
+        self.steps.clear();
         self.input.clear();
         self.scroll_to_end = true;
         self.run = Some(Run {
@@ -281,17 +337,27 @@ impl Assistant {
             base,
             typed,
             mode,
+            draft,
         });
     }
 
     /// Asks the request to stop. The panel shows it stopped at once; the thread follows when its
-    /// connection next yields, and its late text goes nowhere.
-    pub fn stop(&mut self) {
+    /// connection next yields, and its late text goes nowhere. What the assistant had already
+    /// changed in its draft is kept as a proposal, like any other, so stopping loses no work.
+    pub fn stop(&mut self, compile: &dyn Fn(&str) -> Vec<Diagnostic>) {
         if let Some(run) = self.run.take() {
             run.cancel.store(true, Ordering::Relaxed);
             self.input = run.typed.clone();
             self.streaming.clear();
             self.notice = Some(Notice::info("Stopped."));
+            if let Some(script) = changed_draft(run.draft.as_ref(), &run.base) {
+                self.propose(
+                    run.base.clone(),
+                    script,
+                    Some("Stopped before it finished.".to_owned()),
+                    compile,
+                );
+            }
         }
     }
 
@@ -300,9 +366,40 @@ impl Assistant {
         let run = self.run.as_ref()?;
         loop {
             match run.rx.try_recv() {
-                Ok(Event::Text(text)) => {
-                    self.streaming.push_str(&text);
-                }
+                Ok(Event::Progress(progress)) => match progress {
+                    Progress::Text(text) => self.streaming.push_str(&text),
+                    // What came before a tool call is part of the trail, not of the reply.
+                    Progress::Said(text) => {
+                        self.streaming.clear();
+                        self.steps.push(Entry::Said(text));
+                    }
+                    Progress::ToolStarted { id, label, .. } => {
+                        self.streaming.clear();
+                        self.steps.push(Entry::Tool(ToolStep {
+                            id,
+                            label,
+                            outcome: None,
+                        }));
+                    }
+                    Progress::ToolDone {
+                        id,
+                        summary,
+                        ok,
+                        content,
+                    } => {
+                        let step = self.steps.iter_mut().rev().find_map(|entry| match entry {
+                            Entry::Tool(step) if step.id == id => Some(step),
+                            _ => None,
+                        });
+                        if let Some(step) = step {
+                            step.outcome = Some(StepOutcome {
+                                summary,
+                                ok,
+                                detail: content,
+                            });
+                        }
+                    }
+                },
                 Ok(Event::Done(result)) => return Some(self.end(result)),
                 Err(TryRecvError::Empty) => return None,
                 Err(TryRecvError::Disconnected) => {
@@ -314,14 +411,15 @@ impl Assistant {
         }
     }
 
-    fn end(&mut self, result: Result<Done, LlmError>) -> Finished {
+    fn end(&mut self, result: Result<Ended, LlmError>) -> Finished {
         let run = self.run.take().expect("a request was running");
+        self.streaming.clear();
         Finished {
             result,
-            text: std::mem::take(&mut self.streaming),
             base: run.base.clone(),
             typed: run.typed.clone(),
             mode: run.mode,
+            draft: run.draft.clone(),
         }
     }
 
@@ -330,16 +428,22 @@ impl Assistant {
     pub fn finish(&mut self, finished: Finished, compile: &dyn Fn(&str) -> Vec<Diagnostic>) {
         let Finished {
             result,
-            text,
             base,
             typed,
             mode,
+            draft,
         } = finished;
         self.scroll_to_end = true;
+        // What the assistant changed in its draft, if anything. Only Edit has tools that write.
+        let drafted = changed_draft(draft.as_ref(), &base);
         match result {
             Err(LlmError::Cancelled) => {
                 self.input = typed;
                 self.notice = Some(Notice::info("Stopped."));
+                if let Some(script) = drafted {
+                    let note = "Stopped before it finished.".to_owned();
+                    self.propose(base, script, Some(note), compile);
+                }
             }
             Err(error) => {
                 // The message goes back in the box so the user can send it again.
@@ -347,22 +451,50 @@ impl Assistant {
                     self.input = typed;
                 }
                 self.notice = Some(Notice::failure(error.report()));
+                if let Some(script) = drafted {
+                    let note = "Incomplete: the request failed before it finished.".to_owned();
+                    self.propose(base, script, Some(note), compile);
+                }
             }
-            Ok(done) => {
+            Ok(ended) => {
+                let mut text = ended.text.clone();
+                if text.trim().is_empty() {
+                    text = match &ended.limit {
+                        Some(limit) => limit.message(),
+                        None => "(No reply.)".to_owned(),
+                    };
+                }
                 self.turns.push(Turn::User(typed));
                 self.turns.push(Turn::Assistant {
                     text: text.clone(),
                     mode,
                 });
+                if ended.tools_refused {
+                    self.notice = Some(Notice::info(
+                        "This server does not accept tools, so the assistant answered without them.",
+                    ));
+                }
                 // Ask only talks. Whatever the model wrote, no proposal comes of it.
                 if mode == Mode::Ask {
+                    return;
+                }
+                if let Some(script) = drafted {
+                    let note = ended
+                        .limit
+                        .as_ref()
+                        .map(|limit| format!("Incomplete. {}", limit.message()));
+                    self.propose(base, script, note, compile);
+                    return;
+                }
+                if let Some(limit) = &ended.limit {
+                    self.notice = Some(Notice::error(limit.message()));
                     return;
                 }
                 let reply = ai_prompt::split_reply(&text);
                 let Some(script) = reply.script else {
                     return;
                 };
-                if done.truncated || !reply.complete {
+                if ended.truncated || !reply.complete {
                     self.notice = Some(Notice::error(
                         "The reply hit the model's length limit, so the script is cut off. Ask for a smaller change.",
                     ));
@@ -375,21 +507,40 @@ impl Assistant {
                     ));
                     return;
                 }
-                let diagnostics = compile(&script);
-                let errors = diagnostics
-                    .iter()
-                    .filter(|d| d.severity == DiagnosticSeverity::Error)
-                    .count();
-                self.proposal = Some(Proposal {
-                    changes: DiffSnapshot::compute(&base, &script),
-                    base,
-                    script,
-                    errors,
-                    warnings: diagnostics.len() - errors,
-                });
+                self.propose(base, script, None, compile);
             }
         }
     }
+
+    /// Makes `script` the change waiting for the user.
+    fn propose(
+        &mut self,
+        base: String,
+        script: String,
+        note: Option<String>,
+        compile: &dyn Fn(&str) -> Vec<Diagnostic>,
+    ) {
+        let diagnostics = compile(&script);
+        let errors = diagnostics
+            .iter()
+            .filter(|d| d.severity == DiagnosticSeverity::Error)
+            .count();
+        self.proposal = Some(Proposal {
+            changes: DiffSnapshot::compute(&base, &script),
+            base,
+            script,
+            errors,
+            warnings: diagnostics.len() - errors,
+            note,
+        });
+    }
+}
+
+/// The draft as a script in the file's own line endings, if it differs from the script the request
+/// started from.
+fn changed_draft(draft: Option<&Draft>, base: &str) -> Option<String> {
+    let script = match_line_endings(&draft?.text(), base);
+    (!same_text(&script, base)).then_some(script)
 }
 
 /// Equal apart from line endings and trailing blank space, which a model does not reproduce.
@@ -594,7 +745,7 @@ mod tests {
             Mode::Edit,
             wake(),
         );
-        assistant.stop();
+        assistant.stop(&|_| Vec::new());
         assert!(!assistant.is_running());
         assert_eq!(assistant.input, "make it red");
         assert_eq!(assistant.notice, Some(Notice::info("Stopped.")));
@@ -704,7 +855,7 @@ mod tests {
             wake(),
         );
         assert!(!assistant.set_mode(Mode::Ask), "refused while running");
-        assistant.stop();
+        assistant.stop(&|_| Vec::new());
         assert!(assistant.set_mode(Mode::Ask));
 
         let mut with_proposal = run_in(
@@ -775,7 +926,7 @@ mod tests {
         );
         assert_eq!(assistant.pending_request(), Some("make it red"));
         assert!(assistant.scroll_to_end);
-        assistant.stop();
+        assistant.stop(&|_| Vec::new());
         assert_eq!(assistant.pending_request(), None);
     }
 
@@ -860,5 +1011,313 @@ mod tests {
             assistant.models.get(&ProviderKind::Anthropic),
             Some(ModelList::Failed(report)) if report.detail.contains("bad key")
         ));
+    }
+
+    // MARK: Tools
+
+    use crate::script_manager::ai_agent::MAX_ROUNDS;
+    use crate::script_manager::ai_tools::ToolBox;
+    use crate::service::llm::mock::Scripted;
+    use serde_json::json;
+
+    fn no_problems(_: &str) -> Vec<Diagnostic> {
+        Vec::new()
+    }
+
+    fn agent_request(tools: &ToolBox) -> ChatRequest {
+        ChatRequest {
+            tools: tools.specs(),
+            ..request()
+        }
+    }
+
+    fn setup(mode: Mode, base: &str) -> AgentSetup {
+        AgentSetup {
+            tools: ToolBox::new(mode, base, no_problems),
+            fallback_system: "plain".to_owned(),
+        }
+    }
+
+    fn start_agent(assistant: &mut Assistant, mode: Mode, base: &str, provider: MockProvider) {
+        let setup = setup(mode, base);
+        let request = agent_request(&setup.tools);
+        assistant.start_agent(
+            Box::new(provider),
+            request,
+            Some(setup),
+            "make it red".to_owned(),
+            base.to_owned(),
+            mode,
+            wake(),
+        );
+    }
+
+    fn wait_for_end(assistant: &mut Assistant) -> Finished {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            if let Some(finished) = assistant.poll() {
+                return finished;
+            }
+            assert!(Instant::now() < deadline, "the request never finished");
+            std::thread::sleep(Duration::from_millis(2));
+        }
+    }
+
+    fn run_agent(mode: Mode, base: &str, turns: Vec<Result<Scripted, LlmError>>) -> Assistant {
+        let mut assistant = Assistant::default();
+        start_agent(&mut assistant, mode, base, MockProvider::turns(turns));
+        let finished = wait_for_end(&mut assistant);
+        assistant.finish(finished, &|_| Vec::new());
+        assistant
+    }
+
+    fn red_edit(id: &str) -> Scripted {
+        Scripted::call(
+            id,
+            "edit_script",
+            json!({"old": "plot(close)", "new": "plot(close, color = color.red)"}),
+        )
+    }
+
+    #[test]
+    fn an_edit_made_with_tools_becomes_a_proposal_from_the_draft() {
+        let assistant = run_agent(
+            Mode::Edit,
+            BASE,
+            vec![Ok(red_edit("t1")), Ok(Scripted::say("Made the line red."))],
+        );
+        let proposal = assistant.proposal.clone().expect("a proposal");
+        assert_eq!(proposal.base, BASE);
+        assert_eq!(
+            proposal.script,
+            "//@version=6\nindicator(\"x\")\nplot(close, color = color.red)\n"
+        );
+        assert_eq!(proposal.note, None);
+        assert!(assistant.notice.is_none());
+        // The words are kept in history; the trail is shown but not stored.
+        assert!(matches!(
+            assistant.turns.last(),
+            Some(Turn::Assistant { text, mode: Mode::Edit }) if text == "Made the line red."
+        ));
+        assert_eq!(assistant.steps.len(), 1);
+        let Entry::Tool(step) = &assistant.steps[0] else {
+            panic!("a tool step");
+        };
+        assert!(step.outcome.as_ref().unwrap().ok);
+    }
+
+    #[test]
+    fn the_files_line_endings_come_back_in_the_proposal() {
+        let crlf = BASE.replace('\n', "\r\n");
+        let assistant = run_agent(
+            Mode::Edit,
+            &crlf,
+            vec![Ok(red_edit("t1")), Ok(Scripted::say("Done."))],
+        );
+        let proposal = assistant.proposal.expect("a proposal");
+        assert!(proposal.script.contains("color = color.red)\r\n"));
+        assert!(!proposal.script.replace("\r\n", "").contains('\n'));
+    }
+
+    #[test]
+    fn a_question_answered_without_edits_proposes_nothing() {
+        let assistant = run_agent(
+            Mode::Edit,
+            BASE,
+            vec![
+                Ok(Scripted::call("t1", "read_script", json!({}))),
+                Ok(Scripted::say("It plots the close.")),
+            ],
+        );
+        assert!(assistant.proposal.is_none());
+        assert!(assistant.notice.is_none());
+        assert_eq!(assistant.turns.len(), 2);
+    }
+
+    #[test]
+    fn ask_mode_with_tools_never_proposes_even_if_the_model_tries_to_edit() {
+        let assistant = run_agent(
+            Mode::Ask,
+            BASE,
+            vec![
+                Ok(red_edit("t1")),
+                Ok(Scripted::say("I cannot edit, but change line 3.")),
+            ],
+        );
+        assert!(assistant.proposal.is_none());
+        let Entry::Tool(step) = &assistant.steps[0] else {
+            panic!("a tool step");
+        };
+        assert!(!step.outcome.as_ref().unwrap().ok);
+    }
+
+    #[test]
+    fn running_out_of_steps_still_offers_what_was_done_labelled_incomplete() {
+        let mut turns = vec![Ok(red_edit("t0"))];
+        turns.extend((1..=MAX_ROUNDS + 2).map(|n| {
+            Ok(Scripted::call(
+                &format!("t{n}"),
+                "read_script",
+                json!({"start": n}),
+            ))
+        }));
+        let assistant = run_agent(Mode::Edit, BASE, turns);
+        let proposal = assistant.proposal.expect("the work so far");
+        assert!(proposal.note.as_deref().unwrap().starts_with("Incomplete."));
+        assert!(proposal.script.contains("color.red"));
+    }
+
+    #[test]
+    fn a_failure_after_an_edit_keeps_the_edit_as_an_incomplete_proposal() {
+        let assistant = run_agent(
+            Mode::Edit,
+            BASE,
+            vec![Ok(red_edit("t1")), Err(LlmError::rate_limited("slow down"))],
+        );
+        let notice = assistant.notice.clone().unwrap();
+        assert!(notice.error && notice.error_report().detail.contains("slow down"));
+        let proposal = assistant.proposal.expect("the edit is not lost");
+        assert!(proposal.note.as_deref().unwrap().starts_with("Incomplete"));
+        // The message is back in the box to send again.
+        assert_eq!(assistant.input, "make it red");
+        assert!(assistant.turns.is_empty());
+    }
+
+    /// Edits once, then waits for the request to be stopped.
+    struct EditsThenWaits {
+        turns: std::sync::Mutex<usize>,
+    }
+
+    impl LlmProvider for EditsThenWaits {
+        fn stream_chat(
+            &self,
+            _: &ChatRequest,
+            _: &AtomicBool,
+            _: &mut dyn FnMut(&str),
+        ) -> Result<crate::service::llm::Done, LlmError> {
+            unreachable!("only turns are used")
+        }
+
+        fn stream_turn(
+            &self,
+            _: &ChatRequest,
+            cancel: &AtomicBool,
+            _: &mut dyn FnMut(&str),
+        ) -> Result<crate::service::llm::TurnReply, LlmError> {
+            let mut turns = self.turns.lock().unwrap();
+            *turns += 1;
+            if *turns == 1 {
+                return Ok(crate::service::llm::TurnReply {
+                    text: String::new(),
+                    calls: vec![crate::service::llm::ToolCall {
+                        id: "t1".to_owned(),
+                        name: "edit_script".to_owned(),
+                        input: json!({"old": "plot(close)", "new": "plot(open)"}),
+                        malformed: None,
+                    }],
+                    stop: crate::service::llm::Stop::ToolUse,
+                });
+            }
+            while !cancel.load(Ordering::Relaxed) {
+                std::thread::sleep(Duration::from_millis(2));
+            }
+            Err(LlmError::Cancelled)
+        }
+
+        fn list_models(&self) -> Result<Vec<String>, LlmError> {
+            Ok(Vec::new())
+        }
+    }
+
+    #[test]
+    fn stopping_a_request_keeps_the_draft_as_a_proposal() {
+        let mut assistant = Assistant::default();
+        let setup = setup(Mode::Edit, BASE);
+        let request = agent_request(&setup.tools);
+        assistant.start_agent(
+            Box::new(EditsThenWaits {
+                turns: std::sync::Mutex::new(0),
+            }),
+            request,
+            Some(setup),
+            "use the open".to_owned(),
+            BASE.to_owned(),
+            Mode::Edit,
+            wake(),
+        );
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !assistant
+            .steps
+            .iter()
+            .any(|entry| matches!(entry, Entry::Tool(step) if step.outcome.is_some()))
+        {
+            assert!(assistant.poll().is_none());
+            assert!(Instant::now() < deadline, "the edit never happened");
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        assistant.stop(&no_problems);
+        let proposal = assistant.proposal.clone().expect("the edit is kept");
+        assert_eq!(
+            proposal.note.as_deref(),
+            Some("Stopped before it finished.")
+        );
+        assert!(proposal.script.contains("plot(open)"));
+        assert_eq!(assistant.input, "use the open");
+        assert!(!assistant.is_running());
+    }
+
+    #[test]
+    fn stopping_with_nothing_changed_proposes_nothing() {
+        let mut assistant = Assistant::default();
+        start_agent(
+            &mut assistant,
+            Mode::Edit,
+            BASE,
+            MockProvider::turns(vec![Ok(Scripted::say("thinking"))]),
+        );
+        assistant.stop(&no_problems);
+        assert!(assistant.proposal.is_none());
+    }
+
+    #[test]
+    fn a_server_that_refuses_tools_is_told_to_the_user_and_the_old_path_runs() {
+        let new = "//@version=6\nindicator(\"x\")\nplot(close, color = color.red)\n";
+        let assistant = run_agent(
+            Mode::Edit,
+            BASE,
+            vec![
+                Err(LlmError::http(400, "tools are not supported")),
+                Ok(Scripted::say(&format!("Done.\n```pine\n{new}```\n"))),
+            ],
+        );
+        assert!(
+            assistant
+                .notice
+                .as_ref()
+                .unwrap()
+                .text
+                .contains("does not accept tools")
+        );
+        assert_eq!(
+            assistant.proposal.expect("from the fenced script").script,
+            new
+        );
+    }
+
+    #[test]
+    fn the_trail_starts_over_with_each_request() {
+        let mut assistant = run_agent(
+            Mode::Edit,
+            BASE,
+            vec![Ok(red_edit("t1")), Ok(Scripted::say("Done."))],
+        );
+        assert_eq!(assistant.steps.len(), 1);
+        start_agent(
+            &mut assistant,
+            Mode::Edit,
+            BASE,
+            MockProvider::turns(vec![Ok(Scripted::say("later"))]),
+        );
+        assert!(assistant.steps.is_empty());
     }
 }

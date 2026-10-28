@@ -5,14 +5,17 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use super::ai_agent::AgentSetup;
 use super::ai_history::History;
+use super::ai_host::diagnostics_of;
 use super::ai_models::ModelList;
 use super::ai_panel::PanelAction;
 use super::ai_prompt::Mode;
 use super::ai_review_view::ReviewAction;
+use super::ai_tools::ToolBox;
 use super::debug_tests::Rig;
 use super::*;
-use crate::service::llm::mock::MockProvider;
+use crate::service::llm::mock::{MockProvider, Scripted};
 use crate::service::llm::prefs::AiPrefs;
 use crate::service::llm::{ChatMessage, ChatRequest, LlmError, ProviderKind};
 use eframe::egui;
@@ -57,6 +60,37 @@ fn ask_in(rig: &mut Rig, mode: Mode, reply: Result<Vec<String>, LlmError>) {
         std::thread::sleep(Duration::from_millis(5));
     }
     panic!("the reply never finished");
+}
+
+/// Sends a request with tools, answered by `turns`, and runs frames until it ends.
+fn ask_with_tools(rig: &mut Rig, mode: Mode, turns: Vec<Result<Scripted, LlmError>>) {
+    assert!(rig.manager.ai.set_mode(mode));
+    let base = source(rig);
+    let tools = ToolBox::new(mode, &base, diagnostics_of);
+    let request = ChatRequest {
+        tools: tools.specs(),
+        ..request()
+    };
+    rig.manager.ai.start_agent(
+        Box::new(MockProvider::turns(turns)),
+        request,
+        Some(AgentSetup {
+            tools,
+            fallback_system: String::new(),
+        }),
+        "make a change".to_owned(),
+        base,
+        mode,
+        Arc::new(|| {}),
+    );
+    for _ in 0..400 {
+        rig.frame();
+        if !rig.manager.ai.is_running() {
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    panic!("the request never finished");
 }
 
 fn script_reply(script: &str) -> Result<Vec<String>, LlmError> {
@@ -826,4 +860,85 @@ fn the_setup_describes_what_a_request_sends_and_which_providers_are_usable() {
         .collect();
     assert_eq!(ready, vec![ProviderKind::Compatible]);
     let _ = &mut rig;
+}
+
+#[test]
+fn an_assistant_with_tools_edits_a_draft_and_the_editor_waits_for_apply() {
+    let mut rig = Rig::new("ai-agent-edit");
+    open_panel(&mut rig);
+    let before = source(&rig);
+    // The first line is the version comment, which a demo script has exactly once.
+    let first = before.lines().next().unwrap().to_owned();
+    assert_eq!(before.matches(&first).count(), 1);
+    let turns = vec![
+        Ok(Scripted::call(
+            "t1",
+            "read_script",
+            serde_json::json!({"start": 1, "end": 3}),
+        )),
+        Ok(Scripted::call(
+            "t2",
+            "edit_script",
+            serde_json::json!({"old": first, "new": format!("{first}\n// by the assistant")}),
+        )),
+        Ok(Scripted::say("Added a comment.")),
+    ];
+    ask_with_tools(&mut rig, Mode::Edit, turns);
+    assert_eq!(
+        source(&rig),
+        before,
+        "the editor is not touched while the assistant works"
+    );
+    let proposal = rig
+        .manager
+        .ai
+        .proposal
+        .clone()
+        .expect("a proposal from the draft");
+    assert!(proposal.script.contains("// by the assistant"));
+    assert_eq!(rig.manager.ai.steps.len(), 2);
+    // The trail draws, closed and with one step opened.
+    rig.frame();
+    rig.manager.cmds.push(Cmd::Ai(PanelAction::Accept));
+    rig.frame();
+    assert_eq!(source(&rig), proposal.script);
+}
+
+#[test]
+fn the_trail_draws_while_running_after_it_and_at_a_small_size() {
+    let mut rig = Rig::new("ai-agent-draw");
+    rig.screen = Some(egui::Rect::from_min_size(
+        egui::Pos2::ZERO,
+        egui::vec2(700.0, 420.0),
+    ));
+    open_panel(&mut rig);
+    rig.manager.ai.steps = vec![
+        ai::Entry::Said("Let me look at the inputs first.".to_owned()),
+        ai::Entry::Tool(ai::ToolStep {
+            id: "a".to_owned(),
+            label: "Reading the script".to_owned(),
+            outcome: Some(ai::StepOutcome {
+                summary: "Read the script \u{b7} 12 lines".to_owned(),
+                ok: true,
+                detail: "1: //@version=6\n2: indicator(\"x\")".to_owned(),
+            }),
+        }),
+        ai::Entry::Tool(ai::ToolStep {
+            id: "b".to_owned(),
+            label: "Editing the script".to_owned(),
+            outcome: Some(ai::StepOutcome {
+                summary: "`old` matches 2 places (lines 4, 5). Include more of the surrounding lines so it matches once.".to_owned(),
+                ok: false,
+                detail: String::new(),
+            }),
+        }),
+        ai::Entry::Tool(ai::ToolStep {
+            id: "c".to_owned(),
+            label: "Compiling the draft".to_owned(),
+            outcome: None,
+        }),
+    ];
+    for _ in 0..3 {
+        rig.frame();
+    }
 }

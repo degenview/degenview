@@ -3,12 +3,14 @@
 //! about replies live in `ai`; the words sent to the model in `ai_prompt`.
 
 use super::ai::Notice;
+use super::ai_agent::AgentSetup;
 use super::ai_history::History;
 use super::ai_models::ModelList;
 use super::ai_panel::{PanelAction, Setup};
 use super::ai_prompt::{self, IMPLEMENT_MESSAGE, MAX_SOURCE_CHARS, Mode};
 use super::ai_review::Review;
 use super::ai_review_view::{self, ReviewAction};
+use super::ai_tools::ToolBox;
 use super::drawer;
 use super::registry::LibraryRegistry;
 use super::{ScriptManager, ScriptManagerAction, editor};
@@ -27,7 +29,7 @@ const MAX_REPLY_TOKENS: u32 = 16_000;
 /// made in Settings shows without reopening it.
 const PREFS_REFRESH: Duration = Duration::from_millis(1500);
 
-fn diagnostics_of(script: &str) -> Vec<Diagnostic> {
+pub(super) fn diagnostics_of(script: &str) -> Vec<Diagnostic> {
     compiler::compile(script, Limits::default(), &LibraryRegistry).diagnostics
 }
 
@@ -121,7 +123,7 @@ impl ScriptManager {
     pub(super) fn ai_action(&mut self, action: PanelAction, ctx: &egui::Context) {
         match action {
             PanelAction::Send => self.ai_send(ctx),
-            PanelAction::Stop => self.ai.stop(),
+            PanelAction::Stop => self.ai.stop(&diagnostics_of),
             PanelAction::Accept => self.ai_accept(ctx),
             PanelAction::Discard => {
                 self.ai.proposal = None;
@@ -284,18 +286,33 @@ impl ScriptManager {
         };
         // Compiled now, not read from the editor, which may still be waiting out its typing pause.
         let diagnostics = diagnostics_of(&source);
+        let mode = self.ai.mode;
+        // The assistant works on a copy of what is in the editor now; the editor itself is not
+        // touched until the user applies a proposal.
+        let tools = ToolBox::new(mode, &source, diagnostics_of);
         let request = ChatRequest {
             model: self.ai.prefs.model(kind),
-            system: ai_prompt::system_prompt(self.ai.mode),
+            system: ai_prompt::agent_system_prompt(mode),
             messages: ai_prompt::build_messages(&self.ai.turns, &source, &typed, &diagnostics),
             max_tokens: MAX_REPLY_TOKENS,
-            tools: Vec::new(),
+            tools: tools.specs(),
+        };
+        let setup = AgentSetup {
+            tools,
+            // A server that refuses tools is asked again with the whole-script prompt.
+            fallback_system: ai_prompt::system_prompt(mode),
         };
         let repaint = ctx.clone();
         let wake: Arc<dyn Fn() + Send + Sync> = Arc::new(move || repaint.request_repaint());
-        let mode = self.ai.mode;
-        self.ai
-            .start(Box::new(provider), request, typed, source, mode, wake);
+        self.ai.start_agent(
+            Box::new(provider),
+            request,
+            Some(setup),
+            typed,
+            source,
+            mode,
+            wake,
+        );
     }
 
     /// Opens the review sheet over the waiting proposal. The editor and the composer let go of the

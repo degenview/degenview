@@ -12,7 +12,9 @@ own API key**. This page records what exists, why it is shaped this way, and wha
 | Settings ▸ AI Assistant: provider, model, key, Test Connection | Done (phase 1) |
 | Assistant panel under the editor, proposal diff, accept as one undo step | Done (phase 2) |
 | Tool use in `service/llm` (wire formats, `stream_turn`); nothing calls a tool yet | Done (agent PR 1) |
-| Agent loop, draft editing, profiler tool, Plan mode | Planned: see "Tool use" below |
+| Agent loop, private draft, `read_script`/`compile`/`edit_script`/`write_script`, tool steps in the panel | Done (agent PR 2) |
+| `profile` tool (profile the draft on frozen bars) | Planned (agent PR 3) |
+| Plan mode (`submit_plan`, plan card) | Planned (agent PR 4) |
 | Compile-and-repair loop, runtime-error context, selection edits | Superseded by the agent loop |
 
 ## Why a user-supplied key
@@ -66,8 +68,7 @@ completions API: OpenRouter, Ollama, LM Studio, Groq, ...).
 `ChatRequest::tools` (`ToolSpec`: name, description, JSON Schema) lets a model call functions, and
 `LlmProvider::stream_turn` returns a `TurnReply { text, calls, stop }` instead of text alone. A provider
 that only chats keeps the default `stream_turn`, which wraps `stream_chat` and never calls a tool.
-`HttpProvider` implements both over the same decoders. Nothing in the app sends tools yet; the agent
-loop (see the plan in the PR that follows) is the first caller.
+`HttpProvider` implements both over the same decoders. The agent loop (next section) is the caller.
 
 - **Messages carry blocks.** `ChatMessage` keeps its `content` string and gains `tool_calls` (on an
   assistant message) and `tool_results` (on the user message that answers them). A message with neither
@@ -91,6 +92,56 @@ loop (see the plan in the PR that follows) is the first caller.
   placeholder input), the request bodies, and a real `HttpProvider` against a loopback server that
   streams a call. **Not verified**: a real OpenAI or Anthropic tool round trip; the frame shapes come
   from the providers' documentation.
+
+## The agent loop
+
+A request is no longer one reply. `ai_agent::run` asks the model, runs the tools it calls, gives it the
+answers and asks again until it stops calling. It runs on the request's own thread, so `ai.rs` (state),
+`ai_host` (builds the request) and `ai_panel` (draws it) are as before.
+
+- **The assistant never touches the editor.** `ai_send` copies the open script into a `Draft`
+  (`ai_tools`); every tool reads or changes that copy. When the request ends the draft is compared with
+  the script the request started from and becomes the usual `Proposal`: summary card, review sheet, Apply
+  as one undo step, refused if the editor no longer holds `proposal.base`. "Nothing changes until Apply"
+  and "Ask never edits" are unchanged.
+- **Tools** (`ToolBox::new(mode, …)` offers and runs only the mode's own): `read_script(start?, end?)` (numbered
+  lines of the draft, 400 at a time), `compile()` (the draft's diagnostics, as the compiler words them),
+  and in Edit `edit_script(old, new)` and `write_script(text)`. A call to a tool the mode does not have is
+  an error *result* (the model is told), never an edit, so Ask cannot write even if the model tries.
+- **`edit_script` is an exact, unique match.** No match, or more than one (it lists the lines), is an
+  error the model reads and corrects. A change answers with whether the draft still compiles
+  ("Now: 1 error." and the first problems), so the model does not need a `compile` call to find out. The
+  draft is held with `\n` endings whatever the file uses, because the model writes `\n`;
+  `match_line_endings` puts the file's own back when the proposal is built.
+- **Limits are in the loop, not the prompt**: 12 calls to the model (`MAX_ROUNDS`; each resends the whole
+  conversation, so this bounds cost), a call repeated with the same arguments three times ends the
+  request, a tool answer is cut at 8,000 characters, `cancel` is checked between rounds and calls.
+- **Work is not thrown away.** When a request ends without finishing (the step limit, a repeated call, a
+  provider failure part-way) or the user presses Stop, and the draft differs from the script, it is
+  offered as a proposal with a `note` ("Incomplete. It used all 12 steps without finishing.", "Stopped
+  before it finished.") shown in orange on the card. It still goes through review. A failure still puts the
+  message back in the box and shows the provider's error; Stop still restores the message.
+- **A server that refuses tools** (HTTP 400/404/422 on the first request, as a local server that does not
+  know them may answer) is asked once more without tools and with the whole-script prompt
+  (`ai_prompt::system_prompt`), and the user is told. That path (a fenced script in the reply) is the
+  one that existed before and is unchanged. A request that fails a second time is the error.
+- **Two prompts.** `agent_system_prompt` (draft, tools, finish with one to three sentences and do not
+  paste the script) and `system_prompt` (the fallback). Both share `push_reference`, the list of what
+  this interpreter does not implement.
+- **What the panel shows.** Between a message and its reply, one line per tool call: a spinner while it
+  runs, then a check or a cross and what it came to ("Edited lines 12–14 · No problems"), which
+  opens to what the model was told; the text the model said before calling is shown muted. This trail
+  (`Assistant::steps`) is for the latest exchange only and is not saved. **History keeps the words**, so
+  the prompt tells the model to say what it found in its final reply.
+- Ask has the reading tools (it can look, not change). That makes an Ask turn able to take several rounds.
+- Tests: the tools and the loop against the scripted provider (call, answer, final; several calls in a
+  turn; a failed call; Ask refused; step cap; repeat guard; cancel; refused tools; no tools = one request),
+  the draft becoming a proposal (CRLF kept, nothing changed, failure and Stop and step limit keep the work),
+  and the whole window (an edit through tools, Apply, the trail drawing at a small size).
+  Pictures: `script_manager::ai_gallery` (scenes "tools", "tools-incomplete").
+- **Not verified**: any of this against a real model. The scripted provider returns what the wire
+  formats say a model returns; how well real models use these tools, how many rounds a typical request
+  takes, and what it costs have not been measured.
 
 ## The panel (phase 2)
 
