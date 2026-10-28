@@ -313,10 +313,67 @@ fn gallery_of_the_assistant() {
                         break;
                     }
                 }
-                scene.frames(3);
+                // The transcript eases down to the end of the conversation; wait for it.
+                scene.frames(30);
                 scene.save(label);
             }
             scene.rig.manager.ai.clear();
+
+            // Plan mode: it looks, measures and hands over a plan to approve.
+            assert!(scene.rig.manager.ai.set_mode(Mode::Plan));
+            scene.frames(2);
+            scene.save("plan-empty");
+            let feed = scene
+                .rig
+                .manager
+                .preview
+                .debug_feed(super::model::now_ms(), false);
+            let plan_tools = ToolBox::new(Mode::Plan, &tools_base, super::ai_host::diagnostics_of)
+                .with_bars(feed);
+            let plan_request = ChatRequest {
+                model: "m".into(),
+                system: String::new(),
+                messages: vec![ChatMessage::user("x")],
+                max_tokens: 10,
+                tools: plan_tools.specs(),
+            };
+            let plan_turns = vec![
+                Ok(Scripted::call("p1", "profile", serde_json::json!({}))),
+                Ok(Scripted::call(
+                    "p2",
+                    "submit_plan",
+                    serde_json::json!({
+                        "summary": "Line 4 and 5 do most of the work: the function runs once a bar, and its result is computed twice.",
+                        "steps": [
+                            {"title": "Compute it once", "detail": "Store `doubled + 10` in a variable and reuse it instead of calling the function twice.", "lines": "4-5"},
+                            {"title": "Keep the plot", "detail": "Leave `plot(value)` as it is so the chart does not change."},
+                        ],
+                        "expected_effect": "Fewer executions per bar (measured: the function ran 500 times). The time saved is a guess."
+                    }),
+                )),
+            ];
+            scene.rig.manager.ai.start_agent(
+                Box::new(MockProvider::turns(plan_turns)),
+                plan_request,
+                Some(AgentSetup {
+                    tools: plan_tools,
+                    fallback_system: String::new(),
+                }),
+                "Make this script faster".to_owned(),
+                tools_base.clone(),
+                Mode::Plan,
+                Arc::new(|| {}),
+            );
+            for _ in 0..200 {
+                scene.frames(1);
+                if !scene.rig.manager.ai.is_running() {
+                    break;
+                }
+            }
+            scene.frames(30);
+            scene.save("plan");
+            scene.rig.manager.ai.clear();
+            scene.rig.manager.ai.set_mode(Mode::Edit);
 
             // A proposal with several kinds of change over a longer script.
             let rsi = super::demo::BUNDLED

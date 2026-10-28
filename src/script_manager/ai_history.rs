@@ -362,6 +362,23 @@ mod tests {
     }
 
     #[test]
+    fn a_plan_reply_survives_a_save_as_a_plan() {
+        let turns = vec![
+            Turn::User("speed it up".to_owned()),
+            Turn::Assistant {
+                text: "1. a\n2. b".to_owned(),
+                mode: Mode::Plan,
+            },
+        ];
+        let stored: Vec<Stored> = turns.iter().map(Stored::from).collect();
+        let text = serde_json::to_string(&stored).unwrap();
+        assert!(text.contains("planning"));
+        let back: Vec<Stored> = serde_json::from_str(&text).unwrap();
+        let loaded: Vec<Turn> = back.into_iter().map(Turn::from).collect();
+        assert_eq!(loaded, turns);
+    }
+
+    #[test]
     fn a_conversation_saved_before_plan_was_renamed_ask_still_loads() {
         let store = Store::open_in_memory().unwrap();
         store

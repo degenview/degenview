@@ -27,8 +27,13 @@ const OMITTED: &str =
 #[serde(rename_all = "lowercase")]
 pub enum Mode {
     #[default]
+    // Ask was called "plan" before there was a Plan mode, and saved conversations say so.
     #[serde(alias = "plan")]
     Ask,
+    /// Looks and measures with the reading tools, then hands the user a plan to approve. Never edits.
+    /// Saved as "planning" so it is never read as the old name of Ask.
+    #[serde(rename = "planning")]
+    Plan,
     Edit,
 }
 
@@ -36,14 +41,14 @@ impl Mode {
     pub fn title(self) -> &'static str {
         match self {
             Self::Ask => "Ask",
+            Self::Plan => "Plan",
             Self::Edit => "Edit",
         }
     }
 }
 
 /// What the Implement button sends after a plan.
-pub const IMPLEMENT_MESSAGE: &str =
-    "Implement the plan above. Make exactly those changes and return the complete updated script.";
+pub const IMPLEMENT_MESSAGE: &str = "Implement the plan above. Make exactly those changes, and check that the script still compiles.";
 
 /// One line of the conversation as the panel keeps it.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -70,7 +75,7 @@ declaration unless asked to change it.\n\
 - If the message lists compiler errors, fix them.\n\
 - Write plain Markdown: short paragraphs and `code` for names.\n\n",
         ),
-        Mode::Ask => String::from(
+        Mode::Ask | Mode::Plan => String::from(
             "You help with Pine Script v6 for DegenView, a desktop charting app with its own Pine \
 interpreter. The user's current script and their question are in the last message. You are in ASK \
 mode: you cannot change the script, and nothing you write is applied to it.\n\n\
@@ -115,6 +120,22 @@ with //@version=6 and keep the existing indicator(), strategy() or library() dec
 - Finish with one to three sentences saying what you changed and why, with the figures you measured: \
 only this final message is kept, not what the tools returned. Do not paste the script; the user \
 reviews the changes as a diff. Write plain Markdown and `code` for names.\n\n",
+        ),
+        Mode::Plan => String::from(
+            "You plan changes to Pine Script v6 for DegenView, a desktop charting app with its own Pine \
+interpreter. You are in PLAN mode: you cannot change the script, and nothing you do is applied. The \
+user's current script, its compiler diagnostics and their request are in the last message.\n\n\
+How to work:\n\
+- Look before you plan, with the tools that only look: `read_script` (a part of the script, with line \
+numbers), `compile` (the problems) and `profile` (runs the script on the preview chart's bars and says \
+where the time goes). For a request about speed, profile first and plan from what you measured.\n\
+- Then call `submit_plan` exactly once: a `summary` of what you found (with the figures you measured), \
+`steps` (each a `title`, a `detail` saying what to change and why, and the `lines` it applies to), and \
+the `expected_effect`, saying whether it is measured or a guess. After it you are done; add nothing.\n\
+- Plan only what the user asked, in the fewest steps that do it. Name what to change; do not write \
+the code, which the next stage does. Keep to what this Pine implementation can do.\n\
+- If nothing needs changing, or the request cannot be done here, say so in prose and do not call \
+`submit_plan`.\n\n",
         ),
         Mode::Ask => String::from(
             "You help with Pine Script v6 for DegenView, a desktop charting app with its own Pine \
@@ -224,7 +245,7 @@ pub fn build_messages(
             } => ChatMessage::assistant(without_script(text)),
             Turn::Assistant {
                 text,
-                mode: Mode::Ask,
+                mode: Mode::Ask | Mode::Plan,
             } => ChatMessage::assistant(text.clone()),
         })
         .collect();
@@ -600,7 +621,43 @@ mod tests {
     }
 
     #[test]
-    fn the_implement_message_asks_for_the_whole_script() {
-        assert!(IMPLEMENT_MESSAGE.contains("complete updated script"));
+    fn the_implement_message_asks_for_exactly_the_plan() {
+        assert!(IMPLEMENT_MESSAGE.contains("Implement the plan above"));
+        assert!(IMPLEMENT_MESSAGE.contains("exactly"));
+    }
+
+    #[test]
+    fn plan_is_saved_under_its_own_name_and_the_old_name_of_ask_still_reads_as_ask() {
+        assert_eq!(serde_json::to_string(&Mode::Plan).unwrap(), "\"planning\"");
+        for mode in [Mode::Ask, Mode::Plan, Mode::Edit] {
+            let saved = serde_json::to_string(&mode).unwrap();
+            assert_eq!(serde_json::from_str::<Mode>(&saved).unwrap(), mode);
+        }
+        assert_eq!(serde_json::from_str::<Mode>("\"plan\"").unwrap(), Mode::Ask);
+    }
+
+    #[test]
+    fn the_plan_prompt_asks_for_a_submitted_plan_and_for_no_edits() {
+        let prompt = agent_system_prompt(Mode::Plan);
+        assert!(prompt.contains("PLAN mode"));
+        assert!(prompt.contains("`submit_plan`"));
+        assert!(prompt.contains("`profile`"));
+        assert!(prompt.contains("cannot change the script"));
+        // The fallback for a server without tools is the numbered-plan prompt of Ask.
+        assert!(system_prompt(Mode::Plan).contains("numbered plan"));
+        assert!(!prompt.contains("`edit_script`"));
+    }
+
+    #[test]
+    fn a_plan_reply_is_kept_whole_in_history_like_an_ask_reply() {
+        let history = vec![
+            Turn::User("speed it up".to_owned()),
+            Turn::Assistant {
+                text: "1. a\n2. b".to_owned(),
+                mode: Mode::Plan,
+            },
+        ];
+        let messages = build_messages(&history, "x = 1", "go", &[]);
+        assert_eq!(messages[1].content, "1. a\n2. b");
     }
 }
