@@ -658,17 +658,18 @@ impl ScriptManager {
             }
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 4.0;
+                // Added right to left, so they read AI, profiler, debugger from the left.
                 if self.open.is_some() && debug_panel::panel_button(ui, self.prefs.debug_open) {
                     self.cmds.push(Cmd::ToggleDebugPanel);
-                }
-                if self.open.is_some() && ai_panel::panel_button(ui, self.prefs.ai_open) {
-                    self.cmds.push(Cmd::ToggleAiPanel);
                 }
                 if self.open.is_some() {
                     let status = self.profiler.status(self.profiler_now.as_ref());
                     for action in profile_ui::toolbar(ui, &status) {
                         self.cmds.push(Cmd::from(action));
                     }
+                }
+                if self.open.is_some() && ai_panel::panel_button(ui, self.prefs.ai_open) {
+                    self.cmds.push(Cmd::ToggleAiPanel);
                 }
             });
         });
