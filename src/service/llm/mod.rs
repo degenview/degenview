@@ -777,13 +777,13 @@ pub mod mock {
 
     /// One scripted turn: the pieces of text it streams, then the calls it makes.
     #[derive(Clone, Debug, Default)]
-    pub struct Turn {
+    pub struct Scripted {
         pub pieces: Vec<String>,
         pub calls: Vec<ToolCall>,
         pub truncated: bool,
     }
 
-    impl Turn {
+    impl Scripted {
         pub fn say(text: &str) -> Self {
             Self {
                 pieces: vec![text.to_owned()],
@@ -808,7 +808,7 @@ pub mod mock {
     }
 
     pub struct MockProvider {
-        replies: Mutex<VecDeque<Result<Turn, LlmError>>>,
+        replies: Mutex<VecDeque<Result<Scripted, LlmError>>>,
         /// Every request seen, for assertions about what was sent.
         pub requests: Mutex<Vec<ChatRequest>>,
         pub models: Result<Vec<String>, LlmError>,
@@ -820,16 +820,16 @@ pub mod mock {
                 replies
                     .into_iter()
                     .map(|reply| {
-                        reply.map(|pieces| Turn {
+                        reply.map(|pieces| Scripted {
                             pieces,
-                            ..Turn::default()
+                            ..Scripted::default()
                         })
                     })
                     .collect(),
             )
         }
 
-        pub fn turns(turns: Vec<Result<Turn, LlmError>>) -> Self {
+        pub fn turns(turns: Vec<Result<Scripted, LlmError>>) -> Self {
             Self {
                 replies: Mutex::new(turns.into()),
                 requests: Mutex::new(Vec::new()),
