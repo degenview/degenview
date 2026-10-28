@@ -205,6 +205,22 @@
 
 ## Manager lifecycle
 
+- **Scripts edited outside the app** (a person's editor, a coding agent working in the Scripts folder)
+  reach the open editor through `script_manager::external` (a pure state machine; `mod.rs` does the
+  I/O, `disk_banner` draws the question). The sidebar already followed the folder (1.5 s rescan); the
+  open script's *text* now does too: every ~400 ms only the file's metadata is read
+  (`ScriptStore::file_stamp`), and a moved file, or one still settling, triggers a rescan and
+  `reconcile_open`. A change is acted on only after the same text has been seen twice, 300 ms apart (a
+  file another tool is still writing is never loaded half-written). A **clean editor** shows the file's
+  text through `editor::apply_script` (one undo step) and `mark_saved`, with a "Reloaded" note in the
+  status strip. An editor with **unsaved typing is never overwritten**: a banner asks *Reload from disk*
+  (undoable) or *Keep my version* (`rebase_saved`: the typing stays and the file's text becomes the saved
+  baseline, so a later Save overwrites on purpose), and Save is held while the question is open.
+  **Saving is checked at the store**: `save_open` uses `ScriptStore::save_if_unchanged(id, source,
+  saved_source)`, so a file rewritten after the last look is never overwritten silently (the next look
+  then asks at once, `Watch::force`). Equality ignores a missing final newline (`external::same_text`).
+  Not covered: chart instances keep the source they were added with (as after any Save), an outside edit
+  makes no revision, and a draft of a script that is not open is not protected from an outside edit.
 - `ScriptManager` owns its window. `workspace::PreviewState` drives one crypto/stock preview with
   debounced apply and stale output; it has no alert coordinator. `script_manager::inputs` renders a
   precompiled `InputSchema` and is shared with chart settings.

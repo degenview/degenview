@@ -165,6 +165,8 @@ pub struct EditorState {
     carets: carets::CaretState,
     /// Go to definition, the right-click menu and the rename box.
     nav: navigation::NavState,
+    /// A short note for the status strip ("Reloaded: …"), and when it was made.
+    notice: Option<(String, Instant)>,
 }
 
 /// The open suggestion list and its highlighted row.
@@ -233,6 +235,7 @@ impl EditorState {
             profile_hover: None,
             carets: carets::CaretState::default(),
             nav: navigation::NavState::default(),
+            notice: None,
             #[cfg(test)]
             scroll_y: 0.0,
         }
@@ -240,6 +243,19 @@ impl EditorState {
 
     pub fn is_dirty(&self) -> bool {
         self.source != self.saved_source
+    }
+
+    /// Says something in the status strip for a few seconds.
+    pub fn set_notice(&mut self, text: impl Into<String>) {
+        self.notice = Some((text.into(), Instant::now()));
+    }
+
+    /// The status strip's note while it is still fresh.
+    pub fn notice(&self) -> Option<&str> {
+        self.notice
+            .as_ref()
+            .filter(|(_, at)| at.elapsed() < super::external::NOTICE_FOR)
+            .map(|(text, _)| text.as_str())
     }
 
     /// Shows `text` as if it had been typed, for an edit made from outside (the MCP server). The
@@ -262,6 +278,14 @@ impl EditorState {
         self.select_to = None;
         self.carets.clear();
         self.nav.rename = None;
+    }
+
+    /// The file now holds `text` (someone else wrote it) and the person chose to keep what they
+    /// typed over it: the typing stays, and `text` becomes what the editor measures changes against
+    /// and what a save is checked against, so a save overwrites it on purpose.
+    pub fn rebase_saved(&mut self, text: &str) {
+        self.saved_source = text.to_owned();
+        self.saved_key = diff::text_key(text);
     }
 
     pub fn mark_saved(&mut self) {
@@ -2418,6 +2442,20 @@ fn status_bar(ui: &mut Ui, bar: Rect, state: &EditorState, changes: &DiffSnapsho
                     .color(theme::editor_diff_deleted()),
             )
             .on_hover_text(format!("{removed} lines removed since the last save"));
+    }
+    if let Some((text, at)) = state.notice.as_ref()
+        && let Some(left) = super::external::NOTICE_FOR.checked_sub(at.elapsed())
+    {
+        inner.add_space(8.0);
+        inner.add(
+            egui::Label::new(
+                RichText::new(text.as_str())
+                    .size(10.0)
+                    .color(theme::text_secondary()),
+            )
+            .truncate(),
+        );
+        inner.ctx().request_repaint_after(left);
     }
     inner.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
         // egui never draws a button under `interact_size.y`, so the bar lowers it.

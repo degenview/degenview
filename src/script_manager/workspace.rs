@@ -337,6 +337,19 @@ fn editor_and_debug(
     };
     let open = RefCell::new(open);
     let draw_editor = |ui: &mut Ui| {
+        let question = open.borrow().watch.conflict.is_some();
+        if question {
+            let name = open.borrow().name.clone();
+            match super::disk_banner::show(ui, &name) {
+                Some(super::disk_banner::BannerAction::Reload) => {
+                    cmds.borrow_mut().push(Cmd::DiskReload);
+                }
+                Some(super::disk_banner::BannerAction::Keep) => {
+                    cmds.borrow_mut().push(Cmd::DiskKeep);
+                }
+                None => {}
+            }
+        }
         let output = editor::show(ui, &mut open.borrow_mut().editor);
         if output.changed {
             changed.set(true);
