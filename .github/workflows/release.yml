@@ -76,7 +76,7 @@ jobs:
     uses: ./.github/workflows/flatpak.yml
     with:
       ref: ${{ github.event.inputs.tag || github.ref_name }}
-      bundle-name: DegenView-${{ github.event.inputs.tag || github.ref_name }}-linux-x64.flatpak
+      bundle-prefix: DegenView-${{ github.event.inputs.tag || github.ref_name }}-linux
 
   build:
     name: Build ${{ matrix.name }}
@@ -98,6 +98,9 @@ jobs:
           - name: linux-x64
             os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
+          - name: linux-arm64
+            os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
     steps:
       - uses: actions/checkout@v7
         with:
@@ -291,7 +294,8 @@ jobs:
             echo "- **macOS (Intel):** \`DegenView-${RELEASE_TAG}-macos-x64.zip\`"
             echo "- **Windows (x64):** \`DegenView-${RELEASE_TAG}-windows-x64.zip\`"
             echo "- **Linux (x64):** \`DegenView-${RELEASE_TAG}-linux-x64.tar.gz\`"
-            echo "- **Linux (x64, Flatpak):** \`DegenView-${RELEASE_TAG}-linux-x64.flatpak\`, installed with \`flatpak install --user DegenView-${RELEASE_TAG}-linux-x64.flatpak\`"
+            echo "- **Linux (arm64):** \`DegenView-${RELEASE_TAG}-linux-arm64.tar.gz\`"
+            echo "- **Linux Flatpak (x64, arm64):** \`DegenView-${RELEASE_TAG}-linux-x64.flatpak\` and \`DegenView-${RELEASE_TAG}-linux-arm64.flatpak\`, installed with \`flatpak install --user <file>\`"
             echo
             echo "The macOS builds are signed with a Developer ID and notarized by Apple. The Windows build is unsigned; you may need to approve it in system security settings on first launch."
           } > notes.md

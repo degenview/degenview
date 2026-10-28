@@ -26,4 +26,4 @@ jobs:
     name: Flatpak
     uses: ./.github/workflows/flatpak.yml
     with:
-      bundle-name: DegenView-ci-linux-x64.flatpak
+      bundle-prefix: DegenView-ci-linux

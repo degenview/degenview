@@ -114,7 +114,7 @@ timeline scrubber, speed and interval controls, and shared clock across every ch
 
 ## Requirements
 
-- macOS (Apple Silicon or Intel), Windows (x64), or Linux (x64)
+- macOS (Apple Silicon or Intel), Windows (x64), or Linux (x64 or arm64)
 - [Rust](https://rustup.rs) 1.95 or newer (`cargo` on your `PATH`)
 - A free Alpaca account and API keys only if you want stock data — set `DEGENVIEW_ALPACA_KEY_ID`
   and `DEGENVIEW_ALPACA_SECRET_KEY`, or store them in Keychain on macOS (the Secret Service on Linux)
@@ -184,11 +184,12 @@ install -Dm644 degenview.png "$HOME/.local/share/icons/hicolor/512x512/apps/dege
 install -Dm644 degenview.desktop "$HOME/.local/share/applications/degenview.desktop"
 ```
 
-Each release also carries a Flatpak bundle, `DegenView-<tag>-linux-x64.flatpak`, which needs no
+Each release also carries a Flatpak bundle, `DegenView-<tag>-linux-x64.flatpak` or
+`-linux-arm64.flatpak` (the tarball likewise has an `-arm64` build), which needs no
 manual install steps and runs sandboxed (network, display and GPU only):
 
 ```bash
-flatpak install --user DegenView-<tag>-linux-x64.flatpak
+flatpak install --user DegenView-<tag>-linux-<x64|arm64>.flatpak
 flatpak run es.nico.degenview
 ```
 
