@@ -184,8 +184,20 @@ install -Dm644 degenview.png "$HOME/.local/share/icons/hicolor/512x512/apps/dege
 install -Dm644 degenview.desktop "$HOME/.local/share/applications/degenview.desktop"
 ```
 
+Each release also carries a Flatpak bundle, `DegenView-<tag>-linux-x64.flatpak`, which needs no
+manual install steps and runs sandboxed (network, display and GPU only):
+
+```bash
+flatpak install --user DegenView-<tag>-linux-x64.flatpak
+flatpak run es.nico.degenview
+```
+
+A bundle has no remote, so `flatpak update` does not find newer versions; download the next one
+from the release page. How it is built and what is unverified: [docs/flatpak.md](docs/flatpak.md).
+
 Releases: push a tag like `v0.1.0` and the Release workflow builds macOS (arm64 + Intel),
-Windows, and Linux binaries and publishes a GitHub release you can download.
+Windows, and Linux binaries (a tarball and a Flatpak) and publishes a GitHub release you can
+download.
 
 ## Documentation
 

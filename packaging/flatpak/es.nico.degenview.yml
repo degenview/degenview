@@ -1,0 +1,49 @@
+# Flatpak manifest. Built by .github/workflows/flatpak.yml, which generates
+# `cargo-sources.json` (every crate in Cargo.lock, for the offline build) and stamps the build id
+# below. See docs/flatpak.md.
+#
+# The runtime branch must match the container tag in .github/workflows/flatpak.yml.
+app-id: es.nico.degenview
+runtime: org.freedesktop.Platform
+runtime-version: "26.08"
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  # Cargo.toml needs rustc >= 1.95 (`rust-version`); this extension tracks Rust stable.
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: degenview
+
+finish-args:
+  # Market data providers, WebSockets, the MCP server's loopback port, snapshot sharing.
+  - --share=network
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  # Chart rendering (wgpu / GL).
+  - --device=dri
+
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+  env:
+    CARGO_HOME: /run/build/degenview/cargo
+    # There is no .git in the sandbox; the workflow replaces this with the short commit hash.
+    DEGENVIEW_BUILD_ID: unknown
+
+modules:
+  - name: degenview
+    buildsystem: simple
+    build-commands:
+      # Only the app. `degenview-alert-agent` is the macOS login item and is not installed.
+      - cargo --offline build --release --locked --bin degenview
+      - install -Dm755 target/release/degenview -t /app/bin
+      - install -Dm644 packaging/flatpak/es.nico.degenview.desktop -t /app/share/applications
+      - install -Dm644 packaging/flatpak/es.nico.degenview.metainfo.xml -t /app/share/metainfo
+      - install -Dm644 assets/brand/DegenView-512.png /app/share/icons/hicolor/512x512/apps/es.nico.degenview.png
+    sources:
+      - type: dir
+        path: ../..
+        skip:
+          - .git
+          - target
+          - target-rel
+      # Generated from Cargo.lock by the workflow; not committed.
+      - cargo-sources.json

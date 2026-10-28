@@ -1,5 +1,6 @@
 /target
 /target-*
+/packaging/flatpak/cargo-sources.json
 /.DS_Store
 *.profraw
 /.pine-corpus

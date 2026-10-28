@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>es.nico.degenview</id>
+  <name>DegenView</name>
+  <summary>Market dashboard with a local Pine Script engine</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <developer id="es.nico">
+    <name>DegenView</name>
+  </developer>
+  <description>
+    <p>
+      DegenView watches crypto, stocks, prediction markets and CoinMarketCap indices in
+      customizable, linked charts.
+    </p>
+    <p>
+      Its headline feature is a Pine Script v6 engine that runs on your own machine: write
+      TradingView-style indicators and strategies and keep every line of source on your device.
+    </p>
+    <ul>
+      <li>Crypto from Binance, Coinbase, CoinGecko and DEX pairs, US stocks through Alpaca</li>
+      <li>Polymarket and Kalshi events charted as probabilities</li>
+      <li>Drawing tools, price alerts with webhooks, and portfolio tracking</li>
+      <li>An optional local MCP server so AI assistants can inspect and drive the app</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">es.nico.degenview.desktop</launchable>
+  <url type="homepage">https://github.com/degenview/degenview</url>
+  <url type="bugtracker">https://github.com/degenview/degenview/issues</url>
+  <screenshots>
+    <screenshot type="default">
+      <caption>Four linked candlestick charts with indicators and a watchlist</caption>
+      <image>https://raw.githubusercontent.com/degenview/degenview/main/assets/screenshots/screenshot.png</image>
+    </screenshot>
+  </screenshots>
+  <content_rating type="oars-1.1"/>
+  <categories>
+    <category>Office</category>
+    <category>Finance</category>
+  </categories>
+  <provides>
+    <binary>degenview</binary>
+  </provides>
+  <!-- The release workflow replaces this placeholder with the version and date being released. -->
+  <releases>
+    <release version="0.0.0" date="1970-01-01"/>
+  </releases>
+</component>
