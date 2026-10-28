@@ -4,7 +4,8 @@
 
 use crate::sync::account::CONTAINER;
 
-/// What a signed entitlement holds.
+/// What a signed entitlement holds. Only the macOS reader constructs `Text` and `List`.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EntitlementValue {
     Text(String),
