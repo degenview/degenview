@@ -250,7 +250,7 @@ impl ChartWorkspace {
                 );
                 self.say(format!("Saved {name}"), false);
                 // Without a save panel the file went to the downloads folder: show where.
-                if !cfg!(target_os = "macos") {
+                if !crate::platform::has_file_dialogs() {
                     crate::platform::reveal_in_file_manager(&path);
                 }
             }

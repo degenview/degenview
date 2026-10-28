@@ -122,8 +122,9 @@ ships no server; its tests use a mock server on this computer.
 ## Platforms
 
 macOS is the platform this was built and checked on. Download uses the system Save panel
-(`osascript`, as the portfolio export does) there; Windows and Linux save to the Downloads folder
-under a free name and reveal the file (no native panel: that needs a new dependency). Copy image
+(`osascript`, as the portfolio export does) there and the XDG file chooser portal on Linux
+(`rfd`, see [Flatpak](flatpak.md)); Windows saves to the Downloads folder under a free name and
+reveals the file (no native panel yet). Copy image
 uses egui's clipboard (arboard), which cannot report a failure, so "Image copied" means the copy
 was handed to the system.
 

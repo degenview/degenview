@@ -103,10 +103,10 @@ pub fn downloads_path(name: &str) -> Result<PathBuf, ExportError> {
     })))
 }
 
-/// Where the user wants the file: the system's save panel on macOS (`None` if they cancel),
-/// the downloads folder elsewhere.
+/// Where the user wants the file: the system's save panel on macOS and Linux (`None` if they
+/// cancel), the downloads folder elsewhere.
 pub fn choose_destination(name: &str) -> Result<Option<PathBuf>, ExportError> {
-    if cfg!(target_os = "macos") {
+    if crate::platform::has_file_dialogs() {
         let chosen = crate::service::file_dialog::choose_save_path("Save chart image", name)
             .map_err(ExportError::Dialog)?;
         Ok(

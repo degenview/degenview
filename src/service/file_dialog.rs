@@ -1,11 +1,13 @@
-//! Open and save panels, through `osascript`: no extra crate, and the system's own panels. Every
-//! call blocks until the user answers, so run them on a worker thread. A cancelled panel is
-//! `None`, not an error.
+//! Open and save panels: `osascript` on macOS (no extra crate, and the system's own panels) and the
+//! XDG file chooser portal on Linux (through `rfd`), which inside a Flatpak is the only way to
+//! reach a file outside the sandbox. Windows has none yet. Every call blocks until the user
+//! answers, so run them on a worker thread. A cancelled panel is `None`, not an error.
 
 // Transient: the portfolio import/export flow calls these.
 #![allow(dead_code)]
 
 use std::path::PathBuf;
+#[cfg(not(target_os = "linux"))]
 use std::process::Command;
 
 /// A string as an AppleScript literal.
@@ -51,6 +53,33 @@ pub fn parse_path(output: &str) -> Option<PathBuf> {
     (!trimmed.is_empty()).then(|| PathBuf::from(trimmed))
 }
 
+/// File name extensions the open panels offer, without the dot. The AppleScript panels ask for
+/// the matching uniform type identifiers instead.
+const CSV_EXTENSIONS: [&str; 3] = ["csv", "txt", "text"];
+const IMAGE_EXTENSIONS: [&str; 3] = ["png", "jpg", "jpeg"];
+
+#[cfg(target_os = "linux")]
+mod portal {
+    use std::path::PathBuf;
+
+    /// `rfd` reports a cancelled dialog and one that could not open (no portal, no `zenity`) the
+    /// same way, as `None`; both read as "the user chose nothing".
+    pub fn open(title: &str, filter: &str, extensions: &[&str]) -> Option<PathBuf> {
+        rfd::FileDialog::new()
+            .set_title(title)
+            .add_filter(filter, extensions)
+            .pick_file()
+    }
+
+    pub fn save(title: &str, default_name: &str) -> Option<PathBuf> {
+        rfd::FileDialog::new()
+            .set_title(title)
+            .set_file_name(default_name)
+            .save_file()
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
 fn run(script: &str) -> Result<Option<PathBuf>, String> {
     let output = Command::new("osascript")
         .arg("-e")
@@ -71,20 +100,41 @@ fn run(script: &str) -> Result<Option<PathBuf>, String> {
 
 /// Asks for a CSV or text file to read.
 pub fn choose_csv(prompt: &str) -> Result<Option<PathBuf>, String> {
-    run(&open_script(
-        prompt,
-        &["public.comma-separated-values-text", "public.plain-text"],
-    ))
+    #[cfg(target_os = "linux")]
+    {
+        Ok(portal::open(prompt, "CSV or text", &CSV_EXTENSIONS))
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        run(&open_script(
+            prompt,
+            &["public.comma-separated-values-text", "public.plain-text"],
+        ))
+    }
 }
 
 /// Asks for a PNG or JPEG picture to read.
 pub fn choose_image(prompt: &str) -> Result<Option<PathBuf>, String> {
-    run(&open_script(prompt, &["public.png", "public.jpeg"]))
+    #[cfg(target_os = "linux")]
+    {
+        Ok(portal::open(prompt, "Pictures", &IMAGE_EXTENSIONS))
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        run(&open_script(prompt, &["public.png", "public.jpeg"]))
+    }
 }
 
 /// Asks where to save a file.
 pub fn choose_save_path(prompt: &str, default_name: &str) -> Result<Option<PathBuf>, String> {
-    run(&save_script(prompt, default_name))
+    #[cfg(target_os = "linux")]
+    {
+        Ok(portal::save(prompt, default_name))
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        run(&save_script(prompt, default_name))
+    }
 }
 
 /// Reads a chosen file as UTF-8 text.
@@ -128,6 +178,16 @@ mod tests {
             save_script("Export", "degenview-portfolio-transactions.csv"),
             "POSIX path of (choose file name with prompt \"Export\" default name \"degenview-portfolio-transactions.csv\")"
         );
+    }
+
+    #[test]
+    fn the_extension_filters_are_bare_lowercase_names() {
+        for extension in CSV_EXTENSIONS.iter().chain(&IMAGE_EXTENSIONS) {
+            assert!(!extension.starts_with('.') && !extension.starts_with('*'));
+            assert_eq!(*extension, extension.to_lowercase());
+        }
+        assert!(CSV_EXTENSIONS.contains(&"csv"));
+        assert!(IMAGE_EXTENSIONS.contains(&"png") && IMAGE_EXTENSIONS.contains(&"jpg"));
     }
 
     #[test]

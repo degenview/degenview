@@ -61,6 +61,21 @@ one worker thread with a private current-thread runtime.
   plus its account.
 - `DEGENVIEW_NO_KEYCHAIN` keeps secrets in memory, as on macOS.
 
+## File dialogs
+
+`service::file_dialog` (CSV and image import, portfolio export, the watchlist export, snapshot "save
+as") uses the XDG file chooser portal on Linux, through `rfd` without its GTK backend: `rfd` speaks to
+the portal itself and loads `libdbus` when a dialog opens (the Freedesktop runtime has it), falling
+back to `zenity` outside a sandbox when no portal runs. That is how a sandboxed app with no
+filesystem permission reads or writes a file the user picks: the portal hands back a path under
+`/run/user/<uid>/doc/` that the app may use. `rfd` cannot tell a cancelled dialog from one that
+could not open, so both read as "chose nothing" and no error is shown.
+
+`platform::has_file_dialogs()` is the one place that says which platforms have a panel; without
+one, snapshots go to the Downloads folder under a free name and the file is revealed. "Show in File
+Manager" still runs `xdg-open` on the folder, which a Flatpak routes through the OpenURI portal; it
+may do nothing for a path the host cannot see.
+
 ## Not verified
 
 Written without a Linux machine; CI builds the bundle but nothing has run it.
@@ -74,11 +89,12 @@ Written without a Linux machine; CI builds the bundle but nothing has run it.
   which Flathub may want smaller).
 - Secret storage inside the sandbox (below): the worker and its caches are tested with a fake
   keyring, but nothing has talked to a real Secret Service or portal.
-- File dialogs inside the sandbox: not part of this change, see the follow-ups.
+- File dialogs: that `rfd` finds `libdbus` and the portal in the runtime, that the chosen path is
+  readable and writable, and that "Show in File Manager" works from inside the sandbox.
 
 ## Follow-ups
 
-- File dialogs are AppleScript (`service::file_dialog`), so CSV and image import and snapshot "save
-  as" do nothing on Linux. The portal file chooser is the fix.
+- The clipboard picture (`native_bridge::clipboard_picture`) is macOS-only, so "paste an image" has
+  no Linux path yet.
 - Flathub: a separate `flathub/es.nico.degenview` repository whose manifest builds a signed tag.
   Needs the id's domain verified and metainfo that lists each release.

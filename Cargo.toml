@@ -47,6 +47,9 @@ similar = { version = "3.2.0", default-features = false, features = ["std"] }
 # Secret storage on Linux (docs/flatpak.md): the Secret Service, or the Secret portal in a Flatpak.
 [target.'cfg(target_os = "linux")'.dependencies]
 oo7 = "0.6"
+# The XDG file chooser portal, which a Flatpak has no other way to reach a file through. No GTK:
+# `rfd` talks to the portal itself and loads libdbus when a dialog opens.
+rfd = { version = "0.17", default-features = false, features = ["xdg-portal"] }
 
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"
