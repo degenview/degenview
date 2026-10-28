@@ -7,6 +7,7 @@ use super::ai_models::{self, ModelList};
 use super::ai_prompt::{self, Mode, Turn};
 use super::diff_view;
 use crate::service::llm::ProviderKind;
+use crate::ui::error_notice::{self, ErrorEvent, ErrorNotice};
 use crate::ui::icons::{self, Icon};
 use crate::ui::markdown_view;
 use crate::ui::{kit, theme};
@@ -22,6 +23,10 @@ const BOTTOM_HEIGHT: f32 = 128.0;
 /// The model menu's width. A text field inside a menu must not ask for more, or the menu grows to
 /// fill the window.
 const MENU_WIDTH: f32 = 300.0;
+/// Space between the menu's edge and its fields and cards.
+const MENU_INSET: f32 = 8.0;
+/// Where a menu's text starts: the headings' and rows' own inset.
+const MENU_TEXT_INSET: f32 = 14.0;
 /// How long a Copy button says "Copied".
 const COPIED_FOR: Duration = Duration::from_millis(1400);
 
@@ -206,6 +211,9 @@ fn model_chip(ui: &mut Ui, label: &str) -> egui::Response {
 /// The menu behind the chip: which provider, and which of its models.
 fn model_menu(ui: &mut Ui, ai: &mut Assistant, setup: &Setup, actions: &mut Vec<PanelAction>) {
     kit::menu_scope(ui, MENU_WIDTH);
+    // However long a provider's error is, the menu is this wide and no wider.
+    ui.set_max_width(MENU_WIDTH);
+    let inner = MENU_WIDTH - 2.0 * MENU_INSET;
     kit::menu_heading(ui, "Provider");
     for (kind, ready) in &setup.providers {
         let mut row = kit::MenuRow::new(kind.title());
@@ -224,12 +232,14 @@ fn model_menu(ui: &mut Ui, ai: &mut Assistant, setup: &Setup, actions: &mut Vec<
     kit::menu_separator(ui);
     kit::menu_heading(ui, "Model");
     egui::Frame::new()
-        .inner_margin(Margin::symmetric(8, 4))
+        .inner_margin(Margin::symmetric(MENU_INSET as i8, 4))
         .show(ui, |ui| {
-            let field = ui.add(
-                egui::TextEdit::singleline(&mut ai.model_filter)
-                    .hint_text("Filter, or type a model name")
-                    .desired_width(MENU_WIDTH - 40.0),
+            let field = kit::search_field(
+                ui,
+                Id::new("ai-model-filter"),
+                &mut ai.model_filter,
+                "Filter, or type a model name",
+                inner,
             );
             let typed = ai.model_filter.trim().to_owned();
             if field.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) && !typed.is_empty() {
@@ -241,7 +251,7 @@ fn model_menu(ui: &mut Ui, ai: &mut Assistant, setup: &Setup, actions: &mut Vec<
     let note = |ui: &mut Ui, text: &str, color: Color32| {
         ui.add_space(4.0);
         ui.horizontal(|ui| {
-            ui.add_space(12.0);
+            ui.add_space(MENU_TEXT_INSET);
             ui.add(
                 egui::Label::new(kit::text(text, kit::size::SUBHEADLINE, kit::REGULAR, color))
                     .wrap(),
@@ -254,7 +264,7 @@ fn model_menu(ui: &mut Ui, ai: &mut Assistant, setup: &Setup, actions: &mut Vec<
     match ai.models.get(&setup.current).cloned().unwrap_or_default() {
         ModelList::Unloaded | ModelList::Loading => {
             ui.horizontal(|ui| {
-                ui.add_space(12.0);
+                ui.add_space(MENU_TEXT_INSET);
                 ui.add(
                     egui::Spinner::new()
                         .size(12.0)
@@ -269,11 +279,18 @@ fn model_menu(ui: &mut Ui, ai: &mut Assistant, setup: &Setup, actions: &mut Vec<
             });
             ui.add_space(6.0);
         }
-        ModelList::Failed(message) => {
-            note(ui, &message, kit::RED);
-            if kit::menu_row(ui, kit::MenuRow::new("Try again")).clicked() {
-                actions.push(PanelAction::LoadModels);
-            }
+        ModelList::Failed(report) => {
+            ui.add_space(4.0);
+            egui::Frame::new()
+                .inner_margin(Margin::symmetric(MENU_INSET as i8, 0))
+                .show(ui, |ui| {
+                    ui.set_width(inner);
+                    let notice = ErrorNotice::new("models", &report).retry("Try again");
+                    if error_notice::show(ui, &notice) == Some(ErrorEvent::Retry) {
+                        actions.push(PanelAction::LoadModels);
+                    }
+                });
+            ui.add_space(6.0);
         }
         ModelList::Ready(ids) => {
             listed = ids.contains(&typed);
@@ -609,11 +626,20 @@ fn implement_button(ui: &mut Ui) -> bool {
 
 /// A message about the last request: an error (with Try again) or a note. Dismissable.
 fn notice_banner(ui: &mut Ui, notice: &Notice, can_retry: bool, actions: &mut Vec<PanelAction>) {
-    let (icon, tint) = if notice.error {
-        (Icon::TriangleFill, kit::RED)
-    } else {
-        (Icon::InfoCircle, theme::text_secondary())
-    };
+    if notice.error {
+        let report = notice.error_report();
+        let mut card = ErrorNotice::new("panel", &report).dismissable();
+        if can_retry {
+            card = card.retry("Try again");
+        }
+        match error_notice::show(ui, &card) {
+            Some(ErrorEvent::Retry) => actions.push(PanelAction::Send),
+            Some(ErrorEvent::Dismiss) => actions.push(PanelAction::DismissNotice),
+            None => {}
+        }
+        return;
+    }
+    let tint = theme::text_secondary();
     egui::Frame::new()
         .fill(theme::with_alpha(tint, 0.1))
         .corner_radius(10.0)
@@ -622,10 +648,9 @@ fn notice_banner(ui: &mut Ui, notice: &Notice, can_retry: bool, actions: &mut Ve
             ui.set_width(ui.available_width());
             ui.horizontal_top(|ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
-                icons::inline(ui, icon, 13.0, tint);
+                icons::inline(ui, Icon::InfoCircle, 13.0, tint);
                 ui.vertical(|ui| {
                     ui.set_max_width((ui.available_width() - 30.0).max(40.0));
-                    ui.spacing_mut().item_spacing.y = 6.0;
                     ui.add(
                         egui::Label::new(kit::text(
                             &notice.text,
@@ -635,12 +660,6 @@ fn notice_banner(ui: &mut Ui, notice: &Notice, can_retry: bool, actions: &mut Ve
                         ))
                         .selectable(true),
                     );
-                    if notice.error
-                        && can_retry
-                        && kit::push_button(ui, Some(Icon::Repeat), "Try again", true).clicked()
-                    {
-                        actions.push(PanelAction::Send);
-                    }
                 });
                 ui.with_layout(Layout::right_to_left(Align::TOP), |ui| {
                     if icons::button(ui, Icon::Xmark, 18.0, theme::text_tertiary(), "Dismiss")

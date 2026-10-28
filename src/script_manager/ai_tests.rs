@@ -187,10 +187,10 @@ fn a_failed_reply_leaves_the_editor_alone_and_says_why() {
     let mut rig = Rig::new("ai-fail");
     open_panel(&mut rig);
     let before = source(&rig);
-    ask(&mut rig, Err(LlmError::Auth("bad key".to_owned())));
+    ask(&mut rig, Err(LlmError::auth("bad key")));
     assert_eq!(source(&rig), before);
     let notice = rig.manager.ai.notice.clone().unwrap();
-    assert!(notice.error && notice.text.contains("bad key"));
+    assert!(notice.error && notice.error_report().detail.contains("bad key"));
 }
 
 #[test]
@@ -788,7 +788,7 @@ fn opening_the_model_menu_without_a_key_says_why_instead_of_loading() {
     rig.frame();
     let list = rig.manager.ai.models.get(&ProviderKind::OpenAi).cloned();
     assert!(
-        matches!(list, Some(ModelList::Failed(message)) if message.contains("API key")),
+        matches!(list, Some(ModelList::Failed(report)) if report.headline.contains("API key")),
         "no key: nothing to ask"
     );
 }

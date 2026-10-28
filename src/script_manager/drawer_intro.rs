@@ -1,4 +1,4 @@
-//! What the Problems and Report tabs say while they have nothing to show, laid out like the Logs
+//! What the Inputs, Problems and Report tabs say while they have nothing to show, laid out like the Logs
 //! and Profile tabs' introductions: a picture, what the tab is for, three numbered steps and an
 //! example of what it will hold.
 
@@ -10,6 +10,33 @@ use eframe::egui::{
     text::{LayoutJob, TextFormat},
     vec2,
 };
+
+/// The Inputs tab with a script that declares no inputs.
+pub fn inputs(ui: &mut Ui) {
+    centered(ui, |ui| {
+        intro(
+            ui,
+            "Tune a script without editing it",
+            "This script has no inputs yet.",
+            |ui| {
+                step(ui, 1, |ui| {
+                    ui.label(muted(
+                        "Declare one in the script with input.int(), input.bool() and friends.",
+                    ));
+                });
+                step(ui, 2, |ui| {
+                    ui.label(muted("It appears here as a control, grouped as you set."));
+                });
+                step(ui, 3, |ui| {
+                    ui.label(muted("Change it and the preview chart updates."));
+                });
+            },
+            input_example,
+            inputs_picture,
+            |_| {},
+        );
+    });
+}
 
 /// The Problems tab with no diagnostics.
 pub fn problems(ui: &mut Ui) {
@@ -87,6 +114,52 @@ fn card(ui: &Ui, rect: Rect) -> Rect {
         StrokeKind::Inside,
     );
     card
+}
+
+/// Three controls on a card: a switch, a number field and a drop-down, each with a label line.
+fn inputs_picture(ui: &Ui, rect: Rect) {
+    let card = card(ui, rect);
+    let painter = ui.painter();
+    let line = Stroke::new(2.2, theme::text_tertiary().gamma_multiply(0.75));
+    let right = card.right() - 9.0;
+    for (index, length) in [0.30, 0.22, 0.26].into_iter().enumerate() {
+        let y = card.top() + 14.0 + index as f32 * 13.0;
+        painter.hline(
+            card.left() + 9.0..=card.left() + 9.0 + 40.0 * length,
+            y,
+            line,
+        );
+        let control = Rect::from_min_max(pos2(right - 20.0, y - 4.5), pos2(right, y + 4.5));
+        match index {
+            0 => kit::paint_switch(painter, control, 1.0, false),
+            _ => {
+                painter.rect_filled(control, 3.0, theme::well_fill());
+                painter.rect_stroke(
+                    control,
+                    3.0,
+                    Stroke::new(1.0, kit::hairline()),
+                    StrokeKind::Inside,
+                );
+                if index == 1 {
+                    painter.hline(
+                        control.left() + 4.0..=control.left() + 11.0,
+                        control.center().y,
+                        Stroke::new(1.6, theme::text_secondary()),
+                    );
+                } else {
+                    icons::paint(
+                        painter,
+                        Rect::from_center_size(
+                            pos2(control.right() - 5.0, control.center().y),
+                            vec2(6.0, 6.0),
+                        ),
+                        Icon::ChevronUpDown,
+                        theme::text_secondary(),
+                    );
+                }
+            }
+        }
+    }
 }
 
 /// A page of findings on a soft disc: a red, an amber and a green line, the three outcomes.
@@ -203,6 +276,30 @@ fn report_example(ui: &mut Ui, width: f32) {
     job.append("\"Long\"", 0.0, mono(theme::syntax::string()));
     job.append(", ", 0.0, mono(theme::text_secondary()));
     job.append("strategy.long", 0.0, mono(theme::syntax::variable()));
+    job.append(")", 0.0, mono(theme::text_secondary()));
+    let galley = ui.painter().layout_job(job);
+    let (rect, _) = ui.allocate_exact_size(vec2(width, galley.size().y + 18.0), Sense::hover());
+    ui.painter().rect_filled(rect, 8.0, theme::well_fill());
+    ui.painter().galley(
+        pos2(rect.center().x - galley.size().x / 2.0, rect.top() + 9.0),
+        galley,
+        Color32::PLACEHOLDER,
+    );
+}
+
+/// The call that makes a control, in the editor's colours.
+fn input_example(ui: &mut Ui, width: f32) {
+    let mono = |color: Color32| TextFormat {
+        font_id: FontId::monospace(11.0),
+        color,
+        ..Default::default()
+    };
+    let mut job = LayoutJob::default();
+    job.append("input.int", 0.0, mono(theme::syntax::function()));
+    job.append("(", 0.0, mono(theme::text_secondary()));
+    job.append("14", 0.0, mono(theme::syntax::number()));
+    job.append(", ", 0.0, mono(theme::text_secondary()));
+    job.append("\"Length\"", 0.0, mono(theme::syntax::string()));
     job.append(")", 0.0, mono(theme::text_secondary()));
     let galley = ui.painter().layout_job(job);
     let (rect, _) = ui.allocate_exact_size(vec2(width, galley.size().y + 18.0), Sense::hover());

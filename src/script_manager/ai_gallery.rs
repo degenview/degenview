@@ -13,6 +13,7 @@ use super::debug_tests::Rig;
 use super::*;
 use crate::service::keychain_ai_keys::AiKeyStore;
 use crate::service::llm::{ChatMessage, ChatRequest, Done, LlmError, LlmProvider, ProviderKind};
+
 use crate::ui::render_tests::{Screen, gallery_dir};
 use crate::ui::theme::AppTheme;
 
@@ -189,6 +190,13 @@ fn gallery_of_the_assistant() {
             scene.rig.manager.ai.input = "What does this script do?".to_owned();
             scene.frames(4);
             scene.save("error");
+
+            // The same, with a provider's whole paragraph.
+            scene.rig.manager.ai.notice = Some(super::ai::Notice::failure(
+                crate::service::llm::sample::server_error().report(),
+            ));
+            scene.frames(4);
+            scene.save("error-long");
             scene.rig.manager.ai.notice = None;
             scene.rig.manager.ai.input.clear();
             scene.rig.manager.ai.clear();
@@ -314,6 +322,15 @@ fn gallery_of_the_assistant() {
             if let Some(chip) = chip {
                 scene.click(chip.center());
                 scene.save("model-menu");
+                // The list failed with a provider's whole paragraph.
+                scene.rig.manager.ai.models.insert(
+                    ProviderKind::OpenAi,
+                    super::ai_models::ModelList::Failed(
+                        crate::service::llm::sample::server_error().report(),
+                    ),
+                );
+                scene.frames(3);
+                scene.save("model-menu-failed");
                 scene.frame_with(vec![egui::Event::Key {
                     key: egui::Key::Escape,
                     physical_key: None,

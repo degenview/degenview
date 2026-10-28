@@ -9,17 +9,21 @@
 use crate::service::keychain_api_keys::{
     AlpacaCredentials, AlpacaCredentialsStore, CoinMarketCapKeyStore,
 };
+use crate::service::llm::report::ErrorReport;
 use crate::ui::alert_center::Tone;
 use crate::ui::icons::{self, Icon};
-use crate::ui::settings_window::{card, section, status_badge, status_message};
+use crate::ui::settings_window::{card, footer_row, section, status_badge};
 use crate::ui::{kit, theme};
 use eframe::egui;
 use std::sync::mpsc::{Receiver, TryRecvError};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct StatusMessage {
+    /// What the status says; for a provider's failure, its headline.
     pub text: String,
     pub is_error: bool,
+    /// A provider's failure with more to say than its headline (detail, request id).
+    pub report: Option<ErrorReport>,
 }
 
 impl StatusMessage {
@@ -27,6 +31,7 @@ impl StatusMessage {
         Self {
             text: text.into(),
             is_error: false,
+            report: None,
         }
     }
 
@@ -34,6 +39,16 @@ impl StatusMessage {
         Self {
             text: text.into(),
             is_error: true,
+            report: None,
+        }
+    }
+
+    /// A provider's failure: the headline is the text, the rest is kept for a card.
+    pub(crate) fn failure(report: ErrorReport) -> Self {
+        Self {
+            text: report.headline.clone(),
+            is_error: true,
+            report: report.has_more().then_some(report),
         }
     }
 }
@@ -340,10 +355,10 @@ pub(crate) fn link(ui: &mut egui::Ui, label: &str, url: &str) {
     }
 }
 
-pub(crate) fn status(ui: &mut egui::Ui, status: &Option<StatusMessage>) {
-    if let Some(status) = status {
-        status_message(ui, &status.text, status.is_error);
-    }
+/// What a footer says about `status`. `footer_row` cuts it to one line.
+pub(crate) fn footer_status(status: &Option<StatusMessage>) -> Option<(String, bool)> {
+    let status = status.as_ref()?;
+    Some((status.text.clone(), status.is_error))
 }
 
 /// A destructive footer button: the regular button with red text.
@@ -423,9 +438,7 @@ pub fn alpaca_body(ui: &mut egui::Ui, state: &mut ApiKeysState, store: &AlpacaCr
 
 pub fn alpaca_footer(ui: &mut egui::Ui, state: &mut ApiKeysState, store: &AlpacaCredentialsStore) {
     let form = &mut state.alpaca;
-    status(ui, &form.status);
-    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        ui.spacing_mut().item_spacing.x = 10.0;
+    footer_row(ui, footer_status(&form.status), |ui| {
         if kit::sheet_button(ui, "Save", true, form.can_save()).clicked() {
             form.save(store);
         }
@@ -480,9 +493,7 @@ pub fn coinmarketcap_footer(
     store: &CoinMarketCapKeyStore,
 ) {
     let form = &mut state.cmc;
-    status(ui, &form.status);
-    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        ui.spacing_mut().item_spacing.x = 10.0;
+    footer_row(ui, footer_status(&form.status), |ui| {
         if kit::sheet_button(ui, "Save", true, form.can_save()).clicked() {
             form.save(store);
         }

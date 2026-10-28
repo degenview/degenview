@@ -173,6 +173,12 @@
   focus. Clicks are seen before egui moves the caret for them (`note_pointer`) and finished against the
   laid-out text afterwards (`resolve`); ⌘/Ctrl-click is a jump when the click is on a name with a
   definition and a new caret otherwise, ⌥-click always a new caret.
+- The suggestion list and the signature panel are `egui::Area`s on their own layer, which the editor's clip
+  rect does not reach, and they follow `caret_rect` as the text scrolls. `EditorState::caret_hidden` (the caret
+  is outside the visible text area, set in `show`) hides both, and drops the list so Enter/Tab cannot accept an
+  invisible row. Do not use `Area::constrain_to`: it pins the popup to the edge instead of hiding it.
+- A jump's flash is `Flash`: the character it landed on, or (`show_line`: profile hot lines, debugger frames)
+  the whole line as a band behind the text that holds, then fades over 700ms.
 - The right-click menu, the ⌘-hover cue and the inline rename box are `editor/navigation.rs`. An egui
   `Area` takes no focus on its first frame (it only measures), so the rename field asks for it on the
   second.
@@ -190,7 +196,10 @@
   tab past a short drawer). `drawer_tabs_tests` asserts every tab uses no more than the room at five
   sizes; set `DEGENVIEW_GALLERY_DIR` to get pictures.
 - A tab with nothing to show says so with `centered` + `pine_logs_view::intro` (picture, three steps,
-  an example; see `drawer_intro`), never a bare text placeholder.
+  an example; see `drawer_intro`), never a bare text placeholder. That covers Inputs too
+  (`drawer_intro::inputs`); `drawer_tabs_tests::inputs_fit_the_drawer` checks it at the five sizes.
+- The Problems tab's copy button copies every problem (errors first); a right-click on a row copies that
+  problem or only its message.
 - `pine_report::show` / `report_content` (chart settings) keep the compact look; the drawer lays out
   the same pieces (`metric_grid`, `equity_curve`) itself.
 

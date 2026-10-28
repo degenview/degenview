@@ -84,14 +84,13 @@ impl Decoder for AnthropicDecoder {
                 self.stopped = true;
                 Ok(Step::End)
             }
-            Some("error") => Err(LlmError::Http {
-                status: 200,
-                message: value
+            Some("error") => Err(LlmError::http(
+                200,
+                value
                     .pointer("/error/message")
                     .and_then(Value::as_str)
-                    .unwrap_or("the provider reported an error")
-                    .to_owned(),
-            }),
+                    .unwrap_or("the provider reported an error"),
+            )),
             _ => Ok(Step::Skip), // message_start, content_block_start/stop, ping, ...
         }
     }

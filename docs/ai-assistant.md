@@ -135,7 +135,20 @@ summary (counts, whether it compiles, up to three changes) with **Review changes
   one; the composer holds the box, the Ask | Edit switch and Send in one frame; the line under it
   names what a request sends (`Sent to OpenAI · Ask never edits · Bollinger Squeeze · 42 lines ·
   No problems`). What leaves the Mac comes first, because a narrow panel cuts the end of the line.
-- **Errors** are a banner with **Try again** (the message is back in the box) and a dismiss button.
+- **Errors** are a card (`ui::error_notice`, shared by the panel, the model menu and Settings) with **Try again**
+  (the message is back in the box), **Copy details** and a dismiss button. The card shows an
+  `ErrorReport` (`service::llm::report`): a headline, up to 400 characters of the provider's message, and the
+  request id. `LlmError::report()` builds it from the *structure* of the error (the variant, the HTTP status,
+  the body's `error.message`, the `x-request-id` / `request-id` response header), never by reading the message's
+  prose, so a provider can reword, translate or add errors and the screens still hold. Do not turn an `LlmError`
+  into a string before it reaches a screen: `Notice::failure`, `ModelList::Failed` and `StatusMessage::failure`
+  carry the report. The only exact-text rule is dropping a closing "(… request ID <id> …)" note when it contains
+  the very id the header gave. Layout tests run every shape in `service::llm::sample` (short, empty, one huge
+  word, many lines, non-ASCII, no id), not a pasted provider message. Copy gives the whole report. The model menu
+  is fixed at `MENU_WIDTH` whatever the error says. Settings footers (`settings_window::footer_row`, also
+  Alpaca, CoinMarketCap, Snapshots and Webhooks) lay the buttons out first and cut the status to one line with
+  an ellipsis (hover shows all), so a long error can never push Save out of the bar; the AI page also shows the
+  report as a card at the top.
 - **Retry and Edit** work on the last exchange only (`Assistant::rewind_last`): Retry sends the message
   again in the mode it was asked in; Edit puts it in the box.
 - **Model menu** (`ai_models`): the providers (one without a key opens Settings) and the current

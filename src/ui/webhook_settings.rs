@@ -10,7 +10,7 @@ use crate::model::webhook::{
 };
 use crate::model::webhook_policy;
 use crate::ui::icons::{self, Icon};
-use crate::ui::settings_window::{card, section, status_message};
+use crate::ui::settings_window::{card, footer_row, section};
 use crate::ui::webhook_editor::{
     self, WebhookEditorOutcome, WebhookEditorResult, WebhookEditorState,
 };
@@ -333,10 +333,8 @@ pub fn body(
 
 /// The bar under the page: a failure on the left, Add Webhook on the right.
 pub fn footer(ui: &mut egui::Ui, state: &mut WebhookSettingsState, input: &WebhookSettingsInput) {
-    if let Some(failure) = &state.failure {
-        status_message(ui, failure, true);
-    }
-    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+    let status = state.failure.clone().map(|failure| (failure, true));
+    footer_row(ui, status, |ui| {
         if kit::push_button(ui, Some(Icon::Plus), "Add Webhook", !input.load_failed).clicked() {
             state.editor = Some(WebhookEditorState::new_blank());
         }
