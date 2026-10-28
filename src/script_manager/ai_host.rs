@@ -19,6 +19,7 @@ use crate::pine::token::{Diagnostic, Limits};
 use crate::service::keychain_ai_keys::{self, AiKeyStore};
 use crate::service::llm::prefs::AiPrefs;
 use crate::service::llm::{ChatRequest, HttpProvider, ProviderKind};
+use crate::ui::theme;
 use eframe::egui;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -289,7 +290,10 @@ impl ScriptManager {
         let mode = self.ai.mode;
         // The assistant works on a copy of what is in the editor now; the editor itself is not
         // touched until the user applies a proposal.
-        let tools = ToolBox::new(mode, &source, diagnostics_of);
+        let feed = self
+            .preview
+            .debug_feed(super::model::now_ms(), theme::is_light());
+        let tools = ToolBox::new(mode, &source, diagnostics_of).with_bars(feed);
         let request = ChatRequest {
             model: self.ai.prefs.model(kind),
             system: ai_prompt::agent_system_prompt(mode),

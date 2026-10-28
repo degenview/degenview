@@ -139,6 +139,15 @@ script does with the candles afterwards is timed like anything else.
 * The editor keeps its syntax colouring, selection, find highlights and diagnostics: the wash is
   painted under the text with the current-line band, and the column is a separate rectangle.
 
+## The AI assistant's profile
+
+The Script Manager's assistant can call `profile` on its own draft (`script_manager::ai_profile`, see
+[AI assistant](ai-assistant.md)). It uses the same engine, `ProfileSession`, on a frozen copy of the
+preview chart's bars, and turns the report into text with `ProfileMarks`. It is a session of its own: it
+does not use the editor's profiler state, so it never draws a column or fills the Profile tab, and a
+profile the user ran stays as it was. A profile of the assistant's draft is of text that is not in the
+editor, so showing it there would mislabel it.
+
 ## Scope and what a profile belongs to
 
 A profile is of the script **open in the Script Manager** on the **preview chart's** bars (up to the

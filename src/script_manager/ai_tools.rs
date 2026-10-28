@@ -9,11 +9,14 @@
 //! match for text it copied would never succeed on a CRLF file; the file's own endings come back when
 //! the proposal is built (`ai::match_line_endings`).
 
+use super::ai_profile::ProfileTool;
 use super::ai_prompt::Mode;
+use super::debug::DebugFeed;
 use super::drawer;
 use crate::pine::token::{Diagnostic, DiagnosticSeverity};
 use crate::service::llm::{ToolCall, ToolSpec};
 use serde_json::{Value, json};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
 /// What a tool's answer may hold. The model gets a cut one with a note saying so.
@@ -71,7 +74,7 @@ impl Outcome {
         }
     }
 
-    fn error(message: impl Into<String>) -> Self {
+    pub(super) fn error(message: impl Into<String>) -> Self {
         let message = message.into();
         Self {
             summary: message.clone(),
@@ -87,13 +90,17 @@ struct Tool {
     writes: bool,
 }
 
-const TOOLS: [Tool; 4] = [
+const TOOLS: [Tool; 5] = [
     Tool {
         name: "read_script",
         writes: false,
     },
     Tool {
         name: "compile",
+        writes: false,
+    },
+    Tool {
+        name: "profile",
         writes: false,
     },
     Tool {
@@ -116,6 +123,7 @@ pub struct ToolBox {
     mode: Mode,
     draft: Draft,
     compile: Compiler,
+    profile: Arc<ProfileTool>,
 }
 
 impl ToolBox {
@@ -124,7 +132,15 @@ impl ToolBox {
             mode,
             draft: Draft::new(source),
             compile,
+            profile: Arc::new(ProfileTool::new(None)),
         }
+    }
+
+    /// Gives `profile` the preview chart's bars to run the draft on. Without them it answers that
+    /// there is nothing to run on.
+    pub fn with_bars(mut self, feed: Option<DebugFeed>) -> Self {
+        self.profile = Arc::new(ProfileTool::new(feed));
+        self
     }
 
     pub fn draft(&self) -> &Draft {
@@ -149,6 +165,7 @@ impl ToolBox {
                 _ => "Reading the script".to_owned(),
             },
             "compile" => "Compiling the draft".to_owned(),
+            "profile" => "Profiling the draft".to_owned(),
             "edit_script" => "Editing the script".to_owned(),
             "write_script" => "Rewriting the script".to_owned(),
             other => format!("Calling {other}"),
@@ -157,7 +174,7 @@ impl ToolBox {
 
     /// Runs one call. A call the model got wrong is an error result it can read and correct, never
     /// a failure of the request.
-    pub fn run(&self, call: &ToolCall) -> Outcome {
+    pub fn run(&self, call: &ToolCall, cancel: &AtomicBool) -> Outcome {
         if let Some(reason) = &call.malformed {
             return Outcome::error(format!(
                 "Could not read the arguments of `{}`. {reason} Call it again with a JSON object.",
@@ -186,6 +203,7 @@ impl ToolBox {
         match tool.name {
             "read_script" => self.read(&call.input),
             "compile" => self.compile_draft(),
+            "profile" => self.profile_draft(cancel),
             "edit_script" => self.edit(&call.input),
             _ => self.write(&call.input),
         }
@@ -254,6 +272,26 @@ impl ToolBox {
             out.push_str(&format!("\n\u{2026} and {more} more."));
         }
         Outcome::ok(out, format!("Compiled \u{b7} {summary}"))
+    }
+
+    /// Profiles the draft, which has to compile first: a script with errors has nothing to run.
+    fn profile_draft(&self, cancel: &AtomicBool) -> Outcome {
+        let text = self.draft.text();
+        let diagnostics = (self.compile)(&text);
+        if diagnostics
+            .iter()
+            .any(|d| d.severity == DiagnosticSeverity::Error)
+        {
+            let all = drawer::copy_text(&diagnostics);
+            let shown: Vec<&str> = all.lines().take(MAX_PROBLEMS_AFTER_EDIT).collect();
+            return Outcome::error(format!(
+                "The draft has errors, so it cannot be profiled. Fix them first:\n{}",
+                shown.join("\n")
+            ));
+        }
+        let mut outcome = self.profile.run(&text, cancel);
+        outcome.content = cap(outcome.content);
+        outcome
     }
 
     fn edit(&self, input: &Value) -> Outcome {
@@ -392,6 +430,13 @@ arguments it reads from line 1 (at most 400 lines at a time).",
             "Compiles the draft and lists its errors and warnings. Takes no arguments.",
             json!({"type": "object", "properties": {}}),
         ),
+        "profile" => (
+            "Runs the draft on the preview chart's bars (at most 500) and says where the time goes: \
+the hottest lines with their share, time and number of executions, the hottest block and function. \
+Use it to find what is slow before changing anything, and again after a change to check it. The \
+draft must compile. Takes no arguments.",
+            json!({"type": "object", "properties": {}}),
+        ),
         "edit_script" => (
             "Replaces one piece of the draft. `old` must match the draft exactly (spaces, indentation \
 and all) and exactly once, so include enough surrounding lines to be unique. Prefer several small \
@@ -440,6 +485,12 @@ mod tests {
 
     const SCRIPT: &str = "//@version=6\nindicator(\"x\")\nlen = 14\nplot(close)\nplot(open)\n";
 
+    impl ToolBox {
+        fn run_for_test(&self, call: &ToolCall) -> Outcome {
+            self.run(call, &AtomicBool::new(false))
+        }
+    }
+
     fn call(name: &str, input: Value) -> ToolCall {
         ToolCall {
             id: "t".to_owned(),
@@ -462,10 +513,16 @@ mod tests {
                 .map(|spec| spec.name)
                 .collect::<Vec<_>>()
         };
-        assert_eq!(names(Mode::Ask), ["read_script", "compile"]);
+        assert_eq!(names(Mode::Ask), ["read_script", "compile", "profile"]);
         assert_eq!(
             names(Mode::Edit),
-            ["read_script", "compile", "edit_script", "write_script"]
+            [
+                "read_script",
+                "compile",
+                "profile",
+                "edit_script",
+                "write_script"
+            ]
         );
     }
 
@@ -480,13 +537,13 @@ mod tests {
     #[test]
     fn ask_cannot_write_even_if_the_model_calls_a_writing_tool() {
         let tools = ToolBox::new(Mode::Ask, SCRIPT, clean);
-        let outcome = tools.run(&call(
+        let outcome = tools.run_for_test(&call(
             "edit_script",
             json!({"old": "len = 14", "new": "len = 20"}),
         ));
         assert!(outcome.is_error);
         assert!(outcome.content.contains("cannot change the script"));
-        let outcome = tools.run(&call("write_script", json!({"text": "x"})));
+        let outcome = tools.run_for_test(&call("write_script", json!({"text": "x"})));
         assert!(outcome.is_error);
         assert_eq!(tools.draft().text(), SCRIPT);
     }
@@ -494,7 +551,7 @@ mod tests {
     #[test]
     fn reading_numbers_the_lines_and_clamps_the_range() {
         let tools = edit_box();
-        let all = tools.run(&call("read_script", json!({})));
+        let all = tools.run_for_test(&call("read_script", json!({})));
         assert!(!all.is_error);
         assert!(
             all.content
@@ -502,7 +559,7 @@ mod tests {
         );
         assert!(all.content.contains("3: len = 14\n"));
         assert_eq!(all.summary, "Read the script \u{b7} 5 lines");
-        let part = tools.run(&call("read_script", json!({"start": 3, "end": 99})));
+        let part = tools.run_for_test(&call("read_script", json!({"start": 3, "end": 99})));
         assert!(
             part.content
                 .contains("3: len = 14\n4: plot(close)\n5: plot(open)")
@@ -510,19 +567,19 @@ mod tests {
         assert!(!part.content.contains("2: indicator"));
         assert_eq!(part.summary, "Read lines 3\u{2013}5");
         // Numbers sent as text are read as numbers.
-        let text = tools.run(&call("read_script", json!({"start": "4", "end": "4"})));
+        let text = tools.run_for_test(&call("read_script", json!({"start": "4", "end": "4"})));
         assert!(text.content.contains("4: plot(close)"));
     }
 
     #[test]
     fn reading_outside_the_script_is_an_error_the_model_can_read() {
         let tools = edit_box();
-        let past = tools.run(&call("read_script", json!({"start": 40})));
+        let past = tools.run_for_test(&call("read_script", json!({"start": 40})));
         assert!(past.is_error);
         assert!(past.content.contains("5 lines"));
-        let backwards = tools.run(&call("read_script", json!({"start": 4, "end": 2})));
+        let backwards = tools.run_for_test(&call("read_script", json!({"start": 4, "end": 2})));
         assert!(backwards.is_error);
-        let zero = tools.run(&call("read_script", json!({"start": 0})));
+        let zero = tools.run_for_test(&call("read_script", json!({"start": 0})));
         assert!(zero.is_error);
     }
 
@@ -530,7 +587,7 @@ mod tests {
     fn a_long_script_is_read_in_pages() {
         let long: String = (1..=1000).map(|n| format!("x{n} = {n}\n")).collect();
         let tools = ToolBox::new(Mode::Edit, &long, clean);
-        let page = tools.run(&call("read_script", json!({})));
+        let page = tools.run_for_test(&call("read_script", json!({})));
         assert!(page.content.contains("400: x400 = 400"));
         assert!(!page.content.contains("401: "));
         assert!(page.content.contains("`start` 401"));
@@ -539,7 +596,7 @@ mod tests {
     #[test]
     fn an_edit_replaces_one_exact_match_and_reports_where() {
         let tools = edit_box();
-        let outcome = tools.run(&call(
+        let outcome = tools.run_for_test(&call(
             "edit_script",
             json!({"old": "len = 14", "new": "len = 20"}),
         ));
@@ -555,7 +612,7 @@ mod tests {
     #[test]
     fn an_edit_spanning_lines_reports_the_new_range() {
         let tools = edit_box();
-        let outcome = tools.run(&call(
+        let outcome = tools.run_for_test(&call(
             "edit_script",
             json!({"old": "plot(close)\n", "new": "a = 1\nb = 2\nplot(close)\n"}),
         ));
@@ -568,7 +625,7 @@ mod tests {
     #[test]
     fn an_edit_that_matches_nothing_says_why_and_changes_nothing() {
         let tools = edit_box();
-        let missing = tools.run(&call(
+        let missing = tools.run_for_test(&call(
             "edit_script",
             json!({"old": "len = 99", "new": "len = 1"}),
         ));
@@ -576,7 +633,7 @@ mod tests {
         assert!(missing.content.contains("not found"));
         assert!(missing.content.contains("line numbers"));
         // Present, but not as written.
-        let spaced = tools.run(&call(
+        let spaced = tools.run_for_test(&call(
             "edit_script",
             json!({"old": "  len = 14  ", "new": "len = 1"}),
         ));
@@ -588,7 +645,7 @@ mod tests {
     #[test]
     fn an_edit_that_matches_twice_lists_the_places() {
         let tools = edit_box();
-        let outcome = tools.run(&call(
+        let outcome = tools.run_for_test(&call(
             "edit_script",
             json!({"old": "plot(", "new": "plot( "}),
         ));
@@ -602,22 +659,22 @@ mod tests {
         let tools = edit_box();
         assert!(
             tools
-                .run(&call("edit_script", json!({"old": "", "new": "x"})))
+                .run_for_test(&call("edit_script", json!({"old": "", "new": "x"})))
                 .is_error
         );
         assert!(
             tools
-                .run(&call("edit_script", json!({"old": "len", "new": "len"})))
+                .run_for_test(&call("edit_script", json!({"old": "len", "new": "len"})))
                 .is_error
         );
         assert!(
             tools
-                .run(&call("edit_script", json!({"old": "len"})))
+                .run_for_test(&call("edit_script", json!({"old": "len"})))
                 .is_error
         );
         assert!(
             tools
-                .run(&call("edit_script", json!({"old": 3, "new": "x"})))
+                .run_for_test(&call("edit_script", json!({"old": 3, "new": "x"})))
                 .is_error
         );
         assert_eq!(tools.draft().text(), SCRIPT);
@@ -628,13 +685,13 @@ mod tests {
         let crlf = SCRIPT.replace('\n', "\r\n");
         let tools = ToolBox::new(Mode::Edit, &crlf, clean);
         assert_eq!(tools.draft().text(), SCRIPT);
-        let outcome = tools.run(&call(
+        let outcome = tools.run_for_test(&call(
             "edit_script",
             json!({"old": "len = 14\nplot(close)", "new": "len = 9\nplot(close)"}),
         ));
         assert!(!outcome.is_error, "{}", outcome.content);
         // What the model writes with CRLF in it is normalised too.
-        let again = tools.run(&call(
+        let again = tools.run_for_test(&call(
             "edit_script",
             json!({"old": "len = 9\r\nplot(close)", "new": "len = 5\r\nplot(close)"}),
         ));
@@ -646,7 +703,7 @@ mod tests {
     #[test]
     fn a_change_reports_whether_the_draft_still_compiles() {
         let tools = ToolBox::new(Mode::Edit, SCRIPT, failing);
-        let outcome = tools.run(&call(
+        let outcome = tools.run_for_test(&call(
             "edit_script",
             json!({"old": "len = 14", "new": "len = oops"}),
         ));
@@ -659,7 +716,7 @@ mod tests {
     #[test]
     fn writing_replaces_the_whole_draft() {
         let tools = edit_box();
-        let outcome = tools.run(&call(
+        let outcome = tools.run_for_test(&call(
             "write_script",
             json!({"text": "//@version=6\r\nindicator(\"y\")\r\n"}),
         ));
@@ -671,20 +728,24 @@ mod tests {
         assert_eq!(tools.draft().text(), "//@version=6\nindicator(\"y\")\n");
         assert!(
             tools
-                .run(&call("write_script", json!({"text": "  \n"})))
+                .run_for_test(&call("write_script", json!({"text": "  \n"})))
                 .is_error
         );
-        assert!(tools.run(&call("write_script", json!({}))).is_error);
+        assert!(
+            tools
+                .run_for_test(&call("write_script", json!({})))
+                .is_error
+        );
     }
 
     #[test]
     fn compile_lists_the_problems_and_says_so_when_there_are_none() {
         let tools = ToolBox::new(Mode::Ask, "plot(oops)", failing);
-        let outcome = tools.run(&call("compile", json!({})));
+        let outcome = tools.run_for_test(&call("compile", json!({})));
         assert!(!outcome.is_error);
         assert!(outcome.content.starts_with("1 error"));
         assert!(outcome.content.contains("Undeclared identifier"));
-        let ok = ToolBox::new(Mode::Ask, SCRIPT, clean).run(&call("compile", json!({})));
+        let ok = ToolBox::new(Mode::Ask, SCRIPT, clean).run_for_test(&call("compile", json!({})));
         assert!(ok.content.starts_with("No problems"));
         assert_eq!(ok.summary, "Compiled \u{b7} No problems");
     }
@@ -694,15 +755,15 @@ mod tests {
         let tools = edit_box();
         let mut bad = call("read_script", json!({}));
         bad.malformed = Some("The arguments were not valid JSON: eof.".to_owned());
-        let outcome = tools.run(&bad);
+        let outcome = tools.run_for_test(&bad);
         assert!(outcome.is_error);
         assert!(outcome.content.contains("not valid JSON"));
-        let unknown = tools.run(&call("run_the_markets", json!({})));
+        let unknown = tools.run_for_test(&call("run_the_markets", json!({})));
         assert!(unknown.is_error);
         assert!(
             unknown
                 .content
-                .contains("read_script, compile, edit_script, write_script")
+                .contains("read_script, compile, profile, edit_script, write_script")
         );
     }
 

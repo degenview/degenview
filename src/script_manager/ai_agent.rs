@@ -150,7 +150,7 @@ pub fn run(
                 content,
                 is_error,
                 summary,
-            } = setup.tools.run(call);
+            } = setup.tools.run(call, cancel);
             emit(Progress::ToolDone {
                 id: call.id.clone(),
                 summary,

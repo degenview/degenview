@@ -66,7 +66,8 @@ fn ask_in(rig: &mut Rig, mode: Mode, reply: Result<Vec<String>, LlmError>) {
 fn ask_with_tools(rig: &mut Rig, mode: Mode, turns: Vec<Result<Scripted, LlmError>>) {
     assert!(rig.manager.ai.set_mode(mode));
     let base = source(rig);
-    let tools = ToolBox::new(mode, &base, diagnostics_of);
+    let feed = rig.manager.preview.debug_feed(model::now_ms(), false);
+    let tools = ToolBox::new(mode, &base, diagnostics_of).with_bars(feed);
     let request = ChatRequest {
         tools: tools.specs(),
         ..request()
@@ -941,4 +942,35 @@ fn the_trail_draws_while_running_after_it_and_at_a_small_size() {
     for _ in 0..3 {
         rig.frame();
     }
+}
+
+#[test]
+fn the_assistant_can_profile_its_draft_on_the_preview_bars_in_ask_mode_too() {
+    let mut rig = Rig::new("ai-agent-profile");
+    open_panel(&mut rig);
+    if rig
+        .manager
+        .preview
+        .debug_feed(model::now_ms(), false)
+        .is_none()
+    {
+        // The preview has not loaded bars in this rig; the tool says so instead (covered in ai_profile).
+        return;
+    }
+    let before = source(&rig);
+    let turns = vec![
+        Ok(Scripted::call("p1", "profile", serde_json::json!({}))),
+        Ok(Scripted::say("Line 5 takes most of the time.")),
+    ];
+    ask_with_tools(&mut rig, Mode::Ask, turns);
+    let ai::Entry::Tool(step) = &rig.manager.ai.steps[0] else {
+        panic!("a tool step");
+    };
+    let outcome = step.outcome.as_ref().expect("it ran");
+    assert!(outcome.ok, "{}", outcome.detail);
+    assert!(outcome.summary.starts_with("Profiled the draft"));
+    assert!(outcome.detail.contains("Hottest lines"));
+    assert_eq!(source(&rig), before);
+    assert!(rig.manager.ai.proposal.is_none());
+    rig.frame();
 }
