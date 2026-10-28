@@ -2,7 +2,7 @@
 //! the box to ask for the next one. A view only: it reads the [`Assistant`] and reports what was
 //! pressed; `ai_host` acts on it.
 
-use super::ai::{Assistant, Notice, Proposal};
+use super::ai::{Assistant, Entry, Notice, Proposal, ToolStep};
 use super::ai_models::{self, ModelList};
 use super::ai_prompt::{self, Mode, Turn};
 use super::diff_view;
@@ -364,6 +364,9 @@ fn transcript(
                     }
                     Turn::Assistant { text, mode } => {
                         let id = Id::new(("ai-turn", index));
+                        if index + 1 == count && !busy {
+                            steps_view(ui, id, &ai.steps, false);
+                        }
                         assistant_message(ui, id, text, *mode, true);
                         if index + 1 == count && !busy {
                             if reply_actions(ui, id, text) {
@@ -380,6 +383,7 @@ fn transcript(
                 user_message(ui, request, false);
             }
             if ai.is_running() {
+                steps_view(ui, Id::new("ai-streaming"), &ai.steps, true);
                 assistant_message(ui, Id::new("ai-streaming"), &ai.streaming, ai.mode, false);
             }
             if let Some(notice) = &ai.notice {
@@ -549,6 +553,101 @@ fn reply_actions(ui: &mut Ui, id: Id, text: &str) -> bool {
     });
     again
 }
+/// What the assistant did before it answered: the tools it called, each a line that opens to what
+/// the model was told. `running` keeps a call that has not come back spinning.
+fn steps_view(ui: &mut Ui, id: Id, steps: &[Entry], running: bool) {
+    if steps.is_empty() {
+        return;
+    }
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = 4.0;
+        for (index, entry) in steps.iter().enumerate() {
+            match entry {
+                Entry::Said(text) => {
+                    ui.add(
+                        egui::Label::new(kit::text(
+                            text.trim(),
+                            kit::size::SUBHEADLINE,
+                            kit::REGULAR,
+                            theme::text_tertiary(),
+                        ))
+                        .selectable(true),
+                    );
+                }
+                Entry::Tool(step) => tool_step(ui, id.with(("step", index)), step, running),
+            }
+        }
+    });
+}
+
+fn tool_step(ui: &mut Ui, id: Id, step: &ToolStep, running: bool) {
+    let open_id = id.with("open");
+    let open: bool = ui.data(|data| data.get_temp(open_id)).unwrap_or(false);
+    let pending = step.outcome.is_none();
+    let line = ui
+        .horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 6.0;
+            match &step.outcome {
+                None if running => {
+                    ui.add(
+                        egui::Spinner::new()
+                            .size(12.0)
+                            .color(theme::text_secondary()),
+                    );
+                }
+                None => {
+                    icons::inline(ui, Icon::Xmark, 12.0, theme::text_tertiary());
+                }
+                Some(outcome) if outcome.ok => {
+                    icons::inline(ui, Icon::Check, 12.0, kit::GREEN);
+                }
+                Some(_) => {
+                    icons::inline(ui, Icon::Xmark, 12.0, kit::RED);
+                }
+            }
+            let text = match &step.outcome {
+                Some(outcome) => outcome.summary.as_str(),
+                None => step.label.as_str(),
+            };
+            ui.add(
+                egui::Label::new(kit::text(
+                    text,
+                    kit::size::SUBHEADLINE,
+                    kit::REGULAR,
+                    theme::text_secondary(),
+                ))
+                .truncate()
+                .sense(Sense::click()),
+            )
+        })
+        .inner;
+    if !pending
+        && line
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .clicked()
+    {
+        ui.data_mut(|data| data.insert_temp(open_id, !open));
+    }
+    if open && let Some(outcome) = &step.outcome {
+        egui::Frame::new()
+            .fill(theme::with_alpha(theme::text_primary(), 0.04))
+            .corner_radius(6.0)
+            .inner_margin(Margin::symmetric(8, 6))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new(outcome.detail.trim_end())
+                            .monospace()
+                            .size(11.0)
+                            .color(theme::text_secondary()),
+                    )
+                    .selectable(true),
+                );
+            });
+    }
+}
+
 fn thinking(ui: &mut Ui) {
     ui.horizontal(|ui| {
         ui.add(
@@ -694,6 +793,14 @@ fn proposal_card(ui: &mut Ui, proposal: &Proposal, actions: &mut Vec<PanelAction
                 let (text, color) = compile_summary(proposal);
                 ui.label(kit::text(text, kit::size::SUBHEADLINE, kit::MEDIUM, color));
             });
+            if let Some(note) = &proposal.note {
+                ui.label(kit::text(
+                    note,
+                    kit::size::SUBHEADLINE,
+                    kit::MEDIUM,
+                    kit::ORANGE,
+                ));
+            }
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
                 let noun = if hunks.len() == 1 {

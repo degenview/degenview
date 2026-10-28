@@ -7,11 +7,14 @@ use std::time::Duration;
 
 use eframe::egui;
 
+use super::ai_agent::AgentSetup;
 use super::ai_panel::PanelAction;
 use super::ai_prompt::Mode;
+use super::ai_tools::ToolBox;
 use super::debug_tests::Rig;
 use super::*;
 use crate::service::keychain_ai_keys::AiKeyStore;
+use crate::service::llm::mock::{MockProvider, Scripted};
 use crate::service::llm::{ChatMessage, ChatRequest, Done, LlmError, LlmProvider, ProviderKind};
 
 use crate::ui::render_tests::{Screen, gallery_dir};
@@ -234,7 +237,79 @@ fn gallery_of_the_assistant() {
             );
             scene.frames(12);
             scene.save("writing");
-            scene.rig.manager.ai.stop();
+            scene.rig.manager.ai.stop(&|_| Vec::new());
+
+            // The assistant with tools: what it did on the way, and the change it made.
+            let tools_base = scene
+                .rig
+                .manager
+                .open
+                .as_ref()
+                .unwrap()
+                .editor
+                .source
+                .clone();
+            let edit = |id: &str, old: &str, new: &str| {
+                Scripted::call(
+                    id,
+                    "edit_script",
+                    serde_json::json!({"old": old, "new": new}),
+                )
+            };
+            for (label, turns) in [
+                (
+                    "tools",
+                    vec![
+                        Ok(Scripted::say("Let me read the function first.").then_call(
+                            "t1",
+                            "read_script",
+                            serde_json::json!({"start": 1, "end": 12}),
+                        )),
+                        Ok(edit("t2", "offset = 9", "offset = 20")),
+                        Ok(edit("t3", "doubled + 10", "doubled + 20")),
+                        Ok(Scripted::say("The offset is now 20.")),
+                    ],
+                ),
+                (
+                    "tools-incomplete",
+                    vec![
+                        Ok(edit("t1", "doubled + 10", "doubled + 20")),
+                        Err(LlmError::rate_limited(
+                            "Too many requests. Try again in a minute.",
+                        )),
+                    ],
+                ),
+            ] {
+                let tools = ToolBox::new(Mode::Edit, &tools_base, super::ai_host::diagnostics_of);
+                let request = ChatRequest {
+                    model: "m".into(),
+                    system: String::new(),
+                    messages: vec![ChatMessage::user("x")],
+                    max_tokens: 10,
+                    tools: tools.specs(),
+                };
+                scene.rig.manager.ai.start_agent(
+                    Box::new(MockProvider::turns(turns)),
+                    request,
+                    Some(AgentSetup {
+                        tools,
+                        fallback_system: String::new(),
+                    }),
+                    "Make the offset 20".to_owned(),
+                    tools_base.clone(),
+                    Mode::Edit,
+                    Arc::new(|| {}),
+                );
+                for _ in 0..200 {
+                    scene.frames(1);
+                    if !scene.rig.manager.ai.is_running() {
+                        break;
+                    }
+                }
+                scene.frames(3);
+                scene.save(label);
+            }
+            scene.rig.manager.ai.clear();
 
             // A proposal with several kinds of change over a longer script.
             let rsi = super::demo::BUNDLED
