@@ -54,6 +54,60 @@ pub fn branded(builder: ViewportBuilder) -> ViewportBuilder {
     }
 }
 
+/// Whether tab windows round their own corners (`window_corners`): on Linux, where they have no
+/// native frame to do it, and the system composites, so a transparent window can show what is behind
+/// its corners. A Wayland session always composites; on X11 a compositor must own the screen's
+/// `_NET_WM_CM_S<n>` selection, or the corners would come out black. Decided once, at startup: a
+/// compositor started later is not noticed. macOS rounds its windows itself, and Windows is not
+/// done yet.
+pub fn rounded_corners() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        static ROUNDED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *ROUNDED.get_or_init(|| {
+            std::env::var_os("WAYLAND_DISPLAY").is_some_and(|display| !display.is_empty())
+                || x11_compositing()
+        })
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        false
+    }
+}
+
+/// Whether the X server has a compositing manager, which says so by owning `_NET_WM_CM_S<screen>`
+/// (EWMH). Any trouble reaching the server counts as no.
+#[cfg(target_os = "linux")]
+fn x11_compositing() -> bool {
+    use x11rb::connection::Connection;
+    use x11rb::protocol::xproto::ConnectionExt;
+    let Ok((connection, screen)) = x11rb::connect(None) else {
+        return false;
+    };
+    let owner = connection
+        .intern_atom(false, format!("_NET_WM_CM_S{screen}").as_bytes())
+        .ok()
+        .and_then(|cookie| cookie.reply().ok())
+        .and_then(|atom| connection.get_selection_owner(atom.atom).ok())
+        .and_then(|cookie| cookie.reply().ok());
+    owner.is_some_and(|reply| reply.owner != x11rb::NONE)
+}
+
+/// Rounds the corners of the tab window being drawn, when it should be: last in the frame, over
+/// everything, and not while maximized or fullscreen.
+pub fn paint_rounded_corners(ctx: &egui::Context) {
+    let (maximized, fullscreen) = ctx.input(|input| {
+        let viewport = input.viewport();
+        (
+            viewport.maximized == Some(true),
+            viewport.fullscreen == Some(true),
+        )
+    });
+    if super::window_corners::corners_wanted(rounded_corners(), maximized, fullscreen) {
+        super::window_corners::erase(ctx, super::window_corners::WINDOW_CORNER_RADIUS);
+    }
+}
+
 /// Turns a tab window's viewport into one without a native title bar.
 pub fn apply(builder: ViewportBuilder) -> ViewportBuilder {
     if cfg!(target_os = "macos") {
@@ -63,7 +117,10 @@ pub fn apply(builder: ViewportBuilder) -> ViewportBuilder {
             .with_titlebar_shown(false)
             .with_title_shown(false)
     } else {
-        branded(builder).with_decorations(false)
+        branded(builder)
+            .with_decorations(false)
+            // See through to the desktop at the rounded corners (`window_corners`).
+            .with_transparent(rounded_corners())
     }
 }
 

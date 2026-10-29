@@ -397,6 +397,7 @@ fn show_window(
         return;
     };
     crate::ui::window_chrome::handle_resize_edges(&ctx);
+    crate::ui::window_chrome::paint_rounded_corners(&ctx);
     native_bridge::center_traffic_lights(tab_bar::HEIGHT);
     let focused = ui.input(|input| input.viewport().focused == Some(true));
     if focused {
@@ -690,6 +691,11 @@ impl DegenViewApp {
         );
         crate::service::cache_control::launch(&creation.egui_ctx);
         native_bridge::install(&creation.egui_ctx);
+        if crate::ui::window_chrome::rounded_corners()
+            && let Some(render_state) = creation.wgpu_render_state.as_ref()
+        {
+            crate::ui::window_corners::install(render_state);
+        }
 
         let watchlist = Arc::new(Mutex::new(WatchlistStore::new(store.clone())));
         let quote_book = WatchlistQuoteBook::default();
@@ -2629,6 +2635,15 @@ impl DegenViewApp {
 }
 
 impl eframe::App for DegenViewApp {
+    /// Clear where windows round their corners (`ui::window_corners`); otherwise eframe's default.
+    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+        if crate::ui::window_chrome::rounded_corners() {
+            [0.0; 4]
+        } else {
+            egui::Color32::from_rgba_unmultiplied(12, 12, 12, 180).to_normalized_gamma_f32()
+        }
+    }
+
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         crate::ui::theme::sync(ctx);
         self.process_commands(ctx);
