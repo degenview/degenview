@@ -18,8 +18,8 @@
 use crate::model::Kline;
 use crate::model::chart_look::drawn_extremes;
 use crate::pine::outputs::{
-    DISPLAY_PANE, LabelOutput, MarkerKind, MarkerLocation, MarkerShape, PlotOutput, PlotStyle,
-    TableOutput, YLocation,
+    DISPLAY_PANE, LabelOutput, LabelStyle, MarkerKind, MarkerLocation, MarkerShape, PlotOutput,
+    PlotStyle, TableOutput, YLocation,
 };
 use crate::pine::program::VisualOutput;
 use crate::pine::strategy::StrategyReport;
@@ -941,16 +941,13 @@ impl PineLayer<'_> {
                     // Drawn, not typeset: "▲" and "▼" are in no font bundled with egui, so
                     // anywhere without the macOS symbol fonts they came out as tofu squares.
                     None => {
-                        painter.add(Shape::convex_polygon(
-                            geometry::triangle_points(
-                                centre,
-                                marker_radius(marker.size),
-                                marker.style.points_down(),
-                            )
-                            .to_vec(),
+                        draw_marker_shape(
+                            painter,
+                            marker.style,
+                            centre,
+                            marker_radius(marker.size),
                             color,
-                            Stroke::NONE,
-                        ));
+                        );
                     }
                 }
             }
@@ -1086,6 +1083,63 @@ fn draw_arrow(painter: &Painter, tip: Pos2, up: bool, height: f32, color: Color3
     ));
     if let Some(shaft) = arrow.shaft {
         painter.add(Shape::rect_filled(shaft, 0.0, color));
+    }
+}
+
+/// A `plotshape` marker (`shape.*` other than the circle) centred on `centre`, `radius` being the
+/// marker size's half-width. The proportions are inferred, not measured against TradingView: a
+/// square and a diamond about as heavy as the triangle, a block arrow whose tail
+/// lengthens with the size, and a label that is a small bubble with its pointer, as `text` is not drawn.
+fn draw_marker_shape(
+    painter: &Painter,
+    style: MarkerShape,
+    centre: Pos2,
+    radius: f32,
+    color: Color32,
+) {
+    let glyph_rect = Rect::from_center_size(centre, Vec2::splat(2.0 * radius));
+    match style {
+        MarkerShape::Circle => {
+            painter.circle_filled(centre, radius, color);
+        }
+        MarkerShape::TriangleUp | MarkerShape::TriangleDown => {
+            painter.add(Shape::convex_polygon(
+                geometry::triangle_points(centre, radius, style.points_down()).to_vec(),
+                color,
+                Stroke::NONE,
+            ));
+        }
+        MarkerShape::Square => {
+            painter.rect_filled(
+                Rect::from_center_size(centre, Vec2::splat(1.6 * radius)),
+                2.0,
+                color,
+            );
+        }
+        MarkerShape::Diamond => draw_diamond(painter, centre, 1.1 * radius, color),
+        MarkerShape::ArrowUp | MarkerShape::ArrowDown => {
+            let up = style == MarkerShape::ArrowUp;
+            // The head and shaft are one size (as for `plotarrow`), so only the tail grows.
+            let height = 2.0 * radius + 6.0;
+            let tip = Pos2::new(centre.x, centre.y + if up { -height } else { height } / 2.0);
+            draw_arrow(painter, tip, up, height, color);
+        }
+        MarkerShape::Cross => draw_glyph(painter, LabelGlyph::Cross, glyph_rect, color),
+        MarkerShape::Xcross => draw_glyph(painter, LabelGlyph::Xcross, glyph_rect, color),
+        MarkerShape::Flag => draw_glyph(painter, LabelGlyph::Flag, glyph_rect, color),
+        MarkerShape::LabelUp | MarkerShape::LabelDown => {
+            let down = style.points_down();
+            let (size, pointer) = (Vec2::new(2.0 * radius, 1.6 * radius), 0.5 * radius);
+            // The bubble and its pointer together are centred on the marker's point.
+            let half = (size.y + pointer) / 2.0;
+            let anchor = Pos2::new(centre.x, centre.y + if down { half } else { -half });
+            let label = if down {
+                LabelStyle::LabelDown
+            } else {
+                LabelStyle::LabelUp
+            };
+            draw_label_shape(painter, &label_layout(label, anchor, size, pointer), color);
+        }
     }
 }
 
@@ -1650,6 +1704,143 @@ mod tests {
                 .all(|shape| matches!(shape, Shape::Path(path) if path.points.len() == 3)),
             "{shapes:?}"
         );
+    }
+
+    /// What `draw_markers` paints for one marker of `style` on two bars, with no text among it.
+    fn marker_shapes(style: MarkerShape) -> Vec<Shape> {
+        let candles = candles(3);
+        let (x, y) = (x_of as fn(i64) -> f32, y_of as fn(f64) -> f32);
+        let mut output = VisualOutput {
+            bar_count: 3,
+            ..empty()
+        };
+        output.markers.push(MarkerOutput {
+            id: 0,
+            kind: MarkerKind::Shape,
+            title: None,
+            values: vec![true, false, true],
+            character: None,
+            color: 0xFF00_00FF,
+            location: MarkerLocation::BelowBar,
+            style,
+            prices: Vec::new(),
+            colors: Vec::new(),
+            size: Size::Small,
+            display: DISPLAY_PANE,
+            force_overlay: false,
+        });
+        let layer = layer(&output, &candles, &x, &y);
+        let ctx = egui::Context::default();
+        let mut frame = ctx.run_ui(egui::RawInput::default(), |ui| {
+            layer.draw_markers(ui.painter());
+        });
+        frame.textures_delta.clear();
+        frame
+            .shapes
+            .into_iter()
+            .map(|clipped| clipped.shape)
+            .collect()
+    }
+
+    #[test]
+    fn every_marker_shape_is_drawn_as_itself_and_none_as_text() {
+        use MarkerShape::*;
+        // Shapes painted for each of the two bars.
+        for (style, per_bar) in [
+            (Xcross, 2),
+            (Cross, 2),
+            (Circle, 1),
+            (TriangleUp, 1),
+            (TriangleDown, 1),
+            (Flag, 1),
+            (ArrowUp, 2),
+            (ArrowDown, 2),
+            (LabelUp, 2),
+            (LabelDown, 2),
+            (Square, 1),
+            (Diamond, 1),
+        ] {
+            let shapes = marker_shapes(style);
+            assert_eq!(shapes.len(), per_bar * 2, "{style:?}: {shapes:?}");
+            assert!(
+                shapes.iter().all(|shape| !matches!(shape, Shape::Text(_))),
+                "{style:?} was typeset"
+            );
+        }
+        let kinds = |style| -> Vec<&'static str> {
+            marker_shapes(style)
+                .iter()
+                .take(2)
+                .map(|shape| match shape {
+                    Shape::Circle(_) => "circle",
+                    Shape::Rect(_) => "rect",
+                    Shape::LineSegment { .. } => "segment",
+                    Shape::Path(path) if path.points.len() == 3 => "triangle",
+                    Shape::Path(path) if path.points.len() == 4 => "quad",
+                    Shape::Path(_) => "path",
+                    _ => "other",
+                })
+                .collect()
+        };
+        assert_eq!(kinds(Square), ["rect", "rect"]);
+        assert_eq!(kinds(Diamond)[0], "quad");
+        assert_eq!(kinds(Circle)[0], "circle");
+        assert_eq!(kinds(Cross), ["segment", "segment"]);
+        assert_eq!(kinds(Xcross), ["segment", "segment"]);
+        // A block arrow is a head and a shaft; a label a body and its pointer.
+        assert_eq!(kinds(ArrowUp), ["triangle", "rect"]);
+        assert_eq!(kinds(LabelUp), ["rect", "triangle"]);
+        // Up and down differ: the arrow's head leads, the label's body follows its pointer.
+        assert_ne!(marker_shapes(ArrowUp), marker_shapes(ArrowDown));
+        assert_ne!(marker_shapes(LabelUp), marker_shapes(LabelDown));
+        assert_ne!(marker_shapes(Square), marker_shapes(TriangleUp));
+    }
+
+    #[test]
+    #[ignore = "writes images for a person to look at"]
+    fn gallery_of_the_marker_shapes() {
+        use crate::ui::render_tests::{Screen, gallery_dir};
+        use MarkerShape::*;
+        if gallery_dir().is_none() {
+            return;
+        }
+        let shapes = [
+            Xcross,
+            Cross,
+            Circle,
+            TriangleUp,
+            TriangleDown,
+            Flag,
+            ArrowUp,
+            ArrowDown,
+            LabelUp,
+            LabelDown,
+            Square,
+            Diamond,
+        ];
+        let mut screen = Screen::new(egui::vec2(12.0 * 44.0 + 20.0, 3.0 * 56.0 + 20.0));
+        let mut last = None;
+        for _ in 0..2 {
+            last = Some(screen.run(Vec::new(), |ui| {
+                let painter = ui.painter();
+                for (row, size) in [Size::Small, Size::Normal, Size::Huge]
+                    .into_iter()
+                    .enumerate()
+                {
+                    for (column, style) in shapes.into_iter().enumerate() {
+                        let centre =
+                            Pos2::new(32.0 + column as f32 * 44.0, 38.0 + row as f32 * 56.0);
+                        let color = if column % 2 == 0 {
+                            Color32::from_rgb(38, 166, 154)
+                        } else {
+                            Color32::from_rgb(239, 83, 80)
+                        };
+                        draw_marker_shape(painter, style, centre, marker_radius(size), color);
+                    }
+                }
+            }));
+        }
+        screen.save("pine-marker-shapes", last.expect("a frame"));
     }
 
     #[test]
