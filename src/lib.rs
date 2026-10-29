@@ -40,13 +40,11 @@ pub fn run_gui_with(
         "../assets/brand/DegenView-512.png"
     ))?);
     #[cfg(not(target_os = "macos"))]
-    let icon = eframe::icon_data::from_png_bytes(include_bytes!(
-        "../assets/brand/DegenView-512-rounded.png"
-    ))?;
+    let icon = ui::window_chrome::app_icon();
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("DegenView")
-            .with_app_id("es.nico.degenview")
+            .with_app_id(ui::window_chrome::APP_ID)
             .with_icon(icon)
             .with_inner_size([1.0, 1.0])
             .with_position([-10_000.0, -10_000.0]),

@@ -2086,10 +2086,12 @@ impl DegenViewApp {
         let app_actions = Arc::clone(&self.actions);
         let updates = self.updates.clone();
         let sync = self.sync.clone();
-        let builder = egui::ViewportBuilder::default()
-            .with_title("Settings")
-            .with_inner_size(settings_window::WINDOW_SIZE)
-            .with_min_inner_size([520.0, 400.0]);
+        let builder = crate::ui::window_chrome::branded(
+            egui::ViewportBuilder::default()
+                .with_title("Settings")
+                .with_inner_size(settings_window::WINDOW_SIZE)
+                .with_min_inner_size([520.0, 400.0]),
+        );
         ctx.show_viewport_deferred(
             egui::ViewportId::from_hash_of("degenview-settings"),
             builder,
@@ -2261,10 +2263,12 @@ impl DegenViewApp {
         let notifier = Arc::clone(&self.notifier);
         let background_service = Arc::clone(&self.background_service);
         let runtime_control = Arc::clone(&self.alert_runtime_control);
-        let builder = egui::ViewportBuilder::default()
-            .with_title("Alerts")
-            .with_inner_size([880.0, 600.0])
-            .with_min_inner_size([760.0, 480.0]);
+        let builder = crate::ui::window_chrome::branded(
+            egui::ViewportBuilder::default()
+                .with_title("Alerts")
+                .with_inner_size([880.0, 600.0])
+                .with_min_inner_size([760.0, 480.0]),
+        );
         ctx.show_viewport_deferred(
             egui::ViewportId::from_hash_of("degenview-alerts"),
             builder,

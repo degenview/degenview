@@ -25,6 +25,35 @@ pub enum Control {
     Close,
 }
 
+/// The window's application id (Wayland `app_id`, X11 class): what a Linux launcher or taskbar
+/// matches to the `.desktop` file, and so to its icon. Permanent; see `docs/flatpak.md`.
+pub const APP_ID: &str = "es.nico.degenview";
+
+/// The app icon with its corners rounded, for the window systems that draw an icon as it is.
+#[cfg(not(target_os = "macos"))]
+pub fn app_icon() -> std::sync::Arc<egui::IconData> {
+    use std::sync::{Arc, OnceLock};
+    static ICON: OnceLock<Arc<egui::IconData>> = OnceLock::new();
+    Arc::clone(ICON.get_or_init(|| {
+        let bytes = include_bytes!("../../assets/brand/DegenView-512-rounded.png");
+        Arc::new(eframe::icon_data::from_png_bytes(bytes).expect("the bundled icon decodes"))
+    }))
+}
+
+/// Gives a window the app id and icon the first (hidden) viewport has, so a taskbar or Alt+Tab
+/// shows the app's icon for every window, not only the one eframe made. macOS windows share the
+/// Dock's icon, so they are left alone.
+pub fn branded(builder: ViewportBuilder) -> ViewportBuilder {
+    #[cfg(target_os = "macos")]
+    {
+        builder
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        builder.with_app_id(APP_ID).with_icon(app_icon())
+    }
+}
+
 /// Turns a tab window's viewport into one without a native title bar.
 pub fn apply(builder: ViewportBuilder) -> ViewportBuilder {
     if cfg!(target_os = "macos") {
@@ -34,7 +63,7 @@ pub fn apply(builder: ViewportBuilder) -> ViewportBuilder {
             .with_titlebar_shown(false)
             .with_title_shown(false)
     } else {
-        builder.with_decorations(false)
+        branded(builder).with_decorations(false)
     }
 }
 
