@@ -661,7 +661,7 @@ pub fn intercept_quit(on: bool) {
 }
 
 /// The mouse cursor on the whole desktop, in egui points (what `ViewportInfo::outer_rect` uses),
-/// or `None` where the platform does not tell (Wayland, X11 for now). A tab being dragged out of
+/// or `None` where the platform does not tell (Wayland). A tab being dragged out of
 /// its window needs it: the window that follows the cursor moves under it, so a position derived
 /// from window-relative pointer events would chase its own tail.
 #[cfg(target_os = "macos")]
@@ -722,7 +722,12 @@ pub fn global_cursor(pixels_per_point: f32) -> Option<egui::Pos2> {
     })
 }
 
-#[cfg(not(any(target_os = "macos", windows)))]
+#[cfg(target_os = "linux")]
+pub fn global_cursor(pixels_per_point: f32) -> Option<egui::Pos2> {
+    x11_pointer(pixels_per_point).map(|(position, _)| position)
+}
+
+#[cfg(not(any(target_os = "macos", windows, target_os = "linux")))]
 pub fn global_cursor(_pixels_per_point: f32) -> Option<egui::Pos2> {
     None
 }
@@ -753,9 +758,67 @@ pub fn primary_button_down() -> Option<bool> {
     Some(unsafe { GetAsyncKeyState(VK_LBUTTON) } < 0)
 }
 
-#[cfg(not(any(target_os = "macos", windows)))]
+#[cfg(target_os = "linux")]
+pub fn primary_button_down() -> Option<bool> {
+    x11_pointer(1.0).map(|(_, down)| down)
+}
+
+#[cfg(not(any(target_os = "macos", windows, target_os = "linux")))]
 pub fn primary_button_down() -> Option<bool> {
     None
+}
+
+/// The X server's pointer: root-relative position in egui points, and whether button 1 is down.
+/// `None` in a Wayland session (a pointer query would only see XWayland's windows) or when no X
+/// server answers. One connection serves every call, since a tab drag asks every frame.
+#[cfg(target_os = "linux")]
+fn x11_pointer(pixels_per_point: f32) -> Option<(egui::Pos2, bool)> {
+    use x11rb::connection::Connection;
+    use x11rb::protocol::xproto::ConnectionExt;
+    use x11rb::rust_connection::RustConnection;
+
+    static CONNECTION: std::sync::OnceLock<Option<(RustConnection, u32)>> =
+        std::sync::OnceLock::new();
+    let (connection, root) = CONNECTION
+        .get_or_init(|| {
+            if std::env::var_os("WAYLAND_DISPLAY").is_some_and(|display| !display.is_empty()) {
+                return None;
+            }
+            let (connection, screen) = x11rb::connect(None).ok()?;
+            let root = connection.setup().roots.get(screen)?.root;
+            Some((connection, root))
+        })
+        .as_ref()?;
+    let reply = connection.query_pointer(*root).ok()?.reply().ok()?;
+    pointer_from_x11(
+        reply.root_x,
+        reply.root_y,
+        u16::from(reply.mask),
+        pixels_per_point,
+    )
+}
+
+/// X11's `Button1Mask` in a pointer query's key/button state.
+#[cfg(target_os = "linux")]
+const X11_BUTTON1_MASK: u16 = 1 << 8;
+
+/// A pointer query's root position (pixels) and key/button state as egui points and a button flag.
+#[cfg(target_os = "linux")]
+fn pointer_from_x11(
+    root_x: i16,
+    root_y: i16,
+    mask: u16,
+    pixels_per_point: f32,
+) -> Option<(egui::Pos2, bool)> {
+    (pixels_per_point > 0.0).then(|| {
+        (
+            egui::pos2(
+                f32::from(root_x) / pixels_per_point,
+                f32::from(root_y) / pixels_per_point,
+            ),
+            mask & X11_BUTTON1_MASK != 0,
+        )
+    })
 }
 
 /// The picture on the system clipboard, as PNG or JPEG bytes: a copied image, or a picture file
@@ -873,5 +936,24 @@ mod picture_tests {
             &NSString::from_str("public.png"),
         );
         assert_eq!(picture_on(&board).as_deref(), Some(&png[..]));
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod x11_pointer_tests {
+    use super::*;
+
+    #[test]
+    fn a_pointer_query_becomes_points_and_a_button_flag() {
+        assert_eq!(
+            pointer_from_x11(300, -40, X11_BUTTON1_MASK | 1, 2.0),
+            Some((egui::pos2(150.0, -20.0), true))
+        );
+        // Other buttons and modifiers are not button 1.
+        assert_eq!(
+            pointer_from_x11(10, 10, (1 << 9) | 1, 1.0),
+            Some((egui::pos2(10.0, 10.0), false))
+        );
+        assert_eq!(pointer_from_x11(10, 10, 0, 0.0), None);
     }
 }
