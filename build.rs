@@ -1,5 +1,6 @@
 fn main() {
     build_id();
+    build_time();
     // Embed the app icon in the Windows executable (Explorer, taskbar, shortcuts).
     #[cfg(windows)]
     {
@@ -52,6 +53,26 @@ fn build_id() {
         })
         .unwrap_or_else(|| "unknown".to_owned());
     println!("cargo:rustc-env=DEGENVIEW_BUILD_ID={id}");
+}
+
+/// Exposes `DEGENVIEW_BUILD_TIME_MS`: when the build ran, as epoch milliseconds, or
+/// `SOURCE_DATE_EPOCH` (seconds) when a reproducible build sets it. Settings > About prefers the
+/// executable's modification time, but a Flatpak installs every file with a modification time of
+/// 1 Jan 1970, so it falls back to this when the file claims to be older than the build.
+fn build_time() {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    println!("cargo:rerun-if-env-changed=SOURCE_DATE_EPOCH");
+    let millis = std::env::var("SOURCE_DATE_EPOCH")
+        .ok()
+        .and_then(|seconds| seconds.trim().parse::<u64>().ok())
+        .map(|seconds| seconds * 1_000)
+        .or_else(|| {
+            let since = SystemTime::now().duration_since(UNIX_EPOCH).ok()?;
+            u64::try_from(since.as_millis()).ok()
+        })
+        .unwrap_or(0);
+    println!("cargo:rustc-env=DEGENVIEW_BUILD_TIME_MS={millis}");
 }
 
 /// Compiles the CloudKit bridge (`native/swift`) into a static library and links it into the
