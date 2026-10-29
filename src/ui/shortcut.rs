@@ -120,6 +120,7 @@ fn key_name(key: Key) -> &'static str {
         Key::S => "S",
         Key::T => "T",
         Key::Tab => "Tab",
+        Key::Comma => ",",
         Key::V => "V",
         Key::W => "W",
         Key::X => "X",
@@ -219,6 +220,13 @@ pub const SAVE: Shortcut = Shortcut::new(&[S], &[S]);
 pub const NEW_TAB: Shortcut = Shortcut::new(
     &[Chord::new(Key::T).primary()],
     &[Chord::new(Key::T).primary()],
+);
+
+/// Open Settings. macOS gets ⌘, from the app menu; this is for every other platform, where Ctrl+,
+/// is the usual key for Preferences.
+pub const OPEN_SETTINGS: Shortcut = Shortcut::new(
+    &[Chord::new(Key::Comma).primary()],
+    &[Chord::new(Key::Comma).primary()],
 );
 
 /// Create a script in the Script Manager. macOS gets ⌘N from File ▸ New Script; this is for every
@@ -515,7 +523,7 @@ pub const REDO: Shortcut = Shortcut::new(
 mod tests {
     use super::*;
 
-    const ALL: [(&str, Shortcut); 51] = [
+    const ALL: [(&str, Shortcut); 52] = [
         ("debug continue", DEBUG_CONTINUE),
         ("debug pause", DEBUG_PAUSE),
         ("debug step over", DEBUG_STEP_OVER),
@@ -528,6 +536,7 @@ mod tests {
         ("profiler", PROFILER_TOGGLE),
         ("save", SAVE),
         ("new tab", NEW_TAB),
+        ("settings", OPEN_SETTINGS),
         ("new script", NEW_SCRIPT),
         ("close tab", CLOSE_TAB),
         ("next tab", NEXT_TAB),
@@ -623,6 +632,8 @@ mod tests {
         assert_eq!(NEXT_TAB.label_for(true), "⌃Tab");
         assert_eq!(PREVIOUS_TAB.label_for(false), "Ctrl+Shift+Tab");
         assert_eq!(CLOSE_TAB.label_for(true), "⌘W");
+        assert_eq!(OPEN_SETTINGS.label_for(true), "⌘,");
+        assert_eq!(OPEN_SETTINGS.label_for(false), "Ctrl+,");
         assert_eq!(
             SAVE.hint("Save the script"),
             format!("Save the script ({})", SAVE.label())
