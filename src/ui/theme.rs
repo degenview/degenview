@@ -521,12 +521,63 @@ fn install_fonts(ctx: &egui::Context) {
             }
         }
     }
+    add_symbol_fallback(&mut fonts);
     ctx.set_fonts(fonts);
+}
+
+/// A subset of Noto Sans Symbols 2 (`assets/fonts`), the last fallback in both families. Neither
+/// egui's bundled fonts nor a Linux or Windows install can be counted on to have "▲", "✔" or "★",
+/// which a Pine `plotchar`, a label or a text drawing may use.
+fn add_symbol_fallback(fonts: &mut egui::FontDefinitions) {
+    const SYMBOLS: &[u8] = include_bytes!("../../assets/fonts/NotoSansSymbols2-subset.ttf");
+    fonts.font_data.insert(
+        "noto-symbols".to_owned(),
+        std::sync::Arc::new(egui::FontData::from_static(SYMBOLS)),
+    );
+    for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+        fonts
+            .families
+            .entry(family)
+            .or_default()
+            .push("noto-symbols".to_owned());
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// On egui's own fonts alone, with nothing from the system, as on a bare Linux install.
+    #[test]
+    fn the_bundled_symbols_draw_without_any_system_font() {
+        let draws = |with_fallback: bool| {
+            let mut fonts = egui::FontDefinitions::default();
+            if with_fallback {
+                add_symbol_fallback(&mut fonts);
+            }
+            let ctx = egui::Context::default();
+            ctx.set_fonts(fonts);
+            let mut output = ctx.run_ui(Default::default(), |_| {});
+            output.textures_delta.clear();
+            let mut missing = Vec::new();
+            for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+                let font = egui::FontId::new(14.0, family);
+                let tofu = ctx.fonts_mut(|fonts| fonts.glyph_width(&font, '\u{10FFFF}'));
+                for symbol in "▲▼●■◆★☆✔✖⬆⬇⚠☑".chars() {
+                    let width = ctx.fonts_mut(|fonts| fonts.glyph_width(&font, symbol));
+                    if width <= 0.0 || width == tofu {
+                        missing.push(symbol);
+                    }
+                }
+            }
+            missing
+        };
+        assert!(
+            !draws(false).is_empty(),
+            "egui's own fonts now have every symbol: the bundled font may be dropped"
+        );
+        assert_eq!(draws(true), Vec::<char>::new());
+    }
 
     #[test]
     fn math_alphanumerics_have_a_fallback_glyph_in_both_families() {
