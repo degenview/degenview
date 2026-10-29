@@ -219,9 +219,23 @@ fn plot_marker(
     let kind_parameter = if is_shape { "style" } else { "char" };
     let b = bind(
         args,
-        &["series", "title", kind_parameter, "location", "color"],
+        &[
+            "series",
+            "title",
+            kind_parameter,
+            "location",
+            "color",
+            "offset",
+            "text",
+            "textcolor",
+            "editable",
+            "size",
+            "show_last",
+        ],
     );
     let color = color_value(b.get("color"), Some(DEFAULT_COLOR)).unwrap_or(0);
+    // The reference gives no default for `textcolor` here; the default plot blue is assumed.
+    let text_color = color_value(b.get("textcolor"), Some(DEFAULT_COLOR));
     let marker = state.markers.entry(site).or_insert_with(|| MarkerOutput {
         id: site,
         kind: if is_shape {
@@ -250,6 +264,10 @@ fn plot_marker(
             Size::Auto,
             Size::Auto,
         ),
+        texts: Vec::new(),
+        text_colors: Vec::new(),
+        offset: 0,
+        show_last: None,
         display: DISPLAY_ALL,
         force_overlay: false,
     });
@@ -259,6 +277,15 @@ fn plot_marker(
         .push(sample.bool().unwrap_or(sample.number().is_some()));
     marker.prices.push(sample.number());
     marker.colors.push(Some(color));
+    marker
+        .texts
+        .push(text(&b, "text").filter(|text| !text.is_empty()));
+    marker.text_colors.push(text_color);
+    marker.offset = b
+        .get("offset")
+        .and_then(RuntimeValue::int_value)
+        .unwrap_or(0);
+    marker.show_last = last_bars(b.get("show_last"));
     marker.display = display_mask(b.get("display"));
     marker.force_overlay = flag(b.get("force_overlay"));
     Ok(RuntimeValue::Void)
@@ -583,6 +610,50 @@ mod tests {
         assert_eq!(state.hlines[&0].color, DEFAULT_COLOR);
         run(&mut state, "hline", 1, &[arg(Na)]).unwrap();
         assert!(!state.hlines.contains_key(&1));
+    }
+
+    #[test]
+    fn plotshape_and_plotchar_read_text_textcolor_offset_and_show_last() {
+        use RuntimeValue::{Color, Int, String as Text};
+        let mut state = RuntimeState::default();
+        // `series, title, style, location, color, offset, text, textcolor, editable, size,
+        // show_last` by position, so a script can write the long form without names.
+        let positional = [
+            Bool(true),
+            Text("t".into()),
+            Text("shape.circle".into()),
+            Text("location.belowbar".into()),
+            Color(1),
+            Int(2),
+            Text("buy".into()),
+            Color(2),
+            Bool(true),
+            Text("size.large".into()),
+            Int(5),
+        ]
+        .map(arg);
+        run(&mut state, "plotshape", 0, &positional).unwrap();
+        let marker = &state.markers[&0];
+        assert_eq!(marker.texts, [Some("buy".to_owned())]);
+        assert_eq!(marker.text_colors, [Some(2)]);
+        assert_eq!(marker.offset, 2);
+        assert_eq!(marker.show_last, Some(5));
+        assert_eq!(marker.style, MarkerShape::Circle);
+        assert_eq!(marker.location, MarkerLocation::BelowBar);
+
+        // By name, with no text: nothing to draw, and the text colour is the default blue.
+        run(
+            &mut state,
+            "plotchar",
+            1,
+            &[arg(Bool(true)), named("char", Text("x".into()))],
+        )
+        .unwrap();
+        let marker = &state.markers[&1];
+        assert_eq!(marker.texts, [None]);
+        assert_eq!(marker.text_colors, [Some(DEFAULT_COLOR)]);
+        assert_eq!(marker.offset, 0);
+        assert_eq!(marker.show_last, None);
     }
 
     #[test]
