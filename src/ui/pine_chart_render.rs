@@ -933,22 +933,26 @@ impl PineLayer<'_> {
                     painter.circle_filled(Pos2::new(x, y), marker_radius(marker.size), color);
                     continue;
                 }
-                let glyph = marker.character.clone().unwrap_or_else(|| {
-                    if marker.style.points_down() {
-                        "▼"
-                    } else {
-                        "▲"
+                let centre = Pos2::new(x, y);
+                match &marker.character {
+                    Some(glyph) => {
+                        text_at(painter, glyph, 12.0, color, centre, Align2::CENTER_CENTER);
                     }
-                    .to_owned()
-                });
-                text_at(
-                    painter,
-                    &glyph,
-                    12.0,
-                    color,
-                    Pos2::new(x, y),
-                    Align2::CENTER_CENTER,
-                );
+                    // Drawn, not typeset: "▲" and "▼" are in no font bundled with egui, so
+                    // anywhere without the macOS symbol fonts they came out as tofu squares.
+                    None => {
+                        painter.add(Shape::convex_polygon(
+                            geometry::triangle_points(
+                                centre,
+                                marker_radius(marker.size),
+                                marker.style.points_down(),
+                            )
+                            .to_vec(),
+                            color,
+                            Stroke::NONE,
+                        ));
+                    }
+                }
             }
         }
     }
@@ -1604,6 +1608,47 @@ mod tests {
         assert_eq!(
             pane.label_y(&output.labels[1]),
             Some(pane.plot.max.y - MARKER_OFFSET)
+        );
+    }
+
+    #[test]
+    fn triangle_markers_are_polygons_not_text() {
+        let candles = candles(3);
+        let (x, y) = (x_of as fn(i64) -> f32, y_of as fn(f64) -> f32);
+        let mut output = VisualOutput {
+            bar_count: 3,
+            ..empty()
+        };
+        for style in [MarkerShape::TriangleUp, MarkerShape::TriangleDown] {
+            output.markers.push(MarkerOutput {
+                id: 0,
+                kind: MarkerKind::Shape,
+                title: None,
+                values: vec![true, false, true],
+                character: None,
+                color: 0xFF00_00FF,
+                location: MarkerLocation::BelowBar,
+                style,
+                prices: Vec::new(),
+                colors: Vec::new(),
+                size: Size::Small,
+                display: DISPLAY_PANE,
+                force_overlay: false,
+            });
+        }
+        let layer = layer(&output, &candles, &x, &y);
+        let ctx = egui::Context::default();
+        let mut frame = ctx.run_ui(egui::RawInput::default(), |ui| {
+            layer.draw_markers(ui.painter());
+        });
+        frame.textures_delta.clear();
+        let shapes: Vec<_> = frame.shapes.iter().map(|clipped| &clipped.shape).collect();
+        assert_eq!(shapes.len(), 4, "two bars for each of two markers");
+        assert!(
+            shapes
+                .iter()
+                .all(|shape| matches!(shape, Shape::Path(path) if path.points.len() == 3)),
+            "{shapes:?}"
         );
     }
 

@@ -118,6 +118,22 @@ pub fn diamond_points(centre: Pos2, radius: f32) -> [Pos2; 4] {
     ]
 }
 
+/// The corners of an isosceles triangle centred on `centre`, its base `2 * radius` wide and its
+/// height `1.6 * radius`; the apex points down when `down`.
+pub fn triangle_points(centre: Pos2, radius: f32, down: bool) -> [Pos2; 3] {
+    let half_height = radius * 0.8;
+    let (apex, base) = if down {
+        (centre.y + half_height, centre.y - half_height)
+    } else {
+        (centre.y - half_height, centre.y + half_height)
+    };
+    [
+        Pos2::new(centre.x, apex),
+        Pos2::new(centre.x + radius, base),
+        Pos2::new(centre.x - radius, base),
+    ]
+}
+
 // MARK: Strokes
 
 /// The dash pattern a stroke of this style uses; the arrow styles are solid lines with arrowheads.
@@ -942,6 +958,23 @@ mod tests {
             arrow_shape(tip, true, 7.0).shaft,
             None,
             "exactly the head: no shaft"
+        );
+    }
+
+    #[test]
+    fn a_triangle_marker_points_where_it_is_told() {
+        let centre = Pos2::new(10.0, 20.0);
+        let up = triangle_points(centre, 5.0, false);
+        assert_eq!(up[0], Pos2::new(10.0, 16.0));
+        assert_eq!(
+            (up[1], up[2]),
+            (Pos2::new(15.0, 24.0), Pos2::new(5.0, 24.0))
+        );
+        let down = triangle_points(centre, 5.0, true);
+        assert_eq!(down[0], Pos2::new(10.0, 24.0));
+        assert_eq!(
+            (down[1], down[2]),
+            (Pos2::new(15.0, 16.0), Pos2::new(5.0, 16.0))
         );
     }
 
