@@ -472,9 +472,12 @@ mod tests {
         }
 
         /// Runs frames until the snapshot finishes, and returns what the window was asked to do.
+        /// A snapshot takes about two seconds alone and the tests share one work queue, so a
+        /// loaded machine running them all at once needs far longer than that; a hung one waits a
+        /// minute and fails.
         fn finish(&mut self) -> Vec<egui::OutputCommand> {
             let mut commands = Vec::new();
-            for _ in 0..500 {
+            for _ in 0..6_000 {
                 let mut out = self.ctx.run_ui(egui::RawInput::default(), |_| {
                     self.workspace.poll_snapshot(&self.ctx);
                 });

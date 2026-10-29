@@ -987,6 +987,7 @@ mod tests {
         use crate::ui::settings_ai::{self, AiSettingsInput};
         use crate::ui::settings_api_keys::StatusMessage;
         use crate::ui::theme::AppTheme;
+        let _theme = crate::ui::theme::RestoreDefaultTheme;
         let failure = crate::service::llm::sample::server_error().report();
         let _ = AiKeyStore::shared();
         for (name, app_theme) in [("dark", AppTheme::Dark), ("light", AppTheme::Light)] {

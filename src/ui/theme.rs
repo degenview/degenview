@@ -1,6 +1,5 @@
 use eframe::egui::{self, Color32};
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 /// The app theme, as Settings ▸ Appearance stores it under [`THEME_KEY`] (Swift's `appTheme`).
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
@@ -84,17 +83,77 @@ const LIGHT: Palette = Palette {
     ink: Color32::BLACK,
 };
 
-/// Whether the light palette is active. Set from the context's resolved theme every frame, so
-/// System follows the Mac as it switches.
-static LIGHT_ACTIVE: AtomicBool = AtomicBool::new(false);
+/// The two cells that say which theme is showing: whether the light palette is active (set from
+/// the context's resolved theme every frame, so System follows the Mac as it switches), and the
+/// theme picked in Settings as an index into [`AppTheme::ALL`] (starting at the default, Dark).
+///
+/// In the app they are process-wide. Under `cfg(test)` every test thread has its own pair, so a
+/// test that switches to the light theme can never be seen by another that renders, compares
+/// pixels or checks the choice while it runs; they all start from Dark.
+#[cfg(not(test))]
+mod state {
+    use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
-/// The theme picked in Settings, as an index into [`AppTheme::ALL`]. Starts at the default, Dark.
-static CHOICE: AtomicU8 = AtomicU8::new(2);
+    static LIGHT_ACTIVE: AtomicBool = AtomicBool::new(false);
+    static CHOICE: AtomicU8 = AtomicU8::new(super::DEFAULT_CHOICE);
+
+    pub fn light() -> bool {
+        LIGHT_ACTIVE.load(Ordering::Relaxed)
+    }
+    pub fn set_light(light: bool) {
+        LIGHT_ACTIVE.store(light, Ordering::Relaxed);
+    }
+    pub fn choice() -> u8 {
+        CHOICE.load(Ordering::Relaxed)
+    }
+    pub fn set_choice(choice: u8) {
+        CHOICE.store(choice, Ordering::Relaxed);
+    }
+}
+
+#[cfg(test)]
+mod state {
+    use std::cell::Cell;
+
+    thread_local! {
+        static LIGHT_ACTIVE: Cell<bool> = const { Cell::new(false) };
+        static CHOICE: Cell<u8> = const { Cell::new(super::DEFAULT_CHOICE) };
+    }
+
+    pub fn light() -> bool {
+        LIGHT_ACTIVE.with(Cell::get)
+    }
+    pub fn set_light(light: bool) {
+        LIGHT_ACTIVE.with(|cell| cell.set(light));
+    }
+    pub fn choice() -> u8 {
+        CHOICE.with(Cell::get)
+    }
+    pub fn set_choice(choice: u8) {
+        CHOICE.with(|cell| cell.set(choice));
+    }
+}
+
+/// The index of Dark, the default, in [`AppTheme::ALL`].
+const DEFAULT_CHOICE: u8 = 2;
+
+/// Puts the theme back to the default when dropped, for a test that switches it: libtest may run
+/// several tests on one thread (`--test-threads=1`), and the next must not inherit Light.
+#[cfg(test)]
+pub(crate) struct RestoreDefaultTheme;
+
+#[cfg(test)]
+impl Drop for RestoreDefaultTheme {
+    fn drop(&mut self) {
+        state::set_light(false);
+        state::set_choice(DEFAULT_CHOICE);
+    }
+}
 
 /// The theme picked in Settings ▸ Appearance.
 pub fn choice() -> AppTheme {
     AppTheme::ALL
-        .get(CHOICE.load(Ordering::Relaxed) as usize)
+        .get(state::choice() as usize)
         .copied()
         .unwrap_or_default()
 }
@@ -104,7 +163,7 @@ fn palette() -> &'static Palette {
 }
 
 pub fn is_light() -> bool {
-    LIGHT_ACTIVE.load(Ordering::Relaxed)
+    state::light()
 }
 
 /// Picks `dark` or `light` for the active theme.
@@ -309,14 +368,14 @@ fn install_styles(ctx: &egui::Context) {
 /// Switches to `theme`; System follows the Mac's appearance.
 pub fn apply(ctx: &egui::Context, theme: AppTheme) {
     let index = AppTheme::ALL.iter().position(|each| *each == theme);
-    CHOICE.store(index.unwrap_or_default() as u8, Ordering::Relaxed);
+    state::set_choice(index.unwrap_or_default() as u8);
     ctx.set_theme(theme.preference());
     sync(ctx);
 }
 
 /// Points the palette at the context's resolved theme. Called at the top of every frame.
 pub fn sync(ctx: &egui::Context) {
-    LIGHT_ACTIVE.store(ctx.theme() == egui::Theme::Light, Ordering::Relaxed);
+    state::set_light(ctx.theme() == egui::Theme::Light);
 }
 
 fn visuals(theme: egui::Theme, palette: &Palette) -> egui::Visuals {
@@ -636,14 +695,12 @@ mod tests {
             assert_eq!(serde_json::from_str::<AppTheme>(raw).unwrap(), theme);
         }
         assert_eq!(AppTheme::default(), AppTheme::Dark);
-        assert_eq!(
-            AppTheme::ALL[CHOICE.load(Ordering::Relaxed) as usize],
-            AppTheme::default()
-        );
+        assert_eq!(AppTheme::ALL[state::choice() as usize], AppTheme::default());
     }
 
     #[test]
     fn the_palette_follows_the_resolved_theme() {
+        let _theme = RestoreDefaultTheme;
         let ctx = egui::Context::default();
         install(&ctx, AppTheme::Light);
         assert!(is_light());
