@@ -1002,6 +1002,7 @@ dependencies = [
  "tungstenite",
  "ureq",
  "winresource",
+ "x11rb",
 ]
 
 [[package]]

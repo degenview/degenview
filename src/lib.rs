@@ -45,6 +45,9 @@ pub fn run_gui_with(
         viewport: egui::ViewportBuilder::default()
             .with_title("DegenView")
             .with_app_id(ui::window_chrome::APP_ID)
+            // The surface is shared by every window, and eframe reads whether it may be
+            // transparent from this first one (`ui::window_corners`).
+            .with_transparent(ui::window_chrome::rounded_corners())
             .with_icon(icon)
             .with_inner_size([1.0, 1.0])
             .with_position([-10_000.0, -10_000.0]),

@@ -25,6 +25,15 @@
   `TabBarOutput::strip` excludes both insets. Empty strip space drags; double-click maximizes. The
   strip is `tab_bar::HEIGHT` (40); recenter macOS traffic lights in it each frame. Settings/Alerts
   retain native title bars.
+- Linux tab windows round their own corners (`ui::window_corners`, macOS has AppKit's, Windows is not
+  done: it needs DWM's corner preference, not this). egui can only blend, so the window is
+  transparent (`window_chrome::rounded_corners` asks for it on the root viewport, which sets the
+  shared surface's alpha mode, and on each tab window; `App::clear_color` is clear) and the last
+  thing `show_window` draws is a paint callback that erases the area outside a corner arc
+  (`dst * (1 - a)`, antialiased). It is decided once at startup: a Wayland session, or X11 with a
+  compositor owning `_NET_WM_CM_S<n>`; otherwise the windows stay square rather than showing black
+  corners. Maximized and fullscreen windows are square. Not handled: a tiling compositor (winit
+  0.30 reports no tiled state), a compositor that starts after the app.
 - macOS tab windows are set non-movable each frame next to the traffic lights. AppKit otherwise
   drags the window from its title-bar band (the top ~28 pt of the strip) before egui sees the
   press, so tabs could not be reordered or torn off from there. The window still moves through
