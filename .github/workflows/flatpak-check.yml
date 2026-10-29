@@ -9,7 +9,7 @@ on:
       - packaging/flatpak/**
       - Cargo.lock
       - Cargo.toml
-      - assets/brand/DegenView-512.png
+      - assets/brand/DegenView-512-rounded.png
       - .github/workflows/flatpak.yml
       - .github/workflows/flatpak-check.yml
   workflow_dispatch:

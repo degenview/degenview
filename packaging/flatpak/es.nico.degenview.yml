@@ -40,7 +40,7 @@ modules:
       - install -Dm755 target/release/degenview -t /app/bin
       - install -Dm644 packaging/flatpak/es.nico.degenview.desktop -t /app/share/applications
       - install -Dm644 packaging/flatpak/es.nico.degenview.metainfo.xml -t /app/share/metainfo
-      - install -Dm644 assets/brand/DegenView-512.png /app/share/icons/hicolor/512x512/apps/es.nico.degenview.png
+      - install -Dm644 assets/brand/DegenView-512-rounded.png /app/share/icons/hicolor/512x512/apps/es.nico.degenview.png
     sources:
       - type: dir
         path: ../..
