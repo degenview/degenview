@@ -28,16 +28,28 @@ const MONTHS: [&str; 12] = [
     "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
 
-/// When the running executable was built (its modification time), as epoch milliseconds.
+/// When the running executable was built, as epoch milliseconds: its modification time, unless
+/// that is older than the build itself (`build.rs` stamps it), as in a Flatpak, which installs
+/// every file dated 1 Jan 1970.
 fn build_time_ms() -> Option<i64> {
     let modified = std::env::current_exe()
-        .ok()?
-        .metadata()
-        .ok()?
-        .modified()
-        .ok()?;
-    let since = modified.duration_since(UNIX_EPOCH).ok()?;
-    i64::try_from(since.as_millis()).ok()
+        .ok()
+        .and_then(|path| path.metadata().ok())
+        .and_then(|metadata| metadata.modified().ok())
+        .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+        .and_then(|since| i64::try_from(since.as_millis()).ok());
+    pick_build_time(modified, env!("DEGENVIEW_BUILD_TIME_MS").parse().ok())
+}
+
+/// The file's time when it is at least as new as the stamp from compiling, else the stamp. A copy
+/// made after the build keeps its later time; a build that never re-ran `build.rs` has an older
+/// stamp than the file, so the file wins.
+fn pick_build_time(modified: Option<i64>, compiled: Option<i64>) -> Option<i64> {
+    match (modified, compiled) {
+        (Some(modified), Some(compiled)) if modified < compiled => Some(compiled),
+        (Some(modified), _) => Some(modified),
+        (None, compiled) => compiled,
+    }
 }
 
 /// "11 Oct 2026" in the viewer's time zone.
@@ -881,6 +893,23 @@ fn link_row(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_file_dated_before_the_build_gives_way_to_the_stamp() {
+        let built = 1_791_684_840_000;
+        // A Flatpak install: every file is dated the epoch.
+        assert_eq!(pick_build_time(Some(0), Some(built)), Some(built));
+        // The usual case, and a copy made later, keep the file's time.
+        assert_eq!(
+            pick_build_time(Some(built + 5), Some(built)),
+            Some(built + 5)
+        );
+        // A stale stamp (build.rs did not re-run) never wins over a newer file.
+        assert_eq!(pick_build_time(Some(built), Some(built - 9)), Some(built));
+        assert_eq!(pick_build_time(None, Some(built)), Some(built));
+        assert_eq!(pick_build_time(Some(built), None), Some(built));
+        assert_eq!(pick_build_time(None, None), None);
+    }
 
     #[test]
     fn the_version_lines_read_like_swift() {
