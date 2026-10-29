@@ -231,21 +231,11 @@ fn request() -> HashMap<&'static str, &'static str> {
 
 fn marker() -> HashMap<&'static str, &'static str> {
     HashMap::from([
-        ("text", "The text next to the marker is not drawn."),
-        ("textcolor", "The text next to the marker is not drawn."),
-        (
-            "offset",
-            "The markers are not shifted; each is drawn on the bar that produced it.",
-        ),
         (
             "transp",
             "Transparency is not applied; use `color.new(color, transparency)` instead.",
         ),
         ("editable", "The markers cannot be edited from the chart."),
-        (
-            "show_last",
-            "The markers are drawn on every bar, not only the last ones.",
-        ),
     ])
 }
 

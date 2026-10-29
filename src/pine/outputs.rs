@@ -604,8 +604,51 @@ pub struct MarkerOutput {
     pub prices: Vec<Option<f64>>,
     pub colors: Vec<Option<u32>>,
     pub size: Size,
+    /// `text`: what is written beside each marker, per bar (a script may build it from a series).
+    pub texts: Vec<Option<String>>,
+    /// `textcolor`, per bar.
+    pub text_colors: Vec<Option<u32>>,
+    /// `offset`: bars the markers are shifted by (positive moves them later). Applied when the
+    /// run's output is read; a marker pushed past either end has no bar to sit on.
+    pub offset: i64,
+    /// `show_last`: only the last this many bars keep their marker.
+    pub show_last: Option<usize>,
     pub display: u32,
     pub force_overlay: bool,
+}
+
+impl MarkerOutput {
+    /// The markers with `offset` and then `show_last` applied.
+    pub fn finished(mut self) -> Self {
+        let offset = std::mem::take(&mut self.offset);
+        let length = self.values.len();
+        if offset != 0 {
+            // Every per-bar series moves together; one that is shorter than `values` (none is)
+            // would simply lose its tail.
+            fn shift<T: Clone>(series: &[T], offset: i64, blank: T) -> Vec<T> {
+                let mut shifted = vec![blank; series.len()];
+                for (index, item) in series.iter().enumerate() {
+                    let target = index as i64 + offset;
+                    if (0..series.len() as i64).contains(&target) {
+                        shifted[target as usize] = item.clone();
+                    }
+                }
+                shifted
+            }
+            self.values = shift(&self.values, offset, false);
+            self.prices = shift(&self.prices, offset, None);
+            self.colors = shift(&self.colors, offset, None);
+            self.texts = shift(&self.texts, offset, None);
+            self.text_colors = shift(&self.text_colors, offset, None);
+        }
+        if let Some(last) = self.show_last.take() {
+            let hidden = length.saturating_sub(last);
+            for value in self.values.iter_mut().take(hidden) {
+                *value = false;
+            }
+        }
+        self
+    }
 }
 
 /// `plotarrow()`: an up arrow below the bar for each positive value, a down arrow above it for each
@@ -831,5 +874,49 @@ mod tests {
         output.offset = 0;
         output.show_last = Some(2);
         assert_eq!(output.finished().values, [None, None, Some(3.0), Some(4.0)]);
+    }
+
+    #[test]
+    fn markers_are_shifted_with_their_text_and_trimmed_to_the_last_bars() {
+        let mut output = MarkerOutput {
+            id: 0,
+            kind: MarkerKind::Shape,
+            title: None,
+            values: vec![true, false, true, true],
+            character: None,
+            color: 0,
+            location: MarkerLocation::AboveBar,
+            style: MarkerShape::TriangleUp,
+            prices: vec![Some(1.0), None, Some(3.0), Some(4.0)],
+            colors: vec![Some(10), Some(11), Some(12), Some(13)],
+            size: Size::Auto,
+            texts: ["a", "", "c", "d"]
+                .map(|text| (!text.is_empty()).then(|| text.to_owned()))
+                .to_vec(),
+            text_colors: vec![Some(20), Some(21), Some(22), Some(23)],
+            offset: 1,
+            show_last: None,
+            display: 0,
+            force_overlay: false,
+        };
+        let shifted = output.clone().finished();
+        assert_eq!(shifted.values, [false, true, false, true]);
+        assert_eq!(shifted.prices, [None, Some(1.0), None, Some(3.0)]);
+        assert_eq!(shifted.colors, [None, Some(10), Some(11), Some(12)]);
+        assert_eq!(
+            shifted.texts,
+            [None, Some("a".to_owned()), None, Some("c".to_owned())]
+        );
+        assert_eq!(shifted.text_colors, [None, Some(20), Some(21), Some(22)]);
+        assert_eq!(shifted.offset, 0, "applied once");
+        output.offset = -1;
+        assert_eq!(
+            output.clone().finished().values,
+            [false, true, true, false],
+            "pushed past the first bar is gone, and bar 3 slides into 2"
+        );
+        output.offset = 0;
+        output.show_last = Some(2);
+        assert_eq!(output.finished().values, [false, false, true, true]);
     }
 }

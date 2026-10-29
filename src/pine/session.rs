@@ -745,7 +745,10 @@ impl Session {
                 .map(super::outputs::PlotOutput::shifted)
                 .collect(),
             hlines: sorted_by_id(&w.hlines),
-            markers: sorted_by_id(&w.markers),
+            markers: sorted_by_id(&w.markers)
+                .into_iter()
+                .map(super::outputs::MarkerOutput::finished)
+                .collect(),
             arrows: sorted_by_id(&w.arrows)
                 .into_iter()
                 .map(super::outputs::ArrowOutput::finished)

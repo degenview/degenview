@@ -18,8 +18,8 @@
 use crate::model::Kline;
 use crate::model::chart_look::drawn_extremes;
 use crate::pine::outputs::{
-    DISPLAY_PANE, LabelOutput, LabelStyle, MarkerKind, MarkerLocation, MarkerShape, PlotOutput,
-    PlotStyle, TableOutput, YLocation,
+    DISPLAY_PANE, LabelOutput, LabelStyle, MarkerLocation, MarkerShape, PlotOutput, PlotStyle,
+    TableOutput, YLocation,
 };
 use crate::pine::program::VisualOutput;
 use crate::pine::strategy::StrategyReport;
@@ -929,26 +929,41 @@ impl PineLayer<'_> {
                 let x = self.x_at(i);
                 let y = self.marker_y(marker.location, &marker.prices, i);
                 let color = rgba(self.visible_opt(&marker.colors, i).unwrap_or(marker.color));
-                if marker.style == MarkerShape::Circle && marker.kind == MarkerKind::Shape {
-                    painter.circle_filled(Pos2::new(x, y), marker_radius(marker.size), color);
-                    continue;
-                }
                 let centre = Pos2::new(x, y);
-                match &marker.character {
+                let radius = marker_radius(marker.size);
+                let half_height = match &marker.character {
                     Some(glyph) => {
                         text_at(painter, glyph, 12.0, color, centre, Align2::CENTER_CENTER);
+                        6.0
                     }
                     // Drawn, not typeset: "▲" and "▼" are in no font bundled with egui, so
                     // anywhere without the macOS symbol fonts they came out as tofu squares.
                     None => {
-                        draw_marker_shape(
-                            painter,
-                            marker.style,
-                            centre,
-                            marker_radius(marker.size),
-                            color,
-                        );
+                        draw_marker_shape(painter, marker.style, centre, radius, color);
+                        marker_half_height(marker.style, radius)
                     }
+                };
+                // `text` goes past the marker, away from the bar: below it for the markers that
+                // sit under a bar, above it otherwise (inferred for `location.absolute`).
+                if let Some(Some(text)) = self.visible(&marker.texts, i) {
+                    let text_color = rgba(
+                        self.visible_opt(&marker.text_colors, i)
+                            .unwrap_or(marker.color),
+                    );
+                    let gap = 2.0;
+                    let (at, anchor) = if marker.location.is_below() {
+                        (Pos2::new(x, y + half_height + gap), Align2::CENTER_TOP)
+                    } else {
+                        (Pos2::new(x, y - half_height - gap), Align2::CENTER_BOTTOM)
+                    };
+                    text_at(
+                        painter,
+                        text,
+                        font_size(marker.size),
+                        text_color,
+                        at,
+                        anchor,
+                    );
                 }
             }
         }
@@ -1086,7 +1101,20 @@ fn draw_arrow(painter: &Painter, tip: Pos2, up: bool, height: f32, color: Color3
     }
 }
 
-/// A `plotshape` marker (`shape.*` other than the circle) centred on `centre`, `radius` being the
+/// How far `draw_marker_shape` reaches above and below its centre, for placing `text` past it.
+fn marker_half_height(style: MarkerShape, radius: f32) -> f32 {
+    match style {
+        MarkerShape::TriangleUp | MarkerShape::TriangleDown | MarkerShape::Square => 0.8 * radius,
+        MarkerShape::Diamond => 1.1 * radius,
+        MarkerShape::ArrowUp | MarkerShape::ArrowDown => radius + 3.0,
+        MarkerShape::LabelUp | MarkerShape::LabelDown => 1.05 * radius,
+        MarkerShape::Circle | MarkerShape::Cross | MarkerShape::Xcross | MarkerShape::Flag => {
+            radius
+        }
+    }
+}
+
+/// A `plotshape` marker (`shape.*`) centred on `centre`, `radius` being the
 /// marker size's half-width. The proportions are inferred, not measured against TradingView: a
 /// square and a diamond about as heavy as the triangle, a block arrow whose tail
 /// lengthens with the size, and a label that is a small bubble with its pointer, as `text` is not drawn.
@@ -1299,7 +1327,8 @@ mod tests {
     use super::*;
     use crate::pine::outputs::{
         BoxOutput, ColorOutput, FillOutput, HorizontalLine, LabelOutput, LabelStyle, LineExtend,
-        LineOutput, LineStyle, MarkerOutput, Size, TableCell, TablePosition, TextAlign, YLocation,
+        LineOutput, LineStyle, MarkerKind, MarkerOutput, Size, TableCell, TablePosition, TextAlign,
+        YLocation,
     };
 
     fn candles(count: usize) -> Vec<Kline> {
@@ -1686,6 +1715,10 @@ mod tests {
                 prices: Vec::new(),
                 colors: Vec::new(),
                 size: Size::Small,
+                texts: Vec::new(),
+                text_colors: Vec::new(),
+                offset: 0,
+                show_last: None,
                 display: DISPLAY_PANE,
                 force_overlay: false,
             });
@@ -1726,6 +1759,10 @@ mod tests {
             prices: Vec::new(),
             colors: Vec::new(),
             size: Size::Small,
+            texts: Vec::new(),
+            text_colors: Vec::new(),
+            offset: 0,
+            show_last: None,
             display: DISPLAY_PANE,
             force_overlay: false,
         });
@@ -1796,6 +1833,76 @@ mod tests {
         assert_ne!(marker_shapes(Square), marker_shapes(TriangleUp));
     }
 
+    /// The text and the marker `draw_markers` paints on the first bar of a marker with `text`
+    /// there, at `location`: the text's rectangle and colour, and the shape's rectangle.
+    fn marker_with_text(location: MarkerLocation) -> (Rect, Color32, Rect) {
+        let candles = candles(3);
+        let (x, y) = (x_of as fn(i64) -> f32, y_of as fn(f64) -> f32);
+        let mut output = VisualOutput {
+            bar_count: 3,
+            ..empty()
+        };
+        output.markers.push(MarkerOutput {
+            id: 0,
+            kind: MarkerKind::Shape,
+            title: None,
+            values: vec![true, true, false],
+            character: None,
+            color: 0xFF00_00FF,
+            location,
+            style: MarkerShape::TriangleUp,
+            prices: Vec::new(),
+            colors: Vec::new(),
+            size: Size::Small,
+            // Only the first bar has text: the second has a marker and nothing beside it.
+            texts: vec![Some("buy".to_owned()), None, None],
+            text_colors: vec![Some(0x00FF_00FF); 3],
+            offset: 0,
+            show_last: None,
+            display: DISPLAY_PANE,
+            force_overlay: false,
+        });
+        let layer = layer(&output, &candles, &x, &y);
+        let ctx = egui::Context::default();
+        let mut frame = ctx.run_ui(egui::RawInput::default(), |ui| {
+            layer.draw_markers(ui.painter());
+        });
+        frame.textures_delta.clear();
+        let shapes: Vec<_> = frame.shapes.iter().map(|clipped| &clipped.shape).collect();
+        let texts: Vec<_> = shapes
+            .iter()
+            .filter_map(|shape| match shape {
+                Shape::Text(text) => Some(text),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(texts.len(), 1, "one bar has text: {shapes:?}");
+        let triangles = shapes
+            .iter()
+            .filter(|shape| matches!(shape, Shape::Path(_)))
+            .count();
+        assert_eq!(triangles, 2, "both bars keep their marker");
+        let first = shapes
+            .iter()
+            .find(|shape| matches!(shape, Shape::Path(_)))
+            .expect("a marker");
+        (
+            texts[0].visual_bounding_rect(),
+            texts[0].fallback_color,
+            first.visual_bounding_rect(),
+        )
+    }
+
+    #[test]
+    fn marker_text_sits_past_the_marker_away_from_the_bar_in_its_own_colour() {
+        let (text, color, marker) = marker_with_text(MarkerLocation::BelowBar);
+        assert!(text.min.y >= marker.max.y, "{text:?} is under {marker:?}");
+        assert_eq!(color, rgba(0x00FF_00FF));
+        assert!((text.center().x - marker.center().x).abs() < 0.5, "centred");
+        let (text, _, marker) = marker_with_text(MarkerLocation::AboveBar);
+        assert!(text.max.y <= marker.min.y, "{text:?} is over {marker:?}");
+    }
+
     #[test]
     #[ignore = "writes images for a person to look at"]
     fn gallery_of_the_marker_shapes() {
@@ -1863,6 +1970,10 @@ mod tests {
             prices: Vec::new(),
             colors: Vec::new(),
             size: Size::Small,
+            texts: Vec::new(),
+            text_colors: Vec::new(),
+            offset: 0,
+            show_last: None,
             display: DISPLAY_PANE,
             force_overlay: false,
         });
