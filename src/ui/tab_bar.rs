@@ -3,6 +3,7 @@
 //! drives the rest from raw pointer state because a dragged tab leaves this strip.
 
 use super::icons::{self, Icon};
+use super::shortcut;
 use super::theme;
 use super::update_indicator;
 use super::window_chrome::{self, Control};
@@ -18,6 +19,7 @@ pub const HEIGHT: f32 = 40.0;
 const MIN_TAB_WIDTH: f32 = 96.0;
 const MAX_TAB_WIDTH: f32 = 220.0;
 const NEW_BUTTON_WIDTH: f32 = 34.0;
+const SETTINGS_BUTTON_WIDTH: f32 = 34.0;
 const TAB_GAP: f32 = 2.0;
 const SIDE_PADDING: f32 = 6.0;
 const CLOSE_SIZE: f32 = 18.0;
@@ -74,6 +76,8 @@ pub enum TabBarEvent {
     Select(TabId),
     Close(TabId),
     New,
+    /// The settings button was clicked (Windows and Linux; macOS has Settings in its menu).
+    OpenSettings,
     /// The update mark was clicked: the app decides what that means for the update's phase.
     UpdateClicked,
     /// The pointer pressed on `tab` and started dragging; `grab` is its offset inside the tab.
@@ -86,6 +90,16 @@ pub enum TabBarEvent {
         tab: TabId,
         window: WindowId,
     },
+}
+
+/// Room the settings button takes left of the window buttons: only where the strip draws those
+/// buttons, because macOS reaches Settings from its menu.
+fn settings_button_width() -> f32 {
+    if window_chrome::trailing_inset() > 0.0 {
+        SETTINGS_BUTTON_WIDTH
+    } else {
+        0.0
+    }
 }
 
 /// What one frame of the strip produced.
@@ -173,16 +187,18 @@ impl TabBar<'_> {
                 viewport.fullscreen == Some(true),
             )
         });
-        // The update mark sits left of the window buttons, and the tabs end before it.
+        // The settings button and the update mark sit left of the window buttons, and the tabs
+        // end before them.
         let update = update_indicator::layout(ui, self.update);
         let controls_left = full.right() - window_chrome::trailing_inset();
+        let settings_left = controls_left - settings_button_width();
         let strip = Rect::from_min_max(
             pos2(
                 full.left() + window_chrome::leading_inset(fullscreen),
                 full.top(),
             ),
             pos2(
-                controls_left
+                settings_left
                     - update
                         .as_ref()
                         .map_or(0.0, update_indicator::Layout::reserved),
@@ -281,8 +297,30 @@ impl TabBar<'_> {
             self.paint_tab(&painter.with_clip_rect(strip), rect, &incoming.tab, look);
         }
 
+        if settings_button_width() > 0.0 {
+            let rect = Rect::from_min_size(
+                pos2(settings_left + 2.0, full.top() + 5.0),
+                vec2(SETTINGS_BUTTON_WIDTH - 4.0, full.height() - 8.0),
+            );
+            let label = shortcut::OPEN_SETTINGS.hint("Settings");
+            let button = ui.interact(rect, self.id("settings"), Sense::click());
+            let button = super::accessibility::label(button, &label).on_hover_text(&label);
+            if button.hovered() {
+                painter.rect_filled(rect, 6.0, theme::ink(18));
+            }
+            icons::paint(
+                &painter,
+                Rect::from_center_size(rect.center(), Vec2::splat(13.0)),
+                Icon::Sliders,
+                theme::text_secondary(),
+            );
+            if button.clicked() {
+                events.push(TabBarEvent::OpenSettings);
+            }
+        }
+
         if let Some(update) = &update
-            && update_indicator::show(ui, update, controls_left, full.top(), full.height())
+            && update_indicator::show(ui, update, settings_left, full.top(), full.height())
         {
             events.push(TabBarEvent::UpdateClicked);
         }

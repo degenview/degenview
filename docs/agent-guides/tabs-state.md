@@ -44,7 +44,9 @@
   be driven by any window. Never derive the cursor from the moving window. Linux lacks this handoff;
   a lone tab uses OS drag and Wayland merging may require **Move Tab to Window**.
 - macOS menus emit `NativeCommand`s. Windows/Linux use `ui::shortcut` for tab creation/closing and
-  all platforms support next/previous tab actions.
+  all platforms support next/previous tab actions. Windows/Linux have no menu bar, so Settings opens
+  with Ctrl+, or the strip's settings button (left of the window buttons); both become
+  `TabRequest::OpenSettings`. macOS keeps Settings… in its menu and draws no button.
 - Window grouping is not persisted. Restore sorts tabs by old window and strip position into one
   window. `PersistedTab` is untagged so old chart rows remain compatible; special tabs require
   `kind`.

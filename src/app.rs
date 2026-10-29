@@ -470,6 +470,10 @@ fn show_window(
             if !shortcut::is_mac() && shortcut::CLOSE_TAB.consume(input) {
                 events.push(tab_bar::TabBarEvent::Close(window.active));
             }
+            // And Settings through the app menu's Settings…
+            if !shortcut::is_mac() && shortcut::OPEN_SETTINGS.consume(input) {
+                events.push(tab_bar::TabBarEvent::OpenSettings);
+            }
             if shortcut::NEXT_TAB.consume(input) {
                 Some(true)
             } else if shortcut::PREVIOUS_TAB.consume(input) {
@@ -990,11 +994,7 @@ impl DegenViewApp {
                 NativeCommand::SelectPreviousTab => {
                     self.tab_host.cycle(false);
                 }
-                NativeCommand::OpenSettings => {
-                    if let Ok(mut host) = self.webhook_host.lock() {
-                        host.set_open(true);
-                    }
-                }
+                NativeCommand::OpenSettings => self.open_settings(),
                 NativeCommand::Quit => self.request_quit(ctx),
                 NativeCommand::SaveCurrentLayout => {
                     let focused = self.focused_tab.load(Ordering::Acquire);
@@ -1157,6 +1157,7 @@ impl DegenViewApp {
             match request {
                 TabRequest::New(window) => self.add_tab(Some(window)),
                 TabRequest::Close(tab) => self.close_tab_request(ctx, tab),
+                TabRequest::OpenSettings => self.open_settings(),
                 TabRequest::CloseWindow(window) => {
                     for tab in self.tab_host.tabs_of(window) {
                         self.close_tab_request(ctx, tab);
@@ -1165,6 +1166,13 @@ impl DegenViewApp {
             }
         }
         self.drop_closed_tabs(ctx);
+    }
+
+    /// Shows the Settings window: from the macOS menu, or the strip's button and Ctrl+, elsewhere.
+    fn open_settings(&self) {
+        if let Ok(mut host) = self.webhook_host.lock() {
+            host.set_open(true);
+        }
     }
 
     /// Closes `tab`, unless it is a Script Manager with unsaved edits: that one comes to the front

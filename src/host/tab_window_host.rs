@@ -34,6 +34,8 @@ pub enum TabRequest {
     Close(TabId),
     /// The OS close button: close every tab of the window.
     CloseWindow(WindowId),
+    /// The settings button or its shortcut (Windows and Linux): show the Settings window.
+    OpenSettings,
 }
 
 /// What a strip shows of a drag, in the host's terms; the app adds the tab titles.
@@ -281,6 +283,7 @@ impl TabWindowHost {
                 }
                 TabBarEvent::Close(tab) => state.requests.push(TabRequest::Close(tab)),
                 TabBarEvent::New => state.requests.push(TabRequest::New(window)),
+                TabBarEvent::OpenSettings => state.requests.push(TabRequest::OpenSettings),
                 TabBarEvent::MoveToNewWindow(tab) => {
                     Self::detach(&mut state, tab, None);
                 }
@@ -691,6 +694,7 @@ mod tests {
                 TabBarEvent::Select(3),
                 TabBarEvent::Close(2),
                 TabBarEvent::New,
+                TabBarEvent::OpenSettings,
             ],
         );
         assert_eq!(host.window(window).unwrap().active, 3);
@@ -698,7 +702,11 @@ mod tests {
         assert_eq!(host.ordered_tabs(), vec![1, 2, 3]);
         assert_eq!(
             host.take_requests(),
-            vec![TabRequest::Close(2), TabRequest::New(window)]
+            vec![
+                TabRequest::Close(2),
+                TabRequest::New(window),
+                TabRequest::OpenSettings
+            ]
         );
         assert!(host.take_requests().is_empty());
     }
