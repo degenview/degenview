@@ -50,8 +50,10 @@
   neighbor; outside the tear-off zone detach/follow the OS cursor. Over another strip, show an
   incoming gap and hide the floating window; release moves the tab.
 - Hidden windows run no frames, so macOS/Windows dragging uses the global OS cursor/button and may
-  be driven by any window. Never derive the cursor from the moving window. Linux lacks this handoff;
-  a lone tab uses OS drag and Wayland merging may require **Move Tab to Window**.
+  be driven by any window. Never derive the cursor from the moving window. X11 gets the same handoff
+  from `XQueryPointer` (`native_bridge::x11_pointer`, one cached connection, button 1 from the
+  query's mask). Wayland has neither the cursor nor window positions: a lone tab uses OS drag, a
+  tab cannot be dropped on another window, and merging needs **Move Tab to Window**.
 - macOS menus emit `NativeCommand`s. Windows/Linux use `ui::shortcut` for tab creation/closing and
   all platforms support next/previous tab actions. Windows/Linux have no menu bar, so Settings opens
   with Ctrl+, or the strip's settings button (left of the window buttons); both become
