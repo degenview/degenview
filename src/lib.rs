@@ -33,10 +33,16 @@ pub fn run_gui_with(
     let store = store::open_default()?;
     // A finished update leaves the previous app in a hidden folder until the new one has started.
     service::work_queue::submit(service::self_update::cleanup_stale);
-    let icon =
-        eframe::icon_data::from_png_bytes(include_bytes!("../assets/brand/DegenView-512.png"))?;
+    // macOS rounds and insets the square art itself (`inset_macos_icon`); elsewhere the file is
+    // drawn as it is, so it comes with its corners (`tools/round-icon.py`).
     #[cfg(target_os = "macos")]
-    let icon = inset_macos_icon(icon);
+    let icon = inset_macos_icon(eframe::icon_data::from_png_bytes(include_bytes!(
+        "../assets/brand/DegenView-512.png"
+    ))?);
+    #[cfg(not(target_os = "macos"))]
+    let icon = eframe::icon_data::from_png_bytes(include_bytes!(
+        "../assets/brand/DegenView-512-rounded.png"
+    ))?;
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_title("DegenView")
@@ -159,6 +165,39 @@ fn round_macos_icon_corners(icon: &mut egui::IconData) {
             let alpha = &mut icon.rgba[(y * width + x) * 4 + 3];
             *alpha = (*alpha as f32 * coverage).round() as u8;
         }
+    }
+}
+
+/// The window icon off macOS, the Flatpak's and the tarball's: the square master with its corners
+/// in the alpha channel (`tools/round-icon.py`), since nothing there rounds it.
+#[cfg(test)]
+mod rounded_icon_tests {
+    #[test]
+    fn the_rounded_icon_has_clear_corners_and_a_solid_middle() {
+        let icon = eframe::icon_data::from_png_bytes(include_bytes!(
+            "../assets/brand/DegenView-512-rounded.png"
+        ))
+        .unwrap();
+        let (w, h) = (icon.width as usize, icon.height as usize);
+        assert_eq!((w, h), (512, 512));
+        let alpha = |x: usize, y: usize| icon.rgba[(y * w + x) * 4 + 3];
+        for (x, y) in [(0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1)] {
+            assert_eq!(alpha(x, y), 0, "corner ({x}, {y})");
+        }
+        // The edges' midpoints and the art itself are untouched; the radius is 22.3% of the side.
+        for (x, y) in [(w / 2, 0), (0, h / 2), (w / 2, h / 2), (w - 1, h / 2)] {
+            assert_eq!(alpha(x, y), 255, "({x}, {y})");
+        }
+        let radius = (w as f32 * 0.223) as usize;
+        assert_eq!(
+            alpha(radius + 4, 0),
+            255,
+            "the straight edge starts at the radius"
+        );
+        assert!(
+            alpha(radius / 4, radius / 4) < 255,
+            "the arc cuts the corner"
+        );
     }
 }
 

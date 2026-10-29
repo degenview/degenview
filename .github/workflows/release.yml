@@ -236,7 +236,7 @@ jobs:
           cargo build --release
           mkdir -p dist pkg
           cp target/release/degenview pkg/
-          cp assets/brand/DegenView-512.png pkg/degenview.png
+          cp assets/brand/DegenView-512-rounded.png pkg/degenview.png
           cp packaging/degenview.desktop pkg/
           tar -czf "dist/DegenView-${RELEASE_TAG}-${{ matrix.name }}.tar.gz" -C pkg .
 
