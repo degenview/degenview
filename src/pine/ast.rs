@@ -192,9 +192,10 @@ pub enum Statement {
         members: Vec<EnumMember>,
         range: SourceRange,
     },
-    /// User-defined function. The body's last statement is the return value.
+    /// User-defined function or method. The body's last statement is the return value.
     Function {
         name: String,
+        kind: FunctionKind,
         parameters: Vec<Parameter>,
         body: Vec<Statement>,
         range: SourceRange,
@@ -348,13 +349,58 @@ pub struct Argument {
     pub name_range: Option<SourceRange>,
 }
 
+/// What a `Statement::Function` was declared with: `name(…) =>` or `method name(…) =>`. A method is
+/// the same callable with its first parameter as the receiver of `receiver.name(…)`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FunctionKind {
+    Function,
+    Method,
+}
+
+/// A type as a parameter was annotated with it: `float`, `array<float>`, `map<string, Zone>`,
+/// `Zone`, `lib.Zone`, `chart.point`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TypeRef {
+    pub kind: ValueType,
+    /// The script-defined type, enum, library type or `chart.point` when `kind` is `Object`.
+    pub name: Option<String>,
+    /// The element type of an array or matrix, the key and value types of a map.
+    pub arguments: Vec<TypeRef>,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Parameter {
     pub name: String,
-    pub kind: Option<ValueType>,
-    /// The script-defined type (or enum, or `chart.point`) the parameter was annotated with.
-    pub type_name: Option<String>,
+    /// None when the parameter has no type keyword (`double(x) => …`).
+    pub type_ref: Option<TypeRef>,
+    /// `const`, `input`, `simple` or `series` as written; None when the parameter has no qualifier.
+    pub qualifier: Option<Qualifier>,
     pub default_value: Option<Expression>,
+}
+
+/// The names declared with `method` at the top level of `statements`.
+pub fn method_names(statements: &[Statement]) -> std::collections::HashSet<String> {
+    statements
+        .iter()
+        .filter_map(|statement| match statement {
+            Statement::Function {
+                name,
+                kind: FunctionKind::Method,
+                ..
+            } => Some(name.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
+impl Parameter {
+    pub fn kind(&self) -> Option<ValueType> {
+        self.type_ref.as_ref().map(|reference| reference.kind)
+    }
+
+    pub fn type_name(&self) -> Option<&str> {
+        self.type_ref.as_ref()?.name.as_deref()
+    }
 }
 
 /// One `switch` arm; a nil condition is the default (`=> value`) arm.

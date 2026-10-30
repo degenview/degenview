@@ -181,7 +181,7 @@ impl TypeChecker {
                         inner.insert(
                             parameter.name.clone(),
                             parameter
-                                .kind
+                                .kind()
                                 .and_then(|kind| {
                                     if matches!(
                                         kind,

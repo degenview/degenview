@@ -4,9 +4,9 @@
 use std::collections::HashSet;
 
 use super::ast::{
-    Argument, AssignmentOperator, BinaryOperator, DeclarationMode, EnumMember, Expression, Literal,
-    LoopControl, Parameter, Qualifier, Statement, SwitchArm, TypeAnnotation, TypeField,
-    UnaryOperator,
+    Argument, AssignmentOperator, BinaryOperator, DeclarationMode, EnumMember, Expression,
+    FunctionKind, Literal, LoopControl, Parameter, Qualifier, Statement, SwitchArm, TypeAnnotation,
+    TypeField, TypeRef, UnaryOperator,
 };
 use super::program::StatementEnd;
 use super::token::SourcePosition;
@@ -29,7 +29,8 @@ pub struct Parser {
     user_types: HashSet<String>,
     enum_types: HashSet<String>,
     annotated_type_name: Option<String>,
-    method_names: HashSet<String>,
+    /// Element (or key and value) types of the annotation `type_annotation` last read.
+    annotated_arguments: Vec<TypeRef>,
     import_aliases: HashSet<String>,
     exported_names: HashSet<String>,
     /// Where each statement parsed so far ends, by the offset it starts at.
@@ -53,7 +54,7 @@ impl Parser {
             user_types,
             enum_types: HashSet::new(),
             annotated_type_name: None,
-            method_names: HashSet::new(),
+            annotated_arguments: Vec::new(),
             import_aliases,
             exported_names: HashSet::new(),
             statement_ends: Vec::new(),
@@ -87,10 +88,6 @@ impl Parser {
 
     pub fn exported_names(&self) -> &HashSet<String> {
         &self.exported_names
-    }
-
-    pub fn method_names(&self) -> &HashSet<String> {
-        &self.method_names
     }
 
     // MARK: Cursor
@@ -308,7 +305,7 @@ impl Parser {
             ));
         }
         if self.is_function_definition() {
-            return self.function_definition();
+            return self.function_definition(FunctionKind::Function);
         }
         if let Some(declaration) = self.declaration() {
             return Some(declaration);
@@ -613,7 +610,7 @@ impl Parser {
         false
     }
 
-    fn function_definition(&mut self) -> Option<Statement> {
+    fn function_definition(&mut self, kind: FunctionKind) -> Option<Statement> {
         let TokenKind::Identifier(name) = &self.current().kind else {
             return None;
         };
@@ -636,6 +633,7 @@ impl Parser {
         let body = self.block_or_single_statement("function declaration")?;
         Some(Statement::Function {
             name,
+            kind,
             parameters,
             body,
             range,
@@ -643,13 +641,16 @@ impl Parser {
     }
 
     fn function_parameter(&mut self) -> Option<Parameter> {
-        self.skip_qualifier();
-        let kind = self.type_annotation();
-        let type_name = if kind == Some(ValueType::Object) {
-            self.annotated_type_name.clone()
-        } else {
-            None
-        };
+        let qualifier = self.skip_qualifier();
+        let type_ref = self.type_annotation().map(|kind| TypeRef {
+            kind,
+            name: if kind == ValueType::Object {
+                self.annotated_type_name.clone()
+            } else {
+                None
+            },
+            arguments: std::mem::take(&mut self.annotated_arguments),
+        });
         let TokenKind::Identifier(name) = &self.current().kind else {
             self.error(
                 "PINE2011",
@@ -666,8 +667,8 @@ impl Parser {
         }
         Some(Parameter {
             name,
-            kind,
-            type_name,
+            type_ref,
+            qualifier,
             default_value,
         })
     }
@@ -1074,6 +1075,7 @@ impl Parser {
 
     fn type_annotation(&mut self) -> Option<ValueType> {
         self.annotated_type_name = None;
+        self.annotated_arguments.clear();
         let kind;
         match &self.current().kind {
             TokenKind::TypeKeyword(value) => kind = *value,
@@ -1121,32 +1123,41 @@ impl Parser {
             self.advance();
             self.advance();
             self.advance();
+            // `float[]`: the annotated type is the element.
+            self.annotated_arguments = vec![TypeRef {
+                kind,
+                name: self.annotated_type_name.take(),
+                arguments: Vec::new(),
+            }];
             return Some(ValueType::Array);
         }
         if kind == ValueType::Array && next.kind == TokenKind::Less {
             self.advance();
             self.advance();
-            let _ = self.type_argument();
+            let element = self.type_reference();
             self.expect(TokenKind::Greater, "Expected '>'.");
+            self.annotated_arguments = element.into_iter().collect();
             return Some(ValueType::Array);
         }
         if kind == ValueType::Matrix && next.kind == TokenKind::Less {
             self.advance();
             self.advance();
-            let _ = self.type_argument();
+            let element = self.type_reference();
             self.expect(TokenKind::Greater, "Expected '>'.");
+            self.annotated_arguments = element.into_iter().collect();
             return Some(ValueType::Matrix);
         }
         if kind == ValueType::Map && next.kind == TokenKind::Less {
             self.advance();
             self.advance();
-            let _ = self.type_argument();
+            let key = self.type_reference();
             self.expect(
                 TokenKind::Comma,
                 "Expected ',' between the key and value types.",
             );
-            let _ = self.type_argument();
+            let value = self.type_reference();
             self.expect(TokenKind::Greater, "Expected '>'.");
+            self.annotated_arguments = key.into_iter().chain(value).collect();
             return Some(ValueType::Map);
         }
         None
@@ -1172,10 +1183,25 @@ impl Parser {
                 .is_some_and(|t| matches!(&t.kind, TokenKind::Identifier(_)))
     }
 
+    /// The text of a type used as a generic argument, for `array.new<float>` (`array.new_float`).
     fn type_argument(&mut self) -> Option<String> {
-        let mut word = match &self.current().kind {
-            TokenKind::TypeKeyword(kind) => value_type_name(*kind).to_owned(),
-            TokenKind::Identifier(name) => name.clone(),
+        let reference = self.type_reference()?;
+        Some(
+            reference
+                .name
+                .unwrap_or_else(|| value_type_name(reference.kind).to_owned()),
+        )
+    }
+
+    /// A type written inside `<…>`: a keyword, a collection with its own arguments, or a (dotted)
+    /// user type.
+    fn type_reference(&mut self) -> Option<TypeRef> {
+        let (kind, mut word) = match &self.current().kind {
+            TokenKind::TypeKeyword(kind) => (*kind, value_type_name(*kind).to_owned()),
+            TokenKind::Identifier(name) => match object_type(name) {
+                Some(kind) => (kind, name.clone()),
+                None => (ValueType::Object, name.clone()),
+            },
             _ => {
                 self.error("PINE2012", "Expected a type.", self.current().range);
                 return None;
@@ -1192,14 +1218,19 @@ impl Parser {
             self.advance();
             self.advance();
         }
+        let mut arguments = Vec::new();
         if self.take(TokenKind::Less) {
-            let _ = self.type_argument();
+            arguments.extend(self.type_reference());
             while self.take(TokenKind::Comma) {
-                let _ = self.type_argument();
+                arguments.extend(self.type_reference());
             }
             self.expect(TokenKind::Greater, "Expected '>'.");
         }
-        Some(word)
+        Some(TypeRef {
+            kind,
+            name: (kind == ValueType::Object).then_some(word),
+            arguments,
+        })
     }
 
     fn skip_qualifier(&mut self) -> Option<Qualifier> {
@@ -1464,10 +1495,7 @@ impl Parser {
 
     fn method_definition(&mut self) -> Option<Statement> {
         self.advance();
-        if let TokenKind::Identifier(name) = &self.current().kind {
-            self.method_names.insert(name.clone());
-        }
-        self.function_definition()
+        self.function_definition(FunctionKind::Method)
     }
 }
 

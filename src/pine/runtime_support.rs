@@ -256,13 +256,15 @@ impl LibraryLinkage {
         declared: &HashSet<&str>,
     ) -> Parameter {
         let mut result = parameter.clone();
-        if let Some(name) = &parameter.type_name {
+        if let Some(name) = parameter.type_name()
+            && let Some(reference) = result.type_ref.as_mut()
+        {
             if let Some((alias, rest)) = name.split_once('.') {
                 if let Some(path) = self.aliases.get(scope).and_then(|m| m.get(alias)) {
-                    result.type_name = Some(format!("{path}::{rest}"));
+                    reference.name = Some(format!("{path}::{rest}"));
                 }
-            } else if declared.contains(name.as_str()) && !scope.is_empty() {
-                result.type_name = Some(format!("{scope}::{name}"));
+            } else if declared.contains(name) && !scope.is_empty() {
+                reference.name = Some(format!("{scope}::{name}"));
             }
         }
         result
