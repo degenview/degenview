@@ -16,6 +16,7 @@ pub mod call_binding;
 #[cfg(test)]
 mod call_binding_tests;
 mod call_routes;
+pub mod callables;
 #[cfg(test)]
 mod chart_type_tests;
 pub mod compiler;
@@ -82,6 +83,7 @@ pub mod trading_session;
 pub mod traversal;
 pub mod type_checker;
 pub mod type_constructor;
+pub mod types;
 #[cfg(test)]
 mod user_method_tests;
 pub mod user_methods;

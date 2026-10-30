@@ -4,16 +4,27 @@
 use std::collections::{HashMap, HashSet};
 
 use super::ast::{
-    AssignmentOperator, BinaryOperator, DeclarationMode, Expression, Literal, Qualifier, Statement,
-    TypeAnnotation, UnaryOperator,
+    Argument, AssignmentOperator, BinaryOperator, DeclarationMode, Expression, FunctionKind,
+    Literal, Qualifier, Statement, TypeAnnotation, UnaryOperator,
 };
 use super::builtin_types::{self, value_type_name};
+use super::callables::{Callables, Given, NoFit, Resolution};
+use super::registry;
+use super::types::{Ty, TyId, Types};
 use crate::pine::{Diagnostic, DiagnosticCategory, SourceRange, ValueType};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Inferred {
     /// A qualifier of None means the type is certain but the qualifier is not.
     Known(ValueType, Option<Qualifier>),
+    /// A type with more to it than its kind (`array<float>`, a user type), by handle into the
+    /// checker's [`Types`]. `kind` is what the checks that only know kinds see: None for types they
+    /// have never judged (user types, enums, maps, matrices).
+    Typed {
+        ty: TyId,
+        kind: Option<ValueType>,
+        qualifier: Option<Qualifier>,
+    },
     Na,
     Unknown,
 }
@@ -22,17 +33,26 @@ impl Inferred {
     pub fn kind(self) -> Option<ValueType> {
         match self {
             Self::Known(kind, _) => Some(kind),
+            Self::Typed { kind, .. } => kind,
             _ => None,
         }
     }
 
     pub fn qualifier(self) -> Option<Qualifier> {
         match self {
-            Self::Known(_, qualifier) => qualifier,
+            Self::Known(_, qualifier) | Self::Typed { qualifier, .. } => qualifier,
             Self::Na => Some(Qualifier::Constant),
             Self::Unknown => None,
         }
     }
+}
+
+/// What checking a script found.
+pub struct Checked {
+    pub diagnostics: Vec<Diagnostic>,
+    /// The callable each call site selected, by call-site number and by position among the script's
+    /// top-level functions (see [`Callables`]). A call the checker could not settle is absent.
+    pub resolutions: HashMap<usize, usize>,
 }
 
 type Scope = HashMap<String, Inferred>;
@@ -40,25 +60,86 @@ type Scope = HashMap<String, Inferred>;
 pub struct TypeChecker {
     diagnostics: Vec<Diagnostic>,
     reassigned: HashSet<String>,
-    functions: HashSet<String>,
+    types: Types,
+    enums: HashSet<String>,
+    /// The fields of each user type the script declares, in order.
+    udts: HashMap<String, Vec<(String, Ty)>>,
+    callables: Callables,
+    /// What each callable's body evaluates to, once the body has been checked.
+    returns: Vec<Inferred>,
+    /// The callable whose body is being checked.
+    current: Option<usize>,
+    /// Calls between callables, for finding the ones that reach themselves.
+    edges: Vec<(usize, usize, SourceRange)>,
+    resolutions: HashMap<usize, usize>,
+    /// The value of the statement just checked, which a function returns when it is the last.
+    last: Inferred,
+    /// Whether the script imports a library, whose methods this checker cannot see.
+    imports: bool,
 }
 
 impl TypeChecker {
     pub fn check(statements: &[Statement]) -> Vec<Diagnostic> {
+        Self::check_program(statements, false).diagnostics
+    }
+
+    /// Checks `statements`; `imports` says the script imports libraries.
+    pub fn check_program(statements: &[Statement], imports: bool) -> Checked {
+        let enums: HashSet<String> = statements
+            .iter()
+            .filter_map(|statement| match statement {
+                Statement::EnumDeclaration { name, .. } => Some(name.clone()),
+                _ => None,
+            })
+            .collect();
+        let udts = statements
+            .iter()
+            .filter_map(|statement| match statement {
+                Statement::TypeDeclaration { name, fields, .. } => Some((
+                    name.clone(),
+                    fields
+                        .iter()
+                        .map(|field| {
+                            let ty = field
+                                .type_ref
+                                .as_ref()
+                                .map_or(Ty::Any, |reference| Ty::from_ref(reference, &enums));
+                            (field.name.clone(), ty)
+                        })
+                        .collect(),
+                )),
+                _ => None,
+            })
+            .collect();
+        let callables = Callables::collect(statements, &enums);
         let mut checker = Self {
             diagnostics: Vec::new(),
             reassigned: assigned_names(statements),
-            functions: function_names(statements),
+            types: Types::default(),
+            enums,
+            udts,
+            returns: vec![Inferred::Unknown; callables.len()],
+            callables,
+            current: None,
+            edges: Vec::new(),
+            resolutions: HashMap::new(),
+            last: Inferred::Unknown,
+            imports,
         };
         let mut scope = Scope::new();
         checker.check_statements(statements, &mut scope);
-        checker.diagnostics
+        checker.report_recursion();
+        Checked {
+            diagnostics: checker.diagnostics,
+            resolutions: checker.resolutions,
+        }
     }
 
     // MARK: Statements
 
     fn check_statements(&mut self, statements: &[Statement], scope: &mut Scope) {
         for statement in statements {
+            self.last = Inferred::Unknown;
             match statement {
                 Statement::Declaration {
                     name,
@@ -66,14 +147,19 @@ impl TypeChecker {
                     mode,
                     value,
                     ..
-                } => self.declare(name, *annotation, *mode, value, scope),
+                } => {
+                    self.declare(name, *annotation, *mode, value, scope);
+                    let declared = scope.get(name).copied().unwrap_or(Inferred::Unknown);
+                    self.last = declared;
+                }
                 Statement::Assignment {
                     name, op, value, ..
                 } => {
                     self.assign(name, *op, value, scope);
                 }
                 Statement::Expression(expression) => {
-                    self.infer(expression, scope);
+                    let value = self.infer(expression, scope);
+                    self.last = value;
                 }
                 Statement::Conditional {
                     condition,
@@ -120,7 +206,7 @@ impl TypeChecker {
                     body,
                     ..
                 } => {
-                    self.infer(collection, scope);
+                    let collection = self.infer(collection, scope);
                     let mut inner = scope.clone();
                     if let Some(index) = index {
                         inner.insert(
@@ -128,7 +214,11 @@ impl TypeChecker {
                             Inferred::Known(ValueType::Int, Some(Qualifier::Series)),
                         );
                     }
-                    inner.insert(value.clone(), Inferred::Unknown);
+                    let element = match self.ty_of(collection) {
+                        Ty::Array(element) => self.inferred_of(&element, Some(Qualifier::Series)),
+                        _ => Inferred::Unknown,
+                    };
+                    inner.insert(value.clone(), element);
                     self.check_statements(body, &mut inner);
                 }
                 Statement::WhileLoop {
@@ -171,6 +261,7 @@ impl TypeChecker {
                     name,
                     parameters,
                     body,
+                    range,
                     ..
                 } => {
                     let mut inner = scope.clone();
@@ -178,24 +269,24 @@ impl TypeChecker {
                         if let Some(default) = &parameter.default_value {
                             self.infer(default, scope);
                         }
-                        inner.insert(
-                            parameter.name.clone(),
-                            parameter
-                                .kind()
-                                .and_then(|kind| {
-                                    if matches!(
-                                        kind,
-                                        ValueType::Object | ValueType::Map | ValueType::Matrix
-                                    ) {
-                                        None
-                                    } else {
-                                        Some(Inferred::Known(kind, None))
-                                    }
-                                })
-                                .unwrap_or(Inferred::Unknown),
-                        );
+                        let declared = parameter
+                            .type_ref
+                            .as_ref()
+                            .map(|reference| Ty::from_ref(reference, &self.enums));
+                        let value = match declared {
+                            Some(Ty::Scalar(kind)) => Inferred::Known(kind, None),
+                            Some(ty) => self.inferred_of(&ty, None),
+                            None => Inferred::Unknown,
+                        };
+                        inner.insert(parameter.name.clone(), value);
                     }
+                    let outer = self.current;
+                    self.current = self.callables.at(range.start.offset);
                     self.check_statements(body, &mut inner);
+                    if let Some(id) = self.current {
+                        self.returns[id] = self.last;
+                    }
+                    self.current = outer;
                     scope.insert(name.clone(), Inferred::Unknown);
                 }
                 Statement::FieldAssignment { target, value, .. } => {
@@ -205,6 +296,13 @@ impl TypeChecker {
                 Statement::LoopControl(_, _)
                 | Statement::TypeDeclaration { .. }
                 | Statement::EnumDeclaration { .. } => {}
+            }
+            // Only an expression or a declaration hands its value to the function around it.
+            if !matches!(
+                statement,
+                Statement::Expression(_) | Statement::Declaration { .. }
+            ) {
+                self.last = Inferred::Unknown;
             }
         }
     }
@@ -243,8 +341,26 @@ impl TypeChecker {
             || annotation.kind == Some(ValueType::Map)
             || annotation.kind == Some(ValueType::Matrix)
         {
-            // Which type an object is, and whether a value fits it, is not tracked.
-            scope.insert(name.to_owned(), Inferred::Unknown);
+            // Whether a value fits the annotated type is not judged, but a value whose type is
+            // known keeps it.
+            let kept = match value {
+                Inferred::Typed { ty, kind, .. } => Inferred::Typed {
+                    ty,
+                    kind,
+                    qualifier: Some(Qualifier::Series),
+                },
+                _ => Inferred::Unknown,
+            };
+            scope.insert(name.to_owned(), kept);
+        } else if let Inferred::Typed { ty, kind, .. } = value {
+            scope.insert(
+                name.to_owned(),
+                Inferred::Typed {
+                    ty,
+                    kind,
+                    qualifier: Some(Qualifier::Series),
+                },
+            );
         } else if let Some(declared) = annotation.kind {
             if !fits(value, declared) {
                 self.error(
@@ -344,10 +460,15 @@ impl TypeChecker {
                 Literal::Color(_) => Inferred::Known(ValueType::Color, Some(Qualifier::Constant)),
                 Literal::Na => Inferred::Na,
             },
-            Expression::Identifier(name, _) => scope
-                .get(name)
-                .copied()
-                .unwrap_or_else(|| builtin_types::identifier(name)),
+            Expression::Identifier(name, _) => {
+                if let Some(value) = scope.get(name) {
+                    *value
+                } else if let Some(value) = self.field_path(name, scope) {
+                    value
+                } else {
+                    builtin_types::identifier(name)
+                }
+            }
             Expression::Unary { op, operand, range } => {
                 let operand_inferred = self.infer(operand, scope);
                 self.unary(*op, operand_inferred, *range)
@@ -381,9 +502,10 @@ impl TypeChecker {
             Expression::Call {
                 name,
                 arguments,
+                site,
                 range,
                 ..
-            } => self.call(name, arguments, scope, *range),
+            } => self.call(name, arguments, *site, scope, *range),
             Expression::History { base, offset, .. } => {
                 let value = self.infer(base, scope);
                 self.infer(offset, scope);
@@ -398,20 +520,27 @@ impl TypeChecker {
                 }
                 Inferred::Unknown
             }
-            Expression::Member { base, .. } => {
-                self.infer(base, scope);
-                Inferred::Unknown
+            Expression::Member { base, name, .. } => {
+                let base = self.infer(base, scope);
+                let ty = self.ty_of(base);
+                match self.field_type(&ty, name) {
+                    Some(field) => self.inferred_of(&field, Some(Qualifier::Series)),
+                    None => Inferred::Unknown,
+                }
             }
             Expression::MethodCall {
                 receiver,
+                name,
                 arguments,
-                ..
+                site,
+                range,
             } => {
-                self.infer(receiver, scope);
-                for argument in arguments {
-                    self.infer(&argument.value, scope);
-                }
-                Inferred::Unknown
+                let receiver = self.infer(receiver, scope);
+                let values: Vec<Inferred> = arguments
+                    .iter()
+                    .map(|argument| self.infer(&argument.value, scope))
+                    .collect();
+                self.method_call(receiver, name, arguments, &values, *site, *range)
             }
             Expression::Statement(statement, _) => {
                 self.block(std::slice::from_ref(statement.as_ref()), scope);
@@ -435,7 +564,7 @@ impl TypeChecker {
     }
 
     fn unary(&mut self, op: UnaryOperator, operand: Inferred, range: SourceRange) -> Inferred {
-        let Inferred::Known(kind, qualifier) = operand else {
+        let (Some(kind), qualifier) = (operand.kind(), operand.qualifier()) else {
             return Inferred::Unknown;
         };
         if op == UnaryOperator::Not {
@@ -473,10 +602,10 @@ impl TypeChecker {
         if op.is_comparison() && (a == Inferred::Na || b == Inferred::Na) {
             return Inferred::Known(ValueType::Bool, Some(Qualifier::Series));
         }
-        let (Inferred::Known(x, qx), Inferred::Known(y, qy)) = (a, b) else {
+        let (Some(x), Some(y)) = (a.kind(), b.kind()) else {
             return Inferred::Unknown;
         };
-        let qualifier = max_qualifier(qx, qy);
+        let qualifier = max_qualifier(a.qualifier(), b.qualifier());
 
         match op {
             BinaryOperator::And | BinaryOperator::Or => {
@@ -555,7 +684,8 @@ impl TypeChecker {
     fn call(
         &mut self,
         name: &str,
-        arguments: &[super::ast::Argument],
+        arguments: &[Argument],
+        site: usize,
         scope: &Scope,
         range: SourceRange,
     ) -> Inferred {
@@ -563,8 +693,27 @@ impl TypeChecker {
             .iter()
             .map(|argument| self.infer(&argument.value, scope))
             .collect();
-        if self.functions.contains(name) {
-            return Inferred::Unknown;
+        // `levels.push(x)` reads as one dotted name: a variable (or a builtin series) and a method.
+        if let Some((path, member)) = name.rsplit_once('.') {
+            // A variable named like a namespace (`timeframe.change(timeframe)` with a `timeframe`
+            // parameter) does not hide the namespace's function: a method it could be would have to
+            // be declared by the script.
+            let builtin = registry::is_function(name) && self.callables.declared(member).is_empty();
+            if !builtin && let Some(receiver) = self.receiver_value(path, scope) {
+                return self.method_call(receiver, member, arguments, &values, site, range);
+            }
+            if !self.callables.declared(member).is_empty() {
+                return Inferred::Unknown;
+            }
+        }
+        if !self.callables.declared(name).is_empty() {
+            return self.plain_call(name, arguments, &values, site, range);
+        }
+        if let Some(object) = name.strip_suffix(".new")
+            && self.udts.contains_key(object)
+        {
+            let ty = Ty::Udt(object.to_owned());
+            return self.inferred_of(&ty, Some(Qualifier::Series));
         }
         if let Some(kind) = builtin_types::input_result(name) {
             if name != "input.source" {
@@ -586,7 +735,451 @@ impl TypeChecker {
         for value in &values {
             qualifier = max_qualifier(qualifier, value.qualifier());
         }
-        builtin_types::call(name, arguments, &values, qualifier)
+        let result = builtin_types::call(name, arguments, &values, qualifier);
+        self.refine_collection(name, &values, result)
+    }
+
+    // MARK: Types
+
+    /// The type of an inferred value as a `Ty`; `Any` where the checker does not know it.
+    fn ty_of(&self, value: Inferred) -> Ty {
+        match value {
+            Inferred::Known(ValueType::Array, _) => Ty::Array(Box::new(Ty::Any)),
+            Inferred::Known(ValueType::Matrix, _) => Ty::Matrix(Box::new(Ty::Any)),
+            Inferred::Known(ValueType::Map, _) => Ty::Map(Box::new(Ty::Any), Box::new(Ty::Any)),
+            Inferred::Known(ValueType::Object, _) => Ty::Any,
+            Inferred::Known(kind, _) => Ty::Scalar(kind),
+            Inferred::Typed { ty, .. } => self.types.get(ty).clone(),
+            Inferred::Na | Inferred::Unknown => Ty::Any,
+        }
+    }
+
+    /// The inferred value of type `ty`. A scalar stays a plain `Known`, as it always was.
+    fn inferred_of(&mut self, ty: &Ty, qualifier: Option<Qualifier>) -> Inferred {
+        match ty {
+            Ty::Any => Inferred::Unknown,
+            Ty::Scalar(kind) => Inferred::Known(*kind, qualifier),
+            Ty::Array(_) => Inferred::Typed {
+                ty: self.types.intern(ty.clone()),
+                kind: Some(ValueType::Array),
+                qualifier,
+            },
+            Ty::Matrix(_) | Ty::Map(..) | Ty::Udt(_) | Ty::Enum(_) => Inferred::Typed {
+                ty: self.types.intern(ty.clone()),
+                kind: None,
+                qualifier,
+            },
+        }
+    }
+
+    /// The type of `field` in a user type the script declares.
+    fn field_type(&self, ty: &Ty, field: &str) -> Option<Ty> {
+        let Ty::Udt(name) = ty else {
+            return None;
+        };
+        self.udts
+            .get(name)?
+            .iter()
+            .find(|(candidate, _)| candidate == field)
+            .map(|(_, ty)| ty.clone())
+    }
+
+    /// `zone.top`, `this.items`: a variable and the fields read through it. None when the head of
+    /// the path is not a variable.
+    fn field_path(&mut self, path: &str, scope: &Scope) -> Option<Inferred> {
+        let (head, rest) = path.split_once('.')?;
+        let mut ty = self.ty_of(scope.get(head).copied()?);
+        for field in rest.split('.') {
+            let Some(next) = self.field_type(&ty, field) else {
+                return Some(Inferred::Unknown);
+            };
+            ty = next;
+        }
+        Some(self.inferred_of(&ty, Some(Qualifier::Series)))
+    }
+
+    /// What a method is called on, given the path before the method name: a variable, a field path
+    /// or a builtin series such as `close`. None when the path is none of those (a namespace such
+    /// as `ta`).
+    fn receiver_value(&mut self, path: &str, scope: &Scope) -> Option<Inferred> {
+        if let Some(value) = scope.get(path) {
+            return Some(*value);
+        }
+        if let Some(value) = self.field_path(path, scope) {
+            return Some(value);
+        }
+        // A dotted builtin such as `strategy.closedtrades` is also a namespace of functions.
+        if path.contains('.') {
+            return None;
+        }
+        match builtin_types::identifier(path) {
+            Inferred::Unknown => None,
+            known => Some(known),
+        }
+    }
+
+    /// Gives `array.new_float`, `array.from` and `array.copy` the element type they carry.
+    fn refine_collection(&mut self, name: &str, values: &[Inferred], result: Inferred) -> Inferred {
+        let element = if let Some(element) = name.strip_prefix("array.new_") {
+            Some(match element {
+                "int" => Ty::Scalar(ValueType::Int),
+                "float" => Ty::Scalar(ValueType::Float),
+                "bool" => Ty::Scalar(ValueType::Bool),
+                "string" => Ty::Scalar(ValueType::String),
+                "color" => Ty::Scalar(ValueType::Color),
+                "line" => Ty::Scalar(ValueType::Line),
+                "label" => Ty::Scalar(ValueType::Label),
+                "box" => Ty::Scalar(ValueType::Box),
+                "table" => Ty::Scalar(ValueType::Table),
+                "linefill" => Ty::Scalar(ValueType::Linefill),
+                "polyline" => Ty::Scalar(ValueType::Polyline),
+                object if self.udts.contains_key(object) => Ty::Udt(object.to_owned()),
+                _ => Ty::Any,
+            })
+        } else if name == "array.from" {
+            values.first().map(|first| self.ty_of(*first))
+        } else if name == "array.copy" || name == "array.slice" {
+            match values.first().map(|first| self.ty_of(*first)) {
+                Some(Ty::Array(element)) => Some(*element),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        match element {
+            Some(element) => {
+                let qualifier = result.qualifier();
+                self.inferred_of(&Ty::Array(Box::new(element)), qualifier)
+            }
+            None => result,
+        }
+    }
+
+    // MARK: User callables
+
+    fn given(
+        &self,
+        receiver: Option<Inferred>,
+        arguments: &[Argument],
+        values: &[Inferred],
+    ) -> Vec<Given> {
+        receiver
+            .into_iter()
+            .map(|receiver| Given {
+                label: None,
+                ty: self.ty_of(receiver),
+                qualifier: receiver.qualifier(),
+            })
+            .chain(arguments.iter().zip(values).map(|(argument, value)| Given {
+                label: argument.name.clone(),
+                ty: self.ty_of(*value),
+                qualifier: value.qualifier(),
+            }))
+            .collect()
+    }
+
+    /// What a call to callable `id` evaluates to. A scalar's qualifier is not carried over: it
+    /// depends on the arguments.
+    fn select(&mut self, id: usize, site: usize, range: SourceRange) -> Inferred {
+        self.resolutions.insert(site, id);
+        if let Some(from) = self.current {
+            self.edges.push((from, id, range));
+        }
+        match self.returns[id] {
+            Inferred::Known(kind, _) => Inferred::Known(kind, None),
+            other => other,
+        }
+    }
+
+    /// `name(a, b)` where `name` is declared by the script.
+    fn plain_call(
+        &mut self,
+        name: &str,
+        arguments: &[Argument],
+        values: &[Inferred],
+        site: usize,
+        range: SourceRange,
+    ) -> Inferred {
+        // A name declared once can only mean that declaration, so a call from its own body is
+        // recursion whether or not its arguments fit.
+        if let [only] = self.callables.declared(name)
+            && let Some(from) = self.current
+        {
+            self.edges.push((from, *only, range));
+        }
+        let given = self.given(None, arguments, values);
+        match self.callables.resolve(name, &given, false) {
+            Resolution::Selected(id) => self.select(id, site, range),
+            Resolution::Dynamic => Inferred::Unknown,
+            Resolution::Ambiguous(ids) => {
+                self.ambiguous(name, &ids, range);
+                Inferred::Unknown
+            }
+            Resolution::NoFit(reasons) => {
+                let only_methods = !reasons.is_empty()
+                    && reasons
+                        .iter()
+                        .all(|(id, _)| self.callables.get(*id).kind == FunctionKind::Method);
+                if only_methods {
+                    self.refused(name, &reasons, arguments, false, range);
+                }
+                Inferred::Unknown
+            }
+        }
+    }
+
+    /// `receiver.member(a, b)`.
+    fn method_call(
+        &mut self,
+        receiver: Inferred,
+        member: &str,
+        arguments: &[Argument],
+        values: &[Inferred],
+        site: usize,
+        range: SourceRange,
+    ) -> Inferred {
+        let receiver_ty = self.ty_of(receiver);
+        // Nothing is known of the receiver, so which method runs is for the run to say.
+        if receiver_ty == Ty::Any {
+            return Inferred::Unknown;
+        }
+        let given = self.given(Some(receiver), arguments, values);
+        match self.callables.resolve(member, &given, true) {
+            Resolution::Selected(id) => self.select(id, site, range),
+            Resolution::Dynamic => Inferred::Unknown,
+            Resolution::Ambiguous(ids) => {
+                self.ambiguous(member, &ids, range);
+                Inferred::Unknown
+            }
+            Resolution::NoFit(reasons) => {
+                // A builtin method of the same name takes the call when no declaration does.
+                match self.builtin_method(&receiver_ty, receiver, member, values) {
+                    Some(result) => result,
+                    None => {
+                        if reasons.is_empty() {
+                            self.unknown_method(member, &receiver_ty, range);
+                        } else {
+                            self.refused(member, &reasons, arguments, true, range);
+                        }
+                        Inferred::Unknown
+                    }
+                }
+            }
+        }
+    }
+
+    /// The result of a builtin method on a receiver of known type, or None when the type has no such
+    /// method. A receiver the checker has no list of methods for always has it.
+    fn builtin_method(
+        &mut self,
+        receiver: &Ty,
+        value: Inferred,
+        member: &str,
+        values: &[Inferred],
+    ) -> Option<Inferred> {
+        let namespace = match receiver {
+            Ty::Array(_) => "array",
+            Ty::Matrix(_) => "matrix",
+            Ty::Map(..) => "map",
+            Ty::Scalar(ValueType::Line) => "line",
+            Ty::Scalar(ValueType::Label) => "label",
+            Ty::Scalar(ValueType::Box) => "box",
+            Ty::Scalar(ValueType::Table) => "table",
+            Ty::Scalar(ValueType::Linefill) => "linefill",
+            Ty::Scalar(ValueType::Polyline) => "polyline",
+            Ty::Udt(name) => {
+                // A library's types and methods are out of sight.
+                let known = self.udts.contains_key(name) && !self.imports;
+                return (!known || member == "copy").then(|| {
+                    if member == "copy" {
+                        value
+                    } else {
+                        Inferred::Unknown
+                    }
+                });
+            }
+            Ty::Scalar(_) | Ty::Enum(_) => {
+                return self.imports.then_some(Inferred::Unknown);
+            }
+            Ty::Any => return Some(Inferred::Unknown),
+        };
+        let exists = !registry::is_closed(namespace)
+            || self.imports
+            || registry::is_function(&format!("{namespace}.{member}"));
+        if !exists {
+            return None;
+        }
+        let _ = values;
+        Some(match (receiver, member) {
+            (Ty::Array(element), "get" | "first" | "last" | "pop" | "shift" | "remove") => {
+                let element = (**element).clone();
+                self.inferred_of(&element, Some(Qualifier::Series))
+            }
+            (Ty::Array(_) | Ty::Map(..) | Ty::Matrix(_), "copy") => value,
+            _ => Inferred::Unknown,
+        })
+    }
+
+    fn unknown_method(&mut self, member: &str, receiver: &Ty, range: SourceRange) {
+        self.error(
+            "PINE3064",
+            format!("There is no method '{member}' for {}.", receiver.describe()),
+            range,
+        );
+    }
+
+    fn ambiguous(&mut self, name: &str, ids: &[usize], range: SourceRange) {
+        let signatures: Vec<String> = ids.iter().map(|id| self.signature(*id)).collect();
+        self.error(
+            "PINE3068",
+            format!(
+                "The call to '{name}' is ambiguous: {} fit equally well.",
+                signatures.join(" and ")
+            ),
+            range,
+        );
+    }
+
+    fn signature(&self, id: usize) -> String {
+        let callable = self.callables.get(id);
+        let parameters: Vec<String> = callable
+            .params
+            .iter()
+            .map(|parameter| match &parameter.ty {
+                Some(ty) => format!("{} {}", ty.describe(), parameter.name),
+                None => parameter.name.clone(),
+            })
+            .collect();
+        format!("{}({})", callable.name, parameters.join(", "))
+    }
+
+    /// Reports why no declaration of `name` takes the call. `method_syntax` says the first given is
+    /// the receiver written before the dot.
+    fn refused(
+        &mut self,
+        name: &str,
+        reasons: &[(usize, NoFit)],
+        arguments: &[Argument],
+        method_syntax: bool,
+        range: SourceRange,
+    ) {
+        // Where argument `index` of the given list is: the receiver has no range of its own.
+        let at = |index: usize| {
+            let position = if method_syntax {
+                index.checked_sub(1)
+            } else {
+                Some(index)
+            };
+            position
+                .and_then(|position| arguments.get(position))
+                .map_or(range, |argument| argument.value.range())
+        };
+        let receiver_refused = method_syntax
+            && reasons
+                .iter()
+                .all(|(_, reason)| matches!(reason, NoFit::Type { index: 0, .. }));
+        if receiver_refused {
+            let given = match &reasons[0].1 {
+                NoFit::Type { given, .. } => given.describe(),
+                _ => String::new(),
+            };
+            self.error(
+                "PINE3065",
+                format!("No method '{name}' takes a receiver of type {given}."),
+                range,
+            );
+            return;
+        }
+        let (message, at) = match reasons {
+            [(id, reason)] => match reason {
+                NoFit::Arity => (
+                    format!("Wrong number of arguments for '{}'.", self.signature(*id)),
+                    range,
+                ),
+                NoFit::Label(label) => (
+                    format!(
+                        "'{}' has no parameter named '{label}'.",
+                        self.signature(*id)
+                    ),
+                    range,
+                ),
+                NoFit::Type {
+                    index,
+                    expected,
+                    given,
+                } => (
+                    format!(
+                        "Argument {} of '{name}' must be {}, got {}.",
+                        index + usize::from(!method_syntax),
+                        expected.describe(),
+                        given.describe()
+                    ),
+                    at(*index),
+                ),
+                NoFit::Qualifier { index, expected } => (
+                    format!(
+                        "Argument {} of '{name}' must be {} or lower, but it changes from bar to bar.",
+                        index + usize::from(!method_syntax),
+                        describe_qualifier(*expected),
+                    ),
+                    at(*index),
+                ),
+            },
+            _ => (
+                format!("No overload of '{name}' takes these arguments."),
+                range,
+            ),
+        };
+        let code = if matches!(reasons, [(_, NoFit::Qualifier { .. })]) {
+            "PINE3067"
+        } else {
+            "PINE3066"
+        };
+        self.error(code, message, at);
+    }
+
+    /// Reports each callable that reaches itself through the calls the checker resolved.
+    fn report_recursion(&mut self) {
+        let mut out: Vec<Vec<(usize, SourceRange)>> = vec![Vec::new(); self.callables.len()];
+        for (from, to, range) in &self.edges {
+            out[*from].push((*to, *range));
+        }
+        let reaches = |from: usize, target: usize| {
+            let mut seen = vec![false; out.len()];
+            let mut pending = vec![from];
+            while let Some(current) = pending.pop() {
+                if current == target {
+                    return true;
+                }
+                if !std::mem::replace(&mut seen[current], true) {
+                    pending.extend(out[current].iter().map(|(next, _)| *next));
+                }
+            }
+            false
+        };
+        let mut found = Vec::new();
+        for (id, calls) in out.iter().enumerate() {
+            if let Some((callee, range)) = calls.iter().find(|(callee, _)| reaches(*callee, id)) {
+                found.push((id, *callee, *range));
+            }
+        }
+        for (id, callee, range) in found {
+            let callable = self.callables.get(id);
+            let noun = match callable.kind {
+                FunctionKind::Function => "function",
+                FunctionKind::Method => "method",
+            };
+            let how = if callee == id {
+                "itself".to_owned()
+            } else {
+                format!("itself through '{}'", self.callables.get(callee).name)
+            };
+            let message = format!(
+                "The {noun} '{}' calls {how}: Pine functions and methods cannot be recursive, so use a loop.",
+                callable.name
+            );
+            self.error("PINE3063", message, range);
+        }
     }
 
     fn check_alert_message(
@@ -703,6 +1296,9 @@ fn fits(value: Inferred, declared: ValueType) -> bool {
 fn describe(value: Inferred) -> String {
     match value {
         Inferred::Known(kind, _) => value_type_name(kind).to_owned(),
+        Inferred::Typed { kind, .. } => kind.map_or("an object".to_owned(), |kind| {
+            value_type_name(kind).to_owned()
+        }),
         Inferred::Na => "na".to_owned(),
         Inferred::Unknown => "an unknown type".to_owned(),
     }
@@ -745,16 +1341,6 @@ fn nested_blocks(statement: &Statement) -> Vec<&[Statement]> {
         Statement::Switch { arms, .. } => arms.iter().map(|arm| arm.body.as_slice()).collect(),
         _ => Vec::new(),
     }
-}
-
-fn function_names(statements: &[Statement]) -> HashSet<String> {
-    statements
-        .iter()
-        .filter_map(|statement| match statement {
-            Statement::Function { name, .. } => Some(name.clone()),
-            _ => None,
-        })
-        .collect()
 }
 
 #[cfg(test)]

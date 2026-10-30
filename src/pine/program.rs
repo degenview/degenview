@@ -342,6 +342,9 @@ pub struct CompiledProgram {
     pub diagnostics: Vec<Diagnostic>,
     /// Names declared with `method`, which `value.name(…)` resolves ahead of builtins.
     pub method_names: HashSet<String>,
+    /// The function or method each call site was resolved to at compile time: call-site number to
+    /// position among the top-level functions. A call the checker could not settle is absent.
+    pub resolutions: HashMap<usize, usize>,
     /// Names a library declares with `export`.
     pub exported_names: HashSet<String>,
     /// The libraries this script imports, with the compiled program of each that was found.
