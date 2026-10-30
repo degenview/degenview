@@ -88,10 +88,19 @@ fn unknown_value(name: &str, declared: &HashSet<String>) -> bool {
 /// for `log`.
 fn unknown_member(name: &str, declared: &HashSet<String>) -> Option<String> {
     let (namespace, _) = name.split_once('.')?;
+    // `color.red.name()`: a method the script declares, called on a builtin value of a namespace.
+    let on_a_value = name.rsplit_once('.').is_some_and(|(path, member)| {
+        path.contains('.')
+            && declared.contains(member)
+            && (builtins::color(path).is_some()
+                || registry::is_value(path)
+                || symbol_catalog::is_variable(path))
+    });
     if !registry::is_closed(namespace)
         || declared.contains(namespace)
         || declared.contains(name)
         || registry::is_function(name)
+        || on_a_value
     {
         return None;
     }

@@ -18,6 +18,9 @@ use std::collections::HashSet;
 
 use super::ast::{Expression, Route, Statement};
 use super::program::CompiledProgram;
+
+/// Call-site number to the position of the function or method the type checker resolved it to.
+type Targets = std::collections::HashMap<usize, usize>;
 use super::{
     alert_builtins, array_builtins, drawings, map_builtins, math, matrix_builtins,
     strategy_builtins, strings, ta, ta_extra, time, visuals,
@@ -138,7 +141,15 @@ fn is_drawing_function(name: &str) -> bool {
 pub fn bind(program: &mut CompiledProgram) {
     let mut captured = HashSet::new();
     collect_captured(program, &mut captured);
-    bind_program(program, &captured);
+    // Only the script's own calls are resolved: a library's call sites are numbered apart and name
+    // that library's functions.
+    let targets = std::mem::take(&mut program.resolutions);
+    bind_block(&mut program.statements, &captured, Some(&targets));
+    for import in &mut program.imports {
+        if let Some(library) = &mut import.library {
+            bind_program(library, &captured);
+        }
+    }
 }
 
 /// Every name a script or one of its libraries can introduce that a call might then mean: its
@@ -166,7 +177,7 @@ fn collect_captured(program: &CompiledProgram, captured: &mut HashSet<String>) {
 }
 
 fn bind_program(program: &mut CompiledProgram, captured: &HashSet<String>) {
-    bind_block(&mut program.statements, captured);
+    bind_block(&mut program.statements, captured, None);
     for import in &mut program.imports {
         if let Some(library) = &mut import.library {
             bind_program(library, captured);
@@ -182,31 +193,35 @@ fn route_for(name: &str, captured: &HashSet<String>) -> Option<Route> {
     route_of(name)
 }
 
-fn bind_block(statements: &mut [Statement], captured: &HashSet<String>) {
+fn bind_block(statements: &mut [Statement], captured: &HashSet<String>, targets: Option<&Targets>) {
     for statement in statements {
-        bind_statement(statement, captured);
+        bind_statement(statement, captured, targets);
     }
 }
 
-fn bind_statement(statement: &mut Statement, captured: &HashSet<String>) {
+fn bind_statement(
+    statement: &mut Statement,
+    captured: &HashSet<String>,
+    targets: Option<&Targets>,
+) {
     match statement {
         Statement::Declaration { value, .. }
         | Statement::Assignment { value, .. }
-        | Statement::TupleDeclaration { value, .. } => bind_expression(value, captured),
+        | Statement::TupleDeclaration { value, .. } => bind_expression(value, captured, targets),
         Statement::FieldAssignment { target, value, .. } => {
-            bind_expression(target, captured);
-            bind_expression(value, captured);
+            bind_expression(target, captured, targets);
+            bind_expression(value, captured, targets);
         }
-        Statement::Expression(expression) => bind_expression(expression, captured),
+        Statement::Expression(expression) => bind_expression(expression, captured, targets),
         Statement::Conditional {
             condition,
             when_true,
             when_false,
             ..
         } => {
-            bind_expression(condition, captured);
-            bind_block(when_true, captured);
-            bind_block(when_false, captured);
+            bind_expression(condition, captured, targets);
+            bind_block(when_true, captured, targets);
+            bind_block(when_false, captured, targets);
         }
         Statement::ForRange {
             from,
@@ -215,49 +230,49 @@ fn bind_statement(statement: &mut Statement, captured: &HashSet<String>) {
             body,
             ..
         } => {
-            bind_expression(from, captured);
-            bind_expression(to, captured);
+            bind_expression(from, captured, targets);
+            bind_expression(to, captured, targets);
             if let Some(step) = step {
-                bind_expression(step, captured);
+                bind_expression(step, captured, targets);
             }
-            bind_block(body, captured);
+            bind_block(body, captured, targets);
         }
         Statement::ForIn {
             collection, body, ..
         } => {
-            bind_expression(collection, captured);
-            bind_block(body, captured);
+            bind_expression(collection, captured, targets);
+            bind_block(body, captured, targets);
         }
         Statement::WhileLoop {
             condition, body, ..
         } => {
-            bind_expression(condition, captured);
-            bind_block(body, captured);
+            bind_expression(condition, captured, targets);
+            bind_block(body, captured, targets);
         }
         Statement::Once {
             condition, body, ..
         } => {
             if let Some(condition) = condition {
-                bind_expression(condition, captured);
+                bind_expression(condition, captured, targets);
             }
-            bind_block(body, captured);
+            bind_block(body, captured, targets);
         }
         Statement::Switch { subject, arms, .. } => {
             if let Some(subject) = subject {
-                bind_expression(subject, captured);
+                bind_expression(subject, captured, targets);
             }
             for arm in arms {
                 if let Some(condition) = &mut arm.condition {
-                    bind_expression(condition, captured);
+                    bind_expression(condition, captured, targets);
                 }
-                bind_block(&mut arm.body, captured);
+                bind_block(&mut arm.body, captured, targets);
             }
         }
         Statement::LoopControl(..) | Statement::EnumDeclaration { .. } => {}
         Statement::TypeDeclaration { fields, .. } => {
             for field in fields {
                 if let Some(default) = &mut field.default_value {
-                    bind_expression(default, captured);
+                    bind_expression(default, captured, targets);
                 }
             }
         }
@@ -266,21 +281,25 @@ fn bind_statement(statement: &mut Statement, captured: &HashSet<String>) {
         } => {
             for parameter in parameters {
                 if let Some(default) = &mut parameter.default_value {
-                    bind_expression(default, captured);
+                    bind_expression(default, captured, targets);
                 }
             }
-            bind_block(body, captured);
+            bind_block(body, captured, targets);
         }
     }
 }
 
-fn bind_expression(expression: &mut Expression, captured: &HashSet<String>) {
+fn bind_expression(
+    expression: &mut Expression,
+    captured: &HashSet<String>,
+    targets: Option<&Targets>,
+) {
     match expression {
         Expression::Literal(..) | Expression::Identifier(..) => {}
-        Expression::Unary { operand, .. } => bind_expression(operand, captured),
+        Expression::Unary { operand, .. } => bind_expression(operand, captured, targets),
         Expression::Binary { lhs, rhs, .. } => {
-            bind_expression(lhs, captured);
-            bind_expression(rhs, captured);
+            bind_expression(lhs, captured, targets);
+            bind_expression(rhs, captured, targets);
         }
         Expression::Ternary {
             condition,
@@ -288,41 +307,47 @@ fn bind_expression(expression: &mut Expression, captured: &HashSet<String>) {
             when_false,
             ..
         } => {
-            bind_expression(condition, captured);
-            bind_expression(when_true, captured);
-            bind_expression(when_false, captured);
+            bind_expression(condition, captured, targets);
+            bind_expression(when_true, captured, targets);
+            bind_expression(when_false, captured, targets);
         }
         Expression::Call {
             name,
             arguments,
             route,
+            site,
+            target,
             ..
         } => {
             *route = route_for(name, captured);
+            *target = targets.and_then(|resolved| resolved.get(site).copied());
             for argument in arguments {
-                bind_expression(&mut argument.value, captured);
+                bind_expression(&mut argument.value, captured, targets);
             }
         }
         Expression::History { base, offset, .. } => {
-            bind_expression(base, captured);
-            bind_expression(offset, captured);
+            bind_expression(base, captured, targets);
+            bind_expression(offset, captured, targets);
         }
         Expression::Tuple(values, _) => {
             for value in values {
-                bind_expression(value, captured);
+                bind_expression(value, captured, targets);
             }
         }
-        Expression::Member { base, .. } => bind_expression(base, captured),
+        Expression::Member { base, .. } => bind_expression(base, captured, targets),
         Expression::MethodCall {
             receiver,
             arguments,
+            site,
+            target,
             ..
         } => {
-            bind_expression(receiver, captured);
+            *target = targets.and_then(|resolved| resolved.get(site).copied());
+            bind_expression(receiver, captured, targets);
             for argument in arguments {
-                bind_expression(&mut argument.value, captured);
+                bind_expression(&mut argument.value, captured, targets);
             }
         }
-        Expression::Statement(statement, _) => bind_statement(statement, captured),
+        Expression::Statement(statement, _) => bind_statement(statement, captured, targets),
     }
 }

@@ -126,7 +126,9 @@ fn overloads_by_primitive_receiver_type_report_na() {
          c = true.getType()\n\
          red = color.red\n\
          d = red.getType()\n\
-         e = \"x\".getType()",
+         e = \"x\".getType()\n\
+         f = float(na).getType()\n\
+         g = int(na).getType()",
         1,
     );
     assert_eq!(text(&session, "a"), "int");
@@ -134,6 +136,8 @@ fn overloads_by_primitive_receiver_type_report_na() {
     assert_eq!(text(&session, "c"), "bool");
     assert_eq!(text(&session, "d"), "color");
     assert_eq!(text(&session, "e"), "string");
+    assert_eq!(text(&session, "f"), "float (na)");
+    assert_eq!(text(&session, "g"), "int (na)");
 }
 
 #[test]
@@ -530,4 +534,125 @@ fn calls_the_checker_settles_are_recorded_by_site() {
     // `unknown_receiver` is undeclared, so it is an error elsewhere; the first two still resolve.
     assert_eq!(program.resolutions.len(), 2, "{:?}", program.resolutions);
     assert!(program.resolutions.values().all(|&id| id == 0));
+}
+
+// MARK: Run-time selection
+
+#[test]
+fn the_overload_for_a_series_argument_runs_for_a_series_argument() {
+    let session = run(
+        "method pick(int x, simple int length) =>\n    1\n\
+         method pick(int x, series int length) =>\n    2\n\
+         a = (1).pick(5)\n\
+         b = (1).pick(bar_index)",
+        1,
+    );
+    assert_eq!(value(&session, "a"), RuntimeValue::Int(1));
+    assert_eq!(value(&session, "b"), RuntimeValue::Int(2));
+}
+
+#[test]
+fn a_method_on_a_namespaced_constant_runs() {
+    let session = run(
+        "method name(color this) =>\n    \"color\"\n\
+         r = color.red.name()",
+        1,
+    );
+    assert_eq!(text(&session, "r"), "color");
+}
+
+/// Runs `body` with every call bound to its target and with every call found by name.
+fn both_ways(body: &str, count: usize, names: &[&str]) {
+    let program = compiler::compile(&source(body), Limits::default(), &NoLibraries);
+    assert!(program.is_valid(), "{:?}", program.diagnostics);
+    let mut results = Vec::new();
+    for ignore in [false, true] {
+        let mut session = Session::new(
+            program.clone(),
+            HashMap::new(),
+            Limits::default(),
+            None,
+            SymbolInfo::default(),
+            None,
+            None,
+        );
+        session.ignore_routes = ignore;
+        if let Err(error) = session.evaluate(&bars(count)) {
+            panic!("{error:?}");
+        }
+        results.push(
+            names
+                .iter()
+                .map(|name| format!("{:?}", value(&session, name)))
+                .collect::<Vec<_>>(),
+        );
+    }
+    assert_eq!(results[0], results[1], "bound and by-name runs differ");
+}
+
+#[test]
+fn bound_and_by_name_calls_agree() {
+    both_ways(
+        "type Counter\n    int value = 0\n\
+         method bump(Counter this, int by = 1) =>\n    this.value += by\n    this\n\
+         method delta(float value) =>\n    value - value[1]\n\
+         method total(array<float> values) =>\n    values.sum()\n\
+         double(float x) => x * 2.0\n\
+         var Counter c = Counter.new()\n\
+         c.bump().bump(by = 3)\n\
+         d = close.delta()\n\
+         e = (close * 2.0).delta()\n\
+         t = array.from(1.0, 2.0, 3.0).total()\n\
+         f = double(close)\n\
+         v = c.value",
+        6,
+        &["d", "e", "t", "f", "v"],
+    );
+}
+
+#[test]
+fn a_receiver_the_checker_cannot_type_is_chosen_by_its_value() {
+    let session = run(
+        "type Dog\n    int legs\n\
+         type Bird\n    int legs\n\
+         method describe(Dog this) =>\n    \"dog\"\n\
+         method describe(Bird this) =>\n    \"bird\"\n\
+         tag(x) =>\n    x.describe()\n\
+         a = tag(Dog.new(4))\n\
+         b = tag(Bird.new(2))",
+        1,
+    );
+    assert_eq!(text(&session, "a"), "dog");
+    assert_eq!(text(&session, "b"), "bird");
+}
+
+#[test]
+fn a_method_an_imported_library_exports_runs_on_a_receiver() {
+    struct Library;
+    impl compiler::LibraryResolver for Library {
+        fn source_for_library(&self, path: &str) -> Option<String> {
+            (path == "user/Mine/1").then(|| {
+                "//@version=6\nlibrary(\"Mine\")\n\
+                 export method scaled(float this, float k) =>\n    this * k\n"
+                    .to_owned()
+            })
+        }
+    }
+    let program = compiler::compile(
+        &source("import user/Mine/1 as mine\nr = close.scaled(2.0)\n"),
+        Limits::default(),
+        &Library,
+    );
+    assert!(program.is_valid(), "{:?}", program.diagnostics);
+    let mut session = Session::new(
+        program,
+        HashMap::new(),
+        Limits::default(),
+        None,
+        SymbolInfo::default(),
+        None,
+        None,
+    );
+    session.evaluate(&bars(3)).unwrap();
+    assert_eq!(float(&session, "r"), 2.0 * 103.0);
 }

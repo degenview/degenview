@@ -58,13 +58,18 @@ pub enum Expression {
         range: SourceRange,
     },
     /// `site` numbers each call in source order; it keys per-call-site runtime state. `route` is
-    /// set when the session is built, for a call nothing the script declares can capture.
+    /// set when the session is built, for a call nothing the script declares can capture. `target`
+    /// is set then too, for a call the type checker resolved to one of the script's functions or
+    /// methods (its position among the top-level functions): the session runs that function without
+    /// looking the name up. For a dotted name (`levels.top()`) the part before the last dot is the
+    /// receiver.
     Call {
         name: String,
         arguments: Vec<Argument>,
         site: usize,
         range: SourceRange,
         route: Option<Route>,
+        target: Option<usize>,
     },
     History {
         base: Box<Expression>,
@@ -85,6 +90,8 @@ pub enum Expression {
         arguments: Vec<Argument>,
         site: usize,
         range: SourceRange,
+        /// As for `Call`.
+        target: Option<usize>,
     },
     /// `x = if …` / `x = switch …`: a block statement used for its value.
     Statement(Box<Statement>, SourceRange),
