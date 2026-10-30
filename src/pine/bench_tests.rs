@@ -300,6 +300,84 @@ v = top(close)
 plot(v)
 ";
 
+// Each `USER_METHODS*` script computes what its `USER_FUNCTIONS*` twin does, so the pairs measure
+// the cost of the method call syntax: their checksums must be equal.
+pub(crate) const USER_FUNCTIONS: &str = "//@version=6
+indicator(\"Functions\")
+scale(float x, float k) => x * k
+change(float v) => v - v[1]
+smooth(float x) => ta.sma(x, 5)
+a = scale(close, 2.0)
+b = change(close)
+c = scale(change(open), 0.5)
+d = smooth(close)
+plot(a + b + c + d)
+";
+
+pub(crate) const USER_METHODS: &str = "//@version=6
+indicator(\"Methods\")
+method scale(float x, float k) => x * k
+method change(float v) => v - v[1]
+method smooth(float x) => ta.sma(x, 5)
+a = close.scale(2.0)
+b = close.change()
+c = open.change().scale(0.5)
+d = close.smooth()
+plot(a + b + c + d)
+";
+
+pub(crate) const USER_FUNCTIONS_ARRAY: &str = "//@version=6
+indicator(\"Functions on arrays\")
+spread(array<float> v) => v.max() - v.min()
+keep(array<float> v, float x, int n) =>
+    v.push(x)
+    if v.size() > n
+        v.shift()
+    v
+var array<float> window = array.new_float()
+plot(spread(keep(window, close, 20)))
+";
+
+pub(crate) const USER_METHODS_ARRAY: &str = "//@version=6
+indicator(\"Methods on arrays\")
+method spread(array<float> v) => v.max() - v.min()
+method keep(array<float> v, float x, int n) =>
+    v.push(x)
+    if v.size() > n
+        v.shift()
+    v
+var array<float> window = array.new_float()
+plot(window.keep(close, 20).spread())
+";
+
+pub(crate) const USER_FUNCTIONS_UDT: &str = "//@version=6
+indicator(\"Functions on objects\")
+type Acc
+    float total = 0.0
+    int count = 0
+add(Acc this, float x) =>
+    this.total += x
+    this.count += 1
+    this
+mean(Acc this) => this.total / this.count
+var Acc acc = Acc.new()
+plot(mean(add(acc, close)))
+";
+
+pub(crate) const USER_METHODS_UDT: &str = "//@version=6
+indicator(\"Methods on objects\")
+type Acc
+    float total = 0.0
+    int count = 0
+method add(Acc this, float x) =>
+    this.total += x
+    this.count += 1
+    this
+method mean(Acc this) => this.total / this.count
+var Acc acc = Acc.new()
+plot(acc.add(close).mean())
+";
+
 pub(crate) const SECURITY: &str = "//@version=6
 indicator(\"Security\")
 htf = request.security(syminfo.tickerid, \"5\", ta.sma(close, 10))
@@ -485,6 +563,17 @@ fn workloads() -> Vec<Workload> {
     {
         let data = minute.clone();
         add("many_ta", Box::new(move || evaluate(MANY_TA, &data, false)));
+    }
+    for (name, script) in [
+        ("user_functions", USER_FUNCTIONS),
+        ("user_methods", USER_METHODS),
+        ("user_functions_array", USER_FUNCTIONS_ARRAY),
+        ("user_methods_array", USER_METHODS_ARRAY),
+        ("user_functions_udt", USER_FUNCTIONS_UDT),
+        ("user_methods_udt", USER_METHODS_UDT),
+    ] {
+        let data = minute.clone();
+        add(name, Box::new(move || evaluate(script, &data, false)));
     }
     {
         let data = long.clone();
