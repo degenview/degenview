@@ -124,8 +124,22 @@ before this work and after:
 | methods, object receiver | 15.62 ms | 12.27 ms |
 
 A method costs what its function twin does. The other workloads moved within run-to-run noise.
-Allocation counts and peak memory were not measured (`PINE_BENCH_FEATURES=alloc-count`). Check a change
-to `session.rs`, `user_methods.rs` or `call_binding.rs` with `tools/pine-bench.sh`.
+
+Allocations (`PINE_BENCH_FEATURES=alloc-count`, 5000 bars, whole run):
+
+| Workload | Allocations before | after | Peak before | after |
+| --- | --- | --- | --- | --- |
+| functions, primitives | 402,745 | 352,746 | 14.68 MB | 14.88 MB |
+| methods, primitives | 506,048 | 336,049 | 14.40 MB | 14.60 MB |
+| functions, array receiver | 355,770 | 335,771 | 12.28 MB | 12.48 MB |
+| methods, array receiver | 400,784 | 330,785 | 12.00 MB | 12.20 MB |
+| functions, object receiver | 250,813 | 230,814 | 11.71 MB | 11.92 MB |
+| methods, object receiver | 295,828 | 225,828 | 11.44 MB | 11.64 MB |
+
+Peak memory rose by about 200 KB (1.4-1.8%) on every workload, including the function ones. It was not
+traced to a cause; the session now keeps a second `Vec` of the script's functions (`callables`, sharing
+their bodies by `Arc`) and the program's `resolutions` table was moved, not copied. Check a change to
+`session.rs`, `user_methods.rs` or `call_binding.rs` with `tools/pine-bench.sh`.
 
 ## Tests
 
