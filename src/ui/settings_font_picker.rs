@@ -142,7 +142,7 @@ pub fn show(
         Stroke::new(
             1.0,
             if response.has_focus() {
-                kit::ACCENT
+                theme::text_secondary()
             } else {
                 theme::separator()
             },

@@ -447,7 +447,7 @@ pub fn show_table(
             );
             if selected == Some(index) {
                 ui.painter()
-                    .rect_filled(row, 7.0, theme::with_alpha(theme::SYSTEM_ACCENT, 0.16));
+                    .rect_filled(row, 7.0, theme::selected_tint(false));
             } else if response.hovered() {
                 ui.painter().rect_filled(row, 7.0, theme::ink(12));
             } else if index % 2 == 1 {
@@ -534,9 +534,9 @@ pub const MENU_RESERVE: f32 = MENU_BUTTON + 6.0;
 /// A bordered drop-down button; `items` fills its menu. Highlighted while a filter is set.
 pub fn dropdown(ui: &mut Ui, id: Id, label: &str, active: bool, items: impl FnOnce(&mut Ui)) {
     let color = if active {
-        theme::SYSTEM_ACCENT
-    } else {
         theme::text_primary()
+    } else {
+        theme::text_secondary()
     };
     let text = kit::galley(ui, label, kit::size::BODY, REGULAR, color, 220.0);
     let size = vec2(text.size().x + 8.0 + 14.0 + 22.0, 26.0);

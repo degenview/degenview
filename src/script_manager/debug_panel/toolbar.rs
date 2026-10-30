@@ -33,9 +33,9 @@ pub fn panel_button(ui: &mut Ui, panel_open: bool) -> bool {
         "Show the debugger: controls, breakpoints, variables, watches"
     };
     let color = if panel_open {
-        kit::ACCENT
-    } else {
         theme::text_primary()
+    } else {
+        theme::text_secondary()
     };
     icons::button(ui, Icon::Bug, 28.0, color, tip).clicked()
 }

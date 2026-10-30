@@ -160,7 +160,7 @@ pub fn show(
     let (stroke_width, stroke_color) = if error {
         (1.5, theme::DOWN)
     } else if open {
-        (1.5, theme::SYSTEM_ACCENT)
+        (1.5, theme::text_secondary())
     } else if compact {
         (1.0, kit::field_frame(false).stroke.color)
     } else {
@@ -347,7 +347,7 @@ fn popover(
             let is_selected = day == selected;
             let is_today = day == today;
             let color = if is_selected {
-                theme::SYSTEM_ACCENT
+                theme::selected_plate()
             } else {
                 Color32::TRANSPARENT
             };
@@ -360,12 +360,12 @@ fn popover(
                 ui.painter().rect_stroke(
                     cell,
                     7.0,
-                    Stroke::new(1.0, theme::SYSTEM_ACCENT.gamma_multiply(0.8)),
+                    Stroke::new(1.0, theme::text_secondary()),
                     StrokeKind::Inside,
                 );
             }
             let text_color = if is_selected {
-                Color32::WHITE
+                theme::on_selected_plate()
             } else if in_month {
                 theme::text_primary()
             } else {
@@ -501,7 +501,7 @@ fn stepper(ui: &mut Ui, id: Id, rect: Rect, value: i64, modulus: i64) -> i64 {
         rect,
         7.0,
         if focused {
-            Stroke::new(1.5, theme::SYSTEM_ACCENT)
+            Stroke::new(1.5, theme::text_secondary())
         } else {
             Stroke::new(1.0, theme::separator().gamma_multiply(0.6))
         },

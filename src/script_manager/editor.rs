@@ -2949,7 +2949,7 @@ mod tests {
     fn highlighted_row(shapes: &[egui::epaint::ClippedShape]) -> Option<(Rect, Rect)> {
         shapes.iter().find_map(|clipped| match &clipped.shape {
             egui::Shape::Rect(rect)
-                if rect.fill == theme::SYSTEM_ACCENT
+                if rect.fill == Color32::from_rgb(0x58, 0x62, 0x69)
                     && rect.rect.height() == COMPLETION_ROW_HEIGHT =>
             {
                 Some((rect.rect, clipped.clip_rect))

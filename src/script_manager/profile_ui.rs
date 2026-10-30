@@ -137,10 +137,10 @@ pub fn toolbar(ui: &mut Ui, status: &Status) -> Vec<Action> {
             .hint("Turn the profiler on: see which lines of the script take the time")
     };
     let color = match (on, description.tone) {
-        (false, _) => theme::text_primary(),
+        (false, _) => theme::text_secondary(),
         (true, Tone::Caution) => Tone::Caution.color(),
         (true, Tone::Bad) => Tone::Bad.color(),
-        (true, _) => kit::ACCENT,
+        (true, _) => theme::text_primary(),
     };
     if icons::button(ui, Icon::Gauge, 28.0, color, &tip).clicked() {
         actions.push(Action::Toggle);

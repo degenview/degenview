@@ -282,7 +282,7 @@ fn field(
     let (stroke_width, stroke_color) = if error {
         (1.5, theme::DOWN)
     } else if focused {
-        (1.5, theme::SYSTEM_ACCENT)
+        (1.5, theme::text_secondary())
     } else {
         (1.0, theme::separator().gamma_multiply(0.6))
     };
@@ -469,7 +469,7 @@ fn form(ui: &mut egui::Ui, state: &mut TransactionEditorState) {
         .fill(theme::quaternary(0.5))
         .corner_radius(8.0)
         .stroke(if notes_focused {
-            Stroke::new(1.5, theme::SYSTEM_ACCENT)
+            Stroke::new(1.5, theme::text_secondary())
         } else {
             Stroke::new(1.0, theme::separator().gamma_multiply(0.6))
         })

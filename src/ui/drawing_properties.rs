@@ -1914,13 +1914,9 @@ fn template_row(ui: &mut Ui, name: &str) -> Option<RowAction> {
     let hovered = response.hovered();
     let painter = ui.painter();
     if hovered {
-        painter.rect_filled(rect, 5.0, kit::ACCENT);
+        painter.rect_filled(rect, 5.0, theme::selected_tint(true));
     }
-    let color = if hovered {
-        Color32::WHITE
-    } else {
-        theme::text_primary()
-    };
+    let color = theme::text_primary();
     let galley = kit::galley(ui, name, kit::size::BODY, kit::REGULAR, color, width - 84.0);
     ui.painter().galley(
         pos2(rect.left() + 12.0, rect.center().y - galley.size().y / 2.0),
@@ -1936,7 +1932,7 @@ fn template_row(ui: &mut Ui, name: &str) -> Option<RowAction> {
                 ui.painter(),
                 egui::Rect::from_center_size(spot.center(), vec2(12.0, 12.0)),
                 icon,
-                Color32::WHITE,
+                theme::text_primary(),
             );
         }
     }

@@ -80,7 +80,10 @@ fn before_themes(ctx: &egui::Context) -> Appearance {
         (SurfaceColor::DiagnosticError, syntax),
         (SurfaceColor::DiagnosticWarning, theme::YELLOW),
         (SurfaceColor::PopupBackground, theme::chrome()),
-        (SurfaceColor::PopupSelection, theme::SYSTEM_ACCENT),
+        (
+            SurfaceColor::PopupSelection,
+            system((0x58, 0x62, 0x69), (0x6E, 0x6E, 0x73)),
+        ),
     ] {
         surfaces[surface.index()] = color;
     }

@@ -961,7 +961,7 @@ fn is_name_error(error: WebhookHeaderError) -> bool {
 
 fn enabled_card(ui: &mut egui::Ui, is_enabled: &mut bool) {
     let tint = if *is_enabled {
-        kit::ACCENT
+        theme::text_primary()
     } else {
         theme::text_secondary()
     };
