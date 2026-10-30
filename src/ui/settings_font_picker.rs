@@ -18,7 +18,10 @@ pub const SYSTEM_LABEL: &str = SYSTEM_FONT;
 
 const ROW_HEIGHT: f32 = 24.0;
 const LIST_HEIGHT: f32 = 264.0;
+/// The list that opens.
 const WIDTH: f32 = 280.0;
+/// The button that opens it: what the Font row reserves room for.
+pub const BUTTON_WIDTH: f32 = 190.0;
 
 #[derive(Default)]
 pub struct FontPickerState {
@@ -92,7 +95,7 @@ pub fn show(
     include_system: bool,
 ) -> Option<Option<String>> {
     let label = current.unwrap_or(SYSTEM_LABEL);
-    let (rect, response) = ui.allocate_exact_size(vec2(WIDTH - 40.0, 24.0), Sense::click());
+    let (rect, response) = ui.allocate_exact_size(vec2(BUTTON_WIDTH, 24.0), Sense::click());
     let response = crate::ui::accessibility::label(response, format!("Font: {label}"))
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     let painter = ui.painter();

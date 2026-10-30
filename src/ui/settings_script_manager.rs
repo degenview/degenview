@@ -32,6 +32,11 @@ const PREVIEW_HEIGHT: f32 = 66.0;
 const TILE_HEIGHT: f32 = 10.0 + PREVIEW_HEIGHT + 9.0 + 34.0 + 8.0;
 const DIALOG_WIDTH: f32 = 420.0;
 const MINIATURE_RADIUS: f32 = 8.0;
+/// What a typography row's control takes, so the text beside it never runs under it: the line height
+/// menu, the size field with its stepper, and the room of a reset button beside any of them.
+const LINE_HEIGHT_WIDTH: f32 = 130.0;
+const SIZE_WIDTH: f32 = 100.0;
+const RESET_ROOM: f32 = 34.0;
 
 /// What the page is showing.
 #[derive(Default)]
@@ -685,30 +690,38 @@ pub(super) fn typography_controls(
         FontStatus::Loading(name) => format!("Loading “{name}”…"),
         _ => "Built in: JetBrains Mono. Or any monospaced font installed on this Mac.".to_owned(),
     };
-    settings_card::card_reserving(ui, Icon::TextFormat, "Font", Some(&hint), 250.0, |ui| {
-        reset_button(
-            ui,
-            shown.resettable[0],
-            "Use the editor's own font",
-            &mut change.reset[0],
-        );
-        change.family = settings_font_picker::show(
-            ui,
-            &mut controls.picker,
-            salt,
-            shown.family,
-            shown.status,
-            shown.fonts,
-            shown.fonts_ready,
-            true,
-        );
-    });
+    // A control and, beside it while a theme sets the value, its reset: room for both.
+    settings_card::card_reserving(
+        ui,
+        Icon::TextFormat,
+        "Font",
+        Some(&hint),
+        settings_font_picker::BUTTON_WIDTH + RESET_ROOM,
+        |ui| {
+            reset_button(
+                ui,
+                shown.resettable[0],
+                "Use the editor's own font",
+                &mut change.reset[0],
+            );
+            change.family = settings_font_picker::show(
+                ui,
+                &mut controls.picker,
+                salt,
+                shown.family,
+                shown.status,
+                shown.fonts,
+                shown.fonts_ready,
+                true,
+            );
+        },
+    );
     settings_card::card_reserving(
         ui,
         Icon::Sliders,
         "Font size",
         Some(&format!("{MIN_FONT_SIZE} to {MAX_FONT_SIZE} points.")),
-        120.0,
+        SIZE_WIDTH + RESET_ROOM,
         |ui| {
             reset_button(
                 ui,
@@ -724,7 +737,7 @@ pub(super) fn typography_controls(
         Icon::List,
         "Line height",
         Some("The space each line of code gets."),
-        290.0,
+        LINE_HEIGHT_WIDTH + RESET_ROOM,
         |ui| {
             reset_button(
                 ui,
@@ -732,19 +745,18 @@ pub(super) fn typography_controls(
                 "Use the editor's own line height",
                 &mut change.reset[2],
             );
-            let mut value = shown.line_height;
-            let options: Vec<(LineHeight, &str)> = LineHeight::ALL
+            let labels: Vec<String> = LineHeight::ALL
                 .iter()
-                .map(|height| (*height, height.label()))
+                .map(|height| height.label().to_owned())
                 .collect();
-            kit::segmented(
-                ui,
-                Id::new(("editor-line-height", salt)),
-                &options,
-                &mut value,
-            );
-            if value != shown.line_height {
-                change.line_height = Some(value);
+            let current = LineHeight::ALL
+                .iter()
+                .position(|height| *height == shown.line_height)
+                .unwrap_or(1);
+            if let Some(picked) = kit::menu_picker(ui, LINE_HEIGHT_WIDTH, &labels, current, true)
+                && LineHeight::ALL[picked] != shown.line_height
+            {
+                change.line_height = Some(LineHeight::ALL[picked]);
             }
         },
     );

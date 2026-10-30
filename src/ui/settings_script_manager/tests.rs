@@ -561,6 +561,7 @@ fn gallery() {
             ("small", vec2(320.0, 420.0)),
             ("wide", vec2(1000.0, 700.0)),
             ("tall", vec2(600.0, 1700.0)),
+            ("narrow", vec2(320.0, 1900.0)),
         ] {
             let mut rig = Rig::new(size);
             theme::apply(&rig.screen.ctx, app_theme);

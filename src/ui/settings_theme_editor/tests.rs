@@ -277,6 +277,17 @@ fn gallery() {
                             .get(ColorKey::Surface(SurfaceColor::Background)),
                     )
                     .unwrap();
+                // A theme that sets all three, so each row shows its reset beside the control.
+                rig.host
+                    .set_theme_typography(
+                        rig.id,
+                        TypographyOverride {
+                            font_family: Some("Menlo".into()),
+                            font_size: Some(15.0),
+                            line_height: Some(LineHeight::Relaxed),
+                        },
+                    )
+                    .unwrap();
                 rig.editing.tab = tab;
                 let output = rig.settle();
                 rig.screen
