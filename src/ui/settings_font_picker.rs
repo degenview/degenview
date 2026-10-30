@@ -8,12 +8,13 @@
 //! is never silently dropped.
 
 use crate::host::editor_theme_host::FontStatus;
+use crate::model::editor_theme::{BUNDLED_FONT, SYSTEM_FONT};
 use crate::ui::icons::{self, Icon};
 use crate::ui::{kit, theme};
 use eframe::egui::{self, Id, Key, Modifiers, Sense, Stroke, StrokeKind, Ui, vec2};
 
-/// The label of the system's monospace font, which is what no choice means.
-pub const DEFAULT_LABEL: &str = "System Mono (default)";
+/// The label of the system's monospace font.
+pub const SYSTEM_LABEL: &str = SYSTEM_FONT;
 
 const ROW_HEIGHT: f32 = 24.0;
 const LIST_HEIGHT: f32 = 264.0;
@@ -28,11 +29,13 @@ pub struct FontPickerState {
     scroll_to_highlight: bool,
 }
 
-/// What the list offers for `search`: the default (while nothing is typed), then the installed
-/// families that contain it, then the chosen family if it is not installed.
+/// What the list offers for `search`: the system's font (while nothing, or part of its name, is typed),
+/// then the families that contain it (the built-in one first, then the installed), then the chosen
+/// family if it is not installed.
 #[derive(Debug, Eq, PartialEq)]
 pub enum Choice<'a> {
-    Default,
+    /// The system's monospace font.
+    System,
     Family(&'a str),
     /// The saved family, which this Mac does not have.
     Missing(&'a str),
@@ -42,12 +45,12 @@ pub fn choices<'a>(
     search: &str,
     installed: &'a [String],
     saved: Option<&'a str>,
-    include_default: bool,
+    include_system: bool,
 ) -> Vec<Choice<'a>> {
     let needle = search.trim().to_lowercase();
     let mut choices = Vec::new();
-    if include_default && needle.is_empty() {
-        choices.push(Choice::Default);
+    if include_system && (needle.is_empty() || SYSTEM_LABEL.to_lowercase().contains(&needle)) {
+        choices.push(Choice::System);
     }
     choices.extend(
         installed
@@ -74,7 +77,7 @@ pub fn step(highlighted: usize, delta: isize, len: usize) -> usize {
     highlighted.saturating_add_signed(delta).min(len - 1)
 }
 
-/// The font picker. `current` is the family in use (`None`: the system's); `include_default` is
+/// The font picker. `current` is the family in use (`None`: the system's); `include_system` is
 /// whether "System Mono" is offered. Returns the new choice (`Some(None)` for the system font) on
 /// the frame it is made.
 #[allow(clippy::too_many_arguments)]
@@ -86,9 +89,9 @@ pub fn show(
     status: &FontStatus,
     installed: &[String],
     fonts_ready: bool,
-    include_default: bool,
+    include_system: bool,
 ) -> Option<Option<String>> {
-    let label = current.unwrap_or(DEFAULT_LABEL);
+    let label = current.unwrap_or(SYSTEM_LABEL);
     let (rect, response) = ui.allocate_exact_size(vec2(WIDTH - 40.0, 24.0), Sense::click());
     let response = crate::ui::accessibility::label(response, format!("Font: {label}"))
         .on_hover_cursor(egui::CursorIcon::PointingHand);
@@ -145,7 +148,7 @@ pub fn show(
             ui.set_width(WIDTH);
             let opened = !state.was_open;
             state.was_open = true;
-            let rows = choices(&state.search, installed, saved, include_default);
+            let rows = choices(&state.search, installed, saved, include_system);
             // Arrows and Return work while the search field has the focus.
             let (down, up, accept) = ui.input_mut(|input| {
                 (
@@ -210,9 +213,13 @@ pub fn show(
                 ui.spacing_mut().item_spacing.y = 0.0;
                 for index in range {
                     let (label, is_current, enabled) = match &rows[index] {
-                        Choice::Default => (DEFAULT_LABEL.to_owned(), current.is_none(), true),
+                        Choice::System => (SYSTEM_LABEL.to_owned(), current.is_none(), true),
                         Choice::Family(family) => (
-                            (*family).to_owned(),
+                            if family.eq_ignore_ascii_case(BUNDLED_FONT) {
+                                format!("{family} (default)")
+                            } else {
+                                (*family).to_owned()
+                            },
                             current.is_some_and(|c| c.eq_ignore_ascii_case(family)),
                             true,
                         ),
@@ -249,7 +256,7 @@ pub fn show(
                 chosen = Some(state.highlighted);
             }
             let choice = match chosen.map(|index| &rows[index]) {
-                Some(Choice::Default) => Some(None),
+                Some(Choice::System) => Some(None),
                 Some(Choice::Family(family)) => Some(Some((*family).to_owned())),
                 _ => None,
             };

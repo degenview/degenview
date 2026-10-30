@@ -9,8 +9,8 @@
 use crate::host::editor_theme_host::{EditorThemeHost, View};
 use crate::model::editor_theme::contrast::low_contrast;
 use crate::model::editor_theme::{
-    ColorKey, EditorTheme, Palette, Rgba, SurfaceColor, SurfaceGroup, SyntaxGroup, SyntaxRole,
-    ThemeId, TypographyOverride,
+    ColorKey, EditorTheme, Palette, Rgba, SYSTEM_FONT, SurfaceColor, SurfaceGroup, SyntaxGroup,
+    SyntaxRole, ThemeId, TypographyOverride,
 };
 use crate::script_manager::theme_preview::ThemePreview;
 use crate::ui::icons::{self, Icon};
@@ -669,10 +669,12 @@ fn typography_tab(
     ui.add_space(12.0);
     let own = &theme.typography;
     let shown = TypographyShown {
-        family: own
-            .font_family
-            .as_deref()
-            .or(view.typography.font_family.as_deref()),
+        // A theme that names the system font shows it as System Mono (the picker's `None`).
+        family: match own.font_family.as_deref() {
+            Some(SYSTEM_FONT) => None,
+            Some(name) => Some(name),
+            None => view.typography.font_family.as_deref(),
+        },
         size: own.font_size.unwrap_or(view.typography.font_size),
         line_height: own.line_height.unwrap_or(view.typography.line_height),
         resettable: [
@@ -688,9 +690,9 @@ fn typography_tab(
     let mut next: TypographyOverride = own.clone();
     let mut touched = false;
     if let Some(family) = change.family {
-        // A font picked here is the theme's own; "System Mono" is no font of its own, which is
-        // what the reset beside the row also says.
-        next.font_family = family;
+        // A font picked here is the theme's own, and so is the system's: it is named, not left
+        // unset (the reset beside the row is what unsets it).
+        next.font_family = Some(family.unwrap_or_else(|| SYSTEM_FONT.to_owned()));
         touched = true;
     }
     if let Some(size) = change.size {

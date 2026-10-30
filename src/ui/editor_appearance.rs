@@ -9,7 +9,7 @@
 //! a white popover would be unreadable. They do use the editor's font family.
 //!
 //! Until something publishes ([`publish`]) the editor wears Dark or Light by the app's appearance
-//! at 13 points in the system monospace font, as it did before themes existed.
+//! at 13 points in the built-in font (JetBrains Mono), the defaults.
 
 use crate::model::editor_theme::{
     BuiltInTheme, DEFAULT_FONT_SIZE, LineHeight, Palette, Rgba, SurfaceColor, SyntaxRole,
@@ -56,8 +56,8 @@ pub const EDITOR_FAMILY: &str = "editor-code";
 /// The font the code is set in.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct EditorFont {
-    /// Whether a font the person chose is loaded (as the [`EDITOR_FAMILY`] family). Otherwise the
-    /// system's monospace font is used.
+    /// Whether the [`EDITOR_FAMILY`] family holds the editor's font: the built-in one, or the one
+    /// the person chose. Otherwise (they chose the system's) the system's monospace font is used.
     pub custom: bool,
     pub size: f32,
     pub line_height: LineHeight,
@@ -66,7 +66,7 @@ pub struct EditorFont {
 impl Default for EditorFont {
     fn default() -> Self {
         Self {
-            custom: false,
+            custom: true,
             size: DEFAULT_FONT_SIZE,
             line_height: LineHeight::Default,
         }

@@ -676,7 +676,7 @@ pub(super) fn typography_controls(
         }
         FontStatus::Failed(name, why) => format!("“{name}” could not be loaded: {why}"),
         FontStatus::Loading(name) => format!("Loading “{name}”…"),
-        _ => "Any monospaced font installed on this Mac.".to_owned(),
+        _ => "Built in: JetBrains Mono. Or any monospaced font installed on this Mac.".to_owned(),
     };
     settings_card::card_reserving(ui, Icon::TextFormat, "Font", Some(&hint), 250.0, |ui| {
         reset_button(

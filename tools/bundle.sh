@@ -55,6 +55,11 @@ mkdir -p "$helper/Contents/MacOS" "$helper/Contents/Resources"
 cp target/release/degenview "$executable"
 cp target/release/degenview-alert-agent "$helper_executable"
 cp assets/brand/DegenView.icns "$app/Contents/Resources/DegenView.icns"
+# The fonts compiled into the app are under the SIL OFL, which wants its text and the copyright
+# notice to travel with every copy of them.
+mkdir -p "$app/Contents/Resources/Licenses"
+cp assets/fonts/OFL-JetBrainsMono.txt assets/fonts/OFL-NotoSansSymbols2.txt "$app/Contents/Resources/Licenses/"
+cp assets/fonts/README.md "$app/Contents/Resources/Licenses/FONTS.md"
 # The helper shares the app icon: Login Items settings and its notifications show the bundle icon.
 cp assets/brand/DegenView.icns "$helper/Contents/Resources/DegenView.icns"
 

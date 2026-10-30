@@ -25,6 +25,6 @@ pub use theme::{
     ThemeSource, clean_name, new_user_id,
 };
 pub use typography::{
-    DEFAULT_FONT_SIZE, LineHeight, MAX_FONT_SIZE, MIN_FONT_SIZE, Typography, TypographyOverride,
-    clamp_size, clean_family,
+    BUNDLED_FONT, DEFAULT_FONT_SIZE, LineHeight, MAX_FONT_SIZE, MIN_FONT_SIZE, SYSTEM_FONT,
+    Typography, TypographyOverride, clamp_size, clean_family,
 };

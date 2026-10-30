@@ -41,6 +41,9 @@ modules:
       - install -Dm644 packaging/flatpak/es.nico.degenview.desktop -t /app/share/applications
       - install -Dm644 packaging/flatpak/es.nico.degenview.metainfo.xml -t /app/share/metainfo
       - install -Dm644 assets/brand/DegenView-512-rounded.png /app/share/icons/hicolor/512x512/apps/es.nico.degenview.png
+      # The built-in fonts are under the SIL OFL, which wants its text to come with them.
+      - install -Dm644 assets/fonts/OFL-JetBrainsMono.txt assets/fonts/OFL-NotoSansSymbols2.txt -t /app/share/licenses/es.nico.degenview
+      - install -Dm644 assets/fonts/README.md /app/share/licenses/es.nico.degenview/FONTS.md
     sources:
       - type: dir
         path: ../..

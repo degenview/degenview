@@ -5,8 +5,8 @@ the font the code is set in. Settings ▸ Script Manager chooses and edits them;
 follows at once.
 
 **Status.** Built-in Dark, Light and Dracula; custom themes (create, duplicate, rename, delete,
-edit, import, export); typography (font family, size, line height); a live preview that is the real
-editor; saved with the rest of the app's data and synced by iCloud Sync (*Sync*, below).
+edit, import, export); typography (font family, size, line height) with **JetBrains Mono built in and
+the default font**; a live preview that is the real editor; saved with the rest of the app's data and synced by iCloud Sync (*Sync*, below).
 *What is verified* says what has and has not been looked at.
 
 ## Roles
@@ -96,22 +96,26 @@ nothing (a deleted theme, a value from the future) is Automatic, and the correct
 field is read on its own, so one value this version cannot read costs that field only; fields it does
 not know are kept.
 
-**Typography** (`Typography`): font family (none is the system's monospace font), size 9–32 points
-(kept to half points; the field and the stepper clamp, and a value that is not a number is dropped),
-and line height (Compact 1.15×, Default which is the font's own, Relaxed 1.5×, Loose 1.75×). A theme
-may carry its own for the fields it names; what it does not name is the person's. Ligatures, font
-weight and tab width are **not** settings: egui's text engine shapes with the font's default features
-and has no weight axis for a plain font, and the editor indents with four spaces, so a control for any
-of them would do nothing.
+**Typography** (`Typography`): font family, size 9–32 points (kept to half points; the field and the
+stepper clamp, and a value that is not a number is dropped), and line height (Compact 1.15×, Default which
+is the font's own, Relaxed 1.5×, Loose 1.75×). The family is a name: **`JetBrains Mono`, the built-in font,
+is the default** (nothing saved, or no `fontFamily` saved, is JetBrains Mono); **`System Mono`** is the
+system's own monospace font (SF Mono on a Mac), which a saved `null` has always meant and which stays one
+click away in the picker. A theme may carry its own typography for the fields it names (a theme that wants
+the system font says `"System Mono"`); what it does not name is the person's. A family that cannot be used
+(blank, absurd) is the default font. Ligatures, font weight and tab width are **not** settings: egui's text
+engine shapes with the font's default features and has no weight axis for a plain font, and the editor
+indents with four spaces, so a control for any of them would do nothing.
 
 ## Dark, Light and Dracula
 
-Dark and Light are today's colours, exactly: `dark_and_light_match_the_editor_before_themes`
-rebuilds the old values from the functions the editor used to call (and from the old `theme::syntax`
+Dark and Light are the colours the editor had before themes, exactly (the font is the one thing that
+changed: the default is now JetBrains Mono, where it was the system's monospace font):
+`dark_and_light_match_the_editor_before_themes` rebuilds the old values from the functions the editor used to call (and from the old `theme::syntax`
 table, written out in the test) and compares every role and surface in both appearances. Roles that did
 not exist before take the colour of what they were part of: user variables, parameters, user functions
 and punctuation the default text colour, escapes the string colour, control keywords the keyword colour.
-So an upgrade changes nothing a person can see.
+So, apart from the font, an upgrade changes nothing a person can see.
 
 Dracula follows the [Dracula specification](https://spec.draculatheme.com): keywords, operators and
 escapes pink `#FF79C6`; user functions green `#50FA7B`; parameters orange `#FFB86C`; strings yellow
@@ -141,22 +145,37 @@ which read the same visuals, agree.
 
 ## Fonts
 
-The font a person picks is found among the installed fonts (`service::font_catalog`): the system's font
-folders are walked on a background thread, reading from each file only its table directory and the
-`name`, `OS/2` and `post` tables (kilobytes, not the font), and a family is listed once, by its regular
-face, when it declares itself monospaced. `.ttc` collections are read member by member; hidden system
-fonts (a name starting with a dot) and anything unreadable are skipped. The chosen file is read on
-another thread (at most 64 MB) and given to egui as the `editor-code` family: the font, then the
-monospace font and its fallbacks, so a character the font lacks still draws. egui compares fonts byte
-for byte when they are set, so they are set when the choice changes and not otherwise.
+**JetBrains Mono is built in** (`assets/fonts/JetBrainsMonoNL-Regular.ttf`, compiled into the binary:
+about 205 KB) and is the default editor font, on every platform, with nothing to install. It is the **NL**
+build (no ligatures): egui shapes text with the font's default features and the editor draws each syntax
+colour as its own run, so ligatures would form in some runs and not in others. The file is unmodified, and
+under the SIL Open Font License 1.1 with no Reserved Font Name; the licence texts, the copyright notices,
+the version, where the file comes from and its hash are in `assets/fonts/README.md` and the root
+`README.md`, and the licence texts ship in every download (the macOS bundle's `Resources/Licenses`, the
+Flatpak's `share/licenses`, the Linux and Windows archives). A test (`bundled_fonts_tests`) holds the file to
+its recorded hash and checks that the licences, the READMEs and the packaging say what they must.
 
-A saved font that is not installed here keeps its name (it comes back when it is installed) and the
-default draws meanwhile; the picker marks it "not installed". A font that cannot be read says why. A
-font that is still loading, or one the catalog has not found yet, never blocks the editor. No font
-file is bundled: the default stays the system's monospace font (SF Mono on a Mac), and JetBrains Mono
-and the rest appear in the picker only where installed. The picker draws names in the app's font; the
-live preview shows the chosen one (loading every installed font to draw its own name would read
-hundreds of files for one list).
+The editor's code family (`editor-code`) is the chosen font, then the system's monospace font and its
+fallbacks, then the Noto symbols, so a character a font lacks (an arrow, a symbol) still draws. The app
+starts with the built-in font (`theme::install_fonts`), so a context that never hears from the host (a
+snapshot, a test) draws the default too; the host (`EditorThemeHost`) changes it when the choice changes.
+egui compares fonts byte for byte when they are set, so that happens on a change and not every frame.
+
+Other fonts: the picker (`service::font_catalog`) offers the installed monospaced fonts. The system's font
+folders are walked on a background thread, reading from each file only its table directory and the `name`,
+`OS/2` and `post` tables (kilobytes, not the font), and a family is listed once, by its regular face, when it
+declares itself monospaced. `.ttc` collections are read member by member; hidden system fonts (a name
+starting with a dot) and anything unreadable are skipped. The chosen file is read on another thread (at most
+64 MB). The built-in font is listed first, and **an installed font also called "JetBrains Mono" is not
+offered: the built-in one is used**, so the editor looks the same on every machine; one called "System Mono"
+is not offered either, because that name is the system font's.
+
+A saved font that is not installed here keeps its name (it comes back when it is installed) and **the
+built-in font draws meanwhile**; the picker marks it "not installed". A font that cannot be read says why and
+the built-in font draws. A font that is still being read, or one the scan has not found yet, never blocks the
+editor: the built-in font draws until it arrives. The picker draws names in the app's font; the live preview
+shows the chosen one (loading every installed font to draw its own name would read hundreds of files for one
+list).
 
 The editor's layout follows the font: line numbers are two points smaller than the code, the gutter
 widens for five-digit line numbers and large fonts, the suggestion list and signature panel scale with
@@ -281,7 +300,10 @@ a script was not possible here (the macOS automation prompt was never answered).
 Script Manager, pick each theme, edit a colour, change the font and size, and open a script with a
 second window before calling it done.
 
-Not verified: the colour picker's low-alpha hex round trip (the picker works on premultiplied colours,
+Not verified: how JetBrains Mono looks in a real window next to the old SF Mono (it is wider, 0.6 em per
+character, and a little taller; the pictures above were rendered with it and nothing clipped, but the
+layout constants were tuned on SF Mono); the packaging steps (the bundle script was run, the Flatpak
+manifest and release workflow were only read and parsed, not run); the colour picker's low-alpha hex round trip (the picker works on premultiplied colours,
 so a hex typed with a low alpha can come back a point or two off in a channel); Windows and Linux
 rendering; fonts other than the ones on the machine it was built on; iCloud (not synced).
 

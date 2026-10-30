@@ -14,6 +14,11 @@ pub const MAX_FONT_SIZE: f32 = 32.0;
 /// The size the editor has always used.
 pub const DEFAULT_FONT_SIZE: f32 = 13.0;
 pub const MAX_FAMILY_CHARS: usize = 100;
+/// The font that ships with the app and is the editor's default.
+pub const BUNDLED_FONT: &str = "JetBrains Mono";
+/// What the system's own monospace font is called in the picker and in a theme file. A font
+/// installed with exactly this name cannot be chosen.
+pub const SYSTEM_FONT: &str = "System Mono";
 
 /// The height of a line of code, as a multiple of the font size.
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq, Serialize, Deserialize)]
@@ -104,8 +109,9 @@ fn tolerant_size<'de, D: Deserializer<'de>>(deserializer: D) -> Result<f32, D::E
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Typography {
-    /// `None` is the system's monospace font: SF Mono on a Mac, the bundled one elsewhere.
-    #[serde(deserialize_with = "tolerant")]
+    /// `Some(name)` is a family: [`BUNDLED_FONT`], the default, or one installed here. `None` is the
+    /// system's monospace font (SF Mono on a Mac): what a saved `null` has always meant.
+    #[serde(deserialize_with = "tolerant_family")]
     pub font_family: Option<String>,
     #[serde(deserialize_with = "tolerant_size")]
     pub font_size: f32,
@@ -113,10 +119,21 @@ pub struct Typography {
     pub line_height: LineHeight,
 }
 
+/// A family that falls back to the default font (not to the system's) when what is stored cannot be
+/// read, and keeps a stored `null` as the system font.
+fn tolerant_family<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<String>, D::Error> {
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(match value {
+        serde_json::Value::Null => None,
+        serde_json::Value::String(name) => Some(name),
+        _ => Some(BUNDLED_FONT.to_owned()),
+    })
+}
+
 impl Default for Typography {
     fn default() -> Self {
         Self {
-            font_family: None,
+            font_family: Some(BUNDLED_FONT.to_owned()),
             font_size: DEFAULT_FONT_SIZE,
             line_height: LineHeight::Default,
         }
@@ -126,18 +143,25 @@ impl Default for Typography {
 impl Typography {
     /// This with every value made valid.
     pub fn sanitized(mut self) -> Self {
-        self.font_family = self.font_family.as_deref().and_then(clean_family);
+        // A family that cannot be used (blank, absurdly long) is no choice at all: the default
+        // font, not the system's.
+        self.font_family = self
+            .font_family
+            .as_deref()
+            .map(|name| clean_family(name).unwrap_or_else(|| BUNDLED_FONT.to_owned()));
         self.font_size = clamp_size(self.font_size);
         self
     }
 
-    /// This, with the fields `theme` names replacing the ones here.
+    /// This, with the fields `theme` names replacing the ones here. A theme that names
+    /// [`SYSTEM_FONT`] asks for the system's monospace font.
     pub fn with(&self, theme: &TypographyOverride) -> Self {
         Self {
-            font_family: theme
-                .font_family
-                .clone()
-                .or_else(|| self.font_family.clone()),
+            font_family: match theme.font_family.as_deref() {
+                Some(SYSTEM_FONT) => None,
+                Some(name) => Some(name.to_owned()),
+                None => self.font_family.clone(),
+            },
             font_size: theme.font_size.unwrap_or(self.font_size),
             line_height: theme.line_height.unwrap_or(self.line_height),
         }
@@ -172,6 +196,53 @@ impl TypographyOverride {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_default_font_is_the_built_in_one_and_null_is_the_system_s() {
+        assert_eq!(
+            Typography::default().font_family.as_deref(),
+            Some("JetBrains Mono")
+        );
+        let nothing: Typography = serde_json::from_str("{}").unwrap();
+        assert_eq!(nothing.font_family.as_deref(), Some(BUNDLED_FONT));
+        let system: Typography = serde_json::from_str(r#"{"fontFamily": null}"#).unwrap();
+        assert_eq!(system.font_family, None, "a saved null is the system font");
+        let written = serde_json::to_value(&system).unwrap();
+        assert!(
+            written["fontFamily"].is_null(),
+            "and it is written back as null"
+        );
+        let named: Typography = serde_json::from_str(r#"{"fontFamily": "Menlo"}"#).unwrap();
+        assert_eq!(named.font_family.as_deref(), Some("Menlo"));
+    }
+
+    #[test]
+    fn a_theme_can_ask_for_the_system_font_by_name() {
+        let own = TypographyOverride {
+            font_family: Some(SYSTEM_FONT.into()),
+            ..Default::default()
+        };
+        assert_eq!(Typography::default().with(&own).font_family, None);
+        let named = TypographyOverride {
+            font_family: Some("Menlo".into()),
+            ..Default::default()
+        };
+        assert_eq!(
+            Typography::default().with(&named).font_family.as_deref(),
+            Some("Menlo")
+        );
+        // A theme that names none leaves the person's choice, the system's included.
+        let system = Typography {
+            font_family: None,
+            ..Typography::default()
+        };
+        assert_eq!(
+            system.with(&TypographyOverride::default()).font_family,
+            None
+        );
+        assert_eq!(SYSTEM_FONT, "System Mono");
+        assert_eq!(BUNDLED_FONT, "JetBrains Mono");
+    }
 
     #[test]
     fn sizes_are_kept_in_range_and_to_half_points() {
@@ -231,7 +302,11 @@ mod tests {
     fn unreadable_fields_fall_back_alone() {
         let text = r#"{"fontFamily": 7, "fontSize": 16.0, "lineHeight": "enormous"}"#;
         let typography: Typography = serde_json::from_str(text).unwrap();
-        assert_eq!(typography.font_family, None);
+        assert_eq!(
+            typography.font_family.as_deref(),
+            Some(BUNDLED_FONT),
+            "an unreadable family is the default font, not the system's"
+        );
         assert_eq!(typography.font_size, 16.0);
         let text = r#"{"fontFamily": "Menlo", "fontSize": "big"}"#;
         let typography: Typography = serde_json::from_str(text).unwrap();
@@ -250,7 +325,7 @@ mod tests {
             line_height: LineHeight::Loose,
         }
         .sanitized();
-        assert_eq!(wild.font_family, None);
+        assert_eq!(wild.font_family.as_deref(), Some(BUNDLED_FONT));
         assert_eq!(wild.font_size, MAX_FONT_SIZE);
         let theme = TypographyOverride {
             font_family: Some("  ".into()),

@@ -5,6 +5,8 @@ pub mod alert_center;
 pub mod alert_editor;
 mod alert_lines;
 mod annotation_geometry;
+#[cfg(test)]
+mod bundled_fonts_tests;
 pub mod canvas_render;
 mod chart_buttons;
 mod chart_canvas_settings;

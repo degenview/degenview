@@ -97,6 +97,32 @@ fn an_export_is_complete_readable_and_portable() {
 }
 
 #[test]
+fn the_system_font_is_a_name_in_a_theme_file_and_survives_the_trip() {
+    let mut book = ThemeBook::default();
+    let id = book
+        .create(2_000, "Plain", ThemeSource::BuiltIn(BuiltInTheme::Dark), 0)
+        .unwrap();
+    book.set_typography(
+        id,
+        TypographyOverride {
+            font_family: Some("System Mono".into()),
+            ..Default::default()
+        },
+        0,
+    )
+    .unwrap();
+    let text = export(book.get(id).unwrap());
+    let value: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(value["typography"]["fontFamily"], "System Mono");
+    let imported = import(&text).unwrap();
+    assert!(imported.skipped.is_empty(), "{:?}", imported.skipped);
+    assert_eq!(
+        imported.theme.typography.font_family.as_deref(),
+        Some("System Mono")
+    );
+}
+
+#[test]
 fn a_theme_with_no_typography_writes_none() {
     let mut book = ThemeBook::default();
     let id = book

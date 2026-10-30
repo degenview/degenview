@@ -10,13 +10,24 @@ fn fonts() -> Vec<String> {
 fn the_default_comes_first_until_something_is_typed() {
     let installed = fonts();
     let all = choices("", &installed, None, true);
-    assert_eq!(all[0], Choice::Default);
+    assert_eq!(all[0], Choice::System);
     assert_eq!(all.len(), 5);
     let typed = choices("mono", &installed, None, true);
+    // "mono" is in the system font's name too.
     assert_eq!(
         typed,
-        [Choice::Family("JetBrains Mono"), Choice::Family("SF Mono")]
+        [
+            Choice::System,
+            Choice::Family("JetBrains Mono"),
+            Choice::Family("SF Mono")
+        ]
     );
+    assert_eq!(
+        choices("fira", &installed, None, true),
+        [Choice::Family("Fira Code")],
+        "the system font is not offered to a search it does not match"
+    );
+    assert_eq!(choices("sys", &installed, None, true), [Choice::System]);
     assert_eq!(
         choices("", &installed, None, false)[0],
         Choice::Family("Fira Code")

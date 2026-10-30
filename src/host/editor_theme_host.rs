@@ -15,15 +15,15 @@
 
 use crate::model::editor_theme::codec;
 use crate::model::editor_theme::{
-    BuiltInTheme, ColorKey, EditorPrefs, EditorTheme, Rgba, ThemeBook, ThemeError, ThemeId,
-    ThemeSelection, ThemeSource, Typography, TypographyOverride, new_user_id,
+    BUNDLED_FONT, BuiltInTheme, ColorKey, EditorPrefs, EditorTheme, Rgba, SYSTEM_FONT, ThemeBook,
+    ThemeError, ThemeId, ThemeSelection, ThemeSource, Typography, TypographyOverride, new_user_id,
 };
 use crate::model::watchlist::now_ms;
 use crate::service::font_catalog::{FontCatalog, read_font};
 use crate::store::Store;
 use crate::store::editor_theme::Loaded;
 use crate::ui::editor_appearance::{self, Appearance, EditorFont};
-use crate::ui::theme;
+use crate::ui::theme::{self, EditorFontSource};
 use eframe::egui;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex};
@@ -35,7 +35,7 @@ pub const SAVE_DELAY: Duration = Duration::from_millis(400);
 /// What the editor's font is doing.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum FontStatus {
-    /// The system's monospace font, because none is chosen.
+    /// The system's monospace font, which is what was chosen.
     System,
     /// Waiting for the list of installed fonts, or for the file to be read.
     Loading(String),
@@ -58,8 +58,12 @@ struct Inner {
     changed_at: Option<Instant>,
     catalog: FontCatalog,
     font: FontStatus,
-    /// The family the app's fonts were last built with (`None`: the system font).
+    /// What the app's `editor-code` family starts with, and the family that is (`None`: the system
+    /// font). The app starts with the bundled font (`theme::install_fonts`).
+    source: EditorFontSource,
     installed: Option<String>,
+    /// Whether the context has been given [`Self::source`]: not until there is a context.
+    applied: bool,
     /// The family being read from disk.
     pending: Option<String>,
     replies: Receiver<FontReply>,
@@ -99,6 +103,22 @@ pub struct Imported {
     pub id: ThemeId,
     pub name: String,
     pub skipped: Vec<String>,
+}
+
+/// The families the picker offers: the built-in font first, then the installed ones, sorted. An
+/// installed family with the built-in's name is the built-in (so the editor looks the same on every
+/// machine), and one called [`SYSTEM_FONT`] cannot be told from the choice of that name.
+pub fn family_list(installed: impl Iterator<Item = String>) -> Vec<String> {
+    let mut rest: Vec<String> = installed
+        .filter(|family| {
+            !family.eq_ignore_ascii_case(BUNDLED_FONT) && !family.eq_ignore_ascii_case(SYSTEM_FONT)
+        })
+        .collect();
+    rest.sort_by_key(|family| family.to_lowercase());
+    rest.dedup_by(|a, b| a.eq_ignore_ascii_case(b));
+    std::iter::once(BUNDLED_FONT.to_owned())
+        .chain(rest)
+        .collect()
 }
 
 /// A name safe to give a file: letters, digits, spaces, dashes and underscores of any script, the
@@ -178,23 +198,51 @@ impl Inner {
         self.publish();
     }
 
-    fn uninstall_font(&mut self) {
-        if self.installed.take().is_some()
-            && let Some(ctx) = &self.ctx
-        {
-            theme::install_editor_font(ctx, None);
+    /// Gives the context the editor's font, if it has none of this kind yet.
+    fn use_font(&mut self, family: Option<&str>, source: EditorFontSource) {
+        if self.applied && self.installed.as_deref() == family {
+            return;
         }
+        self.source = source;
+        self.installed = family.map(str::to_owned);
+        self.applied = false;
+        self.apply();
+    }
+
+    /// Hands the context the font chosen, as soon as there is a context.
+    fn apply(&mut self) {
+        if let Some(ctx) = &self.ctx {
+            theme::install_editor_font(ctx, &self.source);
+            self.applied = true;
+        }
+    }
+
+    /// The system's own monospace font, because that is what was chosen.
+    fn use_system(&mut self) {
+        self.use_font(None, EditorFontSource::System);
+    }
+
+    /// The built-in font: chosen, or what draws when the chosen one cannot.
+    fn use_bundled(&mut self) {
+        self.use_font(Some(BUNDLED_FONT), EditorFontSource::Bundled);
     }
 
     /// Makes the app's fonts follow the family the editor should use, once the installed fonts
     /// are known, unless that family is already loaded, known to be missing, or being read.
     fn sync_font(&mut self) {
         let Some(family) = effective(&self.book, &self.prefs).font_family else {
-            self.uninstall_font();
+            self.use_system();
             self.pending = None;
             self.font = FontStatus::System;
             return;
         };
+        // The built-in font needs no file, no scan and no thread: it is there before anything else.
+        if family.eq_ignore_ascii_case(BUNDLED_FONT) {
+            self.use_bundled();
+            self.pending = None;
+            self.font = FontStatus::Using(BUNDLED_FONT.to_owned());
+            return;
+        }
         let is = |name: &String| name.eq_ignore_ascii_case(&family);
         if matches!(&self.font,
             FontStatus::Using(name) | FontStatus::Missing(name) | FontStatus::Failed(name, _)
@@ -208,7 +256,7 @@ impl Inner {
             return;
         }
         let Some(entry) = self.catalog.find(&family) else {
-            self.uninstall_font();
+            self.use_bundled();
             self.font = FontStatus::Missing(family);
             return;
         };
@@ -265,14 +313,12 @@ impl Inner {
             }
             match result {
                 Ok(data) => {
-                    if let Some(ctx) = &self.ctx {
-                        theme::install_editor_font(ctx, Some(data));
-                    }
-                    self.installed = Some(family.clone());
+                    self.applied = false;
+                    self.use_font(Some(&family), EditorFontSource::File(data));
                     self.font = FontStatus::Using(family);
                 }
                 Err(error) => {
-                    self.uninstall_font();
+                    self.use_bundled();
                     self.font = FontStatus::Failed(family, error);
                 }
             }
@@ -350,7 +396,9 @@ impl EditorThemeHost {
             changed_at: None,
             catalog,
             font: FontStatus::System,
-            installed: None,
+            source: EditorFontSource::Bundled,
+            installed: Some(BUNDLED_FONT.to_owned()),
+            applied: false,
             pending: None,
             replies,
             reply_to,
@@ -373,6 +421,8 @@ impl EditorThemeHost {
     pub fn attach(&self, ctx: &egui::Context) {
         let mut inner = self.lock();
         inner.ctx = Some(ctx.clone());
+        inner.applied = false;
+        inner.apply();
         inner.sync_font();
         inner.publish();
     }
@@ -415,12 +465,7 @@ impl EditorThemeHost {
         let mut inner = self.lock();
         let ready = inner.catalog.is_ready();
         if ready && inner.families.is_none() {
-            let names = inner
-                .catalog
-                .entries()
-                .into_iter()
-                .map(|e| e.family)
-                .collect();
+            let names = family_list(inner.catalog.entries().into_iter().map(|e| e.family));
             inner.families = Some(Arc::new(names));
         }
         View {
@@ -438,7 +483,11 @@ impl EditorThemeHost {
             effective: effective(&inner.book, &inner.prefs),
             font: inner.font.clone(),
             fonts_ready: ready,
-            fonts: inner.families.clone().unwrap_or_default(),
+            // The built-in font is there before the installed ones have been found.
+            fonts: inner
+                .families
+                .clone()
+                .unwrap_or_else(|| Arc::new(family_list(std::iter::empty()))),
             unwritable: inner.themes_unwritable.clone(),
             notice: inner.notice.clone(),
         }

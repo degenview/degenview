@@ -144,7 +144,8 @@
   editor. Colours come from `ui::editor_appearance` (`current()` for the editor, `chrome()` for code on
   the app's own background): never call `theme::syntax` or a hard-coded colour from editor code. A new
   role or surface goes in `model/editor_theme/roles.rs` and every built-in theme. The editor's font
-  comes from `editor_appearance::editor_font()` (size, line height, the `editor-code` family) and its
+  comes from `editor_appearance::editor_font()` (size, line height, the `editor-code` family, whose default is
+  the built-in JetBrains Mono: `theme::bundled_editor_font`, licensed OFL, see `assets/fonts/README.md`) and its
   layout constants follow it (`gutter_width`, `chrome_scale`): do not add a 13-point assumption. The
   theme and font are kept by `host::editor_theme_host` (saved after a pause, never while Settings draws);
   change them through it so every window repaints. See [Editor themes](../editor-themes.md).

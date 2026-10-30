@@ -578,17 +578,43 @@ fn system_fonts() -> &'static egui::FontDefinitions {
     FONTS.get_or_init(base_fonts)
 }
 
-/// The app's fonts plus the family the editor's code is set in: `editor` first when a person chose a
-/// font, then the monospace font and its fallbacks, so a character the chosen font lacks (an arrow,
-/// a symbol) still draws. The family is always defined, so naming it can never fail.
-fn font_definitions(editor: Option<std::sync::Arc<egui::FontData>>) -> egui::FontDefinitions {
+/// What the editor's code family starts with.
+#[derive(Clone)]
+pub enum EditorFontSource {
+    /// The system's monospace font alone.
+    System,
+    /// The font that ships with the app: JetBrains Mono, the default.
+    Bundled,
+    /// A font a person picked, read from its file.
+    File(std::sync::Arc<egui::FontData>),
+}
+
+/// JetBrains Mono NL Regular (`assets/fonts`, SIL OFL 1.1; the licence and where the file comes from
+/// are in `assets/fonts/README.md`): the font of the editor's code unless a person picks another. The
+/// NL build has no ligatures, which the editor could not switch on or off.
+pub fn bundled_editor_font() -> std::sync::Arc<egui::FontData> {
+    static FONT: std::sync::OnceLock<std::sync::Arc<egui::FontData>> = std::sync::OnceLock::new();
+    const JETBRAINS_MONO: &[u8] = include_bytes!("../../assets/fonts/JetBrainsMonoNL-Regular.ttf");
+    FONT.get_or_init(|| std::sync::Arc::new(egui::FontData::from_static(JETBRAINS_MONO)))
+        .clone()
+}
+
+/// The app's fonts plus the family the editor's code is set in: the editor's font first, then the
+/// monospace font and its fallbacks, so a character the editor's font lacks (an arrow, a symbol) still
+/// draws. The family is always defined, so naming it can never fail.
+fn font_definitions(editor: &EditorFontSource) -> egui::FontDefinitions {
     let mut fonts = system_fonts().clone();
     let mut chain = fonts
         .families
         .get(&egui::FontFamily::Monospace)
         .cloned()
         .unwrap_or_default();
-    if let Some(data) = editor {
+    let data = match editor {
+        EditorFontSource::System => None,
+        EditorFontSource::Bundled => Some(bundled_editor_font()),
+        EditorFontSource::File(data) => Some(data.clone()),
+    };
+    if let Some(data) = data {
         fonts.font_data.insert(EDITOR_FONT.to_owned(), data);
         chain.insert(0, EDITOR_FONT.to_owned());
     }
@@ -601,13 +627,15 @@ fn font_definitions(editor: Option<std::sync::Arc<egui::FontData>>) -> egui::Fon
 const EDITOR_FONT: &str = "editor-code-font";
 use crate::ui::editor_appearance::EDITOR_FAMILY;
 
+/// The app's fonts with the bundled editor font, which is what the editor is in until the host says
+/// otherwise: so a context that never hears from the host (a snapshot, a test) draws the default.
 fn install_fonts(ctx: &egui::Context) {
-    ctx.set_fonts(font_definitions(None));
+    ctx.set_fonts(font_definitions(&EditorFontSource::Bundled));
 }
 
-/// Sets the font the editor's code is drawn in (`None`: the system's monospace font). egui compares
-/// the new fonts to the old byte for byte, so this is called when the choice changes, not every frame.
-pub fn install_editor_font(ctx: &egui::Context, font: Option<std::sync::Arc<egui::FontData>>) {
+/// Sets the font the editor's code is drawn in. egui compares the new fonts to the old byte for byte, so
+/// this is called when the choice changes, not every frame.
+pub fn install_editor_font(ctx: &egui::Context, font: &EditorFontSource) {
     ctx.set_fonts(font_definitions(font));
 }
 

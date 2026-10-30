@@ -64,9 +64,10 @@ fn a_fresh_install_follows_the_app_as_the_editor_always_did() {
     assert_eq!(view.selected, ThemeSelection::Auto);
     assert!(view.customs.is_empty());
     assert_eq!(view.effective, Typography::default());
-    assert_eq!(view.font, FontStatus::System);
+    assert_eq!(view.font, FontStatus::Using("JetBrains Mono".into()));
     assert_eq!(*current(), Appearance::of(BuiltInTheme::Dark));
     assert_eq!(*editor_font(), EditorFont::default());
+    assert!(editor_font().custom, "the built-in font is the default");
 }
 
 #[test]
@@ -339,7 +340,10 @@ fn a_chosen_font_is_read_off_thread_and_installed() {
         matches!(host.view().font, FontStatus::Loading(_)),
         "reading, the old font still drawn"
     );
-    assert!(!editor_font().custom);
+    assert!(
+        editor_font().custom,
+        "the built-in font draws while the other is read"
+    );
     let view = wait_for(&host, &store, |view| {
         matches!(view.font, FontStatus::Using(_))
     });
@@ -356,9 +360,113 @@ fn a_chosen_font_is_read_off_thread_and_installed() {
     );
     // Putting the default back installs the system font again.
     host.set_typography(Typography::default());
+    assert_eq!(host.view().font, FontStatus::Using("JetBrains Mono".into()));
+    assert!(editor_font().custom);
+    // And the system's own font is a choice too.
+    host.set_typography(Typography {
+        font_family: None,
+        ..Typography::default()
+    });
     assert_eq!(host.view().font, FontStatus::System);
     assert!(!editor_font().custom);
     let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
+fn the_built_in_font_needs_neither_the_scan_nor_a_file() {
+    let _theme = RestoreDefaultTheme;
+    let _published = RestorePublished;
+    let store = Store::open_in_memory().unwrap();
+    // A catalog that has not found anything yet, and a context that has just arrived.
+    let host = host_over(&store, FontCatalog::default());
+    let ctx = egui::Context::default();
+    host.attach(&ctx);
+    let view = host.view();
+    assert_eq!(view.font, FontStatus::Using("JetBrains Mono".into()));
+    assert!(!view.fonts_ready);
+    assert_eq!(
+        *view.fonts,
+        ["JetBrains Mono"],
+        "offered before anything is found"
+    );
+    assert!(editor_font().custom);
+    ctx.run_ui(egui::RawInput::default(), |_| {})
+        .textures_delta
+        .clear();
+    assert_eq!(
+        editor_font().code(&ctx).family,
+        egui::FontFamily::Name(crate::ui::editor_appearance::EDITOR_FAMILY.into())
+    );
+    // Choosing it by hand, in another case, is the same font: no thread, no waiting.
+    host.set_typography(Typography {
+        font_family: Some("jetbrains mono".into()),
+        ..Typography::default()
+    });
+    assert_eq!(host.view().font, FontStatus::Using("JetBrains Mono".into()));
+}
+
+#[test]
+fn the_system_font_is_a_choice_for_the_editor_and_for_a_theme() {
+    let _theme = RestoreDefaultTheme;
+    let _published = RestorePublished;
+    let (host, _store) = host();
+    host.attach(&egui::Context::default());
+    host.set_typography(Typography {
+        font_family: None,
+        ..Typography::default()
+    });
+    assert_eq!(host.view().font, FontStatus::System);
+    assert!(
+        !editor_font().custom,
+        "the system's own monospace font draws"
+    );
+    // A theme can ask for the built-in font over the person's system choice, and for the system's
+    // over the built-in one.
+    let id = host
+        .create("Mine", ThemeSource::BuiltIn(BuiltInTheme::Dark))
+        .unwrap();
+    host.set_theme_typography(
+        id,
+        TypographyOverride {
+            font_family: Some("JetBrains Mono".into()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(host.view().font, FontStatus::Using("JetBrains Mono".into()));
+    assert!(editor_font().custom);
+    host.set_typography(Typography::default());
+    host.set_theme_typography(
+        id,
+        TypographyOverride {
+            font_family: Some("System Mono".into()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(host.view().font, FontStatus::System);
+    assert!(!editor_font().custom);
+    // Take the theme's choice away and the person's (the built-in font) is back.
+    host.reset_all(id).unwrap();
+    assert_eq!(host.view().font, FontStatus::Using("JetBrains Mono".into()));
+}
+
+#[test]
+fn the_picker_lists_the_built_in_font_first_and_an_installed_namesake_is_that_font() {
+    let list = family_list(
+        [
+            "Menlo",
+            "jetbrains mono",
+            "Fira Code",
+            "System Mono",
+            "menlo",
+            "JetBrains Mono",
+        ]
+        .into_iter()
+        .map(String::from),
+    );
+    assert_eq!(list, ["JetBrains Mono", "Fira Code", "Menlo"]);
+    assert_eq!(family_list(std::iter::empty()), ["JetBrains Mono"]);
 }
 
 #[test]
@@ -373,7 +481,7 @@ fn a_font_that_is_not_installed_keeps_its_name_and_the_default_draws() {
         ..Typography::default()
     });
     assert_eq!(host.view().font, FontStatus::Missing("Gone Mono".into()));
-    assert!(!editor_font().custom, "the editor still draws");
+    assert!(editor_font().custom, "the built-in font draws in its place");
     host.flush(&store);
     // The name is saved, so the font returns when it is installed again.
     assert_eq!(
@@ -408,7 +516,10 @@ fn a_saved_font_waits_for_the_font_list_instead_of_being_called_missing() {
     host.attach(&egui::Context::default());
     assert_eq!(host.view().font, FontStatus::Loading("Late Mono".into()));
     assert!(!host.view().fonts_ready);
-    assert!(!editor_font().custom);
+    assert!(
+        editor_font().custom,
+        "waiting for the list: the built-in font draws"
+    );
 }
 
 #[test]
@@ -428,7 +539,10 @@ fn a_font_that_cannot_be_read_is_reported_and_the_default_keeps_drawing() {
         matches!(view.font, FontStatus::Failed(..))
     });
     assert!(matches!(view.font, FontStatus::Failed(ref name, _) if name == "Broken Mono"));
-    assert!(!editor_font().custom);
+    assert!(
+        editor_font().custom,
+        "an unreadable font: the built-in one draws"
+    );
     let _ = std::fs::remove_dir_all(root);
 }
 
@@ -448,8 +562,8 @@ fn a_read_for_a_font_nobody_wants_any_more_is_dropped() {
     host.set_typography(Typography::default());
     std::thread::sleep(Duration::from_millis(200));
     host.tick(&store, Instant::now());
-    assert_eq!(host.view().font, FontStatus::System);
-    assert!(!editor_font().custom);
+    assert_eq!(host.view().font, FontStatus::Using("JetBrains Mono".into()));
+    assert!(editor_font().custom);
     let _ = std::fs::remove_dir_all(root);
 }
 
