@@ -31,8 +31,19 @@ pub(super) struct NavState {
 /// The list of calls, where the click was, and the text it was made for (any other text drops it).
 pub(super) struct CallList {
     at: egui::Pos2,
+    /// The function the calls are of, for the header.
+    name: String,
     sites: Vec<CallSite>,
     source_hash: u64,
+    /// The row the keyboard (or the pointer) is on.
+    selected: usize,
+    /// The list scrolls to the selected row on the next frame (after a key).
+    scroll_to_selected: bool,
+    /// Where the list was drawn last frame: a press outside it closes it.
+    rect: Option<Rect>,
+    /// Esc and Enter, taken before the text field could see them and acted on when it is drawn.
+    escape: bool,
+    enter: bool,
 }
 
 /// What the macOS Edit menu asks of the editor.
@@ -119,6 +130,7 @@ impl EditorState {
         &mut self,
         ctx: &egui::Context,
         at: egui::Pos2,
+        name: String,
         sites: Vec<CallSite>,
     ) {
         match sites.as_slice() {
@@ -127,8 +139,14 @@ impl EditorState {
                 self.carets.clear();
                 self.nav.calls = Some(CallList {
                     at,
+                    name,
                     sites,
                     source_hash: text_hash(&self.source),
+                    selected: 0,
+                    scroll_to_selected: false,
+                    rect: None,
+                    escape: false,
+                    enter: false,
                 });
             }
         }
@@ -453,50 +471,259 @@ pub(super) fn context_menu(
     }
 }
 
-/// The list of calls opened by ⌘-clicking a declaration: one row per calling line, as its number
-/// and the start of its code. Choosing one goes there; Esc, a click elsewhere or any edit closes it.
-pub(super) fn call_list(ui: &Ui, state: &mut EditorState) {
-    let Some(list) = state.nav.calls.as_ref() else {
+/// ↑ ↓ Home End Enter and Esc while the call list is open. Taken before the text field is drawn, so
+/// the caret does not move and Enter types nothing; `call_list` acts on them.
+pub(super) fn call_list_keys(ctx: &egui::Context, state: &mut EditorState) {
+    let Some(list) = state.nav.calls.as_mut() else {
+        return;
+    };
+    let (escape, up, down, home, end, enter) = ctx.input_mut(|input| {
+        let none = Modifiers::NONE;
+        (
+            input.consume_key(none, Key::Escape),
+            input.consume_key(none, Key::ArrowUp),
+            input.consume_key(none, Key::ArrowDown),
+            input.consume_key(none, Key::Home),
+            input.consume_key(none, Key::End),
+            input.consume_key(none, Key::Enter),
+        )
+    });
+    let last = list.sites.len().saturating_sub(1);
+    let before = list.selected;
+    if up {
+        list.selected = list.selected.saturating_sub(1);
+    }
+    if down {
+        list.selected = (list.selected + 1).min(last);
+    }
+    if home {
+        list.selected = 0;
+    }
+    if end {
+        list.selected = last;
+    }
+    list.scroll_to_selected |= list.selected != before;
+    list.escape |= escape;
+    list.enter |= enter;
+}
+
+/// Rows the list shows before it scrolls.
+const CALL_ROWS: f32 = 10.0;
+const CALL_ROW_HEIGHT: f32 = 28.0;
+const CALL_PADDING: f32 = 6.0;
+
+/// The list of calls opened by ⌘-clicking a declaration: one row per calling line, its number and
+/// the start of its code with the called name emphasised. ↑ ↓ Home End move, Enter or a click goes
+/// there. Esc, a press anywhere outside it, scrolling away, losing the window's focus or any edit
+/// closes it; the press that closed it still reaches whatever it was aimed at.
+pub(super) fn call_list(ui: &Ui, state: &mut EditorState, look: &Appearance, code: &EditorFont) {
+    let ctx = ui.ctx().clone();
+    let Some(mut list) = state.nav.calls.take() else {
         return;
     };
     if list.source_hash != text_hash(&state.source) {
-        state.nav.calls = None;
         return;
     }
-    // Opened by the press of a click: shown once the button is up, because a popup closes on the
-    // next click outside it, which the release of this very click would be.
-    if ui.input(|input| input.pointer.primary_down()) {
-        return;
-    }
-    let labels: Vec<String> = list.sites.iter().map(CallSite::label).collect();
-    let ranges: Vec<Range<usize>> = list.sites.iter().map(|site| site.range.clone()).collect();
-    let mut open = true;
-    let mut chosen = None;
-    kit::menu_popup_at(ui, Id::new("script-call-list"), list.at, &mut open).show(|ui| {
-        kit::menu_scope(ui, 240.0);
-        let fit: Vec<&str> = labels.iter().map(String::as_str).collect();
-        kit::menu_fit(ui, &fit);
-        egui::ScrollArea::vertical()
-            .max_height(320.0)
-            .auto_shrink([true, true])
-            .show(ui, |ui| {
-                for (index, label) in labels.iter().enumerate() {
-                    let row = kit::MenuRow {
-                        reserve_icon: false,
-                        ..kit::MenuRow::new(label)
-                    };
-                    if kit::menu_row(ui, row).clicked() {
-                        chosen = Some(index);
-                        ui.close();
-                    }
-                }
-            });
+    let away = ctx.input(|input| {
+        let outside = |position: Option<egui::Pos2>| {
+            list.rect
+                .zip(position)
+                .is_some_and(|(rect, position)| !rect.contains(position))
+        };
+        !input.focused
+            || (input.pointer.any_pressed() && outside(input.pointer.interact_pos()))
+            || (input.smooth_scroll_delta != Vec2::ZERO && outside(input.pointer.hover_pos()))
     });
-    if let Some(index) = chosen {
-        state.nav.calls = None;
-        state.go_to_range(ui.ctx(), ranges[index].clone());
-    } else if !open {
-        state.nav.calls = None;
+    if list.escape || away {
+        return;
+    }
+
+    let scale = code.chrome_scale();
+    let mono = code.at(&ctx, 12.0 * scale);
+    let small = code.at(&ctx, 11.0 * scale);
+    let ui_font = FontId::proportional(12.5);
+    let hint_font = FontId::proportional(11.0);
+    let number = look.surface(SurfaceColor::LineNumber);
+    let secondary = theme::text_secondary();
+    let primary = theme::text_primary();
+    let tertiary = theme::text_tertiary();
+    let painter = ui.painter();
+    let widest = list
+        .sites
+        .iter()
+        .map(|site| {
+            painter
+                .layout_no_wrap(site.preview.clone(), mono.clone(), primary)
+                .size()
+                .x
+        })
+        .fold(0.0, f32::max);
+    let number_width = painter
+        .layout_no_wrap("0000".to_owned(), small.clone(), number)
+        .size()
+        .x;
+    let screen = ctx.content_rect();
+    let context_width = list
+        .sites
+        .iter()
+        .filter_map(|site| site.context.as_ref())
+        .map(|context| {
+            painter
+                .layout_no_wrap(format!("in {context}"), hint_font.clone(), tertiary)
+                .size()
+                .x
+        })
+        .fold(0.0, f32::max);
+    let inner_width = (number_width + widest + context_width + 56.0)
+        .clamp(340.0, 600.0)
+        .min(screen.width() - 2.0 * CALL_PADDING - 24.0);
+    let height = list.sites.len().min(CALL_ROWS as usize) as f32 * CALL_ROW_HEIGHT;
+
+    let mut chosen = list.enter.then_some(list.selected);
+    list.enter = false;
+    let pointer_moved = ctx.input(|input| input.pointer.delta() != Vec2::ZERO);
+    let calls = list.sites.len();
+    let shown = egui::Area::new(Id::new("script-call-list"))
+        .order(egui::Order::Foreground)
+        .fixed_pos(list.at + Vec2::new(0.0, 10.0))
+        .show(&ctx, |ui| {
+            kit::menu_frame()
+                .inner_margin(Margin::same(CALL_PADDING as i8))
+                .show(ui, |ui| {
+                    ui.set_width(inner_width);
+                    ui.spacing_mut().item_spacing = Vec2::ZERO;
+                    // Header: whose calls these are, and how many.
+                    let (header, _) =
+                        ui.allocate_exact_size(Vec2::new(inner_width, 30.0), Sense::hover());
+                    let title =
+                        ui.painter()
+                            .layout_no_wrap(list.name.clone(), ui_font.clone(), primary);
+                    let title_width = title.size().x;
+                    ui.painter().galley(
+                        egui::pos2(
+                            header.left() + 8.0,
+                            header.center().y - title.size().y / 2.0,
+                        ),
+                        title,
+                        primary,
+                    );
+                    ui.painter().text(
+                        egui::pos2(header.left() + 8.0 + title_width + 8.0, header.center().y),
+                        Align2::LEFT_CENTER,
+                        format!("{calls} calls"),
+                        hint_font.clone(),
+                        tertiary,
+                    );
+                    ui.painter().hline(
+                        header.x_range(),
+                        header.bottom(),
+                        Stroke::new(1.0, theme::separator()),
+                    );
+                    ui.add_space(4.0);
+                    egui::ScrollArea::vertical()
+                        .max_height(height)
+                        .min_scrolled_height(height.min(CALL_ROWS * CALL_ROW_HEIGHT))
+                        .auto_shrink([false, true])
+                        .show(ui, |ui| {
+                            for (index, site) in list.sites.iter().enumerate() {
+                                let (rect, response) = ui.allocate_exact_size(
+                                    Vec2::new(inner_width, CALL_ROW_HEIGHT),
+                                    Sense::click(),
+                                );
+                                if response.hovered() {
+                                    ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                                    if pointer_moved {
+                                        list.selected = index;
+                                    }
+                                }
+                                let on = index == list.selected;
+                                if on {
+                                    ui.painter().rect_filled(rect, 5.0, theme::ink(18));
+                                    ui.painter().rect_filled(
+                                        Rect::from_min_size(
+                                            rect.min + Vec2::new(0.0, 7.0),
+                                            Vec2::new(2.0, CALL_ROW_HEIGHT - 14.0),
+                                        ),
+                                        1.0,
+                                        theme::ink(150),
+                                    );
+                                    if list.scroll_to_selected {
+                                        ui.scroll_to_rect(rect, None);
+                                    }
+                                }
+                                ui.painter().text(
+                                    egui::pos2(rect.left() + 10.0 + number_width, rect.center().y),
+                                    Align2::RIGHT_CENTER,
+                                    site.line,
+                                    small.clone(),
+                                    if on { secondary } else { number },
+                                );
+                                let characters: Vec<char> = site.preview.chars().collect();
+                                let (from, to) = site
+                                    .name
+                                    .as_ref()
+                                    .map_or((characters.len(), characters.len()), |name| {
+                                        (name.start, name.end)
+                                    });
+                                let mut job = egui::text::LayoutJob::default();
+                                // The called name in the strong ink, the rest of the line quieter.
+                                for (text, color) in [
+                                    (&characters[..from], secondary),
+                                    (&characters[from..to], primary),
+                                    (&characters[to..], secondary),
+                                ] {
+                                    let text: String = text.iter().collect();
+                                    job.append(
+                                        &text,
+                                        0.0,
+                                        egui::TextFormat::simple(mono.clone(), color),
+                                    );
+                                }
+                                let galley = ui.fonts_mut(|fonts| fonts.layout_job(job));
+                                ui.painter().galley(
+                                    egui::pos2(
+                                        rect.left() + 22.0 + number_width,
+                                        rect.center().y - galley.size().y / 2.0,
+                                    ),
+                                    galley,
+                                    primary,
+                                );
+                                if let Some(context) = &site.context {
+                                    ui.painter().text(
+                                        egui::pos2(rect.right() - 10.0, rect.center().y),
+                                        Align2::RIGHT_CENTER,
+                                        format!("in {context}"),
+                                        hint_font.clone(),
+                                        tertiary,
+                                    );
+                                }
+                                if response.clicked() {
+                                    chosen = Some(index);
+                                }
+                            }
+                        });
+                    ui.add_space(4.0);
+                    let (footer, _) =
+                        ui.allocate_exact_size(Vec2::new(inner_width, 26.0), Sense::hover());
+                    ui.painter().hline(
+                        footer.x_range(),
+                        footer.top(),
+                        Stroke::new(1.0, theme::separator()),
+                    );
+                    ui.painter().text(
+                        egui::pos2(footer.left() + 8.0, footer.center().y),
+                        Align2::LEFT_CENTER,
+                        "↑↓  navigate      ↵  open      esc  close",
+                        hint_font.clone(),
+                        tertiary,
+                    );
+                });
+        });
+    list.scroll_to_selected = false;
+    list.rect = Some(shown.response.rect);
+    match chosen.and_then(|index| list.sites.get(index)) {
+        Some(site) => state.go_to_range(&ctx, site.range.clone()),
+        None => state.nav.calls = Some(list),
     }
 }
 

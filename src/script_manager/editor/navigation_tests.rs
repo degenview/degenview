@@ -9,6 +9,7 @@ struct Harness {
     ctx: egui::Context,
     state: EditorState,
     time: f64,
+    focused: bool,
     area: Rect,
     char_width: f32,
     row_height: f32,
@@ -47,6 +48,7 @@ impl Harness {
             ctx: egui::Context::default(),
             state: EditorState::new("nav", source, source),
             time: 0.0,
+            focused: true,
             area: Rect::NOTHING,
             char_width: 8.0,
             row_height: 16.0,
@@ -63,6 +65,7 @@ impl Harness {
         self.time += 0.05;
         let raw = egui::RawInput {
             time: Some(self.time),
+            focused: self.focused,
             events,
             ..Default::default()
         };
@@ -579,4 +582,182 @@ fn the_list_closes_on_an_edit_and_on_escape() {
     h.frame(vec![key(Key::Escape, Modifiers::NONE)]);
     h.frame(vec![]);
     assert!(h.state.call_list_rows().is_empty(), "Esc closes it");
+}
+
+fn open_list(h: &mut Harness) {
+    h.place(0, 0);
+    let target = h.at(2, 1);
+    h.click(target, cmd());
+    assert_eq!(h.state.call_list_rows().len(), 2, "the list is open");
+    // One more frame so the list has been drawn and knows where it is.
+    h.frame(vec![]);
+}
+
+#[test]
+fn a_click_anywhere_else_closes_the_list_and_still_lands() {
+    let mut h = Harness::new(CALLS);
+    open_list(&mut h);
+    let elsewhere = h.at(0, 5);
+    h.click(elsewhere, Modifiers::NONE);
+    assert!(h.state.call_list_rows().is_empty(), "closed by the press");
+    let at = h.index(0, 5);
+    assert_eq!(h.primary(), (at, at), "and the click moved the caret");
+}
+
+#[test]
+fn a_press_with_any_button_outside_closes_it() {
+    let mut h = Harness::new(CALLS);
+    open_list(&mut h);
+    let elsewhere = h.at(0, 3);
+    h.frame(vec![Event::PointerMoved(elsewhere)]);
+    h.frame(vec![Event::PointerButton {
+        pos: elsewhere,
+        button: PointerButton::Secondary,
+        pressed: true,
+        modifiers: Modifiers::NONE,
+    }]);
+    assert!(h.state.call_list_rows().is_empty());
+}
+
+#[test]
+fn the_arrow_keys_move_and_enter_goes_to_the_selected_call() {
+    let mut h = Harness::new(CALLS);
+    open_list(&mut h);
+    let before = h.state.source.clone();
+    h.frame(vec![key(Key::ArrowDown, Modifiers::NONE)]);
+    h.frame(vec![key(Key::Enter, Modifiers::NONE)]);
+    // The second call of `half`, on the line below the first.
+    let second = h.index(6, 4);
+    assert_eq!(h.primary(), (second, second + 4));
+    assert!(h.state.call_list_rows().is_empty());
+    assert_eq!(
+        h.state.source, before,
+        "Enter chose a row, it typed nothing"
+    );
+}
+
+#[test]
+fn up_stays_on_the_first_row_and_end_and_home_jump() {
+    let mut h = Harness::new(CALLS);
+    open_list(&mut h);
+    h.frame(vec![key(Key::ArrowUp, Modifiers::NONE)]);
+    h.frame(vec![key(Key::End, Modifiers::NONE)]);
+    h.frame(vec![key(Key::Enter, Modifiers::NONE)]);
+    let last = h.index(6, 4);
+    assert_eq!(h.primary(), (last, last + 4), "End selects the last call");
+
+    let mut h = Harness::new(CALLS);
+    open_list(&mut h);
+    h.frame(vec![key(Key::End, Modifiers::NONE)]);
+    h.frame(vec![key(Key::Home, Modifiers::NONE)]);
+    h.frame(vec![key(Key::Enter, Modifiers::NONE)]);
+    let first = h.index(5, 4);
+    assert_eq!(h.primary(), (first, first + 4), "Home selects the first");
+}
+
+#[test]
+fn losing_the_windows_focus_closes_the_list() {
+    let mut h = Harness::new(CALLS);
+    open_list(&mut h);
+    h.focused = false;
+    h.frame(vec![]);
+    assert!(h.state.call_list_rows().is_empty());
+}
+
+// MARK: Pictures
+
+const GALLERY: &str = "//@version=6
+indicator(\"Reaction\", overlay = true)
+
+type ReactionState
+    float priorCore = na
+    float priorTop = na
+    int reclaimDirection = 0
+    int breakBar = na
+    int outsideCloses = 0
+
+method forget(ReactionState self) =>
+    self.reclaimDirection := 0
+    self.breakBar := na
+    self.outsideCloses := 0
+
+method inspect(ReactionState self, float core, float halfWidth, bool reset, bool enabled) =>
+    if reset
+        self.forget()
+    float top = core + halfWidth
+    if not enabled
+        self.forget()
+    top
+
+var ReactionState state = ReactionState.new()
+float level = ta.sma(close, 20)
+if barstate.isfirst
+    state.forget()
+if close > open and volume > ta.sma(volume, 50) and not na(level) and ta.crossover(close, level)
+    state.forget()
+state.inspect(level, 1.5, false, true)
+plot(level)
+";
+
+#[test]
+#[ignore = "writes images for a person to look at"]
+fn gallery_of_the_call_list() {
+    use crate::ui::render_tests::{Screen, gallery_dir};
+    use crate::ui::theme::AppTheme;
+    if gallery_dir().is_none() {
+        return;
+    }
+    for (name, app_theme) in [("dark", AppTheme::Dark), ("light", AppTheme::Light)] {
+        let mut screen = Screen::new(egui::vec2(980.0, 640.0));
+        theme::apply(&screen.ctx, app_theme);
+        let mut state = EditorState::new("gallery", GALLERY, GALLERY);
+        screen.ctx.memory_mut(|m| m.request_focus(state.id));
+        let run = |screen: &mut Screen, state: &mut EditorState, events: Vec<Event>| {
+            theme::sync(&screen.ctx);
+            screen.run(events, |ui| {
+                show(ui, state);
+            })
+        };
+        for _ in 0..4 {
+            run(&mut screen, &mut state, vec![]);
+        }
+        // Aim at the name through the caret: put it inside `forget`, and click where it is drawn.
+        let inside = GALLERY.find("forget").expect("the declaration");
+        let inside = GALLERY[..inside].chars().count() + 2;
+        let mut edit_state = TextEditState::load(&screen.ctx, state.id).unwrap_or_default();
+        edit_state
+            .cursor
+            .set_char_range(Some(CCursorRange::one(CCursor::new(inside))));
+        edit_state.store(&screen.ctx, state.id);
+        run(&mut screen, &mut state, vec![]);
+        let caret = state.caret_rect.expect("a caret");
+        let target = caret.center();
+        run(&mut screen, &mut state, vec![Event::PointerMoved(target)]);
+        let press = |pressed| Event::PointerButton {
+            pos: target,
+            button: PointerButton::Primary,
+            pressed,
+            modifiers: cmd(),
+        };
+        run(&mut screen, &mut state, vec![press(true)]);
+        run(&mut screen, &mut state, vec![press(false)]);
+        let output = run(&mut screen, &mut state, vec![]);
+        let output = {
+            drop(output);
+            run(&mut screen, &mut state, vec![])
+        };
+        screen.save(&format!("call-list-{name}"), output);
+        run(
+            &mut screen,
+            &mut state,
+            vec![key(Key::ArrowDown, Modifiers::NONE)],
+        );
+        run(
+            &mut screen,
+            &mut state,
+            vec![key(Key::ArrowDown, Modifiers::NONE)],
+        );
+        let output = run(&mut screen, &mut state, vec![]);
+        screen.save(&format!("call-list-second-{name}"), output);
+    }
 }

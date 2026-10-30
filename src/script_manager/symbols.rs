@@ -187,6 +187,21 @@ impl SymbolTable {
         Some(calls)
     }
 
+    /// The name of the function or method whose body holds `index`, the innermost one; `None` at the
+    /// top level of the script.
+    pub fn enclosing_callable(&self, index: usize) -> Option<&str> {
+        self.symbols
+            .iter()
+            .filter(|symbol| {
+                symbol.kind.callable()
+                    && symbol.body.is_some()
+                    && symbol.declaration.end <= index
+                    && index < symbol.visible_from
+            })
+            .max_by_key(|symbol| symbol.declaration.start)
+            .map(|symbol| symbol.name.as_str())
+    }
+
     /// The symbols that rename together with `id`: overloads of one function.
     fn group(&self, id: SymbolId) -> Vec<SymbolId> {
         let symbol = &self.symbols[id];
@@ -1419,6 +1434,23 @@ mod tests {
         assert_eq!(
             calls(&source, "scale", 0),
             Some(vec![at(&source, "scale", 1)])
+        );
+    }
+
+    #[test]
+    fn a_position_knows_the_function_it_is_in() {
+        let source = script(
+            "outer(x) =>\n    y = x + 1\n    y\nz = outer(2)\nmethod m(float this) =>\n    this * 2.0\n",
+        );
+        let table = analyze(&source);
+        assert_eq!(
+            table.enclosing_callable(at(&source, "y = x", 0)),
+            Some("outer")
+        );
+        assert_eq!(table.enclosing_callable(at(&source, "outer(2)", 0)), None);
+        assert_eq!(
+            table.enclosing_callable(at(&source, "this * 2.0", 0)),
+            Some("m")
         );
     }
 

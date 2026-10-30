@@ -16,6 +16,10 @@ pub struct CallSite {
     pub preview: String,
     /// The first call on the line.
     pub range: Range<usize>,
+    /// Where that call's name sits in `preview`, in characters; `None` when the cut took it off.
+    pub name: Option<Range<usize>>,
+    /// The function or method the call is in, for the caller to fill in (`None` at the top level).
+    pub context: Option<String>,
 }
 
 impl CallSite {
@@ -57,21 +61,31 @@ pub fn describe(source: &str, ranges: &[Range<usize>]) -> Vec<CallSite> {
             .iter()
             .position(|c| matches!(c, '\n' | '\r'))
             .map_or(chars.len(), |length| from + length);
-        let text: String = chars[from..to]
+        let raw: String = chars[from..to]
             .iter()
             .map(|c| if *c == '\t' { ' ' } else { *c })
             .collect();
-        let text = text.trim();
-        let preview = if text.chars().count() > PREVIEW_CHARS {
+        let indent = raw.chars().take_while(|c| c.is_whitespace()).count();
+        let text = raw.trim();
+        let (preview, kept) = if text.chars().count() > PREVIEW_CHARS {
             let cut: String = text.chars().take(PREVIEW_CHARS).collect();
-            format!("{}…", cut.trim_end())
+            let cut = cut.trim_end();
+            (format!("{cut}…"), cut.chars().count())
         } else {
-            text.to_owned()
+            (text.to_owned(), text.chars().count())
         };
+        let length = range.end - range.start;
+        let name = range
+            .start
+            .checked_sub(from + indent)
+            .filter(|start| start + length <= kept)
+            .map(|start| start..start + length);
         sites.push(CallSite {
             line,
             preview,
             range: range.clone(),
+            name,
+            context: None,
         });
     }
     sites
@@ -162,6 +176,27 @@ mod tests {
         let source = "// 🙂🙂\nz = f()\n";
         let sites = describe(source, &[find(source, "f()", 0)]);
         assert_eq!((sites[0].line, sites[0].preview.as_str()), (2, "z = f()"));
+    }
+
+    #[test]
+    fn the_called_name_is_located_in_the_preview() {
+        let source = "a = 1\n\t\tb = half(2)\n";
+        let sites = describe(source, &[find(source, "half", 0)]);
+        let name = sites[0].name.clone().expect("the name is shown");
+        let shown: String = sites[0]
+            .preview
+            .chars()
+            .skip(name.start)
+            .take(name.len())
+            .collect();
+        assert_eq!(
+            (sites[0].preview.as_str(), shown.as_str()),
+            ("b = half(2)", "half")
+        );
+        // A call cut off the end of a long line has no place in the preview.
+        let source = format!("{}half(1)\n", "x".repeat(100));
+        let sites = describe(&source, &[find(&source, "half", 0)]);
+        assert_eq!(sites[0].name, None);
     }
 
     #[test]

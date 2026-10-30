@@ -361,16 +361,30 @@ pub(super) fn resolve(
             .flatten();
         // ⌘-click on a function's or method's declaration goes to where it is called.
         let calls = match definition {
-            None if press.command => state
-                .symbols()
-                .calls_of(index)
-                .map(|calls| call_sites::describe(&state.source, &calls))
-                .filter(|sites| !sites.is_empty()),
+            None if press.command => {
+                let table = state.symbols();
+                let name = table
+                    .name_at(index)
+                    .map(|(id, _)| table.symbol(id).name.clone())
+                    .unwrap_or_default();
+                table
+                    .calls_of(index)
+                    .map(|calls| call_sites::describe(&state.source, &calls))
+                    .filter(|sites| !sites.is_empty())
+                    .map(|mut sites| {
+                        for site in &mut sites {
+                            site.context = table
+                                .enclosing_callable(site.range.start)
+                                .map(str::to_owned);
+                        }
+                        (name, sites)
+                    })
+            }
             _ => None,
         };
         match (definition, calls) {
             (Some(range), _) => state.go_to_range(ctx, range),
-            (None, Some(sites)) => state.open_call_list(ctx, press.pos, sites),
+            (None, Some((name, sites))) => state.open_call_list(ctx, press.pos, name, sites),
             (None, None) => {
                 state.carets.extra.push(press.prior);
                 let selections = Selections::with_extras(
