@@ -239,8 +239,8 @@ pub(super) fn show(
 const WIDE: f32 = 700.0;
 /// The footer width from which both reset buttons are shown rather than a menu of them.
 const COMPACT_FOOTER: f32 = 500.0;
-/// The width from which the tabs and the search share a row.
-const ONE_ROW: f32 = 470.0;
+/// The width from which the tabs show icons beside their titles.
+const ICON_TABS: f32 = 360.0;
 
 /// The real editor, framed, in `size`.
 fn preview_frame(ui: &mut Ui, preview: &mut ThemePreview, size: egui::Vec2) {
@@ -299,23 +299,13 @@ fn rows_column(
             width.max(80.0),
         );
     };
-    if width >= ONE_ROW {
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 8.0;
-            let tabs = if searching {
-                (width * 0.62).floor()
-            } else {
-                width
-            };
-            ui.allocate_ui(vec2(tabs, 30.0), |ui| {
-                kit::tab_bar(ui, Id::new("editor-theme-tabs"), &items, &mut editing.tab);
-            });
-            if searching {
-                search(ui, &mut editing.query, width - tabs - 8.0);
-            }
+    // The tabs always take the whole width and the search always sits under them. Where icons and
+    // titles do not fit (a 320-point window), the tabs are plain titles.
+    if width >= ICON_TABS {
+        ui.allocate_ui(vec2(width, 30.0), |ui| {
+            kit::tab_bar(ui, Id::new("editor-theme-tabs"), &items, &mut editing.tab);
         });
     } else {
-        // Too narrow for icons and a search beside them: plain titles, and the search under.
         let options = [
             (Tab::Syntax, "Syntax"),
             (Tab::Editor, "Editor"),
@@ -328,10 +318,10 @@ fn rows_column(
             &mut editing.tab,
             width,
         );
-        if searching {
-            ui.add_space(8.0);
-            search(ui, &mut editing.query, width);
-        }
+    }
+    if searching {
+        ui.add_space(8.0);
+        search(ui, &mut editing.query, width);
     }
     ui.add_space(10.0);
     let remaining = ui.available_height();

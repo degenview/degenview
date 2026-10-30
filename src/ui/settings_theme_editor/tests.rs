@@ -296,3 +296,34 @@ fn gallery() {
         }
     }
 }
+
+#[test]
+fn the_tabs_take_the_whole_width_and_the_search_sits_under_them() {
+    for width in [320.0, 600.0, 1000.0, 1300.0] {
+        let _theme = RestoreDefaultTheme;
+        let _published = RestorePublished;
+        let mut rig = Rig::new(vec2(width, 700.0));
+        rig.editing.tab = Tab::Syntax;
+        rig.settle();
+        let search = rig
+            .screen
+            .ctx
+            .read_response(Id::new("editor-theme-search"))
+            .unwrap_or_else(|| panic!("a search field at {width}"));
+        // The editor's column is at most the page less its two insets; the search spans nearly
+        // all of what there is, which it cannot while it shares a row with the tabs.
+        let column = if width >= WIDE {
+            (width - 2.0 * INSET - 16.0) / 2.0
+        } else {
+            width - 2.0 * INSET
+        };
+        assert!(
+            search.rect.width() > column * 0.8,
+            "{width}: the search is {} of a {column}-point column",
+            search.rect.width()
+        );
+        // The Typography tab has no search and still shows its tabs.
+        rig.editing.tab = Tab::Typography;
+        rig.settle();
+    }
+}

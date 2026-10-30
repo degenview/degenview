@@ -108,3 +108,37 @@ fn the_picker_draws_and_opens_without_trouble() {
         output.textures_delta.clear();
     }
 }
+
+#[test]
+fn the_list_is_as_wide_as_its_longest_name_within_limits() {
+    let ctx = egui::Context::default();
+    crate::ui::theme::install_offscreen(&ctx);
+    ctx.run_ui(egui::RawInput::default(), |_| {})
+        .textures_delta
+        .clear();
+    let mut widths = Vec::new();
+    ctx.run_ui(egui::RawInput::default(), |ui| {
+        let short = vec!["JetBrains Mono".to_owned(), "Menlo".to_owned()];
+        let long =
+            vec!["A Font With A Remarkably Long Name Indeed, More Than Any Menu Needs".to_owned()];
+        widths.push(list_width(ui, &short, None));
+        widths.push(list_width(ui, &short, Some("Gone Mono")));
+        widths.push(list_width(ui, &long, None));
+        widths.push(list_width(ui, &[], None));
+    })
+    .textures_delta
+    .clear();
+    assert!(
+        widths[0] >= MIN_WIDTH && widths[0] < 260.0,
+        "short names, a short list: {widths:?}"
+    );
+    assert!(
+        widths[1] >= widths[0],
+        "a missing name says so, and may be longer: {widths:?}"
+    );
+    assert_eq!(
+        widths[2], MAX_WIDTH,
+        "a very long name is cut at the limit: {widths:?}"
+    );
+    assert_eq!(widths[3], MIN_WIDTH, "nothing to list: the least");
+}

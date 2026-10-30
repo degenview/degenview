@@ -18,13 +18,49 @@ pub const SYSTEM_LABEL: &str = SYSTEM_FONT;
 
 const ROW_HEIGHT: f32 = 24.0;
 const LIST_HEIGHT: f32 = 264.0;
-/// The list that opens.
-const WIDTH: f32 = 280.0;
+/// The narrowest and widest the list that opens is: it is as wide as its longest name needs.
+const MIN_WIDTH: f32 = 190.0;
+const MAX_WIDTH: f32 = 340.0;
+/// What a row adds to its text: the menu's margins, the row's insets and the check at its end.
+const ROW_EXTRA: f32 = 62.0;
 /// The button that opens it: what the Font row reserves room for.
 pub const BUTTON_WIDTH: f32 = 190.0;
 
+/// How wide the list is: the longest name in it, in the menu's type, with what a row adds, between
+/// [`MIN_WIDTH`] and [`MAX_WIDTH`]. Only the longest name (by characters) is measured.
+fn list_width(ui: &Ui, installed: &[String], saved: Option<&str>) -> f32 {
+    let missing = saved
+        .filter(|name| !installed.iter().any(|f| f.eq_ignore_ascii_case(name)))
+        .map(|name| format!("{name} (not installed)"));
+    let longest = installed
+        .iter()
+        .map(|name| {
+            if name.eq_ignore_ascii_case(BUNDLED_FONT) {
+                format!("{name} (default)")
+            } else {
+                name.clone()
+            }
+        })
+        .chain(missing)
+        .max_by_key(|name| name.chars().count())
+        .unwrap_or_else(|| SYSTEM_LABEL.to_owned());
+    let measured = kit::galley(
+        ui,
+        &longest,
+        kit::size::BODY,
+        kit::REGULAR,
+        theme::text_primary(),
+        f32::INFINITY,
+    )
+    .size()
+    .x;
+    (measured + ROW_EXTRA).clamp(MIN_WIDTH, MAX_WIDTH)
+}
+
 #[derive(Default)]
 pub struct FontPickerState {
+    /// The width of the list, found when it opens.
+    width: f32,
     search: String,
     highlighted: usize,
     was_open: bool,
@@ -147,9 +183,13 @@ pub fn show(
         .frame(kit::menu_frame().inner_margin(egui::Margin::same(8)))
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .show(|ui| {
-            kit::menu_scope(ui, WIDTH);
-            ui.set_width(WIDTH);
             let opened = !state.was_open;
+            if opened {
+                state.width = list_width(ui, installed, saved);
+            }
+            let width = state.width;
+            kit::menu_scope(ui, width);
+            ui.set_width(width);
             state.was_open = true;
             let rows = choices(&state.search, installed, saved, include_system);
             // Arrows and Return work while the search field has the focus.
@@ -170,7 +210,7 @@ pub fn show(
                 search_id,
                 &mut state.search,
                 "Search fonts",
-                WIDTH - 16.0,
+                width - 16.0,
             );
             if opened {
                 field.request_focus();
