@@ -505,7 +505,7 @@ fn variable_row(
     let open = shown.open.contains(key);
     if selected {
         ui.painter()
-            .rect_filled(rect, 0.0, theme::with_alpha(kit::ACCENT, 0.16));
+            .rect_filled(rect, 0.0, theme::selected_tint(false));
     }
     paint_variable(ui, rect, depth, variable, open, response.hovered(), 0.0);
     let tip = if variable.assigned {

@@ -455,7 +455,10 @@ fn header(
     );
     let filter = crate::ui::accessibility::label(filter, "Filter this watchlist")
         .on_hover_text("Filter this watchlist");
-    if filter.hovered() {
+    if filtering {
+        ui.painter()
+            .rect_filled(filter_rect, 6.0, theme::selected_tint(filter.hovered()));
+    } else if filter.hovered() {
         ui.painter()
             .rect_filled(filter_rect, 6.0, Color32::from_white_alpha(17));
     }
@@ -463,11 +466,7 @@ fn header(
         ui.painter(),
         Rect::from_center_size(filter_rect.center(), Vec2::splat(15.0)),
         Icon::Magnifier,
-        if filtering {
-            theme::SYSTEM_ACCENT
-        } else {
-            theme::text_primary()
-        },
+        theme::text_primary(),
     );
     if filter.clicked() {
         state.filter_visible = !state.filter_visible;

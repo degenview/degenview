@@ -31,7 +31,7 @@ pub fn call_stack(ui: &mut Ui, panel: &DebugPanel, actions: &mut Vec<PanelAction
         let selected = frame.index == shown.frame;
         if selected {
             ui.painter()
-                .rect_filled(rect, 0.0, theme::with_alpha(kit::ACCENT, 0.16));
+                .rect_filled(rect, 0.0, theme::selected_tint(false));
         } else if response.hovered() {
             ui.painter().rect_filled(rect, 0.0, theme::ink(8));
         }

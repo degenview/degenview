@@ -68,7 +68,7 @@ fn tile(ui: &mut egui::Ui, rect: Rect, theme: AppTheme, selected: bool) -> bool 
     );
     let painter = ui.painter();
     let fill = if selected {
-        kit::ACCENT.gamma_multiply(0.1)
+        theme::selected_tint(false)
     } else if response.hovered() {
         kit::primary(0.07)
     } else {
@@ -79,7 +79,7 @@ fn tile(ui: &mut egui::Ui, rect: Rect, theme: AppTheme, selected: bool) -> bool 
         rect,
         12.0,
         if selected {
-            Stroke::new(1.5, kit::ACCENT)
+            theme::selected_stroke()
         } else {
             Stroke::new(1.0, kit::primary(0.12))
         },
@@ -108,7 +108,7 @@ fn tile(ui: &mut egui::Ui, rect: Rect, theme: AppTheme, selected: bool) -> bool 
 
     let label_y = preview.bottom() + 10.0 + 9.0;
     let tint = if selected {
-        kit::ACCENT
+        theme::text_primary()
     } else {
         theme::text_secondary()
     };
@@ -133,7 +133,7 @@ fn tile(ui: &mut egui::Ui, rect: Rect, theme: AppTheme, selected: bool) -> bool 
     );
     let check = Rect::from_center_size(pos2(preview.right() - 7.0, label_y), Vec2::splat(14.0));
     if selected {
-        icons::paint(painter, check, Icon::CheckCircleFill, kit::ACCENT);
+        icons::paint(painter, check, Icon::CheckCircleFill, theme::text_primary());
     } else {
         icons::paint(
             painter,

@@ -126,27 +126,13 @@ pub fn icon_button(ui: &mut Ui, icon: Icon, label: &str, on: bool) -> Response {
     let response = accessibility::label(response, label)
         .on_hover_text(label)
         .on_hover_cursor(CursorIcon::PointingHand);
-    if on {
-        let fill = theme::with_alpha(
-            theme::SYSTEM_ACCENT,
-            if response.hovered() { 0.24 } else { 0.16 },
-        );
-        ui.painter().rect_filled(rect, RADIUS, fill);
-        ui.painter().rect_stroke(
-            rect,
-            RADIUS,
-            Stroke::new(1.0, theme::with_alpha(theme::SYSTEM_ACCENT, 0.4)),
-            StrokeKind::Inside,
-        );
-    } else {
-        paint_quiet(ui, rect, &response, false);
-    }
+    paint_quiet(ui, rect, &response, on);
     icons::paint(
         ui.painter(),
         Rect::from_center_size(rect.center(), Vec2::splat(16.0)),
         icon,
         if on {
-            theme::SYSTEM_ACCENT
+            theme::text_primary()
         } else {
             theme::text_secondary()
         },
@@ -154,20 +140,34 @@ pub fn icon_button(ui: &mut Ui, icon: Icon, label: &str, on: bool) -> Response {
     response
 }
 
-/// The window's main action: accent-filled, an icon and a semibold title.
+/// The window's main action: a bordered grey plate, an icon and a semibold title.
 pub fn prominent_button(ui: &mut Ui, icon: Icon, title: &str) -> Response {
-    let label = kit::galley(ui, title, kit::size::BODY, SEMIBOLD, Color32::WHITE, 240.0);
+    let label = kit::galley(
+        ui,
+        title,
+        kit::size::BODY,
+        SEMIBOLD,
+        theme::text_primary(),
+        240.0,
+    );
     let width = 13.0 + GLYPH + 7.0 + label.size().x + 15.0;
     let (rect, response) = ui.allocate_exact_size(vec2(width, HEIGHT), Sense::click());
     let response = accessibility::label(response, title).on_hover_cursor(CursorIcon::PointingHand);
+    let base = theme::control_fill();
     let fill = if response.is_pointer_button_down_on() {
-        theme::SYSTEM_ACCENT.gamma_multiply(0.78)
+        base.gamma_multiply(0.8)
     } else if response.hovered() {
-        Color32::from_rgb(48, 151, 255)
+        base.gamma_multiply(1.12)
     } else {
-        theme::SYSTEM_ACCENT
+        base
     };
     ui.painter().rect_filled(rect, RADIUS, fill);
+    ui.painter().rect_stroke(
+        rect,
+        RADIUS,
+        Stroke::new(1.0, theme::separator()),
+        StrokeKind::Inside,
+    );
     icons::paint(
         ui.painter(),
         Rect::from_center_size(
@@ -175,7 +175,7 @@ pub fn prominent_button(ui: &mut Ui, icon: Icon, title: &str) -> Response {
             Vec2::splat(GLYPH),
         ),
         icon,
-        Color32::WHITE,
+        theme::text_primary(),
     );
     ui.painter().galley(
         pos2(

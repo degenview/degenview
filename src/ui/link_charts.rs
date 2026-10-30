@@ -128,7 +128,12 @@ fn option(ui: &mut Ui, id: &'static str, title: &str, detail: &str, on: &mut boo
         painter.rect_filled(row, 6.0, kit::primary(0.06));
     }
     if response.has_focus() {
-        painter.rect_stroke(row, 6.0, Stroke::new(2.0, kit::ACCENT), StrokeKind::Inside);
+        painter.rect_stroke(
+            row,
+            6.0,
+            Stroke::new(2.0, theme::text_secondary()),
+            StrokeKind::Inside,
+        );
     }
     let progress = ui.ctx().animate_bool(Id::new(id), *on);
     let top = rect.top() + 8.0;

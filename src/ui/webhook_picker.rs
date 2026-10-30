@@ -149,7 +149,7 @@ pub fn send_section(
 
 fn badge(ui: &Ui, rect: Rect, on: bool) {
     let tint = if on {
-        kit::ACCENT
+        theme::text_primary()
     } else {
         theme::text_secondary()
     };
@@ -329,7 +329,7 @@ fn endpoint_row(ui: &mut Ui, id: Id, endpoint: &WebhookEndpoint, selected: bool)
     }
     let ui = &mut child;
     let fill = if selected {
-        theme::with_alpha(kit::ACCENT, 0.08)
+        theme::selected_tint(false)
     } else {
         kit::primary(if response.hovered() { 0.06 } else { 0.025 })
     };
@@ -339,7 +339,7 @@ fn endpoint_row(ui: &mut Ui, id: Id, endpoint: &WebhookEndpoint, selected: bool)
         rect,
         10.0,
         if selected {
-            Stroke::new(1.5, kit::ACCENT)
+            theme::selected_stroke()
         } else {
             Stroke::new(1.0, kit::primary(0.12))
         },
@@ -362,7 +362,7 @@ fn endpoint_row(ui: &mut Ui, id: Id, endpoint: &WebhookEndpoint, selected: bool)
             Icon::Circle
         },
         if selected {
-            kit::ACCENT
+            theme::text_primary()
         } else {
             theme::with_alpha(theme::text_secondary(), 0.6)
         },
@@ -556,7 +556,7 @@ fn placeholder_chip(ui: &mut Ui, token: &str) -> egui::Response {
         .on_hover_text(format!("Add {token} to the message"));
     let hovered = response.hovered();
     let color = if hovered {
-        kit::ACCENT
+        theme::text_primary()
     } else {
         theme::text_secondary()
     };
@@ -564,7 +564,7 @@ fn placeholder_chip(ui: &mut Ui, token: &str) -> egui::Response {
         rect,
         rect.height() / 2.0,
         if hovered {
-            theme::with_alpha(kit::ACCENT, 0.14)
+            theme::selected_tint(true)
         } else {
             kit::primary(0.06)
         },

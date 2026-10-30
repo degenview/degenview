@@ -139,15 +139,7 @@ pub(super) fn show(
     let mut reset_changes = false;
     let mut reset_theme = false;
     footer_row(&mut footer, None, |ui| {
-        if kit::footer_button(
-            ui,
-            "Done",
-            kit::FooterButton::Prominent(kit::ACCENT),
-            true,
-            84.0,
-        )
-        .clicked()
-        {
+        if kit::footer_button(ui, "Done", kit::FooterButton::Primary, true, 84.0).clicked() {
             done = true;
         }
         if bar.width() >= COMPACT_FOOTER {

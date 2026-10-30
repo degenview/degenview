@@ -743,7 +743,7 @@ fn number_well(ui: &mut Ui, edit_id: Id, text: &mut String, invalid: bool) -> eg
     let ring = if invalid {
         theme::with_alpha(crate::ui::kit::RED, 0.7)
     } else if response.has_focus() {
-        theme::with_alpha(crate::ui::kit::ACCENT, 0.7)
+        theme::with_alpha(theme::text_secondary(), 0.7)
     } else {
         theme::ink(if hovered { 40 } else { 30 })
     };

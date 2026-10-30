@@ -142,7 +142,7 @@ fn glyph_response(
     let response = ui.interact(rect, id, Sense::click());
     let response = accessibility::label(response, label);
     let fill = if active {
-        theme::with_alpha(kit::ACCENT, 0.14)
+        theme::selected_tint(false)
     } else if response.is_pointer_button_down_on() {
         kit::primary(0.12)
     } else if response.hovered() {
@@ -156,7 +156,7 @@ fn glyph_response(
         egui::Rect::from_center_size(rect.center(), Vec2::splat(13.0)),
         icon,
         if active {
-            kit::ACCENT
+            theme::text_primary()
         } else {
             theme::text_secondary()
         },

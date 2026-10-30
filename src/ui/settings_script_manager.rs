@@ -428,7 +428,7 @@ fn draw_tile(ui: &mut Ui, rect: Rect, tile: &Tile, selected: bool, id: Id) -> Op
     }
     let painter = ui.painter().clone();
     let fill = if selected {
-        kit::ACCENT.gamma_multiply(0.1)
+        theme::selected_tint(false)
     } else if response.hovered() {
         kit::primary(0.07)
     } else {
@@ -439,7 +439,7 @@ fn draw_tile(ui: &mut Ui, rect: Rect, tile: &Tile, selected: bool, id: Id) -> Op
         rect,
         12.0,
         if selected {
-            Stroke::new(1.5, kit::ACCENT)
+            theme::selected_stroke()
         } else {
             Stroke::new(1.0, kit::primary(0.12))
         },
@@ -449,7 +449,7 @@ fn draw_tile(ui: &mut Ui, rect: Rect, tile: &Tile, selected: bool, id: Id) -> Op
         painter.rect_stroke(
             rect.expand(2.0),
             14.0,
-            Stroke::new(2.0, theme::with_alpha(kit::ACCENT, 0.7)),
+            Stroke::new(2.0, theme::with_alpha(theme::text_secondary(), 0.7)),
             StrokeKind::Outside,
         );
     }
@@ -504,7 +504,12 @@ fn draw_tile(ui: &mut Ui, rect: Rect, tile: &Tile, selected: bool, id: Id) -> Op
         Vec2::splat(14.0),
     );
     if selected {
-        icons::paint(&painter, check, Icon::CheckCircleFill, kit::ACCENT);
+        icons::paint(
+            &painter,
+            check,
+            Icon::CheckCircleFill,
+            theme::text_primary(),
+        );
     } else {
         icons::paint(
             &painter,
@@ -1212,7 +1217,7 @@ fn field_select(
         ui.painter().rect_stroke(
             rect.expand(1.0),
             10.0,
-            Stroke::new(2.0, theme::with_alpha(kit::ACCENT, 0.7)),
+            Stroke::new(2.0, theme::with_alpha(theme::text_secondary(), 0.7)),
             StrokeKind::Outside,
         );
     }
