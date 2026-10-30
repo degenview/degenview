@@ -155,8 +155,9 @@ the version, where the file comes from and its hash are in `assets/fonts/README.
 Flatpak's `share/licenses`, the Linux and Windows archives). A test (`bundled_fonts_tests`) holds the file to
 its recorded hash and checks that the licences, the READMEs and the packaging say what they must.
 
-The editor's code family (`editor-code`) is the chosen font, then the system's monospace font and its
-fallbacks, then the Noto symbols, so a character a font lacks (an arrow, a symbol) still draws. The app
+The editor's code family (`editor-code`) is the chosen font, then (when it is not the built-in one) the
+built-in font, then the system's monospace font and its fallbacks, then the Noto symbols, so a character a
+font lacks (an arrow, a symbol) still draws, in the font the editor is meant to look like first. The app
 starts with the built-in font (`theme::install_fonts`), so a context that never hears from the host (a
 snapshot, a test) draws the default too; the host (`EditorThemeHost`) changes it when the choice changes.
 egui compares fonts byte for byte when they are set, so that happens on a change and not every frame.
@@ -164,7 +165,12 @@ egui compares fonts byte for byte when they are set, so that happens on a change
 Other fonts: the picker (`service::font_catalog`) offers the installed monospaced fonts. The system's font
 folders are walked on a background thread, reading from each file only its table directory and the `name`,
 `OS/2` and `post` tables (kilobytes, not the font), and a family is listed once, by its regular face, when it
-declares itself monospaced. `.ttc` collections are read member by member; hidden system fonts (a name
+declares itself monospaced **and has scalable outlines**: a bitmap-only font (GB18030 Bitmap, on a Mac)
+maps its characters but draws nothing at the sizes the editor asks for, so it is not offered, and a font
+whose outlines turn out to be missing when it is read (`check_outlines`: `A`, `e` and `0` must have one) is
+refused like an unreadable one, with the built-in font drawing instead. Names come from the Unicode
+records, or failing those from ASCII Macintosh ones (Menlo has only those). `.ttc` collections are read
+member by member; hidden system fonts (a name
 starting with a dot) and anything unreadable are skipped. The chosen file is read on another thread (at most
 64 MB). The built-in font is listed first, and **an installed font also called "JetBrains Mono" is not
 offered: the built-in one is used**, so the editor looks the same on every machine; one called "System Mono"

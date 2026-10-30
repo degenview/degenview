@@ -547,6 +547,42 @@ fn a_font_that_cannot_be_read_is_reported_and_the_default_keeps_drawing() {
 }
 
 #[test]
+fn a_font_with_nothing_to_draw_is_refused_and_the_built_in_font_draws() {
+    let _theme = RestoreDefaultTheme;
+    let _published = RestorePublished;
+    // A "font" that reads fine but has no letters in it (a bitmap font, a broken file): the editor
+    // would be blank in it.
+    let (root, entry) = font_on_disk("blank", "Blank Mono");
+    let bytes = std::fs::read(&entry.path).unwrap();
+    std::fs::write(&entry.path, &bytes[..bytes.len() / 3]).unwrap();
+    let store = Store::open_in_memory().unwrap();
+    let host = host_over(&store, FontCatalog::with_entries(vec![entry]));
+    let ctx = egui::Context::default();
+    host.attach(&ctx);
+    host.set_typography(Typography {
+        font_family: Some("Blank Mono".into()),
+        ..Typography::default()
+    });
+    let view = wait_for(&host, &store, |view| {
+        matches!(view.font, FontStatus::Failed(..))
+    });
+    match &view.font {
+        FontStatus::Failed(name, why) => {
+            assert_eq!(name, "Blank Mono");
+            assert!(why.contains("font"), "{why}");
+        }
+        other => panic!("{other:?}"),
+    }
+    assert!(editor_font().custom, "the built-in font draws instead");
+    // The name stays chosen, so the font is not forgotten.
+    assert_eq!(
+        host.view().typography.font_family.as_deref(),
+        Some("Blank Mono")
+    );
+    let _ = std::fs::remove_dir_all(root);
+}
+
+#[test]
 fn a_read_for_a_font_nobody_wants_any_more_is_dropped() {
     let _theme = RestoreDefaultTheme;
     let _published = RestorePublished;

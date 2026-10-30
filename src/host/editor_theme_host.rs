@@ -19,7 +19,7 @@ use crate::model::editor_theme::{
     ThemeError, ThemeId, ThemeSelection, ThemeSource, Typography, TypographyOverride, new_user_id,
 };
 use crate::model::watchlist::now_ms;
-use crate::service::font_catalog::{FontCatalog, read_font};
+use crate::service::font_catalog::{FontCatalog, check_outlines, read_font};
 use crate::store::Store;
 use crate::store::editor_theme::Loaded;
 use crate::ui::editor_appearance::{self, Appearance, EditorFont};
@@ -268,12 +268,13 @@ impl Inner {
             .name("font-read".into())
             .spawn(move || {
                 let result = read_font(&entry)
+                    .map_err(|error| error.to_string())
+                    .and_then(|font| check_outlines(&font).map(|()| font))
                     .map(|font| {
                         let mut data = egui::FontData::from_owned(font.bytes);
                         data.index = font.index;
                         Arc::new(data)
-                    })
-                    .map_err(|error| error.to_string());
+                    });
                 let _ = reply_to.send((family, result));
                 if let Some(ctx) = ctx {
                     ctx.request_repaint();

@@ -254,7 +254,6 @@ fn overview(ui: &mut Ui, state: &mut ScriptManagerState, host: &EditorThemeHost,
                 .corner_radius(10.0)
                 .inner_margin(egui::Margin::same(1))
                 .show(ui, |ui| {
-                    ui.set_clip_rect(ui.max_rect().intersect(ui.clip_rect()));
                     state.preview.show(ui, vec2(width - 2.0, 330.0));
                 });
             let _ = frame;
@@ -535,7 +534,15 @@ fn draw_tile(ui: &mut Ui, rect: Rect, tile: &Tile, selected: bool, id: Id) -> Op
         kit::context_popup(&response),
     ] {
         popup.show(|ui| {
-            kit::menu_scope(ui, 190.0);
+            kit::menu_scope(ui, 0.0);
+            kit::menu_fit(
+                ui,
+                if tile.custom.is_some() {
+                    &["Edit…", "Duplicate", "Rename…", "Export…", "Delete…"][..]
+                } else {
+                    &["Duplicate & Customize", "Export…"][..]
+                },
+            );
             if let Some(chosen) = tile_menu(ui, tile) {
                 action = Some(chosen);
             }
@@ -1147,6 +1154,77 @@ fn name_problem(host: &EditorThemeHost, name: &str, renaming: Option<ThemeId>) -
         .flatten()
 }
 
+/// A small label over a field of a sheet.
+fn caption(ui: &mut Ui, text: &str) {
+    ui.label(kit::text(
+        text,
+        kit::size::SUBHEADLINE,
+        kit::MEDIUM,
+        theme::text_secondary(),
+    ));
+    ui.add_space(6.0);
+}
+
+/// A choice from a short list, drawn as the sheet's text fields are (same frame, same height) and
+/// as wide as they are, with the choices in a menu under it. Returns the index chosen this frame.
+fn field_select(
+    ui: &mut Ui,
+    id: Id,
+    icon: Icon,
+    labels: &[&str],
+    selected: usize,
+) -> Option<usize> {
+    let current = labels.get(selected).copied().unwrap_or_default();
+    let shown = kit::field_frame(false).show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 8.0;
+            icons::inline(ui, icon, 13.0, theme::text_secondary());
+            ui.label(kit::text(
+                current,
+                kit::size::BODY,
+                kit::REGULAR,
+                theme::text_primary(),
+            ));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                icons::inline(ui, Icon::ChevronUpDown, 12.0, theme::text_secondary());
+            });
+        });
+    });
+    let rect = shown.response.rect;
+    let response = ui
+        .interact(rect, id, Sense::click())
+        .on_hover_cursor(egui::CursorIcon::PointingHand);
+    let response = crate::ui::accessibility::label(response, format!("Based on: {current}"));
+    if response.has_focus() {
+        ui.painter().rect_stroke(
+            rect.expand(1.0),
+            10.0,
+            Stroke::new(2.0, theme::with_alpha(kit::ACCENT, 0.7)),
+            StrokeKind::Outside,
+        );
+    }
+    let mut picked = None;
+    kit::menu_popup(&response).show(|ui| {
+        kit::menu_scope(ui, rect.width() - 16.0);
+        for (index, label) in labels.iter().enumerate() {
+            let row = kit::menu_row(
+                ui,
+                kit::MenuRow {
+                    current: index == selected,
+                    reserve_icon: false,
+                    ..kit::MenuRow::new(label)
+                },
+            );
+            if row.clicked() {
+                picked = Some(index);
+                ui.close();
+            }
+        }
+    });
+    picked
+}
+
 enum Outcome {
     Confirm,
     Cancel,
@@ -1172,6 +1250,7 @@ fn name_dialog(
         sheet::inset(ui, |ui| {
             sheet::header(ui, Icon::Palette, title, subtitle, theme::ACCENT);
             ui.add_space(20.0);
+            caption(ui, "Name");
             crate::ui::chart_templates::text_field(
                 ui,
                 Id::new((id, "name")),
@@ -1191,23 +1270,18 @@ fn name_dialog(
                 ));
             }
             if let Some((selected, sources)) = based_on {
-                ui.add_space(14.0);
-                ui.horizontal(|ui| {
-                    ui.label(kit::text(
-                        "Based on",
-                        kit::size::BODY,
-                        kit::REGULAR,
-                        theme::text_primary(),
-                    ));
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let labels: Vec<String> =
-                            sources.iter().map(|(label, _)| label.clone()).collect();
-                        if let Some(picked) = kit::menu_picker(ui, 220.0, &labels, *selected, true)
-                        {
-                            *selected = picked;
-                        }
-                    });
-                });
+                ui.add_space(18.0);
+                caption(ui, "Based on");
+                let labels: Vec<&str> = sources.iter().map(|(label, _)| label.as_str()).collect();
+                if let Some(picked) = field_select(
+                    ui,
+                    Id::new((id, "based-on")),
+                    Icon::Palette,
+                    &labels,
+                    *selected,
+                ) {
+                    *selected = picked;
+                }
             }
             ui.add_space(22.0);
         });

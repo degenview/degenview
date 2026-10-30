@@ -173,7 +173,8 @@ pub(super) fn show(
             // Room for one button: the two resets share a menu.
             let more = icons::button(ui, Icon::Ellipsis, 28.0, theme::text_primary(), "Reset");
             kit::menu_popup(&more).show(|ui| {
-                kit::menu_scope(ui, 200.0);
+                kit::menu_scope(ui, 0.0);
+                kit::menu_fit(ui, &["Reset Changes", "Reset Theme…"]);
                 if kit::menu_item(ui, Icon::Undo, "Reset Changes", changed, false) {
                     reset_changes = true;
                     ui.close();
@@ -248,7 +249,6 @@ fn preview_frame(ui: &mut Ui, preview: &mut ThemePreview, size: egui::Vec2) {
         .corner_radius(10.0)
         .inner_margin(egui::Margin::same(1))
         .show(ui, |ui| {
-            ui.set_clip_rect(ui.max_rect().intersect(ui.clip_rect()));
             preview.show(ui, vec2(size.x - 2.0, size.y - 2.0));
         });
 }
@@ -410,23 +410,20 @@ fn header(
         let (rect, response) = ui.allocate_exact_size(vec2(84.0, 24.0), Sense::click());
         let response = crate::ui::accessibility::label(response, "Back to the themes")
             .on_hover_cursor(egui::CursorIcon::PointingHand);
-        if response.hovered() {
+        // Quiet, like the rest of the page's chrome: neutral, a little stronger under the pointer.
+        let ink = if response.hovered() {
             ui.painter().rect_filled(rect, 6.0, theme::ink(14));
-        }
+            theme::text_primary()
+        } else {
+            theme::text_secondary()
+        };
         icons::paint(
             ui.painter(),
             Rect::from_center_size(pos2(rect.left() + 12.0, rect.center().y), vec2(10.0, 12.0)),
             Icon::ChevronLeft,
-            kit::ACCENT,
+            ink,
         );
-        let text = kit::galley(
-            ui,
-            "Themes",
-            kit::size::BODY,
-            kit::REGULAR,
-            kit::ACCENT,
-            60.0,
-        );
+        let text = kit::galley(ui, "Themes", kit::size::BODY, kit::REGULAR, ink, 60.0);
         ui.painter().galley(
             pos2(rect.left() + 24.0, rect.center().y - text.size().y / 2.0),
             text,
@@ -563,12 +560,14 @@ fn group_rows(
                 "Reset this group",
             );
             kit::menu_popup(&more).show(|ui| {
-                kit::menu_scope(ui, 210.0);
                 let label = match changed.len() {
                     0 => "Nothing to reset".to_owned(),
                     1 => "Reset 1 color".to_owned(),
                     count => format!("Reset {count} colors"),
                 };
+                // As wide as its one row needs, not a guessed width.
+                kit::menu_scope(ui, 0.0);
+                kit::menu_fit(ui, &[&label]);
                 if kit::menu_item(ui, Icon::Undo, &label, !changed.is_empty(), false) {
                     let _ = host.reset_colors(theme.id, &changed);
                     ui.close();

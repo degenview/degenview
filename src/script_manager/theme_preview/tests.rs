@@ -8,7 +8,9 @@ use std::collections::HashSet;
 
 /// The sample as a script that is meant to compile: without the two lines that carry diagnostics.
 fn clean_sample() -> &'static str {
-    let at = SAMPLE.find("plot(averge").expect("the problem lines");
+    let at = SAMPLE
+        .find("// Problems are underlined")
+        .expect("the problem lines");
     &SAMPLE[..at]
 }
 

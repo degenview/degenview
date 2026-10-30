@@ -14,8 +14,8 @@ use crate::pine::token::{
 use eframe::egui::{self, Ui, Vec2};
 
 /// A Pine v6 script with a comment, strings, numbers, keywords, user and builtin names, a
-/// function with parameters, namespaces, operators, constants and punctuation, then a line the
-/// compiler would reject and one it would warn about.
+/// function with parameters, namespaces, operators, constants and punctuation, then, under a comment
+/// that says so, a line the compiler rejects and one that stands for a warning.
 pub const SAMPLE: &str = "//@version=6
 indicator(\"Theme Preview\", overlay=true)
 
@@ -37,7 +37,9 @@ lineColor = isBullish ? color.green : color.red
 
 plot(average, color=lineColor, linewidth=2)
 plot(peak, color=#FF8800)
-plot(averge, title=\"Typo\")
+
+// Problems are underlined like this:
+plot(missing)
 alert(\"Bullish\\n\", alert.freq_once_per_bar)
 ";
 
@@ -77,13 +79,13 @@ impl ThemePreview {
         state.diagnostics = vec![
             diagnostic(
                 DiagnosticSeverity::Error,
-                "averge",
-                "Undeclared identifier \"averge\".",
+                "missing",
+                "Example error: `missing` is not declared in this script.",
             ),
             diagnostic(
                 DiagnosticSeverity::Warning,
                 "alert(",
-                "An alert needs a chart to run on.",
+                "Example warning: this is how a warning is underlined.",
             ),
         ];
         state.status = CompileStatus::Error;

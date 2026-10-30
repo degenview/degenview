@@ -615,6 +615,14 @@ fn font_definitions(editor: &EditorFontSource) -> egui::FontDefinitions {
         EditorFontSource::File(data) => Some(data.clone()),
     };
     if let Some(data) = data {
+        // A font a person picked comes first and the built-in one next, so a character it lacks
+        // draws in the font the editor is meant to look like before the system's fallbacks.
+        if matches!(editor, EditorFontSource::File(_)) {
+            fonts
+                .font_data
+                .insert(EDITOR_FALLBACK.to_owned(), bundled_editor_font());
+            chain.insert(0, EDITOR_FALLBACK.to_owned());
+        }
         fonts.font_data.insert(EDITOR_FONT.to_owned(), data);
         chain.insert(0, EDITOR_FONT.to_owned());
     }
@@ -625,6 +633,7 @@ fn font_definitions(editor: &EditorFontSource) -> egui::FontDefinitions {
 }
 
 const EDITOR_FONT: &str = "editor-code-font";
+const EDITOR_FALLBACK: &str = "editor-code-fallback";
 use crate::ui::editor_appearance::EDITOR_FAMILY;
 
 /// The app's fonts with the bundled editor font, which is what the editor is in until the host says

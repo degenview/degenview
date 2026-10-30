@@ -12,6 +12,7 @@ use std::fs::File;
 use std::io::{self, Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use ttf_parser::PlatformId;
 use ttf_parser::name::Table as NameTable;
 use ttf_parser::name_id;
 
@@ -36,6 +37,9 @@ struct Face {
     family: String,
     monospaced: bool,
     regular: bool,
+    /// Whether it has scalable outlines (`glyf` or `CFF`). A bitmap-only font (`bdat`, `sbix`) maps
+    /// its characters but draws nothing at a size egui asks for: an editor in it would be blank.
+    outlines: bool,
 }
 
 struct TableRecord {
@@ -112,12 +116,25 @@ fn read_face(file: &mut File, offset: u64) -> Option<Face> {
     let records = table_records(file, offset)?;
     let names = table(file, &records, b"name")?;
     let names = NameTable::parse(&names)?;
+    // Unicode names first; failing those, a Macintosh name made only of ASCII (which is all of
+    // Roman that a family name needs, and the only kind Menlo and Monaco carry).
     let text = |id: u16| {
-        names
+        let unicode = names
             .names
             .into_iter()
             .filter(|name| name.name_id == id && name.is_unicode())
-            .find_map(|name| name.to_string())
+            .find_map(|name| name.to_string());
+        unicode.or_else(|| {
+            names
+                .names
+                .into_iter()
+                .filter(|name| name.name_id == id && name.platform_id == PlatformId::Macintosh)
+                .find_map(|name| {
+                    name.name
+                        .is_ascii()
+                        .then(|| String::from_utf8_lossy(name.name).into_owned())
+                })
+        })
     };
     let family = text(name_id::TYPOGRAPHIC_FAMILY)
         .or_else(|| text(name_id::FAMILY))?
@@ -150,10 +167,14 @@ fn read_face(file: &mut File, offset: u64) -> Option<Face> {
             "regular" | "book" | "roman" | "normal" | ""
         ),
     };
+    let outlines = records
+        .iter()
+        .any(|record| matches!(&record.tag, b"glyf" | b"CFF " | b"CFF2"));
     Some(Face {
         family,
         monospaced: fixed_pitch || panose_mono,
         regular,
+        outlines,
     })
 }
 
@@ -208,6 +229,7 @@ pub fn scan(dirs: &[PathBuf]) -> Vec<FontEntry> {
             };
             if !face.monospaced
                 || !face.regular
+                || !face.outlines
                 || face.family.is_empty()
                 || face.family.starts_with('.')
             {
@@ -283,6 +305,31 @@ pub fn read_font(entry: &FontEntry) -> io::Result<LoadedFont> {
         bytes,
         index: entry.index,
     })
+}
+
+/// Whether `font` can draw letters: it parses, and `A`, `e` and `0` have outlines. Catches what the
+/// scan's table check cannot (a font whose outline tables are empty or broken), before the editor is
+/// handed a font that would draw nothing.
+pub fn check_outlines(font: &LoadedFont) -> Result<(), String> {
+    struct Sink;
+    impl ttf_parser::OutlineBuilder for Sink {
+        fn move_to(&mut self, _: f32, _: f32) {}
+        fn line_to(&mut self, _: f32, _: f32) {}
+        fn quad_to(&mut self, _: f32, _: f32, _: f32, _: f32) {}
+        fn curve_to(&mut self, _: f32, _: f32, _: f32, _: f32, _: f32, _: f32) {}
+        fn close(&mut self) {}
+    }
+    let face = ttf_parser::Face::parse(&font.bytes, font.index)
+        .map_err(|_| "it is not a font this app can read".to_owned())?;
+    for letter in ['A', 'e', '0'] {
+        let drawn = face
+            .glyph_index(letter)
+            .and_then(|glyph| face.outline_glyph(glyph, &mut Sink));
+        if drawn.is_none() {
+            return Err("it has no scalable letters to draw with (a bitmap font)".to_owned());
+        }
+    }
+    Ok(())
 }
 
 #[derive(Default)]

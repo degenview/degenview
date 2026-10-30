@@ -560,6 +560,7 @@ fn gallery() {
             ("window", CONTENT),
             ("small", vec2(320.0, 420.0)),
             ("wide", vec2(1000.0, 700.0)),
+            ("tall", vec2(600.0, 1700.0)),
         ] {
             let mut rig = Rig::new(size);
             theme::apply(&rig.screen.ctx, app_theme);
@@ -591,5 +592,141 @@ fn gallery() {
                 editing,
             );
         }
+    }
+}
+
+/// Whether a rectangle of `color` is drawn big enough to be the editor, and is not clipped away: the
+/// part of it inside its own clip rectangle is what shows.
+fn shows_editor(output: &egui::FullOutput, color: egui::Color32) -> bool {
+    fn visible(shape: &egui::Shape, clip: egui::Rect, color: egui::Color32) -> bool {
+        match shape {
+            egui::Shape::Vec(shapes) => shapes.iter().any(|shape| visible(shape, clip, color)),
+            egui::Shape::Rect(rect) if rect.fill == color => {
+                let shown = rect.rect.intersect(clip);
+                shown.width() > 200.0 && shown.height() > 100.0
+            }
+            _ => false,
+        }
+    }
+    output
+        .shapes
+        .iter()
+        .any(|clipped| visible(&clipped.shape, clipped.clip_rect, color))
+}
+
+#[test]
+fn the_preview_still_draws_after_the_page_is_scrolled_to_it() {
+    // The preview sits below the first screenful, so a person has to scroll to it: it was cut off
+    // by a clip taken from the scroll area's own rectangle, which does not move with the scroll.
+    let _theme = RestoreDefaultTheme;
+    let _published = RestorePublished;
+    let mut rig = Rig::new(CONTENT);
+    rig.settle();
+    let background = current().surface(crate::model::editor_theme::SurfaceColor::Background);
+    let mut seen = Vec::new();
+    for _ in 0..6 {
+        rig.frame(vec![
+            Event::PointerMoved(egui::pos2(300.0, 40.0)),
+            Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: vec2(0.0, -400.0),
+                phase: egui::TouchPhase::Move,
+                modifiers: Modifiers::NONE,
+            },
+        ]);
+        rig.frame(Vec::new());
+        seen.push(shows_editor(&rig.frame(Vec::new()), background));
+    }
+    assert!(
+        seen.last().copied().unwrap(),
+        "the editor's background is drawn once the page is scrolled to the preview: {seen:?}"
+    );
+}
+
+#[test]
+fn the_preview_draws_at_every_window_height() {
+    let _theme = RestoreDefaultTheme;
+    let _published = RestorePublished;
+    let background = current().surface(crate::model::editor_theme::SurfaceColor::Background);
+    for height in [420.0, 580.0, 800.0, 1200.0] {
+        let mut rig = Rig::new(vec2(600.0, height));
+        rig.settle();
+        // Scroll to the very bottom, where the preview ends.
+        for _ in 0..8 {
+            rig.frame(vec![
+                Event::PointerMoved(egui::pos2(300.0, 20.0)),
+                Event::MouseWheel {
+                    unit: egui::MouseWheelUnit::Point,
+                    delta: vec2(0.0, -600.0),
+                    phase: egui::TouchPhase::Move,
+                    modifiers: Modifiers::NONE,
+                },
+            ]);
+        }
+        rig.frame(Vec::new());
+        assert!(
+            shows_editor(&rig.frame(Vec::new()), background),
+            "no editor at a window {height} points tall"
+        );
+    }
+}
+
+#[test]
+#[ignore = "writes images for a person to look at"]
+fn gallery_scrolled_to_the_preview() {
+    if gallery_dir().is_none() {
+        return;
+    }
+    let _theme = RestoreDefaultTheme;
+    let _published = RestorePublished;
+    let mut rig = Rig::new(CONTENT);
+    rig.settle();
+    for step in 0..6 {
+        rig.frame(vec![
+            Event::PointerMoved(egui::pos2(300.0, 40.0)),
+            Event::MouseWheel {
+                unit: egui::MouseWheelUnit::Point,
+                delta: vec2(0.0, -400.0),
+                phase: egui::TouchPhase::Move,
+                modifiers: Modifiers::NONE,
+            },
+        ]);
+        rig.frame(Vec::new());
+        let output = rig.frame(Vec::new());
+        rig.screen.save(&format!("scrolled-{step}"), output);
+    }
+}
+
+#[test]
+#[ignore = "writes images for a person to look at"]
+fn gallery_dialogs() {
+    if gallery_dir().is_none() {
+        return;
+    }
+    for (name, app_theme) in [("dark", AppTheme::Dark), ("light", AppTheme::Light)] {
+        let _theme = RestoreDefaultTheme;
+        let _published = RestorePublished;
+        let mut rig = Rig::new(vec2(700.0, 560.0));
+        theme::apply(&rig.screen.ctx, app_theme);
+        rig.host
+            .create("My Dracula", ThemeSource::BuiltIn(BuiltInTheme::Dracula))
+            .unwrap();
+        rig.state.dialog = Some(Dialog::Create {
+            name: "Night".into(),
+            source: 2,
+            focus: false,
+            error: None,
+        });
+        let output = rig.settle();
+        rig.screen.save(&format!("dialog-create-{name}"), output);
+        rig.state.dialog = Some(Dialog::Create {
+            name: "dracula".into(),
+            source: 0,
+            focus: false,
+            error: None,
+        });
+        let output = rig.settle();
+        rig.screen
+            .save(&format!("dialog-create-problem-{name}"), output);
     }
 }

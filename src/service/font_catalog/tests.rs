@@ -7,6 +7,10 @@ struct Spec<'a> {
     mono: bool,
     weight: u16,
     selection: u16,
+    /// Scalable outlines (a `glyf` table) rather than bitmaps only (`bdat`).
+    outlines: bool,
+    /// Names written for the Macintosh platform (ASCII) only, as Menlo's and Monaco's are.
+    mac_names: bool,
 }
 
 impl<'a> Spec<'a> {
@@ -17,6 +21,8 @@ impl<'a> Spec<'a> {
             mono: true,
             weight: 400,
             selection: 0x40,
+            outlines: true,
+            mac_names: false,
         }
     }
 }
@@ -28,8 +34,17 @@ fn utf16(text: &str) -> Vec<u8> {
 /// A font file with just the tables the catalog reads. Table offsets are absolute, so `base` is
 /// where the font starts in the file it is going into.
 fn font(spec: &Spec, base: u32) -> Vec<u8> {
-    let family = utf16(spec.family);
-    let subfamily = utf16(spec.subfamily);
+    let (family, subfamily, platform, encoding, language) = if spec.mac_names {
+        (
+            spec.family.as_bytes().to_vec(),
+            spec.subfamily.as_bytes().to_vec(),
+            1u16,
+            0u16,
+            0u16,
+        )
+    } else {
+        (utf16(spec.family), utf16(spec.subfamily), 3, 1, 0x409)
+    };
     let mut names = Vec::new();
     names.extend(0u16.to_be_bytes()); // format
     names.extend(2u16.to_be_bytes()); // count
@@ -38,7 +53,14 @@ fn font(spec: &Spec, base: u32) -> Vec<u8> {
         (1u16, family.len(), 0usize),
         (2, subfamily.len(), family.len()),
     ] {
-        for value in [3u16, 1, 0x409, id, length as u16, offset as u16] {
+        for value in [
+            platform,
+            encoding,
+            language,
+            id,
+            length as u16,
+            offset as u16,
+        ] {
             names.extend(value.to_be_bytes());
         }
     }
@@ -51,12 +73,20 @@ fn font(spec: &Spec, base: u32) -> Vec<u8> {
     let mut post = vec![0u8; 32];
     post[12..16].copy_from_slice(&u32::from(spec.mono).to_be_bytes());
 
-    let data_start = base + 12 + 3 * 16;
+    // The tables are only found by their tags, not parsed: this stands in for the glyphs.
+    let glyphs = vec![0u8; 8];
+    let glyph_tag: &[u8; 4] = if spec.outlines { b"glyf" } else { b"bdat" };
+    let data_start = base + 12 + 4 * 16;
     let mut out = vec![0, 1, 0, 0];
-    out.extend(3u16.to_be_bytes());
+    out.extend(4u16.to_be_bytes());
     out.extend([0u8; 6]);
     let mut offset = data_start;
-    for (tag, bytes) in [(b"OS/2", &os2), (b"name", &names), (b"post", &post)] {
+    for (tag, bytes) in [
+        (b"OS/2", &os2),
+        (glyph_tag, &glyphs),
+        (b"name", &names),
+        (b"post", &post),
+    ] {
         out.extend(tag);
         out.extend(0u32.to_be_bytes());
         out.extend(offset.to_be_bytes());
@@ -64,6 +94,7 @@ fn font(spec: &Spec, base: u32) -> Vec<u8> {
         offset += bytes.len() as u32;
     }
     out.extend(&os2);
+    out.extend(&glyphs);
     out.extend(&names);
     out.extend(&post);
     out
@@ -129,6 +160,62 @@ fn proportional_bold_and_italic_faces_are_not_listed() {
     write("ok.ttf", Spec::regular("Good Mono"));
     assert_eq!(families(&scan(std::slice::from_ref(&root))), ["Good Mono"]);
     let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn a_bitmap_only_font_is_not_offered_because_it_would_draw_nothing() {
+    // GB18030 Bitmap, on a Mac: monospaced, regular, with every letter mapped, and no outlines.
+    let root = dir("bitmap");
+    let write = |name: &str, spec: Spec| fs::write(root.join(name), font(&spec, 0)).unwrap();
+    write(
+        "bitmap.ttf",
+        Spec {
+            outlines: false,
+            ..Spec::regular("GB18030 Bitmap")
+        },
+    );
+    write("ok.ttf", Spec::regular("Drawn Mono"));
+    assert_eq!(families(&scan(std::slice::from_ref(&root))), ["Drawn Mono"]);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn a_font_named_only_for_the_macintosh_is_listed_too() {
+    // Menlo is on every Mac and its names are Macintosh Roman only.
+    let root = dir("mac-names");
+    let spec = Spec {
+        mac_names: true,
+        ..Spec::regular("Menlo")
+    };
+    fs::write(root.join("menlo.ttf"), font(&spec, 0)).unwrap();
+    assert_eq!(families(&scan(std::slice::from_ref(&root))), ["Menlo"]);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn a_font_is_checked_for_letters_before_the_editor_is_given_it() {
+    let hack = LoadedFont {
+        bytes: eframe::egui::FontDefinitions::default().font_data["Hack"]
+            .font
+            .to_vec(),
+        index: 0,
+    };
+    assert_eq!(check_outlines(&hack), Ok(()), "a real font with outlines");
+    // A file that is not a font, a truncated one, and one whose tables say nothing.
+    for bytes in [
+        b"not a font".to_vec(),
+        hack.bytes[..400].to_vec(),
+        font(&Spec::regular("Synthetic Mono"), 0),
+    ] {
+        let broken = LoadedFont { bytes, index: 0 };
+        assert!(check_outlines(&broken).is_err());
+    }
+    // A face that is not in the file.
+    let missing = LoadedFont {
+        bytes: hack.bytes,
+        index: 9,
+    };
+    assert!(check_outlines(&missing).is_err());
 }
 
 #[test]
@@ -333,4 +420,19 @@ fn the_default_catalog_has_not_scanned() {
 #[test]
 fn the_system_has_font_folders() {
     assert!(!system_font_dirs().is_empty());
+}
+
+#[test]
+#[ignore = "reads this machine's fonts: cargo test --lib font_catalog::tests::this_machine -- --ignored --nocapture"]
+fn this_machine_s_fonts_all_draw_letters() {
+    let entries = scan(&system_font_dirs());
+    eprintln!("{} families: {:?}", entries.len(), families(&entries));
+    assert!(
+        !entries.iter().any(|entry| entry.family.contains("Bitmap")),
+        "a bitmap font is offered"
+    );
+    for entry in &entries {
+        let font = read_font(entry).unwrap();
+        assert_eq!(check_outlines(&font), Ok(()), "{}", entry.family);
+    }
 }
