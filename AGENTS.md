@@ -97,7 +97,7 @@ because cargo never deletes old output. Finished worktrees are where the disk go
 - [Fibonacci and Gann tools](docs/fibonacci-gann-tools.md) — the Fibonacci and Gann tile: editable level lists, bar-counted time lines, curves sampled where they show, Gann angles as ratios of price to time, provenance.
 - [Pine debugger](docs/pine-debugger.md) — the opt-in interpreter hooks, sessions on their own thread, source map and stepping, breakpoints, the read-only expression service, what is measured.
 - [Pine profiler](docs/pine-profiler.md) — the timing model (regions, inclusive and exclusive time, what is not attributed), the opt-in recorder, profile sessions and staleness, the editor column and drawer tab, what is measured.
-- [Editor themes](docs/editor-themes.md) — syntax roles and surfaces, how a name gets its role, the built-in themes, what the editor reads and what stays app-coloured, what is measured.
+- [Editor themes](docs/editor-themes.md) — syntax roles and surfaces, how a name gets its role, the built-in and custom themes and their one-level inheritance, typography and fonts, saving, the file format, the Settings page, what is verified and measured.
 - [Pine volume footprints](docs/pine-footprint.md) — `request.footprint()`: built from intrabar candles, stateless handles, what is inferred and what is not verified.
 - [Pine Logs](docs/pine-logs.md) — `log.*()` messages: the sink, limits, batches, what is verified against TradingView.
 - [AI assistant](docs/ai-assistant.md) — prompting an LLM to edit the open Pine script: bring-your-own key, providers and streaming, what is verified.

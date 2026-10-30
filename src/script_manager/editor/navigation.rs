@@ -466,7 +466,7 @@ pub(super) fn rename_box(ctx: &egui::Context, state: &mut EditorState) -> bool {
                     );
                     let output = egui::TextEdit::singleline(&mut rename.text)
                         .id(field)
-                        .font(FontId::monospace(FONT_SIZE))
+                        .font(editor_appearance::editor_font().code(ctx))
                         .desired_width(f32::INFINITY)
                         .show(ui);
                     let response = output.response;

@@ -587,11 +587,15 @@ pub fn layout_job(
     source: &str,
     spans: &[Span],
     font: FontId,
+    line_height: Option<f32>,
     appearance: &Appearance,
     default: Color32,
 ) -> LayoutJob {
     let mut job = LayoutJob::default();
-    let format = |color: Color32| TextFormat::simple(font.clone(), color);
+    let format = |color: Color32| TextFormat {
+        line_height,
+        ..TextFormat::simple(font.clone(), color)
+    };
     let mut run: Option<(Range<usize>, Color32)> = None;
     let mut add = |job: &mut LayoutJob, range: Range<usize>, color: Color32| {
         if let Some((open, open_color)) = &mut run

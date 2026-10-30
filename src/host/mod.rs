@@ -1,5 +1,6 @@
 pub mod alert_host;
 pub mod alert_runtime;
+pub mod editor_theme_host;
 pub mod mcp_host;
 pub mod paper_host;
 pub mod pine_host;

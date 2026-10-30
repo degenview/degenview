@@ -521,7 +521,7 @@ pub const SYSTEM_ACCENT: Color32 = Color32::from_rgb(10, 132, 255);
 /// a machine without the files simply keeps the defaults. STIX Two Math and Apple Symbols go last
 /// in both families so characters the others lack — "𝓑𝓾𝔂" and other math alphanumerics, arrows,
 /// geometric shapes — draw instead of showing tofu squares.
-fn install_fonts(ctx: &egui::Context) {
+fn base_fonts() -> egui::FontDefinitions {
     let mut fonts = egui::FontDefinitions::default();
     for (name, path, family) in [
         (
@@ -569,7 +569,46 @@ fn install_fonts(ctx: &egui::Context) {
         }
     }
     add_symbol_fallback(&mut fonts);
-    ctx.set_fonts(fonts);
+    fonts
+}
+
+/// The app's fonts without the editor's choice, read from the system once.
+fn system_fonts() -> &'static egui::FontDefinitions {
+    static FONTS: std::sync::OnceLock<egui::FontDefinitions> = std::sync::OnceLock::new();
+    FONTS.get_or_init(base_fonts)
+}
+
+/// The app's fonts plus the family the editor's code is set in: `editor` first when a person chose a
+/// font, then the monospace font and its fallbacks, so a character the chosen font lacks (an arrow,
+/// a symbol) still draws. The family is always defined, so naming it can never fail.
+fn font_definitions(editor: Option<std::sync::Arc<egui::FontData>>) -> egui::FontDefinitions {
+    let mut fonts = system_fonts().clone();
+    let mut chain = fonts
+        .families
+        .get(&egui::FontFamily::Monospace)
+        .cloned()
+        .unwrap_or_default();
+    if let Some(data) = editor {
+        fonts.font_data.insert(EDITOR_FONT.to_owned(), data);
+        chain.insert(0, EDITOR_FONT.to_owned());
+    }
+    fonts
+        .families
+        .insert(egui::FontFamily::Name(EDITOR_FAMILY.into()), chain);
+    fonts
+}
+
+const EDITOR_FONT: &str = "editor-code-font";
+use crate::ui::editor_appearance::EDITOR_FAMILY;
+
+fn install_fonts(ctx: &egui::Context) {
+    ctx.set_fonts(font_definitions(None));
+}
+
+/// Sets the font the editor's code is drawn in (`None`: the system's monospace font). egui compares
+/// the new fonts to the old byte for byte, so this is called when the choice changes, not every frame.
+pub fn install_editor_font(ctx: &egui::Context, font: Option<std::sync::Arc<egui::FontData>>) {
+    ctx.set_fonts(font_definitions(font));
 }
 
 /// A subset of Noto Sans Symbols 2 (`assets/fonts`), the last fallback in both families. Neither

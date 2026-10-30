@@ -343,6 +343,7 @@ fn the_layout_covers_the_whole_source_in_order() {
         source,
         &spans(source),
         FontId::monospace(13.0),
+        None,
         &appearance,
         appearance.role(SyntaxRole::Default),
     );
@@ -352,6 +353,7 @@ fn the_layout_covers_the_whole_source_in_order() {
             "",
             &[],
             FontId::monospace(13.0),
+            None,
             &appearance,
             Color32::WHITE
         )
@@ -375,6 +377,7 @@ fn runs_of_one_colour_are_one_section() {
         source,
         &spans,
         FontId::monospace(13.0),
+        None,
         &appearance,
         appearance.role(SyntaxRole::Default),
     );
@@ -400,10 +403,11 @@ fn a_colour_change_classifies_nothing_again() {
         source,
         &spans,
         font.clone(),
+        None,
         &a,
         a.role(SyntaxRole::Default),
     );
-    let two = layout_job(source, &spans, font, &b, b.role(SyntaxRole::Default));
+    let two = layout_job(source, &spans, font, None, &b, b.role(SyntaxRole::Default));
     assert_eq!(one.text, two.text);
     assert_ne!(one.sections[0].format.color, two.sections[0].format.color);
 }
@@ -417,6 +421,7 @@ fn highlighting_does_not_touch_the_source() {
         &source,
         &spans(&source),
         FontId::monospace(13.0),
+        None,
         &appearance,
         Color32::BLACK,
     );
@@ -477,6 +482,7 @@ fn timings() {
                 &source,
                 &spans,
                 font.clone(),
+                None,
                 &appearance,
                 appearance.role(SyntaxRole::Default),
             ));

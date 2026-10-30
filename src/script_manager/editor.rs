@@ -19,7 +19,7 @@ use super::syntax::{self, Span};
 use crate::model::editor_theme::{SurfaceColor, SyntaxRole};
 use crate::pine::token::{Diagnostic, DiagnosticSeverity};
 use crate::ui::accessibility;
-use crate::ui::editor_appearance::{self, Appearance};
+use crate::ui::editor_appearance::{self, Appearance, EditorFont};
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit;
 use crate::ui::shortcut;
@@ -130,6 +130,8 @@ pub struct EditorState {
     /// Failures of text that compiled but failed when it ran, drawn and counted like `diagnostics`
     /// (the workspace sets them each frame; they are never part of the compile result).
     runtime_problems: Vec<Diagnostic>,
+    /// The editor is a sample (Settings' theme preview): it has no script to save.
+    sample: bool,
     pub status: CompileStatus,
     highlighted: Option<(u64, Arc<Vec<Span>>)>,
     /// A UTF-16 offset to move the caret to on the next frame (a Problems row was clicked).
@@ -219,6 +221,7 @@ impl EditorState {
             reveal_stop: None,
             diagnostics: Vec::new(),
             runtime_problems: Vec::new(),
+            sample: false,
             status: CompileStatus::NotCompiled,
             highlighted: None,
             jump_to: None,
@@ -432,6 +435,29 @@ impl EditorState {
         self.jump_to
     }
 
+    /// Marks the editor as a sample: everything of the editor, minus the Save button, since there is
+    /// no script behind it.
+    pub fn sampled(mut self) -> Self {
+        self.sample = true;
+        self
+    }
+
+    /// Puts the caret before character `index` without taking focus, for an editor shown as a
+    /// sample.
+    pub fn place_caret(&self, ctx: &egui::Context, index: usize) {
+        let mut edit = TextEditState::load(ctx, self.id).unwrap_or_default();
+        edit.cursor
+            .set_char_range(Some(CCursorRange::one(CCursor::new(index))));
+        edit.store(ctx, self.id);
+    }
+
+    /// Where the caret is, as a character index, if the text has been laid out.
+    pub fn caret_index(&self, ctx: &egui::Context) -> Option<usize> {
+        TextEditState::load(ctx, self.id)
+            .and_then(|edit| edit.cursor.char_range())
+            .map(|range| range.primary.index.0)
+    }
+
     /// Moves the caret to a diagnostic's start and flashes it, next frame.
     pub fn reveal(&mut self, diagnostic: &Diagnostic) {
         self.jump_to = Some(diagnostic.range.start.offset);
@@ -520,9 +546,11 @@ pub fn show(ui: &mut Ui, state: &mut EditorState) -> EditorOutput {
     };
     let profile_column =
         Rect::from_min_max(code.min, egui::pos2(code.min.x + profile_width, code.max.y));
+    let font = editor_appearance::editor_font();
+    let gutter_width = gutter_width(ui, &font, state.source.split('\n').count());
     let gutter = Rect::from_min_max(
         egui::pos2(profile_column.max.x, code.min.y),
-        egui::pos2(profile_column.max.x + GUTTER_WIDTH, code.max.y),
+        egui::pos2(profile_column.max.x + gutter_width, code.max.y),
     );
     let text_area = Rect::from_min_max(egui::pos2(gutter.max.x, code.min.y), code.max);
 
@@ -550,7 +578,7 @@ pub fn show(ui: &mut Ui, state: &mut EditorState) -> EditorOutput {
     navigation::edit_menu(ui.ctx(), state);
     edited |= carets::apply(ui.ctx(), state, text_area);
     edited |= apply_assists(ui.ctx(), state);
-    let rows = text_view(ui, state, text_area, &look, &mut edited);
+    let rows = text_view(ui, state, text_area, &look, &font, &mut edited);
     let visible = text_area.intersect(ui.clip_rect());
     state.text_visible = Some(visible);
     state.caret_hidden = state
@@ -559,9 +587,9 @@ pub fn show(ui: &mut Ui, state: &mut EditorState) -> EditorOutput {
     // A rename changes the text but is not typing: no suggestions follow it.
     let renamed = navigation::rename_box(ui.ctx(), state);
     edited |= renamed;
-    edited |= update_completion(ui, state, &look, edited && !renamed);
-    draw_signature(ui, state, &look);
-    paint_gutter(ui, gutter, &rows, &state.debug, &look);
+    edited |= update_completion(ui, state, &look, &font, edited && !renamed);
+    draw_signature(ui, state, &look, &font);
+    paint_gutter(ui, gutter, &rows, &state.debug, &look, &font);
     if state.profile.is_some() {
         profile_gutter(ui, profile_column, &rows, state);
     }
@@ -680,8 +708,12 @@ fn update_completion(
     ui: &mut Ui,
     state: &mut EditorState,
     look: &Appearance,
+    code: &EditorFont,
     edited: bool,
 ) -> bool {
+    let scale = code.chrome_scale();
+    let row_height = COMPLETION_ROW_HEIGHT * scale;
+    let list_width = COMPLETION_WIDTH * scale;
     let ctx = ui.ctx().clone();
     if !state.carets.extra.is_empty() {
         // Suggestions follow one caret.
@@ -738,8 +770,7 @@ fn update_completion(
     let mut clicked = None;
     let selected = view.selected;
     let scroll_to_selected = view.scroll_to_selected;
-    let visible_height =
-        view.completion.items.len().min(COMPLETION_ROWS) as f32 * COMPLETION_ROW_HEIGHT;
+    let visible_height = view.completion.items.len().min(COMPLETION_ROWS) as f32 * row_height;
     // Under the caret, or over it when the list would run out of the editor (onto the panel
     // below) and there is room above.
     let list_height = visible_height + 10.0;
@@ -752,7 +783,7 @@ fn update_completion(
         }
         position.x = position
             .x
-            .min(visible.right() - (COMPLETION_WIDTH + 10.0))
+            .min(visible.right() - (list_width + 10.0))
             .max(visible.left());
     }
     egui::Area::new(Id::new("script-completion"))
@@ -765,7 +796,7 @@ fn update_completion(
                 .corner_radius(6.0)
                 .inner_margin(Margin::same(4))
                 .show(ui, |ui| {
-                    ui.set_width(COMPLETION_WIDTH);
+                    ui.set_width(list_width);
                     egui::ScrollArea::vertical()
                         .min_scrolled_height(visible_height)
                         .max_height(visible_height)
@@ -773,7 +804,7 @@ fn update_completion(
                             ui.spacing_mut().item_spacing.y = 0.0;
                             for (index, item) in view.completion.items.iter().enumerate() {
                                 let (rect, response) = ui.allocate_exact_size(
-                                    Vec2::new(COMPLETION_WIDTH, COMPLETION_ROW_HEIGHT),
+                                    Vec2::new(list_width, row_height),
                                     Sense::click(),
                                 );
                                 let on = index == selected;
@@ -813,14 +844,14 @@ fn update_completion(
                                     badge.center(),
                                     Align2::CENTER_CENTER,
                                     item.kind.badge().to_ascii_uppercase(),
-                                    FontId::monospace(10.0),
+                                    code.at(ui.ctx(), 10.0 * scale),
                                     dim,
                                 );
                                 ui.painter().text(
                                     egui::pos2(rect.min.x + 30.0, rect.center().y),
                                     Align2::LEFT_CENTER,
                                     &item.label,
-                                    FontId::monospace(12.0),
+                                    code.at(ui.ctx(), 12.0 * scale),
                                     ink,
                                 );
                                 ui.painter().text(
@@ -853,7 +884,7 @@ fn update_completion(
 
 /// The signature panel over the caret line: `ta.sma(source, length) → series float`, the
 /// argument under the caret underlined. Quiet while the suggestion list is open.
-fn draw_signature(ui: &mut Ui, state: &EditorState, look: &Appearance) {
+fn draw_signature(ui: &mut Ui, state: &EditorState, look: &Appearance, code: &EditorFont) {
     let ctx = ui.ctx().clone();
     if state.completion.is_some()
         || state.caret_hidden
@@ -876,7 +907,7 @@ fn draw_signature(ui: &mut Ui, state: &EditorState, look: &Appearance) {
     };
     let text = look.role(SyntaxRole::Default);
     let dim = look.surface(SurfaceColor::LineNumber);
-    let mono = FontId::monospace(12.0);
+    let mono = code.at(&ctx, 12.0 * code.chrome_scale());
     let plain = |color: Color32| egui::TextFormat::simple(mono.clone(), color);
     let mut job = egui::text::LayoutJob::default();
     job.append(&format!("{}(", help.name), 0.0, plain(text));
@@ -1035,10 +1066,12 @@ fn text_view(
     state: &mut EditorState,
     area: Rect,
     look: &Appearance,
+    code: &EditorFont,
     edited: &mut bool,
 ) -> GutterRows {
     let id = state.id;
-    let font = FontId::monospace(FONT_SIZE);
+    let font = code.code(ui.ctx());
+    let line_height = code.line_height_points();
     let spans = state.spans();
     let current = text_hash(&state.source);
 
@@ -1099,6 +1132,7 @@ fn text_view(
             text.as_str(),
             &spans,
             font.clone(),
+            line_height,
             look,
             look.role(SyntaxRole::Default),
         );
@@ -1108,7 +1142,7 @@ fn text_view(
 
     let mut pane = ui.new_child(UiBuilder::new().max_rect(area));
     pane.set_clip_rect(area.intersect(ui.clip_rect()));
-    let char_width = pane.fonts_mut(|fonts| fonts.glyph_width(&FontId::monospace(FONT_SIZE), ' '));
+    let char_width = pane.fonts_mut(|fonts| fonts.glyph_width(&font, ' '));
     let mut rows = GutterRows {
         rows: Vec::new(),
         caret_line: None,
@@ -1430,7 +1464,7 @@ fn text_view(
                         ),
                         Align2::LEFT_CENTER,
                         inline,
-                        FontId::monospace(FONT_SIZE - 1.5),
+                        code.at(ui.ctx(), code.size - 1.5),
                         theme::text_tertiary(),
                     );
                 }
@@ -1554,9 +1588,30 @@ fn inline_values(line: &str, values: &Values) -> String {
     parts.join("   ")
 }
 
-fn paint_gutter(ui: &Ui, gutter: Rect, rows: &GutterRows, marks: &DebugMarks, look: &Appearance) {
+/// The size of the line numbers: the editor's size less two points, as it always was.
+fn line_number_size(code: &EditorFont) -> f32 {
+    (code.size - (FONT_SIZE - LINE_NUMBER_SIZE)).max(7.0)
+}
+
+/// The gutter's width: [`GUTTER_WIDTH`], or more where the numbers of a long script in a large font
+/// would not fit (the breakpoint column and the room either side stay as they are).
+fn gutter_width(ui: &Ui, code: &EditorFont, lines: usize) -> f32 {
+    let digits = lines.max(1).to_string().len().max(4);
+    let font = code.at(ui.ctx(), line_number_size(code));
+    let digit = ui.fonts_mut(|fonts| fonts.glyph_width(&font, '0'));
+    GUTTER_WIDTH.max(digit * digits as f32 + 36.0)
+}
+
+fn paint_gutter(
+    ui: &Ui,
+    gutter: Rect,
+    rows: &GutterRows,
+    marks: &DebugMarks,
+    look: &Appearance,
+    code: &EditorFont,
+) {
     let painter = ui.painter().with_clip_rect(gutter);
-    let font = FontId::monospace(LINE_NUMBER_SIZE);
+    let font = code.at(ui.ctx(), line_number_size(code));
     for (index, (top, height)) in rows.rows.iter().enumerate() {
         if top + height < gutter.min.y || *top > gutter.max.y {
             continue;
@@ -2541,18 +2596,20 @@ fn status_bar(ui: &mut Ui, bar: Rect, state: &EditorState, changes: &DiffSnapsho
         );
         inner.ctx().request_repaint_after(left);
     }
-    inner.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
-        // egui never draws a button under `interact_size.y`, so the bar lowers it.
-        ui.spacing_mut().interact_size.y = 20.0;
-        let button = egui::Button::new(egui::RichText::new("Save").size(12.0));
-        if ui
-            .add(button)
-            .on_hover_text(shortcut::SAVE.hint("Save the script"))
-            .clicked()
-        {
-            save = true;
-        }
-    });
+    if !state.sample {
+        inner.with_layout(egui::Layout::right_to_left(Align::Center), |ui| {
+            // egui never draws a button under `interact_size.y`, so the bar lowers it.
+            ui.spacing_mut().interact_size.y = 20.0;
+            let button = egui::Button::new(egui::RichText::new("Save").size(12.0));
+            if ui
+                .add(button)
+                .on_hover_text(shortcut::SAVE.hint("Save the script"))
+                .clicked()
+            {
+                save = true;
+            }
+        });
+    }
     save
 }
 

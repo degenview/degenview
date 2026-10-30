@@ -20,6 +20,9 @@ icloud = []
 
 [dependencies]
 eframe = { version = "0.36.2", features = ["persistence"] }
+# Reads the name and post tables of installed fonts to list the monospaced families (the same
+# version egui already builds).
+ttf-parser = { version = "0.25", default-features = false, features = ["std"] }
 egui_extras = { version = "0.36.2", features = ["all_loaders"] }
 # egui_extras builds `image` without JPEG; CoinGecko serves many coin icons as .jpg. PNG is how
 # chart snapshots are saved and uploaded.

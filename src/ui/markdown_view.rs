@@ -578,11 +578,18 @@ fn code_block(ui: &mut Ui, id: Id, lang: &str, text: &str, closed: bool) {
                     }
                 });
             });
-            let font = FontId::monospace(CODE_SIZE);
+            let font = editor_appearance::editor_font().at(ui.ctx(), CODE_SIZE);
             let plain = theme::text_primary();
             let mut code_job = if matches!(lang, "" | "pine" | "pinescript" | "pine-script") {
                 let spans = syntax::classify(text, None);
-                syntax::layout_job(text, &spans, font, &editor_appearance::chrome(), plain)
+                syntax::layout_job(
+                    text,
+                    &spans,
+                    font,
+                    None,
+                    &editor_appearance::chrome(),
+                    plain,
+                )
             } else {
                 let mut job = LayoutJob::default();
                 job.append(text, 0.0, TextFormat::simple(font, plain));

@@ -184,6 +184,9 @@ pub fn table_policy(table: &str) -> TablePolicy {
         "watchlist" => TablePolicy::Synced(EntityKind::Watchlist),
         "chart_template" => TablePolicy::Synced(EntityKind::ChartTemplate),
         "drawing_template" => TablePolicy::Synced(EntityKind::DrawingTemplate),
+        "editor_theme" => {
+            TablePolicy::Local("custom editor themes; syncing them is a later change")
+        }
         "price_alert" => TablePolicy::Synced(EntityKind::Alert),
         "tab" => {
             TablePolicy::Local("per-device session; tab and chart ids are sequential counters")

@@ -57,6 +57,8 @@ impl Default for StorageEvents {
 pub struct WebhookHost {
     /// The snapshot choices the Snapshots page edits.
     snapshots: crate::host::snapshot_host::SnapshotHost,
+    /// The editor's themes and typography, which the Script Manager page edits.
+    editor_themes: crate::host::editor_theme_host::EditorThemeHost,
     /// The saved assistant settings, read from the store when Settings first needs them.
     ai_prefs: Option<AiPrefs>,
     ai_prefs_read_at: Option<std::time::Instant>,
@@ -71,9 +73,13 @@ pub struct WebhookHost {
 }
 
 impl WebhookHost {
-    pub fn new(snapshots: crate::host::snapshot_host::SnapshotHost) -> Self {
+    pub fn new(
+        snapshots: crate::host::snapshot_host::SnapshotHost,
+        editor_themes: crate::host::editor_theme_host::EditorThemeHost,
+    ) -> Self {
         Self {
             snapshots,
+            editor_themes,
             ..Self::default()
         }
     }
@@ -159,6 +165,7 @@ impl WebhookHost {
             ai: crate::ui::settings_ai::AiSettingsInput { prefs: &ai_prefs },
             updates,
             sync,
+            editor_themes: &self.editor_themes,
             now_ms,
         };
         for action in settings_window::show(ui, &mut self.state, &input) {
@@ -523,7 +530,7 @@ mod tests {
             Store::open_in_memory().expect("a store"),
         ));
         let snapshots = crate::host::snapshot_host::SnapshotHost::load(shared.clone());
-        let mut host = WebhookHost::new(snapshots.clone());
+        let mut host = WebhookHost::new(snapshots.clone(), Default::default());
         let (done, finished) = mpsc::channel();
         let worker_store = shared.clone();
         std::thread::spawn(move || {

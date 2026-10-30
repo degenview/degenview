@@ -454,7 +454,7 @@ fn diff_pane(
 ) {
     let mut pane = ui.new_child(UiBuilder::new().max_rect(rect));
     pane.set_clip_rect(rect.intersect(ui.clip_rect()));
-    let font = FontId::monospace(CODE_SIZE);
+    let font = editor_appearance::editor_font().at(ui.ctx(), CODE_SIZE);
     let char_width = pane.fonts_mut(|fonts| fonts.glyph_width(&font, '0'));
     let rows = &review.rows;
     let code_left = NUMBER_WIDTH * 2.0 + SIGN_WIDTH;
@@ -529,7 +529,7 @@ fn paint_row(
         } else {
             Vec::new()
         };
-        let mut job = syntax::layout_job(text, &spans, font.clone(), &look, color);
+        let mut job = syntax::layout_job(text, &spans, font.clone(), None, &look, color);
         job.wrap.max_width = f32::INFINITY;
         let galley = painter.layout_job(job);
         let at = pos2(code_left, middle - galley.size().y / 2.0);

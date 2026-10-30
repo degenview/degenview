@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::pine::token::{DiagnosticCategory, SourcePosition, SourceRange};
+use crate::ui::editor_appearance::RestorePublished;
 use crate::ui::theme::{self, AppTheme, RestoreDefaultTheme};
 use eframe::egui::epaint::ClippedShape;
 
@@ -238,4 +239,123 @@ fn paint_plain(
     let painted = colours(&output.shapes);
     output.textures_delta.clear();
     painted
+}
+
+fn font(size: f32, line_height: crate::model::editor_theme::LineHeight) -> EditorFont {
+    EditorFont {
+        custom: false,
+        size,
+        line_height,
+    }
+}
+
+#[test]
+fn the_gutter_grows_with_the_font_and_the_script_but_never_shrinks() {
+    let ctx = egui::Context::default();
+    theme::install_offscreen(&ctx);
+    ctx.run_ui(egui::RawInput::default(), |_| {})
+        .textures_delta
+        .clear();
+    let mut widths = Vec::new();
+    ctx.run_ui(egui::RawInput::default(), |ui| {
+        use crate::model::editor_theme::LineHeight::Default;
+        for (size, lines) in [
+            (9.0, 10),
+            (13.0, 10),
+            (13.0, 99_999),
+            (32.0, 10),
+            (32.0, 99_999),
+        ] {
+            widths.push(gutter_width(ui, &font(size, Default), lines));
+        }
+    })
+    .textures_delta
+    .clear();
+    assert_eq!(
+        widths[0], GUTTER_WIDTH,
+        "a small font keeps the gutter it had"
+    );
+    assert_eq!(widths[1], GUTTER_WIDTH, "so does 13 points: nothing moved");
+    assert!(
+        widths[2] > widths[1],
+        "five digits need more room: {widths:?}"
+    );
+    assert!(widths[3] > widths[1], "a large font needs more: {widths:?}");
+    assert!(widths[4] > widths[3] && widths[4] > widths[2], "{widths:?}");
+}
+
+#[test]
+fn line_numbers_follow_the_editor_size_two_points_smaller() {
+    use crate::model::editor_theme::LineHeight::Default;
+    assert_eq!(line_number_size(&font(13.0, Default)), LINE_NUMBER_SIZE);
+    assert_eq!(line_number_size(&font(20.0, Default)), 18.0);
+    assert!(line_number_size(&font(9.0, Default)) >= 7.0);
+}
+
+#[test]
+fn the_editor_draws_at_the_smallest_and_largest_size_with_every_line_height() {
+    use crate::model::editor_theme::LineHeight;
+    for size in [9.0, 13.0, 32.0] {
+        for height in LineHeight::ALL {
+            let _theme = RestoreDefaultTheme;
+            let _published = RestorePublished;
+            editor_appearance::publish(None, font(size, height));
+            let ctx = egui::Context::default();
+            theme::install_offscreen(&ctx);
+            let mut state = EditorState::new("s", SCRIPT, SCRIPT);
+            state.diagnostics = vec![error_at_plot()];
+            let painted = paint(&ctx, &mut state);
+            assert!(!painted.is_empty(), "{size} {height:?}");
+            assert_eq!(state.source, SCRIPT);
+        }
+    }
+}
+
+#[test]
+fn a_taller_line_height_makes_taller_rows_and_the_default_changes_nothing() {
+    use crate::model::editor_theme::LineHeight;
+    let ctx = egui::Context::default();
+    theme::install_offscreen(&ctx);
+    ctx.run_ui(egui::RawInput::default(), |_| {})
+        .textures_delta
+        .clear();
+    let look = Appearance::of(crate::model::editor_theme::BuiltInTheme::Dark);
+    let mut heights = Vec::new();
+    ctx.run_ui(egui::RawInput::default(), |ui| {
+        for height in LineHeight::ALL {
+            let code = font(14.0, height);
+            let job = syntax::layout_job(
+                "a = 1\nb = 2\n",
+                &[],
+                code.code(ui.ctx()),
+                code.line_height_points(),
+                &look,
+                look.role(SyntaxRole::Default),
+            );
+            let galley = ui.fonts_mut(|fonts| fonts.layout_job(job));
+            heights.push(galley.rows[0].height());
+        }
+    })
+    .textures_delta
+    .clear();
+    // Compact < Default (the font's own) < Relaxed < Loose, in points.
+    assert!(
+        heights[1] < heights[2] && heights[2] < heights[3],
+        "{heights:?}"
+    );
+    let own = {
+        let mut own = 0.0;
+        ctx.run_ui(egui::RawInput::default(), |ui| {
+            let id = egui::FontId::monospace(14.0);
+            own = ui.fonts_mut(|fonts| fonts.row_height(&id));
+        })
+        .textures_delta
+        .clear();
+        own
+    };
+    assert!(
+        (heights[1] - own).abs() < 1.0,
+        "Default is the font's own height: {heights:?} {own}"
+    );
+    assert!((heights[3] - 14.0 * 1.75).abs() < 0.6, "{heights:?}");
 }

@@ -54,6 +54,7 @@ fn before_themes(ctx: &egui::Context) -> Appearance {
         (SurfaceColor::Background, theme::editor_background()),
         (SurfaceColor::CurrentLine, theme::ink(15)),
         (SurfaceColor::Selection, visuals.selection.bg_fill),
+        (SurfaceColor::SelectionText, visuals.selection.stroke.color),
         (SurfaceColor::Caret, visuals.text_cursor.stroke.color),
         (SurfaceColor::BracketMatch, theme::ink(56)),
         (
@@ -121,6 +122,83 @@ fn the_current_appearance_follows_the_app() {
     theme::apply(&ctx, AppTheme::Light);
     assert_eq!(*current(), Appearance::of(BuiltInTheme::Light));
     assert_eq!(*chrome(), *current());
+}
+
+#[test]
+fn nothing_published_follows_the_app_at_the_old_font() {
+    let _restore = RestorePublished;
+    assert_eq!(*editor_font(), EditorFont::default());
+    assert_eq!(EditorFont::default().size, 13.0);
+    assert_eq!(EditorFont::default().line_height_points(), None);
+}
+
+#[test]
+fn a_published_theme_and_font_are_what_the_editor_wears() {
+    let _restore = RestorePublished;
+    let dracula = of_built_in(BuiltInTheme::Dracula);
+    let font = EditorFont {
+        custom: true,
+        size: 18.0,
+        line_height: LineHeight::Relaxed,
+    };
+    publish(Some(dracula.clone()), font);
+    assert!(Arc::ptr_eq(&current(), &dracula));
+    assert_eq!(*editor_font(), font);
+    // Chrome never follows the editor's theme.
+    assert_ne!(*chrome(), *dracula);
+    // Publishing no theme goes back to following the app.
+    publish(None, font);
+    assert_eq!(*current(), Appearance::of(BuiltInTheme::Dark));
+}
+
+#[test]
+fn the_editor_font_scales_its_furniture_within_limits() {
+    let at = |size| EditorFont {
+        size,
+        ..EditorFont::default()
+    };
+    assert_eq!(at(13.0).scale(), 1.0);
+    assert_eq!(at(13.0).chrome_scale(), 1.0);
+    assert_eq!(at(32.0).chrome_scale(), 1.5);
+    assert_eq!(at(9.0).chrome_scale(), 0.9);
+    assert!(at(32.0).scale() > 2.0);
+    assert_eq!(
+        EditorFont {
+            size: 20.0,
+            line_height: LineHeight::Relaxed,
+            custom: false
+        }
+        .line_height_points(),
+        Some(30.0)
+    );
+}
+
+#[test]
+fn a_font_the_context_never_loaded_falls_back_to_monospace() {
+    let ctx = egui::Context::default();
+    // Fonts exist once a frame has run, as they always have where the editor draws.
+    ctx.run_ui(egui::RawInput::default(), |_| {})
+        .textures_delta
+        .clear();
+    let font = EditorFont {
+        custom: true,
+        ..EditorFont::default()
+    };
+    assert_eq!(font.code(&ctx).family, FontFamily::Monospace);
+    assert_eq!(font.at(&ctx, 20.0).size, 20.0);
+}
+
+#[test]
+fn dracula_paints_its_palette() {
+    let dracula = Appearance::of(BuiltInTheme::Dracula);
+    assert_eq!(
+        dracula.surface(SurfaceColor::Background),
+        Color32::from_rgb(0x28, 0x2A, 0x36)
+    );
+    assert_eq!(
+        dracula.role(SyntaxRole::Keyword),
+        Color32::from_rgb(0xFF, 0x79, 0xC6)
+    );
 }
 
 #[test]
