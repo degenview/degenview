@@ -254,6 +254,56 @@ impl SymbolTable {
         Some(symbol.declaration.clone())
     }
 
+    /// The calls of the function or method declared at `index`, which must be on its declaration
+    /// name: every call of any of its overloads (a method called through `value.name(` included),
+    /// sorted. `None` anywhere else, so a click elsewhere is not about calls.
+    pub fn calls_of(&self, index: usize) -> Option<Vec<Range<usize>>> {
+        let id = self.symbols.iter().position(|symbol| {
+            symbol.kind.callable()
+                && symbol.declaration.start <= index
+                && index <= symbol.declaration.end
+        })?;
+        Some(self.calls_of_symbol(id))
+    }
+
+    /// The calls of the function or method `index` is on, whether on its declaration or on one of
+    /// its calls. `None` on anything else.
+    pub fn usages_of(&self, index: usize) -> Option<Vec<Range<usize>>> {
+        let id = self
+            .symbol_at(index)
+            .filter(|id| self.symbols[*id].kind.callable())?;
+        Some(self.calls_of_symbol(id))
+    }
+
+    /// Every call of any overload of the function `id`, sorted.
+    fn calls_of_symbol(&self, id: SymbolId) -> Vec<Range<usize>> {
+        let group = self.group(id);
+        let mut calls: Vec<Range<usize>> = self
+            .references
+            .iter()
+            .filter(|reference| group.contains(&reference.symbol))
+            .map(|reference| reference.range.clone())
+            .collect();
+        calls.sort_by_key(|range| range.start);
+        calls.dedup();
+        calls
+    }
+
+    /// The name of the function or method whose body holds `index`, the innermost one; `None` at the
+    /// top level of the script.
+    pub fn enclosing_callable(&self, index: usize) -> Option<&str> {
+        self.symbols
+            .iter()
+            .filter(|symbol| {
+                symbol.kind.callable()
+                    && symbol.body.is_some()
+                    && symbol.declaration.end <= index
+                    && index < symbol.visible_from
+            })
+            .max_by_key(|symbol| symbol.declaration.start)
+            .map(|symbol| symbol.name.as_str())
+    }
+
     /// The symbols that rename together with `id`: overloads of one function.
     fn group(&self, id: SymbolId) -> Vec<SymbolId> {
         let symbol = &self.symbols[id];
@@ -1528,5 +1578,101 @@ mod tests {
         assert_eq!(kinds["q"], Kind::Parameter);
         assert_eq!(kinds["i"], Kind::LoopVariable);
         assert_eq!(kinds["v"], Kind::Variable);
+    }
+
+    fn calls(source: &str, needle: &str, occurrence: usize) -> Option<Vec<usize>> {
+        analyze(source)
+            .calls_of(at(source, needle, occurrence))
+            .map(|ranges| ranges.iter().map(|r| r.start).collect())
+    }
+
+    #[test]
+    fn a_declaration_lists_its_calls() {
+        let source = script("half(x) => x / 2\na = half(1)\nb = half(2)\n");
+        assert_eq!(
+            calls(&source, "half", 0),
+            Some(vec![at(&source, "half", 1), at(&source, "half", 2)])
+        );
+        let none = script("half(x) => x / 2\n");
+        assert_eq!(calls(&none, "half", 0), Some(vec![]));
+    }
+
+    #[test]
+    fn every_overload_lists_the_calls_of_all_of_them() {
+        let source = script(
+            "describe(int x) => 1\ndescribe(string s) => 2\na = describe(1)\nb = describe(\"x\")\n",
+        );
+        let both = Some(vec![at(&source, "describe", 2), at(&source, "describe", 3)]);
+        assert_eq!(calls(&source, "describe", 0), both);
+        assert_eq!(calls(&source, "describe", 1), both);
+    }
+
+    #[test]
+    fn a_methods_calls_include_the_dotted_ones_in_other_methods() {
+        let source = script(
+            "type Z\n    int n\nmethod grow(Z this) => this\nz = Z.new(1)\nz.grow()\n\
+             method again(Z this) =>\n    this.grow()\n",
+        );
+        assert_eq!(
+            calls(&source, "grow", 0),
+            Some(vec![at(&source, "grow", 1), at(&source, "grow", 2)])
+        );
+    }
+
+    #[test]
+    fn a_variable_or_a_label_of_the_same_name_is_not_a_call() {
+        let source = script("f(x) => x\nf = 3\nplot(f)\ny = f(1)\n");
+        assert_eq!(
+            calls(&source, "f(x)", 0),
+            Some(vec![at(&source, "f(1)", 0)])
+        );
+        let source = script("scale(x, k) => x * k\nv = scale(1, k = 2)\n");
+        assert_eq!(
+            calls(&source, "scale", 0),
+            Some(vec![at(&source, "scale", 1)])
+        );
+    }
+
+    #[test]
+    fn a_position_knows_the_function_it_is_in() {
+        let source = script(
+            "outer(x) =>\n    y = x + 1\n    y\nz = outer(2)\nmethod m(float this) =>\n    this * 2.0\n",
+        );
+        let table = analyze(&source);
+        assert_eq!(
+            table.enclosing_callable(at(&source, "y = x", 0)),
+            Some("outer")
+        );
+        assert_eq!(table.enclosing_callable(at(&source, "outer(2)", 0)), None);
+        assert_eq!(
+            table.enclosing_callable(at(&source, "this * 2.0", 0)),
+            Some("m")
+        );
+    }
+
+    #[test]
+    fn usages_are_found_from_the_declaration_or_from_any_call() {
+        let source = script("half(x) => x / 2\na = half(1)\nb = half(2)\nlen = 14\n");
+        let both = Some(vec![at(&source, "half", 1), at(&source, "half", 2)]);
+        let usages = |needle: &str, occurrence: usize| {
+            analyze(&source)
+                .usages_of(at(&source, needle, occurrence))
+                .map(|ranges| ranges.iter().map(|r| r.start).collect::<Vec<_>>())
+        };
+        assert_eq!(usages("half", 0), both, "from the declaration");
+        assert_eq!(usages("half", 1), both, "from a call");
+        assert_eq!(usages("len", 0), None, "a variable has none");
+        assert_eq!(usages("x", 0), None, "nor a parameter");
+    }
+
+    #[test]
+    fn only_a_function_declaration_answers() {
+        let source = script("half(x) => x / 2\nlen = 14\ntype Z\n    int n\na = half(len)\n");
+        // A call, a variable, its use, a type, a parameter: none is a function's declaration.
+        assert_eq!(calls(&source, "half", 1), None);
+        assert_eq!(calls(&source, "len", 0), None);
+        assert_eq!(calls(&source, "len", 1), None);
+        assert_eq!(calls(&source, "Z", 0), None);
+        assert_eq!(calls(&source, "x", 0), None);
     }
 }

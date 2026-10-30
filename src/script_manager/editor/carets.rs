@@ -18,8 +18,9 @@ struct Press {
     /// ⌘-click (Ctrl off the Mac): a jump to a definition if the click is on a name that has
     /// one; otherwise, like ⌥-click, a new caret.
     command: bool,
-    /// Where the primary caret was before the click.
-    prior: Sel,
+    /// Where the primary caret was before the click; none yet in an editor nobody has clicked into,
+    /// where a ⌘-click must still work (it needs no second caret).
+    prior: Option<Sel>,
 }
 
 #[derive(Default)]
@@ -305,10 +306,13 @@ fn note_pointer(ctx: &egui::Context, state: &mut EditorState, text_area: Rect) {
         }
         match button {
             PointerButton::Primary if modifiers.alt || modifiers.command => {
-                if let Some(prior) = primary_sel(ctx, state.id) {
+                let command = modifiers.command && !modifiers.alt;
+                let prior = primary_sel(ctx, state.id);
+                // A new caret needs the old one; a jump or a list does not.
+                if prior.is_some() || command {
                     state.carets.press = Some(Press {
                         pos: *pos,
-                        command: modifiers.command && !modifiers.alt,
+                        command,
                         prior,
                     });
                 }
@@ -358,16 +362,24 @@ pub(super) fn resolve(
             .command
             .then(|| state.symbols().definition_of(index))
             .flatten();
-        match definition {
-            Some(range) => state.go_to_range(ctx, range),
-            None => {
-                state.carets.extra.push(press.prior);
-                let selections = Selections::with_extras(
-                    primary_sel(ctx, state.id).unwrap_or(press.prior),
-                    &state.carets.extra,
-                );
-                state.carets.extra = selections.extras();
-                state.carets.hash = text_hash(&state.source);
+        // ⌘-click on a function's or method's declaration goes to where it is called.
+        let calls = match definition {
+            None if press.command => state.call_sites_at(index, true),
+            _ => None,
+        };
+        match (definition, calls) {
+            (Some(range), _) => state.go_to_range(ctx, range),
+            (None, Some((name, sites))) => state.open_call_list(ctx, press.pos, name, sites),
+            (None, None) => {
+                if let Some(prior) = press.prior {
+                    state.carets.extra.push(prior);
+                    let selections = Selections::with_extras(
+                        primary_sel(ctx, state.id).unwrap_or(prior),
+                        &state.carets.extra,
+                    );
+                    state.carets.extra = selections.extras();
+                    state.carets.hash = text_hash(&state.source);
+                }
             }
         }
     }
