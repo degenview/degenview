@@ -95,10 +95,11 @@ fn compile_internal(
     let mut schema = InputSchema::default();
     collect_inputs(&statements, &environment, &mut schema, &mut diagnostics);
 
-    diagnostics.extend(structure_validate(
+    let method_names = super::ast::method_names(&statements);
+    diagnostics.extend(structure_validate(&statements, &method_names, &normalized));
+    diagnostics.extend(super::declaration_rules::validate(
         &statements,
-        parser.method_names(),
-        &normalized,
+        parser.exported_names(),
     ));
     diagnostics.extend(super::alert_call::validate(&statements));
     diagnostics.extend(super::log_call::validate(&statements));
@@ -114,7 +115,7 @@ fn compile_internal(
         diagnostics.extend(super::name_check::validate(
             &statements,
             &import_aliases,
-            parser.method_names(),
+            &method_names,
         ));
     }
 
@@ -124,7 +125,7 @@ fn compile_internal(
         declaration: metadata,
         input_schema: schema,
         diagnostics,
-        method_names: parser.method_names().clone(),
+        method_names,
         exported_names: parser.exported_names().clone(),
         imports: linked.imports,
         statement_ends: parser.statement_ends(),

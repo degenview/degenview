@@ -23,6 +23,7 @@ pub mod containers;
 #[cfg(feature = "corpus")]
 mod corpus_tests;
 pub mod debug;
+pub mod declaration_rules;
 pub mod drawings;
 pub mod execution;
 pub mod fast_hash;
@@ -81,6 +82,8 @@ pub mod trading_session;
 pub mod traversal;
 pub mod type_checker;
 pub mod type_constructor;
+#[cfg(test)]
+mod user_method_tests;
 pub mod user_methods;
 pub mod visuals;
 

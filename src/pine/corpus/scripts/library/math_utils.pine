@@ -1,6 +1,6 @@
 //@version=6
 library("MathUtils")
-export half(x) =>
+export half(float x) =>
     x / 2
-export double(x) =>
+export double(float x) =>
     x * 2

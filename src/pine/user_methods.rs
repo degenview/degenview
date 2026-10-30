@@ -128,7 +128,7 @@ impl Session {
         if matches!(value, RuntimeValue::Na) {
             return true;
         }
-        if let Some(declared) = &parameter.type_name {
+        if let Some(declared) = parameter.type_name() {
             return match value {
                 RuntimeValue::Ref(RefKind::Object, id) => self
                     .working
@@ -144,7 +144,7 @@ impl Session {
                 _ => false,
             };
         }
-        let Some(kind) = parameter.kind else {
+        let Some(kind) = parameter.kind() else {
             return true;
         };
         match (kind, value) {

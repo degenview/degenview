@@ -23,7 +23,6 @@ pub fn validate(
         diagnostics: Vec::new(),
         methods,
         source,
-        signatures: HashMap::new(),
         first_reads: first_reads(statements),
     };
     validator.validate(statements, &HashSet::new(), &HashSet::new(), false, false);
@@ -47,15 +46,10 @@ pub fn validate(
     validator.diagnostics
 }
 
-/// What tells two definitions of one name apart: the type of every parameter. A function may be
-/// declared again (a library's overloads, a method per receiver type) when its signature is new.
-type Signature = Vec<(Option<ValueType>, Option<String>)>;
-
 struct Validator<'a> {
     diagnostics: Vec<Diagnostic>,
     methods: &'a HashSet<String>,
     source: &'a str,
-    signatures: HashMap<String, Vec<Signature>>,
     /// Where each name is first read, as a source offset.
     first_reads: HashMap<String, usize>,
 }
@@ -140,6 +134,7 @@ impl Validator<'_> {
                     parameters,
                     body,
                     range,
+                    ..
                 } => self.function(name, parameters, body, *range),
                 Statement::Conditional { .. }
                 | Statement::ForRange { .. }
@@ -168,28 +163,6 @@ impl Validator<'_> {
         body: &[Statement],
         range: SourceRange,
     ) {
-        let signature: Signature = parameters
-            .iter()
-            .map(|parameter| (parameter.kind, parameter.type_name.clone()))
-            .collect();
-        // Functions and variables live in different namespaces (`kama = kama(src, len)`), so only an
-        // earlier function of the same name counts.
-        if self
-            .signatures
-            .get(name)
-            .is_some_and(|known| known.contains(&signature))
-        {
-            self.report(
-                "PINE3024",
-                DiagnosticCategory::Semantic,
-                format!("Function '{name}' is already declared."),
-                range,
-            );
-        }
-        self.signatures
-            .entry(name.to_owned())
-            .or_default()
-            .push(signature);
         // A method may share a builtin's name: it is picked by receiver type.
         if !self.methods.contains(name) {
             self.check_name(name, range);
