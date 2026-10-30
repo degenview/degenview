@@ -14,9 +14,12 @@ use super::find::{self, FindEvent, FindState};
 use super::model::CompileStatus;
 use super::profile_marks::{LineMark, ProfileColumn};
 use super::signature;
+use super::symbols::{self, SymbolTable};
 use super::syntax::{self, Span};
+use crate::model::editor_theme::{SurfaceColor, SyntaxRole};
 use crate::pine::token::{Diagnostic, DiagnosticSeverity};
 use crate::ui::accessibility;
+use crate::ui::editor_appearance::{self, Appearance};
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit;
 use crate::ui::shortcut;
@@ -27,6 +30,7 @@ use eframe::egui::{
     text::{CCursor, CCursorRange},
     text_edit::TextEditState,
 };
+use std::cell::RefCell;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
@@ -35,6 +39,8 @@ use std::time::{Duration, Instant};
 mod carets;
 mod navigation;
 pub use navigation::EditAction;
+#[cfg(test)]
+mod appearance_tests;
 #[cfg(test)]
 mod navigation_tests;
 
@@ -438,7 +444,8 @@ impl EditorState {
         {
             return Arc::clone(spans);
         }
-        let spans = Arc::new(syntax::classify(&self.source));
+        let table = self.symbols();
+        let spans = Arc::new(syntax::classify(&self.source, Some(&table)));
         self.highlighted = Some((key, Arc::clone(&spans)));
         spans
     }
@@ -519,10 +526,19 @@ pub fn show(ui: &mut Ui, state: &mut EditorState) -> EditorOutput {
     );
     let text_area = Rect::from_min_max(egui::pos2(gutter.max.x, code.min.y), code.max);
 
+    let look = editor_appearance::current();
     ui.painter()
-        .rect_filled(area, 0.0, theme::editor_background());
+        .rect_filled(area, 0.0, look.surface(SurfaceColor::Background));
     ui.painter()
-        .rect_filled(gutter, 0.0, theme::gutter_background());
+        .rect_filled(gutter, 0.0, look.surface(SurfaceColor::GutterBackground));
+    let separator = look.surface(SurfaceColor::GutterSeparator);
+    if separator.a() > 0 {
+        let x = gutter.max.x - 0.5;
+        ui.painter().line_segment(
+            [egui::pos2(x, gutter.min.y), egui::pos2(x, gutter.max.y)],
+            Stroke::new(1.0, separator),
+        );
+    }
     if state.find.open {
         let bar_rect =
             Rect::from_min_max(area.min, egui::pos2(area.max.x, area.min.y + find_height));
@@ -534,7 +550,7 @@ pub fn show(ui: &mut Ui, state: &mut EditorState) -> EditorOutput {
     navigation::edit_menu(ui.ctx(), state);
     edited |= carets::apply(ui.ctx(), state, text_area);
     edited |= apply_assists(ui.ctx(), state);
-    let rows = text_view(ui, state, text_area, &mut edited);
+    let rows = text_view(ui, state, text_area, &look, &mut edited);
     let visible = text_area.intersect(ui.clip_rect());
     state.text_visible = Some(visible);
     state.caret_hidden = state
@@ -543,9 +559,9 @@ pub fn show(ui: &mut Ui, state: &mut EditorState) -> EditorOutput {
     // A rename changes the text but is not typing: no suggestions follow it.
     let renamed = navigation::rename_box(ui.ctx(), state);
     edited |= renamed;
-    edited |= update_completion(ui, state, edited && !renamed);
-    draw_signature(ui, state);
-    paint_gutter(ui, gutter, &rows, &state.debug);
+    edited |= update_completion(ui, state, &look, edited && !renamed);
+    draw_signature(ui, state, &look);
+    paint_gutter(ui, gutter, &rows, &state.debug, &look);
     if state.profile.is_some() {
         profile_gutter(ui, profile_column, &rows, state);
     }
@@ -660,7 +676,12 @@ fn accept_completion(ctx: &egui::Context, state: &mut EditorState) -> bool {
 
 /// Recomputes the suggestions after the frame's edits and draws the list under the caret.
 /// Returns whether a row click changed the text.
-fn update_completion(ui: &mut Ui, state: &mut EditorState, edited: bool) -> bool {
+fn update_completion(
+    ui: &mut Ui,
+    state: &mut EditorState,
+    look: &Appearance,
+    edited: bool,
+) -> bool {
     let ctx = ui.ctx().clone();
     if !state.carets.extra.is_empty() {
         // Suggestions follow one caret.
@@ -739,7 +760,7 @@ fn update_completion(ui: &mut Ui, state: &mut EditorState, edited: bool) -> bool
         .fixed_pos(position)
         .show(&ctx, |ui| {
             egui::Frame::new()
-                .fill(theme::chrome())
+                .fill(look.surface(SurfaceColor::PopupBackground))
                 .stroke(Stroke::new(1.0, theme::separator()))
                 .corner_radius(6.0)
                 .inner_margin(Margin::same(4))
@@ -757,7 +778,11 @@ fn update_completion(ui: &mut Ui, state: &mut EditorState, edited: bool) -> bool
                                 );
                                 let on = index == selected;
                                 if on {
-                                    ui.painter().rect_filled(rect, 4.0, theme::SYSTEM_ACCENT);
+                                    ui.painter().rect_filled(
+                                        rect,
+                                        4.0,
+                                        look.surface(SurfaceColor::PopupSelection),
+                                    );
                                     if scroll_to_selected {
                                         ui.scroll_to_rect(rect, None);
                                     }
@@ -767,12 +792,12 @@ fn update_completion(ui: &mut Ui, state: &mut EditorState, edited: bool) -> bool
                                 let ink = if on {
                                     Color32::WHITE
                                 } else {
-                                    theme::text_primary()
+                                    look.role(SyntaxRole::Default)
                                 };
                                 let dim = if on {
                                     Color32::WHITE.gamma_multiply(0.8)
                                 } else {
-                                    theme::text_secondary()
+                                    look.surface(SurfaceColor::LineNumber)
                                 };
                                 let badge = Rect::from_center_size(
                                     egui::pos2(rect.min.x + 14.0, rect.center().y),
@@ -828,7 +853,7 @@ fn update_completion(ui: &mut Ui, state: &mut EditorState, edited: bool) -> bool
 
 /// The signature panel over the caret line: `ta.sma(source, length) → series float`, the
 /// argument under the caret underlined. Quiet while the suggestion list is open.
-fn draw_signature(ui: &mut Ui, state: &EditorState) {
+fn draw_signature(ui: &mut Ui, state: &EditorState, look: &Appearance) {
     let ctx = ui.ctx().clone();
     if state.completion.is_some()
         || state.caret_hidden
@@ -849,35 +874,29 @@ fn draw_signature(ui: &mut Ui, state: &EditorState) {
     let Some(help) = signature::help(&state.source, range.primary.index.0) else {
         return;
     };
+    let text = look.role(SyntaxRole::Default);
+    let dim = look.surface(SurfaceColor::LineNumber);
     let mono = FontId::monospace(12.0);
     let plain = |color: Color32| egui::TextFormat::simple(mono.clone(), color);
     let mut job = egui::text::LayoutJob::default();
-    job.append(
-        &format!("{}(", help.name),
-        0.0,
-        plain(theme::text_primary()),
-    );
+    job.append(&format!("{}(", help.name), 0.0, plain(text));
     for (index, parameter) in help.parameters.iter().enumerate() {
         if index > 0 {
-            job.append(", ", 0.0, plain(theme::text_primary()));
+            job.append(", ", 0.0, plain(text));
         }
         let mut format = plain(if Some(index) == help.active {
             Color32::WHITE
         } else {
-            theme::text_primary()
+            text
         });
         if Some(index) == help.active {
-            format.underline = Stroke::new(1.5, theme::SYSTEM_ACCENT);
+            format.underline = Stroke::new(1.5, look.surface(SurfaceColor::PopupSelection));
         }
         job.append(parameter, 0.0, format);
     }
-    job.append(")", 0.0, plain(theme::text_primary()));
+    job.append(")", 0.0, plain(text));
     if !help.returns.is_empty() {
-        job.append(
-            &format!(" → {}", help.returns),
-            0.0,
-            plain(theme::text_secondary()),
-        );
+        job.append(&format!(" → {}", help.returns), 0.0, plain(dim));
     }
     // The panel is as wide as the signature needs, within the window: it slides left to fit
     // rather than wrapping while there is room, and only wraps once the whole window is too
@@ -917,7 +936,7 @@ fn draw_signature(ui: &mut Ui, state: &EditorState) {
         .fixed_pos(egui::pos2(x, y))
         .show(&ctx, |ui| {
             egui::Frame::new()
-                .fill(theme::chrome())
+                .fill(look.surface(SurfaceColor::PopupBackground))
                 .stroke(Stroke::new(1.0, theme::separator()))
                 .corner_radius(6.0)
                 .inner_margin(MARGIN)
@@ -997,12 +1016,27 @@ fn run_find_bar(ui: &mut Ui, rect: Rect, state: &mut EditorState) {
     }
 }
 
+/// A text's classification, done while laying it out.
+struct Classified {
+    key: u64,
+    spans: Arc<Vec<Span>>,
+    table: Arc<SymbolTable>,
+}
+
 /// What the gutter needs from the text view: each line's top and height on screen.
 struct GutterRows {
     rows: Vec<(f32, f32)>,
+    /// The zero-based line the caret is on, while the caret is a point.
+    caret_line: Option<usize>,
 }
 
-fn text_view(ui: &mut Ui, state: &mut EditorState, area: Rect, edited: &mut bool) -> GutterRows {
+fn text_view(
+    ui: &mut Ui,
+    state: &mut EditorState,
+    area: Rect,
+    look: &Appearance,
+    edited: &mut bool,
+) -> GutterRows {
     let id = state.id;
     let font = FontId::monospace(FONT_SIZE);
     let spans = state.spans();
@@ -1041,16 +1075,33 @@ fn text_view(ui: &mut Ui, state: &mut EditorState, area: Rect, edited: &mut bool
     };
     let find_current = state.find.current;
 
+    // Text typed this frame is classified here, once however often the field asks for a layout,
+    // and handed to the state afterwards, so the next frame finds it cached.
+    let typed: RefCell<Option<Classified>> = RefCell::new(None);
     let mut layouter = |ui: &Ui, text: &dyn TextBuffer, _wrap: f32| {
-        // While the buffer is what was classified, reuse it; mid-edit text is classified now.
-        let fresh;
-        let spans: &[Span] = if text_hash(text.as_str()) == current {
-            &spans
+        let key = text_hash(text.as_str());
+        let mut typed = typed.borrow_mut();
+        let spans: Arc<Vec<Span>> = if key == current {
+            Arc::clone(&spans)
+        } else if let Some(done) = typed.as_ref().filter(|done| done.key == key) {
+            Arc::clone(&done.spans)
         } else {
-            fresh = syntax::classify(text.as_str());
-            &fresh
+            let table = Arc::new(symbols::analyze(text.as_str()));
+            let spans = Arc::new(syntax::classify(text.as_str(), Some(&table)));
+            *typed = Some(Classified {
+                key,
+                spans: Arc::clone(&spans),
+                table,
+            });
+            spans
         };
-        let mut job = syntax::layout_job(text.as_str(), spans, font.clone(), theme::text_primary());
+        let mut job = syntax::layout_job(
+            text.as_str(),
+            &spans,
+            font.clone(),
+            look,
+            look.role(SyntaxRole::Default),
+        );
         job.wrap.max_width = f32::INFINITY;
         ui.fonts_mut(|fonts| fonts.layout_job(job))
     };
@@ -1058,11 +1109,18 @@ fn text_view(ui: &mut Ui, state: &mut EditorState, area: Rect, edited: &mut bool
     let mut pane = ui.new_child(UiBuilder::new().max_rect(area));
     pane.set_clip_rect(area.intersect(ui.clip_rect()));
     let char_width = pane.fonts_mut(|fonts| fonts.glyph_width(&FontId::monospace(FONT_SIZE), ' '));
-    let mut rows = GutterRows { rows: Vec::new() };
+    let mut rows = GutterRows {
+        rows: Vec::new(),
+        caret_line: None,
+    };
     let scroll = egui::ScrollArea::both()
         .id_salt(("script-editor-scroll", id))
         .auto_shrink([false, false])
         .show_viewport(&mut pane, |ui, viewport| {
+            // The text field paints the selection and the caret from the visuals, so this ui
+            // (and the extra carets, which read the same) wears the theme's.
+            ui.visuals_mut().selection.bg_fill = look.surface(SurfaceColor::Selection);
+            ui.visuals_mut().text_cursor.stroke.color = look.surface(SurfaceColor::Caret);
             // Decorations that sit behind the text are painted into a slot reserved first.
             let behind = ui.painter().add(Shape::Noop);
             let visible_width = viewport.width().max(ui.available_width());
@@ -1186,10 +1244,11 @@ fn text_view(ui: &mut Ui, state: &mut EditorState, area: Rect, edited: &mut bool
                     .get(galley.layout_from_cursor(range.primary).row)
             {
                 let top = origin.y + row.pos.y;
+                rows.caret_line = Some(galley.layout_from_cursor(range.primary).row);
                 behind_shapes.push(Shape::rect_filled(
                     Rect::from_x_y_ranges(band_x, top..=top + row.row.size.y),
                     0.0,
-                    theme::ink(15),
+                    look.surface(SurfaceColor::CurrentLine),
                 ));
             }
             for (index, span) in find_matches.iter().enumerate() {
@@ -1198,12 +1257,12 @@ fn text_view(ui: &mut Ui, state: &mut EditorState, area: Rect, edited: &mut bool
                 if (a.min.y - b.min.y).abs() < 1.0 {
                     let rect = Rect::from_min_max(a.min, egui::pos2(b.min.x, a.max.y))
                         .translate(origin.to_vec2());
-                    let alpha = if index == find_current { 0.6 } else { 0.28 };
-                    behind_shapes.push(Shape::rect_filled(
-                        rect,
-                        2.0,
-                        theme::with_alpha(theme::YELLOW, alpha),
-                    ));
+                    let color = look.surface(if index == find_current {
+                        SurfaceColor::FindMatchActive
+                    } else {
+                        SurfaceColor::FindMatch
+                    });
+                    behind_shapes.push(Shape::rect_filled(rect, 2.0, color));
                 }
             }
             // Same-identifier highlights and the bracket pair, only while the caret is a point.
@@ -1224,26 +1283,39 @@ fn text_view(ui: &mut Ui, state: &mut EditorState, area: Rect, edited: &mut bool
                     .enumerate()
                 {
                     if let Some(rect) = span_rect(span) {
-                        // The token under the caret is stronger (0.7) than the others (0.45).
-                        let alpha = if index == 0 { 178 } else { 115 };
-                        behind_shapes.push(Shape::rect_filled(
-                            rect,
-                            2.0,
-                            Color32::from_rgba_unmultiplied(63, 99, 148, alpha),
-                        ));
+                        // The token under the caret is stronger than the others (by 115/178).
+                        let strong = look.surface(SurfaceColor::WordHighlight);
+                        let color = if index == 0 {
+                            strong
+                        } else {
+                            strong.gamma_multiply(115.0 / 178.0)
+                        };
+                        behind_shapes.push(Shape::rect_filled(rect, 2.0, color));
                     }
                 }
                 if let Some((position, partner)) = edit_ops::bracket_match(&state.source, at) {
                     let (color, spans) = match partner {
-                        Some(other) => (theme::ink(56), vec![position, other]),
+                        Some(other) => (
+                            look.surface(SurfaceColor::BracketMatch),
+                            vec![position, other],
+                        ),
                         None => (
-                            theme::with_alpha(theme::syntax::string(), 0.3),
+                            theme::with_alpha(look.surface(SurfaceColor::DiagnosticError), 0.3),
                             vec![position],
                         ),
                     };
+                    let border = look.surface(SurfaceColor::BracketMatchBorder);
                     for position in spans {
                         if let Some(rect) = span_rect(position..position + 1) {
                             behind_shapes.push(Shape::rect_filled(rect, 2.0, color));
+                            if partner.is_some() && border.a() > 0 {
+                                behind_shapes.push(Shape::rect_stroke(
+                                    rect,
+                                    2.0,
+                                    Stroke::new(1.0, border),
+                                    egui::StrokeKind::Inside,
+                                ));
+                            }
                         }
                     }
                 }
@@ -1254,6 +1326,7 @@ fn text_view(ui: &mut Ui, state: &mut EditorState, area: Rect, edited: &mut bool
                 origin,
                 char_width,
                 caret.map(|c| c.primary.index.0),
+                look,
             ));
             let (extra_behind, extra_over) =
                 carets::shapes(state, galley, origin, ui.visuals(), char_width);
@@ -1286,10 +1359,10 @@ fn text_view(ui: &mut Ui, state: &mut EditorState, area: Rect, edited: &mut bool
                     continue;
                 }
                 if let Some(rect) = underline_rect(&state.source, galley, origin, diagnostic) {
-                    let color = match diagnostic.severity {
-                        DiagnosticSeverity::Error => theme::syntax::string(),
-                        DiagnosticSeverity::Warning => theme::YELLOW,
-                    };
+                    let color = look.surface(match diagnostic.severity {
+                        DiagnosticSeverity::Error => SurfaceColor::DiagnosticError,
+                        DiagnosticSeverity::Warning => SurfaceColor::DiagnosticWarning,
+                    });
                     ui.painter().line_segment(
                         [rect.left_bottom(), rect.right_bottom()],
                         Stroke::new(1.0, color),
@@ -1391,6 +1464,14 @@ fn text_view(ui: &mut Ui, state: &mut EditorState, area: Rect, edited: &mut bool
     if state.flash.is_some_and(|flash| flash.at.elapsed() >= FLASH) {
         state.flash = None;
     }
+    // Text typed this frame was classified for its layout: keep that for the next frame, when it
+    // is still the text (the layouter may have seen a half-applied edit).
+    if let Some(done) = typed.take()
+        && done.key == text_hash(&state.source)
+    {
+        state.highlighted = Some((done.key, done.spans));
+        state.nav.table = Some((done.key, done.table));
+    }
     #[cfg(test)]
     {
         state.scroll_y = scroll.state.offset.y;
@@ -1473,7 +1554,7 @@ fn inline_values(line: &str, values: &Values) -> String {
     parts.join("   ")
 }
 
-fn paint_gutter(ui: &Ui, gutter: Rect, rows: &GutterRows, marks: &DebugMarks) {
+fn paint_gutter(ui: &Ui, gutter: Rect, rows: &GutterRows, marks: &DebugMarks, look: &Appearance) {
     let painter = ui.painter().with_clip_rect(gutter);
     let font = FontId::monospace(LINE_NUMBER_SIZE);
     for (index, (top, height)) in rows.rows.iter().enumerate() {
@@ -1488,9 +1569,11 @@ fn paint_gutter(ui: &Ui, gutter: Rect, rows: &GutterRows, marks: &DebugMarks) {
             line.to_string(),
             font.clone(),
             if stopped {
-                theme::text_primary()
+                look.role(SyntaxRole::Default)
+            } else if rows.caret_line == Some(index) {
+                look.surface(SurfaceColor::LineNumberActive)
             } else {
-                theme::text_secondary()
+                look.surface(SurfaceColor::LineNumber)
             },
         );
         let center = egui::pos2(gutter.min.x + MARKER_X, top + height / 2.0);
@@ -2236,6 +2319,7 @@ fn indent_guides(
     origin: egui::Pos2,
     char_width: f32,
     caret_index: Option<usize>,
+    look: &Appearance,
 ) -> Vec<Shape> {
     let levels = indent_levels(source);
     let caret_line = caret_index.map(|c| source.chars().take(c).filter(|&ch| ch == '\n').count());
@@ -2265,11 +2349,11 @@ fn indent_guides(
         for guide in 1..=*level {
             let x = origin.x + char_width * (4 * (guide - 1)) as f32 + 0.5;
             let active = active_span.is_some_and(|(s, e, l)| guide == l && line >= s && line <= e);
-            let color = if active {
-                theme::text_secondary().gamma_multiply(0.6)
+            let color = look.surface(if active {
+                SurfaceColor::IndentGuideActive
             } else {
-                theme::ink(22)
-            };
+                SurfaceColor::IndentGuide
+            });
             shapes.push(Shape::line_segment(
                 [egui::pos2(x, top), egui::pos2(x, bottom)],
                 Stroke::new(1.0, color),

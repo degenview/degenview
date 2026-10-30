@@ -479,7 +479,9 @@ pub fn with_alpha(color: Color32, opacity: f32) -> Color32 {
     )
 }
 
-/// Syntax colours: `PineSyntaxTheme.standard`, the system colours of the active appearance.
+/// The macOS system colours the app uses for code-like values outside the editor: sample code in
+/// empty states, the debugger's value types, status text. The editor's own colours are its theme's
+/// (`ui::editor_appearance`).
 pub mod syntax {
     use super::{Color32, pick};
 
@@ -499,28 +501,14 @@ pub mod syntax {
     system! {
         /// `systemPurple`.
         keyword: (0xBF, 0x5A, 0xF2), (0xAF, 0x52, 0xDE);
-        /// `systemIndigo`.
-        r#type: (0x5E, 0x5C, 0xE6), (0x58, 0x56, 0xD6);
-        /// `systemTeal`.
-        namespace: (0x40, 0xC8, 0xE0), (0x30, 0xB0, 0xC7);
         /// `systemBlue`.
         function: (0x0A, 0x84, 0xFF), (0x00, 0x7A, 0xFF);
         /// `systemGreen`.
         variable: (0x30, 0xD1, 0x58), (0x28, 0xA7, 0x45);
-        /// `systemMint`.
-        constant: (0x63, 0xE6, 0xE2), (0x00, 0xA8, 0xA0);
         /// `systemOrange`.
         number: (0xFF, 0x9F, 0x0A), (0xE8, 0x80, 0x00);
         /// `systemRed`.
         string: (0xFF, 0x45, 0x3A), (0xFF, 0x3B, 0x30);
-        /// `secondaryLabelColor`.
-        comment: (152, 152, 157), (110, 110, 115);
-        /// `systemBrown`.
-        annotation: (0xAC, 0x8E, 0x68), (0xA2, 0x84, 0x5E);
-        /// `systemGray`.
-        operator: (0x8E, 0x8E, 0x93), (0x8E, 0x8E, 0x93);
-        /// `systemPink`.
-        color_literal: (0xFF, 0x37, 0x5F), (0xFF, 0x2D, 0x55);
     }
 }
 

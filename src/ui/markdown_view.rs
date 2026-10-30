@@ -9,7 +9,7 @@
 
 use crate::script_manager::syntax;
 use crate::ui::icons::{self, Icon};
-use crate::ui::{kit, theme};
+use crate::ui::{editor_appearance, kit, theme};
 use eframe::egui::{
     self, Color32, FontId, Id, Margin, Sense, Stroke, TextFormat, Ui, text::LayoutJob,
 };
@@ -581,8 +581,8 @@ fn code_block(ui: &mut Ui, id: Id, lang: &str, text: &str, closed: bool) {
             let font = FontId::monospace(CODE_SIZE);
             let plain = theme::text_primary();
             let mut code_job = if matches!(lang, "" | "pine" | "pinescript" | "pine-script") {
-                let spans = syntax::classify(text);
-                syntax::layout_job(text, &spans, font, plain)
+                let spans = syntax::classify(text, None);
+                syntax::layout_job(text, &spans, font, &editor_appearance::chrome(), plain)
             } else {
                 let mut job = LayoutJob::default();
                 job.append(text, 0.0, TextFormat::simple(font, plain));

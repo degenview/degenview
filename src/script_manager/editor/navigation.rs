@@ -11,7 +11,7 @@ use std::ops::Range;
 
 #[derive(Default)]
 pub(super) struct NavState {
-    table: Option<(u64, Arc<SymbolTable>)>,
+    pub(super) table: Option<(u64, Arc<SymbolTable>)>,
     /// The character under the pointer when the context menu opened.
     menu_target: Option<usize>,
     pub(super) rename: Option<RenameBox>,

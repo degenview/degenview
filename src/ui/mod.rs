@@ -27,6 +27,7 @@ mod drawing_geometry;
 mod drawing_layer;
 pub mod drawing_properties;
 pub mod drawing_render;
+pub mod editor_appearance;
 pub mod empty_state;
 pub mod error_notice;
 mod fib_geometry;

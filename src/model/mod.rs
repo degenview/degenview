@@ -19,6 +19,7 @@ pub mod drawing_style;
 pub mod drawing_template;
 pub mod drawing_tool;
 pub mod drawings;
+pub mod editor_theme;
 pub mod elliott;
 pub mod fib;
 pub mod fib_style;

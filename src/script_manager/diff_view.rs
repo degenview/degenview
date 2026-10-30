@@ -4,7 +4,7 @@
 
 use super::diff::{ChangeKind, DiffHunk};
 use super::syntax;
-use crate::ui::{accessibility, icons::Icon, kit, popover, theme};
+use crate::ui::{accessibility, editor_appearance, icons::Icon, kit, popover, theme};
 use eframe::egui::{self, Align, Color32, FontId, Id, Margin, Rect, RichText, Ui};
 
 const WIDTH: f32 = 500.0;
@@ -165,8 +165,9 @@ fn block(ui: &mut Ui, heading: &str, text: &str, first_line: usize, sign: char, 
         .map(|offset| format!("{sign} {:>4}", first_line + offset + 1))
         .collect();
     let font = FontId::monospace(CODE_SIZE);
-    let spans = syntax::classify(display);
-    let mut job = syntax::layout_job(display, &spans, font.clone(), theme::text_primary());
+    let spans = syntax::classify(display, None);
+    let look = editor_appearance::chrome();
+    let mut job = syntax::layout_job(display, &spans, font.clone(), &look, theme::text_primary());
     job.wrap.max_width = f32::INFINITY;
     let galley = ui.fonts_mut(|fonts| fonts.layout_job(job));
     egui::Frame::new()
