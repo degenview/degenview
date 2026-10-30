@@ -386,3 +386,148 @@ fn an_exported_method_declares_every_parameter_type() {
         program.diagnostics
     );
 }
+
+// MARK: Call diagnostics
+
+#[test]
+fn an_unknown_method_on_a_known_receiver_is_a_compile_error() {
+    assert!(has_error(
+        "values = array.from(1.0, 2.0)\nx = values.nothingLikeThis()\n",
+        "nothinglikethis",
+    ));
+}
+
+#[test]
+fn a_receiver_of_the_wrong_type_is_a_compile_error() {
+    assert!(has_error(
+        "method double(array<float> values) =>\n    values.sum() * 2.0\nx = \"text\".double()\n",
+        "receiver of type string",
+    ));
+}
+
+#[test]
+fn an_array_of_the_wrong_element_type_is_not_a_receiver() {
+    assert!(has_error(
+        "method double(array<float> values) =>\n    values.sum() * 2.0\nx = array.from(\"a\", \"b\").double()\n",
+        "receiver of type array<string>",
+    ));
+}
+
+#[test]
+fn a_wrong_argument_count_is_a_compile_error() {
+    assert!(has_error(
+        "method scale(float x, float k) =>\n    x * k\ny = close.scale(1.0, 2.0)\n",
+        "wrong number of arguments",
+    ));
+}
+
+#[test]
+fn an_argument_of_the_wrong_type_is_a_compile_error() {
+    assert!(has_error(
+        "method scale(float x, float k) =>\n    x * k\ny = close.scale(\"two\")\n",
+        "must be float, got string",
+    ));
+}
+
+#[test]
+fn a_named_argument_no_parameter_has_is_a_compile_error() {
+    assert!(has_error(
+        "method scale(float x, float k) =>\n    x * k\ny = close.scale(factor = 2.0)\n",
+        "no parameter named 'factor'",
+    ));
+}
+
+#[test]
+fn a_series_argument_for_a_simple_parameter_is_a_compile_error() {
+    assert!(has_error(
+        "method pick(int x, simple int length) =>\n    length\ny = (1).pick(bar_index)\n",
+        "simple",
+    ));
+}
+
+#[test]
+fn a_series_argument_selects_the_series_overload() {
+    let program = compiler::compile(
+        &source(
+            "method pick(int x, simple int length) =>\n    1\n\
+             method pick(int x, series int length) =>\n    2\n\
+             a = (1).pick(5)\n\
+             b = (1).pick(bar_index)\n",
+        ),
+        Limits::default(),
+        &NoLibraries,
+    );
+    assert!(program.is_valid(), "{:?}", program.diagnostics);
+    let mut chosen: Vec<(usize, usize)> = program.resolutions.into_iter().collect();
+    chosen.sort_unstable();
+    // The constant takes the simple overload, the bar index the series one.
+    assert_eq!(chosen.iter().map(|(_, id)| *id).collect::<Vec<_>>(), [0, 1]);
+}
+
+#[test]
+fn a_user_overload_of_a_builtin_name_applies_only_when_it_fits() {
+    let found = errors(
+        "method fill(array<float> a, float inner, float outer, float lo, float hi) =>\n    a\n\
+         values = array.from(1.0, 2.0)\n\
+         values.fill(0.0)\n\
+         values.fill(1.0, 0.0, 0.0, 5.0)\n",
+    );
+    assert!(found.is_empty(), "{found:?}");
+}
+
+#[test]
+fn a_method_calling_itself_through_method_syntax_is_recursion() {
+    assert!(has_error(
+        "method down(int this) =>\n    this <= 0 ? 0 : (this - 1).down()\n",
+        "cannot be recursive",
+    ));
+}
+
+#[test]
+fn a_method_on_a_field_is_resolved_through_the_path() {
+    let found = errors(
+        "type Stack\n    array<float> items\n\
+         method top(array<float> this) =>\n    this.last()\n\
+         method peek(Stack this) =>\n    this.items.top()\n\
+         s = Stack.new(array.from(1.0))\n\
+         x = s.peek()\n",
+    );
+    assert!(found.is_empty(), "{found:?}");
+    assert!(has_error(
+        "type Stack\n    array<float> items\n\
+         method peek(Stack this) =>\n    this.items.nothing()\n",
+        "nothing",
+    ));
+}
+
+#[test]
+fn a_chain_resolves_each_call_from_the_type_before_it() {
+    let found = errors(
+        "method keep(array<float> a, float v) =>\n    a.push(v)\n    a\n\
+         method total(array<float> a) =>\n    a.sum()\n\
+         t = array.new_float().keep(1.0).keep(2.0).total()\n",
+    );
+    assert!(found.is_empty(), "{found:?}");
+    assert!(has_error(
+        "method keep(array<float> a, float v) =>\n    a.push(v)\n    a\n\
+         t = array.new_float().keep(1.0).total()\n",
+        "total",
+    ));
+}
+
+#[test]
+fn calls_the_checker_settles_are_recorded_by_site() {
+    let program = compiler::compile(
+        &source(
+            "method twice(float this) =>\n    this * 2.0\n\
+             a = close.twice()\n\
+             b = twice(open)\n\
+             c = unknown_receiver.twice()\n",
+        ),
+        Limits::default(),
+        &NoLibraries,
+    );
+    // `unknown_receiver` is undeclared, so it is an error elsewhere; the first two still resolve.
+    assert_eq!(program.resolutions.len(), 2, "{:?}", program.resolutions);
+    assert!(program.resolutions.values().all(|&id| id == 0));
+}

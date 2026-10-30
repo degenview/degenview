@@ -109,8 +109,14 @@ fn compile_internal(
             DiagnosticCategory::Lexical | DiagnosticCategory::Syntax
         )
     });
+    let mut resolutions = HashMap::new();
     if !has_early_error {
-        diagnostics.extend(super::type_checker::TypeChecker::check(&statements));
+        let checked = super::type_checker::TypeChecker::check_program(
+            &statements,
+            !import_aliases.is_empty(),
+        );
+        diagnostics.extend(checked.diagnostics);
+        resolutions = checked.resolutions;
         diagnostics.extend(super::ignored_features::validate(&statements));
         diagnostics.extend(super::name_check::validate(
             &statements,
@@ -126,6 +132,7 @@ fn compile_internal(
         input_schema: schema,
         diagnostics,
         method_names,
+        resolutions,
         exported_names: parser.exported_names().clone(),
         imports: linked.imports,
         statement_ends: parser.statement_ends(),

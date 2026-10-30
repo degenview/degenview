@@ -1,17 +1,14 @@
 //! Rules about how functions and methods are declared, which need no types: where a declaration may
-//! sit, what a method's receiver must look like, which overloads can coexist, and that nothing calls
-//! itself. TradingView documents the scope, overload and recursion rules (User-defined functions
-//! page) and that a method's first parameter must declare its type (Methods page); it documents none
-//! of the messages, so the texts here are this app's own.
-//!
-//! Recursion is judged by name, so it only covers a plain call (`down(n - 1)`) to a name declared
-//! once: `x.size()` inside a user `size` method may be the builtin, and an overloaded name may call
-//! an earlier overload. Those need the receiver's type and are resolved by the type checker.
+//! sit, what a method's receiver must look like and which overloads can coexist. TradingView
+//! documents the scope and overload rules (User-defined functions page) and that a method's first
+//! parameter must declare its type (Methods page); it documents none of the messages, so the texts
+//! here are this app's own. Recursion needs to know which declaration a call selects, so the type
+//! checker reports it.
 
 use std::collections::{HashMap, HashSet};
 
-use super::ast::{Expression, FunctionKind, Parameter, Qualifier, Statement, TypeRef};
-use super::traversal::{children, expressions, nested_blocks};
+use super::ast::{FunctionKind, Parameter, Qualifier, Statement, TypeRef};
+use super::traversal::nested_blocks;
 use crate::pine::{Diagnostic, DiagnosticCategory, SourceRange};
 
 /// What tells two declarations of one name apart: the type and qualifier of every required parameter.
@@ -61,7 +58,6 @@ pub fn validate(statements: &[Statement], exported: &HashSet<String>) -> Vec<Dia
         }
     }
     overloads(&declarations, &mut diagnostics);
-    recursion(&declarations, &mut diagnostics);
     diagnostics
 }
 
@@ -171,94 +167,5 @@ fn overloads(declarations: &[Declaration], diagnostics: &mut Vec<Diagnostic>) {
             ));
         }
         known.push(signature);
-    }
-}
-
-/// Plain calls made by `body`, in source order, with where each sits.
-fn plain_calls(body: &[Statement]) -> Vec<(String, SourceRange)> {
-    fn walk(expression: &Expression, calls: &mut Vec<(String, SourceRange)>) {
-        match expression {
-            Expression::Call { name, range, .. } if !name.contains('.') => {
-                calls.push((name.clone(), *range));
-            }
-            Expression::Statement(statement, _) => statement_calls(statement, calls),
-            _ => {}
-        }
-        for child in children(expression) {
-            walk(child, calls);
-        }
-    }
-    fn statement_calls(statement: &Statement, calls: &mut Vec<(String, SourceRange)>) {
-        for expression in expressions(statement) {
-            walk(expression, calls);
-        }
-        for block in nested_blocks(statement) {
-            for inner in block {
-                statement_calls(inner, calls);
-            }
-        }
-    }
-    let mut calls = Vec::new();
-    for statement in body {
-        statement_calls(statement, &mut calls);
-    }
-    calls
-}
-
-/// A function or method that reaches itself through plain calls to names declared once.
-fn recursion(declarations: &[Declaration], diagnostics: &mut Vec<Diagnostic>) {
-    let mut counts: HashMap<&str, usize> = HashMap::new();
-    for declaration in declarations {
-        *counts.entry(declaration.name).or_default() += 1;
-    }
-    let once: HashMap<&str, &Declaration> = declarations
-        .iter()
-        .filter(|declaration| counts[declaration.name] == 1)
-        .map(|declaration| (declaration.name, declaration))
-        .collect();
-    let edges: HashMap<&str, Vec<(String, SourceRange)>> = once
-        .values()
-        .map(|declaration| {
-            let calls = plain_calls(declaration.body)
-                .into_iter()
-                .filter(|(callee, _)| once.contains_key(callee.as_str()))
-                .collect();
-            (declaration.name, calls)
-        })
-        .collect();
-    for declaration in declarations
-        .iter()
-        .filter(|declaration| once.contains_key(declaration.name))
-    {
-        // The first call out of the function that leads back to it.
-        let leads_back = edges[declaration.name].iter().find(|(callee, _)| {
-            let mut visited: HashSet<&str> = HashSet::new();
-            let mut pending = vec![callee.as_str()];
-            while let Some(current) = pending.pop() {
-                if current == declaration.name {
-                    return true;
-                }
-                if visited.insert(current) {
-                    pending.extend(edges[current].iter().map(|(next, _)| next.as_str()));
-                }
-            }
-            false
-        });
-        if let Some((callee, range)) = leads_back {
-            let how = if callee == declaration.name {
-                "itself".to_owned()
-            } else {
-                format!("itself through '{callee}'")
-            };
-            diagnostics.push(error(
-                "PINE3063",
-                format!(
-                    "The {} '{}' calls {how}: Pine functions and methods cannot be recursive, so use a loop.",
-                    noun(declaration.kind),
-                    declaration.name
-                ),
-                *range,
-            ));
-        }
     }
 }

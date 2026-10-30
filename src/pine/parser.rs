@@ -640,9 +640,9 @@ impl Parser {
         })
     }
 
-    fn function_parameter(&mut self) -> Option<Parameter> {
-        let qualifier = self.skip_qualifier();
-        let type_ref = self.type_annotation().map(|kind| TypeRef {
+    /// The type annotation at the cursor with its name and generic arguments, if there is one.
+    fn annotated_type_ref(&mut self) -> Option<TypeRef> {
+        self.type_annotation().map(|kind| TypeRef {
             kind,
             name: if kind == ValueType::Object {
                 self.annotated_type_name.clone()
@@ -650,7 +650,12 @@ impl Parser {
                 None
             },
             arguments: std::mem::take(&mut self.annotated_arguments),
-        });
+        })
+    }
+
+    fn function_parameter(&mut self) -> Option<Parameter> {
+        let qualifier = self.skip_qualifier();
+        let type_ref = self.annotated_type_ref();
         let TokenKind::Identifier(name) = &self.current().kind else {
             self.error(
                 "PINE2011",
@@ -1406,7 +1411,7 @@ impl Parser {
 
     fn type_field(&mut self) -> Option<TypeField> {
         self.skip_qualifier();
-        let kind = self.type_annotation();
+        let type_ref = self.annotated_type_ref();
         let TokenKind::Identifier(name) = &self.current().kind else {
             self.error("PINE2015", "Expected a field name.", self.current().range);
             return None;
@@ -1419,7 +1424,7 @@ impl Parser {
         }
         Some(TypeField {
             name,
-            kind,
+            type_ref,
             default_value,
         })
     }

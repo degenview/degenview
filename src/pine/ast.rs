@@ -414,8 +414,14 @@ pub struct SwitchArm {
 #[derive(Clone, Debug, PartialEq)]
 pub struct TypeField {
     pub name: String,
-    pub kind: Option<ValueType>,
+    pub type_ref: Option<TypeRef>,
     pub default_value: Option<Expression>,
+}
+
+impl TypeField {
+    pub fn kind(&self) -> Option<ValueType> {
+        self.type_ref.as_ref().map(|reference| reference.kind)
+    }
 }
 
 /// One member of a script-defined `enum`: `name [= "title"]`.
