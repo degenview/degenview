@@ -28,6 +28,7 @@ use super::runtime_types::{BarFlags, Flow, RuntimeContext, RuntimeFunction};
 use super::runtime_value::{RefKind, RuntimeValue};
 use super::state::{AlertEvent, RuntimeState, SecuritySite};
 use super::traversal::nested_blocks;
+use super::user_methods::Supplied;
 use super::{
     alert_builtins, array_builtins, drawings, map_builtins, market_values, math, matrix_builtins,
     number_format, strategy_builtins, strings, ta, visuals,
@@ -74,6 +75,9 @@ pub struct Session {
     pub symbol: SymbolInfo,
     pub functions: FastMap<String, RuntimeFunction>,
     pub methods: FastMap<String, Vec<RuntimeFunction>>,
+    /// The script's own top-level functions and methods in declaration order, which is what a call's
+    /// `target` indexes.
+    pub(crate) callables: Vec<RuntimeFunction>,
     /// Functions declared more than once with different parameter types, by registry key.
     pub overloads: FastMap<String, Vec<RuntimeFunction>>,
     pub types: FastMap<String, Vec<super::ast::TypeField>>,
@@ -99,7 +103,8 @@ pub struct Session {
     /// Builtin variable names (`low`) the script declares itself: removed at the start of each bar so
     /// a read before the declaration still means the builtin.
     shadowing_builtins: Vec<String>,
-    /// Tests only: ignore every call's `route`, so a run can be compared with the chain's.
+    /// Tests only: ignore every call's `route` and `target`, so a run can be compared with the
+    /// chain's, which finds functions and methods by name.
     #[cfg(any(test, feature = "corpus"))]
     pub(crate) ignore_routes: bool,
     /// How many `request.*` expressions the running code is inside of.
@@ -252,6 +257,7 @@ impl Session {
             max_polylines: program.declaration.max_polylines_count,
         };
         let mut functions = FastMap::default();
+        let mut callables = Vec::new();
         let mut methods: FastMap<String, Vec<RuntimeFunction>> = FastMap::default();
         let mut script_overloads: FastMap<String, Vec<RuntimeFunction>> = FastMap::default();
         let mut input_variables = HashMap::new();
@@ -279,6 +285,7 @@ impl Session {
                             .collect(),
                         body.clone(),
                     );
+                    callables.push(function.clone());
                     if let Some(previous) = functions.insert(name.clone(), function.clone()) {
                         let known: &mut Vec<RuntimeFunction> =
                             script_overloads.entry(name.clone()).or_default();
@@ -313,6 +320,7 @@ impl Session {
             inputs,
             limits,
             symbol,
+            callables,
             functions: functions
                 .into_iter()
                 .chain(linkage.functions.clone())
@@ -853,7 +861,17 @@ impl Session {
                 arguments,
                 site,
                 range,
-            } => self.method_call_on_value(receiver, name, arguments, *site, *range, context),
+                target,
+            } => {
+                #[cfg(any(test, feature = "corpus"))]
+                let target = if self.ignore_routes { &None } else { target };
+                if let Some(id) = target {
+                    return self.method_call_target(
+                        *id, receiver, name, arguments, *site, *range, context,
+                    );
+                }
+                self.method_call_on_value(receiver, name, arguments, *site, *range, context)
+            }
             Expression::Member { base, name, range } => {
                 let value = self.eval(base, context)?;
                 self.read_field(name, value, *range)
@@ -872,11 +890,19 @@ impl Session {
                 site,
                 range,
                 route,
-            } => self.call(name, arguments, *route, *site, *range, context),
+                target,
+            } => {
+                #[cfg(any(test, feature = "corpus"))]
+                let target = if self.ignore_routes { &None } else { target };
+                if let Some(id) = target {
+                    return self.call_target(*id, name, arguments, *site, *range, context);
+                }
+                self.call(name, arguments, *route, *site, *range, context)
+            }
         }
     }
 
-    fn resolve_identifier(
+    pub(crate) fn resolve_identifier(
         &mut self,
         name: &str,
         range: SourceRange,
@@ -2772,6 +2798,22 @@ impl Session {
         range: SourceRange,
         context: &mut RuntimeContext,
     ) -> Result<RuntimeValue, Diagnostic> {
+        let supplied = Supplied::Expressions {
+            receiver: None,
+            arguments,
+        };
+        self.invoke_with(function, call_name, supplied, site, range, context)
+    }
+
+    pub(crate) fn invoke_with(
+        &mut self,
+        function: RuntimeFunction,
+        call_name: &str,
+        supplied: Supplied<'_>,
+        site: usize,
+        range: SourceRange,
+        context: &mut RuntimeContext,
+    ) -> Result<RuntimeValue, Diagnostic> {
         if context.depth >= self.limits.call_depth {
             return Err(Diagnostic::error(
                 "PINE8005",
@@ -2780,7 +2822,7 @@ impl Session {
                 range,
             ));
         }
-        let bound = self.bind_parameters(&function, arguments, context)?;
+        let bound = self.bind_parameters(&function, supplied, context)?;
         let prefix = self.site_key(site, context);
         let stash_key = |local: &str| format!("{INTERNAL_PREFIX}fn:{prefix}:{local}");
 
@@ -2900,27 +2942,65 @@ impl Session {
     fn bind_parameters(
         &mut self,
         function: &RuntimeFunction,
-        arguments: &[super::ast::Argument],
+        supplied: Supplied<'_>,
         context: &mut RuntimeContext,
     ) -> Result<FastMap<String, RuntimeValue>, Diagnostic> {
-        let positional: Vec<&super::ast::Argument> =
-            arguments.iter().filter(|a| a.name.is_none()).collect();
         let mut bound = FastMap::default();
-        for (i, parameter) in function.parameters.iter().enumerate() {
-            if let Some(named) = arguments
-                .iter()
-                .find(|a| a.name.as_deref() == Some(&parameter.name))
-            {
-                bound.insert(parameter.name.clone(), self.eval(&named.value, context)?);
-            } else if i < positional.len() {
-                bound.insert(
-                    parameter.name.clone(),
-                    self.eval(&positional[i].value, context)?,
-                );
-            } else if let Some(fallback) = &parameter.default_value {
-                bound.insert(parameter.name.clone(), self.eval(fallback, context)?);
-            } else {
-                bound.insert(parameter.name.clone(), RuntimeValue::Na);
+        match supplied {
+            Supplied::Expressions {
+                mut receiver,
+                arguments,
+            } => {
+                // The receiver stands for the first parameter, so the written arguments start at the second.
+                let offset = usize::from(receiver.is_some());
+                let positional: Vec<&super::ast::Argument> =
+                    arguments.iter().filter(|a| a.name.is_none()).collect();
+                for (i, parameter) in function.parameters.iter().enumerate() {
+                    if i == 0
+                        && let Some(value) = receiver.take()
+                    {
+                        bound.insert(parameter.name.clone(), value);
+                    } else if let Some(named) = arguments
+                        .iter()
+                        .find(|a| a.name.as_deref() == Some(&parameter.name))
+                    {
+                        bound.insert(parameter.name.clone(), self.eval(&named.value, context)?);
+                    } else if let Some(argument) =
+                        i.checked_sub(offset).and_then(|n| positional.get(n))
+                    {
+                        bound.insert(parameter.name.clone(), self.eval(&argument.value, context)?);
+                    } else if let Some(fallback) = &parameter.default_value {
+                        bound.insert(parameter.name.clone(), self.eval(fallback, context)?);
+                    } else {
+                        bound.insert(parameter.name.clone(), RuntimeValue::Na);
+                    }
+                }
+            }
+            Supplied::Values(values) => {
+                let mut labelled = Vec::new();
+                let mut positional = Vec::new();
+                for (label, value) in values {
+                    match label {
+                        Some(label) => labelled.push((label, value)),
+                        None => positional.push(Some(value)),
+                    }
+                }
+                for (i, parameter) in function.parameters.iter().enumerate() {
+                    let given = match labelled
+                        .iter()
+                        .position(|(label, _)| label == &parameter.name)
+                    {
+                        Some(at) => Some(labelled.swap_remove(at).1),
+                        None => positional.get_mut(i).and_then(Option::take),
+                    };
+                    if let Some(value) = given {
+                        bound.insert(parameter.name.clone(), value);
+                    } else if let Some(fallback) = &parameter.default_value {
+                        bound.insert(parameter.name.clone(), self.eval(fallback, context)?);
+                    } else {
+                        bound.insert(parameter.name.clone(), RuntimeValue::Na);
+                    }
+                }
             }
         }
         Ok(bound)

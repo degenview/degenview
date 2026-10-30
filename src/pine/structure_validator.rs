@@ -434,6 +434,7 @@ mod tests {
             arguments: vec![],
             site: 0,
             route: None,
+            target: None,
             range: SourceRange::ZERO,
         })];
         assert!(run(&statements).is_empty());
@@ -452,6 +453,7 @@ mod tests {
             arguments: vec![],
             site: 0,
             route: None,
+            target: None,
             range: SourceRange::ZERO,
         })];
         assert_eq!(codes(&run(&statements)), ["PINE9003"]);

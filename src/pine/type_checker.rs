@@ -534,6 +534,7 @@ impl TypeChecker {
                 arguments,
                 site,
                 range,
+                ..
             } => {
                 let receiver = self.infer(receiver, scope);
                 let values: Vec<Inferred> = arguments
@@ -699,7 +700,7 @@ impl TypeChecker {
             // parameter) does not hide the namespace's function: a method it could be would have to
             // be declared by the script.
             let builtin = registry::is_function(name) && self.callables.declared(member).is_empty();
-            if !builtin && let Some(receiver) = self.receiver_value(path, scope) {
+            if !builtin && let Some(receiver) = self.receiver_value(path, member, scope) {
                 return self.method_call(receiver, member, arguments, &values, site, range);
             }
             if !self.callables.declared(member).is_empty() {
@@ -801,15 +802,16 @@ impl TypeChecker {
     /// What a method is called on, given the path before the method name: a variable, a field path
     /// or a builtin series such as `close`. None when the path is none of those (a namespace such
     /// as `ta`).
-    fn receiver_value(&mut self, path: &str, scope: &Scope) -> Option<Inferred> {
+    fn receiver_value(&mut self, path: &str, member: &str, scope: &Scope) -> Option<Inferred> {
         if let Some(value) = scope.get(path) {
             return Some(*value);
         }
         if let Some(value) = self.field_path(path, scope) {
             return Some(value);
         }
-        // A dotted builtin such as `strategy.closedtrades` is also a namespace of functions.
-        if path.contains('.') {
+        // A dotted builtin such as `strategy.closedtrades` can also be a namespace of functions:
+        // its members are not methods when the whole name is one of them.
+        if path.contains('.') && registry::is_function(&format!("{path}.{member}")) {
             return None;
         }
         match builtin_types::identifier(path) {

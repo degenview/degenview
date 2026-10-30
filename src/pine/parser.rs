@@ -892,6 +892,7 @@ impl Parser {
                     arguments,
                     site: self.call_site,
                     range,
+                    target: None,
                 })
             }
             Expression::Identifier(name, range) => {
@@ -902,6 +903,7 @@ impl Parser {
                     site: self.call_site,
                     range,
                     route: None,
+                    target: None,
                 })
             }
             other => {
