@@ -339,22 +339,11 @@ const COLLECTION_TYPES: [&str; 9] = [
 /// answers; an empty list when it is one whose type is not known, so nothing is guessed.
 fn member_items(table: &SymbolTable, caret: usize, prefix: &str) -> Option<Vec<Item>> {
     let (path, partial) = prefix.rsplit_once('.')?;
-    let mut segments = path.split('.');
-    let declared = table.value_type_at(segments.next()?, caret)?;
+    let declared = table.type_of_path(path, caret)?;
     let mut items = Vec::new();
-    let Some(mut type_name) = declared.map(str::to_owned) else {
+    let Some(type_name) = declared else {
         return Some(items);
     };
-    for field in segments {
-        let next = table
-            .type_info(&type_name)
-            .and_then(|info| info.fields.iter().find(|(name, _)| name == field))
-            .and_then(|(_, written)| written.clone());
-        let Some(next) = next else {
-            return Some(items);
-        };
-        type_name = next;
-    }
     let lower = partial.to_lowercase();
     let mut offer = |member: &str, kind: Kind, callable: bool| {
         if member.to_lowercase().starts_with(&lower) {

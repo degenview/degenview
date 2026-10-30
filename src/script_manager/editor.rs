@@ -887,7 +887,7 @@ fn update_completion(
 
 /// The signature panel over the caret line: `ta.sma(source, length) → series float`, the
 /// argument under the caret underlined. Quiet while the suggestion list is open.
-fn draw_signature(ui: &mut Ui, state: &EditorState, look: &Appearance, code: &EditorFont) {
+fn draw_signature(ui: &mut Ui, state: &mut EditorState, look: &Appearance, code: &EditorFont) {
     let ctx = ui.ctx().clone();
     if state.completion.is_some()
         || state.caret_hidden
@@ -905,7 +905,8 @@ fn draw_signature(ui: &mut Ui, state: &EditorState, look: &Appearance, code: &Ed
     if range.primary != range.secondary {
         return;
     }
-    let Some(help) = signature::help(&state.source, range.primary.index.0) else {
+    let table = state.symbols();
+    let Some(help) = signature::help_with(&state.source, range.primary.index.0, &table) else {
         return;
     };
     let text = look.role(SyntaxRole::Default);
@@ -931,6 +932,14 @@ fn draw_signature(ui: &mut Ui, state: &EditorState, look: &Appearance, code: &Ed
     job.append(")", 0.0, plain(text));
     if !help.returns.is_empty() {
         job.append(&format!(" → {}", help.returns), 0.0, plain(dim));
+    }
+    if help.overloads > 0 {
+        let plural = if help.overloads == 1 { "" } else { "s" };
+        job.append(
+            &format!("  (+{} overload{plural})", help.overloads),
+            0.0,
+            plain(dim),
+        );
     }
     // The panel is as wide as the signature needs, within the window: it slides left to fit
     // rather than wrapping while there is room, and only wraps once the whole window is too

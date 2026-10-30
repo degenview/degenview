@@ -78,6 +78,22 @@ pub struct Symbol {
     pub type_name: Option<String>,
     /// A method's receiver: the type its first parameter declares.
     pub receiver: Option<String>,
+    /// A function's or method's parameters, in order.
+    pub params: Vec<ParamSig>,
+}
+
+/// One parameter of a function: its name, and the whole parameter as the script writes it
+/// (`float factor = 2.0`, `simple int length`).
+#[derive(Clone, Debug)]
+pub struct ParamSig {
+    pub name: String,
+    pub text: String,
+}
+
+/// What reading one parameter found.
+struct ParamInfo {
+    sig: ParamSig,
+    type_name: Option<String>,
 }
 
 /// A `type` the script declares, with the type text of each field in order.
@@ -168,12 +184,73 @@ impl SymbolTable {
             .map(|(_, scope)| *scope)
     }
 
+    /// The variable, parameter or alias `name` means at `caret`.
+    pub fn value_at(&self, name: &str, caret: usize) -> Option<&Symbol> {
+        let scope = self.scope_at(caret)?;
+        let id = self.lookup(scope, name, false, caret, false)?;
+        Some(&self.symbols[id])
+    }
+
     /// What the value `name` is at `caret`: `None` when no such variable or parameter is in scope,
     /// `Some(None)` when there is one whose type is not known.
     pub fn value_type_at(&self, name: &str, caret: usize) -> Option<Option<&str>> {
-        let scope = self.scope_at(caret)?;
-        let id = self.lookup(scope, name, false, caret, false)?;
-        Some(self.symbols[id].type_name.as_deref())
+        Some(self.value_at(name, caret)?.type_name.as_deref())
+    }
+
+    /// The type of a value path (`self`, `this.items`) at `caret`: `None` when its head is no
+    /// variable, parameter or alias, `Some(None)` when its type is not known, and otherwise the type
+    /// text, following each field through the types the script declares.
+    pub fn type_of_path(&self, path: &str, caret: usize) -> Option<Option<String>> {
+        let mut segments = path.split('.');
+        let head = self.value_at(segments.next()?, caret)?;
+        let Some(mut type_name) = head.type_name.clone() else {
+            return Some(None);
+        };
+        for field in segments {
+            let next = self
+                .type_info(&type_name)
+                .and_then(|info| info.fields.iter().find(|(name, _)| name == field))
+                .and_then(|(_, written)| written.clone());
+            let Some(next) = next else {
+                return Some(None);
+            };
+            type_name = next;
+        }
+        Some(Some(type_name))
+    }
+
+    /// The functions and methods called `name` that are visible at `caret`: every overload of the
+    /// one a call there means.
+    pub fn callables_named(&self, name: &str, caret: usize) -> Vec<&Symbol> {
+        let Some(scope) = self.scope_at(caret) else {
+            return Vec::new();
+        };
+        let Some(first) = self.lookup(scope, name, true, caret, false) else {
+            return Vec::new();
+        };
+        let home = self.symbols[first].scope;
+        self.scopes[home]
+            .symbols
+            .iter()
+            .map(|id| &self.symbols[*id])
+            .filter(|symbol| {
+                symbol.name == name && symbol.kind.callable() && symbol.visible_from <= caret
+            })
+            .collect()
+    }
+
+    /// The methods called `name`, for a receiver of `type_name` when it is known and of any type
+    /// when it is not.
+    pub fn methods_named(&self, name: &str, type_name: Option<&str>) -> Vec<&Symbol> {
+        self.symbols
+            .iter()
+            .filter(|symbol| symbol.kind == Kind::Method && symbol.name == name)
+            .filter(|symbol| {
+                type_name.is_none_or(|wanted| {
+                    symbol.receiver.as_deref().map(short_name) == Some(short_name(wanted))
+                })
+            })
+            .collect()
     }
 
     /// The `type` named `name` (a library's `alias.Name` is its `Name`).
@@ -612,9 +689,14 @@ impl Builder<'_> {
                 .last()
                 .map_or((0, Body::Code), |frame| (frame.scope, frame.body));
             if let (Some(first), Some(last)) = (statement.tokens.first(), statement.tokens.last()) {
+                // Through the end of the line: a caret after trailing spaces is still in the statement.
+                let mut end = last.range.end;
+                while end < self.chars.len() && !matches!(self.chars[end], '\n' | '\r') {
+                    end += 1;
+                }
                 self.table
                     .statement_scopes
-                    .push((first.range.start..last.range.end, scope));
+                    .push((first.range.start..end, scope));
             }
             pending = self.statement(index, scope, body);
         }
@@ -646,6 +728,7 @@ impl Builder<'_> {
             body: None,
             type_name: None,
             receiver: None,
+            params: Vec::new(),
         });
         self.table.scopes[scope].symbols.push(id);
         id
@@ -835,6 +918,18 @@ impl Builder<'_> {
             .collect()
     }
 
+    /// The text of `tokens` as written, with each run of whitespace (a wrapped line included) a
+    /// single space: `float factor = 2.0`.
+    fn written(&self, tokens: &[Tok]) -> String {
+        let (Some(first), Some(last)) = (tokens.first(), tokens.last()) else {
+            return String::new();
+        };
+        let raw: String = self.chars[first.range.start..last.range.end]
+            .iter()
+            .collect();
+        raw.split_whitespace().collect::<Vec<_>>().join(" ")
+    }
+
     /// The type words before a name (`var`, qualifiers and then the type): their text, if any.
     fn written_type(&self, tokens: &[Tok]) -> Option<String> {
         let skip = tokens
@@ -954,8 +1049,7 @@ impl Builder<'_> {
 
         let mut start = name_index + 2;
         let mut depth = 0usize;
-        let mut receiver = None;
-        let mut first = true;
+        let mut declared: Vec<ParamInfo> = Vec::new();
         for offset in name_index + 2..close {
             match tokens[offset].kind {
                 TokenKind::LeftParen | TokenKind::LeftBracket => depth += 1,
@@ -963,22 +1057,18 @@ impl Builder<'_> {
                     depth = depth.saturating_sub(1);
                 }
                 TokenKind::Comma if depth == 0 => {
-                    let declared = self.parameter(&tokens[start..offset], scope, body);
-                    if std::mem::take(&mut first) {
-                        receiver = declared;
-                    }
+                    declared.extend(self.parameter(&tokens[start..offset], scope, body));
                     start = offset + 1;
                 }
                 _ => {}
             }
         }
-        let declared = self.parameter(&tokens[start..close], scope, body);
-        if first {
-            receiver = declared;
-        }
+        declared.extend(self.parameter(&tokens[start..close], scope, body));
         if method {
-            self.table.symbols[id].receiver = receiver;
+            self.table.symbols[id].receiver =
+                declared.first().and_then(|first| first.type_name.clone());
         }
+        self.table.symbols[id].params = declared.into_iter().map(|info| info.sig).collect();
         // An inline body: `f(x) => x * 2`.
         self.uses(&tokens[close + 2..], body);
         Some(Pending {
@@ -987,8 +1077,8 @@ impl Builder<'_> {
         })
     }
 
-    /// One parameter: `[qualifier] [type] name [= default]`. Returns its declared type.
-    fn parameter(&mut self, tokens: &[Tok], outer: ScopeId, body: ScopeId) -> Option<String> {
+    /// One parameter: `[qualifier] [type] name [= default]`.
+    fn parameter(&mut self, tokens: &[Tok], outer: ScopeId, body: ScopeId) -> Option<ParamInfo> {
         if tokens.is_empty() {
             return None;
         }
@@ -1008,10 +1098,16 @@ impl Builder<'_> {
             .collect();
         self.uses(&outside, outer);
         let range = tokens[name.0].range.clone();
-        let declared = self.written_type(&tokens[..name.0]);
+        let type_name = self.written_type(&tokens[..name.0]);
         let id = self.declare(body, name.1, Kind::Parameter, range.clone(), range.end);
-        self.table.symbols[id].type_name.clone_from(&declared);
-        declared
+        self.table.symbols[id].type_name.clone_from(&type_name);
+        Some(ParamInfo {
+            sig: ParamSig {
+                name: name.1.to_owned(),
+                text: self.written(tokens),
+            },
+            type_name,
+        })
     }
 
     fn for_loop(&mut self, tokens: &[Tok], scope: ScopeId) -> Pending {
