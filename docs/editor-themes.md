@@ -248,6 +248,13 @@ sizes in both appearances; they were looked at, and the layout was changed for w
 tile miniatures, a preview that left no room for the colours, tabs that ran into the search at 320
 points).
 
+A release build was launched against an empty home folder: it ran for minutes, created the `editor_theme`
+table in a fresh database and did not crash. **No one has used the page in a real window**: the
+pictures above are rendered by the tests, not captured from the app, and driving the real window from
+a script was not possible here (the macOS automation prompt was never answered). Open Settings ▸
+Script Manager, pick each theme, edit a colour, change the font and size, and open a script with a
+second window before calling it done.
+
 Not verified: the colour picker's low-alpha hex round trip (the picker works on premultiplied colours,
 so a hex typed with a low alpha can come back a point or two off in a channel); Windows and Linux
 rendering; fonts other than the ones on the machine it was built on; iCloud (not synced).
