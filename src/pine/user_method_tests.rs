@@ -656,3 +656,152 @@ fn a_method_an_imported_library_exports_runs_on_a_receiver() {
     session.evaluate(&bars(3)).unwrap();
     assert_eq!(float(&session, "r"), 2.0 * 103.0);
 }
+
+// MARK: Realtime, strategies and alerts
+
+/// What a controller produced after each update: every plot's values, the closed trades and the
+/// alerts raised.
+type Snapshot = (Vec<Vec<Option<f64>>>, usize, usize);
+
+/// Feeds `source` three closed bars, then an open fourth that ticks three times, then the fifth bar
+/// (which closes the fourth), and returns what each update produced.
+fn ticked(source: &str) -> Vec<Snapshot> {
+    use crate::pine::execution::ExecutionController;
+    let mut controller = ExecutionController::new(
+        source,
+        HashMap::new(),
+        SymbolInfo::default(),
+        None,
+        Limits::default(),
+        &NoLibraries,
+        None,
+        None,
+    )
+    .expect("valid script");
+    let mut candles = bars(3);
+    let minute = 60_000;
+    let mut out = Vec::new();
+    let mut record = |update: crate::pine::execution::ExecutionUpdate| {
+        assert!(update.error.is_none(), "{:?}", update.error);
+        out.push((
+            update
+                .output
+                .plots
+                .iter()
+                .map(|plot| plot.values.clone())
+                .collect(),
+            update
+                .output
+                .strategy
+                .as_ref()
+                .map_or(0, |report| report.trades.len()),
+            update.alerts.len(),
+        ));
+    };
+    record(controller.update(&candles, None, 3 * minute + 1));
+    let mut live = bars(4).pop().expect("a fourth bar");
+    live.close_time = 10 * minute;
+    candles.push(live.clone());
+    for (step, close) in [120.0, 80.0, 130.0].into_iter().enumerate() {
+        live.close = close;
+        *candles.last_mut().expect("live bar") = live.clone();
+        record(controller.update(&candles, None, 4 * minute + 1_000 * (step as i64 + 1)));
+    }
+    // The fourth bar closes and the fifth opens.
+    let mut closed = live.clone();
+    closed.close_time = 4 * minute;
+    *candles.last_mut().expect("live bar") = closed;
+    let mut next = bars(5).pop().expect("a fifth bar");
+    next.close_time = 11 * minute;
+    candles.push(next);
+    record(controller.update(&candles, None, 5 * minute + 1_000));
+    out
+}
+
+fn script_for(body: &str) -> String {
+    source(body)
+}
+
+#[test]
+fn a_method_changes_state_across_ticks_as_its_function_twin_does() {
+    let methods = "type Acc\n    float total = 0.0\n    int count = 0\n\
+         method add(Acc this, float x) =>\n    this.total += x\n    this.count += 1\n    this\n\
+         method keep(array<float> v, float x) =>\n    v.push(x)\n    v\n\
+         var Acc acc = Acc.new()\n\
+         var array<float> seen = array.new_float()\n\
+         acc.add(close)\n\
+         seen.keep(close)\n\
+         plot(acc.count)\n\
+         plot(seen.size())\n\
+         plot(acc.total)\n";
+    let functions = "type Acc\n    float total = 0.0\n    int count = 0\n\
+         add(Acc this, float x) =>\n    this.total += x\n    this.count += 1\n    this\n\
+         keep(array<float> v, float x) =>\n    v.push(x)\n    v\n\
+         var Acc acc = Acc.new()\n\
+         var array<float> seen = array.new_float()\n\
+         add(acc, close)\n\
+         keep(seen, close)\n\
+         plot(acc.count)\n\
+         plot(seen.size())\n\
+         plot(acc.total)\n";
+    let by_method = ticked(&script_for(methods));
+    assert_eq!(by_method, ticked(&script_for(functions)));
+    // The open bar counts once however often it ticks, and again only when it closes.
+    let counts: Vec<f64> = by_method
+        .iter()
+        .map(|(plots, ..)| plots[0].last().copied().flatten().expect("a count"))
+        .collect();
+    assert_eq!(counts, [3.0, 4.0, 4.0, 4.0, 5.0]);
+    let sizes: Vec<f64> = by_method
+        .iter()
+        .map(|(plots, ..)| plots[1].last().copied().flatten().expect("a size"))
+        .collect();
+    assert_eq!(sizes, [3.0, 4.0, 4.0, 4.0, 5.0]);
+}
+
+#[test]
+fn a_method_in_a_strategy_condition_trades_as_its_function_twin_does() {
+    let strategy = |methods: bool| {
+        let (declare, test) = if methods {
+            (
+                "method crossed(float x, float y) => x > y\n",
+                "close.crossed(open)",
+            )
+        } else {
+            (
+                "crossed(float x, float y) => x > y\n",
+                "crossed(close, open)",
+            )
+        };
+        format!(
+            "//@version=6\nstrategy(\"S\", overlay = true)\n{declare}\
+             if {test} and bar_index % 2 == 0\n    strategy.entry(\"L\", strategy.long)\n\
+             if bar_index % 2 == 1\n    strategy.close(\"L\")\nplot(close)\n"
+        )
+    };
+    let by_method = ticked(&strategy(true));
+    assert_eq!(by_method, ticked(&strategy(false)));
+    // Entered on bar 0, closed on bar 1: the strategy did trade.
+    assert!(by_method.last().is_some_and(|(_, trades, _)| *trades > 0));
+}
+
+#[test]
+fn a_method_in_an_alert_condition_alerts_as_its_function_twin_does() {
+    let alerting = |methods: bool| {
+        let (declare, test) = if methods {
+            (
+                "method rose(float x, float y) => x > y\n",
+                "close.rose(open)",
+            )
+        } else {
+            ("rose(float x, float y) => x > y\n", "rose(close, open)")
+        };
+        format!(
+            "//@version=6\nindicator(\"A\")\n{declare}\
+             if {test}\n    alert(\"up\", alert.freq_once_per_bar_close)\nplot(close)\n"
+        )
+    };
+    let by_method = ticked(&alerting(true));
+    assert_eq!(by_method, ticked(&alerting(false)));
+    assert!(by_method.iter().any(|(.., alerts)| *alerts > 0));
+}
