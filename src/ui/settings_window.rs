@@ -32,6 +32,7 @@ pub const WINDOW_SIZE: Vec2 = Vec2::new(800.0, 580.0);
 pub enum SettingsSection {
     #[default]
     Appearance,
+    ScriptManager,
     Alpaca,
     CoinMarketCap,
     Ai,
@@ -45,8 +46,9 @@ pub enum SettingsSection {
 }
 
 impl SettingsSection {
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 12] = [
         Self::Appearance,
+        Self::ScriptManager,
         Self::Alpaca,
         Self::CoinMarketCap,
         Self::Ai,
@@ -69,6 +71,7 @@ impl SettingsSection {
     pub fn title(self) -> &'static str {
         match self {
             Self::Appearance => "Appearance",
+            Self::ScriptManager => "Script Manager",
             Self::Alpaca => "Alpaca",
             Self::CoinMarketCap => "CoinMarketCap",
             Self::Ai => "AI Assistant",
@@ -86,6 +89,7 @@ impl SettingsSection {
     pub fn tint(self) -> Color32 {
         match self {
             Self::Appearance => Color32::from_rgb(94, 92, 230),
+            Self::ScriptManager => Color32::from_rgb(172, 142, 104),
             Self::Alpaca => Color32::from_rgb(255, 159, 10),
             Self::CoinMarketCap => Color32::from_rgb(10, 132, 255),
             Self::Ai => Color32::from_rgb(255, 214, 10),
@@ -103,6 +107,7 @@ impl SettingsSection {
     pub fn key(self) -> &'static str {
         match self {
             Self::Appearance => "appearance",
+            Self::ScriptManager => "scriptmanager",
             Self::Alpaca => "alpaca",
             Self::CoinMarketCap => "coinmarketcap",
             Self::Ai => "ai",
@@ -154,6 +159,7 @@ pub struct SettingsInput<'a> {
     pub ai: crate::ui::settings_ai::AiSettingsInput<'a>,
     pub updates: &'a crate::host::update_host::UpdateHost,
     pub sync: &'a crate::host::sync_host::SyncHost,
+    pub editor_themes: &'a crate::host::editor_theme_host::EditorThemeHost,
     pub now_ms: i64,
 }
 
@@ -166,6 +172,7 @@ pub struct SettingsState {
     pub storage: StorageState,
     pub mcp: McpSettingsState,
     pub snapshots: crate::ui::settings_snapshots::SnapshotsState,
+    pub script_manager: crate::ui::settings_script_manager::ScriptManagerState,
 }
 
 // MARK: Pure labels
@@ -314,13 +321,14 @@ impl NotificationSwitch {
 
 // MARK: View
 
-const FOOTER_HEIGHT: f32 = 56.0;
-const INSET: f32 = 24.0;
+pub(super) const FOOTER_HEIGHT: f32 = 56.0;
+pub(super) const INSET: f32 = 24.0;
 
 impl SettingsSection {
-    fn icon(self) -> Icon {
+    pub(super) fn icon(self) -> Icon {
         match self {
             Self::Appearance => Icon::Paintbrush,
+            Self::ScriptManager => Icon::Curlybraces,
             Self::Alpaca => Icon::ChartLine,
             Self::CoinMarketCap => Icon::Gauge,
             Self::Ai => Icon::Sparkles,
@@ -467,6 +475,10 @@ pub fn show(
         // Coming back to the page reads the sizes again.
         state.storage.leave();
     }
+    if section != SettingsSection::ScriptManager {
+        // Coming back to the page starts at the themes, not in the middle of an edit.
+        state.script_manager.leave();
+    }
     match section {
         SettingsSection::Appearance => {
             page_shell(
@@ -481,6 +493,14 @@ pub fn show(
                         actions.push(SettingsAction::SetTheme(theme));
                     }
                 },
+            );
+        }
+        SettingsSection::ScriptManager => {
+            crate::ui::settings_script_manager::page(
+                &mut page,
+                section,
+                &mut state.script_manager,
+                input.editor_themes,
             );
         }
         SettingsSection::Alpaca => {
@@ -691,7 +711,7 @@ fn sidebar(ui: &mut egui::Ui, state: &mut SettingsState) {
 
 /// One page: the sheet-style header and the scrolling content. With `has_footer`, returns the
 /// bar pinned under it, for the page's actions.
-fn page_shell(
+pub(super) fn page_shell(
     ui: &mut egui::Ui,
     section: SettingsSection,
     subtitle: &str,

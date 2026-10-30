@@ -11,7 +11,7 @@ use std::ops::Range;
 
 #[derive(Default)]
 pub(super) struct NavState {
-    table: Option<(u64, Arc<SymbolTable>)>,
+    pub(super) table: Option<(u64, Arc<SymbolTable>)>,
     /// The character under the pointer when the context menu opened.
     menu_target: Option<usize>,
     pub(super) rename: Option<RenameBox>,
@@ -466,7 +466,7 @@ pub(super) fn rename_box(ctx: &egui::Context, state: &mut EditorState) -> bool {
                     );
                     let output = egui::TextEdit::singleline(&mut rename.text)
                         .id(field)
-                        .font(FontId::monospace(FONT_SIZE))
+                        .font(editor_appearance::editor_font().code(ctx))
                         .desired_width(f32::INFINITY)
                         .show(ui);
                     let response = output.response;

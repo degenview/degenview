@@ -9,7 +9,7 @@ use super::diff::{ChangeKind, DiffHunk};
 use super::diff_view;
 use super::syntax;
 use crate::ui::icons::{self, Icon};
-use crate::ui::{kit, sheet, theme};
+use crate::ui::{editor_appearance, kit, sheet, theme};
 use eframe::egui::{
     self, Align, Align2, Color32, FontId, Id, Key, Layout, Rect, Sense, Stroke, Ui, UiBuilder,
     epaint::text::LayoutJob, pos2, vec2,
@@ -454,7 +454,7 @@ fn diff_pane(
 ) {
     let mut pane = ui.new_child(UiBuilder::new().max_rect(rect));
     pane.set_clip_rect(rect.intersect(ui.clip_rect()));
-    let font = FontId::monospace(CODE_SIZE);
+    let font = editor_appearance::editor_font().at(ui.ctx(), CODE_SIZE);
     let char_width = pane.fonts_mut(|fonts| fonts.glyph_width(&font, '0'));
     let rows = &review.rows;
     let code_left = NUMBER_WIDTH * 2.0 + SIGN_WIDTH;
@@ -522,13 +522,14 @@ fn paint_row(
             theme::text_tertiary(),
         );
     };
+    let look = editor_appearance::chrome();
     let code = |text: &str, color: Color32, colored: bool| {
         let spans = if colored {
-            syntax::classify(text)
+            syntax::classify(text, None)
         } else {
             Vec::new()
         };
-        let mut job = syntax::layout_job(text, &spans, font.clone(), color);
+        let mut job = syntax::layout_job(text, &spans, font.clone(), None, &look, color);
         job.wrap.max_width = f32::INFINITY;
         let galley = painter.layout_job(job);
         let at = pos2(code_left, middle - galley.size().y / 2.0);

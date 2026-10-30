@@ -77,6 +77,7 @@ pub mod store;
 pub mod symbols;
 pub mod syntax;
 mod tab_chrome;
+pub mod theme_preview;
 mod unsaved;
 mod workspace;
 

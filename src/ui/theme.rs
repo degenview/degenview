@@ -479,7 +479,9 @@ pub fn with_alpha(color: Color32, opacity: f32) -> Color32 {
     )
 }
 
-/// Syntax colours: `PineSyntaxTheme.standard`, the system colours of the active appearance.
+/// The macOS system colours the app uses for code-like values outside the editor: sample code in
+/// empty states, the debugger's value types, status text. The editor's own colours are its theme's
+/// (`ui::editor_appearance`).
 pub mod syntax {
     use super::{Color32, pick};
 
@@ -499,28 +501,14 @@ pub mod syntax {
     system! {
         /// `systemPurple`.
         keyword: (0xBF, 0x5A, 0xF2), (0xAF, 0x52, 0xDE);
-        /// `systemIndigo`.
-        r#type: (0x5E, 0x5C, 0xE6), (0x58, 0x56, 0xD6);
-        /// `systemTeal`.
-        namespace: (0x40, 0xC8, 0xE0), (0x30, 0xB0, 0xC7);
         /// `systemBlue`.
         function: (0x0A, 0x84, 0xFF), (0x00, 0x7A, 0xFF);
         /// `systemGreen`.
         variable: (0x30, 0xD1, 0x58), (0x28, 0xA7, 0x45);
-        /// `systemMint`.
-        constant: (0x63, 0xE6, 0xE2), (0x00, 0xA8, 0xA0);
         /// `systemOrange`.
         number: (0xFF, 0x9F, 0x0A), (0xE8, 0x80, 0x00);
         /// `systemRed`.
         string: (0xFF, 0x45, 0x3A), (0xFF, 0x3B, 0x30);
-        /// `secondaryLabelColor`.
-        comment: (152, 152, 157), (110, 110, 115);
-        /// `systemBrown`.
-        annotation: (0xAC, 0x8E, 0x68), (0xA2, 0x84, 0x5E);
-        /// `systemGray`.
-        operator: (0x8E, 0x8E, 0x93), (0x8E, 0x8E, 0x93);
-        /// `systemPink`.
-        color_literal: (0xFF, 0x37, 0x5F), (0xFF, 0x2D, 0x55);
     }
 }
 
@@ -533,7 +521,7 @@ pub const SYSTEM_ACCENT: Color32 = Color32::from_rgb(10, 132, 255);
 /// a machine without the files simply keeps the defaults. STIX Two Math and Apple Symbols go last
 /// in both families so characters the others lack — "𝓑𝓾𝔂" and other math alphanumerics, arrows,
 /// geometric shapes — draw instead of showing tofu squares.
-fn install_fonts(ctx: &egui::Context) {
+fn base_fonts() -> egui::FontDefinitions {
     let mut fonts = egui::FontDefinitions::default();
     for (name, path, family) in [
         (
@@ -581,7 +569,83 @@ fn install_fonts(ctx: &egui::Context) {
         }
     }
     add_symbol_fallback(&mut fonts);
-    ctx.set_fonts(fonts);
+    fonts
+}
+
+/// The app's fonts without the editor's choice, read from the system once.
+fn system_fonts() -> &'static egui::FontDefinitions {
+    static FONTS: std::sync::OnceLock<egui::FontDefinitions> = std::sync::OnceLock::new();
+    FONTS.get_or_init(base_fonts)
+}
+
+/// What the editor's code family starts with.
+#[derive(Clone)]
+pub enum EditorFontSource {
+    /// The system's monospace font alone.
+    System,
+    /// The font that ships with the app: JetBrains Mono, the default.
+    Bundled,
+    /// A font a person picked, read from its file.
+    File(std::sync::Arc<egui::FontData>),
+}
+
+/// JetBrains Mono NL Regular (`assets/fonts`, SIL OFL 1.1; the licence and where the file comes from
+/// are in `assets/fonts/README.md`): the font of the editor's code unless a person picks another. The
+/// NL build has no ligatures, which the editor could not switch on or off.
+pub fn bundled_editor_font() -> std::sync::Arc<egui::FontData> {
+    static FONT: std::sync::OnceLock<std::sync::Arc<egui::FontData>> = std::sync::OnceLock::new();
+    const JETBRAINS_MONO: &[u8] = include_bytes!("../../assets/fonts/JetBrainsMonoNL-Regular.ttf");
+    FONT.get_or_init(|| std::sync::Arc::new(egui::FontData::from_static(JETBRAINS_MONO)))
+        .clone()
+}
+
+/// The app's fonts plus the family the editor's code is set in: the editor's font first, then the
+/// monospace font and its fallbacks, so a character the editor's font lacks (an arrow, a symbol) still
+/// draws. The family is always defined, so naming it can never fail.
+fn font_definitions(editor: &EditorFontSource) -> egui::FontDefinitions {
+    let mut fonts = system_fonts().clone();
+    let mut chain = fonts
+        .families
+        .get(&egui::FontFamily::Monospace)
+        .cloned()
+        .unwrap_or_default();
+    let data = match editor {
+        EditorFontSource::System => None,
+        EditorFontSource::Bundled => Some(bundled_editor_font()),
+        EditorFontSource::File(data) => Some(data.clone()),
+    };
+    if let Some(data) = data {
+        // A font a person picked comes first and the built-in one next, so a character it lacks
+        // draws in the font the editor is meant to look like before the system's fallbacks.
+        if matches!(editor, EditorFontSource::File(_)) {
+            fonts
+                .font_data
+                .insert(EDITOR_FALLBACK.to_owned(), bundled_editor_font());
+            chain.insert(0, EDITOR_FALLBACK.to_owned());
+        }
+        fonts.font_data.insert(EDITOR_FONT.to_owned(), data);
+        chain.insert(0, EDITOR_FONT.to_owned());
+    }
+    fonts
+        .families
+        .insert(egui::FontFamily::Name(EDITOR_FAMILY.into()), chain);
+    fonts
+}
+
+const EDITOR_FONT: &str = "editor-code-font";
+const EDITOR_FALLBACK: &str = "editor-code-fallback";
+use crate::ui::editor_appearance::EDITOR_FAMILY;
+
+/// The app's fonts with the bundled editor font, which is what the editor is in until the host says
+/// otherwise: so a context that never hears from the host (a snapshot, a test) draws the default.
+fn install_fonts(ctx: &egui::Context) {
+    ctx.set_fonts(font_definitions(&EditorFontSource::Bundled));
+}
+
+/// Sets the font the editor's code is drawn in. egui compares the new fonts to the old byte for byte, so
+/// this is called when the choice changes, not every frame.
+pub fn install_editor_font(ctx: &egui::Context, font: &EditorFontSource) {
+    ctx.set_fonts(font_definitions(font));
 }
 
 /// A subset of Noto Sans Symbols 2 (`assets/fonts`), the last fallback in both families. Neither

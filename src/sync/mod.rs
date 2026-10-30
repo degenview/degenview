@@ -43,3 +43,5 @@ mod portfolio_tests;
 mod replay_tests;
 #[cfg(test)]
 mod script_tests;
+#[cfg(test)]
+mod theme_tests;

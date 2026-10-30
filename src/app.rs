@@ -2,6 +2,7 @@ use crate::host::alert_host::AlertHost;
 use crate::host::alert_runtime::{
     AlertRuntimeLease, AlertRuntimeRunner, GuiRuntimeDecision, gui_runtime_decision,
 };
+use crate::host::editor_theme_host::EditorThemeHost;
 use crate::host::mcp_host::{self, McpHost};
 use crate::host::paper_host::PaperHost;
 use crate::host::pine_subscription_host::PineSubscriptionHost;
@@ -278,6 +279,8 @@ pub struct DegenViewApp {
     webhook_host: Arc<Mutex<WebhookHost>>,
     /// What the user chose about chart snapshots, shared by every window and Settings.
     snapshots: SnapshotHost,
+    /// The editor's themes and typography, shared by every window and Settings.
+    editor_themes: EditorThemeHost,
     /// The MCP server's lifecycle, credentials and request queue.
     mcp_host: Arc<Mutex<McpHost>>,
     alert_host: Arc<Mutex<AlertHost>>,
@@ -722,8 +725,25 @@ impl DegenViewApp {
         let portfolio = Arc::new(Mutex::new(PortfolioHost::load(store.clone())));
         let paper = Arc::new(Mutex::new(PaperHost::load(store.clone())));
         let snapshots = SnapshotHost::load(store.clone());
+        let editor_themes = {
+            let loaded = store
+                .lock()
+                .expect("store lock poisoned")
+                .load_editor_themes();
+            let repaint = creation.egui_ctx.clone();
+            let catalog = crate::service::font_catalog::FontCatalog::start(
+                crate::service::font_catalog::system_font_dirs(),
+                move || repaint.request_repaint(),
+            );
+            let host = EditorThemeHost::new(loaded, catalog);
+            host.attach(&creation.egui_ctx);
+            host
+        };
         let updates = UpdateHost::load(&store);
-        let webhook_host = Arc::new(Mutex::new(WebhookHost::new(snapshots.clone())));
+        let webhook_host = Arc::new(Mutex::new(WebhookHost::new(
+            snapshots.clone(),
+            editor_themes.clone(),
+        )));
         let mcp_host = {
             let ctx = creation.egui_ctx.clone();
             Arc::new(Mutex::new(McpHost::load(
@@ -867,6 +887,7 @@ impl DegenViewApp {
             paper,
             webhook_host,
             snapshots,
+            editor_themes,
             mcp_host,
             alert_host,
             alert_runner: AlertRuntimeRunner::new(AlertRuntimeOwner::App),
@@ -1253,6 +1274,14 @@ impl DegenViewApp {
     /// Quits, but first lets each Script Manager window ask about its unsaved scripts, one window
     /// at a time. Closing the hidden root window ends the app through the same exit path ⌘Q
     /// always took, so the session is saved first.
+    /// Saves the editor's themes a moment after they last changed, and picks up a font that has
+    /// been read. The store is held only for the write.
+    fn tick_editor_themes(&self) {
+        if let Ok(store) = self.store.lock() {
+            self.editor_themes.tick(&store, Instant::now());
+        }
+    }
+
     fn request_quit(&mut self, ctx: &egui::Context) {
         let asking = self
             .tabs
@@ -1952,6 +1981,14 @@ impl DegenViewApp {
                 && let Ok(mut portfolio) = self.portfolio.lock()
             {
                 portfolio.reload();
+            }
+            if (report.tables.contains("editor_theme")
+                || report
+                    .settings
+                    .contains(crate::model::editor_theme::prefs::KEY))
+                && let Ok(store) = self.store.lock()
+            {
+                self.editor_themes.reload(&store);
             }
             if report.settings.contains(crate::ui::theme::THEME_KEY) {
                 let theme = self
@@ -2664,6 +2701,7 @@ impl eframe::App for DegenViewApp {
         self.tick_mcp(ctx);
         self.updates.tick(ctx);
         self.tick_sync(ctx);
+        self.tick_editor_themes();
         if self.session_last_saved_at.elapsed() >= Duration::from_secs(10) {
             self.save_session();
         }
@@ -2687,6 +2725,9 @@ impl eframe::App for DegenViewApp {
     }
 
     fn save(&mut self, _storage: &mut dyn eframe::Storage) {
+        if let Ok(store) = self.store.lock() {
+            self.editor_themes.flush(&store);
+        }
         // A layout with Autosave on is written before the session goes, even mid-debounce.
         for tab in &self.tabs {
             if let Ok(mut content) = tab.content.lock()

@@ -532,7 +532,7 @@ fn confirm(
     outcome
 }
 
-fn text_field(
+pub(super) fn text_field(
     ui: &mut Ui,
     id: Id,
     icon: Icon,

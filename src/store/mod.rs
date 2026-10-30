@@ -15,6 +15,7 @@ pub mod alert;
 pub mod asset_store;
 pub mod chart_template;
 pub mod drawing_template;
+pub mod editor_theme;
 pub mod mcp;
 pub mod paper;
 pub mod pine;
@@ -100,10 +101,11 @@ pub trait Document {
     fn document_id(&self) -> String;
 }
 
-pub(crate) const DOCUMENT_TABLES: [&str; 13] = [
+pub(crate) const DOCUMENT_TABLES: [&str; 14] = [
     "saved_view",
     "chart_template",
     "drawing_template",
+    "editor_theme",
     "tab",
     "watchlist",
     "drawing",
@@ -128,6 +130,12 @@ impl Store {
         let store = Self { connection };
         store.create_schema()?;
         Ok(store)
+    }
+
+    /// The connection, for a test that plants a row the app would never write.
+    #[cfg(test)]
+    pub(crate) fn raw_connection(&self) -> &Connection {
+        &self.connection
     }
 
     #[cfg(test)]

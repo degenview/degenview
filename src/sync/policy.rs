@@ -76,6 +76,8 @@ pub enum EntityKind {
     Watchlist,
     ChartTemplate,
     DrawingTemplate,
+    /// A custom editor theme.
+    EditorTheme,
     Script,
     Alert,
     Portfolio,
@@ -86,13 +88,14 @@ pub enum EntityKind {
 }
 
 impl EntityKind {
-    pub const ALL: [EntityKind; 12] = [
+    pub const ALL: [EntityKind; 13] = [
         Self::Layout,
         Self::LayoutDrawing,
         Self::DrawingAsset,
         Self::Watchlist,
         Self::ChartTemplate,
         Self::DrawingTemplate,
+        Self::EditorTheme,
         Self::Script,
         Self::Alert,
         Self::Portfolio,
@@ -109,6 +112,7 @@ impl EntityKind {
             Self::Watchlist => "watchlist",
             Self::ChartTemplate => "chart_template",
             Self::DrawingTemplate => "drawing_template",
+            Self::EditorTheme => "editor_theme",
             Self::Script => "script",
             Self::Alert => "alert",
             Self::Portfolio => "portfolio",
@@ -126,7 +130,7 @@ impl EntityKind {
         match self {
             Self::Layout | Self::LayoutDrawing | Self::DrawingAsset => Category::Layouts,
             Self::Watchlist => Category::Watchlists,
-            Self::ChartTemplate | Self::DrawingTemplate => Category::Templates,
+            Self::ChartTemplate | Self::DrawingTemplate | Self::EditorTheme => Category::Templates,
             Self::Script => Category::Scripts,
             Self::Alert => Category::Alerts,
             Self::Portfolio | Self::PortfolioTransaction => Category::Portfolios,
@@ -143,6 +147,7 @@ impl EntityKind {
             | Self::DrawingAsset
             | Self::ChartTemplate
             | Self::DrawingTemplate
+            | Self::EditorTheme
             | Self::Alert
             | Self::Portfolio
             | Self::PortfolioTransaction
@@ -184,6 +189,7 @@ pub fn table_policy(table: &str) -> TablePolicy {
         "watchlist" => TablePolicy::Synced(EntityKind::Watchlist),
         "chart_template" => TablePolicy::Synced(EntityKind::ChartTemplate),
         "drawing_template" => TablePolicy::Synced(EntityKind::DrawingTemplate),
+        "editor_theme" => TablePolicy::Synced(EntityKind::EditorTheme),
         "price_alert" => TablePolicy::Synced(EntityKind::Alert),
         "tab" => {
             TablePolicy::Local("per-device session; tab and chart ids are sequential counters")
@@ -240,7 +246,7 @@ pub enum SettingPolicy {
 /// Classifies a `setting` key. Unknown keys are local.
 pub fn setting_policy(key: &str) -> SettingPolicy {
     match key {
-        "appTheme" | "drawing.defaults" | "drawing.prefs" | "snapshot.prefs" => {
+        "appTheme" | "drawing.defaults" | "drawing.prefs" | "snapshot.prefs" | "editor.prefs" => {
             SettingPolicy::Portable(Merge::LastWriterWins)
         }
         "watchlist.flags" => SettingPolicy::Portable(Merge::ThreeWay),
@@ -276,6 +282,7 @@ mod tests {
                 "saved_view",
                 "chart_template",
                 "drawing_template",
+                "editor_theme",
                 "watchlist",
                 "portfolio",
                 "price_alert",
@@ -352,6 +359,25 @@ mod tests {
         assert_eq!(
             setting_policy("watchlist.flags"),
             SettingPolicy::Portable(Merge::ThreeWay)
+        );
+        assert_eq!(
+            setting_policy("editor.prefs"),
+            SettingPolicy::Portable(Merge::LastWriterWins)
+        );
+    }
+
+    #[test]
+    fn custom_editor_themes_travel_with_the_templates_switch() {
+        assert_eq!(EntityKind::EditorTheme.prefix(), "editor_theme");
+        assert_eq!(EntityKind::EditorTheme.category(), Category::Templates);
+        assert_eq!(EntityKind::EditorTheme.merge(), Merge::LastWriterWins);
+        assert_eq!(
+            EntityKind::from_prefix("editor_theme"),
+            Some(EntityKind::EditorTheme)
+        );
+        assert_eq!(
+            table_policy("editor_theme"),
+            TablePolicy::Synced(EntityKind::EditorTheme)
         );
     }
 

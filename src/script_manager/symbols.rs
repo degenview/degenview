@@ -127,6 +127,21 @@ impl SymbolTable {
             .map(|id| (id, self.symbols[id].declaration.clone()))
     }
 
+    /// Every name the table places, as the character range it covers and what its symbol was
+    /// declared as: each declaration, then each use. The highlighter reads it to tell a
+    /// parameter from a variable from a function.
+    pub fn resolved_names(&self) -> impl Iterator<Item = (Range<usize>, Kind)> + '_ {
+        let declarations = self
+            .symbols
+            .iter()
+            .map(|symbol| (symbol.declaration.clone(), symbol.kind));
+        let uses = self
+            .references
+            .iter()
+            .map(|reference| (reference.range.clone(), self.symbols[reference.symbol].kind));
+        declarations.chain(uses)
+    }
+
     pub fn symbol_at(&self, index: usize) -> Option<SymbolId> {
         self.name_at(index).map(|(id, _)| id)
     }

@@ -57,6 +57,7 @@ pub fn parse_path(output: &str) -> Option<PathBuf> {
 /// the matching uniform type identifiers instead.
 const CSV_EXTENSIONS: [&str; 3] = ["csv", "txt", "text"];
 const IMAGE_EXTENSIONS: [&str; 3] = ["png", "jpg", "jpeg"];
+const JSON_EXTENSIONS: [&str; 1] = ["json"];
 
 #[cfg(target_os = "linux")]
 mod portal {
@@ -113,6 +114,18 @@ pub fn choose_csv(prompt: &str) -> Result<Option<PathBuf>, String> {
     }
 }
 
+/// Asks for a JSON file to read.
+pub fn choose_json(prompt: &str) -> Result<Option<PathBuf>, String> {
+    #[cfg(target_os = "linux")]
+    {
+        Ok(portal::open(prompt, "JSON", &JSON_EXTENSIONS))
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        run(&open_script(prompt, &["public.json"]))
+    }
+}
+
 /// Asks for a PNG or JPEG picture to read.
 pub fn choose_image(prompt: &str) -> Result<Option<PathBuf>, String> {
     #[cfg(target_os = "linux")]
@@ -141,6 +154,22 @@ pub fn choose_save_path(prompt: &str, default_name: &str) -> Result<Option<PathB
 pub fn read_text(path: &std::path::Path) -> Result<String, String> {
     std::fs::read_to_string(path)
         .map_err(|error| format!("Could not read {}: {error}", path.display()))
+}
+
+/// Reads a chosen file as UTF-8 text, refusing one longer than `limit` bytes without reading it.
+pub fn read_text_up_to(path: &std::path::Path, limit: usize) -> Result<String, String> {
+    let length = std::fs::metadata(path)
+        .map_err(|error| format!("Could not read {}: {error}", path.display()))?
+        .len();
+    if length > limit as u64 {
+        return Err(format!(
+            "{} is {} KB, which is too large to be what was asked for (the limit is {} KB).",
+            path.display(),
+            length / 1024,
+            limit / 1024
+        ));
+    }
+    read_text(path)
 }
 
 /// Writes `text` to `path`.
@@ -198,6 +227,28 @@ mod tests {
         );
         assert_eq!(parse_path("\n"), None);
         assert_eq!(parse_path(""), None);
+    }
+
+    #[test]
+    fn a_file_over_the_limit_is_refused_unread() {
+        let path =
+            std::env::temp_dir().join(format!("degenview-limit-{}.json", std::process::id()));
+        write_text(&path, &"x".repeat(2048)).unwrap();
+        assert!(read_text_up_to(&path, 4096).is_ok());
+        let error = read_text_up_to(&path, 1024).unwrap_err();
+        assert!(error.contains("too large"), "{error}");
+        let _ = std::fs::remove_file(&path);
+        assert!(
+            read_text_up_to(&path, 4096)
+                .unwrap_err()
+                .starts_with("Could not read")
+        );
+    }
+
+    #[test]
+    fn the_json_panel_asks_for_json_only() {
+        assert!(open_script("Import", &["public.json"]).contains("{\"public.json\"}"));
+        assert_eq!(JSON_EXTENSIONS, ["json"]);
     }
 
     #[test]

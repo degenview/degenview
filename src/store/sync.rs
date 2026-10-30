@@ -968,6 +968,9 @@ impl Store {
                 sync_id,
                 by_id("drawing_template", sync_id)?,
             ),
+            EntityKind::EditorTheme => {
+                pick("editor_theme", sync_id, by_id("editor_theme", sync_id)?)
+            }
             EntityKind::Alert => pick("price_alert", sync_id, by_id("price_alert", sync_id)?),
             EntityKind::Setting => {
                 let value: Option<String> = self
@@ -1543,6 +1546,7 @@ impl Store {
             "saved_view",
             "chart_template",
             "drawing_template",
+            "editor_theme",
         ] {
             self.connection
                 .execute(&format!("DELETE FROM {table}"), [])?;
@@ -1730,6 +1734,7 @@ pub fn row_decodes(table: &str, payload: &str) -> bool {
         "drawing_template" => {
             serde_json::from_str::<model::drawing_template::DrawingTemplate>(payload).is_ok()
         }
+        "editor_theme" => serde_json::from_str::<model::editor_theme::EditorTheme>(payload).is_ok(),
         "price_alert" => serde_json::from_str::<model::alert::PriceAlert>(payload).is_ok(),
         "portfolio" => serde_json::from_str::<model::portfolio::Portfolio>(payload).is_ok(),
         "portfolio_transaction" => {
@@ -1784,6 +1789,7 @@ impl Store {
             EntityKind::Watchlist,
             EntityKind::ChartTemplate,
             EntityKind::DrawingTemplate,
+            EntityKind::EditorTheme,
             EntityKind::Alert,
             EntityKind::Portfolio,
             EntityKind::PortfolioTransaction,

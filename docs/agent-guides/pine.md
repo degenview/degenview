@@ -138,7 +138,17 @@
   four spaces; Pine braces are not paired.
 - `script_manager::syntax` is the sole per-text classification. Strings come from the lexer;
   comment scanning respects strings; names match whole tokens. Do not use lexer indent/dedent to
-  decide editor indentation because incomplete parentheses erase them.
+  decide editor indentation because incomplete parentheses erase them. It produces `SyntaxRole`s,
+  never colours: `classify(source, Some(&table))` takes the cached `EditorState::symbols()` (scope-aware,
+  authoritative for names), `classify(source, None)` is the lexical fallback for snippets outside the
+  editor. Colours come from `ui::editor_appearance` (`current()` for the editor, `chrome()` for code on
+  the app's own background): never call `theme::syntax` or a hard-coded colour from editor code. A new
+  role or surface goes in `model/editor_theme/roles.rs` and every built-in theme. The editor's font
+  comes from `editor_appearance::editor_font()` (size, line height, the `editor-code` family, whose default is
+  the built-in JetBrains Mono: `theme::bundled_editor_font`, licensed OFL, see `assets/fonts/README.md`) and its
+  layout constants follow it (`gutter_width`, `chrome_scale`): do not add a 13-point assumption. The
+  theme and font are kept by `host::editor_theme_host` (saved after a pause, never while Settings draws);
+  change them through it so every window repaints. See [Editor themes](../editor-themes.md).
 - Completion does not compile, run, re-lex, or access network/storage. Builtins come from the symbol
   catalog and signatures from `script_manager::signature`. Add new builtins to both tables.
   `array.*` and `map.*` names are offered straight from `array_builtins::KNOWN` / `map_builtins::NAMES`
