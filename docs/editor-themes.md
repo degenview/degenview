@@ -135,6 +135,13 @@ translucent). Those are our choices, and so is mapping its italics away: the edi
 detached window the same frame: only rendering inputs change, so cursor, selection, undo history,
 scroll position, unsaved text and diagnostics are untouched and nothing is recompiled.
 
+The preview's sample (`script_manager::theme_preview`) is editable. It is compiled with the real Pine
+compiler whenever its text changes (hashed, so a repaint or a theme change does not compile again), and the
+compiler's diagnostics feed the editor's underlines, so they follow the code as lines are added, removed
+or retyped, and vanish when the code is fixed. The sample ends with two lines that do produce problems
+(`plot(missing)`, an error; `input.int(..., display=display.none)`, a warning) so the underline colours
+can be judged; it is never run, only compiled.
+
 Code on the app's own background (the change popover, chat code blocks, the AI review) reads `chrome()`:
 Dark or Light by the app's appearance whatever theme the editor wears, because a theme's colours are
 chosen for its own background. It does use the editor's font family.

@@ -1,5 +1,6 @@
 use super::*;
 use crate::model::editor_theme::{SurfaceColor, SyntaxRole};
+use crate::pine::token::DiagnosticSeverity;
 use crate::script_manager::symbols;
 use crate::script_manager::syntax;
 use crate::ui::editor_appearance;
@@ -53,21 +54,112 @@ fn the_sample_shows_every_syntax_role() {
 #[test]
 fn the_marked_lines_carry_one_error_and_one_warning() {
     let preview = ThemePreview::new();
-    let kinds: Vec<_> = preview
+    let diagnostics = &preview.state.diagnostics;
+    assert_eq!(diagnostics.len(), 2);
+    // They are the compiler's, and sit on the lines that cause them.
+    let line_of = |needle: &str| SAMPLE[..SAMPLE.find(needle).unwrap()].matches('\n').count() + 1;
+    let on = |severity| {
+        let found: Vec<_> = diagnostics
+            .iter()
+            .filter(|d| d.severity == severity)
+            .collect();
+        assert_eq!(found.len(), 1, "{severity:?}");
+        found[0].range.start.line
+    };
+    assert_eq!(on(DiagnosticSeverity::Error), line_of("plot(missing)"));
+    assert_eq!(on(DiagnosticSeverity::Warning), line_of("hidden ="));
+    assert_eq!(preview.state.status, CompileStatus::Error);
+}
+
+/// The text the first problem underlines, as the editor finds it.
+fn underlined(preview: &ThemePreview, severity: DiagnosticSeverity) -> Vec<String> {
+    let text: Vec<char> = preview.state.source.chars().collect();
+    preview
         .state
         .diagnostics
         .iter()
-        .map(|d| d.severity)
-        .collect();
+        .filter(|d| d.severity == severity)
+        .map(|d| {
+            let from = crate::script_manager::syntax::compiled_utf16_to_char_index(
+                &preview.state.source,
+                d.range.start.offset,
+            );
+            let to = crate::script_manager::syntax::compiled_utf16_to_char_index(
+                &preview.state.source,
+                d.range.end.offset,
+            );
+            text[from..to].iter().collect()
+        })
+        .collect()
+}
+
+#[test]
+fn the_problems_follow_the_code_when_lines_are_added_or_removed() {
+    let mut preview = ThemePreview::new();
+    assert_eq!(underlined(&preview, DiagnosticSeverity::Error), ["missing"]);
+    let line_before = preview.state.diagnostics[0].range.start.line;
+
+    // Lines added above: the underline moves down with the code.
+    preview
+        .state
+        .source
+        .insert_str(0, "// one\n// two\n// three\n");
+    preview.recompile();
     assert_eq!(
-        kinds,
-        [DiagnosticSeverity::Error, DiagnosticSeverity::Warning]
+        preview.state.diagnostics[0].range.start.line,
+        line_before + 3,
+        "the error is three lines further down"
     );
-    for diagnostic in &preview.state.diagnostics {
-        let offset = diagnostic.range.start.offset;
-        let line = SAMPLE[..offset].matches('\n').count() + 1;
-        assert_eq!(diagnostic.range.start.line, line);
-    }
+    assert_eq!(underlined(&preview, DiagnosticSeverity::Error), ["missing"]);
+    assert_eq!(underlined(&preview, DiagnosticSeverity::Warning).len(), 1);
+
+    // Typing inside the line moves the rest of it, and the underline with it.
+    preview.state.source = preview
+        .state
+        .source
+        .replace("plot(missing)", "plot(  missing)");
+    preview.recompile();
+    assert_eq!(underlined(&preview, DiagnosticSeverity::Error), ["missing"]);
+
+    // Fixing it removes it; the warning is left; breaking something else adds a new one.
+    preview.state.source = preview
+        .state
+        .source
+        .replace("plot(  missing)", "plot(close)");
+    preview.recompile();
+    assert!(underlined(&preview, DiagnosticSeverity::Error).is_empty());
+    assert_eq!(preview.state.status, CompileStatus::Warning);
+    preview.state.source.push_str("plot(nothing_here)\n");
+    preview.recompile();
+    assert_eq!(
+        underlined(&preview, DiagnosticSeverity::Error),
+        ["nothing_here"]
+    );
+
+    // Everything fixed: nothing is underlined and the status says so.
+    preview.state.source = clean_sample().to_owned();
+    preview.recompile();
+    assert!(preview.state.diagnostics.is_empty());
+    assert_eq!(preview.state.status, CompileStatus::Valid);
+}
+
+#[test]
+fn the_text_is_compiled_only_when_it_changes() {
+    let mut preview = ThemePreview::new();
+    let first = preview.compiled;
+    preview.recompile();
+    assert_eq!(
+        preview.compiled, first,
+        "the same text is not compiled again"
+    );
+    // A diagnostic list handed in by hand survives a call that has nothing to do.
+    preview.state.diagnostics.clear();
+    preview.recompile();
+    assert!(preview.state.diagnostics.is_empty());
+    preview.state.source.push('\n');
+    preview.recompile();
+    assert_ne!(preview.compiled, first);
+    assert!(!preview.state.diagnostics.is_empty());
 }
 
 #[test]
