@@ -743,7 +743,8 @@ fn update_completion(
         state.completion = None;
         return false;
     };
-    let fresh = completion::complete(&state.source, caret, state.completion_explicit);
+    let table = state.symbols();
+    let fresh = completion::complete_with(&state.source, caret, state.completion_explicit, &table);
     state.completion = match (fresh, state.completion.take()) {
         (Some(next), Some(old)) => {
             let same = old.completion.items == next.items;
