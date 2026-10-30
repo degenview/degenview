@@ -254,6 +254,13 @@
   (it has its own `PINE9003`); `syminfo`, `strategy` and `runtime` stay open for values because Pine adds
   variables there over time (`syminfo.cftc_code` failed the corpus). A false error on a script that runs is
   worse than a missed typo.
+- **A call to the script's own function or method is bound too.** The type checker resolves it to a callable
+  (`callables.rs`; an id is the function's position among the top-level functions) and `call_binding::bind`
+  writes it on the call as `Expression::Call::target`; `Session::call_target` runs `Session::callables[target]`
+  and passes a dotted call's receiver as the first parameter (`Supplied`). A call the checker cannot type
+  keeps the by-name path in `user_methods.rs`. `Session::ignore_routes` turns off both `route` and `target`.
+  Read [User-defined methods](../pine-user-methods.md) before changing either side; check with
+  `tools/pine-bench.sh` (the `user_functions*` / `user_methods*` twins must stay equal).
 - **Builtin calls are routed, not searched for.** `Session::call` used to find a builtin by asking each
   family in turn on every execution (about 100 string tests before `ta.sma`, 180 before `plot`). When the
   session is built, `call_binding::bind` sets `Expression::Call::route` on every call that nothing in the
