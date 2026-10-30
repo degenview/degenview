@@ -5,6 +5,7 @@
 //! time as "unknown function".
 
 use super::edit_ops;
+use super::symbols::{self, SymbolTable};
 use super::syntax;
 use crate::pine::symbol_catalog as catalog;
 use crate::pine::{misc_builtins, registry, ta_extra};
@@ -16,6 +17,10 @@ use std::sync::OnceLock;
 pub enum Kind {
     /// A name the script declares: the closest scope, ranked first.
     User,
+    /// A field of a user type, after `value.`.
+    Field,
+    /// A method of the value's type, after `value.`.
+    Method,
     Variable,
     Function,
     Namespace,
@@ -30,6 +35,8 @@ impl Kind {
     pub fn badge(self) -> char {
         match self {
             Self::User => 'u',
+            Self::Field => 'p',
+            Self::Method => 'm',
             Self::Variable => 'v',
             Self::Function => 'f',
             Self::Namespace => 'n',
@@ -42,6 +49,8 @@ impl Kind {
     pub fn detail(self) -> &'static str {
         match self {
             Self::User => "your symbol",
+            Self::Field => "field",
+            Self::Method => "method",
             Self::Variable => "built-in variable",
             Self::Function => "built-in function",
             Self::Namespace => "namespace",
@@ -209,10 +218,21 @@ fn is_word(c: char) -> bool {
     c.is_alphanumeric() || c == '_'
 }
 
+/// [`complete_with`] for a caller that has no symbol table of the text.
+pub fn complete(source: &str, caret: usize, explicit: bool) -> Option<Completion> {
+    complete_with(source, caret, explicit, &symbols::analyze(source))
+}
+
 /// What to offer at `caret`, or `None`. It needs two typed letters, a trailing `.`, or an
 /// explicit request; it stays quiet inside strings and comments and when the only candidate is
-/// exactly what is typed.
-pub fn complete(source: &str, caret: usize, explicit: bool) -> Option<Completion> {
+/// exactly what is typed. `table` is the symbols of `source`: after `value.` it says what `value`
+/// is, so the fields and methods of its type are offered.
+pub fn complete_with(
+    source: &str,
+    caret: usize,
+    explicit: bool,
+    table: &SymbolTable,
+) -> Option<Completion> {
     let chars: Vec<char> = source.chars().collect();
     let caret = caret.min(chars.len());
     let mut start = caret;
@@ -235,6 +255,10 @@ pub fn complete(source: &str, caret: usize, explicit: bool) -> Option<Completion
     }
     let lower = prefix.to_lowercase();
     let dotted = prefix.contains('.');
+    // A variable the script declares answers for itself, builtin namespaces of the same spelling or not.
+    if dotted && let Some(items) = member_items(table, caret, &prefix) {
+        return finish(items, &prefix, start..caret);
+    }
 
     let mut items: Vec<Item> = Vec::new();
     let mut heads: BTreeSet<String> = BTreeSet::new();
@@ -275,6 +299,12 @@ pub fn complete(source: &str, caret: usize, explicit: bool) -> Option<Completion
                 }),
         );
     }
+    finish(items, &prefix, start..caret)
+}
+
+/// Ranks `items` for the typed `prefix` and wraps them, unless there is nothing to offer or the
+/// only candidate is exactly what is typed.
+fn finish(mut items: Vec<Item>, prefix: &str, replace: Range<usize>) -> Option<Completion> {
     if items.is_empty() || (items.len() == 1 && items[0].label == prefix) {
         return None;
     }
@@ -286,8 +316,8 @@ pub fn complete(source: &str, caret: usize, explicit: bool) -> Option<Completion
     items.sort_by(|a, b| {
         let key = |i: &Item| {
             (
-                !i.label.starts_with(&prefix),
-                !i.label.eq_ignore_ascii_case(&prefix),
+                !i.label.starts_with(prefix),
+                !i.label.eq_ignore_ascii_case(prefix),
                 i.kind,
                 i.label.to_lowercase(),
             )
@@ -295,10 +325,78 @@ pub fn complete(source: &str, caret: usize, explicit: bool) -> Option<Completion
         key(a).cmp(&key(b))
     });
     items.truncate(MAX_SUGGESTIONS);
-    Some(Completion {
-        replace: start..caret,
-        items,
-    })
+    Some(Completion { replace, items })
+}
+
+/// The types whose members are the builtin functions of a namespace of the same name
+/// (`array.push` is `values.push`), minus the namespace's constructors.
+const COLLECTION_TYPES: [&str; 9] = [
+    "array", "map", "matrix", "line", "label", "box", "table", "linefill", "polyline",
+];
+
+/// `value.partial` where the head of `value` is a variable the script declares: what can follow the
+/// dot. `None` when the head is no such variable (`ta.`, `array.`), so the builtin catalogue
+/// answers; an empty list when it is one whose type is not known, so nothing is guessed.
+fn member_items(table: &SymbolTable, caret: usize, prefix: &str) -> Option<Vec<Item>> {
+    let (path, partial) = prefix.rsplit_once('.')?;
+    let mut segments = path.split('.');
+    let declared = table.value_type_at(segments.next()?, caret)?;
+    let mut items = Vec::new();
+    let Some(mut type_name) = declared.map(str::to_owned) else {
+        return Some(items);
+    };
+    for field in segments {
+        let next = table
+            .type_info(&type_name)
+            .and_then(|info| info.fields.iter().find(|(name, _)| name == field))
+            .and_then(|(_, written)| written.clone());
+        let Some(next) = next else {
+            return Some(items);
+        };
+        type_name = next;
+    }
+    let lower = partial.to_lowercase();
+    let mut offer = |member: &str, kind: Kind, callable: bool| {
+        if member.to_lowercase().starts_with(&lower) {
+            items.push(Item {
+                label: format!("{path}.{member}"),
+                kind,
+                callable,
+            });
+        }
+    };
+    // `float[]` is an `array<float>`.
+    let base = if type_name.ends_with("[]") {
+        "array"
+    } else {
+        type_name.split('<').next().unwrap_or(&type_name)
+    };
+    if COLLECTION_TYPES.contains(&base) {
+        for item in builtins() {
+            if item.kind != Kind::Function {
+                continue;
+            }
+            let Some(member) = item
+                .label
+                .strip_prefix(base)
+                .and_then(|rest| rest.strip_prefix('.'))
+            else {
+                continue;
+            };
+            if member != "new" && member != "from" && !member.starts_with("new_") {
+                offer(member, Kind::Method, true);
+            }
+        }
+    } else if let Some(info) = table.type_info(&type_name) {
+        for (field, _) in &info.fields {
+            offer(field, Kind::Field, false);
+        }
+        for method in table.methods_of(&type_name) {
+            offer(method, Kind::Method, true);
+        }
+        offer("copy", Kind::Method, true);
+    }
+    Some(items)
 }
 
 #[cfg(test)]
@@ -499,5 +597,243 @@ lev",
     #[test]
     fn an_exact_lone_match_offers_nothing() {
         assert!(complete("barstate.isfirst", 16, false).is_none());
+    }
+
+    // MARK: Members after `value.`
+
+    const STATE: &str = "type ReactionState
+    float priorCore = na
+    float priorTop = na
+    float priorBottom = na
+    int reclaimDirection = 0
+    int breakBar = na
+    int acceptanceDirection = 0
+    int outsideCloses = 0
+
+method forget(ReactionState self) =>
+    self.reclaimDirection := 0
+    self.breakBar := na
+";
+
+    fn after(typed: &str) -> Option<Completion> {
+        let source = format!("{STATE}{typed}");
+        complete(&source, source.chars().count(), false)
+    }
+
+    fn labels_of(found: &Option<Completion>) -> Vec<String> {
+        found
+            .as_ref()
+            .map(|found| found.items.iter().map(|item| item.label.clone()).collect())
+            .unwrap_or_default()
+    }
+
+    #[test]
+    fn self_offers_the_fields_and_methods_of_its_type() {
+        let found = after("    self.");
+        let names = labels_of(&found);
+        for field in [
+            "priorCore",
+            "priorTop",
+            "priorBottom",
+            "reclaimDirection",
+            "breakBar",
+            "acceptanceDirection",
+            "outsideCloses",
+        ] {
+            let label = format!("self.{field}");
+            let item = found
+                .as_ref()
+                .unwrap()
+                .items
+                .iter()
+                .find(|item| item.label == label)
+                .unwrap_or_else(|| panic!("{label} in {names:?}"));
+            assert_eq!(item.kind, Kind::Field);
+            assert!(!item.callable);
+        }
+        // The method itself and the builtin `copy`, both callable; nothing else.
+        for method in ["self.forget", "self.copy"] {
+            let item = found
+                .as_ref()
+                .unwrap()
+                .items
+                .iter()
+                .find(|item| item.label == method)
+                .unwrap_or_else(|| panic!("{method} in {names:?}"));
+            assert_eq!(item.kind, Kind::Method);
+            assert!(item.callable);
+        }
+        assert_eq!(names.len(), 9, "{names:?}");
+        // The whole dotted word is replaced, as for `ta.`.
+        let source = format!("{STATE}    self.");
+        let end = source.chars().count();
+        assert_eq!(found.unwrap().replace, end - 5..end);
+    }
+
+    #[test]
+    fn typing_after_the_dot_narrows_the_members() {
+        assert_eq!(
+            labels_of(&after("    self.re")),
+            ["self.reclaimDirection"],
+            "case-insensitive prefix"
+        );
+        assert_eq!(
+            labels_of(&after("    self.PRIOR")),
+            ["self.priorBottom", "self.priorCore", "self.priorTop"]
+        );
+        assert!(after("    self.zzz").is_none());
+    }
+
+    #[test]
+    fn the_dot_is_completed_in_the_middle_of_a_method_too() {
+        let source = format!("{STATE}    self.\n    self.outsideCloses := 0\n");
+        let caret = format!("{STATE}    self.").chars().count();
+        let found = complete(&source, caret, false);
+        assert_eq!(labels_of(&found).len(), 9);
+    }
+
+    #[test]
+    fn a_name_that_is_not_a_declared_variable_offers_no_members() {
+        // Outside the method `self` is nothing.
+        assert!(after("self.").is_none());
+        // An untyped variable: nothing is guessed, and no builtin name matches.
+        let source = "x = 1\nx.";
+        assert!(complete(source, source.chars().count(), false).is_none());
+        // Builtin namespaces still answer for themselves.
+        assert!(complete("ta.", 3, false).is_some());
+    }
+
+    #[test]
+    fn a_typed_or_constructed_local_has_its_types_members() {
+        let zone = "type Zone\n    float top\n    float bottom\n";
+        for declaration in [
+            "zone = Zone.new(1.0, 2.0)",
+            "Zone zone = na",
+            "var Zone zone = Zone.new()",
+            "varip Zone zone = na",
+        ] {
+            let source = format!("{zone}{declaration}\nzone.");
+            let found = complete(&source, source.chars().count(), false);
+            assert_eq!(
+                labels_of(&found),
+                ["zone.bottom", "zone.top", "zone.copy"],
+                "{declaration}"
+            );
+        }
+    }
+
+    #[test]
+    fn collections_offer_their_namespace_without_constructors() {
+        for declaration in [
+            "window = array.new<float>()",
+            "window = array.new_float()",
+            "array<float> window = na",
+            "float[] window = na",
+        ] {
+            let source = format!("{declaration}\nwindow.pu");
+            let found = complete(&source, source.chars().count(), false);
+            let names = labels_of(&found);
+            assert!(
+                names.contains(&"window.push".to_owned()),
+                "{declaration}: {names:?}"
+            );
+            assert!(names.iter().all(|name| name.starts_with("window.pu")));
+        }
+        let source = "window = array.new_float()\nwindow.";
+        let names = labels_of(&complete(source, source.chars().count(), false));
+        assert!(names.contains(&"window.size".to_owned()));
+        assert!(!names.iter().any(|name| name.contains("new")), "{names:?}");
+        assert!(!names.contains(&"window.from".to_owned()));
+        let source = "m = map.new<string, int>()\nm.";
+        let names = labels_of(&complete(source, source.chars().count(), false));
+        assert!(names.contains(&"m.put".to_owned()) && names.contains(&"m.get".to_owned()));
+        let source = "ln = line.new(0, 1, 2, 3)\nln.set";
+        let names = labels_of(&complete(source, source.chars().count(), false));
+        assert!(names.contains(&"ln.set_x1".to_owned()), "{names:?}");
+    }
+
+    #[test]
+    fn a_field_of_collection_type_is_followed_through_the_path() {
+        let source = "type Book\n    array<float> items\n    Book next\n\
+                      method top(Book this) =>\n    this.items.pu";
+        let found = complete(source, source.chars().count(), false);
+        assert_eq!(
+            labels_of(&found),
+            ["this.items.push"].map(str::to_owned).to_vec(),
+        );
+        // A field whose type is another user type.
+        let source = "type Book\n    array<float> items\n    Book next\n\
+                      method top(Book this) =>\n    this.next.";
+        let names = labels_of(&complete(source, source.chars().count(), false));
+        assert!(names.contains(&"this.next.items".to_owned()));
+        assert!(names.contains(&"this.next.next".to_owned()));
+        assert!(names.contains(&"this.next.top".to_owned()));
+        // A field of unknown type ends the path.
+        let source = "type Book\n    items\nmethod top(Book this) =>\n    this.items.";
+        assert!(complete(source, source.chars().count(), false).is_none());
+    }
+
+    #[test]
+    fn only_the_methods_of_the_receivers_type_are_offered() {
+        let source = "type Dog\n    int legs\ntype Bird\n    int legs\n\
+                      method bark(Dog this) => 1\n\
+                      method chirp(Bird this) => 2\n\
+                      method describe(Dog this) => 3\n\
+                      method describe(Bird this) => 4\n\
+                      method twice(float this) => this * 2.0\n\
+                      d = Dog.new(4)\nd.";
+        let names = labels_of(&complete(source, source.chars().count(), false));
+        assert_eq!(
+            names,
+            ["d.legs", "d.bark", "d.copy", "d.describe"],
+            "fields, then methods by name"
+        );
+    }
+
+    #[test]
+    fn a_library_types_methods_match_by_its_short_name() {
+        let source = "type Zone\n    float top\nmethod grow(Zone this) => this\n\
+                      method shrink(lib.Zone this) => this\nz = Zone.new(1.0)\nz.";
+        let names = labels_of(&complete(source, source.chars().count(), false));
+        assert!(names.contains(&"z.grow".to_owned()) && names.contains(&"z.shrink".to_owned()));
+    }
+
+    #[test]
+    fn members_survive_crlf_and_astral_characters() {
+        let source = "// 🙂🙂\r\ntype Zone\r\n    float top\r\n    float bottom\r\n\r\n\
+                      method flip(Zone this) =>\r\n    this.";
+        let caret = source.chars().count();
+        let found = complete(source, caret, false).expect("members");
+        assert_eq!(
+            found.replace,
+            caret - 5..caret,
+            "a character range, not bytes"
+        );
+        assert_eq!(
+            found
+                .items
+                .iter()
+                .map(|i| i.label.as_str())
+                .collect::<Vec<_>>(),
+            ["this.bottom", "this.top", "this.copy", "this.flip"]
+        );
+    }
+
+    #[test]
+    fn a_parameter_shadows_a_global_of_the_same_name() {
+        let source = "type Dog\n    int legs\ntype Bird\n    int wings\n\
+                      self = Bird.new(2)\n\
+                      method go(Dog self) =>\n    self.";
+        let names = labels_of(&complete(source, source.chars().count(), false));
+        assert_eq!(names, ["self.legs", "self.copy", "self.go"]);
+    }
+
+    #[test]
+    fn accepting_a_method_writes_the_call_and_a_field_does_not() {
+        let found = after("    self.forg").expect("a method");
+        assert_eq!(found.items[0].label, "self.forget");
+        assert!(found.items[0].callable);
+        let found = after("    self.breakB").expect("a field");
+        assert!(!found.items[0].callable);
     }
 }

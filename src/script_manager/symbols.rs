@@ -19,6 +19,10 @@
 //!   and library symbols (`lib.fn`) are not resolved.
 //! - `name =` labels inside a call to a user function are references to that parameter.
 //! - Functions with one name in one scope are overloads: they rename together.
+//! - Types are text, not inference: a symbol's type is what the script writes for it (`ReactionState
+//!   self`, `var Zone z`, `array<float> v`) or what its initialiser constructs (`Zone.new(…)`,
+//!   `array.new_float()`); a `type` records its fields the same way. That is enough for member
+//!   completion, and a name it cannot type is left untyped, never guessed.
 
 use crate::pine::identifier_rules;
 use crate::pine::lexer::Lexer;
@@ -70,6 +74,17 @@ pub struct Symbol {
     visible_from: usize,
     /// A function's own scope, which holds its parameters.
     body: Option<ScopeId>,
+    /// The type as written, or as the initialiser constructs it: `Zone`, `array<float>`, `lib.Zone`.
+    pub type_name: Option<String>,
+    /// A method's receiver: the type its first parameter declares.
+    pub receiver: Option<String>,
+}
+
+/// A `type` the script declares, with the type text of each field in order.
+#[derive(Clone, Debug)]
+pub struct TypeInfo {
+    pub name: String,
+    pub fields: Vec<(String, Option<String>)>,
 }
 
 #[derive(Clone, Debug)]
@@ -89,6 +104,10 @@ pub struct SymbolTable {
     scopes: Vec<Scope>,
     /// Sorted by position.
     references: Vec<Reference>,
+    /// The types the script declares.
+    pub types: Vec<TypeInfo>,
+    /// Where each statement's tokens sit, and the scope they read in.
+    statement_scopes: Vec<(Range<usize>, ScopeId)>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -109,6 +128,75 @@ impl RenameError {
 }
 
 impl SymbolTable {
+    /// The latest visible declaration of `name` at `position`, innermost scope first.
+    fn lookup(
+        &self,
+        scope: ScopeId,
+        name: &str,
+        callable: bool,
+        position: usize,
+        methods_only: bool,
+    ) -> Option<SymbolId> {
+        let mut current = Some(scope);
+        while let Some(scope_id) = current {
+            let found = self.scopes[scope_id]
+                .symbols
+                .iter()
+                .copied()
+                .filter(|id| {
+                    let symbol = &self.symbols[*id];
+                    symbol.name == name
+                        && symbol.kind.callable() == callable
+                        && (!methods_only || symbol.kind == Kind::Method)
+                        && symbol.visible_from <= position
+                })
+                .max_by_key(|id| self.symbols[*id].visible_from);
+            if found.is_some() {
+                return found;
+            }
+            current = self.scopes[scope_id].parent;
+        }
+        None
+    }
+
+    /// The scope the statement under `caret` reads in. A caret just after a statement's last token
+    /// counts: that is where a name being typed ends.
+    fn scope_at(&self, caret: usize) -> Option<ScopeId> {
+        self.statement_scopes
+            .iter()
+            .find(|(span, _)| span.start <= caret && caret <= span.end)
+            .map(|(_, scope)| *scope)
+    }
+
+    /// What the value `name` is at `caret`: `None` when no such variable or parameter is in scope,
+    /// `Some(None)` when there is one whose type is not known.
+    pub fn value_type_at(&self, name: &str, caret: usize) -> Option<Option<&str>> {
+        let scope = self.scope_at(caret)?;
+        let id = self.lookup(scope, name, false, caret, false)?;
+        Some(self.symbols[id].type_name.as_deref())
+    }
+
+    /// The `type` named `name` (a library's `alias.Name` is its `Name`).
+    pub fn type_info(&self, name: &str) -> Option<&TypeInfo> {
+        let wanted = short_name(name);
+        self.types.iter().find(|info| info.name == wanted)
+    }
+
+    /// The names of the methods the script declares for receivers of type `type_name`, once each.
+    pub fn methods_of(&self, type_name: &str) -> Vec<&str> {
+        let wanted = short_name(type_name);
+        let mut names: Vec<&str> = Vec::new();
+        for symbol in &self.symbols {
+            if symbol.kind == Kind::Method
+                && symbol.receiver.as_deref().map(short_name) == Some(wanted)
+                && !names.contains(&symbol.name.as_str())
+            {
+                names.push(&symbol.name);
+            }
+        }
+        names
+    }
+
     /// The symbol, and the range of the name, whose declaration or reference covers the character
     /// at `index` (the caret counts as on a name when it touches either end).
     pub fn name_at(&self, index: usize) -> Option<(SymbolId, Range<usize>)> {
@@ -338,6 +426,11 @@ struct Pending {
     body: Body,
 }
 
+/// `lib.Zone` and `path::Zone` are the library's `Zone`.
+pub fn short_name(name: &str) -> &str {
+    name.rsplit(['.', ':']).next().unwrap_or(name)
+}
+
 pub fn analyze(source: &str) -> SymbolTable {
     let chars: Vec<char> = source.chars().collect();
     let lexed = Lexer::new(source).lex();
@@ -345,6 +438,8 @@ pub fn analyze(source: &str) -> SymbolTable {
     let mut builder = Builder {
         table: SymbolTable::default(),
         statements: &statements,
+        chars: &chars,
+        current_type: None,
     };
     builder.table.scopes.push(Scope {
         parent: None,
@@ -425,6 +520,9 @@ fn statements(chars: &[char], tokens: &[Token]) -> Vec<Statement> {
 struct Builder<'a> {
     table: SymbolTable,
     statements: &'a [Statement],
+    chars: &'a [char],
+    /// The `type` whose field lines are being read.
+    current_type: Option<usize>,
 }
 
 impl Builder<'_> {
@@ -463,6 +561,11 @@ impl Builder<'_> {
             let (scope, body) = stack
                 .last()
                 .map_or((0, Body::Code), |frame| (frame.scope, frame.body));
+            if let (Some(first), Some(last)) = (statement.tokens.first(), statement.tokens.last()) {
+                self.table
+                    .statement_scopes
+                    .push((first.range.start..last.range.end, scope));
+            }
             pending = self.statement(index, scope, body);
         }
     }
@@ -491,12 +594,13 @@ impl Builder<'_> {
             scope,
             visible_from,
             body: None,
+            type_name: None,
+            receiver: None,
         });
         self.table.scopes[scope].symbols.push(id);
         id
     }
 
-    /// The latest visible declaration of `name` at `position`, innermost scope first.
     fn lookup(
         &self,
         scope: ScopeId,
@@ -505,26 +609,8 @@ impl Builder<'_> {
         position: usize,
         methods_only: bool,
     ) -> Option<SymbolId> {
-        let mut current = Some(scope);
-        while let Some(scope_id) = current {
-            let found = self.table.scopes[scope_id]
-                .symbols
-                .iter()
-                .copied()
-                .filter(|id| {
-                    let symbol = &self.table.symbols[*id];
-                    symbol.name == name
-                        && symbol.kind.callable() == callable
-                        && (!methods_only || symbol.kind == Kind::Method)
-                        && symbol.visible_from <= position
-                })
-                .max_by_key(|id| self.table.symbols[*id].visible_from);
-            if found.is_some() {
-                return found;
-            }
-            current = self.table.scopes[scope_id].parent;
-        }
-        None
+        self.table
+            .lookup(scope, name, callable, position, methods_only)
     }
 
     fn reference(&mut self, range: Range<usize>, symbol: SymbolId) {
@@ -630,6 +716,13 @@ impl Builder<'_> {
                 (Kind::Enum, Body::Members)
             };
             self.declare(scope, text, kind, name.range.clone(), name.range.start);
+            if first.is_word("type") {
+                self.table.types.push(TypeInfo {
+                    name: text.to_owned(),
+                    fields: Vec::new(),
+                });
+                self.current_type = Some(self.table.types.len() - 1);
+            }
             return Some(Pending { scope: None, body });
         }
         if body == Body::Code
@@ -681,6 +774,75 @@ impl Builder<'_> {
         }
     }
 
+    /// The text of `tokens` as written, without spaces: `map<string,int>`.
+    fn text(&self, tokens: &[Tok]) -> String {
+        let (Some(first), Some(last)) = (tokens.first(), tokens.last()) else {
+            return String::new();
+        };
+        self.chars[first.range.start..last.range.end]
+            .iter()
+            .filter(|c| !c.is_whitespace())
+            .collect()
+    }
+
+    /// The type words before a name (`var`, qualifiers and then the type): their text, if any.
+    fn written_type(&self, tokens: &[Tok]) -> Option<String> {
+        let skip = tokens
+            .iter()
+            .take_while(|t| {
+                matches!(t.kind, TokenKind::Var | TokenKind::Varip)
+                    || t.name()
+                        .is_some_and(|word| matches!(word, "const" | "input" | "simple" | "series"))
+            })
+            .count();
+        let rest = &tokens[skip..];
+        (!rest.is_empty()).then(|| self.text(rest))
+    }
+
+    /// The type an initialiser constructs: `Zone.new(…)`, `lib.Zone.new(…)`, `array.new_float(…)`,
+    /// `array.new<float>(…)`, `map.new<string, int>(…)`, `line.new(…)`.
+    fn constructed_type(&self, tokens: &[Tok]) -> Option<String> {
+        let mut segments: Vec<&str> = Vec::new();
+        let mut at = 0;
+        loop {
+            segments.push(tokens.get(at)?.name()?);
+            match tokens.get(at + 1).map(|t| &t.kind) {
+                Some(TokenKind::Dot) => at += 2,
+                _ => break,
+            }
+        }
+        let after = at + 1;
+        let opens_call = matches!(
+            tokens.get(after).map(|t| &t.kind),
+            Some(TokenKind::LeftParen)
+        );
+        let last = *segments.last()?;
+        let namespace = segments[..segments.len() - 1].join(".");
+        if namespace == "array"
+            && opens_call
+            && let Some(element) = last.strip_prefix("new_")
+        {
+            return Some(format!("array<{element}>"));
+        }
+        if namespace == "array" && last == "from" && opens_call {
+            return Some("array".to_owned());
+        }
+        if last != "new" || namespace.is_empty() {
+            return None;
+        }
+        if matches!(tokens.get(after).map(|t| &t.kind), Some(TokenKind::Less)) {
+            let close = tokens[after..]
+                .iter()
+                .position(|t| t.kind == TokenKind::Greater)?
+                + after;
+            return Some(format!(
+                "{namespace}<{}>",
+                self.text(&tokens[after + 1..close])
+            ));
+        }
+        opens_call.then_some(namespace)
+    }
+
     /// A field line of a `type`: the field name is not a symbol, its type and default are uses.
     fn field(&mut self, tokens: &[Tok], scope: ScopeId) {
         let equals = tokens
@@ -690,6 +852,11 @@ impl Builder<'_> {
         let name = equals
             .checked_sub(1)
             .filter(|i| tokens[*i].name().is_some());
+        if let (Some(index), Some(owner)) = (name, self.current_type) {
+            let field = tokens[index].name().unwrap_or_default().to_owned();
+            let written = self.written_type(&tokens[..index]);
+            self.table.types[owner].fields.push((field, written));
+        }
         let rest: Vec<Tok> = tokens
             .iter()
             .enumerate()
@@ -737,6 +904,8 @@ impl Builder<'_> {
 
         let mut start = name_index + 2;
         let mut depth = 0usize;
+        let mut receiver = None;
+        let mut first = true;
         for offset in name_index + 2..close {
             match tokens[offset].kind {
                 TokenKind::LeftParen | TokenKind::LeftBracket => depth += 1,
@@ -744,13 +913,22 @@ impl Builder<'_> {
                     depth = depth.saturating_sub(1);
                 }
                 TokenKind::Comma if depth == 0 => {
-                    self.parameter(&tokens[start..offset], scope, body);
+                    let declared = self.parameter(&tokens[start..offset], scope, body);
+                    if std::mem::take(&mut first) {
+                        receiver = declared;
+                    }
                     start = offset + 1;
                 }
                 _ => {}
             }
         }
-        self.parameter(&tokens[start..close], scope, body);
+        let declared = self.parameter(&tokens[start..close], scope, body);
+        if first {
+            receiver = declared;
+        }
+        if method {
+            self.table.symbols[id].receiver = receiver;
+        }
         // An inline body: `f(x) => x * 2`.
         self.uses(&tokens[close + 2..], body);
         Some(Pending {
@@ -759,21 +937,18 @@ impl Builder<'_> {
         })
     }
 
-    /// One parameter: `[qualifier] [type] name [= default]`.
-    fn parameter(&mut self, tokens: &[Tok], outer: ScopeId, body: ScopeId) {
+    /// One parameter: `[qualifier] [type] name [= default]`. Returns its declared type.
+    fn parameter(&mut self, tokens: &[Tok], outer: ScopeId, body: ScopeId) -> Option<String> {
         if tokens.is_empty() {
-            return;
+            return None;
         }
         let equals = tokens
             .iter()
             .position(|t| t.kind == TokenKind::Assign)
             .unwrap_or(tokens.len());
-        let Some(name) = equals
+        let name = equals
             .checked_sub(1)
-            .and_then(|i| tokens[i].name().map(|n| (i, n)))
-        else {
-            return;
-        };
+            .and_then(|i| tokens[i].name().map(|n| (i, n)))?;
         // The type words and the default value read in the enclosing scope.
         let outside: Vec<Tok> = tokens
             .iter()
@@ -783,7 +958,10 @@ impl Builder<'_> {
             .collect();
         self.uses(&outside, outer);
         let range = tokens[name.0].range.clone();
-        self.declare(body, name.1, Kind::Parameter, range.clone(), range.end);
+        let declared = self.written_type(&tokens[..name.0]);
+        let id = self.declare(body, name.1, Kind::Parameter, range.clone(), range.end);
+        self.table.symbols[id].type_name.clone_from(&declared);
+        declared
     }
 
     fn for_loop(&mut self, tokens: &[Tok], scope: ScopeId) -> Pending {
@@ -908,7 +1086,11 @@ impl Builder<'_> {
                 self.uses(&before, scope);
                 let token = &left[position];
                 if let Some(name) = token.name() {
-                    self.declare(scope, name, Kind::Variable, token.range.clone(), end);
+                    let written = self
+                        .written_type(&before)
+                        .or_else(|| self.constructed_type(right));
+                    let id = self.declare(scope, name, Kind::Variable, token.range.clone(), end);
+                    self.table.symbols[id].type_name = written;
                 }
             }
             None => self.uses(left, scope),
