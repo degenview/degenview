@@ -5,6 +5,7 @@
 
 use super::*;
 use crate::native_bridge::EditMenu;
+use crate::script_manager::call_sites::CallSite;
 use crate::script_manager::symbols::{self, SymbolId, SymbolTable};
 use eframe::egui::Galley;
 use std::ops::Range;
@@ -23,6 +24,15 @@ pub(super) struct NavState {
     menu: EditMenu,
     /// The text and caret `menu`'s name checks were made for.
     menu_key: Option<(u64, usize)>,
+    /// The lines a function is called on, listed after ⌘-clicking its declaration.
+    calls: Option<CallList>,
+}
+
+/// The list of calls, where the click was, and the text it was made for (any other text drops it).
+pub(super) struct CallList {
+    at: egui::Pos2,
+    sites: Vec<CallSite>,
+    source_hash: u64,
 }
 
 /// What the macOS Edit menu asks of the editor.
@@ -103,6 +113,27 @@ impl EditorState {
         }
     }
 
+    /// What ⌘-clicking a declaration does with the calls found: one call is jumped to, several are
+    /// listed at the click.
+    pub(super) fn open_call_list(
+        &mut self,
+        ctx: &egui::Context,
+        at: egui::Pos2,
+        sites: Vec<CallSite>,
+    ) {
+        match sites.as_slice() {
+            [only] => self.go_to_range(ctx, only.range.clone()),
+            _ => {
+                self.carets.clear();
+                self.nav.calls = Some(CallList {
+                    at,
+                    sites,
+                    source_hash: text_hash(&self.source),
+                });
+            }
+        }
+    }
+
     /// Runs an Edit-menu item on the next frame (the menu lives outside the window's frames).
     pub fn request_edit(&mut self, action: EditAction) {
         self.nav.pending = Some(action);
@@ -149,6 +180,16 @@ impl EditorState {
     #[cfg(test)]
     pub fn menu_target(&self) -> Option<usize> {
         self.nav.menu_target
+    }
+
+    /// The rows of the call list, as shown (tests).
+    #[cfg(test)]
+    pub fn call_list_rows(&self) -> Vec<String> {
+        self.nav
+            .calls
+            .as_ref()
+            .map(|list| list.sites.iter().map(CallSite::label).collect())
+            .unwrap_or_default()
     }
 
     #[cfg(test)]
@@ -290,7 +331,9 @@ pub(super) fn hover(
     let Some((_, range)) = table.name_at(index) else {
         return;
     };
-    if table.definition_of(index).is_none() {
+    // A use has a declaration to jump to; a declaration may have calls to jump to.
+    let has_calls = || table.calls_of(index).is_some_and(|calls| !calls.is_empty());
+    if table.definition_of(index).is_none() && !has_calls() {
         return;
     }
     if let Some(rect) = name_rect(galley, origin, &range)
@@ -407,6 +450,53 @@ pub(super) fn context_menu(
             state.begin_rename(index);
         }
         None => {}
+    }
+}
+
+/// The list of calls opened by ⌘-clicking a declaration: one row per calling line, as its number
+/// and the start of its code. Choosing one goes there; Esc, a click elsewhere or any edit closes it.
+pub(super) fn call_list(ui: &Ui, state: &mut EditorState) {
+    let Some(list) = state.nav.calls.as_ref() else {
+        return;
+    };
+    if list.source_hash != text_hash(&state.source) {
+        state.nav.calls = None;
+        return;
+    }
+    // Opened by the press of a click: shown once the button is up, because a popup closes on the
+    // next click outside it, which the release of this very click would be.
+    if ui.input(|input| input.pointer.primary_down()) {
+        return;
+    }
+    let labels: Vec<String> = list.sites.iter().map(CallSite::label).collect();
+    let ranges: Vec<Range<usize>> = list.sites.iter().map(|site| site.range.clone()).collect();
+    let mut open = true;
+    let mut chosen = None;
+    kit::menu_popup_at(ui, Id::new("script-call-list"), list.at, &mut open).show(|ui| {
+        kit::menu_scope(ui, 240.0);
+        let fit: Vec<&str> = labels.iter().map(String::as_str).collect();
+        kit::menu_fit(ui, &fit);
+        egui::ScrollArea::vertical()
+            .max_height(320.0)
+            .auto_shrink([true, true])
+            .show(ui, |ui| {
+                for (index, label) in labels.iter().enumerate() {
+                    let row = kit::MenuRow {
+                        reserve_icon: false,
+                        ..kit::MenuRow::new(label)
+                    };
+                    if kit::menu_row(ui, row).clicked() {
+                        chosen = Some(index);
+                        ui.close();
+                    }
+                }
+            });
+    });
+    if let Some(index) = chosen {
+        state.nav.calls = None;
+        state.go_to_range(ui.ctx(), ranges[index].clone());
+    } else if !open {
+        state.nav.calls = None;
     }
 }
 

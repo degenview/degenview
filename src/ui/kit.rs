@@ -1104,6 +1104,27 @@ pub fn menu_popup<'a>(response: &egui::Response) -> egui::Popup<'a> {
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
 }
 
+/// `menu_popup` at `position` while `open` is true, for a menu that is not on a widget (a list opened
+/// by a click in the text). It closes itself on Esc or a click outside and clears `open`.
+pub fn menu_popup_at<'a>(
+    ui: &Ui,
+    id: egui::Id,
+    position: egui::Pos2,
+    open: &'a mut bool,
+) -> egui::Popup<'a> {
+    egui::Popup::new(
+        id,
+        ui.ctx().clone(),
+        egui::PopupAnchor::Position(position),
+        ui.layer_id(),
+    )
+    .kind(egui::PopupKind::Menu)
+    .layout(egui::Layout::top_down_justified(egui::Align::Min))
+    .frame(menu_frame())
+    .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+    .open_bool(open)
+}
+
 /// `menu_popup` for a right-click on `response`, opening at the pointer.
 pub fn context_popup<'a>(response: &egui::Response) -> egui::Popup<'a> {
     egui::Popup::context_menu(response)

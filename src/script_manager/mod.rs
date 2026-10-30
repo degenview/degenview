@@ -23,6 +23,7 @@ mod ai_review_view;
 mod ai_tests;
 mod ai_tools;
 mod bottom_bar;
+mod call_sites;
 mod completion;
 pub mod debug;
 #[cfg(test)]

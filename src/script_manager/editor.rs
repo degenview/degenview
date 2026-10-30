@@ -586,6 +586,7 @@ pub fn show(ui: &mut Ui, state: &mut EditorState) -> EditorOutput {
         .is_some_and(|rect| !visible.intersects(rect));
     // A rename changes the text but is not typing: no suggestions follow it.
     let renamed = navigation::rename_box(ui.ctx(), state);
+    navigation::call_list(ui, state);
     edited |= renamed;
     edited |= update_completion(ui, state, &look, &font, edited && !renamed);
     draw_signature(ui, state, &look, &font);

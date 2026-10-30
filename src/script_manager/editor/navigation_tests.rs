@@ -497,3 +497,86 @@ fn edit_menu_commands_act_on_the_caret() {
     h.frame(vec![]);
     assert!(h.state.rename_open());
 }
+
+// MARK: ⌘-click on a function's declaration
+
+const CALLS: &str = "//@version=6\nindicator(\"T\")\nhalf(x) => x / 2\nquarter(x) => x\nunused(x) => x\n\
+                     a = half(1)\nb = half(2)\nc = quarter(3)\nd = 1\n";
+
+#[test]
+fn cmd_click_on_a_declaration_with_several_calls_lists_the_lines() {
+    let mut h = Harness::new(CALLS);
+    h.place(0, 0);
+    let target = h.at(2, 1);
+    h.click(target, cmd());
+    assert_eq!(
+        h.state.call_list_rows(),
+        ["   6  a = half(1)", "   7  b = half(2)"]
+    );
+    assert!(h.state.extra_carets().is_empty(), "no second caret either");
+}
+
+#[test]
+fn cmd_click_on_a_declaration_with_one_call_goes_there() {
+    let mut h = Harness::new(CALLS);
+    h.place(0, 0);
+    let target = h.at(3, 1);
+    h.click(target, cmd());
+    let call = h.index(7, 4);
+    assert_eq!(h.primary(), (call, call + 7), "the call's name is selected");
+    assert!(h.state.call_list_rows().is_empty());
+    assert!(h.state.extra_carets().is_empty());
+}
+
+#[test]
+fn cmd_click_on_a_declaration_nothing_calls_still_adds_a_caret() {
+    let mut h = Harness::new(CALLS);
+    h.place(0, 0);
+    let target = h.at(4, 2);
+    h.click(target, cmd());
+    assert!(h.state.call_list_rows().is_empty());
+    assert_eq!(h.state.extra_carets(), vec![(0, 0)]);
+}
+
+#[test]
+fn a_plain_click_on_a_declaration_only_places_the_caret() {
+    let mut h = Harness::new(CALLS);
+    h.place(0, 0);
+    let target = h.at(2, 1);
+    h.click(target, Modifiers::NONE);
+    assert!(h.state.call_list_rows().is_empty());
+    let at = h.index(2, 1);
+    assert_eq!(h.primary(), (at, at));
+}
+
+#[test]
+fn cmd_click_on_a_call_still_goes_to_its_declaration() {
+    let mut h = Harness::new(CALLS);
+    h.place(0, 0);
+    let target = h.at(5, 5);
+    h.click(target, cmd());
+    let declaration = h.index(2, 0);
+    assert_eq!(h.primary(), (declaration, declaration + 4));
+    assert!(h.state.call_list_rows().is_empty());
+}
+
+#[test]
+fn the_list_closes_on_an_edit_and_on_escape() {
+    let mut h = Harness::new(CALLS);
+    h.place(0, 0);
+    let target = h.at(2, 1);
+    h.click(target, cmd());
+    assert_eq!(h.state.call_list_rows().len(), 2);
+    h.type_text("z");
+    h.frame(vec![]);
+    assert!(h.state.call_list_rows().is_empty(), "an edit drops it");
+
+    let mut h = Harness::new(CALLS);
+    h.place(0, 0);
+    let target = h.at(2, 1);
+    h.click(target, cmd());
+    assert_eq!(h.state.call_list_rows().len(), 2);
+    h.frame(vec![key(Key::Escape, Modifiers::NONE)]);
+    h.frame(vec![]);
+    assert!(h.state.call_list_rows().is_empty(), "Esc closes it");
+}

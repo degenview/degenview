@@ -9,6 +9,7 @@
 //! and any other change (egui typing, undo, find and replace, rename, a sync) drops the extras.
 
 use super::*;
+use crate::script_manager::call_sites;
 use crate::script_manager::multi_cursor::{self, Cell, Motion, Sel, Selections};
 use eframe::egui::{Galley, PointerButton, Pos2};
 
@@ -358,9 +359,19 @@ pub(super) fn resolve(
             .command
             .then(|| state.symbols().definition_of(index))
             .flatten();
-        match definition {
-            Some(range) => state.go_to_range(ctx, range),
-            None => {
+        // ⌘-click on a function's or method's declaration goes to where it is called.
+        let calls = match definition {
+            None if press.command => state
+                .symbols()
+                .calls_of(index)
+                .map(|calls| call_sites::describe(&state.source, &calls))
+                .filter(|sites| !sites.is_empty()),
+            _ => None,
+        };
+        match (definition, calls) {
+            (Some(range), _) => state.go_to_range(ctx, range),
+            (None, Some(sites)) => state.open_call_list(ctx, press.pos, sites),
+            (None, None) => {
                 state.carets.extra.push(press.prior);
                 let selections = Selections::with_extras(
                     primary_sel(ctx, state.id).unwrap_or(press.prior),
