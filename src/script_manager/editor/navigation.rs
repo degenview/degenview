@@ -5,7 +5,7 @@
 
 use super::*;
 use crate::native_bridge::EditMenu;
-use crate::script_manager::call_sites::CallSite;
+use crate::script_manager::call_sites::{self, CallSite};
 use crate::script_manager::symbols::{self, SymbolId, SymbolTable};
 use eframe::egui::Galley;
 use std::ops::Range;
@@ -24,6 +24,8 @@ pub(super) struct NavState {
     menu: EditMenu,
     /// The text and caret `menu`'s name checks were made for.
     menu_key: Option<(u64, usize)>,
+    /// Where the context menu was opened, for a list its "Find Usages" opens.
+    menu_pos: Option<egui::Pos2>,
     /// The lines a function is called on, listed after ⌘-clicking its declaration.
     calls: Option<CallList>,
 }
@@ -81,6 +83,7 @@ enum MenuAction {
     Copy,
     Paste,
     Definition(Range<usize>),
+    FindUsages(usize),
     Rename(usize),
 }
 
@@ -118,6 +121,53 @@ impl EditorState {
         match self.symbols().definition_of(index) {
             Some(range) => {
                 self.go_to_range(ctx, range);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// The function or method at `index`, with a row for each line that calls it and the function
+    /// each call is in. `declaration_only`: only a click on its declaration counts (⌘-click, where a
+    /// click on a call goes to the declaration instead); otherwise a call will do too (the menu).
+    /// `None` when `index` is not on a function that is called.
+    pub(super) fn call_sites_at(
+        &mut self,
+        index: usize,
+        declaration_only: bool,
+    ) -> Option<(String, Vec<CallSite>)> {
+        let table = self.symbols();
+        let name = table
+            .name_at(index)
+            .map(|(id, _)| table.symbol(id).name.clone())?;
+        let calls = if declaration_only {
+            table.calls_of(index)?
+        } else {
+            table.usages_of(index)?
+        };
+        let mut sites = call_sites::describe(&self.source, &calls);
+        if sites.is_empty() {
+            return None;
+        }
+        for site in &mut sites {
+            site.context = table
+                .enclosing_callable(site.range.start)
+                .map(str::to_owned);
+        }
+        Some((name, sites))
+    }
+
+    /// "Find Usages": jumps to the one call of the function at `index`, or lists them at `at`.
+    /// Returns whether there was a function with calls.
+    pub(super) fn find_usages(
+        &mut self,
+        ctx: &egui::Context,
+        index: usize,
+        at: egui::Pos2,
+    ) -> bool {
+        match self.call_sites_at(index, false) {
+            Some((name, sites)) => {
+                self.open_call_list(ctx, at, name, sites);
                 true
             }
             None => false,
@@ -198,6 +248,12 @@ impl EditorState {
     #[cfg(test)]
     pub fn menu_target(&self) -> Option<usize> {
         self.nav.menu_target
+    }
+
+    /// Closes the call list (tests).
+    #[cfg(test)]
+    pub fn nav_clear_calls(&mut self) {
+        self.nav.calls = None;
     }
 
     /// The rows of the call list, as shown (tests).
@@ -388,6 +444,7 @@ pub(super) fn context_menu(
             .index
             .0;
         state.nav.menu_target = Some(index);
+        state.nav.menu_pos = Some(pos);
     }
     let mut action = None;
     kit::context_popup(response).show(|ui| {
@@ -396,8 +453,11 @@ pub(super) fn context_menu(
         let target = state.nav.menu_target;
         let named = target.and_then(|index| table.name_at(index)).is_some();
         let definition = target.and_then(|index| table.definition_of(index));
+        let has_usages = target
+            .and_then(|index| table.usages_of(index))
+            .is_some_and(|calls| !calls.is_empty());
         kit::menu_scope(ui, 200.0);
-        kit::menu_fit(ui, &["Go to Definition", "Rename Symbol…"]);
+        kit::menu_fit(ui, &["Go to Definition", "Find Usages", "Rename Symbol…"]);
         let selected = TextEditState::load(ctx, state.id)
             .and_then(|edit| edit.cursor.char_range())
             .is_some_and(|range| range.primary != range.secondary);
@@ -447,6 +507,11 @@ pub(super) fn context_menu(
             action = definition.map(MenuAction::Definition);
             ui.close();
         }
+        if kit::menu_item_with_shortcut(ui, Icon::Magnifier, "Find Usages", None, has_usages, false)
+        {
+            action = target.map(MenuAction::FindUsages);
+            ui.close();
+        }
         if kit::menu_item_with_shortcut(
             ui,
             Icon::Pencil,
@@ -464,6 +529,10 @@ pub(super) fn context_menu(
         Some(MenuAction::Copy) => clipboard(ctx, state, EditAction::Copy),
         Some(MenuAction::Paste) => clipboard(ctx, state, EditAction::Paste),
         Some(MenuAction::Definition(range)) => state.go_to_range(ctx, range),
+        Some(MenuAction::FindUsages(index)) => {
+            let at = state.nav.menu_pos.unwrap_or(egui::Pos2::ZERO);
+            state.find_usages(ctx, index, at);
+        }
         Some(MenuAction::Rename(index)) => {
             state.begin_rename(index);
         }
@@ -665,7 +734,27 @@ pub(super) fn call_list(ui: &Ui, state: &mut EditorState, look: &Appearance, cod
                                     .map_or((characters.len(), characters.len()), |name| {
                                         (name.start, name.end)
                                     });
+                                // The code gets the room the function name on the right leaves; a line
+                                // that does not fit ends in `…` instead of running under the name.
+                                let context_room = site.context.as_ref().map_or(0.0, |context| {
+                                    let width = ui
+                                        .painter()
+                                        .layout_no_wrap(
+                                            format!("in {context}"),
+                                            hint_font.clone(),
+                                            tertiary,
+                                        )
+                                        .size()
+                                        .x;
+                                    width + 18.0
+                                });
+                                let code_left = 22.0 + number_width;
                                 let mut job = egui::text::LayoutJob::default();
+                                job.wrap.max_width =
+                                    (inner_width - code_left - 10.0 - context_room).max(40.0);
+                                job.wrap.max_rows = 1;
+                                job.wrap.break_anywhere = true;
+                                job.wrap.overflow_character = Some('…');
                                 // The called name in the strong ink, the rest of the line quieter.
                                 for (text, color) in [
                                     (&characters[..from], secondary),
@@ -682,7 +771,7 @@ pub(super) fn call_list(ui: &Ui, state: &mut EditorState, look: &Appearance, cod
                                 let galley = ui.fonts_mut(|fonts| fonts.layout_job(job));
                                 ui.painter().galley(
                                     egui::pos2(
-                                        rect.left() + 22.0 + number_width,
+                                        rect.left() + code_left,
                                         rect.center().y - galley.size().y / 2.0,
                                     ),
                                     galley,

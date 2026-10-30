@@ -9,7 +9,6 @@
 //! and any other change (egui typing, undo, find and replace, rename, a sync) drops the extras.
 
 use super::*;
-use crate::script_manager::call_sites;
 use crate::script_manager::multi_cursor::{self, Cell, Motion, Sel, Selections};
 use eframe::egui::{Galley, PointerButton, Pos2};
 
@@ -19,8 +18,9 @@ struct Press {
     /// ⌘-click (Ctrl off the Mac): a jump to a definition if the click is on a name that has
     /// one; otherwise, like ⌥-click, a new caret.
     command: bool,
-    /// Where the primary caret was before the click.
-    prior: Sel,
+    /// Where the primary caret was before the click; none yet in an editor nobody has clicked into,
+    /// where a ⌘-click must still work (it needs no second caret).
+    prior: Option<Sel>,
 }
 
 #[derive(Default)]
@@ -306,10 +306,13 @@ fn note_pointer(ctx: &egui::Context, state: &mut EditorState, text_area: Rect) {
         }
         match button {
             PointerButton::Primary if modifiers.alt || modifiers.command => {
-                if let Some(prior) = primary_sel(ctx, state.id) {
+                let command = modifiers.command && !modifiers.alt;
+                let prior = primary_sel(ctx, state.id);
+                // A new caret needs the old one; a jump or a list does not.
+                if prior.is_some() || command {
                     state.carets.press = Some(Press {
                         pos: *pos,
-                        command: modifiers.command && !modifiers.alt,
+                        command,
                         prior,
                     });
                 }
@@ -361,38 +364,22 @@ pub(super) fn resolve(
             .flatten();
         // ⌘-click on a function's or method's declaration goes to where it is called.
         let calls = match definition {
-            None if press.command => {
-                let table = state.symbols();
-                let name = table
-                    .name_at(index)
-                    .map(|(id, _)| table.symbol(id).name.clone())
-                    .unwrap_or_default();
-                table
-                    .calls_of(index)
-                    .map(|calls| call_sites::describe(&state.source, &calls))
-                    .filter(|sites| !sites.is_empty())
-                    .map(|mut sites| {
-                        for site in &mut sites {
-                            site.context = table
-                                .enclosing_callable(site.range.start)
-                                .map(str::to_owned);
-                        }
-                        (name, sites)
-                    })
-            }
+            None if press.command => state.call_sites_at(index, true),
             _ => None,
         };
         match (definition, calls) {
             (Some(range), _) => state.go_to_range(ctx, range),
             (None, Some((name, sites))) => state.open_call_list(ctx, press.pos, name, sites),
             (None, None) => {
-                state.carets.extra.push(press.prior);
-                let selections = Selections::with_extras(
-                    primary_sel(ctx, state.id).unwrap_or(press.prior),
-                    &state.carets.extra,
-                );
-                state.carets.extra = selections.extras();
-                state.carets.hash = text_hash(&state.source);
+                if let Some(prior) = press.prior {
+                    state.carets.extra.push(prior);
+                    let selections = Selections::with_extras(
+                        primary_sel(ctx, state.id).unwrap_or(prior),
+                        &state.carets.extra,
+                    );
+                    state.carets.extra = selections.extras();
+                    state.carets.hash = text_hash(&state.source);
+                }
             }
         }
     }

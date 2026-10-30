@@ -175,6 +175,20 @@ impl SymbolTable {
                 && symbol.declaration.start <= index
                 && index <= symbol.declaration.end
         })?;
+        Some(self.calls_of_symbol(id))
+    }
+
+    /// The calls of the function or method `index` is on, whether on its declaration or on one of
+    /// its calls. `None` on anything else.
+    pub fn usages_of(&self, index: usize) -> Option<Vec<Range<usize>>> {
+        let id = self
+            .symbol_at(index)
+            .filter(|id| self.symbols[*id].kind.callable())?;
+        Some(self.calls_of_symbol(id))
+    }
+
+    /// Every call of any overload of the function `id`, sorted.
+    fn calls_of_symbol(&self, id: SymbolId) -> Vec<Range<usize>> {
         let group = self.group(id);
         let mut calls: Vec<Range<usize>> = self
             .references
@@ -184,7 +198,7 @@ impl SymbolTable {
             .collect();
         calls.sort_by_key(|range| range.start);
         calls.dedup();
-        Some(calls)
+        calls
     }
 
     /// The name of the function or method whose body holds `index`, the innermost one; `None` at the
@@ -1452,6 +1466,21 @@ mod tests {
             table.enclosing_callable(at(&source, "this * 2.0", 0)),
             Some("m")
         );
+    }
+
+    #[test]
+    fn usages_are_found_from_the_declaration_or_from_any_call() {
+        let source = script("half(x) => x / 2\na = half(1)\nb = half(2)\nlen = 14\n");
+        let both = Some(vec![at(&source, "half", 1), at(&source, "half", 2)]);
+        let usages = |needle: &str, occurrence: usize| {
+            analyze(&source)
+                .usages_of(at(&source, needle, occurrence))
+                .map(|ranges| ranges.iter().map(|r| r.start).collect::<Vec<_>>())
+        };
+        assert_eq!(usages("half", 0), both, "from the declaration");
+        assert_eq!(usages("half", 1), both, "from a call");
+        assert_eq!(usages("len", 0), None, "a variable has none");
+        assert_eq!(usages("x", 0), None, "nor a parameter");
     }
 
     #[test]

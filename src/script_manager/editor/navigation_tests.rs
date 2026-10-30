@@ -61,6 +61,22 @@ impl Harness {
         harness
     }
 
+    /// An editor nobody has clicked into: it has no focus and egui holds no caret for it yet.
+    fn fresh(source: &str) -> Self {
+        let mut harness = Self {
+            ctx: egui::Context::default(),
+            state: EditorState::new("nav", source, source),
+            time: 0.0,
+            focused: true,
+            area: Rect::NOTHING,
+            char_width: 8.0,
+            row_height: 16.0,
+        };
+        harness.frame(vec![]);
+        harness.frame(vec![]);
+        harness
+    }
+
     fn frame(&mut self, events: Vec<Event>) {
         self.time += 0.05;
         let raw = egui::RawInput {
@@ -684,6 +700,7 @@ method forget(ReactionState self) =>
 method inspect(ReactionState self, float core, float halfWidth, bool reset, bool enabled) =>
     if reset
         self.forget()
+    cleared = self.forget() or core > halfWidth * 1000 and not reset and enabled and top > core
     float top = core + halfWidth
     if not enabled
         self.forget()
@@ -760,4 +777,49 @@ fn gallery_of_the_call_list() {
         let output = run(&mut screen, &mut state, vec![]);
         screen.save(&format!("call-list-second-{name}"), output);
     }
+}
+
+#[test]
+fn the_first_cmd_click_into_a_fresh_editor_already_works() {
+    // The list: no caret has ever been placed, so egui has no selection to remember.
+    let mut h = Harness::fresh(CALLS);
+    let target = h.at(2, 1);
+    h.click(target, cmd());
+    assert_eq!(
+        h.state.call_list_rows().len(),
+        2,
+        "the first click opens the list"
+    );
+    // The jump to a definition had the same trouble.
+    let mut h = Harness::fresh(SCRIPT);
+    let target = h.at(3, 20);
+    h.click(target, cmd());
+    let declaration = h.index(2, 0);
+    assert_eq!(h.primary(), (declaration, declaration + 3));
+}
+
+#[test]
+fn find_usages_lists_or_jumps_from_a_declaration_or_a_call() {
+    let mut h = Harness::new(CALLS);
+    let at = egui::pos2(300.0, 100.0);
+    // Two calls of `half`: a list, from the declaration and from a call alike.
+    let declaration = h.index(2, 1);
+    assert!(h.state.find_usages(&h.ctx, declaration, at));
+    assert_eq!(h.state.call_list_rows().len(), 2);
+    let call = h.index(5, 5);
+    assert!(h.state.find_usages(&h.ctx, call, at));
+    assert_eq!(h.state.call_list_rows().len(), 2);
+    // One call of `quarter`: straight there.
+    h.state.nav_clear_calls();
+    let declaration = h.index(3, 1);
+    assert!(h.state.find_usages(&h.ctx, declaration, at));
+    assert!(h.state.call_list_rows().is_empty());
+    h.frame(vec![]);
+    let target = h.index(7, 4);
+    assert_eq!(h.primary(), (target, target + 7));
+    // Nothing calls `unused`, and a number is not a function.
+    let unused = h.index(4, 2);
+    assert!(!h.state.find_usages(&h.ctx, unused, at));
+    let one = h.index(8, 4);
+    assert!(!h.state.find_usages(&h.ctx, one, at));
 }
