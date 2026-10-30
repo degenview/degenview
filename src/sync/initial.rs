@@ -46,7 +46,9 @@ impl Counts {
         match kind {
             EntityKind::Watchlist => self.watchlists += 1,
             EntityKind::Layout => self.layouts += 1,
-            EntityKind::ChartTemplate | EntityKind::DrawingTemplate => self.templates += 1,
+            EntityKind::ChartTemplate | EntityKind::DrawingTemplate | EntityKind::EditorTheme => {
+                self.templates += 1
+            }
             EntityKind::Script => self.scripts += 1,
             EntityKind::Alert => self.alerts += 1,
             EntityKind::Portfolio => self.portfolios += 1,
@@ -105,7 +107,7 @@ pub fn summarize(store: &Store, local_scripts: usize) -> rusqlite::Result<JoinSu
     let local = Counts {
         watchlists: rows("watchlist")?,
         layouts: rows("saved_view")?,
-        templates: rows("chart_template")? + rows("drawing_template")?,
+        templates: rows("chart_template")? + rows("drawing_template")? + rows("editor_theme")?,
         scripts: local_scripts,
         alerts: rows("price_alert")?,
         portfolios: rows("portfolio")?,

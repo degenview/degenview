@@ -133,18 +133,18 @@ fn effective(book: &ThemeBook, prefs: &EditorPrefs) -> Typography {
 }
 
 impl Inner {
-    /// A selection that names a theme that is gone is automatic: the editor never wears nothing.
-    fn normalize(&mut self) {
-        if let ThemeSelection::Custom(id) = self.prefs.selected
-            && self.book.get(id).is_none()
-        {
-            self.prefs.selected = ThemeSelection::Auto;
-            self.prefs_dirty = true;
+    /// What the editor is wearing: the chosen theme, or Automatic when the choice names a theme
+    /// that is not here. That is not written back: a theme chosen on another Mac can arrive after
+    /// the choice does, and rewriting the choice meanwhile would undo it everywhere.
+    fn selection(&self) -> ThemeSelection {
+        match self.prefs.selected {
+            ThemeSelection::Custom(id) if self.book.get(id).is_none() => ThemeSelection::Auto,
+            other => other,
         }
     }
 
     fn appearance(&self) -> Option<Arc<Appearance>> {
-        match self.prefs.selected {
+        match self.selection() {
             ThemeSelection::Auto => None,
             ThemeSelection::BuiltIn(theme) => Some(editor_appearance::of_built_in(theme)),
             ThemeSelection::Custom(id) => self
@@ -156,7 +156,6 @@ impl Inner {
 
     /// Hands the editors what they should draw with, and asks every window to repaint.
     fn publish(&mut self) {
-        self.normalize();
         let typography = effective(&self.book, &self.prefs);
         editor_appearance::publish(
             self.appearance(),
@@ -358,7 +357,6 @@ impl EditorThemeHost {
             families: None,
             notice: None,
         };
-        inner.normalize();
         inner.sync_font();
         inner.publish();
         Self {
@@ -393,6 +391,21 @@ impl EditorThemeHost {
         }
     }
 
+    /// Reads the themes and choices again, after iCloud Sync changed them. Unsaved changes of this
+    /// Mac are not thrown away: they are saved a moment later and win, as the later edit.
+    pub fn reload(&self, store: &Store) {
+        let mut inner = self.lock();
+        if inner.themes_dirty || inner.prefs_dirty {
+            return;
+        }
+        let loaded = store.load_editor_themes();
+        inner.book = loaded.book;
+        inner.prefs = loaded.prefs;
+        inner.themes_unwritable = loaded.themes_unwritable;
+        inner.sync_font();
+        inner.publish();
+    }
+
     /// Saves anything not saved yet. The app calls it as it quits.
     pub fn flush(&self, store: &Store) {
         self.lock().flush(store);
@@ -411,7 +424,7 @@ impl EditorThemeHost {
             inner.families = Some(Arc::new(names));
         }
         View {
-            selected: inner.prefs.selected,
+            selected: inner.selection(),
             customs: inner
                 .book
                 .saved()

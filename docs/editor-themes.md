@@ -6,8 +6,7 @@ follows at once.
 
 **Status.** Built-in Dark, Light and Dracula; custom themes (create, duplicate, rename, delete,
 edit, import, export); typography (font family, size, line height); a live preview that is the real
-editor; saved with the rest of the app's data. Custom themes and the choices are **not synced** by
-iCloud Sync yet (they are classified local in `sync::policy`); that is the next change.
+editor; saved with the rest of the app's data and synced by iCloud Sync (*Sync*, below).
 *What is verified* says what has and has not been looked at.
 
 ## Roles
@@ -176,6 +175,33 @@ A theme row that cannot be read does not hide the others, but the table is then 
 row would be lost): changes to themes are refused with the reason, while choosing a theme and the
 typography still work and are saved. A value of `editor.prefs` that is not even an object is replaced by
 the defaults. There are no migrations: the defaults are the old editor.
+
+## Sync
+
+Custom themes are `EntityKind::EditorTheme` (record `editor_theme.<id>`, the `editor_theme` table), merged
+by last writer like the other templates and switched with the Templates category; the choices are the
+portable setting `editor.prefs`, last writer. Built-in themes are code and are never uploaded. Rules that
+follow from how it works:
+
+* A theme record is applied only if its id is the record's (numeric) and at least 1000, it has a name, and it
+  decodes as an `EditorTheme`; anything else waits in the sync inbox, as for every kind. Fields and colour
+  keys a newer version wrote are kept and written back.
+* A choice can arrive before the theme it names (the two are separate records). Until the theme arrives the
+  editor is Automatic, **and the choice is not rewritten as Automatic**: that would be uploaded and undo the
+  choice on the Mac that made it. The host reads the store again when sync reports `editor_theme` or
+  `editor.prefs` changes (`EditorThemeHost::reload`); a Mac with changes it has not saved yet keeps them and
+  reloads after saving, so its later edit wins.
+* A font that is not installed on another Mac keeps its name there (it is part of the synced choice) and
+  the default draws. A theme's own font and size travel with the theme.
+* *Use iCloud's data* replaces the custom themes with iCloud's (the table is cleared bypassing the outbox,
+  like the other templates).
+* Deleting a theme here deletes it everywhere; a mass delete is held for confirmation by the usual rule.
+
+Tested on the two-Mac harness (`sync/theme_tests.rs`): themes arriving whole and not echoing back, rename,
+edit and delete, the later edit winning, records that are not themes kept not applied, future fields
+surviving, the choices with a missing font, and a choice that arrives before its theme. **Not run against
+real CloudKit**, like the rest of sync (see [iCloud Sync](icloud-sync.md#what-is-not-verified)). A change to
+the synced records is a release-candidate change under `AGENTS.md`.
 
 ## The file format
 

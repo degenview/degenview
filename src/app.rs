@@ -1982,6 +1982,14 @@ impl DegenViewApp {
             {
                 portfolio.reload();
             }
+            if (report.tables.contains("editor_theme")
+                || report
+                    .settings
+                    .contains(crate::model::editor_theme::prefs::KEY))
+                && let Ok(store) = self.store.lock()
+            {
+                self.editor_themes.reload(&store);
+            }
             if report.settings.contains(crate::ui::theme::THEME_KEY) {
                 let theme = self
                     .store

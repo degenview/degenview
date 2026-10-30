@@ -147,10 +147,16 @@ fn choices_from_a_newer_version_survive_a_save() {
 }
 
 #[test]
-fn themes_are_not_synced_in_this_version() {
-    use crate::sync::policy::{SettingPolicy, TablePolicy, setting_policy, table_policy};
-    assert!(
-        matches!(table_policy("editor_theme"), TablePolicy::Local(reason) if reason != "unclassified")
+fn themes_and_choices_are_classified_for_sync() {
+    use crate::sync::policy::{
+        EntityKind, Merge, SettingPolicy, TablePolicy, setting_policy, table_policy,
+    };
+    assert_eq!(
+        table_policy("editor_theme"),
+        TablePolicy::Synced(EntityKind::EditorTheme)
     );
-    assert_eq!(setting_policy(KEY), SettingPolicy::Local);
+    assert_eq!(
+        setting_policy(KEY),
+        SettingPolicy::Portable(Merge::LastWriterWins)
+    );
 }

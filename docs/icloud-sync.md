@@ -23,17 +23,17 @@ against SQLite, and every sync problem leaves the app fully usable.
 | Saved layouts | one per layout | without drawings, `last_opened`, `autosave` (per Mac) |
 | Drawings | one per drawing, keyed `layout.chart.drawing` | only inside saved layouts, never the tab session |
 | Pictures | one per distinct picture, keyed by the hash of its bytes (`drawingasset`) | see [Pictures](#pictures); never deleted |
-| Chart / drawing templates | one each | built-in presets live in code |
+| Chart / drawing templates, custom editor themes | one each | built-in presets and themes live in code; editor themes follow the Templates switch ([Editor themes](editor-themes.md)) |
 | Pine scripts | one per script, content inline | no drafts, no revisions; unmodified bundled examples are skipped |
 | Price alert definitions | one per alert | arrive **switched off** on other Macs, see below |
 | Portfolios | one per portfolio, and one per transaction | valuation history is not synced; it is rebuilt on each Mac |
 | Paper trading | one record per account holding the account, its orders, fills, positions, events, closed trades and journal, and which Mac runs it | see [Portfolios and paper trading](#portfolios-and-paper-trading) |
-| Preferences | `appTheme`, `drawing.defaults`, `drawing.prefs`, `snapshot.prefs` (host, scale, include-trading only) | |
+| Preferences | `appTheme`, `drawing.defaults`, `drawing.prefs`, `snapshot.prefs` (host, scale, include-trading only), `editor.prefs` (which editor theme, the editor font, size and line height) | |
 
 Never synced: market and icon caches, portfolio valuation history, which paper account or
 portfolio is selected, live paper quotes, webhook endpoints and their Keychain secrets, API keys, MCP clients/tokens/port, Pine alert subscriptions
 (they bind device-local chart ids), the open tabs and windows, alert runtime state and history,
-snapshot consent and token, `content.prefs` (whether a Post card may fetch a preview from X), and for now the custom editor themes (`editor_theme`) and `editor.prefs` (see [Editor themes](editor-themes.md)). Every document table and `setting` key is classified in
+snapshot consent and token, and `content.prefs` (whether a Post card may fetch a preview from X). Every document table and `setting` key is classified in
 `src/sync/policy.rs`, and a test fails when one is added without a decision; unclassified means
 local.
 
@@ -225,7 +225,7 @@ converge. Randomized tests exercise this. Ordering ties break on `(revision, edi
 | Pine script | the loser always survives as a conflict-copy script; text being typed is never overwritten (the update waits until it is saved); a name taken here is suffixed and the suffix is not uploaded |
 | Portfolio, transaction | last writer; a change that would make the ledger impossible is held (see above) |
 | Paper account | the changed side wins; both changed: later edit keeps the account, the other becomes a paused copy |
-| Templates, alerts, scalar settings | last writer |
+| Templates, editor themes, alerts, scalar settings | last writer |
 | Object-valued settings | per key three-way |
 
 ### Deletion

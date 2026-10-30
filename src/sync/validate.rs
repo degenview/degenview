@@ -123,7 +123,7 @@ fn check(record: &SyncRecord, value: &Value) -> Result<(), String> {
             }
             Ok(())
         }
-        EntityKind::ChartTemplate | EntityKind::DrawingTemplate => {
+        EntityKind::ChartTemplate | EntityKind::DrawingTemplate | EntityKind::EditorTheme => {
             let object = object(value)?;
             id_matches_number(object, id, kind)?;
             name_ok(object, "name")

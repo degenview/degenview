@@ -141,9 +141,13 @@ fn a_saved_selection_of_a_theme_that_is_gone_is_automatic() {
     let host = host_over(&store, FontCatalog::with_entries(Vec::new()));
     assert_eq!(host.view().selected, ThemeSelection::Auto);
     assert_eq!(*current(), Appearance::of(BuiltInTheme::Dark));
-    // And the correction is saved, so the dangling name does not come back.
+    // It is not written back as Automatic: the theme may arrive from another Mac after the
+    // choice does, and rewriting the choice meanwhile would undo it there.
     host.flush(&store);
-    assert_eq!(store.editor_prefs().unwrap().selected, ThemeSelection::Auto);
+    assert_eq!(
+        store.editor_prefs().unwrap().selected,
+        ThemeSelection::Custom(777)
+    );
 }
 
 #[test]

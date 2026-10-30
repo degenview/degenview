@@ -154,6 +154,7 @@ pub fn table_of(kind: EntityKind) -> Option<&'static str> {
     match kind {
         EntityKind::Watchlist => Some("watchlist"),
         EntityKind::ChartTemplate => Some("chart_template"),
+        EntityKind::EditorTheme => Some("editor_theme"),
         EntityKind::DrawingTemplate => Some("drawing_template"),
         EntityKind::Layout | EntityKind::LayoutDrawing => Some("saved_view"),
         EntityKind::DrawingAsset => Some("drawing_asset"),
@@ -351,6 +352,7 @@ impl<'a> Work<'a> {
             EntityKind::Watchlist
             | EntityKind::ChartTemplate
             | EntityKind::DrawingTemplate
+            | EntityKind::EditorTheme
             | EntityKind::Portfolio
             | EntityKind::Setting => self.apply_simple(record),
             EntityKind::PortfolioTransaction => self.apply_transaction(record),
@@ -414,7 +416,7 @@ impl<'a> Work<'a> {
         {
             return self.keep(record, "local_unreadable");
         }
-        if kind == EntityKind::ChartTemplate
+        if matches!(kind, EntityKind::ChartTemplate | EntityKind::EditorTheme)
             && id.parse::<u64>().is_ok_and(|n| n < FIRST_USER_TEMPLATE_ID)
         {
             return self.keep(record, "invalid");
@@ -1694,7 +1696,10 @@ fn compose_row(
                 row.insert("id".into(), sync_id.parse::<u64>().ok()?.into());
             }
         }
-        EntityKind::ChartTemplate | EntityKind::DrawingTemplate | EntityKind::Portfolio => {}
+        EntityKind::ChartTemplate
+        | EntityKind::DrawingTemplate
+        | EntityKind::EditorTheme
+        | EntityKind::Portfolio => {}
         _ => return None,
     }
     Some(Value::Object(row))
