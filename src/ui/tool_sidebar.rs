@@ -77,7 +77,8 @@ struct Tile<'a> {
     label: &'a str,
     tooltip: &'a str,
     active: Active,
-    tint: Color32,
+    /// The colour of a lit tile; `None` is the neutral grey of every other selected surface.
+    tint: Option<Color32>,
     enabled: bool,
     badge: usize,
     /// Identity of the tile when its tooltip changes with its state; empty uses the tooltip.
@@ -327,7 +328,7 @@ pub fn show(ui: &mut Ui, input: &ToolSidebarInput) -> Vec<ToolSidebarAction> {
                     } else {
                         Active::Off
                     },
-                    tint: kit::ACCENT,
+                    tint: None,
                     enabled: true,
                     badge: 0,
                     key: "",
@@ -363,7 +364,7 @@ pub fn show(ui: &mut Ui, input: &ToolSidebarInput) -> Vec<ToolSidebarAction> {
         } else {
             Active::Off
         },
-        tint: kit::ACCENT,
+        tint: None,
         enabled,
         badge: 0,
         key,
@@ -471,7 +472,7 @@ pub fn show(ui: &mut Ui, input: &ToolSidebarInput) -> Vec<ToolSidebarAction> {
             label: &bell_label,
             tooltip: "View Price Alerts",
             active: Active::Off,
-            tint: kit::ACCENT,
+            tint: None,
             enabled: true,
             badge: input.unseen_alerts,
             key: "",
@@ -511,7 +512,7 @@ pub fn show(ui: &mut Ui, input: &ToolSidebarInput) -> Vec<ToolSidebarAction> {
             } else {
                 Active::Off
             },
-            tint: theme::REPLAY,
+            tint: Some(theme::REPLAY),
             enabled: input.has_market || input.replay_open,
             badge: 0,
             key: "",
@@ -547,7 +548,7 @@ pub fn show(ui: &mut Ui, input: &ToolSidebarInput) -> Vec<ToolSidebarAction> {
             } else {
                 Active::Off
             },
-            tint: kit::ACCENT,
+            tint: None,
             enabled: true,
             badge: 0,
             key: "",
@@ -585,7 +586,7 @@ fn menu_tile(
         } else {
             Active::Off
         },
-        tint: kit::ACCENT,
+        tint: None,
         enabled: true,
         badge: 0,
         key: menu.key(),
@@ -687,13 +688,9 @@ fn menu_row(ui: &mut Ui, tool: Tool, selected: bool) -> egui::Response {
     let highlighted = response.hovered() || response.has_focus();
     let painter = ui.painter();
     if highlighted {
-        painter.rect_filled(rect, 6.0, kit::ACCENT);
+        painter.rect_filled(rect, 6.0, theme::selected_tint(true));
     }
-    let color = if highlighted {
-        Color32::WHITE
-    } else {
-        theme::text_primary()
-    };
+    let color = theme::text_primary();
     icons::paint(
         painter,
         Rect::from_center_size(pos2(rect.left() + 18.0, rect.center().y), Vec2::splat(17.0)),
@@ -718,7 +715,7 @@ fn menu_row(ui: &mut Ui, tool: Tool, selected: bool) -> egui::Response {
     );
     if let Some(hint) = hint {
         let tint = if highlighted {
-            Color32::WHITE.gamma_multiply(0.8)
+            theme::text_secondary()
         } else {
             theme::text_tertiary()
         };
@@ -785,30 +782,10 @@ fn tile_button(ui: &mut Ui, rect: Rect, tile: &Tile, strip_right: f32) -> egui::
     } else {
         rect
     };
-    let lit = tile.active == Active::Filled;
-    let (fill, glyph) = match tile.active {
-        Active::Filled => (
-            if pressed {
-                tile.tint.gamma_multiply(0.85)
-            } else {
-                tile.tint
-            },
-            Color32::WHITE,
-        ),
-        Active::Tinted => (
-            theme::with_alpha(
-                tile.tint,
-                if pressed {
-                    0.26
-                } else if hovered {
-                    0.22
-                } else {
-                    0.16
-                },
-            ),
-            tile.tint,
-        ),
-        Active::Off => (
+    let lit = tile.active == Active::Filled && tile.tint.is_some();
+    let grey_lit = tile.active != Active::Off && tile.tint.is_none();
+    let (fill, glyph) = match (tile.active, tile.tint) {
+        (Active::Off, _) => (
             if pressed {
                 kit::primary(0.14)
             } else if hovered {
@@ -822,19 +799,47 @@ fn tile_button(ui: &mut Ui, rect: Rect, tile: &Tile, strip_right: f32) -> egui::
                 kit::primary(0.75)
             },
         ),
+        (_, None) => (
+            theme::selected_tint(hovered || pressed),
+            theme::text_primary(),
+        ),
+        (Active::Filled, Some(tint)) => (
+            if pressed {
+                tint.gamma_multiply(0.85)
+            } else {
+                tint
+            },
+            Color32::WHITE,
+        ),
+        (Active::Tinted, Some(tint)) => (
+            theme::with_alpha(
+                tint,
+                if pressed {
+                    0.26
+                } else if hovered {
+                    0.22
+                } else {
+                    0.16
+                },
+            ),
+            tint,
+        ),
     };
-    if lit {
+    if let (true, Some(tint)) = (lit, tile.tint) {
         painter.add(
             egui::Shadow {
                 offset: [0, 2],
                 blur: 10,
                 spread: 0,
-                color: theme::with_alpha(tile.tint, 0.35),
+                color: theme::with_alpha(tint, 0.35),
             }
             .as_shape(shape, 10.0),
         );
     }
     painter.rect_filled(shape, 10.0, fill);
+    if grey_lit {
+        painter.rect_stroke(shape, 10.0, theme::selected_stroke(), StrokeKind::Inside);
+    }
     if lit {
         // A faint rim, brightest along the top edge, like the Swift gradient stroke.
         painter.rect_stroke(
