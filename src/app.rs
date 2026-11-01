@@ -453,12 +453,14 @@ fn show_window(
             .show(ui)
         })
         .inner;
-    let (outer, inner) = ui.input(|input| {
+    let (outer, inner, transient) = ui.input(|input| {
         let viewport = input.viewport();
-        (viewport.outer_rect, viewport.inner_rect)
+        let transient =
+            [viewport.minimized, viewport.maximized, viewport.fullscreen].contains(&Some(true));
+        (viewport.outer_rect, viewport.inner_rect, transient)
     });
     env.host
-        .publish_geometry(window_id, outer, inner, output.strip);
+        .publish_geometry(window_id, outer, inner, output.strip, transient);
 
     let mut events = output.events;
     if events.contains(&tab_bar::TabBarEvent::UpdateClicked) {
@@ -2702,6 +2704,8 @@ impl eframe::App for DegenViewApp {
         self.updates.tick(ctx);
         self.tick_sync(ctx);
         self.tick_editor_themes();
+        self.tab_host
+            .restore_frames(ctx, native_bridge::screen_layout(), now_ms().max(0) as u64);
         if self.session_last_saved_at.elapsed() >= Duration::from_secs(10) {
             self.save_session();
         }

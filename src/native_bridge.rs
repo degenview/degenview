@@ -275,6 +275,26 @@ mod platform {
     /// high. AppKit lays the bar out again on resize and when leaving full screen, so this runs
     /// every frame and writes only what differs. Windows without full-size content (Settings,
     /// Alerts) keep their native title bars untouched.
+    pub fn screen_layout() -> Vec<[i32; 4]> {
+        let Some(mtm) = MainThreadMarker::new() else {
+            return Vec::new();
+        };
+        let mut screens: Vec<[i32; 4]> = objc2_app_kit::NSScreen::screens(mtm)
+            .iter()
+            .map(|screen| {
+                let frame = screen.frame();
+                [
+                    frame.origin.x.round() as i32,
+                    frame.origin.y.round() as i32,
+                    frame.size.width.round() as i32,
+                    frame.size.height.round() as i32,
+                ]
+            })
+            .collect();
+        screens.sort_unstable();
+        screens
+    }
+
     pub fn center_traffic_lights(height: f64) {
         use objc2_app_kit::{NSWindowButton, NSWindowStyleMask};
         use objc2_foundation::{NSPoint, NSRect, NSSize};
@@ -638,6 +658,16 @@ mod platform {
     pub fn intercept_quit(_on: bool) {}
 
     pub fn center_traffic_lights(_height: f64) {}
+
+    pub fn screen_layout() -> Vec<[i32; 4]> {
+        Vec::new()
+    }
+}
+
+/// The displays as `[x, y, width, height]` in whole points, sorted: which arrangement the windows
+/// sit in (`model::window_frames`). Empty off macOS, and off the main thread.
+pub fn screen_layout() -> Vec<[i32; 4]> {
+    platform::screen_layout()
 }
 
 /// Keeps the macOS window buttons centred in a title bar `height` points tall (see
