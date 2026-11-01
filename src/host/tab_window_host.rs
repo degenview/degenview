@@ -22,7 +22,7 @@ pub struct Placement {
 }
 
 impl Placement {
-    pub const DEFAULT_SIZE: Vec2 = vec2(1440.0, 900.0);
+    pub const DEFAULT_SIZE: Vec2 = vec2(1600.0, 1000.0);
 }
 
 /// What the app has to do for a window.
