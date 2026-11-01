@@ -222,6 +222,15 @@ pub fn selected_plate() -> Color32 {
 pub fn on_selected_plate() -> Color32 {
     pick(Color32::WHITE, palette().text_primary)
 }
+/// The grey that marks a selected or switched-on surface (a chip, tile, row or toggle) where the
+/// system blue used to. Glyphs and text on it use [`text_primary`].
+pub fn selected_tint(hovered: bool) -> Color32 {
+    ink(if hovered { 38 } else { 28 })
+}
+/// The hairline around a [`selected_tint`] surface.
+pub fn selected_stroke() -> egui::Stroke {
+    egui::Stroke::new(1.0, ink(if is_light() { 56 } else { 70 }))
+}
 /// A bordered push button or stepper's bezel (`controlColor`).
 pub fn control_fill() -> Color32 {
     pick(Color32::from_rgb(63, 72, 77), Color32::WHITE)

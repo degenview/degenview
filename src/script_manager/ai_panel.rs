@@ -100,9 +100,9 @@ pub fn panel_button(ui: &mut Ui, panel_open: bool) -> bool {
         "Ask an AI assistant to change this script"
     };
     let color = if panel_open {
-        kit::ACCENT
-    } else {
         theme::text_primary()
+    } else {
+        theme::text_secondary()
     };
     icons::button(ui, Icon::Sparkles, 28.0, color, tip).clicked()
 }
@@ -523,7 +523,7 @@ fn user_message(ui: &mut Ui, text: &str, editable: bool) -> bool {
     ui.with_layout(Layout::top_down(Align::Max), |ui| {
         let widest = ui.available_width() * 0.9;
         egui::Frame::new()
-            .fill(theme::with_alpha(kit::ACCENT, 0.14))
+            .fill(theme::selected_tint(false))
             .corner_radius(12.0)
             .inner_margin(Margin::symmetric(12, 8))
             .show(ui, |ui| {
@@ -990,7 +990,7 @@ fn composer(ui: &mut Ui, ai: &mut Assistant, setup: &Setup, actions: &mut Vec<Pa
         .stroke(egui::Stroke::new(
             1.0,
             if focused {
-                theme::with_alpha(kit::ACCENT, 0.7)
+                theme::with_alpha(theme::text_secondary(), 0.7)
             } else {
                 kit::primary(0.15)
             },

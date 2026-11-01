@@ -595,12 +595,12 @@ fn refresh_button(ui: &mut Ui, busy: bool) -> egui::Response {
     if hot {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         ui.painter()
-            .rect_filled(rect, 6.0, kit::ACCENT.gamma_multiply(0.16));
+            .rect_filled(rect, 6.0, theme::selected_tint(false));
     }
     let color = if busy {
         theme::text_tertiary()
     } else if hot {
-        kit::ACCENT
+        theme::text_primary()
     } else {
         theme::text_secondary()
     };

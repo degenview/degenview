@@ -85,7 +85,7 @@ impl ScriptManager {
                 .color(theme::text_secondary()),
         );
         column.add_space(4.0);
-        if prominent_button(&mut column, Icon::Plus, "Create Your First Script").clicked() {
+        if bordered_button(&mut column, Icon::Plus, "Create Your First Script").clicked() {
             self.cmds.push(Cmd::NewScript);
         }
         if bordered_button(&mut column, Icon::Download, "Add Example Scripts").clicked() {
@@ -503,28 +503,20 @@ fn preview_pane(
     }
 }
 
-fn prominent_button(ui: &mut Ui, icon: Icon, label: &str) -> egui::Response {
-    sized_button(ui, icon, label, Some(theme::SYSTEM_ACCENT))
-}
-
 fn bordered_button(ui: &mut Ui, icon: Icon, label: &str) -> egui::Response {
-    sized_button(ui, icon, label, None)
+    sized_button(ui, icon, label)
 }
 
 /// A large (`.controlSize(.large)`) button with a leading icon.
-fn sized_button(ui: &mut Ui, icon: Icon, label: &str, fill: Option<Color32>) -> egui::Response {
+fn sized_button(ui: &mut Ui, icon: Icon, label: &str) -> egui::Response {
     let font = FontId::proportional(13.0);
     let galley = ui
         .painter()
         .layout_no_wrap(label.to_owned(), font.clone(), Color32::PLACEHOLDER);
     let size = vec2(galley.size().x + 52.0, 32.0);
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
-    let base = fill.unwrap_or_else(theme::control_fill);
-    let ink = if fill.is_some() {
-        Color32::WHITE
-    } else {
-        theme::text_primary()
-    };
+    let base = theme::control_fill();
+    let ink = theme::text_primary();
     let color = if response.is_pointer_button_down_on() {
         base.gamma_multiply(0.8)
     } else if response.hovered() {
@@ -534,14 +526,12 @@ fn sized_button(ui: &mut Ui, icon: Icon, label: &str, fill: Option<Color32>) -> 
     };
     let painter = ui.painter();
     painter.rect_filled(rect, 7.0, color);
-    if fill.is_none() {
-        painter.rect_stroke(
-            rect,
-            7.0,
-            Stroke::new(1.0, theme::separator()),
-            egui::StrokeKind::Inside,
-        );
-    }
+    painter.rect_stroke(
+        rect,
+        7.0,
+        Stroke::new(1.0, theme::separator()),
+        egui::StrokeKind::Inside,
+    );
     icons::paint(
         painter,
         egui::Rect::from_center_size(pos2(rect.min.x + 20.0, rect.center().y), Vec2::splat(13.0)),

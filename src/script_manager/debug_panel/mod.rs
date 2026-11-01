@@ -570,7 +570,7 @@ fn variables_pane(ui: &mut Ui, context: &mut Context<'_>, with_header: bool) {
         ui.painter().rect_stroke(
             output.inner_rect.shrink(1.0),
             0.0,
-            Stroke::new(1.0, theme::with_alpha(kit::ACCENT, 0.7)),
+            Stroke::new(1.0, theme::with_alpha(theme::text_secondary(), 0.7)),
             egui::StrokeKind::Inside,
         );
     }

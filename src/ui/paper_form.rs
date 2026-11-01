@@ -57,7 +57,7 @@ pub fn text_field(
     let (border, width) = if is_error {
         (theme::with_alpha(theme::DOWN, 0.8), 1.5)
     } else if focused {
-        (theme::with_alpha(kit::ACCENT, 0.8), 1.5)
+        (theme::with_alpha(theme::text_secondary(), 0.8), 1.5)
     } else {
         (theme::with_alpha(theme::separator(), 0.6), 1.0)
     };

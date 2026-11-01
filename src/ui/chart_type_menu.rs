@@ -153,14 +153,14 @@ fn row(
     let (rect, response) = ui.allocate_exact_size(vec2(width, ROW_HEIGHT), sense);
     let highlighted = enabled && response.hovered();
     if highlighted {
-        ui.painter().rect_filled(rect, 5.0, kit::ACCENT);
+        ui.painter()
+            .rect_filled(rect, 5.0, theme::selected_tint(true));
     } else if selected {
         ui.painter().rect_filled(rect, 5.0, theme::ink(14));
     }
     let ink = match (enabled, highlighted) {
         (false, _) => theme::text_tertiary(),
-        (true, true) => Color32::WHITE,
-        (true, false) => theme::text_primary(),
+        (true, _) => theme::text_primary(),
     };
     glyph(
         ui.painter(),

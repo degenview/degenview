@@ -261,7 +261,7 @@ pub(crate) fn field(
         .stroke(egui::Stroke::new(
             1.0,
             if focused {
-                theme::with_alpha(kit::ACCENT, 0.7)
+                theme::with_alpha(theme::text_secondary(), 0.7)
             } else {
                 kit::primary(0.15)
             },

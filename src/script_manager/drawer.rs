@@ -92,13 +92,13 @@ pub fn bar(
             ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
         }
         let color = if selected {
-            theme::SYSTEM_ACCENT
+            theme::text_primary()
         } else {
             theme::text_secondary()
         };
         let painter = ui.painter();
         if selected {
-            painter.rect_filled(tab_rect, 6.0, theme::with_alpha(theme::SYSTEM_ACCENT, 0.15));
+            painter.rect_filled(tab_rect, 6.0, theme::selected_tint(false));
         } else if response.hovered() {
             painter.rect_filled(tab_rect, 6.0, theme::ink(10));
         }

@@ -202,14 +202,7 @@ pub fn show(
         sheet::inset(ui, |ui| {
             ui.add_space(14.0);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if kit::footer_button(
-                    ui,
-                    "Done",
-                    kit::FooterButton::Prominent(theme::SYSTEM_ACCENT),
-                    true,
-                    76.0,
-                )
-                .clicked()
+                if kit::footer_button(ui, "Done", kit::FooterButton::Primary, true, 76.0).clicked()
                 {
                     actions.push(AssetDetailAction::Close);
                 }

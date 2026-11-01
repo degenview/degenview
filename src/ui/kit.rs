@@ -640,7 +640,7 @@ fn tab_bar_with<T: Copy + PartialEq>(
                 size::CAPTION + 0.5,
                 SEMIBOLD,
                 if active {
-                    ACCENT
+                    theme::text_primary()
                 } else {
                     theme::text_secondary()
                 },
@@ -659,7 +659,7 @@ fn tab_bar_with<T: Copy + PartialEq>(
             Rect::from_min_size(pos2(x, y - glyph / 2.0), Vec2::splat(glyph)),
             item.icon,
             if active {
-                ACCENT
+                theme::text_primary()
             } else {
                 theme::text_secondary()
             },
@@ -678,7 +678,7 @@ fn tab_bar_with<T: Copy + PartialEq>(
                 capsule.height() / 2.0,
                 theme::with_alpha(
                     if active {
-                        ACCENT
+                        theme::text_primary()
                     } else {
                         theme::text_secondary()
                     },
@@ -714,7 +714,7 @@ pub fn search_field(
         Stroke::new(
             1.0,
             if focused {
-                theme::with_alpha(ACCENT, 0.7)
+                theme::with_alpha(theme::text_secondary(), 0.7)
             } else {
                 primary(0.1)
             },
@@ -887,11 +887,11 @@ pub fn menu_row(ui: &mut Ui, row: MenuRow) -> egui::Response {
     let highlighted = row.enabled && (response.hovered() || row.focused);
     let painter = ui.painter();
     if highlighted {
-        painter.rect_filled(rect, 5.0, ACCENT);
+        painter.rect_filled(rect, 5.0, theme::selected_tint(true));
     }
     let color = match (row.enabled, highlighted, row.destructive) {
         (false, _, _) => theme::text_tertiary(),
-        (true, true, _) => Color32::WHITE,
+        (true, true, _) => theme::text_primary(),
         (true, false, true) => RED,
         (true, false, false) => theme::text_primary(),
     };
@@ -957,10 +957,8 @@ pub fn menu_row(ui: &mut Ui, row: MenuRow) -> egui::Response {
         );
     }
     if row.chevron || row.current {
-        let mark = if row.current && highlighted {
-            Color32::WHITE
-        } else if row.current {
-            ACCENT
+        let mark = if row.current {
+            theme::text_primary()
         } else {
             color
         };
@@ -1009,13 +1007,10 @@ fn menu_item_marked_response(
     let (rect, response) = ui.allocate_exact_size(vec2(width, 24.0), Sense::click());
     let highlighted = response.hovered();
     if highlighted {
-        ui.painter().rect_filled(rect, 5.0, ACCENT);
+        ui.painter()
+            .rect_filled(rect, 5.0, theme::selected_tint(true));
     }
-    let color = if highlighted {
-        Color32::WHITE
-    } else {
-        theme::text_primary()
-    };
+    let color = theme::text_primary();
     if marked {
         icons::paint(
             ui.painter(),
@@ -1246,7 +1241,9 @@ pub fn push_button(ui: &mut Ui, icon: Option<Icon>, label: &str, enabled: bool) 
 pub enum FooterButton {
     /// Cancel and the like: a quiet bordered button.
     Secondary,
-    /// The sheet's main action, filled with the given tint.
+    /// The sheet's main action in the neutral grey: a heavier plate and a semibold label.
+    Primary,
+    /// The sheet's main action, filled with the given tint (a semantic colour, not the accent).
     Prominent(Color32),
 }
 
@@ -1262,11 +1259,11 @@ pub fn footer_button(
     let text_color = match (kind, enabled) {
         (FooterButton::Prominent(_), true) => Color32::WHITE,
         (FooterButton::Prominent(_), false) => Color32::WHITE.gamma_multiply(0.7),
-        (FooterButton::Secondary, true) => theme::text_primary(),
-        (FooterButton::Secondary, false) => theme::text_tertiary(),
+        (FooterButton::Primary | FooterButton::Secondary, true) => theme::text_primary(),
+        (FooterButton::Primary | FooterButton::Secondary, false) => theme::text_tertiary(),
     };
     let weight = match kind {
-        FooterButton::Prominent(_) => SEMIBOLD,
+        FooterButton::Prominent(_) | FooterButton::Primary => SEMIBOLD,
         FooterButton::Secondary => REGULAR,
     };
     let text = galley(ui, label, size::BODY, weight, text_color, 400.0);
@@ -1294,13 +1291,20 @@ pub fn footer_button(
             };
             painter.rect_filled(rect, 7.0, fill);
         }
-        FooterButton::Secondary => {
-            let fill = primary(match (enabled, pressed, hovered) {
-                (false, _, _) => 0.05,
-                (true, true, _) => 0.2,
-                (true, false, true) => 0.14,
-                _ => 0.1,
-            });
+        FooterButton::Primary | FooterButton::Secondary => {
+            let lift = if kind == FooterButton::Primary {
+                0.06
+            } else {
+                0.0
+            };
+            let fill = primary(
+                lift + match (enabled, pressed, hovered) {
+                    (false, _, _) => 0.05,
+                    (true, true, _) => 0.2,
+                    (true, false, true) => 0.14,
+                    _ => 0.1,
+                },
+            );
             painter.rect_filled(rect, 7.0, fill);
             painter.rect_stroke(
                 rect,
@@ -1910,16 +1914,16 @@ pub fn sheet_button(ui: &mut Ui, label: &str, prominent: bool, enabled: bool) ->
     let hovered = response.hovered() && enabled;
     let (fill, color) = match (prominent, enabled) {
         (true, true) => (
-            if pressed {
-                ACCENT.gamma_multiply(0.8)
+            primary(if pressed {
+                0.26
             } else if hovered {
-                ACCENT.gamma_multiply(1.1)
+                0.2
             } else {
-                ACCENT
-            },
-            Color32::WHITE,
+                0.16
+            }),
+            theme::text_primary(),
         ),
-        (true, false) => (theme::with_alpha(ACCENT, 0.3), primary(0.45)),
+        (true, false) => (primary(0.06), primary(0.45)),
         (false, _) => (
             primary(if pressed {
                 0.18
@@ -2064,7 +2068,7 @@ pub fn destructive_sheet_button(ui: &mut Ui, icon: Icon, label: &str) -> egui::R
 /// A quick-value pill; the one already chosen is tinted with the accent.
 pub fn value_chip(ui: &mut Ui, label: &str, selected: bool) -> egui::Response {
     let color = if selected {
-        ACCENT
+        theme::text_primary()
     } else {
         theme::text_secondary()
     };
@@ -2080,7 +2084,7 @@ pub fn value_chip(ui: &mut Ui, label: &str, selected: bool) -> egui::Response {
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
     let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
     let fill = if selected {
-        theme::with_alpha(ACCENT, 0.14)
+        theme::selected_tint(response.hovered())
     } else {
         primary(if response.hovered() { 0.1 } else { 0.06 })
     };
@@ -2170,7 +2174,7 @@ pub fn paint_switch(painter: &egui::Painter, rect: Rect, progress: f32, dimmed: 
     );
     if progress > 0.0 {
         let on = fade * progress;
-        painter.rect_filled(rect, radius, ACCENT.gamma_multiply(on));
+        painter.rect_filled(rect, radius, theme::text_secondary().gamma_multiply(on));
         // The top edge catches a little light, so the track is not one flat colour.
         painter.hline(
             (rect.left() + radius)..=(rect.right() - radius),
@@ -2200,7 +2204,7 @@ pub fn field_frame(focused: bool) -> egui::Frame {
         .stroke(Stroke::new(
             1.0,
             if focused {
-                theme::with_alpha(ACCENT, 0.7)
+                theme::with_alpha(theme::text_secondary(), 0.7)
             } else {
                 primary(0.12)
             },

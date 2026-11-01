@@ -660,7 +660,7 @@ fn sidebar(ui: &mut egui::Ui, state: &mut SettingsState) {
         let selected = state.section == section;
         let painter = ui.painter();
         if selected {
-            painter.rect_filled(rect, 6.0, kit::ACCENT);
+            painter.rect_filled(rect, 6.0, theme::selected_tint(false));
         } else if response.hovered() {
             painter.rect_filled(rect, 6.0, kit::primary(0.06));
         }
@@ -691,11 +691,7 @@ fn sidebar(ui: &mut egui::Ui, state: &mut SettingsState) {
             section.title(),
             kit::size::BODY,
             kit::REGULAR,
-            if selected {
-                Color32::WHITE
-            } else {
-                theme::text_primary()
-            },
+            theme::text_primary(),
             rect.width() - 44.0,
         );
         ui.painter().galley(

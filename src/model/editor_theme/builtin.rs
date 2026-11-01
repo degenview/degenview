@@ -126,7 +126,7 @@ const fn dark_surface(surface: SurfaceColor) -> Rgba {
         S::DiagnosticError => Rgba::hex(0xFF453A),
         S::DiagnosticWarning => Rgba::hex(0xFFD60A),
         S::PopupBackground => Rgba::hex(0x252D31),
-        S::PopupSelection => Rgba::hex(0x0A84FF),
+        S::PopupSelection => Rgba::hex(0x586269),
     }
 }
 
@@ -150,7 +150,7 @@ const fn light_surface(surface: SurfaceColor) -> Rgba {
         S::DiagnosticError => Rgba::hex(0xFF3B30),
         S::DiagnosticWarning => Rgba::hex(0xFFD60A),
         S::PopupBackground => Rgba::hex(0xECECEE),
-        S::PopupSelection => Rgba::hex(0x0A84FF),
+        S::PopupSelection => Rgba::hex(0x6E6E73),
     }
 }
 

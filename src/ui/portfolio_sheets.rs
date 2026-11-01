@@ -268,7 +268,7 @@ fn currency_tile(
         painter.rect_stroke(
             rect.expand(2.0),
             12.0,
-            egui::Stroke::new(2.0, theme::with_alpha(theme::SYSTEM_ACCENT, 0.5)),
+            egui::Stroke::new(2.0, theme::with_alpha(theme::text_secondary(), 0.5)),
             egui::StrokeKind::Outside,
         );
     }
@@ -481,7 +481,7 @@ pub fn show_manage(
                                 egui::Pos2::new(first.left(), y),
                                 egui::Pos2::new(first.right(), y),
                             ],
-                            egui::Stroke::new(2.0, theme::SYSTEM_ACCENT),
+                            egui::Stroke::new(2.0, theme::text_secondary()),
                         );
                     }
                     if drag_stopped && destination != source && destination != source + 1 {
@@ -506,8 +506,7 @@ pub fn show_manage(
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui
                         .add(
-                            egui::Button::new(RichText::new("Done").strong().color(Color32::WHITE))
-                                .fill(theme::SYSTEM_ACCENT)
+                            egui::Button::new(RichText::new("Done").strong())
                                 .min_size(Vec2::new(76.0, 30.0)),
                         )
                         .clicked()
