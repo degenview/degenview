@@ -2,6 +2,7 @@
 //! not rerun on every keystroke. Ported from `PineInstanceSettingsPopover`; the chart legend's
 //! chips and the chart settings sheet's script rows both open it, pointing at themselves.
 
+use super::icons::Icon;
 use super::kit::{self, SEMIBOLD};
 use super::pine_style_view;
 use super::popover;
@@ -104,12 +105,26 @@ impl PineSettingsPopover {
             // kind opens straight on it.
             self.page = self.visible_page();
             if self.has_inputs() && self.has_style() {
-                kit::segmented_filling(
+                // The app's icon tab bar: a tall track with a raised plate under the page in view,
+                // and how many settings each page holds.
+                kit::tab_bar(
                     ui,
                     id.with("page"),
-                    &[(Page::Inputs, "Inputs"), (Page::Style, "Style")],
+                    &[
+                        kit::TabItem {
+                            value: Page::Inputs,
+                            title: "Inputs",
+                            icon: Icon::Sliders,
+                            count: self.schema.inputs.len(),
+                        },
+                        kit::TabItem {
+                            value: Page::Style,
+                            title: "Style",
+                            icon: Icon::Palette,
+                            count: self.rows.len(),
+                        },
+                    ],
                     &mut self.page,
-                    content_width,
                 );
                 ui.add_space(12.0);
             }
@@ -326,5 +341,32 @@ mod tests {
         // With no rows to judge by (the script has not run) nothing is dropped.
         popover.rows.clear();
         assert_eq!(popover.applied_style().len(), 2);
+    }
+
+    /// The popover as pictures. Run by hand with `DEGENVIEW_GALLERY_DIR` set.
+    #[test]
+    #[ignore = "writes images for a person to look at"]
+    fn gallery_of_the_popover() {
+        use crate::ui::render_tests::{Screen, gallery_dir};
+        if gallery_dir().is_none() {
+            return;
+        }
+        let source = "//@version=5\nindicator(\"Squeeze Momentum\")\nlen = input.int(20, \"Length\")\nmult = input.float(2.0, \"Multiplier\")\nplot(close)";
+        for (name, page) in [
+            ("popover-inputs", Page::Inputs),
+            ("popover-style", Page::Style),
+        ] {
+            let mut popover =
+                PineSettingsPopover::open(1, &instance(source), vec![row()], anchor());
+            popover.page = page;
+            let mut screen = Screen::new(vec2(560.0, 520.0));
+            let mut last = None;
+            for _ in 0..4 {
+                last = Some(screen.run(Vec::new(), |ui| {
+                    popover.show(ui.ctx());
+                }));
+            }
+            screen.save(name, last.expect("a frame"));
+        }
     }
 }
