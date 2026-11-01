@@ -1,5 +1,6 @@
 pub mod accessibility;
 pub mod add_chart_sheet;
+pub mod add_indicator_menu;
 pub mod alert_banner;
 pub mod alert_center;
 pub mod alert_editor;
@@ -79,6 +80,7 @@ pub mod replay_date_sheet;
 mod replay_overlay;
 pub mod scale_menu;
 pub mod script_alert_list;
+pub mod script_catalog;
 mod series_render;
 pub mod settings_about;
 pub mod settings_ai;

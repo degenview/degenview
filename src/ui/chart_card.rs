@@ -112,7 +112,7 @@ fn candle_body_half_width(slot_width: f32) -> f32 {
 
 /// Signals a chart card emits while it is being drawn. The owning workspace
 /// applies them after the frame, so rendering never mutates layout mid-pass.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct ChartCardAction {
     pub focus_requested: bool,
     pub settings_requested: bool,

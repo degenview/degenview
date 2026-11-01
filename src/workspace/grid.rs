@@ -735,6 +735,16 @@ impl ChartWorkspace {
                             self.settings_state.tab = chart_settings::Tab::Scripts;
                             self.settings_chart = Some(chart_id);
                         }
+                        Action::AddScript(script) => {
+                            self.add_pine_instance_to(
+                                chart_id,
+                                script.id.clone(),
+                                &script.name,
+                                &script.source,
+                                &Default::default(),
+                                true,
+                            );
+                        }
                         _ => {
                             if let Some(chart) = self.charts.iter_mut().find(|c| c.id == chart_id) {
                                 match action {

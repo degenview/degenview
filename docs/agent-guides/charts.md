@@ -156,6 +156,15 @@ behavior.
 - The Pine logs pane is the same kind of view: it reads `ChartCard::pine_logs` (the run's messages,
   never saved, never in a template) and is dropped with its chart. Only its level and search
   options persist, as the local `pineLogs.prefs` setting.
+- Saved scripts reach a chart from two places, both reading `ui::script_catalog` (saved indicators and
+  strategies by name, re-read at most every 2 s, only while a menu or the Scripts page is open: never
+  call `ScriptStore::all_scripts` per frame). The header "+" (`ui::add_indicator_menu`: search field
+  focused on open, built-ins, a separator, scripts, then Script Manager and All Indicator Settings)
+  reports `Action::AddScript`, which the workspace applies with `add_pine_instance_to` so it is one undo
+  step. The chart settings Scripts page lists every saved script with a switch: the first switch-on adds
+  an instance, and after that the switch is only `PineInstance::visible`, so inputs, style and order
+  survive turning a script off. Removing an instance is the separate x on its row. The sheet has no
+  workspace handle, so its edits are not undoable.
 - Undo is one typed stack (`Snapshot`): drawings, or indicators and scripts. Bulk changes are one
   `apply_drawing_commands` batch or one `remember_indicators` entry. See
   [chart context menus](../chart-context-menu.md).

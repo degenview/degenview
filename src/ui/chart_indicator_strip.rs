@@ -1,5 +1,6 @@
 //! Compact, Swift-style controls for the indicators applied to a chart.
 
+use super::add_indicator_menu;
 use super::chart_card::ChartCard;
 use super::icons::{self, Icon};
 use super::kit::{self, size};
@@ -7,6 +8,7 @@ use super::popover;
 use super::theme;
 pub use crate::model::BuiltIn;
 use crate::model::{DataSource, EMA_PERIODS, IndicatorConfig};
+use crate::script_manager::model::LocalScript;
 use eframe::egui::{self, Color32, FontId, Galley, Rect, Sense, Ui, Vec2, pos2, vec2};
 use std::sync::Arc;
 
@@ -16,9 +18,11 @@ pub enum Kind {
     Script(u64),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Action {
     Add(BuiltIn),
+    /// Apply a saved script to the chart, after the ones already there.
+    AddScript(Arc<LocalScript>),
     ToggleVisible(Kind),
     Remove(BuiltIn),
     EmaPeriod(usize),
@@ -103,7 +107,7 @@ const CONTROLS_RESERVE: f32 = 4.0 + 3.0 * CONTROL_SIZE + 2.0;
 const SPACING: f32 = 4.0;
 
 impl BuiltIn {
-    fn icon(self) -> Icon {
+    pub(super) fn icon(self) -> Icon {
         match self {
             Self::Volume => Icon::BarChart,
             Self::Rsi => Icon::Waveform,
@@ -211,6 +215,7 @@ pub fn show(
     if show_add {
         add_button(
             ui,
+            card,
             config,
             source,
             items.is_empty(),
@@ -327,7 +332,7 @@ fn overflow_list(
                         id,
                         ui.min_rect().expand(SIDE + 1.0),
                     )),
-                    other => other.or(*action),
+                    other => other.or_else(|| action.take()),
                 };
             },
         );
@@ -452,7 +457,7 @@ fn chip(
                 kit::primary(0.85 * opacity),
             );
             if response.clicked() {
-                *action = Some(match button.action {
+                *action = Some(match button.action.clone() {
                     // The popover points at the whole chip, not the little button.
                     Action::ConfigureScript(id, _) => Action::ConfigureScript(id, rect),
                     other => other,
@@ -514,6 +519,7 @@ fn control_buttons(item: &Item) -> Vec<Control> {
 /// there are indicators, so it never competes with the chart's own controls.
 fn add_button(
     ui: &mut Ui,
+    card: &ChartCard,
     config: &IndicatorConfig,
     source: DataSource,
     is_empty: bool,
@@ -546,40 +552,20 @@ fn add_button(
             theme::with_alpha(theme::text_primary(), opacity),
         );
     }
-    egui::Popup::menu(&response)
-        .id(response.id.with("add"))
-        .frame(kit::menu_frame())
-        .align(egui::RectAlign::BOTTOM_START)
-        .gap(4.0)
-        .show(|ui| {
-            ui.set_width(210.0);
-            ui.spacing_mut().item_spacing.y = 0.0;
-            let addable: Vec<BuiltIn> = BuiltIn::ALL
-                .into_iter()
-                .filter(|kind| !(source.is_line_chart() && *kind == BuiltIn::Volume))
-                .filter(|kind| !kind.applied(config))
-                .collect();
-            if !addable.is_empty() {
-                menu_heading(ui, "Built-in");
-                for kind in addable {
-                    if kit::menu_item(ui, kind.icon(), kind.menu_title(), true, false) {
-                        *action = Some(Action::Add(kind));
-                        ui.close();
-                    }
-                }
-                kit::menu_separator(ui);
-            }
-            if !source.is_line_chart()
-                && kit::menu_item(ui, Icon::Curlybraces, "Script Manager…", true, false)
-            {
-                *action = Some(Action::OpenScriptSettings);
-                ui.close();
-            }
-            if kit::menu_item(ui, Icon::Sliders, "All Indicator Settings…", true, false) {
-                *action = Some(Action::OpenIndicatorSettings);
-                ui.close();
-            }
-        });
+    let on_chart: Vec<String> = card
+        .pine_instances()
+        .iter()
+        .filter_map(|instance| instance.script_id.clone())
+        .collect();
+    add_indicator_menu::show(
+        &response,
+        &add_indicator_menu::Env {
+            config,
+            source,
+            on_chart: &on_chart,
+        },
+        action,
+    );
 }
 
 /// A small section label in a menu.

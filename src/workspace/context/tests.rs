@@ -578,6 +578,25 @@ fn indicator_history_and_drawing_history_share_one_stack_in_order() {
 }
 
 #[test]
+fn a_script_picked_from_the_plus_menu_is_applied_by_id_and_undo_takes_it_off() {
+    let mut rig = Rig::new();
+    let chart = rig.chart("BTCUSDT", 100.0);
+    let added = rig.workspace.add_pine_instance_to(
+        chart,
+        "saved-script".to_owned(),
+        "Saved",
+        "//@version=6",
+        &Default::default(),
+        true,
+    );
+    assert!(added.is_some());
+    let instances = rig.chart_mut(chart).chart.pine_instances().to_vec();
+    assert_eq!(instances[0].script_id.as_deref(), Some("saved-script"));
+    rig.workspace.undo();
+    assert!(rig.chart_mut(chart).chart.pine_instances().is_empty());
+}
+
+#[test]
 fn removing_a_script_leaves_its_alert_subscriptions_and_source_alone() {
     // Only the chart's instance goes: the library and the subscription store are not touched by
     // removal (the host marks a subscription whose instance is gone as changed, silently).
