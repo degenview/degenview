@@ -5,6 +5,7 @@ use super::chart_card::ChartCard;
 use super::chart_templates::{self, TemplateAction, TemplateState};
 use super::icons::{self, Icon};
 use super::kit::{self, TabItem};
+use super::script_catalog;
 use super::settings_card;
 use super::sheet;
 use super::theme;
@@ -18,13 +19,12 @@ use crate::model::{
 };
 use crate::script_manager::drawer;
 use crate::script_manager::model::{LocalScript, ScriptType};
-use crate::script_manager::store::ScriptStore;
 use crate::store::SharedStore;
 use eframe::egui::{
     self, Align, Align2, Color32, CornerRadius, CursorIcon, FontId, Id, Layout, Margin, Rect,
     RichText, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2,
 };
-use std::time::{Duration, Instant};
+use std::sync::Arc;
 
 /// Swift's ideal sheet width.
 const WIDTH: f32 = 760.0;
@@ -34,7 +34,6 @@ const MAX_PAGE_HEIGHT: f32 = 650.0;
 const MIN_PAGE_HEIGHT: f32 = 260.0;
 /// What the sheet spends on everything but the page: header, tab bar, two rules and the footer.
 const CHROME_HEIGHT: f32 = 250.0;
-const SCRIPT_REFRESH: Duration = Duration::from_secs(2);
 
 fn page_height(parent_height: f32) -> f32 {
     (parent_height - CHROME_HEIGHT).clamp(MIN_PAGE_HEIGHT, MAX_PAGE_HEIGHT)
@@ -90,8 +89,8 @@ impl Tab {
 pub struct ChartSettingsState {
     pub tab: Tab,
     confirming_removal: bool,
-    scripts: Vec<LocalScript>,
-    scripts_read_at: Option<Instant>,
+    /// What the Scripts page's search field holds.
+    script_query: String,
     templates: TemplateState,
 }
 
@@ -726,7 +725,8 @@ fn indicators_page(ui: &mut Ui, c: &mut ChartSettingsContext) {
 
 // MARK: Scripts
 
-/// What one row of the applied list shows, copied out so drawing needs no borrow of the chart.
+/// What one row of the "On this chart" list shows, copied out so drawing needs no borrow of the
+/// chart.
 struct RowData {
     id: u64,
     title: String,
@@ -737,6 +737,9 @@ struct RowData {
     failure: Option<String>,
     evaluating: bool,
     order: VisualOrder,
+    /// Where the instance sits among all of the chart's scripts, whatever the search shows.
+    position: usize,
+    total: usize,
 }
 
 enum RowEvent {
@@ -747,106 +750,81 @@ enum RowEvent {
     Configure(u64, Rect),
     /// Where the script's visuals sit against the chart's candles.
     SetOrder(u64, VisualOrder),
+    /// Turn a saved script on for this chart (its first instance).
+    Enable(Arc<LocalScript>),
+    /// Apply the instance's script again, with default inputs.
+    Duplicate(u64),
 }
 
-fn refresh_scripts(state: &mut ChartSettingsState) {
-    if cfg!(test) {
-        return;
-    }
-    if state
-        .scripts_read_at
-        .is_some_and(|at| at.elapsed() < SCRIPT_REFRESH)
-    {
-        return;
-    }
-    state.scripts_read_at = Some(Instant::now());
-    if let Some(mut store) = ScriptStore::default_location()
-        && let Ok(mut scripts) = store.all_scripts()
-    {
-        scripts.retain(|s| s.script_type != ScriptType::Library);
-        scripts.sort_by_key(|s| s.name.to_lowercase());
-        state.scripts = scripts;
-    }
-}
+/// The list gets a search field once it has more rows than this.
+const SEARCH_FROM: usize = 5;
 
 fn scripts_page(
     ui: &mut Ui,
     state: &mut ChartSettingsState,
     c: &mut ChartSettingsContext,
 ) -> Option<ChartSettingsAction> {
-    refresh_scripts(state);
     let mut action = None;
-    let mut add: Option<LocalScript> = None;
-    let has_saved = !state.scripts.is_empty();
-
+    let saved = script_catalog::scripts(ui.ctx());
+    let instances: Vec<PineInstance> = c.card.pine_instances().to_vec();
+    if instances.is_empty() && saved.is_empty() {
+        settings_card::section_title(ui, "Scripts", Some("Pine scripts running on this chart."));
+        empty_state(ui, &mut action);
+        return action;
+    }
     ui.horizontal(|ui| {
         ui.vertical(|ui| {
             settings_card::section_title(
                 ui,
                 "Scripts",
-                Some("Pine scripts running on this chart."),
+                Some("Switch a script on to run it on this chart."),
             );
         });
-        if has_saved {
-            ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-                let button = kit::push_button(ui, Some(Icon::Plus), "Add Script", true)
-                    .on_hover_text("Apply a script to this chart — add the same one again with different inputs");
-                egui::Popup::menu(&button)
-                    .frame(kit::menu_frame())
-                    .show(|ui| {
-                        ui.set_min_width(220.0);
-                        for (heading, kind, icon) in [
-                            ("Indicators", ScriptType::Indicator, Icon::ChartLine),
-                            ("Strategies", ScriptType::Strategy, Icon::Cycle),
-                        ] {
-                            let scripts: Vec<&LocalScript> = state
-                                .scripts
-                                .iter()
-                                .filter(|s| s.script_type == kind)
-                                .collect();
-                            if scripts.is_empty() {
-                                continue;
-                            }
-                            ui.horizontal(|ui| {
-                                ui.add_space(8.0);
-                                ui.label(kit::text(
-                                    heading,
-                                    kit::size::CAPTION + 0.5,
-                                    kit::SEMIBOLD,
-                                    theme::text_secondary(),
-                                ));
-                            });
-                            for script in scripts {
-                                if kit::menu_item(ui, icon, &script.name, true, false) {
-                                    add = Some(script.clone());
-                                    ui.close();
-                                }
-                            }
-                            kit::menu_separator(ui);
-                        }
-                        if kit::menu_item(ui, Icon::Curlybraces, "Script Manager…", true, false) {
-                            action = Some(ChartSettingsAction::OpenScriptManager);
-                            ui.close();
-                        }
-                    });
-            });
-        }
+        ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
+            if kit::push_button(ui, Some(Icon::Curlybraces), "Script Manager", true)
+                .on_hover_text("Write, edit and organise scripts")
+                .clicked()
+            {
+                action = Some(ChartSettingsAction::OpenScriptManager);
+            }
+        });
     });
-    if let Some(script) = add {
-        c.card
-            .add_pine_instance(Some(script.id.clone()), &script.name, &script.source);
-    }
 
-    let instances: Vec<PineInstance> = c.card.pine_instances().to_vec();
-    if instances.is_empty() {
-        empty_state(ui, has_saved, &mut action);
-        return action;
+    let off_chart: Vec<&Arc<LocalScript>> = saved
+        .iter()
+        .filter(|script| {
+            !instances
+                .iter()
+                .any(|i| i.script_id.as_deref() == Some(script.id.as_str()))
+        })
+        .collect();
+    if instances.len() + off_chart.len() > SEARCH_FROM {
+        ui.add_space(2.0);
+        kit::search_field(
+            ui,
+            Id::new("chart-settings-script-search"),
+            &mut state.script_query,
+            "Search scripts",
+            ui.available_width(),
+        );
+        ui.add_space(4.0);
+    } else {
+        // A filter nobody can see must not hide rows.
+        state.script_query.clear();
+    }
+    let query = state.script_query.trim().to_lowercase();
+    let mut available = script_catalog::matching(off_chart.iter().copied(), &query);
+    if query.is_empty() {
+        // Indicators, then strategies; each already by name.
+        available.sort_by_key(|script| script.script_type == ScriptType::Strategy);
     }
 
     // Copy what the rows show out of the chart, so drawing needs no borrow of it.
     let rows: Vec<RowData> = instances
         .iter()
-        .map(|instance| {
+        .enumerate()
+        .filter(|(_, instance)| query.is_empty() || instance.name.to_lowercase().contains(&query))
+        .map(|(position, instance)| {
             let status = c.card.pine_status(instance.id);
             RowData {
                 id: instance.id,
@@ -859,6 +837,8 @@ fn scripts_page(
                     .and_then(|s| s.error.map(|e| e.message.clone())),
                 evaluating: instance.visible && status.is_none(),
                 order: instance.visual_order,
+                position,
+                total: instances.len(),
             }
         })
         .collect();
@@ -869,61 +849,62 @@ fn scripts_page(
         .max()
         .filter(|bars| *bars > 0);
 
-    ui.add_space(12.0);
-    ui.horizontal(|ui| {
-        ui.label(kit::text(
-            "Applied",
-            kit::size::SUBHEADLINE + 1.0,
-            kit::SEMIBOLD,
-            theme::text_primary(),
-        ));
-        count_chip(ui, &rows.len().to_string());
-        if let Some(bars) = bars {
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                status_badge(ui, &format!("{bars} bars"), theme::text_secondary());
-            });
-        }
-    });
-    ui.add_space(6.0);
-
     let mut events: Vec<RowEvent> = Vec::new();
-    let list = kit::card_frame(false)
-        .inner_margin(Margin::ZERO)
-        .show(ui, |ui| {
-            ui.spacing_mut().item_spacing.y = 0.0;
-            let count = rows.len();
-            for (index, row) in rows.iter().enumerate() {
-                if index > 0 {
-                    let y = ui.cursor().min.y;
-                    let rect = ui.max_rect();
-                    ui.painter().line_segment(
-                        [pos2(rect.min.x + 54.0, y), pos2(rect.max.x - 12.0, y)],
-                        Stroke::new(1.0, kit::hairline()),
-                    );
-                }
-                instance_row(ui, row, index, count, &mut events);
+    if !rows.is_empty() {
+        ui.add_space(12.0);
+        ui.horizontal(|ui| {
+            ui.label(kit::text(
+                "On this chart",
+                kit::size::SUBHEADLINE + 1.0,
+                kit::SEMIBOLD,
+                theme::text_primary(),
+            ));
+            count_chip(ui, &rows.len().to_string());
+            if let Some(bars) = bars {
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    status_badge(ui, &format!("{bars} bars"), theme::text_secondary());
+                });
             }
         });
-    kit::paint_card_highlight(ui, list.response.rect);
+        ui.add_space(6.0);
+        row_card(ui, rows.len(), |ui, index| {
+            instance_row(ui, &rows[index], index, rows.len(), &mut events);
+        });
+    }
+    if !available.is_empty() {
+        ui.add_space(if rows.is_empty() { 12.0 } else { 20.0 });
+        ui.horizontal(|ui| {
+            ui.label(kit::text(
+                if rows.is_empty() {
+                    "Your scripts"
+                } else {
+                    "Available"
+                },
+                kit::size::SUBHEADLINE + 1.0,
+                kit::SEMIBOLD,
+                theme::text_primary(),
+            ));
+            count_chip(ui, &available.len().to_string());
+        });
+        ui.add_space(6.0);
+        row_card(ui, available.len(), |ui, index| {
+            available_row(ui, available[index], index, available.len(), &mut events);
+        });
+    }
+    if rows.is_empty() && available.is_empty() {
+        ui.add_space(24.0);
+        ui.vertical_centered(|ui| {
+            ui.label(kit::text(
+                format!("No scripts match “{}”", state.script_query.trim()),
+                kit::size::SUBHEADLINE + 1.0,
+                kit::REGULAR,
+                theme::text_tertiary(),
+            ));
+        });
+    }
 
-    for event in events {
-        match event {
-            RowEvent::ToggleVisible(id) => {
-                let visible = instances
-                    .iter()
-                    .find(|i| i.id == id)
-                    .is_some_and(|i| i.visible);
-                c.card.set_pine_visible(id, !visible);
-            }
-            RowEvent::Remove(id) => {
-                c.card.remove_pine_instance(id);
-            }
-            RowEvent::MoveTo(id, index) => c.card.move_pine_instance(id, index),
-            RowEvent::SetOrder(id, order) => c.card.set_pine_visual_order(id, order),
-            RowEvent::Configure(id, anchor) => {
-                action = Some(ChartSettingsAction::ConfigureScript(id, anchor));
-            }
-        }
+    if let Some(asked) = apply_events(c.card, &instances, events) {
+        action = Some(asked);
     }
 
     // One backtest report per applied strategy, so several never hide behind "the first one".
@@ -951,6 +932,47 @@ fn scripts_page(
                 drawer::report_content(ui, Some(status.output));
             }
             ui.add_space(8.0);
+        }
+    }
+    action
+}
+
+/// Applies what the rows asked for to the chart; returns the sheet-level action, if one asked.
+fn apply_events(
+    card: &mut ChartCard,
+    instances: &[PineInstance],
+    events: Vec<RowEvent>,
+) -> Option<ChartSettingsAction> {
+    let mut action = None;
+    for event in events {
+        match event {
+            RowEvent::ToggleVisible(id) => {
+                let visible = instances
+                    .iter()
+                    .find(|i| i.id == id)
+                    .is_some_and(|i| i.visible);
+                card.set_pine_visible(id, !visible);
+            }
+            RowEvent::Remove(id) => {
+                card.remove_pine_instance(id);
+            }
+            RowEvent::MoveTo(id, index) => card.move_pine_instance(id, index),
+            RowEvent::SetOrder(id, order) => card.set_pine_visual_order(id, order),
+            RowEvent::Configure(id, anchor) => {
+                action = Some(ChartSettingsAction::ConfigureScript(id, anchor));
+            }
+            RowEvent::Enable(script) => {
+                card.add_pine_instance(Some(script.id.clone()), &script.name, &script.source);
+            }
+            RowEvent::Duplicate(id) => {
+                if let Some(instance) = instances.iter().find(|i| i.id == id) {
+                    card.add_pine_instance(
+                        instance.script_id.clone(),
+                        &instance.name,
+                        &instance.source,
+                    );
+                }
+            }
         }
     }
     action
@@ -987,7 +1009,7 @@ fn status_badge(ui: &mut Ui, text: &str, color: Color32) {
 
 /// `ScriptsEmptyState`: a disc glyph, a title, a message and an optional call to action on a
 /// dashed card.
-fn empty_state(ui: &mut Ui, has_saved: bool, action: &mut Option<ChartSettingsAction>) {
+fn empty_state(ui: &mut Ui, action: &mut Option<ChartSettingsAction>) {
     ui.add_space(12.0);
     let card = egui::Frame::new()
         .fill(theme::card_fill(false))
@@ -1003,25 +1025,14 @@ fn empty_state(ui: &mut Ui, has_saved: bool, action: &mut Option<ChartSettingsAc
                 icons::paint(
                     ui.painter(),
                     Rect::from_center_size(disc.center(), Vec2::splat(20.0)),
-                    if has_saved {
-                        Icon::ChartLine
-                    } else {
-                        Icon::Curlybraces
-                    },
+                    Icon::Curlybraces,
                     theme::text_secondary(),
                 );
                 ui.add_space(12.0);
-                let (title, message) = if has_saved {
-                    (
-                        "No scripts on this chart",
-                        "Choose Add Script to overlay an indicator or strategy on the candles.",
-                    )
-                } else {
-                    (
-                        "No scripts yet",
-                        "Write one in the Script Manager and it shows up here.",
-                    )
-                };
+                let (title, message) = (
+                    "No scripts yet",
+                    "Write one in the Script Manager and it shows up here.",
+                );
                 ui.label(kit::text(
                     title,
                     kit::size::HEADLINE + 1.0,
@@ -1035,11 +1046,9 @@ fn empty_state(ui: &mut Ui, has_saved: bool, action: &mut Option<ChartSettingsAc
                     kit::REGULAR,
                     theme::text_secondary(),
                 ));
-                if !has_saved {
-                    ui.add_space(12.0);
-                    if kit::sheet_button(ui, "Open Script Manager", true, true).clicked() {
-                        *action = Some(ChartSettingsAction::OpenScriptManager);
-                    }
+                ui.add_space(12.0);
+                if kit::sheet_button(ui, "Open Script Manager", true, true).clicked() {
+                    *action = Some(ChartSettingsAction::OpenScriptManager);
                 }
             });
         });
@@ -1071,6 +1080,162 @@ fn dashed_rounded_rect(painter: &egui::Painter, rect: Rect, radius: f32, stroke:
     painter.extend(egui::Shape::dashed_line(&points, stroke, 5.0, 4.0));
 }
 
+/// A card of `count` rows with an inset hairline between them.
+fn row_card(ui: &mut Ui, count: usize, mut row: impl FnMut(&mut Ui, usize)) {
+    let list = kit::card_frame(false)
+        .inner_margin(Margin::ZERO)
+        .show(ui, |ui| {
+            ui.spacing_mut().item_spacing.y = 0.0;
+            for index in 0..count {
+                if index > 0 {
+                    let y = ui.cursor().min.y;
+                    let rect = ui.max_rect();
+                    ui.painter().line_segment(
+                        [pos2(rect.min.x + 54.0, y), pos2(rect.max.x - 12.0, y)],
+                        Stroke::new(1.0, kit::hairline()),
+                    );
+                }
+                row(ui, index);
+            }
+        });
+    kit::paint_card_highlight(ui, list.response.rect);
+}
+
+/// A wash under the pointer. The first and last rows round the corners they share with the card,
+/// so the wash never pokes out of it.
+fn hover_wash(ui: &Ui, rect: Rect, index: usize, count: usize) {
+    let radius = (kit::CARD_RADIUS - 1.0) as u8;
+    ui.painter().rect_filled(
+        rect.shrink(1.0),
+        CornerRadius {
+            nw: if index == 0 { radius } else { 0 },
+            ne: if index == 0 { radius } else { 0 },
+            sw: if index + 1 == count { radius } else { 0 },
+            se: if index + 1 == count { radius } else { 0 },
+        },
+        theme::ink(6),
+    );
+}
+
+/// The switch at a row's trailing edge, `on` or off, animated. `what` names the script for
+/// screen readers and the tooltip.
+fn switch_at(ui: &mut Ui, row: Rect, id: Id, on: bool, what: &str) -> egui::Response {
+    let rect = Rect::from_center_size(
+        pos2(row.max.x - 12.0 - 18.0, row.center().y),
+        vec2(36.0, 20.0),
+    );
+    let response = ui.interact(rect, id, Sense::click());
+    let t = ui.ctx().animate_bool_with_time(id, on, 0.12);
+    kit::paint_switch(ui.painter(), rect, t, false);
+    let tip = if on {
+        format!("Turn {what} off — it keeps its settings")
+    } else {
+        format!("Turn {what} on")
+    };
+    crate::ui::accessibility::label(
+        response,
+        format!("{what}, {}", if on { "on" } else { "off" }),
+    )
+    .on_hover_cursor(CursorIcon::PointingHand)
+    .on_hover_text(tip)
+}
+
+/// A neutral 30pt tile holding `icon`, as on every settings card.
+fn badge_tile(ui: &Ui, row: Rect, tint: Color32, icon: Icon, stroke: Option<Color32>) -> Rect {
+    let badge = Rect::from_center_size(pos2(row.min.x + 27.0, row.center().y), Vec2::splat(30.0));
+    match stroke {
+        Some(color) => {
+            ui.painter()
+                .rect_filled(badge, 8.0, theme::with_alpha(color, 0.14));
+            ui.painter().rect_stroke(
+                badge,
+                8.0,
+                Stroke::new(1.0, theme::with_alpha(color, 0.3)),
+                StrokeKind::Inside,
+            );
+        }
+        None => {
+            ui.painter().rect_filled(badge, 8.0, theme::ink(10));
+            ui.painter().rect_stroke(
+                badge,
+                8.0,
+                Stroke::new(1.0, theme::ink(14)),
+                StrokeKind::Inside,
+            );
+        }
+    }
+    icons::paint(
+        ui.painter(),
+        Rect::from_center_size(badge.center(), Vec2::splat(15.0)),
+        icon,
+        tint,
+    );
+    badge
+}
+
+/// A saved script that is not on this chart yet: switching it on, or clicking its row, applies it.
+fn available_row(
+    ui: &mut Ui,
+    script: &Arc<LocalScript>,
+    index: usize,
+    count: usize,
+    events: &mut Vec<RowEvent>,
+) {
+    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 52.0), Sense::click());
+    if response.hovered() {
+        hover_wash(ui, rect, index, count);
+    }
+    let strategy = script.script_type == ScriptType::Strategy;
+    let badge = badge_tile(
+        ui,
+        rect,
+        theme::text_tertiary(),
+        if strategy {
+            Icon::Cycle
+        } else {
+            Icon::ChartLine
+        },
+        None,
+    );
+    let switch = switch_at(
+        ui,
+        rect,
+        Id::new(("script-switch", &script.id)),
+        false,
+        &script.name,
+    );
+    if switch.clicked() || response.clicked() {
+        events.push(RowEvent::Enable(script.clone()));
+    }
+    let width = (switch.rect.min.x - 12.0 - (badge.max.x + 12.0)).max(40.0);
+    let title = kit::galley(
+        ui,
+        &script.name,
+        kit::size::SUBHEADLINE + 1.0,
+        kit::SEMIBOLD,
+        theme::text_primary(),
+        width,
+    );
+    let meta = kit::galley(
+        ui,
+        script.script_type.display_name(),
+        kit::size::CAPTION + 0.5,
+        kit::REGULAR,
+        theme::text_secondary(),
+        width,
+    );
+    let top = rect.center().y - (title.size().y + 2.0 + meta.size().y) / 2.0;
+    let left = badge.max.x + 12.0;
+    ui.painter()
+        .galley(pos2(left, top), title.clone(), theme::text_primary());
+    ui.painter().galley(
+        pos2(left, top + title.size().y + 2.0),
+        meta,
+        theme::text_secondary(),
+    );
+    crate::ui::accessibility::label(response, format!("Turn on {}", script.name));
+}
+
 /// One applied script: what it is, how it is doing, and what can be done to it.
 fn instance_row(
     ui: &mut Ui,
@@ -1083,49 +1248,12 @@ fn instance_row(
     let failing = row.failure.is_some();
     let dim = if row.visible { 1.0 } else { 0.55 };
 
-    // A wash under the pointer. The first and last rows round the corners they share with the
-    // card, so the wash never pokes out of it.
     if response.hovered() {
-        let radius = (kit::CARD_RADIUS - 1.0) as u8;
-        ui.painter().rect_filled(
-            rect.shrink(1.0),
-            CornerRadius {
-                nw: if index == 0 { radius } else { 0 },
-                ne: if index == 0 { radius } else { 0 },
-                sw: if index + 1 == count { radius } else { 0 },
-                se: if index + 1 == count { radius } else { 0 },
-            },
-            theme::ink(6),
-        );
+        hover_wash(ui, rect, index, count);
     }
 
     // A neutral tile, as on every settings card. Colour says something here: orange when the
-    // script fails, the accent while it draws, and nothing once it is hidden.
-    let badge = Rect::from_center_size(pos2(rect.min.x + 27.0, rect.center().y), Vec2::splat(30.0));
-    let tint = if failing {
-        ui.painter()
-            .rect_filled(badge, 8.0, theme::with_alpha(theme::ORANGE, 0.14));
-        ui.painter().rect_stroke(
-            badge,
-            8.0,
-            Stroke::new(1.0, theme::with_alpha(theme::ORANGE, 0.3)),
-            StrokeKind::Inside,
-        );
-        theme::ORANGE
-    } else {
-        ui.painter().rect_filled(badge, 8.0, theme::ink(10));
-        ui.painter().rect_stroke(
-            badge,
-            8.0,
-            Stroke::new(1.0, theme::ink(14)),
-            StrokeKind::Inside,
-        );
-        if row.visible {
-            theme::SYSTEM_ACCENT
-        } else {
-            theme::text_tertiary()
-        }
-    };
+    // script fails, the accent while it draws, and nothing once it is off.
     let kind_icon = if failing {
         Icon::TriangleFill
     } else if row.is_strategy {
@@ -1133,15 +1261,27 @@ fn instance_row(
     } else {
         Icon::ChartLine
     };
-    icons::paint(
-        ui.painter(),
-        Rect::from_center_size(badge.center(), Vec2::splat(15.0)),
-        kind_icon,
-        tint,
-    );
+    let tint = if failing {
+        theme::ORANGE
+    } else if row.visible {
+        theme::SYSTEM_ACCENT
+    } else {
+        theme::text_tertiary()
+    };
+    let badge = badge_tile(ui, rect, tint, kind_icon, failing.then_some(theme::ORANGE));
 
-    // Controls, right to left: remove, settings, eye.
-    let mut x = rect.max.x - 12.0;
+    // Controls, right to left: the switch, settings, remove.
+    let switch = switch_at(
+        ui,
+        rect,
+        Id::new(("instance-switch", row.id)),
+        row.visible,
+        &row.title,
+    );
+    if switch.clicked() {
+        events.push(RowEvent::ToggleVisible(row.id));
+    }
+    let mut x = switch.rect.min.x - 6.0;
     let mut button = |ui: &mut Ui, icon: Icon, tip: &str, destructive: bool| -> egui::Response {
         let hit = Rect::from_center_size(pos2(x - 12.0, rect.center().y), Vec2::splat(24.0));
         x -= 26.0;
@@ -1167,16 +1307,6 @@ fn instance_row(
         );
         response.on_hover_text(tip.to_owned())
     };
-    if button(
-        ui,
-        Icon::Xmark,
-        &format!("Remove {} from this chart", row.title),
-        true,
-    )
-    .clicked()
-    {
-        events.push(RowEvent::Remove(row.id));
-    }
     let settings = button(
         ui,
         Icon::Sliders,
@@ -1187,18 +1317,15 @@ fn instance_row(
     if settings.clicked() {
         events.push(RowEvent::Configure(row.id, anchor));
     }
-    let eye_tip = if row.visible {
-        format!("Hide {} on the chart", row.title)
-    } else {
-        format!("Show {} on the chart", row.title)
-    };
-    let eye = if row.visible {
-        Icon::Eye
-    } else {
-        Icon::EyeSlash
-    };
-    if button(ui, eye, &eye_tip, false).clicked() {
-        events.push(RowEvent::ToggleVisible(row.id));
+    if button(
+        ui,
+        Icon::Xmark,
+        &format!("Remove {} from this chart", row.title),
+        true,
+    )
+    .clicked()
+    {
+        events.push(RowEvent::Remove(row.id));
     }
     let text_right = x - 4.0;
 
@@ -1229,7 +1356,7 @@ fn instance_row(
                 parts.push(if overlay { "On chart" } else { "Own pane" }.to_owned());
             }
             if !row.visible {
-                parts.push("Hidden".to_owned());
+                parts.push("Off".to_owned());
             }
             parts.join(" · ")
         }
@@ -1255,11 +1382,7 @@ fn instance_row(
         .galley(pos2(left, top + title.size().y + 2.0), meta, meta_color);
 
     response.context_menu(|ui| {
-        let label = if row.visible {
-            "Hide on Chart"
-        } else {
-            "Show on Chart"
-        };
+        let label = if row.visible { "Turn Off" } else { "Turn On" };
         if ui.button(label).clicked() {
             events.push(RowEvent::ToggleVisible(row.id));
             ui.close();
@@ -1284,19 +1407,23 @@ fn instance_row(
                 }
             });
         }
+        if ui.button("Add Another Copy").clicked() {
+            events.push(RowEvent::Duplicate(row.id));
+            ui.close();
+        }
         ui.separator();
         if ui
-            .add_enabled(index > 0, egui::Button::new("Move Up"))
+            .add_enabled(row.position > 0, egui::Button::new("Move Up"))
             .clicked()
         {
-            events.push(RowEvent::MoveTo(row.id, index - 1));
+            events.push(RowEvent::MoveTo(row.id, row.position - 1));
             ui.close();
         }
         if ui
-            .add_enabled(index + 1 < count, egui::Button::new("Move Down"))
+            .add_enabled(row.position + 1 < row.total, egui::Button::new("Move Down"))
             .clicked()
         {
-            events.push(RowEvent::MoveTo(row.id, index + 1));
+            events.push(RowEvent::MoveTo(row.id, row.position + 1));
             ui.close();
         }
         ui.separator();
@@ -1314,7 +1441,8 @@ fn instance_row(
 mod tests {
     use super::*;
     use crate::store::Store;
-    use std::sync::{Arc, Mutex};
+    use std::collections::HashMap;
+    use std::sync::Mutex;
 
     fn test_store() -> SharedStore {
         Arc::new(Mutex::new(Store::open_in_memory().expect("open")))
@@ -1325,7 +1453,15 @@ mod tests {
         card: &mut ChartCard,
         indicators: &mut IndicatorConfig,
     ) {
-        let ctx = egui::Context::default();
+        draw_in(&egui::Context::default(), state, card, indicators);
+    }
+
+    fn draw_in(
+        ctx: &egui::Context,
+        state: &mut ChartSettingsState,
+        card: &mut ChartCard,
+        indicators: &mut IndicatorConfig,
+    ) {
         let store = test_store();
         for _ in 0..2 {
             let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
@@ -1379,6 +1515,92 @@ mod tests {
         card.set_pine_visible(2, false);
         state.tab = Tab::Scripts;
         draw(&mut state, &mut card, &mut indicators);
+    }
+
+    fn library() -> Vec<LocalScript> {
+        use crate::ui::script_catalog::sample;
+        (0..9)
+            .map(|i| {
+                sample(
+                    &i.to_string(),
+                    &format!("Script {i}"),
+                    if i % 3 == 0 {
+                        ScriptType::Strategy
+                    } else {
+                        ScriptType::Indicator
+                    },
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_scripts_page_lists_saved_scripts_with_and_without_a_search_field() {
+        let ctx = egui::Context::default();
+        let mut state = ChartSettingsState {
+            tab: Tab::Scripts,
+            ..ChartSettingsState::default()
+        };
+        let mut card = ChartCard::default();
+        let mut indicators = IndicatorConfig::default();
+        script_catalog::publish(&ctx, library());
+        draw_in(&ctx, &mut state, &mut card, &mut indicators);
+        // One script on the chart moves out of "Available"; a search narrows both lists.
+        let saved = script_catalog::scripts(&ctx);
+        card.add_pine_instance(Some(saved[0].id.clone()), &saved[0].name, &saved[0].source);
+        state.script_query = "script 4".to_owned();
+        draw_in(&ctx, &mut state, &mut card, &mut indicators);
+        state.script_query = "nothing like it".to_owned();
+        draw_in(&ctx, &mut state, &mut card, &mut indicators);
+        // A short library has no search field, and a stale query must not hide its rows.
+        script_catalog::publish(&ctx, library().into_iter().take(2).collect());
+        draw_in(&ctx, &mut state, &mut card, &mut indicators);
+        assert!(state.script_query.is_empty());
+    }
+
+    #[test]
+    fn switching_a_script_on_applies_it_and_off_keeps_its_settings() {
+        use crate::pine::program::InputValue;
+        let script = Arc::new(crate::ui::script_catalog::sample(
+            "abc",
+            "Squeeze",
+            ScriptType::Indicator,
+        ));
+        let mut card = ChartCard::default();
+        apply_events(&mut card, &[], vec![RowEvent::Enable(script.clone())]);
+        let instances = card.pine_instances().to_vec();
+        assert_eq!(instances.len(), 1);
+        assert_eq!(instances[0].script_id.as_deref(), Some("abc"));
+        assert!(instances[0].visible);
+
+        card.set_pine_instance_inputs(
+            instances[0].id,
+            &HashMap::from([("len".to_owned(), InputValue::Int(21))]),
+        );
+        card.set_pine_instance_style(
+            instances[0].id,
+            HashMap::from([("plot.0.color".to_owned(), "#ff0000".to_owned())]),
+        );
+        let id = instances[0].id;
+        apply_events(&mut card, &instances, vec![RowEvent::ToggleVisible(id)]);
+        let off = card.pine_instances()[0].clone();
+        assert!(!off.visible);
+        assert!(!off.inputs.is_empty() && !off.style_overrides.is_empty());
+
+        let instances = card.pine_instances().to_vec();
+        apply_events(&mut card, &instances, vec![RowEvent::ToggleVisible(id)]);
+        let on = card.pine_instances()[0].clone();
+        assert!(on.visible);
+        assert_eq!(on.inputs, off.inputs);
+        assert_eq!(card.pine_instances().len(), 1, "never a second instance");
+
+        let instances = card.pine_instances().to_vec();
+        apply_events(&mut card, &instances, vec![RowEvent::Duplicate(id)]);
+        assert_eq!(card.pine_instances().len(), 2);
+        assert!(card.pine_instances()[1].inputs.is_empty());
+        let instances = card.pine_instances().to_vec();
+        apply_events(&mut card, &instances, vec![RowEvent::Remove(id)]);
+        assert_eq!(card.pine_instances().len(), 1);
     }
 
     #[test]
@@ -1549,5 +1771,58 @@ mod tests {
             text.find("Show candle bodies.").expect("settings"),
         );
         assert!(style < preview && preview < body, "{text}");
+    }
+
+    /// The Scripts page as a picture. Run by hand with `DEGENVIEW_GALLERY_DIR` set.
+    #[test]
+    #[ignore = "writes images for a person to look at"]
+    fn gallery_of_the_scripts_page() {
+        use crate::ui::render_tests::{Screen, gallery_dir};
+        if gallery_dir().is_none() {
+            return;
+        }
+        for (name, typed, applied) in [
+            ("scripts-page", "", 2),
+            ("scripts-page-search", "sq", 2),
+            ("scripts-page-none", "", 0),
+        ] {
+            let mut screen = Screen::new(egui::vec2(820.0, 780.0));
+            script_catalog::publish(&screen.ctx, library());
+            let mut state = ChartSettingsState {
+                tab: Tab::Scripts,
+                script_query: typed.to_owned(),
+                ..ChartSettingsState::default()
+            };
+            let mut card = ChartCard::default();
+            let saved = script_catalog::scripts(&screen.ctx);
+            for script in saved.iter().take(applied) {
+                card.add_pine_instance(Some(script.id.clone()), &script.name, &script.source);
+            }
+            if applied > 1 {
+                card.set_pine_visible(2, false);
+            }
+            let mut indicators = IndicatorConfig::default();
+            let store = test_store();
+            let mut last = None;
+            for _ in 0..4 {
+                last = Some(screen.run(Vec::new(), |ui| {
+                    let _ = show(
+                        ui.ctx(),
+                        &mut state,
+                        ChartSettingsContext {
+                            title: "BTC/USDT",
+                            symbol: "BTCUSDT",
+                            source: DataSource::Binance,
+                            loaded_candles: 0,
+                            indicators: &mut indicators,
+                            card: &mut card,
+                            scale_mode: PriceScaleMode::Regular,
+                            store: &store,
+                        },
+                    );
+                }));
+            }
+            screen.save(name, last.expect("a frame"));
+        }
     }
 }
