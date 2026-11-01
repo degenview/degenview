@@ -58,6 +58,11 @@
   all platforms support next/previous tab actions. Windows/Linux have no menu bar, so Settings opens
   with Ctrl+, or the strip's settings button (left of the window buttons); both become
   `TabRequest::OpenSettings`. macOS keeps Settings… in its menu and draws no button.
+- The first window opens at 80% of the main screen's usable area (`NSScreen.visibleFrame`,
+  `native_bridge::main_work_area`), at least 960x620, at most 2000x1300, never bigger than the area,
+  centered (`Placement::for_work_area`). Windows and Linux have no screen lookup and open at the
+  fixed `Placement::DEFAULT_SIZE`. A torn-off window keeps its source's size. Window frames are not
+  saved across restarts. The share and limits are a taste choice, not measured.
 - Sleep and display changes: macOS moves and clamps windows when displays drop out on sleep and
   does not put them all back. `model::window_frames::FrameMemory` saves each window's frame per
   display arrangement (`native_bridge::screen_layout`, macOS only; empty elsewhere, which turns it
