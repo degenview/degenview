@@ -75,6 +75,7 @@ pub mod watchlist_quote;
 pub mod watchlist_text;
 pub mod webhook;
 pub mod webhook_policy;
+pub mod window_frames;
 
 pub use appearance::ChartAppearance;
 pub use canvas::ChartCanvas;

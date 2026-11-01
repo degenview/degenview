@@ -58,6 +58,15 @@
   all platforms support next/previous tab actions. Windows/Linux have no menu bar, so Settings opens
   with Ctrl+, or the strip's settings button (left of the window buttons); both become
   `TabRequest::OpenSettings`. macOS keeps Settings… in its menu and draws no button.
+- Sleep and display changes: macOS moves and clamps windows when displays drop out on sleep and
+  does not put them all back. `model::window_frames::FrameMemory` saves each window's frame per
+  display arrangement (`native_bridge::screen_layout`, macOS only; empty elsewhere, which turns it
+  off), only after the arrangement has been steady, so a frame the OS forced is never saved. When
+  an arrangement with saved frames returns, or a gap in the 250 ms root tick shows the Mac slept,
+  `TabWindowHost::restore_frames` (from `DegenViewApp::logic`) sends `OuterPosition`/`InnerSize` to
+  windows that differ by more than 1 pt, for up to 6 s. Minimized, maximized and fullscreen windows
+  are skipped, as is any tick during a tab drag. The settle times are inferred, not measured, and
+  this has not been run on real multi-display sleep. Frames are not saved across restarts.
 - Window grouping is not persisted. Restore sorts tabs by old window and strip position into one
   window. `PersistedTab` is untagged so old chart rows remain compatible; special tabs require
   `kind`.
