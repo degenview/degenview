@@ -275,6 +275,26 @@ mod platform {
     /// high. AppKit lays the bar out again on resize and when leaving full screen, so this runs
     /// every frame and writes only what differs. Windows without full-size content (Settings,
     /// Alerts) keep their native title bars untouched.
+    pub fn main_work_area() -> Option<[f32; 4]> {
+        let mtm = MainThreadMarker::new()?;
+        let primary_height = objc2_app_kit::NSScreen::screens(mtm)
+            .iter()
+            .next()?
+            .frame()
+            .size
+            .height;
+        let frame = objc2_app_kit::NSScreen::mainScreen(mtm)?.visibleFrame();
+        Some(super::top_left_frame(
+            [
+                frame.origin.x,
+                frame.origin.y,
+                frame.size.width,
+                frame.size.height,
+            ],
+            primary_height,
+        ))
+    }
+
     pub fn center_traffic_lights(height: f64) {
         use objc2_app_kit::{NSWindowButton, NSWindowStyleMask};
         use objc2_foundation::{NSPoint, NSRect, NSSize};
@@ -638,6 +658,29 @@ mod platform {
     pub fn intercept_quit(_on: bool) {}
 
     pub fn center_traffic_lights(_height: f64) {}
+
+    pub fn main_work_area() -> Option<[f32; 4]> {
+        None
+    }
+}
+
+/// The usable area of the main screen as `[x, y, width, height]` in points with a top-left
+/// origin, which is what a window position uses. `None` off macOS.
+pub fn main_work_area() -> Option<[f32; 4]> {
+    platform::main_work_area()
+}
+
+/// AppKit measures from the bottom-left of the primary screen; a window position from the
+/// top-left of it.
+#[cfg(any(target_os = "macos", test))]
+fn top_left_frame(frame: [f64; 4], primary_height: f64) -> [f32; 4] {
+    let [x, y, width, height] = frame;
+    [
+        x as f32,
+        (primary_height - (y + height)) as f32,
+        width as f32,
+        height as f32,
+    ]
 }
 
 /// Keeps the macOS window buttons centred in a title bar `height` points tall (see
@@ -955,5 +998,28 @@ mod x11_pointer_tests {
             Some((egui::pos2(10.0, 10.0), false))
         );
         assert_eq!(pointer_from_x11(10, 10, 0, 0.0), None);
+    }
+}
+
+#[cfg(test)]
+mod screen_tests {
+    use super::*;
+
+    #[test]
+    fn appkit_frames_flip_to_a_top_left_origin() {
+        // The primary screen, 982 tall, with a 38 pt menu bar: visible from y = 0 up to 944.
+        assert_eq!(
+            top_left_frame([0.0, 0.0, 1512.0, 944.0], 982.0),
+            [0.0, 38.0, 1512.0, 944.0]
+        );
+        // A screen above the primary is at a negative y, and one below it past the primary's.
+        assert_eq!(
+            top_left_frame([1512.0, 982.0, 1080.0, 1920.0], 982.0),
+            [1512.0, -1920.0, 1080.0, 1920.0]
+        );
+        assert_eq!(
+            top_left_frame([0.0, -1080.0, 1920.0, 1080.0], 982.0),
+            [0.0, 982.0, 1920.0, 1080.0]
+        );
     }
 }

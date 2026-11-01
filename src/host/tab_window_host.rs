@@ -22,7 +22,39 @@ pub struct Placement {
 }
 
 impl Placement {
+    /// The size where the screen is not known.
     pub const DEFAULT_SIZE: Vec2 = vec2(1600.0, 1000.0);
+    /// What share of the screen's usable area the first window takes.
+    const SCREEN_SHARE: f32 = 0.8;
+    /// Never smaller than a chart window can be, nor bigger than this on a huge display.
+    const FIRST_MIN: Vec2 = vec2(960.0, 620.0);
+    const FIRST_MAX: Vec2 = vec2(2000.0, 1300.0);
+
+    /// The first window: most of `area` (the usable part of the main screen in points, top-left
+    /// origin), within the limits above and never bigger than the area, centered in it. Where the
+    /// screen is not known it is the fixed default, placed by the OS.
+    pub fn for_work_area(area: Option<Rect>) -> Self {
+        let Some(area) = area else {
+            return Self::default();
+        };
+        let wanted = (area.size() * Self::SCREEN_SHARE)
+            .max(Self::FIRST_MIN)
+            .min(Self::FIRST_MAX)
+            .min(area.size());
+        Self {
+            position: Some(area.center() - wanted / 2.0),
+            size: wanted,
+        }
+    }
+}
+
+impl Default for Placement {
+    fn default() -> Self {
+        Self {
+            position: None,
+            size: Self::DEFAULT_SIZE,
+        }
+    }
 }
 
 /// What the app has to do for a window.
@@ -97,6 +129,8 @@ struct State {
     focus: Vec<WindowId>,
     closed: Vec<TabId>,
     requests: Vec<TabRequest>,
+    /// Where the first window opens, and a window created when none is left.
+    first: Placement,
 }
 
 impl State {
@@ -158,14 +192,15 @@ pub struct TabWindowHost {
 
 impl TabWindowHost {
     /// Every tab in one window, in this order: how a launch restores the session.
-    pub fn restore(tabs: impl IntoIterator<Item = TabId>) -> Self {
+    pub fn restore(tabs: impl IntoIterator<Item = TabId>, first: Placement) -> Self {
         let host = Self::default();
         {
             let mut state = host.lock();
+            state.first = first;
             state.windows = TabWindows::from_tabs(tabs);
             let ids: Vec<WindowId> = state.windows.windows().iter().map(|w| w.id).collect();
             for id in ids {
-                state.place(id, None, Placement::DEFAULT_SIZE);
+                state.place(id, first.position, first.size);
             }
         }
         host
@@ -225,7 +260,8 @@ impl TabWindowHost {
         let mut state = self.lock();
         let target = state.focused();
         let window = state.windows.add_tab(target, tab);
-        state.place(window, None, Placement::DEFAULT_SIZE);
+        let first = state.first;
+        state.place(window, first.position, first.size);
         window
     }
 
@@ -663,7 +699,7 @@ mod tests {
 
     #[test]
     fn restore_opens_one_window_with_every_tab() {
-        let host = TabWindowHost::restore([4, 2, 7]);
+        let host = TabWindowHost::restore([4, 2, 7], Placement::default());
         let windows = host.snapshot();
         assert_eq!(windows.len(), 1);
         assert_eq!(windows[0].0.tabs, vec![4, 2, 7]);
@@ -672,7 +708,7 @@ mod tests {
 
     #[test]
     fn new_tabs_join_the_window_in_front() {
-        let host = TabWindowHost::restore([1, 2]);
+        let host = TabWindowHost::restore([1, 2], Placement::default());
         host.apply(
             host.focused_window().unwrap(),
             vec![TabBarEvent::MoveToNewWindow(2)],
@@ -686,7 +722,7 @@ mod tests {
 
     #[test]
     fn strip_events_edit_or_queue() {
-        let host = TabWindowHost::restore([1, 2, 3]);
+        let host = TabWindowHost::restore([1, 2, 3], Placement::default());
         let window = host.focused_window().unwrap();
         host.apply(
             window,
@@ -713,7 +749,7 @@ mod tests {
 
     #[test]
     fn closing_a_tab_reports_it_once_and_forgets_an_emptied_window() {
-        let host = TabWindowHost::restore([1, 2]);
+        let host = TabWindowHost::restore([1, 2], Placement::default());
         let home = host.focused_window().unwrap();
         host.apply(home, vec![TabBarEvent::MoveToNewWindow(2)]);
         let other = host.window_of(2).unwrap();
@@ -727,7 +763,7 @@ mod tests {
 
     #[test]
     fn move_to_window_appends_and_merge_all_gathers() {
-        let host = TabWindowHost::restore([1, 2, 3]);
+        let host = TabWindowHost::restore([1, 2, 3], Placement::default());
         let home = host.focused_window().unwrap();
         host.apply(home, vec![TabBarEvent::MoveToNewWindow(3)]);
         let other = host.window_of(3).unwrap();
@@ -747,7 +783,7 @@ mod tests {
 
     #[test]
     fn cycling_and_active_tab_follow_the_window_in_front() {
-        let host = TabWindowHost::restore([1, 2, 3]);
+        let host = TabWindowHost::restore([1, 2, 3], Placement::default());
         assert_eq!(host.focused_tab(), Some(1));
         assert_eq!(host.cycle(true), Some(2));
         assert_eq!(host.focused_tab(), Some(2));
@@ -835,7 +871,7 @@ mod tests {
 
     #[test]
     fn a_dragged_tab_follows_the_pointer_and_reorders_by_its_centre() {
-        let host = TabWindowHost::restore([1, 2]);
+        let host = TabWindowHost::restore([1, 2], Placement::default());
         let window = started_drag(&host, 2, 10.0);
         // Nothing to show until the pointer has been seen.
         assert_eq!(host.drag_view(window), HostDragView::default());
@@ -855,7 +891,7 @@ mod tests {
 
     #[test]
     fn the_session_ends_with_its_source_window() {
-        let host = TabWindowHost::restore([1, 2]);
+        let host = TabWindowHost::restore([1, 2], Placement::default());
         let window = started_drag(&host, 2, 10.0);
         host.close_tab(2);
         host.close_tab(1);
@@ -864,7 +900,7 @@ mod tests {
 
     #[test]
     fn a_detached_window_opens_at_its_source_size() {
-        let host = TabWindowHost::restore([1, 2]);
+        let host = TabWindowHost::restore([1, 2], Placement::default());
         let home = host.focused_window().unwrap();
         host.apply(home, vec![TabBarEvent::MoveToNewWindow(2)]);
         let detached = host.window_of(2).unwrap();
@@ -875,5 +911,56 @@ mod tests {
             .unwrap()
             .1;
         assert_eq!(placement.size, Placement::DEFAULT_SIZE);
+    }
+
+    fn area(x: f32, y: f32, w: f32, h: f32) -> Rect {
+        Rect::from_min_size(pos2(x, y), vec2(w, h))
+    }
+
+    #[test]
+    fn a_laptop_gets_most_of_its_usable_area_centered() {
+        let placement = Placement::for_work_area(Some(area(0.0, 38.0, 1512.0, 944.0)));
+        assert_eq!(placement.size, vec2(1209.6, 755.2));
+        let position = placement.position.unwrap();
+        assert!((position.x - 151.2).abs() < 0.01);
+        assert!((position.y - (38.0 + 944.0 / 2.0 - 755.2 / 2.0)).abs() < 0.01);
+    }
+
+    #[test]
+    fn a_huge_display_is_capped() {
+        let placement = Placement::for_work_area(Some(area(0.0, 0.0, 5120.0, 1400.0)));
+        assert_eq!(placement.size, vec2(2000.0, 1120.0));
+    }
+
+    #[test]
+    fn a_portrait_display_takes_the_minimum_width_not_more_than_it_has() {
+        let placement = Placement::for_work_area(Some(area(0.0, 0.0, 1080.0, 1900.0)));
+        assert_eq!(placement.size, vec2(960.0, 1300.0));
+        let tiny = Placement::for_work_area(Some(area(0.0, 0.0, 800.0, 500.0)));
+        assert_eq!(tiny.size, vec2(800.0, 500.0));
+        assert_eq!(tiny.position, Some(pos2(0.0, 0.0)));
+    }
+
+    #[test]
+    fn a_second_display_centers_in_its_own_area() {
+        let placement = Placement::for_work_area(Some(area(1080.0, -400.0, 2560.0, 1400.0)));
+        assert_eq!(placement.size, vec2(2000.0, 1120.0));
+        assert_eq!(
+            placement.position,
+            Some(pos2(1080.0 + 280.0, -400.0 + 140.0))
+        );
+    }
+
+    #[test]
+    fn an_unknown_screen_keeps_the_fixed_size() {
+        assert_eq!(Placement::for_work_area(None), Placement::default());
+    }
+
+    #[test]
+    fn the_first_placement_opens_the_restored_window() {
+        let first = Placement::for_work_area(Some(area(0.0, 0.0, 1512.0, 944.0)));
+        let host = TabWindowHost::restore([1], first);
+        let (_, placement) = host.snapshot().remove(0);
+        assert_eq!(placement, first);
     }
 }

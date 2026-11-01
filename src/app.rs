@@ -9,7 +9,7 @@ use crate::host::pine_subscription_host::PineSubscriptionHost;
 use crate::host::portfolio_card_host::PortfolioCardEnv;
 use crate::host::portfolio_host::{PortfolioHost, PortfolioTab};
 use crate::host::snapshot_host::SnapshotHost;
-use crate::host::tab_window_host::{TabRequest, TabWindowHost};
+use crate::host::tab_window_host::{Placement, TabRequest, TabWindowHost};
 use crate::host::update_host::{Phase, UpdateHost, UpdateView};
 use crate::host::webhook_host::{WebhookHost, WebhookHostAction};
 use crate::mcp::bridge::{McpCommand, McpError, McpReply};
@@ -860,7 +860,12 @@ impl DegenViewApp {
             (tabs, saved_next_id.max(2))
         };
 
-        let tab_host = TabWindowHost::restore(tabs.iter().map(TabSlot::id));
+        let first_window = Placement::for_work_area(native_bridge::main_work_area().map(
+            |[x, y, width, height]| {
+                egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(width, height))
+            },
+        ));
+        let tab_host = TabWindowHost::restore(tabs.iter().map(TabSlot::id), first_window);
         let registry: TabRegistry = Arc::new(Mutex::new(
             tabs.iter()
                 .map(|tab| (tab.id(), Arc::clone(&tab.content)))

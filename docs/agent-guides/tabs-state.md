@@ -58,6 +58,11 @@
   all platforms support next/previous tab actions. Windows/Linux have no menu bar, so Settings opens
   with Ctrl+, or the strip's settings button (left of the window buttons); both become
   `TabRequest::OpenSettings`. macOS keeps Settings… in its menu and draws no button.
+- The first window opens at 80% of the main screen's usable area (`NSScreen.visibleFrame`,
+  `native_bridge::main_work_area`), at least 960x620, at most 2000x1300, never bigger than the area,
+  centered (`Placement::for_work_area`). Windows and Linux have no screen lookup and open at the
+  fixed `Placement::DEFAULT_SIZE`. A torn-off window keeps its source's size. Window frames are not
+  saved across restarts. The share and limits are a taste choice, not measured.
 - Window grouping is not persisted. Restore sorts tabs by old window and strip position into one
   window. `PersistedTab` is untagged so old chart rows remain compatible; special tabs require
   `kind`.
