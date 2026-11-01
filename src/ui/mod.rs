@@ -1,11 +1,14 @@
 pub mod accessibility;
+pub mod add_chart_art;
 pub mod add_chart_sheet;
 pub mod add_indicator_menu;
+pub mod alert_art;
 pub mod alert_banner;
 pub mod alert_center;
 pub mod alert_editor;
 mod alert_lines;
 mod annotation_geometry;
+mod art;
 #[cfg(test)]
 mod bundled_fonts_tests;
 pub mod canvas_render;
@@ -86,6 +89,7 @@ pub mod settings_about;
 pub mod settings_ai;
 pub mod settings_api_keys;
 mod settings_appearance;
+pub mod settings_art;
 pub mod settings_card;
 pub mod settings_font_picker;
 pub mod settings_mcp;

@@ -10,7 +10,7 @@ use crate::model::portfolio_card::{CardKind, PortfolioCard};
 use crate::service::{self, EventInfo, SearchResult};
 use crate::store::SharedStore;
 use crate::ui::icons::{self, Icon};
-use crate::ui::{source_logo, theme};
+use crate::ui::{add_chart_art, source_logo, theme};
 use eframe::egui::{
     self, Color32, CornerRadius, FontId, Galley, Id, Rect, RichText, Sense, Stroke, StrokeKind, Ui,
     Vec2, pos2, text::LayoutJob, vec2,
@@ -841,7 +841,7 @@ impl AddChartSheet {
     // MARK: Body
 
     fn show_body(&mut self, ui: &mut Ui, search_id: Id, request: &mut Option<Request>) {
-        sheet_header(ui, self.watchlist_name.as_deref());
+        sheet_header(ui, self.watchlist_name.as_deref(), self.tab);
         ui.add_space(16.0);
         if let Some(tab) = tab_bar(ui, self.tab) {
             self.set_tab(tab);
@@ -1309,22 +1309,34 @@ enum Request {
 
 // MARK: Components
 
-/// The top of the sheet: an accent badge, the title and a one-line description.
-fn sheet_header(ui: &mut Ui, watchlist_name: Option<&str>) {
-    header(
-        ui,
-        if watchlist_name.is_some() {
-            Icon::List
-        } else {
-            Icon::ChartLine
-        },
-        &watchlist_name.map_or_else(|| "Add Chart".to_owned(), |name| format!("Add to {name}")),
-        if watchlist_name.is_some() {
-            "Search a market, stock or prediction market to follow in this watchlist."
-        } else {
-            "Search a market, stock or index and add it as a live chart."
-        },
+/// The top of the sheet: a picture for the tab (or for the watchlist), the title and a one-line
+/// description.
+fn sheet_header(ui: &mut Ui, watchlist_name: Option<&str>, tab: Tab) {
+    let scene = if watchlist_name.is_some() {
+        add_chart_art::Scene::Watchlist
+    } else {
+        match tab {
+            Tab::Crypto => add_chart_art::Scene::Crypto,
+            Tab::Stocks => add_chart_art::Scene::Stocks,
+            Tab::Predictions => add_chart_art::Scene::Predictions,
+            Tab::CoinMarketCap => add_chart_art::Scene::CoinMarketCap,
+            Tab::Portfolio => add_chart_art::Scene::Portfolio,
+        }
+    };
+    let title =
+        watchlist_name.map_or_else(|| "Add Chart".to_owned(), |name| format!("Add to {name}"));
+    let subtitle = if watchlist_name.is_some() {
+        "Search a market, stock or prediction market to follow in this watchlist."
+    } else {
+        "Search a market, stock or index and add it as a live chart."
+    };
+    let (row, _) = ui.allocate_exact_size(
+        vec2(ui.available_width(), add_chart_art::SIZE.y),
+        Sense::hover(),
     );
+    let art = Rect::from_min_size(row.min, add_chart_art::SIZE);
+    add_chart_art::paint(ui, art, scene);
+    paint_header_text(ui, row, art.right() + 16.0, &title, subtitle);
 }
 
 pub(crate) fn header(ui: &mut Ui, icon: Icon, title: &str, subtitle: &str) {
@@ -1338,7 +1350,12 @@ pub(crate) fn header(ui: &mut Ui, icon: Icon, title: &str, subtitle: &str) {
         icon,
         theme::ACCENT,
     );
-    let left = badge.right() + 14.0;
+    paint_header_text(ui, row, badge.right() + 14.0, title, subtitle);
+}
+
+/// A header's title and description, vertically centred in `row` from `left`.
+fn paint_header_text(ui: &Ui, row: Rect, left: f32, title: &str, subtitle: &str) {
+    let painter = ui.painter();
     let width = row.right() - left;
     let title = galley(
         ui,
