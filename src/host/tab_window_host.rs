@@ -7,6 +7,7 @@
 //! `DegenViewApp::process_commands`.
 
 use crate::model::tab_windows::{TabId, TabWindow, TabWindows, WindowId};
+use crate::model::window_frames::{Frame, FrameMemory, Layout, Sample};
 use crate::ui::tab_bar::{self, TabBarEvent};
 use crate::ui::window_chrome;
 use eframe::egui::{self, Pos2, Rect, Vec2, ViewportCommand, ViewportId, vec2};
@@ -87,6 +88,8 @@ struct Geometry {
     inner: Rect,
     /// The strip in the window's own coordinates.
     strip: Rect,
+    /// Minimized, maximized or fullscreen: not a frame to remember.
+    transient: bool,
 }
 
 impl Geometry {
@@ -131,6 +134,7 @@ struct State {
     requests: Vec<TabRequest>,
     /// Where the first window opens, and a window created when none is left.
     first: Placement,
+    frames: FrameMemory,
 }
 
 impl State {
@@ -397,6 +401,7 @@ impl TabWindowHost {
         outer: Option<Rect>,
         inner: Option<Rect>,
         strip: Rect,
+        transient: bool,
     ) {
         let mut state = self.lock();
         match (outer, inner) {
@@ -407,12 +412,51 @@ impl TabWindowHost {
                         outer,
                         inner,
                         strip,
+                        transient,
                     },
                 );
             }
             _ => {
                 state.geometry.remove(&window);
             }
+        }
+    }
+
+    /// Puts windows the OS moved or shrank (a sleep that dropped the displays) back where they
+    /// were for this arrangement of displays. `layout` is empty where the platform cannot say,
+    /// and `now` is wall-clock milliseconds, since sleep stops a monotonic clock.
+    pub fn restore_frames(&self, ctx: &egui::Context, layout: Layout, now: u64) {
+        let mut state = self.lock();
+        if state.drag.is_some() {
+            return;
+        }
+        let samples: Vec<Sample> = state
+            .windows
+            .windows()
+            .iter()
+            .filter_map(|window| {
+                let geometry = state.geometry.get(&window.id)?;
+                Some(Sample {
+                    id: window.id,
+                    frame: Frame {
+                        position: geometry.outer.min.into(),
+                        size: geometry.inner.size().into(),
+                    },
+                    transient: geometry.transient,
+                })
+            })
+            .collect();
+        let moves = state.frames.observe(now, layout, &samples);
+        drop(state);
+        for (window, frame) in moves {
+            let viewport = Self::viewport_id(window);
+            ctx.send_viewport_cmd_to(
+                viewport,
+                ViewportCommand::OuterPosition(Pos2::from(frame.position)),
+            );
+            ctx.send_viewport_cmd_to(viewport, ViewportCommand::InnerSize(Vec2::from(frame.size)));
+            // A window hidden through the sleep draws nothing until asked.
+            ctx.request_repaint_of(viewport);
         }
     }
 
@@ -858,7 +902,7 @@ mod tests {
         let strip = Rect::from_min_size(pos2(0.0, 0.0), vec2(800.0, tab_bar::HEIGHT));
         let inner = Rect::from_min_size(pos2(100.0, 128.0), vec2(800.0, 600.0));
         let outer = Rect::from_min_size(pos2(100.0, 100.0), vec2(800.0, 628.0));
-        host.publish_geometry(window, Some(outer), Some(inner), strip);
+        host.publish_geometry(window, Some(outer), Some(inner), strip, false);
         host.apply(
             window,
             vec![TabBarEvent::DragStarted {

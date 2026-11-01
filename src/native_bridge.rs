@@ -270,11 +270,6 @@ mod platform {
         }
     }
 
-    /// Centres the close/minimise/zoom buttons of every tab window in a title bar `height` points
-    /// tall. The buttons sit for AppKit's own 28 pt bar, so under a taller strip they would ride
-    /// high. AppKit lays the bar out again on resize and when leaving full screen, so this runs
-    /// every frame and writes only what differs. Windows without full-size content (Settings,
-    /// Alerts) keep their native title bars untouched.
     pub fn main_work_area() -> Option<[f32; 4]> {
         let mtm = MainThreadMarker::new()?;
         let primary_height = objc2_app_kit::NSScreen::screens(mtm)
@@ -295,6 +290,31 @@ mod platform {
         ))
     }
 
+    pub fn screen_layout() -> Vec<[i32; 4]> {
+        let Some(mtm) = MainThreadMarker::new() else {
+            return Vec::new();
+        };
+        let mut screens: Vec<[i32; 4]> = objc2_app_kit::NSScreen::screens(mtm)
+            .iter()
+            .map(|screen| {
+                let frame = screen.frame();
+                [
+                    frame.origin.x.round() as i32,
+                    frame.origin.y.round() as i32,
+                    frame.size.width.round() as i32,
+                    frame.size.height.round() as i32,
+                ]
+            })
+            .collect();
+        screens.sort_unstable();
+        screens
+    }
+
+    /// Centres the close/minimise/zoom buttons of every tab window in a title bar `height` points
+    /// tall. The buttons sit for AppKit's own 28 pt bar, so under a taller strip they would ride
+    /// high. AppKit lays the bar out again on resize and when leaving full screen, so this runs
+    /// every frame and writes only what differs. Windows without full-size content (Settings,
+    /// Alerts) keep their native title bars untouched.
     pub fn center_traffic_lights(height: f64) {
         use objc2_app_kit::{NSWindowButton, NSWindowStyleMask};
         use objc2_foundation::{NSPoint, NSRect, NSSize};
@@ -662,12 +682,22 @@ mod platform {
     pub fn main_work_area() -> Option<[f32; 4]> {
         None
     }
+
+    pub fn screen_layout() -> Vec<[i32; 4]> {
+        Vec::new()
+    }
 }
 
 /// The usable area of the main screen as `[x, y, width, height]` in points with a top-left
 /// origin, which is what a window position uses. `None` off macOS.
 pub fn main_work_area() -> Option<[f32; 4]> {
     platform::main_work_area()
+}
+
+/// The displays as `[x, y, width, height]` in whole points, sorted: which arrangement the windows
+/// sit in (`model::window_frames`). Empty off macOS, and off the main thread.
+pub fn screen_layout() -> Vec<[i32; 4]> {
+    platform::screen_layout()
 }
 
 /// AppKit measures from the bottom-left of the primary screen; a window position from the
