@@ -7,26 +7,46 @@ use crate::model::watchlist::WatchlistInstrument;
 use crate::ui::add_chart_sheet::RecentMarket;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, MEDIUM, REGULAR, SEMIBOLD, size};
-use crate::ui::theme;
+use crate::ui::{empty_art, theme};
 use eframe::egui::{self, Color32, Id, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2};
 
-const MAX_WIDTH: f32 = 640.0;
+const MAX_WIDTH: f32 = 720.0;
 /// macOS `.callout`.
 const CALLOUT: f32 = 12.0;
-const LAUNCHER_HEIGHT: f32 = 44.0;
+const LAUNCHER_HEIGHT: f32 = 50.0;
 const CHIP_MIN_WIDTH: f32 = 160.0;
-const STARTER_CHIP_MIN_WIDTH: f32 = 104.0;
+const STARTER_CHIP_MIN_WIDTH: f32 = 128.0;
 const CARD_MIN_WIDTH: f32 = 200.0;
 /// Chips shown per section; the rest stays reachable from the sidebar or Add Chart.
 pub const ITEM_LIMIT: usize = 8;
 /// Ticker icons drawn on a saved-layout card.
 const PREVIEW_LIMIT: usize = 3;
 
-const CRYPTO: [&str; 10] = [
-    "BTC", "ETH", "SOL", "BNB", "XRP", "ADA", "DOGE", "AVAX", "DOT", "LINK",
+/// Starter crypto markets: ticker and name.
+const CRYPTO: [(&str, &str); 10] = [
+    ("BTC", "Bitcoin"),
+    ("ETH", "Ethereum"),
+    ("SOL", "Solana"),
+    ("BNB", "BNB"),
+    ("XRP", "XRP"),
+    ("ADA", "Cardano"),
+    ("DOGE", "Dogecoin"),
+    ("AVAX", "Avalanche"),
+    ("DOT", "Polkadot"),
+    ("LINK", "Chainlink"),
 ];
-const STOCKS: [&str; 10] = [
-    "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "SPY", "QQQ", "AMD",
+/// Starter stocks and ETFs: ticker and name.
+const STOCKS: [(&str, &str); 10] = [
+    ("AAPL", "Apple"),
+    ("MSFT", "Microsoft"),
+    ("NVDA", "NVIDIA"),
+    ("AMZN", "Amazon"),
+    ("GOOGL", "Alphabet"),
+    ("META", "Meta"),
+    ("TSLA", "Tesla"),
+    ("SPY", "S&P 500"),
+    ("QQQ", "Nasdaq 100"),
+    ("AMD", "AMD"),
 ];
 
 /// One saved layout as its card shows it.
@@ -139,25 +159,20 @@ pub fn show(ui: &mut Ui, input: &EmptyStateInput) -> Vec<EmptyStateAction> {
 }
 
 fn hero(ui: &mut Ui, has_any: bool) {
-    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 64.0), Sense::hover());
-    let badge = Rect::from_center_size(rect.center(), Vec2::splat(64.0));
-    ui.painter()
-        .rect_filled(badge, 16.0, theme::with_alpha(kit::ACCENT, 0.12));
-    icons::paint(
-        ui.painter(),
-        Rect::from_center_size(badge.center(), Vec2::splat(28.0)),
-        Icon::ChartUptrend,
-        kit::ACCENT,
+    let (rect, _) = ui.allocate_exact_size(
+        vec2(ui.available_width(), empty_art::SIZE.y),
+        Sense::hover(),
     );
-    ui.add_space(12.0);
+    empty_art::paint(ui, Rect::from_center_size(rect.center(), empty_art::SIZE));
+    ui.add_space(14.0);
     centred_line(
         ui,
         "Start a new chart",
-        size::TITLE2 + 1.0,
+        size::TITLE2 + 4.0,
         SEMIBOLD,
         theme::text_primary(),
     );
-    ui.add_space(4.0);
+    ui.add_space(5.0);
     centred_line(
         ui,
         if has_any {
@@ -165,7 +180,7 @@ fn hero(ui: &mut Ui, has_any: bool) {
         } else {
             "Search crypto, stocks and prediction markets."
         },
-        size::BODY,
+        size::BODY + 1.0,
         REGULAR,
         theme::text_secondary(),
     );
@@ -190,48 +205,72 @@ fn launcher(ui: &mut Ui) -> egui::Response {
         .on_hover_text("Add Chart")
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     let hovered = response.hovered();
+    let radius = 14.0;
     let painter = ui.painter();
+    painter.add(
+        egui::Shadow {
+            offset: [0, 3],
+            blur: if hovered { 16 } else { 10 },
+            spread: 0,
+            color: Color32::from_black_alpha(if hovered { 46 } else { 28 }),
+        }
+        .as_shape(rect, radius),
+    );
+    painter.rect_filled(rect, radius, theme::editor_background());
     painter.rect_filled(
         rect,
-        12.0,
-        theme::quaternary(if hovered { 0.7 } else { 0.5 }),
+        radius,
+        theme::quaternary(if hovered { 0.7 } else { 0.4 }),
     );
     painter.rect_stroke(
         rect,
-        12.0,
+        radius,
         Stroke::new(
             1.0,
             if hovered {
-                theme::with_alpha(kit::ACCENT, 0.6)
+                theme::with_alpha(theme::text_secondary(), 0.6)
             } else {
-                kit::primary(0.12)
+                kit::primary(0.14)
             },
         ),
         StrokeKind::Inside,
     );
     icons::paint(
         painter,
-        Rect::from_min_size(
-            pos2(rect.left() + 14.0, rect.center().y - 7.0),
-            Vec2::splat(14.0),
-        ),
+        Rect::from_center_size(pos2(rect.left() + 24.0, rect.center().y), Vec2::splat(16.0)),
         Icon::Magnifier,
         if hovered {
-            kit::ACCENT
+            theme::text_primary()
         } else {
             theme::text_secondary()
         },
     );
+    // What it finds, as quiet marks at the right.
+    let mut x = rect.right() - 20.0;
+    for icon in [Icon::Percent, Icon::BuildingColumns, Icon::BitcoinCircle] {
+        icons::paint(
+            painter,
+            Rect::from_center_size(pos2(x, rect.center().y), Vec2::splat(15.0)),
+            icon,
+            theme::text_tertiary(),
+        );
+        x -= 25.0;
+    }
+    painter.vline(
+        x + 6.0,
+        rect.center().y - 9.0..=rect.center().y + 9.0,
+        Stroke::new(1.0, theme::ink(16)),
+    );
     let prompt = kit::galley(
         ui,
         "Search crypto, stocks, prediction markets…",
-        size::BODY,
+        size::BODY + 1.0,
         REGULAR,
         theme::text_secondary(),
-        rect.width() - 60.0,
+        (x - rect.left() - 56.0).max(40.0),
     );
     ui.painter().galley(
-        pos2(rect.left() + 38.0, rect.center().y - prompt.size().y / 2.0),
+        pos2(rect.left() + 46.0, rect.center().y - prompt.size().y / 2.0),
         prompt,
         theme::text_secondary(),
     );
@@ -246,20 +285,28 @@ fn tip(ui: &mut Ui) {
         size::CAPTION + 0.5,
         REGULAR,
         theme::text_secondary(),
-        ui.available_width() - 20.0,
+        ui.available_width() - 60.0,
     );
-    let (rect, _) =
-        ui.allocate_exact_size(vec2(ui.available_width(), galley.size().y), Sense::hover());
-    let total = 12.0 + 6.0 + galley.size().x;
-    let left = rect.center().x - total / 2.0;
+    let height = galley.size().y + 16.0;
+    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::hover());
+    let total = 14.0 + 8.0 + galley.size().x;
+    let pill = Rect::from_center_size(rect.center(), vec2(total + 28.0, height));
+    ui.painter().rect_filled(pill, height / 2.0, theme::ink(6));
+    ui.painter().rect_stroke(
+        pill,
+        height / 2.0,
+        Stroke::new(1.0, kit::hairline()),
+        StrokeKind::Inside,
+    );
+    let left = pill.left() + 14.0;
     icons::paint(
         ui.painter(),
-        Rect::from_min_size(pos2(left, rect.center().y - 6.0), Vec2::splat(12.0)),
+        Rect::from_center_size(pos2(left + 7.0, rect.center().y), Vec2::splat(14.0)),
         Icon::Lightbulb,
-        theme::text_secondary(),
+        theme::YELLOW,
     );
     ui.painter().galley(
-        pos2(left + 18.0, rect.top()),
+        pos2(left + 22.0, rect.center().y - galley.size().y / 2.0),
         galley,
         theme::text_secondary(),
     );
@@ -300,7 +347,7 @@ fn section(
                                     accessory,
                                     size::CAPTION + 0.5,
                                     REGULAR,
-                                    kit::ACCENT,
+                                    theme::text_secondary(),
                                 ))
                                 .sense(Sense::click()),
                             )
@@ -349,7 +396,7 @@ fn grid(
     }
 }
 
-/// The button every chip and card is: a quiet tile that picks up the accent on hover.
+/// The button every chip and card is: a quiet tile that lifts and firms its outline on hover.
 fn tile(ui: &mut Ui, rect: Rect, id: Id, tooltip: &str) -> egui::Response {
     let response = ui
         .interact(rect, id, Sense::click())
@@ -357,14 +404,14 @@ fn tile(ui: &mut Ui, rect: Rect, id: Id, tooltip: &str) -> egui::Response {
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     let hovered = response.hovered();
     ui.painter()
-        .rect_filled(rect, 8.0, kit::primary(if hovered { 0.09 } else { 0.05 }));
+        .rect_filled(rect, 9.0, kit::primary(if hovered { 0.1 } else { 0.05 }));
     ui.painter().rect_stroke(
         rect,
-        8.0,
+        9.0,
         Stroke::new(
             1.0,
             if hovered {
-                theme::with_alpha(kit::ACCENT, 0.45)
+                theme::with_alpha(theme::text_secondary(), 0.5)
             } else {
                 kit::primary(0.1)
             },
@@ -374,16 +421,25 @@ fn tile(ui: &mut Ui, rect: Rect, id: Id, tooltip: &str) -> egui::Response {
     response
 }
 
-/// One market as a shortcut: artwork, ticker and an optional second line.
-fn market_chip(
-    ui: &mut Ui,
-    rect: Rect,
-    id: Id,
-    icon_symbol: &str,
+/// What a market shortcut shows.
+struct Market<'a> {
+    icon_symbol: &'a str,
     source: DataSource,
-    title: &str,
-    subtitle: Option<&str>,
-) -> egui::Response {
+    title: &'a str,
+    subtitle: Option<&'a str>,
+    badged: bool,
+}
+
+/// One market as a shortcut: artwork (with its data source on the corner when `badged`), ticker
+/// and an optional second line.
+fn market_chip(ui: &mut Ui, rect: Rect, id: Id, market: Market) -> egui::Response {
+    let Market {
+        icon_symbol,
+        source,
+        title,
+        subtitle,
+        badged,
+    } = market;
     let response = tile(ui, rect, id, &format!("Add {title} to this tab"));
     let response = crate::ui::accessibility::label(
         response,
@@ -397,7 +453,10 @@ fn market_chip(
         Vec2::splat(24.0),
     );
     kit::ticker_icon(ui, icon, icon_symbol, source);
-    let left = icon.right() + 8.0;
+    if badged {
+        kit::source_badge(ui, icon, source);
+    }
+    let left = icon.right() + 10.0;
     let width = rect.right() - 10.0 - left;
     let title = kit::galley(ui, title, CALLOUT, MEDIUM, theme::text_primary(), width);
     let subtitle = subtitle.map(|text| {
@@ -433,17 +492,20 @@ fn starters(ui: &mut Ui, offers_stocks: bool, actions: &mut Vec<EmptyStateAction
             ui,
             CRYPTO.len(),
             STARTER_CHIP_MIN_WIDTH,
-            40.0,
+            44.0,
             |ui, index, rect| {
-                let base = CRYPTO[index];
+                let (base, name) = CRYPTO[index];
                 if market_chip(
                     ui,
                     rect,
                     Id::new(("empty-crypto", base)),
-                    base,
-                    DataSource::Binance,
-                    base,
-                    None,
+                    Market {
+                        icon_symbol: base,
+                        source: DataSource::Binance,
+                        title: base,
+                        subtitle: Some(name),
+                        badged: false,
+                    },
                 )
                 .clicked()
                 {
@@ -468,17 +530,20 @@ fn starters(ui: &mut Ui, offers_stocks: bool, actions: &mut Vec<EmptyStateAction
                     ui,
                     STOCKS.len(),
                     STARTER_CHIP_MIN_WIDTH,
-                    40.0,
+                    44.0,
                     |ui, index, rect| {
-                        let symbol = STOCKS[index];
+                        let (symbol, name) = STOCKS[index];
                         if market_chip(
                             ui,
                             rect,
                             Id::new(("empty-stock", symbol)),
-                            symbol,
-                            DataSource::Alpaca,
-                            symbol,
-                            None,
+                            Market {
+                                icon_symbol: symbol,
+                                source: DataSource::Alpaca,
+                                title: symbol,
+                                subtitle: Some(name),
+                                badged: false,
+                            },
                         )
                         .clicked()
                         {
@@ -517,10 +582,13 @@ fn sections(ui: &mut Ui, input: &EmptyStateInput, actions: &mut Vec<EmptyStateAc
                         ui,
                         rect,
                         Id::new(("empty-favorite", item.id)),
-                        &item.label,
-                        item.instrument.source,
-                        &item.label,
-                        Some(&item.name),
+                        Market {
+                            icon_symbol: &item.label,
+                            source: item.instrument.source,
+                            title: &item.label,
+                            subtitle: Some(&item.name),
+                            badged: true,
+                        },
                     )
                     .clicked()
                     {
@@ -546,10 +614,13 @@ fn sections(ui: &mut Ui, input: &EmptyStateInput, actions: &mut Vec<EmptyStateAc
                         ui,
                         rect,
                         Id::new(("empty-recent", index)),
-                        &market.symbol,
-                        market.source,
-                        &market.symbol,
-                        Some(market.source.display_name()),
+                        Market {
+                            icon_symbol: &market.symbol,
+                            source: market.source,
+                            title: &market.symbol,
+                            subtitle: Some(market.source.display_name()),
+                            badged: true,
+                        },
                     );
                     egui::Popup::context_menu(&response)
                         .frame(kit::menu_frame())
@@ -715,6 +786,78 @@ mod tests {
                 assert!(show(ui, &input).is_empty());
             });
             output.textures_delta.clear();
+        }
+    }
+
+    /// Pictures of the page for a person to look at. Run by hand:
+    /// `DEGENVIEW_GALLERY_DIR=… cargo test --lib empty_state -- --ignored`.
+    #[test]
+    #[ignore = "writes images for a person to look at"]
+    fn gallery_of_the_page() {
+        use crate::ui::render_tests::{Screen, gallery_dir};
+        use crate::ui::theme::AppTheme;
+        if gallery_dir().is_none() {
+            return;
+        }
+        let _theme = crate::ui::theme::RestoreDefaultTheme;
+        let favorites: Vec<WatchlistInstrument> = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT"]
+            .into_iter()
+            .enumerate()
+            .map(|(index, symbol)| WatchlistInstrument {
+                id: index as _,
+                ..favorite(symbol)
+            })
+            .collect();
+        let recents: Vec<RecentMarket> = ["DOGEUSDT", "AVAXUSDT", "LINKUSDT"]
+            .into_iter()
+            .map(recent)
+            .collect();
+        let layouts = [
+            LayoutSummary {
+                id: 1,
+                name: "Majors".into(),
+                chart_count: 4,
+                timeframe: "1D",
+                previews: vec![
+                    (DataSource::Binance, "BTCUSDT".into()),
+                    (DataSource::Binance, "ETHUSDT".into()),
+                    (DataSource::Binance, "SOLUSDT".into()),
+                ],
+            },
+            LayoutSummary {
+                id: 2,
+                name: "Tech stocks".into(),
+                chart_count: 1,
+                timeframe: "4H",
+                previews: vec![(DataSource::Alpaca, "NVDA".into())],
+            },
+        ];
+        for (theme_name, app_theme) in [("dark", AppTheme::Dark), ("light", AppTheme::Light)] {
+            for returning in [false, true] {
+                let mut screen =
+                    Screen::new(egui::vec2(1000.0, if returning { 980.0 } else { 760.0 }));
+                crate::ui::theme::apply(&screen.ctx, app_theme);
+                let input = EmptyStateInput {
+                    favorites: if returning { &favorites } else { &[] },
+                    hidden_favorites: 0,
+                    recents: if returning { &recents } else { &[] },
+                    layouts: if returning { &layouts } else { &[] },
+                    offers_stocks: true,
+                };
+                let mut last = None;
+                for _ in 0..4 {
+                    last = Some(screen.run(Vec::new(), |ui| {
+                        show(ui, &input);
+                    }));
+                }
+                screen.save(
+                    &format!(
+                        "empty-page-{}-{theme_name}",
+                        if returning { "returning" } else { "new" }
+                    ),
+                    last.expect("a frame"),
+                );
+            }
         }
     }
 }

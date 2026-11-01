@@ -23,6 +23,16 @@ pub(crate) fn ghost() -> Color32 {
 }
 
 impl Art<'_> {
+    /// The same painter in another colour.
+    pub(crate) fn tinted(&self, tint: Color32) -> Art<'_> {
+        Art {
+            ui: self.ui,
+            painter: self.painter,
+            tint,
+            centre: self.centre,
+        }
+    }
+
     pub(crate) fn disc(&self, centre: Pos2) {
         self.painter
             .circle_filled(centre, 40.0, self.tint.gamma_multiply(0.13));
@@ -149,14 +159,23 @@ pub(crate) mod test_support {
     use crate::ui::theme::AppTheme;
 
     /// Runs `paint` once on a 96x84 box and returns the box and every shape's bounds.
-    pub fn drawn(app_theme: AppTheme, mut paint: impl FnMut(&Ui, Rect)) -> (Rect, Vec<Rect>) {
+    pub fn drawn(app_theme: AppTheme, paint: impl FnMut(&Ui, Rect)) -> (Rect, Vec<Rect>) {
+        drawn_sized(app_theme, SIZE, paint)
+    }
+
+    /// [`drawn`] for a picture of another size.
+    pub fn drawn_sized(
+        app_theme: AppTheme,
+        size: Vec2,
+        mut paint: impl FnMut(&Ui, Rect),
+    ) -> (Rect, Vec<Rect>) {
         let ctx = egui::Context::default();
         crate::ui::theme::install_offscreen(&ctx);
         crate::ui::theme::apply(&ctx, app_theme);
-        let rect = Rect::from_min_size(Pos2::new(40.0, 40.0), SIZE);
+        let rect = Rect::from_min_size(Pos2::new(40.0, 40.0), size);
         let mut output = ctx.run_ui(
             egui::RawInput {
-                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(200.0, 160.0))),
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, size + vec2(80.0, 80.0))),
                 ..Default::default()
             },
             |ui| paint(ui, rect),

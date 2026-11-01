@@ -37,7 +37,7 @@ impl Scene {
             Self::Predictions => Color32::from_rgb(191, 90, 242),
             Self::CoinMarketCap => Color32::from_rgb(64, 156, 255),
             Self::Portfolio => Color32::from_rgb(48, 209, 88),
-            Self::Watchlist => Color32::from_rgb(255, 55, 95),
+            Self::Watchlist => Color32::from_rgb(48, 176, 199),
         }
     }
 }
