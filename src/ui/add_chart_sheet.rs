@@ -10,7 +10,7 @@ use crate::model::portfolio_card::{CardKind, PortfolioCard};
 use crate::service::{self, EventInfo, SearchResult};
 use crate::store::SharedStore;
 use crate::ui::icons::{self, Icon};
-use crate::ui::{source_logo, theme};
+use crate::ui::{add_chart_art, source_logo, theme};
 use eframe::egui::{
     self, Color32, CornerRadius, FontId, Galley, Id, Rect, RichText, Sense, Stroke, StrokeKind, Ui,
     Vec2, pos2, text::LayoutJob, vec2,
@@ -841,7 +841,7 @@ impl AddChartSheet {
     // MARK: Body
 
     fn show_body(&mut self, ui: &mut Ui, search_id: Id, request: &mut Option<Request>) {
-        sheet_header(ui, self.watchlist_name.as_deref());
+        sheet_header(ui, self.watchlist_name.as_deref(), self.tab);
         ui.add_space(16.0);
         if let Some(tab) = tab_bar(ui, self.tab) {
             self.set_tab(tab);
@@ -1083,8 +1083,13 @@ impl AddChartSheet {
                 caption_label(ui, Icon::ClockArrow, "Recent");
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     let clear_button = ui.add(
-                        egui::Label::new(text("Clear", size::CAPTION + 0.5, 400.0, theme::ACCENT))
-                            .sense(Sense::click()),
+                        egui::Label::new(text(
+                            "Clear",
+                            size::CAPTION + 0.5,
+                            400.0,
+                            theme::text_secondary(),
+                        ))
+                        .sense(Sense::click()),
                     );
                     if clear_button
                         .on_hover_cursor(egui::CursorIcon::PointingHand)
@@ -1095,14 +1100,15 @@ impl AddChartSheet {
                 });
             });
             ui.add_space(8.0);
-            let column = (ui.available_width() - 8.0) / 2.0;
-            for (row, pair) in self.recents.chunks(2).enumerate() {
+            let column =
+                (ui.available_width() - RECENT_GAP * (RECENT_COLUMNS - 1.0)) / RECENT_COLUMNS;
+            for (row, group) in self.recents.chunks(RECENT_COLUMNS as usize).enumerate() {
                 if row > 0 {
                     ui.add_space(2.0);
                 }
                 ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 8.0;
-                    for (offset, market) in pair.iter().enumerate() {
+                    ui.spacing_mut().item_spacing.x = RECENT_GAP;
+                    for (offset, market) in group.iter().enumerate() {
                         let result = market.result();
                         let is_selected = selected
                             .as_ref()
@@ -1110,7 +1116,7 @@ impl AddChartSheet {
                         let response = result_row(ui, &result, is_selected, true, column);
                         response.context_menu(|ui| {
                             if ui.button("Remove from Recent").clicked() {
-                                remove = Some(row * 2 + offset);
+                                remove = Some(row * RECENT_COLUMNS as usize + offset);
                                 ui.close();
                             }
                         });
@@ -1309,36 +1315,53 @@ enum Request {
 
 // MARK: Components
 
-/// The top of the sheet: an accent badge, the title and a one-line description.
-fn sheet_header(ui: &mut Ui, watchlist_name: Option<&str>) {
-    header(
-        ui,
-        if watchlist_name.is_some() {
-            Icon::List
-        } else {
-            Icon::ChartLine
-        },
-        &watchlist_name.map_or_else(|| "Add Chart".to_owned(), |name| format!("Add to {name}")),
-        if watchlist_name.is_some() {
-            "Search a market, stock or prediction market to follow in this watchlist."
-        } else {
-            "Search a market, stock or index and add it as a live chart."
-        },
+/// The top of the sheet: a picture for the tab (or for the watchlist), the title and a one-line
+/// description.
+fn sheet_header(ui: &mut Ui, watchlist_name: Option<&str>, tab: Tab) {
+    let scene = if watchlist_name.is_some() {
+        add_chart_art::Scene::Watchlist
+    } else {
+        match tab {
+            Tab::Crypto => add_chart_art::Scene::Crypto,
+            Tab::Stocks => add_chart_art::Scene::Stocks,
+            Tab::Predictions => add_chart_art::Scene::Predictions,
+            Tab::CoinMarketCap => add_chart_art::Scene::CoinMarketCap,
+            Tab::Portfolio => add_chart_art::Scene::Portfolio,
+        }
+    };
+    let title =
+        watchlist_name.map_or_else(|| "Add Chart".to_owned(), |name| format!("Add to {name}"));
+    let subtitle = if watchlist_name.is_some() {
+        "Search a market, stock or prediction market to follow in this watchlist."
+    } else {
+        "Search a market, stock or index and add it as a live chart."
+    };
+    let (row, _) = ui.allocate_exact_size(
+        vec2(ui.available_width(), add_chart_art::SIZE.y),
+        Sense::hover(),
     );
+    let art = Rect::from_min_size(row.min, add_chart_art::SIZE);
+    add_chart_art::paint(ui, art, scene);
+    paint_header_text(ui, row, art.right() + 16.0, &title, subtitle);
 }
 
 pub(crate) fn header(ui: &mut Ui, icon: Icon, title: &str, subtitle: &str) {
     let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), 46.0), Sense::hover());
     let painter = ui.painter();
     let badge = Rect::from_min_size(row.min, Vec2::splat(46.0));
-    painter.rect_filled(badge, 12.0, theme::with_alpha(theme::ACCENT, 0.14));
+    painter.rect_filled(badge, 12.0, theme::selected_tint(false));
     icons::paint(
         painter,
         Rect::from_center_size(badge.center(), Vec2::splat(20.0)),
         icon,
-        theme::ACCENT,
+        theme::text_primary(),
     );
-    let left = badge.right() + 14.0;
+    paint_header_text(ui, row, badge.right() + 14.0, title, subtitle);
+}
+
+/// A header's title and description, vertically centred in `row` from `left`.
+fn paint_header_text(ui: &Ui, row: Rect, left: f32, title: &str, subtitle: &str) {
+    let painter = ui.painter();
     let width = row.right() - left;
     let title = galley(
         ui,
@@ -1453,7 +1476,7 @@ pub(crate) fn segmented_tabs<T: Copy + PartialEq>(
             icon_rect,
             icon,
             if active {
-                theme::ACCENT
+                theme::text_primary()
             } else {
                 theme::text_secondary()
             },
@@ -1521,7 +1544,7 @@ pub(crate) fn search_box(
         Stroke::new(
             1.0,
             if focused {
-                theme::with_alpha(theme::ACCENT, 0.7)
+                theme::with_alpha(theme::text_secondary(), 0.7)
             } else {
                 theme::ink(31)
             },
@@ -1539,7 +1562,7 @@ pub(crate) fn search_box(
         Icon::Magnifier,
         14.0,
         if focused {
-            theme::ACCENT
+            theme::text_primary()
         } else {
             theme::text_secondary()
         },
@@ -1760,7 +1783,9 @@ fn suggestion_chip(ui: &mut Ui, item: &Chip, width: f32) -> egui::Response {
             };
             ticker_icon(ui, icon_rect, ticker, *source, &market);
         }
-        Chip::Symbol(_, icon) => icons::paint(painter, icon_rect.shrink(2.5), *icon, theme::ACCENT),
+        Chip::Symbol(_, icon) => {
+            icons::paint(painter, icon_rect.shrink(2.5), *icon, theme::text_primary())
+        }
     }
     painter.galley(
         pos2(
@@ -1867,7 +1892,8 @@ fn base_symbol(result: &SearchResult) -> String {
     label.split('/').next().unwrap_or(label).to_uppercase()
 }
 
-/// One search hit: logo, symbol, optional source logo and price, and a check when selected.
+/// One search hit: logo (with the data source badged on its corner when `shows_source`), symbol
+/// and price, and a check when selected.
 pub(crate) fn result_row(
     ui: &mut Ui,
     result: &SearchResult,
@@ -1882,7 +1908,7 @@ pub(crate) fn result_row(
     }
     let painter = ui.painter();
     let fill = if selected {
-        theme::with_alpha(theme::ACCENT, 0.12)
+        theme::selected_tint(false)
     } else if response.hovered() {
         theme::ink(15)
     } else {
@@ -1890,12 +1916,7 @@ pub(crate) fn result_row(
     };
     painter.rect_filled(rect, 8.0, fill);
     if selected {
-        painter.rect_stroke(
-            rect,
-            8.0,
-            Stroke::new(1.0, theme::with_alpha(theme::ACCENT, 0.5)),
-            StrokeKind::Inside,
-        );
+        painter.rect_stroke(rect, 8.0, theme::selected_stroke(), StrokeKind::Inside);
     }
     let content = rect.shrink2(vec2(10.0, 5.0));
     let icon = Rect::from_min_size(
@@ -1903,11 +1924,14 @@ pub(crate) fn result_row(
         Vec2::splat(28.0),
     );
     result_icon(ui, icon, result);
+    if shows_source {
+        crate::ui::kit::source_badge(ui, icon, result.source);
+    }
 
     let mut right = content.right();
     let check = Rect::from_center_size(pos2(right - 7.0, rect.center().y), Vec2::splat(14.0));
     if selected {
-        icons::paint(painter, check, Icon::CheckCircleFill, theme::ACCENT);
+        icons::paint(painter, check, Icon::CheckCircleFill, theme::text_primary());
     }
     right = check.left() - 10.0;
     if let Some(price) = result.price {
@@ -1923,12 +1947,6 @@ pub(crate) fn result_row(
             theme::text_secondary(),
         );
         right -= 10.0;
-    }
-    if shows_source {
-        let logo =
-            Rect::from_min_size(pos2(right - 14.0, rect.center().y - 7.0), Vec2::splat(14.0));
-        source_logo::paint(ui, result.source, logo);
-        right = logo.left() - 10.0;
     }
     let left = icon.right() + 10.0;
     let symbol = galley(
@@ -2124,7 +2142,16 @@ fn toggle_group(picked: Option<&SearchResult>, group: &EventGroup) -> Option<Sea
     }
 }
 
-/// A checkbox: an outline, an accent square with a tick, or one with a dash for some.
+/// The grey of a ticked checkbox, dark enough to keep its white tick legible in both appearances.
+fn checkbox_fill() -> Color32 {
+    if theme::is_light() {
+        Color32::from_gray(118)
+    } else {
+        Color32::from_rgb(88, 98, 104)
+    }
+}
+
+/// A checkbox: an outline, a grey square with a tick, or one with a dash for some.
 fn paint_checkbox(painter: &egui::Painter, rect: Rect, tick: Tick) {
     if tick == Tick::None {
         painter.rect_stroke(
@@ -2135,7 +2162,7 @@ fn paint_checkbox(painter: &egui::Painter, rect: Rect, tick: Tick) {
         );
         return;
     }
-    painter.rect_filled(rect, 3.0, theme::ACCENT);
+    painter.rect_filled(rect, 3.0, checkbox_fill());
     let at = |x: f32, y: f32| rect.min + vec2(rect.width() * x, rect.height() * y);
     let stroke = Stroke::new(1.6, Color32::WHITE);
     if tick == Tick::All {
@@ -2149,6 +2176,9 @@ fn paint_checkbox(painter: &egui::Painter, rect: Rect, tick: Tick) {
 // MARK: Event rows
 
 /// Size of a prediction market's artwork beside its title or choice.
+/// The recent markets sit in this many columns, this far apart.
+const RECENT_COLUMNS: f32 = 4.0;
+const RECENT_GAP: f32 = 8.0;
 const EVENT_ART_SIZE: f32 = 24.0;
 const EVENT_PAD: f32 = 10.0;
 const EVENT_CHEVRON: f32 = 12.0;
@@ -2358,17 +2388,12 @@ fn choice_row(ui: &mut Ui, result: &SearchResult, mark: Mark, width: f32) -> egu
     );
     let painter = ui.painter();
     if matches!(mark, Mark::Pick(true)) {
-        painter.rect_filled(row, 8.0, theme::with_alpha(theme::ACCENT, 0.12));
-        painter.rect_stroke(
-            row,
-            8.0,
-            Stroke::new(1.0, theme::with_alpha(theme::ACCENT, 0.5)),
-            StrokeKind::Inside,
-        );
+        painter.rect_filled(row, 8.0, theme::selected_tint(false));
+        painter.rect_stroke(row, 8.0, theme::selected_stroke(), StrokeKind::Inside);
     } else if response.hovered() {
         painter.rect_filled(row, 8.0, theme::ink(15));
     } else if chosen {
-        painter.rect_filled(row, 8.0, theme::with_alpha(theme::ACCENT, 0.06));
+        painter.rect_filled(row, 8.0, theme::ink(10));
     }
     if let Mark::Tick(ticked) = mark {
         paint_checkbox(
@@ -2402,7 +2427,7 @@ fn choice_row(ui: &mut Ui, result: &SearchResult, mark: Mark, width: f32) -> egu
                 Vec2::splat(CHECK),
             ),
             Icon::CheckCircleFill,
-            theme::ACCENT,
+            theme::text_primary(),
         );
     }
     right -= trailing;
@@ -2586,7 +2611,7 @@ fn choice_card(
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     let painter = ui.painter();
     let fill = if selected {
-        theme::with_alpha(theme::ACCENT, 0.1)
+        theme::selected_tint(false)
     } else if response.hovered() {
         theme::ink(18)
     } else {
@@ -2597,14 +2622,14 @@ fn choice_card(
         rect,
         10.0,
         if selected {
-            Stroke::new(1.5, theme::ACCENT)
+            Stroke::new(1.5, theme::selected_stroke().color)
         } else {
             Stroke::new(1.0, theme::ink(31))
         },
         StrokeKind::Inside,
     );
     let tint = if selected {
-        theme::ACCENT
+        theme::text_primary()
     } else {
         theme::text_secondary()
     };
@@ -2624,7 +2649,7 @@ fn choice_card(
         Vec2::splat(14.0),
     );
     if selected {
-        icons::paint(painter, radio, Icon::CheckCircleFill, theme::ACCENT);
+        icons::paint(painter, radio, Icon::CheckCircleFill, theme::text_primary());
     } else {
         icons::paint(
             painter,
@@ -2715,9 +2740,9 @@ fn banner_label(result: &SearchResult) -> &str {
 /// The confirmation strip in the footer, showing what Add will commit.
 pub(crate) fn selected_banner(ui: &mut Ui, result: &SearchResult, max_width: f32) {
     egui::Frame::new()
-        .fill(theme::with_alpha(theme::ACCENT, 0.1))
+        .fill(theme::selected_tint(false))
         .corner_radius(10.0)
-        .stroke(Stroke::new(1.0, theme::with_alpha(theme::ACCENT, 0.35)))
+        .stroke(theme::selected_stroke())
         .inner_margin(egui::Margin::symmetric(10, 6))
         .show(ui, |ui| {
             ui.set_max_width(max_width - 20.0);
@@ -2796,16 +2821,16 @@ pub(crate) fn sheet_button(
     let hovered = response.hovered() && enabled;
     let (fill, color) = match (prominent, enabled) {
         (true, true) => (
-            if pressed {
-                theme::ACCENT.gamma_multiply(0.8)
+            theme::ink(if pressed {
+                56
             } else if hovered {
-                theme::ACCENT.gamma_multiply(1.1)
+                44
             } else {
-                theme::ACCENT
-            },
-            Color32::WHITE,
+                36
+            }),
+            theme::text_primary(),
         ),
-        (true, false) => (theme::with_alpha(theme::ACCENT, 0.3), theme::ink(110)),
+        (true, false) => (theme::ink(14), theme::text_tertiary()),
         (false, _) => (
             theme::ink(if pressed {
                 46
@@ -2819,11 +2844,15 @@ pub(crate) fn sheet_button(
     };
     let painter = ui.painter();
     painter.rect_filled(rect, 7.0, fill);
-    if !prominent {
+    if !prominent || enabled {
         painter.rect_stroke(
             rect,
             7.0,
-            Stroke::new(1.0, theme::ink(14)),
+            if prominent {
+                theme::selected_stroke()
+            } else {
+                Stroke::new(1.0, theme::ink(14))
+            },
             StrokeKind::Inside,
         );
     }

@@ -730,7 +730,7 @@ pub(super) fn page_shell(
                 .show(ui, |ui| {
                     ui.set_width(body_rect.width() - INSET * 2.0 - 8.0);
                     ui.spacing_mut().item_spacing = Vec2::new(8.0, 0.0);
-                    page_header(ui, section.icon(), section.title(), subtitle);
+                    page_header(ui, section, subtitle);
                     ui.add_space(18.0);
                     body(ui);
                 });
@@ -752,19 +752,17 @@ pub(super) fn page_shell(
     })
 }
 
-/// `SheetHeader`: an accent badge, the page title and a one-line description.
-pub(super) fn page_header(ui: &mut egui::Ui, icon: Icon, title: &str, subtitle: &str) {
-    let (row, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 46.0), Sense::hover());
-    let badge = Rect::from_min_size(row.min, Vec2::splat(46.0));
-    ui.painter()
-        .rect_filled(badge, 12.0, theme::with_alpha(kit::ACCENT, 0.14));
-    icons::paint(
-        ui.painter(),
-        Rect::from_center_size(badge.center(), Vec2::splat(20.0)),
-        icon,
-        kit::ACCENT,
+/// `SheetHeader`, with the section's picture in place of an icon badge: the picture, the page
+/// title and a one-line description.
+pub(super) fn page_header(ui: &mut egui::Ui, section: SettingsSection, subtitle: &str) {
+    let title = section.title();
+    let (row, _) = ui.allocate_exact_size(
+        Vec2::new(ui.available_width(), crate::ui::settings_art::SIZE.y),
+        Sense::hover(),
     );
-    let left = badge.right() + 14.0;
+    let art = Rect::from_min_size(row.min, crate::ui::settings_art::SIZE);
+    crate::ui::settings_art::paint(ui, art, section);
+    let left = art.right() + 16.0;
     let width = row.right() - left;
     let title = kit::galley(
         ui,
@@ -1078,6 +1076,33 @@ mod tests {
             }
             if gallery_dir().is_some() {
                 screen.save(&format!("settings-footer-{width}"), last.expect("a frame"));
+            }
+        }
+    }
+
+    /// Every page opens with a picture of the same size, so the controls start at the same height,
+    /// even where the narrowest page makes the subtitle wrap.
+    #[test]
+    fn every_page_header_takes_the_pictures_height() {
+        use crate::ui::render_tests::Screen;
+        for width in [320.0_f32, 600.0] {
+            for section in SettingsSection::ALL {
+                let mut screen = Screen::new(Vec2::new(width, 200.0));
+                let mut height = 0.0;
+                screen.run(Vec::new(), |ui| {
+                    ui.spacing_mut().item_spacing = Vec2::ZERO;
+                    let top = ui.cursor().top();
+                    page_header(
+                        ui,
+                        section,
+                        "A long description of what this page is for, which wraps on a narrow page.",
+                    );
+                    height = ui.cursor().top() - top;
+                });
+                assert!(
+                    (height - crate::ui::settings_art::SIZE.y).abs() < 0.5,
+                    "{section:?} at {width}: {height}"
+                );
             }
         }
     }

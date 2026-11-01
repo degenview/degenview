@@ -529,17 +529,12 @@ fn header(
 ) {
     ui.add_space(18.0);
     padded(ui, |ui| {
-        let (row, _) =
-            ui.allocate_exact_size(Vec2::new(ui.available_width(), 44.0), Sense::hover());
-        let painter = ui.painter();
-        let badge = Rect::from_min_size(row.min, Vec2::splat(44.0));
-        painter.rect_filled(badge, 12.0, theme::with_alpha(kit::ACCENT, 0.12));
-        icons::paint(
-            painter,
-            Rect::from_center_size(badge.center(), Vec2::splat(20.0)),
-            Icon::BellBadge,
-            kit::ACCENT,
+        let (row, _) = ui.allocate_exact_size(
+            Vec2::new(ui.available_width(), crate::ui::alert_art::SIZE.y),
+            Sense::hover(),
         );
+        let art = Rect::from_min_size(row.min, crate::ui::alert_art::SIZE);
+        crate::ui::alert_art::paint(ui, art, state.tab);
 
         // Right to left: the search field, then the runtime badge.
         let search = Rect::from_min_size(
@@ -561,7 +556,7 @@ fn header(
             .interact(runtime, Id::new("alert-runtime-badge"), Sense::hover())
             .on_hover_text(help);
 
-        let left = badge.right() + 14.0;
+        let left = art.right() + 16.0;
         let width = runtime.left() - 12.0 - left;
         let title = kit::galley(
             ui,
