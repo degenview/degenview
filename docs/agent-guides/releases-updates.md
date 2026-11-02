@@ -141,9 +141,11 @@ the same app and is what the in-app updater downloads; the updater never reads t
   and that an ad-hoc seal on the stub app still verifies inside the image and after a `ditto` out of
   it. It cannot judge how the window looks. By hand, the same check passed on a real Developer ID
   signed bundle with its login item and provisioning profile (identical file modes after the copy).
+- **Verified on CI**: `macos-dmg-check` builds the image with dmgbuild 1.6.5 on the `macos-latest`
+  (arm64) runner's Python and passes (PR #247).
 - **Not verified**: signing, notarization and stapling of the image, Gatekeeper on a quarantined
-  download of it, and the dmgbuild step on the CI runner's Python, until a release candidate has
-  gone through the workflow. Dark appearance not looked at.
+  download of it, the Intel leg (`macos-15-intel`), until a release candidate has gone through the
+  workflow. Dark appearance not looked at.
 
 ## Windows updates
 
