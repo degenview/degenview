@@ -11,7 +11,7 @@ use crate::store::SharedStore;
 use crate::store::sync::ConflictSummary;
 use crate::sync::account::{self, AccountChoice};
 use crate::sync::apply::{ApplyCtx, ApplyReport, apply_batch};
-use crate::sync::core::{Effect, PauseReason, Phase, SyncCore};
+use crate::sync::core::{Effect, PauseReason, Phase, RemoteBatch, SyncCore};
 use crate::sync::initial::{JoinMode, JoinSummary, finish_join, summarize};
 use crate::sync::policy::Category;
 use crate::sync::scripts::{NoScripts, ScriptCache, ScriptSink, StoreScriptSink, scan_scripts};
@@ -181,6 +181,29 @@ struct Shared {
     last_script_scan: Option<Instant>,
     /// When the app thread last ran `tick`: it only runs while a window is drawing.
     last_tick: Option<Instant>,
+    /// Set while a fetched batch could not be saved. Its batch stays at the front of `effects`
+    /// and is tried again once `not_before` has passed.
+    apply_retry: Option<ApplyRetry>,
+    /// Why the last attempt failed, shown until a batch applies.
+    apply_error: Option<String>,
+}
+
+struct ApplyRetry {
+    attempts: u32,
+    not_before: Instant,
+}
+
+/// How long to wait before saving a fetched batch again after it failed. Capped, so a fault that
+/// goes away (a full disk, a locked database) is picked up soon without hammering a broken one.
+fn apply_backoff(attempts: u32) -> Duration {
+    #[cfg(not(test))]
+    {
+        Duration::from_secs(2u64.saturating_pow(attempts.min(6)).min(60))
+    }
+    #[cfg(test)]
+    {
+        Duration::from_millis(40 * u64::from(attempts.min(5)))
+    }
 }
 
 /// How long the interface may go without a frame before the worker applies fetched changes itself.
@@ -221,22 +244,81 @@ impl Applier {
         }
     }
 
-    fn apply(&self, batch: &crate::sync::core::RemoteBatch) -> Option<ApplyReport> {
-        let ctx = self.apply_ctx()?;
+    /// Saves one fetched batch. `Err` says why it was not saved: nothing of it was kept.
+    fn apply(&self, batch: &RemoteBatch) -> Result<ApplyReport, String> {
+        let ctx = self
+            .apply_ctx()
+            .ok_or_else(|| "Could not read the sync state to save iCloud's changes.".to_string())?;
         let report = self.with_scripts(|sink| {
             let store = lock(&self.store);
             apply_batch(&store, sink, batch, &ctx)
         });
-        match report {
-            Ok(report) => {
-                if !report.tables.is_empty() || !report.settings.is_empty() {
-                    (self.repaint)();
-                }
-                Some(report)
-            }
-            // Not acknowledged as failed: the checkpoint did not move, so it is fetched again.
-            Err(_) => None,
+        let report =
+            report.map_err(|error| format!("Could not save changes from iCloud: {error}"))?;
+        if !report.tables.is_empty() || !report.settings.is_empty() {
+            (self.repaint)();
         }
+        Ok(report)
+    }
+
+    /// Saves fetched batches in the order they arrived and stops at the first that fails. Returns
+    /// the ids that were saved and the batches left, the failed one first.
+    ///
+    /// A batch that did not save must not be acknowledged: the core would move the engine's
+    /// checkpoint past data this Mac never got, and it would not be fetched again. So it is kept,
+    /// tried again after a growing pause, and the batches behind it wait: applying a later one
+    /// first could bring back something an earlier one deleted.
+    fn apply_in_order(&self, batches: Vec<RemoteBatch>) -> (Vec<u64>, Vec<RemoteBatch>) {
+        if batches.is_empty() {
+            return (Vec::new(), Vec::new());
+        }
+        let waiting = lock(&self.shared)
+            .apply_retry
+            .as_ref()
+            .is_some_and(|retry| Instant::now() < retry.not_before);
+        if waiting {
+            return (Vec::new(), batches);
+        }
+        let mut saved = Vec::new();
+        let mut batches = batches.into_iter();
+        while let Some(batch) = batches.next() {
+            match self.apply(&batch) {
+                Ok(report) => {
+                    let mut shared = lock(&self.shared);
+                    shared.reports.push(report);
+                    shared.apply_retry = None;
+                    shared.apply_error = None;
+                    saved.push(batch.id);
+                }
+                Err(message) => {
+                    let mut shared = lock(&self.shared);
+                    let attempts = shared.apply_retry.as_ref().map_or(0, |r| r.attempts) + 1;
+                    shared.apply_retry = Some(ApplyRetry {
+                        attempts,
+                        not_before: Instant::now() + apply_backoff(attempts),
+                    });
+                    if let Some(view) = shared.view.as_mut() {
+                        view.last_error = Some(message.clone());
+                    }
+                    shared.apply_error = Some(message);
+                    drop(shared);
+                    let mut left = vec![batch];
+                    left.extend(batches);
+                    return (saved, left);
+                }
+            }
+        }
+        (saved, Vec::new())
+    }
+
+    /// Puts batches that were not saved back at the front of the queue, before newer ones.
+    fn requeue(&self, left: Vec<RemoteBatch>) {
+        if left.is_empty() {
+            return;
+        }
+        let mut shared = lock(&self.shared);
+        let front = left.into_iter().map(Effect::RemoteChanges);
+        shared.effects.splice(0..0, front);
     }
 }
 
@@ -398,15 +480,10 @@ impl SyncHost {
             self.run(action);
         }
         let effects = std::mem::take(&mut lock(&self.shared).effects);
+        let mut remote = Vec::new();
         for effect in effects {
             match effect {
-                Effect::RemoteChanges(batch) => {
-                    let id = batch.id;
-                    if let Some(report) = self.applier.apply(&batch) {
-                        lock(&self.shared).reports.push(report);
-                    }
-                    self.tell(WorkerMsg::Applied(id));
-                }
+                Effect::RemoteChanges(batch) => remote.push(batch),
                 Effect::NeedsBinding { user_hash } => {
                     lock(&self.shared).pending_account = Some(user_hash);
                 }
@@ -415,6 +492,12 @@ impl SyncHost {
                 }
             }
         }
+        // Only what was saved is acknowledged; the rest is tried again on a later frame.
+        let (saved, left) = self.applier.apply_in_order(remote);
+        for id in saved {
+            self.tell(WorkerMsg::Applied(id));
+        }
+        self.applier.requeue(left);
         // iCloud confirmed the deletion this Mac asked for: forget the binding and stop.
         let confirmed = lock(&self.shared)
             .view
@@ -509,7 +592,7 @@ impl SyncHost {
                         records: Vec::new(),
                         deletions: Vec::new(),
                     };
-                    if let Some(report) = self.applier.apply(&empty) {
+                    if let Ok(report) = self.applier.apply(&empty) {
                         lock(&self.shared).reports.push(report);
                     }
                     self.note_scripts_changed();
@@ -747,6 +830,7 @@ fn run_worker<T: SyncTransport>(
         let status = core.status();
         {
             let mut shared = lock(&shared);
+            let apply_error = shared.apply_error.clone();
             // A change of status is something to draw: without a frame the page keeps showing the
             // old one (a join prompt that has been answered, "Syncing…" long after it finished).
             let phase_changed = shown_phase != Some(status.phase);
@@ -755,7 +839,7 @@ fn run_worker<T: SyncTransport>(
             shared.effects.extend(effects);
             if let Some(view) = shared.view.as_mut() {
                 view.phase = status.phase;
-                view.last_error = status.last_error.clone();
+                view.last_error = status.last_error.clone().or_else(|| apply_error.clone());
                 view.cloud_deleted = status.cloud_deleted;
                 view.deleting = status.cloud_deleting;
                 view.delete_error = status.cloud_delete_error.clone();
@@ -778,7 +862,7 @@ fn apply_while_ui_is_idle<T: SyncTransport>(
     shared: &Mutex<Shared>,
     applier: &Applier,
 ) {
-    let batches: Vec<crate::sync::core::RemoteBatch> = {
+    let batches: Vec<RemoteBatch> = {
         let mut shared = lock(shared);
         let idle = shared
             .last_tick
@@ -798,13 +882,11 @@ fn apply_while_ui_is_idle<T: SyncTransport>(
             })
             .collect()
     };
-    for batch in batches {
-        let id = batch.id;
-        if let Some(report) = applier.apply(&batch) {
-            lock(shared).reports.push(report);
-        }
+    let (saved, left) = applier.apply_in_order(batches);
+    for id in saved {
         core.remote_applied(id);
     }
+    applier.requeue(left);
     let more = core.take_effects();
     if !more.is_empty() {
         lock(shared).effects.extend(more);
