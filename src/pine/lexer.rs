@@ -213,23 +213,43 @@ impl<'source> Lexer<'source> {
             }
             end += 1;
         }
+        let mut malformed = false;
         if matches!(line.character(end), Some('e' | 'E')) {
             end += 1;
             if matches!(line.character(end), Some('+' | '-')) {
                 end += 1;
             }
+            let digits = end;
             while Self::is_digit(line.character(end)) {
                 end += 1;
             }
+            malformed = end == digits;
             has_fraction = true;
         }
 
         let literal: String = line.text[start..end].iter().collect();
-        let value = literal.parse::<f64>().unwrap_or(0.0);
+        let value = match literal.parse::<f64>() {
+            Ok(value) if value.is_finite() && !malformed => value,
+            _ => {
+                state.diagnostics.push(Diagnostic::error(
+                    "PINE1005",
+                    DiagnosticCategory::Lexical,
+                    "Malformed number literal.",
+                    line.range(start, end),
+                ));
+                0.0
+            }
+        };
+        let int = if has_fraction {
+            None
+        } else {
+            literal.parse::<i64>().ok()
+        };
         state.tokens.push(Token::new(
             TokenKind::Number {
                 value,
                 is_integer: !has_fraction,
+                int,
             },
             line.range(start, end),
         ));
@@ -599,6 +619,7 @@ mod tests {
                 == TokenKind::Number {
                     value: 12.0,
                     is_integer: true,
+                    int: Some(12),
                 }
         }));
         assert!(result.tokens.iter().any(|token| {
@@ -606,6 +627,7 @@ mod tests {
                 == TokenKind::Number {
                     value: 50.0,
                     is_integer: false,
+                    int: None,
                 }
         }));
         assert!(
@@ -648,6 +670,7 @@ mod tests {
                 TokenKind::Number {
                     value: 1.0,
                     is_integer: true,
+                    int: Some(1),
                 },
                 TokenKind::Newline,
                 TokenKind::If,
@@ -659,6 +682,7 @@ mod tests {
                 TokenKind::Number {
                     value: 2.0,
                     is_integer: true,
+                    int: Some(2),
                 },
                 TokenKind::Newline,
                 TokenKind::Dedent,
@@ -668,6 +692,7 @@ mod tests {
                 TokenKind::Number {
                     value: 3.0,
                     is_integer: true,
+                    int: Some(3),
                 },
                 TokenKind::Newline,
                 TokenKind::Eof,
@@ -812,5 +837,68 @@ mod tests {
         .lex();
         assert_eq!(token_limited.diagnostics[0].code, "PINE8002");
         assert_eq!(token_limited.tokens.last().unwrap().kind, TokenKind::Eof);
+    }
+
+    fn number_tokens(source: &str) -> Vec<(f64, bool, Option<i64>)> {
+        lex(source)
+            .tokens
+            .into_iter()
+            .filter_map(|token| match token.kind {
+                TokenKind::Number {
+                    value,
+                    is_integer,
+                    int,
+                } => Some((value, is_integer, int)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn keeps_an_integer_literal_exact_beyond_two_to_the_53() {
+        let result = lex("a = 9007199254740993\nb = 9223372036854775807\n");
+        assert!(result.diagnostics.is_empty(), "{:?}", result.diagnostics);
+        let ints: Vec<Option<i64>> = number_tokens("9007199254740993 9223372036854775807")
+            .into_iter()
+            .map(|(_, _, int)| int)
+            .collect();
+        assert_eq!(ints, vec![Some(9_007_199_254_740_993), Some(i64::MAX)]);
+    }
+
+    #[test]
+    fn an_integer_past_i64_has_no_exact_value() {
+        assert_eq!(
+            number_tokens("9223372036854775808")
+                .into_iter()
+                .map(|(_, integer, int)| (integer, int))
+                .collect::<Vec<_>>(),
+            vec![(true, None)]
+        );
+    }
+
+    #[test]
+    fn floats_and_exponents_are_not_integers() {
+        for source in ["1.5", "1e3", "1.5e-3", ".5e+2"] {
+            let numbers = number_tokens(source);
+            assert_eq!(numbers.len(), 1, "{source}");
+            assert!(!numbers[0].1 && numbers[0].2.is_none(), "{source}");
+        }
+        assert_eq!(number_tokens("1e3")[0].0, 1000.0);
+    }
+
+    #[test]
+    fn reports_a_malformed_number_instead_of_zero() {
+        for source in ["x = 1e\n", "x = 1e+\n", "x = 2.5E-\n", "x = 1e999\n"] {
+            let result = lex(source);
+            assert_eq!(
+                result
+                    .diagnostics
+                    .iter()
+                    .map(|d| d.code.as_str())
+                    .collect::<Vec<_>>(),
+                vec!["PINE1005"],
+                "{source}"
+            );
+        }
     }
 }

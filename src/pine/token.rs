@@ -153,7 +153,13 @@ impl Default for Limits {
 #[derive(Clone, Debug, PartialEq)]
 pub enum TokenKind {
     Identifier(String),
-    Number { value: f64, is_integer: bool },
+    /// `int` is the exact value of an integer literal (`None` when it does not fit an `i64`);
+    /// `value` is the nearest float, and the only value of a float literal.
+    Number {
+        value: f64,
+        is_integer: bool,
+        int: Option<i64>,
+    },
     String(String),
     Bool(bool),
     Color(u32),
