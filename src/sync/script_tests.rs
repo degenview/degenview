@@ -369,3 +369,105 @@ fn the_real_sink_hides_unmodified_examples_and_knows_about_drafts() {
     assert!(sink.has_unsaved_work(&own));
     let _ = std::fs::remove_dir_all(root);
 }
+
+fn copies(mac: &Mac) -> usize {
+    mac.library
+        .sorted()
+        .iter()
+        .filter(|(name, _)| name.contains("conflict from"))
+        .count()
+}
+
+#[test]
+fn a_conflict_whose_copy_cannot_be_written_overwrites_nothing_and_finishes_later() {
+    let (_cloud, mut a, mut b) = pair();
+    let id = a.library.add("My Strategy", V1);
+    settle(&mut a, &mut b);
+    a.library.set_source(&id, V2);
+    b.library.set_source(&id, V3);
+    a.scan_scripts();
+    a.core.request_sync();
+    a.run();
+    b.scan_scripts();
+    b.hold_applies = true;
+    b.core.request_sync();
+    b.run();
+    let batch = b.batches.last().cloned().expect("B received A's edit");
+
+    // B cannot save the version that loses, so the batch fails and neither version is touched.
+    b.library.fail_adopt = true;
+    let state = b.store.lock().unwrap().sync_state().unwrap().unwrap();
+    let ctx = super::apply::ApplyCtx {
+        device_id: state.device_id,
+        device_name: state.device_name,
+        now_ms: 5,
+        date: "2026-10-20".into(),
+    };
+    {
+        let store = b.store.lock().unwrap();
+        assert!(super::apply::apply_batch(&store, &mut b.library, &batch, &ctx).is_err());
+    }
+    assert_eq!(b.library.sorted().len(), 1);
+    assert_eq!(b.library.source(&id), V3, "B's own edit was overwritten");
+
+    // The disk recovers and the same batch is applied: both versions, one copy.
+    b.library.fail_adopt = false;
+    b.hold_applies = false;
+    b.apply_to_store(&batch);
+    b.apply_held();
+    settle(&mut a, &mut b);
+    let (on_a, on_b) = (a.library.sorted(), b.library.sorted());
+    assert_eq!(on_a, on_b);
+    let sources: HashSet<&str> = on_b.iter().map(|(_, s)| s.as_str()).collect();
+    assert_eq!(sources, [V2, V3].into(), "neither edit was lost");
+    assert_eq!(copies(&b), 1, "one copy, not more");
+    assert_eq!(on_b.len(), 2);
+}
+
+#[test]
+fn applying_a_conflict_again_after_a_failure_later_in_the_batch_makes_no_second_copy() {
+    let (_cloud, mut a, mut b) = pair();
+    let id = a.library.add("My Strategy", V1);
+    settle(&mut a, &mut b);
+    a.library.set_source(&id, V2);
+    b.library.set_source(&id, V3);
+    a.scan_scripts();
+    a.core.request_sync();
+    a.run();
+    b.scan_scripts();
+    b.hold_applies = true;
+    b.core.request_sync();
+    b.run();
+    let batch = b.batches.last().cloned().expect("B received A's edit");
+
+    // The copy is written, then the note about it cannot be: the batch fails and rolls back.
+    b.store
+        .lock()
+        .unwrap()
+        .execute_raw(
+            "CREATE TRIGGER no_note BEFORE INSERT ON sync_conflict
+             BEGIN SELECT RAISE(ABORT, 'disk full'); END",
+        )
+        .unwrap();
+    let state = b.store.lock().unwrap().sync_state().unwrap().unwrap();
+    let ctx = super::apply::ApplyCtx {
+        device_id: state.device_id,
+        device_name: state.device_name,
+        now_ms: 5,
+        date: "2026-10-20".into(),
+    };
+    {
+        let store = b.store.lock().unwrap();
+        assert!(super::apply::apply_batch(&store, &mut b.library, &batch, &ctx).is_err());
+    }
+    let after_failure = copies(&b);
+    b.store
+        .lock()
+        .unwrap()
+        .execute_raw("DROP TRIGGER no_note")
+        .unwrap();
+
+    b.apply_to_store(&batch);
+    assert!(after_failure <= 1);
+    assert_eq!(copies(&b), 1, "the replay made another copy");
+}

@@ -151,28 +151,36 @@ pub fn finish_join(
 
     let mut backup = None;
     if mode == JoinMode::UseCloud {
+        // The copy is a file and stays whatever happens next; that is what it is for.
         backup = Some(stash(store, backups_dir, ctx.now_ms)?);
-        store.clear_replaceable_collections()?;
     }
 
-    let mut records = Vec::new();
-    for entry in store.inbox()?.into_iter().filter(|e| e.reason == PENDING) {
-        match remote_from_inbox(&entry) {
-            Some(record) => records.push(record),
-            None => store.remove_inbox(&entry.record_name)?,
+    // Replacing this Mac's collections with iCloud's is one change: clearing and applying commit
+    // together or not at all, never a Mac with its own data gone and iCloud's not yet in.
+    let mut report = store.in_savepoint("first_merge", || {
+        if mode == JoinMode::UseCloud {
+            store.clear_replaceable_collections()?;
         }
-    }
-    let batch = RemoteBatch {
-        id: 0,
-        records,
-        deletions: Vec::new(),
-    };
-    let mut report = apply_batch(store, scripts, &batch, ctx)?;
-    // Whatever applied is done; anything that could not be applied was re-filed under its own
-    // reason, so what still says "pending" has been dealt with.
-    for entry in store.inbox()?.into_iter().filter(|e| e.reason == PENDING) {
-        store.remove_inbox(&entry.record_name)?;
-    }
+        let mut records = Vec::new();
+        for entry in store.inbox()?.into_iter().filter(|e| e.reason == PENDING) {
+            match remote_from_inbox(&entry) {
+                Some(record) => records.push(record),
+                None => store.remove_inbox(&entry.record_name)?,
+            }
+        }
+        let batch = RemoteBatch {
+            id: 0,
+            records,
+            deletions: Vec::new(),
+        };
+        let report = apply_batch(store, scripts, &batch, ctx)?;
+        // Whatever applied is done; anything that could not be applied was re-filed under its own
+        // reason, so what still says "pending" has been dealt with.
+        for entry in store.inbox()?.into_iter().filter(|e| e.reason == PENDING) {
+            store.remove_inbox(&entry.record_name)?;
+        }
+        Ok(report)
+    })?;
 
     // An untouched default paper account would only duplicate the one iCloud brought.
     if store.drop_untouched_default_paper_account(ctx.now_ms)? {

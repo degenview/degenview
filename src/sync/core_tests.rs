@@ -37,6 +37,8 @@ pub(super) struct FakeLibrary {
     pub(super) unsaved: std::collections::HashSet<String>,
     pub(super) pristine_demos: std::collections::HashSet<String>,
     pub(super) fail_listing: bool,
+    /// Writing a new script fails, as a full disk would.
+    pub(super) fail_adopt: bool,
     seed: u128,
     counter: u128,
 }
@@ -126,6 +128,9 @@ impl super::scripts::ScriptSink for FakeLibrary {
         self.unsaved.contains(id)
     }
     fn adopt(&mut self, id: &str, name: &str, source: &str, favorite: bool) -> Result<(), String> {
+        if self.fail_adopt {
+            return Err("disk full".into());
+        }
         let name = self.unique(name, None);
         self.scripts.insert(
             id.into(),

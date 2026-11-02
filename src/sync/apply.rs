@@ -679,6 +679,12 @@ impl<'a> Work<'a> {
             }
         }
 
+        // The loser is saved first. If it cannot be, the batch fails and nothing is overwritten:
+        // it is applied again later, and finds the copy it already made.
+        let mut conflict = None;
+        if let Some((loser, from_local)) = copy {
+            conflict = Some(self.make_script_copy(record, &id, loser, from_local)?);
+        }
         if let Some((name, source, favorite)) = write {
             let result = if local.is_some() {
                 self.scripts.update(&id, &name, &source, favorite)
@@ -690,8 +696,8 @@ impl<'a> Work<'a> {
             }
             self.report.applied += 1;
         }
-        if let Some((loser, from_local)) = copy {
-            self.save_script_copy(record, &id, loser, from_local)?;
+        if let Some(conflict) = conflict {
+            self.store.record_conflict(&conflict, self.ctx.now_ms)?;
         }
 
         // A name this Mac had to change (another script already has it) is not an edit to upload.
@@ -718,14 +724,19 @@ impl<'a> Work<'a> {
         Ok(())
     }
 
-    /// Saves the losing version of a script as a new script, so neither edit is ever lost.
-    fn save_script_copy(
+    /// Saves the losing version of a script as a new script, so neither edit is ever lost, and
+    /// returns the note about it. An error when the copy cannot be written: the winner is not
+    /// written either, and the whole batch is tried again.
+    ///
+    /// The copy's id is derived from what it holds, so applying the same batch again (after a
+    /// failure later in it) finds the copy it already made instead of making another.
+    fn make_script_copy(
         &mut self,
         record: &RemoteRecord,
         original: &str,
         loser: ScriptSnapshot,
         from_local: bool,
-    ) -> rusqlite::Result<()> {
+    ) -> rusqlite::Result<ConflictRecord> {
         // `from_local` here means the local script won, so the loser is the cloud's version.
         let loser_is_local = !from_local;
         let device = if loser_is_local {
@@ -735,28 +746,35 @@ impl<'a> Work<'a> {
                 .device_name(&record.record.origin_device)?
                 .unwrap_or_default()
         };
-        let copy_id = self.scripts.fresh_id();
         let copy_name = conflict_copy_name(&loser.name, &device, &self.ctx.date);
-        if self
-            .scripts
-            .adopt(&copy_id, &copy_name, &loser.source, loser.is_favorite)
-            .is_err()
+        let copy_id = sha256_hex(
+            format!(
+                "{original}\0{copy_name}\0{}\0{}",
+                loser.source, loser.is_favorite
+            )
+            .as_bytes(),
+        )[..32]
+            .to_string();
+        let exists = matches!(self.scripts.get(&copy_id), Ok(Some(_)));
+        if !exists
+            && let Err(message) =
+                self.scripts
+                    .adopt(&copy_id, &copy_name, &loser.source, loser.is_favorite)
         {
-            return Ok(());
+            return Err(rusqlite::Error::ToSqlConversionFailure(Box::new(
+                std::io::Error::other(format!("could not keep the other version: {message}")),
+            )));
         }
-        self.store.record_conflict(
-            &ConflictRecord {
-                entity: EntityKind::Script,
-                sync_id: original.to_string(),
-                kind: "script".into(),
-                local_payload: loser_is_local.then(|| loser.source.clone().into_bytes()),
-                remote_payload: Some(record.record.payload.clone()),
-                remote_device: Some(record.record.origin_device.clone()),
-                copy_entity: Some(EntityKind::Script),
-                copy_sync_id: Some(copy_id),
-            },
-            self.ctx.now_ms,
-        )
+        Ok(ConflictRecord {
+            entity: EntityKind::Script,
+            sync_id: original.to_string(),
+            kind: "script".into(),
+            local_payload: loser_is_local.then(|| loser.source.clone().into_bytes()),
+            remote_payload: Some(record.record.payload.clone()),
+            remote_device: Some(record.record.origin_device.clone()),
+            copy_entity: Some(EntityKind::Script),
+            copy_sync_id: Some(copy_id),
+        })
     }
 
     fn delete_script(&mut self, id: &str) -> rusqlite::Result<()> {
