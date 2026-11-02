@@ -200,17 +200,7 @@ jobs:
           # Accepted; the Intel runner hits it most. Retry each step on its own, so a validate that
           # cannot connect never makes a staple that already worked run again, and back off for
           # minutes rather than seconds.
-          retry() {
-            what=$1; shift
-            attempt=1
-            until "$@"; do
-              [ "$attempt" -lt 8 ] || { echo "::error::$what failed $attempt times"; return 1; }
-              delay=$((attempt * 20)); [ "$delay" -le 120 ] || delay=120
-              echo "$what attempt ${attempt} failed; retrying in ${delay}s"
-              sleep "$delay"
-              attempt=$((attempt + 1))
-            done
-          }
+          . ./tools/retry.sh
           retry "stapler staple" xcrun stapler staple target/DegenView.app || exit 1
           # The ticket is stapled; this only asks Apple to confirm it. If Apple stays unreachable
           # the offline checks below (signature, then Gatekeeper using the stapled ticket) decide.
@@ -267,15 +257,15 @@ jobs:
             echo "::error::Notarizing the disk image finished with status ${status}"
             exit 1
           fi
-          # Same retry as for the app: stapling fetches the ticket from Apple and now and then drops.
-          for attempt in 1 2 3 4 5; do
-            if xcrun stapler staple "$dmg" && xcrun stapler validate "$dmg"; then
-              break
-            fi
-            [ "$attempt" -lt 5 ] || { echo "::error::stapler failed 5 times for the disk image"; exit 1; }
-            echo "Attempt ${attempt} failed; retrying in $((attempt * 15))s"
-            sleep $((attempt * 15))
-          done
+          # The same retry as the app (tools/retry.sh): each step on its own, so a validate that cannot
+          # reach Apple never makes a staple that already worked run again.
+          . ./tools/retry.sh
+          retry "stapler staple (disk image)" xcrun stapler staple "$dmg" || exit 1
+          # The ticket is stapled; this only asks Apple to confirm it. If Apple stays unreachable the
+          # offline checks below (the image's signature assessment, then the app inside) decide.
+          if ! retry "stapler validate (disk image)" xcrun stapler validate "$dmg"; then
+            echo "::warning::stapler validate could not reach Apple for the disk image; relying on the offline checks"
+          fi
 
           # What a user sees: the image is accepted, and the app inside it passes Gatekeeper and
           # still has its signature after the trip through the image.

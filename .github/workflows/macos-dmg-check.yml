@@ -10,6 +10,8 @@ on:
       - "packaging/macos/**"
       - "tools/make-dmg.sh"
       - "tools/make-dmg-background.py"
+      - "tools/retry.sh"
+      - "tools/test-retry.sh"
       - ".github/workflows/macos-dmg-check.yml"
   workflow_dispatch:
 
@@ -31,6 +33,10 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+
+      # The notarization retry both release steps share (tools/retry.sh); no Apple needed.
+      - name: The retry helper retries
+        run: ./tools/test-retry.sh
 
       - name: Install dmgbuild
         run: |

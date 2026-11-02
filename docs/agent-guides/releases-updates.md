@@ -69,7 +69,9 @@ connection drops now and then (worst on `macos-x64`, the Intel runner: "network 
 lost", `stapler` exit 68). `stapler staple` and `stapler validate` are retried separately for about
 ten minutes in total, and if only `validate` cannot reach Apple the build goes on to the offline
 `codesign --verify` and `spctl --assess` checks. If a tagged build still fails there, re-run the
-failed job; the tag stays.
+failed job; the tag stays. The retry is `retry` in `tools/retry.sh`, sourced by both the app step and
+the disk-image step (steps do not share shell state, so a shared file is the only way to keep them from
+drifting); `tools/test-retry.sh` exercises it and runs in `macos-dmg-check.yml`.
 
 Never squash/rebase the release PR or reuse/move a published tag. Fix a bad release with a new
 version. Re-run a failed tagged build through the Release workflow dispatch.
