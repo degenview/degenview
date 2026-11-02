@@ -128,6 +128,49 @@ fn verify(bytes: &[u8], asset: &ReleaseAsset) -> Result<(), String> {
     Ok(())
 }
 
+/// Moves the installation at `current` to `old`, then `new` into its place, with `rename` doing the
+/// moves. If the second move fails the old one is put back; if that fails too, nothing else will
+/// restore the app, so the error says where the old copy is and what to do. Both moves are within
+/// one folder tree on one volume, so each is atomic, but there is a moment between them with
+/// nothing at `current` (a crash there leaves the old copy in the staging folder).
+fn swap_paths(
+    current: &Path,
+    new: &Path,
+    old: &Path,
+    rename: &dyn Fn(&Path, &Path) -> std::io::Result<()>,
+) -> Result<(), String> {
+    rename(current, old)
+        .map_err(|error| format!("Could not move the current app aside: {error}"))?;
+    let Err(error) = rename(new, current) else {
+        return Ok(());
+    };
+    match rename(old, current) {
+        Ok(()) => Err(format!("Could not install the new app: {error}")),
+        Err(restore) => Err(format!(
+            "Could not install the new app: {error}. Putting the old one back failed too \
+             ({restore}). It is at {}: move it to {} to get it back.",
+            old.display(),
+            current.display()
+        )),
+    }
+}
+
+/// Refuses to clear `staging` when it holds the only copy of the app: a swap that failed and could
+/// not put the old one back leaves `staging/old` behind with nothing at `target`, and preparing the
+/// next attempt starts by deleting the staging folder.
+fn keep_only_copy(staging: &Path, target: &Path) -> Result<(), String> {
+    let old = staging.join("old");
+    if std::fs::symlink_metadata(target).is_err() && std::fs::symlink_metadata(&old).is_ok() {
+        return Err(format!(
+            "DegenView is missing from {} and the previous version is in {}. Move it back, then \
+             try the update again.",
+            target.display(),
+            old.display()
+        ));
+    }
+    Ok(())
+}
+
 // Called by the macOS and Windows strategies; Linux inherits its environment (tests use it everywhere).
 #[cfg_attr(target_os = "linux", allow(dead_code))]
 fn forwarded_env(
@@ -177,6 +220,93 @@ mod tests {
         assert!(verify(b"abc", &asset(3, abc)).is_ok());
         assert!(verify(b"abd", &asset(3, abc)).is_err());
         assert!(verify(b"ab", &asset(3, abc)).is_err());
+    }
+
+    use std::io;
+
+    /// A `current` app holding "old" and a `new` one holding "new", under a scratch folder.
+    fn swap_fixture(name: &str) -> (PathBuf, PathBuf, PathBuf, PathBuf) {
+        let root = scratch(name);
+        let (current, new) = (root.join("app"), root.join("staging-new"));
+        let old = root.join("staging").join("old").join("app");
+        fs::write(&current, "old").unwrap();
+        fs::write(&new, "new").unwrap();
+        fs::create_dir_all(old.parent().unwrap()).unwrap();
+        (root, current, new, old)
+    }
+
+    #[test]
+    fn a_swap_installs_the_new_and_keeps_the_old() {
+        let (root, current, new, old) = swap_fixture("swap-ok");
+        swap_paths(&current, &new, &old, &|from, to| fs::rename(from, to)).unwrap();
+        assert_eq!(fs::read_to_string(&current).unwrap(), "new");
+        assert_eq!(fs::read_to_string(&old).unwrap(), "old");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_swap_that_cannot_start_changes_nothing() {
+        let (root, current, new, old) = swap_fixture("swap-first");
+        let refuse = |_: &Path, _: &Path| Err(io::Error::other("busy"));
+        let error = swap_paths(&current, &new, &old, &refuse).unwrap_err();
+        assert!(error.contains("move the current app aside"), "{error}");
+        assert_eq!(fs::read_to_string(&current).unwrap(), "old");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_failed_second_move_puts_the_old_one_back() {
+        let (root, current, new, old) = swap_fixture("swap-second");
+        // The new copy has gone missing: only the move into place fails.
+        fs::remove_file(&new).unwrap();
+        let error = swap_paths(&current, &new, &old, &|from, to| fs::rename(from, to)).unwrap_err();
+        assert!(
+            error.starts_with("Could not install the new app"),
+            "{error}"
+        );
+        assert!(!error.contains("Putting the old one back"), "{error}");
+        assert_eq!(fs::read_to_string(&current).unwrap(), "old");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_failed_put_back_says_where_the_old_copy_is() {
+        let (root, current, new, old) = swap_fixture("swap-both");
+        let rename = |from: &Path, to: &Path| {
+            if from == new {
+                Err(io::Error::other("no space"))
+            } else if to == current && from == old {
+                Err(io::Error::other("denied"))
+            } else {
+                fs::rename(from, to)
+            }
+        };
+        let error = swap_paths(&current, &new, &old, &rename).unwrap_err();
+        assert!(
+            error.contains("no space") && error.contains("denied"),
+            "{error}"
+        );
+        assert!(error.contains(&old.display().to_string()), "{error}");
+        assert!(error.contains(&current.display().to_string()), "{error}");
+        assert!(!current.exists());
+        assert_eq!(fs::read_to_string(&old).unwrap(), "old");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn the_only_copy_in_the_staging_folder_is_never_cleared() {
+        let (root, current, new, old) = swap_fixture("keep-only");
+        let staging = root.join("staging");
+        // Healthy: the app is where it belongs, so staging is disposable.
+        assert!(keep_only_copy(&staging, &current).is_ok());
+        // A swap that lost the app: it is missing and the old copy sits in staging.
+        let _ = new;
+        fs::rename(&current, &old).unwrap();
+        let error = keep_only_copy(&staging, &current).unwrap_err();
+        assert!(error.contains("previous version"), "{error}");
+        // No staging folder at all: nothing to protect.
+        assert!(keep_only_copy(&root.join("nothing"), &current).is_ok());
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

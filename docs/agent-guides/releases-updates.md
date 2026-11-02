@@ -215,7 +215,12 @@ installs the ARM64 installer over it (same `AppId`) or unzips the ARM64 zip. The
   the `\\?\` prefix `canonicalize` adds).
 - **Swap**: Windows cannot overwrite a running exe but can rename it, so the swap moves the running
   exe into `.DegenView-update\old\` and renames the new one into its place, rolling back if the
-  second rename fails. The next start deletes the staging folder (a file still in use waits for
+  second rename fails. If the roll-back fails too, the error says where the old copy is and
+  how to put it back (`self_update::swap_paths`, shared by every strategy), and the next `prepare`
+  refuses to clear the staging folder while the app is missing and `old/` is in it
+  (`keep_only_copy`): clearing it would delete the only copy. Zip entries named alike are refused
+  (`has_duplicate_names`), and an unpacked tree or extraction that cannot be fully read is an error,
+  not a small size. The next start deletes the staging folder (a file still in use waits for
   the start after).
 - **Relaunch**: no helper. The new exe is started detached with `--relaunch-after <pid>` and a
   cleared environment (`FORWARDED_ENV` in `portable_binary`: data/cache folders, the standard Windows

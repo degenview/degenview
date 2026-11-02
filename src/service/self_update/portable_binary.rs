@@ -20,7 +20,7 @@
 // `forwarded_env` is only called on Windows (Linux inherits its environment); tests use it everywhere.
 #[cfg_attr(not(windows), allow(unused_imports))]
 use super::forwarded_env;
-use super::{Progress, STAGING_NAME, Stage, is_writable, verify};
+use super::{Progress, STAGING_NAME, Stage, is_writable, keep_only_copy, swap_paths, verify};
 use crate::service::update_check::{Release, ReleaseAsset};
 use crate::service::{tag_signature, update_archive, update_download};
 use std::ffi::OsString;
@@ -119,6 +119,7 @@ pub fn prepare(
     tag_signature::verify_release_tag(&release.tag).map_err(|error| error.to_string())?;
     let parent = exe.parent().ok_or("The app has no parent folder.")?;
     let staging = parent.join(STAGING_NAME);
+    keep_only_copy(&staging, exe)?;
     let _ = std::fs::remove_dir_all(&staging);
     std::fs::create_dir(&staging)
         .map_err(|error| format!("Could not create {STAGING_NAME}: {error}"))?;
@@ -193,13 +194,9 @@ fn swap(prepared: &Prepared) -> Result<(), String> {
     let old = prepared.staging.join("old").join(name);
     std::fs::create_dir_all(old.parent().expect("old has a parent"))
         .map_err(|error| error.to_string())?;
-    std::fs::rename(&prepared.exe, &old)
-        .map_err(|error| format!("Could not move the current app aside: {error}"))?;
-    if let Err(error) = std::fs::rename(&prepared.new_exe, &prepared.exe) {
-        let _ = std::fs::rename(&old, &prepared.exe);
-        return Err(format!("Could not install the new app: {error}"));
-    }
-    Ok(())
+    swap_paths(&prepared.exe, &prepared.new_exe, &old, &|from, to| {
+        std::fs::rename(from, to)
+    })
 }
 
 /// Environment the relaunched app gets (names compare case-insensitively on Windows). It is
