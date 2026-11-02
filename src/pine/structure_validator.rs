@@ -367,6 +367,7 @@ mod tests {
                 kind,
                 qualifier: None,
             },
+            type_ref: None,
             mode: DeclarationMode::Ordinary,
             value,
             range: SourceRange::ZERO,

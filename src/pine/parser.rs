@@ -1049,6 +1049,15 @@ impl Parser {
         }
         let qualifier = self.skip_qualifier();
         let kind = self.type_annotation();
+        let type_ref = kind.map(|kind| TypeRef {
+            kind,
+            name: if kind == ValueType::Object {
+                self.annotated_type_name.clone()
+            } else {
+                None
+            },
+            arguments: std::mem::take(&mut self.annotated_arguments),
+        });
         let Some((name, range, token_count)) = self.declaration_target() else {
             self.index = start;
             return None;
@@ -1060,6 +1069,7 @@ impl Parser {
         Some(Statement::Declaration {
             name,
             annotation: TypeAnnotation { kind, qualifier },
+            type_ref,
             mode,
             value,
             range,
