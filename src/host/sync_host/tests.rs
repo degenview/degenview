@@ -734,11 +734,9 @@ fn a_batch_that_cannot_be_saved_is_not_acknowledged_and_is_applied_once_it_can()
     b.wait("both lists", |_| b.rows("watchlist").len() == 2);
     b.wait("the error to clear", |v| v.last_error.is_none());
     assert_eq!(b.watchlist_names(), ["Blocked", "Fine"]);
-    assert_ne!(
-        b.engine_state(),
-        checkpoint,
-        "saved, so the checkpoint moves"
-    );
+    // The rows are saved on the caller's thread, but the checkpoint is written when the worker
+    // thread handles the acknowledgement that follows, so it moves a moment later.
+    b.wait("the checkpoint to move", |_| b.engine_state() != checkpoint);
 }
 
 #[test]
