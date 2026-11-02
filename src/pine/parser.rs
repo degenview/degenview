@@ -24,7 +24,10 @@ pub struct Parser {
     diagnostics: Vec<Diagnostic>,
     call_site: usize,
     limits: Limits,
-    statement_count: usize,
+    /// Statements and expression nodes parsed so far, against `Limits::ast_nodes`.
+    node_count: usize,
+    /// Set once the node limit is reported: the parse stops and reports nothing more.
+    limit_hit: bool,
     export_ranges: Vec<SourceRange>,
     user_types: HashSet<String>,
     enum_types: HashSet<String>,
@@ -49,7 +52,8 @@ impl Parser {
             diagnostics: Vec::new(),
             call_site: 0,
             limits,
-            statement_count: 0,
+            node_count: 0,
+            limit_hit: false,
             export_ranges: Vec::new(),
             user_types,
             enum_types: HashSet::new(),
@@ -137,6 +141,10 @@ impl Parser {
     }
 
     fn error(&mut self, code: &str, message: impl Into<String>, range: SourceRange) {
+        // Past the limit the tree is abandoned, so what follows would only be noise.
+        if self.limit_hit {
+            return;
+        }
         self.diagnostics.push(Diagnostic::error(
             code,
             DiagnosticCategory::Syntax,
@@ -145,11 +153,29 @@ impl Parser {
         ));
     }
 
+    /// Counts `nodes` more against `Limits::ast_nodes`; true once the limit is passed, after
+    /// reporting it the first time.
+    fn over_node_limit(&mut self, nodes: usize) -> bool {
+        self.node_count += nodes;
+        if self.node_count <= self.limits.ast_nodes {
+            return false;
+        }
+        if !self.limit_hit {
+            let range = self.current().range;
+            self.error("PINE8003", "AST node limit exceeded.", range);
+            self.limit_hit = true;
+        }
+        true
+    }
+
     // MARK: Blocks
 
     fn block(&mut self, until_dedent: bool) -> Vec<Statement> {
         let mut out = Vec::new();
-        while !self.at(TokenKind::Eof) && !(until_dedent && self.at(TokenKind::Dedent)) {
+        while !self.at(TokenKind::Eof)
+            && !(until_dedent && self.at(TokenKind::Dedent))
+            && !self.limit_hit
+        {
             if self.take(TokenKind::Newline) || self.take(TokenKind::Indent) {
                 continue;
             }
@@ -162,7 +188,6 @@ impl Parser {
             let parsed_len = parsed.len();
             let parsed_empty = parsed.is_empty();
             out.extend(parsed);
-            self.statement_count += parsed_len;
             if self.index == before {
                 self.error("PINE2001", "Expected a statement.", self.current().range);
                 self.advance();
@@ -170,8 +195,7 @@ impl Parser {
                 self.end_statement(!parsed_empty);
             }
             while self.take(TokenKind::Newline) {}
-            if self.statement_count > self.limits.ast_nodes {
-                self.error("PINE8003", "AST node limit exceeded.", self.current().range);
+            if self.over_node_limit(parsed_len) {
                 break;
             }
         }
@@ -681,6 +705,9 @@ impl Parser {
     // MARK: Expressions
 
     fn expression(&mut self, min_bp: u8) -> Option<Expression> {
+        if self.over_node_limit(1) {
+            return None;
+        }
         let token = self.current().clone();
         self.advance();
         if token.kind == TokenKind::If || token.kind == TokenKind::Switch {
@@ -695,7 +722,12 @@ impl Parser {
         let mut lhs = self.prefix_expression(&token)?;
         loop {
             match self.extend(lhs, min_bp) {
-                Extension::Extended(grown) => lhs = grown,
+                Extension::Extended(grown) => {
+                    if self.over_node_limit(1) {
+                        return None;
+                    }
+                    lhs = grown;
+                }
                 Extension::Finished(done) => return Some(done),
             }
         }
@@ -1762,5 +1794,69 @@ mod tests {
             diagnostics.iter().any(|d| d.code == "PINE2014"),
             "{diagnostics:?}"
         );
+    }
+
+    fn parse_with_node_limit(source: &str, ast_nodes: usize) -> Vec<Diagnostic> {
+        let lexed = Lexer::new(source).lex();
+        let mut parser = Parser::new(
+            lexed.tokens,
+            Limits {
+                ast_nodes,
+                ..Limits::default()
+            },
+            HashSet::new(),
+        );
+        parser.parse().1
+    }
+
+    fn only_limit_error(diagnostics: &[Diagnostic]) -> bool {
+        diagnostics.len() == 1 && diagnostics[0].code == "PINE8003"
+    }
+
+    #[test]
+    fn a_deep_expression_counts_against_the_node_limit() {
+        let source = format!("x = {}1{}\n", "(".repeat(100), ")".repeat(100));
+        assert!(only_limit_error(&parse_with_node_limit(&source, 50)));
+        assert!(parse_with_node_limit(&source, 5_000).is_empty());
+    }
+
+    #[test]
+    fn a_wide_argument_list_counts_against_the_node_limit() {
+        let arguments = vec!["1"; 200].join(", ");
+        let source = format!("plot(math.max({arguments}))\n");
+        assert!(only_limit_error(&parse_with_node_limit(&source, 50)));
+        assert!(parse_with_node_limit(&source, 5_000).is_empty());
+    }
+
+    #[test]
+    fn a_long_chain_of_operators_counts_against_the_node_limit() {
+        let source = format!("x = {}\n", vec!["a"; 300].join(" + "));
+        assert!(only_limit_error(&parse_with_node_limit(&source, 100)));
+    }
+
+    #[test]
+    fn many_statements_still_hit_the_node_limit() {
+        let source = "x = 1\n".repeat(100);
+        assert!(only_limit_error(&parse_with_node_limit(&source, 50)));
+    }
+
+    #[test]
+    fn a_nested_block_past_the_limit_reports_it_once() {
+        let body = "    y = 1\n".repeat(100);
+        let source = format!("if true\n{body}z = 2\n");
+        assert!(only_limit_error(&parse_with_node_limit(&source, 50)));
+    }
+
+    #[test]
+    fn the_default_node_limit_admits_a_script_at_the_token_limit() {
+        // Every node consumes a token, so the default must stay above what the token limit allows.
+        assert!(Limits::default().ast_nodes >= Limits::default().tokens);
+        // About 46,000 tokens in one wide, shallow call.
+        let source = format!("f({})\n", vec!["a"; 23_000].join(", "));
+        let lexed = Lexer::new(&source).lex();
+        assert!(lexed.diagnostics.is_empty(), "{:?}", lexed.diagnostics);
+        let mut parser = Parser::new(lexed.tokens, Limits::default(), HashSet::new());
+        let (_, diagnostics) = parser.parse();
+        assert!(diagnostics.is_empty(), "{diagnostics:?}");
     }
 }
