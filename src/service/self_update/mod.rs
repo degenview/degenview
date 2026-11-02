@@ -28,7 +28,8 @@ pub use app_bundle::{Prepared, apply, cleanup_stale, install_target, prepare, re
 mod portable_exe;
 #[cfg(windows)]
 pub use portable_exe::{
-    Prepared, apply, cleanup_stale, install_target, prepare, relaunch, wait_for_predecessor,
+    Prepared, apply, cleanup_stale, install_target, prepare, relaunch, sync_installed_version,
+    wait_for_predecessor,
 };
 
 /// Nothing to wait for outside Windows: the macOS helper waits for the old process itself, and
@@ -37,6 +38,10 @@ pub use portable_exe::{
 pub fn wait_for_predecessor() -> Result<(), String> {
     Ok(())
 }
+
+/// Nothing to keep in step outside Windows: only its installer writes an Installed apps entry.
+#[cfg(not(windows))]
+pub fn sync_installed_version() {}
 
 /// The folder next to the app where an update is downloaded, unpacked and kept until the new
 /// version has started.

@@ -197,8 +197,14 @@ A bundle has no remote, so `flatpak update` does not find newer versions; downlo
 from the release page. How it is built and what is unverified: [docs/flatpak.md](docs/flatpak.md).
 
 Releases: push a tag like `v0.1.0` and the Release workflow builds macOS (arm64 + Intel),
-Windows, and Linux binaries (a tarball and a Flatpak) and publishes a GitHub release you can
-download.
+Windows (an installer and a portable zip), and Linux binaries (a tarball and a Flatpak) and
+publishes a GitHub release you can download.
+
+On Windows, `DegenView-<tag>-windows-x64-setup.exe` installs for the current user (no admin rights)
+into `%LOCALAPPDATA%\Programs\DegenView`, adds a Start menu entry and an uninstaller, and keeps your
+data when removed. The `.zip` is the portable alternative: unzip it into a folder you own. Both update
+themselves from inside the app. Neither is signed yet, so SmartScreen may ask you to approve the first
+launch.
 
 ## Documentation
 
@@ -218,7 +224,8 @@ Copyright © 2026 Nico Oelgart.
 Two fonts are built into DegenView. They are not covered by the GPL: each keeps its own licence, the
 [SIL Open Font License 1.1](https://openfontlicense.org), and neither declares a Reserved Font Name. The
 licence texts are in [`assets/fonts`](assets/fonts), and ship with every download (the macOS app's
-`Contents/Resources/Licenses`, the Flatpak's `share/licenses`, the Linux and Windows archives).
+`Contents/Resources/Licenses`, the Flatpak's `share/licenses`, the Linux and Windows archives, the Windows installer's `licenses`
+folder).
 
 - **JetBrains Mono** (the NL build, without ligatures; version 2.304), the Pine editor's default font.
   Copyright 2020 The JetBrains Mono Project Authors, <https://github.com/JetBrains/JetBrainsMono>.

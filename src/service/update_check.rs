@@ -577,6 +577,32 @@ mod tests {
         assert!(picked.url.ends_with("v1.0.0/arm"));
     }
 
+    /// The Windows release has an installer next to the zip the updater unpacks; only the zip may
+    /// ever be picked, whatever order GitHub lists them in.
+    #[test]
+    fn the_windows_installer_is_never_picked_as_the_update() {
+        let digest = format!("sha256:{}", "ab".repeat(32));
+        for order in [[0, 1], [1, 0]] {
+            let files = [
+                ("DegenView-v1.0.0-windows-x64-setup.exe", "v1.0.0/setup", 30),
+                ("DegenView-v1.0.0-windows-x64.zip", "v1.0.0/zip", 20),
+            ];
+            let assets = order
+                .map(|i| asset(files[i].0, files[i].1, files[i].2, Some(&digest)))
+                .into_iter()
+                .collect();
+            let picked = select_asset(assets, Some("-windows-x64.zip")).unwrap();
+            assert_eq!(picked.name, "DegenView-v1.0.0-windows-x64.zip");
+        }
+        let only_setup = vec![asset(
+            "DegenView-v1.0.0-windows-x64-setup.exe",
+            "v1.0.0/setup",
+            30,
+            Some(&digest),
+        )];
+        assert!(select_asset(only_setup, Some("-windows-x64.zip")).is_none());
+    }
+
     #[test]
     fn assets_without_a_trustworthy_digest_or_url_are_not_installable() {
         let digest = format!("sha256:{}", "ab".repeat(32));
