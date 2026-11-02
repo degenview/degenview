@@ -28,6 +28,9 @@ const FIRST_CHECK_DELAY: Duration = Duration::from_secs(15);
 const CHECK_INTERVAL: Duration = Duration::from_secs(6 * 60 * 60);
 /// Between checks after one failed (offline, rate limited).
 const RETRY_INTERVAL: Duration = Duration::from_secs(30 * 60);
+/// What an available update says about itself until `install_target` has answered. On macOS that
+/// runs `codesign`, which must not hold up the first window.
+const PENDING_TARGET: &str = "Checking whether this copy can update itself…";
 
 /// Where installing the available release has got to.
 #[derive(Clone)]
@@ -41,7 +44,12 @@ enum Install {
         prepared: Prepared,
         applied: bool,
     },
-    Failed(String),
+    /// Installing `version` failed; the error is shown only while that release is still the one on
+    /// offer (a newer release makes it moot).
+    Failed {
+        version: String,
+        message: String,
+    },
 }
 
 struct State {
@@ -52,9 +60,15 @@ struct State {
     checking: bool,
     /// When the last check started; the schedule counts from it.
     last_started: Option<Instant>,
+    /// The latest check could not reach GitHub, even when `last` still holds an earlier answer
+    /// (a failed refresh keeps a known update). The retry interval follows this, not `last`.
+    last_failed: bool,
     install: Install,
-    /// The app bundle an update can replace, or why there is none (a `cargo run` build).
+    /// The app bundle an update can replace, or why there is none (a `cargo run` build). Starts as
+    /// `PENDING_TARGET` and is resolved on the update worker (`tick`), never while the app starts.
     target: Result<PathBuf, String>,
+    /// The lookup has not been started yet.
+    target_pending: bool,
     /// Set when an installed update should ask for the restart (cleared by "Later").
     restart_prompt: bool,
     /// The user chose "Restart Now" and the quit that follows has not been called off: when the app
@@ -117,7 +131,9 @@ impl UpdateHost {
     /// Starts on the running version's own channel (a release candidate keeps getting release
     /// candidates until the user picks one).
     pub fn new() -> Self {
-        Self::with_target(self_update::install_target(), Channel::of_version(VERSION))
+        let host = Self::with_target(Err(PENDING_TARGET.to_owned()), Channel::of_version(VERSION));
+        host.lock().target_pending = true;
+        host
     }
 
     /// `new`, with the channel the user saved. A value this version cannot read is ignored.
@@ -142,8 +158,10 @@ impl UpdateHost {
                 last: None,
                 checking: false,
                 last_started: None,
+                last_failed: false,
                 install: Install::Idle,
                 target,
+                target_pending: false,
                 restart_prompt: false,
                 relaunch_on_exit: false,
                 born: Instant::now(),
@@ -199,7 +217,10 @@ impl UpdateHost {
                 }
                 Phase::InstallFailed { message, .. } => {
                     state.last = Some((UpdateOutcome::Available(release(true)), Instant::now()));
-                    state.install = Install::Failed(message.clone());
+                    state.install = Install::Failed {
+                        version: "9.9.9".to_owned(),
+                        message: message.clone(),
+                    };
                 }
             }
         }
@@ -261,17 +282,40 @@ impl UpdateHost {
 
     /// Called every frame: starts the launch check and the periodic ones.
     pub fn tick(&self, ctx: &egui::Context) {
+        self.resolve_target(ctx);
         let due = {
             let state = self.lock();
             check_due(&state, Instant::now())
         };
         if due {
-            self.check_now(ctx);
+            self.start_check(ctx, false);
         }
     }
 
-    /// Asks GitHub for the latest release on a worker thread; the UIs repaint when it answers.
+    /// Looks up what this copy can replace, once, on the update worker. It runs before any check
+    /// (one worker, in order), so an answer that arrives finds the target settled.
+    fn resolve_target(&self, ctx: &egui::Context) {
+        if !std::mem::take(&mut self.lock().target_pending) || cfg!(test) {
+            return;
+        }
+        let host = self.clone();
+        let ctx = ctx.clone();
+        work_queue::UPDATES.submit(move || {
+            let target = self_update::install_target();
+            host.lock().target = target;
+            host.repaint(&ctx);
+        });
+    }
+
+    /// Asks GitHub for the latest release on a worker thread; the UIs repaint when it answers. A
+    /// person asked for this, so a failed install's error is cleared: the answer is a fresh start.
     pub fn check_now(&self, ctx: &egui::Context) {
+        self.start_check(ctx, true);
+    }
+
+    /// `manual`: a check someone asked for. A scheduled one leaves a failed install's error in
+    /// place until it finds a different release (`finish_check`), so it is not wiped unseen.
+    fn start_check(&self, ctx: &egui::Context, manual: bool) {
         let channel = {
             let mut state = self.lock();
             if state.checking || matches!(state.install, Install::Working(_)) {
@@ -279,7 +323,7 @@ impl UpdateHost {
             }
             state.checking = true;
             state.last_started = Some(Instant::now());
-            if matches!(state.install, Install::Failed(_)) {
+            if manual && matches!(state.install, Install::Failed { .. }) {
                 state.install = Install::Idle;
             }
             state.channel
@@ -304,12 +348,25 @@ impl UpdateHost {
             state.last_started = None;
             return;
         }
+        state.last_failed = matches!(outcome, UpdateOutcome::Failed(_));
         // A check that could not reach GitHub must not take a known update away.
-        let keeps_known_update = matches!(outcome, UpdateOutcome::Failed(_))
-            && matches!(&state.last, Some((UpdateOutcome::Available(_), _)));
-        if !keeps_known_update {
-            state.last = Some((outcome, Instant::now()));
+        let keeps_known_update =
+            state.last_failed && matches!(&state.last, Some((UpdateOutcome::Available(_), _)));
+        if keeps_known_update {
+            return;
         }
+        // The error of a failed install belongs to the release that failed: once a different one
+        // is on offer (or none), it no longer applies and a retry starts clean.
+        if let Install::Failed { version, .. } = &state.install {
+            let still_offered = matches!(
+                &outcome,
+                UpdateOutcome::Available(release) if release.version == *version
+            );
+            if !still_offered {
+                state.install = Install::Idle;
+            }
+        }
+        state.last = Some((outcome, Instant::now()));
     }
 
     /// Downloads and verifies the available release on a worker thread; nothing is replaced until
@@ -357,7 +414,7 @@ impl UpdateHost {
                 };
                 state.restart_prompt = true;
             }
-            Err(message) => state.install = Install::Failed(message),
+            Err(message) => state.install = Install::Failed { version, message },
         }
     }
 
@@ -385,10 +442,12 @@ impl UpdateHost {
     /// still be called off by an unsaved-script question, and a new process started now would sit
     /// beside the old one instead of replacing it.
     fn restart_with(&self, apply: impl Fn(&Prepared) -> Result<(), String>) -> Result<(), String> {
-        let (prepared, applied) = match &self.lock().install {
+        let (prepared, applied, version) = match &self.lock().install {
             Install::Ready {
-                prepared, applied, ..
-            } => (prepared.clone(), *applied),
+                prepared,
+                applied,
+                version,
+            } => (prepared.clone(), *applied, version.clone()),
             _ => return Err("There is no update ready to install.".to_owned()),
         };
         // Outside the lock: this renames the bundle on disk. Not again after a quit that was
@@ -404,7 +463,12 @@ impl UpdateHost {
                 }
                 state.relaunch_on_exit = true;
             }
-            Err(message) => state.install = Install::Failed(message.clone()),
+            Err(message) => {
+                state.install = Install::Failed {
+                    version,
+                    message: message.clone(),
+                };
+            }
         }
         result
     }
@@ -462,11 +526,13 @@ fn phase(state: &State) -> Phase {
         (Install::Ready { version, .. }, _) => Phase::Ready {
             version: version.clone(),
         },
-        (Install::Failed(message), Some(release)) => Phase::InstallFailed {
-            version: release.version.clone(),
-            url: release.url.clone(),
-            message: message.clone(),
-        },
+        (Install::Failed { version, message }, Some(release)) if release.version == *version => {
+            Phase::InstallFailed {
+                version: release.version.clone(),
+                url: release.url.clone(),
+                message: message.clone(),
+            }
+        }
         (_, Some(release)) => available_phase(release, &state.target),
         (_, None) => match &state.last {
             Some((UpdateOutcome::Failed(message), _)) => Phase::CheckFailed(message.clone()),
@@ -497,17 +563,19 @@ fn available_phase(release: &Release, target: &Result<PathBuf, String>) -> Phase
 }
 
 /// The schedule: once shortly after launch, then every six hours (half an hour after a failure),
-/// and never while an install is under way or waiting for its restart.
+/// and never while an install is under way or waiting for its restart. A failed install does not
+/// stop it: a corrected release published since must still be found.
 fn check_due(state: &State, now: Instant) -> bool {
-    if state.checking || !matches!(state.install, Install::Idle) {
+    if state.checking || matches!(state.install, Install::Working(_) | Install::Ready { .. }) {
         return false;
     }
     match state.last_started {
         None => now.saturating_duration_since(state.born) >= FIRST_CHECK_DELAY,
         Some(started) => {
-            let wait = match &state.last {
-                Some((UpdateOutcome::Failed(_), _)) => RETRY_INTERVAL,
-                _ => CHECK_INTERVAL,
+            let wait = if state.last_failed {
+                RETRY_INTERVAL
+            } else {
+                CHECK_INTERVAL
             };
             now.saturating_duration_since(started) >= wait
         }
@@ -740,7 +808,7 @@ mod tests {
         assert!(result.is_err());
         // The failure is what the tab bar shows (a red mark with this reason).
         assert!(
-            matches!(&host.lock().install, Install::Failed(message) if message.contains("busy"))
+            matches!(&host.lock().install, Install::Failed { message, .. } if message.contains("busy"))
         );
         host.relaunch_with(|_| {
             relaunches.set(relaunches.get() + 1);
@@ -777,7 +845,9 @@ mod tests {
 
         // A failed check is retried sooner.
         state.last = Some((UpdateOutcome::Failed("x".to_owned()), born));
+        state.last_failed = true;
         assert!(check_due(&state, born + RETRY_INTERVAL));
+        state.last_failed = false;
 
         // Never while one runs, an install runs, or a restart waits.
         state.checking = true;
@@ -785,8 +855,97 @@ mod tests {
         state.checking = false;
         state.install = Install::Working(Progress::new(Stage::Downloading));
         assert!(!check_due(&state, born + CHECK_INTERVAL * 2));
-        state.install = Install::Failed("x".to_owned());
-        assert!(!check_due(&state, born + CHECK_INTERVAL * 2));
+        // A failed install does not stop the schedule: a corrected release must still be found.
+        state.install = Install::Failed {
+            version: "9.9.9".to_owned(),
+            message: "x".to_owned(),
+        };
+        assert!(check_due(&state, born + CHECK_INTERVAL * 2));
+    }
+
+    #[test]
+    fn construction_does_not_look_up_the_install_target() {
+        let host = UpdateHost::new();
+        assert!(host.lock().target_pending);
+        let channel = host.channel();
+        host.finish_check(UpdateOutcome::Available(release(None, true)), channel);
+        // Until the worker answers, the update is on offer but not yet installable.
+        assert!(matches!(
+            host.view().phase,
+            Phase::Available { installable: false, note: Some(ref note), .. } if note == PENDING_TARGET
+        ));
+        // The lookup is started once, by the first tick.
+        host.tick(&ctx());
+        assert!(!host.lock().target_pending);
+    }
+
+    #[test]
+    fn a_failed_refresh_of_a_known_update_retries_after_half_an_hour() {
+        let host = host();
+        host.finish_check(
+            UpdateOutcome::Available(release(None, true)),
+            Channel::Stable,
+        );
+        let born = host.lock().born;
+        host.lock().last_started = Some(born);
+        assert!(!check_due(&host.lock(), born + RETRY_INTERVAL));
+        // GitHub cannot be reached: the update stays on offer, but the next try is the short one.
+        host.finish_check(UpdateOutcome::Failed("offline".to_owned()), Channel::Stable);
+        assert!(matches!(host.view().phase, Phase::Available { .. }));
+        assert!(check_due(&host.lock(), born + RETRY_INTERVAL));
+        // An answer clears it.
+        host.finish_check(
+            UpdateOutcome::Available(release(None, true)),
+            Channel::Stable,
+        );
+        assert!(!check_due(&host.lock(), born + RETRY_INTERVAL));
+    }
+
+    fn newer(version: &str) -> UpdateOutcome {
+        let mut newer = release(None, true);
+        newer.version = version.to_owned();
+        newer.tag = format!("v{version}");
+        UpdateOutcome::Available(newer)
+    }
+
+    #[test]
+    fn a_scheduled_check_finds_the_release_that_replaces_a_failed_one() {
+        let host = host();
+        host.finish_check(newer("9.9.9"), Channel::Stable);
+        host.finish_install("9.9.9".to_owned(), Err("checksum".to_owned()));
+        assert!(matches!(host.view().phase, Phase::InstallFailed { .. }));
+        let born = host.lock().born;
+        host.lock().last_started = Some(born);
+        // The periodic check is still due after the failure...
+        assert!(check_due(&host.lock(), born + CHECK_INTERVAL));
+        // ...and when 9.9.10 is out, it is offered without the old error attached.
+        host.start_check(&ctx(), false);
+        host.finish_check(newer("9.9.10"), Channel::Stable);
+        match host.view().phase {
+            Phase::Available { version, .. } => assert_eq!(version, "9.9.10"),
+            other => panic!("expected the new release, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_scheduled_check_keeps_the_error_of_the_release_that_failed() {
+        let host = host();
+        host.finish_check(newer("9.9.9"), Channel::Stable);
+        host.finish_install("9.9.9".to_owned(), Err("checksum".to_owned()));
+        // Nothing new: the scheduled check does not wipe the error unseen.
+        host.start_check(&ctx(), false);
+        host.finish_check(newer("9.9.9"), Channel::Stable);
+        assert!(matches!(
+            host.view().phase,
+            Phase::InstallFailed { ref message, .. } if message == "checksum"
+        ));
+        // Nor does a check that could not reach GitHub.
+        host.start_check(&ctx(), false);
+        host.finish_check(UpdateOutcome::Failed("offline".to_owned()), Channel::Stable);
+        assert!(matches!(host.view().phase, Phase::InstallFailed { .. }));
+        // A person asking again starts clean.
+        host.check_now(&ctx());
+        assert!(matches!(host.view().phase, Phase::Available { .. }));
     }
 
     #[test]
