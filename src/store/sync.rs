@@ -385,6 +385,15 @@ impl Store {
     }
 
     /// Gives a cloned database a new identity and drops the per-device engine checkpoint.
+    /// Records the hardware this database runs on without changing who it is.
+    pub fn set_hardware_hash(&self, hardware_hash: &str) -> rusqlite::Result<()> {
+        self.connection.execute(
+            "UPDATE sync_state SET hardware_hash = ?1 WHERE id = 1",
+            [hardware_hash],
+        )?;
+        Ok(())
+    }
+
     pub fn reset_sync_device(&self, hardware_hash: &str) -> rusqlite::Result<()> {
         self.connection.execute(
             "UPDATE sync_state SET device_id = ?1, hardware_hash = ?2, engine_state = NULL,

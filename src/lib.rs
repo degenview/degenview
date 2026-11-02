@@ -34,6 +34,8 @@ pub fn run_gui_with(
     // opens, and do not open it at all if that process never does (two instances on one store).
     service::self_update::wait_for_predecessor()?;
     let store = store::open_default()?;
+    // A database copied from another Mac becomes this Mac's own before anything reads its ids.
+    host::sync_host::adopt_this_mac(&store);
     // A finished update leaves the previous app in a hidden folder until the new one has started.
     service::work_queue::submit(service::self_update::cleanup_stale);
     service::work_queue::submit(service::self_update::sync_installed_version);

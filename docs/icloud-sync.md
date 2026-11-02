@@ -279,8 +279,17 @@ them saving the newer edit is the merge.
 A database is bound to one account (a hash, never the identifier). If a different Apple Account is
 signed in, sync **pauses with nothing uploaded** and the user chooses: keep local only, use that
 account's data (copy saved first), or merge. Signing out only waits. Staging carries the bound
-account's hash and the bridge refuses a mismatch. A database copied to another Mac gets a new
-device identity. *Delete my iCloud data* is a separate, typed-confirmation action that only
+account's hash and the bridge refuses a mismatch. A database copied to another Mac (Migration Assistant, a restored
+backup) is noticed when the app starts, before anything loads it, and again before the sync worker
+starts: it gets a new device identity, no engine checkpoint, a new id tag, and it asks the first-sync
+question again. The counter ids it holds (portfolios, transactions, paper accounts, and the cards in
+layouts and watchlists that point at them) are rewritten to the form the old tag gave them in iCloud
+(`store::identity`), so they stay the same records on both Macs and the two never mint the same ids
+(one savepoint: all or nothing). If this Mac's hardware identifier cannot be read, nothing is compared
+(a failed `ioreg` must not look like a new Mac); an identifier stored from the computer's name
+(`name:` prefix) is replaced by the real one without a new device. A paper account that the copy
+was running now names another Mac, so it waits for the user to take it over. Not verified on two real
+Macs; open tabs' portfolio cards may fall back to All Portfolios after the move. *Delete my iCloud data* is a separate, typed-confirmation action that only
 targets the bound account and forgets the binding only after iCloud confirms; other Macs pause and
 offer to upload again.
 

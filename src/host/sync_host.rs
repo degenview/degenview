@@ -250,6 +250,8 @@ pub struct SyncHost {
     applier: Applier,
     repaint: Arc<dyn Fn() + Send + Sync>,
     backups_dir: PathBuf,
+    /// Which hardware this is; replaced in tests to stand in for another Mac.
+    hardware: Arc<dyn Fn() -> Option<String> + Send + Sync>,
 }
 
 fn now_ms() -> i64 {
@@ -271,6 +273,24 @@ impl SyncHost {
         scripts: Option<ScriptStore>,
         backups_dir: PathBuf,
         repaint: Arc<dyn Fn() + Send + Sync>,
+    ) -> Self {
+        Self::with_hardware(
+            store,
+            factory,
+            scripts,
+            backups_dir,
+            repaint,
+            Arc::new(hardware_id),
+        )
+    }
+
+    pub(crate) fn with_hardware(
+        store: SharedStore,
+        factory: Option<Arc<dyn TransportFactory>>,
+        scripts: Option<ScriptStore>,
+        backups_dir: PathBuf,
+        repaint: Arc<dyn Fn() + Send + Sync>,
+        hardware: Arc<dyn Fn() -> Option<String> + Send + Sync>,
     ) -> Self {
         let unavailable = match &factory {
             None => Some("iCloud Sync is not included in this build of DegenView.".to_string()),
@@ -295,12 +315,28 @@ impl SyncHost {
             script_cache: ScriptCache::default(),
             repaint,
             backups_dir,
+            hardware,
         };
         host.refresh_view();
         if unavailable.is_none() && host.store_enabled() {
-            host.start_worker();
+            // A database that now runs on other hardware becomes its own device before anything
+            // syncs; when that cannot be done, syncing waits rather than using the old identity.
+            // (The app has normally done this already, before it loaded anything; see
+            // `adopt_this_mac`.)
+            match account::check_device_identity(&lock(&host.store), (host.hardware)().as_deref()) {
+                Ok(_) => host.start_worker(),
+                Err(error) => host.refuse_to_start(&error),
+            }
         }
         host
+    }
+
+    fn refuse_to_start(&self, error: &rusqlite::Error) {
+        if let Some(view) = lock(&self.shared).view.as_mut() {
+            view.last_error = Some(format!(
+                "iCloud Sync did not start: could not set up this Mac ({error})."
+            ));
+        }
     }
 
     fn store_enabled(&self) -> bool {
@@ -560,11 +596,13 @@ impl SyncHost {
         let _ = account::enable(
             &lock(&self.store),
             &device_name(),
-            &hardware_hash(),
+            &hardware_hash_to_store(),
             &environment,
         );
-        let _ = account::check_device_identity(&lock(&self.store), &hardware_hash());
-        self.start_worker();
+        match account::check_device_identity(&lock(&self.store), (self.hardware)().as_deref()) {
+            Ok(_) => self.start_worker(),
+            Err(error) => self.refuse_to_start(&error),
+        }
     }
 
     fn join(&self, mode: JoinMode) {
@@ -845,8 +883,9 @@ pub fn device_name() -> String {
         .unwrap_or_else(|_| "This Mac".to_string())
 }
 
-/// A stable hash of this machine's hardware identity, to notice a database copied to another Mac.
-pub fn hardware_hash() -> String {
+/// A stable identifier for this computer, hashed; `None` where it cannot be read. A failure to read
+/// it must not look like a different Mac, so callers compare nothing then.
+pub fn hardware_id() -> Option<String> {
     #[cfg(target_os = "macos")]
     if let Ok(output) = std::process::Command::new("ioreg")
         .args(["-rd1", "-c", "IOPlatformExpertDevice"])
@@ -858,10 +897,33 @@ pub fn hardware_hash() -> String {
             .find(|line| line.contains("IOPlatformUUID"))
             .and_then(|line| line.split('"').nth(3))
         {
-            return crate::sync::record::sha256_hex(uuid.as_bytes());
+            return Some(crate::sync::record::sha256_hex(uuid.as_bytes()));
         }
     }
-    crate::sync::record::sha256_hex(device_name().as_bytes())
+    None
+}
+
+/// What is stored when turning sync on: the identifier, or a marked stand-in made from the name.
+fn hardware_hash_to_store() -> String {
+    hardware_id().unwrap_or_else(|| {
+        format!(
+            "{}{}",
+            account::NAME_HASH_PREFIX,
+            crate::sync::record::sha256_hex(device_name().as_bytes())
+        )
+    })
+}
+
+/// Before the app loads anything: if this database was copied to other hardware, take it over now,
+/// while no engine or window holds the ids that are about to change.
+pub fn adopt_this_mac(store: &SharedStore) {
+    let store = lock(store);
+    if !store.sync_enabled() {
+        return;
+    }
+    if let Err(error) = account::check_device_identity(&store, hardware_id().as_deref()) {
+        eprintln!("DegenView: could not check which Mac this database belongs to: {error}");
+    }
 }
 
 #[cfg(test)]

@@ -16,6 +16,7 @@ pub mod asset_store;
 pub mod chart_template;
 pub mod drawing_template;
 pub mod editor_theme;
+pub mod identity;
 pub mod mcp;
 pub mod paper;
 pub mod pine;

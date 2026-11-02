@@ -89,13 +89,18 @@ pub fn map_parts_with(parts: &mut Parts, map: &dyn Fn(u64) -> u64) {
     map_fields_with(&mut parts.account, &["id"], map);
     for ((key, _), rows) in COLLECTIONS.iter().zip(parts.rows.iter_mut()) {
         for row in rows {
-            map_fields_with(row, id_fields(key), map);
-            if *key == "order_events"
-                && let Some(order) = row.get_mut("order")
-            {
-                map_fields_with(order, &ORDER_IDS, map);
-            }
+            map_collection_row(key, row, map);
         }
+    }
+}
+
+/// Rewrites the ids in one row of the collection `key` (a [`COLLECTIONS`] key).
+pub fn map_collection_row(key: &str, row: &mut Value, map: &dyn Fn(u64) -> u64) {
+    map_fields_with(row, id_fields(key), map);
+    if key == "order_events"
+        && let Some(order) = row.get_mut("order")
+    {
+        map_fields_with(order, &ORDER_IDS, map);
     }
 }
 

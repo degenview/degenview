@@ -172,17 +172,31 @@ pub fn stash(store: &Store, backups_dir: &Path, now_ms: i64) -> rusqlite::Result
     Ok(path)
 }
 
+/// Marks a hardware hash that came from the computer's name because the machine's own identifier
+/// could not be read. It says nothing about which machine this is.
+pub const NAME_HASH_PREFIX: &str = "name:";
+
 /// A database copied to another Mac (Migration Assistant, a restored backup) carries a device
-/// identity that belongs to the original. If the hardware differs, mint a new identity and drop
-/// the engine checkpoint, which is per device. Returns whether the identity changed.
-pub fn check_device_identity(store: &Store, hardware_hash: &str) -> rusqlite::Result<bool> {
-    let Some(state) = store.sync_state()? else {
+/// identity that belongs to the original. If the hardware differs, mint a new identity, drop the
+/// engine checkpoint (which is per device), and give the database a new id tag, rewriting the ids it
+/// holds so they keep their meaning in iCloud ([`Store::move_to_new_device`]). Returns whether the
+/// identity changed.
+///
+/// `None` is "this Mac's identifier could not be read": nothing is compared, since guessing wrong
+/// would throw away a good identity. A stored hash made from the computer's name (the same
+/// failure, earlier) is replaced by the real one without a new identity.
+pub fn check_device_identity(store: &Store, hardware_hash: Option<&str>) -> rusqlite::Result<bool> {
+    let (Some(state), Some(hardware_hash)) = (store.sync_state()?, hardware_hash) else {
         return Ok(false);
     };
     if state.hardware_hash == hardware_hash {
         return Ok(false);
     }
-    store.reset_sync_device(hardware_hash)?;
+    if state.hardware_hash.starts_with(NAME_HASH_PREFIX) {
+        store.set_hardware_hash(hardware_hash)?;
+        return Ok(false);
+    }
+    store.move_to_new_device(hardware_hash)?;
     Ok(true)
 }
 
@@ -273,14 +287,28 @@ mod tests {
     fn a_cloned_database_gets_a_new_identity_only_when_the_hardware_differs() {
         let store = Store::open_in_memory().unwrap();
         let original = enable(&store, "Studio", "hw-a", "Production").unwrap();
-        assert!(!check_device_identity(&store, "hw-a").unwrap());
-        assert!(check_device_identity(&store, "hw-b").unwrap());
+        assert!(!check_device_identity(&store, Some("hw-a")).unwrap());
+        assert!(check_device_identity(&store, Some("hw-b")).unwrap());
         let cloned = store.sync_state().unwrap().unwrap();
         assert_ne!(cloned.device_id, original.device_id);
         assert_eq!(cloned.hardware_hash, "hw-b");
-        assert!(!check_device_identity(&store, "hw-b").unwrap());
+        assert!(!check_device_identity(&store, Some("hw-b")).unwrap());
         let empty = Store::open_in_memory().unwrap();
-        assert!(!check_device_identity(&empty, "hw").unwrap());
+        assert!(!check_device_identity(&empty, Some("hw")).unwrap());
+
+        // A stand-in made from the computer's name is replaced by the real identifier, not a new device.
+        let stand_in = Store::open_in_memory().unwrap();
+        stand_in.ensure_sync_state("Mac", "name:abc").unwrap();
+        let before = stand_in.sync_state().unwrap().unwrap();
+        assert!(!check_device_identity(&stand_in, Some("real")).unwrap());
+        let after = stand_in.sync_state().unwrap().unwrap();
+        assert_eq!(after.hardware_hash, "real");
+        assert_eq!(after.device_id, before.device_id);
+        assert_eq!(after.id_tag, before.id_tag);
+        assert!(
+            !check_device_identity(&store, None).unwrap(),
+            "unknown hardware compares nothing"
+        );
     }
 
     fn with_data(store: &Store) {
