@@ -131,6 +131,7 @@ pub struct Limits {
     /// A runaway-input guard rather than a Pine language rule.
     pub source_characters: usize,
     pub tokens: usize,
+    /// Statements plus expression nodes the parser builds; the parse stops with `PINE8003` past it.
     pub ast_nodes: usize,
     pub instructions_per_bar: usize,
     pub call_depth: usize,
@@ -142,7 +143,9 @@ impl Default for Limits {
         Self {
             source_characters: 500_000,
             tokens: 50_000,
-            ast_nodes: 50_000,
+            // Every node consumes a token, so statements plus expression nodes stay under twice the
+            // token limit: this never refuses a script the token limit lets through.
+            ast_nodes: 100_000,
             instructions_per_bar: 20_000_000,
             call_depth: 64,
             deadline_seconds: 10.0,
