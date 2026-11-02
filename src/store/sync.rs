@@ -1541,17 +1541,20 @@ impl Store {
     /// iCloud's data. Deliberately bypasses sync tracking: the cloud must never be told these
     /// rows were deleted. Alerts and scripts are never cleared; they merge instead.
     pub fn clear_replaceable_collections(&self) -> rusqlite::Result<()> {
-        for table in [
-            "watchlist",
-            "saved_view",
-            "chart_template",
-            "drawing_template",
-            "editor_theme",
-        ] {
-            self.connection
-                .execute(&format!("DELETE FROM {table}"), [])?;
-        }
-        Ok(())
+        // All five or none: a failure part way must not leave a mixture of cleared and kept.
+        self.in_savepoint("clear_replaceable", || {
+            for table in [
+                "watchlist",
+                "saved_view",
+                "chart_template",
+                "drawing_template",
+                "editor_theme",
+            ] {
+                self.connection
+                    .execute(&format!("DELETE FROM {table}"), [])?;
+            }
+            Ok(())
+        })
     }
 
     /// The friendly name of a Mac, if the cloud's device list has told us.

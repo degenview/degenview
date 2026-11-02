@@ -276,6 +276,16 @@ them saving the newer edit is the merge.
    deletes local data. The step is idempotent after an interruption.
 3. Uploads begin only after that step.
 
+*Use iCloud's data*, and the account-change choices that reset or replace data, are each one database
+change: clearing this Mac's collections, resetting the sync tables, applying iCloud's records and
+binding the account commit together or not at all (the file copy in `SyncBackups/` is made first and
+stays either way). Script files are the exception: they cannot join the database change. A script
+conflict therefore saves the losing version as a copy *first*, under an id derived from its contents,
+and fails the batch if it cannot; the same batch applied again finds that copy instead of making a
+second one, and the winner is only written after the loser is safe. A failure after a script file was
+deleted or written is repaired by the same replay (the operations are idempotent); a full
+prepare/commit/finalize journal for script files is not built.
+
 A database is bound to one account (a hash, never the identifier). If a different Apple Account is
 signed in, sync **pauses with nothing uploaded** and the user chooses: keep local only, use that
 account's data (copy saved first), or merge. Signing out only waits. Staging carries the bound

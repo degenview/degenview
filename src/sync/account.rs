@@ -84,8 +84,11 @@ pub fn resolve_account_change(
     backups_dir: &Path,
     now_ms: i64,
 ) -> rusqlite::Result<Resolution> {
+    // Each choice is one change: either all of it happens or none, never a reset database that
+    // is still bound to the old account, or half the collections cleared. (The file copy made
+    // first is outside the database and stays either way; that is what it is for.)
     match choice {
-        AccountChoice::KeepLocalOnly => {
+        AccountChoice::KeepLocalOnly => store.in_savepoint("resolve_account", || {
             if let Some(mut state) = store.sync_state()? {
                 state.enabled = false;
                 state.account_hash = None;
@@ -100,25 +103,27 @@ pub fn resolve_account_change(
                 backup: None,
                 needs_join: false,
             })
-        }
+        }),
         AccountChoice::UseThisAccountsData => {
             let backup = stash(store, backups_dir, now_ms)?;
-            store.reset_sync_data()?;
-            store.clear_replaceable_collections()?;
-            bind(store, new_user_hash, now_ms)?;
-            Ok(Resolution {
-                backup: Some(backup),
-                needs_join: true,
+            store.in_savepoint("resolve_account", || {
+                store.reset_sync_data()?;
+                store.clear_replaceable_collections()?;
+                bind(store, new_user_hash, now_ms)?;
+                Ok(Resolution {
+                    backup: Some(backup),
+                    needs_join: true,
+                })
             })
         }
-        AccountChoice::MergeIntoThisAccount => {
+        AccountChoice::MergeIntoThisAccount => store.in_savepoint("resolve_account", || {
             store.reset_sync_data()?;
             bind(store, new_user_hash, now_ms)?;
             Ok(Resolution {
                 backup: None,
                 needs_join: true,
             })
-        }
+        }),
     }
 }
 
@@ -126,36 +131,40 @@ pub fn resolve_account_change(
 /// binding and everything learned about the cloud. Local data is untouched, and turning sync on
 /// again starts a fresh first-time merge.
 pub fn after_cloud_delete(store: &Store) -> rusqlite::Result<()> {
-    if let Some(mut state) = store.sync_state()? {
-        state.enabled = false;
-        state.account_hash = None;
-        state.account_bound_ms = None;
-        state.dataset_id = None;
-        state.initial_sync_done = false;
-        state.engine_state = None;
-        state.engine_state_account_hash = None;
-        store.save_sync_state(&state)?;
-    }
-    store.reset_sync_data()
+    store.in_savepoint("after_cloud_delete", || {
+        if let Some(mut state) = store.sync_state()? {
+            state.enabled = false;
+            state.account_hash = None;
+            state.account_bound_ms = None;
+            state.dataset_id = None;
+            state.initial_sync_done = false;
+            state.engine_state = None;
+            state.engine_state_account_hash = None;
+            store.save_sync_state(&state)?;
+        }
+        store.reset_sync_data()
+    })
 }
 
 /// Another Mac deleted DegenView's data in iCloud. Either upload this Mac's data again as a fresh
 /// start (`reupload`), or stop syncing. Nothing local is removed either way.
 pub fn resolve_remote_deletion(store: &Store, reupload: bool) -> rusqlite::Result<()> {
-    store.reset_sync_data()?;
-    if let Some(mut state) = store.sync_state()? {
-        state.initial_sync_done = false;
-        state.engine_state = None;
-        state.engine_state_account_hash = None;
-        state.dataset_id = None;
-        state.enabled = reupload;
-        if !reupload {
-            state.account_hash = None;
-            state.account_bound_ms = None;
+    store.in_savepoint("resolve_remote_deletion", || {
+        store.reset_sync_data()?;
+        if let Some(mut state) = store.sync_state()? {
+            state.initial_sync_done = false;
+            state.engine_state = None;
+            state.engine_state_account_hash = None;
+            state.dataset_id = None;
+            state.enabled = reupload;
+            if !reupload {
+                state.account_hash = None;
+                state.account_bound_ms = None;
+            }
+            store.save_sync_state(&state)?;
         }
-        store.save_sync_state(&state)?;
-    }
-    Ok(())
+        Ok(())
+    })
 }
 
 /// A copy of the whole database, named by time, that opens as an ordinary DegenView database.
