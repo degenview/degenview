@@ -14,6 +14,8 @@ use std::sync::{Arc, Mutex};
 pub enum Fault {
     /// The next send fails wholesale.
     Send(ErrorKind, Option<u64>),
+    /// The next send throws before the engine reports any record: only a `SendFailed` follows.
+    SendThrows(ErrorKind),
     /// Only these record names fail on the next send.
     Partial(Vec<String>, ErrorKind),
     /// The next request to delete the zone fails.
@@ -220,6 +222,14 @@ impl MockTransport {
         let mut partial_kind = ErrorKind::Unknown;
         match fault {
             Some(Fault::Send(kind, retry)) => return self.fail_all(kind, retry),
+            Some(Fault::SendThrows(kind)) => {
+                self.staged.clear();
+                self.events.push_back(TransportEvent::SendFailed {
+                    kind,
+                    message: format!("{kind:?}"),
+                });
+                return;
+            }
             Some(Fault::Partial(names, kind)) => {
                 partial = names;
                 partial_kind = kind;

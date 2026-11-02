@@ -291,6 +291,14 @@ pub fn event_from_json(text_json: &str) -> Result<TransportEvent, String> {
                 .and_then(Value::as_bool)
                 .unwrap_or(true),
         },
+        "send_error" => TransportEvent::SendFailed {
+            kind: error_kind(&text(&value, "kind")?),
+            message: value
+                .get("message")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .into(),
+        },
         "error" => TransportEvent::Error {
             kind: error_kind(&text(&value, "kind")?),
             message: value
