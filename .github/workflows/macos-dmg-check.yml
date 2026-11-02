@@ -1,0 +1,83 @@
+name: macOS disk image
+
+# Builds the disk image around a stub app and looks inside it, so a broken script or settings file
+# is found on the pull request rather than when a tag is cut. The release workflow builds the real
+# one, then signs and notarizes it, with the same tools/make-dmg.sh. It cannot judge the window's
+# layout; that was looked at by hand (docs/agent-guides/releases-updates.md).
+on:
+  pull_request:
+    paths:
+      - "packaging/macos/**"
+      - "tools/make-dmg.sh"
+      - "tools/make-dmg-background.py"
+      - ".github/workflows/macos-dmg-check.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # Keep in step with release.yml.
+  DMGBUILD_VERSION: "1.6.5"
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dmg:
+    name: Build and inspect
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install dmgbuild
+        run: |
+          python3 -m venv "$RUNNER_TEMP/dmgvenv"
+          "$RUNNER_TEMP/dmgvenv/bin/pip" install --quiet "dmgbuild==$DMGBUILD_VERSION"
+          echo "$RUNNER_TEMP/dmgvenv/bin" >> "$GITHUB_PATH"
+
+      - name: Build the disk image around a stub app
+        run: |
+          app="$RUNNER_TEMP/stub/DegenView.app"
+          mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+          # A real Mach-O, not a script: a script's signature lives in extended attributes, which
+          # would make this check about xattrs rather than about the bundle.
+          printf 'int main(void) { return 0; }\n' | cc -x c - -o "$app/Contents/MacOS/DegenView"
+          cp assets/brand/DegenView.icns "$app/Contents/Resources/"
+          cat > "$app/Contents/Info.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <plist version="1.0"><dict>
+            <key>CFBundleIdentifier</key><string>es.nico.degenview</string>
+            <key>CFBundleExecutable</key><string>DegenView</string>
+            <key>CFBundleIconFile</key><string>DegenView.icns</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+          </dict></plist>
+          PLIST
+          # Sealed, as the release app is, so the next step can tell whether the copy into the image
+          # broke the seal (permissions, links, nested bundles). Ad hoc: this is not the identity.
+          codesign --force --deep --sign - "$app"
+          codesign --verify --deep --strict "$app"
+          ./tools/make-dmg.sh "$app" dist/check.dmg
+
+      - name: Look inside
+        run: |
+          mount="$RUNNER_TEMP/dmg-mount"
+          mkdir -p "$mount"
+          hdiutil attach dist/check.dmg -readonly -nobrowse -mountpoint "$mount" -quiet
+          trap 'hdiutil detach "$mount" -quiet || true' EXIT
+          ls -la "$mount"
+          fail() { echo "::error::$1"; exit 1; }
+          [ -x "$mount/DegenView.app/Contents/MacOS/DegenView" ] || fail "the app is not in the image"
+          [ -L "$mount/Applications" ] || fail "no Applications shortcut"
+          [ "$(readlink "$mount/Applications")" = "/Applications" ] || fail "the shortcut does not point at /Applications"
+          [ -s "$mount/.background.tiff" ] || fail "no background"
+          [ -s "$mount/.DS_Store" ] || fail "no saved window layout"
+          [ -s "$mount/.VolumeIcon.icns" ] || fail "no volume icon"
+          # The seal survives the copy into the image, and a drag out of it.
+          codesign --verify --deep --strict "$mount/DegenView.app" || fail "the app's signature broke inside the image"
+          ditto "$mount/DegenView.app" "$RUNNER_TEMP/dragged.app"
+          codesign --verify --deep --strict "$RUNNER_TEMP/dragged.app" || fail "the app's signature broke when dragged out"
+          # Both art sizes made it into the one TIFF.
+          [ "$(tiffutil -info "$mount/.background.tiff" 2>&1 | grep -c '^Directory at')" = 2 ] || fail "the background lacks its 2x image"

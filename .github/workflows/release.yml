@@ -20,6 +20,8 @@ env:
   RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
   # The Windows installer compiler; keep in step with windows-installer-check.yml.
   INNO_SETUP_VERSION: "6.7.1"
+  # The macOS disk image builder (tools/make-dmg.sh); keep in step with macos-dmg-check.yml.
+  DMGBUILD_VERSION: "1.6.5"
 
 jobs:
   verify:
@@ -228,6 +230,66 @@ jobs:
           ditto -c -k --sequesterRsrc --keepParent target/DegenView.app \
             "dist/DegenView-${RELEASE_TAG}-${{ matrix.name }}.zip"
 
+      # The disk image people open to install: the app above (already signed, notarized and stapled)
+      # next to an Applications shortcut, made by tools/make-dmg.sh. The image is signed, notarized
+      # and stapled too, so Gatekeeper accepts it as downloaded. The updater never reads it: it
+      # downloads the zip above, whose name the image's `.dmg` can never match. The App Store Connect
+      # key the notarize step wrote is still in RUNNER_TEMP and is removed below.
+      - name: Build, sign and notarize the macOS disk image
+        if: runner.os == 'macOS'
+        env:
+          DEGENVIEW_CODESIGN_IDENTITY: ${{ secrets.MACOS_CODESIGN_IDENTITY }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+        run: |
+          # Homebrew's Python refuses a global pip install, so dmgbuild gets a venv.
+          python3 -m venv "$RUNNER_TEMP/dmgvenv"
+          "$RUNNER_TEMP/dmgvenv/bin/pip" install --quiet "dmgbuild==$DMGBUILD_VERSION"
+          export PATH="$RUNNER_TEMP/dmgvenv/bin:$PATH"
+          dmg="dist/DegenView-${RELEASE_TAG}-${{ matrix.name }}.dmg"
+          ./tools/make-dmg.sh target/DegenView.app "$dmg"
+
+          codesign --force --timestamp --sign "$DEGENVIEW_CODESIGN_IDENTITY" "$dmg"
+          codesign --verify --verbose=2 "$dmg"
+          if ! xcrun notarytool submit "$dmg" \
+              --key "$RUNNER_TEMP/AuthKey.p8" --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID" \
+              --wait --output-format json > "$RUNNER_TEMP/notarize-dmg.json"; then
+            cat "$RUNNER_TEMP/notarize-dmg.json"
+            echo "::error::notarytool submit failed for the disk image"
+            exit 1
+          fi
+          cat "$RUNNER_TEMP/notarize-dmg.json"
+          status=$(jq -r .status "$RUNNER_TEMP/notarize-dmg.json")
+          if [ "$status" != "Accepted" ]; then
+            id=$(jq -r .id "$RUNNER_TEMP/notarize-dmg.json")
+            xcrun notarytool log "$id" \
+              --key "$RUNNER_TEMP/AuthKey.p8" --key-id "$ASC_KEY_ID" --issuer "$ASC_ISSUER_ID" || true
+            echo "::error::Notarizing the disk image finished with status ${status}"
+            exit 1
+          fi
+          # Same retry as for the app: stapling fetches the ticket from Apple and now and then drops.
+          for attempt in 1 2 3 4 5; do
+            if xcrun stapler staple "$dmg" && xcrun stapler validate "$dmg"; then
+              break
+            fi
+            [ "$attempt" -lt 5 ] || { echo "::error::stapler failed 5 times for the disk image"; exit 1; }
+            echo "Attempt ${attempt} failed; retrying in $((attempt * 15))s"
+            sleep $((attempt * 15))
+          done
+
+          # What a user sees: the image is accepted, and the app inside it passes Gatekeeper and
+          # still has its signature after the trip through the image.
+          spctl --assess --type open --context context:primary-signature --verbose=2 "$dmg"
+          mount="$RUNNER_TEMP/dmg-verify"
+          mkdir -p "$mount"
+          hdiutil attach "$dmg" -readonly -nobrowse -mountpoint "$mount" -quiet
+          verified=0
+          spctl --assess --type execute --verbose=2 "$mount/DegenView.app" \
+            && codesign --verify --deep --strict "$mount/DegenView.app" \
+            && verified=1
+          hdiutil detach "$mount" -quiet
+          [ "$verified" = 1 ] || { echo "::error::the app inside the disk image failed verification"; exit 1; }
+
       - name: Remove signing material
         if: always() && runner.os == 'macOS'
         run: |
@@ -320,8 +382,9 @@ jobs:
             echo
             echo "## Downloads"
             echo
-            echo "- **macOS (Apple Silicon):** \`DegenView-${RELEASE_TAG}-macos-arm64.zip\`"
-            echo "- **macOS (Intel):** \`DegenView-${RELEASE_TAG}-macos-x64.zip\`"
+            echo "- **macOS (Apple Silicon):** \`DegenView-${RELEASE_TAG}-macos-arm64.dmg\`, open it and drag DegenView to Applications"
+            echo "- **macOS (Intel):** \`DegenView-${RELEASE_TAG}-macos-x64.dmg\`, open it and drag DegenView to Applications"
+            echo "- **macOS archives:** \`DegenView-${RELEASE_TAG}-macos-arm64.zip\` and \`DegenView-${RELEASE_TAG}-macos-x64.zip\` hold the same app; the in-app updater downloads these"
             echo "- **Windows (x64) installer:** \`DegenView-${RELEASE_TAG}-windows-x64-setup.exe\`, installs for the current user without admin rights"
             echo "- **Windows (x64) portable:** \`DegenView-${RELEASE_TAG}-windows-x64.zip\`, unzip into a folder you own"
             echo "- **Linux (x64):** \`DegenView-${RELEASE_TAG}-linux-x64.tar.gz\`"

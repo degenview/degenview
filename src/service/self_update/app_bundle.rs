@@ -56,12 +56,21 @@ pub fn install_target() -> Result<PathBuf, String> {
     }
     let parent = app.parent().ok_or("The app has no parent folder.")?;
     if !is_writable(parent) {
-        return Err(format!("{} is not writable.", parent.display()));
+        return Err(not_writable_message(&app, parent));
     }
     // An update must be signed by the team that signed this app; without one there is nothing to
     // compare against.
     code_signature::team_id(&app)?;
     Ok(app)
+}
+
+/// Why an app in a read-only folder cannot update. The common case is running it straight from the
+/// disk image it was downloaded in, which the user fixes by dragging it to Applications.
+fn not_writable_message(app: &Path, parent: &Path) -> String {
+    if app.starts_with("/Volumes") {
+        return "Drag DegenView from the disk image to the Applications folder first.".to_owned();
+    }
+    format!("{} is not writable.", parent.display())
 }
 
 /// `/…/DegenView.app` for `/…/DegenView.app/Contents/MacOS/DegenView`.
@@ -296,6 +305,18 @@ mod tests {
         assert!(run(alive.id()).success());
         assert!(marker.exists(), "did not launch after the process exited");
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn an_app_run_from_the_disk_image_is_told_to_move_to_applications() {
+        let on_image = Path::new("/Volumes/DegenView/DegenView.app");
+        let message = not_writable_message(on_image, on_image.parent().unwrap());
+        assert!(message.contains("Applications"), "{message}");
+        let elsewhere = Path::new("/opt/apps/DegenView.app");
+        assert_eq!(
+            not_writable_message(elsewhere, elsewhere.parent().unwrap()),
+            "/opt/apps is not writable."
+        );
     }
 
     #[test]

@@ -196,9 +196,13 @@ flatpak run es.nico.degenview
 A bundle has no remote, so `flatpak update` does not find newer versions; download the next one
 from the release page. How it is built and what is unverified: [docs/flatpak.md](docs/flatpak.md).
 
-Releases: push a tag like `v0.1.0` and the Release workflow builds macOS (arm64 + Intel),
-Windows (an installer and a portable zip), and Linux binaries (a tarball and a Flatpak) and
-publishes a GitHub release you can download.
+Releases: push a tag like `v0.1.0` and the Release workflow builds macOS (arm64 + Intel, as a disk
+image and a zip), Windows (an installer and a portable zip), and Linux binaries (a tarball and a
+Flatpak) and publishes a GitHub release you can download.
+
+On macOS, open `DegenView-<tag>-macos-<arm64|x64>.dmg` and drag DegenView onto the Applications
+shortcut. The app is signed and notarized, and updates itself from inside the app (it downloads the
+`.zip` with the same app in it, so keep it in Applications, not on the disk image).
 
 On Windows, `DegenView-<tag>-windows-x64-setup.exe` installs for the current user (no admin rights)
 into `%LOCALAPPDATA%\Programs\DegenView`, adds a Start menu entry and an uninstaller, and keeps your
