@@ -631,6 +631,28 @@ fn a_network_failure_backs_off_and_then_succeeds() {
 }
 
 #[test]
+fn a_send_the_engine_could_not_run_at_all_is_sent_again_without_a_restart() {
+    let cloud = MockCloud::new();
+    // No per-record result follows this failure: only the wholesale one.
+    cloud.inject(Fault::SendThrows(ErrorKind::Network));
+    let mut a = mac(&cloud, "A", "acct", Some("acct"));
+    a.lists(&[(1, "Tech")]);
+    a.start();
+    assert!(cloud.names().is_empty());
+    assert_eq!(a.outbox().len(), 1, "the change is still queued");
+
+    // Not in a tight loop: nothing is staged again until the pause is over.
+    a.run();
+    a.run();
+    assert!(cloud.names().is_empty());
+    a.advance(2_000);
+    a.run();
+    assert_eq!(cloud.names(), ["watchlist.1"]);
+    assert!(a.outbox().is_empty());
+    assert_eq!(a.phase(), Phase::UpToDate);
+}
+
+#[test]
 fn the_servers_retry_after_is_respected() {
     let cloud = MockCloud::new();
     cloud.inject(Fault::Send(ErrorKind::RateLimited, Some(120)));

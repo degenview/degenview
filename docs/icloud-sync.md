@@ -443,6 +443,13 @@ It is on `main` too.
   scans for rows an older build wrote without queuing them every five minutes) and on **Sync Now**,
   so a change reaches a covered window in about 20 seconds. Pushes are not relied on at all.
 * Asset (`CKAsset`) upload for records over ~900 KB, and whether assets get the same encryption.
+* A send that `CKSyncEngine.sendChanges()` throws before it reports any record (offline, account,
+  service, cancellation). The bridge now reports it as `send_error`; the core frees the staged
+  entries (they stay in the outbox) and sends again after a pause that grows with each repeat, instead
+  of leaving them "in flight" until the next launch. Covered against the test cloud
+  (`Fault::SendThrows`); which errors the real engine actually throws, versus handles internally and
+  reports per record, has not been observed. Run it against a Development container with the network
+  off, a signed-out account and a cancelled send before relying on it.
 * Pictures between two real Macs ([Pictures](#pictures)): only `MockCloud` has carried one.
 * Behaviour with all windows hidden: remote changes are applied on the app thread while windows
   draw. When it has not ticked for 3 seconds (a covered or hidden window draws nothing) the sync

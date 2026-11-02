@@ -156,6 +156,9 @@ pub struct SyncCore<T: SyncTransport> {
     fetch_completed: bool,
     initial_fetch_done: bool,
     last_error: Option<(ErrorKind, String)>,
+    /// Sends in a row the engine could not carry out at all, and when the next may start.
+    send_failures: i64,
+    send_hold_until_ms: i64,
     /// Uploads in a row that failed for no reason the engine recognises. A few are noise; a run of
     /// them is something the user should be told about.
     failure_streak: u32,
@@ -200,6 +203,8 @@ impl<T: SyncTransport> SyncCore<T> {
             fetch_completed: false,
             initial_fetch_done: false,
             last_error: None,
+            send_failures: 0,
+            send_hold_until_ms: 0,
             failure_streak: 0,
             pause: None,
             unapplied: HashSet::new(),
@@ -411,6 +416,9 @@ impl<T: SyncTransport> SyncCore<T> {
             return;
         }
         let now = self.now();
+        if now < self.send_hold_until_ms {
+            return;
+        }
         let device = self.state().map(|s| s.device_id).unwrap_or_default();
         let busy: HashSet<(EntityKind, String)> = self
             .inflight
@@ -580,6 +588,7 @@ impl<T: SyncTransport> SyncCore<T> {
                 }
             }
             TransportEvent::Error { kind, message } => self.on_error(kind, message),
+            TransportEvent::SendFailed { kind, message } => self.on_send_failed(kind, message),
         }
         self.pump();
         self.take_effects()
@@ -647,6 +656,18 @@ impl<T: SyncTransport> SyncCore<T> {
                 self.inflight.clear();
             }
         }
+    }
+
+    /// The engine gave up on a whole send, so nothing will say what became of the entries staged
+    /// for it. They are still in the outbox; free them and send again after a pause that grows
+    /// while it keeps happening. (Waiting for a per-record result that never comes would leave them
+    /// "in flight" until the next launch.)
+    fn on_send_failed(&mut self, kind: ErrorKind, message: String) {
+        self.on_error(kind, message);
+        self.inflight.clear();
+        let delay = super::outbox::backoff_ms(self.send_failures, 0, None);
+        self.send_failures = self.send_failures.saturating_add(1);
+        self.send_hold_until_ms = self.now() + delay;
     }
 
     fn on_error(&mut self, kind: ErrorKind, message: String) {
@@ -930,6 +951,9 @@ impl<T: SyncTransport> SyncCore<T> {
         failed: Vec<SendFailure>,
     ) {
         let now = self.now();
+        if !saved.is_empty() || !deleted.is_empty() {
+            self.send_failures = 0;
+        }
         for done in saved {
             let entry = self.inflight.remove(&done.outbox_seq);
             let Some(name) = RecordName::parse(&done.name) else {
