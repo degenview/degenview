@@ -465,6 +465,107 @@ fn another_macs_deletion_offers_to_upload_again_and_does_so() {
     );
 }
 
+/// An enabled database as the first Mac left it, then opened on `hardware`.
+fn enabled_database() -> (SharedStore, String) {
+    let store: SharedStore = Arc::new(Mutex::new(Store::open_in_memory().unwrap()));
+    let device = {
+        let guard = store.lock().unwrap();
+        let mut state = guard.ensure_sync_state("Mac A", "hw-a").unwrap();
+        state.enabled = true;
+        state.engine_state = Some(vec![1, 2, 3]);
+        state.initial_sync_done = true;
+        guard.save_sync_state(&state).unwrap();
+        state.device_id
+    };
+    (store, device)
+}
+
+fn host_on(store: &SharedStore, cloud: &MockCloud, hardware: Option<&'static str>) -> SyncHost {
+    let factory: Arc<dyn TransportFactory> = Arc::new(MockFactory {
+        cloud: cloud.clone(),
+        device: "Mac B".into(),
+        environment: Ok("Development".into()),
+    });
+    SyncHost::with_hardware(
+        store.clone(),
+        Some(factory),
+        None,
+        scratch("identity"),
+        Arc::new(|| {}),
+        Arc::new(move || hardware.map(str::to_string)),
+    )
+}
+
+#[test]
+fn an_enabled_database_on_other_hardware_becomes_a_new_device_before_it_syncs() {
+    let cloud = MockCloud::new();
+    let (store, original) = enabled_database();
+    let host = host_on(&store, &cloud, Some("hw-b"));
+
+    let state = store.lock().unwrap().sync_state().unwrap().unwrap();
+    assert_ne!(
+        state.device_id, original,
+        "kept the original Mac's identity"
+    );
+    assert_eq!(state.hardware_hash, "hw-b");
+    assert!(
+        state.engine_state.is_none(),
+        "kept the original Mac's checkpoint"
+    );
+    // It asks the user how to combine iCloud's data with this Mac's, as for any Mac joining.
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while !matches!(
+        host.view().prompt,
+        Some(SyncPrompt::Join(_)) | Some(SyncPrompt::ConfirmAccount)
+    ) {
+        host.tick();
+        assert!(Instant::now() < deadline, "never asked: {:?}", host.view());
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    host.shutdown();
+}
+
+#[test]
+fn the_same_hardware_or_an_unreadable_identifier_changes_nothing() {
+    let cloud = MockCloud::new();
+    for hardware in [Some("hw-a"), None] {
+        let (store, original) = enabled_database();
+        let host = host_on(&store, &cloud, hardware);
+        let state = store.lock().unwrap().sync_state().unwrap().unwrap();
+        assert_eq!(state.device_id, original);
+        assert_eq!(state.engine_state, Some(vec![1, 2, 3]));
+        host.shutdown();
+    }
+}
+
+#[test]
+fn when_the_move_cannot_be_saved_sync_waits_and_says_so() {
+    let cloud = MockCloud::new();
+    let (store, original) = enabled_database();
+    store
+        .lock()
+        .unwrap()
+        .execute_raw(
+            "CREATE TRIGGER stop BEFORE UPDATE OF hardware_hash ON sync_state
+             BEGIN SELECT RAISE(ABORT, 'disk full'); END",
+        )
+        .unwrap();
+    let host = host_on(&store, &cloud, Some("hw-b"));
+    assert!(
+        host.view()
+            .last_error
+            .as_deref()
+            .is_some_and(|e| e.contains("did not start"))
+    );
+    assert!(
+        host.sender().is_none(),
+        "the original identity must not sync"
+    );
+    let state = store.lock().unwrap().sync_state().unwrap().unwrap();
+    assert_eq!(state.device_id, original);
+    assert_eq!(state.engine_state, Some(vec![1, 2, 3]));
+}
+
 impl Rig {
     fn engine_state(&self) -> Option<Vec<u8>> {
         self.store
