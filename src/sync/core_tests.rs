@@ -37,6 +37,8 @@ pub(super) struct FakeLibrary {
     pub(super) unsaved: std::collections::HashSet<String>,
     pub(super) pristine_demos: std::collections::HashSet<String>,
     pub(super) fail_listing: bool,
+    /// Writing a new script fails, as a full disk would.
+    pub(super) fail_adopt: bool,
     seed: u128,
     counter: u128,
 }
@@ -126,6 +128,9 @@ impl super::scripts::ScriptSink for FakeLibrary {
         self.unsaved.contains(id)
     }
     fn adopt(&mut self, id: &str, name: &str, source: &str, favorite: bool) -> Result<(), String> {
+        if self.fail_adopt {
+            return Err("disk full".into());
+        }
         let name = self.unique(name, None);
         self.scripts.insert(
             id.into(),
@@ -622,6 +627,28 @@ fn a_network_failure_backs_off_and_then_succeeds() {
     a.advance(2_000);
     a.run();
     assert_eq!(cloud.names(), ["watchlist.1"]);
+    assert_eq!(a.phase(), Phase::UpToDate);
+}
+
+#[test]
+fn a_send_the_engine_could_not_run_at_all_is_sent_again_without_a_restart() {
+    let cloud = MockCloud::new();
+    // No per-record result follows this failure: only the wholesale one.
+    cloud.inject(Fault::SendThrows(ErrorKind::Network));
+    let mut a = mac(&cloud, "A", "acct", Some("acct"));
+    a.lists(&[(1, "Tech")]);
+    a.start();
+    assert!(cloud.names().is_empty());
+    assert_eq!(a.outbox().len(), 1, "the change is still queued");
+
+    // Not in a tight loop: nothing is staged again until the pause is over.
+    a.run();
+    a.run();
+    assert!(cloud.names().is_empty());
+    a.advance(2_000);
+    a.run();
+    assert_eq!(cloud.names(), ["watchlist.1"]);
+    assert!(a.outbox().is_empty());
     assert_eq!(a.phase(), Phase::UpToDate);
 }
 

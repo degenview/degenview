@@ -166,6 +166,9 @@ pub struct SyncCore<T: SyncTransport> {
     last_error: Option<(ErrorKind, String)>,
     /// Which operation `last_error` is about, when it is a database error.
     store_error_what: Option<&'static str>,
+    /// Sends in a row the engine could not carry out at all, and when the next may start.
+    send_failures: i64,
+    send_hold_until_ms: i64,
     /// Uploads in a row that failed for no reason the engine recognises. A few are noise; a run of
     /// them is something the user should be told about.
     failure_streak: u32,
@@ -211,6 +214,8 @@ impl<T: SyncTransport> SyncCore<T> {
             initial_fetch_done: false,
             last_error: None,
             store_error_what: None,
+            send_failures: 0,
+            send_hold_until_ms: 0,
             failure_streak: 0,
             pause: None,
             unapplied: HashSet::new(),
@@ -267,7 +272,12 @@ impl<T: SyncTransport> SyncCore<T> {
                 .store
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
-                .inbox_count(&[super::apply::UNKNOWN_TYPE, super::apply::NEWER_SCHEMA])
+                .inbox_count(&[
+                    super::apply::UNKNOWN_TYPE,
+                    super::apply::NEWER_SCHEMA,
+                    super::apply::LOCAL_UNREADABLE,
+                    super::apply::DELETE_PENDING,
+                ])
                 .is_ok_and(|waiting| waiting > 0)
         {
             let id = self.next_batch;
@@ -453,6 +463,9 @@ impl<T: SyncTransport> SyncCore<T> {
             return;
         }
         let now = self.now();
+        if now < self.send_hold_until_ms {
+            return;
+        }
         let device = self.state().map(|s| s.device_id).unwrap_or_default();
         let busy: HashSet<(EntityKind, String)> = self
             .inflight
@@ -635,6 +648,7 @@ impl<T: SyncTransport> SyncCore<T> {
                 }
             }
             TransportEvent::Error { kind, message } => self.on_error(kind, message),
+            TransportEvent::SendFailed { kind, message } => self.on_send_failed(kind, message),
         }
         self.pump();
         self.take_effects()
@@ -707,6 +721,18 @@ impl<T: SyncTransport> SyncCore<T> {
         }
     }
 
+    /// The engine gave up on a whole send, so nothing will say what became of the entries staged
+    /// for it. They are still in the outbox; free them and send again after a pause that grows
+    /// while it keeps happening. (Waiting for a per-record result that never comes would leave them
+    /// "in flight" until the next launch.)
+    fn on_send_failed(&mut self, kind: ErrorKind, message: String) {
+        self.on_error(kind, message);
+        self.inflight.clear();
+        let delay = super::outbox::backoff_ms(self.send_failures, 0, None);
+        self.send_failures = self.send_failures.saturating_add(1);
+        self.send_hold_until_ms = self.now() + delay;
+    }
+
     fn on_error(&mut self, kind: ErrorKind, message: String) {
         // A deletion that hits an error did not happen; say so instead of waiting forever.
         if self.cloud_delete == CloudDelete::Requested {
@@ -771,10 +797,31 @@ impl<T: SyncTransport> SyncCore<T> {
                 records.push(accepted);
             }
         }
-        let deletions: Vec<RecordName> = deletions
-            .iter()
-            .filter_map(|name| RecordName::parse(name))
-            .collect();
+        // A deletion names a record this version may have set aside (a kind it does not know, a
+        // schema it cannot read, or a first fetch still waiting for the user's choice). The copy
+        // must go, or it comes back when an update teaches this version to read it.
+        let initial_done = self.state().is_some_and(|s| s.initial_sync_done);
+        let mut named = Vec::new();
+        for name in &deletions {
+            let reasons: &[&str] = if initial_done {
+                &[super::apply::UNKNOWN_TYPE, super::apply::NEWER_SCHEMA]
+            } else {
+                &[
+                    super::apply::UNKNOWN_TYPE,
+                    super::apply::NEWER_SCHEMA,
+                    "initial_pending",
+                ]
+            };
+            let _ = self
+                .store
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .remove_inbox_if_reason(name, reasons);
+            if let Some(parsed) = RecordName::parse(name) {
+                named.push(parsed);
+            }
+        }
+        let deletions = named;
         if records.is_empty() && deletions.is_empty() {
             return;
         }
@@ -994,6 +1041,9 @@ impl<T: SyncTransport> SyncCore<T> {
         failed: Vec<SendFailure>,
     ) {
         let now = self.now();
+        if !saved.is_empty() || !deleted.is_empty() {
+            self.send_failures = 0;
+        }
         for done in saved {
             let entry = self.inflight.remove(&done.outbox_seq);
             let Some(name) = RecordName::parse(&done.name) else {

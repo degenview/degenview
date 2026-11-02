@@ -7,7 +7,7 @@
 //! and must not depend on every model's Rust type.
 
 use super::ids::{Direction, IdSpace, map_card, map_fields};
-use super::policy::{EntityKind, SettingPolicy, TablePolicy, setting_policy, table_policy};
+use super::policy::{EntityKind, TablePolicy, setting_is_portable, table_policy};
 use super::record::{FAVORITES_ID, sha256_hex};
 use serde_json::{Map, Value};
 
@@ -146,7 +146,7 @@ pub fn project_transaction(ids: IdSpace, id: &str, payload: &str) -> Option<Proj
 
 /// The entity a `setting` value syncs as, if the key is portable.
 pub fn project_setting(key: &str, value: &str) -> Option<Projected> {
-    if !matches!(setting_policy(key), SettingPolicy::Portable(_)) {
+    if !setting_is_portable(key) {
         return None;
     }
     let mut value = serde_json::from_str::<Value>(value).ok()?;

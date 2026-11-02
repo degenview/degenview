@@ -5,11 +5,20 @@ alert definitions, portfolios with their transactions, paper-trading accounts an
 preferences the same on every Mac signed in to one Apple Account.
 
 **Status.** The sync engine, merge rules, account protection, UI and Swift bridge are written and
-tested against an in-memory CloudKit stand-in. **It has not been run against real CloudKit.** Two
-things must be proven on real hardware before a release enables it (see
-[What is not verified](#what-is-not-verified)): that a Developer ID build can use CloudKit with the
-entitlements below, and that CloudKit pushes reach the app. Do not describe the feature as
-production-ready until the two-Mac and notarized-build checks below have passed.
+tested against an in-memory CloudKit stand-in, and have been run against real CloudKit. The
+[release checklist](icloud-sync-release-checklist.md) is the record of what, and is what decides
+whether a release enables the feature; this page does not repeat its results. In short:
+
+* **Proven on real hardware:** a notarized Developer ID build launches and syncs in the Production
+  environment on two Macs, with the entitlements, profile and schema below; the first-sync choices
+  (A1 to A5); account-change protection, simulated by rewriting the stored account; a large library
+  against the Development environment ([Performance](#performance)).
+* **Not yet proven:** a second genuine Apple Account, signing out and back in, sleep and wake, a
+  dropped network, the release path and CI, and the unchecked scenarios in the checklist. CloudKit
+  pushes rarely reach the app, so none of this relies on them. See
+  [What is not verified](#what-is-not-verified) for design-level gaps.
+
+Do not describe the feature as production-ready until the unchecked items there have passed.
 
 SQLite stays the source of truth. CloudKit is a transport: every read and write the app makes is
 against SQLite, and every sync problem leaves the app fully usable.
@@ -36,6 +45,10 @@ portfolio is selected, live paper quotes, webhook endpoints and their Keychain s
 snapshot consent and token, and `content.prefs` (whether a Post card may fetch a preview from X). Every document table and `setting` key is classified in
 `src/sync/policy.rs`, and a test fails when one is added without a decision; unclassified means
 local.
+
+The decision applies in both directions: a `setting.<key>` record for a key this version keeps local
+(or does not know) is refused when it arrives, kept in the inbox as `invalid`, and neither applied nor
+deleted from iCloud, so a stale or foreign record cannot change MCP, consent or update settings.
 
 ## Design
 
@@ -101,7 +114,14 @@ entity's identity, so repeated uploads and downloads hit the same record. Plain 
 arrives (a kind it does not know, `unknown_type`, or a schema above its own, `newer_schema`) is kept
 untouched in the inbox. An update that teaches it to read the record applies it: `apply_batch` looks at
 those entries again on every apply, and a launch with any waiting (after the first sync) asks for one
-empty apply, so nothing waits for new changes. What it still cannot read stays put, byte for byte. See
+empty apply, so nothing waits for new changes.
+A *deletion* is kept just as carefully: when iCloud deletes a record this version set aside, the copy
+is removed by name even though the kind cannot be parsed (and during the first-sync wait, a copy held
+as `initial_pending` goes too), so an update cannot bring a deleted record back. A deletion that
+cannot be applied because its table holds a row this version cannot read is filed as `delete_pending`
+(empty payload, the name only) and carried out by the first apply that can write the table; a record
+filed as `local_unreadable` is retried the same way. Not covered: a deletion that arrives *before* the
+record it deletes. What it still cannot read stays put, byte for byte. See
 [Newer versions](#newer-versions). A payload over ~900 KB as written (in practice a long paper-trading
 history) is deflated behind a `DVZ1` marker (`record::to_wire` / `from_wire`, applied in the core's
 `build` and `RawRecord::into_record`, so nothing else sees the difference); a paper account
@@ -289,11 +309,30 @@ them saving the newer edit is the merge.
    deletes local data. The step is idempotent after an interruption.
 3. Uploads begin only after that step.
 
+*Use iCloud's data*, and the account-change choices that reset or replace data, are each one database
+change: clearing this Mac's collections, resetting the sync tables, applying iCloud's records and
+binding the account commit together or not at all (the file copy in `SyncBackups/` is made first and
+stays either way). Script files are the exception: they cannot join the database change. A script
+conflict therefore saves the losing version as a copy *first*, under an id derived from its contents,
+and fails the batch if it cannot; the same batch applied again finds that copy instead of making a
+second one, and the winner is only written after the loser is safe. A failure after a script file was
+deleted or written is repaired by the same replay (the operations are idempotent); a full
+prepare/commit/finalize journal for script files is not built.
+
 A database is bound to one account (a hash, never the identifier). If a different Apple Account is
 signed in, sync **pauses with nothing uploaded** and the user chooses: keep local only, use that
 account's data (copy saved first), or merge. Signing out only waits. Staging carries the bound
-account's hash and the bridge refuses a mismatch. A database copied to another Mac gets a new
-device identity. *Delete my iCloud data* is a separate, typed-confirmation action that only
+account's hash and the bridge refuses a mismatch. A database copied to another Mac (Migration Assistant, a restored
+backup) is noticed when the app starts, before anything loads it, and again before the sync worker
+starts: it gets a new device identity, no engine checkpoint, a new id tag, and it asks the first-sync
+question again. The counter ids it holds (portfolios, transactions, paper accounts, and the cards in
+layouts and watchlists that point at them) are rewritten to the form the old tag gave them in iCloud
+(`store::identity`), so they stay the same records on both Macs and the two never mint the same ids
+(one savepoint: all or nothing). If this Mac's hardware identifier cannot be read, nothing is compared
+(a failed `ioreg` must not look like a new Mac); an identifier stored from the computer's name
+(`name:` prefix) is replaced by the real one without a new device. A paper account that the copy
+was running now names another Mac, so it waits for the user to take it over. Not verified on two real
+Macs; open tabs' portfolio cards may fall back to All Portfolios after the move. *Delete my iCloud data* is a separate, typed-confirmation action that only
 targets the bound account and forgets the binding only after iCloud confirms; other Macs pause and
 offer to upload again.
 
@@ -368,7 +407,8 @@ Without `--features icloud` the Settings page is hidden.
   autosave-layout drawing edit appears on the other Mac; the alert agent running with the app
   closed. Also: restart, update in place, wake from sleep, network drop.
 
-Record the results here when they exist. There are none yet.
+The results of the manual scenarios live in the
+[release checklist](icloud-sync-release-checklist.md), next to each item, not here.
 
 ## Performance
 
@@ -421,6 +461,13 @@ It is on `main` too.
   scans for rows an older build wrote without queuing them every five minutes) and on **Sync Now**,
   so a change reaches a covered window in about 20 seconds. Pushes are not relied on at all.
 * Asset (`CKAsset`) upload for records over ~900 KB, and whether assets get the same encryption.
+* A send that `CKSyncEngine.sendChanges()` throws before it reports any record (offline, account,
+  service, cancellation). The bridge now reports it as `send_error`; the core frees the staged
+  entries (they stay in the outbox) and sends again after a pause that grows with each repeat, instead
+  of leaving them "in flight" until the next launch. Covered against the test cloud
+  (`Fault::SendThrows`); which errors the real engine actually throws, versus handles internally and
+  reports per record, has not been observed. Run it against a Development container with the network
+  off, a signed-out account and a cancelled send before relying on it.
 * Pictures between two real Macs ([Pictures](#pictures)): only `MockCloud` has carried one.
 * Behaviour with all windows hidden: remote changes are applied on the app thread while windows
   draw. When it has not ticked for 3 seconds (a covered or hidden window draws nothing) the sync
@@ -437,7 +484,9 @@ It is on `main` too.
 * If another Mac deletes a layout while this one has edited it, the layout returns; but a drawing
   deletion that reached this Mac in an earlier batch than the layout deletion has already removed
   that drawing locally.
-* No device list in Settings yet (`sync_device` is ready for it).
+* No device list, and Macs do not tell each other their names: a conflict copy made from another
+  Mac's version says "another Mac", not which one. `sync_device` exists but nothing writes to it, so
+  it is a reserved table, not a feature; naming Macs needs a record that carries each Mac's name.
 * Webhook endpoints and Pine alert subscriptions are excluded by design.
 * A paper account over the limit above (about 5,000 fills) does not sync yet. Two Macs acting on one account within a sync
   interval produce a paused copy rather than a merge. A Mac that made its own default paper account

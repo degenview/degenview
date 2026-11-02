@@ -37,6 +37,7 @@ pub struct SyncState {
     /// Hash of the CloudKit user record id this database is bound to.
     pub account_hash: Option<String>,
     pub account_bound_ms: Option<i64>,
+    /// Reserved: never given a value, only cleared.
     pub dataset_id: Option<String>,
     pub zone_name: String,
     /// JSON map of per-category switches; a missing category is on.
@@ -47,6 +48,7 @@ pub struct SyncState {
     pub engine_state_account_hash: Option<String>,
     pub last_fetch_ms: Option<i64>,
     pub last_send_ms: Option<i64>,
+    /// Reserved: not written at runtime; the live error is in `SyncCore::status`.
     pub last_error: Option<String>,
     /// 31 random bits that namespace this database's counter ids when they cross into a synced
     /// record (see `sync::ids`). Kept by a copied database so a lineage keeps meaning the same ids.
@@ -103,6 +105,7 @@ impl Store {
                 environment TEXT,
                 account_hash TEXT,
                 account_bound_ms INTEGER,
+                -- Reserved: never assigned a value (only cleared). Kept so an older build's row reads.
                 dataset_id TEXT,
                 zone_name TEXT NOT NULL DEFAULT 'DegenViewZone',
                 categories TEXT NOT NULL DEFAULT '{}',
@@ -111,6 +114,8 @@ impl Store {
                 engine_state_account_hash TEXT,
                 last_fetch_ms INTEGER,
                 last_send_ms INTEGER,
+                -- Reserved: runtime errors live in memory (`SyncCore`) and are shown from there; this
+                -- is not written while the app runs, so it says nothing about the last failure.
                 last_error TEXT,
                 id_tag INTEGER NOT NULL DEFAULT 0
             );
@@ -169,6 +174,7 @@ impl Store {
                 resolved_ms INTEGER,
                 resolution TEXT
             );
+            -- Reserved: nothing writes it yet (see Known limitations in docs/icloud-sync.md).
             CREATE TABLE IF NOT EXISTS sync_device (
                 device_id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
@@ -385,6 +391,15 @@ impl Store {
     }
 
     /// Gives a cloned database a new identity and drops the per-device engine checkpoint.
+    /// Records the hardware this database runs on without changing who it is.
+    pub fn set_hardware_hash(&self, hardware_hash: &str) -> rusqlite::Result<()> {
+        self.connection.execute(
+            "UPDATE sync_state SET hardware_hash = ?1 WHERE id = 1",
+            [hardware_hash],
+        )?;
+        Ok(())
+    }
+
     pub fn reset_sync_device(&self, hardware_hash: &str) -> rusqlite::Result<()> {
         self.connection.execute(
             "UPDATE sync_state SET device_id = ?1, hardware_hash = ?2, engine_state = NULL,
@@ -1269,6 +1284,22 @@ impl Store {
         Ok(())
     }
 
+    /// Removes a set-aside record only if it is waiting for one of `reasons`. Used when the cloud
+    /// deletes a record whose name this version cannot parse: the copy it kept must not come back.
+    pub fn remove_inbox_if_reason(
+        &self,
+        record_name: &str,
+        reasons: &[&str],
+    ) -> rusqlite::Result<()> {
+        for reason in reasons {
+            self.connection.execute(
+                "DELETE FROM sync_inbox WHERE record_name = ?1 AND reason = ?2",
+                params![record_name, reason],
+            )?;
+        }
+        Ok(())
+    }
+
     /// Conflicts the user has not resolved or dismissed.
     pub fn open_conflict_count(&self) -> rusqlite::Result<usize> {
         self.connection.query_row(
@@ -1541,17 +1572,20 @@ impl Store {
     /// iCloud's data. Deliberately bypasses sync tracking: the cloud must never be told these
     /// rows were deleted. Alerts and scripts are never cleared; they merge instead.
     pub fn clear_replaceable_collections(&self) -> rusqlite::Result<()> {
-        for table in [
-            "watchlist",
-            "saved_view",
-            "chart_template",
-            "drawing_template",
-            "editor_theme",
-        ] {
-            self.connection
-                .execute(&format!("DELETE FROM {table}"), [])?;
-        }
-        Ok(())
+        // All five or none: a failure part way must not leave a mixture of cleared and kept.
+        self.in_savepoint("clear_replaceable", || {
+            for table in [
+                "watchlist",
+                "saved_view",
+                "chart_template",
+                "drawing_template",
+                "editor_theme",
+            ] {
+                self.connection
+                    .execute(&format!("DELETE FROM {table}"), [])?;
+            }
+            Ok(())
+        })
     }
 
     /// The friendly name of a Mac, if the cloud's device list has told us.

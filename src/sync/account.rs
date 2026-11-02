@@ -84,8 +84,11 @@ pub fn resolve_account_change(
     backups_dir: &Path,
     now_ms: i64,
 ) -> rusqlite::Result<Resolution> {
+    // Each choice is one change: either all of it happens or none, never a reset database that
+    // is still bound to the old account, or half the collections cleared. (The file copy made
+    // first is outside the database and stays either way; that is what it is for.)
     match choice {
-        AccountChoice::KeepLocalOnly => {
+        AccountChoice::KeepLocalOnly => store.in_savepoint("resolve_account", || {
             if let Some(mut state) = store.sync_state()? {
                 state.enabled = false;
                 state.account_hash = None;
@@ -100,25 +103,27 @@ pub fn resolve_account_change(
                 backup: None,
                 needs_join: false,
             })
-        }
+        }),
         AccountChoice::UseThisAccountsData => {
             let backup = stash(store, backups_dir, now_ms)?;
-            store.reset_sync_data()?;
-            store.clear_replaceable_collections()?;
-            bind(store, new_user_hash, now_ms)?;
-            Ok(Resolution {
-                backup: Some(backup),
-                needs_join: true,
+            store.in_savepoint("resolve_account", || {
+                store.reset_sync_data()?;
+                store.clear_replaceable_collections()?;
+                bind(store, new_user_hash, now_ms)?;
+                Ok(Resolution {
+                    backup: Some(backup),
+                    needs_join: true,
+                })
             })
         }
-        AccountChoice::MergeIntoThisAccount => {
+        AccountChoice::MergeIntoThisAccount => store.in_savepoint("resolve_account", || {
             store.reset_sync_data()?;
             bind(store, new_user_hash, now_ms)?;
             Ok(Resolution {
                 backup: None,
                 needs_join: true,
             })
-        }
+        }),
     }
 }
 
@@ -126,36 +131,40 @@ pub fn resolve_account_change(
 /// binding and everything learned about the cloud. Local data is untouched, and turning sync on
 /// again starts a fresh first-time merge.
 pub fn after_cloud_delete(store: &Store) -> rusqlite::Result<()> {
-    if let Some(mut state) = store.sync_state()? {
-        state.enabled = false;
-        state.account_hash = None;
-        state.account_bound_ms = None;
-        state.dataset_id = None;
-        state.initial_sync_done = false;
-        state.engine_state = None;
-        state.engine_state_account_hash = None;
-        store.save_sync_state(&state)?;
-    }
-    store.reset_sync_data()
+    store.in_savepoint("after_cloud_delete", || {
+        if let Some(mut state) = store.sync_state()? {
+            state.enabled = false;
+            state.account_hash = None;
+            state.account_bound_ms = None;
+            state.dataset_id = None;
+            state.initial_sync_done = false;
+            state.engine_state = None;
+            state.engine_state_account_hash = None;
+            store.save_sync_state(&state)?;
+        }
+        store.reset_sync_data()
+    })
 }
 
 /// Another Mac deleted DegenView's data in iCloud. Either upload this Mac's data again as a fresh
 /// start (`reupload`), or stop syncing. Nothing local is removed either way.
 pub fn resolve_remote_deletion(store: &Store, reupload: bool) -> rusqlite::Result<()> {
-    store.reset_sync_data()?;
-    if let Some(mut state) = store.sync_state()? {
-        state.initial_sync_done = false;
-        state.engine_state = None;
-        state.engine_state_account_hash = None;
-        state.dataset_id = None;
-        state.enabled = reupload;
-        if !reupload {
-            state.account_hash = None;
-            state.account_bound_ms = None;
+    store.in_savepoint("resolve_remote_deletion", || {
+        store.reset_sync_data()?;
+        if let Some(mut state) = store.sync_state()? {
+            state.initial_sync_done = false;
+            state.engine_state = None;
+            state.engine_state_account_hash = None;
+            state.dataset_id = None;
+            state.enabled = reupload;
+            if !reupload {
+                state.account_hash = None;
+                state.account_bound_ms = None;
+            }
+            store.save_sync_state(&state)?;
         }
-        store.save_sync_state(&state)?;
-    }
-    Ok(())
+        Ok(())
+    })
 }
 
 /// A copy of the whole database, named by time, that opens as an ordinary DegenView database.
@@ -172,17 +181,31 @@ pub fn stash(store: &Store, backups_dir: &Path, now_ms: i64) -> rusqlite::Result
     Ok(path)
 }
 
+/// Marks a hardware hash that came from the computer's name because the machine's own identifier
+/// could not be read. It says nothing about which machine this is.
+pub const NAME_HASH_PREFIX: &str = "name:";
+
 /// A database copied to another Mac (Migration Assistant, a restored backup) carries a device
-/// identity that belongs to the original. If the hardware differs, mint a new identity and drop
-/// the engine checkpoint, which is per device. Returns whether the identity changed.
-pub fn check_device_identity(store: &Store, hardware_hash: &str) -> rusqlite::Result<bool> {
-    let Some(state) = store.sync_state()? else {
+/// identity that belongs to the original. If the hardware differs, mint a new identity, drop the
+/// engine checkpoint (which is per device), and give the database a new id tag, rewriting the ids it
+/// holds so they keep their meaning in iCloud ([`Store::move_to_new_device`]). Returns whether the
+/// identity changed.
+///
+/// `None` is "this Mac's identifier could not be read": nothing is compared, since guessing wrong
+/// would throw away a good identity. A stored hash made from the computer's name (the same
+/// failure, earlier) is replaced by the real one without a new identity.
+pub fn check_device_identity(store: &Store, hardware_hash: Option<&str>) -> rusqlite::Result<bool> {
+    let (Some(state), Some(hardware_hash)) = (store.sync_state()?, hardware_hash) else {
         return Ok(false);
     };
     if state.hardware_hash == hardware_hash {
         return Ok(false);
     }
-    store.reset_sync_device(hardware_hash)?;
+    if state.hardware_hash.starts_with(NAME_HASH_PREFIX) {
+        store.set_hardware_hash(hardware_hash)?;
+        return Ok(false);
+    }
+    store.move_to_new_device(hardware_hash)?;
     Ok(true)
 }
 
@@ -273,14 +296,28 @@ mod tests {
     fn a_cloned_database_gets_a_new_identity_only_when_the_hardware_differs() {
         let store = Store::open_in_memory().unwrap();
         let original = enable(&store, "Studio", "hw-a", "Production").unwrap();
-        assert!(!check_device_identity(&store, "hw-a").unwrap());
-        assert!(check_device_identity(&store, "hw-b").unwrap());
+        assert!(!check_device_identity(&store, Some("hw-a")).unwrap());
+        assert!(check_device_identity(&store, Some("hw-b")).unwrap());
         let cloned = store.sync_state().unwrap().unwrap();
         assert_ne!(cloned.device_id, original.device_id);
         assert_eq!(cloned.hardware_hash, "hw-b");
-        assert!(!check_device_identity(&store, "hw-b").unwrap());
+        assert!(!check_device_identity(&store, Some("hw-b")).unwrap());
         let empty = Store::open_in_memory().unwrap();
-        assert!(!check_device_identity(&empty, "hw").unwrap());
+        assert!(!check_device_identity(&empty, Some("hw")).unwrap());
+
+        // A stand-in made from the computer's name is replaced by the real identifier, not a new device.
+        let stand_in = Store::open_in_memory().unwrap();
+        stand_in.ensure_sync_state("Mac", "name:abc").unwrap();
+        let before = stand_in.sync_state().unwrap().unwrap();
+        assert!(!check_device_identity(&stand_in, Some("real")).unwrap());
+        let after = stand_in.sync_state().unwrap().unwrap();
+        assert_eq!(after.hardware_hash, "real");
+        assert_eq!(after.device_id, before.device_id);
+        assert_eq!(after.id_tag, before.id_tag);
+        assert!(
+            !check_device_identity(&store, None).unwrap(),
+            "unknown hardware compares nothing"
+        );
     }
 
     fn with_data(store: &Store) {

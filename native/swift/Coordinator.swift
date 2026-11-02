@@ -216,7 +216,15 @@ final class Coordinator: NSObject, CKSyncEngineDelegate, @unchecked Sendable {
 
     private func send() async {
         guard let engine = lockedEngine() else { return }
-        do { try await engine.sendChanges() } catch { fail(Codec.kind(of: error), error.localizedDescription) }
+        do {
+            try await engine.sendChanges()
+        } catch {
+            // Not an `error`: it says no per-record result will follow, so the core can send again.
+            emitter.emit([
+                "event": "send_error", "kind": Codec.kind(of: error),
+                "message": error.localizedDescription,
+            ])
+        }
     }
 
     private func fetch() async {

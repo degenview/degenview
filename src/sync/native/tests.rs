@@ -138,6 +138,13 @@ fn every_event_kind_decodes() {
                 message: "full".into(),
             },
         ),
+        (
+            r#"{"event":"send_error","kind":"network","message":"offline"}"#,
+            TransportEvent::SendFailed {
+                kind: ErrorKind::Network,
+                message: "offline".into(),
+            },
+        ),
     ];
     for (json, expected) in cases {
         assert_eq!(event_from_json(json).unwrap(), expected, "{json}");

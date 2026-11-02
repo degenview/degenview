@@ -243,6 +243,12 @@ pub enum SettingPolicy {
     Local,
 }
 
+/// Whether a `setting` key may sync at all. The one test both directions use, so what this Mac
+/// uploads and what it accepts from iCloud cannot drift apart.
+pub fn setting_is_portable(key: &str) -> bool {
+    matches!(setting_policy(key), SettingPolicy::Portable(_))
+}
+
 /// Classifies a `setting` key. Unknown keys are local.
 pub fn setting_policy(key: &str) -> SettingPolicy {
     match key {

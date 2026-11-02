@@ -1,6 +1,6 @@
 # iCloud Sync (PR #84): production-readiness checklist
 
-The automated suite (`cargo test`, 2982 tests) uses a mock cloud and a fake bridge. Real CloudKit
+The automated suite (`cargo test`) uses a mock cloud and a fake bridge. Real CloudKit
 has only been exercised on two Macs on one Apple Account with notarized Developer ID builds
 (Production), and so far for watchlists, drawings and alerts. Record the result next to each item as
 you go.
@@ -190,5 +190,5 @@ build first, then a notarized Developer ID build.
 
 ## 8. Record results
 
-- [ ] Write the results into the "Tests" section of `docs/icloud-sync.md`, which currently says there are
-  none.
+- [x] Results are recorded in this checklist; `docs/icloud-sync.md` points here instead of keeping a
+  second copy that goes stale.

@@ -394,6 +394,114 @@ fn a_portable_setting_travels_and_local_ones_do_not() {
     assert_eq!(outbox_len(&b), 0);
 }
 
+/// Keys this version keeps on the Mac, from security and consent state to a key it has never heard of.
+const LOCAL_ONLY_KEYS: [&str; 6] = [
+    "mcp.settings",
+    "mcp.permissions",
+    "ai.prefs",
+    "update.channel",
+    "content.prefs",
+    "from.a.newer.version",
+];
+
+#[test]
+fn a_record_for_a_setting_kept_on_this_mac_is_never_applied() {
+    let (cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    for key in LOCAL_ONLY_KEYS {
+        b.store
+            .lock()
+            .unwrap()
+            .set_setting(key, &json!({"mine": true}))
+            .unwrap();
+        // A stale record from a development build, a newer client or a hand edit in the dashboard.
+        cloud.put_from_elsewhere(
+            raw(
+                &format!("setting.{key}"),
+                &json!({"theirs": true}),
+                5,
+                9,
+                "Z",
+            ),
+            "Z",
+        );
+    }
+    settle(&mut a, &mut b);
+
+    let store = b.store.lock().unwrap();
+    for key in LOCAL_ONLY_KEYS {
+        assert_eq!(
+            store.raw_setting(key).unwrap(),
+            Some(json!({"mine": true})),
+            "{key} was overwritten from iCloud"
+        );
+        assert!(
+            store
+                .entity_meta(EntityKind::Setting, key)
+                .unwrap()
+                .is_none(),
+            "{key} is tracked for sync"
+        );
+        assert!(
+            store
+                .inbox()
+                .unwrap()
+                .iter()
+                .any(|r| r.record_name == format!("setting.{key}") && r.reason == "invalid"),
+            "{key} was not kept aside"
+        );
+    }
+    drop(store);
+    assert_eq!(outbox_len(&b), 0);
+}
+
+#[test]
+fn a_deletion_for_a_setting_kept_on_this_mac_changes_nothing() {
+    let (cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    for key in LOCAL_ONLY_KEYS {
+        b.store
+            .lock()
+            .unwrap()
+            .set_setting(key, &json!({"mine": true}))
+            .unwrap();
+        cloud.put_from_elsewhere(
+            raw(
+                &format!("setting.{key}"),
+                &json!({"theirs": true}),
+                5,
+                9,
+                "Z",
+            ),
+            "Z",
+        );
+    }
+    settle(&mut a, &mut b);
+    for key in LOCAL_ONLY_KEYS {
+        cloud.delete_from_elsewhere(&format!("setting.{key}"), "Z");
+    }
+    settle(&mut a, &mut b);
+
+    let store = b.store.lock().unwrap();
+    for key in LOCAL_ONLY_KEYS {
+        assert_eq!(
+            store.raw_setting(key).unwrap(),
+            Some(json!({"mine": true})),
+            "{key} was deleted from iCloud"
+        );
+        assert!(
+            store
+                .entity_meta(EntityKind::Setting, key)
+                .unwrap()
+                .is_none()
+        );
+    }
+    drop(store);
+    assert_eq!(outbox_len(&b), 0);
+}
+
 #[test]
 fn snapshot_preferences_never_overwrite_this_macs_consented_hosts() {
     let (_cloud, mut a, mut b) = pair();
@@ -470,6 +578,123 @@ fn a_table_holding_a_row_from_a_newer_version_is_never_rewritten() {
     let on_b = b.store.lock().unwrap().raw_rows("watchlist").unwrap();
     assert_eq!(on_b.len(), 1);
     assert_eq!(on_b[0], json!({"future": true}));
+}
+
+#[test]
+fn a_deletion_of_a_record_this_version_cannot_read_removes_the_copy_it_kept() {
+    let (cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    cloud.put_from_elsewhere(raw("hologram.3", &json!({"x": 1}), 1, 1, "Z"), "Z");
+    settle(&mut a, &mut b);
+    let waiting = |mac: &Mac| {
+        mac.store
+            .lock()
+            .unwrap()
+            .inbox()
+            .unwrap()
+            .iter()
+            .any(|r| r.record_name == "hologram.3")
+    };
+    assert!(waiting(&b), "kept while it cannot be read");
+
+    // The newer app deletes it; this one does not know the kind but must not keep the copy,
+    // or an update that teaches it the kind would bring the deleted record back.
+    cloud.delete_from_elsewhere("hologram.3", "Z");
+    settle(&mut a, &mut b);
+    assert!(!waiting(&b), "the deleted record is still set aside");
+}
+
+#[test]
+fn a_remote_deletion_that_cannot_be_applied_yet_is_kept_and_applied_later() {
+    let (cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    put(&a, &[watchlist(10, "Tech", &[], false)]);
+    settle(&mut a, &mut b);
+    assert_eq!(rows(&b, "watchlist").len(), 1);
+
+    // B now holds a row it cannot read (written by a newer app), so its table is never rewritten.
+    b.store
+        .lock()
+        .unwrap()
+        .execute_raw(
+            "INSERT INTO watchlist (id, position, payload) VALUES ('999', 1, '{\"future\": true}')",
+        )
+        .unwrap();
+    put(&a, &[]);
+    settle(&mut a, &mut b);
+    assert_eq!(rows(&b, "watchlist").len(), 2, "the table was rewritten");
+    let kept = b.store.lock().unwrap().inbox().unwrap();
+    assert!(
+        kept.iter()
+            .any(|r| r.record_name == "watchlist.10" && r.reason == super::apply::DELETE_PENDING),
+        "{kept:?}"
+    );
+
+    // An update makes the row readable (here: the row goes away). The next apply carries it out.
+    b.store
+        .lock()
+        .unwrap()
+        .execute_raw("DELETE FROM watchlist WHERE id = '999'")
+        .unwrap();
+    let empty = super::core::RemoteBatch {
+        id: 0,
+        records: Vec::new(),
+        deletions: Vec::new(),
+    };
+    b.apply_to_store(&empty);
+    assert!(
+        rows(&b, "watchlist").is_empty(),
+        "the delete never happened"
+    );
+    assert!(
+        b.store
+            .lock()
+            .unwrap()
+            .inbox()
+            .unwrap()
+            .iter()
+            .all(|r| r.reason != super::apply::DELETE_PENDING)
+    );
+    settle(&mut a, &mut b);
+    assert!(rows(&b, "watchlist").is_empty(), "it came back");
+    assert!(
+        !cloud.names().contains(&"watchlist.10".to_string()),
+        "it was uploaded again"
+    );
+}
+
+#[test]
+fn a_record_kept_for_an_unreadable_table_is_applied_once_the_table_can_be_read() {
+    let (cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    b.store
+        .lock()
+        .unwrap()
+        .execute_raw(
+            "INSERT INTO watchlist (id, position, payload) VALUES ('999', 0, '{\"future\": true}')",
+        )
+        .unwrap();
+    put_remote(&cloud, 10, "Tech");
+    settle(&mut a, &mut b);
+    assert_eq!(rows(&b, "watchlist").len(), 1);
+
+    b.store
+        .lock()
+        .unwrap()
+        .execute_raw("DELETE FROM watchlist WHERE id = '999'")
+        .unwrap();
+    let empty = super::core::RemoteBatch {
+        id: 0,
+        records: Vec::new(),
+        deletions: Vec::new(),
+    };
+    b.apply_to_store(&empty);
+    let on_b = rows(&b, "watchlist");
+    assert_eq!(on_b.len(), 1);
+    assert_eq!(on_b[0]["name"], "Tech");
 }
 
 fn put_remote(cloud: &MockCloud, id: u64, name: &str) {

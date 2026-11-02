@@ -181,6 +181,12 @@ pub enum TransportEvent {
         kind: ErrorKind,
         message: String,
     },
+    /// The engine could not carry out a send at all, so no per-record result will follow for what
+    /// was staged. (A send that runs reports each record in `Sent`.)
+    SendFailed {
+        kind: ErrorKind,
+        message: String,
+    },
 }
 
 /// Implemented by the Swift bridge and by the test cloud. Must not block.

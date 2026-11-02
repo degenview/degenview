@@ -130,6 +130,28 @@ fn the_first_mac_uploads_its_data_after_seeing_that_icloud_is_empty() {
 }
 
 #[test]
+fn something_deleted_while_the_first_merge_waits_is_not_brought_back_by_it() {
+    let cloud = MockCloud::new();
+    let mut a = established(&cloud, "A");
+    let mut b = new_mac(&cloud, "B");
+    b.core.start();
+    b.run();
+    assert_eq!(b.phase(), Phase::AwaitingJoin);
+    assert_eq!(summary(&b).cloud.watchlists, 1);
+
+    // The list is deleted on A while B is still deciding how to combine.
+    put(&a, &[]);
+    a.core.request_sync();
+    a.run();
+    b.core.request_sync();
+    b.run();
+    assert_eq!(summary(&b).cloud.watchlists, 0, "still offered to B");
+
+    join(&mut b, JoinMode::Merge, &backups("deleted-while-waiting"));
+    assert!(rows(&b, "watchlist").is_empty());
+}
+
+#[test]
 fn an_empty_icloud_never_deletes_local_data() {
     let cloud = MockCloud::new();
     let mut a = new_mac(&cloud, "A");
@@ -343,6 +365,128 @@ fn using_icloud_stashes_a_recoverable_copy_and_deletes_nothing_in_the_cloud() {
     assert_eq!(scripts, ["B Script", "Cloud Script"]);
     assert_eq!(rows(&a, "watchlist").len(), 1);
     assert_eq!(outbox_len(&a) + outbox_len(&b), 0);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+/// What this Mac holds in the collections "Use iCloud's data" replaces.
+fn replaceable(mac: &Mac) -> Vec<serde_json::Value> {
+    [
+        "watchlist",
+        "saved_view",
+        "chart_template",
+        "drawing_template",
+        "editor_theme",
+    ]
+    .iter()
+    .flat_map(|table| rows(mac, table))
+    .collect()
+}
+
+#[test]
+fn using_icloud_is_all_or_nothing_when_something_fails_part_way() {
+    let cloud = MockCloud::new();
+    let _a = established(&cloud, "A");
+    let mut b = new_mac(&cloud, "B");
+    put(&b, &[watchlist(20, "B's list", &[(2, "BBB")], false)]);
+    b.store
+        .lock()
+        .unwrap()
+        .replace_documents("chart_template", &[template(1600, "B Look")])
+        .unwrap();
+    b.core.start();
+    b.run();
+    let before = replaceable(&b);
+    assert_eq!(before.len(), 2);
+
+    // iCloud's template cannot be saved, after the lists have already been cleared and replaced.
+    b.store
+        .lock()
+        .unwrap()
+        .execute_raw(
+            "CREATE TRIGGER no_templates BEFORE INSERT ON chart_template
+             BEGIN SELECT RAISE(ABORT, 'disk full'); END",
+        )
+        .unwrap();
+    let state = b.store.lock().unwrap().sync_state().unwrap().unwrap();
+    let ctx = ApplyCtx {
+        device_id: state.device_id,
+        device_name: state.device_name,
+        now_ms: 20_000_000,
+        date: "2026-10-20".into(),
+    };
+    let dir = backups("all-or-nothing");
+    {
+        let store = b.store.lock().unwrap();
+        let failed = finish_join(
+            &store,
+            &mut b.library,
+            &b.script_cache,
+            JoinMode::UseCloud,
+            &dir,
+            &ctx,
+        );
+        assert!(failed.is_err());
+    }
+    assert_eq!(
+        replaceable(&b),
+        before,
+        "a mixture of cleared and kept data"
+    );
+    assert!(
+        !b.store
+            .lock()
+            .unwrap()
+            .sync_state()
+            .unwrap()
+            .unwrap()
+            .initial_sync_done,
+        "still waiting for the choice"
+    );
+
+    // The choice can be made again, and then it completes.
+    b.store
+        .lock()
+        .unwrap()
+        .execute_raw("DROP TRIGGER no_templates")
+        .unwrap();
+    join(&mut b, JoinMode::UseCloud, &dir);
+    let names: Vec<String> = rows(&b, "watchlist")
+        .iter()
+        .map(|r| r["name"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(names, ["Shared"]);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn switching_accounts_is_all_or_nothing_when_binding_fails() {
+    let cloud = MockCloud::new();
+    let a = established(&cloud, "A");
+    let before = replaceable(&a);
+    let linked = a.store.lock().unwrap().synced_entities().unwrap();
+    assert!(!linked.is_empty());
+    a.store
+        .lock()
+        .unwrap()
+        .execute_raw(
+            "CREATE TRIGGER no_bind BEFORE UPDATE OF account_bound_ms ON sync_state
+             BEGIN SELECT RAISE(ABORT, 'disk full'); END",
+        )
+        .unwrap();
+    let dir = backups("account-switch");
+    let result = resolve_account_change(
+        &a.store.lock().unwrap(),
+        AccountChoice::UseThisAccountsData,
+        "account-two",
+        &dir,
+        40_000_000,
+    );
+    assert!(result.is_err());
+    // Not reset, not cleared, not half-bound: exactly as before the choice.
+    assert_eq!(replaceable(&a), before);
+    assert_eq!(a.store.lock().unwrap().synced_entities().unwrap(), linked);
+    let state = a.store.lock().unwrap().sync_state().unwrap().unwrap();
+    assert_eq!(state.account_hash.as_deref(), Some("acct"));
     let _ = std::fs::remove_dir_all(dir);
 }
 

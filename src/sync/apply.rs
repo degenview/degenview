@@ -14,7 +14,7 @@ use super::ids::{Direction, map_fields};
 use super::merge::{
     Outcome, Side, Stamp, conflict_copy_name, merge, next_drawing_id, renumber_drawing,
 };
-use super::policy::{EntityKind, Merge, category_of, merge_of};
+use super::policy::{EntityKind, Merge, category_of, merge_of, setting_is_portable};
 use super::project::{
     ScriptSnapshot, canonical_json, drawing_id, map_chart_cards, map_entry_cards, project_row_in,
     project_script, project_setting, project_transaction,
@@ -36,6 +36,10 @@ mod portfolio;
 /// Why a fetched record was kept in the inbox, for the two reasons an update can fix.
 pub const UNKNOWN_TYPE: &str = "unknown_type";
 pub const NEWER_SCHEMA: &str = "newer_schema";
+/// A record kept because a table holds a row this version cannot read, so it cannot be rewritten.
+pub const LOCAL_UNREADABLE: &str = "local_unreadable";
+/// A deletion kept for the same reason. Its payload is empty; only the name matters.
+pub const DELETE_PENDING: &str = "delete_pending";
 
 /// Who is applying, and when. Passed in so applying is deterministic under test.
 #[derive(Debug, Clone)]
@@ -113,6 +117,8 @@ pub fn apply_batch(
         for name in deletions {
             work.apply_deletion(name)?;
         }
+        work.retry_pending_deletions()?;
+        work.retry_local_unreadable()?;
         work.retry_set_aside()?;
         work.retry_category_off()?;
         work.retry_orphans()?;
@@ -411,10 +417,14 @@ impl<'a> Work<'a> {
     fn apply_simple(&mut self, record: &RemoteRecord) -> rusqlite::Result<()> {
         let RecordName { kind, id } = &record.record.name;
         let (kind, id) = (*kind, id.as_str());
+        if kind == EntityKind::Setting && !setting_is_portable(id) {
+            // Validation already refuses these; this is the second lock on the same door.
+            return self.keep(record, "invalid");
+        }
         if let Some(table) = table_of(kind)
             && !self.table_writable(table)?
         {
-            return self.keep(record, "local_unreadable");
+            return self.keep(record, LOCAL_UNREADABLE);
         }
         if matches!(kind, EntityKind::ChartTemplate | EntityKind::EditorTheme)
             && id.parse::<u64>().is_ok_and(|n| n < FIRST_USER_TEMPLATE_ID)
@@ -669,6 +679,12 @@ impl<'a> Work<'a> {
             }
         }
 
+        // The loser is saved first. If it cannot be, the batch fails and nothing is overwritten:
+        // it is applied again later, and finds the copy it already made.
+        let mut conflict = None;
+        if let Some((loser, from_local)) = copy {
+            conflict = Some(self.make_script_copy(record, &id, loser, from_local)?);
+        }
         if let Some((name, source, favorite)) = write {
             let result = if local.is_some() {
                 self.scripts.update(&id, &name, &source, favorite)
@@ -680,8 +696,8 @@ impl<'a> Work<'a> {
             }
             self.report.applied += 1;
         }
-        if let Some((loser, from_local)) = copy {
-            self.save_script_copy(record, &id, loser, from_local)?;
+        if let Some(conflict) = conflict {
+            self.store.record_conflict(&conflict, self.ctx.now_ms)?;
         }
 
         // A name this Mac had to change (another script already has it) is not an edit to upload.
@@ -708,14 +724,19 @@ impl<'a> Work<'a> {
         Ok(())
     }
 
-    /// Saves the losing version of a script as a new script, so neither edit is ever lost.
-    fn save_script_copy(
+    /// Saves the losing version of a script as a new script, so neither edit is ever lost, and
+    /// returns the note about it. An error when the copy cannot be written: the winner is not
+    /// written either, and the whole batch is tried again.
+    ///
+    /// The copy's id is derived from what it holds, so applying the same batch again (after a
+    /// failure later in it) finds the copy it already made instead of making another.
+    fn make_script_copy(
         &mut self,
         record: &RemoteRecord,
         original: &str,
         loser: ScriptSnapshot,
         from_local: bool,
-    ) -> rusqlite::Result<()> {
+    ) -> rusqlite::Result<ConflictRecord> {
         // `from_local` here means the local script won, so the loser is the cloud's version.
         let loser_is_local = !from_local;
         let device = if loser_is_local {
@@ -725,28 +746,35 @@ impl<'a> Work<'a> {
                 .device_name(&record.record.origin_device)?
                 .unwrap_or_default()
         };
-        let copy_id = self.scripts.fresh_id();
         let copy_name = conflict_copy_name(&loser.name, &device, &self.ctx.date);
-        if self
-            .scripts
-            .adopt(&copy_id, &copy_name, &loser.source, loser.is_favorite)
-            .is_err()
+        let copy_id = sha256_hex(
+            format!(
+                "{original}\0{copy_name}\0{}\0{}",
+                loser.source, loser.is_favorite
+            )
+            .as_bytes(),
+        )[..32]
+            .to_string();
+        let exists = matches!(self.scripts.get(&copy_id), Ok(Some(_)));
+        if !exists
+            && let Err(message) =
+                self.scripts
+                    .adopt(&copy_id, &copy_name, &loser.source, loser.is_favorite)
         {
-            return Ok(());
+            return Err(rusqlite::Error::ToSqlConversionFailure(Box::new(
+                std::io::Error::other(format!("could not keep the other version: {message}")),
+            )));
         }
-        self.store.record_conflict(
-            &ConflictRecord {
-                entity: EntityKind::Script,
-                sync_id: original.to_string(),
-                kind: "script".into(),
-                local_payload: loser_is_local.then(|| loser.source.clone().into_bytes()),
-                remote_payload: Some(record.record.payload.clone()),
-                remote_device: Some(record.record.origin_device.clone()),
-                copy_entity: Some(EntityKind::Script),
-                copy_sync_id: Some(copy_id),
-            },
-            self.ctx.now_ms,
-        )
+        Ok(ConflictRecord {
+            entity: EntityKind::Script,
+            sync_id: original.to_string(),
+            kind: "script".into(),
+            local_payload: loser_is_local.then(|| loser.source.clone().into_bytes()),
+            remote_payload: Some(record.record.payload.clone()),
+            remote_device: Some(record.record.origin_device.clone()),
+            copy_entity: Some(EntityKind::Script),
+            copy_sync_id: Some(copy_id),
+        })
     }
 
     fn delete_script(&mut self, id: &str) -> rusqlite::Result<()> {
@@ -1433,6 +1461,55 @@ impl<'a> Work<'a> {
         Ok(())
     }
 
+    /// Deletions kept because their table could not be rewritten are applied once it can be.
+    fn retry_pending_deletions(&mut self) -> rusqlite::Result<()> {
+        let waiting: Vec<InboxRecord> = self
+            .store
+            .inbox()?
+            .into_iter()
+            .filter(|entry| entry.reason == DELETE_PENDING)
+            .collect();
+        for entry in waiting {
+            let Some(name) = RecordName::parse(&entry.record_name) else {
+                continue;
+            };
+            let writable = match table_of(name.kind) {
+                Some(table) => self.table_writable(table)?,
+                None => true,
+            };
+            if writable {
+                // Removes the inbox row first, then deletes as a fresh delete would.
+                self.apply_deletion(&name)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Records kept because their table held a row this version could not read are applied once
+    /// every row can be.
+    fn retry_local_unreadable(&mut self) -> rusqlite::Result<()> {
+        let waiting: Vec<InboxRecord> = self
+            .store
+            .inbox()?
+            .into_iter()
+            .filter(|entry| entry.reason == LOCAL_UNREADABLE)
+            .collect();
+        for entry in waiting {
+            let Some(record) = remote_from_inbox(&entry) else {
+                continue;
+            };
+            let writable = match table_of(record.record.name.kind) {
+                Some(table) => self.table_writable(table)?,
+                None => true,
+            };
+            if writable {
+                self.store.remove_inbox(&entry.record_name)?;
+                self.apply_record(&record)?;
+            }
+        }
+        Ok(())
+    }
+
     /// Records held back because their category was off are applied once it is switched on.
     fn retry_category_off(&mut self) -> rusqlite::Result<()> {
         let waiting: Vec<InboxRecord> = self
@@ -1503,6 +1580,10 @@ impl<'a> Work<'a> {
         let (kind, id) = (name.kind, name.id.as_str());
         // A copy set aside is for a record that still exists: it must not come back later.
         self.store.remove_inbox(&name.render())?;
+        if kind == EntityKind::Setting && !setting_is_portable(id) {
+            // A setting this version keeps on the Mac is not deleted, or tracked, from iCloud.
+            return Ok(());
+        }
         if self.disabled.contains(&category_of(kind, id)) {
             // Not applied; if the category returns, a reconcile re-uploads anything still here.
             return Ok(());
@@ -1520,6 +1601,23 @@ impl<'a> Work<'a> {
         if let Some(table) = table_of(kind)
             && !self.table_writable(table)?
         {
+            // The delete cannot be applied to a table this version cannot rewrite. Keep it, by
+            // name, and apply it when the table can be read: a checkpoint that moves on must not
+            // leave the item here to be uploaded again.
+            self.store.put_inbox(
+                &InboxRecord {
+                    record_name: name.render(),
+                    entity_type: kind.prefix().to_string(),
+                    schema_version: super::record::SCHEMA_VERSION,
+                    reason: DELETE_PENDING.to_string(),
+                    payload: Vec::new(),
+                    system_fields: None,
+                    revision: 0,
+                    origin_device: String::new(),
+                    modified_ms: self.ctx.now_ms,
+                },
+                self.ctx.now_ms,
+            )?;
             self.report.inboxed += 1;
             return Ok(());
         }
