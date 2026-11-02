@@ -109,11 +109,21 @@ impl Progress {
     }
 }
 
+/// Whether a folder can be created in `dir`. `create_dir` fails if the name exists, and the probe is
+/// removed only when this call created it, so a folder that was already there is never touched.
 fn is_writable(dir: &Path) -> bool {
-    let probe = dir.join(format!(".DegenView-write-test-{}", std::process::id()));
-    let ok = std::fs::create_dir(&probe).is_ok();
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_nanos());
+    let probe = dir.join(format!(
+        ".DegenView-write-test-{}-{nanos}",
+        std::process::id()
+    ));
+    if std::fs::create_dir(&probe).is_err() {
+        return false;
+    }
     let _ = std::fs::remove_dir(&probe);
-    ok
+    true
 }
 
 fn verify(bytes: &[u8], asset: &ReleaseAsset) -> Result<(), String> {
@@ -184,6 +194,18 @@ mod tests {
         let root = scratch("writable");
         assert!(is_writable(&root));
         assert!(!is_writable(&root.join("missing")));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn the_write_probe_leaves_no_trace_and_touches_nothing_else() {
+        let root = scratch("probe");
+        let bystander = root.join(".DegenView-write-test-keep");
+        fs::create_dir(&bystander).unwrap();
+        assert!(is_writable(&root));
+        assert!(bystander.is_dir());
+        let leftovers = fs::read_dir(&root).unwrap().count();
+        assert_eq!(leftovers, 1, "only the bystander remains");
         let _ = fs::remove_dir_all(root);
     }
 

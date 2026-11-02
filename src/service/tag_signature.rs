@@ -6,12 +6,16 @@
 //! a key registered on *some* GitHub account", so the tag's tagger must also be the maintainer's
 //! identity: GitHub only reports `valid` when the signing key belongs to an account that owns the
 //! tagger's email, which makes the email trustworthy on a verified tag. A repository write token
-//! cannot add a signing key to the maintainer's account, so it cannot ship an update.
+//! cannot add a signing key to the maintainer's account, so it cannot forge a signed *tag*.
 //!
 //! The trust anchor is therefore GitHub's account and key registry, not a key baked into the app,
 //! and rotating the signing key means registering the new one on the account. The signature
-//! vouches for "this tag names this commit", not for the zip CI uploaded afterwards; enabling
-//! GitHub's immutable releases cover most of that (see `docs/agent-guides/releases-updates.md`).
+//! vouches for "this tag names this commit", not for the files attached to the release. Immutable
+//! releases lock a published release's assets and its tag name, but a token that can create
+//! releases could still publish its own assets for a signed tag that has no release yet (while the
+//! workflow builds, or after a failed run). macOS has a second check, the Developer ID signature;
+//! Windows and Linux have none beyond this and the GitHub digest (see
+//! `docs/agent-guides/releases-updates.md`).
 
 use crate::service::http::{self, Retry};
 use crate::service::update_check::github_headers;
@@ -154,6 +158,27 @@ mod tests {
         let mut json: serde_json::Value = serde_json::from_str(REAL).unwrap();
         edit(&mut json);
         serde_json::from_value(json).unwrap()
+    }
+
+    /// The release workflow refuses to build a tag by anyone else, so its identity and the one the
+    /// app trusts must be the same.
+    #[test]
+    fn the_workflow_and_the_app_trust_the_same_maintainer() {
+        let workflow = include_str!("../../.github/workflows/release.yml");
+        let emails: Vec<&str> = workflow
+            .lines()
+            .filter_map(|line| line.trim().strip_prefix("MAINTAINER_EMAIL:"))
+            .map(str::trim)
+            .collect();
+        assert!(!emails.is_empty(), "release.yml names no MAINTAINER_EMAIL");
+        for email in emails {
+            assert!(
+                MAINTAINER_EMAILS
+                    .iter()
+                    .any(|trusted| trusted.eq_ignore_ascii_case(email)),
+                "{email} is trusted by release.yml but not by the app"
+            );
+        }
     }
 
     #[test]

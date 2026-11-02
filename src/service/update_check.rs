@@ -7,8 +7,11 @@ use serde::Deserialize;
 
 /// The recent releases, prereleases included (`/releases/latest` never returns one, and is "the
 /// most recently created stable release", not the highest version).
-const RELEASE_LIST_URL: &str =
-    "https://api.github.com/repos/degenview/degenview/releases?per_page=30";
+const RELEASE_LIST_URL: &str = "https://api.github.com/repos/degenview/degenview/releases";
+/// Releases per page of the list, and how many pages one check reads at most. The list is ordered
+/// by creation, so a run of release candidates can push the newest stable release past page one.
+const PAGE_SIZE: usize = 30;
+const MAX_PAGES: usize = 3;
 /// Where "view release" falls back to when the API reply carries no page URL.
 pub const RELEASES_URL: &str = "https://github.com/degenview/degenview/releases";
 
@@ -152,11 +155,11 @@ fn platform_suffix() -> Option<&'static str> {
     }
 }
 
-fn select_asset(assets: Vec<AssetDto>, suffix: Option<&str>) -> Option<ReleaseAsset> {
-    let suffix = suffix?;
-    let asset = assets
-        .into_iter()
-        .find(|asset| asset.name.ends_with(suffix))?;
+/// The platform's download for the release tagged `tag`: exactly `DegenView-<tag><suffix>`, as
+/// `release.yml` names it. A stale or misnamed file that merely ends in the suffix is not offered.
+fn select_asset(assets: Vec<AssetDto>, tag: &str, suffix: Option<&str>) -> Option<ReleaseAsset> {
+    let expected = format!("DegenView-{tag}{}", suffix?);
+    let asset = assets.into_iter().find(|asset| asset.name == expected)?;
     let sha256 = asset.digest?.strip_prefix("sha256:")?.to_ascii_lowercase();
     let valid = sha256.len() == 64 && sha256.bytes().all(|byte| byte.is_ascii_hexdigit());
     (valid
@@ -182,43 +185,84 @@ pub fn github_headers() -> [(&'static str, &'static str); 3] {
     ]
 }
 
-/// Blocking: one GET. Call it from a worker thread.
+/// Blocking: up to `MAX_PAGES` GETs. Call it from a worker thread.
 pub fn check(current: &str, channel: Channel) -> UpdateOutcome {
-    let body = http::get_text(RELEASE_LIST_URL, &github_headers(), Retry::Transient);
-    match body {
-        Ok(body) => evaluate(&body, current, channel),
-        // No published release yet (or repository not public): nothing newer exists.
-        Err(http::Error::Status(404)) => UpdateOutcome::UpToDate,
-        Err(http::Error::Status(403 | 429)) => {
-            UpdateOutcome::Failed("GitHub is rate limiting requests. Try again later.".to_owned())
-        }
-        Err(error) => UpdateOutcome::Failed(error.to_string()),
-    }
+    check_pages(current, channel, |page| {
+        let url = format!("{RELEASE_LIST_URL}?per_page={PAGE_SIZE}&page={page}");
+        http::get_text(&url, &github_headers(), Retry::Transient)
+    })
 }
 
-fn evaluate(body: &str, current: &str, channel: Channel) -> UpdateOutcome {
-    let releases: Vec<ReleaseDto> = match serde_json::from_str(body) {
-        Ok(releases) => releases,
-        Err(_) => return UpdateOutcome::Failed("GitHub sent an unreadable reply.".to_owned()),
-    };
+/// `check` over a page source, so the paging is tested without a network.
+fn check_pages(
+    current: &str,
+    channel: Channel,
+    fetch: impl Fn(usize) -> Result<String, http::Error>,
+) -> UpdateOutcome {
     let Some(running) = Version::parse(current) else {
         return UpdateOutcome::Failed(format!("Could not compare version {current}."));
     };
+    let mut releases = Vec::new();
+    for page in 1..=MAX_PAGES {
+        let body = match fetch(page) {
+            Ok(body) => body,
+            // No published release yet (or repository not public): nothing newer exists. Past the
+            // first page it only means the list ended.
+            Err(http::Error::Status(404)) => break,
+            Err(http::Error::Status(403 | 429)) => {
+                return UpdateOutcome::Failed(
+                    "GitHub is rate limiting requests. Try again later.".to_owned(),
+                );
+            }
+            Err(error) => return UpdateOutcome::Failed(error.to_string()),
+        };
+        let Some(listed) = parse_page(&body) else {
+            return UpdateOutcome::Failed("GitHub sent an unreadable reply.".to_owned());
+        };
+        let last = listed.len() < PAGE_SIZE;
+        // The list is newest-created first: once a page holds a release this build already has (or
+        // an older one) that the channel accepts, later pages only hold older releases.
+        let reached_history = listed
+            .iter()
+            .any(|release| offered_version(release, channel).is_some_and(|v| v <= running));
+        releases.extend(listed);
+        if last || reached_history {
+            break;
+        }
+    }
+    pick(releases, &running, channel)
+}
+
+fn parse_page(body: &str) -> Option<Vec<ReleaseDto>> {
+    serde_json::from_str(body).ok()
+}
+
+#[cfg(test)]
+fn evaluate(body: &str, current: &str, channel: Channel) -> UpdateOutcome {
+    check_pages(current, channel, |_| Ok(body.to_owned()))
+}
+
+/// The release's version, when it is a published release `channel` offers.
+fn offered_version(release: &ReleaseDto, channel: Channel) -> Option<Version> {
+    if release.draft {
+        return None;
+    }
+    let version = Version::parse(&release.tag_name)?;
+    // GitHub's flag and the tag agree for releases the workflow publishes; a stable tag marked as
+    // a prerelease is not trusted as stable.
+    let consistent = !release.prerelease || version.prerelease.is_some();
+    (consistent && channel.accepts(&version)).then_some(version)
+}
+
+fn pick(releases: Vec<ReleaseDto>, running: &Version, channel: Channel) -> UpdateOutcome {
     // A tag this version cannot read, or that no channel offers, is skipped rather than failing
     // the whole check: one stray tag must not stop updates.
     let newest = releases
         .into_iter()
-        .filter(|release| !release.draft)
-        .filter_map(|release| {
-            let version = Version::parse(&release.tag_name)?;
-            // GitHub's flag and the tag agree for releases the workflow publishes; a stable tag
-            // marked as a prerelease is not trusted as stable.
-            let consistent = !release.prerelease || version.prerelease.is_some();
-            (consistent && channel.accepts(&version)).then_some((version, release))
-        })
+        .filter_map(|release| Some((offered_version(&release, channel)?, release)))
         .max_by(|(a, _), (b, _)| a.cmp(b));
     match newest {
-        Some((latest, release)) if latest > running => UpdateOutcome::Available(offer(release)),
+        Some((latest, release)) if latest > *running => UpdateOutcome::Available(offer(release)),
         _ => UpdateOutcome::UpToDate,
     }
 }
@@ -254,7 +298,7 @@ fn offer(release: ReleaseDto) -> Release {
             .html_url
             .filter(|url| url.starts_with("https://github.com/"))
             .unwrap_or_else(|| RELEASES_URL.to_owned()),
-        asset: select_asset(assets, platform_suffix()),
+        asset: select_asset(assets, &release.tag_name, platform_suffix()),
         manual_only,
         tag: release.tag_name,
     }
@@ -279,40 +323,74 @@ enum Kind {
 }
 
 impl Version {
+    /// SemVer 2.0 with one optional `v`: three numbers without leading zeros, then an optional
+    /// `-prerelease` and `+build`. Anything looser is not a tag the release tooling creates.
     fn parse(text: &str) -> Option<Self> {
-        let text = text.trim().trim_start_matches(['v', 'V']);
-        let text = text.split('+').next()?;
+        let text = text.trim();
+        let text = text.strip_prefix(['v', 'V']).unwrap_or(text);
+        let (text, build) = match text.split_once('+') {
+            Some((text, build)) => (text, Some(build)),
+            None => (text, None),
+        };
+        if build.is_some_and(|build| !build.split('.').all(is_identifier)) {
+            return None;
+        }
         let (core, prerelease) = match text.split_once('-') {
-            Some((core, pre)) => (core, Some(pre.to_owned())),
+            Some((core, pre)) => (core, Some(pre)),
             None => (text, None),
         };
         let mut parts = core.split('.');
         let mut numbers = [0_u64; 3];
         for slot in &mut numbers {
-            *slot = parts.next()?.parse().ok()?;
+            *slot = parse_number(parts.next()?)?;
         }
-        parts.next().is_none().then_some(Self {
+        if parts.next().is_some() {
+            return None;
+        }
+        if let Some(pre) = prerelease {
+            let valid = pre.split('.').all(|part| {
+                is_identifier(part) && (!is_digits(part) || parse_number(part).is_some())
+            });
+            if !valid {
+                return None;
+            }
+        }
+        Some(Self {
             core: numbers,
-            prerelease,
+            prerelease: prerelease.map(str::to_owned),
         })
     }
 
-    /// Named by the letters that start the prerelease, so `rc.1`, `rc1` and `RC.1` are all
-    /// release candidates.
+    /// A release candidate is exactly `rc.N` (the form `tools/release.sh` writes); `rc1`, `RC.1`
+    /// and everything else after the hyphen are "other", which no channel offers.
     fn kind(&self) -> Kind {
         let Some(pre) = &self.prerelease else {
             return Kind::Stable;
         };
-        let name: String = pre
-            .chars()
-            .take_while(char::is_ascii_alphabetic)
-            .collect::<String>()
-            .to_ascii_lowercase();
-        match name.as_str() {
-            "rc" => Kind::ReleaseCandidate,
+        match pre.strip_prefix("rc.") {
+            Some(number) if is_digits(number) => Kind::ReleaseCandidate,
             _ => Kind::Other,
         }
     }
+}
+
+fn is_digits(text: &str) -> bool {
+    !text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+/// A SemVer identifier: non-empty ASCII letters, digits and hyphens.
+fn is_identifier(text: &str) -> bool {
+    !text.is_empty()
+        && text
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+}
+
+/// Digits only, no leading zero (`0` itself is fine), and small enough for a `u64`.
+fn parse_number(text: &str) -> Option<u64> {
+    (is_digits(text) && (text == "0" || !text.starts_with('0')))
+        .then(|| text.parse().ok())
+        .flatten()
 }
 
 impl PartialOrd for Version {
@@ -425,6 +503,37 @@ mod tests {
         assert!(Version::parse("1.2.3.4").is_none());
     }
 
+    /// The client reads remote repository state, so it shares the contract of `tools/release.sh`.
+    #[test]
+    fn versions_must_be_strict_semver() {
+        for tag in [
+            "vv1.0.0",
+            "01.0.0",
+            "1.00.0",
+            "1.0.0-01",
+            "+1.0.0",
+            "1.0.0-",
+            "1.0.0-rc..1",
+            "1.0.0-rc.1+",
+            "1.0.0+a..b",
+            "1.0.0-rc_1",
+            "1.-1.0",
+            "99999999999999999999.0.0",
+        ] {
+            assert!(Version::parse(tag).is_none(), "{tag}");
+        }
+        for tag in [
+            "v1.0.0",
+            "V1.0.0",
+            "0.0.0",
+            "1.0.0-rc.1",
+            "1.0.0-0.3.7",
+            "1.0.0+20130313",
+        ] {
+            assert!(Version::parse(tag).is_some(), "{tag}");
+        }
+    }
+
     #[test]
     fn prereleases_follow_semver_precedence() {
         let v = |text| Version::parse(text).unwrap();
@@ -442,10 +551,20 @@ mod tests {
     #[test]
     fn a_prereleases_channel_comes_from_its_name() {
         assert_eq!(Channel::of_version("0.5.1"), Channel::Stable);
-        for tag in ["0.6.0-rc.1", "v0.6.0-rc1", "0.6.0-RC.2"] {
+        for tag in ["0.6.0-rc.1", "v0.6.0-rc.12"] {
             assert_eq!(Channel::of_version(tag), Channel::ReleaseCandidate, "{tag}");
         }
-        for tag in ["0.6.0-beta.1", "0.6.0-nightly", "0.6.0-1", "garbage"] {
+        // Only the dotted `rc.N` that `tools/release.sh` writes is a release candidate.
+        for tag in [
+            "0.6.0-beta.1",
+            "0.6.0-nightly",
+            "0.6.0-1",
+            "garbage",
+            "v0.6.0-rc1",
+            "0.6.0-RC.2",
+            "0.6.0-rc.",
+            "0.6.0-rc.1.2",
+        ] {
             assert_eq!(Channel::of_version(tag), Channel::Stable, "{tag}");
         }
         for channel in Channel::ALL {
@@ -562,6 +681,113 @@ mod tests {
         assert_eq!(available(one(body, "0.1.0")).url, RELEASES_URL);
     }
 
+    /// A page source serving `all` in pages of `PAGE_SIZE`, counting how many pages were read.
+    fn paged(
+        all: Vec<String>,
+        reads: &std::cell::Cell<usize>,
+    ) -> impl Fn(usize) -> Result<String, http::Error> + '_ {
+        move |page| {
+            reads.set(reads.get() + 1);
+            let slice = all.chunks(PAGE_SIZE).nth(page - 1).unwrap_or_default();
+            Ok(list(slice))
+        }
+    }
+
+    fn candidates(count: usize) -> Vec<String> {
+        (1..=count)
+            .rev()
+            .map(|number| reply(&format!("v0.9.0-rc.{number}")))
+            .collect()
+    }
+
+    #[test]
+    fn a_stable_release_behind_a_run_of_candidates_is_found_on_a_later_page() {
+        let mut all = candidates(31);
+        all.push(reply("v0.5.2"));
+        let reads = std::cell::Cell::new(0);
+        let outcome = check_pages("0.5.1", Channel::Stable, paged(all, &reads));
+        assert_eq!(available(outcome).version, "0.5.2");
+        assert_eq!(reads.get(), 2);
+    }
+
+    #[test]
+    fn paging_stops_once_the_running_version_is_reached() {
+        let mut all = vec![reply("v0.5.2")];
+        all.extend(candidates(40));
+        let reads = std::cell::Cell::new(0);
+        let outcome = check_pages("0.5.2", Channel::Stable, paged(all, &reads));
+        assert_eq!(outcome, UpdateOutcome::UpToDate);
+        assert_eq!(reads.get(), 1);
+    }
+
+    #[test]
+    fn paging_is_bounded() {
+        let reads = std::cell::Cell::new(0);
+        let outcome = check_pages("0.5.1", Channel::Stable, paged(candidates(200), &reads));
+        assert_eq!(outcome, UpdateOutcome::UpToDate);
+        assert_eq!(reads.get(), MAX_PAGES);
+    }
+
+    #[test]
+    fn a_failing_later_page_fails_the_check_but_a_missing_one_ends_the_list() {
+        let first = list(&candidates(PAGE_SIZE));
+        let serve = |second: http::Error| {
+            let first = first.clone();
+            move |page: usize| match page {
+                1 => Ok(first.clone()),
+                _ => Err(match &second {
+                    http::Error::Status(code) => http::Error::Status(*code),
+                    other => http::Error::Network(other.to_string()),
+                }),
+            }
+        };
+        let rate_limited = check_pages("0.5.1", Channel::Stable, serve(http::Error::Status(429)));
+        assert!(matches!(rate_limited, UpdateOutcome::Failed(_)));
+        let ended = check_pages("0.5.1", Channel::Stable, serve(http::Error::Status(404)));
+        assert_eq!(ended, UpdateOutcome::UpToDate);
+    }
+
+    /// `release.yml` publishes exactly the names the updater looks for.
+    #[test]
+    fn the_workflow_publishes_every_asset_the_updater_picks() {
+        let workflow = include_str!("../../.github/workflows/release.yml");
+        for suffix in [
+            "macos-arm64.zip",
+            "macos-x64.zip",
+            "windows-x64.zip",
+            "windows-arm64.zip",
+            "linux-x64.tar.gz",
+            "linux-arm64.tar.gz",
+        ] {
+            assert!(
+                workflow.contains(suffix),
+                "release.yml does not list {suffix}"
+            );
+        }
+    }
+
+    #[test]
+    fn only_the_exactly_named_asset_is_offered() {
+        let digest = format!("sha256:{}", "ab".repeat(32));
+        let suffix = Some("-macos-arm64.zip");
+        for name in [
+            "old-macos-arm64.zip",
+            "DegenView-v0.9.9-macos-arm64.zip",
+            "DegenView-v1.0.0-extra-macos-arm64.zip",
+            "DegenView-1.0.0-macos-arm64.zip",
+        ] {
+            let assets = vec![asset(name, "v1.0.0/a", 5, Some(&digest))];
+            assert!(select_asset(assets, "v1.0.0", suffix).is_none(), "{name}");
+        }
+        let exact = vec![asset(
+            "DegenView-v1.0.0-macos-arm64.zip",
+            "v1.0.0/a",
+            5,
+            Some(&digest),
+        )];
+        assert!(select_asset(exact, "v1.0.0", suffix).is_some());
+    }
+
     fn asset(name: &str, url_tail: &str, size: u64, digest: Option<&str>) -> AssetDto {
         AssetDto {
             name: name.to_owned(),
@@ -588,7 +814,7 @@ mod tests {
                 Some(&digest),
             ),
         ];
-        let picked = select_asset(assets, Some("-macos-arm64.zip")).unwrap();
+        let picked = select_asset(assets, "v1.0.0", Some("-macos-arm64.zip")).unwrap();
         assert_eq!(picked.size, 20);
         assert_eq!(picked.sha256, "ab".repeat(32));
         assert!(picked.url.ends_with("v1.0.0/arm"));
@@ -608,7 +834,7 @@ mod tests {
                 .map(|i| asset(files[i].0, files[i].1, files[i].2, Some(&digest)))
                 .into_iter()
                 .collect();
-            let picked = select_asset(assets, Some("-windows-x64.zip")).unwrap();
+            let picked = select_asset(assets, "v1.0.0", Some("-windows-x64.zip")).unwrap();
             assert_eq!(picked.name, "DegenView-v1.0.0-windows-x64.zip");
         }
         let only_setup = vec![asset(
@@ -617,7 +843,7 @@ mod tests {
             30,
             Some(&digest),
         )];
-        assert!(select_asset(only_setup, Some("-windows-x64.zip")).is_none());
+        assert!(select_asset(only_setup, "v1.0.0", Some("-windows-x64.zip")).is_none());
     }
 
     /// Windows ships an x64 and an ARM64 zip, each next to its installer: a build takes the zip for its
@@ -644,7 +870,7 @@ mod tests {
                     .iter()
                     .map(|name| asset(name, &format!("v1.0.0/{name}"), 40, Some(&digest)))
                     .collect();
-                let picked = select_asset(assets, Some(suffix)).unwrap();
+                let picked = select_asset(assets, "v1.0.0", Some(suffix)).unwrap();
                 assert_eq!(picked.name, expected);
             }
         }
@@ -665,7 +891,7 @@ mod tests {
                     .map(|i| asset(&files[i].0, files[i].1, 40, Some(&digest)))
                     .into_iter()
                     .collect();
-                let picked = select_asset(assets, Some(suffix)).unwrap();
+                let picked = select_asset(assets, "v1.0.0", Some(suffix)).unwrap();
                 assert!(picked.name.ends_with(".tar.gz"), "{}", picked.name);
             }
             let only_flatpak = vec![asset(
@@ -674,7 +900,7 @@ mod tests {
                 40,
                 Some(&digest),
             )];
-            assert!(select_asset(only_flatpak, Some(suffix)).is_none());
+            assert!(select_asset(only_flatpak, "v1.0.0", Some(suffix)).is_none());
         }
     }
 
@@ -692,7 +918,7 @@ mod tests {
                 .map(|i| asset(files[i].0, files[i].1, files[i].2, Some(&digest)))
                 .into_iter()
                 .collect();
-            let picked = select_asset(assets, Some("-macos-arm64.zip")).unwrap();
+            let picked = select_asset(assets, "v1.0.0", Some("-macos-arm64.zip")).unwrap();
             assert_eq!(picked.name, "DegenView-v1.0.0-macos-arm64.zip");
         }
         let only_image = vec![asset(
@@ -701,13 +927,13 @@ mod tests {
             30,
             Some(&digest),
         )];
-        assert!(select_asset(only_image, Some("-macos-arm64.zip")).is_none());
+        assert!(select_asset(only_image, "v1.0.0", Some("-macos-arm64.zip")).is_none());
     }
 
     #[test]
     fn assets_without_a_trustworthy_digest_or_url_are_not_installable() {
         let digest = format!("sha256:{}", "ab".repeat(32));
-        let pick = |asset| select_asset(vec![asset], Some("-macos-arm64.zip"));
+        let pick = |asset| select_asset(vec![asset], "v1.0.0", Some("-macos-arm64.zip"));
         let name = "DegenView-v1.0.0-macos-arm64.zip";
         assert!(pick(asset(name, "v1.0.0/a", 5, None)).is_none());
         assert!(pick(asset(name, "v1.0.0/a", 5, Some("sha256:abc"))).is_none());
@@ -717,7 +943,7 @@ mod tests {
         let mut foreign = asset(name, "v1.0.0/a", 5, Some(&digest));
         foreign.browser_download_url = "https://evil.example/a.zip".to_owned();
         assert!(pick(foreign).is_none());
-        assert!(select_asset(vec![asset(name, "x", 5, Some(&digest))], None).is_none());
+        assert!(select_asset(vec![asset(name, "x", 5, Some(&digest))], "v1.0.0", None).is_none());
     }
 
     #[test]

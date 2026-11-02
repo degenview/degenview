@@ -407,6 +407,27 @@ jobs:
           } > notes.md
           cat notes.md
 
+      # An immutable release cannot be amended, so check the whole set while it is still only files:
+      # exactly these twelve names (the updater picks its zip by exact name, see
+      # `update_check::select_asset`), nothing missing, nothing stray, nothing empty.
+      - name: Check the asset set
+        run: |
+          expected=$(for suffix in \
+            macos-arm64.zip macos-x64.zip macos-arm64.dmg macos-x64.dmg \
+            windows-x64.zip windows-arm64.zip windows-x64-setup.exe windows-arm64-setup.exe \
+            linux-x64.tar.gz linux-arm64.tar.gz linux-x64.flatpak linux-arm64.flatpak; do
+            echo "DegenView-${RELEASE_TAG}-${suffix}"
+          done | sort)
+          actual=$(ls dist | sort)
+          if [ "$expected" != "$actual" ]; then
+            echo "::error::dist/ does not hold exactly the expected assets."
+            diff <(echo "$expected") <(echo "$actual") || true
+            exit 1
+          fi
+          for asset in dist/*; do
+            [ -s "$asset" ] || { echo "::error::$asset is empty."; exit 1; }
+          done
+
       # The app only installs a release that GitHub published as immutable, so every asset must be
       # attached before it is published: `gh release create` makes a draft, uploads, then
       # publishes. Never `gh release upload` to a published release, it is locked.
@@ -430,9 +451,11 @@ jobs:
             --verify-tag \
             $flags
 
-      # Fail loudly, before any user's updater does, if the release is not immutable or an asset
-      # does not match the release attestation. GitHub creates the attestation asynchronously, so
-      # right after publishing it can be missing ("no attestations for tag"); retry before failing.
+      # Fail loudly if the release is not immutable or an asset does not match the release
+      # attestation. This can only run after publishing (a draft has no attestation), so it is an
+      # alarm, not a gate: a client can see the release while this runs. GitHub creates the
+      # attestation asynchronously, so right after publishing it can be missing ("no attestations
+      # for tag"); retry before failing.
       - name: Verify the published release
         env:
           GH_TOKEN: ${{ github.token }}

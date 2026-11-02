@@ -22,9 +22,12 @@ a promoted RC binary.
   `update.channel` setting (never in `sync::policy`). **Stable** offers tags with no prerelease
   part. **Release Candidate** offers those plus `rc` tags, so it moves on to `0.6.0` once it ships.
   With nothing saved, a build starts on its own channel (an RC keeps getting RCs).
-- `update_check::check` reads `releases?per_page=30` (the list includes prereleases;
-  `/releases/latest` does not), skips drafts and tags no channel accepts or it cannot parse, and
-  takes the highest version. It never offers anything not newer than the running build, so
+- `update_check::check` reads `releases?per_page=30`, up to three pages (the list includes
+  prereleases; `/releases/latest` does not, and the list is ordered by creation, so a run of release
+  candidates can push the newest stable past page one). It stops after the first page that holds a
+  release the channel accepts that is not newer than the running build, skips drafts and tags no
+  channel accepts or it cannot parse, and takes the highest version. Tags are parsed as strict
+  SemVer; only the dotted `rc.N` is a release candidate (`rc1` and `RC.1` are offered nowhere). It never offers anything not newer than the running build, so
   switching channel cannot downgrade. Every trust rule below applies to RCs unchanged.
 - Add a channel by adding a `Channel` variant, its `accepts` rule and a label; the version
   classification (`Kind`) already knows `rc`, everything else is "other" and offered nowhere.
@@ -82,12 +85,18 @@ version. Re-run a failed tagged build through the Release workflow dispatch.
   a tagger email in `tag_signature::MAINTAINER_EMAILS`. Rotate keys on the maintainer account; to
   change email, first release a version trusting both. Failed verification, including no GitHub
   access, offers **View Release** instead; the workflow rejects the same failure before building.
+- Nothing but GitHub binds the Windows and Linux asset bytes to the signed tag (macOS has the
+  Developer ID check on top). Immutability locks a published release, but a token that can create
+  releases could publish its own assets for a signed tag that has no release yet: the minutes the
+  workflow takes to build, or after a failed run (the tag stays). A signed manifest or Authenticode
+  is the follow-up; until then do not leave a signed tag without its release.
 - The release must be immutable and authored by `github-actions[bot]` or an allowed maintainer.
   Keep Immutable releases enabled. Assets must be uploaded before publication; never upload to an
   immutable release afterward. Old mutable releases are manual-download only.
 - Keep macOS suffixes `-macos-arm64.zip`/`-macos-x64.zip` and the `DegenView.app` layout, and the
   Windows suffix `-windows-x64.zip` with `degenview.exe` at the zip root (see Windows below). The updater
-  checks GitHub's digest. `gh release create "$TAG" dist/*` handles draft, upload, and publish; the
+  takes only the asset named exactly `DegenView-<tag><suffix>` and checks GitHub's digest. The
+  release job checks that `dist/` holds exactly the twelve expected names before publishing. `gh release create "$TAG" dist/*` handles draft, upload, and publish; the
   workflow verifies the release and assets last.
 - The Release workflow imports a Developer ID Application certificate into a throwaway keychain,
   signs through `tools/bundle.sh`, notarizes with `notarytool` (App Store Connect API key), staples
@@ -335,8 +344,14 @@ be deployed before a release that changes records. Details: [iCloud Sync](../icl
 
 - `UpdateHost` is the sole check/install/restart state. The app owns it and exposes a cloned
   `UpdateView` to windows and Settings; no other code calls check/prepare directly. State is
-  memory-only. Check about 15 seconds after launch, every six hours, or 30 minutes after failure.
-  Do not check while installing/awaiting restart or discard a known update after a failed check.
+  memory-only. Check about 15 seconds after launch, every six hours, or 30 minutes after the latest
+  attempt failed (also while a known update stays on offer). Do not check while installing or
+  awaiting restart, and never discard a known update after a failed check. A failed install does
+  not stop the schedule: its error belongs to that release, a scheduled check keeps it while the
+  same release is still offered and drops it for a different one, and only a person's check or a
+  channel switch clears it directly. Where the running copy can be replaced (`install_target`,
+  which runs `codesign` on macOS) is looked up on the update worker by the first tick, not while
+  the app starts; until it answers an available update says so and is not installable.
 - The tab-bar indicator and About card render `UpdateView::Phase`; UI never reads host internals.
   The indicator reserves strip space. Progress is 0–5% signature, 5–90% byte download, and
   90–100% unpack. Workers repaint only viewports that drew the state.
