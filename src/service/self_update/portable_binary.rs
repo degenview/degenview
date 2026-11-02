@@ -20,7 +20,7 @@
 // `forwarded_env` is only called on Windows (Linux inherits its environment); tests use it everywhere.
 #[cfg_attr(not(windows), allow(unused_imports))]
 use super::forwarded_env;
-use super::{Progress, STAGING_NAME, Stage, is_writable, verify};
+use super::{Progress, STAGING_NAME, Stage, is_writable, keep_only_copy, swap_paths, verify};
 use crate::service::update_check::{Release, ReleaseAsset};
 use crate::service::{tag_signature, update_archive, update_download};
 use std::ffi::OsString;
@@ -119,6 +119,7 @@ pub fn prepare(
     tag_signature::verify_release_tag(&release.tag).map_err(|error| error.to_string())?;
     let parent = exe.parent().ok_or("The app has no parent folder.")?;
     let staging = parent.join(STAGING_NAME);
+    keep_only_copy(&staging, exe)?;
     let _ = std::fs::remove_dir_all(&staging);
     std::fs::create_dir(&staging)
         .map_err(|error| format!("Could not create {STAGING_NAME}: {error}"))?;
@@ -193,13 +194,9 @@ fn swap(prepared: &Prepared) -> Result<(), String> {
     let old = prepared.staging.join("old").join(name);
     std::fs::create_dir_all(old.parent().expect("old has a parent"))
         .map_err(|error| error.to_string())?;
-    std::fs::rename(&prepared.exe, &old)
-        .map_err(|error| format!("Could not move the current app aside: {error}"))?;
-    if let Err(error) = std::fs::rename(&prepared.new_exe, &prepared.exe) {
-        let _ = std::fs::rename(&old, &prepared.exe);
-        return Err(format!("Could not install the new app: {error}"));
-    }
-    Ok(())
+    swap_paths(&prepared.exe, &prepared.new_exe, &old, &|from, to| {
+        std::fs::rename(from, to)
+    })
 }
 
 /// Environment the relaunched app gets (names compare case-insensitively on Windows). It is
@@ -490,23 +487,28 @@ mod tests {
         let _ = fs::remove_dir_all(root);
     }
 
-    /// A running binary can be swapped out on Linux as well: the old process keeps its open inode.
+    /// A binary that is in use can be swapped out on Unix: the swap only renames, and whoever has the
+    /// file open (a running process holds its executable open and mapped) keeps the old inode.
+    /// A file held open stands in for the process. Running a copied system binary instead is not
+    /// stable: macOS kills a copy of one of its own binaries, and Linux refuses to execute a file
+    /// another test thread's fork still holds open for writing ("Text file busy").
     #[cfg(unix)]
     #[test]
-    fn a_running_binary_can_be_swapped_out() {
-        let root = scratch("bin-running");
-        let prepared = prepared_in(&root, "", "new");
-        fs::copy("/bin/sleep", &prepared.exe).unwrap();
-        let mut child =
-            retry_busy(|| std::process::Command::new(&prepared.exe).arg("30").spawn()).unwrap();
-        let swapped = swap(&prepared);
-        let still_running = child.try_wait().unwrap().is_none();
-        let _ = child.kill();
-        let _ = child.wait();
-        swapped.unwrap();
-        assert!(still_running, "the old process must outlive the swap");
+    fn a_binary_in_use_can_be_swapped_out() {
+        use std::io::Read;
+
+        let root = scratch("bin-in-use");
+        let prepared = prepared_in(&root, "old", "new");
+        let mut in_use = fs::File::open(&prepared.exe).unwrap();
+        swap(&prepared).unwrap();
+        let mut seen = String::new();
+        in_use.read_to_string(&mut seen).unwrap();
+        assert_eq!(seen, "old", "the holder keeps the old file");
         assert_eq!(fs::read_to_string(&prepared.exe).unwrap(), "new");
-        assert!(prepared.staging.join("old").join("degenview.exe").is_file());
+        assert_eq!(
+            fs::read_to_string(prepared.staging.join("old").join("degenview.exe")).unwrap(),
+            "old"
+        );
         let _ = fs::remove_dir_all(root);
     }
 

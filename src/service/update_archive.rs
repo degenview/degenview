@@ -123,8 +123,11 @@ fn run_bounded(
             Some(status) => return Err(format!("unpacking failed ({status})")),
             None => {}
         }
-        if directory_bytes(watch) > max_bytes {
-            return fail(&mut child, "it unpacks to more data than an update should");
+        match directory_bytes(watch) {
+            Ok(bytes) if bytes <= max_bytes => {}
+            Ok(_) => return fail(&mut child, "it unpacks to more data than an update should"),
+            // A size that cannot be measured cannot be bounded: stop rather than let it grow.
+            Err(error) => return fail(&mut child, &format!("could not measure it ({error})")),
         }
         if started.elapsed() > timeout {
             return fail(&mut child, "unpacking took too long");
@@ -133,19 +136,31 @@ fn run_bounded(
     }
 }
 
-/// Total size of the regular files under `dir` (symlinks are not followed).
-fn directory_bytes(dir: &Path) -> u64 {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return 0;
+/// Total size of the regular files under `dir` (symlinks are not followed). A folder that does not
+/// exist yet counts as empty (the extractor has not made it); any other read error is reported, so
+/// a tree that cannot be fully measured is never taken to be small.
+fn directory_bytes(dir: &Path) -> std::io::Result<u64> {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(0),
+        Err(error) => return Err(error),
     };
-    entries
-        .flatten()
-        .map(|entry| match entry.metadata() {
-            Ok(meta) if meta.is_dir() => directory_bytes(&entry.path()),
-            Ok(meta) if meta.is_file() => meta.len(),
-            _ => 0,
-        })
-        .sum()
+    let mut total = 0_u64;
+    for entry in entries {
+        let entry = entry?;
+        let meta = match entry.metadata() {
+            Ok(meta) => meta,
+            // The extractor renamed or removed a temporary file between listing and reading.
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(error),
+        };
+        if meta.is_dir() {
+            total = total.saturating_add(directory_bytes(&entry.path())?);
+        } else if meta.is_file() {
+            total = total.saturating_add(meta.len());
+        }
+    }
+    Ok(total)
 }
 
 // MARK: Windows executable
@@ -165,6 +180,10 @@ pub fn extract_exe(bytes: &[u8], dest_dir: &Path) -> Result<std::path::PathBuf, 
     let failed = |error: &dyn std::fmt::Display| format!("Could not unpack the download: {error}");
     let mut archive =
         zip::ZipArchive::new(std::io::Cursor::new(bytes)).map_err(|error| failed(&error))?;
+    // Two entries of one name would leave it to the reader which one is "the" executable.
+    if archive.has_duplicate_names() {
+        return Err("The download contains the same file twice.".to_owned());
+    }
     let mut entry = archive
         .by_name(EXE_NAME)
         .map_err(|_| "The download is not a DegenView app.".to_owned())?;
@@ -362,8 +381,8 @@ pub fn check_bundle(app: &Path) -> Result<(), String> {
 
 fn inspect(root: &Path, dir: &Path, expected: &[std::path::PathBuf]) -> Result<(), String> {
     let entries = std::fs::read_dir(dir).map_err(|error| error.to_string())?;
-    for entry in entries.flatten() {
-        let path = entry.path();
+    for entry in entries {
+        let path = entry.map_err(|error| error.to_string())?.path();
         let meta = std::fs::symlink_metadata(&path).map_err(|error| error.to_string())?;
         let relative = path
             .strip_prefix(root)
@@ -677,6 +696,52 @@ mod tests {
             assert_eq!(fs::read(&path).unwrap(), exe);
             assert_eq!(fs::read_dir(&dest).unwrap().count(), 1);
             assert!(check_exe(&path).is_ok());
+        }
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_zip_with_the_executable_twice_is_refused() {
+        let root = scratch("exe-twice");
+        let exe = fake_pe(expected_machine());
+        // The writer refuses two entries of one name, so write a same-length twin and rename it
+        // in both the local header and the central directory.
+        let twin = EXE_NAME.replace(".exe", ".exf");
+        let zip = make_zip(
+            &[(EXE_NAME, &exe), (&twin, &exe)],
+            zip::CompressionMethod::Stored,
+        );
+        let mut doubled = zip.clone();
+        let (from, to) = (twin.as_bytes(), EXE_NAME.as_bytes());
+        let mut at = 0;
+        while let Some(found) = doubled[at..].windows(from.len()).position(|w| w == from) {
+            doubled[at + found..at + found + from.len()].copy_from_slice(to);
+            at += found + from.len();
+        }
+        assert!(extract_exe(&zip, &root.join("fine")).is_ok());
+        let error = extract_exe(&doubled, &root.join("out")).unwrap_err();
+        assert!(error.contains("twice"), "{error}");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn an_unreadable_tree_is_not_measured_as_small() {
+        let root = scratch("measure");
+        // Not made yet: empty.
+        assert_eq!(directory_bytes(&root.join("later")).unwrap(), 0);
+        let sub = root.join("a");
+        fs::create_dir_all(&sub).unwrap();
+        fs::write(sub.join("file"), [0_u8; 100]).unwrap();
+        fs::write(root.join("top"), [0_u8; 50]).unwrap();
+        assert_eq!(directory_bytes(&root).unwrap(), 150);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&sub, fs::Permissions::from_mode(0o000)).unwrap();
+            let readable = fs::read_dir(&sub).is_ok(); // running as root ignores the mode
+            let result = directory_bytes(&root);
+            fs::set_permissions(&sub, fs::Permissions::from_mode(0o755)).unwrap();
+            assert!(readable || result.is_err(), "{result:?}");
         }
         let _ = fs::remove_dir_all(root);
     }

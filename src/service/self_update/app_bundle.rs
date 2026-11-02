@@ -1,7 +1,9 @@
 //! The macOS (and, for tests, Unix) strategy: replace the running `.app` bundle.
 //!
 //! Shared types and checks live in the parent module.
-use super::{Progress, STAGING_NAME, Stage, forwarded_env, is_writable, verify};
+use super::{
+    Progress, STAGING_NAME, Stage, forwarded_env, is_writable, keep_only_copy, swap_paths, verify,
+};
 use crate::service::update_check::{Release, ReleaseAsset};
 use crate::service::{code_signature, tag_signature, update_archive, update_download};
 use std::ffi::OsString;
@@ -101,6 +103,7 @@ pub fn prepare(
     let team_id = code_signature::team_id(app)?;
     let parent = app.parent().ok_or("The app has no parent folder.")?;
     let staging = parent.join(STAGING_NAME);
+    keep_only_copy(&staging, app)?;
     let _ = std::fs::remove_dir_all(&staging);
     std::fs::create_dir(&staging)
         .map_err(|error| format!("Could not create {STAGING_NAME}: {error}"))?;
@@ -166,13 +169,9 @@ fn swap(prepared: &Prepared) -> Result<(), String> {
     let old = prepared.staging.join("old").join(APP_NAME);
     std::fs::create_dir_all(old.parent().expect("old has a parent"))
         .map_err(|error| error.to_string())?;
-    std::fs::rename(&prepared.app, &old)
-        .map_err(|error| format!("Could not move the current app aside: {error}"))?;
-    if let Err(error) = std::fs::rename(&prepared.new_app, &prepared.app) {
-        let _ = std::fs::rename(&old, &prepared.app);
-        return Err(format!("Could not install the new app: {error}"));
-    }
-    Ok(())
+    swap_paths(&prepared.app, &prepared.new_app, &old, &|from, to| {
+        std::fs::rename(from, to)
+    })
 }
 
 /// Environment the relaunched app gets: `open` otherwise starts it clean, which would drop a dev
