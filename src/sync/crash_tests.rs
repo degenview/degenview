@@ -356,3 +356,130 @@ fn a_crash_after_the_cloud_accepted_a_paper_account_does_not_duplicate_it() {
         1
     );
 }
+
+fn engine_state(mac: &Mac) -> Option<Vec<u8>> {
+    mac.store
+        .lock()
+        .unwrap()
+        .sync_state()
+        .unwrap()
+        .unwrap()
+        .engine_state
+}
+
+fn last_error(mac: &Mac) -> Option<String> {
+    mac.core.status().last_error
+}
+
+#[test]
+fn a_checkpoint_that_cannot_be_saved_is_kept_and_saved_when_the_disk_recovers() {
+    let (_cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    settle(&mut a, &mut b);
+    let before = engine_state(&b);
+
+    b.store
+        .lock()
+        .unwrap()
+        .execute_raw(
+            "CREATE TRIGGER no_checkpoint BEFORE UPDATE OF engine_state ON sync_state
+             BEGIN SELECT RAISE(ABORT, 'disk full'); END",
+        )
+        .unwrap();
+    put(&a, &[watchlist(10, "New", &[(1, "AAA")], false)]);
+    settle(&mut a, &mut b);
+    assert_eq!(rows(&b, "watchlist").len(), 1, "the data itself arrived");
+    assert_eq!(engine_state(&b), before, "the checkpoint cannot have moved");
+    let message = last_error(&b).expect("the failure is reported");
+    assert!(message.contains("save the sync position"), "{message}");
+
+    b.store
+        .lock()
+        .unwrap()
+        .execute_raw("DROP TRIGGER no_checkpoint")
+        .unwrap();
+    settle(&mut a, &mut b);
+    assert_ne!(engine_state(&b), before, "saved once the disk works again");
+    assert_eq!(last_error(&b), None);
+}
+
+#[test]
+fn fetched_data_that_cannot_be_set_aside_holds_the_checkpoint_until_it_arrives_again() {
+    let (cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    settle(&mut a, &mut b);
+    let before = engine_state(&b);
+
+    // A record this version cannot read is kept in the inbox, and the inbox cannot be written.
+    b.store
+        .lock()
+        .unwrap()
+        .execute_raw(
+            "CREATE TRIGGER no_inbox BEFORE INSERT ON sync_inbox
+             BEGIN SELECT RAISE(ABORT, 'disk full'); END",
+        )
+        .unwrap();
+    cloud.put_from_elsewhere(
+        super::core_tests::raw("hologram.3", &serde_json::json!({"x": 1}), 1, 1, "Z"),
+        "Z",
+    );
+    put(&a, &[watchlist(10, "Other", &[(1, "AAA")], false)]);
+    settle(&mut a, &mut b);
+    assert_eq!(
+        engine_state(&b),
+        before,
+        "moved past a record that was never kept"
+    );
+    assert!(last_error(&b).is_some_and(|m| m.contains("keep what iCloud sent")));
+
+    // The next launch, with a working disk, gets the record again and keeps it.
+    b.store
+        .lock()
+        .unwrap()
+        .execute_raw("DROP TRIGGER no_inbox")
+        .unwrap();
+    restart(&mut b, &cloud, "Mac B");
+    settle(&mut a, &mut b);
+    assert!(
+        b.store
+            .lock()
+            .unwrap()
+            .inbox()
+            .unwrap()
+            .iter()
+            .any(|r| r.record_name == "hologram.3")
+    );
+    assert_ne!(engine_state(&b), before);
+}
+
+#[test]
+fn a_queue_that_cannot_be_read_is_an_error_not_an_empty_queue() {
+    let (_cloud, mut a, _b) = pair();
+    a.core.start();
+    a.run();
+    a.store
+        .lock()
+        .unwrap()
+        .execute_raw("ALTER TABLE sync_outbox RENAME TO sync_outbox_away")
+        .unwrap();
+    a.core.tick();
+    let message = last_error(&a).expect("reported");
+    assert!(
+        message.contains("read the changes waiting to upload"),
+        "{message}"
+    );
+    assert_eq!(
+        a.core.status().phase,
+        Phase::Error(super::transport::ErrorKind::Storage)
+    );
+
+    a.store
+        .lock()
+        .unwrap()
+        .execute_raw("ALTER TABLE sync_outbox_away RENAME TO sync_outbox")
+        .unwrap();
+    a.core.tick();
+    assert_eq!(last_error(&a), None);
+}

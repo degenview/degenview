@@ -41,6 +41,14 @@ const MERGE_RETRY_MS: i64 = 5_000;
 /// Failed uploads in a row, with no recognised cause, after which the page says so.
 const UNEXPLAINED_FAILURES: u32 = 3;
 
+const KEEP_FETCHED: &str = "keep what iCloud sent";
+const SAVE_POSITION: &str = "save the sync position";
+const READ_QUEUE: &str = "read the changes waiting to upload";
+const SCAN_LOCAL: &str = "look for changes made on this Mac";
+
+/// A batch id that is never acknowledged; see `SyncCore::hold_checkpoint`.
+const CHECKPOINT_HELD: u64 = u64::MAX;
+
 /// Entries handed to the engine per stage command.
 const STAGE_BATCH: usize = 100;
 
@@ -156,6 +164,8 @@ pub struct SyncCore<T: SyncTransport> {
     fetch_completed: bool,
     initial_fetch_done: bool,
     last_error: Option<(ErrorKind, String)>,
+    /// Which operation `last_error` is about, when it is a database error.
+    store_error_what: Option<&'static str>,
     /// Sends in a row the engine could not carry out at all, and when the next may start.
     send_failures: i64,
     send_hold_until_ms: i64,
@@ -203,6 +213,7 @@ impl<T: SyncTransport> SyncCore<T> {
             fetch_completed: false,
             initial_fetch_done: false,
             last_error: None,
+            store_error_what: None,
             send_failures: 0,
             send_hold_until_ms: 0,
             failure_streak: 0,
@@ -352,17 +363,53 @@ impl<T: SyncTransport> SyncCore<T> {
     pub fn tick(&mut self) {
         if self.reconcile_needed && self.can_sync() {
             self.reconcile_needed = false;
-            let _ = self
+            let result = self
                 .store
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
                 .reconcile_stored();
+            match result {
+                Ok(_) => self.clear_store_error(SCAN_LOCAL),
+                Err(error) => {
+                    // Local changes made outside the write hook are not queued yet: look again.
+                    self.reconcile_needed = true;
+                    self.note_store_error(SCAN_LOCAL, &error);
+                }
+            }
         }
         self.pump();
     }
 
     pub fn take_effects(&mut self) -> Vec<Effect> {
         std::mem::take(&mut self.effects)
+    }
+
+    // MARK: Database errors
+
+    /// A database write or read this session needed failed. Say so (the status line shows it),
+    /// and carry on: the caller decides whether the work is retried or the checkpoint is held.
+    fn note_store_error(&mut self, what: &'static str, error: &rusqlite::Error) {
+        self.last_error = Some((ErrorKind::Storage, format!("Could not {what}: {error}")));
+        self.store_error_what = Some(what);
+    }
+
+    /// The operation that failed as `what` worked again. Only its own message goes: another
+    /// operation's failure, or an unrelated upload error, is still true.
+    fn clear_store_error(&mut self, what: &'static str) {
+        if self.store_error_what == Some(what)
+            && matches!(self.last_error, Some((ErrorKind::Storage, _)))
+        {
+            self.last_error = None;
+            self.store_error_what = None;
+        }
+    }
+
+    /// Fetched data could not be set aside durably. The checkpoint must not move past it, so a
+    /// batch id that is never acknowledged keeps `flush_state` closed until the session restarts
+    /// and iCloud sends it again.
+    fn hold_checkpoint(&mut self, error: &rusqlite::Error) {
+        self.unapplied.insert(CHECKPOINT_HELD);
+        self.note_store_error(KEEP_FETCHED, error);
     }
 
     // MARK: Gates
@@ -429,8 +476,18 @@ impl<T: SyncTransport> SyncCore<T> {
             .store
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .outbox_due(now)
-            .unwrap_or_default();
+            .outbox_due(now);
+        let due = match due {
+            Ok(due) => {
+                self.clear_store_error(READ_QUEUE);
+                due
+            }
+            Err(error) => {
+                // Not "nothing is due": the queue could not be read.
+                self.note_store_error(READ_QUEUE, &error);
+                return;
+            }
+        };
 
         let mut staged = Vec::new();
         for row in due {
@@ -549,11 +606,14 @@ impl<T: SyncTransport> SyncCore<T> {
     }
 
     fn block(&mut self, seq: i64, reason: &str) {
-        let _ = self
+        let result = self
             .store
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .set_outbox_state(seq, OutboxState::Blocked, Some(reason));
+        if let Err(error) = result {
+            self.note_store_error("mark a change as too large to upload", &error);
+        }
     }
 
     // MARK: Events
@@ -650,9 +710,12 @@ impl<T: SyncTransport> SyncCore<T> {
             }
             ZoneEvent::EncryptedDataReset => {
                 let store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
-                let _ = store.forget_cloud_state();
-                let _ = store.reconcile_stored();
+                let forgot = store.forget_cloud_state();
+                let reconciled = store.reconcile_stored();
                 drop(store);
+                for error in [forgot.err(), reconciled.err()].into_iter().flatten() {
+                    self.note_store_error("start over after iCloud reset its data", &error);
+                }
                 self.inflight.clear();
             }
         }
@@ -696,11 +759,14 @@ impl<T: SyncTransport> SyncCore<T> {
 
     /// Drops the checkpoint and fetches everything again.
     fn restart_from_scratch(&mut self) {
-        let _ = self
+        let saved = self
             .store
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .save_engine_state(None, None, self.now());
+        if let Err(error) = saved {
+            self.note_store_error("forget the old sync position", &error);
+        }
         self.pending_state = None;
         self.initial_fetch_done = false;
         self.fetch_completed = false;
@@ -763,8 +829,9 @@ impl<T: SyncTransport> SyncCore<T> {
         // until the user chooses how to combine iCloud's data with this Mac's.
         if !self.state().is_some_and(|s| s.initial_sync_done) {
             let store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
+            let mut failed = None;
             for record in &records {
-                let _ = store.put_inbox(
+                let kept = store.put_inbox(
                     &InboxRecord {
                         record_name: record.record.name.render(),
                         entity_type: record.record.name.kind.prefix().to_string(),
@@ -778,6 +845,13 @@ impl<T: SyncTransport> SyncCore<T> {
                     },
                     now,
                 );
+                if let Err(error) = kept {
+                    failed = Some(error);
+                }
+            }
+            drop(store);
+            if let Some(error) = failed {
+                self.hold_checkpoint(&error);
             }
             return;
         }
@@ -793,10 +867,9 @@ impl<T: SyncTransport> SyncCore<T> {
 
     /// Validates one fetched record. Anything not applied is kept in the inbox, never dropped.
     fn admit(&mut self, raw: RawRecord, now: i64) -> Option<RemoteRecord> {
-        let keep = |reason: &str, raw: &RawRecord, this: &Self| {
+        let keep = |reason: &str, raw: &RawRecord, this: &Self| -> rusqlite::Result<()> {
             let entity_type = raw.name.split('.').next().unwrap_or_default().to_string();
-            let _ = this
-                .store
+            this.store
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
                 .put_inbox(
@@ -812,22 +885,28 @@ impl<T: SyncTransport> SyncCore<T> {
                         modified_ms: raw.modified_ms,
                     },
                     now,
-                );
+                )
         };
         let (record, system_fields) = match raw.clone().into_record() {
             Ok(parsed) => parsed,
             Err(unknown) => {
-                keep(super::apply::UNKNOWN_TYPE, &unknown, self);
+                if let Err(error) = keep(super::apply::UNKNOWN_TYPE, &unknown, self) {
+                    self.hold_checkpoint(&error);
+                }
                 return None;
             }
         };
         match validate(&record) {
             Verdict::NewerSchema => {
-                keep(super::apply::NEWER_SCHEMA, &raw, self);
+                if let Err(error) = keep(super::apply::NEWER_SCHEMA, &raw, self) {
+                    self.hold_checkpoint(&error);
+                }
                 None
             }
             Verdict::Reject(_) => {
-                keep("invalid", &raw, self);
+                if let Err(error) = keep("invalid", &raw, self) {
+                    self.hold_checkpoint(&error);
+                }
                 None
             }
             Verdict::Accept(value) => {
@@ -908,11 +987,14 @@ impl<T: SyncTransport> SyncCore<T> {
     /// The host applied a remote batch locally.
     pub fn remote_applied(&mut self, batch_id: u64) {
         self.unapplied.remove(&batch_id);
-        let _ = self
+        let released = self
             .store
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .release_merged_edits();
+        if let Err(error) = released {
+            self.note_store_error("release merged changes for upload", &error);
+        }
         self.flush_state();
         self.pump();
     }
@@ -934,11 +1016,19 @@ impl<T: SyncTransport> SyncCore<T> {
             Account::Available(hash) => Some(hash.clone()),
             _ => None,
         };
-        let _ = self
+        let saved = self
             .store
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .save_engine_state(Some(&bytes), account.as_deref(), self.now());
+        match saved {
+            Ok(()) => self.clear_store_error(SAVE_POSITION),
+            Err(error) => {
+                // Not saved: keep it, and try again with the next acknowledgement or fetch.
+                self.pending_state = Some(bytes);
+                self.note_store_error(SAVE_POSITION, &error);
+            }
+        }
         self.initial_fetch_done = true;
     }
 
@@ -961,15 +1051,22 @@ impl<T: SyncTransport> SyncCore<T> {
             };
             let store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
             let (hash, sent) = entry.map_or((None, None), |entry| (entry.hash, entry.payload));
+            // None of this is fatal when it fails: the entry stays queued and is sent again, which
+            // the cloud accepts as a no-op. It is reported, so a broken database is not silent.
+            let mut failed = Vec::new();
             match hash {
                 Some(hash) => {
-                    let _ = store.ack_saved(
-                        done.outbox_seq,
-                        name.kind,
-                        &name.id,
-                        &hash,
-                        &done.system_fields,
-                        now,
+                    failed.extend(
+                        store
+                            .ack_saved(
+                                done.outbox_seq,
+                                name.kind,
+                                &name.id,
+                                &hash,
+                                &done.system_fields,
+                                now,
+                            )
+                            .err(),
                     );
                     // What this Mac sent is now what both sides agree on. Left as it was, a later
                     // merge reads anything this Mac removed before that upload as still present
@@ -977,19 +1074,22 @@ impl<T: SyncTransport> SyncCore<T> {
                     if merge_of(name.kind, &name.id) == Merge::ThreeWay
                         && let Some(sent) = sent
                     {
-                        let _ = store.set_base_payload(name.kind, &name.id, &sent);
+                        failed.extend(store.set_base_payload(name.kind, &name.id, &sent).err());
                     }
                 }
                 // Unknown what was sent (the entry was forgotten across an account change): keep
                 // the new change tag and let the entity upload again; that is harmless.
                 None => {
-                    let _ = store.set_system_fields(name.kind, &name.id, &done.system_fields);
+                    failed.extend(
+                        store
+                            .set_system_fields(name.kind, &name.id, &done.system_fields)
+                            .err(),
+                    );
                 }
             }
-            let _ = store.set_last_send(now);
+            failed.extend(store.set_last_send(now).err());
             drop(store);
-            self.last_error = None;
-            self.failure_streak = 0;
+            self.finish_upload_bookkeeping(failed);
         }
         for done in deleted {
             self.inflight.remove(&done.outbox_seq);
@@ -997,14 +1097,29 @@ impl<T: SyncTransport> SyncCore<T> {
                 continue;
             };
             let store = self.store.lock().unwrap_or_else(PoisonError::into_inner);
-            let _ = store.ack_deleted(done.outbox_seq, name.kind, &name.id);
-            let _ = store.set_last_send(now);
+            let mut failed = Vec::new();
+            failed.extend(
+                store
+                    .ack_deleted(done.outbox_seq, name.kind, &name.id)
+                    .err(),
+            );
+            failed.extend(store.set_last_send(now).err());
             drop(store);
-            self.last_error = None;
-            self.failure_streak = 0;
+            self.finish_upload_bookkeeping(failed);
         }
         for failure in failed {
             self.on_failure(failure, now);
+        }
+    }
+
+    /// An accepted upload clears the old error, unless saving the result failed.
+    fn finish_upload_bookkeeping(&mut self, failed: Vec<rusqlite::Error>) {
+        self.failure_streak = 0;
+        match failed.first() {
+            Some(error) => self.note_store_error("record an upload", error),
+            // An upload went through; a database problem noted elsewhere is still true.
+            None if matches!(self.last_error, Some((ErrorKind::Storage, _))) => {}
+            None => self.last_error = None,
         }
     }
 
@@ -1045,6 +1160,8 @@ impl<T: SyncTransport> SyncCore<T> {
     }
 
     fn retry_later(&mut self, seq: i64, at_ms: i64, failure: &SendFailure) {
+        // Best effort: when this write fails the entry keeps its old state and is staged again on
+        // the next pass, so nothing is lost; the failure itself is already what is shown.
         let _ = self
             .store
             .lock()

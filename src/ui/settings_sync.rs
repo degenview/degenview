@@ -49,6 +49,7 @@ fn error_label(kind: ErrorKind) -> &'static str {
         ErrorKind::Quota => "iCloud storage is full",
         ErrorKind::Permission => "DegenView is not allowed to use iCloud",
         ErrorKind::AccountUnavailable => "iCloud is unavailable",
+        ErrorKind::Storage => "This Mac could not save sync data",
         _ => "Something went wrong syncing",
     }
 }
