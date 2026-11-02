@@ -20,6 +20,9 @@ pub enum ErrorKind {
     ChangeTokenExpired,
     TooLarge,
     Permission,
+    /// This Mac could not read or write its own sync data (a full disk, a damaged database). Never
+    /// sent by the cloud: the core raises it when a database write fails.
+    Storage,
     Unknown,
 }
 

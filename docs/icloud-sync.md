@@ -65,6 +65,14 @@ SettingsPage ← SyncView ← SyncHost (app thread: apply, actions)   ──mpsc
   and holds every later batch behind it, so the engine checkpoint never moves past data this Mac does not
   have and an older batch is never applied after a newer one. After a relaunch nothing was saved, so
   iCloud sends it again.
+
+  Database failures are not swallowed. The core reports them as `ErrorKind::Storage` ("This Mac could not
+  save sync data"; each clears when the same operation next works): a checkpoint that cannot be saved is
+  kept and retried; fetched data that cannot be set aside in the inbox holds the checkpoint for the rest
+  of the session, so it is fetched again on the next launch; an unreadable outbox is an error, not an
+  empty queue. The host acts on a user's choice (turn off, agree to an account, categories, switching
+  accounts, deleting iCloud data) only after it was written, and says why when it was not. Upload
+  acknowledgements and retry bookkeeping stay best effort: the entry remains queued and is sent again.
 * **Bridge** (`native/swift`, `src/sync/native.rs`) moves records between `CKSyncEngine` and the
   core as JSON over a four-function C interface. It never throws across the boundary and refuses
   to stage data for any account other than the one the data is bound to.

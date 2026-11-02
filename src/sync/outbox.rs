@@ -58,7 +58,7 @@ pub fn classify(
         ErrorKind::ChangeTokenExpired => Disposition::StaleToken,
         ErrorKind::TooLarge => Disposition::Block,
         ErrorKind::AccountUnavailable => Disposition::WaitForAccount,
-        ErrorKind::Quota | ErrorKind::Permission => Disposition::Persistent(
+        ErrorKind::Quota | ErrorKind::Permission | ErrorKind::Storage => Disposition::Persistent(
             PERSISTENT_RETRY_MS.max(retry_after_s.map_or(0, |s| s as i64 * 1_000)),
         ),
     }

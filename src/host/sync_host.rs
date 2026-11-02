@@ -186,6 +186,8 @@ struct Shared {
     apply_retry: Option<ApplyRetry>,
     /// Why the last attempt failed, shown until a batch applies.
     apply_error: Option<String>,
+    /// Why the last thing the user asked for did not happen, shown until they ask for another.
+    host_error: Option<String>,
 }
 
 struct ApplyRetry {
@@ -504,12 +506,17 @@ impl SyncHost {
             .as_ref()
             .is_some_and(|view| view.cloud_deleted);
         if confirmed {
-            let _ = account::after_cloud_delete(&lock(&self.store));
-            self.tell(WorkerMsg::Stop);
-            if let Some(view) = lock(&self.shared).view.as_mut() {
-                view.cloud_deleted = false;
-                view.deleting = false;
-                view.notice = Some(SyncNotice::CloudDeleted);
+            // iCloud has deleted the data. Forgetting the binding here must work before this says
+            // so: otherwise the next launch would create the zone and upload it all again. If it
+            // fails, `cloud_deleted` stays set and the next frame tries again.
+            let result = account::after_cloud_delete(&lock(&self.store));
+            if self.guard("finish deleting iCloud data", result).is_some() {
+                self.tell(WorkerMsg::Stop);
+                if let Some(view) = lock(&self.shared).view.as_mut() {
+                    view.cloud_deleted = false;
+                    view.deleting = false;
+                    view.notice = Some(SyncNotice::CloudDeleted);
+                }
             }
         }
         self.scan_scripts_if_due();
@@ -558,12 +565,32 @@ impl SyncHost {
         }
     }
 
+    /// A database write the user's choice depends on. When it fails nothing else happens: the
+    /// worker is not told, the page says why, and the choice can be made again.
+    fn guard<T>(&self, what: &str, result: rusqlite::Result<T>) -> Option<T> {
+        match result {
+            Ok(value) => Some(value),
+            Err(error) => {
+                let message = format!("Could not {what}: {error}");
+                let mut shared = lock(&self.shared);
+                if let Some(view) = shared.view.as_mut() {
+                    view.last_error = Some(message.clone());
+                }
+                shared.host_error = Some(message);
+                None
+            }
+        }
+    }
+
     fn run(&self, action: SyncAction) {
+        lock(&self.shared).host_error = None;
         match action {
             SyncAction::Enable => self.enable(),
             SyncAction::Disable => {
-                let _ = account::disable(&lock(&self.store));
-                self.tell(WorkerMsg::Stop);
+                let result = account::disable(&lock(&self.store));
+                if self.guard("turn iCloud Sync off", result).is_some() {
+                    self.tell(WorkerMsg::Stop);
+                }
             }
             SyncAction::SyncNow => {
                 self.tell(WorkerMsg::SyncNow);
@@ -572,17 +599,26 @@ impl SyncHost {
             SyncAction::ConfirmAccount => {
                 let hash = lock(&self.shared).pending_account.take();
                 if let Some(hash) = hash {
-                    let _ = account::bind(&lock(&self.store), &hash, now_ms());
-                    self.tell(WorkerMsg::Restart);
+                    let result = account::bind(&lock(&self.store), &hash, now_ms());
+                    if self.guard("use this Apple Account", result).is_some() {
+                        self.tell(WorkerMsg::Restart);
+                    } else {
+                        // Still waiting for the answer: the user can agree again.
+                        lock(&self.shared).pending_account = Some(hash);
+                    }
                 }
             }
             SyncAction::ChooseJoin(mode) => self.join(mode),
             SyncAction::ResolveAccount(choice) => self.resolve_account(choice),
             SyncAction::SetCategory(category, on) => {
                 let store = lock(&self.store);
-                let _ = store.set_category_enabled(category, on);
+                let saved = store.set_category_enabled(category, on);
+                if self.guard("save that choice", saved).is_none() {
+                    return;
+                }
                 if on {
-                    let _ = store.reconcile_stored();
+                    let found = store.reconcile_stored();
+                    self.guard("look for changes made on this Mac", found);
                 }
                 drop(store);
                 if on {
@@ -600,14 +636,18 @@ impl SyncHost {
                 }
             }
             SyncAction::ConfirmHeldDeletes => {
-                let _ = lock(&self.store).release_held();
-                self.tell(WorkerMsg::Tick);
+                let result = lock(&self.store).release_held();
+                if self.guard("send those deletions", result).is_some() {
+                    self.tell(WorkerMsg::Tick);
+                }
             }
             SyncAction::KeepHeldDeletes => {
-                let _ = lock(&self.store).drop_held();
+                let result = lock(&self.store).drop_held();
+                self.guard("keep those items in iCloud", result);
             }
             SyncAction::DismissConflicts(kind) => {
-                let _ = lock(&self.store).dismiss_conflicts(kind.as_deref(), now_ms());
+                let result = lock(&self.store).dismiss_conflicts(kind.as_deref(), now_ms());
+                self.guard("dismiss those notes", result);
             }
             SyncAction::DeleteCloudData => {
                 // Show progress at once rather than after the worker's next pass.
@@ -624,7 +664,10 @@ impl SyncHost {
                 }
             }
             SyncAction::ResolveRemoteDeletion { reupload } => {
-                let _ = account::resolve_remote_deletion(&lock(&self.store), reupload);
+                let result = account::resolve_remote_deletion(&lock(&self.store), reupload);
+                if self.guard("act on that choice", result).is_none() {
+                    return;
+                }
                 if reupload {
                     self.tell(WorkerMsg::ClearPause);
                     self.tell(WorkerMsg::Restart);
@@ -640,13 +683,22 @@ impl SyncHost {
         let Ok(environment) = factory.environment() else {
             return;
         };
-        let _ = account::enable(
+        let enabled = account::enable(
             &lock(&self.store),
             &device_name(),
             &hardware_hash(),
             &environment,
         );
-        let _ = account::check_device_identity(&lock(&self.store), &hardware_hash());
+        if self.guard("turn iCloud Sync on", enabled).is_none() {
+            return;
+        }
+        let identity = account::check_device_identity(&lock(&self.store), &hardware_hash());
+        if self
+            .guard("set up this Mac for iCloud Sync", identity)
+            .is_none()
+        {
+            return;
+        }
         self.start_worker();
     }
 
@@ -660,9 +712,10 @@ impl SyncHost {
             let store = lock(&self.store);
             finish_join(&store, sink, &cache, mode, &backups, &ctx)
         });
-        match outcome {
-            Ok(outcome) => lock(&self.shared).reports.push(outcome.report),
-            Err(error) => eprintln!("DegenView sync: combining data failed: {error}"),
+        match self.guard("combine this Mac's data with iCloud's", outcome) {
+            Some(outcome) => lock(&self.shared).reports.push(outcome.report),
+            // The choice stays open; nothing was stopped or started.
+            None => return,
         }
         if mode == JoinMode::KeepLocalOnly {
             self.tell(WorkerMsg::Stop);
@@ -682,12 +735,16 @@ impl SyncHost {
             &self.backups_dir,
             now_ms(),
         );
-        match resolution {
-            Ok(resolution) if resolution.needs_join => {
+        match self.guard("switch to that Apple Account", resolution) {
+            Some(resolution) if resolution.needs_join => {
                 self.tell(WorkerMsg::ClearPause);
                 self.tell(WorkerMsg::Restart);
             }
-            _ => self.tell(WorkerMsg::Stop),
+            Some(_) => self.tell(WorkerMsg::Stop),
+            None => {
+                // Still the same question: the user can choose again.
+                lock(&self.shared).mismatched_account = Some(hash);
+            }
         }
     }
 
@@ -830,7 +887,10 @@ fn run_worker<T: SyncTransport>(
         let status = core.status();
         {
             let mut shared = lock(&shared);
-            let apply_error = shared.apply_error.clone();
+            let apply_error = shared
+                .apply_error
+                .clone()
+                .or_else(|| shared.host_error.clone());
             // A change of status is something to draw: without a frame the page keeps showing the
             // old one (a join prompt that has been answered, "Syncing…" long after it finished).
             let phase_changed = shown_phase != Some(status.phase);

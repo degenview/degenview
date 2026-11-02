@@ -410,6 +410,72 @@ fn deleting_icloud_data_unbinds_after_icloud_confirms_and_keeps_local_data() {
 }
 
 #[test]
+fn icloud_data_is_not_reported_deleted_until_this_mac_has_forgotten_the_binding() {
+    let cloud = MockCloud::new();
+    let a = rig(&cloud, "Mac A");
+    a.put_watchlist(10, "Mine");
+    a.set_up(JoinMode::Merge);
+    a.store
+        .lock()
+        .unwrap()
+        .execute_raw(
+            "CREATE TRIGGER no_unbind BEFORE UPDATE OF account_hash ON sync_state
+             BEGIN SELECT RAISE(ABORT, 'disk full'); END",
+        )
+        .unwrap();
+    a.host.act(SyncAction::DeleteCloudData);
+    a.wait("the failure to be shown", |v| {
+        v.last_error
+            .as_deref()
+            .is_some_and(|e| e.contains("finish deleting iCloud data"))
+    });
+    assert!(cloud.names().is_empty(), "iCloud's copy is gone");
+    assert_eq!(
+        a.host.view().notice,
+        None,
+        "said it was done while the binding was still here"
+    );
+    assert!(a.store.lock().unwrap().sync_enabled());
+
+    // The disk recovers: the next frame finishes the job.
+    a.store
+        .lock()
+        .unwrap()
+        .execute_raw("DROP TRIGGER no_unbind")
+        .unwrap();
+    a.wait("sync off", |v| !v.enabled);
+    assert_eq!(a.host.view().notice, Some(SyncNotice::CloudDeleted));
+    let state = a.store.lock().unwrap().sync_state().unwrap().unwrap();
+    assert!(state.account_hash.is_none());
+}
+
+#[test]
+fn turning_sync_off_that_cannot_be_saved_says_so_and_leaves_it_on() {
+    let cloud = MockCloud::new();
+    let a = rig(&cloud, "Mac A");
+    a.set_up(JoinMode::Merge);
+    a.store
+        .lock()
+        .unwrap()
+        .execute_raw(
+            "CREATE TRIGGER no_disable BEFORE UPDATE OF enabled ON sync_state
+             BEGIN SELECT RAISE(ABORT, 'disk full'); END",
+        )
+        .unwrap();
+    a.host.act(SyncAction::Disable);
+    a.wait("the failure to be shown", |v| {
+        v.last_error
+            .as_deref()
+            .is_some_and(|e| e.contains("turn iCloud Sync off"))
+    });
+    assert!(
+        a.store.lock().unwrap().sync_enabled(),
+        "still on, and the page agrees"
+    );
+    assert!(a.host.view().enabled);
+}
+
+#[test]
 fn a_failed_deletion_leaves_sync_on_and_reports_why() {
     let cloud = MockCloud::new();
     let a = rig(&cloud, "Mac A");
