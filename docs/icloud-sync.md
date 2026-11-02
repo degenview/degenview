@@ -60,6 +60,11 @@ SettingsPage ← SyncView ← SyncHost (app thread: apply, actions)   ──mpsc
 * **Apply** (`src/sync/apply.rs`) writes one fetched batch in one transaction. Each remote row is
   checked against this version's own model first; a table holding a row this version cannot read
   is never rewritten; what cannot be applied is kept in `sync_inbox`, never dropped.
+  A batch that cannot be saved at all (a full disk, a locked or damaged database) is **not
+  acknowledged**: the host keeps it, shows the error, retries it after a growing pause (up to a minute),
+  and holds every later batch behind it, so the engine checkpoint never moves past data this Mac does not
+  have and an older batch is never applied after a newer one. After a relaunch nothing was saved, so
+  iCloud sends it again.
 * **Bridge** (`native/swift`, `src/sync/native.rs`) moves records between `CKSyncEngine` and the
   core as JSON over a four-function C interface. It never throws across the boundary and refuses
   to stage data for any account other than the one the data is bound to.
