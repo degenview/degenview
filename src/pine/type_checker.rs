@@ -67,6 +67,10 @@ pub struct TypeChecker {
     callables: Callables,
     /// What each callable's body evaluates to, once the body has been checked.
     returns: Vec<Inferred>,
+    /// Whether each callable's body has been checked in some pass, so `returns` holds its result.
+    settled: Vec<bool>,
+    /// Whether this pass selected a callable whose body had not been checked yet.
+    read_unsettled: bool,
     /// The callable whose body is being checked.
     current: Option<usize>,
     /// Calls between callables, for finding the ones that reach themselves.
@@ -119,6 +123,8 @@ impl TypeChecker {
             enums,
             udts,
             returns: vec![Inferred::Unknown; callables.len()],
+            settled: vec![false; callables.len()],
+            read_unsettled: false,
             callables,
             current: None,
             edges: Vec::new(),
@@ -126,13 +132,34 @@ impl TypeChecker {
             last: Inferred::Unknown,
             imports,
         };
-        let mut scope = Scope::new();
-        checker.check_statements(statements, &mut scope);
+        checker.check_statements(statements, &mut Scope::new());
+        // A call to a function declared further down read its result before it was known. Run
+        // again with the results found so far, until they stop changing: a call chain `n` deep
+        // settles within `n` more passes, and recursion is refused, so the cap is only a backstop.
+        let mut passes = 0;
+        let mut again = checker.read_unsettled;
+        while again && passes <= checker.returns.len() {
+            passes += 1;
+            let before = checker.returns.clone();
+            checker.reset_pass();
+            checker.check_statements(statements, &mut Scope::new());
+            again = checker.returns != before;
+        }
         checker.report_recursion();
         Checked {
             diagnostics: checker.diagnostics,
             resolutions: checker.resolutions,
         }
+    }
+
+    /// Forget what a pass reported, keeping the return types it found.
+    fn reset_pass(&mut self) {
+        self.diagnostics.clear();
+        self.edges.clear();
+        self.resolutions.clear();
+        self.last = Inferred::Unknown;
+        self.current = None;
+        self.read_unsettled = false;
     }
 
     // MARK: Statements
@@ -285,6 +312,7 @@ impl TypeChecker {
                     self.check_statements(body, &mut inner);
                     if let Some(id) = self.current {
                         self.returns[id] = self.last;
+                        self.settled[id] = true;
                     }
                     self.current = outer;
                     scope.insert(name.clone(), Inferred::Unknown);
@@ -887,6 +915,7 @@ impl TypeChecker {
         if let Some(from) = self.current {
             self.edges.push((from, id, range));
         }
+        self.read_unsettled |= !self.settled[id];
         match self.returns[id] {
             Inferred::Known(kind, _) => Inferred::Known(kind, None),
             other => other,
@@ -1396,6 +1425,76 @@ mod tests {
         assert_eq!(
             diagnostics.iter().filter(|d| d.code == "PINE3030").count(),
             1
+        );
+    }
+
+    fn messages(source: &str) -> Vec<(String, String)> {
+        let mut found: Vec<_> = check(source)
+            .into_iter()
+            .map(|d| (d.code, d.message))
+            .collect();
+        found.sort();
+        found
+    }
+
+    #[test]
+    fn a_return_type_does_not_depend_on_declaration_order() {
+        let callee_first = messages("b() => \"s\"\na() => b()\nint y = a()\n");
+        let callee_last = messages("a() => b()\nb() => \"s\"\nint y = a()\n");
+        assert_eq!(callee_first.len(), 1, "{callee_first:?}");
+        assert_eq!(callee_first[0].0, "PINE3030");
+        assert_eq!(callee_first, callee_last);
+    }
+
+    #[test]
+    fn a_long_chain_declared_in_reverse_still_resolves() {
+        let diagnostics =
+            messages("a() => b()\nb() => c()\nc() => d()\nd() => 1\nstring y = a()\n");
+        assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+        assert_eq!(diagnostics[0].0, "PINE3030");
+        assert!(messages("a() => b()\nb() => c()\nc() => d()\nd() => 1\nint y = a()\n").is_empty());
+    }
+
+    #[test]
+    fn a_method_return_does_not_depend_on_declaration_order() {
+        let diagnostics =
+            messages("method a(int x) => b(x)\nmethod b(int x) => \"s\"\nint y = a(1)\n");
+        assert_eq!(diagnostics.len(), 1, "{diagnostics:?}");
+        assert_eq!(diagnostics[0].0, "PINE3030");
+    }
+
+    #[test]
+    fn a_second_pass_does_not_repeat_diagnostics() {
+        // `c` reads `d` before it is settled, forcing another pass; the unrelated error in
+        // `bad` must still be reported once, and so must the recursion.
+        let source = "c() => d()\nd() => 1\nbad() => 1 + \"s\"\nf() => g()\ng() => f()\nx = c() + bad() + f()\n";
+        let diagnostics = messages(source);
+        let recursion = diagnostics
+            .iter()
+            .filter(|(code, _)| code == "PINE3063")
+            .count();
+        assert_eq!(recursion, 2, "{diagnostics:?}");
+        let arithmetic = diagnostics
+            .iter()
+            .filter(|(code, _)| code != "PINE3063")
+            .count();
+        assert_eq!(arithmetic, 1, "{diagnostics:?}");
+    }
+
+    #[test]
+    fn resolutions_do_not_depend_on_declaration_order() {
+        let resolved = |source: &str| {
+            let lexed = Lexer::new(source).lex();
+            let mut parser =
+                Parser::new(lexed.tokens, crate::pine::Limits::default(), HashSet::new());
+            let (statements, _) = parser.parse();
+            TypeChecker::check_program(&statements, false)
+                .resolutions
+                .len()
+        };
+        assert_eq!(
+            resolved("b() => 1\na() => b()\nx = a()\n"),
+            resolved("a() => b()\nb() => 1\nx = a()\n")
         );
     }
 }
