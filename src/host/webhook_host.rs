@@ -522,6 +522,35 @@ mod tests {
     }
 
     /// The Settings window draws with the store locked, and every change on the Snapshots page
+    /// `WebhookHost::new` fills the rest of its fields from `Self::default()`, which builds a throwaway
+    /// `EditorThemeHost`. That must not change what the editors draw: at launch it replaced the saved
+    /// theme with Automatic before the first frame.
+    #[test]
+    fn building_the_host_leaves_the_editors_theme_alone() {
+        use crate::host::editor_theme_host::EditorThemeHost;
+        use crate::model::editor_theme::{BuiltInTheme, EditorPrefs, ThemeSelection};
+        use crate::service::font_catalog::FontCatalog;
+        use crate::ui::editor_appearance::{RestorePublished, current, of_built_in};
+        let _published = RestorePublished;
+        let store = Store::open_in_memory().expect("a store");
+        store
+            .set_editor_prefs(&EditorPrefs {
+                selected: ThemeSelection::BuiltIn(BuiltInTheme::Dracula),
+                ..EditorPrefs::default()
+            })
+            .unwrap();
+        let themes = EditorThemeHost::new(
+            store.load_editor_themes(),
+            FontCatalog::with_entries(Vec::new()),
+        );
+        assert!(Arc::ptr_eq(&current(), &of_built_in(BuiltInTheme::Dracula)));
+        let _host = WebhookHost::new(Default::default(), themes);
+        assert!(
+            Arc::ptr_eq(&current(), &of_built_in(BuiltInTheme::Dracula)),
+            "WebhookHost::new replaced the saved editor theme"
+        );
+    }
+
     /// is saved from there: saving must use that lock, not wait for it (which never ends).
     #[test]
     fn a_snapshot_setting_changed_in_settings_is_saved_without_locking_the_store_twice() {

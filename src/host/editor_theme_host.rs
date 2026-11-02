@@ -371,21 +371,33 @@ pub struct EditorThemeHost {
 }
 
 impl Default for EditorThemeHost {
-    /// A host with no custom themes and no installed fonts: what a test or an empty database has.
+    /// A placeholder host with no custom themes and no installed fonts: a field's default, a test's
+    /// stand-in. It does **not** publish. Publishing replaces what every editor in the process
+    /// draws, so merely constructing a placeholder must never undo the real host's choice. That is
+    /// exactly what happened at launch: `WebhookHost::new`'s `..Self::default()` builds a throwaway
+    /// default host for the field it then overwrites, and the throwaway published Automatic over the
+    /// saved theme, so the Script Manager opened Dark although Dracula was selected.
     fn default() -> Self {
-        Self::new(
+        Self::build(
             Loaded {
                 book: ThemeBook::default(),
                 prefs: EditorPrefs::default(),
                 themes_unwritable: None,
             },
             FontCatalog::default(),
+            false,
         )
     }
 }
 
 impl EditorThemeHost {
     pub fn new(loaded: Loaded, catalog: FontCatalog) -> Self {
+        Self::build(loaded, catalog, true)
+    }
+
+    /// `publish`: whether the editors are given this host's appearance now. Only a host that is
+    /// meant to be the app's does that (`new`); a placeholder (`default`) must not.
+    fn build(loaded: Loaded, catalog: FontCatalog, publish: bool) -> Self {
         let (reply_to, replies) = channel();
         let mut inner = Inner {
             ctx: None,
@@ -407,7 +419,9 @@ impl EditorThemeHost {
             notice: None,
         };
         inner.sync_font();
-        inner.publish();
+        if publish {
+            inner.publish();
+        }
         Self {
             inner: Arc::new(Mutex::new(inner)),
         }

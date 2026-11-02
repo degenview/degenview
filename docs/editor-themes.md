@@ -135,6 +135,18 @@ translucent). Those are our choices, and so is mapping its italics away: the edi
 detached window the same frame: only rendering inputs change, so cursor, selection, undo history,
 scroll position, unsaved text and diagnostics are untouched and nothing is recompiled.
 
+**Only the app's host publishes, and a placeholder host never does.** `EditorThemeHost::new` publishes (it
+is the host that loaded the saved choice); `EditorThemeHost::default()`, a placeholder for a field's
+default or a test's stand-in, builds the same host but publishes nothing. This matters because publishing
+replaces what every editor in the process draws: `WebhookHost::new` fills the fields it is not given from
+`Self::default()`, which builds a throwaway `EditorThemeHost`, and when that throwaway published (as
+`new` did) it put Automatic over the saved theme before the first frame, so the Script Manager opened Dark
+although Dracula was selected (and Settings, reading the real host, still showed Dracula); picking any
+theme again published from the real host and healed it. Tests hold both halves
+(`a_placeholder_host_never_undoes_the_real_hosts_choice`,
+`webhook_host::tests::building_the_host_leaves_the_editors_theme_alone`). Any new code that builds
+a host outside `DegenViewApp::new` must use `default()`, never `new()`.
+
 The preview's sample (`script_manager::theme_preview`) is editable. It is compiled with the real Pine
 compiler whenever its text changes (hashed, so a repaint or a theme change does not compile again), and the
 compiler's diagnostics feed the editor's underlines, so they follow the code as lines are added, removed
@@ -305,6 +317,15 @@ settings_theme_editor::tests::gallery --ignored` writes the page and every tab o
 sizes in both appearances; they were looked at, and the layout was changed for what they showed (the
 tile miniatures, a preview that left no room for the colours, tabs that ran into the search at 320
 points).
+
+A release build was launched against a throwaway home folder with `editor.prefs` set to Dracula, a Script
+Manager tab and a script selected (`setting` rows `editor.prefs`, `scriptManager.layout` with
+`selectedScriptId`, and a `tab` row `{"id":2,"kind":"pine"}`), and **only that window was captured** by its
+window id: the first frames drew the Dark colours (background `#181F22`, blue and red syntax) until the
+bug above was fixed; afterwards they draw Dracula (`#282A36`, pink, yellow and purple), with the app in
+Dark and in Light appearance. A second build with temporary tracing showed the second, default host
+publishing right after the real one. That is the one thing checked in a real window; the rest of this
+paragraph still stands.
 
 A release build was launched against an empty home folder: it ran for minutes, created the `editor_theme`
 table in a fresh database and did not crash. **No one has used the page in a real window**: the

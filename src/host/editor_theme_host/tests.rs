@@ -81,6 +81,35 @@ fn choosing_a_built_in_theme_reaches_the_editors_at_once() {
     assert_eq!(*current(), Appearance::of(BuiltInTheme::Dark));
 }
 
+/// The launch bug: the app builds its real host from the saved choice (Dracula), and a placeholder
+/// host built afterwards (a field's `Default`, as `WebhookHost::new`'s `..Self::default()` does)
+/// published Automatic over it, so every editor opened Dark. A placeholder must never publish.
+#[test]
+fn a_placeholder_host_never_undoes_the_real_hosts_choice() {
+    let _theme = RestoreDefaultTheme;
+    let _published = RestorePublished;
+    let store = Store::open_in_memory().unwrap();
+    store
+        .set_editor_prefs(&EditorPrefs {
+            selected: ThemeSelection::BuiltIn(BuiltInTheme::Dracula),
+            ..EditorPrefs::default()
+        })
+        .unwrap();
+    // Launch: the host loads what was saved and the editors draw it.
+    let real = host_over(&store, FontCatalog::with_entries(Vec::new()));
+    assert!(Arc::ptr_eq(&current(), &of_built_in(BuiltInTheme::Dracula)));
+    // Something constructs a placeholder afterwards.
+    let placeholder = EditorThemeHost::default();
+    assert!(
+        Arc::ptr_eq(&current(), &of_built_in(BuiltInTheme::Dracula)),
+        "building a default host changed what the editors draw"
+    );
+    // The placeholder still works as a host once something does change it.
+    placeholder.select(ThemeSelection::BuiltIn(BuiltInTheme::Light));
+    assert!(Arc::ptr_eq(&current(), &of_built_in(BuiltInTheme::Light)));
+    drop(real);
+}
+
 #[test]
 fn a_custom_theme_is_worn_when_made_and_follows_every_edit() {
     let _theme = RestoreDefaultTheme;
