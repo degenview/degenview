@@ -358,23 +358,45 @@ fn wait_for_pid(pid: u32, millis: u32) -> Result<(), String> {
 /// `RELAUNCH_WAIT_MS`) for the one it replaces to exit, so the database is not opened twice.
 #[cfg(unix)]
 pub fn wait_for_predecessor() -> Result<(), String> {
-    if let Some(pid) = predecessor_pid(std::env::args_os()) {
-        wait_until_exited(
-            pid,
-            std::time::Duration::from_millis(RELAUNCH_WAIT_MS.into()),
-        );
+    match predecessor_pid(std::env::args_os()) {
+        Some(pid)
+            if !wait_until_exited(
+                pid,
+                std::time::Duration::from_millis(RELAUNCH_WAIT_MS.into()),
+            ) =>
+        {
+            Err(PREDECESSOR_RUNNING.to_owned())
+        }
+        _ => Ok(()),
     }
-    Ok(())
 }
 
-/// Polls until `pid` is gone or `timeout` passes. Reads `/proc`, so on a system without one the
-/// process counts as already gone and nothing waits.
+/// Polls until `pid` is gone (true) or `timeout` passes with it still running (false). Reads `/proc`,
+/// so on a system without one the process counts as already gone and nothing waits.
 #[cfg(unix)]
-fn wait_until_exited(pid: u32, timeout: std::time::Duration) {
+fn wait_until_exited(pid: u32, timeout: std::time::Duration) -> bool {
+    wait_while(
+        || process_is_running(pid),
+        timeout,
+        std::time::Duration::from_millis(100),
+    )
+}
+
+/// Polls `running` every `poll` until it says no (true) or `timeout` passes with it still saying yes
+/// (false). Separate from the `/proc` read so the timeout path is tested on every platform.
+fn wait_while(
+    mut running: impl FnMut() -> bool,
+    timeout: std::time::Duration,
+    poll: std::time::Duration,
+) -> bool {
     let started = std::time::Instant::now();
-    while process_is_running(pid) && started.elapsed() < timeout {
-        std::thread::sleep(std::time::Duration::from_millis(100));
+    while running() {
+        if started.elapsed() >= timeout {
+            return false;
+        }
+        std::thread::sleep(poll);
     }
+    true
 }
 
 #[cfg(unix)]
@@ -621,6 +643,38 @@ mod tests {
     }
 
     #[test]
+    fn the_wait_gives_up_at_the_timeout_and_reports_it() {
+        use std::time::{Duration, Instant};
+
+        // Still running when the timeout passes: false, and no sooner than the timeout.
+        let started = Instant::now();
+        assert!(!wait_while(
+            || true,
+            Duration::from_millis(60),
+            Duration::from_millis(5)
+        ));
+        assert!(started.elapsed() >= Duration::from_millis(60));
+        // Gone after a few polls: true, long before the timeout.
+        let mut polls = 0;
+        let started = Instant::now();
+        assert!(wait_while(
+            || {
+                polls += 1;
+                polls < 4
+            },
+            Duration::from_secs(20),
+            Duration::from_millis(5),
+        ));
+        assert!(started.elapsed() < Duration::from_secs(5));
+        // Already gone: true at once, even with no time allowed.
+        assert!(wait_while(
+            || false,
+            Duration::ZERO,
+            Duration::from_millis(5)
+        ));
+    }
+
+    #[test]
     fn a_process_that_has_exited_but_not_been_reaped_counts_as_gone() {
         assert!(!is_dead("4242 (degenview) S 1 4242 4242 0 -1 4194560"));
         assert!(!is_dead("4242 (degenview) R 1 4242 4242 0 -1 4194560"));
@@ -644,7 +698,7 @@ mod tests {
             .spawn()
             .unwrap();
         let started = Instant::now();
-        wait_until_exited(child.id(), Duration::from_secs(20));
+        assert!(wait_until_exited(child.id(), Duration::from_secs(20)));
         let waited = started.elapsed();
         assert!(
             waited >= Duration::from_millis(300),
@@ -662,7 +716,8 @@ mod tests {
             .spawn()
             .unwrap();
         let started = Instant::now();
-        wait_until_exited(stays.id(), Duration::from_millis(300));
+        // It reports that the process is still there, which is what keeps startup from going on.
+        assert!(!wait_until_exited(stays.id(), Duration::from_millis(300)));
         assert!(started.elapsed() < Duration::from_secs(10));
         assert!(process_is_running(stays.id()));
         let _ = stays.kill();
