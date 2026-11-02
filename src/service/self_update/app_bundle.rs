@@ -1,79 +1,15 @@
-//! Replaces the running macOS app bundle with a newer release.
+//! The macOS (and, for tests, Unix) strategy: replace the running `.app` bundle.
 //!
-//! Two steps so nothing on disk changes until the user says so: `prepare` downloads the release
-//! zip, checks its SHA-256 against the digest GitHub published for it, unpacks it, sanity-checks
-//! the bundle and verifies its Developer ID signature against the running app's Team ID;
-//! `apply_and_relaunch` swaps the bundle in place, then a detached shell waits for this
-//! process to exit and reopens the app. The previous bundle is kept in the staging folder until the
-//! new version starts and calls `cleanup_stale`, so a build that never launches can be restored by
-//! hand.
-//!
-//! Everything lives in a hidden folder next to the app (same volume, so the swap is two atomic
-//! renames); an app in a folder the user cannot write to simply is not installable.
-
+//! Shared types and checks live in the parent module.
+use super::{Progress, STAGING_NAME, Stage, forwarded_env, is_writable, verify};
 use crate::service::update_check::{Release, ReleaseAsset};
 use crate::service::{code_signature, tag_signature, update_archive, update_download};
-use sha2::{Digest, Sha256};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-const STAGING_NAME: &str = ".DegenView-update";
 const APP_NAME: &str = "DegenView.app";
 /// How long the relaunch helper waits for this process to exit before giving up.
 const RELAUNCH_WAIT_TICKS: u32 = 300;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Stage {
-    Verifying,
-    Downloading,
-    Unpacking,
-}
-
-impl Stage {
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Verifying => "Checking the release signature…",
-            Self::Downloading => "Downloading the new version…",
-            Self::Unpacking => "Unpacking and checking it…",
-        }
-    }
-}
-
-/// Where `prepare` has got to: the stage, and how far through the whole job that is (0 to 1).
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Progress {
-    pub stage: Stage,
-    pub fraction: f32,
-}
-
-/// Share of the overall bar each stage covers: the signature check, the download (by bytes),
-/// then unpacking, whose own progress is not measurable.
-const VERIFY_END: f32 = 0.05;
-const DOWNLOAD_END: f32 = 0.90;
-
-impl Progress {
-    pub fn new(stage: Stage) -> Self {
-        let fraction = match stage {
-            Stage::Verifying => 0.0,
-            Stage::Downloading => VERIFY_END,
-            Stage::Unpacking => DOWNLOAD_END,
-        };
-        Self { stage, fraction }
-    }
-
-    /// The download after `received` of `total` bytes.
-    fn downloading(received: u64, total: u64) -> Self {
-        let done = if total == 0 {
-            0.0
-        } else {
-            (received as f64 / total as f64).clamp(0.0, 1.0) as f32
-        };
-        Self {
-            stage: Stage::Downloading,
-            fraction: VERIFY_END + (DOWNLOAD_END - VERIFY_END) * done,
-        }
-    }
-}
 
 /// A downloaded, verified update waiting for the user's restart.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -139,13 +75,6 @@ fn bundle_for_executable(exe: &Path) -> Option<PathBuf> {
     is_bundle.then(|| app.to_path_buf())
 }
 
-fn is_writable(dir: &Path) -> bool {
-    let probe = dir.join(format!(".DegenView-write-test-{}", std::process::id()));
-    let ok = std::fs::create_dir(&probe).is_ok();
-    let _ = std::fs::remove_dir(&probe);
-    ok
-}
-
 /// Blocking: checks the release tag's signature, then downloads, verifies and unpacks the
 /// release's zip next to `app`, whose Developer ID Team ID the new bundle must be signed with. Nothing is replaced yet, and nothing is downloaded for a tag that
 /// is not signed by a pinned key.
@@ -208,18 +137,6 @@ fn prepare_in(
     })
 }
 
-fn verify(bytes: &[u8], asset: &ReleaseAsset) -> Result<(), String> {
-    if bytes.len() as u64 != asset.size {
-        return Err("The download is incomplete.".to_owned());
-    }
-    let hash = Sha256::digest(bytes);
-    let hex: String = hash.iter().map(|byte| format!("{byte:02x}")).collect();
-    if hex != asset.sha256 {
-        return Err("The download does not match its published checksum.".to_owned());
-    }
-    Ok(())
-}
-
 /// Swaps the prepared bundle in and schedules the reopen. On `Ok` the caller must quit now.
 pub fn apply_and_relaunch(prepared: &Prepared) -> Result<(), String> {
     swap(prepared)?;
@@ -259,14 +176,6 @@ const FORWARDED_ENV: &[&str] = &[
 
 /// What the helper needs itself (it runs `sh`, `kill`, `sleep`, `open`).
 const HELPER_ENV: &[&str] = &["HOME", "PATH", "USER", "TMPDIR"];
-
-fn forwarded_env(
-    vars: impl Iterator<Item = (OsString, OsString)>,
-    allowed: &[&str],
-) -> Vec<(OsString, OsString)> {
-    vars.filter(|(name, _)| name.to_str().is_some_and(|name| allowed.contains(&name)))
-        .collect()
-}
 
 /// The detached helper: waits for `pid` to exit (at most `RELAUNCH_WAIT_TICKS` × 0.2 s), then
 /// reopens `app`. Its arguments are visible to every user on the Mac, and so are only `forwarded`
@@ -340,19 +249,10 @@ pub fn cleanup_stale() {
 
 #[cfg(test)]
 mod tests {
+    use super::super::tests::scratch;
     use super::*;
     use crate::service::update_archive::testing::fake_app;
     use std::fs;
-
-    fn scratch(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "degenview-self-update-{name}-{}",
-            std::process::id()
-        ));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        dir
-    }
 
     #[test]
     fn the_bundle_is_found_from_its_executable() {
@@ -370,21 +270,6 @@ mod tests {
             bundle_for_executable(Path::new("/x/Tools/Contents/MacOS/degenview")),
             None
         );
-    }
-
-    #[test]
-    fn a_checksum_mismatch_or_short_body_is_rejected() {
-        let asset = |size, sha256: &str| ReleaseAsset {
-            name: "a.zip".to_owned(),
-            url: String::new(),
-            size,
-            sha256: sha256.to_owned(),
-        };
-        // sha256("abc")
-        let abc = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
-        assert!(verify(b"abc", &asset(3, abc)).is_ok());
-        assert!(verify(b"abd", &asset(3, abc)).is_err());
-        assert!(verify(b"ab", &asset(3, abc)).is_err());
     }
 
     #[test]
@@ -543,26 +428,5 @@ mod tests {
         assert!(line.ends_with("/Applications/DegenView.app"), "{line}");
         let envs: Vec<_> = command.get_envs().collect();
         assert!(envs.iter().all(|(name, _)| *name == "HOME"), "{envs:?}");
-    }
-
-    #[test]
-    fn a_read_only_folder_is_not_writable() {
-        let root = scratch("writable");
-        assert!(is_writable(&root));
-        assert!(!is_writable(&root.join("missing")));
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn the_bar_only_moves_forward_across_the_stages() {
-        let start = Progress::new(Stage::Verifying).fraction;
-        let begin = Progress::new(Stage::Downloading).fraction;
-        let half = Progress::downloading(50, 100).fraction;
-        let end = Progress::downloading(100, 100).fraction;
-        let unpack = Progress::new(Stage::Unpacking).fraction;
-        assert!(start < begin && begin < half && half < end);
-        assert_eq!(end, unpack);
-        assert_eq!(Progress::downloading(500, 100).fraction, end);
-        assert_eq!(Progress::downloading(0, 0).fraction, begin);
     }
 }
