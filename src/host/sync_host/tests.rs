@@ -566,6 +566,152 @@ fn when_the_move_cannot_be_saved_sync_waits_and_says_so() {
     assert_eq!(state.engine_state, Some(vec![1, 2, 3]));
 }
 
+impl Rig {
+    fn engine_state(&self) -> Option<Vec<u8>> {
+        self.store
+            .lock()
+            .unwrap()
+            .sync_state()
+            .unwrap()
+            .and_then(|state| state.engine_state)
+    }
+
+    /// Makes saving a watchlist named "Blocked" fail, the way a full disk or a damaged table would.
+    fn break_saving_watchlists(&self) {
+        self.store
+            .lock()
+            .unwrap()
+            .execute_raw(
+                "CREATE TRIGGER fail_save BEFORE INSERT ON watchlist
+                 WHEN NEW.payload LIKE '%Blocked%'
+                 BEGIN SELECT RAISE(ABORT, 'disk full'); END",
+            )
+            .unwrap();
+    }
+
+    fn fix_saving_watchlists(&self) {
+        self.store
+            .lock()
+            .unwrap()
+            .execute_raw("DROP TRIGGER fail_save")
+            .unwrap();
+    }
+
+    /// Adds a list to the ones already there (`put_watchlist` replaces them all).
+    fn add_watchlist(&self, id: u64, name: &str) {
+        let mut lists: Vec<crate::store::sync::RawDoc> = self
+            .rows("watchlist")
+            .into_iter()
+            .map(crate::store::sync::RawDoc)
+            .collect();
+        lists.push(crate::store::sync::RawDoc(json!({"id": id, "name": name,
+            "entries": [], "display": {}, "is_favorites": false,
+            "created_at_ms": 1, "updated_at_ms": 2})));
+        self.store
+            .lock()
+            .unwrap()
+            .replace_documents("watchlist", &lists)
+            .unwrap();
+    }
+
+    fn watchlist_names(&self) -> Vec<String> {
+        self.rows("watchlist")
+            .iter()
+            .filter_map(|row| row["name"].as_str().map(str::to_string))
+            .collect()
+    }
+}
+
+/// Uploads a new watchlist from `a` and has `b` ask for it, without ticking `b`.
+fn publish(a: &Rig, b: &Rig, id: u64, name: &str) {
+    a.add_watchlist(id, name);
+    a.host.act(SyncAction::SyncNow);
+    a.wait("the upload", |v| v.pending == 0);
+    b.host.tell(WorkerMsg::SyncNow);
+}
+
+#[test]
+fn a_batch_that_cannot_be_saved_is_not_acknowledged_and_is_applied_once_it_can() {
+    let cloud = MockCloud::new();
+    let a = rig(&cloud, "Mac A");
+    a.set_up(JoinMode::Merge);
+    let b = rig(&cloud, "Mac B");
+    b.set_up(JoinMode::Merge);
+    let checkpoint = b.engine_state();
+    b.break_saving_watchlists();
+
+    publish(&a, &b, 50, "Blocked");
+    b.wait("the failure to be reported", |v| {
+        v.last_error
+            .as_deref()
+            .is_some_and(|e| e.contains("disk full"))
+    });
+    assert!(b.rows("watchlist").is_empty());
+    assert_eq!(b.engine_state(), checkpoint, "the checkpoint stays put");
+
+    // A later batch that would save fine waits behind the one that did not, and the checkpoint
+    // still does not move past the first.
+    publish(&a, &b, 51, "Fine");
+    let until = Instant::now() + Duration::from_millis(600);
+    while Instant::now() < until {
+        b.host.tick();
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert!(b.rows("watchlist").is_empty(), "applied out of order");
+    assert_eq!(
+        b.engine_state(),
+        checkpoint,
+        "a later batch moved the checkpoint"
+    );
+
+    b.fix_saving_watchlists();
+    b.wait("both lists", |_| b.rows("watchlist").len() == 2);
+    b.wait("the error to clear", |v| v.last_error.is_none());
+    assert_eq!(b.watchlist_names(), ["Blocked", "Fine"]);
+    assert_ne!(
+        b.engine_state(),
+        checkpoint,
+        "saved, so the checkpoint moves"
+    );
+}
+
+#[test]
+fn the_worker_applying_for_a_covered_window_does_not_acknowledge_a_failed_batch_either() {
+    let cloud = MockCloud::new();
+    let a = rig(&cloud, "Mac A");
+    a.set_up(JoinMode::Merge);
+    let b = rig(&cloud, "Mac B");
+    b.set_up(JoinMode::Merge);
+    let checkpoint = b.engine_state();
+    b.break_saving_watchlists();
+
+    // B's window is covered: nothing ticks it from here on.
+    publish(&a, &b, 60, "Blocked");
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while lock(&b.host.shared).apply_error.is_none() {
+        assert!(Instant::now() < deadline, "the failure was never seen");
+        b.host.tell(WorkerMsg::SyncNow);
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    std::thread::sleep(Duration::from_millis(400));
+    assert!(b.rows("watchlist").is_empty());
+    assert_eq!(b.engine_state(), checkpoint);
+
+    b.fix_saving_watchlists();
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while b.rows("watchlist").is_empty() {
+        assert!(Instant::now() < deadline, "never retried");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(b.watchlist_names(), ["Blocked"]);
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while b.engine_state() == checkpoint {
+        assert!(Instant::now() < deadline, "checkpoint never moved");
+        b.host.tell(WorkerMsg::SyncNow);
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
 #[test]
 fn today_is_a_calendar_date() {
     let text = super::today();

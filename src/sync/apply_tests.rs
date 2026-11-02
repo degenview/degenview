@@ -394,6 +394,114 @@ fn a_portable_setting_travels_and_local_ones_do_not() {
     assert_eq!(outbox_len(&b), 0);
 }
 
+/// Keys this version keeps on the Mac, from security and consent state to a key it has never heard of.
+const LOCAL_ONLY_KEYS: [&str; 6] = [
+    "mcp.settings",
+    "mcp.permissions",
+    "ai.prefs",
+    "update.channel",
+    "content.prefs",
+    "from.a.newer.version",
+];
+
+#[test]
+fn a_record_for_a_setting_kept_on_this_mac_is_never_applied() {
+    let (cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    for key in LOCAL_ONLY_KEYS {
+        b.store
+            .lock()
+            .unwrap()
+            .set_setting(key, &json!({"mine": true}))
+            .unwrap();
+        // A stale record from a development build, a newer client or a hand edit in the dashboard.
+        cloud.put_from_elsewhere(
+            raw(
+                &format!("setting.{key}"),
+                &json!({"theirs": true}),
+                5,
+                9,
+                "Z",
+            ),
+            "Z",
+        );
+    }
+    settle(&mut a, &mut b);
+
+    let store = b.store.lock().unwrap();
+    for key in LOCAL_ONLY_KEYS {
+        assert_eq!(
+            store.raw_setting(key).unwrap(),
+            Some(json!({"mine": true})),
+            "{key} was overwritten from iCloud"
+        );
+        assert!(
+            store
+                .entity_meta(EntityKind::Setting, key)
+                .unwrap()
+                .is_none(),
+            "{key} is tracked for sync"
+        );
+        assert!(
+            store
+                .inbox()
+                .unwrap()
+                .iter()
+                .any(|r| r.record_name == format!("setting.{key}") && r.reason == "invalid"),
+            "{key} was not kept aside"
+        );
+    }
+    drop(store);
+    assert_eq!(outbox_len(&b), 0);
+}
+
+#[test]
+fn a_deletion_for_a_setting_kept_on_this_mac_changes_nothing() {
+    let (cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    for key in LOCAL_ONLY_KEYS {
+        b.store
+            .lock()
+            .unwrap()
+            .set_setting(key, &json!({"mine": true}))
+            .unwrap();
+        cloud.put_from_elsewhere(
+            raw(
+                &format!("setting.{key}"),
+                &json!({"theirs": true}),
+                5,
+                9,
+                "Z",
+            ),
+            "Z",
+        );
+    }
+    settle(&mut a, &mut b);
+    for key in LOCAL_ONLY_KEYS {
+        cloud.delete_from_elsewhere(&format!("setting.{key}"), "Z");
+    }
+    settle(&mut a, &mut b);
+
+    let store = b.store.lock().unwrap();
+    for key in LOCAL_ONLY_KEYS {
+        assert_eq!(
+            store.raw_setting(key).unwrap(),
+            Some(json!({"mine": true})),
+            "{key} was deleted from iCloud"
+        );
+        assert!(
+            store
+                .entity_meta(EntityKind::Setting, key)
+                .unwrap()
+                .is_none()
+        );
+    }
+    drop(store);
+    assert_eq!(outbox_len(&b), 0);
+}
+
 #[test]
 fn snapshot_preferences_never_overwrite_this_macs_consented_hosts() {
     let (_cloud, mut a, mut b) = pair();
