@@ -130,6 +130,28 @@ fn the_first_mac_uploads_its_data_after_seeing_that_icloud_is_empty() {
 }
 
 #[test]
+fn something_deleted_while_the_first_merge_waits_is_not_brought_back_by_it() {
+    let cloud = MockCloud::new();
+    let mut a = established(&cloud, "A");
+    let mut b = new_mac(&cloud, "B");
+    b.core.start();
+    b.run();
+    assert_eq!(b.phase(), Phase::AwaitingJoin);
+    assert_eq!(summary(&b).cloud.watchlists, 1);
+
+    // The list is deleted on A while B is still deciding how to combine.
+    put(&a, &[]);
+    a.core.request_sync();
+    a.run();
+    b.core.request_sync();
+    b.run();
+    assert_eq!(summary(&b).cloud.watchlists, 0, "still offered to B");
+
+    join(&mut b, JoinMode::Merge, &backups("deleted-while-waiting"));
+    assert!(rows(&b, "watchlist").is_empty());
+}
+
+#[test]
 fn an_empty_icloud_never_deletes_local_data() {
     let cloud = MockCloud::new();
     let mut a = new_mac(&cloud, "A");

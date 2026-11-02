@@ -256,7 +256,12 @@ impl<T: SyncTransport> SyncCore<T> {
                 .store
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
-                .inbox_count(&[super::apply::UNKNOWN_TYPE, super::apply::NEWER_SCHEMA])
+                .inbox_count(&[
+                    super::apply::UNKNOWN_TYPE,
+                    super::apply::NEWER_SCHEMA,
+                    super::apply::LOCAL_UNREADABLE,
+                    super::apply::DELETE_PENDING,
+                ])
                 .is_ok_and(|waiting| waiting > 0)
         {
             let id = self.next_batch;
@@ -705,10 +710,31 @@ impl<T: SyncTransport> SyncCore<T> {
                 records.push(accepted);
             }
         }
-        let deletions: Vec<RecordName> = deletions
-            .iter()
-            .filter_map(|name| RecordName::parse(name))
-            .collect();
+        // A deletion names a record this version may have set aside (a kind it does not know, a
+        // schema it cannot read, or a first fetch still waiting for the user's choice). The copy
+        // must go, or it comes back when an update teaches this version to read it.
+        let initial_done = self.state().is_some_and(|s| s.initial_sync_done);
+        let mut named = Vec::new();
+        for name in &deletions {
+            let reasons: &[&str] = if initial_done {
+                &[super::apply::UNKNOWN_TYPE, super::apply::NEWER_SCHEMA]
+            } else {
+                &[
+                    super::apply::UNKNOWN_TYPE,
+                    super::apply::NEWER_SCHEMA,
+                    "initial_pending",
+                ]
+            };
+            let _ = self
+                .store
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .remove_inbox_if_reason(name, reasons);
+            if let Some(parsed) = RecordName::parse(name) {
+                named.push(parsed);
+            }
+        }
+        let deletions = named;
         if records.is_empty() && deletions.is_empty() {
             return;
         }

@@ -97,7 +97,14 @@ entity's identity, so repeated uploads and downloads hit the same record. Plain 
 arrives (a kind it does not know, `unknown_type`, or a schema above its own, `newer_schema`) is kept
 untouched in the inbox. An update that teaches it to read the record applies it: `apply_batch` looks at
 those entries again on every apply, and a launch with any waiting (after the first sync) asks for one
-empty apply, so nothing waits for new changes. What it still cannot read stays put, byte for byte. See
+empty apply, so nothing waits for new changes.
+A *deletion* is kept just as carefully: when iCloud deletes a record this version set aside, the copy
+is removed by name even though the kind cannot be parsed (and during the first-sync wait, a copy held
+as `initial_pending` goes too), so an update cannot bring a deleted record back. A deletion that
+cannot be applied because its table holds a row this version cannot read is filed as `delete_pending`
+(empty payload, the name only) and carried out by the first apply that can write the table; a record
+filed as `local_unreadable` is retried the same way. Not covered: a deletion that arrives *before* the
+record it deletes. What it still cannot read stays put, byte for byte. See
 [Newer versions](#newer-versions). A payload over ~900 KB as written (in practice a long paper-trading
 history) is deflated behind a `DVZ1` marker (`record::to_wire` / `from_wire`, applied in the core's
 `build` and `RawRecord::into_record`, so nothing else sees the difference); a paper account

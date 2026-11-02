@@ -36,6 +36,10 @@ mod portfolio;
 /// Why a fetched record was kept in the inbox, for the two reasons an update can fix.
 pub const UNKNOWN_TYPE: &str = "unknown_type";
 pub const NEWER_SCHEMA: &str = "newer_schema";
+/// A record kept because a table holds a row this version cannot read, so it cannot be rewritten.
+pub const LOCAL_UNREADABLE: &str = "local_unreadable";
+/// A deletion kept for the same reason. Its payload is empty; only the name matters.
+pub const DELETE_PENDING: &str = "delete_pending";
 
 /// Who is applying, and when. Passed in so applying is deterministic under test.
 #[derive(Debug, Clone)]
@@ -113,6 +117,8 @@ pub fn apply_batch(
         for name in deletions {
             work.apply_deletion(name)?;
         }
+        work.retry_pending_deletions()?;
+        work.retry_local_unreadable()?;
         work.retry_set_aside()?;
         work.retry_category_off()?;
         work.retry_orphans()?;
@@ -418,7 +424,7 @@ impl<'a> Work<'a> {
         if let Some(table) = table_of(kind)
             && !self.table_writable(table)?
         {
-            return self.keep(record, "local_unreadable");
+            return self.keep(record, LOCAL_UNREADABLE);
         }
         if matches!(kind, EntityKind::ChartTemplate | EntityKind::EditorTheme)
             && id.parse::<u64>().is_ok_and(|n| n < FIRST_USER_TEMPLATE_ID)
@@ -1437,6 +1443,55 @@ impl<'a> Work<'a> {
         Ok(())
     }
 
+    /// Deletions kept because their table could not be rewritten are applied once it can be.
+    fn retry_pending_deletions(&mut self) -> rusqlite::Result<()> {
+        let waiting: Vec<InboxRecord> = self
+            .store
+            .inbox()?
+            .into_iter()
+            .filter(|entry| entry.reason == DELETE_PENDING)
+            .collect();
+        for entry in waiting {
+            let Some(name) = RecordName::parse(&entry.record_name) else {
+                continue;
+            };
+            let writable = match table_of(name.kind) {
+                Some(table) => self.table_writable(table)?,
+                None => true,
+            };
+            if writable {
+                // Removes the inbox row first, then deletes as a fresh delete would.
+                self.apply_deletion(&name)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Records kept because their table held a row this version could not read are applied once
+    /// every row can be.
+    fn retry_local_unreadable(&mut self) -> rusqlite::Result<()> {
+        let waiting: Vec<InboxRecord> = self
+            .store
+            .inbox()?
+            .into_iter()
+            .filter(|entry| entry.reason == LOCAL_UNREADABLE)
+            .collect();
+        for entry in waiting {
+            let Some(record) = remote_from_inbox(&entry) else {
+                continue;
+            };
+            let writable = match table_of(record.record.name.kind) {
+                Some(table) => self.table_writable(table)?,
+                None => true,
+            };
+            if writable {
+                self.store.remove_inbox(&entry.record_name)?;
+                self.apply_record(&record)?;
+            }
+        }
+        Ok(())
+    }
+
     /// Records held back because their category was off are applied once it is switched on.
     fn retry_category_off(&mut self) -> rusqlite::Result<()> {
         let waiting: Vec<InboxRecord> = self
@@ -1528,6 +1583,23 @@ impl<'a> Work<'a> {
         if let Some(table) = table_of(kind)
             && !self.table_writable(table)?
         {
+            // The delete cannot be applied to a table this version cannot rewrite. Keep it, by
+            // name, and apply it when the table can be read: a checkpoint that moves on must not
+            // leave the item here to be uploaded again.
+            self.store.put_inbox(
+                &InboxRecord {
+                    record_name: name.render(),
+                    entity_type: kind.prefix().to_string(),
+                    schema_version: super::record::SCHEMA_VERSION,
+                    reason: DELETE_PENDING.to_string(),
+                    payload: Vec::new(),
+                    system_fields: None,
+                    revision: 0,
+                    origin_device: String::new(),
+                    modified_ms: self.ctx.now_ms,
+                },
+                self.ctx.now_ms,
+            )?;
             self.report.inboxed += 1;
             return Ok(());
         }
