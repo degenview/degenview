@@ -172,7 +172,9 @@ Flatpak, which brings its own runtime.
   `ubuntu-latest` again) and states the promise in CI. `linux-glibc-check.yml` builds the release on both
   22.04 runners for any pull request that changes `Cargo.toml`/`Cargo.lock`, the check, or those
   workflows: its build step catches a dependency that no longer builds or links on 22.04 (`Test linux`
-  builds on 24.04 and would not see it), and it also proves the check can fail.
+  builds on 24.04 and would not see it), and it also proves the check can fail. It also runs
+  `tools/test-check-glibc.py`, which builds small ELF files to test weak versus required versions and that
+  a damaged file gives an error message rather than a traceback.
 - **Cache key**: the Linux legs use `release-<target>-glibc-2.35` (matrix `cache`), not
   `release-<target>`, so they never restore a cache made on the 24.04 image: a build script or C object
   (`ring`, bundled SQLite) compiled there would carry its glibc requirement into the new build.

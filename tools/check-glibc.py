@@ -30,7 +30,8 @@ def version_key(version):
 
 def glibc_needs(data):
     """(required, weak): the highest GLIBC_x.y per kind, as strings, or None."""
-    if data[:4] != b"\x7fELF" or data[4] != 2 or data[5] != 1:
+    # 64 bytes is the ELF64 header; anything shorter cannot be a binary (and would index past its end).
+    if len(data) < 64 or data[:4] != b"\x7fELF" or data[4] != 2 or data[5] != 1:
         raise ValueError("not a 64-bit little-endian ELF file")
     (shoff,) = struct.unpack_from("<Q", data, 0x28)
     shentsize, shnum = struct.unpack_from("<HH", data, 0x3A)
@@ -69,7 +70,7 @@ def main(argv):
     try:
         with open(path, "rb") as file:
             required, weak = glibc_needs(file.read())
-    except (OSError, ValueError, struct.error) as error:
+    except (OSError, ValueError, IndexError, struct.error) as error:  # a damaged file is an error, not a traceback
         print(f"error: {path}: {error}", file=sys.stderr)
         return 1
     note = f" (and weakly GLIBC_{weak}, which the loader does not insist on)" if weak and (

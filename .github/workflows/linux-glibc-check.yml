@@ -12,6 +12,7 @@ on:
       - "Cargo.toml"
       - "Cargo.lock"
       - "tools/check-glibc.py"
+      - "tools/test-check-glibc.py"
       - ".github/workflows/linux-glibc-check.yml"
       - ".github/workflows/release.yml"
       - ".github/workflows/release-cache.yml"
@@ -52,6 +53,10 @@ jobs:
         with:
           shared-key: release-${{ matrix.cache }}
           save-if: false
+
+      # The checker's own tests (weak versus required, damaged files): no build needed.
+      - name: Test the glibc checker
+        run: python3 tools/test-check-glibc.py
 
       - name: Install Linux dependencies
         run: |
