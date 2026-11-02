@@ -14,7 +14,7 @@ use super::ids::{Direction, map_fields};
 use super::merge::{
     Outcome, Side, Stamp, conflict_copy_name, merge, next_drawing_id, renumber_drawing,
 };
-use super::policy::{EntityKind, Merge, category_of, merge_of};
+use super::policy::{EntityKind, Merge, category_of, merge_of, setting_is_portable};
 use super::project::{
     ScriptSnapshot, canonical_json, drawing_id, map_chart_cards, map_entry_cards, project_row_in,
     project_script, project_setting, project_transaction,
@@ -411,6 +411,10 @@ impl<'a> Work<'a> {
     fn apply_simple(&mut self, record: &RemoteRecord) -> rusqlite::Result<()> {
         let RecordName { kind, id } = &record.record.name;
         let (kind, id) = (*kind, id.as_str());
+        if kind == EntityKind::Setting && !setting_is_portable(id) {
+            // Validation already refuses these; this is the second lock on the same door.
+            return self.keep(record, "invalid");
+        }
         if let Some(table) = table_of(kind)
             && !self.table_writable(table)?
         {
@@ -1503,6 +1507,10 @@ impl<'a> Work<'a> {
         let (kind, id) = (name.kind, name.id.as_str());
         // A copy set aside is for a record that still exists: it must not come back later.
         self.store.remove_inbox(&name.render())?;
+        if kind == EntityKind::Setting && !setting_is_portable(id) {
+            // A setting this version keeps on the Mac is not deleted, or tracked, from iCloud.
+            return Ok(());
+        }
         if self.disabled.contains(&category_of(kind, id)) {
             // Not applied; if the category returns, a reconcile re-uploads anything still here.
             return Ok(());

@@ -67,6 +67,11 @@ fn check(record: &SyncRecord, value: &Value) -> Result<(), String> {
     let id = record.name.id.as_str();
     match kind {
         EntityKind::Setting => {
+            // A key this version keeps on the Mac (MCP, consent, AI preferences, the update channel,
+            // anything it does not know) is never written from iCloud, whoever put the record there.
+            if !super::policy::setting_is_portable(id) {
+                return Err("setting is not synced".into());
+            }
             if record.payload.len() > MAX_SETTING_BYTES {
                 return Err("setting is too large".into());
             }
@@ -325,6 +330,20 @@ mod tests {
         }
     }
 
+    #[test]
+    fn a_setting_kept_on_this_mac_is_refused_and_a_portable_one_accepted() {
+        for key in ["mcp.settings", "content.prefs", "something.new"] {
+            let reason = rejected(&record(EntityKind::Setting, key, json!({"a": 1})));
+            assert!(reason.contains("not synced"), "{key}: {reason}");
+        }
+        for key in ["appTheme", "editor.prefs", "watchlist.flags"] {
+            assert!(matches!(
+                validate(&record(EntityKind::Setting, key, json!({"a": 1}))),
+                Verdict::Accept(_)
+            ));
+        }
+    }
+
     fn rejected(record: &SyncRecord) -> String {
         match validate(record) {
             Verdict::Reject(reason) => reason,
@@ -443,10 +462,10 @@ mod tests {
 
     #[test]
     fn oversize_and_unparseable_payloads_are_rejected() {
-        let mut big = record(EntityKind::Setting, "x", json!(1));
+        let mut big = record(EntityKind::Setting, "appTheme", json!(1));
         big.payload = vec![b' '; MAX_RAW_PAYLOAD_BYTES + 1];
         assert!(rejected(&big).contains("bytes"));
-        let mut junk = record(EntityKind::Setting, "x", json!(1));
+        let mut junk = record(EntityKind::Setting, "appTheme", json!(1));
         junk.payload = b"{not json".to_vec();
         assert!(rejected(&junk).contains("JSON"));
     }
@@ -457,7 +476,7 @@ mod tests {
         for _ in 0..(MAX_JSON_DEPTH + 5) {
             value = json!([value]);
         }
-        let deep = record(EntityKind::Setting, "x", value);
+        let deep = record(EntityKind::Setting, "appTheme", value);
         assert!(rejected(&deep).contains("nested"));
     }
 
@@ -480,9 +499,9 @@ mod tests {
 
     #[test]
     fn numbers_outside_a_sane_range_are_rejected() {
-        let huge = record(EntityKind::Setting, "x", json!({"price": 1e300}));
+        let huge = record(EntityKind::Setting, "appTheme", json!({"price": 1e300}));
         assert!(rejected(&huge).contains("range"));
-        let fine = record(EntityKind::Setting, "x", json!({"price": 12345.5}));
+        let fine = record(EntityKind::Setting, "appTheme", json!({"price": 12345.5}));
         assert!(matches!(validate(&fine), Verdict::Accept(_)));
     }
 
