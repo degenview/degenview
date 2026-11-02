@@ -472,6 +472,123 @@ fn a_table_holding_a_row_from_a_newer_version_is_never_rewritten() {
     assert_eq!(on_b[0], json!({"future": true}));
 }
 
+#[test]
+fn a_deletion_of_a_record_this_version_cannot_read_removes_the_copy_it_kept() {
+    let (cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    cloud.put_from_elsewhere(raw("hologram.3", &json!({"x": 1}), 1, 1, "Z"), "Z");
+    settle(&mut a, &mut b);
+    let waiting = |mac: &Mac| {
+        mac.store
+            .lock()
+            .unwrap()
+            .inbox()
+            .unwrap()
+            .iter()
+            .any(|r| r.record_name == "hologram.3")
+    };
+    assert!(waiting(&b), "kept while it cannot be read");
+
+    // The newer app deletes it; this one does not know the kind but must not keep the copy,
+    // or an update that teaches it the kind would bring the deleted record back.
+    cloud.delete_from_elsewhere("hologram.3", "Z");
+    settle(&mut a, &mut b);
+    assert!(!waiting(&b), "the deleted record is still set aside");
+}
+
+#[test]
+fn a_remote_deletion_that_cannot_be_applied_yet_is_kept_and_applied_later() {
+    let (cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    put(&a, &[watchlist(10, "Tech", &[], false)]);
+    settle(&mut a, &mut b);
+    assert_eq!(rows(&b, "watchlist").len(), 1);
+
+    // B now holds a row it cannot read (written by a newer app), so its table is never rewritten.
+    b.store
+        .lock()
+        .unwrap()
+        .execute_raw(
+            "INSERT INTO watchlist (id, position, payload) VALUES ('999', 1, '{\"future\": true}')",
+        )
+        .unwrap();
+    put(&a, &[]);
+    settle(&mut a, &mut b);
+    assert_eq!(rows(&b, "watchlist").len(), 2, "the table was rewritten");
+    let kept = b.store.lock().unwrap().inbox().unwrap();
+    assert!(
+        kept.iter()
+            .any(|r| r.record_name == "watchlist.10" && r.reason == super::apply::DELETE_PENDING),
+        "{kept:?}"
+    );
+
+    // An update makes the row readable (here: the row goes away). The next apply carries it out.
+    b.store
+        .lock()
+        .unwrap()
+        .execute_raw("DELETE FROM watchlist WHERE id = '999'")
+        .unwrap();
+    let empty = super::core::RemoteBatch {
+        id: 0,
+        records: Vec::new(),
+        deletions: Vec::new(),
+    };
+    b.apply_to_store(&empty);
+    assert!(
+        rows(&b, "watchlist").is_empty(),
+        "the delete never happened"
+    );
+    assert!(
+        b.store
+            .lock()
+            .unwrap()
+            .inbox()
+            .unwrap()
+            .iter()
+            .all(|r| r.reason != super::apply::DELETE_PENDING)
+    );
+    settle(&mut a, &mut b);
+    assert!(rows(&b, "watchlist").is_empty(), "it came back");
+    assert!(
+        !cloud.names().contains(&"watchlist.10".to_string()),
+        "it was uploaded again"
+    );
+}
+
+#[test]
+fn a_record_kept_for_an_unreadable_table_is_applied_once_the_table_can_be_read() {
+    let (cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    b.store
+        .lock()
+        .unwrap()
+        .execute_raw(
+            "INSERT INTO watchlist (id, position, payload) VALUES ('999', 0, '{\"future\": true}')",
+        )
+        .unwrap();
+    put_remote(&cloud, 10, "Tech");
+    settle(&mut a, &mut b);
+    assert_eq!(rows(&b, "watchlist").len(), 1);
+
+    b.store
+        .lock()
+        .unwrap()
+        .execute_raw("DELETE FROM watchlist WHERE id = '999'")
+        .unwrap();
+    let empty = super::core::RemoteBatch {
+        id: 0,
+        records: Vec::new(),
+        deletions: Vec::new(),
+    };
+    b.apply_to_store(&empty);
+    let on_b = rows(&b, "watchlist");
+    assert_eq!(on_b.len(), 1);
+    assert_eq!(on_b[0]["name"], "Tech");
+}
+
 fn put_remote(cloud: &MockCloud, id: u64, name: &str) {
     let payload: Value = serde_json::to_value(watchlist(id, name, &[], false).0).unwrap();
     cloud.put_from_elsewhere(raw(&format!("watchlist.{id}"), &payload, 1, 1, "Z"), "Z");

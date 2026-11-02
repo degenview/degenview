@@ -1269,6 +1269,22 @@ impl Store {
         Ok(())
     }
 
+    /// Removes a set-aside record only if it is waiting for one of `reasons`. Used when the cloud
+    /// deletes a record whose name this version cannot parse: the copy it kept must not come back.
+    pub fn remove_inbox_if_reason(
+        &self,
+        record_name: &str,
+        reasons: &[&str],
+    ) -> rusqlite::Result<()> {
+        for reason in reasons {
+            self.connection.execute(
+                "DELETE FROM sync_inbox WHERE record_name = ?1 AND reason = ?2",
+                params![record_name, reason],
+            )?;
+        }
+        Ok(())
+    }
+
     /// Conflicts the user has not resolved or dismissed.
     pub fn open_conflict_count(&self) -> rusqlite::Result<usize> {
         self.connection.query_row(
