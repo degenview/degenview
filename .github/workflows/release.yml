@@ -233,6 +233,8 @@ jobs:
           rm -f "$RUNNER_TEMP/AuthKey.p8" "$RUNNER_TEMP/cert.p12" "$RUNNER_TEMP/notarize.zip" \
             "$RUNNER_TEMP/app.provisionprofile" "$RUNNER_TEMP/helper.provisionprofile"
 
+      # The in-app updater picks this zip by its `-windows-x64.zip` suffix and unpacks
+      # `degenview.exe` from its root (`update_archive::extract_exe`); keep both.
       - name: Build Windows executable
         if: runner.os == 'Windows'
         shell: bash

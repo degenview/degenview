@@ -66,3 +66,25 @@ jobs:
           cargo build --locked --features icloud
           ! otool -L target/debug/degenview-alert-agent | grep -q libswift
           otool -L target/debug/degenview | grep -q libswiftCloudKit
+
+  # The Windows self-updater (`service::self_update::portable_exe`) only runs there, and the full
+  # suite has never been run on Windows, so this job runs the update tests and no more. It also
+  # proves the whole crate still compiles for Windows, which the release build otherwise finds out.
+  test-windows:
+    name: Test windows (updater)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: windows
+
+      - name: Run update tests
+        shell: bash
+        env:
+          DEGENVIEW_NO_KEYCHAIN: "1"
+        run: cargo test --locked --lib -- self_update update_archive update_check update_host

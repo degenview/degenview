@@ -426,7 +426,7 @@ fn available_phase(release: &Release, target: &Result<PathBuf, String>) -> Phase
     } else if let Err(reason) = target {
         Some(reason.clone())
     } else {
-        Some("This release has no download for this Mac.".to_owned())
+        Some("This release has no download for this computer.".to_owned())
     };
     Phase::Available {
         version: release.version.clone(),

@@ -39,7 +39,7 @@ pub fn install_target() -> Result<PathBuf, String> {
         return Err(if crate::service::sandbox::is_flatpak() {
             "This Flatpak cannot update itself. Download the new .flatpak from the release page."
         } else {
-            "Automatic updates are only available on macOS."
+            "Automatic updates are only available on macOS and Windows."
         }
         .to_owned());
     }
@@ -86,7 +86,7 @@ pub fn prepare(
     let asset = release
         .asset
         .as_ref()
-        .ok_or("This release has no download for this Mac.")?;
+        .ok_or("This release has no download for this computer.")?;
     progress(Progress::new(Stage::Verifying));
     tag_signature::verify_release_tag(&release.tag).map_err(|error| error.to_string())?;
     let team_id = code_signature::team_id(app)?;

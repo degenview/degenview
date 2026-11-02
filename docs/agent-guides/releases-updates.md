@@ -61,7 +61,7 @@ other jobs. The same workflow
 runs on pull requests that touch `packaging/flatpak/**`, `Cargo.lock` or `Cargo.toml`
 (`flatpak-check.yml`, x86_64 only: a release builds arm64 too), which is the only check that the manifest builds before a tag. Details, and
 what is unverified: [Flatpak](../flatpak.md). The updater never looks at the Flatpak asset: it only
-picks the macOS zip suffixes.
+picks the macOS and Windows zip suffixes.
 
 The macOS jobs staple the notarization ticket, which fetches it from Apple's CloudKit; that
 connection drops now and then (worst on `macos-x64`, the Intel runner: "network connection was
@@ -82,7 +82,8 @@ version. Re-run a failed tagged build through the Release workflow dispatch.
 - The release must be immutable and authored by `github-actions[bot]` or an allowed maintainer.
   Keep Immutable releases enabled. Assets must be uploaded before publication; never upload to an
   immutable release afterward. Old mutable releases are manual-download only.
-- Keep macOS suffixes `-macos-arm64.zip`/`-macos-x64.zip` and the `DegenView.app` layout. The updater
+- Keep macOS suffixes `-macos-arm64.zip`/`-macos-x64.zip` and the `DegenView.app` layout, and the
+  Windows suffix `-windows-x64.zip` with `degenview.exe` at the zip root (see Windows below). The updater
   checks GitHub's digest. `gh release create "$TAG" dist/*` handles draft, upload, and publish; the
   workflow verifies the release and assets last.
 - The Release workflow imports a Developer ID Application certificate into a throwaway keychain,
@@ -103,6 +104,44 @@ version. Re-run a failed tagged build through the Release workflow dispatch.
 - The helper clears its environment. `self_update::FORWARDED_ENV` may contain only non-secrets:
   `HOME`, `DEGENVIEW_CACHE_DIR`, `DEGENVIEW_NO_KEYCHAIN`, and `DEGENVIEW_NO_NOTIFICATIONS`. Never
   forward credentials; helper argv is visible to other users.
+
+## Windows updates
+
+The updater also runs on Windows x64, for the portable zip (`DegenView-<tag>-windows-x64.zip`). Code:
+`service/self_update/portable_exe.rs` (the strategy), `update_archive::{extract_exe, check_exe}`;
+the check, tag verification, download, digest and `UpdateHost` are shared with macOS. Windows on
+ARM and Linux get no asset and stay on **View Release**.
+
+- **Trust**: the signed tag, the immutable release and the GitHub SHA-256, exactly the root of trust
+  macOS already depends on. There is **no** Authenticode check because the Windows build is not
+  signed (no certificate, no CI step). A signer pin like macOS's Team ID is the follow-up that
+  would add one; until then nothing proves the exe beyond those three.
+- **Unpack**: in-process with the `zip` crate (inflate only), no `ditto`. `precheck` bounds the
+  directory first; `extract_exe` takes only the entry named `degenview.exe` at the root, under a
+  fixed output name and the `MAX_UNPACKED_BYTES` cap; licence files and anything else are ignored.
+  `check_exe` requires a PE image for the running CPU.
+- **Installable**: the running exe's folder must be writable (`Program Files` is not: **View
+  Release**), and a build under the source tree (`cargo run`) never replaces itself (the paths are compared without
+  the `\\?\` prefix `canonicalize` adds).
+- **Swap**: Windows cannot overwrite a running exe but can rename it, so the swap moves the running
+  exe into `.DegenView-update\old\` and renames the new one into its place, rolling back if the
+  second rename fails. The next start deletes the staging folder (a file still in use waits for
+  the start after).
+- **Relaunch**: no helper. The new exe is started detached with `--relaunch-after <pid>` and a
+  cleared environment (`FORWARDED_ENV` in `portable_exe`: data/cache folders, the standard Windows
+  variables a child process expects, and non-secret `DEGENVIEW_*` switches, names matched
+  case-insensitively; never credentials).
+  `wait_for_predecessor` runs first in `run_gui_with`, before the database opens, and waits up to
+  60 s (as long as the macOS helper) for that pid to exit so two instances never share the store.
+- Inferred, not observed: our own download carries no Mark-of-the-Web, so an updated exe should not
+  meet SmartScreen again; only the first manual download does.
+- **Not verified**: written and unit-tested on macOS only. The `cfg(windows)` code (spawn, wait) and
+  the real-process rename test run on the `test-windows` CI job. No update has been taken in a real
+  Windows session: release the next candidate, install the previous candidate's zip in a folder you
+  own, and update from it. Builds before the first updater-capable release have to be replaced by
+  hand once.
+- **Not done**: an installer (a per-user one would give a fixed writable folder, a Start menu entry
+  and an uninstaller), Authenticode signing, a Windows-on-ARM asset.
 
 ## iCloud entitlements
 

@@ -46,6 +46,9 @@ http = "1.5.0"
 tokio-util = "0.7.20"
 tower = { version = "0.5.3", features = ["limit"] }
 similar = { version = "3.2.0", default-features = false, features = ["std"] }
+# Windows self-update unpacks the release zip in-process (`update_archive::extract_exe`); macOS uses
+# ditto. Inflate only: no compression, no zopfli.
+zip = { version = "9.2.2", default-features = false, features = ["deflate-flate2"] }
 
 # Secret storage on Linux (docs/flatpak.md): the Secret Service, or the Secret portal in a Flatpak.
 [target.'cfg(target_os = "linux")'.dependencies]

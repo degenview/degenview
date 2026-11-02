@@ -21,6 +21,19 @@ mod app_bundle;
 #[cfg(not(windows))]
 pub use app_bundle::{Prepared, apply_and_relaunch, cleanup_stale, install_target, prepare};
 
+// Compiled everywhere under test so its logic is tested on every platform; it is the strategy only
+// on Windows.
+#[cfg(any(windows, test))]
+mod portable_exe;
+#[cfg(windows)]
+pub use portable_exe::{
+    Prepared, apply_and_relaunch, cleanup_stale, install_target, prepare, wait_for_predecessor,
+};
+
+/// Nothing to wait for outside Windows: the macOS helper waits for the old process itself.
+#[cfg(not(windows))]
+pub fn wait_for_predecessor() {}
+
 /// The folder next to the app where an update is downloaded, unpacked and kept until the new
 /// version has started.
 const STAGING_NAME: &str = ".DegenView-update";
@@ -101,8 +114,18 @@ fn forwarded_env(
     vars: impl Iterator<Item = (OsString, OsString)>,
     allowed: &[&str],
 ) -> Vec<(OsString, OsString)> {
-    vars.filter(|(name, _)| name.to_str().is_some_and(|name| allowed.contains(&name)))
-        .collect()
+    vars.filter(|(name, _)| {
+        name.to_str().is_some_and(|name| {
+            allowed.iter().any(|allowed| {
+                if cfg!(windows) {
+                    allowed.eq_ignore_ascii_case(name)
+                } else {
+                    *allowed == name
+                }
+            })
+        })
+    })
+    .collect()
 }
 
 #[cfg(test)]

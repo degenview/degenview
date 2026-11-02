@@ -134,6 +134,9 @@ fn platform_suffix() -> Option<&'static str> {
         Some("-macos-arm64.zip")
     } else if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
         Some("-macos-x64.zip")
+    } else if cfg!(all(windows, target_arch = "x86_64")) {
+        // The zip `release.yml` builds for Windows: `degenview.exe` at its root.
+        Some("-windows-x64.zip")
     } else {
         None
     }
@@ -356,7 +359,7 @@ mod tests {
 
     fn reply_by(tag: &str, immutable: bool, author: &str) -> String {
         let digest = format!("sha256:{}", "ab".repeat(32));
-        let assets: Vec<String> = ["macos-arm64", "macos-x64"]
+        let assets: Vec<String> = ["macos-arm64", "macos-x64", "windows-x64"]
             .iter()
             .map(|platform| {
                 format!(

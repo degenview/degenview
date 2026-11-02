@@ -146,6 +146,84 @@ fn directory_bytes(dir: &Path) -> u64 {
         .sum()
 }
 
+// MARK: Windows executable
+
+/// The one file a Windows update replaces: the release zip carries it at its root, next to licence
+/// texts that are not code and are left alone.
+#[cfg(any(windows, test))]
+pub const EXE_NAME: &str = "degenview.exe";
+
+/// Inflates `EXE_NAME` from the zip in `bytes` into `dest_dir`, refusing more than
+/// `MAX_UNPACKED_BYTES`. The output name is fixed, so nothing in the archive picks where a file
+/// lands, and every other entry is ignored. `precheck` has already bounded the directory itself.
+#[cfg(any(windows, test))]
+pub fn extract_exe(bytes: &[u8], dest_dir: &Path) -> Result<std::path::PathBuf, String> {
+    use std::io::Read;
+
+    let failed = |error: &dyn std::fmt::Display| format!("Could not unpack the download: {error}");
+    let mut archive =
+        zip::ZipArchive::new(std::io::Cursor::new(bytes)).map_err(|error| failed(&error))?;
+    let mut entry = archive
+        .by_name(EXE_NAME)
+        .map_err(|_| "The download is not a DegenView app.".to_owned())?;
+    if !entry.is_file() || entry.size() > MAX_UNPACKED_BYTES {
+        return Err("The download is not a DegenView app.".to_owned());
+    }
+    std::fs::create_dir_all(dest_dir).map_err(|error| failed(&error))?;
+    let dest = dest_dir.join(EXE_NAME);
+    let mut out = std::fs::File::create(&dest).map_err(|error| failed(&error))?;
+    // Declared sizes can lie: count what actually comes out.
+    let copied = std::io::copy(&mut (&mut entry).take(MAX_UNPACKED_BYTES + 1), &mut out)
+        .map_err(|error| failed(&error))?;
+    if copied > MAX_UNPACKED_BYTES {
+        return Err("The download unpacks to more data than an update should.".to_owned());
+    }
+    Ok(dest)
+}
+
+/// The PE machine type of the running build, which an update for another CPU must not replace.
+#[cfg(any(windows, test))]
+const fn expected_machine() -> u16 {
+    if cfg!(target_arch = "aarch64") {
+        0xAA64
+    } else {
+        0x8664
+    }
+}
+
+/// The machine type in the PE header of `exe`, or an error if it is not a PE image.
+#[cfg(any(windows, test))]
+fn pe_machine(exe: &Path) -> Result<u16, String> {
+    use std::io::{Read, Seek, SeekFrom};
+
+    let not_degenview = || "The download is not a DegenView app.".to_owned();
+    let mut file = std::fs::File::open(exe).map_err(|_| not_degenview())?;
+    let mut dos = [0u8; 64];
+    file.read_exact(&mut dos).map_err(|_| not_degenview())?;
+    if &dos[..2] != b"MZ" {
+        return Err(not_degenview());
+    }
+    let pe_at = u32::from_le_bytes([dos[0x3C], dos[0x3D], dos[0x3E], dos[0x3F]]);
+    let mut pe = [0u8; 6];
+    file.seek(SeekFrom::Start(pe_at.into()))
+        .and_then(|_| file.read_exact(&mut pe))
+        .map_err(|_| not_degenview())?;
+    if &pe[..4] != b"PE\0\0" {
+        return Err(not_degenview());
+    }
+    Ok(u16::from_le_bytes([pe[4], pe[5]]))
+}
+
+/// Structural check of an unpacked Windows executable: a PE image for this CPU. It cannot prove the
+/// file is genuine; that is the signed tag, the immutable release and the SHA-256.
+#[cfg(any(windows, test))]
+pub fn check_exe(exe: &Path) -> Result<(), String> {
+    if pe_machine(exe)? != expected_machine() {
+        return Err("The download is for a different kind of processor.".to_owned());
+    }
+    Ok(())
+}
+
 // MARK: Bundle layout
 
 /// The unpacked bundle must be exactly DegenView: both of its executables with our bundle ids, no
@@ -238,6 +316,16 @@ pub(crate) mod testing {
         app
     }
 
+    /// A file that passes `check_exe`: the DOS header, a PE signature and `machine`.
+    pub fn fake_pe(machine: u16) -> Vec<u8> {
+        let mut bytes = vec![0u8; 0x80];
+        bytes[..2].copy_from_slice(b"MZ");
+        bytes[0x3C..0x40].copy_from_slice(&0x40u32.to_le_bytes());
+        bytes[0x40..0x44].copy_from_slice(b"PE\0\0");
+        bytes[0x44..0x46].copy_from_slice(&machine.to_le_bytes());
+        bytes
+    }
+
     #[cfg(unix)]
     pub fn make_executable(path: &Path) {
         use std::os::unix::fs::PermissionsExt;
@@ -250,7 +338,7 @@ pub(crate) mod testing {
 
 #[cfg(test)]
 mod tests {
-    use super::testing::{fake_app, make_executable};
+    use super::testing::{fake_app, fake_pe, make_executable};
     use super::*;
     use std::fs;
     use std::path::PathBuf;
@@ -323,6 +411,7 @@ mod tests {
         assert!(precheck(&broken).is_err());
     }
 
+    #[cfg(unix)]
     #[test]
     fn a_runaway_extraction_is_killed() {
         let root = scratch("runaway");
@@ -341,6 +430,7 @@ mod tests {
         let _ = fs::remove_dir_all(root);
     }
 
+    #[cfg(unix)]
     #[test]
     fn a_slow_extraction_times_out_and_a_small_one_succeeds() {
         let root = scratch("timeout");
@@ -360,6 +450,7 @@ mod tests {
         let _ = fs::remove_dir_all(root);
     }
 
+    #[cfg(not(windows))]
     #[test]
     fn the_real_bundle_layout_passes() {
         let root = scratch("layout-ok");
@@ -374,6 +465,7 @@ mod tests {
         let _ = fs::remove_dir_all(root);
     }
 
+    #[cfg(not(windows))]
     #[test]
     fn a_missing_or_wrong_helper_is_refused() {
         let root = scratch("helper");
@@ -390,6 +482,7 @@ mod tests {
         let _ = fs::remove_dir_all(root);
     }
 
+    #[cfg(not(windows))]
     #[test]
     fn wrong_main_id_and_substring_ids_are_refused() {
         let root = scratch("ids");
@@ -425,6 +518,104 @@ mod tests {
             let error = check_bundle(&app).unwrap_err();
             assert!(error.contains("links outside"), "{target}: {error}");
         }
+        let _ = fs::remove_dir_all(root);
+    }
+
+    // MARK: Windows executable
+
+    fn make_zip(entries: &[(&str, &[u8])], method: zip::CompressionMethod) -> Vec<u8> {
+        use std::io::Write;
+        let mut writer = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
+        let options = zip::write::SimpleFileOptions::default().compression_method(method);
+        for (name, body) in entries {
+            writer.start_file(*name, options).unwrap();
+            writer.write_all(body).unwrap();
+        }
+        writer.finish().unwrap().into_inner()
+    }
+
+    #[test]
+    fn only_the_executable_is_unpacked_from_a_windows_zip() {
+        let root = scratch("exe-extract");
+        let exe = fake_pe(expected_machine());
+        for method in [
+            zip::CompressionMethod::Stored,
+            zip::CompressionMethod::Deflated,
+        ] {
+            let zip = make_zip(
+                &[
+                    ("OFL-JetBrainsMono.txt", b"licence"),
+                    (EXE_NAME, &exe),
+                    ("evil.exe", b"MZ"),
+                ],
+                method,
+            );
+            precheck(&zip).unwrap();
+            let dest = root.join(format!("{method:?}"));
+            let path = extract_exe(&zip, &dest).unwrap();
+            assert_eq!(fs::read(&path).unwrap(), exe);
+            assert_eq!(fs::read_dir(&dest).unwrap().count(), 1);
+            assert!(check_exe(&path).is_ok());
+        }
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_zip_without_the_executable_or_with_it_nested_is_refused() {
+        let root = scratch("exe-missing");
+        let exe = fake_pe(expected_machine());
+        let method = zip::CompressionMethod::Stored;
+        for entries in [
+            vec![("README.md", &b"x"[..])],
+            vec![("DegenView/degenview.exe", &exe[..])],
+            vec![("DEGENVIEW.EXE", &exe[..])],
+        ] {
+            let zip = make_zip(&entries, method);
+            assert!(extract_exe(&zip, &root.join("out")).is_err(), "{entries:?}");
+        }
+        assert!(extract_exe(b"not a zip", &root.join("out")).is_err());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn only_a_pe_image_for_this_cpu_passes() {
+        let root = scratch("exe-check");
+        let check = |name: &str, bytes: &[u8]| {
+            let path = root.join(name);
+            fs::write(&path, bytes).unwrap();
+            check_exe(&path)
+        };
+        assert!(check("ok.exe", &fake_pe(expected_machine())).is_ok());
+        let other = if expected_machine() == 0x8664 {
+            0xAA64
+        } else {
+            0x8664
+        };
+        assert!(check("other.exe", &fake_pe(other)).is_err());
+        assert!(check("short.exe", b"MZ").is_err());
+        assert!(check("elf.exe", &[0x7f, b'E', b'L', b'F', 0, 0, 0, 0]).is_err());
+        let mut no_pe = fake_pe(expected_machine());
+        no_pe[0x40] = b'X';
+        assert!(check("no-pe.exe", &no_pe).is_err());
+        let mut far = fake_pe(expected_machine());
+        far[0x3C..0x40].copy_from_slice(&0x00FF_FFFFu32.to_le_bytes());
+        assert!(check("far.exe", &far).is_err());
+        assert!(check_exe(&root.join("missing.exe")).is_err());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// Needs a real release zip: `DEGENVIEW_TEST_WINDOWS_ZIP=<path> cargo test -- --ignored
+    /// a_real_windows_release_zip_unpacks`. Reads the PE machine directly rather than `check_exe`,
+    /// which compares with the CPU of the machine running the test.
+    #[test]
+    #[ignore = "needs a downloaded release zip"]
+    fn a_real_windows_release_zip_unpacks() {
+        let path = std::env::var("DEGENVIEW_TEST_WINDOWS_ZIP").expect("DEGENVIEW_TEST_WINDOWS_ZIP");
+        let zip = fs::read(path).unwrap();
+        precheck(&zip).unwrap();
+        let root = scratch("real-windows-zip");
+        let exe = extract_exe(&zip, &root).unwrap();
+        assert_eq!(pe_machine(&exe).unwrap(), 0x8664);
         let _ = fs::remove_dir_all(root);
     }
 }
