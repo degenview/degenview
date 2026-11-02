@@ -114,7 +114,7 @@ timeline scrubber, speed and interval controls, and shared clock across every ch
 
 ## Requirements
 
-- macOS (Apple Silicon or Intel), Windows (x64), or Linux (x64 or arm64)
+- macOS (Apple Silicon or Intel), Windows (x64 or ARM64), or Linux (x64 or arm64)
 - [Rust](https://rustup.rs) 1.95 or newer (`cargo` on your `PATH`)
 - A free Alpaca account and API keys only if you want stock data — set `DEGENVIEW_ALPACA_KEY_ID`
   and `DEGENVIEW_ALPACA_SECRET_KEY`, or store them in Keychain on macOS (the Secret Service on Linux)
@@ -202,15 +202,16 @@ A bundle has no remote, so `flatpak update` does not find newer versions and the
 itself in the sandbox; download the next one from the release page. How it is built and what is unverified: [docs/flatpak.md](docs/flatpak.md).
 
 Releases: push a tag like `v0.1.0` and the Release workflow builds macOS (arm64 + Intel, as a disk
-image and a zip), Windows (an installer and a portable zip), and Linux binaries (a tarball and a
+image and a zip), Windows (x64 and ARM64, each an installer and a portable zip), and Linux binaries (a tarball and a
 Flatpak) and publishes a GitHub release you can download.
 
 On macOS, open `DegenView-<tag>-macos-<arm64|x64>.dmg` and drag DegenView onto the Applications
 shortcut. The app is signed and notarized, and updates itself from inside the app (it downloads the
 `.zip` with the same app in it, so keep it in Applications, not on the disk image).
 
-On Windows, `DegenView-<tag>-windows-x64-setup.exe` installs for the current user (no admin rights)
-into `%LOCALAPPDATA%\Programs\DegenView`, adds a Start menu entry and an uninstaller, and keeps your
+On Windows, `DegenView-<tag>-windows-x64-setup.exe` (or `-windows-arm64-setup.exe` on a Windows on ARM
+PC such as a Snapdragon X laptop; the x64 build only runs there emulated) installs for the current
+user (no admin rights) into `%LOCALAPPDATA%\Programs\DegenView`, adds a Start menu entry and an uninstaller, and keeps your
 data when removed. The `.zip` is the portable alternative: unzip it into a folder you own. Both update
 themselves from inside the app. Neither is signed yet, so SmartScreen may ask you to approve the first
 launch.

@@ -137,6 +137,10 @@ fn platform_suffix() -> Option<&'static str> {
     } else if cfg!(all(windows, target_arch = "x86_64")) {
         // The zip `release.yml` builds for Windows: `degenview.exe` at its root.
         Some("-windows-x64.zip")
+    } else if cfg!(all(windows, target_arch = "aarch64")) {
+        // Native ARM64. An x64 build running emulated on Windows on ARM is still x86_64 here, so it
+        // keeps taking the x64 zip.
+        Some("-windows-arm64.zip")
     } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
         // The tarball `release.yml` builds for Linux: `./degenview` at its root. The Flatpak next to
         // it ends `.flatpak` and is never picked; a Flatpak install is refused by `install_target`.
@@ -369,6 +373,7 @@ mod tests {
             "macos-arm64.zip",
             "macos-x64.zip",
             "windows-x64.zip",
+            "windows-arm64.zip",
             "linux-x64.tar.gz",
             "linux-arm64.tar.gz",
         ]
@@ -613,6 +618,36 @@ mod tests {
             Some(&digest),
         )];
         assert!(select_asset(only_setup, Some("-windows-x64.zip")).is_none());
+    }
+
+    /// Windows ships an x64 and an ARM64 zip, each next to its installer: a build takes the zip for its
+    /// own CPU and never the other zip or an installer, whatever order GitHub lists them in.
+    #[test]
+    fn each_windows_cpu_takes_only_its_own_zip() {
+        let digest = format!("sha256:{}", "ab".repeat(32));
+        let files = [
+            "DegenView-v1.0.0-windows-x64-setup.exe",
+            "DegenView-v1.0.0-windows-arm64-setup.exe",
+            "DegenView-v1.0.0-windows-x64.zip",
+            "DegenView-v1.0.0-windows-arm64.zip",
+        ];
+        for (suffix, expected) in [
+            ("-windows-x64.zip", files[2]),
+            ("-windows-arm64.zip", files[3]),
+        ] {
+            for reversed in [false, true] {
+                let mut names = files.to_vec();
+                if reversed {
+                    names.reverse();
+                }
+                let assets = names
+                    .iter()
+                    .map(|name| asset(name, &format!("v1.0.0/{name}"), 40, Some(&digest)))
+                    .collect();
+                let picked = select_asset(assets, Some(suffix)).unwrap();
+                assert_eq!(picked.name, expected);
+            }
+        }
     }
 
     /// Linux ships a tarball and, per CPU, a Flatpak bundle; only the tarball may be picked.

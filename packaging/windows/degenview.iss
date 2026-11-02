@@ -11,11 +11,25 @@
 #ifndef ExePath
   #error Pass /DExePath=<path to degenview.exe>
 #endif
+; The CPU the exe in ExePath is built for. One script makes both installers; they share the AppId below,
+; so installing the arm64 one over an x64 install is an in-place move to the native build.
+#ifndef Arch
+  #define Arch "x64"
+#endif
+#if Arch == "arm64"
+  #define ArchAllowed "arm64"
+#elif Arch == "x64"
+  ; x64os, not x64compatible: that would also admit Windows on ARM, which would then install the
+  ; emulated build. Refusing steers those users to the native installer.
+  #define ArchAllowed "x64os"
+#else
+  #error Arch must be x64 or arm64
+#endif
 
 [Setup]
 ; The installer's identity, and the key under Settings > Installed apps. NEVER change it: a new id
 ; makes the next installer install beside the old one instead of over it. The app writes the same
-; id (`INSTALLER_APP_ID` in src/service/self_update/portable_exe.rs, kept in step by a test) to keep
+; id (`INSTALLER_APP_ID` in src/service/self_update/installed_version.rs, kept in step by a test) to keep
 ; the displayed version current after a self-update.
 AppId={{79717C79-2D1E-4206-B25A-F3E626438640}
 AppName=DegenView
@@ -29,8 +43,8 @@ AppSupportURL=https://github.com/degenview/degenview/issues
 PrivilegesRequired=lowest
 DefaultDirName={autopf}\DegenView
 DisableProgramGroupPage=yes
-ArchitecturesAllowed=x64compatible
-ArchitecturesInstallIn64BitMode=x64compatible
+ArchitecturesAllowed={#ArchAllowed}
+ArchitecturesInstallIn64BitMode={#ArchAllowed}
 LicenseFile=..\..\LICENSE.md
 SetupIconFile=..\..\assets\brand\DegenView.ico
 UninstallDisplayIcon={app}\degenview.exe
@@ -41,7 +55,7 @@ SolidCompression=yes
 CloseApplications=yes
 RestartApplications=no
 OutputDir=..\..\dist
-OutputBaseFilename=DegenView-{#Tag}-windows-x64-setup
+OutputBaseFilename=DegenView-{#Tag}-windows-{#Arch}-setup
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked

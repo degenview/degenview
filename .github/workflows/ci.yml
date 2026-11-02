@@ -70,10 +70,22 @@ jobs:
   # The Windows self-updater (`service::self_update::portable_binary`) only runs there, and the full
   # suite has never been run on Windows, so this job runs the update tests and no more. It also
   # proves the whole crate still compiles for Windows, which the release build otherwise finds out.
+  # Two runners: x64, and native ARM64, which is where `ring`, the bundled SQLite and the windowing
+  # stack first have to build for `aarch64-pc-windows-msvc`.
   test-windows:
-    name: Test windows (updater)
-    runs-on: windows-latest
-    timeout-minutes: 45
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Test windows (updater)
+            os: windows-latest
+            key: windows
+          - name: Test windows arm64 (updater)
+            os: windows-11-arm
+            key: windows-arm64
     steps:
       - uses: actions/checkout@v7
 
@@ -81,7 +93,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          key: windows
+          key: ${{ matrix.key }}
 
       # `cargo test --lib` builds the library only as a test harness, where the updater's per-OS code
       # is compiled differently from the shipped binary; this is the build the release makes.

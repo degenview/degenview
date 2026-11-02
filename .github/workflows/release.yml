@@ -99,6 +99,11 @@ jobs:
           - name: windows-x64
             os: windows-latest
             target: x86_64-pc-windows-msvc
+          # Native ARM64 Windows (free for public repositories). The zip and installer names carry
+          # the matrix name, which is what the updater's `-windows-arm64.zip` suffix matches.
+          - name: windows-arm64
+            os: windows-11-arm
+            target: aarch64-pc-windows-msvc
           - name: linux-x64
             os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
@@ -304,9 +309,12 @@ jobs:
       - name: Build Windows installer
         if: runner.os == 'Windows'
         shell: bash
+        env:
+          MATRIX_NAME: ${{ matrix.name }}
         run: |
           choco install innosetup --version "$INNO_SETUP_VERSION" -y --no-progress
-          ./tools/windows-installer.sh "$RELEASE_TAG" target/release/degenview.exe
+          # `windows-x64` / `windows-arm64`: the part after the dash is the installer's architecture.
+          ./tools/windows-installer.sh "$RELEASE_TAG" target/release/degenview.exe "${MATRIX_NAME#windows-}"
 
       # The in-app updater picks this tarball by its `-linux-<arch>.tar.gz` suffix and unpacks only
       # `./degenview` from its root (`update_archive::extract_tar_gz_binary`); keep both.
@@ -379,6 +387,8 @@ jobs:
             echo "- **macOS archives:** \`DegenView-${RELEASE_TAG}-macos-arm64.zip\` and \`DegenView-${RELEASE_TAG}-macos-x64.zip\` hold the same app; the in-app updater downloads these"
             echo "- **Windows (x64) installer:** \`DegenView-${RELEASE_TAG}-windows-x64-setup.exe\`, installs for the current user without admin rights"
             echo "- **Windows (x64) portable:** \`DegenView-${RELEASE_TAG}-windows-x64.zip\`, unzip into a folder you own"
+            echo "- **Windows (ARM64) installer:** \`DegenView-${RELEASE_TAG}-windows-arm64-setup.exe\`, the native build for Windows on ARM (Snapdragon X, Surface, Parallels on Apple Silicon); the x64 build only runs there emulated"
+            echo "- **Windows (ARM64) portable:** \`DegenView-${RELEASE_TAG}-windows-arm64.zip\`"
             echo "- **Linux (x64):** \`DegenView-${RELEASE_TAG}-linux-x64.tar.gz\`, updates itself when installed in a folder you can write to"
             echo "- **Linux (arm64):** \`DegenView-${RELEASE_TAG}-linux-arm64.tar.gz\`, updates itself when installed in a folder you can write to"
             echo "- **Linux Flatpak (x64, arm64):** \`DegenView-${RELEASE_TAG}-linux-x64.flatpak\` and \`DegenView-${RELEASE_TAG}-linux-arm64.flatpak\`, installed with \`flatpak install --user <file>\`; it cannot update itself, so download the next one"
