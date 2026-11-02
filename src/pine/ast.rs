@@ -120,6 +120,9 @@ pub enum Statement {
     Declaration {
         name: String,
         annotation: TypeAnnotation,
+        /// The annotation with its element, key/value and user-type names, as written; None when
+        /// the declaration has no type keyword. `annotation` only keeps the flat kind.
+        type_ref: Option<TypeRef>,
         mode: DeclarationMode,
         value: Expression,
         range: SourceRange,

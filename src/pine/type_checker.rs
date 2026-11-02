@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 
 use super::ast::{
     Argument, AssignmentOperator, BinaryOperator, DeclarationMode, Expression, FunctionKind,
-    Literal, Qualifier, Statement, TypeAnnotation, UnaryOperator,
+    Literal, Qualifier, Statement, TypeAnnotation, TypeRef, UnaryOperator,
 };
 use super::builtin_types::{self, value_type_name};
 use super::callables::{Callables, Given, NoFit, Resolution};
@@ -171,11 +171,12 @@ impl TypeChecker {
                 Statement::Declaration {
                     name,
                     annotation,
+                    type_ref,
                     mode,
                     value,
                     ..
                 } => {
-                    self.declare(name, *annotation, *mode, value, scope);
+                    self.declare(name, *annotation, type_ref.as_ref(), *mode, value, scope);
                     let declared = scope.get(name).copied().unwrap_or(Inferred::Unknown);
                     self.last = declared;
                 }
@@ -344,6 +345,7 @@ impl TypeChecker {
         &mut self,
         name: &str,
         annotation: TypeAnnotation,
+        type_ref: Option<&TypeRef>,
         mode: DeclarationMode,
         expression: &Expression,
         scope: &mut Scope,
@@ -365,6 +367,7 @@ impl TypeChecker {
                 expression.range(),
             );
         }
+        let mismatched = self.annotation_mismatch(name, type_ref, value, expression.range());
         if annotation.kind == Some(ValueType::Object)
             || annotation.kind == Some(ValueType::Map)
             || annotation.kind == Some(ValueType::Matrix)
@@ -390,7 +393,7 @@ impl TypeChecker {
                 },
             );
         } else if let Some(declared) = annotation.kind {
-            if !fits(value, declared) {
+            if !mismatched && !fits(value, declared) {
                 self.error(
                     "PINE3030",
                     format!(
@@ -427,6 +430,48 @@ impl TypeChecker {
         } else {
             scope.insert(name.to_owned(), Inferred::Unknown);
         }
+    }
+
+    /// Reports a value whose known type cannot be the annotated one: an `array<float>` for an
+    /// `int`, a map for an `array<int>`, one user type for another. Returns whether it did.
+    /// A scalar for a scalar, and a scalar for an array, are judged by `declare` itself; a part the
+    /// checker does not know (`Ty::Any`, an array's element) fits.
+    fn annotation_mismatch(
+        &mut self,
+        name: &str,
+        type_ref: Option<&TypeRef>,
+        value: Inferred,
+        range: SourceRange,
+    ) -> bool {
+        let Some(reference) = type_ref else {
+            return false;
+        };
+        let declared = Ty::from_ref(reference, &self.enums);
+        let judged = match value {
+            Inferred::Typed { .. } => true,
+            Inferred::Known(..) => matches!(
+                declared,
+                Ty::Udt(_) | Ty::Enum(_) | Ty::Map(..) | Ty::Matrix(_)
+            ),
+            Inferred::Na | Inferred::Unknown => false,
+        };
+        if !judged {
+            return false;
+        }
+        let given = self.ty_of(value);
+        if declared.accepts(&given).is_some() {
+            return false;
+        }
+        self.error(
+            "PINE3030",
+            format!(
+                "Cannot assign {} to {} variable '{name}'.",
+                given.describe(),
+                declared.describe()
+            ),
+            range,
+        );
+        true
     }
 
     fn assign(
@@ -1496,5 +1541,66 @@ mod tests {
             resolved("b() => 1\na() => b()\nx = a()\n"),
             resolved("a() => b()\nb() => 1\nx = a()\n")
         );
+    }
+
+    fn assign_errors(source: &str) -> usize {
+        check(source)
+            .iter()
+            .filter(|d| d.code == "PINE3030")
+            .count()
+    }
+
+    #[test]
+    fn rejects_a_container_where_another_type_is_annotated() {
+        for source in [
+            "int x = array.new_float(1)\n",
+            "map<string, int> m = array.new<int>()\n",
+            "matrix<float> m = array.new_float(1)\n",
+            "array<int> a = array.new_float(1)\n",
+            "string s = array.new_float(1)\n",
+        ] {
+            assert_eq!(assign_errors(source), 1, "{source}");
+        }
+    }
+
+    #[test]
+    fn rejects_one_user_type_for_another_and_a_scalar_for_a_user_type() {
+        let types = "type A\n    int n = 0\ntype B\n    int n = 0\n";
+        assert_eq!(assign_errors(&format!("{types}A x = B.new()\n")), 1);
+        assert_eq!(assign_errors(&format!("{types}A x = 1\n")), 1);
+        assert_eq!(
+            assign_errors(&format!("{types}map<string, int> m = 1\n")),
+            1
+        );
+    }
+
+    #[test]
+    fn accepts_a_value_of_the_annotated_type() {
+        let types = "type A\n    int n = 0\n";
+        for source in [
+            "array<float> a = array.new_float(1)\n",
+            "array<float> a = array.new<float>()\n",
+            "array<int> a = array.new_int(1)\n",
+            "map<string, int> m = map.new<string, int>()\n",
+            "matrix<float> m = matrix.new<float>(1, 1)\n",
+            "float f = 1\n",
+            "array<float> a = array.from(1.0, 2.0)\n",
+            "a = array.new_float(1)\narray<float> b = a\n",
+        ] {
+            assert_eq!(assign_errors(source), 0, "{source}");
+        }
+        assert_eq!(assign_errors(&format!("{types}A x = A.new()\n")), 0);
+        assert_eq!(assign_errors(&format!("{types}A x = na\n")), 0);
+        assert_eq!(
+            assign_errors(&format!("{types}A x = A.new()\nA y = x\n")),
+            0
+        );
+    }
+
+    #[test]
+    fn what_the_checker_cannot_see_stays_permissive() {
+        // The result of a function it cannot type, and a library call, fit any annotation.
+        assert_eq!(assign_errors("f(x) => x\narray<int> a = f(1)\n"), 0);
+        assert_eq!(assign_errors("int x = unknown_call()\n"), 0);
     }
 }
