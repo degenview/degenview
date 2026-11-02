@@ -51,8 +51,8 @@ tag's own commit, so a change to the notes step must be on `main` before the tag
 
 A tag run can only restore caches saved from `main`, so `release-cache.yml` builds the release
 profile there (on a `Cargo.lock`/`Cargo.toml` change and weekly; `linux-arm64` runs on the free
-`ubuntu-24.04-arm` runner) under the shared key
-`release-<target>`, and `release.yml` saves no cache itself on a tag. Keep the two builds identical
+`ubuntu-22.04-arm` runner) under the shared key
+`release-<target>` (`release-<target>-glibc-2.35` for the two Linux legs, see below), and `release.yml` saves no cache itself on a tag. Keep the two builds identical
 (runners, features, `--release`); if you change one, change the other.
 
 The Flatpak is built by the reusable `flatpak.yml` (`release.yml` calls it as the `flatpak` job, and
@@ -148,6 +148,41 @@ the same app and is what the in-app updater downloads; the updater never reads t
 - **Not verified**: signing, notarization and stapling of the image, Gatekeeper on a quarantined
   download of it, the Intel leg (`macos-15-intel`), until a release candidate has gone through the
   workflow. Dark appearance not looked at.
+
+## Linux glibc baseline
+
+The Linux release binaries must start on **glibc 2.35** (Ubuntu 22.04, Debian 12, Fedora 36 and
+newer), so the Linux release and cache legs run on `ubuntu-22.04` and `ubuntu-22.04-arm`, the oldest
+runner images, not `ubuntu-latest`. A binary needs the glibc it was linked against, and building on
+a newer distro silently raises that floor. Older distros (RHEL 9 and clones, glibc 2.34) use the
+Flatpak, which brings its own runtime.
+
+- **What went wrong**: the rc.11 tarballs were built on Ubuntu 24.04. Reading their ELF version tables
+  (`.gnu.version_r`): the **arm64** binary requires `GLIBC_2.39` outright, so the loader refuses to
+  start it on 22.04. The **x64** binary only *weakly* references `GLIBC_2.39` (Rust's std treats
+  `pidfd_spawnp` as optional and the linker marks the version `VER_FLG_WEAK`, which the loader
+  tolerates); its hard floor was already `GLIBC_2.35` (`libm`). Not run on a 22.04 machine: read from the
+  files.
+- **The gate**: `tools/check-glibc.py <binary> [max]` (default 2.35) parses that table and fails when
+  a *required* version exceeds the baseline; weak-only versions are reported, not failed. It is not
+  `strings | grep GLIBC_`, which cannot tell weak from required and would call the x64 binary too new.
+  `release.yml` runs it on each Linux build (a failing check fails the release before anything is
+  published) and `release-cache.yml` runs it weekly. On a 22.04 builder the link itself already refuses
+  a symbol newer than 2.35, so the check mostly guards against the build host drifting (someone writing
+  `ubuntu-latest` again) and states the promise in CI. `linux-glibc-check.yml` builds the release on both
+  22.04 runners for any pull request that changes `Cargo.toml`/`Cargo.lock`, the check, or those
+  workflows: its build step catches a dependency that no longer builds or links on 22.04 (`Test linux`
+  builds on 24.04 and would not see it), and it also proves the check can fail.
+- **Cache key**: the Linux legs use `release-<target>-glibc-2.35` (matrix `cache`), not
+  `release-<target>`, so they never restore a cache made on the 24.04 image: a build script or C object
+  (`ring`, bundled SQLite) compiled there would carry its glibc requirement into the new build.
+  After this merges, `release-cache.yml` runs on `main` (its own file changed) and fills the new keys.
+- **Changing the baseline** is a decision: edit `tools/check-glibc.py`, both workflows' runners and
+  `cache` keys, `linux-glibc-check.yml`, and the README. When GitHub retires the 22.04 runner, build
+  in an `ubuntu:22.04` container on the new runner (or `cargo-zigbuild` with a glibc suffix) rather than
+  moving the baseline by accident.
+- **Not verified**: the first build on 22.04 (this PR's `linux-glibc-check` run is it), whether arm64
+  then passes, and any real start on an old distro.
 
 ## Windows and Linux updates
 

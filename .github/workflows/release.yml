@@ -104,12 +104,19 @@ jobs:
           - name: windows-arm64
             os: windows-11-arm
             target: aarch64-pc-windows-msvc
+          # Linux is built on the OLDEST distro we support (Ubuntu 22.04, glibc 2.35): a binary needs
+          # the glibc it was linked against, so building on `ubuntu-latest` (24.04) raised the floor to
+          # 2.39. `cache` keeps these builds off caches made on the newer image: a build script or C
+          # object compiled there would carry its glibc requirement into this build. See
+          # tools/check-glibc.py, which release.yml runs on the result.
           - name: linux-x64
-            os: ubuntu-latest
+            os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
+            cache: x86_64-unknown-linux-gnu-glibc-2.35
           - name: linux-arm64
-            os: ubuntu-24.04-arm
+            os: ubuntu-22.04-arm
             target: aarch64-unknown-linux-gnu
+            cache: aarch64-unknown-linux-gnu-glibc-2.35
     steps:
       - uses: actions/checkout@v7
         with:
@@ -123,7 +130,7 @@ jobs:
       # thing there under this key. Only a run on `main` saves one; a tag run's would never be read.
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: release-${{ matrix.target }}
+          shared-key: release-${{ matrix.cache || matrix.target }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Install Linux dependencies
@@ -322,6 +329,9 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           cargo build --release
+          # Fail the release rather than ship a binary that will not start on the oldest distro we
+          # support, which is what moving this job off the 22.04 runner would do.
+          python3 tools/check-glibc.py target/release/degenview
           mkdir -p dist pkg
           cp target/release/degenview pkg/
           cp assets/brand/DegenView-512-rounded.png pkg/degenview.png

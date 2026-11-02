@@ -114,7 +114,9 @@ timeline scrubber, speed and interval controls, and shared clock across every ch
 
 ## Requirements
 
-- macOS (Apple Silicon or Intel), Windows (x64 or ARM64), or Linux (x64 or arm64)
+- macOS (Apple Silicon or Intel), Windows (x64 or ARM64), or Linux (x64 or arm64) with glibc 2.35 or
+  newer (Ubuntu 22.04, Debian 12, Fedora 36 and later); on an older distro such as RHEL 9, use the
+  Flatpak
 - [Rust](https://rustup.rs) 1.95 or newer (`cargo` on your `PATH`)
 - A free Alpaca account and API keys only if you want stock data — set `DEGENVIEW_ALPACA_KEY_ID`
   and `DEGENVIEW_ALPACA_SECRET_KEY`, or store them in Keychain on macOS (the Secret Service on Linux)
