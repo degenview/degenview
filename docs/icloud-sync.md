@@ -37,6 +37,10 @@ snapshot consent and token, and `content.prefs` (whether a Post card may fetch a
 `src/sync/policy.rs`, and a test fails when one is added without a decision; unclassified means
 local.
 
+The decision applies in both directions: a `setting.<key>` record for a key this version keeps local
+(or does not know) is refused when it arrives, kept in the inbox as `invalid`, and neither applied nor
+deleted from iCloud, so a stale or foreign record cannot change MCP, consent or update settings.
+
 ## Design
 
 ```
