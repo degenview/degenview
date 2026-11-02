@@ -139,17 +139,17 @@ fn prepare_in(
     })
 }
 
-/// Swaps the prepared exe in and starts it. On `Ok` the caller must quit now.
-pub fn apply_and_relaunch(prepared: &Prepared) -> Result<(), String> {
-    swap(prepared)?;
-    if let Err(error) = spawn_relaunch(prepared) {
-        // Without the new process nobody would reopen the app; the new exe is in place
-        // regardless, so tell the user rather than quitting into nothing.
-        return Err(format!(
-            "Updated, but could not restart: {error}. Reopen DegenView."
-        ));
-    }
-    Ok(())
+/// Swaps the prepared exe in. Nothing is started: the app is still running and may yet decide not
+/// to quit (an unsaved-script question); `relaunch` runs once exit is certain.
+pub fn apply(prepared: &Prepared) -> Result<(), String> {
+    swap(prepared)
+}
+
+/// Starts the new exe, which waits for this process to exit before it opens anything. Call it when
+/// exit is certain; the exe is already in place, so a failure only means nobody reopens the app.
+pub fn relaunch(prepared: &Prepared) -> Result<(), String> {
+    spawn_relaunch(prepared)
+        .map_err(|error| format!("Updated, but could not restart: {error}. Reopen DegenView."))
 }
 
 fn swap(prepared: &Prepared) -> Result<(), String> {
@@ -257,10 +257,23 @@ fn predecessor_pid(args: impl Iterator<Item = OsString>) -> Option<u32> {
     None
 }
 
+/// What the new process says when the one it replaces never exited.
+const PREDECESSOR_RUNNING: &str =
+    "The previous DegenView is still running. Close it, then open DegenView again.";
+
 /// Run first thing at startup: when an update started this process, waits (at most
-/// `RELAUNCH_WAIT_MS`) for the one it replaces to exit, so the database is not opened twice.
+/// `RELAUNCH_WAIT_MS`) for the one it replaces to exit, so the database is not opened twice. Fails
+/// when that process is still there: the caller must not go on to open the database.
 #[cfg(windows)]
-pub fn wait_for_predecessor() {
+pub fn wait_for_predecessor() -> Result<(), String> {
+    match predecessor_pid(std::env::args_os()) {
+        Some(pid) => wait_for_pid(pid, RELAUNCH_WAIT_MS),
+        None => Ok(()),
+    }
+}
+
+#[cfg(windows)]
+fn wait_for_pid(pid: u32, millis: u32) -> Result<(), String> {
     use std::ffi::c_void;
 
     #[link(name = "kernel32")]
@@ -270,18 +283,22 @@ pub fn wait_for_predecessor() {
         fn CloseHandle(handle: *mut c_void) -> i32;
     }
     const SYNCHRONIZE: u32 = 0x0010_0000;
+    const WAIT_OBJECT_0: u32 = 0;
+    const WAIT_TIMEOUT: u32 = 0x102;
 
-    let Some(pid) = predecessor_pid(std::env::args_os()) else {
-        return;
-    };
     // No handle means the process is already gone (or is not ours to wait on).
     let handle = unsafe { OpenProcess(SYNCHRONIZE, 0, pid) };
     if handle.is_null() {
-        return;
+        return Ok(());
     }
-    unsafe {
-        WaitForSingleObject(handle, RELAUNCH_WAIT_MS);
-        CloseHandle(handle);
+    let result = unsafe { WaitForSingleObject(handle, millis) };
+    unsafe { CloseHandle(handle) };
+    match result {
+        WAIT_OBJECT_0 => Ok(()),
+        WAIT_TIMEOUT => Err(PREDECESSOR_RUNNING.to_owned()),
+        other => Err(format!(
+            "Could not wait for the previous DegenView to exit (wait returned {other:#x})."
+        )),
     }
 }
 
@@ -462,5 +479,23 @@ mod tests {
         assert_eq!(pid(&["degenview.exe", "--relaunch-after", "soon"]), None);
         // The program name is never an argument.
         assert_eq!(pid(&["--relaunch-after", "4242"]), None);
+    }
+
+    /// Windows only: a process that outlives the wait is an error, one that has exited is not.
+    #[cfg(windows)]
+    #[test]
+    fn the_new_process_does_not_go_on_while_the_old_one_lives() {
+        // `ping` is a stock Windows exe that stays up for as long as asked.
+        let mut stays = std::process::Command::new("ping")
+            .args(["-n", "30", "127.0.0.1"])
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        let waited = wait_for_pid(stays.id(), 300);
+        let _ = stays.kill();
+        let _ = stays.wait();
+        assert_eq!(waited, Err(PREDECESSOR_RUNNING.to_owned()));
+        // A pid that is gone (the child just killed and reaped) is fine.
+        assert_eq!(wait_for_pid(stays.id(), 300), Ok(()));
     }
 }

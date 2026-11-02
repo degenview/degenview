@@ -133,6 +133,9 @@ ARM and Linux get no asset and stay on **View Release**.
   case-insensitively; never credentials).
   `wait_for_predecessor` runs first in `run_gui_with`, before the database opens, and waits up to
   60 s (as long as the macOS helper) for that pid to exit so two instances never share the store.
+  **If the pid is still there when the wait ends it fails** (`WAIT_TIMEOUT`), `run_gui_with` returns the
+  error ("The previous DegenView is still running. Close it, then open DegenView again.", shown by
+  `report_fatal`) and the database is never opened.
 - Inferred, not observed: our own download carries no Mark-of-the-Web, so an updated exe should not
   meet SmartScreen again; only the first manual download does.
 - **Not verified**: written and unit-tested on macOS only. The `cfg(windows)` code (spawn, wait) and
@@ -164,3 +167,13 @@ be deployed before a release that changes records. Details: [iCloud Sync](../icl
   90–100% unpack. Workers repaint only viewports that drew the state.
 - Prompt the focused window once when ready. “Later” leaves the Restart indicator; restart uses
   `AppAction::Quit` so unsaved-script checks still run.
+- **Order of a restart**: "Restart Now" only *swaps* the new version in (`self_update::apply`, once; a
+  failure still shows on the tab bar) and arms the relaunch. The new version is *started* from
+  `eframe::App::on_exit` (`UpdateHost::relaunch_if_armed`, `self_update::relaunch`), when exit is
+  certain. Starting it earlier (as the first version did) put a second process beside the old one
+  whenever the unsaved-script question was slow or answered Cancel. `call_off_quit` disarms it, so a
+  cancelled quit followed by an ordinary quit days later starts nothing, and a second "Restart Now"
+  after a cancel skips the swap (swapping again would move the new version over the kept copy). The
+  macOS helper likewise starts the app only if the old process is really gone when its 60 s wait ends.
+  A spawn failure in `on_exit` cannot be shown: it is logged and the user reopens the app. Not run
+  end-to-end on any OS yet.

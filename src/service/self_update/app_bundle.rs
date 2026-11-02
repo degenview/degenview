@@ -137,17 +137,20 @@ fn prepare_in(
     })
 }
 
-/// Swaps the prepared bundle in and schedules the reopen. On `Ok` the caller must quit now.
-pub fn apply_and_relaunch(prepared: &Prepared) -> Result<(), String> {
-    swap(prepared)?;
-    if let Err(error) = spawn_relaunch(prepared) {
-        // Without the helper nobody would reopen the app; the new bundle is in place regardless,
-        // so tell the user rather than quitting into nothing.
-        return Err(format!(
-            "Updated, but could not restart: {error}. Reopen DegenView."
-        ));
-    }
-    Ok(())
+/// Swaps the prepared bundle in. Nothing is started: the app is still running and may yet decide
+/// not to quit (an unsaved-script question); `relaunch` runs once exit is certain.
+pub fn apply(prepared: &Prepared) -> Result<(), String> {
+    swap(prepared)
+}
+
+/// Starts the helper that reopens the app once this process has exited. Call it when exit is
+/// certain: the helper starts the new app only after this process is gone, and does not start it at
+/// all if this process is still there when its wait runs out.
+pub fn relaunch(prepared: &Prepared) -> Result<(), String> {
+    spawn_relaunch(prepared).map_err(|error| {
+        // Without the helper nobody would reopen the app; the new bundle is in place regardless.
+        format!("Updated, but could not restart: {error}. Reopen DegenView.")
+    })
 }
 
 fn swap(prepared: &Prepared) -> Result<(), String> {
@@ -177,19 +180,15 @@ const FORWARDED_ENV: &[&str] = &[
 /// What the helper needs itself (it runs `sh`, `kill`, `sleep`, `open`).
 const HELPER_ENV: &[&str] = &["HOME", "PATH", "USER", "TMPDIR"];
 
-/// The detached helper: waits for `pid` to exit (at most `RELAUNCH_WAIT_TICKS` × 0.2 s), then
-/// reopens `app`. Its arguments are visible to every user on the Mac, and so are only `forwarded`
-/// names; its own environment is cleared down to `helper_env`.
+/// The detached helper: waits for `pid` to exit (at most `ticks` × 0.2 s), then runs `launch`, but
+/// only when `pid` is really gone: a process that outlives the wait (a hung shutdown, a quit that
+/// was called off) is left alone rather than given a second instance on the same database.
 #[cfg(unix)]
-fn relaunch_command(
-    app: &Path,
-    pid: u32,
-    forwarded: &[(OsString, OsString)],
-    helper_env: Vec<(OsString, OsString)>,
-) -> std::process::Command {
+fn helper_command(ticks: u32, pid: u32, launch: &[OsString]) -> std::process::Command {
     let script = format!(
         "pid=$1; shift; i=0; \
-         while kill -0 \"$pid\" 2>/dev/null && [ $i -lt {RELAUNCH_WAIT_TICKS} ]; do sleep 0.2; i=$((i+1)); done; \
+         while kill -0 \"$pid\" 2>/dev/null && [ $i -lt {ticks} ]; do sleep 0.2; i=$((i+1)); done; \
+         if kill -0 \"$pid\" 2>/dev/null; then exit 0; fi; \
          exec \"$@\""
     );
     let mut command = std::process::Command::new("/bin/sh");
@@ -198,14 +197,30 @@ fn relaunch_command(
         .arg(script)
         .arg("sh")
         .arg(pid.to_string())
-        .args(["/usr/bin/open", "-n"]);
+        .args(launch);
+    command
+}
+
+/// The helper that reopens `app` with `open -n`. Its arguments are visible to every user on the
+/// Mac, and so are only `forwarded` names; its own environment is cleared down to `helper_env`.
+#[cfg(unix)]
+fn relaunch_command(
+    app: &Path,
+    pid: u32,
+    forwarded: &[(OsString, OsString)],
+    helper_env: Vec<(OsString, OsString)>,
+) -> std::process::Command {
+    let mut launch: Vec<OsString> = vec!["/usr/bin/open".into(), "-n".into()];
     for (name, value) in forwarded {
         let mut assignment = name.clone();
         assignment.push("=");
         assignment.push(value);
-        command.arg("--env").arg(assignment);
+        launch.push("--env".into());
+        launch.push(assignment);
     }
-    command.arg(app).env_clear().envs(helper_env);
+    launch.push(app.into());
+    let mut command = helper_command(RELAUNCH_WAIT_TICKS, pid, &launch);
+    command.env_clear().envs(helper_env);
     command
 }
 
@@ -253,6 +268,35 @@ mod tests {
     use super::*;
     use crate::service::update_archive::testing::fake_app;
     use std::fs;
+
+    /// The helper script, executed for real: it starts the launcher only when the process it waits
+    /// for is gone, and leaves the app alone when that process outlives the wait.
+    #[cfg(unix)]
+    #[test]
+    fn the_helper_launches_only_once_the_old_process_is_gone() {
+        let root = scratch("helper");
+        let marker = root.join("launched");
+        let run = |pid: u32| {
+            let launch = ["/usr/bin/touch".into(), marker.clone().into_os_string()];
+            helper_command(2, pid, &launch).status().unwrap()
+        };
+        // Alive past the wait (2 ticks, 0.4 s): the helper gives up without launching anything.
+        let mut alive = std::process::Command::new("sleep")
+            .arg("5")
+            .spawn()
+            .unwrap();
+        assert!(run(alive.id()).success());
+        assert!(
+            !marker.exists(),
+            "launched beside a process that was still running"
+        );
+        let _ = alive.kill();
+        let _ = alive.wait();
+        // Gone: it launches.
+        assert!(run(alive.id()).success());
+        assert!(marker.exists(), "did not launch after the process exited");
+        let _ = fs::remove_dir_all(root);
+    }
 
     #[test]
     fn the_bundle_is_found_from_its_executable() {

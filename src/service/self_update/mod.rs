@@ -3,8 +3,9 @@
 //! Two steps so nothing on disk changes until the user says so: `prepare` downloads the release
 //! zip, checks its SHA-256 against the digest GitHub published for it, unpacks it, sanity-checks
 //! the bundle and verifies its Developer ID signature against the running app's Team ID;
-//! `apply_and_relaunch` swaps the bundle in place, then a detached shell waits for this
-//! process to exit and reopens the app. The previous bundle is kept in the staging folder until the
+//! `apply` swaps the bundle in place when the user asks to restart, and `relaunch` starts a detached
+//! shell that waits for this process to exit and reopens the app (called once exit is certain, so a
+//! quit the user calls off leaves no second app behind). The previous bundle is kept in the staging folder until the
 //! new version starts and calls `cleanup_stale`, so a build that never launches can be restored by
 //! hand.
 //!
@@ -19,7 +20,7 @@ use std::path::Path;
 #[cfg(not(windows))]
 mod app_bundle;
 #[cfg(not(windows))]
-pub use app_bundle::{Prepared, apply_and_relaunch, cleanup_stale, install_target, prepare};
+pub use app_bundle::{Prepared, apply, cleanup_stale, install_target, prepare, relaunch};
 
 // Compiled everywhere under test so its logic is tested on every platform; it is the strategy only
 // on Windows.
@@ -27,12 +28,15 @@ pub use app_bundle::{Prepared, apply_and_relaunch, cleanup_stale, install_target
 mod portable_exe;
 #[cfg(windows)]
 pub use portable_exe::{
-    Prepared, apply_and_relaunch, cleanup_stale, install_target, prepare, wait_for_predecessor,
+    Prepared, apply, cleanup_stale, install_target, prepare, relaunch, wait_for_predecessor,
 };
 
-/// Nothing to wait for outside Windows: the macOS helper waits for the old process itself.
+/// Nothing to wait for outside Windows: the macOS helper waits for the old process itself, and
+/// starts the new app only once it is gone.
 #[cfg(not(windows))]
-pub fn wait_for_predecessor() {}
+pub fn wait_for_predecessor() -> Result<(), String> {
+    Ok(())
+}
 
 /// The folder next to the app where an update is downloaded, unpacked and kept until the new
 /// version has started.

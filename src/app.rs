@@ -1305,6 +1305,9 @@ impl DegenViewApp {
 
     /// Cancel or a failed save: the quit stays off and no window keeps asking.
     fn call_off_quit(&mut self) {
+        // A restart for an update was waiting on this quit; the app keeps running, so it must not
+        // start the new version when it exits some other time.
+        self.updates.disarm_relaunch();
         for tab in &self.tabs {
             if let Ok(mut content) = tab.content.lock()
                 && let TabContent::Pine(pine) = &mut *content
@@ -2731,6 +2734,15 @@ impl eframe::App for DegenViewApp {
         self.banner.expire(now);
         alert_banner::show(&ctx, &mut self.banner, now);
         ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+    }
+
+    /// The app is going: start the new version if "Restart Now" was chosen for an update and the quit
+    /// was not called off. Only here is exit certain; starting it earlier left a second instance
+    /// beside this one whenever the quit was cancelled or slow.
+    fn on_exit(&mut self) {
+        if let Err(error) = self.updates.relaunch_if_armed() {
+            eprintln!("{error}");
+        }
     }
 
     fn save(&mut self, _storage: &mut dyn eframe::Storage) {
