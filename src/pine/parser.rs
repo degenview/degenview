@@ -703,9 +703,11 @@ impl Parser {
 
     fn prefix_expression(&mut self, token: &Token) -> Option<Expression> {
         match &token.kind {
-            TokenKind::Number { value, is_integer } => {
-                Some(self.number_literal(*value, *is_integer, token.range))
-            }
+            TokenKind::Number {
+                value,
+                is_integer,
+                int,
+            } => Some(self.number_literal(*value, *is_integer, *int, token.range)),
             TokenKind::Color(value) => {
                 Some(Expression::Literal(Literal::Color(*value), token.range))
             }
@@ -748,12 +750,18 @@ impl Parser {
         }
     }
 
-    fn number_literal(&mut self, value: f64, integer: bool, range: SourceRange) -> Expression {
+    fn number_literal(
+        &mut self,
+        value: f64,
+        integer: bool,
+        int: Option<i64>,
+        range: SourceRange,
+    ) -> Expression {
         if !integer {
             return Expression::Literal(Literal::Float(value), range);
         }
-        if value >= i64::MIN as f64 && value <= i64::MAX as f64 {
-            return Expression::Literal(Literal::Int(value as i64), range);
+        if let Some(int) = int {
+            return Expression::Literal(Literal::Int(int), range);
         }
         self.error("PINE2014", "Integer literal is out of range.", range);
         Expression::Literal(Literal::Float(value), range)
@@ -1718,5 +1726,31 @@ mod tests {
             panic!("expected call");
         };
         assert_eq!((range.start.offset, range.end.offset), (0, 4));
+    }
+
+    #[test]
+    fn an_integer_literal_keeps_every_bit_up_to_i64_max() {
+        let (statements, diagnostics) = parse("a = 9007199254740993\nb = 9223372036854775807\n");
+        assert!(diagnostics.is_empty(), "{diagnostics:?}");
+        let ints: Vec<i64> = statements
+            .iter()
+            .filter_map(|statement| match statement {
+                Statement::Declaration {
+                    value: Expression::Literal(Literal::Int(value), _),
+                    ..
+                } => Some(*value),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(ints, vec![9_007_199_254_740_993, i64::MAX]);
+    }
+
+    #[test]
+    fn an_integer_literal_past_i64_is_out_of_range() {
+        let (_, diagnostics) = parse("a = 9223372036854775808\n");
+        assert!(
+            diagnostics.iter().any(|d| d.code == "PINE2014"),
+            "{diagnostics:?}"
+        );
     }
 }
