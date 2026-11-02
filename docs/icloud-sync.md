@@ -5,11 +5,20 @@ alert definitions, portfolios with their transactions, paper-trading accounts an
 preferences the same on every Mac signed in to one Apple Account.
 
 **Status.** The sync engine, merge rules, account protection, UI and Swift bridge are written and
-tested against an in-memory CloudKit stand-in. **It has not been run against real CloudKit.** Two
-things must be proven on real hardware before a release enables it (see
-[What is not verified](#what-is-not-verified)): that a Developer ID build can use CloudKit with the
-entitlements below, and that CloudKit pushes reach the app. Do not describe the feature as
-production-ready until the two-Mac and notarized-build checks below have passed.
+tested against an in-memory CloudKit stand-in, and have been run against real CloudKit. The
+[release checklist](icloud-sync-release-checklist.md) is the record of what, and is what decides
+whether a release enables the feature; this page does not repeat its results. In short:
+
+* **Proven on real hardware:** a notarized Developer ID build launches and syncs in the Production
+  environment on two Macs, with the entitlements, profile and schema below; the first-sync choices
+  (A1 to A5); account-change protection, simulated by rewriting the stored account; a large library
+  against the Development environment ([Performance](#performance)).
+* **Not yet proven:** a second genuine Apple Account, signing out and back in, sleep and wake, a
+  dropped network, the release path and CI, and the unchecked scenarios in the checklist. CloudKit
+  pushes rarely reach the app, so none of this relies on them. See
+  [What is not verified](#what-is-not-verified) for design-level gaps.
+
+Do not describe the feature as production-ready until the unchecked items there have passed.
 
 SQLite stays the source of truth. CloudKit is a transport: every read and write the app makes is
 against SQLite, and every sync problem leaves the app fully usable.
@@ -355,7 +364,8 @@ Without `--features icloud` the Settings page is hidden.
   autosave-layout drawing edit appears on the other Mac; the alert agent running with the app
   closed. Also: restart, update in place, wake from sleep, network drop.
 
-Record the results here when they exist. There are none yet.
+The results of the manual scenarios live in the
+[release checklist](icloud-sync-release-checklist.md), next to each item, not here.
 
 ## Performance
 
@@ -424,7 +434,9 @@ It is on `main` too.
 * If another Mac deletes a layout while this one has edited it, the layout returns; but a drawing
   deletion that reached this Mac in an earlier batch than the layout deletion has already removed
   that drawing locally.
-* No device list in Settings yet (`sync_device` is ready for it).
+* No device list, and Macs do not tell each other their names: a conflict copy made from another
+  Mac's version says "another Mac", not which one. `sync_device` exists but nothing writes to it, so
+  it is a reserved table, not a feature; naming Macs needs a record that carries each Mac's name.
 * Webhook endpoints and Pine alert subscriptions are excluded by design.
 * A paper account over the limit above (about 5,000 fills) does not sync yet. Two Macs acting on one account within a sync
   interval produce a paused copy rather than a merge. A Mac that made its own default paper account

@@ -37,6 +37,7 @@ pub struct SyncState {
     /// Hash of the CloudKit user record id this database is bound to.
     pub account_hash: Option<String>,
     pub account_bound_ms: Option<i64>,
+    /// Reserved: never given a value, only cleared.
     pub dataset_id: Option<String>,
     pub zone_name: String,
     /// JSON map of per-category switches; a missing category is on.
@@ -47,6 +48,7 @@ pub struct SyncState {
     pub engine_state_account_hash: Option<String>,
     pub last_fetch_ms: Option<i64>,
     pub last_send_ms: Option<i64>,
+    /// Reserved: not written at runtime; the live error is in `SyncCore::status`.
     pub last_error: Option<String>,
     /// 31 random bits that namespace this database's counter ids when they cross into a synced
     /// record (see `sync::ids`). Kept by a copied database so a lineage keeps meaning the same ids.
@@ -103,6 +105,7 @@ impl Store {
                 environment TEXT,
                 account_hash TEXT,
                 account_bound_ms INTEGER,
+                -- Reserved: never assigned a value (only cleared). Kept so an older build's row reads.
                 dataset_id TEXT,
                 zone_name TEXT NOT NULL DEFAULT 'DegenViewZone',
                 categories TEXT NOT NULL DEFAULT '{}',
@@ -111,6 +114,8 @@ impl Store {
                 engine_state_account_hash TEXT,
                 last_fetch_ms INTEGER,
                 last_send_ms INTEGER,
+                -- Reserved: runtime errors live in memory (`SyncCore`) and are shown from there; this
+                -- is not written while the app runs, so it says nothing about the last failure.
                 last_error TEXT,
                 id_tag INTEGER NOT NULL DEFAULT 0
             );
@@ -169,6 +174,7 @@ impl Store {
                 resolved_ms INTEGER,
                 resolution TEXT
             );
+            -- Reserved: nothing writes it yet (see Known limitations in docs/icloud-sync.md).
             CREATE TABLE IF NOT EXISTS sync_device (
                 device_id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
