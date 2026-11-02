@@ -12,6 +12,7 @@ use crate::ui::accessibility;
 use crate::ui::alert_center::clock_time;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit;
+use crate::ui::portfolio_empty;
 use crate::ui::replay_bar::date_text;
 use crate::ui::theme;
 use eframe::egui::{self, Align2, Color32, FontId, Mesh, Pos2, Rect, Sense, Shape, Stroke, Vec2};
@@ -110,10 +111,10 @@ pub fn show_allocation(
     let slices = slices(holdings);
     let (area, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), height), Sense::hover());
     if slices.is_empty() {
-        empty_message(
+        portfolio_empty::compact(
             ui,
             area,
-            Icon::PieChart,
+            portfolio_empty::Scene::Allocation,
             "No Allocations",
             "Priced holdings appear here.",
         );
@@ -574,10 +575,10 @@ pub fn show_history(ui: &mut egui::Ui, input: &HistoryInput, height: f32) {
         return;
     }
     let Some((minimum, maximum)) = value_bounds(&points) else {
-        empty_message(
+        portfolio_empty::compact(
             ui,
             rect,
-            Icon::ChartUptrend,
+            portfolio_empty::Scene::History,
             "No History Yet",
             "History builds from transaction dates and available market candles.",
         );

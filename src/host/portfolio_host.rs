@@ -23,13 +23,14 @@ use crate::service::portfolio_history::{HistoryRebuilder, IntradayFeed, Intraday
 use crate::service::portfolio_quotes::{PortfolioQuoteFeed, PortfolioQuoteState};
 use crate::store::SharedStore;
 use crate::ui::header_controls;
-use crate::ui::icons::{self, Icon};
+use crate::ui::icons::Icon;
 use crate::ui::kit::{self, Confirm, ConfirmOutcome};
 use crate::ui::portfolio_asset_detail::{self, AssetDetailAction, AssetDetailInput};
 use crate::ui::portfolio_asset_picker::{self, AssetPickerOutcome, AssetPickerState};
+use crate::ui::portfolio_empty;
 use crate::ui::portfolio_holdings::{self, HoldingsAction, HoldingsInput, HoldingsState};
 use crate::ui::portfolio_overview::{
-    self, OverviewAction, OverviewInput, OverviewState, StatisticsInput,
+    self, OverviewAction, OverviewInput, OverviewState, PriceStatus, StatisticsInput,
 };
 use crate::ui::portfolio_sheets::{
     self, CreateOutcome, CreateState, ManageAction, ManageInput, ManageRow, ManageState,
@@ -42,7 +43,7 @@ use crate::ui::portfolio_transactions::{
 };
 use crate::ui::sheet;
 use crate::ui::theme;
-use eframe::egui::{self, RichText, Sense, Vec2};
+use eframe::egui;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
@@ -401,6 +402,16 @@ impl PortfolioSection {
         }
     }
 
+    /// The picture and words the page shows while the portfolio has no transactions.
+    fn empty_scene(self) -> portfolio_empty::Scene {
+        match self {
+            Self::Overview => portfolio_empty::Scene::Overview,
+            Self::Holdings => portfolio_empty::Scene::Holdings,
+            Self::Transactions => portfolio_empty::Scene::Transactions,
+            Self::Statistics => portfolio_empty::Scene::Statistics,
+        }
+    }
+
     fn icon(self) -> Icon {
         match self {
             Self::Overview => Icon::PieChart,
@@ -547,7 +558,9 @@ impl PortfolioTab {
                     .fill(theme::background())
                     .inner_margin(egui::Margin::symmetric(16, 14)),
             )
-            .show(ui, |ui| self.show_header(ui, host, &snapshot));
+            .show(ui, |ui| {
+                capped(ui, |ui| self.show_header(ui, host, &snapshot))
+            });
 
         // With no portfolio there is nothing to section: the page is the header and one call to
         // action.
@@ -559,7 +572,9 @@ impl PortfolioTab {
                         .fill(theme::background())
                         .inner_margin(egui::Margin::symmetric(16, 12)),
                 )
-                .show(ui, |ui| portfolio_sections(ui, &mut self.section, self.id));
+                .show(ui, |ui| {
+                    capped(ui, |ui| portfolio_sections(ui, &mut self.section, self.id));
+                });
         }
 
         egui::CentralPanel::default()
@@ -569,29 +584,19 @@ impl PortfolioTab {
                     .inner_margin(egui::Margin::ZERO),
             )
             .show(ui, |ui| {
-                if scope.is_empty() {
-                    empty_state(
-                        ui,
-                        Icon::Briefcase,
-                        "No Portfolios",
-                        "Create a portfolio to start tracking your investments.",
-                        |ui| {
+                capped(ui, |ui| {
+                    if scope.is_empty() {
+                        portfolio_empty::page(ui, portfolio_empty::Scene::Portfolios, |ui| {
                             if header_controls::prominent_button(ui, Icon::Plus, "Create Portfolio")
                                 .clicked()
                             {
                                 self.create = Some(CreateState::default());
                             }
-                        },
-                    );
-                    return;
-                }
-                if !has_transactions {
-                    empty_state(
-                        ui,
-                        Icon::PieChart,
-                        "Your portfolio is empty",
-                        "Add a transaction, or import a CSV or CoinMarketCap export, to begin tracking your holdings.",
-                        |ui| {
+                        });
+                        return;
+                    }
+                    if !has_transactions {
+                        portfolio_empty::page(ui, self.section.empty_scene(), |ui| {
                             if header_controls::prominent_button(ui, Icon::Plus, "Add Transaction")
                                 .clicked()
                             {
@@ -624,15 +629,15 @@ impl PortfolioTab {
                                     }
                                 },
                             );
-                        },
-                    );
-                    // No holdings means no quotes yet: the editor opens without a market price.
-                    if let Some(asset) = self.new_asset.take() {
-                        self.open_new_editor(asset, &snapshot, selected, &HashMap::new());
+                        });
+                        // No holdings means no quotes yet: the editor opens without a market price.
+                        if let Some(asset) = self.new_asset.take() {
+                            self.open_new_editor(asset, &snapshot, selected, &HashMap::new());
+                        }
+                        return;
                     }
-                    return;
-                }
-                self.show_content(ui, host, &snapshot, selected);
+                    self.show_content(ui, host, &snapshot, selected);
+                });
             });
 
         self.show_sheets(&ctx, host);
@@ -826,8 +831,9 @@ impl PortfolioTab {
         host.drive_history(ui.ctx(), &portfolio_ids, now_ms, local_offset());
         let quote_state = self.quote_feed.state();
         let projected = quote_state.projection.as_ref();
-        if projected.is_none() || quote_state.is_updating {
-            // Nothing else wakes the frame while a worker is still settling the prices.
+        if projected.is_none() || quote_state.is_updating || quote_state.refresh_pending {
+            // Nothing else wakes the frame while a worker is still settling the prices, or
+            // while price ticks wait for the next revaluation.
             ui.ctx()
                 .request_repaint_after(std::time::Duration::from_millis(400));
         }
@@ -934,7 +940,7 @@ impl PortfolioTab {
                         formatter,
                         subtitle: &subtitle,
                         market_value_caption: &market_value_caption,
-                        is_updating: quote_state.is_updating,
+                        price_status: price_status(&quote_state, &holding_values),
                         is_loading_initial: projected.is_none(),
                         is_loading_history: host.is_rebuilding_history(&portfolio_ids),
                         now_ms,
@@ -1440,6 +1446,44 @@ fn market_value_caption(
     format!("{label}{exchange_suffix}")
 }
 
+/// The widest the page grows. A wider window keeps the header, the section bar and the page in one
+/// centred column instead of stretching every row and table across the screen.
+const CONTENT_MAX_WIDTH: f32 = 1480.0;
+
+/// Runs `content` in the centred column at most [`CONTENT_MAX_WIDTH`] wide.
+fn capped<R>(ui: &mut egui::Ui, content: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    let full = ui.max_rect();
+    let width = full.width().min(CONTENT_MAX_WIDTH);
+    let column = egui::Rect::from_min_max(
+        egui::pos2(full.center().x - width / 2.0, full.top()),
+        egui::pos2(full.center().x + width / 2.0, full.bottom()),
+    );
+    ui.scope_builder(egui::UiBuilder::new().max_rect(column), content)
+        .inner
+}
+
+/// How current the prices behind the total are, for the dot beside the caption.
+fn price_status(
+    state: &PortfolioQuoteState,
+    holdings: &[crate::model::portfolio::PortfolioHolding],
+) -> PriceStatus {
+    if state.error.is_some() {
+        return PriceStatus::Unavailable;
+    }
+    let Some(projection) = &state.projection else {
+        return PriceStatus::Live;
+    };
+    if projection.unpriced_asset_count > 0 {
+        PriceStatus::Partial
+    } else if projection.uses_cached_exchange_rates
+        || holdings.iter().any(|holding| holding.is_price_stale)
+    {
+        PriceStatus::Cached
+    } else {
+        PriceStatus::Live
+    }
+}
+
 /// The section bar: Swift's regular `IconTabBar`, hugging its titles.
 fn portfolio_sections(ui: &mut egui::Ui, selected: &mut PortfolioSection, id: u64) {
     let items = PortfolioSection::ALL.map(|section| kit::TabItem {
@@ -1454,47 +1498,6 @@ fn portfolio_sections(ui: &mut egui::Ui, selected: &mut PortfolioSection, id: u6
         &items,
         selected,
     );
-}
-
-fn empty_state(
-    ui: &mut egui::Ui,
-    icon: Icon,
-    title: &str,
-    detail: &str,
-    actions: impl FnOnce(&mut egui::Ui),
-) {
-    ui.add_space(((ui.available_height() - 180.0) / 2.0).max(28.0));
-    ui.vertical_centered(|ui| {
-        let (icon_rect, _) = ui.allocate_exact_size(Vec2::splat(42.0), Sense::hover());
-        icons::paint(
-            ui.painter(),
-            icon_rect.shrink(6.0),
-            icon,
-            theme::text_secondary(),
-        );
-        ui.add_space(12.0);
-        ui.label(RichText::new(title).strong().size(20.0));
-        ui.add_space(4.0);
-        ui.label(RichText::new(detail).color(theme::text_secondary()));
-        ui.add_space(16.0);
-        // The row's width is whatever the actions measure (one button here, two there), so centre
-        // it from the width it had last pass rather than from a guess. The first pass of a new
-        // row has no width yet: pad nothing and ask egui to redo the pass before painting.
-        let width_id = ui.id().with(("empty-state-actions", title));
-        ui.horizontal(|ui| {
-            // The header's gap between controls.
-            ui.spacing_mut().item_spacing.x = 10.0;
-            let known: Option<f32> = ui.data(|data| data.get_temp(width_id));
-            ui.add_space(((ui.available_width() - known.unwrap_or(0.0)) / 2.0).max(0.0));
-            let start = ui.cursor().min.x;
-            actions(ui);
-            let width = ui.min_rect().right() - start;
-            if known.is_none_or(|known| (known - width).abs() > 0.5) {
-                ui.data_mut(|data| data.insert_temp(width_id, width));
-                ui.ctx().request_discard("centre the empty-state actions");
-            }
-        });
-    });
 }
 
 /// The viewer's UTC offset now, for showing and typing dates in local time.

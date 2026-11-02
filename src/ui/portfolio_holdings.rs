@@ -13,6 +13,7 @@ use crate::ui::accessibility;
 use crate::ui::icons::Icon;
 use crate::ui::kit::{self, SEMIBOLD};
 use crate::ui::portfolio_charts;
+use crate::ui::portfolio_empty;
 use crate::ui::portfolio_grid::{
     self, Col, INSET, MENU_RESERVE, Navigation, RowContext, TableSpec,
 };
@@ -286,20 +287,24 @@ pub fn show(
             "Loading prices\u{2026}",
         );
     } else if shown.is_empty() {
-        let (icon, title, detail) = if input.holdings.is_empty() {
-            (
-                Icon::Briefcase,
-                "No Holdings".to_owned(),
+        let body = portfolio_grid::body_rect(outer);
+        if input.holdings.is_empty() {
+            portfolio_empty::compact(
+                ui,
+                body,
+                portfolio_empty::Scene::Holdings,
+                "No Holdings",
                 "Positions appear once a transaction leaves you holding an asset.",
-            )
+            );
         } else {
-            (
+            portfolio_charts::empty_message(
+                ui,
+                body,
                 Icon::Magnifier,
-                format!("No Results for \u{201C}{}\u{201D}", state.search.trim()),
+                &format!("No Results for \u{201C}{}\u{201D}", state.search.trim()),
                 "Check the spelling or try a new search.",
-            )
-        };
-        portfolio_charts::empty_message(ui, portfolio_grid::body_rect(outer), icon, &title, detail);
+            );
+        }
     } else {
         table_view(ui, state, input, outer, &shown, &mut actions);
     }

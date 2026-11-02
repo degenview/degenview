@@ -68,6 +68,9 @@ pub mod portfolio_asset_picker;
 pub mod portfolio_cards;
 pub mod portfolio_charts;
 pub mod portfolio_cmc_import;
+pub mod portfolio_empty;
+#[cfg(test)]
+mod portfolio_gallery_tests;
 pub mod portfolio_grid;
 pub mod portfolio_holdings;
 pub mod portfolio_import_preview;

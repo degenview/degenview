@@ -13,6 +13,7 @@ use crate::ui::alert_center::clock_time;
 use crate::ui::icons::Icon;
 use crate::ui::kit::{self, SEMIBOLD};
 use crate::ui::portfolio_charts;
+use crate::ui::portfolio_empty;
 use crate::ui::portfolio_grid::{
     self, Col, INSET, MENU_RESERVE, Navigation, RowContext, TableSpec,
 };
@@ -387,10 +388,10 @@ pub fn show(
                 state.filters.clear();
             }
         } else {
-            portfolio_charts::empty_message(
+            portfolio_empty::compact(
                 ui,
                 portfolio_grid::body_rect(outer),
-                Icon::List,
+                portfolio_empty::Scene::Transactions,
                 "No Transactions",
                 "Add a transaction or import a CSV to get started.",
             );
