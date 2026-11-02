@@ -34,7 +34,13 @@ const RETRY_INTERVAL: Duration = Duration::from_secs(30 * 60);
 enum Install {
     Idle,
     Working(Progress),
-    Ready { version: String, prepared: Prepared },
+    /// `applied`: the new version is already swapped in on disk (the user asked to restart), which
+    /// must happen once even if the quit that follows is called off and asked for again.
+    Ready {
+        version: String,
+        prepared: Prepared,
+        applied: bool,
+    },
     Failed(String),
 }
 
@@ -51,6 +57,9 @@ struct State {
     target: Result<PathBuf, String>,
     /// Set when an installed update should ask for the restart (cleared by "Later").
     restart_prompt: bool,
+    /// The user chose "Restart Now" and the quit that follows has not been called off: when the app
+    /// exits, the new version is started. Cleared when the quit is called off.
+    relaunch_on_exit: bool,
     born: Instant,
     /// Viewports that draw this state; a worker's answer repaints exactly these.
     viewers: HashSet<egui::ViewportId>,
@@ -136,6 +145,7 @@ impl UpdateHost {
                 install: Install::Idle,
                 target,
                 restart_prompt: false,
+                relaunch_on_exit: false,
                 born: Instant::now(),
                 viewers: HashSet::new(),
             })),
@@ -184,6 +194,7 @@ impl UpdateHost {
                     state.install = Install::Ready {
                         version: version.clone(),
                         prepared: Prepared::for_test(),
+                        applied: false,
                     };
                 }
                 Phase::InstallFailed { message, .. } => {
@@ -339,7 +350,11 @@ impl UpdateHost {
         let mut state = self.lock();
         match result {
             Ok(prepared) => {
-                state.install = Install::Ready { version, prepared };
+                state.install = Install::Ready {
+                    version,
+                    prepared,
+                    applied: false,
+                };
                 state.restart_prompt = true;
             }
             Err(message) => state.install = Install::Failed(message),
@@ -362,18 +377,63 @@ impl UpdateHost {
 
     /// Swaps the prepared update in and schedules the reopen. On `Ok` the caller must quit now.
     pub fn restart(&self) -> Result<(), String> {
-        let prepared = match &self.lock().install {
-            Install::Ready { prepared, .. } => prepared.clone(),
+        self.restart_with(self_update::apply)
+    }
+
+    /// "Restart Now": swaps the new version in (once) and arms the relaunch, which happens when the
+    /// app actually exits (`relaunch_if_armed`). Nothing is started yet: the quit that follows may
+    /// still be called off by an unsaved-script question, and a new process started now would sit
+    /// beside the old one instead of replacing it.
+    fn restart_with(&self, apply: impl Fn(&Prepared) -> Result<(), String>) -> Result<(), String> {
+        let (prepared, applied) = match &self.lock().install {
+            Install::Ready {
+                prepared, applied, ..
+            } => (prepared.clone(), *applied),
             _ => return Err("There is no update ready to install.".to_owned()),
         };
-        // Outside the lock: this renames the bundle on disk.
-        let result = self_update::apply_and_relaunch(&prepared);
+        // Outside the lock: this renames the bundle on disk. Not again after a quit that was
+        // called off and is now asked for a second time: the new version is already in place, and
+        // swapping once more would move it over the copy kept for a manual restore.
+        let result = if applied { Ok(()) } else { apply(&prepared) };
         let mut state = self.lock();
         state.restart_prompt = false;
-        if let Err(message) = &result {
-            state.install = Install::Failed(message.clone());
+        match &result {
+            Ok(()) => {
+                if let Install::Ready { applied, .. } = &mut state.install {
+                    *applied = true;
+                }
+                state.relaunch_on_exit = true;
+            }
+            Err(message) => state.install = Install::Failed(message.clone()),
         }
         result
+    }
+
+    /// The quit a restart asked for was called off (an unsaved script, Cancel): the app keeps
+    /// running, so nothing may start the new version when it exits some other day.
+    pub fn disarm_relaunch(&self) {
+        self.lock().relaunch_on_exit = false;
+    }
+
+    /// Run when the app is certain to exit: starts the new version if "Restart Now" was chosen and
+    /// the quit was not called off. A failure cannot be shown (the app is going); the new version is
+    /// already in place, so the caller logs it and the user reopens the app.
+    pub fn relaunch_if_armed(&self) -> Result<(), String> {
+        self.relaunch_with(self_update::relaunch)
+    }
+
+    fn relaunch_with(
+        &self,
+        relaunch: impl Fn(&Prepared) -> Result<(), String>,
+    ) -> Result<(), String> {
+        let prepared = {
+            let state = self.lock();
+            match &state.install {
+                Install::Ready { prepared, .. } if state.relaunch_on_exit => prepared.clone(),
+                _ => return Ok(()),
+            }
+        };
+        relaunch(&prepared)
     }
 
     /// Whether the "restart to finish updating" question is waiting for an answer.
@@ -426,7 +486,7 @@ fn available_phase(release: &Release, target: &Result<PathBuf, String>) -> Phase
     } else if let Err(reason) = target {
         Some(reason.clone())
     } else {
-        Some("This release has no download for this Mac.".to_owned())
+        Some("This release has no download for this computer.".to_owned())
     };
     Phase::Available {
         version: release.version.clone(),
@@ -624,6 +684,70 @@ mod tests {
         assert!(!host.restart_prompt_pending());
         host.prompt_restart();
         assert!(host.restart_prompt_pending());
+    }
+
+    fn ready_host() -> UpdateHost {
+        UpdateHost::at_phase(&Phase::Ready {
+            version: "9.9.9".to_owned(),
+        })
+    }
+
+    #[test]
+    fn restart_swaps_once_and_relaunches_only_when_the_app_exits() {
+        let (swaps, relaunches) = (std::cell::Cell::new(0), std::cell::Cell::new(0));
+        let apply = |_: &Prepared| {
+            swaps.set(swaps.get() + 1);
+            Ok(())
+        };
+        let relaunch = |_: &Prepared| {
+            relaunches.set(relaunches.get() + 1);
+            Ok(())
+        };
+        let host = ready_host();
+        // Nothing starts at "Restart Now": the quit is not decided yet.
+        host.restart_with(apply).unwrap();
+        assert_eq!((swaps.get(), relaunches.get()), (1, 0));
+        // The quit is called off, then asked for again: one swap in all, and the exit relaunches.
+        host.disarm_relaunch();
+        host.restart_with(apply).unwrap();
+        assert_eq!(swaps.get(), 1);
+        host.relaunch_with(relaunch).unwrap();
+        assert_eq!(relaunches.get(), 1);
+    }
+
+    #[test]
+    fn a_called_off_quit_never_relaunches() {
+        let relaunches = std::cell::Cell::new(0);
+        let relaunch = |_: &Prepared| {
+            relaunches.set(relaunches.get() + 1);
+            Ok(())
+        };
+        let host = ready_host();
+        host.restart_with(|_| Ok(())).unwrap();
+        host.disarm_relaunch();
+        // The user keeps working and quits another day: nothing starts a second copy.
+        host.relaunch_with(relaunch).unwrap();
+        // And an app that never chose "Restart Now" relaunches nothing either.
+        ready_host().relaunch_with(relaunch).unwrap();
+        assert_eq!(relaunches.get(), 0);
+    }
+
+    #[test]
+    fn a_failed_swap_stays_visible_and_arms_nothing() {
+        let relaunches = std::cell::Cell::new(0);
+        let host = ready_host();
+        let result = host.restart_with(|_| Err("Could not install the new app: busy".to_owned()));
+        assert!(result.is_err());
+        // The failure is what the tab bar shows (a red mark with this reason).
+        assert!(
+            matches!(&host.lock().install, Install::Failed(message) if message.contains("busy"))
+        );
+        host.relaunch_with(|_| {
+            relaunches.set(relaunches.get() + 1);
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(relaunches.get(), 0);
     }
 
     #[test]

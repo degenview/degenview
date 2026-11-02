@@ -30,9 +30,13 @@ pub fn run_gui() -> Result<(), Box<dyn std::error::Error>> {
 pub fn run_gui_with(
     sync: Option<std::sync::Arc<dyn TransportFactory>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    // Started by an update on Windows or Linux: let the process it replaces exit before the database
+    // opens, and do not open it at all if that process never does (two instances on one store).
+    service::self_update::wait_for_predecessor()?;
     let store = store::open_default()?;
     // A finished update leaves the previous app in a hidden folder until the new one has started.
     service::work_queue::submit(service::self_update::cleanup_stale);
+    service::work_queue::submit(service::self_update::sync_installed_version);
     // macOS rounds and insets the square art itself (`inset_macos_icon`); elsewhere the file is
     // drawn as it is, so it comes with its corners (`tools/round-icon.py`).
     #[cfg(target_os = "macos")]

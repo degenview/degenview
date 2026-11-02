@@ -114,7 +114,9 @@ timeline scrubber, speed and interval controls, and shared clock across every ch
 
 ## Requirements
 
-- macOS (Apple Silicon or Intel), Windows (x64), or Linux (x64 or arm64)
+- macOS (Apple Silicon or Intel), Windows (x64 or ARM64), or Linux (x64 or arm64) with glibc 2.35 or
+  newer (Ubuntu 22.04, Debian 12, Fedora 36 and later); on an older distro such as RHEL 9, use the
+  Flatpak
 - [Rust](https://rustup.rs) 1.95 or newer (`cargo` on your `PATH`)
 - A free Alpaca account and API keys only if you want stock data — set `DEGENVIEW_ALPACA_KEY_ID`
   and `DEGENVIEW_ALPACA_SECRET_KEY`, or store them in Keychain on macOS (the Secret Service on Linux)
@@ -184,6 +186,11 @@ install -Dm644 degenview.png "$HOME/.local/share/icons/hicolor/512x512/apps/dege
 install -Dm644 degenview.desktop "$HOME/.local/share/applications/degenview.desktop"
 ```
 
+Installed in `~/.local/bin` (or any folder you own), the binary updates itself from inside the app: it
+downloads the new tarball, replaces `degenview` and restarts. A binary in a folder you cannot write to,
+such as `/usr/local/bin` or one a package manager owns, only shows a link to the release page. The
+launcher and icon files above are not touched by an update.
+
 Each release also carries a Flatpak bundle, `DegenView-<tag>-linux-x64.flatpak` or
 `-linux-arm64.flatpak` (the tarball likewise has an `-arm64` build), which needs no
 manual install steps and runs sandboxed (network, display and GPU only):
@@ -193,12 +200,23 @@ flatpak install --user DegenView-<tag>-linux-<x64|arm64>.flatpak
 flatpak run es.nico.degenview
 ```
 
-A bundle has no remote, so `flatpak update` does not find newer versions; download the next one
-from the release page. How it is built and what is unverified: [docs/flatpak.md](docs/flatpak.md).
+A bundle has no remote, so `flatpak update` does not find newer versions and the app cannot replace
+itself in the sandbox; download the next one from the release page. How it is built and what is unverified: [docs/flatpak.md](docs/flatpak.md).
 
-Releases: push a tag like `v0.1.0` and the Release workflow builds macOS (arm64 + Intel),
-Windows, and Linux binaries (a tarball and a Flatpak) and publishes a GitHub release you can
-download.
+Releases: push a tag like `v0.1.0` and the Release workflow builds macOS (arm64 + Intel, as a disk
+image and a zip), Windows (x64 and ARM64, each an installer and a portable zip), and Linux binaries (a tarball and a
+Flatpak) and publishes a GitHub release you can download.
+
+On macOS, open `DegenView-<tag>-macos-<arm64|x64>.dmg` and drag DegenView onto the Applications
+shortcut. The app is signed and notarized, and updates itself from inside the app (it downloads the
+`.zip` with the same app in it, so keep it in Applications, not on the disk image).
+
+On Windows, `DegenView-<tag>-windows-x64-setup.exe` (or `-windows-arm64-setup.exe` on a Windows on ARM
+PC such as a Snapdragon X laptop; the x64 build only runs there emulated) installs for the current
+user (no admin rights) into `%LOCALAPPDATA%\Programs\DegenView`, adds a Start menu entry and an uninstaller, and keeps your
+data when removed. The `.zip` is the portable alternative: unzip it into a folder you own. Both update
+themselves from inside the app. Neither is signed yet, so SmartScreen may ask you to approve the first
+launch.
 
 ## Documentation
 
@@ -218,7 +236,8 @@ Copyright © 2026 Nico Oelgart.
 Two fonts are built into DegenView. They are not covered by the GPL: each keeps its own licence, the
 [SIL Open Font License 1.1](https://openfontlicense.org), and neither declares a Reserved Font Name. The
 licence texts are in [`assets/fonts`](assets/fonts), and ship with every download (the macOS app's
-`Contents/Resources/Licenses`, the Flatpak's `share/licenses`, the Linux and Windows archives).
+`Contents/Resources/Licenses`, the Flatpak's `share/licenses`, the Linux and Windows archives, the Windows installer's `licenses`
+folder).
 
 - **JetBrains Mono** (the NL build, without ligatures; version 2.304), the Pine editor's default font.
   Copyright 2020 The JetBrains Mono Project Authors, <https://github.com/JetBrains/JetBrainsMono>.

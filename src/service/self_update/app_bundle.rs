@@ -1,79 +1,15 @@
-//! Replaces the running macOS app bundle with a newer release.
+//! The macOS (and, for tests, Unix) strategy: replace the running `.app` bundle.
 //!
-//! Two steps so nothing on disk changes until the user says so: `prepare` downloads the release
-//! zip, checks its SHA-256 against the digest GitHub published for it, unpacks it, sanity-checks
-//! the bundle and verifies its Developer ID signature against the running app's Team ID;
-//! `apply_and_relaunch` swaps the bundle in place, then a detached shell waits for this
-//! process to exit and reopens the app. The previous bundle is kept in the staging folder until the
-//! new version starts and calls `cleanup_stale`, so a build that never launches can be restored by
-//! hand.
-//!
-//! Everything lives in a hidden folder next to the app (same volume, so the swap is two atomic
-//! renames); an app in a folder the user cannot write to simply is not installable.
-
+//! Shared types and checks live in the parent module.
+use super::{Progress, STAGING_NAME, Stage, forwarded_env, is_writable, verify};
 use crate::service::update_check::{Release, ReleaseAsset};
 use crate::service::{code_signature, tag_signature, update_archive, update_download};
-use sha2::{Digest, Sha256};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-const STAGING_NAME: &str = ".DegenView-update";
 const APP_NAME: &str = "DegenView.app";
 /// How long the relaunch helper waits for this process to exit before giving up.
 const RELAUNCH_WAIT_TICKS: u32 = 300;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Stage {
-    Verifying,
-    Downloading,
-    Unpacking,
-}
-
-impl Stage {
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Verifying => "Checking the release signature…",
-            Self::Downloading => "Downloading the new version…",
-            Self::Unpacking => "Unpacking and checking it…",
-        }
-    }
-}
-
-/// Where `prepare` has got to: the stage, and how far through the whole job that is (0 to 1).
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Progress {
-    pub stage: Stage,
-    pub fraction: f32,
-}
-
-/// Share of the overall bar each stage covers: the signature check, the download (by bytes),
-/// then unpacking, whose own progress is not measurable.
-const VERIFY_END: f32 = 0.05;
-const DOWNLOAD_END: f32 = 0.90;
-
-impl Progress {
-    pub fn new(stage: Stage) -> Self {
-        let fraction = match stage {
-            Stage::Verifying => 0.0,
-            Stage::Downloading => VERIFY_END,
-            Stage::Unpacking => DOWNLOAD_END,
-        };
-        Self { stage, fraction }
-    }
-
-    /// The download after `received` of `total` bytes.
-    fn downloading(received: u64, total: u64) -> Self {
-        let done = if total == 0 {
-            0.0
-        } else {
-            (received as f64 / total as f64).clamp(0.0, 1.0) as f32
-        };
-        Self {
-            stage: Stage::Downloading,
-            fraction: VERIFY_END + (DOWNLOAD_END - VERIFY_END) * done,
-        }
-    }
-}
 
 /// A downloaded, verified update waiting for the user's restart.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -103,7 +39,7 @@ pub fn install_target() -> Result<PathBuf, String> {
         return Err(if crate::service::sandbox::is_flatpak() {
             "This Flatpak cannot update itself. Download the new .flatpak from the release page."
         } else {
-            "Automatic updates are only available on macOS."
+            "Automatic updates are not available on this platform."
         }
         .to_owned());
     }
@@ -120,12 +56,21 @@ pub fn install_target() -> Result<PathBuf, String> {
     }
     let parent = app.parent().ok_or("The app has no parent folder.")?;
     if !is_writable(parent) {
-        return Err(format!("{} is not writable.", parent.display()));
+        return Err(not_writable_message(&app, parent));
     }
     // An update must be signed by the team that signed this app; without one there is nothing to
     // compare against.
     code_signature::team_id(&app)?;
     Ok(app)
+}
+
+/// Why an app in a read-only folder cannot update. The common case is running it straight from the
+/// disk image it was downloaded in, which the user fixes by dragging it to Applications.
+fn not_writable_message(app: &Path, parent: &Path) -> String {
+    if app.starts_with("/Volumes") {
+        return "Drag DegenView from the disk image to the Applications folder first.".to_owned();
+    }
+    format!("{} is not writable.", parent.display())
 }
 
 /// `/…/DegenView.app` for `/…/DegenView.app/Contents/MacOS/DegenView`.
@@ -139,13 +84,6 @@ fn bundle_for_executable(exe: &Path) -> Option<PathBuf> {
     is_bundle.then(|| app.to_path_buf())
 }
 
-fn is_writable(dir: &Path) -> bool {
-    let probe = dir.join(format!(".DegenView-write-test-{}", std::process::id()));
-    let ok = std::fs::create_dir(&probe).is_ok();
-    let _ = std::fs::remove_dir(&probe);
-    ok
-}
-
 /// Blocking: checks the release tag's signature, then downloads, verifies and unpacks the
 /// release's zip next to `app`, whose Developer ID Team ID the new bundle must be signed with. Nothing is replaced yet, and nothing is downloaded for a tag that
 /// is not signed by a pinned key.
@@ -157,7 +95,7 @@ pub fn prepare(
     let asset = release
         .asset
         .as_ref()
-        .ok_or("This release has no download for this Mac.")?;
+        .ok_or("This release has no download for this computer.")?;
     progress(Progress::new(Stage::Verifying));
     tag_signature::verify_release_tag(&release.tag).map_err(|error| error.to_string())?;
     let team_id = code_signature::team_id(app)?;
@@ -208,29 +146,20 @@ fn prepare_in(
     })
 }
 
-fn verify(bytes: &[u8], asset: &ReleaseAsset) -> Result<(), String> {
-    if bytes.len() as u64 != asset.size {
-        return Err("The download is incomplete.".to_owned());
-    }
-    let hash = Sha256::digest(bytes);
-    let hex: String = hash.iter().map(|byte| format!("{byte:02x}")).collect();
-    if hex != asset.sha256 {
-        return Err("The download does not match its published checksum.".to_owned());
-    }
-    Ok(())
+/// Swaps the prepared bundle in. Nothing is started: the app is still running and may yet decide
+/// not to quit (an unsaved-script question); `relaunch` runs once exit is certain.
+pub fn apply(prepared: &Prepared) -> Result<(), String> {
+    swap(prepared)
 }
 
-/// Swaps the prepared bundle in and schedules the reopen. On `Ok` the caller must quit now.
-pub fn apply_and_relaunch(prepared: &Prepared) -> Result<(), String> {
-    swap(prepared)?;
-    if let Err(error) = spawn_relaunch(prepared) {
-        // Without the helper nobody would reopen the app; the new bundle is in place regardless,
-        // so tell the user rather than quitting into nothing.
-        return Err(format!(
-            "Updated, but could not restart: {error}. Reopen DegenView."
-        ));
-    }
-    Ok(())
+/// Starts the helper that reopens the app once this process has exited. Call it when exit is
+/// certain: the helper starts the new app only after this process is gone, and does not start it at
+/// all if this process is still there when its wait runs out.
+pub fn relaunch(prepared: &Prepared) -> Result<(), String> {
+    spawn_relaunch(prepared).map_err(|error| {
+        // Without the helper nobody would reopen the app; the new bundle is in place regardless.
+        format!("Updated, but could not restart: {error}. Reopen DegenView.")
+    })
 }
 
 fn swap(prepared: &Prepared) -> Result<(), String> {
@@ -260,27 +189,15 @@ const FORWARDED_ENV: &[&str] = &[
 /// What the helper needs itself (it runs `sh`, `kill`, `sleep`, `open`).
 const HELPER_ENV: &[&str] = &["HOME", "PATH", "USER", "TMPDIR"];
 
-fn forwarded_env(
-    vars: impl Iterator<Item = (OsString, OsString)>,
-    allowed: &[&str],
-) -> Vec<(OsString, OsString)> {
-    vars.filter(|(name, _)| name.to_str().is_some_and(|name| allowed.contains(&name)))
-        .collect()
-}
-
-/// The detached helper: waits for `pid` to exit (at most `RELAUNCH_WAIT_TICKS` × 0.2 s), then
-/// reopens `app`. Its arguments are visible to every user on the Mac, and so are only `forwarded`
-/// names; its own environment is cleared down to `helper_env`.
+/// The detached helper: waits for `pid` to exit (at most `ticks` × 0.2 s), then runs `launch`, but
+/// only when `pid` is really gone: a process that outlives the wait (a hung shutdown, a quit that
+/// was called off) is left alone rather than given a second instance on the same database.
 #[cfg(unix)]
-fn relaunch_command(
-    app: &Path,
-    pid: u32,
-    forwarded: &[(OsString, OsString)],
-    helper_env: Vec<(OsString, OsString)>,
-) -> std::process::Command {
+fn helper_command(ticks: u32, pid: u32, launch: &[OsString]) -> std::process::Command {
     let script = format!(
         "pid=$1; shift; i=0; \
-         while kill -0 \"$pid\" 2>/dev/null && [ $i -lt {RELAUNCH_WAIT_TICKS} ]; do sleep 0.2; i=$((i+1)); done; \
+         while kill -0 \"$pid\" 2>/dev/null && [ $i -lt {ticks} ]; do sleep 0.2; i=$((i+1)); done; \
+         if kill -0 \"$pid\" 2>/dev/null; then exit 0; fi; \
          exec \"$@\""
     );
     let mut command = std::process::Command::new("/bin/sh");
@@ -289,14 +206,30 @@ fn relaunch_command(
         .arg(script)
         .arg("sh")
         .arg(pid.to_string())
-        .args(["/usr/bin/open", "-n"]);
+        .args(launch);
+    command
+}
+
+/// The helper that reopens `app` with `open -n`. Its arguments are visible to every user on the
+/// Mac, and so are only `forwarded` names; its own environment is cleared down to `helper_env`.
+#[cfg(unix)]
+fn relaunch_command(
+    app: &Path,
+    pid: u32,
+    forwarded: &[(OsString, OsString)],
+    helper_env: Vec<(OsString, OsString)>,
+) -> std::process::Command {
+    let mut launch: Vec<OsString> = vec!["/usr/bin/open".into(), "-n".into()];
     for (name, value) in forwarded {
         let mut assignment = name.clone();
         assignment.push("=");
         assignment.push(value);
-        command.arg("--env").arg(assignment);
+        launch.push("--env".into());
+        launch.push(assignment);
     }
-    command.arg(app).env_clear().envs(helper_env);
+    launch.push(app.into());
+    let mut command = helper_command(RELAUNCH_WAIT_TICKS, pid, &launch);
+    command.env_clear().envs(helper_env);
     command
 }
 
@@ -340,18 +273,50 @@ pub fn cleanup_stale() {
 
 #[cfg(test)]
 mod tests {
+    use super::super::tests::scratch;
     use super::*;
     use crate::service::update_archive::testing::fake_app;
     use std::fs;
 
-    fn scratch(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!(
-            "degenview-self-update-{name}-{}",
-            std::process::id()
-        ));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
-        dir
+    /// The helper script, executed for real: it starts the launcher only when the process it waits
+    /// for is gone, and leaves the app alone when that process outlives the wait.
+    #[cfg(unix)]
+    #[test]
+    fn the_helper_launches_only_once_the_old_process_is_gone() {
+        let root = scratch("helper");
+        let marker = root.join("launched");
+        let run = |pid: u32| {
+            let launch = ["/usr/bin/touch".into(), marker.clone().into_os_string()];
+            helper_command(2, pid, &launch).status().unwrap()
+        };
+        // Alive past the wait (2 ticks, 0.4 s): the helper gives up without launching anything.
+        let mut alive = std::process::Command::new("sleep")
+            .arg("5")
+            .spawn()
+            .unwrap();
+        assert!(run(alive.id()).success());
+        assert!(
+            !marker.exists(),
+            "launched beside a process that was still running"
+        );
+        let _ = alive.kill();
+        let _ = alive.wait();
+        // Gone: it launches.
+        assert!(run(alive.id()).success());
+        assert!(marker.exists(), "did not launch after the process exited");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn an_app_run_from_the_disk_image_is_told_to_move_to_applications() {
+        let on_image = Path::new("/Volumes/DegenView/DegenView.app");
+        let message = not_writable_message(on_image, on_image.parent().unwrap());
+        assert!(message.contains("Applications"), "{message}");
+        let elsewhere = Path::new("/opt/apps/DegenView.app");
+        assert_eq!(
+            not_writable_message(elsewhere, elsewhere.parent().unwrap()),
+            "/opt/apps is not writable."
+        );
     }
 
     #[test]
@@ -370,21 +335,6 @@ mod tests {
             bundle_for_executable(Path::new("/x/Tools/Contents/MacOS/degenview")),
             None
         );
-    }
-
-    #[test]
-    fn a_checksum_mismatch_or_short_body_is_rejected() {
-        let asset = |size, sha256: &str| ReleaseAsset {
-            name: "a.zip".to_owned(),
-            url: String::new(),
-            size,
-            sha256: sha256.to_owned(),
-        };
-        // sha256("abc")
-        let abc = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
-        assert!(verify(b"abc", &asset(3, abc)).is_ok());
-        assert!(verify(b"abd", &asset(3, abc)).is_err());
-        assert!(verify(b"ab", &asset(3, abc)).is_err());
     }
 
     #[test]
@@ -543,26 +493,5 @@ mod tests {
         assert!(line.ends_with("/Applications/DegenView.app"), "{line}");
         let envs: Vec<_> = command.get_envs().collect();
         assert!(envs.iter().all(|(name, _)| *name == "HOME"), "{envs:?}");
-    }
-
-    #[test]
-    fn a_read_only_folder_is_not_writable() {
-        let root = scratch("writable");
-        assert!(is_writable(&root));
-        assert!(!is_writable(&root.join("missing")));
-        let _ = fs::remove_dir_all(root);
-    }
-
-    #[test]
-    fn the_bar_only_moves_forward_across_the_stages() {
-        let start = Progress::new(Stage::Verifying).fraction;
-        let begin = Progress::new(Stage::Downloading).fraction;
-        let half = Progress::downloading(50, 100).fraction;
-        let end = Progress::downloading(100, 100).fraction;
-        let unpack = Progress::new(Stage::Unpacking).fraction;
-        assert!(start < begin && begin < half && half < end);
-        assert_eq!(end, unpack);
-        assert_eq!(Progress::downloading(500, 100).fraction, end);
-        assert_eq!(Progress::downloading(0, 0).fraction, begin);
     }
 }

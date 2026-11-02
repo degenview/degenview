@@ -3,6 +3,7 @@
 //! An update is only installed when it is signed by the same Developer ID Team ID as the running
 //! app, so a substituted asset that is merely well-formed (or signed by someone else) is refused
 //! even if it got past the checksum.
+#![cfg_attr(any(windows, target_os = "linux"), allow(dead_code))]
 
 use std::path::Path;
 use std::process::{Command, Stdio};

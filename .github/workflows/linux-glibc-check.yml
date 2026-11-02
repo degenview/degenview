@@ -1,0 +1,81 @@
+name: Linux glibc baseline
+
+# The Linux release binaries must start on the oldest distro we support (Ubuntu 22.04, glibc 2.35).
+# A binary needs the glibc it was linked against, so this builds the release the way release.yml does,
+# on the 22.04 runners, and runs tools/check-glibc.py on it. `Test linux` builds on 24.04 and would not
+# notice a dependency that no longer builds or links on 22.04; this build does, and the check guards
+# against the build host drifting off 22.04. It runs when a dependency changes or when the build, the
+# check or the runners do. The release workflow runs the same check on the real build.
+on:
+  pull_request:
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "tools/check-glibc.py"
+      - "tools/test-check-glibc.py"
+      - ".github/workflows/linux-glibc-check.yml"
+      - ".github/workflows/release.yml"
+      - ".github/workflows/release-cache.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  glibc:
+    name: glibc baseline (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            os: ubuntu-22.04
+            cache: x86_64-unknown-linux-gnu-glibc-2.35
+          - arch: arm64
+            os: ubuntu-22.04-arm
+            cache: aarch64-unknown-linux-gnu-glibc-2.35
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # The release's own cache, read-only: a PR must not write what a tag run will read.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-${{ matrix.cache }}
+          save-if: false
+
+      # The checker's own tests (weak versus required, damaged files): no build needed.
+      - name: Test the glibc checker
+        run: python3 tools/test-check-glibc.py
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
+            libx11-dev libxcursor-dev libxrandr-dev libxi-dev \
+            libgl1-mesa-dev libegl1-mesa-dev libssl-dev pkg-config
+
+      - name: Build the release binary
+        run: cargo build --release
+
+      - name: Check the glibc baseline
+        run: python3 tools/check-glibc.py target/release/degenview
+
+      # The check has to be able to fail, or it proves nothing.
+      - name: The check fails below what the binary needs
+        run: |
+          if python3 tools/check-glibc.py target/release/degenview 2.0; then
+            echo "::error::tools/check-glibc.py passed a baseline the binary cannot meet"
+            exit 1
+          fi

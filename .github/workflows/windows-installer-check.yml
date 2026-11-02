@@ -1,0 +1,119 @@
+name: Windows installer
+
+# Builds the installer around a stub exe, installs it silently, checks what it left behind, and
+# uninstalls it, on x64 and on native Windows on ARM (where the arm64 installer is installed for real). A broken installer script would otherwise be found when a tag is cut. The release
+# workflow builds the real one with the same tools/windows-installer.sh.
+on:
+  pull_request:
+    paths:
+      - "packaging/windows/**"
+      - "tools/windows-installer.sh"
+      - ".github/workflows/windows-installer-check.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # Keep in step with release.yml.
+  INNO_SETUP_VERSION: "6.7.1"
+  APP_ID: "{79717C79-2D1E-4206-B25A-F3E626438640}"
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  installer:
+    name: Build, install and uninstall (${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    env:
+      ARCH: ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            os: windows-latest
+          - arch: arm64
+            os: windows-11-arm
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Inno Setup
+        shell: bash
+        run: choco install innosetup --version "$INNO_SETUP_VERSION" -y --no-progress
+
+      # The release zips its exe with 7-Zip; a runner image without it would only fail on tag day.
+      - name: The release's zip tool is there
+        shell: bash
+        run: command -v 7z
+
+      - name: Build the installer around a stub exe
+        shell: bash
+        run: |
+          mkdir stub
+          cp /c/Windows/System32/ping.exe stub/degenview.exe
+          ./tools/windows-installer.sh v0.0.0-check stub/degenview.exe "$ARCH"
+          # The other CPU's installer too, for the refusal check below.
+          if [ "$ARCH" = arm64 ]; then
+            ./tools/windows-installer.sh v0.0.0-check stub/degenview.exe x64
+          fi
+
+      # The x64 installer is `x64os`, so it must not install the emulated build on Windows on ARM.
+      - name: The x64 installer refuses Windows on ARM
+        if: matrix.arch == 'arm64'
+        shell: pwsh
+        timeout-minutes: 5
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dir = Join-Path $env:RUNNER_TEMP 'DegenViewRefused'
+          $key = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\$($env:APP_ID)_is1"
+          $setup = Get-Item dist\DegenView-v0.0.0-check-windows-x64-setup.exe
+          $run = Start-Process -Wait -PassThru -FilePath $setup.FullName `
+            -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=$dir"
+          Write-Host "exit code $($run.ExitCode)"
+          if (Test-Path -LiteralPath $dir) { throw "the x64 installer installed on Windows on ARM" }
+          if (Test-Path -LiteralPath $key) { throw "the x64 installer registered itself on Windows on ARM" }
+          if ($run.ExitCode -eq 0) { throw "the x64 installer reported success on Windows on ARM" }
+
+      - name: Install, inspect and uninstall
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $setup = Get-Item "dist\DegenView-v0.0.0-check-windows-$($env:ARCH)-setup.exe"
+          $dir = Join-Path $env:RUNNER_TEMP 'DegenViewInstall'
+          $key = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\$($env:APP_ID)_is1"
+          $data = Join-Path $env:APPDATA 'es.nico.degenview'
+          New-Item -Force -ItemType Directory $data | Out-Null
+          Set-Content (Join-Path $data 'keep.txt') 'user data'
+
+          Start-Process -Wait -FilePath $setup.FullName `
+            -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=$dir"
+
+          foreach ($path in @(
+              "$dir\degenview.exe", "$dir\unins000.exe",
+              "$dir\licenses\OFL-JetBrainsMono.txt", "$dir\licenses\OFL-NotoSansSymbols2.txt",
+              "$dir\licenses\FONTS.md",
+              "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\DegenView.lnk")) {
+            if (-not (Test-Path -LiteralPath $path)) { throw "missing after install: $path" }
+          }
+          $entry = Get-ItemProperty -LiteralPath $key
+          if ($entry.DisplayVersion -ne '0.0.0-check') { throw "DisplayVersion is $($entry.DisplayVersion)" }
+          if ($entry.'Inno Setup: App Path' -ne $dir) { throw "App Path is $($entry.'Inno Setup: App Path')" }
+          Write-Host "Installed to $dir, DisplayVersion $($entry.DisplayVersion)"
+
+          # What the self-updater leaves behind must go with the app.
+          New-Item -Force -ItemType Directory "$dir\.DegenView-update\old" | Out-Null
+          Set-Content "$dir\.DegenView-update\old\degenview.exe" 'old'
+
+          Start-Process -Wait -FilePath "$dir\unins000.exe" `
+            -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'
+          # The uninstaller hands over to a temporary copy of itself, so Wait returns early.
+          $deadline = (Get-Date).AddSeconds(60)
+          while ((Test-Path -LiteralPath $dir) -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 1 }
+          if (Test-Path -LiteralPath $dir) { throw "$dir is still there after uninstall" }
+          if (Test-Path -LiteralPath $key) { throw "the uninstall entry is still there" }
+          if (-not (Test-Path (Join-Path $data 'keep.txt'))) { throw "uninstall deleted the user's data" }
+          Write-Host "Uninstalled; user data kept"

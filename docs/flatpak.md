@@ -42,7 +42,8 @@ listens on `127.0.0.1`; `--share=network` uses the host network, so clients on t
 A downloaded bundle has no remote, so `flatpak update` finds nothing. The in-app update check
 therefore stays on and stays non-installable: `self_update::install_target` returns a message
 that names the release page when `sandbox::is_flatpak()` (`FLATPAK_ID` or `/.flatpak-info`). If
-the app is ever hosted on Flathub, hide the check there instead.
+the app is ever hosted on Flathub, hide the check there instead. The Linux tarball is the form
+that updates itself (`docs/agent-guides/releases-updates.md`, "Linux").
 
 ## Secret storage
 
