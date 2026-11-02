@@ -67,7 +67,7 @@ jobs:
           ! otool -L target/debug/degenview-alert-agent | grep -q libswift
           otool -L target/debug/degenview | grep -q libswiftCloudKit
 
-  # The Windows self-updater (`service::self_update::portable_exe`) only runs there, and the full
+  # The Windows self-updater (`service::self_update::portable_binary`) only runs there, and the full
   # suite has never been run on Windows, so this job runs the update tests and no more. It also
   # proves the whole crate still compiles for Windows, which the release build otherwise finds out.
   test-windows:

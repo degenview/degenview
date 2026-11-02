@@ -152,7 +152,7 @@ the same app and is what the in-app updater downloads; the updater never reads t
 ## Windows updates
 
 The updater also runs on Windows x64, for the portable zip (`DegenView-<tag>-windows-x64.zip`). Code:
-`service/self_update/portable_exe.rs` (the strategy), `update_archive::{extract_exe, check_exe}`;
+`service/self_update/portable_binary.rs` (the strategy), `update_archive::{extract_exe, check_exe}`;
 the check, tag verification, download, digest and `UpdateHost` are shared with macOS. Linux and a
 native Windows ARM build (none is shipped) get no asset and stay on **View Release**; the x64 exe
 also runs on Windows on ARM under emulation and updates like any other.
@@ -173,7 +173,7 @@ also runs on Windows on ARM under emulation and updates like any other.
   second rename fails. The next start deletes the staging folder (a file still in use waits for
   the start after).
 - **Relaunch**: no helper. The new exe is started detached with `--relaunch-after <pid>` and a
-  cleared environment (`FORWARDED_ENV` in `portable_exe`: data/cache folders, the standard Windows
+  cleared environment (`FORWARDED_ENV` in `portable_binary`: data/cache folders, the standard Windows
   variables a child process expects, and non-secret `DEGENVIEW_*` switches, names matched
   case-insensitively; never credentials).
   `wait_for_predecessor` runs first in `run_gui_with`, before the database opens, and waits up to
@@ -204,7 +204,7 @@ never match, and a test pins that.
   it. Do not add `PrivilegesRequiredOverridesAllowed`.
 - **`AppId` is permanent.** It names the installer's identity and its Settings > Installed apps entry
   (`HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\{id}_is1`). Change it and the next
-  installer installs beside the old one. `INSTALLER_APP_ID` in `portable_exe.rs` must equal it; a test
+  installer installs beside the old one. `INSTALLER_APP_ID` in `installed_version.rs` must equal it; a test
   reads the `.iss` and fails otherwise.
 - **Installed apps version.** A self-update swaps the exe but not the installer's entry, so
   `sync_installed_version` (run at startup beside `cleanup_stale`) rewrites `DisplayVersion` to the

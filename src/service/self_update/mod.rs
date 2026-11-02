@@ -25,12 +25,16 @@ pub use app_bundle::{Prepared, apply, cleanup_stale, install_target, prepare, re
 // Compiled everywhere under test so its logic is tested on every platform; it is the strategy only
 // on Windows.
 #[cfg(any(windows, test))]
-mod portable_exe;
+mod portable_binary;
 #[cfg(windows)]
-pub use portable_exe::{
-    Prepared, apply, cleanup_stale, install_target, prepare, relaunch, sync_installed_version,
-    wait_for_predecessor,
+pub use portable_binary::{
+    Prepared, apply, cleanup_stale, install_target, prepare, relaunch, wait_for_predecessor,
 };
+
+#[cfg(any(windows, test))]
+mod installed_version;
+#[cfg(windows)]
+pub use installed_version::sync_installed_version;
 
 /// Nothing to wait for outside Windows: the macOS helper waits for the old process itself, and
 /// starts the new app only once it is gone.
