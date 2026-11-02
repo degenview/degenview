@@ -68,8 +68,7 @@ impl<'source> Lexer<'source> {
         }
 
         let source_end = self.source.encode_utf16().count();
-        let eof_position =
-            SourcePosition::new(raw_lines.len(), last_line.character_len() + 1, source_end);
+        let eof_position = SourcePosition::new(raw_lines.len(), last_line.end_column(), source_end);
         let eof_range = SourceRange::new(eof_position, eof_position);
         while state.indents.len() > 1 {
             state.indents.pop();
@@ -476,6 +475,9 @@ struct SourceLine {
     number: usize,
     start_offset: usize,
     utf16_prefix: Vec<usize>,
+    /// The physical (line, column) of each character index, and of the end, when the text spans
+    /// several physical lines (a multiline string). None for the usual single line.
+    physical: Option<Vec<(usize, usize)>>,
 }
 
 /// A string literal may run over several lines (TradingView accepts a long tooltip written that
@@ -543,20 +545,45 @@ impl SourceLine {
             utf16_prefix
                 .push(utf16_prefix.last().copied().unwrap_or_default() + character.len_utf16());
         }
+        let physical = text.contains(&'\n').then(|| {
+            let (mut line, mut column) = (number, 1);
+            let mut positions = Vec::with_capacity(text.len() + 1);
+            for character in &text {
+                positions.push((line, column));
+                if *character == '\n' {
+                    line += 1;
+                    column = 1;
+                } else {
+                    column += 1;
+                }
+            }
+            positions.push((line, column));
+            positions
+        });
         Self {
             text,
             number,
             start_offset,
             utf16_prefix,
+            physical,
         }
+    }
+
+    /// The 1-based line and column of character `index` (the end of the text for its length).
+    fn position(&self, index: usize) -> (usize, usize) {
+        match &self.physical {
+            Some(positions) => positions[index],
+            None => (self.number, index + 1),
+        }
+    }
+
+    /// The column just past the last character, on its physical line.
+    fn end_column(&self) -> usize {
+        self.position(self.text.len()).1
     }
 
     fn character(&self, index: usize) -> Option<char> {
         self.text.get(index).copied()
-    }
-
-    fn character_len(&self) -> usize {
-        self.text.len()
     }
 
     fn utf16_len(&self) -> usize {
@@ -564,15 +591,17 @@ impl SourceLine {
     }
 
     fn range(&self, from: usize, to: usize) -> SourceRange {
+        let (from_line, from_column) = self.position(from);
+        let (to_line, to_column) = self.position(to);
         SourceRange::new(
             SourcePosition::new(
-                self.number,
-                from + 1,
+                from_line,
+                from_column,
                 self.start_offset + self.utf16_prefix[from],
             ),
             SourcePosition::new(
-                self.number,
-                to + 1,
+                to_line,
+                to_column,
                 self.start_offset + self.utf16_prefix[to],
             ),
         )
@@ -900,5 +929,77 @@ mod tests {
                 "{source}"
             );
         }
+    }
+
+    fn position_of(source: &str, find: impl Fn(&TokenKind) -> bool) -> SourcePosition {
+        lex(source)
+            .tokens
+            .iter()
+            .find(|token| find(&token.kind))
+            .expect("token")
+            .range
+            .start
+    }
+
+    #[test]
+    fn a_token_after_a_multiline_string_is_on_its_physical_line() {
+        // `+` follows the closing quote on line 2, column 4.
+        let plus = position_of("s = \"a\nb\" + c\n", |kind| *kind == TokenKind::Plus);
+        assert_eq!((plus.line, plus.column), (2, 4));
+        assert_eq!(plus.offset, 10);
+        let c = position_of("s = \"a\nb\" + c\n", |kind| {
+            *kind == TokenKind::Identifier("c".into())
+        });
+        assert_eq!((c.line, c.column), (2, 6));
+    }
+
+    #[test]
+    fn a_string_spanning_three_lines_ends_where_it_closes() {
+        let result = lex("t = \"a\n\nb\" // end\nu = 1\n");
+        let string = result
+            .tokens
+            .iter()
+            .find(|token| matches!(token.kind, TokenKind::String(_)))
+            .expect("string");
+        assert_eq!((string.range.start.line, string.range.start.column), (1, 5));
+        assert_eq!((string.range.end.line, string.range.end.column), (3, 3));
+        // The next statement keeps its own line number.
+        let u = position_of("t = \"a\n\nb\" // end\nu = 1\n", |kind| {
+            *kind == TokenKind::Identifier("u".into())
+        });
+        assert_eq!((u.line, u.column), (4, 1));
+    }
+
+    #[test]
+    fn multiline_columns_count_characters_and_offsets_count_utf16_units() {
+        // An astral character before and inside the string: one column, two UTF-16 units.
+        let source = "𝄞 = \"𝄞\n𝄞\" + c\n";
+        let plus = position_of(source, |kind| *kind == TokenKind::Plus);
+        assert_eq!((plus.line, plus.column), (2, 4));
+        let expected: usize = source
+            .split('+')
+            .next()
+            .expect("prefix")
+            .encode_utf16()
+            .count();
+        assert_eq!(plus.offset, expected);
+    }
+
+    #[test]
+    fn eof_after_a_multiline_string_is_on_the_last_physical_line() {
+        let result = lex("s = \"a\nbcd\"");
+        let eof = result.tokens.last().expect("eof").range.start;
+        assert_eq!((eof.line, eof.column), (2, 5));
+    }
+
+    #[test]
+    fn a_string_left_open_is_reported_on_the_line_it_starts_on() {
+        let result = lex("s = \"a\nx = 1\n");
+        let diagnostic = result
+            .diagnostics
+            .iter()
+            .find(|d| d.code == "PINE1003")
+            .expect("unterminated");
+        assert_eq!(diagnostic.range.start.line, 1);
     }
 }
