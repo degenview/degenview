@@ -10,6 +10,7 @@ use super::ast::{
 use super::builtin_types::{self, value_type_name};
 use super::callables::{Callables, Given, NoFit, Resolution};
 use super::registry;
+use super::traversal::assigned_names;
 use super::types::{Ty, TyId, Types};
 use crate::pine::{Diagnostic, DiagnosticCategory, SourceRange, ValueType};
 
@@ -1386,36 +1387,6 @@ fn describe_qualifier(qualifier: Qualifier) -> &'static str {
         Qualifier::Input => "input",
         Qualifier::Simple => "simple",
         Qualifier::Series => "series",
-    }
-}
-
-fn assigned_names(statements: &[Statement]) -> HashSet<String> {
-    let mut names = HashSet::new();
-    for statement in statements {
-        if let Statement::Assignment { name, .. } = statement {
-            names.insert(name.clone());
-        }
-        for block in nested_blocks(statement) {
-            names.extend(assigned_names(block));
-        }
-    }
-    names
-}
-
-fn nested_blocks(statement: &Statement) -> Vec<&[Statement]> {
-    match statement {
-        Statement::Conditional {
-            when_true,
-            when_false,
-            ..
-        } => vec![when_true.as_slice(), when_false.as_slice()],
-        Statement::ForRange { body, .. }
-        | Statement::ForIn { body, .. }
-        | Statement::WhileLoop { body, .. }
-        | Statement::Once { body, .. }
-        | Statement::Function { body, .. } => vec![body.as_slice()],
-        Statement::Switch { arms, .. } => arms.iter().map(|arm| arm.body.as_slice()).collect(),
-        _ => Vec::new(),
     }
 }
 
