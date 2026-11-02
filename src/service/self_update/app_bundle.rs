@@ -39,7 +39,7 @@ pub fn install_target() -> Result<PathBuf, String> {
         return Err(if crate::service::sandbox::is_flatpak() {
             "This Flatpak cannot update itself. Download the new .flatpak from the release page."
         } else {
-            "Automatic updates are only available on macOS and Windows."
+            "Automatic updates are not available on this platform."
         }
         .to_owned());
     }

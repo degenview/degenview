@@ -137,6 +137,12 @@ fn platform_suffix() -> Option<&'static str> {
     } else if cfg!(all(windows, target_arch = "x86_64")) {
         // The zip `release.yml` builds for Windows: `degenview.exe` at its root.
         Some("-windows-x64.zip")
+    } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+        // The tarball `release.yml` builds for Linux: `./degenview` at its root. The Flatpak next to
+        // it ends `.flatpak` and is never picked; a Flatpak install is refused by `install_target`.
+        Some("-linux-x64.tar.gz")
+    } else if cfg!(all(target_os = "linux", target_arch = "aarch64")) {
+        Some("-linux-arm64.tar.gz")
     } else {
         None
     }
@@ -359,14 +365,20 @@ mod tests {
 
     fn reply_by(tag: &str, immutable: bool, author: &str) -> String {
         let digest = format!("sha256:{}", "ab".repeat(32));
-        let assets: Vec<String> = ["macos-arm64", "macos-x64", "windows-x64"]
-            .iter()
-            .map(|platform| {
-                format!(
-                    r#"{{"name":"DegenView-{tag}-{platform}.zip","size":10,"digest":"{digest}","browser_download_url":"{DOWNLOAD_PREFIX}{tag}/DegenView-{tag}-{platform}.zip"}}"#
-                )
-            })
-            .collect();
+        let assets: Vec<String> = [
+            "macos-arm64.zip",
+            "macos-x64.zip",
+            "windows-x64.zip",
+            "linux-x64.tar.gz",
+            "linux-arm64.tar.gz",
+        ]
+        .iter()
+        .map(|platform| {
+            format!(
+                r#"{{"name":"DegenView-{tag}-{platform}","size":10,"digest":"{digest}","browser_download_url":"{DOWNLOAD_PREFIX}{tag}/DegenView-{tag}-{platform}"}}"#
+            )
+        })
+        .collect();
         let prerelease = tag.contains('-');
         format!(
             r#"{{"tag_name":"{tag}","prerelease":{prerelease},"immutable":{immutable},"author":{{"login":"{author}"}},"html_url":"https://github.com/degenview/degenview/releases/tag/{tag}","assets":[{}]}}"#,
@@ -601,6 +613,34 @@ mod tests {
             Some(&digest),
         )];
         assert!(select_asset(only_setup, Some("-windows-x64.zip")).is_none());
+    }
+
+    /// Linux ships a tarball and, per CPU, a Flatpak bundle; only the tarball may be picked.
+    #[test]
+    fn the_linux_tarball_is_picked_and_the_flatpak_never_is() {
+        let digest = format!("sha256:{}", "ab".repeat(32));
+        for suffix in ["-linux-x64.tar.gz", "-linux-arm64.tar.gz"] {
+            let cpu = suffix.trim_end_matches(".tar.gz");
+            for order in [[0, 1], [1, 0]] {
+                let files = [
+                    (format!("DegenView-v1.0.0{cpu}.flatpak"), "v1.0.0/flatpak"),
+                    (format!("DegenView-v1.0.0{cpu}.tar.gz"), "v1.0.0/tarball"),
+                ];
+                let assets = order
+                    .map(|i| asset(&files[i].0, files[i].1, 40, Some(&digest)))
+                    .into_iter()
+                    .collect();
+                let picked = select_asset(assets, Some(suffix)).unwrap();
+                assert!(picked.name.ends_with(".tar.gz"), "{}", picked.name);
+            }
+            let only_flatpak = vec![asset(
+                &format!("DegenView-v1.0.0{cpu}.flatpak"),
+                "v1.0.0/flatpak",
+                40,
+                Some(&digest),
+            )];
+            assert!(select_asset(only_flatpak, Some(suffix)).is_none());
+        }
     }
 
     /// The Mac release has a disk image next to the zip the updater unpacks; only the zip may ever be

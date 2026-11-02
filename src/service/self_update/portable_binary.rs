@@ -1,28 +1,32 @@
-//! The Windows strategy: replace the running `degenview.exe` in place.
+//! The portable strategy (Windows and Linux): replace the running executable in place.
 //!
-//! Windows will not let a running program be overwritten or deleted, but it does let it be
-//! renamed. So the swap moves the running exe into the staging folder and puts the new one where
-//! it was; the old process keeps running from its renamed file until it quits.
+//! Neither OS lets a running program be overwritten in the usual way, but both let it be renamed:
+//! the swap moves the running binary into the staging folder and puts the new one where it was,
+//! and the old process keeps running from its renamed file until it quits.
 //!
-//! There is no shell helper to reopen the app: `apply_and_relaunch` starts the new exe straight
-//! away with `--relaunch-after <pid>`, and `wait_for_predecessor` (the first thing the new process
+//! There is no shell helper to reopen the app: `relaunch` (called once exit is certain) starts the new
+//! binary with `--relaunch-after <pid>`, and `wait_for_predecessor` (the first thing the new process
 //! does) holds it back until that pid has exited, so two instances never share the database.
 //!
-//! Unlike the macOS bundle, nothing here is checked against a code signature: the Windows build
-//! is not Authenticode-signed. Trust comes from the signed release tag, the immutable release and
-//! the SHA-256 GitHub published for the zip (`docs/agent-guides/releases-updates.md`).
+//! Unlike the macOS bundle, nothing here is checked against a code signature: neither the Windows
+//! nor the Linux build is signed. Trust comes from the signed release tag, the immutable release and
+//! the SHA-256 GitHub published for the archive (`docs/agent-guides/releases-updates.md`). Only the
+//! unpacking differs per OS: a zip holding `degenview.exe`, or a tarball holding `degenview`.
 //!
 //! The logic is compiled on every platform so its tests run everywhere; only the process calls
-//! are Windows-only.
-#![cfg_attr(not(windows), allow(dead_code))]
+//! are per-OS.
+#![cfg_attr(not(any(windows, target_os = "linux")), allow(dead_code))]
 
-use super::{Progress, STAGING_NAME, Stage, forwarded_env, is_writable, verify};
+// `forwarded_env` is only called on Windows (Linux inherits its environment); tests use it everywhere.
+#[cfg_attr(not(windows), allow(unused_imports))]
+use super::forwarded_env;
+use super::{Progress, STAGING_NAME, Stage, is_writable, verify};
 use crate::service::update_check::{Release, ReleaseAsset};
 use crate::service::{tag_signature, update_archive, update_download};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 
-/// Passed to the relaunched exe, followed by the pid of the process it replaces.
+/// Passed to the relaunched binary, followed by the pid of the process it replaces.
 const RELAUNCH_FLAG: &str = "--relaunch-after";
 /// How long the new process waits for its predecessor to exit before carrying on regardless: as
 /// long as the macOS helper, since the old app may still be asking about unsaved scripts.
@@ -41,15 +45,23 @@ impl Prepared {
     /// A stand-in for tests of code that only passes a `Prepared` along.
     pub(crate) fn for_test() -> Self {
         Self {
-            exe: PathBuf::from(r"C:\Users\me\DegenView\degenview.exe"),
-            staging: PathBuf::from(r"C:\Users\me\DegenView\.DegenView-update"),
-            new_exe: PathBuf::from(r"C:\Users\me\DegenView\.DegenView-update\new\degenview.exe"),
+            exe: PathBuf::from("/home/me/.local/bin/degenview"),
+            staging: PathBuf::from("/home/me/.local/bin/.DegenView-update"),
+            new_exe: PathBuf::from("/home/me/.local/bin/.DegenView-update/new/degenview"),
         }
     }
 }
 
 /// The running executable, when it can be replaced in place.
 pub fn install_target() -> Result<PathBuf, String> {
+    // A Flatpak installed from a downloaded bundle has no remote, so `flatpak update` finds
+    // nothing: the release page is where the next one comes from.
+    if crate::service::sandbox::is_flatpak() {
+        return Err(
+            "This Flatpak cannot update itself. Download the new .flatpak from the release page."
+                .to_owned(),
+        );
+    }
     let exe = std::env::current_exe()
         .and_then(|exe| exe.canonicalize())
         .map_err(|error| error.to_string())?;
@@ -79,15 +91,20 @@ fn target_for(exe: &Path, source_root: &Path) -> Result<PathBuf, String> {
     let parent = exe.parent().ok_or("The app has no parent folder.")?;
     if !is_writable(parent) {
         return Err(format!(
-            "{} is not writable. Move DegenView to a folder you own, such as Documents.",
-            parent.display()
+            "{} is not writable. {}",
+            parent.display(),
+            if cfg!(windows) {
+                "Move DegenView to a folder you own, such as Documents."
+            } else {
+                "Install DegenView in a folder you own, such as ~/.local/bin."
+            }
         ));
     }
     Ok(exe.to_path_buf())
 }
 
 /// Blocking: checks the release tag's signature, then downloads, verifies and unpacks the
-/// release's zip next to `exe`. Nothing is replaced yet, and nothing is downloaded for a tag that
+/// release's archive next to `exe`. Nothing is replaced yet, and nothing is downloaded for a tag that
 /// is not signed by a pinned key.
 pub fn prepare(
     exe: &Path,
@@ -128,15 +145,31 @@ fn prepare_in(
     verify(&bytes, asset)?;
 
     progress(Progress::new(Stage::Unpacking));
-    update_archive::precheck(&bytes)?;
-    let new_exe = update_archive::extract_exe(&bytes, &staging.join("new"))?;
+    let new_exe = unpack(&bytes, &staging.join("new"))?;
     drop(bytes);
-    update_archive::check_exe(&new_exe)?;
     Ok(Prepared {
         exe: exe.to_path_buf(),
         staging: staging.to_path_buf(),
         new_exe,
     })
+}
+
+/// Unpacks the downloaded archive's one binary into `dest_dir` and checks it is an executable for
+/// this CPU: a zip holding `degenview.exe` on Windows, a tarball holding `degenview` elsewhere.
+/// Two definitions rather than a `cfg!` branch: each calls functions that only exist on its own OS.
+#[cfg(windows)]
+fn unpack(bytes: &[u8], dest_dir: &Path) -> Result<PathBuf, String> {
+    update_archive::precheck(bytes)?;
+    let exe = update_archive::extract_exe(bytes, dest_dir)?;
+    update_archive::check_exe(&exe)?;
+    Ok(exe)
+}
+
+#[cfg(not(windows))]
+fn unpack(bytes: &[u8], dest_dir: &Path) -> Result<PathBuf, String> {
+    let binary = update_archive::extract_tar_gz_binary(bytes, dest_dir)?;
+    update_archive::check_elf(&binary)?;
+    Ok(binary)
 }
 
 /// Swaps the prepared exe in. Nothing is started: the app is still running and may yet decide not
@@ -173,6 +206,7 @@ fn swap(prepared: &Prepared) -> Result<(), String> {
 /// started clean, so these are what it needs to find its data and cache folders, plus the
 /// non-secret `DEGENVIEW_*` switches. Credentials (`DEGENVIEW_ALPACA_*`, `DEGENVIEW_CMC_API_KEY`, …)
 /// must never be added: the relaunched app reads them from its own store again.
+#[cfg_attr(not(windows), allow(dead_code))]
 const FORWARDED_ENV: &[&str] = &[
     // Where its data and cache folders are.
     "APPDATA",
@@ -205,18 +239,25 @@ const FORWARDED_ENV: &[&str] = &[
     "DEGENVIEW_NO_NOTIFICATIONS",
 ];
 
-/// The new process: the exe, `--relaunch-after <pid>`, and only the `forwarded` environment.
-fn relaunch_command(
-    exe: &Path,
-    pid: u32,
-    forwarded: Vec<(OsString, OsString)>,
-) -> std::process::Command {
+/// What environment the relaunched process gets.
+#[cfg_attr(not(windows), allow(dead_code))]
+enum Environment {
+    /// Only these variables (Windows): started clean, so nothing it was not meant to see is passed.
+    Only(Vec<(OsString, OsString)>),
+    /// Everything this process has (Linux). A child's environment is not visible to other users, it
+    /// is the user's own session, and it must carry `DISPLAY`/`WAYLAND_DISPLAY`/`XDG_RUNTIME_DIR`/
+    /// `DBUS_SESSION_BUS_ADDRESS` (the Secret Service) or the new process would start broken; an
+    /// allowlist of those would be the riskier choice. Nothing is put on the command line.
+    Inherit,
+}
+
+/// The new process: the exe and `--relaunch-after <pid>`, with the given environment.
+fn relaunch_command(exe: &Path, pid: u32, environment: Environment) -> std::process::Command {
     let mut command = std::process::Command::new(exe);
-    command
-        .arg(RELAUNCH_FLAG)
-        .arg(pid.to_string())
-        .env_clear()
-        .envs(forwarded);
+    command.arg(RELAUNCH_FLAG).arg(pid.to_string());
+    if let Environment::Only(variables) = environment {
+        command.env_clear().envs(variables);
+    }
     command
 }
 
@@ -231,7 +272,7 @@ fn spawn_relaunch(prepared: &Prepared) -> std::io::Result<()> {
     relaunch_command(
         &prepared.exe,
         std::process::id(),
-        forwarded_env(std::env::vars_os(), FORWARDED_ENV),
+        Environment::Only(forwarded_env(std::env::vars_os(), FORWARDED_ENV)),
     )
     .stdin(Stdio::null())
     .stdout(Stdio::null())
@@ -241,9 +282,20 @@ fn spawn_relaunch(prepared: &Prepared) -> std::io::Result<()> {
     .map(drop)
 }
 
-#[cfg(not(windows))]
-fn spawn_relaunch(_: &Prepared) -> std::io::Result<()> {
-    Err(std::io::Error::other("unsupported platform"))
+#[cfg(unix)]
+fn spawn_relaunch(prepared: &Prepared) -> std::io::Result<()> {
+    use std::os::unix::process::CommandExt;
+    use std::process::Stdio;
+
+    // Its own process group, so closing the terminal this one was started from does not take it
+    // down with the old process.
+    relaunch_command(&prepared.exe, std::process::id(), Environment::Inherit)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .process_group(0)
+        .spawn()
+        .map(drop)
 }
 
 /// The pid after `--relaunch-after`, when this process was started by an update.
@@ -302,7 +354,44 @@ fn wait_for_pid(pid: u32, millis: u32) -> Result<(), String> {
     }
 }
 
-/// Run once the app has started: removes the staging folder (and the previous exe in it) a
+/// Run first thing at startup: when an update started this process, waits (at most
+/// `RELAUNCH_WAIT_MS`) for the one it replaces to exit, so the database is not opened twice.
+#[cfg(unix)]
+pub fn wait_for_predecessor() -> Result<(), String> {
+    if let Some(pid) = predecessor_pid(std::env::args_os()) {
+        wait_until_exited(
+            pid,
+            std::time::Duration::from_millis(RELAUNCH_WAIT_MS.into()),
+        );
+    }
+    Ok(())
+}
+
+/// Polls until `pid` is gone or `timeout` passes. Reads `/proc`, so on a system without one the
+/// process counts as already gone and nothing waits.
+#[cfg(unix)]
+fn wait_until_exited(pid: u32, timeout: std::time::Duration) {
+    let started = std::time::Instant::now();
+    while process_is_running(pid) && started.elapsed() < timeout {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+}
+
+#[cfg(unix)]
+fn process_is_running(pid: u32) -> bool {
+    std::fs::read_to_string(format!("/proc/{pid}/stat")).is_ok_and(|stat| !is_dead(&stat))
+}
+
+/// Whether a `/proc/<pid>/stat` line says the process has exited but not yet been reaped (`Z`), or
+/// is gone (`X`). The state is the field after the command name, which is in parentheses and may
+/// itself contain spaces and parentheses, so it is found from the last `)`.
+fn is_dead(stat: &str) -> bool {
+    stat.rsplit_once(')')
+        .and_then(|(_, rest)| rest.trim_start().chars().next())
+        .is_some_and(|state| matches!(state, 'Z' | 'X'))
+}
+
+/// Run once the app has started: removes the staging folder (and the previous binary in it) a
 /// finished or abandoned update left next to the app. A file still in use stays for next time.
 pub fn cleanup_stale() {
     let Ok(exe) = std::env::current_exe().and_then(|exe| exe.canonicalize()) else {
@@ -318,6 +407,22 @@ mod tests {
     use super::super::tests::scratch;
     use super::*;
     use std::fs;
+
+    /// Runs `start` again while Linux says "Text file busy": another test thread forked while the
+    /// file this one just wrote was still open for writing, and the kernel refuses to execute it
+    /// until that copy of the descriptor closes. Harmless and brief.
+    fn retry_busy<T>(mut start: impl FnMut() -> std::io::Result<T>) -> std::io::Result<T> {
+        const ETXTBSY: i32 = 26;
+        for _ in 0..50 {
+            match start() {
+                Err(error) if error.raw_os_error() == Some(ETXTBSY) => {
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                }
+                other => return other,
+            }
+        }
+        start()
+    }
 
     fn env(pairs: &[(&str, &str)]) -> Vec<(OsString, OsString)> {
         pairs
@@ -360,6 +465,26 @@ mod tests {
         prepared.new_exe = root.join("missing.exe");
         assert!(swap(&prepared).is_err());
         assert_eq!(fs::read_to_string(&prepared.exe).unwrap(), "old");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// A running binary can be swapped out on Linux as well: the old process keeps its open inode.
+    #[cfg(unix)]
+    #[test]
+    fn a_running_binary_can_be_swapped_out() {
+        let root = scratch("bin-running");
+        let prepared = prepared_in(&root, "", "new");
+        fs::copy("/bin/sleep", &prepared.exe).unwrap();
+        let mut child =
+            retry_busy(|| std::process::Command::new(&prepared.exe).arg("30").spawn()).unwrap();
+        let swapped = swap(&prepared);
+        let still_running = child.try_wait().unwrap().is_none();
+        let _ = child.kill();
+        let _ = child.wait();
+        swapped.unwrap();
+        assert!(still_running, "the old process must outlive the swap");
+        assert_eq!(fs::read_to_string(&prepared.exe).unwrap(), "new");
+        assert!(prepared.staging.join("old").join("degenview.exe").is_file());
         let _ = fs::remove_dir_all(root);
     }
 
@@ -457,13 +582,93 @@ mod tests {
         let command = relaunch_command(
             Path::new(r"C:\Apps\degenview.exe"),
             4242,
-            env(&[("LOCALAPPDATA", r"C:\Users\me\AppData\Local")]),
+            Environment::Only(env(&[("LOCALAPPDATA", r"C:\Users\me\AppData\Local")])),
         );
         let args: Vec<_> = command.get_args().collect();
         assert_eq!(args, ["--relaunch-after", "4242"]);
         let envs: Vec<_> = command.get_envs().collect();
         assert_eq!(envs.len(), 1, "{envs:?}");
         assert_eq!(command.get_program(), r"C:\Apps\degenview.exe");
+    }
+
+    /// The two environments, observed: a script prints `HOME`, which this process has (and which `sh`,
+    /// unlike `PATH`, does not invent when it is missing).
+    #[cfg(unix)]
+    #[test]
+    fn the_relaunch_inherits_the_environment_only_where_asked() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let root = scratch("relaunch-env");
+        let script = root.join("degenview");
+        fs::write(&script, "#!/bin/sh\nprintf %s \"${HOME-unset}\"\n").unwrap();
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o755)).unwrap();
+        let run = |inherit: bool| {
+            let output = retry_busy(|| {
+                let environment = if inherit {
+                    Environment::Inherit
+                } else {
+                    Environment::Only(Vec::new())
+                };
+                relaunch_command(&script, 1, environment).output()
+            })
+            .unwrap();
+            String::from_utf8_lossy(&output.stdout).into_owned()
+        };
+        let home = std::env::var("HOME").unwrap();
+        assert_eq!(run(true), home);
+        assert_eq!(run(false), "unset");
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_process_that_has_exited_but_not_been_reaped_counts_as_gone() {
+        assert!(!is_dead("4242 (degenview) S 1 4242 4242 0 -1 4194560"));
+        assert!(!is_dead("4242 (degenview) R 1 4242 4242 0 -1 4194560"));
+        assert!(is_dead("4242 (degenview) Z 1 4242 4242 0 -1 4194560"));
+        assert!(is_dead("4242 (degenview) X 1 4242 4242 0 -1 4194560"));
+        // The command name may hold spaces and parentheses.
+        assert!(is_dead("4242 (a b) c) Z 1 4242"));
+        assert!(!is_dead("4242 (a b) c) S 1 4242"));
+        assert!(!is_dead(""));
+        assert!(!is_dead("no parenthesis here"));
+    }
+
+    /// Needs `/proc`, so Linux only.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn the_new_process_waits_for_the_old_one_to_exit() {
+        use std::time::{Duration, Instant};
+
+        let mut child = std::process::Command::new("sleep")
+            .arg("0.5")
+            .spawn()
+            .unwrap();
+        let started = Instant::now();
+        wait_until_exited(child.id(), Duration::from_secs(20));
+        let waited = started.elapsed();
+        assert!(
+            waited >= Duration::from_millis(300),
+            "returned after {waited:?}"
+        );
+        assert!(
+            waited < Duration::from_secs(10),
+            "returned after {waited:?}"
+        );
+        child.wait().unwrap();
+
+        // A process that stays gives up at the timeout instead of hanging the start.
+        let mut stays = std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .unwrap();
+        let started = Instant::now();
+        wait_until_exited(stays.id(), Duration::from_millis(300));
+        assert!(started.elapsed() < Duration::from_secs(10));
+        assert!(process_is_running(stays.id()));
+        let _ = stays.kill();
+        let _ = stays.wait();
+        // And one that never existed is gone at once.
+        assert!(!process_is_running(u32::MAX));
     }
 
     #[test]

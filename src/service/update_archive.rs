@@ -5,6 +5,8 @@
 //! All of this is structural. It cannot prove the binaries are genuine; that comes from the signed
 //! tag, the immutable release and the SHA-256 checked before anything is unpacked, and from the
 //! Developer ID signature check in `code_signature`.
+// The macOS bundle checks and `ditto` extraction below are unused on Windows and Linux.
+#![cfg_attr(any(windows, target_os = "linux"), allow(dead_code))]
 
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -224,6 +226,114 @@ pub fn check_exe(exe: &Path) -> Result<(), String> {
     Ok(())
 }
 
+// MARK: Linux binary
+
+/// The one file a Linux update replaces: the release tarball carries it at its root (as
+/// `./degenview`), next to the icon, `.desktop` file and licence texts, which are left alone.
+#[cfg(any(target_os = "linux", test))]
+pub const BINARY_NAME: &str = "degenview";
+
+/// Inflates `BINARY_NAME` from the gzipped tarball in `bytes` into `dest_dir` (mode 0755), refusing
+/// more than `MAX_UNPACKED_BYTES` of decompressed data in total, more than `MAX_ENTRIES` entries,
+/// an unsafe entry name anywhere, and a `BINARY_NAME` that is not a regular file or appears twice.
+/// The output name is fixed, so nothing in the archive picks where a file lands.
+#[cfg(any(target_os = "linux", test))]
+pub fn extract_tar_gz_binary(bytes: &[u8], dest_dir: &Path) -> Result<std::path::PathBuf, String> {
+    extract_tar_gz_binary_within(bytes, dest_dir, MAX_UNPACKED_BYTES)
+}
+
+/// `extract_tar_gz_binary` with the decompressed-size limit as a parameter, so a test can hit it
+/// without inflating half a gigabyte.
+#[cfg(any(target_os = "linux", test))]
+fn extract_tar_gz_binary_within(
+    bytes: &[u8],
+    dest_dir: &Path,
+    max_bytes: u64,
+) -> Result<std::path::PathBuf, String> {
+    use std::io::Read;
+
+    let failed = |error: &dyn std::fmt::Display| format!("Could not unpack the download: {error}");
+    let not_degenview = || "The download is not a DegenView app.".to_owned();
+    if bytes.get(..2) != Some(&[0x1f, 0x8b]) {
+        return Err("The download is not a valid archive.".to_owned());
+    }
+    // Declared sizes can lie, and so can compression ratios: bound what actually comes out.
+    let stream = flate2::read::GzDecoder::new(bytes).take(max_bytes);
+    let mut archive = tar::Archive::new(stream);
+    let mut written = None;
+    for (index, entry) in archive.entries().map_err(|e| failed(&e))?.enumerate() {
+        if index >= MAX_ENTRIES {
+            return Err("The download has an unexpected number of files.".to_owned());
+        }
+        let mut entry = entry.map_err(|e| failed(&e))?;
+        let path = entry.path().map_err(|e| failed(&e))?;
+        let name = path
+            .to_str()
+            .ok_or("The download contains an unsafe file path.")?;
+        if !is_safe_entry_name(name.as_bytes()) {
+            return Err("The download contains an unsafe file path.".to_owned());
+        }
+        if name.trim_start_matches("./") != BINARY_NAME {
+            continue;
+        }
+        if written.is_some() || !entry.header().entry_type().is_file() {
+            return Err(not_degenview());
+        }
+        std::fs::create_dir_all(dest_dir).map_err(|e| failed(&e))?;
+        let dest = dest_dir.join(BINARY_NAME);
+        let mut out = std::fs::File::create(&dest).map_err(|e| failed(&e))?;
+        std::io::copy(&mut (&mut entry).take(max_bytes), &mut out).map_err(|e| failed(&e))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o755))
+                .map_err(|e| failed(&e))?;
+        }
+        written = Some(dest);
+    }
+    written.ok_or_else(not_degenview)
+}
+
+/// The ELF `e_machine` of the running build, which an update for another CPU must not replace.
+#[cfg(any(target_os = "linux", test))]
+const fn expected_elf_machine() -> u16 {
+    if cfg!(target_arch = "aarch64") {
+        0xB7
+    } else {
+        0x3E
+    }
+}
+
+/// The ELF `e_machine` of `path`, once its header says it is a 64-bit little-endian ELF executable
+/// or PIE.
+#[cfg(any(target_os = "linux", test))]
+fn elf_machine(path: &Path) -> Result<u16, String> {
+    use std::io::Read;
+
+    let not_degenview = || "The download is not a DegenView app.".to_owned();
+    let mut header = [0u8; 20];
+    std::fs::File::open(path)
+        .and_then(|mut file| file.read_exact(&mut header))
+        .map_err(|_| not_degenview())?;
+    let kind = u16::from_le_bytes([header[16], header[17]]);
+    // ELF magic, ELFCLASS64, ELFDATA2LSB; ET_EXEC or ET_DYN.
+    if header[..4] != *b"\x7fELF" || header[4] != 2 || header[5] != 1 || !matches!(kind, 2 | 3) {
+        return Err(not_degenview());
+    }
+    Ok(u16::from_le_bytes([header[18], header[19]]))
+}
+
+/// Structural check of an unpacked Linux binary: a 64-bit little-endian ELF executable (or PIE) for
+/// this CPU. It cannot prove the file is genuine; that is the signed tag, the immutable release and
+/// the SHA-256.
+#[cfg(any(target_os = "linux", test))]
+pub fn check_elf(path: &Path) -> Result<(), String> {
+    if elf_machine(path)? != expected_elf_machine() {
+        return Err("The download is for a different kind of processor.".to_owned());
+    }
+    Ok(())
+}
+
 // MARK: Bundle layout
 
 /// The unpacked bundle must be exactly DegenView: both of its executables with our bundle ids, no
@@ -326,6 +436,17 @@ pub(crate) mod testing {
         bytes
     }
 
+    /// A file that passes `check_elf`: a 64-bit little-endian ELF header with `machine`.
+    pub fn fake_elf(machine: u16) -> Vec<u8> {
+        let mut bytes = vec![0u8; 64];
+        bytes[..4].copy_from_slice(b"\x7fELF");
+        bytes[4] = 2;
+        bytes[5] = 1;
+        bytes[16..18].copy_from_slice(&3u16.to_le_bytes());
+        bytes[18..20].copy_from_slice(&machine.to_le_bytes());
+        bytes
+    }
+
     #[cfg(unix)]
     pub fn make_executable(path: &Path) {
         use std::os::unix::fs::PermissionsExt;
@@ -338,7 +459,7 @@ pub(crate) mod testing {
 
 #[cfg(test)]
 mod tests {
-    use super::testing::{fake_app, fake_pe, make_executable};
+    use super::testing::{fake_app, fake_elf, fake_pe, make_executable};
     use super::*;
     use std::fs;
     use std::path::PathBuf;
@@ -616,6 +737,198 @@ mod tests {
         let root = scratch("real-windows-zip");
         let exe = extract_exe(&zip, &root).unwrap();
         assert_eq!(pe_machine(&exe).unwrap(), 0x8664);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    // MARK: Linux binary
+
+    enum Kind {
+        File,
+        Symlink,
+    }
+
+    /// A gzipped tarball with the given entries. Names go into the header unchecked (the `tar`
+    /// crate refuses to write `..` itself, which is exactly what some tests need to write).
+    fn make_targz(entries: &[(&str, &[u8], Kind)]) -> Vec<u8> {
+        let mut builder = tar::Builder::new(Vec::new());
+        for (name, body, kind) in entries {
+            let mut header = tar::Header::new_gnu();
+            header.as_old_mut().name[..name.len()].copy_from_slice(name.as_bytes());
+            header.set_mode(0o644);
+            match kind {
+                Kind::File => {
+                    header.set_entry_type(tar::EntryType::Regular);
+                    header.set_size(body.len() as u64);
+                }
+                Kind::Symlink => {
+                    header.set_entry_type(tar::EntryType::Symlink);
+                    header.set_link_name("/bin/sh").unwrap();
+                    header.set_size(0);
+                }
+            }
+            header.set_cksum();
+            builder.append(&header, *body).unwrap();
+        }
+        let tar = builder.into_inner().unwrap();
+        let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+        std::io::Write::write_all(&mut gz, &tar).unwrap();
+        gz.finish().unwrap()
+    }
+
+    #[test]
+    fn only_the_binary_is_unpacked_from_a_linux_tarball() {
+        let root = scratch("tar-extract");
+        let elf = fake_elf(expected_elf_machine());
+        // The release tarball is made with `tar -czf ... -C pkg .`: every name starts with `./`.
+        let targz = make_targz(&[
+            ("./", b"", Kind::File),
+            ("./degenview.desktop", b"[Desktop Entry]", Kind::File),
+            ("./degenview", &elf, Kind::File),
+            ("./licenses/FONTS.md", b"fonts", Kind::File),
+            ("./degenview.png", b"png", Kind::File),
+        ]);
+        let path = extract_tar_gz_binary(&targz, &root.join("out")).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), elf);
+        assert_eq!(fs::read_dir(root.join("out")).unwrap().count(), 1);
+        assert!(check_elf(&path).is_ok());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                0o755
+            );
+        }
+        // A tarball without the leading `./` works too.
+        let plain = make_targz(&[("degenview", &elf, Kind::File)]);
+        assert!(extract_tar_gz_binary(&plain, &root.join("plain")).is_ok());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_tarball_without_the_binary_or_with_it_nested_or_doubled_is_refused() {
+        let root = scratch("tar-missing");
+        let elf = fake_elf(expected_elf_machine());
+        for entries in [
+            vec![("./README.md", &b"x"[..], Kind::File)],
+            vec![("./bin/degenview", &elf[..], Kind::File)],
+            vec![("./DEGENVIEW", &elf[..], Kind::File)],
+            vec![
+                ("./degenview", &elf[..], Kind::File),
+                ("degenview", &elf[..], Kind::File),
+            ],
+            vec![("./degenview", &b""[..], Kind::Symlink)],
+        ] {
+            let targz = make_targz(&entries);
+            assert!(extract_tar_gz_binary(&targz, &root.join("out")).is_err());
+        }
+        assert!(extract_tar_gz_binary(b"not gzip", &root.join("out")).is_err());
+        assert!(extract_tar_gz_binary(&[0x1f, 0x8b, 0, 0], &root.join("out")).is_err());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn unsafe_names_and_floods_anywhere_in_the_tarball_are_refused() {
+        let root = scratch("tar-unsafe");
+        let elf = fake_elf(expected_elf_machine());
+        for name in ["../evil", "/etc/passwd", "./a/../../b"] {
+            let targz = make_targz(&[("./degenview", &elf, Kind::File), (name, b"x", Kind::File)]);
+            assert!(
+                extract_tar_gz_binary(&targz, &root.join("out")).is_err(),
+                "{name}"
+            );
+        }
+        let many: Vec<_> = (0..=MAX_ENTRIES)
+            .map(|index| (format!("./f{index}"), Vec::new(), Kind::File))
+            .collect();
+        let entries: Vec<_> = many
+            .iter()
+            .map(|(name, body, kind)| {
+                (
+                    name.as_str(),
+                    body.as_slice(),
+                    match kind {
+                        Kind::File => Kind::File,
+                        Kind::Symlink => Kind::Symlink,
+                    },
+                )
+            })
+            .collect();
+        assert!(extract_tar_gz_binary(&make_targz(&entries), &root.join("out")).is_err());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_tarball_that_inflates_past_the_limit_is_cut_off() {
+        let root = scratch("tar-bomb");
+        let elf = fake_elf(expected_elf_machine());
+        // 256 KiB of zeros gzips to a few hundred bytes; with the limit at 64 KiB it must fail,
+        // wherever in the archive the binary sits.
+        let filler = vec![0u8; 256 * 1024];
+        for entries in [
+            vec![
+                ("./filler", &filler[..], Kind::File),
+                ("./degenview", &elf[..], Kind::File),
+            ],
+            vec![
+                ("./degenview", &elf[..], Kind::File),
+                ("./filler", &filler[..], Kind::File),
+            ],
+        ] {
+            let targz = make_targz(&entries);
+            assert!(targz.len() < 4096, "the fixture must be a small bomb");
+            let out = root.join("out");
+            assert!(extract_tar_gz_binary_within(&targz, &out, 64 * 1024).is_err());
+            assert!(extract_tar_gz_binary_within(&targz, &out, 1024 * 1024).is_ok());
+        }
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn only_an_elf_for_this_cpu_passes() {
+        let root = scratch("elf-check");
+        let check = |name: &str, bytes: &[u8]| {
+            let path = root.join(name);
+            fs::write(&path, bytes).unwrap();
+            check_elf(&path)
+        };
+        assert!(check("ok", &fake_elf(expected_elf_machine())).is_ok());
+        let other = if expected_elf_machine() == 0x3E {
+            0xB7
+        } else {
+            0x3E
+        };
+        assert!(check("other-cpu", &fake_elf(other)).is_err());
+        assert!(check("script", b"#!/bin/sh\nexit 0\n#################").is_err());
+        assert!(check("pe", &fake_pe(0x8664)).is_err());
+        assert!(check("short", b"\x7fELF").is_err());
+        let mut thirty_two_bit = fake_elf(expected_elf_machine());
+        thirty_two_bit[4] = 1;
+        assert!(check("elf32", &thirty_two_bit).is_err());
+        let mut big_endian = fake_elf(expected_elf_machine());
+        big_endian[5] = 2;
+        assert!(check("big-endian", &big_endian).is_err());
+        let mut relocatable = fake_elf(expected_elf_machine());
+        relocatable[16] = 1;
+        assert!(check("object", &relocatable).is_err());
+        assert!(check_elf(&root.join("missing")).is_err());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    /// Needs a real release tarball: `DEGENVIEW_TEST_LINUX_TARBALL=<path> cargo test -- --ignored
+    /// a_real_linux_release_tarball_unpacks`. The CPU is read from the file name (`-arm64` or
+    /// `-x64`); `check_elf` is not used because it compares with the machine running the test.
+    #[test]
+    #[ignore = "needs a downloaded release tarball"]
+    fn a_real_linux_release_tarball_unpacks() {
+        let path =
+            std::env::var("DEGENVIEW_TEST_LINUX_TARBALL").expect("DEGENVIEW_TEST_LINUX_TARBALL");
+        let expected = if path.contains("arm64") { 0xB7 } else { 0x3E };
+        let targz = fs::read(&path).unwrap();
+        let root = scratch("real-linux-tarball");
+        let binary = extract_tar_gz_binary(&targz, &root).unwrap();
+        assert_eq!(elf_machine(&binary).unwrap(), expected);
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
         let _ = fs::remove_dir_all(root);
     }
 }

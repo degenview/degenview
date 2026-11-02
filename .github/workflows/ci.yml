@@ -83,6 +83,12 @@ jobs:
         with:
           key: windows
 
+      # `cargo test --lib` builds the library only as a test harness, where the updater's per-OS code
+      # is compiled differently from the shipped binary; this is the build the release makes.
+      - name: Check the crate compiles for Windows
+        shell: bash
+        run: cargo check --locked
+
       - name: Run update tests
         shell: bash
         env:

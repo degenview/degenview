@@ -184,6 +184,11 @@ install -Dm644 degenview.png "$HOME/.local/share/icons/hicolor/512x512/apps/dege
 install -Dm644 degenview.desktop "$HOME/.local/share/applications/degenview.desktop"
 ```
 
+Installed in `~/.local/bin` (or any folder you own), the binary updates itself from inside the app: it
+downloads the new tarball, replaces `degenview` and restarts. A binary in a folder you cannot write to,
+such as `/usr/local/bin` or one a package manager owns, only shows a link to the release page. The
+launcher and icon files above are not touched by an update.
+
 Each release also carries a Flatpak bundle, `DegenView-<tag>-linux-x64.flatpak` or
 `-linux-arm64.flatpak` (the tarball likewise has an `-arm64` build), which needs no
 manual install steps and runs sandboxed (network, display and GPU only):
@@ -193,8 +198,8 @@ flatpak install --user DegenView-<tag>-linux-<x64|arm64>.flatpak
 flatpak run es.nico.degenview
 ```
 
-A bundle has no remote, so `flatpak update` does not find newer versions; download the next one
-from the release page. How it is built and what is unverified: [docs/flatpak.md](docs/flatpak.md).
+A bundle has no remote, so `flatpak update` does not find newer versions and the app cannot replace
+itself in the sandbox; download the next one from the release page. How it is built and what is unverified: [docs/flatpak.md](docs/flatpak.md).
 
 Releases: push a tag like `v0.1.0` and the Release workflow builds macOS (arm64 + Intel, as a disk
 image and a zip), Windows (an installer and a portable zip), and Linux binaries (a tarball and a

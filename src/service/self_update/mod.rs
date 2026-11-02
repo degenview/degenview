@@ -1,4 +1,7 @@
-//! Replaces the running macOS app bundle with a newer release.
+//! Replaces the running app with a newer release: the `.app` bundle on macOS (`app_bundle`), the
+//! one executable on Windows and Linux (`portable_binary`). The shared parts live here.
+//!
+//! What follows describes the macOS bundle strategy; the portable one has its own header.
 //!
 //! Two steps so nothing on disk changes until the user says so: `prepare` downloads the release
 //! zip, checks its SHA-256 against the digest GitHub published for it, unpacks it, sanity-checks
@@ -17,16 +20,18 @@ use sha2::{Digest, Sha256};
 use std::ffi::OsString;
 use std::path::Path;
 
-#[cfg(not(windows))]
+// The macOS strategy: replace the `.app` bundle. Compiled on the other Unixes too, where its
+// install target is refused, so the rest of the crate has one set of functions to call.
+#[cfg(not(any(windows, target_os = "linux")))]
 mod app_bundle;
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "linux")))]
 pub use app_bundle::{Prepared, apply, cleanup_stale, install_target, prepare, relaunch};
 
-// Compiled everywhere under test so its logic is tested on every platform; it is the strategy only
-// on Windows.
-#[cfg(any(windows, test))]
+// The portable strategy: replace the one executable. Compiled everywhere under test so its logic is
+// tested on every platform; it is the strategy only on Windows and Linux.
+#[cfg(any(windows, target_os = "linux", test))]
 mod portable_binary;
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "linux"))]
 pub use portable_binary::{
     Prepared, apply, cleanup_stale, install_target, prepare, relaunch, wait_for_predecessor,
 };
@@ -36,9 +41,9 @@ mod installed_version;
 #[cfg(windows)]
 pub use installed_version::sync_installed_version;
 
-/// Nothing to wait for outside Windows: the macOS helper waits for the old process itself, and
-/// starts the new app only once it is gone.
-#[cfg(not(windows))]
+/// Nothing to wait for on macOS: its helper waits for the old process itself, and starts the new
+/// app only once it is gone.
+#[cfg(not(any(windows, target_os = "linux")))]
 pub fn wait_for_predecessor() -> Result<(), String> {
     Ok(())
 }
@@ -123,6 +128,8 @@ fn verify(bytes: &[u8], asset: &ReleaseAsset) -> Result<(), String> {
     Ok(())
 }
 
+// Called by the macOS and Windows strategies; Linux inherits its environment (tests use it everywhere).
+#[cfg_attr(target_os = "linux", allow(dead_code))]
 fn forwarded_env(
     vars: impl Iterator<Item = (OsString, OsString)>,
     allowed: &[&str],

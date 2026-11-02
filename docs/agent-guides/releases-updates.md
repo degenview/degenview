@@ -149,13 +149,19 @@ the same app and is what the in-app updater downloads; the updater never reads t
   download of it, the Intel leg (`macos-15-intel`), until a release candidate has gone through the
   workflow. Dark appearance not looked at.
 
-## Windows updates
+## Windows and Linux updates
 
-The updater also runs on Windows x64, for the portable zip (`DegenView-<tag>-windows-x64.zip`). Code:
-`service/self_update/portable_binary.rs` (the strategy), `update_archive::{extract_exe, check_exe}`;
-the check, tag verification, download, digest and `UpdateHost` are shared with macOS. Linux and a
-native Windows ARM build (none is shipped) get no asset and stay on **View Release**; the x64 exe
-also runs on Windows on ARM under emulation and updates like any other.
+The updater also runs on Windows x64 (the portable zip, `DegenView-<tag>-windows-x64.zip`) and on
+Linux x64/arm64 (the tarball, `DegenView-<tag>-linux-<arch>.tar.gz`). Both use one strategy,
+`service/self_update/portable_binary.rs`: replace the one executable, which is the only thing that
+differs from macOS's `.app` swap. Per OS only the unpacking (`update_archive::{extract_exe,
+check_exe}` for the zip, `{extract_tar_gz_binary, check_elf}` for the tarball), the relaunch and the
+wait differ. The check, tag verification, download, digest and `UpdateHost` are shared with macOS. A
+native Windows ARM build (none is shipped) gets no asset and stays on **View Release**; the x64 exe
+also runs on Windows on ARM under emulation and updates like any other. The asset names and the
+`degenview.exe` / `./degenview` at the archive root are contracts with the updater, like macOS's.
+
+### Windows
 
 - **Trust**: the signed tag, the immutable release and the GitHub SHA-256, exactly the root of trust
   macOS already depends on. There is **no** Authenticode check because the Windows build is not
@@ -189,6 +195,46 @@ also runs on Windows on ARM under emulation and updates like any other.
   own, and update from it. Builds before the first updater-capable release have to be replaced by
   hand once.
 - **Not done**: Authenticode signing, a native Windows-on-ARM build, winget/Scoop manifests.
+
+### Linux
+
+For the tarball a user installed by hand (the README says `~/.local/bin/degenview`). Same trust as
+Windows: the signed tag, the immutable release and the GitHub SHA-256; Linux binaries are not signed,
+so there is no signature check beyond those.
+
+- **Unpack**: `extract_tar_gz_binary` (the `tar` crate, no default features, over `flate2`). The whole
+  decompressed stream is capped at `MAX_UNPACKED_BYTES`, at most `MAX_ENTRIES` entries, an unsafe
+  name (absolute, `..`, non-UTF-8) anywhere refuses the archive, and only the regular file named
+  `degenview` (the release tarball's entries start `./`; that is stripped) is written, as `0755`
+  under a fixed name. A symlink or hardlink of that name, or two of them, refuses it. The icon,
+  `degenview.desktop` and `licenses/` are **not** updated: only the binary is. `check_elf` requires a
+  64-bit little-endian ELF executable or PIE whose machine matches the running CPU.
+- **Installable**: the canonicalised binary's folder must be writable (a distro-packaged `/usr/bin`
+  install or a read-only mount is not: **View Release**, with a hint to use `~/.local/bin`), never a
+  development build, and never a Flatpak (`sandbox::is_flatpak()` is checked first, so the Flatpak keeps
+  its "download the new .flatpak" message even though it is also Linux x86-64 and the tarball asset
+  exists).
+- **Swap**: the running binary is renamed into `.DegenView-update/old/`, the new one renamed in, with
+  rollback. A running binary can be replaced this way because the old process keeps its open inode.
+- **Relaunch**: the new binary is started in its own process group with `--relaunch-after <pid>` and
+  the **whole environment inherited**, unlike Windows (cleared, allowlisted) and macOS (`open --env`
+  puts values on argv, hence its allowlist). A child's environment is not visible to other users, and it
+  has to carry `DISPLAY`/`WAYLAND_DISPLAY`/`XDG_RUNTIME_DIR`/`DBUS_SESSION_BUS_ADDRESS` (the Secret
+  Service) or the new process starts broken; an allowlist would be the riskier choice. Nothing goes
+  on the command line. A test observes both behaviours with a script.
+- **Wait**: `wait_for_predecessor` polls `/proc/<pid>/stat` every 100 ms for up to 60 s and treats a
+  zombie (`Z`) as exited. No `libc` is needed; with no `/proc` it does not wait.
+- **Flatpak**: unchanged, notify-only. Hosting a Flatpak repo (OSTree, signing key, Pages) or Flathub
+  would make `flatpak update` work and is a separate project.
+- **Checked against real artifacts**: the rc.11 tarballs for both CPUs unpack through
+  `extract_tar_gz_binary` and carry the expected ELF machine (`0x3E`, `0xB7`): ignored test
+  `a_real_linux_release_tarball_unpacks` with `DEGENVIEW_TEST_LINUX_TARBALL=<path>`.
+- **Not verified**: written on macOS; the unit tests (extraction, ELF check, environment, `/proc`
+  wait, running-binary swap) run on the Linux CI job (x86-64) and nothing has run on arm64. No update
+  has been taken in a real session: release the next candidate, install the previous candidate's
+  tarball binary into `~/.local/bin`, run it under X11 and Wayland, update, and check the relaunch
+  (display, Secret Service) and the new build id in Settings > About. Builds before the first
+  updater-capable release have to be replaced by hand once.
 
 ### Windows installer
 
