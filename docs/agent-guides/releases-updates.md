@@ -279,7 +279,7 @@ so there is no signature check beyond those.
   `extract_tar_gz_binary` and carry the expected ELF machine (`0x3E`, `0xB7`): ignored test
   `a_real_linux_release_tarball_unpacks` with `DEGENVIEW_TEST_LINUX_TARBALL=<path>`.
 - **Not verified**: written on macOS; the unit tests (extraction, ELF check, environment, `/proc`
-  wait, running-binary swap) run on the Linux CI job (x86-64) and nothing has run on arm64. No update
+  wait, swapping a binary that is held open) run on the Linux CI job (x86-64) and nothing has run on arm64. No update
   has been taken in a real session: release the next candidate, install the previous candidate's
   tarball binary into `~/.local/bin`, run it under X11 and Wayland, update, and check the relaunch
   (display, Secret Service) and the new build id in Settings > About. Builds before the first
