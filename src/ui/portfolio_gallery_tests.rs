@@ -154,11 +154,15 @@ fn portfolio_gallery_statistics() {
     if crate::ui::render_tests::gallery_dir().is_none() {
         return;
     }
-    for (name, empty) in [
-        ("portfolio-statistics", false),
-        ("portfolio-statistics-empty", true),
+    for (name, empty, size) in [
+        ("portfolio-statistics", false, vec2(1100.0, 1000.0)),
+        ("portfolio-statistics-1480", false, vec2(1480.0, 900.0)),
+        ("portfolio-statistics-760", false, vec2(760.0, 1250.0)),
+        ("portfolio-statistics-420", false, vec2(420.0, 1500.0)),
+        ("portfolio-statistics-empty", true, vec2(1100.0, 900.0)),
+        ("portfolio-statistics-empty-420", true, vec2(420.0, 1200.0)),
     ] {
-        both_themes(name, vec2(1100.0, 900.0), move |ui| {
+        both_themes(name, size, move |ui| {
             let holdings = if empty { Vec::new() } else { holdings() };
             let history = if empty { Vec::new() } else { history() };
             portfolio_overview::show_statistics(

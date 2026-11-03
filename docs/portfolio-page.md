@@ -41,6 +41,12 @@ rebuild the projection (holdings, history, cards) and flip `is_updating`, which 
   worst performer tiles on the right, each pair ending level. Below that everything stacks, as
   before, with the performers as short cards. Statistics key-figure rows go from four across to
   two below 640.
+- Statistics: a hero (total P&L large, how it splits between unrealized and realized in the
+  middle, the 24 h move at the edge), four value cards, a Value Range strip (today's value
+  between the history's low and high), then P&L by Asset beside a Win Rate ring (from
+  `WIDE_MIN`, level, as tall as the longer of the bars and the ring needs; stacked below), then
+  four activity cards. The P&L rows share their panel's height within 30 to 40 pt; below 520 pt
+  the percentage column is dropped.
 - Every block has a fixed height and paints at measured positions, so nothing reflows while prices
   stream in.
 
@@ -53,7 +59,7 @@ introductions use: a disc and a card, with a badge for the page.
   an example row with made-up figures, and the Add Transaction and Import buttons. The portfolio
   with no portfolios yet has its own.
 - **A panel waiting for data** (`portfolio_empty::compact`): Allocation, Portfolio Value history,
-  Top Holdings, the Statistics P&L chart, and the Holdings and Transactions tables with no rows.
+  Top Holdings, the Statistics P&L and Win Rate panels, and the Holdings and Transactions tables with no rows.
   A search or filter that matches nothing keeps its glyph and message.
 
 ## Not verified
