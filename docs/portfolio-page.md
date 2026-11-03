@@ -99,6 +99,18 @@ fix or N warnings, and carries Import N Transactions.
 The header menus (portfolio, currency, Import or Export) take the labels they will show and open
 exactly as wide as the longest, never narrower than their button.
 
+## Manage Portfolios
+
+`portfolio_sheets::show_manage`. The sheet opens with Add Chart's header art and uses no accent
+colour. Each portfolio is a fixed 68 pt card: a grip of dots (drag to reorder, a line shows where
+the row lands), its base currency on a tile, its name (click to rename in place) over what it
+holds, then a green Viewing pill or a grey Archived one, Duplicate and Delete. A rename that
+clashes with another portfolio's name shows the reason under the field in red and is put back
+instead of being sent; Escape puts the old name back; Escape with nothing focused closes the
+sheet. With no portfolios the card holds the empty picture. The footer has New Portfolio\u2026 and
+Done. The card, pill, status dot and problem list the import sheets use live in
+`portfolio_sheet_parts`.
+
 ## Empty states
 
 `portfolio_empty` draws them with the `Art` helpers the Script Manager's Logs, Problems and Profile

@@ -832,3 +832,58 @@ fn portfolio_gallery_import_preview() {
         });
     }
 }
+
+#[test]
+#[ignore = "writes PNGs for a person to look at"]
+fn portfolio_gallery_manage() {
+    use crate::model::portfolio::Portfolio;
+    use crate::ui::portfolio_sheets::{ManageInput, ManageRow, ManageState, show_manage};
+    if crate::ui::render_tests::gallery_dir().is_none() {
+        return;
+    }
+    let mut portfolios: Vec<Portfolio> = ["Main", "Long-term holds", "Trading account", "DeFi"]
+        .iter()
+        .enumerate()
+        .map(|(index, name)| Portfolio::new(index as u64 + 1, *name, 0))
+        .collect();
+    portfolios[1].base_currency = PortfolioCurrency::Eur;
+    portfolios[3].is_archived = true;
+    let counts = [(42, 6), (118, 11), (7, 2), (0, 0)];
+    let rows: Vec<ManageRow> = portfolios
+        .iter()
+        .zip(counts)
+        .map(|(portfolio, (transactions, assets))| ManageRow {
+            portfolio,
+            transactions,
+            assets,
+        })
+        .collect();
+    let many: Vec<Portfolio> = (0..9)
+        .map(|index| Portfolio::new(index + 1, format!("Portfolio {}", index + 1), 0))
+        .collect();
+    let many_rows: Vec<ManageRow> = many
+        .iter()
+        .map(|portfolio| ManageRow {
+            portfolio,
+            transactions: 3,
+            assets: 2,
+        })
+        .collect();
+    for (name, list, current) in [
+        ("portfolio-manage", &rows, Some(1)),
+        ("portfolio-manage-many", &many_rows, None),
+        ("portfolio-manage-empty", &Vec::new(), None),
+    ] {
+        let state = std::cell::RefCell::new(ManageState::default());
+        both_themes(name, vec2(900.0, 780.0), |ui| {
+            show_manage(
+                ui.ctx(),
+                &mut state.borrow_mut(),
+                &ManageInput {
+                    rows: list,
+                    current,
+                },
+            );
+        });
+    }
+}

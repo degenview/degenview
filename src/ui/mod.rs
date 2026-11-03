@@ -75,6 +75,7 @@ pub mod portfolio_grid;
 pub mod portfolio_holdings;
 pub mod portfolio_import_preview;
 pub mod portfolio_overview;
+pub mod portfolio_sheet_parts;
 pub mod portfolio_sheets;
 pub mod portfolio_table;
 pub mod portfolio_transaction_editor;

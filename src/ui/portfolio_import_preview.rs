@@ -9,10 +9,11 @@ use crate::model::portfolio::{PortfolioCurrency, PortfolioTransaction};
 use crate::model::portfolio_accounting::unique_assets;
 use crate::model::portfolio_csv::CsvPreview;
 use crate::model::portfolio_format::{PortfolioValueFormatter, QuantitySign};
-use crate::ui::icons::{self, Icon};
+use crate::ui::icons::Icon;
 use crate::ui::portfolio_empty;
 use crate::ui::portfolio_grid::{self, Col, Navigation, RowContext, TableSpec};
 use crate::ui::portfolio_overview::activity_caption;
+use crate::ui::portfolio_sheet_parts::{card_background, problem_card, status_dot};
 use crate::ui::portfolio_transactions::{
     asset_subtitle, kind_counts, paint_asset_cell, paint_date_cell, paint_type_capsule,
     paint_type_tick, quantity_sign, type_mix, type_name,
@@ -20,9 +21,7 @@ use crate::ui::portfolio_transactions::{
 use crate::ui::sheet;
 use crate::ui::theme;
 use crate::ui::{add_chart_art, add_chart_sheet, kit};
-use eframe::egui::{
-    self, Align2, Color32, Id, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2,
-};
+use eframe::egui::{self, Align2, Color32, Id, Rect, Sense, Stroke, Ui, Vec2, pos2, vec2};
 
 pub const SIZE: Vec2 = Vec2::new(720.0, 680.0);
 
@@ -240,20 +239,6 @@ pub fn show(
     outcome
 }
 
-/// A card's fill and outline, shared by the import sheets' bands, rows and cards.
-pub(crate) fn card_background(ui: &Ui, rect: Rect, outline: Option<Color32>) {
-    ui.painter().rect_filled(rect, 12.0, theme::quaternary(0.4));
-    ui.painter().rect_stroke(
-        rect,
-        12.0,
-        Stroke::new(
-            1.0,
-            outline.unwrap_or_else(|| theme::separator().gamma_multiply(0.6)),
-        ),
-        StrokeKind::Inside,
-    );
-}
-
 /// How many transactions come in, from how many assets and of what kind: the figure, a
 /// buys-and-sells line, and one bar of the mix by type.
 fn summary_band(ui: &mut Ui, preview: &CsvPreview) {
@@ -329,71 +314,6 @@ fn summary_band(ui: &mut Ui, preview: &CsvPreview) {
         secondary,
     );
     type_mix(ui, area, &by_kind, count);
-}
-
-/// A tinted callout: a glyph, a title, an optional detail line and `lines` as bullets in a
-/// scroll area at most `max_height` tall. The import sheets' errors and warnings.
-pub(crate) fn problem_card(
-    ui: &mut Ui,
-    icon: Icon,
-    tint: Color32,
-    title: &str,
-    detail: Option<&str>,
-    lines: &[String],
-    max_height: f32,
-) {
-    egui::Frame::new()
-        .fill(theme::with_alpha(tint, 0.08))
-        .corner_radius(10.0)
-        .stroke(Stroke::new(1.0, theme::with_alpha(tint, 0.25)))
-        .inner_margin(egui::Margin::same(12))
-        .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.horizontal_top(|ui| {
-                ui.spacing_mut().item_spacing.x = 10.0;
-                icons::inline(ui, icon, 14.0, tint);
-                ui.vertical(|ui| {
-                    ui.spacing_mut().item_spacing.y = 3.0;
-                    ui.label(kit::text(
-                        title,
-                        kit::size::SUBHEADLINE + 1.0,
-                        kit::SEMIBOLD,
-                        theme::text_primary(),
-                    ));
-                    if let Some(detail) = detail {
-                        ui.add(
-                            egui::Label::new(kit::text(
-                                detail,
-                                kit::size::CAPTION + 0.5,
-                                kit::REGULAR,
-                                theme::text_secondary(),
-                            ))
-                            .wrap(),
-                        );
-                    }
-                    if !lines.is_empty() {
-                        egui::ScrollArea::vertical()
-                            .id_salt(title)
-                            .max_height(max_height)
-                            .auto_shrink([false, true])
-                            .show(ui, |ui| {
-                                ui.spacing_mut().item_spacing.y = 2.0;
-                                for line in lines {
-                                    ui.add(
-                                        egui::Label::new(kit::text(
-                                            format!("\u{2022} {line}"),
-                                            kit::size::CAPTION + 0.5,
-                                            kit::REGULAR,
-                                            theme::text_secondary(),
-                                        ))
-                                        .wrap(),
-                                    );
-                                }
-                            });
-                    }
-                });
-            });
-        });
 }
 
 fn notices(ui: &mut Ui, preview: &CsvPreview, state: &ImportPreviewState) {
@@ -532,13 +452,6 @@ fn preview_row(
         kit::MEDIUM,
         primary,
     );
-}
-
-/// A dot and a label, for a footer's status line.
-pub(crate) fn status_dot(ui: &mut Ui, color: Color32, label: &str, weight: f32, text: Color32) {
-    let (dot, _) = ui.allocate_exact_size(Vec2::splat(8.0), Sense::hover());
-    ui.painter().circle_filled(dot.center(), 3.5, color);
-    ui.label(kit::text(label, kit::size::BODY, weight, text));
 }
 
 /// The footer's leading side: busy while importing, else whether the file is ready.

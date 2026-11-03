@@ -11,9 +11,8 @@ use crate::model::portfolio::{PortfolioAsset, PortfolioCurrency, PortfolioTransa
 use crate::model::portfolio_csv::{CmcPreview, CmcRow, CsvPreview, Mint};
 use crate::ui::icons::{self, Icon};
 use crate::ui::portfolio_grid;
-use crate::ui::portfolio_import_preview::{
-    card_background, plural, problem_card, status_dot, warning_title,
-};
+use crate::ui::portfolio_import_preview::{plural, warning_title};
+use crate::ui::portfolio_sheet_parts::{card_background, pill, problem_card, status_dot};
 use crate::ui::portfolio_table::paint_asset_icon;
 use crate::ui::sheet;
 use crate::ui::theme;
@@ -740,20 +739,6 @@ fn row_button(
         color,
     );
     (rect.left(), response.clicked())
-}
-
-/// A small rounded label at `left`, centred on `middle`; returns its right edge.
-fn pill(ui: &Ui, left: f32, middle: f32, label: &str, tint: Color32) -> f32 {
-    let text = kit::galley(ui, label, kit::size::CAPTION, kit::SEMIBOLD, tint, 200.0);
-    let rect = Rect::from_min_size(pos2(left, middle - 9.0), vec2(text.size().x + 14.0, 18.0));
-    ui.painter()
-        .rect_filled(rect, 9.0, tint.gamma_multiply(0.14));
-    ui.painter().galley(
-        pos2(rect.left() + 7.0, rect.center().y - text.size().y / 2.0),
-        text,
-        Color32::PLACEHOLDER,
-    );
-    rect.right()
 }
 
 /// The ticker's initials on a neutral disc, for a ticker with no market yet.
