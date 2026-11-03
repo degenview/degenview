@@ -99,6 +99,15 @@ fix or N warnings, and carries Import N Transactions.
 The header menus (portfolio, currency, Import or Export) take the labels they will show and open
 exactly as wide as the longest, never narrower than their button.
 
+## Asset detail
+
+`portfolio_asset_detail`, the sheet a double click on a holding opens. Add Chart's header art with
+"BTC Transactions" over "Bitcoin · Binance · Values in USD"; the position as one card of eight
+figures (two rows of four on a hairline grid, each cell reserving the caption line so figures
+line up); and the asset's transactions in the Transactions table's own cells (type tick, date
+over time, type capsule), with a row menu sized to its labels. An asset whose transactions net to
+zero shows a note in place of the card.
+
 ## Edit Transaction
 
 `portfolio_transaction_editor`: Add Chart's header art with a line that says what the sheet does in

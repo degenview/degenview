@@ -12,13 +12,17 @@ use crate::ui::icons::{self, Icon};
 use crate::ui::kit;
 use crate::ui::portfolio_charts;
 use crate::ui::portfolio_grid::{self, Col, MENU_RESERVE, Navigation, RowContext, TableSpec};
-use crate::ui::portfolio_overview::{StatCard, grid};
-use crate::ui::portfolio_transactions::{date_time_text, quantity_sign, type_name, type_tint};
+use crate::ui::portfolio_overview::{StatCard, tone_or};
+use crate::ui::portfolio_sheet_parts::card_background;
+use crate::ui::portfolio_transactions::{
+    paint_date_cell, paint_type_capsule, paint_type_tick, quantity_sign, type_name,
+};
 use crate::ui::sheet;
 use crate::ui::theme;
+use crate::ui::{add_chart_art, add_chart_sheet};
 use eframe::egui::{self, Color32, Id, Pos2, Rect, Sense, Stroke, Vec2};
 
-pub const SIZE: Vec2 = Vec2::new(880.0, 660.0);
+pub const SIZE: Vec2 = Vec2::new(880.0, 720.0);
 
 pub struct AssetDetailInput<'a> {
     /// None when the transactions net to zero.
@@ -129,10 +133,13 @@ pub struct AssetDetailState {
     navigation: Navigation,
 }
 
-const HEADER_ICON: f32 = 40.0;
+/// Height of one row of the position band.
+const BAND_ROW: f32 = 68.0;
+/// The line a figure's caption (a percentage) takes, kept free in every cell.
+const CAPTION_LINE: f32 = 13.0;
 /// Space under the table: a gap, the divider, and the padded Done row.
 const FOOTER_HEIGHT: f32 = 16.0 + 1.0 + 14.0 + 28.0 + 14.0;
-const ROW_HEIGHT: f32 = 42.0;
+const ROW_HEIGHT: f32 = 48.0;
 
 const COLUMNS: [Col; 6] = [
     Col::new(130.0, 150.0, false),
@@ -155,23 +162,9 @@ pub fn show(
         ui.add_space(24.0);
         sheet::inset(ui, |ui| {
             header(ui, input);
-            ui.add_space(18.0);
+            ui.add_space(14.0);
             match input.holding {
-                Some(holding) => {
-                    ui.label(kit::text(
-                        values_note(input.formatter.currency.code()),
-                        kit::size::CAPTION,
-                        kit::REGULAR,
-                        theme::text_secondary(),
-                    ));
-                    ui.add_space(8.0);
-                    let cards = stat_cards(holding, input.formatter);
-                    for row in cards.chunks(4) {
-                        grid(ui, row);
-                        ui.add_space(12.0);
-                    }
-                    ui.add_space(-12.0);
-                }
+                Some(holding) => position_band(ui, &stat_cards(holding, input.formatter)),
                 None => no_position(ui),
             }
             ui.add_space(18.0);
@@ -179,18 +172,18 @@ pub fn show(
                 ui.spacing_mut().item_spacing.x = 8.0;
                 ui.label(kit::text(
                     "Transactions",
-                    kit::size::HEADLINE,
+                    kit::size::HEADLINE + 1.0,
                     kit::SEMIBOLD,
                     theme::text_primary(),
                 ));
                 ui.label(kit::text(
                     input.transactions.len().to_string(),
-                    kit::size::SUBHEADLINE,
+                    kit::size::SUBHEADLINE + 1.0,
                     kit::REGULAR,
                     theme::text_secondary(),
                 ));
             });
-            ui.add_space(8.0);
+            ui.add_space(10.0);
             let height = (ui.available_height() - FOOTER_HEIGHT).max(100.0);
             let (outer, _) =
                 ui.allocate_exact_size(Vec2::new(ui.available_width(), height), Sense::hover());
@@ -198,16 +191,10 @@ pub fn show(
             transactions(ui, state, input, outer, &mut actions);
         });
         ui.add_space(16.0);
-        ui.separator();
-        sheet::inset(ui, |ui| {
-            ui.add_space(14.0);
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if kit::footer_button(ui, "Done", kit::FooterButton::Primary, true, 76.0).clicked()
-                {
-                    actions.push(AssetDetailAction::Close);
-                }
-            });
-            ui.add_space(14.0);
+        sheet::footer(ui, |ui| {
+            if kit::footer_button(ui, "Done", kit::FooterButton::Primary, true, 90.0).clicked() {
+                actions.push(AssetDetailAction::Close);
+            }
         });
     });
     if actions.is_empty() && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
@@ -216,15 +203,79 @@ pub fn show(
     actions
 }
 
-fn no_position(ui: &mut egui::Ui) {
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 44.0), Sense::hover());
-    ui.painter().rect_filled(rect, 10.0, theme::quaternary(0.4));
-    ui.painter().rect_stroke(
-        rect,
-        10.0,
-        Stroke::new(1.0, theme::separator().gamma_multiply(0.4)),
-        egui::StrokeKind::Inside,
+/// The position as one card: two rows of four figures under a hairline grid, each a caption, a
+/// figure and, where there is one, a line under it. Every amount is in the reporting currency
+/// (the header says which).
+fn position_band(ui: &mut egui::Ui, cards: &[StatCard]) {
+    let (rect, _) = ui.allocate_exact_size(
+        Vec2::new(ui.available_width(), BAND_ROW * 2.0),
+        Sense::hover(),
     );
+    card_background(ui, rect, None);
+    let separator = Stroke::new(1.0, theme::separator().gamma_multiply(0.6));
+    let cell_width = rect.width() / 4.0;
+    ui.painter()
+        .hline(rect.x_range().shrink(1.0), rect.center().y, separator);
+    for column in 1..4 {
+        ui.painter().vline(
+            rect.left() + cell_width * column as f32,
+            rect.y_range().shrink(12.0),
+            separator,
+        );
+    }
+    for (index, card) in cards.iter().enumerate() {
+        let cell = Rect::from_min_size(
+            Pos2::new(
+                rect.left() + cell_width * (index % 4) as f32,
+                rect.top() + BAND_ROW * (index / 4) as f32,
+            ),
+            Vec2::new(cell_width, BAND_ROW),
+        );
+        let left = cell.left() + 18.0;
+        let width = cell_width - 30.0;
+        let title = kit::galley(
+            ui,
+            card.title,
+            kit::size::CAPTION + 0.5,
+            kit::REGULAR,
+            theme::text_secondary(),
+            width,
+        );
+        let value_color = if card.placeholder {
+            theme::text_tertiary()
+        } else {
+            tone_or(card.tone, theme::text_primary())
+        };
+        let value = kit::galley(ui, &card.value, 16.0, kit::SEMIBOLD, value_color, width);
+        let caption = card.caption.as_ref().map(|caption| {
+            kit::galley(
+                ui,
+                caption,
+                kit::size::CAPTION + 0.5,
+                kit::MEDIUM,
+                tone_or(card.tone, theme::text_secondary()),
+                width,
+            )
+        });
+        // Every cell reserves the caption's line, so the figures in a row line up.
+        let block = title.size().y + 3.0 + value.size().y + 2.0 + CAPTION_LINE;
+        let mut y = cell.center().y - block / 2.0;
+        ui.painter()
+            .galley(Pos2::new(left, y), title.clone(), Color32::PLACEHOLDER);
+        y += title.size().y + 3.0;
+        ui.painter()
+            .galley(Pos2::new(left, y), value.clone(), Color32::PLACEHOLDER);
+        y += value.size().y + 2.0;
+        if let Some(caption) = caption {
+            ui.painter()
+                .galley(Pos2::new(left, y), caption, Color32::PLACEHOLDER);
+        }
+    }
+}
+
+fn no_position(ui: &mut egui::Ui) {
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 52.0), Sense::hover());
+    card_background(ui, rect, None);
     icons::paint(
         ui.painter(),
         Rect::from_center_size(
@@ -237,7 +288,7 @@ fn no_position(ui: &mut egui::Ui) {
     let label = kit::galley(
         ui,
         NO_POSITION,
-        12.0,
+        kit::size::SUBHEADLINE + 1.0,
         kit::REGULAR,
         theme::text_secondary(),
         rect.width() - 60.0,
@@ -249,30 +300,26 @@ fn no_position(ui: &mut egui::Ui) {
     );
 }
 
+/// Add Chart's header art, then the asset's ticker as the title and where it comes from under it.
 fn header(ui: &mut egui::Ui, input: &AssetDetailInput) {
     let Some(asset) = input.asset else {
         return;
     };
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 14.0;
-        let (rect, _) = ui.allocate_exact_size(Vec2::splat(HEADER_ICON), Sense::hover());
-        crate::ui::portfolio_table::paint_asset_icon(ui, rect, asset);
-        ui.vertical(|ui| {
-            ui.spacing_mut().item_spacing.y = 2.0;
-            ui.label(kit::text(
-                asset.display_ticker(),
-                22.0,
-                kit::BOLD,
-                theme::text_primary(),
-            ));
-            ui.label(kit::text(
-                format!("{} · {}", input.subtitle, asset.source.display_name()),
-                kit::size::BODY,
-                kit::REGULAR,
-                theme::text_secondary(),
-            ));
-        });
-    });
+    add_chart_sheet::header(
+        ui,
+        add_chart_art::Scene::Portfolio,
+        &format!("{} Transactions", asset.display_ticker()),
+        &header_subtitle(input.subtitle, asset, input.formatter.currency.code()),
+    );
+}
+
+/// "Bitcoin · Binance · Values in USD".
+pub fn header_subtitle(name: &str, asset: &PortfolioAsset, code: &str) -> String {
+    format!(
+        "{name} \u{00B7} {} \u{00B7} {}",
+        asset.source.display_name(),
+        values_note(code)
+    )
 }
 
 fn transactions(
@@ -350,37 +397,15 @@ fn transaction_row(
     let price = (input.price_of)(transaction);
     let dash = || "\u{2014}".to_owned();
 
-    portfolio_grid::figure(
+    paint_type_tick(ui, cells[0], ROW_HEIGHT, transaction.kind);
+    paint_date_cell(
         ui,
         cells[0],
         &columns[0],
-        &date_time_text(transaction.timestamp, input.utc_offset_secs),
-        primary,
+        transaction.timestamp,
+        input.utc_offset_secs,
     );
-
-    let tint = type_tint(transaction.kind);
-    let badge = kit::galley(
-        ui,
-        type_name(transaction.kind),
-        kit::size::CAPTION,
-        kit::MEDIUM,
-        tint,
-        200.0,
-    );
-    let capsule = Rect::from_min_size(
-        Pos2::new(
-            cells[1].left() + portfolio_grid::CELL_PAD,
-            cells[1].center().y - (badge.size().y + 4.0) / 2.0,
-        ),
-        Vec2::new(badge.size().x + 16.0, badge.size().y + 4.0),
-    );
-    ui.painter()
-        .rect_filled(capsule, capsule.height() / 2.0, tint.gamma_multiply(0.14));
-    ui.painter().galley(
-        Pos2::new(capsule.left() + 8.0, capsule.top() + 2.0),
-        badge,
-        Color32::PLACEHOLDER,
-    );
+    paint_type_capsule(ui, cells[1], transaction.kind, type_name(transaction.kind));
 
     let quantity_color = if f.privacy {
         primary
@@ -447,7 +472,7 @@ fn transaction_row(
 }
 
 fn row_menu(ui: &mut egui::Ui, id: u64, actions: &mut Vec<AssetDetailAction>) {
-    ui.set_width(170.0);
+    portfolio_grid::fit_menu(ui, &["Edit", "Duplicate", "Delete"]);
     ui.spacing_mut().item_spacing.y = 0.0;
     if kit::menu_item(ui, Icon::Pencil, "Edit", true, false) {
         actions.push(AssetDetailAction::Edit(id));
@@ -585,6 +610,10 @@ mod tests {
         );
         assert!(!masked[0].value.contains("BTC"), "{}", masked[0].value);
         assert_eq!(values_note("EUR"), "Values in EUR");
+        assert_eq!(
+            header_subtitle("Bitcoin", &asset("Binance:BTCUSDT"), "USD"),
+            "Bitcoin \u{00B7} Binance \u{00B7} Values in USD"
+        );
         assert!(NO_POSITION.starts_with("No open position"));
     }
 }

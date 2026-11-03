@@ -933,3 +933,43 @@ fn portfolio_gallery_row_menus() {
         });
     });
 }
+
+#[test]
+#[ignore = "writes PNGs for a person to look at"]
+fn portfolio_gallery_asset_detail() {
+    use crate::ui::portfolio_asset_detail::{AssetDetailInput, AssetDetailState, show};
+    if crate::ui::render_tests::gallery_dir().is_none() {
+        return;
+    }
+    let all = holdings();
+    let holding = all[0].clone();
+    let ledger = ledger();
+    let mine: Vec<&crate::model::portfolio::PortfolioTransaction> = ledger
+        .iter()
+        .filter(|tx| tx.asset.display_ticker() == "BTC" || tx.asset.display_ticker() == "ETH")
+        .collect();
+    let price_of = |tx: &crate::model::portfolio::PortfolioTransaction| tx.price;
+    let none: Vec<&crate::model::portfolio::PortfolioTransaction> = Vec::new();
+    for (name, with_holding, rows) in [
+        ("portfolio-detail", true, &mine),
+        ("portfolio-detail-closed", false, &mine),
+        ("portfolio-detail-empty", false, &none),
+    ] {
+        let state = std::cell::RefCell::new(AssetDetailState::default());
+        both_themes(name, vec2(1000.0, 800.0), |ui| {
+            show(
+                ui.ctx(),
+                &mut state.borrow_mut(),
+                &AssetDetailInput {
+                    holding: with_holding.then_some(&holding),
+                    asset: Some(&holding.asset),
+                    subtitle: &holding.asset.name,
+                    transactions: rows,
+                    price_of: &price_of,
+                    formatter: PortfolioValueFormatter::new(PortfolioCurrency::Usd, false),
+                    utc_offset_secs: 0,
+                },
+            );
+        });
+    }
+}

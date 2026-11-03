@@ -153,7 +153,7 @@ fn caption_color() -> Color32 {
 }
 
 /// The tone's colour, or `fallback` when there is none (zero, unknown, or values hidden).
-fn tone_or(tone: Option<Tone>, fallback: Color32) -> Color32 {
+pub(crate) fn tone_or(tone: Option<Tone>, fallback: Color32) -> Color32 {
     tone_option(tone).unwrap_or(fallback)
 }
 
