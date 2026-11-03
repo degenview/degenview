@@ -9,13 +9,17 @@ use crate::ui::kit;
 use crate::ui::shortcut;
 use crate::ui::theme;
 use eframe::egui::{
-    self, Align, Color32, CursorIcon, FontId, Id, Margin, Rect, RichText, Sense, Shape, Ui, Vec2,
-    pos2, vec2,
+    self, Align, Color32, CursorIcon, FontId, Id, Margin, Rect, Sense, Ui, Vec2, pos2, vec2,
 };
 use std::time::{Duration, Instant};
 
-const ROW_HEIGHT: f32 = 28.0;
-const HEADER_HEIGHT: f32 = 26.0;
+const ROW_HEIGHT: f32 = 34.0;
+const HEADER_HEIGHT: f32 = 28.0;
+/// The gutter shared by the search field, the row pills and the New Script button.
+const GUTTER: f32 = 8.0;
+/// The tinted tile that carries a row's type glyph.
+const TILE: f32 = 22.0;
+const BUTTON_HEIGHT: f32 = 30.0;
 pub(super) const COMMUNITY_URL: &str = "https://www.tradingview.com/scripts/";
 
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -49,6 +53,18 @@ impl Group {
             Self::Indicators => "indicators",
             Self::Strategies => "strategies",
             Self::Libraries => "libraries",
+        }
+    }
+}
+
+impl ScriptType {
+    /// The glyph and hue that say what a script is at a glance: a waveform for an indicator, two
+    /// opposed arrows for a strategy (it trades), a stack for a library (it is built upon).
+    fn look(self) -> (Icon, Color32) {
+        match self {
+            Self::Indicator => (Icon::Waveform, theme::SYSTEM_ACCENT),
+            Self::Strategy => (Icon::Exchange, theme::ORANGE),
+            Self::Library => (Icon::Layers, theme::ACCENT),
         }
     }
 }
@@ -107,7 +123,7 @@ impl ScriptManager {
         ui.painter().rect_filled(rect, 0.0, theme::chrome());
         // The footer and the New Script button are pinned; the list takes the rest.
         let footer_height = super::bottom_bar::HEIGHT;
-        let button_height = ROW_HEIGHT + 16.0;
+        let button_height = BUTTON_HEIGHT + 2.0 * GUTTER;
         let list_rect = Rect::from_min_max(
             rect.min,
             pos2(rect.max.x, rect.max.y - footer_height - button_height),
@@ -128,37 +144,44 @@ impl ScriptManager {
             pos2(rect.min.x, list_rect.max.y),
             pos2(rect.max.x, list_rect.max.y + button_height),
         );
+        // A hairline sets the pinned button apart from the list that scrolls under it.
+        ui.painter().hline(
+            rect.x_range(),
+            button_rect.min.y,
+            egui::Stroke::new(1.0, theme::separator()),
+        );
         self.new_script_button(ui, button_rect);
         self.footer(ui, rect, footer_height);
     }
 
     fn search_field(&mut self, ui: &mut Ui) {
         egui::Frame::new()
-            .outer_margin(Margin::same(8))
-            .inner_margin(Margin::symmetric(8, 3))
-            .fill(theme::quaternary(1.0))
-            .corner_radius(8.0)
+            .inner_margin(Margin::same(GUTTER as i8))
             .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 6.0;
-                    ui.spacing_mut().interact_size.y = 18.0;
-                    icons::inline(ui, Icon::Magnifier, 13.0, theme::text_secondary());
-                    ui.add(
-                        egui::TextEdit::singleline(&mut self.search)
-                            .hint_text("Search name or source")
-                            .frame(egui::Frame::NONE)
-                            .margin(Margin::ZERO)
-                            .desired_width(f32::INFINITY),
-                    );
-                });
+                let width = ui.available_width();
+                kit::search_field(
+                    ui,
+                    Id::new("script-search"),
+                    &mut self.search,
+                    "Search name or source",
+                    width,
+                );
             });
     }
 
     fn rows(&mut self, ui: &mut Ui) {
         let groups = grouped(&self.scripts, &self.search);
-        for (group, scripts) in groups {
+        if groups.is_empty() {
+            self.empty_list(ui);
+            return;
+        }
+        for (index, (group, scripts)) in groups.into_iter().enumerate() {
             let collapsed = self.collapsed.contains(&group);
-            self.section_header(ui, group, collapsed);
+            // Sections breathe: the gap above a header separates it from the rows it closes.
+            if index > 0 {
+                ui.add_space(6.0);
+            }
+            self.section_header(ui, group, scripts.len(), collapsed);
             if collapsed {
                 continue;
             }
@@ -166,45 +189,133 @@ impl ScriptManager {
                 self.row(ui, group, &script);
             }
         }
-        ui.add_space(8.0);
+        ui.add_space(GUTTER);
     }
 
-    fn section_header(&mut self, ui: &mut Ui, group: Group, collapsed: bool) {
+    /// Nothing to list: either the folder is empty or the search matched nothing.
+    fn empty_list(&self, ui: &mut Ui) {
+        let searching = !self.search.trim().is_empty();
+        let (icon, title, detail) = if searching {
+            (
+                Icon::Magnifier,
+                "No matches",
+                "No script's name or source contains that text.",
+            )
+        } else {
+            (
+                Icon::Curlybraces,
+                "No scripts yet",
+                "Create one with the button below.",
+            )
+        };
+        let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 150.0), Sense::hover());
+        let width = rect.width() - 2.0 * (GUTTER + 12.0);
+        let painter = ui.painter();
+        let title = kit::galley(ui, title, 12.0, kit::SEMIBOLD, theme::text_primary(), width);
+        let detail = {
+            let mut job = egui::text::LayoutJob::default();
+            job.append(
+                detail,
+                0.0,
+                egui::TextFormat {
+                    font_id: FontId::proportional(11.0),
+                    color: theme::text_secondary(),
+                    ..Default::default()
+                },
+            );
+            job.wrap.max_width = width;
+            job.halign = Align::Center;
+            painter.layout_job(job)
+        };
+        let mut y = rect.min.y + 34.0;
+        let tile = Rect::from_center_size(pos2(rect.center().x, y + 14.0), Vec2::splat(28.0));
+        painter.rect_filled(tile, 8.0, theme::quaternary(0.7));
+        icons::paint(
+            painter,
+            Rect::from_center_size(tile.center(), Vec2::splat(14.0)),
+            icon,
+            theme::text_secondary(),
+        );
+        y += 28.0 + 10.0;
+        painter.galley(
+            pos2(rect.center().x - title.size().x / 2.0, y),
+            title.clone(),
+            theme::text_primary(),
+        );
+        y += title.size().y + 3.0;
+        painter.galley(pos2(rect.center().x, y), detail, theme::text_secondary());
+    }
+
+    fn section_header(&mut self, ui: &mut Ui, group: Group, count: usize, collapsed: bool) {
         let (rect, response) =
             ui.allocate_exact_size(vec2(ui.available_width(), HEADER_HEIGHT), Sense::click());
+        let response = crate::ui::accessibility::label(response, group.title());
+        let hovered = response.hovered();
+        let pill = rect.shrink2(vec2(GUTTER, 1.0));
+        if hovered {
+            ui.painter().rect_filled(pill, 6.0, theme::ink(8));
+            ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
+        }
+        let color = if hovered {
+            theme::text_primary()
+        } else {
+            theme::text_secondary()
+        };
+
+        // The chevron is always there: a section says it can fold before the pointer finds out.
+        icons::paint(
+            ui.painter(),
+            Rect::from_center_size(pos2(pill.min.x + 12.0, pill.center().y), Vec2::splat(10.0)),
+            if collapsed {
+                Icon::ChevronRight
+            } else {
+                Icon::ChevronDown
+            },
+            color,
+        );
         let title = kit::galley(
             ui,
-            group.title(),
-            11.0,
-            kit::SEMIBOLD,
-            theme::text_secondary(),
-            rect.width() - 40.0,
+            &group.title().to_uppercase(),
+            10.0,
+            kit::BOLD,
+            color,
+            pill.width() - 60.0,
         );
+        let title_x = pill.min.x + 24.0;
+        let title_width = title.size().x;
         ui.painter().galley(
-            pos2(
-                rect.min.x + 14.0,
-                rect.center().y + 2.0 - title.size().y / 2.0,
-            ),
+            pos2(title_x, pill.center().y - title.size().y / 2.0),
             title,
-            theme::text_secondary(),
+            color,
         );
-        let response = crate::ui::accessibility::label(response, group.title());
-        if response.hovered() {
+        if group == Group::Favorites {
             icons::paint(
                 ui.painter(),
                 Rect::from_center_size(
-                    pos2(rect.max.x - 18.0, rect.center().y + 2.0),
-                    Vec2::splat(11.0),
+                    pos2(title_x + title_width + 9.0, pill.center().y),
+                    Vec2::splat(9.0),
                 ),
-                if collapsed {
-                    Icon::ChevronRight
-                } else {
-                    Icon::ChevronDown
-                },
-                theme::text_secondary(),
+                Icon::StarFill,
+                theme::YELLOW,
             );
-            ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
         }
+
+        let digits = kit::digits(
+            ui,
+            &count.to_string(),
+            kit::size::CAPTION + 0.5,
+            kit::SEMIBOLD,
+            theme::text_secondary(),
+            f32::INFINITY,
+        );
+        kit::paint_count(
+            ui,
+            pill.max.x - 8.0 - (digits.size().x + 12.0),
+            pill.center().y,
+            count,
+            theme::text_secondary(),
+            theme::quaternary(0.7),
+        );
         if response.clicked() && !self.collapsed.remove(&group) {
             self.collapsed.insert(group);
         }
@@ -220,55 +331,88 @@ impl ScriptManager {
         let width = ui.available_width();
         let (rect, response) = ui.allocate_exact_size(vec2(width, ROW_HEIGHT), Sense::click());
         let response = crate::ui::accessibility::label(response, &script.name);
-        let pill = rect.shrink2(vec2(8.0, 1.0));
+        let pill = rect.shrink2(vec2(GUTTER, 1.0));
         let id = Id::new(("script-row", group.key(), &script.id));
+        let hovered = response.hovered() && !renaming;
 
         if selected {
             ui.painter()
-                .rect_filled(pill, 6.0, theme::surface_selected());
+                .rect_filled(pill, 7.0, theme::surface_selected());
             ui.painter().rect_stroke(
                 pill,
-                6.0,
+                7.0,
                 egui::Stroke::new(1.0, theme::border()),
                 egui::StrokeKind::Inside,
             );
-        } else if response.hovered() && !renaming {
-            ui.painter().rect_filled(pill, 6.0, theme::ink(14));
+            // A short accent bar on the leading edge marks the open row.
+            ui.painter().rect_filled(
+                Rect::from_center_size(
+                    pos2(pill.min.x + 3.5, pill.center().y),
+                    vec2(3.0, ROW_HEIGHT - 16.0),
+                ),
+                1.5,
+                theme::SYSTEM_ACCENT,
+            );
+        } else if hovered {
+            ui.painter().rect_filled(pill, 7.0, theme::ink(12));
         }
-        let text_color = theme::text_primary();
 
-        // The favorite star sits at the trailing edge; it takes its own clicks.
-        let star_rect =
-            Rect::from_center_size(pill.right_center() - vec2(14.0, 0.0), Vec2::splat(20.0));
-        let star = ui.interact(star_rect, id.with("star"), Sense::click());
-        let star_icon = if script.is_favorite {
-            Icon::StarFill
-        } else {
-            Icon::Star
-        };
-        let star_color = if script.is_favorite {
-            theme::YELLOW
-        } else if selected {
-            theme::text_primary().gamma_multiply(0.8)
-        } else {
-            theme::text_secondary()
-        };
+        // The type tile.
+        let (type_icon, hue) = script.script_type.look();
+        let tile = Rect::from_center_size(
+            pos2(pill.min.x + 11.0 + TILE / 2.0, pill.center().y),
+            Vec2::splat(TILE),
+        );
+        ui.painter().rect_filled(
+            tile,
+            6.0,
+            theme::with_alpha(hue, if selected || hovered { 0.28 } else { 0.18 }),
+        );
         icons::paint(
             ui.painter(),
-            Rect::from_center_size(star_rect.center(), Vec2::splat(12.0)),
-            star_icon,
-            star_color,
+            Rect::from_center_size(tile.center(), Vec2::splat(12.0)),
+            type_icon,
+            hue,
         );
+
+        // The favorite star sits at the trailing edge and takes its own clicks. An unfavorited
+        // star only shows while the row is under the pointer or selected.
+        let star_rect =
+            Rect::from_center_size(pill.right_center() - vec2(14.0, 0.0), Vec2::splat(22.0));
+        let star = ui.interact(star_rect, id.with("star"), Sense::click());
+        if script.is_favorite || selected || hovered || star.hovered() {
+            let star_color = if script.is_favorite {
+                theme::YELLOW
+            } else if star.hovered() {
+                theme::text_primary()
+            } else {
+                theme::text_secondary()
+            };
+            icons::paint(
+                ui.painter(),
+                Rect::from_center_size(star_rect.center(), Vec2::splat(12.0)),
+                if script.is_favorite {
+                    Icon::StarFill
+                } else {
+                    Icon::Star
+                },
+                star_color,
+            );
+        }
         if star.clicked() {
             self.cmds.push(Cmd::ToggleFavorite(script.id.clone()));
             return;
         }
 
+        let text_left = tile.max.x + 9.0;
         if renaming {
             self.rename_field(
                 ui,
                 id,
-                Rect::from_min_max(pill.min + vec2(6.0, 2.0), pill.max - vec2(30.0, 2.0)),
+                Rect::from_min_max(
+                    pos2(text_left, pill.min.y + 2.0),
+                    pos2(pill.max.x - 30.0, pill.max.y - 2.0),
+                ),
             );
         } else {
             let weight = if selected {
@@ -276,16 +420,17 @@ impl ScriptManager {
             } else {
                 kit::REGULAR
             };
+            let text_color = theme::text_primary();
             let name = kit::galley(
                 ui,
                 &script.name,
                 13.0,
                 weight,
                 text_color,
-                pill.width() - 40.0,
+                pill.max.x - 30.0 - text_left,
             );
             ui.painter().galley(
-                pos2(pill.min.x + 10.0, rect.center().y - name.size().y / 2.0),
+                pos2(text_left, rect.center().y - name.size().y / 2.0),
                 name,
                 text_color,
             );
@@ -449,37 +594,41 @@ impl ScriptManager {
 
     fn new_script_button(&mut self, ui: &mut Ui, area: Rect) {
         // Same gutter as the search field and the row pills above it.
-        let rect = area.shrink2(vec2(8.0, 8.0));
+        let rect = area.shrink(GUTTER);
         let response = ui
             .interact(rect, Id::new("new-script"), Sense::click())
             .on_hover_text(shortcut::NEW_SCRIPT.hint("Create a new script"));
+        let response = crate::ui::accessibility::label(response, "New Script");
         if response.hovered() {
             ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
         }
-        let hovered = response.hovered();
+        // The one primary action in the sidebar: the accent, with a light edge on top.
+        let accent = theme::SYSTEM_ACCENT;
         let fill = if response.is_pointer_button_down_on() {
-            theme::ink(30)
+            accent.gamma_multiply(0.82)
+        } else if response.hovered() {
+            accent.gamma_multiply(1.1)
         } else {
-            theme::card_fill(hovered)
+            accent
         };
         let painter = ui.painter();
-        painter.rect_filled(rect, 6.0, fill);
+        painter.rect_filled(rect, 8.0, fill);
         painter.rect_stroke(
             rect,
-            6.0,
-            egui::Stroke::new(1.0, theme::card_border(hovered)),
+            8.0,
+            egui::Stroke::new(1.0, Color32::from_black_alpha(36)),
             egui::StrokeKind::Inside,
         );
         painter.hline(
-            rect.x_range().shrink(6.0),
+            rect.x_range().shrink(8.0),
             rect.min.y + 1.0,
-            egui::Stroke::new(1.0, theme::card_highlight()),
+            egui::Stroke::new(1.0, Color32::from_white_alpha(70)),
         );
-        let color = theme::text_primary();
+        let color = Color32::WHITE;
         let label = kit::galley(
             ui,
             "New Script",
-            12.0,
+            12.5,
             kit::SEMIBOLD,
             color,
             rect.width() - 40.0,
@@ -508,6 +657,24 @@ impl ScriptManager {
         let footer = Rect::from_min_max(pos2(rect.min.x, rect.max.y - height), rect.max);
         super::bottom_bar::paint(ui, footer);
         community_link(ui, pos2(footer.min.x + 12.0, footer.center().y - 8.0));
+        let count = self.scripts.len();
+        let text = format!("{count} {}", if count == 1 { "script" } else { "scripts" });
+        let galley = kit::galley(
+            ui,
+            &text,
+            10.0,
+            kit::REGULAR,
+            theme::text_tertiary(),
+            f32::INFINITY,
+        );
+        ui.painter().galley(
+            pos2(
+                footer.max.x - 12.0 - galley.size().x,
+                footer.center().y - galley.size().y / 2.0,
+            ),
+            galley,
+            theme::text_tertiary(),
+        );
     }
 }
 
@@ -553,9 +720,6 @@ pub fn community_link(ui: &mut Ui, origin: egui::Pos2) -> egui::Response {
     }
     response
 }
-
-#[allow(dead_code)]
-fn _unused(_: Shape, _: RichText, _: Align) {}
 
 #[cfg(test)]
 mod tests {

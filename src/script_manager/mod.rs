@@ -1515,6 +1515,19 @@ mod tests {
                 screen.save(&format!("sidebar-{tag}-{name}"), output);
             }
         }
+        // Every section at once, a favorite, and a search that finds nothing.
+        manager.scripts[0].is_favorite = true;
+        manager.scripts[1].script_type = ScriptType::Strategy;
+        manager.scripts[3].script_type = ScriptType::Library;
+        let mut screen = Screen::new(vec2(240.0, 640.0));
+        theme::apply(&screen.ctx, AppTheme::Dark);
+        screen.run(vec![], |ui| manager.sidebar_ui(ui));
+        let output = screen.run(vec![], |ui| manager.sidebar_ui(ui));
+        screen.save("sidebar-dark-sections", output);
+        manager.search = "zzzz".into();
+        screen.run(vec![], |ui| manager.sidebar_ui(ui));
+        let output = screen.run(vec![], |ui| manager.sidebar_ui(ui));
+        screen.save("sidebar-dark-no-matches", output);
         theme::apply(&egui::Context::default(), AppTheme::Dark);
         let _ = std::fs::remove_dir_all(root);
     }
