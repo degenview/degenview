@@ -594,9 +594,22 @@ pub fn dropdown(
         Icon::ChevronUpDown,
         theme::text_secondary(),
     );
-    // As wide as its widest choice and the trigger, not the width a menu would otherwise take.
-    let menu_width = kit::menu_width_for(ui, choices, rect.width());
-    egui::Popup::menu(&response)
+    choice_menu(ui, &response, id, rect.width(), choices, items);
+    response
+}
+
+/// The menu under a dropdown's trigger: as wide as its widest choice (and the trigger), not the
+/// width a menu would otherwise take, and scrolling when tall.
+fn choice_menu(
+    ui: &Ui,
+    trigger: &Response,
+    id: Id,
+    trigger_width: f32,
+    choices: &[impl AsRef<str>],
+    items: impl FnOnce(&mut Ui),
+) {
+    let menu_width = kit::menu_width_for(ui, choices, trigger_width);
+    egui::Popup::menu(trigger)
         .id(id)
         .frame(kit::menu_frame())
         .width(menu_width)
@@ -610,6 +623,50 @@ pub fn dropdown(
                 .auto_shrink([false, true])
                 .show(ui, items);
         });
+}
+
+/// A dropdown for a table's footer strip: caption-sized text and a small chevron with no box,
+/// lit on hover, so it sits in the strip like the text beside it.
+pub fn dropdown_inline(
+    ui: &mut Ui,
+    id: Id,
+    label: &str,
+    choices: &[impl AsRef<str>],
+    items: impl FnOnce(&mut Ui),
+) -> Response {
+    let open = egui::Popup::is_id_open(ui.ctx(), id);
+    let text = kit::galley(
+        ui,
+        label,
+        kit::size::CAPTION,
+        REGULAR,
+        theme::text_secondary(),
+        200.0,
+    );
+    let size = vec2(text.size().x + 10.0 + 6.0 + 10.0 + 8.0, 22.0);
+    let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+    let response = response.on_hover_cursor(CursorIcon::PointingHand);
+    if open || response.hovered() {
+        ui.painter()
+            .rect_filled(rect, 6.0, theme::quaternary(if open { 1.0 } else { 0.75 }));
+    }
+    let color = if open || response.hovered() {
+        theme::text_primary()
+    } else {
+        theme::text_secondary()
+    };
+    ui.painter().galley_with_override_text_color(
+        pos2(rect.left() + 10.0, rect.center().y - text.size().y / 2.0),
+        text,
+        color,
+    );
+    icons::paint(
+        ui.painter(),
+        Rect::from_center_size(pos2(rect.right() - 12.0, rect.center().y), Vec2::splat(8.0)),
+        Icon::ChevronUpDown,
+        color,
+    );
+    choice_menu(ui, &response, id, rect.width(), choices, items);
     response
 }
 
@@ -691,9 +748,9 @@ pub fn loading_message(ui: &mut Ui, area: Rect, message: &str) {
     );
     let width = 16.0 + 8.0 + label.size().x;
     let left = area.center().x - width / 2.0;
-    ui.put(
+    egui::Spinner::new().size(16.0).paint_at(
+        ui,
         Rect::from_center_size(pos2(left + 8.0, area.center().y), Vec2::splat(16.0)),
-        egui::Spinner::new().size(16.0),
     );
     ui.painter().galley(
         pos2(left + 24.0, area.center().y - label.size().y / 2.0),

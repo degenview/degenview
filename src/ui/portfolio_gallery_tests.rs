@@ -144,6 +144,39 @@ fn portfolio_gallery_overview() {
             overview(ui, &mut state, false);
         });
     }
+    // The first frames, before any price: the holdings exist, the valuation does not.
+    for (name, size) in [
+        ("portfolio-overview-loading", vec2(1100.0, 1000.0)),
+        ("portfolio-overview-loading-760", vec2(760.0, 1100.0)),
+    ] {
+        both_themes(name, size, |ui| {
+            let mut state = OverviewState::default();
+            let mut holdings = holdings();
+            for holding in &mut holdings {
+                holding.current_value = None;
+                holding.current_price = None;
+            }
+            let subtitle = |asset: &PortfolioAsset| asset.name.clone();
+            portfolio_overview::show_overview(
+                ui,
+                &mut state,
+                &OverviewInput {
+                    portfolio_name: Some("Main"),
+                    holdings: &holdings,
+                    history: &[],
+                    total_value: 0.0,
+                    formatter: PortfolioValueFormatter::new(PortfolioCurrency::Usd, false),
+                    subtitle: &subtitle,
+                    market_value_caption: "Live market value",
+                    price_status: PriceStatus::Live,
+                    is_loading_initial: true,
+                    is_loading_history: true,
+                    now_ms: NOW,
+                    utc_offset_secs: 0,
+                },
+            );
+        });
+    }
     both_themes("portfolio-overview-empty", vec2(1100.0, 1000.0), |ui| {
         let mut state = OverviewState::default();
         overview(ui, &mut state, true);
@@ -456,6 +489,30 @@ fn portfolio_gallery_transactions() {
                     utc_offset_secs: 0,
                 },
             );
+        });
+    }
+}
+
+#[test]
+#[ignore = "writes PNGs for a person to look at"]
+fn portfolio_gallery_editor() {
+    use crate::ui::portfolio_transaction_editor::{EditorMode, TransactionEditorState, show};
+    if crate::ui::render_tests::gallery_dir().is_none() {
+        return;
+    }
+    for (name, index, mode) in [
+        ("portfolio-editor-edit", 0, EditorMode::Edit),
+        ("portfolio-editor-sell", 2, EditorMode::Edit),
+        ("portfolio-editor-income", 3, EditorMode::Duplicate),
+    ] {
+        let state = std::cell::RefCell::new(TransactionEditorState::new(
+            mode,
+            ledger()[index].clone(),
+            0,
+        ));
+        state.borrow_mut().set_market_price(31_450.0);
+        both_themes(name, vec2(700.0, 900.0), |ui| {
+            show(ui.ctx(), &mut state.borrow_mut());
         });
     }
 }

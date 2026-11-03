@@ -470,7 +470,7 @@ fn pager(
     on_page: std::ops::Range<usize>,
 ) {
     const BUTTON: f32 = 24.0;
-    const SIZE_WIDTH: f32 = 118.0;
+    const SIZE_WIDTH: f32 = 104.0;
     const GAP: f32 = 8.0;
     let strip = Rect::from_min_max(
         pos2(outer.left(), outer.bottom() - portfolio_grid::FOOTER_STRIP),
@@ -491,17 +491,16 @@ fn pager(
     let mut x = strip.center().x - block / 2.0;
     let middle = strip.center().y;
 
-    let size_rect = Rect::from_min_size(pos2(x, middle - 13.0), vec2(SIZE_WIDTH, 26.0));
+    let size_rect = Rect::from_min_size(pos2(x, middle - 11.0), vec2(SIZE_WIDTH, 22.0));
     let size_labels: Vec<String> = PAGE_SIZES
         .iter()
         .map(|size| format!("{size} per page"))
         .collect();
     ui.put(size_rect, |ui: &mut egui::Ui| {
-        portfolio_grid::dropdown(
+        portfolio_grid::dropdown_inline(
             ui,
             egui::Id::new("portfolio-transactions-page-size"),
             &format!("{} per page", state.page_size),
-            false,
             &size_labels,
             |ui| {
                 for (size, name) in PAGE_SIZES.iter().zip(&size_labels) {

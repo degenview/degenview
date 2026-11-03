@@ -191,19 +191,24 @@ pub fn show(
     outcome
 }
 
+/// A field's name, with room between it and the field (the sheet's own item spacing is zero).
 fn label(ui: &mut egui::Ui, text: &str) {
     ui.label(kit::text(
         text,
-        kit::size::CAPTION + 0.5,
+        kit::size::CAPTION + 1.0,
         kit::MEDIUM,
         theme::text_secondary(),
     ));
+    ui.add_space(6.0);
 }
 
+/// The error or hint under a field, set off from the field above it.
 fn footnote(ui: &mut egui::Ui, error: Option<&String>, hint: Option<&str>) {
     if let Some(error) = error {
+        ui.add_space(5.0);
         ui.label(RichText::new(error).small().color(theme::DOWN));
     } else if let Some(hint) = hint {
+        ui.add_space(5.0);
         ui.label(RichText::new(hint).small().weak());
     }
 }
@@ -237,7 +242,7 @@ fn field(
                         .size()
                         .x
                 };
-                let suffix_width = measure(suffix, kit::size::SUBHEADLINE + 1.0, kit::REGULAR);
+                let suffix_width = measure(suffix, kit::size::BODY, kit::REGULAR);
                 let market_width = if accessory {
                     measure("Market", kit::size::CAPTION, kit::SEMIBOLD)
                         + 2.0 * ui.spacing().button_padding.x
@@ -271,7 +276,7 @@ fn field(
                 }
                 ui.label(kit::text(
                     suffix,
-                    kit::size::SUBHEADLINE + 1.0,
+                    kit::size::BODY,
                     kit::REGULAR,
                     theme::text_secondary(),
                 ));
@@ -293,6 +298,17 @@ fn field(
         egui::StrokeKind::Inside,
     );
     (frame.inner, accessory_clicked)
+}
+
+/// Selects all of `text` in the text field `id`, replacing a cursor left over from an earlier sheet.
+fn select_all(ctx: &egui::Context, id: Id, text: &str) {
+    use egui::text::{CCursor, CCursorRange};
+    let mut edit = egui::TextEdit::load_state(ctx, id).unwrap_or_default();
+    edit.cursor.set_char_range(Some(CCursorRange::two(
+        CCursor::new(0),
+        CCursor::new(text.chars().count()),
+    )));
+    edit.store(ctx, id);
 }
 
 fn form(ui: &mut egui::Ui, state: &mut TransactionEditorState) {
@@ -406,6 +422,15 @@ fn form(ui: &mut egui::Ui, state: &mut TransactionEditorState) {
     let currency = state.price_currency();
 
     label(ui, "Quantity");
+    if state.first_frame {
+        // The field keeps its cursor between sheets (same id): start with the whole value
+        // selected instead of wherever the last sheet left it.
+        select_all(
+            ui.ctx(),
+            ui.make_persistent_id("quantity"),
+            &state.draft.quantity_text,
+        );
+    }
     let quantity = field(
         ui,
         "quantity",

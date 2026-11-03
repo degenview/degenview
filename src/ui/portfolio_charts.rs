@@ -541,12 +541,12 @@ pub fn show_history(ui: &mut egui::Ui, input: &HistoryInput, height: f32) {
             Stroke::new(1.0, theme::separator().gamma_multiply(0.5)),
             egui::StrokeKind::Inside,
         );
-        ui.put(
+        egui::Spinner::new().size(14.0).paint_at(
+            ui,
             Rect::from_center_size(
                 Pos2::new(pill.left() + 14.0 + 7.0, pill.center().y),
                 Vec2::splat(14.0),
             ),
-            egui::Spinner::new().size(14.0),
         );
         painter.galley(
             Pos2::new(
