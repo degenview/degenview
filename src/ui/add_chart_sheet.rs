@@ -1336,27 +1336,19 @@ fn sheet_header(ui: &mut Ui, watchlist_name: Option<&str>, tab: Tab) {
     } else {
         "Search a market, stock or index and add it as a live chart."
     };
+    header(ui, scene, &title, subtitle);
+}
+
+/// A sheet's header: `scene`'s picture, then the title and a one-line description. Add Chart and
+/// the portfolio's asset picker both open with it.
+pub(crate) fn header(ui: &mut Ui, scene: add_chart_art::Scene, title: &str, subtitle: &str) {
     let (row, _) = ui.allocate_exact_size(
         vec2(ui.available_width(), add_chart_art::SIZE.y),
         Sense::hover(),
     );
     let art = Rect::from_min_size(row.min, add_chart_art::SIZE);
     add_chart_art::paint(ui, art, scene);
-    paint_header_text(ui, row, art.right() + 16.0, &title, subtitle);
-}
-
-pub(crate) fn header(ui: &mut Ui, icon: Icon, title: &str, subtitle: &str) {
-    let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), 46.0), Sense::hover());
-    let painter = ui.painter();
-    let badge = Rect::from_min_size(row.min, Vec2::splat(46.0));
-    painter.rect_filled(badge, 12.0, theme::selected_tint(false));
-    icons::paint(
-        painter,
-        Rect::from_center_size(badge.center(), Vec2::splat(20.0)),
-        icon,
-        theme::text_primary(),
-    );
-    paint_header_text(ui, row, badge.right() + 14.0, title, subtitle);
+    paint_header_text(ui, row, art.right() + 16.0, title, subtitle);
 }
 
 /// A header's title and description, vertically centred in `row` from `left`.

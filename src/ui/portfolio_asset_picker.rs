@@ -8,6 +8,7 @@
 
 use crate::model::DataSource;
 use crate::service::SearchResult;
+use crate::ui::add_chart_art;
 use crate::ui::add_chart_sheet::{
     self, CRYPTO_SUGGESTIONS, Chip, PREDICTION_TOPICS, STOCK_SUGGESTIONS,
 };
@@ -51,6 +52,15 @@ impl PickerTab {
         }
     }
 
+    /// The picture at the head of the sheet: the one Add Chart shows for the same section.
+    fn scene(self) -> add_chart_art::Scene {
+        match self {
+            Self::Crypto => add_chart_art::Scene::Crypto,
+            Self::Stocks => add_chart_art::Scene::Stocks,
+            Self::Predictions => add_chart_art::Scene::Predictions,
+        }
+    }
+
     fn icon(self) -> Icon {
         match self {
             Self::Crypto => Icon::BitcoinCircle,
@@ -75,7 +85,6 @@ pub struct AssetPickerState {
     pub tab: PickerTab,
     /// The prediction-market provider the Predictions section searches.
     pub provider: DataSource,
-    icon: Icon,
     pub query: String,
     pub selected: Option<SearchResult>,
     results: Vec<(DataSource, Result<Vec<SearchResult>, String>)>,
@@ -110,7 +119,6 @@ impl AssetPickerState {
             action_label: action_label.to_owned(),
             tab: PickerTab::Crypto,
             provider: DataSource::Polymarket,
-            icon: Icon::Magnifier,
             query: String::new(),
             selected: None,
             results: Vec::new(),
@@ -121,12 +129,6 @@ impl AssetPickerState {
             search,
             focus: true,
         }
-    }
-
-    /// The glyph in the sheet's header badge.
-    pub fn with_icon(mut self, icon: Icon) -> Self {
-        self.icon = icon;
-        self
     }
 
     /// The providers the current section asks.
@@ -375,7 +377,7 @@ fn show_body(
     search_id: Id,
     outcome: &mut Option<AssetPickerOutcome>,
 ) {
-    add_chart_sheet::header(ui, state.icon, &state.title, &state.subtitle);
+    add_chart_sheet::header(ui, state.tab.scene(), &state.title, &state.subtitle);
     ui.add_space(16.0);
     let items = PickerTab::ALL.map(|tab| (tab, tab.title(), tab.icon()));
     if let Some(tab) = add_chart_sheet::segmented_tabs(ui, &items, state.tab) {

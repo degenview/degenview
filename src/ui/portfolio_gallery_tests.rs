@@ -516,3 +516,26 @@ fn portfolio_gallery_editor() {
         });
     }
 }
+
+#[test]
+#[ignore = "writes PNGs for a person to look at"]
+fn portfolio_gallery_asset_picker() {
+    use crate::ui::portfolio_asset_picker::{AssetPickerState, PickerTab, show};
+    if crate::ui::render_tests::gallery_dir().is_none() {
+        return;
+    }
+    for (name, tab) in [
+        ("portfolio-picker-crypto", PickerTab::Crypto),
+        ("portfolio-picker-stocks", PickerTab::Stocks),
+    ] {
+        let state = std::cell::RefCell::new(AssetPickerState::new(
+            "Add Asset",
+            "Choose the asset this transaction is for.",
+            "Continue",
+        ));
+        state.borrow_mut().select_tab(tab);
+        both_themes(name, vec2(1000.0, 720.0), |ui| {
+            show(ui.ctx(), &mut state.borrow_mut());
+        });
+    }
+}

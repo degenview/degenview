@@ -1405,7 +1405,6 @@ fn remap_picker(ticker: &str) -> AssetPickerState {
         "Move this asset's transactions to a different market.",
         "Use Asset",
     )
-    .with_icon(crate::ui::icons::Icon::Exchange)
 }
 
 fn add_transaction_picker() -> AssetPickerState {
