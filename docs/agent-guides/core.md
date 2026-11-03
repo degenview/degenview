@@ -36,9 +36,8 @@ See [the architecture map](../architecture.md) before changing module boundaries
   menus. A primary action is neutral: `kit::sheet_button` with `prominent`, `kit::push_button`, the
   footer's Primary button, or the card style of `theme::card_fill` / `card_border` /
   `card_highlight` with `text_primary` for its label. A destructive action is `kit::destructive_sheet_button`.
-  Colour belongs to state and data (a selected row or tab, a link, a chart series, the type of a
-  script), never to the control you press. Check a new button against the neighbouring sheets
-  before adding colour.
+  Colour belongs to state and data (a selected row or tab, a link, a chart series), never to the
+  control you press. Check a new button against the neighbouring sheets before adding colour.
   Known breach to remove, not to copy: the paper account sheet's submit button is a
   `tinted_button` in `kit::ACCENT`. The rest of the app has not been audited for others.
 - Outside `src/mcp/`, use background threads and `std::sync::mpsc`, not an async runtime. Shared
