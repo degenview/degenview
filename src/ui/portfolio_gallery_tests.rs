@@ -913,3 +913,23 @@ fn portfolio_gallery_create() {
         });
     }
 }
+
+#[test]
+#[ignore = "writes PNGs for a person to look at"]
+fn portfolio_gallery_row_menus() {
+    use crate::ui::portfolio_grid;
+    if crate::ui::render_tests::gallery_dir().is_none() {
+        return;
+    }
+    both_themes("portfolio-row-menus", vec2(600.0, 240.0), |ui| {
+        let cell = egui::Rect::from_min_size(egui::pos2(300.0, 40.0), vec2(280.0, 40.0));
+        let id = egui::Id::new("gallery-row-menu");
+        egui::Popup::open_id(ui.ctx(), id.with("popup"));
+        portfolio_grid::row_menu_button(ui, cell, id, "Actions", |ui| {
+            portfolio_grid::fit_menu(ui, &["View Transactions", "Remap Asset\u{2026}"]);
+            ui.spacing_mut().item_spacing.y = 0.0;
+            crate::ui::kit::menu_item(ui, Icon::List, "View Transactions", true, false);
+            crate::ui::kit::menu_item(ui, Icon::ArrowLeftRight, "Remap Asset\u{2026}", true, false);
+        });
+    });
+}

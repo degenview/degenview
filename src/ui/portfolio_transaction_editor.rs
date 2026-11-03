@@ -6,17 +6,19 @@
 // Transient: the portfolio host opens the editor once it is wired.
 #![allow(dead_code)]
 
-use crate::model::portfolio::{PortfolioCurrency, PortfolioTransaction, PortfolioTransactionType};
+use crate::model::portfolio::{PortfolioCurrency, PortfolioTransaction};
 use crate::model::portfolio_editor::{Category, EditorField, Summary, TransactionDraft};
 use crate::ui::date_picker;
 use crate::ui::icons::Icon;
 use crate::ui::kit::{self, TabItem};
-use crate::ui::portfolio_transactions::{type_name, type_tint};
+use crate::ui::portfolio_sheet_parts::card_background;
+use crate::ui::portfolio_transactions::{asset_subtitle, type_name, type_tint};
 use crate::ui::sheet;
 use crate::ui::theme;
+use crate::ui::{add_chart_art, add_chart_sheet};
 use eframe::egui::{self, Color32, Id, Rect, RichText, Stroke, Vec2};
 
-pub const WIDTH: f32 = 460.0;
+pub const WIDTH: f32 = 500.0;
 
 fn date_id() -> Id {
     Id::new("portfolio-transaction-date")
@@ -35,6 +37,15 @@ impl EditorMode {
             Self::New => "Add Transaction",
             Self::Edit => "Edit Transaction",
             Self::Duplicate => "Duplicate Transaction",
+        }
+    }
+
+    /// The line under the title: what the sheet does with what is entered.
+    pub fn subtitle(self) -> &'static str {
+        match self {
+            Self::New => "Record a buy, sell or transfer of this asset.",
+            Self::Edit => "Change what was recorded for this transaction.",
+            Self::Duplicate => "Add a copy of this transaction, then adjust it.",
         }
     }
 
@@ -135,14 +146,6 @@ pub fn summary_rows(summary: &Summary, currency: PortfolioCurrency) -> Vec<(Stri
         rows.push((label.to_owned(), currency.format(amount), true));
     }
     rows
-}
-
-pub fn primary_color(kind: PortfolioTransactionType) -> Color32 {
-    if kind == PortfolioTransactionType::Adjustment {
-        theme::ACCENT
-    } else {
-        type_tint(kind)
-    }
 }
 
 // MARK: View
@@ -266,7 +269,7 @@ fn field(
                                 "Market",
                                 kit::size::CAPTION,
                                 kit::SEMIBOLD,
-                                theme::SYSTEM_ACCENT,
+                                theme::text_primary(),
                             ))
                             .frame(false),
                         )
@@ -311,36 +314,78 @@ fn select_all(ctx: &egui::Context, id: Id, text: &str) {
     edit.store(ctx, id);
 }
 
+/// The asset the transaction is for: its icon, ticker over name, and where its prices come from.
+fn asset_card(ui: &mut egui::Ui, asset: &crate::model::portfolio::PortfolioAsset) {
+    let (rect, _) =
+        ui.allocate_exact_size(Vec2::new(ui.available_width(), 56.0), egui::Sense::hover());
+    card_background(ui, rect, None);
+    let icon = Rect::from_center_size(
+        egui::pos2(rect.left() + 16.0 + 16.0, rect.center().y),
+        Vec2::splat(32.0),
+    );
+    crate::ui::portfolio_table::paint_asset_icon(ui, icon, asset);
+    let source = kit::galley(
+        ui,
+        asset.source.display_name(),
+        kit::size::SUBHEADLINE + 1.0,
+        kit::MEDIUM,
+        theme::text_secondary(),
+        180.0,
+    );
+    let source_left = rect.right() - 16.0 - source.size().x;
+    ui.painter().galley(
+        egui::pos2(source_left, rect.center().y - source.size().y / 2.0),
+        source,
+        egui::Color32::PLACEHOLDER,
+    );
+    crate::ui::source_logo::paint(
+        ui,
+        asset.source,
+        Rect::from_center_size(
+            egui::pos2(source_left - 16.0, rect.center().y),
+            Vec2::splat(18.0),
+        ),
+    );
+    let text_left = icon.right() + 12.0;
+    let width = (source_left - 34.0 - text_left).max(60.0);
+    let ticker = kit::galley(
+        ui,
+        &asset.display_ticker(),
+        kit::size::BODY + 1.0,
+        kit::SEMIBOLD,
+        theme::text_primary(),
+        width,
+    );
+    let name = kit::galley(
+        ui,
+        &asset_subtitle(asset),
+        kit::size::CAPTION + 0.5,
+        kit::REGULAR,
+        theme::text_secondary(),
+        width,
+    );
+    let top = rect.center().y - (ticker.size().y + 2.0 + name.size().y) / 2.0;
+    ui.painter().galley(
+        egui::pos2(text_left, top),
+        ticker.clone(),
+        egui::Color32::PLACEHOLDER,
+    );
+    ui.painter().galley(
+        egui::pos2(text_left, top + ticker.size().y + 2.0),
+        name,
+        egui::Color32::PLACEHOLDER,
+    );
+}
+
 fn form(ui: &mut egui::Ui, state: &mut TransactionEditorState) {
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 14.0;
-        let (rect, _) = ui.allocate_exact_size(Vec2::splat(46.0), egui::Sense::hover());
-        crate::ui::portfolio_table::paint_asset_icon(
-            ui,
-            Rect::from_center_size(rect.center(), Vec2::splat(40.0)),
-            &state.base.asset,
-        );
-        kit::source_badge(
-            ui,
-            Rect::from_center_size(rect.center(), Vec2::splat(40.0)),
-            state.base.asset.source,
-        );
-        ui.vertical(|ui| {
-            ui.spacing_mut().item_spacing.y = 2.0;
-            ui.label(kit::text(
-                state.mode.title(),
-                kit::size::TITLE2 + 1.0,
-                kit::SEMIBOLD,
-                theme::text_primary(),
-            ));
-            ui.label(kit::text(
-                state.subtitle(),
-                kit::size::SUBHEADLINE + 1.0,
-                kit::REGULAR,
-                theme::text_secondary(),
-            ));
-        });
-    });
+    add_chart_sheet::header(
+        ui,
+        add_chart_art::Scene::Portfolio,
+        state.mode.title(),
+        state.mode.subtitle(),
+    );
+    ui.add_space(14.0);
+    asset_card(ui, &state.base.asset);
     ui.add_space(16.0);
 
     // Type: category tabs, then the types inside a multi-type category.
@@ -514,9 +559,12 @@ fn form(ui: &mut egui::Ui, state: &mut TransactionEditorState) {
 
     if let Some(summary) = state.draft.summary() {
         egui::Frame::new()
-            .fill(theme::ink(10))
-            .stroke(egui::Stroke::new(1.0, theme::border().gamma_multiply(0.6)))
-            .corner_radius(10.0)
+            .fill(theme::quaternary(0.4))
+            .stroke(egui::Stroke::new(
+                1.0,
+                theme::separator().gamma_multiply(0.6),
+            ))
+            .corner_radius(12.0)
             .inner_margin(egui::Margin::symmetric(14, 10))
             .show(ui, |ui| {
                 ui.set_width(ui.available_width());
@@ -648,7 +696,7 @@ fn footer(
             let submit = kit::footer_button(
                 ui,
                 state.mode.submit_title(),
-                kit::FooterButton::Prominent(primary_color(state.draft.kind)),
+                kit::FooterButton::Primary,
                 state.draft.can_submit() && !state.submitting,
                 130.0,
             );
@@ -676,6 +724,7 @@ fn footer(
 mod tests {
     use super::*;
     use crate::model::DataSource;
+    use crate::model::portfolio::PortfolioTransactionType;
     use crate::model::portfolio::{PortfolioAsset, PortfolioSource};
     use std::collections::HashMap;
 
@@ -712,6 +761,9 @@ mod tests {
         assert_eq!(EditorMode::Edit.title(), "Edit Transaction");
         assert_eq!(EditorMode::Duplicate.title(), "Duplicate Transaction");
         assert_eq!(EditorMode::Edit.submit_title(), "Save Changes");
+        assert!(EditorMode::New.subtitle().starts_with("Record"));
+        assert!(EditorMode::Edit.subtitle().starts_with("Change"));
+        assert!(EditorMode::Duplicate.subtitle().contains("copy"));
         assert_eq!(EditorMode::Duplicate.submit_title(), "Add Transaction");
         assert_eq!(price_label("BTC"), "Price per BTC");
         assert_eq!(price_hint(true), "Required");
@@ -771,10 +823,5 @@ mod tests {
             net: None,
         };
         assert_eq!(summary_rows(&bare, PortfolioCurrency::Usd).len(), 1);
-        assert_eq!(
-            primary_color(PortfolioTransactionType::Adjustment),
-            theme::ACCENT
-        );
-        assert_eq!(primary_color(PortfolioTransactionType::Sell), theme::DOWN);
     }
 }

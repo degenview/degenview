@@ -6,6 +6,7 @@
 // Transient: the Portfolio window hosts this once the portfolio store is wired.
 #![allow(dead_code)]
 
+use crate::model::DataSource;
 use crate::model::portfolio::{PortfolioAsset, PortfolioTransaction, PortfolioTransactionType};
 use crate::model::portfolio_format::{PortfolioValueFormatter, QuantitySign};
 use crate::ui::accessibility;
@@ -963,12 +964,19 @@ pub(crate) fn paint_type_capsule(
     capsule
 }
 
-/// An asset's second line: its name, else the name embedded in its key, else its symbol.
+/// An asset's second line: its name, else the name embedded in its key, else its symbol. A pair
+/// reads "BTC/USDT"; CoinGecko lists a bare ticker, so it gets the currency it is priced in
+/// ("PEPE/USD") like the others.
 pub fn asset_subtitle(asset: &PortfolioAsset) -> String {
-    if asset.name.is_empty() {
-        asset.embedded_name().unwrap_or(&asset.symbol).to_owned()
+    let name = if asset.name.is_empty() {
+        asset.embedded_name().unwrap_or(&asset.symbol)
     } else {
-        asset.name.clone()
+        &asset.name
+    };
+    if asset.source == DataSource::CoinGecko && !name.contains('/') {
+        format!("{name}/{}", asset.quote_currency.code())
+    } else {
+        name.to_owned()
     }
 }
 
@@ -1187,7 +1195,7 @@ fn transaction_row(
 }
 
 fn row_menu(ui: &mut egui::Ui, id: u64, actions: &mut Vec<TransactionAction>) {
-    ui.set_width(170.0);
+    portfolio_grid::fit_menu(ui, &["Edit", "Duplicate", "Delete"]);
     ui.spacing_mut().item_spacing.y = 0.0;
     if kit::menu_item(ui, Icon::Pencil, "Edit", true, false) {
         actions.push(TransactionAction::Edit(id));
@@ -1444,6 +1452,39 @@ mod tests {
             state.column(),
             TransactionColumn::Total,
             "fees are not a sort key"
+        );
+    }
+
+    #[test]
+    fn a_bare_coingecko_ticker_gets_its_currency_like_the_other_pairs() {
+        let asset = |source, symbol: &str, name: &str| PortfolioAsset {
+            key: "k".into(),
+            symbol: symbol.into(),
+            name: name.into(),
+            source,
+            quote_currency: crate::model::portfolio::PortfolioCurrency::Usd,
+            metadata: Default::default(),
+        };
+        assert_eq!(
+            asset_subtitle(&asset(DataSource::CoinGecko, "PEPE", "PEPE")),
+            "PEPE/USD"
+        );
+        assert_eq!(
+            asset_subtitle(&asset(DataSource::CoinGecko, "PEPE", "")),
+            "PEPE/USD"
+        );
+        assert_eq!(
+            asset_subtitle(&asset(DataSource::Binance, "BTC/USDT", "BTC/USDT")),
+            "BTC/USDT"
+        );
+        assert_eq!(
+            asset_subtitle(&asset(DataSource::CoinGecko, "PEPE/WETH", "PEPE/WETH")),
+            "PEPE/WETH",
+            "a name that already is a pair is left alone"
+        );
+        assert_eq!(
+            asset_subtitle(&asset(DataSource::Alpaca, "AAPL \u{2014} Apple Inc.", "")),
+            "Apple Inc."
         );
     }
 

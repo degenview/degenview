@@ -543,6 +543,12 @@ pub fn row_menu_button(
     response
 }
 
+/// Sizes the menu `ui` is drawing to its longest label (its rows stretch to the menu's width), so
+/// a short menu has no blank space beside its rows.
+pub fn fit_menu(ui: &mut Ui, labels: &[&str]) {
+    ui.set_width(kit::menu_width_for(ui, labels, 0.0) - kit::MENU_FRAME_MARGIN);
+}
+
 /// Width reserved at the end of a column for `row_menu_button`.
 pub const MENU_BUTTON: f32 = 24.0;
 pub const MENU_RESERVE: f32 = MENU_BUTTON + 6.0;

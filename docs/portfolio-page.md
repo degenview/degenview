@@ -99,6 +99,18 @@ fix or N warnings, and carries Import N Transactions.
 The header menus (portfolio, currency, Import or Export) take the labels they will show and open
 exactly as wide as the longest, never narrower than their button.
 
+## Edit Transaction
+
+`portfolio_transaction_editor`: Add Chart's header art with a line that says what the sheet does in
+its mode, a card for the asset (icon, ticker over name, where its prices come from), the type
+tabs, then the fields and the summary card. No accent colour: the main button is the neutral
+Primary one whatever the type, and the quantity is selected on open instead of keeping the
+last sheet's cursor.
+
+Asset subtitles come from `asset_subtitle`: a pair reads BTC/USDT, and CoinGecko's bare tickers
+get the currency they are priced in (PEPE/USD). Row menus (the ... button) are sized to their
+labels with `fit_menu`.
+
 ## New Portfolio
 
 `portfolio_sheets::show_create`: Add Chart's header art, a name field, and a grid of base-currency

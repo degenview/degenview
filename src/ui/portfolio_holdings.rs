@@ -813,7 +813,7 @@ fn holding_row(
 }
 
 fn row_menu(ui: &mut egui::Ui, key: &str, actions: &mut Vec<HoldingsAction>) {
-    ui.set_width(190.0);
+    portfolio_grid::fit_menu(ui, &["View Transactions", "Remap Asset\u{2026}"]);
     ui.spacing_mut().item_spacing.y = 0.0;
     if kit::menu_item(ui, Icon::List, "View Transactions", true, false) {
         actions.push(HoldingsAction::Open(key.to_owned()));
