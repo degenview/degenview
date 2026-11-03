@@ -58,13 +58,14 @@ impl Group {
 }
 
 impl ScriptType {
-    /// The glyph and hue that say what a script is at a glance: a waveform for an indicator, two
-    /// opposed arrows for a strategy (it trades), a stack for a library (it is built upon).
-    fn look(self) -> (Icon, Color32) {
+    /// The glyph that says what a script is at a glance: a waveform for an indicator, two
+    /// opposed arrows for a strategy (it trades), a stack for a library (it is built upon). Every
+    /// sidebar icon is the same light gray; the shape alone tells the types apart.
+    fn glyph(self) -> Icon {
         match self {
-            Self::Indicator => (Icon::Waveform, theme::SYSTEM_ACCENT),
-            Self::Strategy => (Icon::Exchange, theme::ORANGE),
-            Self::Library => (Icon::Layers, theme::ACCENT),
+            Self::Indicator => Icon::Waveform,
+            Self::Strategy => Icon::Exchange,
+            Self::Library => Icon::Layers,
         }
     }
 }
@@ -296,7 +297,7 @@ impl ScriptManager {
                     Vec2::splat(9.0),
                 ),
                 Icon::StarFill,
-                theme::YELLOW,
+                theme::text_secondary(),
             );
         }
 
@@ -358,7 +359,7 @@ impl ScriptManager {
         }
 
         // The type tile.
-        let (type_icon, hue) = script.script_type.look();
+        let type_icon = script.script_type.glyph();
         let tile = Rect::from_center_size(
             pos2(pill.min.x + 11.0 + TILE / 2.0, pill.center().y),
             Vec2::splat(TILE),
@@ -366,13 +367,13 @@ impl ScriptManager {
         ui.painter().rect_filled(
             tile,
             6.0,
-            theme::with_alpha(hue, if selected || hovered { 0.28 } else { 0.18 }),
+            theme::quaternary(if selected || hovered { 1.0 } else { 0.7 }),
         );
         icons::paint(
             ui.painter(),
             Rect::from_center_size(tile.center(), Vec2::splat(12.0)),
             type_icon,
-            hue,
+            theme::text_secondary(),
         );
 
         // The favorite star sits at the trailing edge and takes its own clicks. An unfavorited
@@ -381,9 +382,7 @@ impl ScriptManager {
             Rect::from_center_size(pill.right_center() - vec2(14.0, 0.0), Vec2::splat(22.0));
         let star = ui.interact(star_rect, id.with("star"), Sense::click());
         if script.is_favorite || selected || hovered || star.hovered() {
-            let star_color = if script.is_favorite {
-                theme::YELLOW
-            } else if star.hovered() {
+            let star_color = if star.hovered() {
                 theme::text_primary()
             } else {
                 theme::text_secondary()
