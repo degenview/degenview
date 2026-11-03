@@ -80,6 +80,8 @@ struct AlertRuntimeControl {
     registration_attempted_at_ms: i64,
     service_state: AlertServiceState,
     last_status_check_ms: i64,
+    /// A status query running off the UI thread; its answer replaces `service_state`.
+    status_probe: Option<mpsc::Receiver<AlertServiceState>>,
 }
 
 impl AlertRuntimeControl {
@@ -89,6 +91,7 @@ impl AlertRuntimeControl {
             registration_attempted_at_ms: now_ms,
             service_state,
             last_status_check_ms: i64::MIN / 2,
+            status_probe: None,
         }
     }
 
@@ -97,6 +100,23 @@ impl AlertRuntimeControl {
         self.registration_attempted_at_ms = now_ms;
         self.service_state = service_state;
         self.last_status_check_ms = now_ms;
+        // A query started before this registration would report the state from before it.
+        self.status_probe = None;
+    }
+
+    /// Takes the answer of a finished status query, if there is one.
+    fn poll_service_status(&mut self) {
+        let Some(receiver) = &self.status_probe else {
+            return;
+        };
+        match receiver.try_recv() {
+            Ok(state) => {
+                self.service_state = state;
+                self.status_probe = None;
+            }
+            Err(mpsc::TryRecvError::Disconnected) => self.status_probe = None,
+            Err(mpsc::TryRecvError::Empty) => {}
+        }
     }
 }
 
@@ -1886,12 +1906,23 @@ impl DegenViewApp {
                 .alert_runtime_control
                 .lock()
                 .expect("alert runtime control lock poisoned");
-            if now.saturating_sub(control.last_status_check_ms) >= 1_000 {
-                control.service_state = self
-                    .background_service
-                    .lock()
-                    .map(|service| service.status())
-                    .unwrap_or(AlertServiceState::Failed);
+            control.poll_service_status();
+            if control.status_probe.is_none()
+                && now.saturating_sub(control.last_status_check_ms) >= 1_000
+            {
+                match self.background_service.lock() {
+                    Ok(service) => {
+                        let probe = service.status_probe();
+                        let (sender, receiver) = mpsc::channel();
+                        // Not the shared work queue: a slow system service must not hold up
+                        // provider requests, nor they it.
+                        std::thread::spawn(move || {
+                            let _ = sender.send(probe());
+                        });
+                        control.status_probe = Some(receiver);
+                    }
+                    Err(_) => control.service_state = AlertServiceState::Failed,
+                }
                 control.last_status_check_ms = now;
             }
             let decision = gui_runtime_decision(
@@ -2766,6 +2797,34 @@ mod tests {
     use super::*;
     use crate::model::{ChartColumn, DataSource};
     use crate::workspace::PersistedChart;
+
+    #[test]
+    fn service_status_answer_replaces_the_state_once_it_arrives() {
+        let mut control = AlertRuntimeControl::new(AlertServiceState::Disabled, 0);
+        let (sender, receiver) = mpsc::channel();
+        control.status_probe = Some(receiver);
+
+        control.poll_service_status();
+        assert_eq!(control.service_state, AlertServiceState::Disabled);
+        assert!(control.status_probe.is_some());
+
+        sender.send(AlertServiceState::Enabled).unwrap();
+        control.poll_service_status();
+        assert_eq!(control.service_state, AlertServiceState::Enabled);
+        assert!(control.status_probe.is_none());
+    }
+
+    #[test]
+    fn a_registration_drops_the_status_query_started_before_it() {
+        let mut control = AlertRuntimeControl::new(AlertServiceState::Disabled, 0);
+        let (sender, receiver) = mpsc::channel();
+        control.status_probe = Some(receiver);
+
+        control.retrying(AlertServiceState::Enabled, 10);
+        let _ = sender.send(AlertServiceState::Disabled);
+        control.poll_service_status();
+        assert_eq!(control.service_state, AlertServiceState::Enabled);
+    }
 
     #[test]
     fn persisted_session_round_trips() {

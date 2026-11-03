@@ -26,6 +26,11 @@ See [the architecture map](../architecture.md) before changing module boundaries
   `kit::menu_scope` first in the body. Do not put bare `ui.button`, `radio`, `checkbox` or
   `menu_button` in a menu: egui frames those itself, so they miss the menu style. Menus stay open
   on a click, so a row that ends the menu calls `ui.close()` and a toggle does not.
+- Code that runs every frame (anything reached from `update`/`ui`) must not touch SQLite beyond a
+  cheap change check, parse JSON, or make a blocking system call (XPC, `SMAppService`). Cache the
+  result keyed on a change signal (`Store::layout_index`) or query on a thread and poll the channel
+  (`AlertRuntimeControl::poll_service_status`). A 4-day-old session spent about 20% of its UI thread
+  in the two that were left in.
 - Outside `src/mcp/`, use background threads and `std::sync::mpsc`, not an async runtime. Shared
   state is `Arc<Mutex<...>>`; keep store locks short.
 - User data lives in bundled-rusqlite SQLite through `store::Store`. Document tables are ordered

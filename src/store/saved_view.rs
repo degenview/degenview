@@ -2,6 +2,7 @@
 
 use crate::model::SavedView;
 use crate::store::{Document, Store};
+use std::sync::Arc;
 
 impl Document for SavedView {
     fn document_id(&self) -> String {
@@ -9,9 +10,59 @@ impl Document for SavedView {
     }
 }
 
+/// What the workspace toolbar shows of the saved layouts: the menu entries and which ones
+/// write back by themselves. Reading it must not parse every layout's charts and drawings.
+#[derive(Debug, Default, PartialEq)]
+pub struct LayoutIndex {
+    /// `(id, name)` in saved order.
+    pub layouts: Vec<(u64, String)>,
+    pub autosave: Vec<u64>,
+}
+
+/// An index plus the database state it was built from.
+pub struct CachedLayoutIndex {
+    /// `(changes made through this connection, changes made through any other)`.
+    stamp: (u64, i64),
+    index: Arc<LayoutIndex>,
+}
+
 impl Store {
     pub fn saved_views(&self) -> Vec<SavedView> {
         self.documents("saved_view")
+    }
+
+    /// The saved layouts' index, rebuilt only after a write to the database: the toolbar asks
+    /// every frame, and parsing every layout each time kept the UI thread busy.
+    pub fn layout_index(&self) -> Arc<LayoutIndex> {
+        // Any write counts, not only to `saved_view`: it costs one rebuild per write, and no
+        // writer (sync, another window, a restore) can be forgotten.
+        let stamp = (
+            self.connection.total_changes(),
+            self.connection
+                .query_row("PRAGMA data_version", [], |row| row.get::<_, i64>(0))
+                .unwrap_or_default(),
+        );
+        let mut cached = self.layout_index.borrow_mut();
+        if let Some(hit) = cached.as_ref().filter(|hit| hit.stamp == stamp) {
+            return Arc::clone(&hit.index);
+        }
+        let views = self.saved_views();
+        let index = Arc::new(LayoutIndex {
+            layouts: views
+                .iter()
+                .map(|view| (view.id, view.name.clone()))
+                .collect(),
+            autosave: views
+                .iter()
+                .filter(|view| view.autosave == Some(true))
+                .map(|view| view.id)
+                .collect(),
+        });
+        *cached = Some(CachedLayoutIndex {
+            stamp,
+            index: Arc::clone(&index),
+        });
+        index
     }
 
     pub fn replace_saved_views(&self, views: &[SavedView]) -> rusqlite::Result<()> {
@@ -252,5 +303,48 @@ mod tests {
         assert_eq!(loaded.len(), 2);
         assert_eq!(loaded[0].id, 7);
         assert_eq!(loaded[1].id, 9);
+    }
+
+    #[test]
+    fn layout_index_is_reused_until_the_database_changes() {
+        let store = Store::open_in_memory().expect("open");
+        let mut second = view(9);
+        second.autosave = Some(true);
+        store
+            .replace_saved_views(&[view(7), second])
+            .expect("write");
+        let first = store.layout_index();
+        assert_eq!(
+            first.layouts,
+            [(7, "BTC watch".to_string()), (9, "BTC watch".to_string())]
+        );
+        assert_eq!(first.autosave, [9]);
+        assert!(Arc::ptr_eq(&first, &store.layout_index()));
+
+        store.replace_saved_views(&[view(7)]).expect("write");
+        let after = store.layout_index();
+        assert!(!Arc::ptr_eq(&first, &after));
+        assert_eq!(after.layouts.len(), 1);
+        assert!(after.autosave.is_empty());
+    }
+
+    #[test]
+    fn layout_index_sees_a_write_from_another_connection() {
+        let path = std::env::temp_dir().join(format!(
+            "degenview-layout-index-{}.sqlite",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let reader = Store::open(&path).expect("open reader");
+        let writer = Store::open(&path).expect("open writer");
+        assert!(reader.layout_index().layouts.is_empty());
+
+        writer.replace_saved_views(&[view(3)]).expect("write");
+        assert_eq!(reader.layout_index().layouts[0].0, 3);
+
+        drop((reader, writer));
+        for suffix in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{suffix}", path.display()));
+        }
     }
 }

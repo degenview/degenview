@@ -34,8 +34,17 @@ pub struct BackgroundAlertService {
 }
 
 impl BackgroundAlertService {
+    /// The current status, blocking. Fine once at startup; per frame use `status_probe`.
     pub fn status(&self) -> AlertServiceState {
-        map_service_status(platform::status(self.registration_failed))
+        self.status_probe()()
+    }
+
+    /// The status query, ready to run on another thread. On macOS it is a blocking XPC round
+    /// trip to the system service daemon, which can take tens of milliseconds and far longer when
+    /// the machine is under memory pressure, so it must never run on the UI thread.
+    pub fn status_probe(&self) -> impl FnOnce() -> AlertServiceState + Send + 'static {
+        let registration_failed = self.registration_failed;
+        move || map_service_status(platform::status(registration_failed))
     }
 
     /// Registers the helper when it is embedded. Calling this for an enabled service is harmless.
