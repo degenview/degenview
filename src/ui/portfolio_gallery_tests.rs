@@ -887,3 +887,29 @@ fn portfolio_gallery_manage() {
         });
     }
 }
+
+#[test]
+#[ignore = "writes PNGs for a person to look at"]
+fn portfolio_gallery_create() {
+    use crate::ui::portfolio_sheets::{CreateState, show_create};
+    if crate::ui::render_tests::gallery_dir().is_none() {
+        return;
+    }
+    let existing = vec!["Main".to_owned()];
+    for (name, typed, currency) in [
+        ("portfolio-create", "", PortfolioCurrency::Usd),
+        (
+            "portfolio-create-filled",
+            "Long-term holds",
+            PortfolioCurrency::Eur,
+        ),
+        ("portfolio-create-duplicate", "main", PortfolioCurrency::Usd),
+    ] {
+        let state = std::cell::RefCell::new(CreateState::default());
+        state.borrow_mut().name = typed.to_owned();
+        state.borrow_mut().currency = currency;
+        both_themes(name, vec2(800.0, 820.0), |ui| {
+            show_create(ui.ctx(), &mut state.borrow_mut(), &existing);
+        });
+    }
+}

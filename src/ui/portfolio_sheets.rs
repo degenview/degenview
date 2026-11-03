@@ -61,6 +61,11 @@ impl CreateState {
         }
     }
 
+    /// `outcome`, but nothing when the name is already taken (the ledger would refuse it).
+    pub fn outcome_unless(&self, duplicate: bool) -> Option<CreateOutcome> {
+        if duplicate { None } else { self.outcome() }
+    }
+
     pub fn outcome(&self) -> Option<CreateOutcome> {
         self.is_valid().then(|| CreateOutcome::Create {
             name: normalize_name(&self.name),
@@ -94,15 +99,14 @@ pub fn show_create(
     existing_names: &[String],
 ) -> Option<CreateOutcome> {
     let mut outcome = None;
-    sheet::show(ctx, Id::new("portfolio-create"), 460.0, |ui| {
+    sheet::show(ctx, Id::new("portfolio-create"), 480.0, |ui| {
         ui.add_space(24.0);
         sheet::inset(ui, |ui| {
-            sheet::header(
+            add_chart_sheet::header(
                 ui,
-                Icon::Briefcase,
+                add_chart_art::Scene::Portfolio,
                 "New Portfolio",
                 "Group transactions and track them together.",
-                theme::ACCENT,
             );
             ui.add_space(24.0);
             section_label(ui, "Name");
@@ -132,15 +136,16 @@ pub fn show_create(
                 response.request_focus();
             }
             state.clamp_name();
+            let duplicate = state.is_duplicate(existing_names);
             if response.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter)) {
-                outcome = state.outcome();
+                outcome = state.outcome_unless(duplicate);
             }
             ui.add_space(6.0);
             let (status, _) = ui.allocate_exact_size(
                 Vec2::new(ui.available_width(), STATUS_HEIGHT),
                 Sense::hover(),
             );
-            if state.is_duplicate(existing_names) {
+            if duplicate {
                 // The system orange is too pale to read as small text on a light sheet.
                 let warning = theme::pick(kit::ORANGE, Color32::from_rgb(190, 100, 0));
                 let message = kit::galley(
@@ -187,11 +192,20 @@ pub fn show_create(
             );
             ui.add_space(24.0);
         });
+        let duplicate = state.is_duplicate(existing_names);
         sheet::footer(ui, |ui| {
-            if kit::sheet_button(ui, "Create Portfolio", true, state.is_valid()).clicked() {
-                outcome = state.outcome();
+            if kit::footer_button(
+                ui,
+                "Create Portfolio",
+                kit::FooterButton::Primary,
+                state.is_valid() && !duplicate,
+                150.0,
+            )
+            .clicked()
+            {
+                outcome = state.outcome_unless(duplicate);
             }
-            if kit::sheet_button(ui, "Cancel", false, true).clicked() {
+            if kit::footer_button(ui, "Cancel", kit::FooterButton::Secondary, true, 0.0).clicked() {
                 outcome = Some(CreateOutcome::Cancel);
             }
         });
@@ -235,8 +249,9 @@ fn currency_tile(
         format!("{}, {}", currency.code(), currency.display_name()),
     )
     .on_hover_cursor(egui::CursorIcon::PointingHand);
+    // The chosen tile is the one in full ink; the rest are quiet.
     let tint = if is_selected {
-        theme::ACCENT
+        theme::text_primary()
     } else {
         theme::text_secondary()
     };
@@ -245,7 +260,7 @@ fn currency_tile(
         rect,
         10.0,
         if is_selected {
-            theme::ACCENT.gamma_multiply(0.10)
+            theme::text_primary().gamma_multiply(0.09)
         } else if response.is_pointer_button_down_on() {
             theme::ink(24)
         } else if response.hovered() {
@@ -260,7 +275,7 @@ fn currency_tile(
         egui::Stroke::new(
             if is_selected { 1.5 } else { 1.0 },
             if is_selected {
-                theme::ACCENT
+                theme::text_primary().gamma_multiply(0.85)
             } else {
                 theme::border()
             },
@@ -309,6 +324,17 @@ fn currency_tile(
         .galley(egui::pos2(text_left, top), code, Color32::PLACEHOLDER);
     ui.painter()
         .galley(egui::pos2(text_left, name_top), name, Color32::PLACEHOLDER);
+    if is_selected {
+        icons::paint(
+            ui.painter(),
+            egui::Rect::from_center_size(
+                egui::pos2(rect.right() - 14.0, rect.center().y),
+                Vec2::splat(11.0),
+            ),
+            Icon::Check,
+            theme::text_primary(),
+        );
+    }
     response
 }
 
@@ -1036,5 +1062,16 @@ mod tests {
             "its own name is not a clash"
         );
         assert!(!rename_clashes("Savings", 1, &rows));
+    }
+
+    #[test]
+    fn a_taken_name_creates_nothing() {
+        let state = CreateState {
+            name: "Main".into(),
+            ..CreateState::default()
+        };
+        assert!(state.outcome_unless(false).is_some());
+        assert_eq!(state.outcome_unless(true), None);
+        assert!(state.is_duplicate(&["main".to_owned()]));
     }
 }

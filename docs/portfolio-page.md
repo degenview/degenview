@@ -99,6 +99,13 @@ fix or N warnings, and carries Import N Transactions.
 The header menus (portfolio, currency, Import or Export) take the labels they will show and open
 exactly as wide as the longest, never narrower than their button.
 
+## New Portfolio
+
+`portfolio_sheets::show_create`: Add Chart's header art, a name field, and a grid of base-currency
+tiles with no accent colour (the chosen tile is the one in full ink with a check). A name another
+portfolio already has shows a warning and disables Create Portfolio (and Return), since the
+ledger would refuse it; the warning line is reserved, so the sheet never changes height.
+
 ## Manage Portfolios
 
 `portfolio_sheets::show_manage`. The sheet opens with Add Chart's header art and uses no accent
