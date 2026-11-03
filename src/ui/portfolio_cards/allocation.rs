@@ -11,8 +11,8 @@ use crate::ui::theme;
 use eframe::egui::{self, Align2, Color32, Id, Pos2, Rect, Shape, Stroke, Ui, Vec2};
 use std::f32::consts::{PI, TAU};
 
-const LEGEND_ROW: f32 = 24.0;
-const MIN_DONUT: f32 = 84.0;
+const LEGEND_ROW: f32 = 26.0;
+const MIN_DONUT: f32 = 76.0;
 const MAX_DONUT: f32 = 230.0;
 /// A gap between slices, in radians.
 const SLICE_GAP: f32 = 0.028;
@@ -24,36 +24,39 @@ pub(super) struct Layout {
     pub legend: Rect,
 }
 
-/// Donut beside its legend when the card is wide, above it when it is tall.
+/// Donut beside its legend unless the card is taller than it is wide, then above it.
 pub(super) fn layout(area: Rect) -> Layout {
     let pad = 12.0;
     let inner = area.shrink(pad);
-    if inner.width() >= inner.height() * 1.25 && inner.width() >= 260.0 {
+    if inner.width() >= 210.0 && inner.width() >= inner.height() * 0.95 {
+        let share = if inner.width() >= 330.0 { 0.5 } else { 0.42 };
         let size = inner
             .height()
             .clamp(MIN_DONUT, MAX_DONUT)
-            .min(inner.width() * 0.5);
-        let used = size + 24.0 + (inner.width() - size - 24.0).clamp(120.0, 260.0);
+            .min(inner.width() * share);
+        let gap = if inner.width() >= 330.0 { 28.0 } else { 16.0 };
+        let legend_room = (inner.width() - size - gap).clamp(96.0, 280.0);
+        let used = size + gap + legend_room;
         let left = inner.left() + (inner.width() - used).max(0.0) / 2.0;
         let donut = Rect::from_min_size(
             Pos2::new(left, inner.center().y - size / 2.0),
             Vec2::splat(size),
         );
         let legend = Rect::from_min_max(
-            Pos2::new(donut.right() + 24.0, inner.top()),
+            Pos2::new(donut.right() + gap, inner.top()),
             Pos2::new((left + used).min(inner.right()), inner.bottom()),
         );
         Layout { donut, legend }
     } else {
-        let size = (inner.height() * 0.58)
+        let size = (inner.height() * 0.5)
             .clamp(MIN_DONUT, MAX_DONUT)
             .min(inner.width());
         let donut = Rect::from_min_size(
-            Pos2::new(inner.center().x - size / 2.0, inner.top()),
+            Pos2::new(inner.center().x - size / 2.0, inner.top() + 4.0),
             Vec2::splat(size),
         );
         let legend = Rect::from_min_max(
-            Pos2::new(inner.left(), donut.bottom() + 10.0),
+            Pos2::new(inner.left(), donut.bottom() + 14.0),
             inner.right_bottom(),
         );
         Layout { donut, legend }
@@ -89,7 +92,7 @@ pub(super) fn paint(ui: &Ui, area: Rect, id: Id, data: &CardData, pointer: Optio
     let ctx = ui.ctx();
     let layout = layout(area);
     let centre = layout.donut.center();
-    let ring_width = (layout.donut.width() * 0.13).clamp(10.0, 26.0);
+    let ring_width = (layout.donut.width() * 0.1).clamp(8.0, 20.0);
     let radius = layout.donut.width() / 2.0 - ring_width / 2.0 - 3.0;
 
     // Legend rows are placed first so a pointer over one lifts its slice too.
@@ -161,55 +164,91 @@ pub(super) fn paint(ui: &Ui, area: Rect, id: Id, data: &CardData, pointer: Optio
         hovered,
     );
 
-    // Legend.
+    // Legend: a dot and a name, a bar on a shared track when the legend is wide enough, and the
+    // share in a column of its own so every track and every number lines up.
     let widest = slices
         .iter()
         .map(|slice| slice.share)
         .fold(f64::EPSILON, f64::max);
+    let percent_width = kit::galley(
+        ui,
+        "100.0%",
+        11.5,
+        kit::MEDIUM,
+        Color32::WHITE,
+        f32::INFINITY,
+    )
+    .size()
+    .x;
+    let name_width = slices
+        .iter()
+        .take(rows)
+        .map(|slice| {
+            kit::galley(
+                ui,
+                &slice.label,
+                12.0,
+                kit::MEDIUM,
+                Color32::WHITE,
+                f32::INFINITY,
+            )
+            .size()
+            .x
+        })
+        .fold(0.0, f32::max)
+        .clamp(30.0, 92.0);
     for (index, slice) in slices.iter().take(rows).enumerate() {
         let row = row_rect(index);
         let active = hovered == Some(index);
         if active {
-            painter.rect_filled(row, 6.0, theme::ink(12));
+            painter.rect_filled(row.shrink2(Vec2::new(0.0, 1.0)), 6.0, theme::ink(10));
         }
         let fade = if hovered.is_none() || active {
             1.0
         } else {
-            0.5
+            0.45
         };
         painter.circle_filled(
-            Pos2::new(row.left() + 10.0, row.center().y),
-            4.0,
+            Pos2::new(row.left() + 11.0, row.center().y),
+            3.5,
             slice.color.gamma_multiply(fade),
         );
+        let percent_right = row.right() - 8.0;
         let percent = kit::galley(
             ui,
             &data.formatter.percent(slice.share, 1),
             11.5,
             kit::MEDIUM,
-            theme::text_secondary().gamma_multiply(fade),
-            60.0,
+            if active {
+                theme::text_primary()
+            } else {
+                theme::text_secondary()
+            }
+            .gamma_multiply(fade),
+            percent_width + 4.0,
         );
         painter.galley(
             Pos2::new(
-                row.right() - 8.0 - percent.size().x,
+                percent_right - percent.size().x,
                 row.center().y - percent.size().y / 2.0,
             ),
-            percent.clone(),
+            percent,
             Color32::PLACEHOLDER,
         );
-        let label_left = row.left() + 22.0;
-        let bar_room = row.right() - 8.0 - percent.size().x - 10.0 - (label_left + 64.0);
+        let label_left = row.left() + 24.0;
+        let track_left = label_left + name_width + 12.0;
+        let track_right = percent_right - percent_width - 12.0;
+        let bar = track_right - track_left >= 36.0;
         let label = kit::galley(
             ui,
             &slice.label,
             12.0,
             kit::MEDIUM,
             theme::text_primary().gamma_multiply(fade),
-            if bar_room >= 40.0 {
-                58.0
+            if bar {
+                name_width + 2.0
             } else {
-                (row.right() - 8.0 - percent.size().x - 8.0 - label_left).max(20.0)
+                (percent_right - percent_width - 8.0 - label_left).max(20.0)
             },
         );
         painter.galley(
@@ -217,16 +256,16 @@ pub(super) fn paint(ui: &Ui, area: Rect, id: Id, data: &CardData, pointer: Optio
             label,
             Color32::PLACEHOLDER,
         );
-        if bar_room >= 40.0 {
-            let track = Rect::from_min_size(
-                Pos2::new(label_left + 64.0, row.center().y - 2.0),
-                Vec2::new(bar_room, 4.0),
+        if bar {
+            let track = Rect::from_min_max(
+                Pos2::new(track_left, row.center().y - 2.0),
+                Pos2::new(track_right, row.center().y + 2.0),
             );
-            painter.rect_filled(track, 2.0, theme::ink(10));
+            painter.rect_filled(track, 2.0, theme::ink(9));
             let fill = Rect::from_min_size(
                 track.min,
                 Vec2::new(
-                    (track.width() * (slice.share / widest) as f32 * progress).max(3.0),
+                    (track.width() * (slice.share / widest) as f32 * progress).max(4.0),
                     4.0,
                 ),
             );
@@ -245,7 +284,7 @@ pub(super) fn paint(ui: &Ui, area: Rect, id: Id, data: &CardData, pointer: Optio
         );
         painter.galley(
             Pos2::new(
-                layout.legend.left() + 22.0,
+                layout.legend.left() + 24.0,
                 row_rect(rows).center().y - galley.size().y / 2.0,
             ),
             galley,
@@ -264,8 +303,8 @@ fn paint_centre(
     slices: &[Slice],
     hovered: Option<usize>,
 ) {
-    let inner = donut.width() - ring_width * 2.0 - 12.0;
-    if inner < 44.0 {
+    let inner = donut.width() - ring_width * 2.0 - 22.0;
+    if inner < 40.0 {
         return;
     }
     let centre = donut.center();
@@ -347,6 +386,14 @@ mod tests {
     }
 
     #[test]
+    fn a_small_card_keeps_its_legend_beside_a_smaller_donut() {
+        let layout = layout(area(270.0, 160.0));
+        assert!(layout.legend.left() >= layout.donut.right());
+        assert!(layout.legend.width() >= 96.0);
+        assert!(area(270.0, 160.0).contains_rect(layout.donut));
+    }
+
+    #[test]
     fn a_tall_card_puts_the_legend_under_the_donut() {
         let layout = layout(area(240.0, 420.0));
         assert!(layout.legend.top() >= layout.donut.bottom());
@@ -363,7 +410,7 @@ mod tests {
     #[test]
     fn cut_legends_keep_a_row_for_the_remainder() {
         assert_eq!(visible_rows(240.0, 9), 9);
-        assert_eq!(visible_rows(72.0, 9), 2);
+        assert_eq!(visible_rows(80.0, 9), 2);
         assert_eq!(visible_rows(0.0, 9), 0);
     }
 }
