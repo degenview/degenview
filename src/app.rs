@@ -308,6 +308,9 @@ pub struct DegenViewApp {
     actions: Arc<Mutex<Vec<AppAction>>>,
     session_save_error: Arc<Mutex<Option<String>>>,
     session_last_saved_at: Instant,
+    /// The root window is a hidden 1×1 surface; it is asked to hide once, because every viewport
+    /// command asks egui for another frame.
+    root_hidden: bool,
     last_saved_session: Option<PersistedSession>,
 }
 
@@ -377,6 +380,18 @@ impl WindowEnv {
             title: content.title(),
             icon: content.icon(),
         })
+    }
+}
+
+/// Titles the window, but only when the title changed. Every viewport command asks egui for
+/// another frame, so sending the same title each frame kept the app repainting at the display's
+/// rate for as long as a window was open.
+fn set_window_title(ctx: &egui::Context, title: String) {
+    let remembered = egui::Id::new(("window_title", ctx.viewport_id()));
+    let unchanged = ctx.data(|data| data.get_temp::<String>(remembered).as_ref() == Some(&title));
+    if !unchanged {
+        ctx.data_mut(|data| data.insert_temp(remembered, title.clone()));
+        ctx.send_viewport_cmd(egui::ViewportCommand::Title(title));
     }
 }
 
@@ -505,7 +520,7 @@ fn show_window(
         return;
     };
     if let Some(view) = env.view(window.active) {
-        ctx.send_viewport_cmd(egui::ViewportCommand::Title(view.title));
+        set_window_title(&ctx, view.title);
     }
     ui.push_id(window.active, |ui| {
         show_tab(ui, env, window.active, &content, chart_info);
@@ -914,6 +929,7 @@ impl DegenViewApp {
             actions,
             session_save_error: Arc::new(Mutex::new(None)),
             session_last_saved_at: Instant::now(),
+            root_hidden: false,
             last_saved_session: None,
         }
     }
@@ -2733,7 +2749,9 @@ impl eframe::App for DegenViewApp {
         let now = now_ms();
         self.banner.expire(now);
         alert_banner::show(&ctx, &mut self.banner, now);
-        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+        if !std::mem::replace(&mut self.root_hidden, true) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+        }
     }
 
     /// The app is going: start the new version if "Restart Now" was chosen for an update and the quit
@@ -2766,6 +2784,34 @@ mod tests {
     use super::*;
     use crate::model::{ChartColumn, DataSource};
     use crate::workspace::PersistedChart;
+
+    fn title_commands(ctx: &egui::Context, title: &str) -> usize {
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            set_window_title(ui.ctx(), title.to_owned());
+        });
+        output.textures_delta.clear();
+        output
+            .viewport_output
+            .get(&egui::ViewportId::ROOT)
+            .map_or(0, |viewport| {
+                viewport
+                    .commands
+                    .iter()
+                    .filter(|command| matches!(command, egui::ViewportCommand::Title(_)))
+                    .count()
+            })
+    }
+
+    #[test]
+    fn a_window_is_titled_only_when_its_title_changes() {
+        let ctx = egui::Context::default();
+        assert_eq!(title_commands(&ctx, "BTCUSDT"), 1);
+        // A viewport command asks egui for another frame, so repeating it never lets the app idle.
+        assert_eq!(title_commands(&ctx, "BTCUSDT"), 0);
+        assert_eq!(title_commands(&ctx, "BTCUSDT"), 0);
+        assert_eq!(title_commands(&ctx, "ETHUSDT"), 1);
+        assert_eq!(title_commands(&ctx, "ETHUSDT"), 0);
+    }
 
     #[test]
     fn persisted_session_round_trips() {
