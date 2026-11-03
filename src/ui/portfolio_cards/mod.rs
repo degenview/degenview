@@ -8,6 +8,8 @@
 //! grid keeps those paths away from it.
 
 mod allocation;
+#[cfg(test)]
+mod gallery_tests;
 mod top_performers;
 mod value;
 mod value_chart;
@@ -27,7 +29,21 @@ use std::sync::Arc;
 
 pub const HEADER_HEIGHT: f32 = 45.0;
 /// The row of summary and range control above a body.
-const CONTROLS_HEIGHT: f32 = 34.0;
+const CONTROLS_HEIGHT: f32 = 36.0;
+/// Below this width the summary and the range switch no longer fit one row, so the switch drops
+/// to a row of its own, stretched across the card.
+const NARROW_CARD: f32 = 420.0;
+/// The two rows of a narrow card's controls.
+const NARROW_CONTROLS_HEIGHT: f32 = 34.0 + 32.0;
+
+/// How tall the controls above a body are for a card `width` wide.
+pub(super) fn controls_height(width: f32) -> f32 {
+    if width < NARROW_CARD {
+        NARROW_CONTROLS_HEIGHT
+    } else {
+        CONTROLS_HEIGHT
+    }
+}
 
 pub fn icon(kind: CardKind) -> Icon {
     match kind {
@@ -40,16 +56,20 @@ pub fn icon(kind: CardKind) -> Icon {
 
 /// The glyph on its tinted badge, `size` square. Also the row icon in a watchlist.
 pub fn paint_badge(painter: &egui::Painter, rect: Rect, kind: CardKind) {
-    painter.rect_filled(
+    // Neutral, like the tile of a settings card: colour is kept for data and state.
+    let radius = rect.width() * 0.29;
+    painter.rect_filled(rect, radius, theme::ink(10));
+    painter.rect_stroke(
         rect,
-        rect.width() * 0.3,
-        theme::with_alpha(theme::ACCENT, 0.16),
+        radius,
+        Stroke::new(1.0, theme::ink(14)),
+        StrokeKind::Inside,
     );
     icons::paint(
         painter,
-        Rect::from_center_size(rect.center(), Vec2::splat(rect.width() * 0.62)),
+        Rect::from_center_size(rect.center(), Vec2::splat(rect.width() * 0.55)),
         icon(kind),
-        theme::ACCENT,
+        theme::text_secondary(),
     );
 }
 
@@ -92,17 +112,23 @@ pub fn header(
 
             ui.vertical(|ui| {
                 ui.set_width(title_width);
-                ui.spacing_mut().item_spacing.y = 0.0;
+                ui.spacing_mut().item_spacing.y = 1.0;
                 ui.add(
-                    egui::Label::new(egui::RichText::new(card.kind.title()).size(13.0).strong())
-                        .truncate(),
+                    egui::Label::new(kit::text(
+                        card.kind.title(),
+                        13.0,
+                        kit::SEMIBOLD,
+                        theme::text_primary(),
+                    ))
+                    .truncate(),
                 );
                 ui.add(
-                    egui::Label::new(
-                        egui::RichText::new(scope)
-                            .size(11.0)
-                            .color(theme::text_secondary()),
-                    )
+                    egui::Label::new(kit::text(
+                        scope,
+                        11.0,
+                        kit::REGULAR,
+                        theme::text_secondary(),
+                    ))
                     .truncate(),
                 );
             });
@@ -186,7 +212,12 @@ pub fn body(ui: &mut Ui, card: &mut PortfolioCard, data: Option<&CardData>, char
         return response.clicked();
     }
 
-    let controls = Rect::from_min_size(area.min, Vec2::new(area.width(), CONTROLS_HEIGHT));
+    let controls_height = if card.kind.has_range() {
+        controls_height(area.width())
+    } else {
+        0.0
+    };
+    let controls = Rect::from_min_size(area.min, Vec2::new(area.width(), controls_height));
     let content = Rect::from_min_max(
         Pos2::new(area.left(), controls.bottom()),
         area.right_bottom(),
@@ -217,26 +248,50 @@ pub fn body(ui: &mut Ui, card: &mut PortfolioCard, data: Option<&CardData>, char
     response.clicked()
 }
 
-/// The summary at the left of the controls row and the range switch at the right.
+/// The summary at the left of the controls and the range switch at the right, or under it when
+/// the card is too narrow for both.
 fn paint_controls(ui: &mut Ui, row: Rect, id: Id, card: &mut PortfolioCard, data: &CardData) {
-    let mut controls = ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(row.shrink2(Vec2::new(4.0, 4.0)))
-            .layout(egui::Layout::right_to_left(egui::Align::Center)),
-    );
     let options: Vec<(PortfolioHistoryRange, &str)> = PortfolioHistoryRange::ALL
         .iter()
         .map(|range| (*range, range.title()))
         .collect();
     let mut range = card.range;
-    kit::segmented(&mut controls, id.with("range"), &options, &mut range);
+    let narrow = row.width() < NARROW_CARD;
+    let summary = if narrow {
+        let switch = Rect::from_min_max(
+            Pos2::new(row.left() + 4.0, row.bottom() - 28.0),
+            Pos2::new(row.right() - 4.0, row.bottom() - 4.0),
+        );
+        let mut controls = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(switch)
+                .layout(egui::Layout::left_to_right(egui::Align::Center)),
+        );
+        kit::segmented_filling(
+            &mut controls,
+            id.with("range"),
+            &options,
+            &mut range,
+            switch.width(),
+        );
+        Rect::from_min_max(
+            row.min + Vec2::new(6.0, 0.0),
+            Pos2::new(row.right() - 6.0, switch.top() - 2.0),
+        )
+    } else {
+        let mut controls = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(row.shrink2(Vec2::new(4.0, 4.0)))
+                .layout(egui::Layout::right_to_left(egui::Align::Center)),
+        );
+        kit::segmented(&mut controls, id.with("range"), &options, &mut range);
+        let summary_width = (row.width() - controls.min_rect().width() - 24.0).max(0.0);
+        Rect::from_min_size(
+            row.min + Vec2::new(6.0, 0.0),
+            Vec2::new(summary_width, row.height()),
+        )
+    };
     card.range = range;
-
-    let summary_width = (row.width() - controls.min_rect().width() - 24.0).max(0.0);
-    let summary = Rect::from_min_size(
-        row.min + Vec2::new(6.0, 0.0),
-        Vec2::new(summary_width, row.height()),
-    );
     match card.kind {
         CardKind::ValueChart => value_chart::paint_summary(ui, summary, card, data),
         CardKind::TopPerformers => top_performers::paint_summary(ui, summary, card, data),

@@ -26,6 +26,23 @@ same card when kind and portfolio match; adding one that exists focuses it. The 
   Geometry that can be tested without a window (`bars`, `layout`, `visible_rows`, `plot_rect`) is
   pure and has unit tests.
 
+## Look
+
+- The header badge is neutral (an inked tile, grey glyph), like the tile of a settings card; colour is
+  kept for gains, losses and chart series. The same badge is the watchlist row icon.
+- Controls (summary, range switch) are one row from 420 pt of card width up. Narrower, the switch
+  drops to its own row stretched across the card (`controls_height`), so the headline is never
+  truncated by it.
+- Portfolio Value is left-aligned: number, 24h chip, caption. The month of history goes under it on a
+  tall card, beside it on a wide short one, and is left out below 170 pt (`value::layout`).
+- Allocation keeps its legend beside the donut down to about 210 pt of inner width and puts it under
+  the donut only when the card is taller than wide (`allocation::layout`). Legend names, bars and
+  percentages sit in fixed columns so every track lines up; the bar is dropped before the name is cut.
+- A value-chart axis label that the badge of today's value would sit on is not drawn.
+- To look at all four in both themes: `DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib
+  portfolio_cards_gallery -- --ignored` (sizes, hover and the loading, down, privacy, empty and
+  unpriced states). Verified that way only, not in a running window.
+
 ## Decisions
 
 - **Top Performers ranks holdings, not the market.** A start price per holding comes from its own

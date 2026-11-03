@@ -9,15 +9,45 @@ use eframe::egui::{Color32, Id, Pos2, Rect, Stroke, Ui, Vec2};
 
 /// Below this height the sparkline would crowd the number.
 const SPARKLINE_MIN_HEIGHT: f32 = 170.0;
+/// Room kept around the text.
+const PAD: f32 = 14.0;
 
-/// The part of the card the history is drawn in: the bottom third.
-pub(super) fn sparkline_band(area: Rect) -> Option<Rect> {
-    (area.height() >= SPARKLINE_MIN_HEIGHT).then(|| {
-        Rect::from_min_max(
-            Pos2::new(area.left() + 8.0, area.bottom() - area.height() * 0.34),
-            Pos2::new(area.right() - 8.0, area.bottom() - 10.0),
-        )
-    })
+/// Where the text and the history go in a card.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct Layout {
+    pub text: Rect,
+    pub spark: Option<Rect>,
+}
+
+/// The number sits at the left. A tall card carries the month under it; a wide, short one beside
+/// it; one too short for either has the number alone, in the middle.
+pub(super) fn layout(area: Rect) -> Layout {
+    let inner = area.shrink2(Vec2::new(PAD, PAD - 2.0));
+    if area.height() < SPARKLINE_MIN_HEIGHT {
+        return Layout {
+            text: inner,
+            spark: None,
+        };
+    }
+    if area.width() >= 440.0 && area.height() < 260.0 {
+        let split = inner.left() + inner.width() * 0.46;
+        return Layout {
+            text: Rect::from_min_max(inner.min, Pos2::new(split - 12.0, inner.bottom())),
+            spark: Some(Rect::from_min_max(
+                Pos2::new(split, inner.top() + 10.0),
+                Pos2::new(inner.right(), inner.bottom() - 6.0),
+            )),
+        };
+    }
+    let share = if area.height() > 380.0 { 0.48 } else { 0.4 };
+    let band_top = area.bottom() - area.height() * share;
+    Layout {
+        text: Rect::from_min_max(inner.min, Pos2::new(inner.right(), band_top - 6.0)),
+        spark: Some(Rect::from_min_max(
+            Pos2::new(area.left() + 6.0, band_top),
+            Pos2::new(area.right() - 6.0, area.bottom() - 6.0),
+        )),
+    }
 }
 
 pub(super) fn paint(ui: &Ui, area: Rect, id: Id, data: &CardData, _pointer: Option<Pos2>) {
@@ -25,57 +55,24 @@ pub(super) fn paint(ui: &Ui, area: Rect, id: Id, data: &CardData, _pointer: Opti
         loading_pill(ui, area, "Loading market data…");
         return;
     }
-    let band = sparkline_band(area);
-    if let Some(band) = band {
+    let layout = layout(area);
+    if let Some(band) = layout.spark {
         paint_sparkline(ui, band, id, data);
     }
-    let anchor_y = band.map_or(area.center().y, |band| {
-        area.top() + (band.top() - area.top()) / 2.0 + 4.0
-    });
-    let width = (area.width() - 32.0).max(40.0);
+    let text = layout.text;
+    let width = text.width().max(40.0);
     let galley = fitted(
         ui,
         &data.formatter.money(data.total_value),
-        46.0,
+        40.0,
         18.0,
         kit::SEMIBOLD,
         theme::text_primary(),
         width,
     );
-    let top = anchor_y - galley.size().y / 2.0 - 14.0;
-    ui.painter().galley(
-        Pos2::new(area.center().x - galley.size().x / 2.0, top),
-        galley.clone(),
-        Color32::PLACEHOLDER,
-    );
 
-    // 24h change, centred under the number.
-    let mut y = top + galley.size().y + 12.0;
-    if let Some(change) = data.day_change {
-        let color = tone_color(data.formatter.tone(Some(change.amount)));
-        let arrow = if change.amount >= 0.0 { "↗" } else { "↘" };
-        let text = match change.percentage {
-            Some(fraction) => format!(
-                "{arrow} {} · {}  24h",
-                data.formatter.signed_money(change.amount),
-                data.formatter.signed_percent(fraction, 2)
-            ),
-            None => format!(
-                "{arrow} {}  24h",
-                data.formatter.signed_money(change.amount)
-            ),
-        };
-        let probe = kit::galley(ui, &text, 11.0, kit::SEMIBOLD, color, f32::INFINITY);
-        let chip_width = (probe.size().x + 14.0).min(width);
-        chip(
-            ui,
-            Pos2::new(area.center().x - chip_width / 2.0, y + 10.0),
-            &text,
-            color,
-            width,
-        );
-        y += 28.0;
-    }
+    // The number, the change chip and the caption are one block, centred in the text area when
+    // the card has no history to fill the rest of it.
     let caption = if data.unpriced > 0 {
         format!(
             "{} {} could not be priced",
@@ -98,15 +95,49 @@ pub(super) fn paint(ui: &Ui, area: Rect, id: Id, data: &CardData, _pointer: Opti
             }
         )
     };
-    let color = if data.unpriced > 0 {
+    let caption_color = if data.unpriced > 0 {
         kit::ORANGE
     } else {
         theme::text_secondary()
     };
-    let galley = kit::galley(ui, &caption, 11.0, kit::REGULAR, color, width);
+    let caption = kit::galley(ui, &caption, 11.5, kit::REGULAR, caption_color, width);
+    let chip_row = if data.day_change.is_some() {
+        20.0 + 10.0
+    } else {
+        0.0
+    };
+    let block = galley.size().y + 10.0 + chip_row + caption.size().y;
+    let mut y = if layout.spark.is_some() {
+        text.top() + 6.0
+    } else {
+        text.center().y - block / 2.0
+    };
     ui.painter().galley(
-        Pos2::new(area.center().x - galley.size().x / 2.0, y),
-        galley,
+        Pos2::new(text.left(), y),
+        galley.clone(),
+        Color32::PLACEHOLDER,
+    );
+    y += galley.size().y + 10.0;
+    if let Some(change) = data.day_change {
+        let color = tone_color(data.formatter.tone(Some(change.amount)));
+        let arrow = if change.amount >= 0.0 { "↗" } else { "↘" };
+        let label = match change.percentage {
+            Some(fraction) => format!(
+                "{arrow} {} · {}  24h",
+                data.formatter.signed_money(change.amount),
+                data.formatter.signed_percent(fraction, 2)
+            ),
+            None => format!(
+                "{arrow} {}  24h",
+                data.formatter.signed_money(change.amount)
+            ),
+        };
+        chip(ui, Pos2::new(text.left(), y + 10.0), &label, color, width);
+        y += 30.0;
+    }
+    ui.painter().galley(
+        Pos2::new(text.left() + 1.0, y),
+        caption,
         Color32::PLACEHOLDER,
     );
 }
@@ -133,6 +164,13 @@ fn paint_sparkline(ui: &Ui, band: Rect, id: Id, data: &CardData) {
         })
         .collect();
     let rising = values.last() >= values.first();
+    ui.painter().text(
+        Pos2::new(band.left() + 2.0, band.top() - 2.0),
+        eframe::egui::Align2::LEFT_BOTTOM,
+        "Past month",
+        eframe::egui::FontId::proportional(10.0),
+        theme::text_tertiary(),
+    );
     let color = if rising { theme::UP } else { theme::DOWN };
     let progress = reveal(ui.ctx(), id.with("spark"), 0.7);
     let clip = Rect::from_min_max(
@@ -143,11 +181,14 @@ fn paint_sparkline(ui: &Ui, band: Rect, id: Id, data: &CardData) {
         ),
     );
     let painter = ui.painter().with_clip_rect(clip);
-    area_under(&painter, &line, band.bottom(), color, 0.18);
-    painter.add(eframe::egui::Shape::line(
-        line,
-        Stroke::new(1.5, color.gamma_multiply(0.85)),
-    ));
+    area_under(&painter, &line, band.bottom(), color, 0.22);
+    let end = line[line.len() - 1];
+    painter.add(eframe::egui::Shape::line(line, Stroke::new(1.75, color)));
+    if progress >= 1.0 {
+        ui.painter()
+            .circle_filled(end, 6.0, color.gamma_multiply(0.22));
+        ui.painter().circle_filled(end, 3.0, color);
+    }
 }
 
 #[cfg(test)]
@@ -157,10 +198,21 @@ mod tests {
     #[test]
     fn a_short_card_has_no_sparkline() {
         let short = Rect::from_min_size(Pos2::ZERO, Vec2::new(300.0, 120.0));
-        assert!(sparkline_band(short).is_none());
+        assert!(layout(short).spark.is_none());
         let tall = Rect::from_min_size(Pos2::ZERO, Vec2::new(300.0, 300.0));
-        let band = sparkline_band(tall).unwrap();
+        let layout = layout(tall);
+        let band = layout.spark.unwrap();
         assert!(band.top() > tall.center().y);
         assert!(band.bottom() < tall.bottom());
+        assert!(layout.text.bottom() <= band.top());
+    }
+
+    #[test]
+    fn a_wide_short_card_puts_the_history_beside_the_number() {
+        let wide = Rect::from_min_size(Pos2::ZERO, Vec2::new(560.0, 200.0));
+        let layout = layout(wide);
+        let band = layout.spark.unwrap();
+        assert!(band.left() > layout.text.right());
+        assert!(wide.contains_rect(band) && wide.contains_rect(layout.text));
     }
 }

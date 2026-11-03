@@ -157,15 +157,19 @@ pub(super) fn paint(
     let plot = plot_rect(area, label_width);
     let painter = ui.painter_at(area);
 
-    // Grid and value labels, bottom to top.
+    // Grid and value labels, bottom to top. A label the badge of today's value would sit on is
+    // left out: the badge says it better.
+    let last_y = points.last().map_or(plot.bottom(), |point| {
+        plot.bottom() - plot.height() * ((point.value - minimum) / spread) as f32
+    });
     for (tick, label) in labels.iter().enumerate() {
         let fraction = tick as f32 / (ticks - 1) as f32;
         let y = plot.bottom() - plot.height() * fraction;
         painter.line_segment(
             [Pos2::new(plot.left(), y), Pos2::new(plot.right(), y)],
-            Stroke::new(1.0, theme::grid()),
+            Stroke::new(1.0, theme::grid().gamma_multiply(0.7)),
         );
-        if !privacy {
+        if !privacy && (y - last_y).abs() >= 12.0 {
             axis_text(
                 ui,
                 Pos2::new(plot.right() + 6.0, y),
@@ -220,6 +224,7 @@ pub(super) fn paint(
         theme::DOWN
     };
     if progress >= 1.0 {
+        painter.circle_filled(positions[last], 7.0, live.gamma_multiply(0.22));
         painter.circle_filled(positions[last], 3.5, live);
         if !privacy {
             dashed_h(

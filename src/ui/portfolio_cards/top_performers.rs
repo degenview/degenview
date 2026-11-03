@@ -157,7 +157,8 @@ pub(super) fn paint(
     let (zero, bars) = bars(&changes);
 
     let wide = area.width() >= 330.0;
-    let bar_left = area.left() + 12.0 + ICON_SIZE + 8.0 + TICKER_COLUMN;
+    let ticker_column = if wide { TICKER_COLUMN } else { 58.0 };
+    let bar_left = area.left() + 12.0 + ICON_SIZE + 8.0 + ticker_column;
     let bar_right = area.right() - 12.0 - RIGHT_COLUMN - 10.0;
     let zone = Rect::from_min_max(
         Pos2::new(bar_left, area.top()),
@@ -211,7 +212,7 @@ pub(super) fn paint(
             12.5,
             kit::SEMIBOLD,
             theme::text_primary(),
-            TICKER_COLUMN,
+            ticker_column,
         );
         let text_left = area.left() + 12.0 + ICON_SIZE + 8.0;
         let name = holding.map(|holding| {
@@ -234,7 +235,7 @@ pub(super) fn paint(
                     10.0,
                     kit::REGULAR,
                     theme::text_secondary(),
-                    TICKER_COLUMN,
+                    ticker_column,
                 )
             });
         let block = ticker.size().y + detail.as_ref().map_or(0.0, |d| d.size().y);
@@ -258,7 +259,7 @@ pub(super) fn paint(
                 Pos2::new(zone.left(), row.center().y - 4.0),
                 Vec2::new(zone.width(), 8.0),
             );
-            painter.rect_filled(track, 4.0, theme::ink(7));
+            painter.rect_filled(track, 4.0, theme::ink(9));
             let fill = Rect::from_min_size(
                 Pos2::new(zone.left() + zone.width() * bar.start, track.top()),
                 Vec2::new((zone.width() * bar.length).max(2.0), 8.0),

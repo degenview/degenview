@@ -1,8 +1,5 @@
 # Chart navigation
 
-How the chart is panned, zoomed and scaled. The specification this implements is
-`chart-dragging.md`; this file records what was built, what is verified, and what is not.
-
 ## One viewport
 
 `model::viewport::ChartViewport` is the only description of what part of a chart is on screen. It
