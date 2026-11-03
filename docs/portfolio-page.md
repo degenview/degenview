@@ -73,6 +73,22 @@ it shows the same Recent card (`add_chart_sheet::recents_card`) over the same st
 (`addTicker.recentMarkets`): a pick in either sheet appears in both. Crypto and stock markets are
 kept; prediction markets and CoinMarketCap indices are not, so the Predictions section has none.
 
+## Import sheets
+
+The CoinMarketCap import sheet (`portfolio_cmc_import`) opens with the same header art as Add Chart
+(its CoinMarketCap scene) and the app's blue (`SYSTEM_ACCENT`), not the old pink `ACCENT`. Under
+the header a band says how many tickers have a market (`tally`) with one bar split by state:
+matched, searching, to match, skipped. Each ticker is a fixed 60 pt row: its initials (or the
+market's icon once matched), the transactions it carries, an arrow, then the market with the
+exchange's logo and an Auto-matched pill, or Searching, Skipped, Not matched; the actions follow
+the state (Match is the filled button only for a ticker with no market). Fee exchange rates are
+their own card with a progress bar, a loaded line, or one row per failure with Skip Item. The
+footer counts the transactions that will import. The Import Preview sheet, the next step, shares
+the blue header and the footer buttons.
+
+The header menus (portfolio, currency, Import or Export) take the labels they will show and open
+exactly as wide as the longest, never narrower than their button.
+
 ## Empty states
 
 `portfolio_empty` draws them with the `Art` helpers the Script Manager's Logs, Problems and Profile

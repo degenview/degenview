@@ -9,14 +9,19 @@
 
 use crate::model::portfolio::{PortfolioAsset, PortfolioCurrency, PortfolioTransaction};
 use crate::model::portfolio_csv::{CmcPreview, CmcRow, CsvPreview, Mint};
-use crate::ui::icons::Icon;
+use crate::ui::icons::{self, Icon};
+use crate::ui::portfolio_grid;
 use crate::ui::portfolio_import_preview::{plural, warning_title};
+use crate::ui::portfolio_table::paint_asset_icon;
 use crate::ui::sheet;
 use crate::ui::theme;
-use eframe::egui::{self, Align2, Color32, Id, RichText, Sense, Vec2};
+use crate::ui::{add_chart_art, add_chart_sheet, kit, source_logo};
+use eframe::egui::{
+    self, Color32, CursorIcon, Id, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2,
+};
 use std::collections::{HashMap, HashSet};
 
-pub const SIZE: Vec2 = Vec2::new(700.0, 640.0);
+pub const SIZE: Vec2 = Vec2::new(720.0, 680.0);
 
 #[derive(Default)]
 pub struct CmcImportState {
@@ -280,7 +285,84 @@ pub fn token_status(state: &CmcImportState, symbol: &str) -> TokenStatus {
     }
 }
 
+// MARK: Tally
+
+/// How the file's tickers stand: the one summary the progress band draws.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct Tally {
+    pub total: usize,
+    /// Matched to a market.
+    pub matched: usize,
+    /// Left out on purpose.
+    pub skipped: usize,
+    /// Still being searched for.
+    pub resolving: usize,
+    /// Neither matched nor skipped: left out unless the user matches them.
+    pub unmatched: usize,
+}
+
+pub fn tally(state: &CmcImportState, preview: &CmcPreview) -> Tally {
+    let mut tally = Tally::default();
+    for symbol in preview.symbols() {
+        tally.total += 1;
+        match token_status(state, &symbol) {
+            TokenStatus::Resolving => tally.resolving += 1,
+            TokenStatus::Mapped { .. } => tally.matched += 1,
+            TokenStatus::Skipped => tally.skipped += 1,
+            TokenStatus::NotMatched => tally.unmatched += 1,
+        }
+    }
+    tally
+}
+
+/// The big figure of the progress band: how many of the tickers have a market.
+pub fn matched_title(tally: &Tally) -> String {
+    format!("{} of {}", tally.matched, tally.total)
+}
+
+/// The legend under the progress bar; only the groups that have tickers.
+pub fn tally_legend(tally: &Tally) -> Vec<(TallyKind, String)> {
+    [
+        (TallyKind::Matched, tally.matched, "matched"),
+        (TallyKind::Searching, tally.resolving, "searching"),
+        (TallyKind::Unmatched, tally.unmatched, "to match"),
+        (TallyKind::Skipped, tally.skipped, "skipped"),
+    ]
+    .into_iter()
+    .filter(|(_, count, _)| *count > 0)
+    .map(|(kind, count, word)| (kind, format!("{count} {word}")))
+    .collect()
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TallyKind {
+    Matched,
+    Searching,
+    Unmatched,
+    Skipped,
+}
+
+impl TallyKind {
+    fn color(self) -> Color32 {
+        match self {
+            Self::Matched => theme::UP,
+            Self::Searching => theme::SYSTEM_ACCENT,
+            Self::Unmatched => theme::REPLAY,
+            Self::Skipped => theme::text_tertiary(),
+        }
+    }
+}
+
 // MARK: View
+
+const HEADER_PADDING: f32 = 24.0;
+/// Room under the scrolling body for the footer: its hairline, padding and 28 pt buttons.
+const FOOTER_HEIGHT: f32 = 58.0;
+const BAND_HEIGHT: f32 = 76.0;
+const ROW_HEIGHT: f32 = 60.0;
+const FEE_ROW_HEIGHT: f32 = 46.0;
+/// Where a ticker row's market starts, from its left edge.
+const TARGET_LEFT: f32 = 196.0;
 
 pub fn show(
     ctx: &egui::Context,
@@ -291,29 +373,54 @@ pub fn show(
     let preview = input.preview;
     sheet::show(ctx, Id::new("portfolio-cmc-import"), SIZE.x, |ui| {
         ui.set_height(SIZE.y);
-        ui.add_space(24.0);
+        let top = ui.cursor().top();
+        ui.add_space(HEADER_PADDING);
         sheet::inset(ui, |ui| {
-            sheet::header(
+            add_chart_sheet::header(
                 ui,
-                Icon::Download,
+                add_chart_art::Scene::CoinMarketCap,
                 "Import from CoinMarketCap",
                 &subtitle(preview),
-                theme::ACCENT,
-            )
+            );
+            ui.add_space(16.0);
+            progress_band(ui, &tally(state, preview));
         });
         ui.add_space(16.0);
+        // `set_height` made the sheet's own rect SIZE.y tall, so measure from the cursor.
+        let height = SIZE.y - (ui.cursor().top() - top) - FOOTER_HEIGHT;
         egui::ScrollArea::vertical()
-            .max_height(SIZE.y - 170.0)
+            .max_height(height)
             .auto_shrink([false, false])
             .show(ui, |ui| {
-                sheet::inset(ui, |ui| body(ui, state, input, &mut actions));
+                sheet::inset(ui, |ui| {
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    body(ui, state, input, &mut actions);
+                    ui.add_space(12.0);
+                });
             });
-        ui.separator();
-        sheet::inset(ui, |ui| {
-            ui.add_space(12.0);
-            footer(ui, state, preview, &mut actions);
-            ui.add_space(10.0);
-        });
+        sheet::footer_split(
+            ui,
+            |ui| summary(ui, state, preview),
+            |ui| {
+                let enabled = state.can_continue(preview);
+                if kit::footer_button(
+                    ui,
+                    "Continue to Preview",
+                    kit::FooterButton::Prominent(theme::SYSTEM_ACCENT),
+                    enabled,
+                    150.0,
+                )
+                .clicked()
+                {
+                    actions.push(CmcImportAction::Continue);
+                }
+                if kit::footer_button(ui, "Cancel", kit::FooterButton::Secondary, true, 0.0)
+                    .clicked()
+                {
+                    actions.push(CmcImportAction::Cancel);
+                }
+            },
+        );
     });
     if actions.is_empty() && ctx.input(|input| input.key_pressed(egui::Key::Escape)) {
         actions.push(CmcImportAction::Cancel);
@@ -321,23 +428,116 @@ pub fn show(
     actions
 }
 
-fn notice(ui: &mut egui::Ui, tint: Color32, title: &str, lines: &[String]) {
-    egui::Frame::new()
-        .fill(tint.gamma_multiply(0.12))
-        .corner_radius(10.0)
-        .inner_margin(egui::Margin::same(10))
-        .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.label(RichText::new(title).strong().color(tint));
-            for line in lines {
-                ui.label(RichText::new(format!("• {line}")).small());
-            }
-        });
-    ui.add_space(8.0);
+/// A card's fill and outline, shared by the band, the ticker rows and the fee card.
+fn card_background(ui: &Ui, rect: Rect, outline: Option<Color32>) {
+    ui.painter().rect_filled(rect, 12.0, theme::quaternary(0.4));
+    ui.painter().rect_stroke(
+        rect,
+        12.0,
+        Stroke::new(
+            1.0,
+            outline.unwrap_or_else(|| theme::separator().gamma_multiply(0.6)),
+        ),
+        StrokeKind::Inside,
+    );
+}
+
+/// How many tickers have a market, as a figure and one bar split by state, with its legend.
+fn progress_band(ui: &mut Ui, tally: &Tally) {
+    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), BAND_HEIGHT), Sense::hover());
+    card_background(ui, rect, None);
+    let inner = rect.shrink2(vec2(18.0, 14.0));
+    let primary = theme::text_primary();
+    let secondary = theme::text_secondary();
+
+    let figure = kit::galley(
+        ui,
+        &matched_title(tally),
+        22.0,
+        kit::SEMIBOLD,
+        primary,
+        140.0,
+    );
+    let caption = kit::galley(
+        ui,
+        if tally.total == 1 {
+            "ticker matched"
+        } else {
+            "tickers matched"
+        },
+        kit::size::CAPTION + 0.5,
+        kit::REGULAR,
+        secondary,
+        140.0,
+    );
+    let block = figure.size().y + 1.0 + caption.size().y;
+    let top = rect.center().y - block / 2.0;
+    let figure_width = figure.size().x.max(caption.size().x);
+    ui.painter().galley(
+        pos2(inner.left(), top),
+        figure.clone(),
+        Color32::PLACEHOLDER,
+    );
+    ui.painter().galley(
+        pos2(inner.left(), top + figure.size().y + 1.0),
+        caption,
+        Color32::PLACEHOLDER,
+    );
+
+    // The bar and its legend, to the right of a hairline.
+    let left = inner.left() + figure_width.max(96.0) + 22.0;
+    ui.painter().vline(
+        left - 12.0,
+        rect.top() + 16.0..=rect.bottom() - 16.0,
+        Stroke::new(1.0, theme::separator().gamma_multiply(0.7)),
+    );
+    let bar = Rect::from_min_size(
+        pos2(left, inner.top() + 8.0),
+        vec2(inner.right() - left, 8.0),
+    );
+    ui.painter().rect_filled(bar, 4.0, theme::quaternary(1.0));
+    if tally.total > 0 {
+        let mut x = bar.left();
+        let segments = [
+            (TallyKind::Matched, tally.matched),
+            (TallyKind::Searching, tally.resolving),
+            (TallyKind::Unmatched, tally.unmatched),
+            (TallyKind::Skipped, tally.skipped),
+        ];
+        let visible: Vec<_> = segments.iter().filter(|(_, count)| *count > 0).collect();
+        let gap = 2.0;
+        let usable = bar.width() - gap * visible.len().saturating_sub(1) as f32;
+        for (kind, count) in visible {
+            let width = usable * *count as f32 / tally.total as f32;
+            let piece = Rect::from_min_size(pos2(x, bar.top()), vec2(width, bar.height()));
+            ui.painter().rect_filled(piece, 4.0, kind.color());
+            x += width + gap;
+        }
+    }
+    let mut x = left;
+    let legend_y = bar.bottom() + 14.0;
+    for (kind, label) in tally_legend(tally) {
+        ui.painter()
+            .circle_filled(pos2(x + 4.0, legend_y), 3.5, kind.color());
+        let text = kit::galley(
+            ui,
+            &label,
+            kit::size::CAPTION + 0.5,
+            kit::REGULAR,
+            secondary,
+            200.0,
+        );
+        ui.painter().galley(
+            pos2(x + 14.0, legend_y - text.size().y / 2.0),
+            text.clone(),
+            Color32::PLACEHOLDER,
+        );
+        x += 14.0 + text.size().x + 18.0;
+    }
 }
 
 fn body(
-    ui: &mut egui::Ui,
+    ui: &mut Ui,
     state: &mut CmcImportState,
     input: &CmcImportInput,
     actions: &mut Vec<CmcImportAction>,
@@ -346,62 +546,118 @@ fn body(
     if !preview.errors.is_empty() {
         notice(
             ui,
+            Icon::TriangleFill,
             theme::DOWN,
-            &format!("✕ {}", csv_error_title(preview.errors.len())),
+            &csv_error_title(preview.errors.len()),
             &preview.errors,
         );
+        ui.add_space(16.0);
     }
     tokens_section(ui, state, input, actions);
     if !state.foreign_fee_rows(preview).is_empty() {
-        ui.add_space(14.0);
+        ui.add_space(20.0);
         fee_section(ui, state, preview);
     }
     if !state.skipped_row_ids.is_empty() {
-        ui.add_space(8.0);
-        if ui
-            .link(RichText::new(restore_title(state.skipped_row_ids.len())).small())
-            .clicked()
-        {
+        ui.add_space(14.0);
+        if portfolio_grid::link(ui, &restore_title(state.skipped_row_ids.len())) {
             state.skipped_row_ids.clear();
         }
     }
     if !preview.warnings.is_empty() {
-        ui.add_space(10.0);
+        ui.add_space(16.0);
         notice(
             ui,
+            Icon::TriangleFill,
             theme::REPLAY,
-            &format!("⚠ {}", warning_title(preview.warnings.len())),
+            &warning_title(preview.warnings.len()),
             &preview.warnings,
         );
     }
 }
 
+/// A tinted callout listing `lines`, one bullet each.
+fn notice(ui: &mut Ui, icon: Icon, tint: Color32, title: &str, lines: &[String]) {
+    let detail = lines
+        .iter()
+        .map(|line| format!("\u{2022} {line}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    kit::notice_card(ui, icon, tint, title, Some(&detail), None);
+}
+
+/// A section's title with an optional status at its trailing edge, and a line of explanation.
+fn section_heading(ui: &mut Ui, title: &str, detail: &str, busy: Option<&str>) {
+    let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), 20.0), Sense::hover());
+    let heading = kit::galley(
+        ui,
+        title,
+        kit::size::HEADLINE + 2.0,
+        kit::SEMIBOLD,
+        theme::text_primary(),
+        row.width(),
+    );
+    ui.painter().galley(
+        pos2(row.left(), row.center().y - heading.size().y / 2.0),
+        heading,
+        Color32::PLACEHOLDER,
+    );
+    if let Some(busy) = busy {
+        let label = kit::galley(
+            ui,
+            busy,
+            kit::size::CAPTION + 0.5,
+            kit::REGULAR,
+            theme::text_secondary(),
+            300.0,
+        );
+        let left = row.right() - label.size().x;
+        ui.painter().galley(
+            pos2(left, row.center().y - label.size().y / 2.0),
+            label,
+            Color32::PLACEHOLDER,
+        );
+        egui::Spinner::new().size(13.0).paint_at(
+            ui,
+            Rect::from_center_size(pos2(left - 14.0, row.center().y), Vec2::splat(13.0)),
+        );
+    }
+    ui.add_space(3.0);
+    ui.add(
+        egui::Label::new(kit::text(
+            detail,
+            kit::size::SUBHEADLINE,
+            kit::REGULAR,
+            theme::text_secondary(),
+        ))
+        .wrap(),
+    );
+    ui.add_space(12.0);
+}
+
 fn tokens_section(
-    ui: &mut egui::Ui,
+    ui: &mut Ui,
     state: &mut CmcImportState,
     input: &CmcImportInput,
     actions: &mut Vec<CmcImportAction>,
 ) {
-    ui.label(RichText::new("Match tokens to markets").strong().size(15.0));
-    ui.label(
-        RichText::new(
-            "Only transactions for matched tickers are imported. Skip a ticker to leave all of \
-             its transactions out.",
-        )
-        .small()
-        .weak(),
+    let searching = (!state.did_auto_map).then(|| search_note(input.portfolio_currency));
+    section_heading(
+        ui,
+        "Match tokens to markets",
+        "Only transactions for matched tickers are imported. Skip a ticker to leave all of its \
+         transactions out.",
+        searching.is_some().then_some("Searching exchanges\u{2026}"),
     );
-    if !state.did_auto_map {
-        ui.horizontal(|ui| {
-            ui.spinner();
-            ui.label(
-                RichText::new(search_note(input.portfolio_currency))
-                    .small()
-                    .weak(),
-            );
-        });
+    if let Some(note) = searching {
+        ui.add(egui::Label::new(kit::text(
+            note,
+            kit::size::CAPTION + 0.5,
+            kit::REGULAR,
+            theme::text_tertiary(),
+        )));
+        ui.add_space(10.0);
     }
-    ui.add_space(6.0);
     for symbol in input.preview.symbols() {
         let count = input
             .preview
@@ -410,126 +666,352 @@ fn tokens_section(
             .filter(|row| row.token == symbol)
             .count();
         token_row(ui, state, &symbol, count, actions);
-        ui.add_space(4.0);
+        ui.add_space(8.0);
     }
 }
 
+#[derive(Clone, Copy, PartialEq)]
+enum ButtonStyle {
+    /// The step that moves the row forward.
+    Prominent,
+    Bordered,
+    /// A quiet text button.
+    Quiet,
+}
+
+/// A 26 pt button ending at `right`, centred on `middle`; returns its left edge and whether it
+/// was clicked. Painted and hit-tested by hand so a row stays one fixed-height block.
+fn row_button(
+    ui: &Ui,
+    id: Id,
+    right: f32,
+    middle: f32,
+    label: &str,
+    style: ButtonStyle,
+) -> (f32, bool) {
+    let color = match style {
+        ButtonStyle::Prominent => Color32::WHITE,
+        ButtonStyle::Bordered => theme::text_primary(),
+        ButtonStyle::Quiet => theme::text_secondary(),
+    };
+    let text = kit::galley(
+        ui,
+        label,
+        kit::size::SUBHEADLINE + 1.0,
+        kit::MEDIUM,
+        color,
+        200.0,
+    );
+    let rect = Rect::from_min_max(
+        pos2(right - text.size().x - 24.0, middle - 13.0),
+        pos2(right, middle + 13.0),
+    );
+    let response = ui
+        .interact(rect, id, Sense::click())
+        .on_hover_cursor(CursorIcon::PointingHand);
+    let hovered = response.hovered();
+    match style {
+        ButtonStyle::Prominent => {
+            let fill = theme::SYSTEM_ACCENT;
+            ui.painter().rect_filled(
+                rect,
+                7.0,
+                if hovered {
+                    fill.gamma_multiply(0.85)
+                } else {
+                    fill
+                },
+            );
+        }
+        ButtonStyle::Bordered => {
+            ui.painter().rect_filled(
+                rect,
+                7.0,
+                theme::quaternary(if hovered { 0.9 } else { 0.6 }),
+            );
+            ui.painter().rect_stroke(
+                rect,
+                7.0,
+                Stroke::new(1.0, theme::separator()),
+                StrokeKind::Inside,
+            );
+        }
+        ButtonStyle::Quiet => {
+            if hovered {
+                ui.painter().rect_filled(rect, 7.0, theme::quaternary(0.6));
+            }
+        }
+    }
+    let color = if style == ButtonStyle::Quiet && hovered {
+        theme::text_primary()
+    } else {
+        color
+    };
+    ui.painter().galley_with_override_text_color(
+        pos2(
+            rect.center().x - text.size().x / 2.0,
+            rect.center().y - text.size().y / 2.0,
+        ),
+        text,
+        color,
+    );
+    (rect.left(), response.clicked())
+}
+
+/// A small rounded label at `left`, centred on `middle`; returns its right edge.
+fn pill(ui: &Ui, left: f32, middle: f32, label: &str, tint: Color32) -> f32 {
+    let text = kit::galley(ui, label, kit::size::CAPTION, kit::SEMIBOLD, tint, 200.0);
+    let rect = Rect::from_min_size(pos2(left, middle - 9.0), vec2(text.size().x + 14.0, 18.0));
+    ui.painter()
+        .rect_filled(rect, 9.0, tint.gamma_multiply(0.14));
+    ui.painter().galley(
+        pos2(rect.left() + 7.0, rect.center().y - text.size().y / 2.0),
+        text,
+        Color32::PLACEHOLDER,
+    );
+    rect.right()
+}
+
+/// The ticker's initials on a neutral disc, for a ticker with no market yet.
+fn placeholder_icon(ui: &Ui, rect: Rect, symbol: &str) {
+    ui.painter()
+        .circle_filled(rect.center(), rect.width() / 2.0, theme::quaternary(1.0));
+    let initials: String = symbol.chars().take(2).collect();
+    let text = kit::galley(
+        ui,
+        &initials.to_uppercase(),
+        13.0,
+        kit::SEMIBOLD,
+        theme::text_secondary(),
+        rect.width(),
+    );
+    ui.painter().galley(
+        rect.center() - text.size() / 2.0,
+        text,
+        Color32::PLACEHOLDER,
+    );
+}
+
 fn token_row(
-    ui: &mut egui::Ui,
+    ui: &mut Ui,
     state: &mut CmcImportState,
     symbol: &str,
     count: usize,
     actions: &mut Vec<CmcImportAction>,
 ) {
     let status = token_status(state, symbol);
-    egui::Frame::new()
-        .fill(theme::ink(9))
-        .stroke(egui::Stroke::new(1.0, theme::border().gamma_multiply(0.5)))
-        .corner_radius(10.0)
-        .inner_margin(egui::Margin::symmetric(12, 8))
-        .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.horizontal(|ui| {
-                monogram(ui, symbol);
-                ui.vertical(|ui| {
-                    ui.set_width(120.0);
-                    ui.label(RichText::new(symbol).strong());
-                    ui.label(
-                        RichText::new(plural(count, "transaction", "transactions"))
-                            .small()
-                            .weak(),
-                    );
-                });
-                ui.label(RichText::new("→").weak());
-                ui.vertical(|ui| {
-                    ui.set_width(240.0);
-                    status_view(ui, &status);
-                });
-                if status != TokenStatus::Resolving {
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let label = if state.mappings.contains_key(symbol) {
-                            "Change…"
-                        } else {
-                            "Match…"
-                        };
-                        if ui.small_button(label).clicked() {
-                            state.skipped_symbols.remove(symbol);
-                            state.auto_mapped.remove(symbol);
-                            actions.push(CmcImportAction::Match(symbol.to_owned()));
-                        }
-                        let unmapped = !state.mappings.contains_key(symbol);
-                        let skipped = state.skipped_symbols.contains(symbol);
-                        if unmapped && !skipped && ui.small_button("Skip").clicked() {
-                            state.skip(symbol);
-                        }
-                        if (!unmapped || skipped) && ui.small_button("Reset").clicked() {
-                            state.reset(symbol);
-                        }
-                    });
-                }
-            });
-        });
-}
+    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), ROW_HEIGHT), Sense::hover());
+    let outline = (status == TokenStatus::NotMatched).then(|| theme::REPLAY.gamma_multiply(0.45));
+    card_background(ui, rect, outline);
+    let middle = rect.center().y;
+    let primary = theme::text_primary();
+    let secondary = theme::text_secondary();
 
-fn monogram(ui: &mut egui::Ui, symbol: &str) {
-    let (rect, _) = ui.allocate_exact_size(Vec2::splat(32.0), Sense::hover());
-    ui.painter()
-        .circle_filled(rect.center(), 16.0, theme::ACCENT.gamma_multiply(0.2));
-    ui.painter().text(
-        rect.center(),
-        Align2::CENTER_CENTER,
-        symbol
-            .chars()
-            .next()
-            .map_or(String::new(), |c| c.to_string()),
-        egui::FontId::proportional(14.0),
-        theme::ACCENT,
+    // The ticker as the file spells it, with how many transactions it carries.
+    let icon = Rect::from_center_size(pos2(rect.left() + 32.0, middle), Vec2::splat(36.0));
+    match state.mappings.get(symbol) {
+        Some(asset) => paint_asset_icon(ui, icon, asset),
+        None => placeholder_icon(ui, icon, symbol),
+    }
+    let name = kit::galley(
+        ui,
+        symbol,
+        kit::size::BODY + 1.0,
+        kit::SEMIBOLD,
+        primary,
+        100.0,
     );
-}
+    let caption = kit::galley(
+        ui,
+        &plural(count, "transaction", "transactions"),
+        kit::size::CAPTION + 0.5,
+        kit::REGULAR,
+        secondary,
+        120.0,
+    );
+    let stack = name.size().y + 2.0 + caption.size().y;
+    let top = middle - stack / 2.0;
+    let text_left = icon.right() + 12.0;
+    ui.painter()
+        .galley(pos2(text_left, top), name.clone(), Color32::PLACEHOLDER);
+    ui.painter().galley(
+        pos2(text_left, top + name.size().y + 2.0),
+        caption,
+        Color32::PLACEHOLDER,
+    );
+    icons::paint(
+        ui.painter(),
+        Rect::from_center_size(
+            pos2(rect.left() + TARGET_LEFT - 22.0, middle),
+            Vec2::splat(11.0),
+        ),
+        Icon::ChevronRight,
+        theme::text_tertiary(),
+    );
 
-fn small_pill(ui: &mut egui::Ui, text: &str, tint: Color32) {
-    egui::Frame::new()
-        .fill(tint.gamma_multiply(0.14))
-        .corner_radius(999.0)
-        .inner_margin(egui::Margin::symmetric(7, 1))
-        .show(ui, |ui| {
-            ui.label(RichText::new(text).size(10.5).strong().color(tint));
-        });
-}
+    // The actions, from the trailing edge in.
+    let mut right = rect.right() - 12.0;
+    let button = |ui: &Ui, name: &str, right: f32, label: &str, style| {
+        row_button(
+            ui,
+            Id::new(("cmc-row", symbol, name)),
+            right,
+            middle,
+            label,
+            style,
+        )
+    };
+    let mut clicked_match = false;
+    let mut skip = false;
+    let mut reset = false;
+    match &status {
+        TokenStatus::Resolving => {}
+        TokenStatus::Mapped { .. } => {
+            let (left, clicked) =
+                button(ui, "change", right, "Change\u{2026}", ButtonStyle::Bordered);
+            clicked_match = clicked;
+            let (left, clicked) = button(ui, "reset", left - 6.0, "Reset", ButtonStyle::Quiet);
+            reset = clicked;
+            right = left;
+        }
+        TokenStatus::Skipped => {
+            let (left, clicked) =
+                button(ui, "match", right, "Match\u{2026}", ButtonStyle::Bordered);
+            clicked_match = clicked;
+            let (left, clicked) = button(ui, "reset", left - 6.0, "Reset", ButtonStyle::Quiet);
+            reset = clicked;
+            right = left;
+        }
+        TokenStatus::NotMatched => {
+            let (left, clicked) =
+                button(ui, "match", right, "Match\u{2026}", ButtonStyle::Prominent);
+            clicked_match = clicked;
+            let (left, clicked) = button(ui, "skip", left - 6.0, "Skip", ButtonStyle::Quiet);
+            skip = clicked;
+            right = left;
+        }
+    }
 
-fn status_view(ui: &mut egui::Ui, status: &TokenStatus) {
-    match status {
+    // What the ticker maps to, between the arrow and the actions.
+    let target = rect.left() + TARGET_LEFT;
+    let room = (right - 14.0 - target).max(60.0);
+    match &status {
         TokenStatus::Resolving => {
-            ui.horizontal(|ui| {
-                ui.spinner();
-                ui.label(RichText::new("Searching exchanges…").weak());
-            });
+            egui::Spinner::new().size(14.0).paint_at(
+                ui,
+                Rect::from_center_size(pos2(target + 7.0, middle), Vec2::splat(14.0)),
+            );
+            let label = kit::galley(
+                ui,
+                "Searching exchanges\u{2026}",
+                kit::size::BODY,
+                kit::REGULAR,
+                secondary,
+                room - 24.0,
+            );
+            ui.painter().galley(
+                pos2(target + 24.0, middle - label.size().y / 2.0),
+                label,
+                Color32::PLACEHOLDER,
+            );
         }
         TokenStatus::Mapped {
             ticker,
             detail,
             auto,
         } => {
-            ui.horizontal(|ui| {
-                ui.label(RichText::new(ticker).strong());
-                if *auto {
-                    small_pill(ui, "Auto-matched", Color32::from_rgb(10, 132, 255));
-                }
-            });
-            ui.add(egui::Label::new(RichText::new(detail).small().weak()).truncate());
+            let logo = Rect::from_center_size(pos2(target + 11.0, middle), Vec2::splat(22.0));
+            if let Some(asset) = state.mappings.get(symbol) {
+                source_logo::paint(ui, asset.source, logo);
+            }
+            let ticker = kit::galley(
+                ui,
+                ticker,
+                kit::size::BODY,
+                kit::MEDIUM,
+                primary,
+                room - 34.0,
+            );
+            let line = kit::galley(
+                ui,
+                detail,
+                kit::size::CAPTION + 0.5,
+                kit::REGULAR,
+                secondary,
+                room - 34.0,
+            );
+            let stack = ticker.size().y + 2.0 + line.size().y;
+            let top = middle - stack / 2.0;
+            let ticker_right = target + 34.0 + ticker.size().x;
+            ui.painter().galley(
+                pos2(target + 34.0, top),
+                ticker.clone(),
+                Color32::PLACEHOLDER,
+            );
+            ui.painter().galley(
+                pos2(target + 34.0, top + ticker.size().y + 2.0),
+                line,
+                Color32::PLACEHOLDER,
+            );
+            if *auto {
+                pill(
+                    ui,
+                    ticker_right + 8.0,
+                    top + ticker.size().y / 2.0,
+                    "Auto-matched",
+                    theme::SYSTEM_ACCENT,
+                );
+            }
         }
         TokenStatus::Skipped => {
-            small_pill(ui, "Skipped", Color32::from_gray(150));
-            ui.label(RichText::new("Won't be imported").small().weak());
+            let end = pill(ui, target, middle - 9.0, "Skipped", theme::text_tertiary());
+            let _ = end;
+            let line = kit::galley(
+                ui,
+                "Won\u{2019}t be imported",
+                kit::size::CAPTION + 0.5,
+                kit::REGULAR,
+                secondary,
+                room,
+            );
+            ui.painter().galley(
+                pos2(target, middle + 9.0 - line.size().y / 2.0),
+                line,
+                Color32::PLACEHOLDER,
+            );
         }
         TokenStatus::NotMatched => {
-            small_pill(ui, "Not matched", theme::REPLAY);
-            ui.label(RichText::new("Skipped unless you match it").small().weak());
+            pill(ui, target, middle - 9.0, "Not matched", theme::REPLAY);
+            let line = kit::galley(
+                ui,
+                "Skipped unless you match it",
+                kit::size::CAPTION + 0.5,
+                kit::REGULAR,
+                secondary,
+                room,
+            );
+            ui.painter().galley(
+                pos2(target, middle + 9.0 - line.size().y / 2.0),
+                line,
+                Color32::PLACEHOLDER,
+            );
         }
+    }
+
+    if clicked_match {
+        state.skipped_symbols.remove(symbol);
+        state.auto_mapped.remove(symbol);
+        actions.push(CmcImportAction::Match(symbol.to_owned()));
+    }
+    if skip {
+        state.skip(symbol);
+    }
+    if reset {
+        state.reset(symbol);
     }
 }
 
-fn fee_section(ui: &mut egui::Ui, state: &mut CmcImportState, preview: &CmcPreview) {
+fn fee_section(ui: &mut Ui, state: &mut CmcImportState, preview: &CmcPreview) {
     let rows = state.foreign_fee_rows(preview);
     let failed: Vec<(String, String, String)> = rows
         .iter()
@@ -540,81 +1022,174 @@ fn fee_section(ui: &mut egui::Ui, state: &mut CmcImportState, preview: &CmcPrevi
                 .map(|error| (row.id.clone(), fee_row_title(row), error.clone()))
         })
         .collect();
+    let fees = rows.len();
+    section_heading(
+        ui,
+        "Fee exchange rates",
+        &format!(
+            "{} in a currency other than USD {} a historical rate to be converted.",
+            plural(fees, "fee is", "fees are"),
+            if fees == 1 { "needs" } else { "need" }
+        ),
+        None,
+    );
+    let secondary = theme::text_secondary();
     egui::Frame::new()
-        .fill(theme::ink(9))
-        .stroke(egui::Stroke::new(1.0, theme::border().gamma_multiply(0.5)))
-        .corner_radius(10.0)
-        .inner_margin(egui::Margin::same(14))
+        .fill(theme::quaternary(0.4))
+        .stroke(Stroke::new(1.0, theme::separator().gamma_multiply(0.6)))
+        .corner_radius(12.0)
+        .inner_margin(egui::Margin::symmetric(16, 14))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            ui.label(RichText::new("⇄ Fee exchange rates").strong().size(15.0));
+            ui.spacing_mut().item_spacing.y = 0.0;
             if state.is_resolving_fee_fx {
-                ui.add(
-                    egui::ProgressBar::new(state.fee_fx_progress)
-                        .text(progress_text(state.fee_fx_progress)),
+                let (row, _) =
+                    ui.allocate_exact_size(vec2(ui.available_width(), 18.0), Sense::hover());
+                let label = kit::galley(
+                    ui,
+                    "Fetching historical exchange rates\u{2026}",
+                    kit::size::SUBHEADLINE + 1.0,
+                    kit::REGULAR,
+                    secondary,
+                    row.width() - 60.0,
                 );
-                ui.label(
-                    RichText::new("Fetching historical exchange rates…")
-                        .small()
-                        .weak(),
+                ui.painter().galley(
+                    pos2(row.left(), row.center().y - label.size().y / 2.0),
+                    label,
+                    Color32::PLACEHOLDER,
                 );
+                let percent = kit::galley(
+                    ui,
+                    &progress_text(state.fee_fx_progress),
+                    kit::size::SUBHEADLINE + 1.0,
+                    kit::MEDIUM,
+                    theme::text_primary(),
+                    60.0,
+                );
+                ui.painter().galley(
+                    pos2(
+                        row.right() - percent.size().x,
+                        row.center().y - percent.size().y / 2.0,
+                    ),
+                    percent,
+                    Color32::PLACEHOLDER,
+                );
+                ui.add_space(10.0);
+                let (bar, _) =
+                    ui.allocate_exact_size(vec2(ui.available_width(), 6.0), Sense::hover());
+                ui.painter().rect_filled(bar, 3.0, theme::quaternary(1.0));
+                let mut fill = bar;
+                fill.set_width((bar.width() * state.fee_fx_progress.clamp(0.0, 1.0)).max(6.0));
+                ui.painter().rect_filled(fill, 3.0, theme::SYSTEM_ACCENT);
             } else if failed.is_empty() {
-                ui.label(
-                    RichText::new("✓ Historical exchange rates loaded")
-                        .small()
-                        .color(theme::UP),
+                let (row, _) =
+                    ui.allocate_exact_size(vec2(ui.available_width(), 18.0), Sense::hover());
+                icons::paint(
+                    ui.painter(),
+                    Rect::from_center_size(
+                        pos2(row.left() + 7.0, row.center().y),
+                        Vec2::splat(13.0),
+                    ),
+                    Icon::Check,
+                    theme::UP,
+                );
+                let label = kit::galley(
+                    ui,
+                    "Historical exchange rates loaded",
+                    kit::size::SUBHEADLINE + 1.0,
+                    kit::MEDIUM,
+                    theme::UP,
+                    row.width() - 24.0,
+                );
+                ui.painter().galley(
+                    pos2(row.left() + 22.0, row.center().y - label.size().y / 2.0),
+                    label,
+                    Color32::PLACEHOLDER,
                 );
             }
-            for (id, title, error) in failed {
-                ui.horizontal(|ui| {
-                    ui.vertical(|ui| {
-                        ui.label(title);
-                        ui.label(RichText::new(error).small().color(theme::DOWN));
-                    });
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.small_button("Skip Item").clicked() {
-                            state.skipped_row_ids.insert(id);
-                        }
-                    });
-                });
+            for (index, (id, title, error)) in failed.into_iter().enumerate() {
+                if index > 0 {
+                    ui.add_space(4.0);
+                }
+                let (row, _) = ui.allocate_exact_size(
+                    vec2(ui.available_width(), FEE_ROW_HEIGHT),
+                    Sense::hover(),
+                );
+                let middle = row.center().y;
+                let (left, clicked) = row_button(
+                    ui,
+                    Id::new(("cmc-fee-skip", &id)),
+                    row.right(),
+                    middle,
+                    "Skip Item",
+                    ButtonStyle::Bordered,
+                );
+                if clicked {
+                    state.skipped_row_ids.insert(id);
+                }
+                let width = left - 12.0 - row.left();
+                let title = kit::galley(
+                    ui,
+                    &title,
+                    kit::size::BODY,
+                    kit::MEDIUM,
+                    theme::text_primary(),
+                    width,
+                );
+                let error = kit::galley(
+                    ui,
+                    &error,
+                    kit::size::CAPTION + 0.5,
+                    kit::REGULAR,
+                    theme::DOWN,
+                    width,
+                );
+                let top = middle - (title.size().y + 2.0 + error.size().y) / 2.0;
+                ui.painter()
+                    .galley(pos2(row.left(), top), title.clone(), Color32::PLACEHOLDER);
+                ui.painter().galley(
+                    pos2(row.left(), top + title.size().y + 2.0),
+                    error,
+                    Color32::PLACEHOLDER,
+                );
             }
         });
 }
 
-fn footer(
-    ui: &mut egui::Ui,
-    state: &CmcImportState,
-    preview: &CmcPreview,
-    actions: &mut Vec<CmcImportAction>,
-) {
-    ui.add_space(6.0);
-    ui.horizontal(|ui| {
-        ui.label(
-            RichText::new(format!("✓ {} to import", state.mapped_rows(preview))).color(theme::UP),
+/// The footer's leading side: how many transactions go in and how many stay out.
+fn summary(ui: &mut Ui, state: &CmcImportState, preview: &CmcPreview) {
+    let dot_label = |ui: &mut Ui, color: Color32, label: String, weight: f32, text: Color32| {
+        let (dot, _) = ui.allocate_exact_size(Vec2::splat(8.0), Sense::hover());
+        ui.painter().circle_filled(dot.center(), 3.5, color);
+        ui.label(kit::text(label, kit::size::BODY, weight, text));
+    };
+    ui.spacing_mut().item_spacing.x = 6.0;
+    let mapped = state.mapped_rows(preview);
+    dot_label(
+        ui,
+        if mapped > 0 {
+            theme::UP
+        } else {
+            theme::text_tertiary()
+        },
+        format!(
+            "{} to import",
+            plural(mapped, "transaction", "transactions")
+        ),
+        kit::MEDIUM,
+        theme::text_primary(),
+    );
+    let skipped = state.skipped_rows(preview);
+    if skipped > 0 {
+        ui.add_space(10.0);
+        dot_label(
+            ui,
+            theme::text_tertiary(),
+            format!("{skipped} skipped"),
+            kit::REGULAR,
+            theme::text_secondary(),
         );
-        let skipped = state.skipped_rows(preview);
-        if skipped > 0 {
-            ui.label(RichText::new(format!("⊖ {skipped} skipped")).weak());
-        }
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let button = egui::Button::new(
-                RichText::new("Continue to Preview")
-                    .strong()
-                    .color(Color32::WHITE),
-            )
-            .fill(theme::ACCENT);
-            if ui
-                .add_enabled(state.can_continue(preview), button)
-                .clicked()
-            {
-                actions.push(CmcImportAction::Continue);
-            }
-            if ui.button("Cancel").clicked() {
-                actions.push(CmcImportAction::Cancel);
-            }
-        });
-    });
-    ui.add_space(4.0);
+    }
 }
 
 #[cfg(test)]
@@ -813,6 +1388,44 @@ mod tests {
                 detail: "DOGE coin · Binance".into(),
                 auto: true
             }
+        );
+    }
+
+    #[test]
+    fn the_tally_counts_each_ticker_once_by_how_it_stands() {
+        let (preview, mut state) = ready();
+        let tally_of = |state: &CmcImportState| tally(state, &preview);
+        assert_eq!(
+            tally_of(&state),
+            Tally {
+                total: 3,
+                unmatched: 3,
+                ..Tally::default()
+            }
+        );
+        state.set_mapping("BTC", asset("BTC", "Binance:BTCUSDT"));
+        state.skip("DOGE");
+        state.resolving.insert("ETH".into());
+        let now = tally_of(&state);
+        assert_eq!(
+            now,
+            Tally {
+                total: 3,
+                matched: 1,
+                skipped: 1,
+                resolving: 1,
+                unmatched: 0
+            }
+        );
+        assert_eq!(matched_title(&now), "1 of 3");
+        assert_eq!(
+            tally_legend(&now),
+            vec![
+                (TallyKind::Matched, "1 matched".to_owned()),
+                (TallyKind::Searching, "1 searching".to_owned()),
+                (TallyKind::Skipped, "1 skipped".to_owned()),
+            ],
+            "empty groups are left out"
         );
     }
 }

@@ -563,3 +563,209 @@ fn portfolio_gallery_asset_picker() {
         });
     }
 }
+
+const CMC_FILE: &str = "Date (UTC),Token,Type,Price,Amount,Total value,Fee,Fee currency,Notes\n\
+    2024-03-05 14:30:00,BTC,Buy,60000,0.5,30000,--,,\n\
+    2024-03-06 10:00:00,ETH,Buy,3000,2,6000,1.5,EUR,\n\
+    2024-03-07 10:00:00,ETH,Sell,3000,1,3000,0,,\n\
+    2024-03-08 10:00:00,DOGE,Buy,0.1,100,10,0,,\n\
+    2024-03-09 10:00:00,SOL,Buy,140,10,1400,0,,\n\
+    2024-03-10 10:00:00,PEPE,Buy,0.00001,1000000,10,0,,\n\
+    2024-03-11 10:00:00,ARB,Buy,1.2,400,480,2,GBP,";
+
+const CMC_SMALL: &str = "Date (UTC),Token,Type,Price,Amount,Total value,Fee,Fee currency,Notes\n\
+    2024-03-05 14:30:00,BTC,Buy,60000,0.5,30000,--,,\n\
+    2024-03-06 10:00:00,ETH,Buy,3000,2,6000,1.5,EUR,\n\
+    2024-03-11 10:00:00,ARB,Buy,1.2,400,480,2,GBP,";
+
+#[test]
+#[ignore = "writes PNGs for a person to look at"]
+fn portfolio_gallery_cmc_import() {
+    use crate::model::portfolio_csv::preview_coinmarketcap;
+    use crate::ui::portfolio_cmc_import::{CmcImportInput, CmcImportState, show};
+    if crate::ui::render_tests::gallery_dir().is_none() {
+        return;
+    }
+    let asset = |ticker: &str, name: &str| {
+        let mut asset = holding(ticker, name, 1.0, 1.0, 0.0).asset;
+        asset.symbol = format!("{ticker}/USDT");
+        asset
+    };
+    let preview = preview_coinmarketcap(CMC_FILE);
+    assert!(preview.is_valid(), "{:?}", preview.errors);
+    // Searching: nothing decided, the host still looking.
+    let small = preview_coinmarketcap(CMC_SMALL);
+    assert!(small.is_valid(), "{:?}", small.errors);
+    let searching = || {
+        let mut state = CmcImportState::default();
+        for symbol in preview.symbols() {
+            state.resolving.insert(symbol);
+        }
+        state
+    };
+    // Mixed: every kind of row, a fee rate that failed and one still loading.
+    let mixed = |preview: &crate::model::portfolio_csv::CmcPreview| {
+        let mut state = CmcImportState {
+            did_auto_map: true,
+            ..CmcImportState::default()
+        };
+        state.auto_mapped("BTC", asset("BTC", "Bitcoin"));
+        state.set_mapping("ETH", asset("ETH", "Ethereum"));
+        state.skip("SOL");
+        state.resolving.insert("DOGE".into());
+        state.is_resolving_fee_fx = false;
+        let ids: Vec<String> = preview.rows.iter().map(|row| row.id.clone()).collect();
+        state.fee_rate_resolved(&ids[1], Err("No rate found for EUR on Mar 6, 2024.".into()));
+        state
+    };
+    // Ready: everything matched, the fee rates loaded.
+    let ready = |preview: &crate::model::portfolio_csv::CmcPreview| {
+        let mut state = CmcImportState {
+            did_auto_map: true,
+            ..CmcImportState::default()
+        };
+        for (ticker, name) in [
+            ("BTC", "Bitcoin"),
+            ("ETH", "Ethereum"),
+            ("DOGE", "Dogecoin"),
+            ("SOL", "Solana"),
+            ("ARB", "Arbitrum"),
+        ] {
+            state.auto_mapped(ticker, asset(ticker, name));
+        }
+        state.skip("PEPE");
+        for row in &preview.rows {
+            if row.fee != 0.0 {
+                state.fee_rate_resolved(&row.id, Ok(1.08));
+            }
+        }
+        state
+    };
+    let loading_fees = |preview: &crate::model::portfolio_csv::CmcPreview| {
+        let mut state = mixed(preview);
+        state.fee_fx_errors.clear();
+        state.is_resolving_fee_fx = true;
+        state.fee_fx_progress = 0.45;
+        state
+    };
+    let mut broken = small.clone();
+    broken.errors = vec![
+        "Line 4: unknown transaction type \"Swap\".".into(),
+        "Line 9: the amount is missing.".into(),
+    ];
+    broken.warnings = vec!["PEPE has no market yet; its 1 transaction will be skipped.".into()];
+    let cases: Vec<(&str, CmcImportState, &_)> = vec![
+        ("portfolio-cmc-searching", searching(), &preview),
+        ("portfolio-cmc-mixed", mixed(&preview), &preview),
+        ("portfolio-cmc-fees-loading", loading_fees(&small), &small),
+        ("portfolio-cmc-fees-failed", mixed(&small), &small),
+        ("portfolio-cmc-ready", ready(&small), &small),
+        ("portfolio-cmc-errors", mixed(&small), &broken),
+    ];
+    for (name, state, file) in cases {
+        let state = std::cell::RefCell::new(state);
+        both_themes(name, vec2(900.0, 780.0), |ui| {
+            show(
+                ui.ctx(),
+                &mut state.borrow_mut(),
+                &CmcImportInput {
+                    preview: file,
+                    portfolio_currency: PortfolioCurrency::Usd,
+                },
+            );
+        });
+    }
+}
+
+#[test]
+#[ignore = "writes PNGs for a person to look at"]
+fn portfolio_gallery_header_menus() {
+    use crate::ui::header_controls::{self, open_for_gallery};
+    if crate::ui::render_tests::gallery_dir().is_none() {
+        return;
+    }
+    let currencies: Vec<String> = [
+        ("USD", "US Dollar"),
+        ("EUR", "Euro"),
+        ("GBP", "British Pound"),
+    ]
+    .iter()
+    .map(|(code, name)| format!("{code}  \u{00B7}  {name}"))
+    .collect();
+    let transfers = [
+        "Import Transactions\u{2026}",
+        "Import from CoinMarketCap\u{2026}",
+        "Export Transactions\u{2026}",
+        "Export Current Holdings\u{2026}",
+        "Export Portfolio History\u{2026}",
+    ];
+    let portfolios = [
+        "All Portfolios",
+        "Main",
+        "Create Portfolio\u{2026}",
+        "Manage Portfolios\u{2026}",
+    ];
+    for (name, which) in [
+        ("portfolio-menu-transfer", 0),
+        ("portfolio-menu-currency", 1),
+        ("portfolio-menu-selector", 2),
+    ] {
+        both_themes(name, vec2(700.0, 330.0), |ui| {
+            ui.add_space(20.0);
+            ui.horizontal(|ui| {
+                ui.add_space(20.0);
+                let ids = [
+                    egui::Id::new("gallery-portfolio"),
+                    egui::Id::new("gallery-currency"),
+                    egui::Id::new("gallery-transfer"),
+                ];
+                open_for_gallery(ui.ctx(), ids[[2, 1, 0][which]]);
+                header_controls::menu_button(
+                    ui,
+                    ids[0],
+                    Icon::Briefcase,
+                    "Main",
+                    &portfolios,
+                    false,
+                    |ui| {
+                        header_controls::choice(ui, "All Portfolios", false);
+                        header_controls::separator(ui);
+                        header_controls::choice(ui, "Main", true);
+                        header_controls::separator(ui);
+                        header_controls::action(ui, Icon::Plus, "Create Portfolio\u{2026}");
+                        header_controls::action(ui, Icon::Sliders, "Manage Portfolios\u{2026}");
+                    },
+                );
+                header_controls::menu_button(
+                    ui,
+                    ids[1],
+                    Icon::Banknote,
+                    "USD",
+                    &currencies,
+                    false,
+                    |ui| {
+                        for (index, label) in currencies.iter().enumerate() {
+                            header_controls::choice(ui, label, index == 0);
+                        }
+                    },
+                );
+                header_controls::menu_button(
+                    ui,
+                    ids[2],
+                    Icon::Exchange,
+                    "Import or Export",
+                    &transfers,
+                    false,
+                    |ui| {
+                        for (index, label) in transfers.iter().enumerate() {
+                            if index == 2 {
+                                header_controls::separator(ui);
+                            }
+                            header_controls::action(ui, Icon::Download, label);
+                        }
+                    },
+                );
+            });
+        });
+    }
+}

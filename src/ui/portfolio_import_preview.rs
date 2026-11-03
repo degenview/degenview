@@ -10,6 +10,7 @@ use crate::model::portfolio_accounting::unique_assets;
 use crate::model::portfolio_csv::CsvPreview;
 use crate::model::portfolio_format::{PortfolioValueFormatter, QuantitySign, Tone};
 use crate::ui::icons::Icon;
+use crate::ui::kit;
 use crate::ui::portfolio_overview::{StatCard, stat_card};
 use crate::ui::portfolio_table::{HEADER_HEIGHT, ROW_HEIGHT, header_cell, numeric_cell, pill};
 use crate::ui::portfolio_transactions::{date_time_text, type_name, type_tint};
@@ -132,7 +133,7 @@ pub fn show(
                 Icon::Download,
                 "Import Preview",
                 subtitle(preview),
-                theme::ACCENT,
+                theme::SYSTEM_ACCENT,
             );
             ui.add_space(18.0);
             summary(ui, preview);
@@ -315,16 +316,27 @@ fn footer(
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let title = import_button_title(preview.transactions.len());
-            let button = egui::Button::new(RichText::new(title).strong().color(Color32::WHITE))
-                .fill(theme::ACCENT);
-            if ui.add_enabled(can_import(preview, state), button).clicked() {
+            if kit::footer_button(
+                ui,
+                &title,
+                kit::FooterButton::Prominent(theme::SYSTEM_ACCENT),
+                can_import(preview, state),
+                150.0,
+            )
+            .clicked()
+            {
                 state.is_importing = true;
                 state.failure = None;
                 *outcome = Some(ImportPreviewOutcome::Import);
             }
-            if ui
-                .add_enabled(!state.is_importing, egui::Button::new("Cancel"))
-                .clicked()
+            if kit::footer_button(
+                ui,
+                "Cancel",
+                kit::FooterButton::Secondary,
+                !state.is_importing,
+                0.0,
+            )
+            .clicked()
             {
                 *outcome = Some(ImportPreviewOutcome::Cancel);
             }

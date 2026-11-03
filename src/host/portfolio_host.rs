@@ -614,7 +614,7 @@ impl PortfolioTab {
                                 egui::Id::new(("portfolio-empty-import", self.id)),
                                 Icon::Download,
                                 "Import Transactions",
-                                250.0,
+                                &IMPORT_SOURCES,
                                 false,
                                 |ui| {
                                     if header_controls::action(
@@ -676,12 +676,26 @@ impl PortfolioTab {
                         .find(|portfolio| portfolio.id == id)
                 })
                 .map_or("All Portfolios", |portfolio| portfolio.name.as_str());
+            let selector_labels: Vec<&str> = [
+                "All Portfolios",
+                "Create Portfolio\u{2026}",
+                "Manage Portfolios\u{2026}",
+            ]
+            .into_iter()
+            .chain(
+                snapshot
+                    .portfolios
+                    .iter()
+                    .filter(|portfolio| !portfolio.is_archived)
+                    .map(|portfolio| portfolio.name.as_str()),
+            )
+            .collect();
             header_controls::menu_button(
                 ui,
                 egui::Id::new(("portfolio-selector", self.id)),
                 Icon::Briefcase,
                 selected_name,
-                230.0,
+                &selector_labels,
                 false,
                 |ui| {
                     if header_controls::choice(
@@ -716,18 +730,22 @@ impl PortfolioTab {
             );
 
             let chosen_before = self.reporting_currency;
+            let currency_labels: Vec<String> = PORTFOLIO_CURRENCIES
+                .iter()
+                .map(|currency| currency_choice(*currency))
+                .collect();
             header_controls::menu_button(
                 ui,
                 egui::Id::new(("portfolio-currency", self.id)),
                 Icon::Banknote,
                 self.reporting_currency.code(),
-                230.0,
+                &currency_labels,
                 converting,
                 |ui| {
                     for currency in PORTFOLIO_CURRENCIES {
                         if header_controls::choice(
                             ui,
-                            &format!("{}  \u{00B7}  {}", currency.code(), currency.display_name()),
+                            &currency_choice(currency),
                             currency == chosen_before,
                         ) {
                             self.reporting_currency = currency;
@@ -783,7 +801,7 @@ impl PortfolioTab {
             egui::Id::new(("portfolio-import-export", self.id)),
             Icon::Exchange,
             "Import or Export",
-            250.0,
+            &IMPORT_EXPORT_ACTIONS,
             false,
             |ui| {
                 if header_controls::action(ui, Icon::Download, "Import Transactions\u{2026}") {
@@ -1400,6 +1418,23 @@ fn cmc_destination(snapshot: &PortfolioLedgerSnapshot) -> Option<(u64, Portfolio
 /// need one: with none, `open_new_editor` has nowhere to put the transaction, a CSV row can only
 /// name an existing portfolio, and there is nothing to export. The tab shows its "No Portfolios"
 /// page and hides those controls in exactly this state.
+/// The empty page's import menu.
+const IMPORT_SOURCES: [&str; 2] = ["From a CSV File\u{2026}", "From CoinMarketCap\u{2026}"];
+
+/// The header's Import or Export menu, for sizing it.
+const IMPORT_EXPORT_ACTIONS: [&str; 5] = [
+    "Import Transactions\u{2026}",
+    "Import from CoinMarketCap\u{2026}",
+    "Export Transactions\u{2026}",
+    "Export Current Holdings\u{2026}",
+    "Export Portfolio History\u{2026}",
+];
+
+/// A currency's row in the currency menu: the code, then its name.
+fn currency_choice(currency: PortfolioCurrency) -> String {
+    format!("{}  \u{00B7}  {}", currency.code(), currency.display_name())
+}
+
 fn has_portfolio_scope(snapshot: &PortfolioLedgerSnapshot) -> bool {
     !portfolio_scope(snapshot).is_empty()
 }
