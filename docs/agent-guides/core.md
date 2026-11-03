@@ -31,6 +31,16 @@ See [the architecture map](../architecture.md) before changing module boundaries
   result keyed on a change signal (`Store::layout_index`) or query on a thread and poll the channel
   (`AlertRuntimeControl::poll_service_status`). A 4-day-old session spent about 20% of its UI thread
   in the two that were left in.
+- Buttons are never blue. Do not fill, tint, outline or colour the label of a button with
+  `theme::SYSTEM_ACCENT`, `theme::ACCENT` or any other blue accent, in sheets, panels, sidebars or
+  menus. A primary action is neutral: `kit::sheet_button` with `prominent`, `kit::push_button`, the
+  footer's Primary button, or the card style of `theme::card_fill` / `card_border` /
+  `card_highlight` with `text_primary` for its label. A destructive action is `kit::destructive_sheet_button`.
+  Colour belongs to state and data (a selected row or tab, a link, a chart series, the type of a
+  script), never to the control you press. Check a new button against the neighbouring sheets
+  before adding colour.
+  Known breach to remove, not to copy: the paper account sheet's submit button is a
+  `tinted_button` in `kit::ACCENT`. The rest of the app has not been audited for others.
 - Outside `src/mcp/`, use background threads and `std::sync::mpsc`, not an async runtime. Shared
   state is `Arc<Mutex<...>>`; keep store locks short.
 - User data lives in bundled-rusqlite SQLite through `store::Store`. Document tables are ordered

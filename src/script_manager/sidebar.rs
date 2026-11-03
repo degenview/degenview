@@ -602,29 +602,27 @@ impl ScriptManager {
         if response.hovered() {
             ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
         }
-        // The one primary action in the sidebar: the accent, with a light edge on top.
-        let accent = theme::SYSTEM_ACCENT;
+        // A neutral card, never the accent: see "Buttons are never blue" in the core guide.
+        let hovered = response.hovered();
         let fill = if response.is_pointer_button_down_on() {
-            accent.gamma_multiply(0.82)
-        } else if response.hovered() {
-            accent.gamma_multiply(1.1)
+            theme::ink(30)
         } else {
-            accent
+            theme::card_fill(hovered)
         };
         let painter = ui.painter();
         painter.rect_filled(rect, 8.0, fill);
         painter.rect_stroke(
             rect,
             8.0,
-            egui::Stroke::new(1.0, Color32::from_black_alpha(36)),
+            egui::Stroke::new(1.0, theme::card_border(hovered)),
             egui::StrokeKind::Inside,
         );
         painter.hline(
             rect.x_range().shrink(8.0),
             rect.min.y + 1.0,
-            egui::Stroke::new(1.0, Color32::from_white_alpha(70)),
+            egui::Stroke::new(1.0, theme::card_highlight()),
         );
-        let color = Color32::WHITE;
+        let color = theme::text_primary();
         let label = kit::galley(
             ui,
             "New Script",
