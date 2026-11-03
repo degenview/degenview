@@ -556,10 +556,10 @@ impl PortfolioTab {
             .frame(
                 egui::Frame::new()
                     .fill(theme::background())
-                    .inner_margin(egui::Margin::symmetric(16, 14)),
+                    .inner_margin(egui::Margin::symmetric(0, 14)),
             )
             .show(ui, |ui| {
-                capped(ui, |ui| self.show_header(ui, host, &snapshot))
+                aligned(ui, |ui| self.show_header(ui, host, &snapshot))
             });
 
         // With no portfolio there is nothing to section: the page is the header and one call to
@@ -570,10 +570,10 @@ impl PortfolioTab {
                 .frame(
                     egui::Frame::new()
                         .fill(theme::background())
-                        .inner_margin(egui::Margin::symmetric(16, 12)),
+                        .inner_margin(egui::Margin::symmetric(0, 12)),
                 )
                 .show(ui, |ui| {
-                    capped(ui, |ui| portfolio_sections(ui, &mut self.section, self.id));
+                    aligned(ui, |ui| portfolio_sections(ui, &mut self.section, self.id));
                 });
         }
 
@@ -1460,6 +1460,20 @@ fn capped<R>(ui: &mut egui::Ui, content: impl FnOnce(&mut egui::Ui) -> R) -> R {
     );
     ui.scope_builder(egui::UiBuilder::new().max_rect(column), content)
         .inner
+}
+
+/// The side margin the pages keep inside the centred column (their cards, bands and tables).
+const PAGE_MARGIN: f32 = 16.0;
+
+/// Runs `content` in the centred column inset by [`PAGE_MARGIN`] on both sides: the same edges the
+/// page below keeps, so the header's buttons and the section bar line up with its content at any
+/// window width.
+fn aligned<R>(ui: &mut egui::Ui, content: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    capped(ui, |ui| {
+        let inset = ui.max_rect().shrink2(egui::vec2(PAGE_MARGIN, 0.0));
+        ui.scope_builder(egui::UiBuilder::new().max_rect(inset), content)
+            .inner
+    })
 }
 
 /// How current the prices behind the total are, for the dot beside the caption.

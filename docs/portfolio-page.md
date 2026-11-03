@@ -35,7 +35,9 @@ rebuild the projection (holdings, history, cards) and flip `is_updating`, which 
 
 - The host puts the header, the section bar and the page in one column at most
   `CONTENT_MAX_WIDTH` (1480) wide, centred, so a full-screen window does not stretch rows and
-  tables across the screen.
+  tables across the screen. The pages keep `PAGE_MARGIN` (16) inside that column; the header and
+  the section bar are inset by the same amount (`aligned`), so their buttons and tabs share the
+  content's left and right edges at every window width.
 - Overview has two layouts. From `WIDE_MIN` (1000) of content width it puts a `SIDE_WIDTH` (400)
   column beside the main one: value chart over holdings on the left, allocation over the best and
   worst performer tiles on the right, each pair ending level. Below that everything stacks, as
@@ -43,10 +45,11 @@ rebuild the projection (holdings, history, cards) and flip `is_updating`, which 
   two below 640.
 - Statistics: a hero (total P&L large, how it splits between unrealized and realized in the
   middle, the 24 h move at the edge), four value cards, a Value Range strip (today's value
-  between the history's low and high), then P&L by Asset beside a Win Rate ring (from
-  `WIDE_MIN`, level, as tall as the longer of the bars and the ring needs; stacked below), then
-  four activity cards. The P&L rows share their panel's height within 30 to 40 pt; below 520 pt
-  the percentage column is dropped.
+  between the history's low and high), then P&L by Asset beside a side column (from `WIDE_MIN`):
+  the Win Rate ring over the four activity cards two across, both columns ending level at the
+  taller of the bars and the side column. Below `WIDE_MIN` the Win Rate, P&L and activity cards
+  stack. The P&L rows share their panel's height within 30 to 54 pt; below 520 pt the percentage
+  column is dropped.
 - Holdings: a summary band (total value and profit; one bar of how the money divides, in the
   colours the Overview's donut gives the same assets) above the search field and the table.
   Rows are 52 pt: the 24 h move is a tinted pill, the allocation cell carries a bar against the
@@ -54,7 +57,10 @@ rebuild the projection (holdings, history, cards) and flip `is_updating`, which 
   prices load and is absent for a portfolio with no holdings.
 - Transactions: the same band above the toolbar (the ledger's count with buys and sells, one bar
   of the mix by type in the capsule colours, fees paid), 48 pt rows with the date over the time,
-  the asset over its name, and a tick in the type's colour at the row's edge. The shared table
+  the asset over its name, and a tick in the type's colour at the row's edge. The table shows
+  100 rows per page (25, 50, 100, 250 or 500 from the footer's menu); the footer's pager appears
+  once the filtered list has more than 25 rows. A change of filter, search or sort returns to
+  page one. The Type and Asset menus are as wide as their longest entry. The shared table
   code (`portfolio_grid`) is unchanged apart from a `put` text helper both bands use.
 - Every block has a fixed height and paints at measured positions, so nothing reflows while prices
   stream in.

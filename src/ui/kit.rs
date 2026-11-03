@@ -1741,18 +1741,18 @@ pub(crate) const MENU_MAX_HEIGHT: f32 = 320.0;
 /// A menu row's leading check gutter and trailing padding, around its label.
 const MENU_ROW_INSET: f32 = 32.0 + 12.0;
 /// The menu frame's margin on both sides.
-const MENU_FRAME_MARGIN: f32 = 10.0;
+pub(crate) const MENU_FRAME_MARGIN: f32 = 10.0;
 
 /// The width a pull-down menu needs for `labels`: its widest row, the trigger's width at least,
 /// at most `MENU_MAX_WIDTH`. The trigger can be capped narrower than its choices (a long title
 /// would crowd its card), so the menu is sized by its content, not the trigger.
-fn menu_width_for(ui: &Ui, labels: &[String], trigger_width: f32) -> f32 {
+pub(crate) fn menu_width_for(ui: &Ui, labels: &[impl AsRef<str>], trigger_width: f32) -> f32 {
     let widest = labels
         .iter()
         .map(|label| {
             galley(
                 ui,
-                label,
+                label.as_ref(),
                 size::BODY,
                 REGULAR,
                 Color32::PLACEHOLDER,

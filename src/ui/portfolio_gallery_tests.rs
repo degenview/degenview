@@ -384,10 +384,20 @@ fn portfolio_gallery_transactions() {
     }
     let full = ledger();
     let subtitle = |asset: &PortfolioAsset| asset.name.clone();
+    // The same ledger ten times over, so the footer has pages to offer.
+    let long: Vec<_> = (0..10u64)
+        .flat_map(|copy| {
+            full.iter().cloned().map(move |mut tx| {
+                tx.id += copy * 100;
+                tx.timestamp -= copy as i64 * 120 * DAY;
+                tx
+            })
+        })
+        .collect();
     let projection = {
-        let full = full.clone();
+        let long = long.clone();
         move |id: u64| {
-            full.iter().find(|tx| tx.id == id).map(|tx| Projection {
+            long.iter().find(|tx| tx.id == id).map(|tx| Projection {
                 price: tx.price,
                 fee: tx.fee,
             })
@@ -407,6 +417,18 @@ fn portfolio_gallery_transactions() {
             "",
         ),
         ("portfolio-transactions-760", vec2(760.0, 760.0), &full, ""),
+        (
+            "portfolio-transactions-paged",
+            vec2(1100.0, 760.0),
+            &long,
+            "",
+        ),
+        (
+            "portfolio-transactions-paged-760",
+            vec2(760.0, 760.0),
+            &long,
+            "",
+        ),
         (
             "portfolio-transactions-nomatch",
             vec2(1100.0, 460.0),

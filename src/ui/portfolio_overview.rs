@@ -1323,13 +1323,13 @@ pub fn tracking_caption(since_ms: i64, now_ms: i64) -> String {
     }
 }
 
-/// The Win Rate panel's content height when it stands alone; beside the P&L panel it takes that
-/// panel's height instead, so the two end level.
-const WIN_CONTENT: f32 = 190.0;
+/// The Win Rate panel's content height at least: beside the P&L panel it grows so the side column
+/// (the panel over the activity cards) ends level with the bars.
+const WIN_CONTENT: f32 = 156.0;
 const RANGE_HEIGHT: f32 = 96.0;
 /// The P&L rows share their panel's height, kept within these.
 const PNL_ROW_MIN: f32 = 30.0;
-const PNL_ROW_MAX: f32 = 40.0;
+const PNL_ROW_MAX: f32 = 54.0;
 /// Below this row width the P&L percentage is dropped, so the bars keep some room.
 const PNL_COMPACT: f32 = 520.0;
 
@@ -1349,22 +1349,34 @@ pub fn show_statistics(ui: &mut egui::Ui, input: &StatisticsInput) {
                     range_strip(ui, input, &stats);
                     let rows_height = stats.asset_results.len().max(1) as f32 * PNL_ROW_MIN;
                     if width >= WIDE_MIN {
-                        // Results on the left, the win rate beside them, both as tall as the
-                        // longer of the bars and the ring needs.
-                        let content = rows_height.max(WIN_CONTENT);
+                        // Results on the left. Beside them the win rate and, under it, the four
+                        // activity cards two across; both columns end level, as tall as the
+                        // longer of the bars and the side column needs.
+                        let cards = 2.0 * CARD_HEIGHT + GRID_GAP;
+                        let total = panel_height(rows_height)
+                            .max(panel_height(WIN_CONTENT) + SECTION_GAP + cards);
                         split(
                             ui,
                             [width - SIDE_WIDTH - SECTION_GAP, SIDE_WIDTH],
                             SECTION_GAP,
                             &mut (),
-                            |ui, _| pnl_panel(ui, &stats.asset_results, f, content),
-                            |ui, _| win_panel(ui, &stats, content),
+                            |ui, _| {
+                                pnl_panel(ui, &stats.asset_results, f, total - panel_height(0.0))
+                            },
+                            |ui, _| {
+                                let win = total - cards - SECTION_GAP - panel_height(0.0);
+                                win_panel(ui, &stats, win);
+                                ui.scope(|ui| {
+                                    ui.spacing_mut().item_spacing.y = GRID_GAP;
+                                    activity_cards(ui, input, &stats);
+                                });
+                            },
                         );
                     } else {
                         win_panel(ui, &stats, WIN_CONTENT);
                         pnl_panel(ui, &stats.asset_results, f, rows_height.max(WIN_CONTENT));
+                        activity_cards(ui, input, &stats);
                     }
-                    activity_cards(ui, input, &stats);
                 });
         });
 }

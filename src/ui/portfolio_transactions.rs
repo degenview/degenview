@@ -311,6 +311,29 @@ pub struct TransactionsState {
     ascending: bool,
     selected: Option<u64>,
     navigation: Navigation,
+    /// The page shown, from zero.
+    page: usize,
+    /// Rows per page; one of [`PAGE_SIZES`].
+    page_size: usize,
+    /// The filters and sort the page was last chosen under; a change of either returns to page one.
+    view: Option<(Filters, TransactionColumn, bool)>,
+}
+
+/// The page sizes the footer offers.
+pub const PAGE_SIZES: [usize; 5] = [25, 50, 100, 250, 500];
+/// Rows per page unless the user picks another.
+pub const DEFAULT_PAGE_SIZE: usize = 100;
+
+/// How many pages `total` rows make at `size` per page; one even when there are no rows.
+pub fn page_count(total: usize, size: usize) -> usize {
+    total.div_ceil(size.max(1)).max(1)
+}
+
+/// The rows of `page` (from zero) out of `total`, the page clamped to the last.
+pub fn page_range(total: usize, size: usize, page: usize) -> std::ops::Range<usize> {
+    let size = size.max(1);
+    let page = page.min(page_count(total, size) - 1);
+    (page * size).min(total)..((page + 1) * size).min(total)
 }
 
 impl Default for TransactionsState {
@@ -321,6 +344,9 @@ impl Default for TransactionsState {
             ascending: false,
             selected: None,
             navigation: Navigation::default(),
+            page: 0,
+            page_size: DEFAULT_PAGE_SIZE,
+            view: None,
         }
     }
 }
@@ -366,6 +392,14 @@ pub fn show(
         state.column,
         state.ascending,
     );
+    let view = (state.filters.clone(), state.column, state.ascending);
+    if state.view.as_ref() != Some(&view) {
+        state.page = 0;
+        state.view = Some(view);
+    }
+    let pages = page_count(shown.len(), state.page_size);
+    state.page = state.page.min(pages - 1);
+    let on_page = page_range(shown.len(), state.page_size, state.page);
     let outer = portfolio_grid::allocate_table(ui);
     portfolio_grid::paint_page_frame(ui, outer);
     if shown.is_empty() {
@@ -402,7 +436,14 @@ pub fn show(
             );
         }
     } else {
-        table_view(ui, state, input, outer, &shown, &mut actions);
+        table_view(
+            ui,
+            state,
+            input,
+            outer,
+            &shown[on_page.clone()],
+            &mut actions,
+        );
     }
     portfolio_grid::footer(
         ui,
@@ -414,7 +455,110 @@ pub fn show(
         ),
         &format!("Prices and fees in {}", input.formatter.currency.code()),
     );
+    if shown.len() > PAGE_SIZES[0] {
+        pager(ui, state, outer, shown.len(), on_page);
+    }
     actions
+}
+
+/// The page size and the previous and next buttons, centred in the footer strip.
+fn pager(
+    ui: &mut egui::Ui,
+    state: &mut TransactionsState,
+    outer: Rect,
+    total: usize,
+    on_page: std::ops::Range<usize>,
+) {
+    const BUTTON: f32 = 24.0;
+    const SIZE_WIDTH: f32 = 118.0;
+    const GAP: f32 = 8.0;
+    let strip = Rect::from_min_max(
+        pos2(outer.left(), outer.bottom() - portfolio_grid::FOOTER_STRIP),
+        outer.max,
+    );
+    let pages = page_count(total, state.page_size);
+    let label = format!("{}\u{2013}{} of {total}", on_page.start + 1, on_page.end);
+    let text = kit::galley(
+        ui,
+        &label,
+        kit::size::CAPTION,
+        REGULAR,
+        theme::text_secondary(),
+        240.0,
+    );
+    let pager_width = BUTTON + GAP + text.size().x + GAP + BUTTON;
+    let block = SIZE_WIDTH + 16.0 + pager_width;
+    let mut x = strip.center().x - block / 2.0;
+    let middle = strip.center().y;
+
+    let size_rect = Rect::from_min_size(pos2(x, middle - 13.0), vec2(SIZE_WIDTH, 26.0));
+    let size_labels: Vec<String> = PAGE_SIZES
+        .iter()
+        .map(|size| format!("{size} per page"))
+        .collect();
+    ui.put(size_rect, |ui: &mut egui::Ui| {
+        portfolio_grid::dropdown(
+            ui,
+            egui::Id::new("portfolio-transactions-page-size"),
+            &format!("{} per page", state.page_size),
+            false,
+            &size_labels,
+            |ui| {
+                for (size, name) in PAGE_SIZES.iter().zip(&size_labels) {
+                    if kit::menu_item_marked(ui, Icon::Check, name, *size == state.page_size) {
+                        state.page_size = *size;
+                        state.page = 0;
+                        ui.close();
+                    }
+                }
+            },
+        )
+    });
+    x += SIZE_WIDTH + 16.0;
+
+    let step = |ui: &mut egui::Ui, rect: Rect, icon: Icon, enabled: bool, name: &str| {
+        let response = ui
+            .interact(
+                rect,
+                egui::Id::new(("portfolio-transactions-page", name)),
+                Sense::click(),
+            )
+            .on_hover_cursor(if enabled {
+                egui::CursorIcon::PointingHand
+            } else {
+                egui::CursorIcon::Default
+            });
+        if enabled && response.hovered() {
+            ui.painter().rect_filled(rect, 6.0, theme::quaternary(0.75));
+        }
+        let color = if enabled {
+            theme::text_primary()
+        } else {
+            theme::text_tertiary().gamma_multiply(0.6)
+        };
+        crate::ui::icons::paint(
+            ui.painter(),
+            Rect::from_center_size(rect.center(), egui::Vec2::splat(12.0)),
+            icon,
+            color,
+        );
+        enabled && response.clicked()
+    };
+    let previous = Rect::from_min_size(pos2(x, middle - BUTTON / 2.0), vec2(BUTTON, BUTTON));
+    if step(ui, previous, Icon::ChevronLeft, state.page > 0, "previous") {
+        state.page -= 1;
+    }
+    x += BUTTON + GAP;
+    ui.painter().galley(
+        pos2(x, middle - text.size().y / 2.0),
+        text.clone(),
+        Color32::PLACEHOLDER,
+    );
+    x += text.size().x + GAP;
+    let next = Rect::from_min_size(pos2(x, middle - BUTTON / 2.0), vec2(BUTTON, BUTTON));
+    if step(ui, next, Icon::ChevronRight, state.page + 1 < pages, "next") {
+        state.page += 1;
+    }
 }
 
 fn toolbar(
@@ -437,11 +581,15 @@ fn toolbar(
         );
 
         let kind_label = state.filters.kind.map_or("All Types", type_name);
+        let kind_choices: Vec<&str> = std::iter::once("All Types")
+            .chain(ALL_TYPES.iter().map(|kind| type_name(*kind)))
+            .collect();
         portfolio_grid::dropdown(
             ui,
             egui::Id::new("portfolio-type-filter"),
             kind_label,
             state.filters.kind.is_some(),
+            &kind_choices,
             |ui| {
                 let filters = &mut state.filters;
                 if kit::menu_item_marked(ui, Icon::Check, "All Types", filters.kind.is_none()) {
@@ -470,11 +618,15 @@ fn toolbar(
             .as_ref()
             .and_then(|key| choices.iter().find(|(candidate, _)| candidate == key))
             .map_or("All Assets", |(_, ticker)| ticker.as_str());
+        let asset_names: Vec<&str> = std::iter::once("All Assets")
+            .chain(choices.iter().map(|(_, ticker)| ticker.as_str()))
+            .collect();
         portfolio_grid::dropdown(
             ui,
             egui::Id::new("portfolio-asset-filter"),
             asset_label,
             state.filters.asset_key.is_some(),
+            &asset_names,
             |ui| {
                 let filters = &mut state.filters;
                 if kit::menu_item_marked(ui, Icon::Check, "All Assets", filters.asset_key.is_none())
@@ -1075,6 +1227,20 @@ mod tests {
             column,
             ascending,
         )
+    }
+
+    #[test]
+    fn pages_split_the_rows_and_the_last_one_keeps_the_remainder() {
+        assert_eq!(page_count(0, 100), 1);
+        assert_eq!(page_count(100, 100), 1);
+        assert_eq!(page_count(101, 100), 2);
+        assert_eq!(page_range(250, 100, 0), 0..100);
+        assert_eq!(page_range(250, 100, 2), 200..250);
+        // A page past the end is the last one; no rows is an empty first page.
+        assert_eq!(page_range(250, 100, 9), 200..250);
+        assert_eq!(page_range(0, 100, 0), 0..0);
+        assert_eq!(DEFAULT_PAGE_SIZE, 100);
+        assert!(PAGE_SIZES.contains(&DEFAULT_PAGE_SIZE));
     }
 
     #[test]

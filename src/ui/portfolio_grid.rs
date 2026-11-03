@@ -548,7 +548,14 @@ pub const MENU_BUTTON: f32 = 24.0;
 pub const MENU_RESERVE: f32 = MENU_BUTTON + 6.0;
 
 /// A bordered drop-down button; `items` fills its menu. Highlighted while a filter is set.
-pub fn dropdown(ui: &mut Ui, id: Id, label: &str, active: bool, items: impl FnOnce(&mut Ui)) {
+pub fn dropdown(
+    ui: &mut Ui,
+    id: Id,
+    label: &str,
+    active: bool,
+    choices: &[impl AsRef<str>],
+    items: impl FnOnce(&mut Ui),
+) -> Response {
     let color = if active {
         theme::text_primary()
     } else {
@@ -587,15 +594,23 @@ pub fn dropdown(ui: &mut Ui, id: Id, label: &str, active: bool, items: impl FnOn
         Icon::ChevronUpDown,
         theme::text_secondary(),
     );
+    // As wide as its widest choice and the trigger, not the width a menu would otherwise take.
+    let menu_width = kit::menu_width_for(ui, choices, rect.width());
     egui::Popup::menu(&response)
         .id(id)
         .frame(kit::menu_frame())
+        .width(menu_width)
         .gap(4.0)
         .show(|ui| {
-            ui.set_min_width(170.0);
+            ui.set_min_width(menu_width - kit::MENU_FRAME_MARGIN);
+            ui.set_max_width(menu_width - kit::MENU_FRAME_MARGIN);
             ui.spacing_mut().item_spacing.y = 0.0;
-            items(ui);
+            egui::ScrollArea::vertical()
+                .max_height(kit::MENU_MAX_HEIGHT)
+                .auto_shrink([false, true])
+                .show(ui, items);
         });
+    response
 }
 
 /// A text link in the accent colour; returns whether it was clicked.
