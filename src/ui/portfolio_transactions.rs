@@ -684,12 +684,7 @@ pub fn summarise(
     projection: &dyn Fn(u64) -> Option<Projection>,
 ) -> Summary {
     let count_of = |kind| ledger.iter().filter(|tx| tx.kind == kind).count();
-    let mut by_kind: Vec<(PortfolioTransactionType, usize)> = ALL_TYPES
-        .iter()
-        .map(|kind| (*kind, count_of(*kind)))
-        .filter(|(_, count)| *count > 0)
-        .collect();
-    by_kind.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
+    let by_kind = kind_counts(ledger.iter().map(|tx| tx.kind));
     Summary {
         count: ledger.len(),
         buys: count_of(PortfolioTransactionType::Buy),
@@ -788,21 +783,29 @@ fn summary_band(ui: &mut egui::Ui, input: &TransactionsInput) {
         secondary,
     );
 
+    type_mix(ui, area, &summary.by_kind, summary.count);
+}
+
+/// One bar of how many transactions there are of each type, in the colours of the type capsules,
+/// with its legend under it. `area` is the block that also holds a caption row above (24 pt).
+pub(crate) fn type_mix(
+    ui: &mut egui::Ui,
+    area: Rect,
+    by_kind: &[(PortfolioTransactionType, usize)],
+    total: usize,
+) {
+    let secondary = theme::text_secondary();
     let bar = Rect::from_min_size(
         pos2(area.left(), area.top() + 24.0),
         vec2(area.width(), 12.0),
     );
     ui.painter().rect_filled(bar, 6.0, theme::ink(10));
     let mut start = 0.0_f32;
-    for (index, (kind, count)) in summary.by_kind.iter().enumerate() {
+    for (index, (kind, count)) in by_kind.iter().enumerate() {
         let from = bar.left() + bar.width() * start;
-        start += *count as f32 / summary.count as f32;
+        start += *count as f32 / total as f32;
         let to = bar.left() + bar.width() * start;
-        let gap = if index + 1 < summary.by_kind.len() {
-            2.0
-        } else {
-            0.0
-        };
+        let gap = if index + 1 < by_kind.len() { 2.0 } else { 0.0 };
         let width = (to - from - gap).max(2.0);
         ui.painter().rect_filled(
             Rect::from_min_size(pos2(from, bar.top()), vec2(width, bar.height())),
@@ -813,7 +816,7 @@ fn summary_band(ui: &mut egui::Ui, input: &TransactionsInput) {
 
     let middle = area.top() + 56.0;
     let mut x = area.left();
-    for (kind, count) in &summary.by_kind {
+    for (kind, count) in by_kind {
         let galley = kit::galley(
             ui,
             &format!("{} {count}", type_name(*kind)),
@@ -835,6 +838,156 @@ fn summary_band(ui: &mut egui::Ui, input: &TransactionsInput) {
         );
         x += width + 16.0;
     }
+}
+
+// MARK: Shared cells
+
+/// A tick in the type's colour at the row's edge, so buys and sells read down a long table.
+pub(crate) fn paint_type_tick(
+    ui: &egui::Ui,
+    first_cell: Rect,
+    row_height: f32,
+    kind: PortfolioTransactionType,
+) {
+    ui.painter().rect_filled(
+        Rect::from_center_size(
+            pos2(first_cell.left() + 3.0, first_cell.center().y),
+            vec2(3.0, row_height - 22.0),
+        ),
+        1.5,
+        type_tint(kind),
+    );
+}
+
+/// The date over the time of day, in `cell`.
+pub(crate) fn paint_date_cell(
+    ui: &egui::Ui,
+    cell: Rect,
+    column: &Col,
+    timestamp: i64,
+    utc_offset_secs: i64,
+) {
+    let span = portfolio_grid::text_span(cell, column);
+    let date = kit::galley(
+        ui,
+        &date_text(timestamp + utc_offset_secs * 1_000),
+        kit::size::BODY,
+        MEDIUM,
+        theme::text_primary(),
+        span.width(),
+    );
+    let time = kit::galley(
+        ui,
+        &clock_time(timestamp, utc_offset_secs),
+        kit::size::CAPTION,
+        REGULAR,
+        theme::text_secondary(),
+        span.width(),
+    );
+    let top = cell.center().y - (date.size().y + 1.0 + time.size().y) / 2.0;
+    let time_top = top + date.size().y + 1.0;
+    ui.painter()
+        .galley(pos2(span.left() + 4.0, top), date, Color32::PLACEHOLDER);
+    ui.painter().galley(
+        pos2(span.left() + 4.0, time_top),
+        time,
+        Color32::PLACEHOLDER,
+    );
+}
+
+/// The asset's icon, its ticker over its name, in `cell`.
+pub(crate) fn paint_asset_cell(
+    ui: &egui::Ui,
+    cell: Rect,
+    asset: &PortfolioAsset,
+    ticker: &str,
+    name: &str,
+) {
+    let icon = Rect::from_center_size(
+        pos2(
+            cell.left() + portfolio_grid::CELL_PAD + 12.0,
+            cell.center().y,
+        ),
+        egui::Vec2::splat(24.0),
+    );
+    table::paint_asset_icon(ui, icon, asset);
+    let text_left = icon.right() + 9.0;
+    let text_width = (cell.right() - text_left - 6.0).max(20.0);
+    let ticker = kit::galley(
+        ui,
+        ticker,
+        kit::size::BODY,
+        SEMIBOLD,
+        theme::text_primary(),
+        text_width,
+    );
+    let name = kit::galley(
+        ui,
+        name,
+        kit::size::CAPTION,
+        REGULAR,
+        theme::text_secondary(),
+        text_width,
+    );
+    let top = cell.center().y - (ticker.size().y + 1.0 + name.size().y) / 2.0;
+    let name_y = top + ticker.size().y + 1.0;
+    ui.painter()
+        .galley(pos2(text_left, top), ticker, Color32::PLACEHOLDER);
+    ui.painter()
+        .galley(pos2(text_left, name_y), name, Color32::PLACEHOLDER);
+}
+
+/// The type as a tinted capsule in `cell`; returns the capsule's rect.
+pub(crate) fn paint_type_capsule(
+    ui: &egui::Ui,
+    cell: Rect,
+    kind: PortfolioTransactionType,
+    label: &str,
+) -> Rect {
+    let tint = type_tint(kind);
+    let badge = kit::galley(ui, label, kit::size::CAPTION, kit::MEDIUM, tint, 200.0);
+    let capsule = Rect::from_min_size(
+        pos2(
+            cell.left() + portfolio_grid::CELL_PAD,
+            cell.center().y - (badge.size().y + 4.0) / 2.0,
+        ),
+        vec2(badge.size().x + 16.0, badge.size().y + 4.0),
+    );
+    ui.painter()
+        .rect_filled(capsule, capsule.height() / 2.0, tint.gamma_multiply(0.14));
+    ui.painter().galley(
+        pos2(capsule.left() + 8.0, capsule.top() + 2.0),
+        badge,
+        Color32::PLACEHOLDER,
+    );
+    capsule
+}
+
+/// An asset's second line: its name, else the name embedded in its key, else its symbol.
+pub fn asset_subtitle(asset: &PortfolioAsset) -> String {
+    if asset.name.is_empty() {
+        asset.embedded_name().unwrap_or(&asset.symbol).to_owned()
+    } else {
+        asset.name.clone()
+    }
+}
+
+/// How many transactions of each type, most common first (ties keep the order of `ALL_TYPES`).
+pub fn kind_counts(
+    kinds: impl Iterator<Item = PortfolioTransactionType> + Clone,
+) -> Vec<(PortfolioTransactionType, usize)> {
+    let mut by_kind: Vec<(PortfolioTransactionType, usize)> = ALL_TYPES
+        .iter()
+        .map(|kind| {
+            (
+                *kind,
+                kinds.clone().filter(|candidate| candidate == kind).count(),
+            )
+        })
+        .filter(|(_, count)| *count > 0)
+        .collect();
+    by_kind.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
+    by_kind
 }
 
 // MARK: Table
@@ -923,110 +1076,26 @@ fn transaction_row(
         portfolio_grid::figure(ui, cells[index], &COLUMNS[index], text, color)
     };
 
-    // A tick in the type's colour at the row's edge, so buys and sells read down a long table.
-    let row_rect = Rect::from_min_max(
-        pos2(cells[0].left(), cells[0].top()),
-        pos2(cells[0].left(), cells[0].bottom()),
-    );
-    ui.painter().rect_filled(
-        Rect::from_center_size(
-            pos2(row_rect.left() + 3.0, row_rect.center().y),
-            vec2(3.0, ROW_HEIGHT - 22.0),
-        ),
-        1.5,
-        type_tint(tx.kind),
+    paint_type_tick(ui, cells[0], ROW_HEIGHT, tx.kind);
+
+    paint_date_cell(
+        ui,
+        cells[0],
+        &COLUMNS[0],
+        tx.timestamp,
+        input.utc_offset_secs,
     );
 
-    // Date over the time of day.
-    let date_span = portfolio_grid::text_span(cells[0], &COLUMNS[0]);
-    let date = kit::galley(
+    paint_asset_cell(
         ui,
-        &date_text(tx.timestamp + input.utc_offset_secs * 1_000),
-        kit::size::BODY,
-        MEDIUM,
-        primary,
-        date_span.width(),
-    );
-    let time = kit::galley(
-        ui,
-        &clock_time(tx.timestamp, input.utc_offset_secs),
-        kit::size::CAPTION,
-        REGULAR,
-        secondary,
-        date_span.width(),
-    );
-    let date_top = cells[0].center().y - (date.size().y + 1.0 + time.size().y) / 2.0;
-    let time_top = date_top + date.size().y + 1.0;
-    ui.painter().galley(
-        pos2(date_span.left() + 4.0, date_top),
-        date,
-        Color32::PLACEHOLDER,
-    );
-    ui.painter().galley(
-        pos2(date_span.left() + 4.0, time_top),
-        time,
-        Color32::PLACEHOLDER,
-    );
-
-    // Asset: icon, ticker over name.
-    let asset = cells[1];
-    let icon = Rect::from_center_size(
-        pos2(
-            asset.left() + portfolio_grid::CELL_PAD + 12.0,
-            asset.center().y,
-        ),
-        egui::Vec2::splat(24.0),
-    );
-    table::paint_asset_icon(ui, icon, &tx.asset);
-    let text_left = icon.right() + 9.0;
-    let text_width = (asset.right() - text_left - 6.0).max(20.0);
-    let ticker = kit::galley(
-        ui,
+        cells[1],
+        &tx.asset,
         &item.ticker(),
-        kit::size::BODY,
-        SEMIBOLD,
-        primary,
-        text_width,
-    );
-    let name = kit::galley(
-        ui,
         &(input.subtitle)(&tx.asset),
-        kit::size::CAPTION,
-        REGULAR,
-        secondary,
-        text_width,
     );
-    let top = asset.center().y - (ticker.size().y + 1.0 + name.size().y) / 2.0;
-    let name_y = top + ticker.size().y + 1.0;
-    ui.painter()
-        .galley(pos2(text_left, top), ticker, Color32::PLACEHOLDER);
-    ui.painter()
-        .galley(pos2(text_left, name_y), name, Color32::PLACEHOLDER);
 
     // Type: a tinted capsule; hovering says where the transaction came from.
-    let tint = type_tint(tx.kind);
-    let badge = kit::galley(
-        ui,
-        item.type_name(),
-        kit::size::CAPTION,
-        kit::MEDIUM,
-        tint,
-        200.0,
-    );
-    let capsule = Rect::from_min_size(
-        pos2(
-            cells[2].left() + portfolio_grid::CELL_PAD,
-            cells[2].center().y - (badge.size().y + 4.0) / 2.0,
-        ),
-        vec2(badge.size().x + 16.0, badge.size().y + 4.0),
-    );
-    ui.painter()
-        .rect_filled(capsule, capsule.height() / 2.0, tint.gamma_multiply(0.14));
-    ui.painter().galley(
-        pos2(capsule.left() + 8.0, capsule.top() + 2.0),
-        badge,
-        Color32::PLACEHOLDER,
-    );
+    let capsule = paint_type_capsule(ui, cells[2], tx.kind, item.type_name());
     ui.interact(
         capsule,
         egui::Id::new(("portfolio-transaction-type", tx.id)),

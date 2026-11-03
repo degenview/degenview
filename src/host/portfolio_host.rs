@@ -937,13 +937,7 @@ impl PortfolioTab {
                 .find(|portfolio| portfolio.id == id)
         });
         let formatter = PortfolioValueFormatter::new(self.reporting_currency, self.privacy);
-        let subtitle = |asset: &crate::model::portfolio::PortfolioAsset| {
-            if asset.name.is_empty() {
-                asset.embedded_name().unwrap_or(&asset.symbol).to_owned()
-            } else {
-                asset.name.clone()
-            }
-        };
+        let subtitle = crate::ui::portfolio_transactions::asset_subtitle;
         let total_value: f64 = holding_values
             .iter()
             .filter_map(|holding| holding.current_value)

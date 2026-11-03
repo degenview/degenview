@@ -11,7 +11,9 @@ use crate::model::portfolio::{PortfolioAsset, PortfolioCurrency, PortfolioTransa
 use crate::model::portfolio_csv::{CmcPreview, CmcRow, CsvPreview, Mint};
 use crate::ui::icons::{self, Icon};
 use crate::ui::portfolio_grid;
-use crate::ui::portfolio_import_preview::{plural, warning_title};
+use crate::ui::portfolio_import_preview::{
+    card_background, plural, problem_card, status_dot, warning_title,
+};
 use crate::ui::portfolio_table::paint_asset_icon;
 use crate::ui::sheet;
 use crate::ui::theme;
@@ -346,7 +348,7 @@ impl TallyKind {
     fn color(self) -> Color32 {
         match self {
             Self::Matched => theme::UP,
-            Self::Searching => theme::SYSTEM_ACCENT,
+            Self::Searching => theme::text_secondary(),
             Self::Unmatched => theme::REPLAY,
             Self::Skipped => theme::text_tertiary(),
         }
@@ -406,7 +408,7 @@ pub fn show(
                 if kit::footer_button(
                     ui,
                     "Continue to Preview",
-                    kit::FooterButton::Prominent(theme::SYSTEM_ACCENT),
+                    kit::FooterButton::Primary,
                     enabled,
                     150.0,
                 )
@@ -426,20 +428,6 @@ pub fn show(
         actions.push(CmcImportAction::Cancel);
     }
     actions
-}
-
-/// A card's fill and outline, shared by the band, the ticker rows and the fee card.
-fn card_background(ui: &Ui, rect: Rect, outline: Option<Color32>) {
-    ui.painter().rect_filled(rect, 12.0, theme::quaternary(0.4));
-    ui.painter().rect_stroke(
-        rect,
-        12.0,
-        Stroke::new(
-            1.0,
-            outline.unwrap_or_else(|| theme::separator().gamma_multiply(0.6)),
-        ),
-        StrokeKind::Inside,
-    );
 }
 
 /// How many tickers have a market, as a figure and one bar split by state, with its legend.
@@ -576,14 +564,9 @@ fn body(
     }
 }
 
-/// A tinted callout listing `lines`, one bullet each.
+/// A tinted callout listing `lines`, one bullet each, scrolling when long.
 fn notice(ui: &mut Ui, icon: Icon, tint: Color32, title: &str, lines: &[String]) {
-    let detail = lines
-        .iter()
-        .map(|line| format!("\u{2022} {line}"))
-        .collect::<Vec<_>>()
-        .join("\n");
-    kit::notice_card(ui, icon, tint, title, Some(&detail), None);
+    problem_card(ui, icon, tint, title, None, lines, 96.0);
 }
 
 /// A section's title with an optional status at its trailing edge, and a line of explanation.
@@ -690,7 +673,8 @@ fn row_button(
     style: ButtonStyle,
 ) -> (f32, bool) {
     let color = match style {
-        ButtonStyle::Prominent => Color32::WHITE,
+        // The filled button is the inverse of the sheet: light on dark, dark on light.
+        ButtonStyle::Prominent => theme::chrome(),
         ButtonStyle::Bordered => theme::text_primary(),
         ButtonStyle::Quiet => theme::text_secondary(),
     };
@@ -712,7 +696,7 @@ fn row_button(
     let hovered = response.hovered();
     match style {
         ButtonStyle::Prominent => {
-            let fill = theme::SYSTEM_ACCENT;
+            let fill = theme::text_primary();
             ui.painter().rect_filled(
                 rect,
                 7.0,
@@ -959,7 +943,7 @@ fn token_row(
                     ticker_right + 8.0,
                     top + ticker.size().y / 2.0,
                     "Auto-matched",
-                    theme::SYSTEM_ACCENT,
+                    theme::text_secondary(),
                 );
             }
         }
@@ -1080,7 +1064,7 @@ fn fee_section(ui: &mut Ui, state: &mut CmcImportState, preview: &CmcPreview) {
                 ui.painter().rect_filled(bar, 3.0, theme::quaternary(1.0));
                 let mut fill = bar;
                 fill.set_width((bar.width() * state.fee_fx_progress.clamp(0.0, 1.0)).max(6.0));
-                ui.painter().rect_filled(fill, 3.0, theme::SYSTEM_ACCENT);
+                ui.painter().rect_filled(fill, 3.0, theme::UP);
             } else if failed.is_empty() {
                 let (row, _) =
                     ui.allocate_exact_size(vec2(ui.available_width(), 18.0), Sense::hover());
@@ -1158,21 +1142,16 @@ fn fee_section(ui: &mut Ui, state: &mut CmcImportState, preview: &CmcPreview) {
 
 /// The footer's leading side: how many transactions go in and how many stay out.
 fn summary(ui: &mut Ui, state: &CmcImportState, preview: &CmcPreview) {
-    let dot_label = |ui: &mut Ui, color: Color32, label: String, weight: f32, text: Color32| {
-        let (dot, _) = ui.allocate_exact_size(Vec2::splat(8.0), Sense::hover());
-        ui.painter().circle_filled(dot.center(), 3.5, color);
-        ui.label(kit::text(label, kit::size::BODY, weight, text));
-    };
     ui.spacing_mut().item_spacing.x = 6.0;
     let mapped = state.mapped_rows(preview);
-    dot_label(
+    status_dot(
         ui,
         if mapped > 0 {
             theme::UP
         } else {
             theme::text_tertiary()
         },
-        format!(
+        &format!(
             "{} to import",
             plural(mapped, "transaction", "transactions")
         ),
@@ -1182,10 +1161,10 @@ fn summary(ui: &mut Ui, state: &CmcImportState, preview: &CmcPreview) {
     let skipped = state.skipped_rows(preview);
     if skipped > 0 {
         ui.add_space(10.0);
-        dot_label(
+        status_dot(
             ui,
             theme::text_tertiary(),
-            format!("{skipped} skipped"),
+            &format!("{skipped} skipped"),
             kit::REGULAR,
             theme::text_secondary(),
         );

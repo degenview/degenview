@@ -75,16 +75,26 @@ kept; prediction markets and CoinMarketCap indices are not, so the Predictions s
 
 ## Import sheets
 
-The CoinMarketCap import sheet (`portfolio_cmc_import`) opens with the same header art as Add Chart
-(its CoinMarketCap scene) and the app's blue (`SYSTEM_ACCENT`), not the old pink `ACCENT`. Under
-the header a band says how many tickers have a market (`tally`) with one bar split by state:
-matched, searching, to match, skipped. Each ticker is a fixed 60 pt row: its initials (or the
-market's icon once matched), the transactions it carries, an arrow, then the market with the
-exchange's logo and an Auto-matched pill, or Searching, Skipped, Not matched; the actions follow
-the state (Match is the filled button only for a ticker with no market). Fee exchange rates are
-their own card with a progress bar, a loaded line, or one row per failure with Skip Item. The
-footer counts the transactions that will import. The Import Preview sheet, the next step, shares
-the blue header and the footer buttons.
+Both import sheets open with Add Chart's header art (the CoinMarketCap scene, and the Portfolio
+scene for the preview) and use no accent colour: the main button is the neutral Primary footer
+button, a ticker's filled button is the inverse of the sheet (light on dark, dark on light), and
+colour only carries meaning (green ready or matched, orange to match or a warning, red an error).
+They share `card_background`, `problem_card` (errors and warnings, scrolling when long) and
+`status_dot` from `portfolio_import_preview`.
+
+**CoinMarketCap import** (`portfolio_cmc_import`). A band says how many tickers have a market
+(`tally`) with one bar split by state: matched, searching, to match, skipped. Each ticker is a
+fixed 60 pt row: its initials (or the market's icon once matched), the transactions it carries, an
+arrow, then the market with the exchange's logo and an Auto-matched pill, or Searching, Skipped,
+Not matched; the actions follow the state. Fee exchange rates are their own card with a progress
+bar, a loaded line, or one row per failure with Skip Item. The footer counts the transactions that
+will import.
+
+**Import Preview** (`portfolio_import_preview`). A band with the transaction count, buys, sells
+and assets, and the Transactions page's by-type bar (`type_mix`); then errors, a failed import and
+warnings as cards; then the rows in the Transactions table's own cells (the type tick, date over
+time, asset over name, type capsule), newest first; the footer says Ready to import, N errors to
+fix or N warnings, and carries Import N Transactions.
 
 The header menus (portfolio, currency, Import or Export) take the labels they will show and open
 exactly as wide as the longest, never narrower than their button.

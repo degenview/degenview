@@ -769,3 +769,66 @@ fn portfolio_gallery_header_menus() {
         });
     }
 }
+
+#[test]
+#[ignore = "writes PNGs for a person to look at"]
+fn portfolio_gallery_import_preview() {
+    use crate::model::portfolio_csv::CsvPreview;
+    use crate::ui::portfolio_import_preview::{ImportPreviewInput, ImportPreviewState, show};
+    if crate::ui::render_tests::gallery_dir().is_none() {
+        return;
+    }
+    let ready = CsvPreview {
+        transactions: ledger(),
+        ..CsvPreview::default()
+    };
+    let warned = CsvPreview {
+        warnings: vec![
+            "Line 7: the fee currency is missing; USD is assumed.".into(),
+            "Line 11: the notes were cut to 200 characters.".into(),
+        ],
+        ..ready.clone()
+    };
+    let broken = CsvPreview {
+        errors: vec![
+            "Line 4: a Sell of 20 SOL exceeds the 14 SOL held on that date.".into(),
+            "Line 9: the amount is missing.".into(),
+        ],
+        warnings: vec!["PEPE has no market yet; its 1 transaction was left out.".into()],
+        ..ready.clone()
+    };
+    for (name, preview, importing, failure) in [
+        ("portfolio-preview-ready", ready.clone(), false, None),
+        ("portfolio-preview-warned", warned, false, None),
+        ("portfolio-preview-errors", broken, false, None),
+        ("portfolio-preview-importing", ready.clone(), true, None),
+        (
+            "portfolio-preview-failed",
+            ready,
+            false,
+            Some("A sell on Mar 8, 2024 exceeds the holding."),
+        ),
+        (
+            "portfolio-preview-empty",
+            CsvPreview::default(),
+            false,
+            None,
+        ),
+    ] {
+        let state = std::cell::RefCell::new(ImportPreviewState::default());
+        state.borrow_mut().is_importing = importing;
+        if let Some(message) = failure {
+            state.borrow_mut().failed(message);
+        }
+        both_themes(name, vec2(900.0, 780.0), |ui| {
+            show(
+                ui.ctx(),
+                &mut state.borrow_mut(),
+                &ImportPreviewInput {
+                    preview: &preview,
+                    utc_offset_secs: 0,
+                },
+            );
+        });
+    }
+}

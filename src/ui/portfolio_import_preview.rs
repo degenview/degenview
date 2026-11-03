@@ -8,23 +8,30 @@
 use crate::model::portfolio::{PortfolioCurrency, PortfolioTransaction};
 use crate::model::portfolio_accounting::unique_assets;
 use crate::model::portfolio_csv::CsvPreview;
-use crate::model::portfolio_format::{PortfolioValueFormatter, QuantitySign, Tone};
-use crate::ui::icons::Icon;
-use crate::ui::kit;
-use crate::ui::portfolio_overview::{StatCard, stat_card};
-use crate::ui::portfolio_table::{HEADER_HEIGHT, ROW_HEIGHT, header_cell, numeric_cell, pill};
-use crate::ui::portfolio_transactions::{date_time_text, type_name, type_tint};
+use crate::model::portfolio_format::{PortfolioValueFormatter, QuantitySign};
+use crate::ui::icons::{self, Icon};
+use crate::ui::portfolio_empty;
+use crate::ui::portfolio_grid::{self, Col, Navigation, RowContext, TableSpec};
+use crate::ui::portfolio_overview::activity_caption;
+use crate::ui::portfolio_transactions::{
+    asset_subtitle, kind_counts, paint_asset_cell, paint_date_cell, paint_type_capsule,
+    paint_type_tick, quantity_sign, type_mix, type_name,
+};
 use crate::ui::sheet;
 use crate::ui::theme;
-use eframe::egui::{self, Color32, Id, RichText, Vec2};
-use egui_extras::{Column, TableBuilder};
+use crate::ui::{add_chart_art, add_chart_sheet, kit};
+use eframe::egui::{
+    self, Align2, Color32, Id, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2,
+};
 
-pub const SIZE: Vec2 = Vec2::new(680.0, 600.0);
+pub const SIZE: Vec2 = Vec2::new(720.0, 680.0);
 
 #[derive(Default)]
 pub struct ImportPreviewState {
     pub is_importing: bool,
     pub failure: Option<String>,
+    selected: Option<usize>,
+    navigation: Navigation,
 }
 
 impl ImportPreviewState {
@@ -94,18 +101,42 @@ pub fn import_button_title(count: usize) -> String {
     format!("Import {}", plural(count, "Transaction", "Transactions"))
 }
 
-/// The third stat: errors when there are any, else warnings.
-pub fn problem_card(preview: &CsvPreview) -> (&'static str, usize, Option<Tone>) {
-    if preview.errors.is_empty() {
-        (
-            "Warnings",
-            preview.warnings.len(),
-            // Orange has no `Tone`; warnings are drawn in the stat's neutral accent.
-            None,
-        )
-    } else {
-        ("Errors", preview.errors.len(), Some(Tone::Loss))
+/// How serious one footer status is; picks its dot's colour.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Status {
+    Good,
+    Warning,
+    Error,
+}
+
+impl Status {
+    pub fn color(self) -> Color32 {
+        match self {
+            Self::Good => theme::UP,
+            Self::Warning => theme::REPLAY,
+            Self::Error => theme::DOWN,
+        }
     }
+}
+
+/// What the footer says about the file: problems that block, warnings that don't, or that it is
+/// ready.
+pub fn footer_status(preview: &CsvPreview) -> Vec<(Status, String)> {
+    let mut status = Vec::new();
+    if !preview.errors.is_empty() {
+        status.push((
+            Status::Error,
+            format!("{} to fix", plural(preview.errors.len(), "error", "errors")),
+        ));
+    } else if preview.transactions.is_empty() {
+        status.push((Status::Warning, "Nothing to import".to_owned()));
+    } else {
+        status.push((Status::Good, "Ready to import".to_owned()));
+    }
+    if !preview.warnings.is_empty() {
+        status.push((Status::Warning, warning_title(preview.warnings.len())));
+    }
+    status
 }
 
 pub fn failure_detail(message: &str) -> String {
@@ -117,6 +148,24 @@ pub fn failure_detail(message: &str) -> String {
 
 // MARK: View
 
+const HEADER_PADDING: f32 = 24.0;
+/// The footer's hairline, padding and 28 pt buttons.
+const FOOTER_HEIGHT: f32 = 58.0;
+const BAND_HEIGHT: f32 = 92.0;
+const ROW_HEIGHT: f32 = 48.0;
+/// The table keeps at least this tall, however many notices sit above it.
+const TABLE_MIN_HEIGHT: f32 = 150.0;
+
+/// Date, asset, type, quantity, price, total.
+const COLUMNS: [Col; 6] = [
+    Col::new(104.0, 140.0, false).unsortable(),
+    Col::new(120.0, 140.0, false).unsortable(),
+    Col::new(100.0, 110.0, false).unsortable(),
+    Col::new(80.0, 90.0, true).unsortable(),
+    Col::new(96.0, 100.0, true).unsortable(),
+    Col::new(100.0, 110.0, true).unsortable(),
+];
+
 pub fn show(
     ctx: &egui::Context,
     state: &mut ImportPreviewState,
@@ -126,31 +175,61 @@ pub fn show(
     let preview = input.preview;
     sheet::show(ctx, Id::new("portfolio-import-preview"), SIZE.x, |ui| {
         ui.set_height(SIZE.y);
-        ui.add_space(24.0);
+        let top = ui.cursor().top();
+        ui.add_space(HEADER_PADDING);
         sheet::inset(ui, |ui| {
-            sheet::header(
+            add_chart_sheet::header(
                 ui,
-                Icon::Download,
+                add_chart_art::Scene::Portfolio,
                 "Import Preview",
                 subtitle(preview),
-                theme::SYSTEM_ACCENT,
             );
-            ui.add_space(18.0);
-            summary(ui, preview);
+            ui.add_space(16.0);
+            summary_band(ui, preview);
             ui.add_space(12.0);
             notices(ui, preview, state);
         });
-        let footer_height = 52.0;
-        let table_height = (ui.available_height() - footer_height).max(120.0);
-        ui.allocate_ui(Vec2::new(ui.available_width(), table_height), |ui| {
-            content(ui, preview, input.utc_offset_secs);
-        });
-        ui.separator();
+        // `set_height` made the sheet's own rect SIZE.y tall, so measure from the cursor.
+        let used = ui.cursor().top() - top;
+        let height = (SIZE.y - used - FOOTER_HEIGHT - 16.0).max(TABLE_MIN_HEIGHT);
         sheet::inset(ui, |ui| {
-            ui.add_space(12.0);
-            footer(ui, state, preview, &mut outcome);
-            ui.add_space(10.0);
+            let (outer, _) =
+                ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::hover());
+            table(ui, outer, state, preview, input.utc_offset_secs);
         });
+        ui.add_space(16.0);
+        let importing = state.is_importing;
+        sheet::footer_split(
+            ui,
+            |ui| status(ui, importing, preview),
+            |ui| {
+                let title = import_button_title(preview.transactions.len());
+                if kit::footer_button(
+                    ui,
+                    &title,
+                    kit::FooterButton::Primary,
+                    can_import(preview, state),
+                    170.0,
+                )
+                .clicked()
+                {
+                    state.is_importing = true;
+                    state.failure = None;
+                    outcome = Some(ImportPreviewOutcome::Import);
+                }
+                if kit::footer_button(
+                    ui,
+                    "Cancel",
+                    kit::FooterButton::Secondary,
+                    !state.is_importing,
+                    0.0,
+                )
+                .clicked()
+                {
+                    outcome = Some(ImportPreviewOutcome::Cancel);
+                }
+            },
+        );
     });
     if outcome.is_none()
         && !state.is_importing
@@ -161,188 +240,340 @@ pub fn show(
     outcome
 }
 
-fn summary(ui: &mut egui::Ui, preview: &CsvPreview) {
-    let (title, count, tone) = problem_card(preview);
-    let cards = [
-        StatCard::new("Transactions", preview.transactions.len().to_string())
-            .icon(crate::ui::icons::Icon::Exchange),
-        StatCard::new("Assets", asset_count(preview).to_string())
-            .icon(crate::ui::icons::Icon::Layers),
-        StatCard::new(title, count.to_string())
-            .tone(tone)
-            .icon(if tone.is_some() {
-                crate::ui::icons::Icon::XmarkOctagonFill
-            } else {
-                crate::ui::icons::Icon::Triangle
-            }),
-    ];
-    ui.columns(3, |columns| {
-        for (column, card) in columns.iter_mut().zip(&cards) {
-            stat_card(column, card);
-        }
-    });
+/// A card's fill and outline, shared by the import sheets' bands, rows and cards.
+pub(crate) fn card_background(ui: &Ui, rect: Rect, outline: Option<Color32>) {
+    ui.painter().rect_filled(rect, 12.0, theme::quaternary(0.4));
+    ui.painter().rect_stroke(
+        rect,
+        12.0,
+        Stroke::new(
+            1.0,
+            outline.unwrap_or_else(|| theme::separator().gamma_multiply(0.6)),
+        ),
+        StrokeKind::Inside,
+    );
 }
 
-fn notice(ui: &mut egui::Ui, tint: Color32, title: &str, detail: &str, lines: &[String], max: f32) {
-    egui::Frame::new()
-        .fill(tint.gamma_multiply(0.12))
-        .corner_radius(10.0)
-        .inner_margin(egui::Margin::same(10))
-        .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.label(RichText::new(title).strong().color(tint));
-            ui.label(RichText::new(detail).small().weak());
-            if !lines.is_empty() {
-                egui::ScrollArea::vertical()
-                    .id_salt(title)
-                    .max_height(max)
-                    .show(ui, |ui| {
-                        for line in lines {
-                            ui.label(RichText::new(format!("• {line}")).small());
-                        }
-                    });
-            }
-        });
-    ui.add_space(6.0);
-}
+/// How many transactions come in, from how many assets and of what kind: the figure, a
+/// buys-and-sells line, and one bar of the mix by type.
+fn summary_band(ui: &mut Ui, preview: &CsvPreview) {
+    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), BAND_HEIGHT), Sense::hover());
+    card_background(ui, rect, None);
+    let inner = rect.shrink2(vec2(18.0, 14.0));
+    let secondary = theme::text_secondary();
+    let count = preview.transactions.len();
+    let by_kind = kind_counts(preview.transactions.iter().map(|tx| tx.kind));
+    let count_of = |kind| {
+        by_kind
+            .iter()
+            .find(|(candidate, _)| *candidate == kind)
+            .map_or(0, |(_, count)| *count)
+    };
 
-fn notices(ui: &mut egui::Ui, preview: &CsvPreview, state: &ImportPreviewState) {
-    if !preview.errors.is_empty() {
-        notice(
-            ui,
-            theme::DOWN,
-            &format!("✕ {}", error_title(preview.errors.len())),
-            "Fix the source data and import again.",
-            &preview.errors,
-            90.0,
-        );
-    }
-    if !preview.warnings.is_empty() {
-        notice(
-            ui,
-            theme::REPLAY,
-            &format!("⚠ {}", warning_title(preview.warnings.len())),
-            "Warnings don't block the import.",
-            &preview.warnings,
-            70.0,
-        );
-    }
-    if let Some(failure) = &state.failure {
-        notice(
-            ui,
-            theme::DOWN,
-            "⚠ Import failed",
-            &failure_detail(failure),
-            &[],
-            0.0,
-        );
-    }
-}
+    let caption = portfolio_grid::put(
+        ui,
+        inner.left_top(),
+        Align2::LEFT_TOP,
+        if count == 1 {
+            "Transaction"
+        } else {
+            "Transactions"
+        },
+        kit::size::CAPTION + 0.5,
+        kit::REGULAR,
+        secondary,
+    );
+    let figure = portfolio_grid::put(
+        ui,
+        pos2(inner.left(), inner.top() + 15.0),
+        Align2::LEFT_TOP,
+        &count.to_string(),
+        26.0,
+        kit::SEMIBOLD,
+        theme::text_primary(),
+    );
+    let activity = portfolio_grid::put(
+        ui,
+        pos2(inner.left(), inner.bottom() - 15.0),
+        Align2::LEFT_TOP,
+        &format!(
+            "{} \u{00B7} {}",
+            activity_caption(
+                count_of(crate::model::portfolio::PortfolioTransactionType::Buy),
+                count_of(crate::model::portfolio::PortfolioTransactionType::Sell)
+            ),
+            plural(asset_count(preview), "asset", "assets")
+        ),
+        kit::size::CAPTION + 0.5,
+        kit::REGULAR,
+        secondary,
+    );
 
-fn content(ui: &mut egui::Ui, preview: &CsvPreview, utc_offset_secs: i64) {
-    let rows = sorted_rows(preview);
-    if rows.is_empty() {
-        ui.add_space(30.0);
-        ui.vertical_centered(|ui| {
-            ui.label(RichText::new("No Transactions").strong().size(15.0));
-            ui.label(
-                RichText::new("The file didn't contain any transactions that can be imported.")
-                    .weak(),
-            );
-        });
+    let divider = caption.right().max(figure.right()).max(activity.right()) + 26.0;
+    let area = Rect::from_min_max(pos2(divider + 26.0, inner.top()), inner.right_bottom());
+    if count == 0 || area.width() < 200.0 {
         return;
     }
-    let formatter = PortfolioValueFormatter::new(PortfolioCurrency::Usd, false);
-    let height = ui.available_height();
-    TableBuilder::new(ui)
-        .id_salt("portfolio-import-preview-table")
-        .striped(true)
-        .max_scroll_height(height)
-        .column(Column::initial(150.0).at_least(120.0).clip(true))
-        .column(Column::initial(70.0).at_least(55.0))
-        .column(Column::initial(100.0).at_least(85.0))
-        .column(Column::initial(100.0).at_least(70.0))
-        .column(Column::remainder().at_least(85.0))
-        .header(HEADER_HEIGHT, |mut header| {
-            for (index, title) in ["Date", "Asset", "Type", "Quantity", "Price"]
-                .into_iter()
-                .enumerate()
-            {
-                header.col(|ui| {
-                    header_cell(ui, title, None, false, index >= 3);
-                });
-            }
-        })
-        .body(|body| {
-            body.rows(ROW_HEIGHT, rows.len(), |mut row| {
-                let transaction = rows[row.index()];
-                row.col(|ui| {
-                    ui.label(date_time_text(transaction.timestamp, utc_offset_secs));
-                });
-                row.col(|ui| {
-                    ui.label(RichText::new(transaction.asset.display_ticker()).strong());
-                });
-                row.col(|ui| {
-                    pill(ui, type_name(transaction.kind), type_tint(transaction.kind));
-                });
-                row.col(|ui| {
-                    numeric_cell(
-                        ui,
-                        &formatter.quantity(transaction.quantity, QuantitySign::None),
-                        None,
-                    );
-                });
-                row.col(|ui| {
-                    let price = transaction.price.map_or("—".to_owned(), |price| {
-                        transaction.price_currency.format_price(price)
-                    });
-                    numeric_cell(ui, &price, None);
+    ui.painter().vline(
+        divider,
+        rect.top() + 16.0..=rect.bottom() - 16.0,
+        Stroke::new(1.0, theme::separator().gamma_multiply(0.7)),
+    );
+    portfolio_grid::put(
+        ui,
+        area.left_top(),
+        Align2::LEFT_TOP,
+        "By Type",
+        kit::size::CAPTION + 0.5,
+        kit::REGULAR,
+        secondary,
+    );
+    type_mix(ui, area, &by_kind, count);
+}
+
+/// A tinted callout: a glyph, a title, an optional detail line and `lines` as bullets in a
+/// scroll area at most `max_height` tall. The import sheets' errors and warnings.
+pub(crate) fn problem_card(
+    ui: &mut Ui,
+    icon: Icon,
+    tint: Color32,
+    title: &str,
+    detail: Option<&str>,
+    lines: &[String],
+    max_height: f32,
+) {
+    egui::Frame::new()
+        .fill(theme::with_alpha(tint, 0.08))
+        .corner_radius(10.0)
+        .stroke(Stroke::new(1.0, theme::with_alpha(tint, 0.25)))
+        .inner_margin(egui::Margin::same(12))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal_top(|ui| {
+                ui.spacing_mut().item_spacing.x = 10.0;
+                icons::inline(ui, icon, 14.0, tint);
+                ui.vertical(|ui| {
+                    ui.spacing_mut().item_spacing.y = 3.0;
+                    ui.label(kit::text(
+                        title,
+                        kit::size::SUBHEADLINE + 1.0,
+                        kit::SEMIBOLD,
+                        theme::text_primary(),
+                    ));
+                    if let Some(detail) = detail {
+                        ui.add(
+                            egui::Label::new(kit::text(
+                                detail,
+                                kit::size::CAPTION + 0.5,
+                                kit::REGULAR,
+                                theme::text_secondary(),
+                            ))
+                            .wrap(),
+                        );
+                    }
+                    if !lines.is_empty() {
+                        egui::ScrollArea::vertical()
+                            .id_salt(title)
+                            .max_height(max_height)
+                            .auto_shrink([false, true])
+                            .show(ui, |ui| {
+                                ui.spacing_mut().item_spacing.y = 2.0;
+                                for line in lines {
+                                    ui.add(
+                                        egui::Label::new(kit::text(
+                                            format!("\u{2022} {line}"),
+                                            kit::size::CAPTION + 0.5,
+                                            kit::REGULAR,
+                                            theme::text_secondary(),
+                                        ))
+                                        .wrap(),
+                                    );
+                                }
+                            });
+                    }
                 });
             });
         });
 }
 
-fn footer(
-    ui: &mut egui::Ui,
+fn notices(ui: &mut Ui, preview: &CsvPreview, state: &ImportPreviewState) {
+    if !preview.errors.is_empty() {
+        problem_card(
+            ui,
+            Icon::XmarkOctagonFill,
+            theme::DOWN,
+            &error_title(preview.errors.len()),
+            Some("Fix the source data and import again."),
+            &preview.errors,
+            84.0,
+        );
+        ui.add_space(8.0);
+    }
+    if let Some(failure) = &state.failure {
+        problem_card(
+            ui,
+            Icon::TriangleFill,
+            theme::DOWN,
+            "Import failed",
+            Some(&failure_detail(failure)),
+            &[],
+            0.0,
+        );
+        ui.add_space(8.0);
+    }
+    if !preview.warnings.is_empty() {
+        problem_card(
+            ui,
+            Icon::TriangleFill,
+            theme::REPLAY,
+            &warning_title(preview.warnings.len()),
+            Some("Warnings don't block the import."),
+            &preview.warnings,
+            64.0,
+        );
+        ui.add_space(8.0);
+    }
+}
+
+/// The transactions that will be written, newest first, in the same cells as the Transactions
+/// table.
+fn table(
+    ui: &mut Ui,
+    outer: Rect,
     state: &mut ImportPreviewState,
     preview: &CsvPreview,
-    outcome: &mut Option<ImportPreviewOutcome>,
+    utc_offset_secs: i64,
 ) {
-    ui.add_space(6.0);
-    ui.horizontal(|ui| {
-        if state.is_importing {
-            ui.spinner();
-            ui.label(RichText::new("Validating and importing…").weak());
+    portfolio_grid::paint_frame(ui, outer);
+    let rows = sorted_rows(preview);
+    if rows.is_empty() {
+        portfolio_empty::compact(
+            ui,
+            outer,
+            portfolio_empty::Scene::Transactions,
+            "No Transactions",
+            "The file didn't contain any transactions that can be imported.",
+        );
+        return;
+    }
+    let headers: Vec<String> = ["Date", "Asset", "Type", "Quantity", "Price", "Total"]
+        .iter()
+        .map(|title| (*title).to_owned())
+        .collect();
+    let formatter = PortfolioValueFormatter::new(PortfolioCurrency::Usd, false);
+    let output = portfolio_grid::show_table(
+        ui,
+        outer,
+        &TableSpec {
+            id: "portfolio-import-preview",
+            columns: &COLUMNS,
+            headers: &headers,
+            row_height: ROW_HEIGHT,
+            count: rows.len(),
+            sorted: None,
+            selected: state.selected,
+            has_footer: false,
+        },
+        &mut state.navigation,
+        |ui, row| preview_row(ui, rows[row.index], row, &formatter, utc_offset_secs),
+    );
+    if let Some(index) = output.row_clicked.or(output.moved_to) {
+        state.selected = Some(index);
+    }
+}
+
+fn preview_row(
+    ui: &mut Ui,
+    tx: &PortfolioTransaction,
+    row: &RowContext,
+    formatter: &PortfolioValueFormatter,
+    utc_offset_secs: i64,
+) {
+    let cells = row.cells;
+    let primary = theme::text_primary();
+    paint_type_tick(ui, cells[0], ROW_HEIGHT, tx.kind);
+    paint_date_cell(ui, cells[0], &COLUMNS[0], tx.timestamp, utc_offset_secs);
+    paint_asset_cell(
+        ui,
+        cells[1],
+        &tx.asset,
+        &tx.asset.display_ticker(),
+        &asset_subtitle(&tx.asset),
+    );
+    paint_type_capsule(ui, cells[2], tx.kind, type_name(tx.kind));
+    let quantity_color = match quantity_sign(tx.kind) {
+        QuantitySign::Plus => theme::UP,
+        QuantitySign::Minus => theme::DOWN,
+        QuantitySign::None => primary,
+    };
+    portfolio_grid::figure(
+        ui,
+        cells[3],
+        &COLUMNS[3],
+        &formatter.quantity(tx.quantity, quantity_sign(tx.kind)),
+        quantity_color,
+    );
+    let dash = || "\u{2014}".to_owned();
+    portfolio_grid::figure(
+        ui,
+        cells[4],
+        &COLUMNS[4],
+        &tx.price
+            .map_or_else(dash, |price| tx.price_currency.format_price(price)),
+        primary,
+    );
+    portfolio_grid::cell_text(
+        ui,
+        cells[5],
+        &COLUMNS[5],
+        &tx.price
+            .map_or_else(dash, |price| tx.price_currency.format(price * tx.quantity)),
+        kit::size::BODY,
+        kit::MEDIUM,
+        primary,
+    );
+}
+
+/// A dot and a label, for a footer's status line.
+pub(crate) fn status_dot(ui: &mut Ui, color: Color32, label: &str, weight: f32, text: Color32) {
+    let (dot, _) = ui.allocate_exact_size(Vec2::splat(8.0), Sense::hover());
+    ui.painter().circle_filled(dot.center(), 3.5, color);
+    ui.label(kit::text(label, kit::size::BODY, weight, text));
+}
+
+/// The footer's leading side: busy while importing, else whether the file is ready.
+fn status(ui: &mut Ui, importing: bool, preview: &CsvPreview) {
+    ui.spacing_mut().item_spacing.x = 6.0;
+    if importing {
+        ui.add(egui::Spinner::new().size(14.0));
+        ui.label(kit::text(
+            "Validating and importing\u{2026}",
+            kit::size::BODY,
+            kit::REGULAR,
+            theme::text_secondary(),
+        ));
+        return;
+    }
+    for (index, (kind, label)) in footer_status(preview).iter().enumerate() {
+        if index > 0 {
+            ui.add_space(10.0);
         }
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let title = import_button_title(preview.transactions.len());
-            if kit::footer_button(
-                ui,
-                &title,
-                kit::FooterButton::Prominent(theme::SYSTEM_ACCENT),
-                can_import(preview, state),
-                150.0,
-            )
-            .clicked()
-            {
-                state.is_importing = true;
-                state.failure = None;
-                *outcome = Some(ImportPreviewOutcome::Import);
-            }
-            if kit::footer_button(
-                ui,
-                "Cancel",
-                kit::FooterButton::Secondary,
-                !state.is_importing,
-                0.0,
-            )
-            .clicked()
-            {
-                *outcome = Some(ImportPreviewOutcome::Cancel);
-            }
-        });
-    });
-    ui.add_space(4.0);
+        status_dot(
+            ui,
+            kind.color(),
+            label,
+            if index == 0 {
+                kit::MEDIUM
+            } else {
+                kit::REGULAR
+            },
+            if index == 0 {
+                theme::text_primary()
+            } else {
+                theme::text_secondary()
+            },
+        );
+    }
 }
 
 #[cfg(test)]
@@ -410,7 +641,7 @@ mod tests {
         assert!(!can_import(&preview(vec![]), &state));
         let busy = ImportPreviewState {
             is_importing: true,
-            failure: None,
+            ..ImportPreviewState::default()
         };
         assert!(!can_import(&preview(vec![transaction(1, "X", 1)]), &busy));
     }
@@ -419,7 +650,7 @@ mod tests {
     fn a_failure_reopens_the_button_and_shows_why() {
         let mut state = ImportPreviewState {
             is_importing: true,
-            failure: None,
+            ..ImportPreviewState::default()
         };
         state.failed("Sell exceeds holdings");
         assert!(!state.is_importing);
@@ -428,19 +659,39 @@ mod tests {
     }
 
     #[test]
-    fn the_third_stat_prefers_errors_and_words_agree_with_counts() {
-        let mut preview = preview(vec![]);
-        assert_eq!(problem_card(&preview), ("Warnings", 0, None));
+    fn the_footer_says_ready_unless_something_blocks_or_warns() {
+        let mut preview = preview(vec![transaction(1, "BTCUSDT", 1)]);
+        assert_eq!(
+            footer_status(&preview),
+            vec![(Status::Good, "Ready to import".to_owned())]
+        );
         preview.warnings.push("w".into());
-        assert_eq!(problem_card(&preview), ("Warnings", 1, None));
+        assert_eq!(
+            footer_status(&preview),
+            vec![
+                (Status::Good, "Ready to import".to_owned()),
+                (Status::Warning, "1 warning".to_owned())
+            ]
+        );
         preview.errors.extend(["e1".to_owned(), "e2".to_owned()]);
-        assert_eq!(problem_card(&preview), ("Errors", 2, Some(Tone::Loss)));
+        assert_eq!(
+            footer_status(&preview)[0],
+            (Status::Error, "2 errors to fix".to_owned())
+        );
+        assert_eq!(
+            footer_status(&super::tests::preview(vec![])),
+            vec![(Status::Warning, "Nothing to import".to_owned())]
+        );
+    }
+
+    #[test]
+    fn words_agree_with_counts() {
         assert_eq!(error_title(1), "1 problem requires attention");
         assert_eq!(error_title(2), "2 problems require attention");
         assert_eq!(warning_title(1), "1 warning");
         assert_eq!(warning_title(3), "3 warnings");
         assert_eq!(import_button_title(1), "Import 1 Transaction");
         assert_eq!(import_button_title(0), "Import 0 Transactions");
-        assert_eq!(subtitle(&preview), "Nothing to import yet.");
+        assert_eq!(subtitle(&preview(vec![])), "Nothing to import yet.");
     }
 }
