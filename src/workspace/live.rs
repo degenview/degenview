@@ -34,12 +34,11 @@ impl ChartWorkspace {
             }
         }
 
-        let mut updates = Vec::new();
-        if let Some(feed) = &self.live_feed {
-            while let Ok((symbol, kline)) = feed.receiver.try_recv() {
-                updates.push((symbol, kline));
-            }
-        }
+        let updates = self
+            .live_feed
+            .as_ref()
+            .map(|feed| feed.inbox.drain())
+            .unwrap_or_default();
         for (symbol, kline) in updates {
             self.apply_live_kline(&symbol, kline);
         }
