@@ -7,6 +7,7 @@ use crate::model::portfolio::{
 };
 use crate::model::portfolio_format::PortfolioValueFormatter;
 use crate::ui::portfolio_empty::{self, Scene};
+use crate::ui::portfolio_holdings::{self, HoldingsInput, HoldingsState};
 use crate::ui::portfolio_overview::{
     self, OverviewInput, OverviewState, PriceStatus, StatisticsInput,
 };
@@ -205,4 +206,80 @@ fn portfolio_gallery_empty_pages() {
             header_controls::prominent_button(ui, Icon::Plus, "Add Transaction");
         });
     });
+}
+
+#[test]
+#[ignore = "writes PNGs for a person to look at"]
+fn portfolio_gallery_holdings() {
+    if crate::ui::render_tests::gallery_dir().is_none() {
+        return;
+    }
+    let mut with_unpriced = holdings();
+    let mut unpriced = holding("PEPE", "Pepe", 0.0, 120.0, 0.0);
+    unpriced.current_price = None;
+    unpriced.previous_day_price = None;
+    unpriced.current_value = None;
+    unpriced.unrealized_pnl = None;
+    with_unpriced.push(unpriced);
+    let subtitle = |asset: &PortfolioAsset| asset.name.clone();
+    for (name, size, list, loading, search) in [
+        (
+            "portfolio-holdings-1100",
+            vec2(1100.0, 640.0),
+            &with_unpriced,
+            false,
+            "",
+        ),
+        (
+            "portfolio-holdings-1480",
+            vec2(1480.0, 560.0),
+            &with_unpriced,
+            false,
+            "",
+        ),
+        (
+            "portfolio-holdings-760",
+            vec2(760.0, 640.0),
+            &with_unpriced,
+            false,
+            "",
+        ),
+        (
+            "portfolio-holdings-loading",
+            vec2(1100.0, 460.0),
+            &with_unpriced,
+            true,
+            "",
+        ),
+        (
+            "portfolio-holdings-nomatch",
+            vec2(1100.0, 460.0),
+            &with_unpriced,
+            false,
+            "zzz",
+        ),
+        (
+            "portfolio-holdings-empty",
+            vec2(1100.0, 460.0),
+            &Vec::new(),
+            false,
+            "",
+        ),
+    ] {
+        both_themes(name, size, |ui| {
+            let mut state = HoldingsState::default();
+            state.search = search.to_owned();
+            portfolio_holdings::show(
+                ui,
+                &mut state,
+                &HoldingsInput {
+                    holdings: list,
+                    saved_sort: crate::model::portfolio::PortfolioHoldingsSort::CurrentValue,
+                    formatter: PortfolioValueFormatter::new(PortfolioCurrency::Usd, false),
+                    is_loading: loading,
+                    subtitle: &subtitle,
+                },
+            );
+        });
+    }
 }

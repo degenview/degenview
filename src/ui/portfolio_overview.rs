@@ -178,7 +178,7 @@ fn paint_arrow(ui: &Ui, center: Pos2, up: bool, color: Color32) {
 }
 
 /// A raised surface: a soft shadow under the fill, and a hairline around it.
-fn lift(ui: &Ui, rect: Rect, radius: f32) {
+pub(crate) fn lift(ui: &Ui, rect: Rect, radius: f32) {
     let painter = ui.painter();
     painter.add(
         egui::Shadow {

@@ -47,6 +47,11 @@ rebuild the projection (holdings, history, cards) and flip `is_updating`, which 
   `WIDE_MIN`, level, as tall as the longer of the bars and the ring needs; stacked below), then
   four activity cards. The P&L rows share their panel's height within 30 to 40 pt; below 520 pt
   the percentage column is dropped.
+- Holdings: a summary band (total value and profit; one bar of how the money divides, in the
+  colours the Overview's donut gives the same assets) above the search field and the table.
+  Rows are 52 pt: the 24 h move is a tinted pill, the allocation cell carries a bar against the
+  largest position, and P&L is the amount over its percentage. The band shows skeletons while
+  prices load and is absent for a portfolio with no holdings.
 - Every block has a fixed height and paints at measured positions, so nothing reflows while prices
   stream in.
 
