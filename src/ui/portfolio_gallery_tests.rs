@@ -534,8 +534,32 @@ fn portfolio_gallery_asset_picker() {
             "Continue",
         ));
         state.borrow_mut().select_tab(tab);
+        let store: crate::store::SharedStore = std::sync::Arc::new(std::sync::Mutex::new(
+            crate::store::Store::open_in_memory().expect("open store"),
+        ));
+        {
+            let mut recents = Vec::new();
+            for (symbol, full, source) in [
+                ("BTC/USDT", "BTCUSDT", DataSource::Binance),
+                ("ETH/USDT", "ETHUSDT", DataSource::Binance),
+                ("AAPL", "AAPL", DataSource::Alpaca),
+                ("SOL/USDT", "SOLUSDT", DataSource::Binance),
+            ] {
+                crate::ui::add_chart_sheet::record_recent(
+                    &mut recents,
+                    &crate::service::SearchResult {
+                        symbol: symbol.into(),
+                        full_symbol: full.into(),
+                        source,
+                        price: None,
+                        event: None,
+                    },
+                );
+            }
+            crate::ui::add_chart_sheet::store_recents(&store.lock().unwrap(), &recents);
+        }
         both_themes(name, vec2(1000.0, 720.0), |ui| {
-            show(ui.ctx(), &mut state.borrow_mut());
+            show(ui.ctx(), &mut state.borrow_mut(), &store);
         });
     }
 }

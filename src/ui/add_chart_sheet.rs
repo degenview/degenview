@@ -478,6 +478,27 @@ pub fn store_recents(store: &crate::store::Store, recents: &[RecentMarket]) {
     };
 }
 
+/// Puts `result` first in `recents`, the one place both sheets record a pick. Prediction markets
+/// and CoinMarketCap indices are not kept; returns whether the list changed.
+pub(crate) fn record_recent(recents: &mut Vec<RecentMarket>, result: &SearchResult) -> bool {
+    if result.source.is_prediction_market() || result.source == DataSource::CoinMarketCap {
+        return false;
+    }
+    recents.retain(|recent| {
+        recent.source != result.source || recent.full_symbol != result.full_symbol
+    });
+    recents.insert(
+        0,
+        RecentMarket {
+            symbol: result.symbol.clone(),
+            full_symbol: result.full_symbol.clone(),
+            source: result.source,
+        },
+    );
+    recents.truncate(RECENT_LIMIT);
+    true
+}
+
 impl RecentMarket {
     pub fn result(&self) -> SearchResult {
         SearchResult {
@@ -699,22 +720,7 @@ impl AddChartSheet {
             self.needs_alpaca_setup = true;
             return None;
         }
-        if self.watchlist_name.is_none()
-            && !result.source.is_prediction_market()
-            && result.source != DataSource::CoinMarketCap
-        {
-            self.recents.retain(|recent| {
-                recent.source != result.source || recent.full_symbol != result.full_symbol
-            });
-            self.recents.insert(
-                0,
-                RecentMarket {
-                    symbol: result.symbol.clone(),
-                    full_symbol: result.full_symbol.clone(),
-                    source: result.source,
-                },
-            );
-            self.recents.truncate(RECENT_LIMIT);
+        if self.watchlist_name.is_none() && record_recent(&mut self.recents, &result) {
             self.save_recents();
         }
         if self.watchlist_name.is_none() {
@@ -1075,69 +1081,13 @@ impl AddChartSheet {
             Tab::Stocks => self.stocks.selected.clone(),
             _ => self.crypto.selected.clone(),
         };
-        let mut pick = None;
-        let mut remove = None;
-        let mut clear = false;
-        card(ui, |ui| {
-            ui.horizontal(|ui| {
-                caption_label(ui, Icon::ClockArrow, "Recent");
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let clear_button = ui.add(
-                        egui::Label::new(text(
-                            "Clear",
-                            size::CAPTION + 0.5,
-                            400.0,
-                            theme::text_secondary(),
-                        ))
-                        .sense(Sense::click()),
-                    );
-                    if clear_button
-                        .on_hover_cursor(egui::CursorIcon::PointingHand)
-                        .clicked()
-                    {
-                        clear = true;
-                    }
-                });
-            });
-            ui.add_space(8.0);
-            let column =
-                (ui.available_width() - RECENT_GAP * (RECENT_COLUMNS - 1.0)) / RECENT_COLUMNS;
-            for (row, group) in self.recents.chunks(RECENT_COLUMNS as usize).enumerate() {
-                if row > 0 {
-                    ui.add_space(2.0);
-                }
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = RECENT_GAP;
-                    for (offset, market) in group.iter().enumerate() {
-                        let result = market.result();
-                        let is_selected = selected
-                            .as_ref()
-                            .is_some_and(|picked| same_market(picked, &result));
-                        let response = result_row(ui, &result, is_selected, true, column);
-                        response.context_menu(|ui| {
-                            if ui.button("Remove from Recent").clicked() {
-                                remove = Some(row * RECENT_COLUMNS as usize + offset);
-                                ui.close();
-                            }
-                        });
-                        if response.double_clicked() {
-                            *request = Some(Request::Commit(result));
-                        } else if response.clicked() {
-                            pick = Some(result);
-                        }
-                    }
-                });
-            }
-        });
-        if let Some(result) = pick {
+        let outcome = recents_card(ui, &mut self.recents, selected.as_ref());
+        if let Some(result) = outcome.commit {
+            *request = Some(Request::Commit(result));
+        } else if let Some(result) = outcome.pick {
             self.pick_recent(result);
         }
-        if let Some(index) = remove {
-            self.recents.remove(index);
-            self.save_recents();
-        }
-        if clear {
-            self.recents.clear();
+        if outcome.changed {
             self.save_recents();
         }
     }
@@ -1311,6 +1261,86 @@ enum Request {
     CommitSelection,
     Commit(SearchResult),
     OpenAlpacaSettings,
+}
+
+/// What the user did in the Recent card this frame.
+#[derive(Default)]
+pub(crate) struct RecentsOutcome {
+    /// A market was clicked: select it.
+    pub pick: Option<SearchResult>,
+    /// A market was double-clicked: take it.
+    pub commit: Option<SearchResult>,
+    /// A market was removed or the list cleared: save it.
+    pub changed: bool,
+}
+
+/// The "Recent" card: the markets picked before, in rows with a Clear link and a context menu to
+/// remove one. Shared by the Add Chart sheet and the portfolio's asset picker.
+pub(crate) fn recents_card(
+    ui: &mut Ui,
+    recents: &mut Vec<RecentMarket>,
+    selected: Option<&SearchResult>,
+) -> RecentsOutcome {
+    let mut outcome = RecentsOutcome::default();
+    let mut remove = None;
+    let mut clear = false;
+    card(ui, |ui| {
+        ui.horizontal(|ui| {
+            caption_label(ui, Icon::ClockArrow, "Recent");
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let clear_button = ui.add(
+                    egui::Label::new(text(
+                        "Clear",
+                        size::CAPTION + 0.5,
+                        400.0,
+                        theme::text_secondary(),
+                    ))
+                    .sense(Sense::click()),
+                );
+                if clear_button
+                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                    .clicked()
+                {
+                    clear = true;
+                }
+            });
+        });
+        ui.add_space(8.0);
+        let column = (ui.available_width() - RECENT_GAP * (RECENT_COLUMNS - 1.0)) / RECENT_COLUMNS;
+        for (row, group) in recents.chunks(RECENT_COLUMNS as usize).enumerate() {
+            if row > 0 {
+                ui.add_space(2.0);
+            }
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = RECENT_GAP;
+                for (offset, market) in group.iter().enumerate() {
+                    let result = market.result();
+                    let is_selected = selected.is_some_and(|picked| same_market(picked, &result));
+                    let response = result_row(ui, &result, is_selected, true, column);
+                    response.context_menu(|ui| {
+                        if ui.button("Remove from Recent").clicked() {
+                            remove = Some(row * RECENT_COLUMNS as usize + offset);
+                            ui.close();
+                        }
+                    });
+                    if response.double_clicked() {
+                        outcome.commit = Some(result);
+                    } else if response.clicked() {
+                        outcome.pick = Some(result);
+                    }
+                }
+            });
+        }
+    });
+    if let Some(index) = remove {
+        recents.remove(index);
+        outcome.changed = true;
+    }
+    if clear {
+        recents.clear();
+        outcome.changed = true;
+    }
+    outcome
 }
 
 // MARK: Components

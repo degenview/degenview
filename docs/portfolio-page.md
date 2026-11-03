@@ -65,6 +65,14 @@ rebuild the projection (holdings, history, cards) and flip `is_updating`, which 
 - Every block has a fixed height and paints at measured positions, so nothing reflows while prices
   stream in.
 
+## Asset picker
+
+The Add Asset, Remap and CoinMarketCap Match sheets share `portfolio_asset_picker`, the Add Chart
+sheet's twin. It opens with Add Chart's header art for the section, and under the suggestion chips
+it shows the same Recent card (`add_chart_sheet::recents_card`) over the same stored list
+(`addTicker.recentMarkets`): a pick in either sheet appears in both. Crypto and stock markets are
+kept; prediction markets and CoinMarketCap indices are not, so the Predictions section has none.
+
 ## Empty states
 
 `portfolio_empty` draws them with the `Art` helpers the Script Manager's Logs, Problems and Profile

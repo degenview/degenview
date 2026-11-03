@@ -83,6 +83,11 @@ pub struct PortfolioHost {
 }
 
 impl PortfolioHost {
+    /// The store the host reads and writes, for the sheets that keep their own settings.
+    pub fn store(&self) -> &SharedStore {
+        &self.store
+    }
+
     pub fn load(store: SharedStore) -> Self {
         let loaded = store
             .lock()
@@ -1258,7 +1263,7 @@ impl PortfolioTab {
         }
 
         if let Some(picker) = &mut self.picker {
-            match portfolio_asset_picker::show(ctx, picker) {
+            match portfolio_asset_picker::show(ctx, picker, host.store()) {
                 Some(AssetPickerOutcome::Choose(result)) => {
                     self.new_asset = Some(asset_from_search_result(&result));
                     self.picker = None;
@@ -1269,7 +1274,7 @@ impl PortfolioTab {
         }
 
         if let Some((key, picker)) = &mut self.remap {
-            match portfolio_asset_picker::show(ctx, picker) {
+            match portfolio_asset_picker::show(ctx, picker, host.store()) {
                 Some(AssetPickerOutcome::Choose(result)) => {
                     let scope = portfolio_scope(host.snapshot());
                     let destination = asset_from_search_result(&result);
