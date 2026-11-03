@@ -52,6 +52,10 @@ rebuild the projection (holdings, history, cards) and flip `is_updating`, which 
   Rows are 52 pt: the 24 h move is a tinted pill, the allocation cell carries a bar against the
   largest position, and P&L is the amount over its percentage. The band shows skeletons while
   prices load and is absent for a portfolio with no holdings.
+- Transactions: the same band above the toolbar (the ledger's count with buys and sells, one bar
+  of the mix by type in the capsule colours, fees paid), 48 pt rows with the date over the time,
+  the asset over its name, and a tick in the type's colour at the row's edge. The shared table
+  code (`portfolio_grid`) is unchanged apart from a `put` text helper both bands use.
 - Every block has a fixed height and paints at measured positions, so nothing reflows while prices
   stream in.
 

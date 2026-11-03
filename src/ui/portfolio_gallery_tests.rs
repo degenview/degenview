@@ -11,6 +11,7 @@ use crate::ui::portfolio_holdings::{self, HoldingsInput, HoldingsState};
 use crate::ui::portfolio_overview::{
     self, OverviewInput, OverviewState, PriceStatus, StatisticsInput,
 };
+use crate::ui::portfolio_transactions::{self, Projection, TransactionsInput, TransactionsState};
 use crate::ui::render_tests::Screen;
 use crate::ui::{header_controls, icons::Icon, theme};
 use eframe::egui::{self, vec2};
@@ -278,6 +279,159 @@ fn portfolio_gallery_holdings() {
                     formatter: PortfolioValueFormatter::new(PortfolioCurrency::Usd, false),
                     is_loading: loading,
                     subtitle: &subtitle,
+                },
+            );
+        });
+    }
+}
+
+fn ledger() -> Vec<crate::model::portfolio::PortfolioTransaction> {
+    use crate::model::portfolio::{
+        PortfolioSource, PortfolioTransaction, PortfolioTransactionType,
+    };
+    let kinds = [
+        (
+            PortfolioTransactionType::Buy,
+            "BTC",
+            0.25,
+            31_200.0,
+            "Weekly DCA",
+        ),
+        (PortfolioTransactionType::Buy, "ETH", 2.0, 1_700.0, ""),
+        (
+            PortfolioTransactionType::Sell,
+            "SOL",
+            14.0,
+            140.0,
+            "Took profit",
+        ),
+        (
+            PortfolioTransactionType::StakingReward,
+            "ETH",
+            0.012,
+            1_850.0,
+            "",
+        ),
+        (
+            PortfolioTransactionType::TransferIn,
+            "LINK",
+            120.0,
+            14.5,
+            "From cold wallet",
+        ),
+        (PortfolioTransactionType::Buy, "BTC", 0.1, 30_100.0, ""),
+        (PortfolioTransactionType::Airdrop, "ARB", 400.0, 1.2, ""),
+        (PortfolioTransactionType::Sell, "DOGE", 2_500.0, 0.09, ""),
+        (PortfolioTransactionType::Buy, "SOL", 20.0, 98.0, "Dip"),
+        (PortfolioTransactionType::Fee, "ETH", 0.002, 1_900.0, "Gas"),
+        (PortfolioTransactionType::Buy, "LINK", 60.0, 12.8, ""),
+        (
+            PortfolioTransactionType::Interest,
+            "BTC",
+            0.0004,
+            32_000.0,
+            "",
+        ),
+    ];
+    kinds
+        .iter()
+        .enumerate()
+        .map(
+            |(index, (kind, ticker, quantity, price, notes))| PortfolioTransaction {
+                id: index as u64 + 1,
+                portfolio_id: 1,
+                asset: holding(
+                    ticker,
+                    match *ticker {
+                        "BTC" => "Bitcoin",
+                        "ETH" => "Ethereum",
+                        "SOL" => "Solana",
+                        "LINK" => "Chainlink",
+                        "ARB" => "Arbitrum",
+                        _ => "Dogecoin",
+                    },
+                    *price,
+                    *price,
+                    0.0,
+                )
+                .asset,
+                kind: *kind,
+                quantity: *quantity,
+                price: Some(*price),
+                price_currency: PortfolioCurrency::Usd,
+                fee: if *kind == PortfolioTransactionType::Buy {
+                    4.5
+                } else {
+                    0.0
+                },
+                fee_currency: PortfolioCurrency::Usd,
+                timestamp: NOW - (index as i64 + 1) * 9 * DAY + index as i64 * 3_700_000,
+                notes: (*notes).to_owned(),
+                source: PortfolioSource::Manual,
+                external_transaction_id: None,
+                created_at: NOW,
+                updated_at: NOW,
+            },
+        )
+        .collect()
+}
+
+#[test]
+#[ignore = "writes PNGs for a person to look at"]
+fn portfolio_gallery_transactions() {
+    if crate::ui::render_tests::gallery_dir().is_none() {
+        return;
+    }
+    let full = ledger();
+    let subtitle = |asset: &PortfolioAsset| asset.name.clone();
+    let projection = {
+        let full = full.clone();
+        move |id: u64| {
+            full.iter().find(|tx| tx.id == id).map(|tx| Projection {
+                price: tx.price,
+                fee: tx.fee,
+            })
+        }
+    };
+    for (name, size, list, search) in [
+        (
+            "portfolio-transactions-1100",
+            vec2(1100.0, 760.0),
+            &full,
+            "",
+        ),
+        (
+            "portfolio-transactions-1480",
+            vec2(1480.0, 620.0),
+            &full,
+            "",
+        ),
+        ("portfolio-transactions-760", vec2(760.0, 760.0), &full, ""),
+        (
+            "portfolio-transactions-nomatch",
+            vec2(1100.0, 460.0),
+            &full,
+            "zzz",
+        ),
+        (
+            "portfolio-transactions-empty",
+            vec2(1100.0, 460.0),
+            &Vec::new(),
+            "",
+        ),
+    ] {
+        both_themes(name, size, |ui| {
+            let mut state = TransactionsState::default();
+            state.filters.search = search.to_owned();
+            portfolio_transactions::show(
+                ui,
+                &mut state,
+                &TransactionsInput {
+                    ledger: list,
+                    projection: &projection,
+                    subtitle: &subtitle,
+                    formatter: PortfolioValueFormatter::new(PortfolioCurrency::Usd, false),
+                    utc_offset_secs: 0,
                 },
             );
         });

@@ -15,12 +15,12 @@ use crate::ui::kit::{self, MEDIUM, REGULAR, SEMIBOLD};
 use crate::ui::portfolio_charts;
 use crate::ui::portfolio_empty;
 use crate::ui::portfolio_grid::{
-    self, Col, INSET, MENU_RESERVE, Navigation, RowContext, TableSpec,
+    self, Col, INSET, MENU_RESERVE, Navigation, RowContext, TableSpec, put,
 };
 use crate::ui::portfolio_overview::lift;
 use crate::ui::portfolio_table as table;
 use crate::ui::theme;
-use eframe::egui::{self, Align2, Color32, Pos2, Rect, Sense, Stroke, Vec2, pos2, vec2};
+use eframe::egui::{self, Align2, Color32, Rect, Sense, Stroke, Vec2, pos2, vec2};
 use std::cmp::Ordering;
 use std::collections::HashMap;
 
@@ -357,22 +357,6 @@ pub fn summarise(holdings: &[PortfolioHolding]) -> Summary {
         pnl,
         pnl_percent: pnl.filter(|_| cost > 0.0).map(|pnl: f64| pnl / cost),
     }
-}
-
-/// Text anchored at `pos`; returns the rect it covers.
-fn put(
-    ui: &egui::Ui,
-    pos: Pos2,
-    anchor: Align2,
-    text: &str,
-    size: f32,
-    weight: f32,
-    color: Color32,
-) -> Rect {
-    let galley = kit::galley(ui, text, size, weight, color, 600.0);
-    let rect = anchor.anchor_size(pos, galley.size());
-    ui.painter().galley(rect.min, galley, Color32::PLACEHOLDER);
-    rect
 }
 
 /// The total value with its profit, and beside them one bar of how the money divides, in the

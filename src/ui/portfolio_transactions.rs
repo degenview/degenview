@@ -11,16 +11,17 @@ use crate::model::portfolio_format::{PortfolioValueFormatter, QuantitySign};
 use crate::ui::accessibility;
 use crate::ui::alert_center::clock_time;
 use crate::ui::icons::Icon;
-use crate::ui::kit::{self, SEMIBOLD};
+use crate::ui::kit::{self, MEDIUM, REGULAR, SEMIBOLD};
 use crate::ui::portfolio_charts;
 use crate::ui::portfolio_empty;
 use crate::ui::portfolio_grid::{
-    self, Col, INSET, MENU_RESERVE, Navigation, RowContext, TableSpec,
+    self, Col, INSET, MENU_RESERVE, Navigation, RowContext, TableSpec, put,
 };
+use crate::ui::portfolio_overview::{activity_caption, lift};
 use crate::ui::portfolio_table as table;
 use crate::ui::replay_bar::date_text;
 use crate::ui::theme;
-use eframe::egui::{self, Color32, Rect, Sense, Vec2, pos2, vec2};
+use eframe::egui::{self, Align2, Color32, Rect, Sense, Stroke, pos2, vec2};
 use std::cmp::Ordering;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -352,6 +353,10 @@ pub fn show(
     input: &TransactionsInput,
 ) -> Vec<TransactionAction> {
     let mut actions = Vec::new();
+    if !input.ledger.is_empty() {
+        ui.add_space(12.0);
+        summary_band(ui, input);
+    }
     toolbar(ui, state, input, &mut actions);
     let shown = rows(
         input.ledger,
@@ -507,19 +512,195 @@ fn toolbar(
     }
 }
 
-const ROW_HEIGHT: f32 = 42.0;
+// MARK: Summary band
+
+const BAND_HEIGHT: f32 = 108.0;
+
+/// What the band above the table says about the whole ledger, whatever the filters show.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Summary {
+    pub count: usize,
+    pub buys: usize,
+    pub sells: usize,
+    /// Fees in the reporting currency.
+    pub fees: f64,
+    /// How many of each type, most common first (ties in the order of `ALL_TYPES`).
+    pub by_kind: Vec<(PortfolioTransactionType, usize)>,
+}
+
+pub fn summarise(
+    ledger: &[PortfolioTransaction],
+    projection: &dyn Fn(u64) -> Option<Projection>,
+) -> Summary {
+    let count_of = |kind| ledger.iter().filter(|tx| tx.kind == kind).count();
+    let mut by_kind: Vec<(PortfolioTransactionType, usize)> = ALL_TYPES
+        .iter()
+        .map(|kind| (*kind, count_of(*kind)))
+        .filter(|(_, count)| *count > 0)
+        .collect();
+    by_kind.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
+    Summary {
+        count: ledger.len(),
+        buys: count_of(PortfolioTransactionType::Buy),
+        sells: count_of(PortfolioTransactionType::Sell),
+        fees: ledger
+            .iter()
+            .filter_map(|tx| projection(tx.id))
+            .map(|p| p.fee)
+            .sum(),
+        by_kind,
+    }
+}
+
+/// How many transactions there are and of what kind, with one bar of the mix in the colours of
+/// the type capsules below.
+fn summary_band(ui: &mut egui::Ui, input: &TransactionsInput) {
+    let f = input.formatter;
+    let (full, _) = ui.allocate_exact_size(vec2(ui.available_width(), BAND_HEIGHT), Sense::hover());
+    let rect = egui::Rect::from_min_max(
+        pos2(full.left() + INSET, full.top()),
+        pos2(full.right() - INSET, full.bottom()),
+    );
+    lift(ui, rect, 14.0);
+    let inner = rect.shrink2(vec2(20.0, 16.0));
+    let secondary = theme::text_secondary();
+    let summary = summarise(input.ledger, input.projection);
+
+    let caption = put(
+        ui,
+        inner.left_top(),
+        Align2::LEFT_TOP,
+        "Transactions",
+        kit::size::CAPTION,
+        REGULAR,
+        secondary,
+    );
+    let count = put(
+        ui,
+        pos2(inner.left(), inner.top() + 14.0),
+        Align2::LEFT_TOP,
+        &summary.count.to_string(),
+        26.0,
+        SEMIBOLD,
+        theme::text_primary(),
+    );
+    let galley = kit::galley(
+        ui,
+        &activity_caption(summary.buys, summary.sells),
+        kit::size::CAPTION,
+        MEDIUM,
+        theme::SYSTEM_ACCENT,
+        400.0,
+    );
+    let pill = Rect::from_min_size(
+        pos2(inner.left(), inner.bottom() - 22.0),
+        vec2(galley.size().x + 18.0, 22.0),
+    );
+    ui.painter()
+        .rect_filled(pill, 11.0, theme::SYSTEM_ACCENT.gamma_multiply(0.16));
+    ui.painter().galley(
+        pill.center() - galley.size() / 2.0,
+        galley,
+        Color32::PLACEHOLDER,
+    );
+
+    let divider = caption.right().max(count.right()).max(pill.right()) + 28.0;
+    let area = Rect::from_min_max(pos2(divider + 28.0, inner.top()), inner.right_bottom());
+    if area.width() < 200.0 {
+        return;
+    }
+    ui.painter().vline(
+        divider,
+        inner.y_range(),
+        Stroke::new(1.0, theme::separator().gamma_multiply(0.7)),
+    );
+    put(
+        ui,
+        area.left_top(),
+        Align2::LEFT_TOP,
+        "By Type",
+        kit::size::CAPTION,
+        REGULAR,
+        secondary,
+    );
+    put(
+        ui,
+        area.right_top(),
+        Align2::RIGHT_TOP,
+        &if summary.fees > 0.0 {
+            format!("Fees paid \u{00B7} {}", f.money(summary.fees))
+        } else {
+            "No fees paid".to_owned()
+        },
+        kit::size::CAPTION,
+        REGULAR,
+        secondary,
+    );
+
+    let bar = Rect::from_min_size(
+        pos2(area.left(), area.top() + 24.0),
+        vec2(area.width(), 12.0),
+    );
+    ui.painter().rect_filled(bar, 6.0, theme::ink(10));
+    let mut start = 0.0_f32;
+    for (index, (kind, count)) in summary.by_kind.iter().enumerate() {
+        let from = bar.left() + bar.width() * start;
+        start += *count as f32 / summary.count as f32;
+        let to = bar.left() + bar.width() * start;
+        let gap = if index + 1 < summary.by_kind.len() {
+            2.0
+        } else {
+            0.0
+        };
+        let width = (to - from - gap).max(2.0);
+        ui.painter().rect_filled(
+            Rect::from_min_size(pos2(from, bar.top()), vec2(width, bar.height())),
+            (width / 2.0).min(6.0),
+            type_tint(*kind),
+        );
+    }
+
+    let middle = area.top() + 56.0;
+    let mut x = area.left();
+    for (kind, count) in &summary.by_kind {
+        let galley = kit::galley(
+            ui,
+            &format!("{} {count}", type_name(*kind)),
+            kit::size::CAPTION,
+            REGULAR,
+            secondary,
+            300.0,
+        );
+        let width = 14.0 + galley.size().x;
+        if x + width > area.right() {
+            break;
+        }
+        ui.painter()
+            .circle_filled(pos2(x + 3.5, middle), 3.5, type_tint(*kind));
+        ui.painter().galley(
+            pos2(x + 14.0, middle - galley.size().y / 2.0),
+            galley,
+            Color32::PLACEHOLDER,
+        );
+        x += width + 16.0;
+    }
+}
+
+// MARK: Table
+
+const ROW_HEIGHT: f32 = 48.0;
 
 /// The columns, in `TransactionColumn::ALL` order. Widths follow the Swift table's.
 const COLUMNS: [Col; 8] = [
-    Col::new(120.0, 145.0, false),
-    Col::new(86.0, 80.0, false),
-    Col::new(112.0, 110.0, false),
-    Col::new(76.0, 90.0, true),
-    Col::new(84.0, 95.0, true),
-    Col::new(84.0, 100.0, true),
-    Col::new(64.0, 75.0, true).unsortable(),
+    Col::new(104.0, 145.0, false),
+    Col::new(100.0, 120.0, false),
+    Col::new(100.0, 110.0, false),
+    Col::new(68.0, 90.0, true),
+    Col::new(96.0, 95.0, true),
+    Col::new(96.0, 100.0, true),
+    Col::new(52.0, 75.0, true).unsortable(),
     // Row actions sit at the end of the last column, as in the Holdings table.
-    Col::new(90.0, 120.0, false).trailing(MENU_RESERVE),
+    Col::new(72.0, 120.0, false).trailing(MENU_RESERVE),
 ];
 
 fn table_view(
@@ -591,38 +772,85 @@ fn transaction_row(
         portfolio_grid::figure(ui, cells[index], &COLUMNS[index], text, color)
     };
 
-    figure(
-        ui,
-        0,
-        &date_time_text(tx.timestamp, input.utc_offset_secs),
-        primary,
+    // A tick in the type's colour at the row's edge, so buys and sells read down a long table.
+    let row_rect = Rect::from_min_max(
+        pos2(cells[0].left(), cells[0].top()),
+        pos2(cells[0].left(), cells[0].bottom()),
+    );
+    ui.painter().rect_filled(
+        Rect::from_center_size(
+            pos2(row_rect.left() + 3.0, row_rect.center().y),
+            vec2(3.0, ROW_HEIGHT - 22.0),
+        ),
+        1.5,
+        type_tint(tx.kind),
     );
 
-    // Asset: a small icon and the ticker.
+    // Date over the time of day.
+    let date_span = portfolio_grid::text_span(cells[0], &COLUMNS[0]);
+    let date = kit::galley(
+        ui,
+        &date_text(tx.timestamp + input.utc_offset_secs * 1_000),
+        kit::size::BODY,
+        MEDIUM,
+        primary,
+        date_span.width(),
+    );
+    let time = kit::galley(
+        ui,
+        &clock_time(tx.timestamp, input.utc_offset_secs),
+        kit::size::CAPTION,
+        REGULAR,
+        secondary,
+        date_span.width(),
+    );
+    let date_top = cells[0].center().y - (date.size().y + 1.0 + time.size().y) / 2.0;
+    let time_top = date_top + date.size().y + 1.0;
+    ui.painter().galley(
+        pos2(date_span.left() + 4.0, date_top),
+        date,
+        Color32::PLACEHOLDER,
+    );
+    ui.painter().galley(
+        pos2(date_span.left() + 4.0, time_top),
+        time,
+        Color32::PLACEHOLDER,
+    );
+
+    // Asset: icon, ticker over name.
     let asset = cells[1];
     let icon = Rect::from_center_size(
         pos2(
-            asset.left() + portfolio_grid::CELL_PAD + 10.0,
+            asset.left() + portfolio_grid::CELL_PAD + 12.0,
             asset.center().y,
         ),
-        Vec2::splat(20.0),
+        egui::Vec2::splat(24.0),
     );
-    ui.scope_builder(egui::UiBuilder::new().max_rect(icon), |ui| {
-        table::asset_icon(ui, &tx.asset, 20.0);
-    });
+    table::paint_asset_icon(ui, icon, &tx.asset);
+    let text_left = icon.right() + 9.0;
+    let text_width = (asset.right() - text_left - 6.0).max(20.0);
     let ticker = kit::galley(
         ui,
         &item.ticker(),
         kit::size::BODY,
         SEMIBOLD,
         primary,
-        (asset.right() - icon.right() - 8.0 - 6.0).max(20.0),
+        text_width,
     );
-    ui.painter().galley(
-        pos2(icon.right() + 8.0, asset.center().y - ticker.size().y / 2.0),
-        ticker,
-        Color32::PLACEHOLDER,
+    let name = kit::galley(
+        ui,
+        &(input.subtitle)(&tx.asset),
+        kit::size::CAPTION,
+        REGULAR,
+        secondary,
+        text_width,
     );
+    let top = asset.center().y - (ticker.size().y + 1.0 + name.size().y) / 2.0;
+    let name_y = top + ticker.size().y + 1.0;
+    ui.painter()
+        .galley(pos2(text_left, top), ticker, Color32::PLACEHOLDER);
+    ui.painter()
+        .galley(pos2(text_left, name_y), name, Color32::PLACEHOLDER);
 
     // Type: a tinted capsule; hovering says where the transaction came from.
     let tint = type_tint(tx.kind);
@@ -677,10 +905,13 @@ fn transaction_row(
         &item.price.map_or_else(dash, |v| f.price(v)),
         primary,
     );
-    figure(
+    portfolio_grid::cell_text(
         ui,
-        5,
+        cells[5],
+        &COLUMNS[5],
         &item.total().map_or_else(dash, |v| f.money(v)),
+        kit::size::BODY,
+        MEDIUM,
         primary,
     );
     figure(
@@ -844,6 +1075,25 @@ mod tests {
             column,
             ascending,
         )
+    }
+
+    #[test]
+    fn the_summary_counts_the_whole_ledger_by_type_and_adds_up_the_fees() {
+        use PortfolioTransactionType::*;
+        let summary = summarise(&ledger(), &projection);
+        assert_eq!((summary.count, summary.buys, summary.sells), (4, 2, 1));
+        assert_eq!(summary.fees, 1.5);
+        // Most common first; the rest keep their order in `ALL_TYPES`.
+        assert_eq!(summary.by_kind, [(Buy, 2), (Sell, 1), (Reward, 1)]);
+        assert_eq!(
+            summary
+                .by_kind
+                .iter()
+                .map(|(_, count)| count)
+                .sum::<usize>(),
+            summary.count
+        );
+        assert_eq!(summarise(&[], &projection).by_kind, []);
     }
 
     #[test]

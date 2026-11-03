@@ -290,6 +290,22 @@ pub fn cell_text(
     rect
 }
 
+/// Text anchored at `pos`, on one line; returns the rect it covers.
+pub fn put(
+    ui: &Ui,
+    pos: Pos2,
+    anchor: Align2,
+    text: &str,
+    size: f32,
+    weight: f32,
+    color: Color32,
+) -> Rect {
+    let galley = kit::galley(ui, text, size, weight, color, 600.0);
+    let rect = anchor.anchor_size(pos, galley.size());
+    ui.painter().galley(rect.min, galley, Color32::PLACEHOLDER);
+    rect
+}
+
 /// A figure in a table cell: regular weight, 13 pt.
 pub fn figure(ui: &Ui, cell: Rect, column: &Col, text: &str, color: Color32) {
     cell_text(ui, cell, column, text, kit::size::BODY, REGULAR, color);
