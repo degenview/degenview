@@ -23,6 +23,12 @@ use std::time::{Duration, Instant};
 /// each price lands; a market that never answers must not hold the portfolio back forever.
 const SETTLE: Duration = Duration::from_secs(8);
 
+/// The most often a valued portfolio is revalued for price ticks alone. The quote book changes
+/// several times a second while markets are busy, and every revaluation republishes holdings,
+/// history and cards; a total that moves every two seconds reads as live and costs a fraction.
+/// A change to the ledger, the selection or the currency is never held back.
+const REFRESH_INTERVAL: Duration = Duration::from_secs(2);
+
 pub trait PortfolioFxRates: Send + Sync {
     fn conversion(
         &self,
@@ -76,7 +82,12 @@ pub struct PortfolioProjection {
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct PortfolioQuoteState {
     pub projection: Option<PortfolioProjection>,
+    /// A valuation is being built where there was none: the first load, or after the ledger,
+    /// selection or currency changed. A refresh for price ticks alone never sets it, so nothing
+    /// that reads it flashes while markets move.
     pub is_updating: bool,
+    /// Prices changed inside the refresh interval: the next frame after it revalues them.
+    pub refresh_pending: bool,
     pub error: Option<String>,
 }
 
@@ -96,6 +107,8 @@ struct FeedState {
     worker_running: bool,
     /// When the current basis first asked for prices.
     settle_started: Option<Instant>,
+    /// When the last valuation was started.
+    last_started: Option<Instant>,
     /// The settle window ran out: publish whatever is priced.
     settle_expired: bool,
 }
@@ -113,6 +126,7 @@ impl Default for FeedState {
             pending: None,
             worker_running: false,
             settle_started: None,
+            last_started: None,
             settle_expired: false,
         }
     }
@@ -198,8 +212,8 @@ impl PortfolioQuoteFeed {
                 .state
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner);
-            let unchanged =
-                state.basis.as_ref() == Some(&basis) && state.book_revision == book_revision;
+            let same_basis = state.basis.as_ref() == Some(&basis);
+            let unchanged = same_basis && state.book_revision == book_revision;
             let expired_while_waiting = !state.settle_expired
                 && state.published.projection.is_none()
                 && state
@@ -208,6 +222,17 @@ impl PortfolioQuoteFeed {
             if unchanged && !expired_while_waiting {
                 return;
             }
+            if same_basis
+                && state.published.projection.is_some()
+                && !refresh_due(state.last_started, Instant::now())
+            {
+                // Only prices moved, and the last valuation is recent: leave the revision
+                // unrecorded so the first frame after the interval picks it up.
+                state.published.refresh_pending = true;
+                return;
+            }
+            state.published.refresh_pending = false;
+            state.last_started = Some(Instant::now());
             if expired_while_waiting {
                 state.settle_expired = true;
             }
@@ -219,7 +244,7 @@ impl PortfolioQuoteFeed {
             state.basis = Some(basis.clone());
             state.book_revision = book_revision;
             state.generation = state.generation.wrapping_add(1);
-            state.published.is_updating = true;
+            state.published.is_updating = state.published.projection.is_none();
             state.published.error = None;
             let generation = state.generation;
             state.pending = Some((basis, generation, now_ms));
@@ -273,6 +298,8 @@ fn run_projections(inner: &Inner) {
         );
         let mut state = inner.state.lock().unwrap_or_else(PoisonError::into_inner);
         if state.generation == generation {
+            // An error is news too; so is a valuation that differs from the one on screen.
+            let mut changed = true;
             match result {
                 Ok(projection) => {
                     let settling = projection.awaiting_asset_count > 0
@@ -282,6 +309,7 @@ fn run_projections(inner: &Inner) {
                         // Keep waiting: the next book change (or the settle timeout) re-runs.
                         continue;
                     }
+                    changed = state.published.projection.as_ref() != Some(&projection);
                     state.published.projection = Some(projection);
                     state.published.error = None;
                 }
@@ -289,9 +317,16 @@ fn run_projections(inner: &Inner) {
             }
             state.published.is_updating = false;
             drop(state);
-            (inner.repaint)();
+            if changed {
+                (inner.repaint)();
+            }
         }
     }
+}
+
+/// Whether a valuation started at `last` is old enough to be redone for a price tick.
+fn refresh_due(last: Option<Instant>, now: Instant) -> bool {
+    last.is_none_or(|last| now.saturating_duration_since(last) >= REFRESH_INTERVAL)
 }
 
 pub fn instrument_for(asset: &PortfolioAsset) -> InstrumentId {
@@ -617,6 +652,20 @@ mod tests {
             }],
             ..PortfolioLedgerSnapshot::default()
         }
+    }
+
+    #[test]
+    fn price_ticks_revalue_at_most_once_per_interval() {
+        let started = Instant::now();
+        assert!(refresh_due(None, started), "never valued: go now");
+        assert!(!refresh_due(Some(started), started));
+        assert!(!refresh_due(
+            Some(started),
+            started + REFRESH_INTERVAL - Duration::from_millis(1)
+        ));
+        assert!(refresh_due(Some(started), started + REFRESH_INTERVAL));
+        // A clock that reads earlier than the start never panics or holds the refresh back forever.
+        assert!(!refresh_due(Some(started + REFRESH_INTERVAL), started));
     }
 
     #[test]

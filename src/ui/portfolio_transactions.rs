@@ -6,20 +6,23 @@
 // Transient: the Portfolio window hosts this once the portfolio store is wired.
 #![allow(dead_code)]
 
+use crate::model::DataSource;
 use crate::model::portfolio::{PortfolioAsset, PortfolioTransaction, PortfolioTransactionType};
 use crate::model::portfolio_format::{PortfolioValueFormatter, QuantitySign};
 use crate::ui::accessibility;
 use crate::ui::alert_center::clock_time;
 use crate::ui::icons::Icon;
-use crate::ui::kit::{self, SEMIBOLD};
+use crate::ui::kit::{self, MEDIUM, REGULAR, SEMIBOLD};
 use crate::ui::portfolio_charts;
+use crate::ui::portfolio_empty;
 use crate::ui::portfolio_grid::{
-    self, Col, INSET, MENU_RESERVE, Navigation, RowContext, TableSpec,
+    self, Col, INSET, MENU_RESERVE, Navigation, RowContext, TableSpec, put,
 };
+use crate::ui::portfolio_overview::{activity_caption, lift};
 use crate::ui::portfolio_table as table;
 use crate::ui::replay_bar::date_text;
 use crate::ui::theme;
-use eframe::egui::{self, Color32, Rect, Sense, Vec2, pos2, vec2};
+use eframe::egui::{self, Align2, Color32, Rect, Sense, Stroke, pos2, vec2};
 use std::cmp::Ordering;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -309,6 +312,29 @@ pub struct TransactionsState {
     ascending: bool,
     selected: Option<u64>,
     navigation: Navigation,
+    /// The page shown, from zero.
+    page: usize,
+    /// Rows per page; one of [`PAGE_SIZES`].
+    page_size: usize,
+    /// The filters and sort the page was last chosen under; a change of either returns to page one.
+    view: Option<(Filters, TransactionColumn, bool)>,
+}
+
+/// The page sizes the footer offers.
+pub const PAGE_SIZES: [usize; 5] = [25, 50, 100, 250, 500];
+/// Rows per page unless the user picks another.
+pub const DEFAULT_PAGE_SIZE: usize = 100;
+
+/// How many pages `total` rows make at `size` per page; one even when there are no rows.
+pub fn page_count(total: usize, size: usize) -> usize {
+    total.div_ceil(size.max(1)).max(1)
+}
+
+/// The rows of `page` (from zero) out of `total`, the page clamped to the last.
+pub fn page_range(total: usize, size: usize, page: usize) -> std::ops::Range<usize> {
+    let size = size.max(1);
+    let page = page.min(page_count(total, size) - 1);
+    (page * size).min(total)..((page + 1) * size).min(total)
 }
 
 impl Default for TransactionsState {
@@ -319,6 +345,9 @@ impl Default for TransactionsState {
             ascending: false,
             selected: None,
             navigation: Navigation::default(),
+            page: 0,
+            page_size: DEFAULT_PAGE_SIZE,
+            view: None,
         }
     }
 }
@@ -351,6 +380,10 @@ pub fn show(
     input: &TransactionsInput,
 ) -> Vec<TransactionAction> {
     let mut actions = Vec::new();
+    if !input.ledger.is_empty() {
+        ui.add_space(12.0);
+        summary_band(ui, input);
+    }
     toolbar(ui, state, input, &mut actions);
     let shown = rows(
         input.ledger,
@@ -360,6 +393,14 @@ pub fn show(
         state.column,
         state.ascending,
     );
+    let view = (state.filters.clone(), state.column, state.ascending);
+    if state.view.as_ref() != Some(&view) {
+        state.page = 0;
+        state.view = Some(view);
+    }
+    let pages = page_count(shown.len(), state.page_size);
+    state.page = state.page.min(pages - 1);
+    let on_page = page_range(shown.len(), state.page_size, state.page);
     let outer = portfolio_grid::allocate_table(ui);
     portfolio_grid::paint_page_frame(ui, outer);
     if shown.is_empty() {
@@ -387,16 +428,23 @@ pub fn show(
                 state.filters.clear();
             }
         } else {
-            portfolio_charts::empty_message(
+            portfolio_empty::compact(
                 ui,
                 portfolio_grid::body_rect(outer),
-                Icon::List,
+                portfolio_empty::Scene::Transactions,
                 "No Transactions",
                 "Add a transaction or import a CSV to get started.",
             );
         }
     } else {
-        table_view(ui, state, input, outer, &shown, &mut actions);
+        table_view(
+            ui,
+            state,
+            input,
+            outer,
+            &shown[on_page.clone()],
+            &mut actions,
+        );
     }
     portfolio_grid::footer(
         ui,
@@ -408,7 +456,109 @@ pub fn show(
         ),
         &format!("Prices and fees in {}", input.formatter.currency.code()),
     );
+    if shown.len() > PAGE_SIZES[0] {
+        pager(ui, state, outer, shown.len(), on_page);
+    }
     actions
+}
+
+/// The page size and the previous and next buttons, centred in the footer strip.
+fn pager(
+    ui: &mut egui::Ui,
+    state: &mut TransactionsState,
+    outer: Rect,
+    total: usize,
+    on_page: std::ops::Range<usize>,
+) {
+    const BUTTON: f32 = 24.0;
+    const SIZE_WIDTH: f32 = 104.0;
+    const GAP: f32 = 8.0;
+    let strip = Rect::from_min_max(
+        pos2(outer.left(), outer.bottom() - portfolio_grid::FOOTER_STRIP),
+        outer.max,
+    );
+    let pages = page_count(total, state.page_size);
+    let label = format!("{}\u{2013}{} of {total}", on_page.start + 1, on_page.end);
+    let text = kit::galley(
+        ui,
+        &label,
+        kit::size::CAPTION,
+        REGULAR,
+        theme::text_secondary(),
+        240.0,
+    );
+    let pager_width = BUTTON + GAP + text.size().x + GAP + BUTTON;
+    let block = SIZE_WIDTH + 16.0 + pager_width;
+    let mut x = strip.center().x - block / 2.0;
+    let middle = strip.center().y;
+
+    let size_rect = Rect::from_min_size(pos2(x, middle - 11.0), vec2(SIZE_WIDTH, 22.0));
+    let size_labels: Vec<String> = PAGE_SIZES
+        .iter()
+        .map(|size| format!("{size} per page"))
+        .collect();
+    ui.put(size_rect, |ui: &mut egui::Ui| {
+        portfolio_grid::dropdown_inline(
+            ui,
+            egui::Id::new("portfolio-transactions-page-size"),
+            &format!("{} per page", state.page_size),
+            &size_labels,
+            |ui| {
+                for (size, name) in PAGE_SIZES.iter().zip(&size_labels) {
+                    if kit::menu_item_marked(ui, Icon::Check, name, *size == state.page_size) {
+                        state.page_size = *size;
+                        state.page = 0;
+                        ui.close();
+                    }
+                }
+            },
+        )
+    });
+    x += SIZE_WIDTH + 16.0;
+
+    let step = |ui: &mut egui::Ui, rect: Rect, icon: Icon, enabled: bool, name: &str| {
+        let response = ui
+            .interact(
+                rect,
+                egui::Id::new(("portfolio-transactions-page", name)),
+                Sense::click(),
+            )
+            .on_hover_cursor(if enabled {
+                egui::CursorIcon::PointingHand
+            } else {
+                egui::CursorIcon::Default
+            });
+        if enabled && response.hovered() {
+            ui.painter().rect_filled(rect, 6.0, theme::quaternary(0.75));
+        }
+        let color = if enabled {
+            theme::text_primary()
+        } else {
+            theme::text_tertiary().gamma_multiply(0.6)
+        };
+        crate::ui::icons::paint(
+            ui.painter(),
+            Rect::from_center_size(rect.center(), egui::Vec2::splat(12.0)),
+            icon,
+            color,
+        );
+        enabled && response.clicked()
+    };
+    let previous = Rect::from_min_size(pos2(x, middle - BUTTON / 2.0), vec2(BUTTON, BUTTON));
+    if step(ui, previous, Icon::ChevronLeft, state.page > 0, "previous") {
+        state.page -= 1;
+    }
+    x += BUTTON + GAP;
+    ui.painter().galley(
+        pos2(x, middle - text.size().y / 2.0),
+        text.clone(),
+        Color32::PLACEHOLDER,
+    );
+    x += text.size().x + GAP;
+    let next = Rect::from_min_size(pos2(x, middle - BUTTON / 2.0), vec2(BUTTON, BUTTON));
+    if step(ui, next, Icon::ChevronRight, state.page + 1 < pages, "next") {
+        state.page += 1;
+    }
 }
 
 fn toolbar(
@@ -431,11 +581,15 @@ fn toolbar(
         );
 
         let kind_label = state.filters.kind.map_or("All Types", type_name);
+        let kind_choices: Vec<&str> = std::iter::once("All Types")
+            .chain(ALL_TYPES.iter().map(|kind| type_name(*kind)))
+            .collect();
         portfolio_grid::dropdown(
             ui,
             egui::Id::new("portfolio-type-filter"),
             kind_label,
             state.filters.kind.is_some(),
+            &kind_choices,
             |ui| {
                 let filters = &mut state.filters;
                 if kit::menu_item_marked(ui, Icon::Check, "All Types", filters.kind.is_none()) {
@@ -464,11 +618,15 @@ fn toolbar(
             .as_ref()
             .and_then(|key| choices.iter().find(|(candidate, _)| candidate == key))
             .map_or("All Assets", |(_, ticker)| ticker.as_str());
+        let asset_names: Vec<&str> = std::iter::once("All Assets")
+            .chain(choices.iter().map(|(_, ticker)| ticker.as_str()))
+            .collect();
         portfolio_grid::dropdown(
             ui,
             egui::Id::new("portfolio-asset-filter"),
             asset_label,
             state.filters.asset_key.is_some(),
+            &asset_names,
             |ui| {
                 let filters = &mut state.filters;
                 if kit::menu_item_marked(ui, Icon::Check, "All Assets", filters.asset_key.is_none())
@@ -506,19 +664,355 @@ fn toolbar(
     }
 }
 
-const ROW_HEIGHT: f32 = 42.0;
+// MARK: Summary band
+
+const BAND_HEIGHT: f32 = 108.0;
+
+/// What the band above the table says about the whole ledger, whatever the filters show.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Summary {
+    pub count: usize,
+    pub buys: usize,
+    pub sells: usize,
+    /// Fees in the reporting currency.
+    pub fees: f64,
+    /// How many of each type, most common first (ties in the order of `ALL_TYPES`).
+    pub by_kind: Vec<(PortfolioTransactionType, usize)>,
+}
+
+pub fn summarise(
+    ledger: &[PortfolioTransaction],
+    projection: &dyn Fn(u64) -> Option<Projection>,
+) -> Summary {
+    let count_of = |kind| ledger.iter().filter(|tx| tx.kind == kind).count();
+    let by_kind = kind_counts(ledger.iter().map(|tx| tx.kind));
+    Summary {
+        count: ledger.len(),
+        buys: count_of(PortfolioTransactionType::Buy),
+        sells: count_of(PortfolioTransactionType::Sell),
+        fees: ledger
+            .iter()
+            .filter_map(|tx| projection(tx.id))
+            .map(|p| p.fee)
+            .sum(),
+        by_kind,
+    }
+}
+
+/// How many transactions there are and of what kind, with one bar of the mix in the colours of
+/// the type capsules below.
+fn summary_band(ui: &mut egui::Ui, input: &TransactionsInput) {
+    let f = input.formatter;
+    let (full, _) = ui.allocate_exact_size(vec2(ui.available_width(), BAND_HEIGHT), Sense::hover());
+    let rect = egui::Rect::from_min_max(
+        pos2(full.left() + INSET, full.top()),
+        pos2(full.right() - INSET, full.bottom()),
+    );
+    lift(ui, rect, 14.0);
+    let inner = rect.shrink2(vec2(20.0, 16.0));
+    let secondary = theme::text_secondary();
+    let summary = summarise(input.ledger, input.projection);
+
+    let caption = put(
+        ui,
+        inner.left_top(),
+        Align2::LEFT_TOP,
+        "Transactions",
+        kit::size::CAPTION,
+        REGULAR,
+        secondary,
+    );
+    let count = put(
+        ui,
+        pos2(inner.left(), inner.top() + 14.0),
+        Align2::LEFT_TOP,
+        &summary.count.to_string(),
+        26.0,
+        SEMIBOLD,
+        theme::text_primary(),
+    );
+    let galley = kit::galley(
+        ui,
+        &activity_caption(summary.buys, summary.sells),
+        kit::size::CAPTION,
+        MEDIUM,
+        theme::SYSTEM_ACCENT,
+        400.0,
+    );
+    let pill = Rect::from_min_size(
+        pos2(inner.left(), inner.bottom() - 22.0),
+        vec2(galley.size().x + 18.0, 22.0),
+    );
+    ui.painter()
+        .rect_filled(pill, 11.0, theme::SYSTEM_ACCENT.gamma_multiply(0.16));
+    ui.painter().galley(
+        pill.center() - galley.size() / 2.0,
+        galley,
+        Color32::PLACEHOLDER,
+    );
+
+    let divider = caption.right().max(count.right()).max(pill.right()) + 28.0;
+    let area = Rect::from_min_max(pos2(divider + 28.0, inner.top()), inner.right_bottom());
+    if area.width() < 200.0 {
+        return;
+    }
+    ui.painter().vline(
+        divider,
+        inner.y_range(),
+        Stroke::new(1.0, theme::separator().gamma_multiply(0.7)),
+    );
+    put(
+        ui,
+        area.left_top(),
+        Align2::LEFT_TOP,
+        "By Type",
+        kit::size::CAPTION,
+        REGULAR,
+        secondary,
+    );
+    put(
+        ui,
+        area.right_top(),
+        Align2::RIGHT_TOP,
+        &if summary.fees > 0.0 {
+            format!("Fees paid \u{00B7} {}", f.money(summary.fees))
+        } else {
+            "No fees paid".to_owned()
+        },
+        kit::size::CAPTION,
+        REGULAR,
+        secondary,
+    );
+
+    type_mix(ui, area, &summary.by_kind, summary.count);
+}
+
+/// One bar of how many transactions there are of each type, in the colours of the type capsules,
+/// with its legend under it. `area` is the block that also holds a caption row above (24 pt).
+pub(crate) fn type_mix(
+    ui: &mut egui::Ui,
+    area: Rect,
+    by_kind: &[(PortfolioTransactionType, usize)],
+    total: usize,
+) {
+    let secondary = theme::text_secondary();
+    let bar = Rect::from_min_size(
+        pos2(area.left(), area.top() + 24.0),
+        vec2(area.width(), 12.0),
+    );
+    ui.painter().rect_filled(bar, 6.0, theme::ink(10));
+    let mut start = 0.0_f32;
+    for (index, (kind, count)) in by_kind.iter().enumerate() {
+        let from = bar.left() + bar.width() * start;
+        start += *count as f32 / total as f32;
+        let to = bar.left() + bar.width() * start;
+        let gap = if index + 1 < by_kind.len() { 2.0 } else { 0.0 };
+        let width = (to - from - gap).max(2.0);
+        ui.painter().rect_filled(
+            Rect::from_min_size(pos2(from, bar.top()), vec2(width, bar.height())),
+            (width / 2.0).min(6.0),
+            type_tint(*kind),
+        );
+    }
+
+    let middle = area.top() + 56.0;
+    let mut x = area.left();
+    for (kind, count) in by_kind {
+        let galley = kit::galley(
+            ui,
+            &format!("{} {count}", type_name(*kind)),
+            kit::size::CAPTION,
+            REGULAR,
+            secondary,
+            300.0,
+        );
+        let width = 14.0 + galley.size().x;
+        if x + width > area.right() {
+            break;
+        }
+        ui.painter()
+            .circle_filled(pos2(x + 3.5, middle), 3.5, type_tint(*kind));
+        ui.painter().galley(
+            pos2(x + 14.0, middle - galley.size().y / 2.0),
+            galley,
+            Color32::PLACEHOLDER,
+        );
+        x += width + 16.0;
+    }
+}
+
+// MARK: Shared cells
+
+/// A tick in the type's colour at the row's edge, so buys and sells read down a long table.
+pub(crate) fn paint_type_tick(
+    ui: &egui::Ui,
+    first_cell: Rect,
+    row_height: f32,
+    kind: PortfolioTransactionType,
+) {
+    ui.painter().rect_filled(
+        Rect::from_center_size(
+            pos2(first_cell.left() + 3.0, first_cell.center().y),
+            vec2(3.0, row_height - 22.0),
+        ),
+        1.5,
+        type_tint(kind),
+    );
+}
+
+/// The date over the time of day, in `cell`.
+pub(crate) fn paint_date_cell(
+    ui: &egui::Ui,
+    cell: Rect,
+    column: &Col,
+    timestamp: i64,
+    utc_offset_secs: i64,
+) {
+    let span = portfolio_grid::text_span(cell, column);
+    let date = kit::galley(
+        ui,
+        &date_text(timestamp + utc_offset_secs * 1_000),
+        kit::size::BODY,
+        MEDIUM,
+        theme::text_primary(),
+        span.width(),
+    );
+    let time = kit::galley(
+        ui,
+        &clock_time(timestamp, utc_offset_secs),
+        kit::size::CAPTION,
+        REGULAR,
+        theme::text_secondary(),
+        span.width(),
+    );
+    let top = cell.center().y - (date.size().y + 1.0 + time.size().y) / 2.0;
+    let time_top = top + date.size().y + 1.0;
+    ui.painter()
+        .galley(pos2(span.left() + 4.0, top), date, Color32::PLACEHOLDER);
+    ui.painter().galley(
+        pos2(span.left() + 4.0, time_top),
+        time,
+        Color32::PLACEHOLDER,
+    );
+}
+
+/// The asset's icon, its ticker over its name, in `cell`.
+pub(crate) fn paint_asset_cell(
+    ui: &egui::Ui,
+    cell: Rect,
+    asset: &PortfolioAsset,
+    ticker: &str,
+    name: &str,
+) {
+    let icon = Rect::from_center_size(
+        pos2(
+            cell.left() + portfolio_grid::CELL_PAD + 12.0,
+            cell.center().y,
+        ),
+        egui::Vec2::splat(24.0),
+    );
+    table::paint_asset_icon(ui, icon, asset);
+    let text_left = icon.right() + 9.0;
+    let text_width = (cell.right() - text_left - 6.0).max(20.0);
+    let ticker = kit::galley(
+        ui,
+        ticker,
+        kit::size::BODY,
+        SEMIBOLD,
+        theme::text_primary(),
+        text_width,
+    );
+    let name = kit::galley(
+        ui,
+        name,
+        kit::size::CAPTION,
+        REGULAR,
+        theme::text_secondary(),
+        text_width,
+    );
+    let top = cell.center().y - (ticker.size().y + 1.0 + name.size().y) / 2.0;
+    let name_y = top + ticker.size().y + 1.0;
+    ui.painter()
+        .galley(pos2(text_left, top), ticker, Color32::PLACEHOLDER);
+    ui.painter()
+        .galley(pos2(text_left, name_y), name, Color32::PLACEHOLDER);
+}
+
+/// The type as a tinted capsule in `cell`; returns the capsule's rect.
+pub(crate) fn paint_type_capsule(
+    ui: &egui::Ui,
+    cell: Rect,
+    kind: PortfolioTransactionType,
+    label: &str,
+) -> Rect {
+    let tint = type_tint(kind);
+    let badge = kit::galley(ui, label, kit::size::CAPTION, kit::MEDIUM, tint, 200.0);
+    let capsule = Rect::from_min_size(
+        pos2(
+            cell.left() + portfolio_grid::CELL_PAD,
+            cell.center().y - (badge.size().y + 4.0) / 2.0,
+        ),
+        vec2(badge.size().x + 16.0, badge.size().y + 4.0),
+    );
+    ui.painter()
+        .rect_filled(capsule, capsule.height() / 2.0, tint.gamma_multiply(0.14));
+    ui.painter().galley(
+        pos2(capsule.left() + 8.0, capsule.top() + 2.0),
+        badge,
+        Color32::PLACEHOLDER,
+    );
+    capsule
+}
+
+/// An asset's second line: its name, else the name embedded in its key, else its symbol. A pair
+/// reads "BTC/USDT"; CoinGecko lists a bare ticker, so it gets the currency it is priced in
+/// ("PEPE/USD") like the others.
+pub fn asset_subtitle(asset: &PortfolioAsset) -> String {
+    let name = if asset.name.is_empty() {
+        asset.embedded_name().unwrap_or(&asset.symbol)
+    } else {
+        &asset.name
+    };
+    if asset.source == DataSource::CoinGecko && !name.contains('/') {
+        format!("{name}/{}", asset.quote_currency.code())
+    } else {
+        name.to_owned()
+    }
+}
+
+/// How many transactions of each type, most common first (ties keep the order of `ALL_TYPES`).
+pub fn kind_counts(
+    kinds: impl Iterator<Item = PortfolioTransactionType> + Clone,
+) -> Vec<(PortfolioTransactionType, usize)> {
+    let mut by_kind: Vec<(PortfolioTransactionType, usize)> = ALL_TYPES
+        .iter()
+        .map(|kind| {
+            (
+                *kind,
+                kinds.clone().filter(|candidate| candidate == kind).count(),
+            )
+        })
+        .filter(|(_, count)| *count > 0)
+        .collect();
+    by_kind.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
+    by_kind
+}
+
+// MARK: Table
+
+const ROW_HEIGHT: f32 = 48.0;
 
 /// The columns, in `TransactionColumn::ALL` order. Widths follow the Swift table's.
 const COLUMNS: [Col; 8] = [
-    Col::new(120.0, 145.0, false),
-    Col::new(86.0, 80.0, false),
-    Col::new(112.0, 110.0, false),
-    Col::new(76.0, 90.0, true),
-    Col::new(84.0, 95.0, true),
-    Col::new(84.0, 100.0, true),
-    Col::new(64.0, 75.0, true).unsortable(),
+    Col::new(104.0, 145.0, false),
+    Col::new(100.0, 120.0, false),
+    Col::new(100.0, 110.0, false),
+    Col::new(68.0, 90.0, true),
+    Col::new(96.0, 95.0, true),
+    Col::new(96.0, 100.0, true),
+    Col::new(52.0, 75.0, true).unsortable(),
     // Row actions sit at the end of the last column, as in the Holdings table.
-    Col::new(90.0, 120.0, false).trailing(MENU_RESERVE),
+    Col::new(72.0, 120.0, false).trailing(MENU_RESERVE),
 ];
 
 fn table_view(
@@ -590,63 +1084,26 @@ fn transaction_row(
         portfolio_grid::figure(ui, cells[index], &COLUMNS[index], text, color)
     };
 
-    figure(
+    paint_type_tick(ui, cells[0], ROW_HEIGHT, tx.kind);
+
+    paint_date_cell(
         ui,
-        0,
-        &date_time_text(tx.timestamp, input.utc_offset_secs),
-        primary,
+        cells[0],
+        &COLUMNS[0],
+        tx.timestamp,
+        input.utc_offset_secs,
     );
 
-    // Asset: a small icon and the ticker.
-    let asset = cells[1];
-    let icon = Rect::from_center_size(
-        pos2(
-            asset.left() + portfolio_grid::CELL_PAD + 10.0,
-            asset.center().y,
-        ),
-        Vec2::splat(20.0),
-    );
-    ui.scope_builder(egui::UiBuilder::new().max_rect(icon), |ui| {
-        table::asset_icon(ui, &tx.asset, 20.0);
-    });
-    let ticker = kit::galley(
+    paint_asset_cell(
         ui,
+        cells[1],
+        &tx.asset,
         &item.ticker(),
-        kit::size::BODY,
-        SEMIBOLD,
-        primary,
-        (asset.right() - icon.right() - 8.0 - 6.0).max(20.0),
-    );
-    ui.painter().galley(
-        pos2(icon.right() + 8.0, asset.center().y - ticker.size().y / 2.0),
-        ticker,
-        Color32::PLACEHOLDER,
+        &(input.subtitle)(&tx.asset),
     );
 
     // Type: a tinted capsule; hovering says where the transaction came from.
-    let tint = type_tint(tx.kind);
-    let badge = kit::galley(
-        ui,
-        item.type_name(),
-        kit::size::CAPTION,
-        kit::MEDIUM,
-        tint,
-        200.0,
-    );
-    let capsule = Rect::from_min_size(
-        pos2(
-            cells[2].left() + portfolio_grid::CELL_PAD,
-            cells[2].center().y - (badge.size().y + 4.0) / 2.0,
-        ),
-        vec2(badge.size().x + 16.0, badge.size().y + 4.0),
-    );
-    ui.painter()
-        .rect_filled(capsule, capsule.height() / 2.0, tint.gamma_multiply(0.14));
-    ui.painter().galley(
-        pos2(capsule.left() + 8.0, capsule.top() + 2.0),
-        badge,
-        Color32::PLACEHOLDER,
-    );
+    let capsule = paint_type_capsule(ui, cells[2], tx.kind, item.type_name());
     ui.interact(
         capsule,
         egui::Id::new(("portfolio-transaction-type", tx.id)),
@@ -676,10 +1133,13 @@ fn transaction_row(
         &item.price.map_or_else(dash, |v| f.price(v)),
         primary,
     );
-    figure(
+    portfolio_grid::cell_text(
         ui,
-        5,
+        cells[5],
+        &COLUMNS[5],
         &item.total().map_or_else(dash, |v| f.money(v)),
+        kit::size::BODY,
+        MEDIUM,
         primary,
     );
     figure(
@@ -735,7 +1195,7 @@ fn transaction_row(
 }
 
 fn row_menu(ui: &mut egui::Ui, id: u64, actions: &mut Vec<TransactionAction>) {
-    ui.set_width(170.0);
+    portfolio_grid::fit_menu(ui, &["Edit", "Duplicate", "Delete"]);
     ui.spacing_mut().item_spacing.y = 0.0;
     if kit::menu_item(ui, Icon::Pencil, "Edit", true, false) {
         actions.push(TransactionAction::Edit(id));
@@ -843,6 +1303,39 @@ mod tests {
             column,
             ascending,
         )
+    }
+
+    #[test]
+    fn pages_split_the_rows_and_the_last_one_keeps_the_remainder() {
+        assert_eq!(page_count(0, 100), 1);
+        assert_eq!(page_count(100, 100), 1);
+        assert_eq!(page_count(101, 100), 2);
+        assert_eq!(page_range(250, 100, 0), 0..100);
+        assert_eq!(page_range(250, 100, 2), 200..250);
+        // A page past the end is the last one; no rows is an empty first page.
+        assert_eq!(page_range(250, 100, 9), 200..250);
+        assert_eq!(page_range(0, 100, 0), 0..0);
+        assert_eq!(DEFAULT_PAGE_SIZE, 100);
+        assert!(PAGE_SIZES.contains(&DEFAULT_PAGE_SIZE));
+    }
+
+    #[test]
+    fn the_summary_counts_the_whole_ledger_by_type_and_adds_up_the_fees() {
+        use PortfolioTransactionType::*;
+        let summary = summarise(&ledger(), &projection);
+        assert_eq!((summary.count, summary.buys, summary.sells), (4, 2, 1));
+        assert_eq!(summary.fees, 1.5);
+        // Most common first; the rest keep their order in `ALL_TYPES`.
+        assert_eq!(summary.by_kind, [(Buy, 2), (Sell, 1), (Reward, 1)]);
+        assert_eq!(
+            summary
+                .by_kind
+                .iter()
+                .map(|(_, count)| count)
+                .sum::<usize>(),
+            summary.count
+        );
+        assert_eq!(summarise(&[], &projection).by_kind, []);
     }
 
     #[test]
@@ -959,6 +1452,39 @@ mod tests {
             state.column(),
             TransactionColumn::Total,
             "fees are not a sort key"
+        );
+    }
+
+    #[test]
+    fn a_bare_coingecko_ticker_gets_its_currency_like_the_other_pairs() {
+        let asset = |source, symbol: &str, name: &str| PortfolioAsset {
+            key: "k".into(),
+            symbol: symbol.into(),
+            name: name.into(),
+            source,
+            quote_currency: crate::model::portfolio::PortfolioCurrency::Usd,
+            metadata: Default::default(),
+        };
+        assert_eq!(
+            asset_subtitle(&asset(DataSource::CoinGecko, "PEPE", "PEPE")),
+            "PEPE/USD"
+        );
+        assert_eq!(
+            asset_subtitle(&asset(DataSource::CoinGecko, "PEPE", "")),
+            "PEPE/USD"
+        );
+        assert_eq!(
+            asset_subtitle(&asset(DataSource::Binance, "BTC/USDT", "BTC/USDT")),
+            "BTC/USDT"
+        );
+        assert_eq!(
+            asset_subtitle(&asset(DataSource::CoinGecko, "PEPE/WETH", "PEPE/WETH")),
+            "PEPE/WETH",
+            "a name that already is a pair is left alone"
+        );
+        assert_eq!(
+            asset_subtitle(&asset(DataSource::Alpaca, "AAPL \u{2014} Apple Inc.", "")),
+            "Apple Inc."
         );
     }
 

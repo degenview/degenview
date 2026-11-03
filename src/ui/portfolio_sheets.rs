@@ -11,9 +11,12 @@ use crate::model::portfolio::{
 use crate::model::portfolio_format::PORTFOLIO_CURRENCIES;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, Confirm, ConfirmOutcome};
+use crate::ui::portfolio_empty;
+use crate::ui::portfolio_sheet_parts::{card_background, pill};
 use crate::ui::sheet;
 use crate::ui::theme;
-use eframe::egui::{self, Align2, Color32, Id, RichText, Sense, Vec2};
+use crate::ui::{add_chart_art, add_chart_sheet};
+use eframe::egui::{self, Align2, Color32, Id, Sense, Stroke, Vec2};
 
 // MARK: New portfolio
 
@@ -58,6 +61,11 @@ impl CreateState {
         }
     }
 
+    /// `outcome`, but nothing when the name is already taken (the ledger would refuse it).
+    pub fn outcome_unless(&self, duplicate: bool) -> Option<CreateOutcome> {
+        if duplicate { None } else { self.outcome() }
+    }
+
     pub fn outcome(&self) -> Option<CreateOutcome> {
         self.is_valid().then(|| CreateOutcome::Create {
             name: normalize_name(&self.name),
@@ -91,15 +99,14 @@ pub fn show_create(
     existing_names: &[String],
 ) -> Option<CreateOutcome> {
     let mut outcome = None;
-    sheet::show(ctx, Id::new("portfolio-create"), 460.0, |ui| {
+    sheet::show(ctx, Id::new("portfolio-create"), 480.0, |ui| {
         ui.add_space(24.0);
         sheet::inset(ui, |ui| {
-            sheet::header(
+            add_chart_sheet::header(
                 ui,
-                Icon::Briefcase,
+                add_chart_art::Scene::Portfolio,
                 "New Portfolio",
                 "Group transactions and track them together.",
-                theme::ACCENT,
             );
             ui.add_space(24.0);
             section_label(ui, "Name");
@@ -129,15 +136,16 @@ pub fn show_create(
                 response.request_focus();
             }
             state.clamp_name();
+            let duplicate = state.is_duplicate(existing_names);
             if response.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter)) {
-                outcome = state.outcome();
+                outcome = state.outcome_unless(duplicate);
             }
             ui.add_space(6.0);
             let (status, _) = ui.allocate_exact_size(
                 Vec2::new(ui.available_width(), STATUS_HEIGHT),
                 Sense::hover(),
             );
-            if state.is_duplicate(existing_names) {
+            if duplicate {
                 // The system orange is too pale to read as small text on a light sheet.
                 let warning = theme::pick(kit::ORANGE, Color32::from_rgb(190, 100, 0));
                 let message = kit::galley(
@@ -184,11 +192,20 @@ pub fn show_create(
             );
             ui.add_space(24.0);
         });
+        let duplicate = state.is_duplicate(existing_names);
         sheet::footer(ui, |ui| {
-            if kit::sheet_button(ui, "Create Portfolio", true, state.is_valid()).clicked() {
-                outcome = state.outcome();
+            if kit::footer_button(
+                ui,
+                "Create Portfolio",
+                kit::FooterButton::Primary,
+                state.is_valid() && !duplicate,
+                150.0,
+            )
+            .clicked()
+            {
+                outcome = state.outcome_unless(duplicate);
             }
-            if kit::sheet_button(ui, "Cancel", false, true).clicked() {
+            if kit::footer_button(ui, "Cancel", kit::FooterButton::Secondary, true, 0.0).clicked() {
                 outcome = Some(CreateOutcome::Cancel);
             }
         });
@@ -232,8 +249,9 @@ fn currency_tile(
         format!("{}, {}", currency.code(), currency.display_name()),
     )
     .on_hover_cursor(egui::CursorIcon::PointingHand);
+    // The chosen tile is the one in full ink; the rest are quiet.
     let tint = if is_selected {
-        theme::ACCENT
+        theme::text_primary()
     } else {
         theme::text_secondary()
     };
@@ -242,7 +260,7 @@ fn currency_tile(
         rect,
         10.0,
         if is_selected {
-            theme::ACCENT.gamma_multiply(0.10)
+            theme::text_primary().gamma_multiply(0.09)
         } else if response.is_pointer_button_down_on() {
             theme::ink(24)
         } else if response.hovered() {
@@ -257,7 +275,7 @@ fn currency_tile(
         egui::Stroke::new(
             if is_selected { 1.5 } else { 1.0 },
             if is_selected {
-                theme::ACCENT
+                theme::text_primary().gamma_multiply(0.85)
             } else {
                 theme::border()
             },
@@ -306,6 +324,17 @@ fn currency_tile(
         .galley(egui::pos2(text_left, top), code, Color32::PLACEHOLDER);
     ui.painter()
         .galley(egui::pos2(text_left, name_top), name, Color32::PLACEHOLDER);
+    if is_selected {
+        icons::paint(
+            ui.painter(),
+            egui::Rect::from_center_size(
+                egui::pos2(rect.right() - 14.0, rect.center().y),
+                Vec2::splat(11.0),
+            ),
+            Icon::Check,
+            theme::text_primary(),
+        );
+    }
     response
 }
 
@@ -390,55 +419,63 @@ pub fn delete_message(transactions: usize) -> String {
     )
 }
 
+const MANAGE_SIZE: Vec2 = Vec2::new(620.0, 640.0);
+/// The footer's hairline, padding and 28 pt buttons.
+const MANAGE_FOOTER: f32 = 58.0;
+const MANAGE_ROW: f32 = 68.0;
+const MANAGE_GAP: f32 = 8.0;
+const GRIP_WIDTH: f32 = 30.0;
+const CODE_TILE: f32 = 40.0;
+const ROW_BUTTON: f32 = 28.0;
+
 pub fn show_manage(
     ctx: &egui::Context,
     state: &mut ManageState,
     input: &ManageInput,
 ) -> Vec<ManageAction> {
     let mut actions = Vec::new();
-    sheet::show(ctx, Id::new("portfolio-manage"), 560.0, |ui| {
-        ui.set_height(520.0);
+    sheet::show(ctx, Id::new("portfolio-manage"), MANAGE_SIZE.x, |ui| {
+        ui.set_height(MANAGE_SIZE.y);
+        let top = ui.cursor().top();
         ui.add_space(24.0);
         sheet::inset(ui, |ui| {
-            sheet::header(
+            add_chart_sheet::header(
                 ui,
-                Icon::Layers,
+                add_chart_art::Scene::Portfolio,
                 "Manage Portfolios",
-                &format!(
-                    "{} · Drag to reorder, click a name to rename.",
-                    if input.rows.len() == 1 {
-                        "1 portfolio".to_owned()
-                    } else {
-                        format!("{} portfolios", input.rows.len())
-                    }
-                ),
-                theme::ACCENT,
+                &manage_subtitle(input.rows.len()),
             );
         });
         ui.add_space(16.0);
+        // `set_height` made the sheet's own rect tall, so measure from the cursor.
+        let height = MANAGE_SIZE.y - (ui.cursor().top() - top) - MANAGE_FOOTER - 8.0;
         if input.rows.is_empty() {
-            ui.allocate_ui(Vec2::new(ui.available_width(), 365.0), |ui| {
-                ui.add_space(125.0);
-                ui.vertical_centered(|ui| {
-                    ui.label(RichText::new("No Portfolios").strong().size(16.0));
-                    ui.label(
-                        RichText::new("Create a portfolio to start tracking investments.").weak(),
-                    );
-                });
+            sheet::inset(ui, |ui| {
+                let (area, _) =
+                    ui.allocate_exact_size(Vec2::new(ui.available_width(), height), Sense::hover());
+                card_background(ui, area, None);
+                portfolio_empty::compact(
+                    ui,
+                    area,
+                    portfolio_empty::Scene::Portfolios,
+                    "No Portfolios",
+                    "Create a portfolio to start tracking investments.",
+                );
             });
         } else {
             let mut rects = Vec::with_capacity(input.rows.len());
             let mut drag_started = None;
             let mut drag_stopped = false;
             egui::ScrollArea::vertical()
-                .max_height(365.0)
-                .min_scrolled_height(365.0)
+                .max_height(height)
+                .min_scrolled_height(height)
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     sheet::inset(ui, |ui| {
+                        ui.spacing_mut().item_spacing.y = MANAGE_GAP;
                         for (index, row) in input.rows.iter().enumerate() {
                             let (rect, started, stopped) =
-                                manage_row(ui, state, input, row, &mut actions);
+                                manage_row(ui, state, input, row, index, &mut actions);
                             rects.push(rect);
                             if started {
                                 drag_started = Some(index);
@@ -471,17 +508,18 @@ pub fn show_manage(
                             .unwrap_or(rects.len())
                     });
                 if let Some(destination) = destination {
-                    let y = rects.get(destination).map_or_else(
-                        || rects.last().map_or(0.0, |rect| rect.bottom()),
-                        |rect| rect.top(),
-                    );
+                    // Where the row would land: a line in the gap between two rows.
+                    let y = match rects.get(destination) {
+                        Some(rect) => rect.top() - MANAGE_GAP / 2.0,
+                        None => rects.last().map_or(0.0, |rect| rect.bottom()) + MANAGE_GAP / 2.0,
+                    };
                     if let Some(first) = rects.first() {
                         ui.painter().line_segment(
                             [
                                 egui::Pos2::new(first.left(), y),
                                 egui::Pos2::new(first.right(), y),
                             ],
-                            egui::Stroke::new(2.0, theme::text_secondary()),
+                            egui::Stroke::new(2.0, theme::text_primary()),
                         );
                     }
                     if drag_stopped && destination != source && destination != source + 1 {
@@ -496,139 +534,302 @@ pub fn show_manage(
                 }
             }
         }
-        ui.separator();
-        sheet::inset(ui, |ui| {
-            ui.add_space(14.0);
-            ui.horizontal(|ui| {
-                if kit::push_button(ui, Some(Icon::Plus), "New Portfolio", true).clicked() {
-                    actions.push(ManageAction::New);
+        ui.add_space(8.0);
+        let (mut new, mut done) = (false, false);
+        sheet::footer_split(
+            ui,
+            |ui| {
+                if kit::footer_button(
+                    ui,
+                    "New Portfolio\u{2026}",
+                    kit::FooterButton::Secondary,
+                    true,
+                    0.0,
+                )
+                .clicked()
+                {
+                    new = true;
                 }
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui
-                        .add(
-                            egui::Button::new(RichText::new("Done").strong())
-                                .min_size(Vec2::new(76.0, 30.0)),
-                        )
-                        .clicked()
-                    {
-                        actions.push(ManageAction::Done);
-                    }
-                });
-            });
-            ui.add_space(14.0);
-        });
+            },
+            |ui| {
+                if kit::footer_button(ui, "Done", kit::FooterButton::Primary, true, 90.0).clicked()
+                {
+                    done = true;
+                }
+            },
+        );
+        if new {
+            actions.push(ManageAction::New);
+        }
+        if done {
+            actions.push(ManageAction::Done);
+        }
     });
     delete_dialog(ctx, state, input, &mut actions);
+    if actions.is_empty()
+        && state.pending_delete.is_none()
+        && ctx.input(|input| input.key_pressed(egui::Key::Escape))
+        && ctx.memory(|memory| memory.focused().is_none())
+    {
+        actions.push(ManageAction::Done);
+    }
     actions
 }
 
+/// "3 portfolios · Drag to reorder, click a name to rename."
+pub fn manage_subtitle(count: usize) -> String {
+    if count == 0 {
+        return "No portfolios yet \u{00B7} Create one to start tracking.".to_owned();
+    }
+    format!(
+        "{} \u{00B7} Drag to reorder, click a name to rename.",
+        if count == 1 {
+            "1 portfolio".to_owned()
+        } else {
+            format!("{count} portfolios")
+        }
+    )
+}
+
+/// The caption under a portfolio's name: what it holds, without the currency (which has its own
+/// tile).
+pub fn holdings_line(transactions: usize, assets: usize) -> String {
+    let plural =
+        |n: usize, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
+    format!(
+        "{} \u{00B7} {}",
+        plural(transactions, "transaction", "transactions"),
+        plural(assets, "asset", "assets")
+    )
+}
+
+/// Whether renaming portfolio `id` to `draft` would clash with another portfolio's name.
+pub fn rename_clashes(draft: &str, id: u64, rows: &[ManageRow]) -> bool {
+    let others: Vec<String> = rows
+        .iter()
+        .filter(|row| row.portfolio.id != id)
+        .map(|row| row.portfolio.name.clone())
+        .collect();
+    is_duplicate_name(draft, &others)
+}
+
+/// One portfolio as a fixed-height card: a grip, its currency, its editable name over what it
+/// holds, then its badges and actions. Returns the card's rect and whether a drag started or
+/// stopped on its grip.
 fn manage_row(
     ui: &mut egui::Ui,
     state: &mut ManageState,
     input: &ManageInput,
     row: &ManageRow,
+    index: usize,
     actions: &mut Vec<ManageAction>,
 ) -> (egui::Rect, bool, bool) {
     let portfolio = row.portfolio;
-    let mut drag_started = false;
-    let mut drag_stopped = false;
-    let frame = egui::Frame::new()
-        .fill(theme::ink(8))
-        .stroke(egui::Stroke::new(1.0, theme::border()))
-        .corner_radius(10.0)
-        .inner_margin(egui::Margin::symmetric(12, 9))
-        .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.horizontal(|ui| {
-                let (handle, response) =
-                    ui.allocate_exact_size(Vec2::new(14.0, 28.0), Sense::drag());
-                let color = if response.hovered() {
-                    theme::text_primary()
+    let (rect, _) =
+        ui.allocate_exact_size(Vec2::new(ui.available_width(), MANAGE_ROW), Sense::hover());
+    let middle = rect.center().y;
+    let primary = theme::text_primary();
+    let secondary = theme::text_secondary();
+    let current = input.current == Some(portfolio.id);
+    let moving = state.dragging == Some(index);
+    card_background(ui, rect, current.then(|| theme::UP.gamma_multiply(0.45)));
+
+    // The grip: two columns of dots, the drag handle.
+    let grip = egui::Rect::from_min_size(rect.min, Vec2::new(GRIP_WIDTH, MANAGE_ROW));
+    let grip_response = ui
+        .interact(
+            grip,
+            Id::new(("portfolio-manage-grip", portfolio.id)),
+            Sense::drag(),
+        )
+        .on_hover_cursor(egui::CursorIcon::Grab)
+        .on_hover_text("Drag to reorder");
+    let grip_color = if grip_response.hovered() || moving {
+        primary
+    } else {
+        theme::text_tertiary()
+    };
+    for column in [-2.5, 2.5] {
+        for line in [-5.0, 0.0, 5.0] {
+            ui.painter().circle_filled(
+                egui::pos2(grip.center().x + column, middle + line),
+                1.3,
+                grip_color,
+            );
+        }
+    }
+
+    // The base currency on a tile of its own.
+    let tile = egui::Rect::from_center_size(
+        egui::pos2(rect.left() + GRIP_WIDTH + CODE_TILE / 2.0, middle),
+        Vec2::splat(CODE_TILE),
+    );
+    ui.painter().rect_filled(tile, 10.0, theme::quaternary(1.0));
+    let code = kit::galley(
+        ui,
+        portfolio.base_currency.code(),
+        kit::size::SUBHEADLINE,
+        kit::SEMIBOLD,
+        secondary,
+        CODE_TILE,
+    );
+    ui.painter().galley(
+        tile.center() - code.size() / 2.0,
+        code,
+        Color32::PLACEHOLDER,
+    );
+
+    // From the trailing edge in: the two actions, then the badges.
+    let mut right = rect.right() - 12.0;
+    let buttons = egui::Rect::from_min_max(
+        egui::pos2(right - 2.0 * ROW_BUTTON - 4.0, middle - ROW_BUTTON / 2.0),
+        egui::pos2(right, middle + ROW_BUTTON / 2.0),
+    );
+    let mut button_ui = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(buttons)
+            .layout(egui::Layout::right_to_left(egui::Align::Center)),
+    );
+    button_ui.spacing_mut().item_spacing.x = 4.0;
+    if icons::button(
+        &mut button_ui,
+        Icon::Trash,
+        ROW_BUTTON,
+        secondary,
+        "Delete portfolio",
+    )
+    .clicked()
+    {
+        state.pending_delete = Some(portfolio.id);
+    }
+    if icons::button(
+        &mut button_ui,
+        Icon::CopyDoc,
+        ROW_BUTTON,
+        secondary,
+        "Duplicate, including its transactions",
+    )
+    .clicked()
+    {
+        actions.push(ManageAction::Duplicate(portfolio.id));
+    }
+    right = buttons.left() - 12.0;
+    for (label, tint) in [
+        portfolio
+            .is_archived
+            .then_some(("Archived", theme::text_tertiary())),
+        current.then_some(("Viewing", theme::UP)),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        let width = kit::galley(ui, label, kit::size::CAPTION, kit::SEMIBOLD, tint, 200.0)
+            .size()
+            .x
+            + 14.0;
+        pill(ui, right - width, middle, label, tint);
+        right -= width + 6.0;
+    }
+
+    // The name, editable in place; the holdings line under it, or why the name is refused.
+    let text_left = tile.right() + 14.0;
+    let field = egui::Rect::from_min_max(
+        egui::pos2(text_left - 8.0, middle - 25.0),
+        egui::pos2((right - 4.0).max(text_left + 80.0), middle + 1.0),
+    );
+    let name_id = Id::new(("portfolio-manage-name", portfolio.id));
+    let focused = ui.memory(|memory| memory.has_focus(name_id));
+    let draft = state
+        .drafts
+        .entry(portfolio.id)
+        .or_insert_with(|| portfolio.name.clone());
+    let clashes = focused && rename_clashes(draft, portfolio.id, input.rows);
+    if focused || ui.rect_contains_pointer(field) {
+        ui.painter().rect_filled(field, 7.0, theme::quaternary(0.7));
+        ui.painter().rect_stroke(
+            field,
+            7.0,
+            Stroke::new(
+                if focused { 1.5 } else { 1.0 },
+                if clashes {
+                    theme::DOWN
+                } else if focused {
+                    secondary
                 } else {
-                    theme::text_tertiary()
-                };
-                for offset in [-3.0, 0.0, 3.0] {
-                    ui.painter().line_segment(
-                        [
-                            handle.center() + Vec2::new(-4.0, offset),
-                            handle.center() + Vec2::new(4.0, offset),
-                        ],
-                        egui::Stroke::new(1.3, color),
-                    );
-                }
-                drag_started = response.drag_started();
-                drag_stopped = response.drag_stopped();
-                response.on_hover_text("Drag to reorder");
-                ui.vertical(|ui| {
-                    let draft = state
-                        .drafts
-                        .entry(portfolio.id)
-                        .or_insert_with(|| portfolio.name.clone());
-                    let response = ui.add(
-                        egui::TextEdit::singleline(draft)
-                            .font(egui::TextStyle::Heading)
-                            .frame(egui::Frame::NONE)
-                            .desired_width(210.0),
-                    );
-                    if draft.chars().count() > MAX_NAME_LENGTH {
-                        *draft = draft.chars().take(MAX_NAME_LENGTH).collect();
-                    }
-                    let committed = response.lost_focus();
-                    if committed {
-                        match rename_commit(draft, &portfolio.name) {
-                            Some(name) => actions.push(ManageAction::Rename {
-                                id: portfolio.id,
-                                name,
-                            }),
-                            // A blank or unchanged name is put back.
-                            None => *draft = portfolio.name.clone(),
-                        }
-                    } else if !response.has_focus() && *draft != portfolio.name {
-                        // Renamed elsewhere while not editing: follow it.
-                        *draft = portfolio.name.clone();
-                    }
-                    ui.label(
-                        RichText::new(summary_line(
-                            portfolio.base_currency,
-                            row.transactions,
-                            row.assets,
-                        ))
-                        .small()
-                        .weak(),
-                    );
-                });
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let weak = ui.visuals().weak_text_color();
-                    if icons::button(ui, Icon::Trash, 28.0, weak, "Delete portfolio").clicked() {
-                        state.pending_delete = Some(portfolio.id);
-                    }
-                    if icons::button(
-                        ui,
-                        Icon::CopyDoc,
-                        28.0,
-                        weak,
-                        "Duplicate, including its transactions",
-                    )
-                    .clicked()
-                    {
-                        actions.push(ManageAction::Duplicate(portfolio.id));
-                    }
-                    if portfolio.is_archived {
-                        ui.label(RichText::new("Archived").small().weak());
-                    }
-                    if input.current == Some(portfolio.id) {
-                        ui.label(
-                            RichText::new("Viewing")
-                                .small()
-                                .strong()
-                                .color(theme::ACCENT),
-                        );
-                    }
-                });
-            });
-        });
-    ui.add_space(4.0);
-    (frame.response.rect, drag_started, drag_stopped)
+                    theme::separator()
+                },
+            ),
+            egui::StrokeKind::Inside,
+        );
+    }
+    let mut name_ui = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(field.shrink2(Vec2::new(8.0, 0.0)))
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    let response = kit::plain_field(
+        &mut name_ui,
+        name_id,
+        draft,
+        "Portfolio name",
+        kit::size::BODY + 1.0,
+        kit::SEMIBOLD,
+        field.width() - 16.0,
+    );
+    if draft.chars().count() > MAX_NAME_LENGTH {
+        *draft = draft.chars().take(MAX_NAME_LENGTH).collect();
+    }
+    let escaped = response.has_focus() && ui.input(|input| input.key_pressed(egui::Key::Escape));
+    if escaped {
+        *draft = portfolio.name.clone();
+        ui.memory_mut(|memory| memory.surrender_focus(name_id));
+    } else if response.lost_focus() {
+        match rename_commit(draft, &portfolio.name) {
+            Some(_) if rename_clashes(draft, portfolio.id, input.rows) => {
+                *draft = portfolio.name.clone();
+            }
+            Some(name) => actions.push(ManageAction::Rename {
+                id: portfolio.id,
+                name,
+            }),
+            // A blank or unchanged name is put back.
+            None => *draft = portfolio.name.clone(),
+        }
+    } else if !response.has_focus() && *draft != portfolio.name {
+        // Renamed elsewhere while not editing: follow it.
+        *draft = portfolio.name.clone();
+    }
+    let (caption, caption_color) = if clashes {
+        (
+            "Another portfolio already has this name".to_owned(),
+            theme::DOWN,
+        )
+    } else {
+        (holdings_line(row.transactions, row.assets), secondary)
+    };
+    let caption = kit::galley(
+        ui,
+        &caption,
+        kit::size::CAPTION + 0.5,
+        kit::REGULAR,
+        caption_color,
+        (right - text_left).max(60.0),
+    );
+    ui.painter().galley(
+        egui::pos2(text_left, middle + 6.0),
+        caption,
+        Color32::PLACEHOLDER,
+    );
+
+    if moving {
+        ui.painter()
+            .rect_filled(rect, 12.0, theme::chrome().gamma_multiply(0.55));
+    }
+    (
+        rect,
+        grip_response.drag_started(),
+        grip_response.drag_stopped(),
+    )
 }
 
 fn delete_dialog(
@@ -822,5 +1023,55 @@ mod tests {
         assert!(delete_message(1).contains("its 1 transaction."));
         assert!(delete_message(5).contains("its 5 transactions."));
         assert!(delete_message(0).contains("0 transactions"));
+    }
+
+    #[test]
+    fn the_subtitle_and_holdings_line_pluralise() {
+        assert_eq!(
+            manage_subtitle(1),
+            "1 portfolio \u{00B7} Drag to reorder, click a name to rename."
+        );
+        assert!(manage_subtitle(3).starts_with("3 portfolios"));
+        assert!(manage_subtitle(0).starts_with("No portfolios yet"));
+        assert_eq!(holdings_line(1, 1), "1 transaction \u{00B7} 1 asset");
+        assert_eq!(holdings_line(0, 4), "0 transactions \u{00B7} 4 assets");
+    }
+
+    #[test]
+    fn a_rename_clashes_with_other_portfolios_only() {
+        let main = Portfolio::new(1, "Main", 0);
+        let growth = Portfolio::new(2, "Growth", 0);
+        let rows = [
+            ManageRow {
+                portfolio: &main,
+                transactions: 0,
+                assets: 0,
+            },
+            ManageRow {
+                portfolio: &growth,
+                transactions: 0,
+                assets: 0,
+            },
+        ];
+        assert!(
+            rename_clashes(" growth ", 1, &rows),
+            "case and spaces are ignored"
+        );
+        assert!(
+            !rename_clashes("Growth", 2, &rows),
+            "its own name is not a clash"
+        );
+        assert!(!rename_clashes("Savings", 1, &rows));
+    }
+
+    #[test]
+    fn a_taken_name_creates_nothing() {
+        let state = CreateState {
+            name: "Main".into(),
+            ..CreateState::default()
+        };
+        assert!(state.outcome_unless(false).is_some());
+        assert_eq!(state.outcome_unless(true), None);
+        assert!(state.is_duplicate(&["main".to_owned()]));
     }
 }

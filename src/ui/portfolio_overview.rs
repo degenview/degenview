@@ -19,6 +19,7 @@ use crate::ui::accessibility;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, MEDIUM, REGULAR, SEMIBOLD};
 use crate::ui::portfolio_charts::{self, HistoryInput};
+use crate::ui::portfolio_empty;
 use crate::ui::portfolio_table::{self, tone_color, tone_option};
 use crate::ui::replay_bar::date_text;
 use crate::ui::theme;
@@ -32,12 +33,18 @@ use std::sync::Arc;
 pub const TOP_COUNT: usize = 6;
 
 /// Space around the page and between its blocks.
-const PAGE_INSET: i8 = 20;
+const PAGE_INSET: i8 = 16;
 const SECTION_GAP: f32 = 16.0;
 const GRID_GAP: f32 = 12.0;
 /// A stat or performer card: two 12 pt paddings around a 50 pt text block.
 const CARD_HEIGHT: f32 = 76.0;
-const HERO_HEIGHT: f32 = 92.0;
+const HERO_HEIGHT: f32 = 136.0;
+const HERO_PADDING: f32 = 22.0;
+/// From this content width the Overview puts a side column beside the charts and the lists.
+const WIDE_MIN: f32 = 1_000.0;
+const SIDE_WIDTH: f32 = 400.0;
+/// The value chart's content height beside the allocation, a little taller than when stacked.
+const WIDE_CHART_HEIGHT: f32 = 300.0;
 /// A panel's padding, its title row and the gap under it.
 const PANEL_PADDING: f32 = 16.0;
 const PANEL_HEADER: f32 = 27.0;
@@ -68,7 +75,7 @@ pub struct OverviewInput<'a> {
     pub subtitle: &'a dyn Fn(&PortfolioAsset) -> String,
     /// "Prices as of 14:03" and the like.
     pub market_value_caption: &'a str,
-    pub is_updating: bool,
+    pub price_status: PriceStatus,
     pub is_loading_initial: bool,
     pub is_loading_history: bool,
     pub now_ms: i64,
@@ -146,7 +153,7 @@ fn caption_color() -> Color32 {
 }
 
 /// The tone's colour, or `fallback` when there is none (zero, unknown, or values hidden).
-fn tone_or(tone: Option<Tone>, fallback: Color32) -> Color32 {
+pub(crate) fn tone_or(tone: Option<Tone>, fallback: Color32) -> Color32 {
     tone_option(tone).unwrap_or(fallback)
 }
 
@@ -170,23 +177,79 @@ fn paint_arrow(ui: &Ui, center: Pos2, up: bool, color: Color32) {
         .add(Shape::convex_polygon(points, color, Stroke::NONE));
 }
 
-/// A panel: fixed outer height, a title row with an optional trailing control, then content.
-/// Because the height is given, two panels in a row end level whatever they hold.
-fn panel(ui: &mut Ui, content_height: f32, title: &str, content: impl FnOnce(&mut Ui, &mut Ui)) {
-    let height = PANEL_PADDING * 2.0 + PANEL_HEADER + PANEL_GAP + content_height;
-    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::hover());
-    ui.painter().rect_filled(rect, 12.0, theme::chrome());
-    ui.painter().rect_stroke(
+/// A raised surface: a soft shadow under the fill, and a hairline around it.
+pub(crate) fn lift(ui: &Ui, rect: Rect, radius: f32) {
+    let painter = ui.painter();
+    painter.add(
+        egui::Shadow {
+            offset: [0, 2],
+            blur: 10,
+            spread: 0,
+            color: Color32::from_black_alpha(30),
+        }
+        .as_shape(rect, radius),
+    );
+    painter.rect_filled(rect, radius, theme::chrome());
+    painter.rect_stroke(
         rect,
-        12.0,
+        radius,
         Stroke::new(1.0, theme::separator().gamma_multiply(0.6)),
         egui::StrokeKind::Inside,
     );
+}
+
+/// A soft light of `color` rising from the bottom of `rect`, strongest right of centre and
+/// gone before the corners, so it needs no clipping to the rounded shape.
+fn glow(ui: &Ui, rect: Rect, color: Color32) {
+    const COLUMNS: usize = 20;
+    let from = rect.left() + rect.width() * 0.3;
+    let to = rect.right() - 20.0;
+    let (top, bottom) = (rect.top() + rect.height() * 0.35, rect.bottom() - 1.0);
+    let mut mesh = egui::Mesh::default();
+    for column in 0..=COLUMNS {
+        let t = column as f32 / COLUMNS as f32;
+        let x = from + (to - from) * t;
+        let bell = (std::f32::consts::PI * t).sin().powi(2);
+        mesh.colored_vertex(pos2(x, top), color.gamma_multiply(0.0));
+        mesh.colored_vertex(pos2(x, bottom), color.gamma_multiply(0.13 * bell));
+    }
+    for column in 0..COLUMNS as u32 {
+        let base = column * 2;
+        mesh.add_triangle(base, base + 1, base + 2);
+        mesh.add_triangle(base + 1, base + 3, base + 2);
+    }
+    ui.painter().add(Shape::mesh(mesh));
+}
+
+/// A panel: fixed outer height, a title row with an optional trailing control, then content.
+/// Because the height is given, two panels in a row end level whatever they hold.
+fn panel(
+    ui: &mut Ui,
+    content_height: f32,
+    icon: Icon,
+    title: &str,
+    content: impl FnOnce(&mut Ui, &mut Ui),
+) {
+    let height = panel_height(content_height);
+    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::hover());
+    lift(ui, rect, 14.0);
     let inner = rect.shrink(PANEL_PADDING);
     let header = Rect::from_min_size(inner.min, vec2(inner.width(), PANEL_HEADER));
+    let chip = Rect::from_center_size(
+        pos2(header.left() + 11.0, header.center().y),
+        Vec2::splat(22.0),
+    );
+    ui.painter()
+        .rect_filled(chip, 7.0, theme::SYSTEM_ACCENT.gamma_multiply(0.14));
+    icons::paint(
+        ui.painter(),
+        Rect::from_center_size(chip.center(), Vec2::splat(13.0)),
+        icon,
+        theme::SYSTEM_ACCENT,
+    );
     text_at(
         ui,
-        pos2(header.left(), header.center().y),
+        pos2(chip.right() + 9.0, header.center().y),
         Align2::LEFT_CENTER,
         title,
         kit::size::HEADLINE,
@@ -210,20 +273,85 @@ fn panel(ui: &mut Ui, content_height: f32, title: &str, content: impl FnOnce(&mu
     content(&mut header_ui, &mut body_ui);
 }
 
-/// A tinted, bordered card of a fixed height; `inside` is the content rect.
-fn card_frame(ui: &mut Ui, height: f32) -> Rect {
+/// The outer height of a [`panel`] whose content is `content_height` tall.
+fn panel_height(content_height: f32) -> f32 {
+    PANEL_PADDING * 2.0 + PANEL_HEADER + PANEL_GAP + content_height
+}
+
+/// A tinted, bordered card of a fixed height; `inside` is the content rect. `wash` lays a faint
+/// light of the card's tone over it.
+fn card_frame(ui: &mut Ui, height: f32, wash: Option<Color32>) -> Rect {
     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), height), Sense::hover());
-    ui.painter().rect_filled(rect, 10.0, theme::quaternary(0.4));
+    ui.painter().rect_filled(rect, 12.0, theme::chrome());
+    if let Some(wash) = wash {
+        ui.painter()
+            .rect_filled(rect, 12.0, wash.gamma_multiply(0.07));
+    }
     ui.painter().rect_stroke(
         rect,
-        10.0,
-        Stroke::new(1.0, theme::separator().gamma_multiply(0.4)),
+        12.0,
+        Stroke::new(1.0, theme::separator().gamma_multiply(0.6)),
         egui::StrokeKind::Inside,
     );
     rect
 }
 
+/// Two columns of the given widths, tops level, with `gap` between. Both share `shared`, which
+/// each takes in turn.
+fn split<T>(
+    ui: &mut Ui,
+    widths: [f32; 2],
+    gap: f32,
+    shared: &mut T,
+    left: impl FnOnce(&mut Ui, &mut T),
+    right: impl FnOnce(&mut Ui, &mut T),
+) {
+    ui.horizontal_top(|ui| {
+        ui.spacing_mut().item_spacing.x = gap;
+        ui.allocate_ui_with_layout(
+            vec2(widths[0], 0.0),
+            egui::Layout::top_down(egui::Align::Min),
+            |ui| {
+                ui.set_width(widths[0]);
+                left(ui, shared);
+            },
+        );
+        ui.allocate_ui_with_layout(
+            vec2(widths[1], 0.0),
+            egui::Layout::top_down(egui::Align::Min),
+            |ui| {
+                ui.set_width(widths[1]);
+                right(ui, shared);
+            },
+        );
+    });
+}
+
 // MARK: Overview
+
+/// How current the prices behind the total are; colours the dot beside the caption.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PriceStatus {
+    /// Every holding has a live price.
+    #[default]
+    Live,
+    /// Some price is a cached one.
+    Cached,
+    /// Some holding has no price.
+    Partial,
+    /// The valuation failed.
+    Unavailable,
+}
+
+impl PriceStatus {
+    fn color(self) -> Color32 {
+        match self {
+            Self::Live => kit::GREEN,
+            Self::Cached | Self::Partial => kit::ORANGE,
+            Self::Unavailable => kit::RED,
+        }
+    }
+}
 
 pub fn show_overview(
     ui: &mut egui::Ui,
@@ -242,44 +370,89 @@ pub fn show_overview(
                 .inner_margin(Margin::same(PAGE_INSET))
                 .show(ui, |ui| {
                     ui.spacing_mut().item_spacing = vec2(GRID_GAP, SECTION_GAP);
+                    let wide = ui.available_width() >= WIDE_MIN;
                     hero(ui, state, input, &stats, period);
                     summary_cards(ui, input.formatter, &stats);
-                    ui.columns(2, |columns| {
-                        performer_card(
-                            &mut columns[0],
-                            "Best Performer",
-                            stats.best.as_ref(),
-                            input,
+                    if wide {
+                        let width = ui.available_width();
+                        let widths = [width - SIDE_WIDTH - SECTION_GAP, SIDE_WIDTH];
+                        split(
+                            ui,
+                            widths,
+                            SECTION_GAP,
+                            state,
+                            |ui, state| history_card(ui, state, input, WIDE_CHART_HEIGHT),
+                            |ui, state| allocation_panel(ui, state, input, WIDE_CHART_HEIGHT),
                         );
-                        performer_card(
-                            &mut columns[1],
-                            "Worst Performer",
-                            stats.worst.as_ref(),
-                            input,
-                        );
-                    });
-                    history_card(ui, state, input);
-                    ui.spacing_mut().item_spacing.x = SECTION_GAP;
-                    ui.columns(2, |columns| {
-                        panel(
-                            &mut columns[0],
-                            PANEL_CONTENT_HEIGHT,
-                            "Allocation",
-                            |_, ui| {
-                                portfolio_charts::show_allocation(
+                        split(
+                            ui,
+                            widths,
+                            SECTION_GAP,
+                            &mut actions,
+                            |ui, actions| top_holdings_panel(ui, input, actions),
+                            |ui, _| {
+                                ui.spacing_mut().item_spacing.y = GRID_GAP;
+                                let each = (panel_height(PANEL_CONTENT_HEIGHT) - GRID_GAP) / 2.0;
+                                performer_card(
                                     ui,
-                                    input.holdings,
-                                    input.formatter,
-                                    &mut state.hovered_slice,
-                                    PANEL_CONTENT_HEIGHT,
+                                    "Best Performer",
+                                    stats.best.as_ref(),
+                                    input,
+                                    each,
+                                );
+                                performer_card(
+                                    ui,
+                                    "Worst Performer",
+                                    stats.worst.as_ref(),
+                                    input,
+                                    each,
                                 );
                             },
                         );
-                        top_holdings_panel(&mut columns[1], input, &mut actions);
-                    });
+                    } else {
+                        ui.columns(2, |columns| {
+                            performer_card(
+                                &mut columns[0],
+                                "Best Performer",
+                                stats.best.as_ref(),
+                                input,
+                                CARD_HEIGHT,
+                            );
+                            performer_card(
+                                &mut columns[1],
+                                "Worst Performer",
+                                stats.worst.as_ref(),
+                                input,
+                                CARD_HEIGHT,
+                            );
+                        });
+                        history_card(ui, state, input, HISTORY_CHART_HEIGHT);
+                        ui.spacing_mut().item_spacing.x = SECTION_GAP;
+                        ui.columns(2, |columns| {
+                            allocation_panel(&mut columns[0], state, input, PANEL_CONTENT_HEIGHT);
+                            top_holdings_panel(&mut columns[1], input, &mut actions);
+                        });
+                    }
                 });
         });
     actions
+}
+
+fn allocation_panel(
+    ui: &mut Ui,
+    state: &mut OverviewState,
+    input: &OverviewInput,
+    content_height: f32,
+) {
+    panel(ui, content_height, Icon::PieChart, "Allocation", |_, ui| {
+        portfolio_charts::show_allocation(
+            ui,
+            input.holdings,
+            input.formatter,
+            &mut state.hovered_slice,
+            content_height,
+        );
+    });
 }
 
 fn hero(
@@ -291,109 +464,196 @@ fn hero(
 ) {
     let f = input.formatter;
     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), HERO_HEIGHT), Sense::hover());
-    let left = rect.left() + 4.0;
-    let right = rect.right() - 4.0;
+    let tint = f
+        .tone(period.map(|p| p.profit))
+        .map_or(theme::SYSTEM_ACCENT, tone_color);
+    lift(ui, rect, 16.0);
+    if !input.is_loading_initial && !input.holdings.is_empty() {
+        glow(ui, rect, tint);
+    }
+    let inner = rect.shrink(HERO_PADDING);
 
+    // The portfolio's name on a chip of its own.
+    let chip = Rect::from_center_size(
+        pos2(inner.left() + 11.0, inner.top() + 11.0),
+        Vec2::splat(22.0),
+    );
+    ui.painter()
+        .rect_filled(chip, 7.0, theme::SYSTEM_ACCENT.gamma_multiply(0.14));
+    icons::paint(
+        ui.painter(),
+        Rect::from_center_size(chip.center(), Vec2::splat(13.0)),
+        Icon::Briefcase,
+        theme::SYSTEM_ACCENT,
+    );
     let name = text_at(
         ui,
-        pos2(left, rect.top()),
-        Align2::LEFT_TOP,
+        pos2(chip.right() + 9.0, chip.center().y),
+        Align2::LEFT_CENTER,
         input.portfolio_name.unwrap_or("All Portfolios"),
         15.0,
         SEMIBOLD,
         theme::text_primary(),
     );
-    text_at(
+    let count = text_at(
         ui,
-        pos2(name.right() + 6.0, rect.top()),
-        Align2::LEFT_TOP,
-        &format!("· {}", asset_count_text(input.holdings.len())),
+        pos2(name.right() + 6.0, chip.center().y),
+        Align2::LEFT_CENTER,
+        &format!("\u{00B7} {}", asset_count_text(input.holdings.len())),
         15.0,
         REGULAR,
         caption_color(),
     );
 
-    let balance_top = rect.top() + 26.0;
+    let balance_top = inner.top() + 32.0;
     let balance_middle = balance_top + 24.0;
+    let mut left_end = count.right();
     if input.is_loading_initial {
-        ui.put(
-            Rect::from_center_size(pos2(left + 8.0, balance_middle), Vec2::splat(16.0)),
-            egui::Spinner::new().size(16.0),
-        );
-        text_at(
+        // Painted, not `put`: `put` would move the cursor back up to the spinner, and the cards
+        // below would start under the hero.
+        egui::Spinner::new().size(16.0).paint_at(
             ui,
-            pos2(left + 26.0, balance_middle),
+            Rect::from_center_size(pos2(inner.left() + 8.0, balance_middle), Vec2::splat(16.0)),
+        );
+        let loading = text_at(
+            ui,
+            pos2(inner.left() + 26.0, balance_middle),
             Align2::LEFT_CENTER,
-            "Loading portfolio value…",
+            "Loading portfolio value\u{2026}",
             12.0,
             REGULAR,
             caption_color(),
         );
+        left_end = left_end.max(loading.right());
     } else {
-        text_at(
+        let balance = text_at(
             ui,
-            pos2(left, balance_top),
+            pos2(inner.left(), balance_top),
             Align2::LEFT_TOP,
             &f.money(input.total_value),
             40.0,
             SEMIBOLD,
             theme::text_primary(),
         );
+        left_end = left_end.max(balance.right());
     }
 
-    let caption_middle = rect.bottom() - 6.0;
+    // Where the prices stand: a dot in the state's colour, then the caption.
+    let caption_middle = inner.bottom() - 6.0;
+    if !input.is_loading_initial {
+        ui.painter().circle_filled(
+            pos2(inner.left() + 4.0, caption_middle),
+            3.5,
+            input.price_status.color(),
+        );
+    }
     let caption = text_at(
         ui,
-        pos2(left, caption_middle),
+        pos2(
+            inner.left() + if input.is_loading_initial { 0.0 } else { 14.0 },
+            caption_middle,
+        ),
         Align2::LEFT_CENTER,
         input.market_value_caption,
         kit::size::CAPTION,
         REGULAR,
         caption_color(),
     );
-    if input.is_updating && !input.is_loading_initial {
-        ui.put(
-            Rect::from_center_size(
-                pos2(caption.right() + 12.0, caption_middle),
-                Vec2::splat(10.0),
-            ),
-            egui::Spinner::new().size(10.0),
-        );
-        text_at(
-            ui,
-            pos2(caption.right() + 22.0, caption_middle),
-            Align2::LEFT_CENTER,
-            "Updating…",
-            kit::size::CAPTION,
-            REGULAR,
-            caption_color(),
-        );
-    }
+    left_end = left_end.max(caption.right());
 
-    if !input.is_loading_initial {
-        let pnl_label = format!("P&L · {}", state.range.period_name());
-        let edge = change_figure(
+    if input.is_loading_initial {
+        return;
+    }
+    let middle = rect.center().y;
+    let pnl_label = format!("P&L \u{00B7} {}", state.range.period_name());
+    let edge = change_block(
+        ui,
+        f,
+        &pnl_label,
+        period.map(|p| p.profit),
+        period.and_then(|p| p.percentage),
+        pos2(inner.right(), middle),
+    );
+    let day_edge = change_block(
+        ui,
+        f,
+        "24h",
+        stats.day_change.map(|d| d.amount),
+        stats.day_change.and_then(|d| d.percentage),
+        pos2(edge - 36.0, middle),
+    );
+    ui.painter().vline(
+        edge - 18.0,
+        middle - 26.0..=middle + 26.0,
+        Stroke::new(1.0, theme::separator().gamma_multiply(0.7)),
+    );
+
+    // Between the two, the shape of the range.
+    let room = Rect::from_min_max(
+        pos2(left_end + 36.0, inner.top() + 6.0),
+        pos2(day_edge - 36.0, inner.bottom() - 6.0),
+    );
+    if room.width() >= 120.0 && !f.privacy {
+        sparkline(
             ui,
-            f,
-            &pnl_label,
-            period.map(|p| p.profit),
-            period.and_then(|p| p.percentage),
-            pos2(right, rect.bottom()),
-        );
-        change_figure(
-            ui,
-            f,
-            "24h",
-            stats.day_change.map(|d| d.amount),
-            stats.day_change.and_then(|d| d.percentage),
-            pos2(edge - 28.0, rect.bottom()),
+            room,
+            &portfolio_charts::prepared_points(
+                input.history,
+                input.total_value,
+                state.range,
+                input.now_ms,
+                false,
+            ),
         );
     }
 }
 
-/// A signed amount and percentage under a period label: "+$1,204.10  ▲ 3.21%", right-aligned
-/// to `anchor` (its bottom-right corner). Returns the figure's left edge.
-fn change_figure(
+/// The value over the range as a line with a fade under it; green when it ends above where it
+/// began, red when below.
+fn sparkline(ui: &Ui, rect: Rect, points: &[PortfolioSnapshot]) {
+    let Some((minimum, maximum)) = portfolio_charts::value_bounds(points) else {
+        return;
+    };
+    if points.len() < 2 {
+        return;
+    }
+    let color = if points[points.len() - 1].value >= points[0].value {
+        theme::UP
+    } else {
+        theme::DOWN
+    };
+    let spread = (maximum - minimum).max(f64::EPSILON);
+    let line: Vec<Pos2> = points
+        .iter()
+        .enumerate()
+        .map(|(index, point)| {
+            pos2(
+                rect.left() + rect.width() * index as f32 / (points.len() - 1) as f32,
+                rect.bottom() - rect.height() * ((point.value - minimum) / spread) as f32,
+            )
+        })
+        .collect();
+    let mut mesh = egui::Mesh::default();
+    for point in &line {
+        mesh.colored_vertex(*point, color.gamma_multiply(0.20));
+        mesh.colored_vertex(pos2(point.x, rect.bottom()), color.gamma_multiply(0.0));
+    }
+    for step in 0..line.len() as u32 - 1 {
+        let base = step * 2;
+        mesh.add_triangle(base, base + 1, base + 2);
+        mesh.add_triangle(base + 1, base + 3, base + 2);
+    }
+    ui.painter().add(Shape::mesh(mesh));
+    let end = line[line.len() - 1];
+    ui.painter().add(Shape::line(line, Stroke::new(2.0, color)));
+    ui.painter().circle_filled(end, 3.5, color);
+    ui.painter()
+        .circle_stroke(end, 3.5, Stroke::new(2.0, theme::chrome()));
+}
+
+/// A period label over a signed amount over a pill with the percentage, left-aligned in a block
+/// that ends at `anchor.x` and is centred on `anchor.y`. Returns the block's left edge.
+fn change_block(
     ui: &Ui,
     f: PortfolioValueFormatter,
     label: &str,
@@ -403,28 +663,18 @@ fn change_figure(
 ) -> f32 {
     let secondary = caption_color();
     let label = line(ui, label, kit::size::CAPTION, REGULAR, secondary);
-    let Some(amount) = amount else {
-        let dash = line(ui, "—", 15.0, SEMIBOLD, secondary);
-        let width = label.size().x.max(dash.size().x);
-        let height = label.size().y + 3.0 + dash.size().y;
-        let top = anchor.y - height;
-        draw(ui, pos2(anchor.x - label.size().x, top), &label);
-        draw(
+    let tone = f.tone(amount);
+    let value = match amount {
+        Some(amount) => line(
             ui,
-            pos2(anchor.x - dash.size().x, top + label.size().y + 3.0),
-            &dash,
-        );
-        return anchor.x - width;
+            &f.signed_money(amount),
+            17.0,
+            SEMIBOLD,
+            tone_or(tone, theme::text_primary()),
+        ),
+        None => line(ui, "\u{2014}", 17.0, SEMIBOLD, secondary),
     };
-    let tone = f.tone(Some(amount));
-    let value = line(
-        ui,
-        &f.signed_money(amount),
-        15.0,
-        SEMIBOLD,
-        tone_or(tone, theme::text_primary()),
-    );
-    let percent = percentage.map(|percentage| {
+    let percent = percentage.filter(|_| amount.is_some()).map(|percentage| {
         line(
             ui,
             &f.percent(percentage.abs(), 2),
@@ -433,32 +683,41 @@ fn change_figure(
             tone_or(tone, secondary),
         )
     });
-    let arrow = !f.privacy && amount != 0.0;
-    let arrow_width = if arrow { 11.0 } else { 0.0 };
-    let percent_width = percent
-        .as_ref()
-        .map_or(0.0, |galley| galley.size().x + arrow_width);
-    let width = label.size().x.max(value.size().x).max(percent_width);
-    let percent_height = percent.as_ref().map_or(0.0, |galley| galley.size().y + 3.0);
-    let height = label.size().y + 3.0 + value.size().y + percent_height;
-    let mut y = anchor.y - height;
-    draw(ui, pos2(anchor.x - label.size().x, y), &label);
+    let arrow = amount.is_some_and(|amount| !f.privacy && amount != 0.0);
+    let pill_width = percent.as_ref().map_or(0.0, |galley| {
+        galley.size().x + 16.0 + if arrow { 12.0 } else { 0.0 }
+    });
+    let width = label.size().x.max(value.size().x).max(pill_width);
+    let pill_height = if percent.is_some() { 20.0 + 5.0 } else { 0.0 };
+    let height = label.size().y + 3.0 + value.size().y + pill_height;
+    let left = anchor.x - width;
+    let mut y = anchor.y - height / 2.0;
+    draw(ui, pos2(left, y), &label);
     y += label.size().y + 3.0;
-    draw(ui, pos2(anchor.x - value.size().x, y), &value);
-    y += value.size().y + 3.0;
+    draw(ui, pos2(left, y), &value);
+    y += value.size().y + 5.0;
     if let Some(percent) = percent {
-        let x = anchor.x - percent.size().x;
-        draw(ui, pos2(x, y), &percent);
+        let pill = Rect::from_min_size(pos2(left, y), vec2(pill_width, 20.0));
+        let fill = tone_option(tone).unwrap_or_else(theme::text_tertiary);
+        ui.painter()
+            .rect_filled(pill, 10.0, fill.gamma_multiply(0.16));
+        let mut x = pill.left() + 8.0;
         if arrow {
             paint_arrow(
                 ui,
-                pos2(x - 7.0, y + percent.size().y / 2.0),
-                amount > 0.0,
+                pos2(x + 3.5, pill.center().y),
+                amount.is_some_and(|amount| amount > 0.0),
                 tone_or(tone, secondary),
             );
+            x += 12.0;
         }
+        draw(
+            ui,
+            pos2(x, pill.center().y - percent.size().y / 2.0),
+            &percent,
+        );
     }
-    anchor.x - width
+    left
 }
 
 pub struct StatCard<'a> {
@@ -505,8 +764,8 @@ impl<'a> StatCard<'a> {
 }
 
 pub fn stat_card(ui: &mut egui::Ui, card: &StatCard) {
-    let rect = card_frame(ui, CARD_HEIGHT);
     let tint = card.tone.map_or(theme::SYSTEM_ACCENT, tone_color);
+    let rect = card_frame(ui, CARD_HEIGHT, card.tone.map(tone_color));
     let mut x = rect.left() + 14.0;
     if let Some(icon) = card.icon {
         let badge = Rect::from_center_size(pos2(x + 17.0, rect.center().y), Vec2::splat(34.0));
@@ -528,7 +787,7 @@ pub fn stat_card(ui: &mut egui::Ui, card: &StatCard) {
     } else {
         tone_or(card.tone, theme::text_primary())
     };
-    let value = kit::galley(ui, &card.value, 15.0, SEMIBOLD, value_color, max_width);
+    let value = kit::galley(ui, &card.value, 17.0, SEMIBOLD, value_color, max_width);
     // Always laid out, so cards with and without a caption share one text block.
     let caption = card.caption.as_deref().map(|caption| {
         kit::galley(
@@ -553,9 +812,11 @@ pub fn stat_card(ui: &mut egui::Ui, card: &StatCard) {
 
 pub fn grid(ui: &mut egui::Ui, cards: &[StatCard]) {
     ui.spacing_mut().item_spacing.x = GRID_GAP;
-    ui.columns(4, |columns| {
+    // Two across where four would squeeze a figure out of its card.
+    let across = if ui.available_width() < 640.0 { 2 } else { 4 };
+    ui.columns(across, |columns| {
         for (index, card) in cards.iter().enumerate() {
-            stat_card(&mut columns[index % 4], card);
+            stat_card(&mut columns[index % across], card);
         }
     });
 }
@@ -584,9 +845,13 @@ fn performer_card(
     title: &str,
     result: Option<&AssetResult>,
     input: &OverviewInput,
+    height: f32,
 ) {
+    if height > CARD_HEIGHT * 1.5 {
+        return performer_tile(ui, title, result, input, height);
+    }
     let f = input.formatter;
-    let rect = card_frame(ui, CARD_HEIGHT);
+    let rect = card_frame(ui, height, None);
     let left = rect.left() + 14.0;
     let right = rect.right() - 14.0;
     let secondary = caption_color();
@@ -676,31 +941,134 @@ fn performer_card(
     );
 }
 
-fn history_card(ui: &mut egui::Ui, state: &mut OverviewState, input: &OverviewInput) {
-    panel(ui, HISTORY_CHART_HEIGHT, "Portfolio Value", |header, ui| {
-        history_range_control(header, &mut state.range);
-        let loading =
-            input.is_loading_initial || (input.is_loading_history && input.history.is_empty());
-        portfolio_charts::show_history(
+/// A performer as a tall tile: which it is, what it is, then how far it moved in large type.
+fn performer_tile(
+    ui: &mut egui::Ui,
+    title: &str,
+    result: Option<&AssetResult>,
+    input: &OverviewInput,
+    height: f32,
+) {
+    let f = input.formatter;
+    let best = title.starts_with("Best");
+    let tone = result.and_then(|result| f.tone(Some(result.total_pnl)));
+    let rect = card_frame(ui, height, tone.map(tone_color));
+    let (left, right) = (rect.left() + 18.0, rect.right() - 18.0);
+    let secondary = caption_color();
+    let accent = if best { kit::GREEN } else { kit::RED };
+    let badge = Rect::from_center_size(pos2(left + 10.0, rect.top() + 24.0), Vec2::splat(20.0));
+    ui.painter()
+        .rect_filled(badge, 6.0, accent.gamma_multiply(0.16));
+    icons::paint(
+        ui.painter(),
+        Rect::from_center_size(badge.center(), Vec2::splat(11.0)),
+        if best {
+            Icon::ArrowUpRight
+        } else {
+            Icon::ArrowDownRight
+        },
+        accent,
+    );
+    text_at(
+        ui,
+        pos2(badge.right() + 8.0, badge.center().y),
+        Align2::LEFT_CENTER,
+        title,
+        kit::size::SUBHEADLINE,
+        MEDIUM,
+        secondary,
+    );
+    let Some(result) = result else {
+        text_at(
             ui,
-            &HistoryInput {
-                snapshots: input.history,
-                current_value: input.total_value,
-                currency: input.formatter.currency,
-                range: state.range,
-                privacy: input.formatter.privacy,
-                is_loading: loading,
-                loading_message: if input.is_loading_initial {
-                    "Loading market data…"
-                } else {
-                    "Building history…"
-                },
-                now_ms: input.now_ms,
-                utc_offset_secs: input.utc_offset_secs,
-            },
-            HISTORY_CHART_HEIGHT,
+            pos2(left, rect.center().y + 10.0),
+            Align2::LEFT_CENTER,
+            "No priced holdings yet",
+            kit::size::SUBHEADLINE,
+            REGULAR,
+            secondary,
         );
-    });
+        return;
+    };
+
+    let icon = Rect::from_min_size(pos2(left, badge.bottom() + 14.0), Vec2::splat(36.0));
+    // Painted in place: a scope would move the column's cursor back up to the icon.
+    portfolio_table::paint_asset_icon(ui, icon, &result.asset);
+    let text_left = icon.right() + 12.0;
+    let width = (right - text_left).max(30.0);
+    let ticker = kit::galley(
+        ui,
+        &result.asset.display_ticker(),
+        kit::size::HEADLINE,
+        SEMIBOLD,
+        theme::text_primary(),
+        width,
+    );
+    let name = kit::galley(
+        ui,
+        &(input.subtitle)(&result.asset),
+        kit::size::CAPTION,
+        REGULAR,
+        secondary,
+        width,
+    );
+    let top = icon.center().y - (ticker.size().y + 1.0 + name.size().y) / 2.0;
+    draw(ui, pos2(text_left, top), &ticker);
+    draw(ui, pos2(text_left, top + ticker.size().y + 1.0), &name);
+
+    let amount = text_at(
+        ui,
+        pos2(left, rect.bottom() - 16.0),
+        Align2::LEFT_BOTTOM,
+        &f.signed_money(result.total_pnl),
+        kit::size::SUBHEADLINE,
+        MEDIUM,
+        tone_or(tone, secondary),
+    );
+    text_at(
+        ui,
+        pos2(left, amount.top() - 2.0),
+        Align2::LEFT_BOTTOM,
+        &result
+            .pnl_percent
+            .map_or("\u{2014}".to_owned(), |p| f.signed_percent(p, 2)),
+        26.0,
+        SEMIBOLD,
+        tone_or(tone, theme::text_primary()),
+    );
+}
+
+fn history_card(ui: &mut egui::Ui, state: &mut OverviewState, input: &OverviewInput, height: f32) {
+    panel(
+        ui,
+        height,
+        Icon::ChartUptrend,
+        "Portfolio Value",
+        |header, ui| {
+            history_range_control(header, &mut state.range);
+            let loading =
+                input.is_loading_initial || (input.is_loading_history && input.history.is_empty());
+            portfolio_charts::show_history(
+                ui,
+                &HistoryInput {
+                    snapshots: input.history,
+                    current_value: input.total_value,
+                    currency: input.formatter.currency,
+                    range: state.range,
+                    privacy: input.formatter.privacy,
+                    is_loading: loading,
+                    loading_message: if input.is_loading_initial {
+                        "Loading market data\u{2026}"
+                    } else {
+                        "Building history\u{2026}"
+                    },
+                    now_ms: input.now_ms,
+                    utc_offset_secs: input.utc_offset_secs,
+                },
+                height,
+            );
+        },
+    );
 }
 
 fn history_range_control(ui: &mut egui::Ui, selected: &mut PortfolioHistoryRange) {
@@ -759,34 +1127,50 @@ fn history_range_control(ui: &mut egui::Ui, selected: &mut PortfolioHistoryRange
 fn top_holdings_panel(ui: &mut Ui, input: &OverviewInput, actions: &mut Vec<OverviewAction>) {
     let f = input.formatter;
     let show_all = input.holdings.len() > TOP_COUNT;
-    panel(ui, PANEL_CONTENT_HEIGHT, "Top Holdings", |header, ui| {
-        if show_all {
-            let link = header
-                .add(
-                    egui::Label::new(kit::text(
-                        "View All",
-                        kit::size::SUBHEADLINE,
-                        MEDIUM,
-                        theme::SYSTEM_ACCENT,
-                    ))
-                    .sense(Sense::click()),
-                )
-                .on_hover_cursor(CursorIcon::PointingHand);
-            if link.clicked() {
-                actions.push(OverviewAction::ShowHoldings);
+    panel(
+        ui,
+        PANEL_CONTENT_HEIGHT,
+        Icon::Layers,
+        "Top Holdings",
+        |header, ui| {
+            if show_all {
+                let link = header
+                    .add(
+                        egui::Label::new(kit::text(
+                            "View All",
+                            kit::size::SUBHEADLINE,
+                            MEDIUM,
+                            theme::SYSTEM_ACCENT,
+                        ))
+                        .sense(Sense::click()),
+                    )
+                    .on_hover_cursor(CursorIcon::PointingHand);
+                if link.clicked() {
+                    actions.push(OverviewAction::ShowHoldings);
+                }
             }
-        }
-        let width = ui.available_width();
-        let top = ui.max_rect().top();
-        let left = ui.max_rect().left();
-        for (index, holding) in top_holdings(input.holdings).into_iter().enumerate() {
-            let row = Rect::from_min_size(
-                pos2(left, top + index as f32 * (TOP_ROW_HEIGHT + TOP_ROW_GAP)),
-                vec2(width, TOP_ROW_HEIGHT),
-            );
-            top_holding_row(ui, row, holding, input, f, actions);
-        }
-    });
+            if input.holdings.is_empty() {
+                portfolio_empty::compact(
+                    ui,
+                    ui.max_rect(),
+                    portfolio_empty::Scene::Holdings,
+                    "No Open Positions",
+                    "Assets you hold appear here.",
+                );
+                return;
+            }
+            let width = ui.available_width();
+            let top = ui.max_rect().top();
+            let left = ui.max_rect().left();
+            for (index, holding) in top_holdings(input.holdings).into_iter().enumerate() {
+                let row = Rect::from_min_size(
+                    pos2(left, top + index as f32 * (TOP_ROW_HEIGHT + TOP_ROW_GAP)),
+                    vec2(width, TOP_ROW_HEIGHT),
+                );
+                top_holding_row(ui, row, holding, input, f, actions);
+            }
+        },
+    );
 }
 
 fn top_holding_row(
@@ -838,14 +1222,19 @@ fn top_holding_row(
     draw(ui, pos2(right - value.size().x, right_top), &value);
     let line_y = right_top + value.size().y + 3.0;
     draw(ui, pos2(right - percent.size().x, line_y), &percent);
+    // The bar grows with the row, so a wide page does not leave it a stub far from its name.
+    let bar_width = (row.width() * 0.22).clamp(64.0, 240.0);
     let bar = Rect::from_center_size(
-        pos2(right - 44.0 - 6.0 - 32.0, line_y + percent.size().y / 2.0),
-        vec2(64.0, 4.0),
+        pos2(
+            right - 44.0 - 6.0 - bar_width / 2.0,
+            line_y + percent.size().y / 2.0,
+        ),
+        vec2(bar_width, 4.0),
     );
     ui.painter().rect_filled(bar, 2.0, theme::ink(28));
     let filled = Rect::from_min_size(
         bar.min,
-        vec2(64.0 * holding.allocation.clamp(0.0, 1.0) as f32, 4.0),
+        vec2(bar_width * holding.allocation.clamp(0.0, 1.0) as f32, 4.0),
     );
     ui.painter().rect_filled(filled, 2.0, theme::SYSTEM_ACCENT);
 
@@ -890,6 +1279,12 @@ fn card(ui: &mut egui::Ui, content: impl FnOnce(&mut egui::Ui)) {
         .fill(theme::chrome())
         .stroke(Stroke::new(1.0, theme::separator().gamma_multiply(0.6)))
         .corner_radius(12.0)
+        .shadow(egui::Shadow {
+            offset: [0, 2],
+            blur: 10,
+            spread: 0,
+            color: Color32::from_black_alpha(30),
+        })
         .inner_margin(egui::Margin::same(16))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
@@ -930,155 +1325,636 @@ pub fn tracking_caption(since_ms: i64, now_ms: i64) -> String {
     }
 }
 
+/// The Win Rate panel's content height at least: beside the P&L panel it grows so the side column
+/// (the panel over the activity cards) ends level with the bars.
+const WIN_CONTENT: f32 = 156.0;
+const RANGE_HEIGHT: f32 = 96.0;
+/// The P&L rows share their panel's height, kept within these.
+const PNL_ROW_MIN: f32 = 30.0;
+const PNL_ROW_MAX: f32 = 54.0;
+/// Below this row width the P&L percentage is dropped, so the bars keep some room.
+const PNL_COMPACT: f32 = 520.0;
+
 pub fn show_statistics(ui: &mut egui::Ui, input: &StatisticsInput) {
     let f = input.formatter;
     let stats = PortfolioStatistics::new(input.holdings, input.history, input.transactions);
-    let on = |ms: i64| date_text(ms + input.utc_offset_secs * 1_000);
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
         .show(ui, |ui| {
             egui::Frame::new()
                 .inner_margin(Margin::same(PAGE_INSET))
                 .show(ui, |ui| {
-                    ui.spacing_mut().item_spacing = vec2(GRID_GAP, GRID_GAP);
-                    section(ui, "Performance", None, false);
-                    grid(
-                        ui,
-                        &[
-                            StatCard::new("Total P&L", f.signed_money(stats.total_pnl()))
-                                .tone(f.tone(Some(stats.total_pnl()))),
-                            StatCard::new("Unrealized P&L", f.signed_money(stats.unrealized_pnl))
-                                .tone(f.tone(Some(stats.unrealized_pnl)))
-                                .caption(stats.unrealized_percent.map(|p| f.signed_percent(p, 2))),
-                            StatCard::new("Realized P&L", f.signed_money(stats.realized_pnl))
-                                .tone(f.tone(Some(stats.realized_pnl))),
-                            StatCard::new(
-                                "Last 24 Hours",
-                                stats
-                                    .day_change
-                                    .map_or("—".to_owned(), |d| f.signed_money(d.amount)),
-                            )
-                            .tone(f.tone(stats.day_change.map(|d| d.amount)))
-                            .caption(
-                                stats
-                                    .day_change
-                                    .and_then(|d| d.percentage)
-                                    .map(|p| f.signed_percent(p, 2)),
-                            )
-                            .placeholder(stats.day_change.is_none()),
-                        ],
-                    );
-                    section(ui, "Value", None, true);
-                    grid(
-                        ui,
-                        &[
-                            StatCard::new("Current Value", f.money(stats.total_value)),
-                            StatCard::new("Cost Basis", f.money(stats.cost_basis)),
-                            StatCard::new(
-                                "Portfolio High",
-                                stats.high.map_or("—".to_owned(), |e| f.money(e.value)),
-                            )
-                            .caption(stats.high.map(|e| on(e.timestamp)))
-                            .placeholder(stats.high.is_none()),
-                            StatCard::new(
-                                "Portfolio Low",
-                                stats.low.map_or("—".to_owned(), |e| f.money(e.value)),
-                            )
-                            .caption(stats.low.map(|e| on(e.timestamp)))
-                            .placeholder(stats.low.is_none()),
-                        ],
-                    );
-                    section(ui, "Activity", None, true);
-                    grid(
-                        ui,
-                        &[
-                            StatCard::new("Transactions", stats.transaction_count.to_string())
-                                .caption(Some(activity_caption(stats.buy_count, stats.sell_count))),
-                            StatCard::new("Assets", stats.asset_count.to_string()).caption(Some(
-                                format!("{} in profit · {} at a loss", stats.winners, stats.losers),
-                            )),
-                            StatCard::new("Fees Paid", f.money(stats.fees_paid)),
-                            StatCard::new(
-                                "Tracking Since",
-                                stats.first_transaction.map_or("—".to_owned(), on),
-                            )
-                            .caption(
-                                stats
-                                    .first_transaction
-                                    .map(|t| tracking_caption(t, input.now_ms)),
-                            )
-                            .placeholder(stats.first_transaction.is_none()),
-                        ],
-                    );
-                    section(
-                        ui,
-                        "P&L by Asset",
-                        Some(&format!("Total, in {}", f.currency.code())),
-                        true,
-                    );
-                    card(ui, |ui| pnl_bars_view(ui, &stats.asset_results, f));
+                    ui.spacing_mut().item_spacing = vec2(GRID_GAP, SECTION_GAP);
+                    let width = ui.available_width();
+                    statistics_hero(ui, f, &stats);
+                    value_cards(ui, input, &stats);
+                    range_strip(ui, input, &stats);
+                    let rows_height = stats.asset_results.len().max(1) as f32 * PNL_ROW_MIN;
+                    if width >= WIDE_MIN {
+                        // Results on the left. Beside them the win rate and, under it, the four
+                        // activity cards two across; both columns end level, as tall as the
+                        // longer of the bars and the side column needs.
+                        let cards = 2.0 * CARD_HEIGHT + GRID_GAP;
+                        let total = panel_height(rows_height)
+                            .max(panel_height(WIN_CONTENT) + SECTION_GAP + cards);
+                        split(
+                            ui,
+                            [width - SIDE_WIDTH - SECTION_GAP, SIDE_WIDTH],
+                            SECTION_GAP,
+                            &mut (),
+                            |ui, _| {
+                                pnl_panel(ui, &stats.asset_results, f, total - panel_height(0.0))
+                            },
+                            |ui, _| {
+                                let win = total - cards - SECTION_GAP - panel_height(0.0);
+                                win_panel(ui, &stats, win);
+                                ui.scope(|ui| {
+                                    ui.spacing_mut().item_spacing.y = GRID_GAP;
+                                    activity_cards(ui, input, &stats);
+                                });
+                            },
+                        );
+                    } else {
+                        win_panel(ui, &stats, WIN_CONTENT);
+                        pnl_panel(ui, &stats.asset_results, f, rows_height.max(WIN_CONTENT));
+                        activity_cards(ui, input, &stats);
+                    }
                 });
         });
 }
 
-/// A section heading: a semibold title with an optional secondary note, `SECTION_BREAK` below
-/// the previous block when it is not the first.
-fn section(ui: &mut egui::Ui, title: &str, subtitle: Option<&str>, spaced: bool) {
-    if spaced {
-        ui.add_space(STATS_SECTION_GAP - GRID_GAP);
+fn value_cards(ui: &mut Ui, input: &StatisticsInput, stats: &PortfolioStatistics) {
+    let f = input.formatter;
+    let on = |ms: i64| date_text(ms + input.utc_offset_secs * 1_000);
+    grid(
+        ui,
+        &[
+            StatCard::new("Current Value", f.money(stats.total_value)).icon(Icon::Briefcase),
+            StatCard::new("Cost Basis", f.money(stats.cost_basis)).icon(Icon::Banknote),
+            StatCard::new(
+                "Portfolio High",
+                stats.high.map_or("—".to_owned(), |e| f.money(e.value)),
+            )
+            .caption(stats.high.map(|e| on(e.timestamp)))
+            .placeholder(stats.high.is_none())
+            .icon(Icon::ArrowUp),
+            StatCard::new(
+                "Portfolio Low",
+                stats.low.map_or("—".to_owned(), |e| f.money(e.value)),
+            )
+            .caption(stats.low.map(|e| on(e.timestamp)))
+            .placeholder(stats.low.is_none())
+            .icon(Icon::ArrowDown),
+        ],
+    );
+}
+
+fn activity_cards(ui: &mut Ui, input: &StatisticsInput, stats: &PortfolioStatistics) {
+    let f = input.formatter;
+    let on = |ms: i64| date_text(ms + input.utc_offset_secs * 1_000);
+    grid(
+        ui,
+        &[
+            StatCard::new("Transactions", stats.transaction_count.to_string())
+                .caption(Some(activity_caption(stats.buy_count, stats.sell_count)))
+                .icon(Icon::Exchange),
+            StatCard::new("Assets", stats.asset_count.to_string())
+                .caption(Some(format!(
+                    "{} in profit · {} at a loss",
+                    stats.winners, stats.losers
+                )))
+                .icon(Icon::Layers),
+            StatCard::new("Fees Paid", f.money(stats.fees_paid)).icon(Icon::Percent),
+            StatCard::new(
+                "Tracking Since",
+                stats.first_transaction.map_or("—".to_owned(), on),
+            )
+            .caption(
+                stats
+                    .first_transaction
+                    .map(|t| tracking_caption(t, input.now_ms)),
+            )
+            .placeholder(stats.first_transaction.is_none())
+            .icon(Icon::List),
+        ],
+    );
+}
+
+// MARK: Statistics hero
+
+/// How the profit divides between what is banked and what is still open, as shares of the two
+/// magnitudes. `None` when there is neither.
+pub fn composition_shares(unrealized: f64, realized: f64) -> Option<[f32; 2]> {
+    let total = unrealized.abs() + realized.abs();
+    (total.is_finite() && total > 0.0).then(|| {
+        [
+            (unrealized.abs() / total) as f32,
+            (realized.abs() / total) as f32,
+        ]
+    })
+}
+
+/// Shares of the priced assets that are in profit, at a loss and level, summing to one. All
+/// zero when nothing is priced.
+pub fn win_shares(winners: usize, losers: usize, priced: usize) -> [f32; 3] {
+    if priced == 0 {
+        return [0.0; 3];
     }
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 8.0;
-        ui.label(kit::text(title, 15.0, SEMIBOLD, theme::text_primary()));
-        if let Some(subtitle) = subtitle {
-            ui.label(kit::text(
-                subtitle,
+    let share = |count: usize| count as f32 / priced as f32;
+    let level = priced.saturating_sub(winners + losers);
+    [share(winners), share(losers), share(level)]
+}
+
+/// Total P&L large, how it splits between realized and unrealized in the middle, and the last
+/// day's move at the edge.
+fn statistics_hero(ui: &mut Ui, f: PortfolioValueFormatter, stats: &PortfolioStatistics) {
+    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), HERO_HEIGHT), Sense::hover());
+    let total = stats.total_pnl();
+    let tone = f.tone(Some(total));
+    let tint = tone.map_or(theme::SYSTEM_ACCENT, tone_color);
+    lift(ui, rect, 16.0);
+    if stats.asset_count > 0 {
+        glow(ui, rect, tint);
+    }
+    let inner = rect.shrink(HERO_PADDING);
+    let secondary = caption_color();
+
+    let chip = Rect::from_center_size(
+        pos2(inner.left() + 11.0, inner.top() + 11.0),
+        Vec2::splat(22.0),
+    );
+    ui.painter()
+        .rect_filled(chip, 7.0, theme::SYSTEM_ACCENT.gamma_multiply(0.14));
+    icons::paint(
+        ui.painter(),
+        Rect::from_center_size(chip.center(), Vec2::splat(13.0)),
+        Icon::ChartUptrend,
+        theme::SYSTEM_ACCENT,
+    );
+    let name = text_at(
+        ui,
+        pos2(chip.right() + 9.0, chip.center().y),
+        Align2::LEFT_CENTER,
+        "Total P&L",
+        15.0,
+        SEMIBOLD,
+        theme::text_primary(),
+    );
+    let all_time = text_at(
+        ui,
+        pos2(name.right() + 6.0, chip.center().y),
+        Align2::LEFT_CENTER,
+        "\u{00B7} All time",
+        15.0,
+        REGULAR,
+        secondary,
+    );
+    let balance = text_at(
+        ui,
+        pos2(inner.left(), inner.top() + 32.0),
+        Align2::LEFT_TOP,
+        &f.signed_money(total),
+        40.0,
+        SEMIBOLD,
+        tone_or(tone, theme::text_primary()),
+    );
+
+    // The return on what was put in, in the figure's own colour.
+    let caption_middle = inner.bottom() - 6.0;
+    let mut left_end = all_time.right().max(balance.right());
+    if stats.cost_basis > 0.0 {
+        let percent = total / stats.cost_basis;
+        let figure = text_at(
+            ui,
+            pos2(inner.left(), caption_middle),
+            Align2::LEFT_CENTER,
+            &f.signed_percent(percent, 2),
+            kit::size::CAPTION,
+            MEDIUM,
+            tone_or(f.tone(Some(percent)), secondary),
+        );
+        let rest = text_at(
+            ui,
+            pos2(figure.right() + 5.0, caption_middle),
+            Align2::LEFT_CENTER,
+            "on cost basis",
+            kit::size::CAPTION,
+            REGULAR,
+            secondary,
+        );
+        left_end = left_end.max(rest.right());
+    } else {
+        let none = text_at(
+            ui,
+            pos2(inner.left(), caption_middle),
+            Align2::LEFT_CENTER,
+            "No cost basis yet",
+            kit::size::CAPTION,
+            REGULAR,
+            secondary,
+        );
+        left_end = left_end.max(none.right());
+    }
+
+    let middle = rect.center().y;
+    let edge = change_block(
+        ui,
+        f,
+        "24h",
+        stats.day_change.map(|d| d.amount),
+        stats.day_change.and_then(|d| d.percentage),
+        pos2(inner.right(), middle),
+    );
+    ui.painter().vline(
+        edge - 18.0,
+        middle - 26.0..=middle + 26.0,
+        Stroke::new(1.0, theme::separator().gamma_multiply(0.7)),
+    );
+    let room = Rect::from_min_max(
+        pos2(left_end + 36.0, inner.top() + 4.0),
+        pos2(edge - 36.0, inner.bottom() - 4.0),
+    );
+    if room.width() >= 220.0 {
+        composition(ui, f, room, stats);
+    }
+}
+
+/// A bar of realized against unrealized profit, with a line each beneath it.
+fn composition(ui: &Ui, f: PortfolioValueFormatter, room: Rect, stats: &PortfolioStatistics) {
+    let secondary = caption_color();
+    let room = Rect::from_min_size(room.min, vec2(room.width().min(420.0), room.height()));
+    let top = room.center().y - 37.0;
+    text_at(
+        ui,
+        pos2(room.left(), top),
+        Align2::LEFT_TOP,
+        "Breakdown",
+        kit::size::CAPTION,
+        REGULAR,
+        secondary,
+    );
+    let open = (stats.unrealized_pnl, 1.0);
+    let banked = (stats.realized_pnl, 0.55);
+    let colour = |(amount, strength): (f64, f32)| {
+        tone_option(f.tone(Some(amount))).map_or(theme::ink(80), |c| c.gamma_multiply(strength))
+    };
+
+    let bar = Rect::from_min_size(pos2(room.left(), top + 22.0), vec2(room.width(), 10.0));
+    ui.painter().rect_filled(bar, 5.0, theme::ink(10));
+    if let Some([open_share, banked_share]) =
+        composition_shares(stats.unrealized_pnl, stats.realized_pnl)
+    {
+        let gap = if open_share > 0.0 && banked_share > 0.0 {
+            3.0
+        } else {
+            0.0
+        };
+        let usable = bar.width() - gap;
+        let open_width = usable * open_share;
+        let paint = |left: f32, width: f32, colour: Color32| {
+            if width > 0.0 {
+                ui.painter().rect_filled(
+                    Rect::from_min_size(pos2(left, bar.top()), vec2(width, bar.height())),
+                    5.0,
+                    colour,
+                );
+            }
+        };
+        paint(bar.left(), open_width, colour(open));
+        paint(
+            bar.left() + open_width + gap,
+            usable * banked_share,
+            colour(banked),
+        );
+    }
+
+    for (index, (label, figure)) in [("Unrealized", open), ("Realized", banked)]
+        .into_iter()
+        .enumerate()
+    {
+        let y = top + 46.0 + index as f32 * 20.0;
+        ui.painter()
+            .circle_filled(pos2(room.left() + 4.0, y), 3.5, colour(figure));
+        text_at(
+            ui,
+            pos2(room.left() + 14.0, y),
+            Align2::LEFT_CENTER,
+            label,
+            kit::size::CAPTION,
+            REGULAR,
+            secondary,
+        );
+        text_at(
+            ui,
+            pos2(room.right(), y),
+            Align2::RIGHT_CENTER,
+            &f.signed_money(figure.0),
+            kit::size::CAPTION,
+            MEDIUM,
+            tone_or(f.tone(Some(figure.0)), theme::text_primary()),
+        );
+    }
+}
+
+// MARK: Value range
+
+/// Where the value stands between its lowest and highest point: a track filled to today's value.
+fn range_strip(ui: &mut Ui, input: &StatisticsInput, stats: &PortfolioStatistics) {
+    let f = input.formatter;
+    let on = |ms: i64| date_text(ms + input.utc_offset_secs * 1_000);
+    let rect = card_frame(ui, RANGE_HEIGHT, None);
+    let (left, right) = (rect.left() + 16.0, rect.right() - 16.0);
+    let secondary = caption_color();
+    text_at(
+        ui,
+        pos2(left, rect.top() + 13.0),
+        Align2::LEFT_TOP,
+        "Value Range",
+        kit::size::CAPTION,
+        REGULAR,
+        secondary,
+    );
+
+    let ends = stats
+        .high
+        .zip(stats.low)
+        .filter(|(high, low)| high.value > low.value);
+    let position = ends.map(|(high, low)| {
+        ((stats.total_value - low.value) / (high.value - low.value)).clamp(0.0, 1.0) as f32
+    });
+    if let Some(position) = position {
+        text_at(
+            ui,
+            pos2(right, rect.top() + 13.0),
+            Align2::RIGHT_TOP,
+            &format!("{:.0}% of the way up", position * 100.0),
+            kit::size::CAPTION,
+            REGULAR,
+            secondary,
+        );
+    }
+
+    let y = rect.top() + 44.0;
+    let track = Rect::from_min_max(pos2(left, y - 4.0), pos2(right, y + 4.0));
+    ui.painter().rect_filled(track, 4.0, theme::ink(10));
+    if let Some(position) = position {
+        let colour = tone_option(f.tone(Some(stats.total_pnl()))).unwrap_or(theme::SYSTEM_ACCENT);
+        // The marker keeps its whole width on the card at either end.
+        let x = (track.left() + track.width() * position)
+            .clamp(track.left() + 8.0, track.right() - 8.0);
+        ui.painter().rect_filled(
+            Rect::from_min_max(track.min, pos2(x.max(track.left() + 8.0), track.bottom())),
+            4.0,
+            colour.gamma_multiply(0.85),
+        );
+        ui.painter().circle_filled(pos2(x, y), 8.0, theme::chrome());
+        ui.painter()
+            .circle_filled(pos2(x, y), 5.5, theme::text_primary());
+    }
+
+    let with_date = rect.width() >= 480.0;
+    for (extreme, label, anchor, align) in [
+        (stats.low, "Low", left, Align2::LEFT_TOP),
+        (stats.high, "High", right, Align2::RIGHT_TOP),
+    ] {
+        let money = extreme.map_or("—".to_owned(), |e| f.money(e.value));
+        let note = match extreme {
+            Some(e) if with_date => format!("{label} \u{00B7} {}", on(e.timestamp)),
+            _ => label.to_owned(),
+        };
+        let top = rect.top() + 58.0;
+        let figure = text_at(
+            ui,
+            pos2(anchor, top),
+            align,
+            &money,
+            13.0,
+            SEMIBOLD,
+            if extreme.is_some() {
+                theme::text_primary()
+            } else {
+                secondary
+            },
+        );
+        text_at(
+            ui,
+            pos2(anchor, figure.bottom() + 1.0),
+            align,
+            &note,
+            kit::size::CAPTION,
+            REGULAR,
+            secondary,
+        );
+    }
+}
+
+// MARK: Win rate
+
+fn win_panel(ui: &mut Ui, stats: &PortfolioStatistics, content_height: f32) {
+    panel(ui, content_height, Icon::Gauge, "Win Rate", |header, ui| {
+        let priced = stats.asset_results.len();
+        let area = ui.max_rect();
+        if priced == 0 {
+            portfolio_empty::compact(
+                ui,
+                area,
+                portfolio_empty::Scene::Allocation,
+                "No Win Rate Yet",
+                "Priced holdings appear here.",
+            );
+            return;
+        }
+        header.label(kit::text(
+            format!("{priced} priced"),
+            kit::size::SUBHEADLINE,
+            REGULAR,
+            caption_color(),
+        ));
+        paint_win_rate(ui, area, stats);
+    });
+}
+
+/// A ring of in profit, at a loss and level, with its legend beside it, the pair centred in
+/// `area`.
+fn paint_win_rate(ui: &Ui, area: Rect, stats: &PortfolioStatistics) {
+    let secondary = caption_color();
+    let priced = stats.asset_results.len();
+    let shares = win_shares(stats.winners, stats.losers, priced);
+    let level = priced.saturating_sub(stats.winners + stats.losers);
+    let unpriced = stats.asset_count.saturating_sub(priced);
+
+    let diameter = area.height().min(132.0).min(area.width() * 0.45);
+    let legend_width = (area.width() - diameter - 28.0).clamp(120.0, 210.0);
+    let block = diameter + 28.0 + legend_width;
+    let left = (area.center().x - block / 2.0).max(area.left());
+    let centre = pos2(left + diameter / 2.0, area.center().y);
+    let width = 14.0;
+    let radius = diameter / 2.0 - width / 2.0;
+
+    ring(
+        ui,
+        centre,
+        radius,
+        width,
+        &[
+            (shares[0], theme::UP),
+            (shares[1], theme::DOWN),
+            (shares[2], theme::text_tertiary()),
+        ],
+    );
+    let rate = line(
+        ui,
+        &format!("{:.0}%", shares[0] * 100.0),
+        24.0,
+        SEMIBOLD,
+        theme::text_primary(),
+    );
+    let caption = line(ui, "win rate", kit::size::CAPTION, REGULAR, secondary);
+    let stack = rate.size().y + caption.size().y;
+    let top = centre.y - stack / 2.0;
+    draw(ui, pos2(centre.x - rate.size().x / 2.0, top), &rate);
+    draw(
+        ui,
+        pos2(centre.x - caption.size().x / 2.0, top + rate.size().y),
+        &caption,
+    );
+
+    let mut rows = vec![
+        (theme::UP, "In profit", stats.winners),
+        (theme::DOWN, "At a loss", stats.losers),
+        (theme::text_tertiary(), "Break-even", level),
+    ];
+    if unpriced > 0 {
+        rows.push((theme::ink(80), "No price", unpriced));
+    }
+    let row_height = 34.0;
+    let x0 = left + diameter + 28.0;
+    let first = area.center().y - rows.len() as f32 * row_height / 2.0;
+    for (index, (colour, label, count)) in rows.iter().enumerate() {
+        let middle = first + (index as f32 + 0.5) * row_height;
+        ui.painter()
+            .circle_filled(pos2(x0 + 5.0, middle), 4.5, *colour);
+        text_at(
+            ui,
+            pos2(x0 + 18.0, middle),
+            Align2::LEFT_CENTER,
+            label,
+            kit::size::SUBHEADLINE,
+            REGULAR,
+            secondary,
+        );
+        text_at(
+            ui,
+            pos2(x0 + legend_width, middle),
+            Align2::RIGHT_CENTER,
+            &count.to_string(),
+            15.0,
+            SEMIBOLD,
+            theme::text_primary(),
+        );
+        if index + 1 < rows.len() {
+            ui.painter().hline(
+                x0..=x0 + legend_width,
+                middle + row_height / 2.0,
+                Stroke::new(1.0, theme::separator().gamma_multiply(0.5)),
+            );
+        }
+    }
+}
+
+/// Segments of a ring, each a share of the whole in its colour, on a faint track. Several
+/// segments are kept apart by a small gap.
+fn ring(ui: &Ui, centre: Pos2, radius: f32, width: f32, segments: &[(f32, Color32)]) {
+    use std::f32::consts::{FRAC_PI_2, TAU};
+    ui.painter()
+        .circle_stroke(centre, radius, Stroke::new(width, theme::ink(10)));
+    let shown: Vec<&(f32, Color32)> = segments.iter().filter(|(share, _)| *share > 0.0).collect();
+    if let [(_, colour)] = shown.as_slice() {
+        ui.painter()
+            .circle_stroke(centre, radius, Stroke::new(width, *colour));
+        return;
+    }
+    let gap = 0.06;
+    let mut start = -FRAC_PI_2;
+    for (share, colour) in shown {
+        let sweep = share * TAU;
+        let (from, to) = (start + gap / 2.0, start + sweep - gap / 2.0);
+        start += sweep;
+        if to <= from {
+            continue;
+        }
+        let steps = ((to - from) * radius / 2.0).ceil().max(2.0) as usize;
+        let points = (0..=steps)
+            .map(|step| {
+                let angle = from + (to - from) * step as f32 / steps as f32;
+                centre + vec2(angle.cos(), angle.sin()) * radius
+            })
+            .collect();
+        ui.painter()
+            .add(Shape::line(points, Stroke::new(width, *colour)));
+    }
+}
+
+// MARK: P&L by asset
+
+fn pnl_panel(
+    ui: &mut Ui,
+    results: &[AssetResult],
+    f: PortfolioValueFormatter,
+    content_height: f32,
+) {
+    panel(
+        ui,
+        content_height,
+        Icon::BarChart,
+        "P&L by Asset",
+        |header, ui| {
+            header.label(kit::text(
+                format!("Total, in {}", f.currency.code()),
                 kit::size::SUBHEADLINE,
                 REGULAR,
                 caption_color(),
             ));
-        }
-    });
-    ui.add_space(-2.0);
+            pnl_bars_view(ui, results, f, content_height);
+        },
+    );
 }
 
-/// Space between the Statistics sections (Swift's `VStack(spacing: 24)`).
-const STATS_SECTION_GAP: f32 = 24.0;
-const PNL_ROW_HEIGHT: f32 = 26.0;
-const PNL_ROW_GAP: f32 = 4.0;
-
 /// Horizontal bars of each asset's total P&L around a zero line: gains grow right, losses left.
-fn pnl_bars_view(ui: &mut egui::Ui, results: &[AssetResult], f: PortfolioValueFormatter) {
+/// Rows share `content_height` between them, within a comfortable range.
+fn pnl_bars_view(
+    ui: &mut egui::Ui,
+    results: &[AssetResult],
+    f: PortfolioValueFormatter,
+    content_height: f32,
+) {
     if results.is_empty() {
-        let (area, _) = ui.allocate_exact_size(vec2(ui.available_width(), 60.0), Sense::hover());
-        text_at(
+        let area = ui.max_rect();
+        portfolio_empty::compact(
             ui,
-            area.center(),
-            Align2::CENTER_CENTER,
+            area,
+            portfolio_empty::Scene::Results,
+            "No Results Yet",
             "Priced holdings appear here.",
-            12.0,
-            REGULAR,
-            caption_color(),
         );
         return;
     }
     let (bars, zero) = pnl_bars(results);
     let secondary = caption_color();
+    let row_height = (content_height / results.len() as f32).clamp(PNL_ROW_MIN, PNL_ROW_MAX);
+    ui.spacing_mut().item_spacing.y = 0.0;
+    let compact = ui.available_width() < PNL_COMPACT;
     for (result, bar) in results.iter().zip(&bars) {
         let (row, response) =
-            ui.allocate_exact_size(vec2(ui.available_width(), PNL_ROW_HEIGHT), Sense::hover());
-        ui.add_space(PNL_ROW_GAP - ui.spacing().item_spacing.y);
+            ui.allocate_exact_size(vec2(ui.available_width(), row_height), Sense::hover());
         if response.hovered() {
             ui.painter()
-                .rect_filled(row.expand2(vec2(8.0, 0.0)), 6.0, theme::ink(10));
+                .rect_filled(row.expand2(vec2(8.0, -1.0)), 8.0, theme::ink(10));
         }
         let middle = row.center().y;
 
-        // Asset: icon and ticker in a 100 pt column.
-        let icon = Rect::from_center_size(pos2(row.left() + 10.0, middle), Vec2::splat(20.0));
-        ui.scope_builder(UiBuilder::new().max_rect(icon), |ui| {
-            portfolio_table::asset_icon(ui, &result.asset, 20.0);
-        });
+        // Asset: icon and ticker in a 96 pt column.
+        paint_asset_icon_at(ui, pos2(row.left() + 11.0, middle), &result.asset, 22.0);
         let ticker = kit::galley(
             ui,
             &result.asset.display_ticker(),
@@ -1087,75 +1963,74 @@ fn pnl_bars_view(ui: &mut egui::Ui, results: &[AssetResult], f: PortfolioValueFo
             theme::text_primary(),
             62.0,
         );
-        ui.painter().galley(
-            pos2(row.left() + 28.0, middle - ticker.size().y / 2.0),
-            ticker,
-            Color32::PLACEHOLDER,
+        draw(
+            ui,
+            pos2(row.left() + 30.0, middle - ticker.size().y / 2.0),
+            &ticker,
         );
 
-        // Figures: amount (120 pt) and percentage (80 pt), right-aligned at the row's end.
+        // Figures, right-aligned at the row's end: the amount, then the percentage.
         let tone = f.tone(Some(result.total_pnl));
-        let percent_tone = f.tone(result.pnl_percent);
-        let percent = kit::galley(
-            ui,
-            &result
-                .pnl_percent
-                .map_or("—".to_owned(), |p| f.signed_percent(p, 2)),
-            kit::size::SUBHEADLINE,
-            REGULAR,
-            tone_or(percent_tone, secondary),
-            80.0,
-        );
+        let mut figures_left = row.right();
+        if !compact {
+            let percent = kit::galley(
+                ui,
+                &result
+                    .pnl_percent
+                    .map_or("—".to_owned(), |p| f.signed_percent(p, 2)),
+                kit::size::SUBHEADLINE,
+                REGULAR,
+                tone_or(f.tone(result.pnl_percent), secondary),
+                76.0,
+            );
+            draw(
+                ui,
+                pos2(
+                    row.right() - percent.size().x,
+                    middle - percent.size().y / 2.0,
+                ),
+                &percent,
+            );
+            figures_left -= 76.0 + 10.0;
+        }
         let amount = kit::galley(
             ui,
             &f.signed_money(result.total_pnl),
             kit::size::SUBHEADLINE,
             REGULAR,
             tone_or(tone, theme::text_primary()),
-            120.0,
+            110.0,
         );
-        let percent_right = row.right();
-        let amount_right = percent_right - 80.0 - 10.0;
-        ui.painter().galley(
+        draw(
+            ui,
             pos2(
-                percent_right - percent.size().x,
-                middle - percent.size().y / 2.0,
-            ),
-            percent,
-            Color32::PLACEHOLDER,
-        );
-        ui.painter().galley(
-            pos2(
-                amount_right - amount.size().x,
+                figures_left - amount.size().x,
                 middle - amount.size().y / 2.0,
             ),
-            amount,
-            Color32::PLACEHOLDER,
+            &amount,
         );
 
         // The bar track fills what the other columns leave.
         let track = Rect::from_min_max(
-            pos2(
-                row.left() + 100.0 + 10.0,
-                middle - (PNL_ROW_HEIGHT - 8.0) / 2.0,
-            ),
-            pos2(
-                amount_right - 120.0 - 10.0,
-                middle + (PNL_ROW_HEIGHT - 8.0) / 2.0,
-            ),
+            pos2(row.left() + 96.0 + 14.0, middle - 5.0),
+            pos2(figures_left - 110.0 - 14.0, middle + 5.0),
         );
         if track.width() > 20.0 {
+            ui.painter().rect_filled(track, 5.0, theme::ink(8));
             let zero_x = track.left() + track.width() * zero as f32;
-            ui.painter()
-                .vline(zero_x, track.y_range(), Stroke::new(1.0, theme::ink(60)));
             // Neutral while values are hidden: red and green would give each sign away.
-            let colour = tone_option(tone).map_or(theme::ink(80), |c| c.gamma_multiply(0.85));
-            let left = track.left() + track.width() * bar.start as f32;
-            let length = (track.width() * bar.length as f32).max(2.0);
+            let colour = tone_option(tone).map_or(theme::ink(80), |c| c.gamma_multiply(0.9));
+            let from = track.left() + track.width() * bar.start as f32;
+            let length = (track.width() * bar.length as f32).max(3.0);
             ui.painter().rect_filled(
-                Rect::from_min_size(pos2(left, track.top()), vec2(length, track.height())),
-                3.0,
+                Rect::from_min_size(pos2(from, track.top()), vec2(length, track.height())),
+                5.0,
                 colour,
+            );
+            ui.painter().vline(
+                zero_x,
+                egui::Rangef::new(track.top() - 3.0, track.bottom() + 3.0),
+                Stroke::new(1.0, theme::ink(70)),
             );
         }
         accessibility::label_as(
@@ -1171,6 +2046,11 @@ fn pnl_bars_view(ui: &mut egui::Ui, results: &[AssetResult], f: PortfolioValueFo
             ),
         );
     }
+}
+
+/// An asset's icon centred at `centre`, painted without moving the layout cursor.
+fn paint_asset_icon_at(ui: &Ui, centre: Pos2, asset: &PortfolioAsset, size: f32) {
+    portfolio_table::paint_asset_icon(ui, Rect::from_center_size(centre, Vec2::splat(size)), asset);
 }
 
 #[cfg(test)]
@@ -1256,6 +2136,23 @@ mod tests {
             "today",
             "a future first transaction is not negative"
         );
+    }
+
+    #[test]
+    fn the_breakdown_splits_by_magnitude_and_is_empty_without_profit() {
+        assert_eq!(composition_shares(300.0, 100.0), Some([0.75, 0.25]));
+        assert_eq!(composition_shares(-100.0, 100.0), Some([0.5, 0.5]));
+        assert_eq!(composition_shares(0.0, 0.0), None);
+        assert_eq!(composition_shares(f64::NAN, 1.0), None);
+    }
+
+    #[test]
+    fn win_shares_sum_to_one_and_count_the_level_ones() {
+        assert_eq!(win_shares(0, 0, 0), [0.0; 3]);
+        assert_eq!(win_shares(3, 3, 6), [0.5, 0.5, 0.0]);
+        assert_eq!(win_shares(1, 1, 4), [0.25, 0.25, 0.5]);
+        let shares = win_shares(5, 2, 9);
+        assert!((shares.iter().sum::<f32>() - 1.0).abs() < 1e-6);
     }
 
     #[test]

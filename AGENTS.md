@@ -11,6 +11,7 @@ scenario matches the work:
 | --- | --- |
 | Providers, symbols, timeframes, prediction markets, caches, icons, live data, or watchlists | [Market data](docs/agent-guides/market-data.md) |
 | Chart rendering, price labels, chart types, canvas, templates, drawings, portfolio cards, or snapshots | [Charts](docs/agent-guides/charts.md) |
+| The Portfolio tab: Overview, Holdings, Transactions, Statistics, their empty states, or portfolio revaluation | [Portfolio page](docs/portfolio-page.md) |
 | Text, note, table, image or post drawings | [Annotation tools](docs/annotation-tools.md) |
 | Chart patterns, Elliott waves or cycle drawings | [Chart patterns, Elliott waves and cycles](docs/pattern-tools.md) |
 | Position, forecast, volume profile, VWAP or measurement drawings | [Forecasting, volume and measurement tools](docs/forecast-tools.md) |
@@ -104,5 +105,6 @@ because cargo never deletes old output. Finished worktrees are where the disk go
 - [Pine Logs](docs/pine-logs.md) — `log.*()` messages: the sink, limits, batches, what is verified against TradingView.
 - [AI assistant](docs/ai-assistant.md) — prompting an LLM to edit the open Pine script: bring-your-own key, providers and streaming, what is verified.
 - [Portfolio cards](docs/portfolio-cards.md) — card design and known gaps.
+- [Portfolio page](docs/portfolio-page.md) — the Portfolio tab: throttled revaluation, centred column and wide layout, empty-state pictures.
 - [Chart snapshots](docs/snapshots.md) — the camera menu, one shared renderer, hosted sharing protocol, privacy.
 - [MCP implementation](docs/mcp-implementation.md) and [remaining work](docs/mcp-remaining-work.md).

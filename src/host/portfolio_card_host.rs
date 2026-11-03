@@ -122,7 +122,7 @@ impl PortfolioCardEnv {
 
         let state = runtime.feed.state();
         let projected = state.projection.as_ref();
-        if projected.is_none() || state.is_updating {
+        if projected.is_none() || state.is_updating || state.refresh_pending {
             // Nothing else wakes the frame while a worker is still settling the prices.
             ctx.request_repaint_after(Duration::from_millis(400));
         }

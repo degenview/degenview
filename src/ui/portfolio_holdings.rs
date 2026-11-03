@@ -11,15 +11,18 @@ use crate::model::portfolio::{PortfolioAsset, PortfolioHolding, PortfolioHolding
 use crate::model::portfolio_format::PortfolioValueFormatter;
 use crate::ui::accessibility;
 use crate::ui::icons::Icon;
-use crate::ui::kit::{self, SEMIBOLD};
+use crate::ui::kit::{self, MEDIUM, REGULAR, SEMIBOLD};
 use crate::ui::portfolio_charts;
+use crate::ui::portfolio_empty;
 use crate::ui::portfolio_grid::{
-    self, Col, INSET, MENU_RESERVE, Navigation, RowContext, TableSpec,
+    self, Col, INSET, MENU_RESERVE, Navigation, RowContext, TableSpec, put,
 };
+use crate::ui::portfolio_overview::lift;
 use crate::ui::portfolio_table as table;
 use crate::ui::theme;
-use eframe::egui::{self, Color32, Rect, Vec2, pos2};
+use eframe::egui::{self, Align2, Color32, Rect, Sense, Stroke, Vec2, pos2, vec2};
 use std::cmp::Ordering;
+use std::collections::HashMap;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum HoldingsColumn {
@@ -252,9 +255,13 @@ pub fn show(
     let mut actions = Vec::new();
     state.adopt(input.saved_sort);
 
-    // Toolbar: the search field, padded like the table beneath it.
+    // The summary band, then the toolbar: the search field, padded like the table beneath it.
     let search_id = egui::Id::new("portfolio-holdings-search");
     ui.add_space(12.0);
+    if !input.holdings.is_empty() {
+        summary_band(ui, input);
+        ui.add_space(12.0);
+    }
     ui.horizontal(|ui| {
         ui.add_space(INSET);
         kit::search_field(
@@ -286,20 +293,24 @@ pub fn show(
             "Loading prices\u{2026}",
         );
     } else if shown.is_empty() {
-        let (icon, title, detail) = if input.holdings.is_empty() {
-            (
-                Icon::Briefcase,
-                "No Holdings".to_owned(),
+        let body = portfolio_grid::body_rect(outer);
+        if input.holdings.is_empty() {
+            portfolio_empty::compact(
+                ui,
+                body,
+                portfolio_empty::Scene::Holdings,
+                "No Holdings",
                 "Positions appear once a transaction leaves you holding an asset.",
-            )
+            );
         } else {
-            (
+            portfolio_charts::empty_message(
+                ui,
+                body,
                 Icon::Magnifier,
-                format!("No Results for \u{201C}{}\u{201D}", state.search.trim()),
+                &format!("No Results for \u{201C}{}\u{201D}", state.search.trim()),
                 "Check the spelling or try a new search.",
-            )
-        };
-        portfolio_charts::empty_message(ui, portfolio_grid::body_rect(outer), icon, &title, detail);
+            );
+        }
     } else {
         table_view(ui, state, input, outer, &shown, &mut actions);
     }
@@ -316,20 +327,210 @@ pub fn show(
     actions
 }
 
-const ROW_HEIGHT: f32 = 46.0;
+// MARK: Summary band
+
+const BAND_HEIGHT: f32 = 108.0;
+
+/// What the band above the table says about the rows beneath it.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Summary {
+    pub total_value: f64,
+    /// Profit across the priced holdings, `None` when nothing is priced.
+    pub pnl: Option<f64>,
+    /// That profit over the priced holdings' cost.
+    pub pnl_percent: Option<f64>,
+}
+
+pub fn summarise(holdings: &[PortfolioHolding]) -> Summary {
+    let priced: Vec<&PortfolioHolding> = holdings
+        .iter()
+        .filter(|holding| holding.current_value.is_some())
+        .collect();
+    let pnl = (!priced.is_empty()).then(|| priced.iter().filter_map(|h| h.total_pnl()).sum());
+    let cost: f64 = priced
+        .iter()
+        .filter(|holding| holding.unrealized_pnl.is_some())
+        .map(|holding| holding.cost_basis)
+        .sum();
+    Summary {
+        total_value: priced.iter().filter_map(|h| h.current_value).sum(),
+        pnl,
+        pnl_percent: pnl.filter(|_| cost > 0.0).map(|pnl: f64| pnl / cost),
+    }
+}
+
+/// The total value with its profit, and beside them one bar of how the money divides, in the
+/// colours the Overview's donut gives the same assets.
+fn summary_band(ui: &mut egui::Ui, input: &HoldingsInput) {
+    let f = input.formatter;
+    let (full, _) = ui.allocate_exact_size(vec2(ui.available_width(), BAND_HEIGHT), Sense::hover());
+    let rect = Rect::from_min_max(
+        pos2(full.left() + INSET, full.top()),
+        pos2(full.right() - INSET, full.bottom()),
+    );
+    lift(ui, rect, 14.0);
+    let inner = rect.shrink2(vec2(20.0, 16.0));
+    let secondary = theme::text_secondary();
+    let summary = summarise(input.holdings);
+
+    let caption = put(
+        ui,
+        inner.left_top(),
+        Align2::LEFT_TOP,
+        "Total Value",
+        kit::size::CAPTION,
+        REGULAR,
+        secondary,
+    );
+    let value = put(
+        ui,
+        pos2(inner.left(), inner.top() + 14.0),
+        Align2::LEFT_TOP,
+        &if input.is_loading {
+            "\u{2014}".to_owned()
+        } else {
+            f.money(summary.total_value)
+        },
+        26.0,
+        SEMIBOLD,
+        if input.is_loading {
+            secondary
+        } else {
+            theme::text_primary()
+        },
+    );
+    let mut left_end = caption.right().max(value.right());
+    if let (false, Some(pnl)) = (input.is_loading, summary.pnl) {
+        let colour = table::tone_option(f.tone(Some(pnl))).unwrap_or(secondary);
+        let text = match summary.pnl_percent {
+            Some(percent) => format!(
+                "{} \u{00B7} {}",
+                f.signed_money(pnl),
+                f.signed_percent(percent, 2)
+            ),
+            None => f.signed_money(pnl),
+        };
+        let galley = kit::galley(ui, &text, kit::size::CAPTION, MEDIUM, colour, 400.0);
+        let pill = Rect::from_min_size(
+            pos2(inner.left(), inner.bottom() - 22.0),
+            vec2(galley.size().x + 18.0, 22.0),
+        );
+        ui.painter()
+            .rect_filled(pill, 11.0, colour.gamma_multiply(0.16));
+        ui.painter().galley(
+            pill.center() - galley.size() / 2.0,
+            galley,
+            Color32::PLACEHOLDER,
+        );
+        left_end = left_end.max(pill.right());
+    }
+
+    if input.is_loading {
+        // Where the profit and the allocation will be, until the prices arrive.
+        let pill =
+            Rect::from_min_size(pos2(inner.left(), inner.bottom() - 22.0), vec2(132.0, 22.0));
+        ui.painter().rect_filled(pill, 11.0, theme::ink(10));
+        left_end = left_end.max(pill.right());
+    }
+    let slices = if input.is_loading {
+        Vec::new()
+    } else {
+        portfolio_charts::slices(input.holdings)
+    };
+    let divider = left_end + 28.0;
+    let area = Rect::from_min_max(pos2(divider + 28.0, inner.top()), inner.right_bottom());
+    if area.width() < 200.0 || (slices.is_empty() && !input.is_loading) {
+        return;
+    }
+    ui.painter().vline(
+        divider,
+        inner.y_range(),
+        Stroke::new(1.0, theme::separator().gamma_multiply(0.7)),
+    );
+    put(
+        ui,
+        area.left_top(),
+        Align2::LEFT_TOP,
+        "Allocation",
+        kit::size::CAPTION,
+        REGULAR,
+        secondary,
+    );
+    if let Some(top) = slices.first() {
+        put(
+            ui,
+            area.right_top(),
+            Align2::RIGHT_TOP,
+            &format!("Largest \u{00B7} {} {}", top.label, f.percent(top.share, 1)),
+            kit::size::CAPTION,
+            REGULAR,
+            secondary,
+        );
+    }
+
+    let bar = Rect::from_min_size(
+        pos2(area.left(), area.top() + 24.0),
+        vec2(area.width(), 12.0),
+    );
+    ui.painter().rect_filled(bar, 6.0, theme::ink(10));
+    let whole: f64 = slices.iter().map(|slice| slice.share).sum::<f64>().max(1.0);
+    let mut start = 0.0_f64;
+    for (index, slice) in slices.iter().enumerate() {
+        let from = bar.left() + bar.width() * (start / whole) as f32;
+        start += slice.share;
+        let to = bar.left() + bar.width() * (start / whole) as f32;
+        let gap = if index + 1 < slices.len() { 2.0 } else { 0.0 };
+        let width = (to - from - gap).max(2.0);
+        ui.painter().rect_filled(
+            Rect::from_min_size(pos2(from, bar.top()), vec2(width, bar.height())),
+            (width / 2.0).min(6.0),
+            slice.color,
+        );
+    }
+
+    let middle = area.top() + 56.0;
+    let mut x = area.left();
+    for slice in &slices {
+        let label = format!("{} {}", slice.label, f.percent(slice.share, 0));
+        let galley = kit::galley(ui, &label, kit::size::CAPTION, REGULAR, secondary, 300.0);
+        let width = 14.0 + galley.size().x;
+        if x + width > area.right() {
+            break;
+        }
+        ui.painter()
+            .circle_filled(pos2(x + 3.5, middle), 3.5, slice.color);
+        ui.painter().galley(
+            pos2(x + 14.0, middle - galley.size().y / 2.0),
+            galley,
+            Color32::PLACEHOLDER,
+        );
+        x += width + 16.0;
+    }
+}
+
+// MARK: Table
+
+const ROW_HEIGHT: f32 = 52.0;
 
 /// The columns, in `HoldingsColumn::ALL` order. Widths follow the Swift table's ideal widths.
 const COLUMNS: [Col; 8] = [
-    Col::new(130.0, 150.0, false),
-    Col::new(84.0, 100.0, true),
-    Col::new(64.0, 70.0, true),
-    Col::new(70.0, 90.0, true),
-    Col::new(84.0, 100.0, true),
-    Col::new(84.0, 105.0, true),
-    Col::new(76.0, 76.0, true),
+    Col::new(120.0, 170.0, false),
+    Col::new(80.0, 100.0, true),
+    Col::new(72.0, 84.0, true),
+    Col::new(64.0, 90.0, true),
+    Col::new(80.0, 100.0, true),
+    Col::new(84.0, 110.0, true),
+    Col::new(84.0, 120.0, true),
     // Row actions sit at the end of the last column, as in the Transactions table.
-    Col::new(130.0, 140.0, true).trailing(MENU_RESERVE),
+    Col::new(118.0, 150.0, true).trailing(MENU_RESERVE),
 ];
+
+/// What every row shares: the largest allocation, which a full bar stands for, and the colour
+/// the band and the donut give each asset.
+struct RowStyle {
+    max_allocation: f64,
+    colors: HashMap<String, Color32>,
+}
 
 fn table_view(
     ui: &mut egui::Ui,
@@ -350,6 +551,16 @@ fn table_view(
     let sorted_column = HoldingsColumn::ALL
         .iter()
         .position(|column| *column == state.column);
+    let style = RowStyle {
+        max_allocation: shown
+            .iter()
+            .map(|row| row.holding.allocation)
+            .fold(0.0, f64::max),
+        colors: portfolio_charts::slices(input.holdings)
+            .into_iter()
+            .map(|slice| (slice.id, slice.color))
+            .collect(),
+    };
     let output = portfolio_grid::show_table(
         ui,
         outer,
@@ -364,7 +575,7 @@ fn table_view(
             has_footer: true,
         },
         &mut state.navigation,
-        |ui, row| holding_row(ui, &shown[row.index], row, input.formatter, actions),
+        |ui, row| holding_row(ui, &shown[row.index], row, input.formatter, &style, actions),
     );
     if let Some(index) = output.row_clicked.or(output.moved_to) {
         state.selected = Some(shown[index].key().to_owned());
@@ -386,6 +597,7 @@ fn holding_row(
     item: &HoldingRow,
     row: &RowContext,
     f: PortfolioValueFormatter,
+    style: &RowStyle,
     actions: &mut Vec<HoldingsAction>,
 ) {
     let holding = &item.holding;
@@ -397,15 +609,13 @@ fn holding_row(
     let asset = cells[0];
     let icon = Rect::from_center_size(
         pos2(
-            asset.left() + portfolio_grid::CELL_PAD + 12.0,
+            asset.left() + portfolio_grid::CELL_PAD + 15.0,
             asset.center().y,
         ),
-        Vec2::splat(24.0),
+        Vec2::splat(30.0),
     );
-    ui.scope_builder(egui::UiBuilder::new().max_rect(icon), |ui| {
-        table::asset_icon(ui, &holding.asset, 24.0);
-    });
-    let text_left = icon.right() + 10.0;
+    table::paint_asset_icon(ui, icon, &holding.asset);
+    let text_left = icon.right() + 12.0;
     let text_width = (asset.right() - text_left - 6.0).max(20.0);
     let ticker = kit::galley(
         ui,
@@ -419,7 +629,7 @@ fn holding_row(
         ui,
         &item.subtitle,
         kit::size::CAPTION,
-        kit::REGULAR,
+        REGULAR,
         secondary,
         text_width,
     );
@@ -439,38 +649,146 @@ fn holding_row(
         &holding.current_price.map_or_else(dash, |v| f.price(v)),
         primary,
     );
+
+    // 24h: the move as a tinted pill.
     let day = holding.day_change_percent();
-    figure(
-        2,
-        &day.map_or_else(dash, |v| f.signed_percent(v, 2)),
-        table::tone_option(f.tone(day)).unwrap_or(secondary),
-    );
+    match day {
+        Some(day) => {
+            let colour = table::tone_option(f.tone(Some(day))).unwrap_or(secondary);
+            let span = portfolio_grid::text_span(cells[2], &COLUMNS[2]);
+            let galley = kit::galley(
+                ui,
+                &f.signed_percent(day, 2),
+                kit::size::CAPTION,
+                MEDIUM,
+                colour,
+                span.width(),
+            );
+            let pill = Rect::from_min_max(
+                pos2(
+                    span.right() - galley.size().x - 14.0,
+                    cells[2].center().y - 11.0,
+                ),
+                pos2(span.right(), cells[2].center().y + 11.0),
+            );
+            ui.painter()
+                .rect_filled(pill, 11.0, colour.gamma_multiply(0.14));
+            ui.painter().galley(
+                pill.center() - galley.size() / 2.0,
+                galley,
+                Color32::PLACEHOLDER,
+            );
+        }
+        None => figure(2, &dash(), secondary),
+    }
     figure(
         3,
         &f.quantity(holding.quantity, Default::default()),
         primary,
     );
-    figure(4, &f.price(holding.average_cost), primary);
+    figure(4, &f.price(holding.average_cost), secondary);
     portfolio_grid::cell_text(
         ui,
         cells[5],
         &COLUMNS[5],
         &holding.current_value.map_or_else(dash, |v| f.money(v)),
         kit::size::BODY,
-        kit::MEDIUM,
+        MEDIUM,
         primary,
     );
-    figure(6, &f.percent(holding.allocation, 1), secondary);
-    let pnl = holding.total_pnl();
-    portfolio_grid::cell_text(
+
+    // Allocation: the share, and a bar of it against the largest position.
+    let span = portfolio_grid::text_span(cells[6], &COLUMNS[6]);
+    let share = kit::galley(
         ui,
-        cells[7],
-        &COLUMNS[7],
-        &pnl.map_or_else(dash, |v| f.signed_money(v)),
+        &f.percent(holding.allocation, 1),
         kit::size::BODY,
-        kit::MEDIUM,
-        table::tone_option(f.tone(pnl)).unwrap_or(primary),
+        REGULAR,
+        secondary,
+        span.width(),
     );
+    let stack = share.size().y + 6.0 + 4.0;
+    let share_top = cells[6].center().y - stack / 2.0;
+    let track = Rect::from_min_size(
+        pos2(span.left(), share_top + share.size().y + 6.0),
+        vec2(span.width(), 4.0),
+    );
+    ui.painter().galley(
+        pos2(span.right() - share.size().x, share_top),
+        share,
+        Color32::PLACEHOLDER,
+    );
+    ui.painter().rect_filled(track, 2.0, theme::ink(10));
+    if style.max_allocation > 0.0 && holding.allocation > 0.0 {
+        let fill = (holding.allocation / style.max_allocation).clamp(0.0, 1.0) as f32;
+        let colour = style
+            .colors
+            .get(item.key())
+            .copied()
+            .unwrap_or_else(theme::text_tertiary);
+        ui.painter().rect_filled(
+            Rect::from_min_size(
+                track.min,
+                vec2((track.width() * fill).max(3.0), track.height()),
+            ),
+            2.0,
+            colour,
+        );
+    }
+
+    // P&L: the amount over the percentage it is of the cost.
+    let pnl = holding.total_pnl();
+    let colour = table::tone_option(f.tone(pnl));
+    match pnl {
+        Some(pnl) => {
+            let span = portfolio_grid::text_span(cells[7], &COLUMNS[7]);
+            let amount = kit::galley(
+                ui,
+                &f.signed_money(pnl),
+                kit::size::BODY,
+                MEDIUM,
+                colour.unwrap_or(primary),
+                span.width(),
+            );
+            let percent = holding.pnl_percent().map(|percent| {
+                kit::galley(
+                    ui,
+                    &f.signed_percent(percent, 2),
+                    kit::size::CAPTION,
+                    REGULAR,
+                    colour.unwrap_or(secondary),
+                    span.width(),
+                )
+            });
+            let stack = amount.size().y + percent.as_ref().map_or(0.0, |p| 2.0 + p.size().y);
+            let mut y = cells[7].center().y - stack / 2.0;
+            let amount_height = amount.size().y;
+            ui.painter().galley(
+                pos2(span.right() - amount.size().x, y),
+                amount,
+                Color32::PLACEHOLDER,
+            );
+            y += amount_height + 2.0;
+            if let Some(percent) = percent {
+                ui.painter().galley(
+                    pos2(span.right() - percent.size().x, y),
+                    percent,
+                    Color32::PLACEHOLDER,
+                );
+            }
+        }
+        None => {
+            portfolio_grid::cell_text(
+                ui,
+                cells[7],
+                &COLUMNS[7],
+                &dash(),
+                kit::size::BODY,
+                MEDIUM,
+                secondary,
+            );
+        }
+    }
 
     let ticker_text = item.ticker();
     portfolio_grid::row_menu_button(
@@ -495,7 +813,7 @@ fn holding_row(
 }
 
 fn row_menu(ui: &mut egui::Ui, key: &str, actions: &mut Vec<HoldingsAction>) {
-    ui.set_width(190.0);
+    portfolio_grid::fit_menu(ui, &["View Transactions", "Remap Asset\u{2026}"]);
     ui.spacing_mut().item_spacing.y = 0.0;
     if kit::menu_item(ui, Icon::List, "View Transactions", true, false) {
         actions.push(HoldingsAction::Open(key.to_owned()));
@@ -616,6 +934,20 @@ mod tests {
             want.sort();
             assert_eq!(found, want, "{needle:?}");
         }
+    }
+
+    #[test]
+    fn the_summary_totals_the_priced_holdings_only() {
+        let summary = summarise(&fixtures());
+        assert_eq!(summary.total_value, 1_000.0);
+        // BTC +100, ETH -50, ADA +40; DOGE has no price and stays out of both sums.
+        assert_eq!(summary.pnl, Some(90.0));
+        assert!((summary.pnl_percent.unwrap() - 90.0 / 910.0).abs() < 1e-12);
+        let unpriced = summarise(&[holding("DOGE", "Dogecoin", None, 50.0, 400.0)]);
+        assert_eq!(
+            (unpriced.total_value, unpriced.pnl, unpriced.pnl_percent),
+            (0.0, None, None)
+        );
     }
 
     #[test]

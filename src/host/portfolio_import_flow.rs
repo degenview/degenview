@@ -381,7 +381,7 @@ impl PortfolioImportFlow {
         flow.poll();
         // The "Match…" picker sits on top of the sheet.
         if let Some((symbol, picker)) = &mut flow.picking {
-            match portfolio_asset_picker::show(ctx, picker) {
+            match portfolio_asset_picker::show(ctx, picker, host.store()) {
                 Some(AssetPickerOutcome::Choose(result)) => {
                     let symbol = symbol.clone();
                     flow.state

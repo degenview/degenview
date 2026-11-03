@@ -38,16 +38,23 @@ fn open_key(id: Id) -> Id {
     id.with("menu-open")
 }
 
-/// A menu button: a leading icon, a title and a chevron. `items` fills the `menu_width` menu it
-/// opens (rows stretch to the menu's width, so it must be fixed). While `busy` the chevron is a
-/// spinner and the menu cannot be opened. The
-/// open flag lives in egui's temporary data so a menu left open never returns after a restart.
+/// Opens the menu button `id` without a click, for the galleries.
+#[cfg(test)]
+pub(crate) fn open_for_gallery(ctx: &egui::Context, id: Id) {
+    ctx.data_mut(|data| data.insert_temp(open_key(id), true));
+}
+
+/// A menu button: a leading icon, a title and a chevron. `items` fills the menu it opens; the menu
+/// is as wide as the longest of `labels` (every row `items` adds, so the rows, which stretch to
+/// the menu's width, leave no blank space) and at least as wide as the button. While `busy` the
+/// chevron is a spinner and the menu cannot be opened. The open flag lives in egui's temporary
+/// data so a menu left open never returns after a restart.
 pub fn menu_button(
     ui: &mut Ui,
     id: Id,
     icon: Icon,
     title: &str,
-    menu_width: f32,
+    labels: &[impl AsRef<str>],
     busy: bool,
     items: impl FnOnce(&mut Ui),
 ) -> Response {
@@ -106,13 +113,15 @@ pub fn menu_button(
             theme::text_secondary(),
         );
     }
+    let menu_width = kit::menu_width_for(ui, labels, rect.width());
     egui::Popup::menu(&response)
         .id(id.with("popup"))
         .open_bool(&mut open)
         .frame(kit::menu_frame())
+        .width(menu_width)
         .gap(4.0)
         .show(|ui| {
-            ui.set_width(menu_width);
+            ui.set_width(menu_width - kit::MENU_FRAME_MARGIN);
             ui.spacing_mut().item_spacing.y = 0.0;
             items(ui);
         });
@@ -231,7 +240,7 @@ mod tests {
                         Id::new("import"),
                         Icon::Download,
                         "Import Transactions",
-                        250.0,
+                        &["Import Transactions\u{2026}"],
                         false,
                         |_| {},
                     )

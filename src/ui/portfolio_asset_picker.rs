@@ -8,8 +8,10 @@
 
 use crate::model::DataSource;
 use crate::service::SearchResult;
+use crate::store::SharedStore;
+use crate::ui::add_chart_art;
 use crate::ui::add_chart_sheet::{
-    self, CRYPTO_SUGGESTIONS, Chip, PREDICTION_TOPICS, STOCK_SUGGESTIONS,
+    self, CRYPTO_SUGGESTIONS, Chip, PREDICTION_TOPICS, RecentMarket, STOCK_SUGGESTIONS,
 };
 use crate::ui::icons::Icon;
 use crate::ui::theme;
@@ -51,6 +53,15 @@ impl PickerTab {
         }
     }
 
+    /// The picture at the head of the sheet: the one Add Chart shows for the same section.
+    fn scene(self) -> add_chart_art::Scene {
+        match self {
+            Self::Crypto => add_chart_art::Scene::Crypto,
+            Self::Stocks => add_chart_art::Scene::Stocks,
+            Self::Predictions => add_chart_art::Scene::Predictions,
+        }
+    }
+
     fn icon(self) -> Icon {
         match self {
             Self::Crypto => Icon::BitcoinCircle,
@@ -75,7 +86,6 @@ pub struct AssetPickerState {
     pub tab: PickerTab,
     /// The prediction-market provider the Predictions section searches.
     pub provider: DataSource,
-    icon: Icon,
     pub query: String,
     pub selected: Option<SearchResult>,
     results: Vec<(DataSource, Result<Vec<SearchResult>, String>)>,
@@ -85,6 +95,11 @@ pub struct AssetPickerState {
     debounce: Option<Instant>,
     search: SearchFn,
     focus: bool,
+    /// The markets picked before (Add Chart's list); loaded when the sheet first draws.
+    recents: Vec<RecentMarket>,
+    recents_loaded: bool,
+    /// The list changed in the sheet and still has to be saved.
+    recents_dirty: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -110,7 +125,6 @@ impl AssetPickerState {
             action_label: action_label.to_owned(),
             tab: PickerTab::Crypto,
             provider: DataSource::Polymarket,
-            icon: Icon::Magnifier,
             query: String::new(),
             selected: None,
             results: Vec::new(),
@@ -120,13 +134,10 @@ impl AssetPickerState {
             debounce: None,
             search,
             focus: true,
+            recents: Vec::new(),
+            recents_loaded: false,
+            recents_dirty: false,
         }
-    }
-
-    /// The glyph in the sheet's header badge.
-    pub fn with_icon(mut self, icon: Icon) -> Self {
-        self.icon = icon;
-        self
     }
 
     /// The providers the current section asks.
@@ -173,6 +184,16 @@ impl AssetPickerState {
         } else {
             self.debounce = Some(Instant::now());
         }
+    }
+
+    /// Selects a recent market on the section that owns its source, switching to it.
+    fn pick_recent(&mut self, result: SearchResult) {
+        self.select_tab(if result.source == DataSource::Alpaca {
+            PickerTab::Stocks
+        } else {
+            PickerTab::Crypto
+        });
+        self.selected = Some(result);
     }
 
     pub fn select_tab(&mut self, tab: PickerTab) {
@@ -291,7 +312,19 @@ const SEARCH_ID: &str = "portfolio_asset_search_field";
 
 /// The sheet is the Add Chart sheet's twin: same size, header, section switcher, search box,
 /// suggestion chips, result list and footer, so the two never drift apart.
-pub fn show(ctx: &egui::Context, state: &mut AssetPickerState) -> Option<AssetPickerOutcome> {
+pub fn show(
+    ctx: &egui::Context,
+    state: &mut AssetPickerState,
+    store: &SharedStore,
+) -> Option<AssetPickerOutcome> {
+    if !state.recents_loaded {
+        state.recents_loaded = true;
+        state.recents = store
+            .lock()
+            .ok()
+            .map(|store| add_chart_sheet::load_recents(&store))
+            .unwrap_or_default();
+    }
     state.receive();
     if state.is_due(Instant::now()) {
         state.start(ctx);
@@ -366,6 +399,16 @@ pub fn show(ctx: &egui::Context, state: &mut AssetPickerState) -> Option<AssetPi
     {
         outcome = Some(AssetPickerOutcome::Choose(Box::new(selected)));
     }
+    if let Some(AssetPickerOutcome::Choose(result)) = &outcome
+        && add_chart_sheet::record_recent(&mut state.recents, result)
+    {
+        state.recents_dirty = true;
+    }
+    if std::mem::take(&mut state.recents_dirty)
+        && let Ok(store) = store.lock()
+    {
+        add_chart_sheet::store_recents(&store, &state.recents);
+    }
     outcome
 }
 
@@ -375,7 +418,7 @@ fn show_body(
     search_id: Id,
     outcome: &mut Option<AssetPickerOutcome>,
 ) {
-    add_chart_sheet::header(ui, state.icon, &state.title, &state.subtitle);
+    add_chart_sheet::header(ui, state.tab.scene(), &state.title, &state.subtitle);
     ui.add_space(16.0);
     let items = PickerTab::ALL.map(|tab| (tab, tab.title(), tab.icon()));
     if let Some(tab) = add_chart_sheet::segmented_tabs(ui, &items, state.tab) {
@@ -421,7 +464,7 @@ fn show_body(
                 if state
                     .selected
                     .as_ref()
-                    .is_some_and(|selected| same_market(selected, &first))
+                    .is_some_and(|selected| add_chart_sheet::same_market(selected, &first))
                 {
                     *outcome = Some(AssetPickerOutcome::Choose(Box::new(first)));
                 } else {
@@ -433,7 +476,7 @@ fn show_body(
     ui.add_space(16.0);
 
     if state.query.trim().is_empty() {
-        idle(ui, state);
+        idle(ui, state, outcome);
         return;
     }
     let searching = state.is_loading() || state.debounce.is_some();
@@ -457,7 +500,7 @@ fn show_body(
 }
 
 /// Suggestion chips while the box is empty; they scroll rather than push the sheet.
-fn idle(ui: &mut Ui, state: &mut AssetPickerState) {
+fn idle(ui: &mut Ui, state: &mut AssetPickerState, outcome: &mut Option<AssetPickerOutcome>) {
     let mut search = None;
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
@@ -492,6 +535,17 @@ fn idle(ui: &mut Ui, state: &mut AssetPickerState) {
                     }
                 }
             }
+            if state.tab != PickerTab::Predictions && !state.recents.is_empty() {
+                ui.add_space(16.0);
+                let recents =
+                    add_chart_sheet::recents_card(ui, &mut state.recents, state.selected.as_ref());
+                if let Some(result) = recents.commit {
+                    *outcome = Some(AssetPickerOutcome::Choose(Box::new(result)));
+                } else if let Some(result) = recents.pick {
+                    state.pick_recent(result);
+                }
+                state.recents_dirty |= recents.changed;
+            }
         });
     if let Some(query) = search {
         state.query = query.to_owned();
@@ -522,10 +576,6 @@ fn show_footer(
             *outcome = Some(AssetPickerOutcome::Cancel);
         }
     });
-}
-
-fn same_market(a: &SearchResult, b: &SearchResult) -> bool {
-    a.source == b.source && a.full_symbol == b.full_symbol
 }
 
 impl AssetPickerState {
@@ -707,7 +757,17 @@ mod tests {
         assert_eq!(state.sources(), [DataSource::Kalshi]);
     }
 
+    fn memory_store() -> SharedStore {
+        Arc::new(Mutex::new(
+            crate::store::Store::open_in_memory().expect("open store"),
+        ))
+    }
+
     fn draw(state: &mut AssetPickerState) -> Option<AssetPickerOutcome> {
+        draw_with(state, &memory_store())
+    }
+
+    fn draw_with(state: &mut AssetPickerState, store: &SharedStore) -> Option<AssetPickerOutcome> {
         let ctx = egui::Context::default();
         let mut outcome = None;
         for _ in 0..2 {
@@ -716,7 +776,7 @@ mod tests {
                     screen_rect: Some(Rect::from_min_size(pos2(0.0, 0.0), vec2(1000.0, 800.0))),
                     ..Default::default()
                 },
-                |ui| outcome = show(ui.ctx(), state),
+                |ui| outcome = show(ui.ctx(), state, store),
             );
             output.textures_delta.clear();
         }
@@ -775,5 +835,48 @@ mod tests {
         let mut priced = hit(DataSource::Binance, "BTC/USDT", "x");
         priced.price = Some(67_432.19);
         assert!(hit_summary(&priced).starts_with("BTC/USDT  ·  "));
+    }
+
+    #[test]
+    fn a_pick_is_remembered_and_offered_again() {
+        let store = memory_store();
+        let mut state = AssetPickerState::new("Add Asset", "", "Continue");
+        draw_with(&mut state, &store);
+        assert!(state.recents.is_empty());
+        let btc = hit(DataSource::Binance, "BTC/USDT", "BTCUSDT");
+        state.recents_dirty = false;
+        // What the sheet does when a row is chosen.
+        assert!(add_chart_sheet::record_recent(&mut state.recents, &btc));
+        add_chart_sheet::store_recents(&store.lock().unwrap(), &state.recents);
+
+        let mut next = AssetPickerState::new("Add Asset", "", "Continue");
+        draw_with(&mut next, &store);
+        assert_eq!(next.recents.len(), 1);
+        assert_eq!(next.recents[0].full_symbol, "BTCUSDT");
+    }
+
+    #[test]
+    fn a_recent_stock_switches_to_stocks_and_selects_it() {
+        let mut state = AssetPickerState::new("Add Asset", "", "Continue");
+        assert_eq!(state.tab, PickerTab::Crypto);
+        state.pick_recent(hit(DataSource::Alpaca, "AAPL", "AAPL"));
+        assert_eq!(state.tab, PickerTab::Stocks);
+        assert_eq!(
+            state.selected.as_ref().map(|s| s.symbol.as_str()),
+            Some("AAPL")
+        );
+        state.pick_recent(hit(DataSource::Binance, "BTC/USDT", "BTCUSDT"));
+        assert_eq!(state.tab, PickerTab::Crypto);
+        assert!(state.selected.is_some());
+    }
+
+    #[test]
+    fn prediction_markets_are_not_kept_as_recents() {
+        let mut recents = Vec::new();
+        assert!(!add_chart_sheet::record_recent(
+            &mut recents,
+            &hit(DataSource::Polymarket, "Fed", "fed")
+        ));
+        assert!(recents.is_empty());
     }
 }

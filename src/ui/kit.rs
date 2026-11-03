@@ -1243,8 +1243,6 @@ pub enum FooterButton {
     Secondary,
     /// The sheet's main action in the neutral grey: a heavier plate and a semibold label.
     Primary,
-    /// The sheet's main action, filled with the given tint (a semantic colour, not the accent).
-    Prominent(Color32),
 }
 
 /// A sheet-footer button at the large control size (28 pt). `min_width` keeps a primary action
@@ -1257,13 +1255,11 @@ pub fn footer_button(
     min_width: f32,
 ) -> egui::Response {
     let text_color = match (kind, enabled) {
-        (FooterButton::Prominent(_), true) => Color32::WHITE,
-        (FooterButton::Prominent(_), false) => Color32::WHITE.gamma_multiply(0.7),
         (FooterButton::Primary | FooterButton::Secondary, true) => theme::text_primary(),
         (FooterButton::Primary | FooterButton::Secondary, false) => theme::text_tertiary(),
     };
     let weight = match kind {
-        FooterButton::Prominent(_) | FooterButton::Primary => SEMIBOLD,
+        FooterButton::Primary => SEMIBOLD,
         FooterButton::Secondary => REGULAR,
     };
     let text = galley(ui, label, size::BODY, weight, text_color, 400.0);
@@ -1279,18 +1275,6 @@ pub fn footer_button(
     let hovered = enabled && response.hovered();
     let painter = ui.painter();
     match kind {
-        FooterButton::Prominent(tint) => {
-            let fill = if !enabled {
-                tint.gamma_multiply(0.4)
-            } else if pressed {
-                tint.gamma_multiply(0.8)
-            } else if hovered {
-                tint.gamma_multiply(0.92)
-            } else {
-                tint
-            };
-            painter.rect_filled(rect, 7.0, fill);
-        }
         FooterButton::Primary | FooterButton::Secondary => {
             let lift = if kind == FooterButton::Primary {
                 0.06
@@ -1741,18 +1725,18 @@ pub(crate) const MENU_MAX_HEIGHT: f32 = 320.0;
 /// A menu row's leading check gutter and trailing padding, around its label.
 const MENU_ROW_INSET: f32 = 32.0 + 12.0;
 /// The menu frame's margin on both sides.
-const MENU_FRAME_MARGIN: f32 = 10.0;
+pub(crate) const MENU_FRAME_MARGIN: f32 = 10.0;
 
 /// The width a pull-down menu needs for `labels`: its widest row, the trigger's width at least,
 /// at most `MENU_MAX_WIDTH`. The trigger can be capped narrower than its choices (a long title
 /// would crowd its card), so the menu is sized by its content, not the trigger.
-fn menu_width_for(ui: &Ui, labels: &[String], trigger_width: f32) -> f32 {
+pub(crate) fn menu_width_for(ui: &Ui, labels: &[impl AsRef<str>], trigger_width: f32) -> f32 {
     let widest = labels
         .iter()
         .map(|label| {
             galley(
                 ui,
-                label,
+                label.as_ref(),
                 size::BODY,
                 REGULAR,
                 Color32::PLACEHOLDER,

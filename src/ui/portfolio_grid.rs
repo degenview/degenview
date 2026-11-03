@@ -290,6 +290,22 @@ pub fn cell_text(
     rect
 }
 
+/// Text anchored at `pos`, on one line; returns the rect it covers.
+pub fn put(
+    ui: &Ui,
+    pos: Pos2,
+    anchor: Align2,
+    text: &str,
+    size: f32,
+    weight: f32,
+    color: Color32,
+) -> Rect {
+    let galley = kit::galley(ui, text, size, weight, color, 600.0);
+    let rect = anchor.anchor_size(pos, galley.size());
+    ui.painter().galley(rect.min, galley, Color32::PLACEHOLDER);
+    rect
+}
+
 /// A figure in a table cell: regular weight, 13 pt.
 pub fn figure(ui: &Ui, cell: Rect, column: &Col, text: &str, color: Color32) {
     cell_text(ui, cell, column, text, kit::size::BODY, REGULAR, color);
@@ -527,12 +543,25 @@ pub fn row_menu_button(
     response
 }
 
+/// Sizes the menu `ui` is drawing to its longest label (its rows stretch to the menu's width), so
+/// a short menu has no blank space beside its rows.
+pub fn fit_menu(ui: &mut Ui, labels: &[&str]) {
+    ui.set_width(kit::menu_width_for(ui, labels, 0.0) - kit::MENU_FRAME_MARGIN);
+}
+
 /// Width reserved at the end of a column for `row_menu_button`.
 pub const MENU_BUTTON: f32 = 24.0;
 pub const MENU_RESERVE: f32 = MENU_BUTTON + 6.0;
 
 /// A bordered drop-down button; `items` fills its menu. Highlighted while a filter is set.
-pub fn dropdown(ui: &mut Ui, id: Id, label: &str, active: bool, items: impl FnOnce(&mut Ui)) {
+pub fn dropdown(
+    ui: &mut Ui,
+    id: Id,
+    label: &str,
+    active: bool,
+    choices: &[impl AsRef<str>],
+    items: impl FnOnce(&mut Ui),
+) -> Response {
     let color = if active {
         theme::text_primary()
     } else {
@@ -571,15 +600,80 @@ pub fn dropdown(ui: &mut Ui, id: Id, label: &str, active: bool, items: impl FnOn
         Icon::ChevronUpDown,
         theme::text_secondary(),
     );
-    egui::Popup::menu(&response)
+    choice_menu(ui, &response, id, rect.width(), choices, items);
+    response
+}
+
+/// The menu under a dropdown's trigger: as wide as its widest choice (and the trigger), not the
+/// width a menu would otherwise take, and scrolling when tall.
+fn choice_menu(
+    ui: &Ui,
+    trigger: &Response,
+    id: Id,
+    trigger_width: f32,
+    choices: &[impl AsRef<str>],
+    items: impl FnOnce(&mut Ui),
+) {
+    let menu_width = kit::menu_width_for(ui, choices, trigger_width);
+    egui::Popup::menu(trigger)
         .id(id)
         .frame(kit::menu_frame())
+        .width(menu_width)
         .gap(4.0)
         .show(|ui| {
-            ui.set_min_width(170.0);
+            ui.set_min_width(menu_width - kit::MENU_FRAME_MARGIN);
+            ui.set_max_width(menu_width - kit::MENU_FRAME_MARGIN);
             ui.spacing_mut().item_spacing.y = 0.0;
-            items(ui);
+            egui::ScrollArea::vertical()
+                .max_height(kit::MENU_MAX_HEIGHT)
+                .auto_shrink([false, true])
+                .show(ui, items);
         });
+}
+
+/// A dropdown for a table's footer strip: caption-sized text and a small chevron with no box,
+/// lit on hover, so it sits in the strip like the text beside it.
+pub fn dropdown_inline(
+    ui: &mut Ui,
+    id: Id,
+    label: &str,
+    choices: &[impl AsRef<str>],
+    items: impl FnOnce(&mut Ui),
+) -> Response {
+    let open = egui::Popup::is_id_open(ui.ctx(), id);
+    let text = kit::galley(
+        ui,
+        label,
+        kit::size::CAPTION,
+        REGULAR,
+        theme::text_secondary(),
+        200.0,
+    );
+    let size = vec2(text.size().x + 10.0 + 6.0 + 10.0 + 8.0, 22.0);
+    let (rect, response) = ui.allocate_exact_size(size, Sense::click());
+    let response = response.on_hover_cursor(CursorIcon::PointingHand);
+    if open || response.hovered() {
+        ui.painter()
+            .rect_filled(rect, 6.0, theme::quaternary(if open { 1.0 } else { 0.75 }));
+    }
+    let color = if open || response.hovered() {
+        theme::text_primary()
+    } else {
+        theme::text_secondary()
+    };
+    ui.painter().galley_with_override_text_color(
+        pos2(rect.left() + 10.0, rect.center().y - text.size().y / 2.0),
+        text,
+        color,
+    );
+    icons::paint(
+        ui.painter(),
+        Rect::from_center_size(pos2(rect.right() - 12.0, rect.center().y), Vec2::splat(8.0)),
+        Icon::ChevronUpDown,
+        color,
+    );
+    choice_menu(ui, &response, id, rect.width(), choices, items);
+    response
 }
 
 /// A text link in the accent colour; returns whether it was clicked.
@@ -660,9 +754,9 @@ pub fn loading_message(ui: &mut Ui, area: Rect, message: &str) {
     );
     let width = 16.0 + 8.0 + label.size().x;
     let left = area.center().x - width / 2.0;
-    ui.put(
+    egui::Spinner::new().size(16.0).paint_at(
+        ui,
         Rect::from_center_size(pos2(left + 8.0, area.center().y), Vec2::splat(16.0)),
-        egui::Spinner::new().size(16.0),
     );
     ui.painter().galley(
         pos2(left + 24.0, area.center().y - label.size().y / 2.0),
