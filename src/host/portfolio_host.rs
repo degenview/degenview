@@ -556,19 +556,23 @@ impl PortfolioTab {
             self.quote_feed.release(self.id);
         }
 
-        egui::Panel::top(egui::Id::new(("portfolio-header", self.id)))
-            .exact_size(62.0)
-            .frame(
-                egui::Frame::new()
-                    .fill(theme::background())
-                    .inner_margin(egui::Margin::symmetric(0, 14)),
-            )
-            .show(ui, |ui| {
-                aligned(ui, |ui| self.show_header(ui, host, &snapshot))
-            });
+        // With no portfolios at all the pickers, currency, privacy and import menus have nothing
+        // to act on: the page is one call to action. (Everything archived keeps the header, its
+        // picker is the way back to an archived portfolio.)
+        if shows_header(&snapshot) {
+            egui::Panel::top(egui::Id::new(("portfolio-header", self.id)))
+                .exact_size(62.0)
+                .frame(
+                    egui::Frame::new()
+                        .fill(theme::background())
+                        .inner_margin(egui::Margin::symmetric(0, 14)),
+                )
+                .show(ui, |ui| {
+                    aligned(ui, |ui| self.show_header(ui, host, &snapshot))
+                });
+        }
 
-        // With no portfolio there is nothing to section: the page is the header and one call to
-        // action.
+        // With nothing in scope there is nothing to section: the page is one call to action.
         if has_portfolio_scope(&snapshot) {
             egui::Panel::top(egui::Id::new(("portfolio-sections", self.id)))
                 .exact_size(64.0)
@@ -1429,6 +1433,11 @@ fn currency_choice(currency: PortfolioCurrency) -> String {
     format!("{}  \u{00B7}  {}", currency.code(), currency.display_name())
 }
 
+/// The header's controls act on portfolios; with none there is nothing for them to do.
+fn shows_header(snapshot: &PortfolioLedgerSnapshot) -> bool {
+    !snapshot.portfolios.is_empty()
+}
+
 fn has_portfolio_scope(snapshot: &PortfolioLedgerSnapshot) -> bool {
     !portfolio_scope(snapshot).is_empty()
 }
@@ -1662,6 +1671,21 @@ mod tests {
         }
         host.select(None).expect("select all");
         (host, ids)
+    }
+
+    #[test]
+    fn the_header_is_hidden_only_when_there_are_no_portfolios() {
+        let (host, _) = host_with(&[]);
+        assert!(!shows_header(host.snapshot()));
+
+        let (host, _) = host_with(&[true, true]);
+        assert!(
+            shows_header(host.snapshot()),
+            "all archived: the picker is the way back"
+        );
+
+        let (host, _) = host_with(&[false]);
+        assert!(shows_header(host.snapshot()));
     }
 
     #[test]

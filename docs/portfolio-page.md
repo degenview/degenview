@@ -147,6 +147,9 @@ introductions use: a disc and a card, with a badge for the page.
 - **A page with no transactions** (`portfolio_empty::page`): one picture per section, three steps,
   an example row with made-up figures, and the Add Transaction and Import buttons. The portfolio
   with no portfolios yet has its own.
+  With no portfolios at all the page also drops the header (picker, currency, privacy, Import or
+  Export; `shows_header`) and the section bar: Create Portfolio is the only control. A ledger whose
+  portfolios are all archived keeps the header, since its picker leads back to them.
 - **A panel waiting for data** (`portfolio_empty::compact`): Allocation, Portfolio Value history,
   Top Holdings, the Statistics P&L and Win Rate panels, and the Holdings and Transactions tables with no rows.
   A search or filter that matches nothing keeps its glyph and message.
