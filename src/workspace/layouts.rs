@@ -169,6 +169,14 @@ impl ChartWorkspace {
             .unwrap_or_default()
     }
 
+    /// The saved layouts' menu entries; cheap enough to ask every frame.
+    pub(super) fn layout_index(&self) -> std::sync::Arc<crate::store::saved_view::LayoutIndex> {
+        self.store
+            .lock()
+            .map(|store| store.layout_index())
+            .unwrap_or_default()
+    }
+
     pub(super) fn active_view(&self) -> Option<SavedView> {
         let id = self.active_view_id?;
         self.load_saved_views()

@@ -121,6 +121,9 @@ pub(crate) const DOCUMENT_TABLES: [&str; 14] = [
 
 pub struct Store {
     connection: Connection,
+    /// The saved-layout index the toolbar reads every frame, rebuilt only when the database
+    /// changed (see `Store::layout_index`).
+    layout_index: std::cell::RefCell<Option<saved_view::CachedLayoutIndex>>,
 }
 
 impl Store {
@@ -128,7 +131,10 @@ impl Store {
         let connection = Connection::open(path)?;
         connection.busy_timeout(Duration::from_secs(5))?;
         connection.pragma_update(None, "journal_mode", "WAL")?;
-        let store = Self { connection };
+        let store = Self {
+            connection,
+            layout_index: Default::default(),
+        };
         store.create_schema()?;
         Ok(store)
     }
@@ -143,7 +149,10 @@ impl Store {
     pub fn open_in_memory() -> rusqlite::Result<Self> {
         let connection = Connection::open_in_memory()?;
         connection.busy_timeout(Duration::from_secs(5))?;
-        let store = Self { connection };
+        let store = Self {
+            connection,
+            layout_index: Default::default(),
+        };
         store.create_schema()?;
         Ok(store)
     }

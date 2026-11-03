@@ -14,17 +14,14 @@ impl ChartWorkspace {
     ) -> Vec<WorkspaceAction> {
         let mut actions = Vec::new();
         let active_view_id = self.active_view_id;
-        let saved_views = self.load_saved_views();
+        let layout_index = self.layout_index();
         let mut save_clicked = false;
         let mut copy_clicked = false;
         let mut rename_clicked = false;
         let mut autosave_toggled = false;
         let mut open_id: Option<u64> = None;
         let mut delete_id: Option<u64> = None;
-        let layouts: Vec<(u64, String)> = saved_views
-            .iter()
-            .map(|view| (view.id, view.name.clone()))
-            .collect();
+        let layouts = &layout_index.layouts;
         let unlinkable: Vec<String> = self
             .charts
             .iter()
@@ -32,10 +29,7 @@ impl ChartWorkspace {
             .map(Chart::display_title)
             .collect();
         let dirty = self.is_dirty();
-        let autosave_on = saved_views
-            .iter()
-            .find(|view| Some(view.id) == active_view_id)
-            .is_some_and(|view| view.autosave == Some(true));
+        let autosave_on = active_view_id.is_some_and(|id| layout_index.autosave.contains(&id));
         // An Autosave layout also saves drawing-only edits; the toolbar's "unsaved" state does not
         // count them, as before.
         self.tick_autosave(
@@ -54,7 +48,7 @@ impl ChartWorkspace {
                 on: autosave_on,
                 failed: self.autosave.failed,
             },
-            layouts: &layouts,
+            layouts,
             active_layout: active_view_id,
             watchlist_visible: self.watchlist_visible,
             sync: self.sync,
