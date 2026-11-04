@@ -101,6 +101,8 @@ pub struct PaperAccountSheetState {
     pub commission_text: String,
     /// The name field takes the keyboard when a new sheet opens; a reset leaves the name alone.
     focus_pending: bool,
+    /// Why the last submit failed to save, shown until the next try.
+    pub submit_error: Option<String>,
 }
 
 impl PaperAccountSheetState {
@@ -115,6 +117,7 @@ impl PaperAccountSheetState {
             commission_kind: CommissionKind::None,
             commission_text: "0".to_owned(),
             focus_pending: true,
+            submit_error: None,
         }
     }
 
@@ -131,6 +134,7 @@ impl PaperAccountSheetState {
             commission_kind,
             commission_text: decimal_text(commission, false),
             focus_pending: false,
+            submit_error: None,
         }
     }
 
@@ -264,6 +268,19 @@ pub fn show(
     sheet::show(ctx, Id::new("paper-account-sheet"), WIDTH, |ui| {
         ui.add_space(24.0);
         sheet::inset(ui, |ui| form(ui, state));
+        if let Some(error) = &state.submit_error {
+            ui.add_space(GAP);
+            sheet::inset(ui, |ui| {
+                kit::notice_card(
+                    ui,
+                    Icon::TriangleFill,
+                    kit::RED,
+                    "Not saved",
+                    Some(error),
+                    None,
+                );
+            });
+        }
         ui.add_space(24.0);
         footer(ui, state, &mut outcome);
     });

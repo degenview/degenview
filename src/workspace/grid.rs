@@ -832,7 +832,8 @@ impl ChartWorkspace {
         for (chart_id, drawing) in drawing_commands {
             self.apply_drawing_commands(chart_id, drawing);
         }
-        Self::apply_paper_overlay_actions(paper_host, paper_actions);
+        let paper_failures = Self::apply_paper_overlay_actions(paper_host, paper_actions);
+        self.paper_panel.report_messages(&paper_failures);
         if new_alert.is_some() {
             self.new_alert_request = new_alert;
         }

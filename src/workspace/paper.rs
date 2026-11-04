@@ -112,26 +112,32 @@ impl ChartWorkspace {
         source != DataSource::CoinMarketCap
     }
 
+    /// Runs what the chart overlay asked for and returns why any of it failed, for the panel to
+    /// show: the host keeps only its last error, which a following success would clear.
     pub(super) fn apply_paper_overlay_actions(
         host: &mut PaperHost,
         actions: Vec<PaperOverlayAction>,
-    ) {
+    ) -> Vec<String> {
+        let mut failures = Vec::new();
         for action in actions {
-            match action {
+            let result = match action {
                 PaperOverlayAction::ClosePosition {
                     account_id,
                     instrument_key,
-                } => {
-                    let _ = host.close_position(account_id, &instrument_key);
-                }
+                } => host.close_position(account_id, &instrument_key).map(drop),
                 PaperOverlayAction::ModifyOrder { order_id, price } => {
-                    let _ = host.move_order(order_id, price);
+                    host.move_order(order_id, price)
                 }
-                PaperOverlayAction::CancelOrder(id) => {
-                    let _ = host.cancel(id);
-                }
+                PaperOverlayAction::CancelOrder(id) => host.cancel(id),
+            };
+            if let Err(error) = result {
+                failures.push(error.message());
             }
         }
+        if !failures.is_empty() {
+            host.clear_error();
+        }
+        failures
     }
 }
 

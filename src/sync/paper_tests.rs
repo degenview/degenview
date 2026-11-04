@@ -179,6 +179,45 @@ fn placing_an_order_on_the_mirror_takes_the_account_over() {
 }
 
 #[test]
+fn a_refused_order_on_the_mirror_takes_the_account_over_but_an_invalid_one_does_not() {
+    let (_cloud, mut a, mut b) = pair();
+    let mut on_a = host(&a);
+    let id = open(&mut on_a, "Main");
+    settle(&mut a, &mut b);
+    let shared = a.store.lock().unwrap().id_space().to_global(id);
+
+    let mut on_b = host(&b);
+    on_b.process_quote(quote(110.0)).unwrap();
+    assert!(on_b.owned_elsewhere(shared).is_some());
+
+    // A ticket the engine refuses before it records anything leaves the owner alone.
+    let mut empty = limit_buy(shared, 100.0);
+    empty.quantity = 0.0;
+    assert!(on_b.submit(empty).is_err());
+    assert!(on_b.owned_elsewhere(shared).is_some(), "nothing changed");
+
+    // An order that is recorded and then refused (unaffordable) is a change to the account.
+    let mut huge = limit_buy(shared, 100.0);
+    huge.quantity = 5_000.0;
+    assert!(on_b.submit(huge).is_err());
+    assert!(on_b.owned_elsewhere(shared).is_none(), "B runs it now");
+    assert_eq!(
+        b.store
+            .lock()
+            .unwrap()
+            .paper_owner(&shared.to_string())
+            .unwrap(),
+        None
+    );
+    assert!(
+        on_b.snapshot()
+            .orders
+            .iter()
+            .any(|order| order.status == PaperOrderStatus::Rejected)
+    );
+}
+
+#[test]
 fn account_changes_uploaded_before_either_mac_fetches_keep_both_versions() {
     let (_cloud, mut a, mut b) = pair();
     let mut on_a = host(&a);

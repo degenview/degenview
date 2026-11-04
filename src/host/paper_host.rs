@@ -461,9 +461,14 @@ impl PaperHost {
 
         let mut candidate = PaperTradingEngine::new(self.engine.snapshot().clone());
         let result = operation(&mut candidate);
+        // Acting on a mirrored account takes it over, and so does a refused order the engine
+        // recorded for audit: that already changed the account, which must not stay owned by the
+        // Mac that did not see it. A refusal that changed nothing (an unknown order, an invalid
+        // ticket) leaves the owner alone.
+        let changed = candidate.snapshot() != self.engine.snapshot();
         let claim = account
             .filter(|id| self.elsewhere.contains_key(id))
-            .filter(|_| result.is_ok());
+            .filter(|_| result.is_ok() || changed);
         let saved = self
             .store
             .lock()
@@ -838,6 +843,37 @@ impl PaperPanel {
         }
     }
 
+    /// Puts what failed in a notice that stays until dismissed. The host's own banner holds only
+    /// the last error and a later success clears it, so a failure in a batch would be lost.
+    fn report_failures(&mut self, host: &mut PaperHost, failures: &[PaperHostError]) {
+        let Some(first) = failures.first() else {
+            return;
+        };
+        let text = match failures.len() {
+            1 => first.message(),
+            more => format!(
+                "{} failed: {} (and {} more)",
+                more,
+                first.message(),
+                more - 1
+            ),
+        };
+        self.notice = Some(PanelNotice::error(text));
+        host.clear_error();
+    }
+
+    /// Failures from actions taken on a chart, shown the next time the panel is.
+    pub fn report_messages(&mut self, messages: &[String]) {
+        let Some(first) = messages.first() else {
+            return;
+        };
+        let text = match messages.len() {
+            1 => first.clone(),
+            more => format!("{more} failed: {first} (and {} more)", more - 1),
+        };
+        self.notice = Some(PanelNotice::error(text));
+    }
+
     fn show_notice(&mut self, ui: &mut egui::Ui) {
         if self.notice.as_ref().is_some_and(PanelNotice::expired) {
             self.notice = None;
@@ -907,7 +943,9 @@ impl PaperPanel {
         for action in actions {
             match action {
                 PaperHeaderAction::SelectAccount(id) => {
-                    let _ = host.select_account(id);
+                    if let Err(error) = host.select_account(id) {
+                        self.report_failures(host, &[error]);
+                    }
                 }
                 PaperHeaderAction::NewAccount => {
                     self.account_sheet = Some(PaperAccountSheetState::create());
@@ -930,25 +968,22 @@ impl PaperPanel {
     }
 
     fn apply_table_actions(&mut self, actions: Vec<PaperTableAction>, host: &mut PaperHost) {
+        let mut failures = Vec::new();
         for action in actions {
-            match action {
+            let result = match action {
                 PaperTableAction::ClosePosition {
                     account_id,
                     instrument_key,
-                } => {
-                    let _ = host.close_position(account_id, &instrument_key);
-                }
+                } => host.close_position(account_id, &instrument_key).map(drop),
                 PaperTableAction::ReversePosition {
                     account_id,
                     instrument_key,
-                } => {
-                    let _ = host.reverse_position(account_id, &instrument_key);
-                }
-                PaperTableAction::CancelOrder(id) => {
-                    let _ = host.cancel(id);
-                }
-            }
+                } => host.reverse_position(account_id, &instrument_key).map(drop),
+                PaperTableAction::CancelOrder(id) => host.cancel(id),
+            };
+            failures.extend(result.err());
         }
+        self.report_failures(host, &failures);
     }
 
     fn apply_footer_actions(
@@ -960,10 +995,18 @@ impl PaperPanel {
         for action in actions {
             match (action, account_id) {
                 (PaperFooterAction::CloseAllPositions, Some(id)) => {
-                    let _ = host.close_all_positions(id);
+                    let results = host.close_all_positions(id);
+                    if let Some(text) = bulk_failure_text("Closed", "positions", &results) {
+                        self.notice = Some(PanelNotice::error(text));
+                        host.clear_error();
+                    }
                 }
                 (PaperFooterAction::CancelAllOrders, Some(id)) => {
-                    let _ = host.cancel_all_orders(id);
+                    let results = host.cancel_all_orders(id);
+                    if let Some(text) = bulk_failure_text("Canceled", "orders", &results) {
+                        self.notice = Some(PanelNotice::error(text));
+                        host.clear_error();
+                    }
                 }
                 (PaperFooterAction::Export, _) => self.export_requested = true,
                 _ => {}
@@ -983,24 +1026,33 @@ impl PaperPanel {
         let is_reset = sheet.is_reset;
         match show_account_sheet(context, sheet) {
             Some(AccountSheetOutcome::Submit(result)) => {
-                if is_reset {
-                    if let Some(id) = selected_account_id {
-                        let _ = host.reset_account(
-                            id,
-                            result.currency,
-                            result.balance,
-                            result.settings,
-                        );
+                let outcome = if is_reset {
+                    match selected_account_id {
+                        Some(id) => {
+                            host.reset_account(id, result.currency, result.balance, result.settings)
+                        }
+                        None => Ok(()),
                     }
                 } else {
-                    let _ = host.create_account(
+                    host.create_account(
                         &result.name,
                         result.currency,
                         result.balance,
                         result.settings,
-                    );
+                    )
+                    .map(drop)
+                };
+                match outcome {
+                    Ok(()) => self.account_sheet = None,
+                    // Nothing was saved: the sheet stays, with what went wrong, so the user can
+                    // retry or cancel instead of losing what they typed.
+                    Err(error) => {
+                        if let Some(sheet) = self.account_sheet.as_mut() {
+                            sheet.submit_error = Some(error.message());
+                        }
+                        host.clear_error();
+                    }
                 }
-                self.account_sheet = None;
             }
             Some(AccountSheetOutcome::Cancel) => self.account_sheet = None,
             None => {}
@@ -1023,8 +1075,10 @@ impl PaperPanel {
         };
         match crate::ui::paper_header::delete_confirm(context, &name) {
             Some(crate::ui::kit::ConfirmOutcome::Confirmed) => {
-                let _ = host.delete_account(id);
                 self.pending_delete = None;
+                if let Err(error) = host.delete_account(id) {
+                    self.report_failures(host, &[error]);
+                }
             }
             Some(crate::ui::kit::ConfirmOutcome::Cancelled) => self.pending_delete = None,
             None => {}
@@ -1134,6 +1188,27 @@ fn owner_note(ui: &mut egui::Ui, elsewhere: &Elsewhere) {
         });
 }
 
+/// What a bulk action did not manage, or `None` when every item went through.
+fn bulk_failure_text<T>(
+    verb: &str,
+    noun: &str,
+    results: &[Result<T, PaperHostError>],
+) -> Option<String> {
+    let failures: Vec<&PaperHostError> = results.iter().filter_map(|r| r.as_ref().err()).collect();
+    let first = failures.first()?;
+    let more = if failures.len() > 1 {
+        format!(" (and {} more)", failures.len() - 1)
+    } else {
+        String::new()
+    };
+    Some(format!(
+        "{verb} {} of {} {noun}. {}{more}",
+        results.len() - failures.len(),
+        results.len(),
+        first.message()
+    ))
+}
+
 fn error_banner(ui: &mut egui::Ui, message: &str) {
     egui::Frame::new()
         .fill(crate::ui::theme::DOWN.gamma_multiply(0.14))
@@ -1182,6 +1257,25 @@ mod tests {
             take_profit: None,
             stop_loss: None,
         }
+    }
+
+    #[test]
+    fn a_bulk_action_reports_what_it_could_not_do() {
+        let ok: Result<u64, PaperHostError> = Ok(1);
+        let failed: Result<u64, PaperHostError> =
+            Err(PaperHostError::Engine(PaperTradingError::NoMarketData));
+        assert_eq!(
+            bulk_failure_text("Closed", "positions", &[ok.clone(), ok.clone()]),
+            None
+        );
+        let text = bulk_failure_text(
+            "Closed",
+            "positions",
+            &[ok.clone(), failed.clone(), failed.clone()],
+        )
+        .unwrap();
+        assert!(text.starts_with("Closed 1 of 3 positions."), "{text}");
+        assert!(text.ends_with("(and 1 more)"), "{text}");
     }
 
     #[test]
