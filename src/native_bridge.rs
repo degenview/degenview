@@ -651,7 +651,8 @@ mod platform {
 
         // Help: the project's GitHub organisation and the maintainer's Buy Me a Coffee page.
         let help_item = NSMenuItem::new(mtm);
-        let help_menu = NSMenu::initWithTitle(mtm.alloc(), ns_string!("Help"));
+        let help_menu =
+            NSMenu::initWithTitle(mtm.alloc(), ns_string!("Help supporting this project"));
         for (title, selector) in [
             (ns_string!("DegenView on GitHub"), sel!(openGitHub:)),
             (ns_string!("Buy Me a Coffee"), sel!(openCoffee:)),

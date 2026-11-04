@@ -355,7 +355,7 @@ impl TabBar<'_> {
             );
             let button = ui.interact(rect, self.id(name), Sense::click());
             let button = super::accessibility::label(button, name)
-                .on_hover_text(format!("{name}: {url}"))
+                .on_hover_text(name)
                 .on_hover_cursor(egui::CursorIcon::PointingHand);
             let color = if button.hovered() {
                 painter.rect_filled(rect, 6.0, theme::ink(18));
