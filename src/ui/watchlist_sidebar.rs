@@ -479,11 +479,21 @@ fn header(
     options_menu(ui, state, list, actions, options_rect, enabled);
 }
 
-/// Narrowest the list menu opens; a long list name widens nothing, it ellipsizes.
-const LIST_MENU_WIDTH: f32 = 232.0;
-/// The header "…" menu and the row menus, and their submenus.
-const MENU_WIDTH: f32 = 212.0;
-const SUBMENU_WIDTH: f32 = 188.0;
+/// The header "…" menu and the row menus, and their submenus. Measured against their rows by
+/// `menu_widths_fit_their_rows`, which fails if either drifts too narrow or wide. (The list menu
+/// is sized from its list names when it opens.)
+///
+/// The system font sets the width: macOS's measures 179 and 173, the font a Linux machine with no
+/// system fonts falls back to (egui's own) 190 and 179, so the other platforms get a few points
+/// more rather than a cut label. Windows is not measured; its UI font is assumed no wider.
+#[cfg(target_os = "macos")]
+const MENU_WIDTH: f32 = 186.0;
+#[cfg(target_os = "macos")]
+const SUBMENU_WIDTH: f32 = 178.0;
+#[cfg(not(target_os = "macos"))]
+const MENU_WIDTH: f32 = 194.0;
+#[cfg(not(target_os = "macos"))]
+const SUBMENU_WIDTH: f32 = 184.0;
 /// What the menu frame's margins take from its width.
 const MENU_FRAME: f32 = 10.0;
 
@@ -549,10 +559,35 @@ fn list_selector(
         Icon::ChevronDown,
         theme::text_secondary(),
     );
+    if !(open || response.clicked()) {
+        return;
+    }
+    // As wide as the list names (with their counts) and the fixed rows need, no wider.
+    let counts: Vec<String> = input
+        .lists
+        .iter()
+        .map(|candidate| candidate.instruments().count().to_string())
+        .collect();
+    let mut rows: Vec<(&str, Option<&str>)> = input
+        .lists
+        .iter()
+        .zip(&counts)
+        .map(|(candidate, count)| (candidate.name.as_str(), Some(count.as_str())))
+        .collect();
+    rows.extend(
+        [
+            "Create New Watchlist\u{2026}",
+            "Rename Watchlist\u{2026}",
+            "Make a Copy\u{2026}",
+            "Delete Watchlist\u{2026}",
+        ]
+        .map(|label| (label, None)),
+    );
+    let list_menu_width = kit::menu_width_for_rows(ui, &rows, 0.0);
     kit::menu_popup(&response)
-        .width(LIST_MENU_WIDTH)
+        .width(list_menu_width)
         .show(|ui| {
-            kit::menu_scope(ui, LIST_MENU_WIDTH - MENU_FRAME);
+            kit::menu_scope(ui, list_menu_width - MENU_FRAME);
             if !input.lists.is_empty() {
                 kit::menu_heading(ui, "Watchlists");
                 egui::ScrollArea::vertical()
@@ -2061,6 +2096,70 @@ fn import_window(
 
 #[cfg(test)]
 mod tests {
+    /// What each menu's rows need, measured with the real font: the constants above must not be
+    /// narrower (a label would be cut) or more than a few points wider (blank space).
+    #[test]
+    fn menu_widths_fit_their_rows() {
+        let ctx = egui::Context::default();
+        crate::ui::theme::install_offscreen(&ctx);
+        let rows = |labels: &[&'static str]| -> Vec<(&'static str, Option<&'static str>)> {
+            labels.iter().map(|label| (*label, None)).collect()
+        };
+        let mut measured = Vec::new();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            measured.push(kit::menu_width_for_rows(
+                ui,
+                &rows(&[
+                    "Add Section\u{2026}",
+                    "Sort By",
+                    "Columns",
+                    "Filter by Flag",
+                    "Show Details",
+                    "Import Symbols\u{2026}",
+                    "Export to File\u{2026}",
+                    "Copy as Text",
+                    "Open in Focused Chart",
+                    "Add as New Chart",
+                    "Open in New Tab",
+                    "Move to Section",
+                    "Set Flag",
+                    "Add to Watchlist",
+                    "Create Price Alert\u{2026}",
+                    "Copy Symbol",
+                    "Copy Qualified Symbol",
+                    "Remove from Watchlist",
+                ]),
+                0.0,
+            ));
+            measured.push(kit::menu_width_for_rows(
+                ui,
+                &rows(&[
+                    "Collapse Section",
+                    "Rename Section\u{2026}",
+                    "Add Section\u{2026}",
+                    "Delete Section",
+                    "Show Symbol Subtitle",
+                    "Descending",
+                    "Clear Flag",
+                    "New Watchlist\u{2026}",
+                ]),
+                0.0,
+            ));
+        });
+        output.textures_delta.clear();
+        eprintln!("measured menu widths: {measured:?}");
+        for (name, have, need) in [
+            ("options and row menus", MENU_WIDTH, measured[0]),
+            ("submenus", SUBMENU_WIDTH, measured[1]),
+        ] {
+            assert!(have >= need - 1.0, "{name}: {have} is narrower than {need}");
+            assert!(
+                have <= need + 12.0,
+                "{name}: {have} is more than 12 pt wider than the {need} the rows need"
+            );
+        }
+    }
+
     use super::*;
     use crate::model::DataSource;
     use crate::model::watchlist::Watchlist;

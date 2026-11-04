@@ -18,7 +18,6 @@ const BUTTON: f32 = 20.0;
 const MARGIN: f32 = 2.0;
 /// The corner is left empty below this: the button would crowd the axes.
 const MIN_CELL: f32 = 18.0;
-const MENU_WIDTH: f32 = 168.0;
 
 /// The id of a chart's button, which the menu it opens hangs from.
 pub fn id(chart_id: u64) -> Id {
@@ -123,19 +122,33 @@ pub fn show(ui: &mut Ui, id: Id, cell: Rect, state: &ScaleButton) -> Option<Pric
     );
 
     let mut picked = None;
-    kit::menu_popup(&response)
-        .align(RectAlign::TOP_END)
-        .gap(4.0)
-        .width(MENU_WIDTH)
-        .show(|ui| picked = menu(ui, focus_id, state));
+    // Sized to the rows and their shortcuts, and only worked out while the menu is open.
+    if open || response.clicked() {
+        let hints: Vec<Option<String>> = PriceScaleMode::ALL
+            .into_iter()
+            .map(|mode| shortcut::scale_mode(mode).map(|shortcut| shortcut.label()))
+            .collect();
+        let rows: Vec<(&str, Option<&str>)> = PriceScaleMode::ALL
+            .into_iter()
+            .zip(&hints)
+            .map(|(mode, hint)| (mode.label(), hint.as_deref()))
+            .collect();
+        let width = kit::menu_width_for_rows(ui, &rows, 0.0);
+        kit::menu_popup(&response)
+            .align(RectAlign::TOP_END)
+            .gap(4.0)
+            .width(width)
+            .show(|ui| picked = menu(ui, focus_id, state, width));
+    }
     picked
 }
 
 /// The rows, with the keyboard's highlight: none until the arrows or the pointer set it, then the
 /// arrows move it (the first Down lands on the first row, the first Up on the last, and both
 /// wrap), Enter or Space picks it, and the pointer moves it as it moves.
-fn menu(ui: &mut Ui, focus_id: Id, state: &ScaleButton) -> Option<PriceScaleMode> {
-    kit::menu_scope(ui, MENU_WIDTH - 10.0);
+fn menu(ui: &mut Ui, focus_id: Id, state: &ScaleButton, width: f32) -> Option<PriceScaleMode> {
+    kit::menu_scope(ui, 0.0);
+    ui.set_width(width - kit::MENU_FRAME_MARGIN);
     let mut focus = ui
         .data(|data| data.get_temp::<Option<usize>>(focus_id))
         .flatten();

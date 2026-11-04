@@ -935,27 +935,24 @@ fn currency_menu(ui: &mut egui::Ui, currency: &mut AlertCurrency) {
         Icon::ChevronUpDown,
         theme::text_secondary(),
     );
-    egui::Popup::menu(&response)
-        .frame(kit::menu_frame())
-        .align(egui::RectAlign::BOTTOM_END)
-        .gap(6.0)
-        .show(|ui| {
-            ui.set_width(200.0);
-            ui.spacing_mut().item_spacing.y = 0.0;
-            for option in AlertCurrency::ALL {
-                let label = format!("{} — {}", option.code(), option.display_name());
-                let icon = if option == *currency {
-                    Icon::Check
-                } else {
-                    Icon::Circle
-                };
-                // Only the chosen one carries a mark.
-                if kit::menu_item_marked(ui, icon, &label, option == *currency) {
-                    *currency = option;
-                    ui.close();
-                }
+    let labels: Vec<String> = AlertCurrency::ALL
+        .into_iter()
+        .map(|option| format!("{} \u{2014} {}", option.code(), option.display_name()))
+        .collect();
+    kit::fitted_menu(ui, &response, egui::RectAlign::BOTTOM_END, &labels, |ui| {
+        for (option, label) in AlertCurrency::ALL.into_iter().zip(&labels) {
+            let icon = if option == *currency {
+                Icon::Check
+            } else {
+                Icon::Circle
+            };
+            // Only the chosen one carries a mark.
+            if kit::menu_item_marked(ui, icon, label, option == *currency) {
+                *currency = option;
+                ui.close();
             }
-        });
+        }
+    });
 }
 
 fn footer(

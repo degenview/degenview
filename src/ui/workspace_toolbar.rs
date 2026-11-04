@@ -361,77 +361,86 @@ fn layout_menu(
         theme::text_secondary(),
     );
 
-    egui::Popup::menu(&response)
-        .frame(kit::menu_frame())
-        .align(egui::RectAlign::BOTTOM_END)
-        .gap(6.0)
-        .show(|ui| {
-            ui.set_width(230.0);
-            ui.spacing_mut().item_spacing.y = 0.0;
-            if kit::menu_item_with_shortcut(
-                ui,
-                Icon::Download,
-                "Save layout",
-                Some(&shortcut::SAVE.label()),
-                true,
-                false,
-            ) {
-                actions.push(ToolbarAction::SaveLayout);
-                ui.close();
-            }
-            if autosave_row(ui, input.autosave) {
-                actions.push(ToolbarAction::ToggleAutosave);
-                ui.close();
-            }
+    // As wide as the fixed rows and the layout names need. A layout row also holds a trash button
+    // at its end, which the two em spaces stand in for when measuring.
+    let save_hint = shortcut::SAVE.label();
+    let mut rows: Vec<(&str, Option<&str>)> = vec![
+        ("Save layout", Some(&save_hint)),
+        ("Autosave", None),
+        ("Make a copy", None),
+        ("Rename", None),
+    ];
+    rows.extend(
+        input
+            .layouts
+            .iter()
+            .map(|(_, name)| (name.as_str(), Some("\u{2003}\u{2003}"))),
+    );
+    kit::fitted_menu_rows(ui, &response, egui::RectAlign::BOTTOM_END, &rows, |ui| {
+        if kit::menu_item_with_shortcut(
+            ui,
+            Icon::Download,
+            "Save layout",
+            Some(&shortcut::SAVE.label()),
+            true,
+            false,
+        ) {
+            actions.push(ToolbarAction::SaveLayout);
+            ui.close();
+        }
+        if autosave_row(ui, input.autosave) {
+            actions.push(ToolbarAction::ToggleAutosave);
+            ui.close();
+        }
+        kit::menu_separator(ui);
+        if kit::menu_item(
+            ui,
+            Icon::CopyDoc,
+            "Make a copy",
+            input.active_layout.is_some(),
+            false,
+        ) {
+            actions.push(ToolbarAction::CopyLayout);
+            ui.close();
+        }
+        if kit::menu_item(
+            ui,
+            Icon::Pencil,
+            "Rename",
+            input.active_layout.is_some(),
+            false,
+        ) {
+            actions.push(ToolbarAction::RenameLayout);
+            ui.close();
+        }
+        if !input.layouts.is_empty() {
             kit::menu_separator(ui);
-            if kit::menu_item(
-                ui,
-                Icon::CopyDoc,
-                "Make a copy",
-                input.active_layout.is_some(),
-                false,
-            ) {
-                actions.push(ToolbarAction::CopyLayout);
-                ui.close();
-            }
-            if kit::menu_item(
-                ui,
-                Icon::Pencil,
-                "Rename",
-                input.active_layout.is_some(),
-                false,
-            ) {
-                actions.push(ToolbarAction::RenameLayout);
-                ui.close();
-            }
-            if !input.layouts.is_empty() {
-                kit::menu_separator(ui);
-                ui.add_space(2.0);
-                ui.horizontal(|ui| {
-                    ui.add_space(10.0);
-                    ui.label(kit::text(
-                        "Layouts",
-                        size::CAPTION + 0.5,
-                        SEMIBOLD,
-                        theme::text_tertiary(),
-                    ));
-                });
-                ui.add_space(4.0);
-                for (id, name) in input.layouts {
-                    match layout_row(ui, *id, name, input.active_layout == Some(*id)) {
-                        Some(LayoutRow::Open) => {
-                            actions.push(ToolbarAction::OpenLayout(*id));
-                            ui.close();
-                        }
-                        Some(LayoutRow::Delete) => {
-                            actions.push(ToolbarAction::DeleteLayout(*id));
-                            ui.close();
-                        }
-                        None => {}
+            ui.add_space(2.0);
+            ui.horizontal(|ui| {
+                ui.add_space(10.0);
+                ui.label(kit::text(
+                    "Layouts",
+                    size::CAPTION + 0.5,
+                    SEMIBOLD,
+                    theme::text_tertiary(),
+                ));
+            });
+            ui.add_space(4.0);
+            for (id, name) in input.layouts {
+                match layout_row(ui, *id, name, input.active_layout == Some(*id)) {
+                    Some(LayoutRow::Open) => {
+                        actions.push(ToolbarAction::OpenLayout(*id));
+                        ui.close();
                     }
+                    Some(LayoutRow::Delete) => {
+                        actions.push(ToolbarAction::DeleteLayout(*id));
+                        ui.close();
+                    }
+                    None => {}
                 }
             }
-        });
+        }
+    });
     rect.left()
 }
 
