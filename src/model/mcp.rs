@@ -43,10 +43,11 @@ pub enum Permission {
     WatchlistsWrite,
     WatchlistsDelete,
     PaperRead,
+    PortfolioRead,
 }
 
 impl Permission {
-    pub const GROUPS: [&'static str; 7] = [
+    pub const GROUPS: [&'static str; 8] = [
         "Charts",
         "Drawings",
         "Price Alerts",
@@ -54,9 +55,10 @@ impl Permission {
         "Markets",
         "Watchlists",
         "Paper Trading",
+        "Portfolio",
     ];
 
-    pub const ALL: [Permission; 29] = [
+    pub const ALL: [Permission; 30] = [
         Permission::ChartsRead,
         Permission::ChartsCreate,
         Permission::ChartsIndicatorsWrite,
@@ -86,6 +88,7 @@ impl Permission {
         Permission::WatchlistsWrite,
         Permission::WatchlistsDelete,
         Permission::PaperRead,
+        Permission::PortfolioRead,
     ];
 
     /// The stable wire/storage identifier, e.g. `charts.read`.
@@ -120,6 +123,7 @@ impl Permission {
             Self::WatchlistsWrite => "watchlists.write",
             Self::WatchlistsDelete => "watchlists.delete",
             Self::PaperRead => "paper.read",
+            Self::PortfolioRead => "portfolio.read",
         }
     }
 
@@ -160,6 +164,7 @@ impl Permission {
             Self::WatchlistsWrite => "Create and edit watchlists",
             Self::WatchlistsDelete => "Delete watchlists",
             Self::PaperRead => "Read paper trading",
+            Self::PortfolioRead => "Read portfolios",
         }
     }
 
@@ -213,6 +218,9 @@ impl Permission {
             Self::PaperRead => {
                 "Read paper-trading accounts, positions, orders, fills and closed trades. Placing or changing orders is not possible."
             }
+            Self::PortfolioRead => {
+                "Read portfolios, what they hold and what it is worth, and their transactions. Nothing can be changed."
+            }
         }
     }
 
@@ -244,6 +252,7 @@ impl Permission {
             Self::MarketsRead => "Markets",
             Self::WatchlistsRead | Self::WatchlistsWrite | Self::WatchlistsDelete => "Watchlists",
             Self::PaperRead => "Paper Trading",
+            Self::PortfolioRead => "Portfolio",
         }
     }
 
@@ -263,6 +272,7 @@ impl Permission {
             | Self::PineAlertsRead
             | Self::MarketsRead
             | Self::PaperRead
+            | Self::PortfolioRead
             | Self::WatchlistsRead => false,
             Self::ChartsCreate
             | Self::ChartsIndicatorsWrite

@@ -1085,6 +1085,7 @@ mod tests {
                 ("Markets · read".to_owned(), false),
                 ("Watchlists · read".to_owned(), false),
                 ("Paper Trading · read".to_owned(), false),
+                ("Portfolio · read".to_owned(), false),
             ]
         );
         let mixed = PermissionSet::of([

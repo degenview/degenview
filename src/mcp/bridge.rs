@@ -175,6 +175,17 @@ pub enum McpCommand {
         offset: usize,
         limit: usize,
     },
+    ListPortfolios,
+    /// The ledger side of a holdings read: one portfolio, or every unarchived one.
+    GetPortfolioHoldings {
+        portfolio_id: Option<u64>,
+    },
+    ListPortfolioTransactions {
+        portfolio_id: Option<u64>,
+        asset: Option<String>,
+        offset: usize,
+        limit: usize,
+    },
     ListWatchlists,
     /// One page of a watchlist's entries. Quotes are not read here (the tool waits for them
     /// off the app thread); the reply names the markets on the page.
@@ -252,6 +263,9 @@ pub enum McpReply {
     PaperAccount(Box<crate::mcp::paper::PaperAccountDetail>),
     PaperFills(Box<crate::mcp::paper::PaperFillsResult>),
     PaperTrades(Box<crate::mcp::paper::PaperTradesResult>),
+    Portfolios(crate::mcp::portfolio::PortfoliosResult),
+    PortfolioHoldings(Box<crate::mcp::portfolio::HoldingsBase>),
+    PortfolioTransactions(Box<crate::mcp::portfolio::TransactionsResult>),
     Watchlists(crate::mcp::markets::WatchlistsResult),
     Watchlist(Box<crate::mcp::markets::WatchlistPage>),
     WatchlistChanged(Box<crate::mcp::markets::WatchlistChangeResult>),

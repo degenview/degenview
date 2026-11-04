@@ -26,7 +26,7 @@ client → 127.0.0.1:<port>/mcp → bearer/Host/Origin/size checks
 
 Permissions separate reads and mutations: charts read/create/indicator-write/Pine-instance-write/candles-read/view-write/delete; drawings read/write/delete; alerts
 read/create/edit/pause/delete; Pine script list/read/write/save plus diagnostics, inputs, styles,
-reports, and alert reads; markets read (symbol search and quotes); watchlists read/write/delete; paper-trading read (no write).
+reports, and alert reads; markets read (symbol search and quotes); watchlists read/write/delete; paper-trading read (no write); portfolio read.
 Delete and saved-source writes require their own grants.
 
 ## Tool behavior
@@ -40,6 +40,7 @@ Delete and saved-source writes require their own grants.
 | Markets | `search_symbols`, `get_quotes` |
 | Watchlists | `list_watchlists`, `get_watchlist`, `create_watchlist`, `update_watchlist`, `delete_watchlist` |
 | Paper trading (read-only) | `list_paper_accounts`, `get_paper_account`, `list_paper_fills`, `list_paper_trades` |
+| Portfolio (read-only) | `list_portfolios`, `get_portfolio_holdings`, `list_portfolio_transactions` |
 | Pine instances | `list_chart_pine_instances`, `get_pine_instance`, `get_pine_styles`, `get_pine_report`, `list_pine_alerts`, `add_pine_script_to_chart`, `update_pine_instance`, `remove_pine_instance` |
 
 - Workspace ids are persisted tab ids. Reject Portfolio/Pine Studio tabs. Timeframe is
@@ -81,6 +82,16 @@ Delete and saved-source writes require their own grants.
   none. Ids come from `next_free_id` (the counter, but never one already stored). A locked drawing
   is never edited or removed, a chart holds at most 500 drawings, and a call carries at most 25
   (add) or 50 (delete). Only trend lines and rectangles are writable.
+- Portfolio tools (`mcp::portfolio`, `mcp::portfolio_tools`) are read-only. Holdings come from
+  `model::portfolio_accounting::holdings_and_closed` on the app thread (the app's own weighted-average
+  accounting, so a sale realizes profit against the average cost and a position sold to nothing still
+  counts in `closed_positions_realized_pnl`). They are then valued on the tool thread from the quote
+  feed with `wait_for_quotes`, the same lease as `get_quotes`. That accounting is unit-naive: cost
+  is in the currency the transactions were priced in. The Portfolio tab converts with an FX service;
+  this read does not, so a holding bought in a currency other than its market quotes in gets price
+  and value but no profit, return or allocation (`currency_mismatch`) and is left out of `totals`,
+  and totals are per currency, never summed across them. Privacy mode only hides amounts on screen;
+  a client with `portfolio.read` gets the figures (and `list_portfolios` reports the mode).
 - Paper-trading tools (`mcp::paper`, `mcp::paper_tools`) only read the app's `PaperHost` on the app
   thread: accounts with the engine's own metrics, positions marked the way the panel marks them
   (bid for a long, ask for a short, last as fallback; no quote → null mark and no profit figure),

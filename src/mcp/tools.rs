@@ -24,6 +24,9 @@ use crate::mcp::paper_tools::{
     GET_PAPER_ACCOUNT, LIST_PAPER_ACCOUNTS, LIST_PAPER_FILLS, LIST_PAPER_TRADES,
 };
 use crate::mcp::pine::{self, InputArgs, Target, Version};
+use crate::mcp::portfolio_tools::{
+    GET_PORTFOLIO_HOLDINGS, LIST_PORTFOLIO_TRANSACTIONS, LIST_PORTFOLIOS,
+};
 use crate::mcp::state::{ClientIdentity, McpShared};
 use crate::mcp::types::{
     AddChartResult, AddIndicatorResult, AlertChangeResult, AlertInfo, AlertsResult,
@@ -115,6 +118,9 @@ pub fn required_permission(tool: &str) -> Option<Permission> {
         LIST_PINE_ALERTS => Some(Permission::PineAlertsRead),
         LIST_PAPER_ACCOUNTS | GET_PAPER_ACCOUNT | LIST_PAPER_FILLS | LIST_PAPER_TRADES => {
             Some(Permission::PaperRead)
+        }
+        LIST_PORTFOLIOS | GET_PORTFOLIO_HOLDINGS | LIST_PORTFOLIO_TRANSACTIONS => {
+            Some(Permission::PortfolioRead)
         }
         SEARCH_SYMBOLS | GET_QUOTES => Some(Permission::MarketsRead),
         LIST_WATCHLISTS | GET_WATCHLIST => Some(Permission::WatchlistsRead),
@@ -685,7 +691,8 @@ impl DegenViewMcp {
                 + Self::market_router()
                 + Self::indicator_router()
                 + Self::chart_control_router()
-                + Self::paper_router(),
+                + Self::paper_router()
+                + Self::portfolio_router(),
         }
     }
 

@@ -19,6 +19,8 @@ pub mod markets;
 pub mod paper;
 pub mod paper_tools;
 pub mod pine;
+pub mod portfolio;
+pub mod portfolio_tools;
 pub mod state;
 pub mod tools;
 pub mod transport;

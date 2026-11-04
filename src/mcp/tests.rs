@@ -41,6 +41,7 @@ struct Stub {
     /// The watchlists the app holds: the real store over an in-memory database.
     watchlists: StubWatchlists,
     paper: StubPaper,
+    portfolio: StubPortfolio,
 }
 
 /// The paper-trading host the stub app serves: the real host over an in-memory database.
@@ -52,6 +53,20 @@ impl Default for StubPaper {
             crate::store::Store::open_in_memory().expect("store"),
         ));
         Self(Mutex::new(crate::host::paper_host::PaperHost::load(shared)))
+    }
+}
+
+/// The portfolio host the stub app serves: the real host over an in-memory database.
+struct StubPortfolio(Mutex<crate::host::portfolio_host::PortfolioHost>);
+
+impl Default for StubPortfolio {
+    fn default() -> Self {
+        let shared = crate::store::SharedStore::new(Mutex::new(
+            crate::store::Store::open_in_memory().expect("store"),
+        ));
+        Self(Mutex::new(
+            crate::host::portfolio_host::PortfolioHost::load(shared),
+        ))
     }
 }
 
@@ -225,6 +240,13 @@ impl Harness {
         self.stub.paper.0.lock().unwrap()
     }
 
+    /// The portfolio host behind the stub app, to seed portfolios and transactions.
+    pub fn portfolio(
+        &self,
+    ) -> std::sync::MutexGuard<'_, crate::host::portfolio_host::PortfolioHost> {
+        self.stub.portfolio.0.lock().unwrap()
+    }
+
     pub fn url(&self) -> String {
         format!("http://127.0.0.1:{}/mcp", self.port)
     }
@@ -281,6 +303,25 @@ fn stub_app(
             active: true,
             timeframe: "1D".into(),
         }])),
+        McpCommand::ListPortfolios => {
+            let host = stub.portfolio.0.lock().unwrap();
+            mcp_host::list_portfolios(&host).map(McpReply::Portfolios)
+        }
+        McpCommand::GetPortfolioHoldings { portfolio_id } => {
+            let host = stub.portfolio.0.lock().unwrap();
+            mcp_host::portfolio_holdings_base(&host, portfolio_id, 0)
+                .map(|base| McpReply::PortfolioHoldings(Box::new(base)))
+        }
+        McpCommand::ListPortfolioTransactions {
+            portfolio_id,
+            asset,
+            offset,
+            limit,
+        } => {
+            let host = stub.portfolio.0.lock().unwrap();
+            mcp_host::portfolio_transactions(&host, portfolio_id, asset.as_deref(), offset, limit)
+                .map(|result| McpReply::PortfolioTransactions(Box::new(result)))
+        }
         McpCommand::ListPaperAccounts => {
             let host = stub.paper.0.lock().unwrap();
             mcp_host::list_paper_accounts(&host).map(McpReply::PaperAccounts)
@@ -3391,3 +3432,4 @@ mod chart_control_tests;
 mod indicator_tests;
 mod market_tests;
 mod paper_tests;
+mod portfolio_tests;

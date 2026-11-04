@@ -19,6 +19,7 @@ next. Nothing here is started.
 | 9 | Indicator values and removal: RSI, EMA, Bollinger and trend-flip series for a chart, and take a built-in indicator off | `charts.candles.read`, `charts.indicators.write` |
 | 10 | Chart control: set a workspace's timeframe, a chart's type, and remove a chart | `charts.view.write`, `charts.delete` |
 | 11 | Paper trading, read-only: accounts and metrics, positions, working orders, fills, closed trades | `paper.read` |
+| 12 | Portfolio, read-only: portfolios, holdings valued at live prices (per currency), transactions | `portfolio.read` |
 
 ## 0. What a trader still cannot do over MCP
 
@@ -32,7 +33,7 @@ Ranked by how soon someone would ask. Not started unless listed under "Done so f
 - Paper trading writes: submit/modify/cancel, close/reverse. Reading is done. Writing needs the
   confirmation policy (item 3) first, and its own off-by-default permissions. No real-broker
   order tool: Alpaca is data only.
-- Portfolio read (holdings, transactions, P&L); replay control; a chart snapshot image.
+- Portfolio: cross-currency totals (needs the FX service the Portfolio tab uses), value history and statistics; replay control; a chart snapshot image.
 - Drawing tools other than trend lines and rectangles (item 4b); candles by symbol and timeframe
   without an open chart; swing, support/resistance and volatility helpers.
 - Watchlist sections, sorting, columns and flags (read-only today), and trending symbols.

@@ -192,7 +192,7 @@ fn is_settled(quote: Option<&WatchlistQuote>) -> bool {
     })
 }
 
-fn quote_wait(seconds: Option<u32>) -> Result<Duration, CallToolResult> {
+pub(super) fn quote_wait(seconds: Option<u32>) -> Result<Duration, CallToolResult> {
     match seconds {
         None => Ok(DEFAULT_QUOTE_WAIT),
         Some(seconds) if seconds <= MAX_QUOTE_WAIT_SECS => {
@@ -599,15 +599,13 @@ impl DegenViewMcp {
         }
     }
 
-    /// Prices `markets`, in order, waiting up to `wait` for any not known yet. The demand on the
-    /// quote feed ends when this returns or is cancelled. Returns the quotes and how many are
-    /// still unpriced.
-    async fn read_quotes(
+    /// Holds a demand on the quote feed for `markets` and waits up to `wait` for them to settle.
+    /// The demand ends when this returns or is cancelled. One entry per market, in order.
+    pub(super) async fn wait_for_quotes(
         &self,
-        client: &ClientIdentity,
-        markets: Vec<InstrumentId>,
+        markets: &[InstrumentId],
         wait: Duration,
-    ) -> Result<(Vec<QuoteInfo>, usize), CallToolResult> {
+    ) -> Result<Vec<Option<WatchlistQuote>>, CallToolResult> {
         let Some(access) = self.shared.quotes() else {
             return Err(failure(&McpError::AppUnavailable(
                 "Quotes are unavailable right now".into(),
@@ -618,9 +616,9 @@ impl DegenViewMcp {
                 "Too many quote requests are waiting; try again shortly".into(),
             )));
         };
-        let lease = self.shared.lease_quotes(access, markets.clone());
+        let lease = self.shared.lease_quotes(access, markets.to_vec());
         let deadline = Instant::now() + wait;
-        let (quotes, pending) = loop {
+        loop {
             let held: Vec<Option<WatchlistQuote>> = markets
                 .iter()
                 .map(|market| lease.book().get(market))
@@ -630,19 +628,33 @@ impl DegenViewMcp {
                 .filter(|quote| !is_settled(quote.as_ref()))
                 .count();
             if pending == 0 || Instant::now() >= deadline {
-                break (held, pending);
+                return Ok(held);
             }
             tokio::time::sleep(QUOTE_POLL).await;
-        };
-        drop(lease);
+        }
+    }
+
+    /// Prices `markets`, in order, waiting up to `wait` for any not known yet. Returns the quotes
+    /// and how many are still unpriced.
+    async fn read_quotes(
+        &self,
+        client: &ClientIdentity,
+        markets: Vec<InstrumentId>,
+        wait: Duration,
+    ) -> Result<(Vec<QuoteInfo>, usize), CallToolResult> {
+        let held = self.wait_for_quotes(&markets, wait).await?;
         if !self.shared.allows(&client.id, Permission::MarketsRead) {
             return Err(failure(&McpError::PermissionDenied(
                 "This credential no longer has the required permission".into(),
             )));
         }
+        let pending = held
+            .iter()
+            .filter(|quote| !is_settled(quote.as_ref()))
+            .count();
         let quotes = markets
             .iter()
-            .zip(&quotes)
+            .zip(&held)
             .map(|(market, quote)| quote_info(market, quote.as_ref()))
             .collect();
         Ok((quotes, pending))

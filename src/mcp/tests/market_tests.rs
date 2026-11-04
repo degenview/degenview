@@ -53,7 +53,7 @@ impl QuoteProvider for OneMarket {
 
 /// Binance markets only in the tests that read quotes: a Coinbase market would open the feed's
 /// real websocket and be priced from the network.
-fn feed() -> QuoteAccess {
+pub(super) fn feed() -> QuoteAccess {
     let book = WatchlistQuoteBook::default();
     let coordinator = WatchlistQuoteCoordinator::with_provider(
         book.clone(),

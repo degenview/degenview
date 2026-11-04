@@ -413,6 +413,10 @@ fn alerts_unavailable() -> McpError {
     McpError::AppUnavailable("Price alerts are unavailable right now".into())
 }
 
+fn portfolio_unavailable() -> McpError {
+    McpError::AppUnavailable("Portfolios are unavailable right now".into())
+}
+
 fn paper_unavailable() -> McpError {
     McpError::AppUnavailable("Paper trading is unavailable right now".into())
 }
@@ -1733,6 +1737,31 @@ impl DegenViewApp {
                     mcp_host::paper_fills(&host, account_id, offset, limit)
                         .map(|result| McpReply::PaperFills(Box::new(result)))
                 }
+            }
+            McpCommand::ListPortfolios => {
+                let host = self.portfolio.lock().map_err(|_| portfolio_unavailable())?;
+                mcp_host::list_portfolios(&host).map(McpReply::Portfolios)
+            }
+            McpCommand::GetPortfolioHoldings { portfolio_id } => {
+                let host = self.portfolio.lock().map_err(|_| portfolio_unavailable())?;
+                mcp_host::portfolio_holdings_base(&host, portfolio_id, now_ms())
+                    .map(|base| McpReply::PortfolioHoldings(Box::new(base)))
+            }
+            McpCommand::ListPortfolioTransactions {
+                portfolio_id,
+                asset,
+                offset,
+                limit,
+            } => {
+                let host = self.portfolio.lock().map_err(|_| portfolio_unavailable())?;
+                mcp_host::portfolio_transactions(
+                    &host,
+                    portfolio_id,
+                    asset.as_deref(),
+                    offset,
+                    limit,
+                )
+                .map(|result| McpReply::PortfolioTransactions(Box::new(result)))
             }
             McpCommand::ListWatchlists => {
                 let store = self
