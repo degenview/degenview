@@ -2,10 +2,12 @@
 //! the ledger tables in one transaction. Ported from `AppDatabase+Portfolio.swift`.
 #![allow(dead_code)] // transient until the portfolio ledger host wires these
 
+use crate::model::portfolio::PortfolioSnapshot;
 use crate::model::portfolio::{Portfolio, PortfolioLedgerSnapshot};
 use crate::store::{Document, Store};
 use rusqlite::params;
 use serde::Serialize;
+use std::collections::HashMap;
 
 const KEY_SELECTED: &str = "portfolio.selectedPortfolioID";
 const KEY_INVALIDATED_AFTER: &str = "portfolio.invalidatedAfter";
@@ -30,6 +32,47 @@ impl Store {
             invalidated_after: self
                 .setting_strict(KEY_INVALIDATED_AFTER)?
                 .unwrap_or_default(),
+        })
+    }
+
+    /// Remembers which portfolio is selected, without rewriting the ledger.
+    pub fn set_selected_portfolio(&self, id: Option<u64>) -> rusqlite::Result<()> {
+        match id {
+            Some(id) => self.set_setting(KEY_SELECTED, &id),
+            None => self.remove_setting(KEY_SELECTED),
+        }
+    }
+
+    /// Replaces one portfolio's value history from `from` on with `snapshots`, and stores the
+    /// updated stale marks, touching nothing else: a rebuild must not rewrite every transaction.
+    pub fn replace_portfolio_history(
+        &self,
+        portfolio_id: u64,
+        from: i64,
+        snapshots: &[PortfolioSnapshot],
+        invalidated_after: &HashMap<u64, i64>,
+    ) -> rusqlite::Result<()> {
+        self.in_transaction(|| {
+            self.connection.execute(
+                "DELETE FROM portfolio_snapshot WHERE portfolio_id = ?1 AND timestamp >= ?2",
+                params![portfolio_id.to_string(), from],
+            )?;
+            let mut insert = self.connection.prepare(
+                "INSERT INTO portfolio_snapshot (portfolio_id, timestamp, payload) VALUES (?1, ?2, ?3)",
+            )?;
+            for value in snapshots {
+                insert.execute(params![
+                    value.portfolio_id.to_string(),
+                    value.timestamp,
+                    json(value)?,
+                ])?;
+            }
+            drop(insert);
+            if invalidated_after.is_empty() {
+                self.remove_setting(KEY_INVALIDATED_AFTER)
+            } else {
+                self.set_setting(KEY_INVALIDATED_AFTER, invalidated_after)
+            }
         })
     }
 

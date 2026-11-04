@@ -11,6 +11,7 @@ use crate::model::portfolio::{
     PortfolioAsset, PortfolioHolding, PortfolioSnapshot, PortfolioTransaction,
     PortfolioTransactionType,
 };
+use crate::model::portfolio_accounting::ClosedPosition;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Direction {
@@ -132,14 +133,19 @@ pub struct PortfolioPeriodChange {
 }
 
 impl PortfolioPeriodChange {
-    /// `snapshots` are the history inside the range, oldest first; `current_value` is
-    /// today's value, which stands in for the end of the range.
-    pub fn new(snapshots: &[PortfolioSnapshot], current_value: f64) -> Option<Self> {
-        let (first, last) = (snapshots.first()?, snapshots.last()?);
+    /// `snapshots` are the history inside the range, oldest first. `current_value` and
+    /// `current_net_contributions` are today's, taken from the ledger: they stand in for the
+    /// end of the range, so money moved after the last stored point is not read as profit.
+    pub fn new(
+        snapshots: &[PortfolioSnapshot],
+        current_value: f64,
+        current_net_contributions: f64,
+    ) -> Option<Self> {
+        let first = snapshots.first()?;
         let start_profit = first.value - first.net_contributions;
-        let end_profit = current_value - last.net_contributions;
+        let end_profit = current_value - current_net_contributions;
         let profit = end_profit - start_profit;
-        let deposited = (last.net_contributions - first.net_contributions).max(0.0);
+        let deposited = (current_net_contributions - first.net_contributions).max(0.0);
         let capital = first.value + deposited;
         Some(Self {
             profit,
@@ -204,9 +210,21 @@ impl PortfolioStatistics {
         history: &[PortfolioSnapshot],
         transactions: &[PortfolioTransaction],
     ) -> Self {
+        Self::with_closed(holdings, &[], history, transactions)
+    }
+
+    /// Statistics that also count the positions closed completely: their realized profit is
+    /// part of the total, and each is a win or a loss in the results.
+    pub fn with_closed(
+        holdings: &[PortfolioHolding],
+        closed: &[ClosedPosition],
+        history: &[PortfolioSnapshot],
+        transactions: &[PortfolioTransaction],
+    ) -> Self {
         let total_value = holdings.iter().filter_map(|h| h.current_value).sum();
         let cost_basis = holdings.iter().map(|h| h.cost_basis).sum();
-        let realized_pnl = holdings.iter().map(|h| h.realized_pnl).sum();
+        let realized_pnl = holdings.iter().map(|h| h.realized_pnl).sum::<f64>()
+            + closed.iter().map(|c| c.realized_pnl).sum::<f64>();
         let unrealized_pnl: f64 = holdings.iter().filter_map(|h| h.unrealized_pnl).sum();
 
         let priced_cost: f64 = holdings
@@ -234,6 +252,11 @@ impl PortfolioStatistics {
                     pnl_percent: holding.pnl_percent(),
                 })
             })
+            .chain(closed.iter().map(|position| AssetResult {
+                asset: position.asset.clone(),
+                total_pnl: position.realized_pnl,
+                pnl_percent: None,
+            }))
             .collect();
         results.sort_by(|a, b| b.total_pnl.total_cmp(&a.total_pnl));
         let ranked = || results.iter().filter(|result| result.pnl_percent.is_some());
@@ -372,6 +395,34 @@ mod tests {
         }
     }
 
+    #[test]
+    fn closed_positions_count_towards_realized_pnl_and_the_win_rate() {
+        let open = [holding("A", 1.0, 100.0, Some(110.0), None)];
+        let closed = [
+            ClosedPosition {
+                asset: asset("B"),
+                realized_pnl: 50.0,
+            },
+            ClosedPosition {
+                asset: asset("C"),
+                realized_pnl: -20.0,
+            },
+        ];
+        let stats = PortfolioStatistics::with_closed(&open, &closed, &[], &[]);
+        assert_eq!(stats.realized_pnl, 30.0);
+        assert_eq!(stats.unrealized_pnl, 10.0);
+        assert_eq!(stats.total_pnl(), 40.0);
+        assert_eq!((stats.winners, stats.losers), (2, 1));
+        assert_eq!(stats.asset_results.len(), 3);
+        // A closed position has no cost basis, so it is not ranked by percentage.
+        assert_eq!(
+            stats.best.map(|r| r.asset.key),
+            Some("binance:A".to_owned())
+        );
+        // `asset_count` is what is held.
+        assert_eq!(stats.asset_count, 1);
+    }
+
     fn snapshot(timestamp: i64, value: f64, contributions: f64) -> PortfolioSnapshot {
         PortfolioSnapshot {
             portfolio_id: 1,
@@ -409,7 +460,7 @@ mod tests {
             snapshot(0, 1_000.0, 1_000.0),
             snapshot(10, 2_000.0, 2_000.0),
         ];
-        let change = PortfolioPeriodChange::new(&history, 2_100.0).unwrap();
+        let change = PortfolioPeriodChange::new(&history, 2_100.0, 2_000.0).unwrap();
         assert!(
             (change.profit - 100.0).abs() < 1e-9,
             "only the $100 above the money put in"
@@ -422,17 +473,35 @@ mod tests {
     #[test]
     fn a_withdrawal_is_not_a_loss_and_an_empty_range_has_no_change() {
         let history = [snapshot(0, 2_000.0, 1_000.0), snapshot(10, 1_500.0, 500.0)];
-        let change = PortfolioPeriodChange::new(&history, 1_500.0).unwrap();
+        let change = PortfolioPeriodChange::new(&history, 1_500.0, 500.0).unwrap();
         // P&L went from 1,000 to 1,000: nothing gained or lost despite value falling.
         assert!(change.profit.abs() < 1e-9);
         assert_eq!(change.direction(), Direction::Unchanged);
-        assert_eq!(PortfolioPeriodChange::new(&[], 100.0), None);
+        assert_eq!(PortfolioPeriodChange::new(&[], 100.0, 0.0), None);
+    }
+
+    #[test]
+    fn money_moved_after_the_last_point_is_not_profit_or_loss() {
+        // The last stored point is worth 1,000 with 1,000 in.
+        let history = [
+            snapshot(0, 1_000.0, 1_000.0),
+            snapshot(10, 1_000.0, 1_000.0),
+        ];
+        // A 500 buy since then: worth 1,500 with 1,500 in.
+        let bought = PortfolioPeriodChange::new(&history, 1_500.0, 1_500.0).unwrap();
+        assert!(bought.profit.abs() < 1e-9, "a buy is not a gain");
+        // A 400 withdrawal since then: worth 600 with 600 in.
+        let sold = PortfolioPeriodChange::new(&history, 600.0, 600.0).unwrap();
+        assert!(sold.profit.abs() < 1e-9, "a sale is not a loss");
+        // A gain on top of the new money still shows.
+        let gained = PortfolioPeriodChange::new(&history, 1_600.0, 1_500.0).unwrap();
+        assert!((gained.profit - 100.0).abs() < 1e-9);
     }
 
     #[test]
     fn a_range_that_started_empty_has_no_percentage() {
         let history = [snapshot(0, 0.0, 0.0)];
-        let change = PortfolioPeriodChange::new(&history, 0.0).unwrap();
+        let change = PortfolioPeriodChange::new(&history, 0.0, 0.0).unwrap();
         assert_eq!(change.percentage, None);
     }
 

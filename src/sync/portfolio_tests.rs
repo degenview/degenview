@@ -296,6 +296,43 @@ fn applying_a_change_drops_the_valuation_history_after_it() {
     assert_eq!(on_b.invalidated_after.get(&shared), Some(&4_000));
 }
 
+#[test]
+fn a_transaction_moved_between_portfolios_drops_the_history_of_both() {
+    let (_cloud, mut a, mut b) = pair();
+    save(
+        &a,
+        &[(1, "Main"), (2, "Other")],
+        vec![tx(NANO, 1, BUY, 1.0, 1_000)],
+    );
+    settle(&mut a, &mut b);
+    let (main, other) = (local_id(&b, "Main"), local_id(&b, "Other"));
+    // B has valued both.
+    let mut on_b = ledger(&b);
+    on_b.invalidated_after.clear();
+    b.store
+        .lock()
+        .unwrap()
+        .save_portfolio_ledger(&on_b)
+        .unwrap();
+    // A moves the purchase to the other portfolio.
+    let mut on_a = ledger(&a);
+    on_a.transactions[0].portfolio_id = local_id(&a, "Other");
+    a.store
+        .lock()
+        .unwrap()
+        .save_portfolio_ledger(&on_a)
+        .unwrap();
+    settle(&mut a, &mut b);
+    let on_b = ledger(&b);
+    assert_eq!(on_b.transactions[0].portfolio_id, other);
+    assert_eq!(on_b.invalidated_after.get(&other), Some(&1_000));
+    assert_eq!(
+        on_b.invalidated_after.get(&main),
+        Some(&1_000),
+        "the portfolio it left no longer matches its stored history"
+    );
+}
+
 // MARK: Held ledgers
 
 fn cloud_record(store: &Store, kind: EntityKind, sync_id: &str, revision: u64) -> RemoteRecord {

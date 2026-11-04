@@ -202,8 +202,11 @@ pub fn performance(
                     start_price: movement.start,
                     price: movement.latest,
                     change,
+                    // Today's value scaled back to the start of the range divides by the
+                    // price ratio, so a latest price of zero has no amount.
                     amount: holding
                         .current_value
+                        .filter(|_| movement.latest > 0.0)
                         .map(|value| value * change / (1.0 + change)),
                 });
             }
@@ -283,6 +286,17 @@ mod tests {
         assert_eq!(card.range, PortfolioHistoryRange::OneMonth);
         let saved = serde_json::to_string(&card).unwrap();
         assert_eq!(serde_json::from_str::<PortfolioCard>(&saved).unwrap(), card);
+    }
+
+    #[test]
+    fn a_latest_price_of_zero_gives_no_infinite_amount() {
+        let result = performance(
+            &[holding("ETH", 2.0, Some(110.0))],
+            &moves(&[("ETH", 100.0, 0.0)]),
+        );
+        assert_eq!(result.ranked.len(), 1);
+        assert_eq!(result.ranked[0].change, -1.0);
+        assert_eq!(result.ranked[0].amount, None);
     }
 
     #[test]

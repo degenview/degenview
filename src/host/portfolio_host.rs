@@ -11,17 +11,20 @@ use crate::model::portfolio::{
     PortfolioLedgerSnapshot, PortfolioSnapshot, PortfolioSource, PortfolioTransaction,
     PortfolioTransactionType,
 };
-use crate::model::portfolio_accounting::holdings;
+use crate::model::portfolio_accounting::{holdings_and_closed, net_contributions};
 use crate::model::portfolio_csv;
 use crate::model::portfolio_format::{PORTFOLIO_CURRENCIES, PortfolioValueFormatter};
-use crate::model::portfolio_history::rebuild_start;
+use crate::model::portfolio_history::{rebuild_start, transactions_fingerprint};
 use crate::model::portfolio_ledger::PortfolioLedger;
 use crate::model::portfolio_statistics::PortfolioHistoryRange;
 use crate::model::watchlist::new_id;
 use crate::service::asset_auto_mapper::asset_from_search_result;
-use crate::service::portfolio_history::{HistoryRebuilder, IntradayFeed, IntradayRequest};
-use crate::service::portfolio_quotes::{PortfolioQuoteFeed, PortfolioQuoteState};
-use crate::store::SharedStore;
+use crate::service::portfolio_history::{
+    HistoryRebuilder, HistoryResult, IntradayFeed, IntradayRequest,
+};
+use crate::service::portfolio_quotes::{PortfolioFxRates, PortfolioQuoteFeed, PortfolioQuoteState};
+use crate::service::timezone::local_utc_offset_secs;
+use crate::store::{SharedStore, Store};
 use crate::ui::header_controls;
 use crate::ui::icons::Icon;
 use crate::ui::kit::{self, Confirm, ConfirmOutcome};
@@ -46,6 +49,7 @@ use crate::ui::theme;
 use eframe::egui;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
+use std::sync::Arc;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum PortfolioHostError {
@@ -155,24 +159,13 @@ impl PortfolioHost {
         ctx: &egui::Context,
         scope: &HashSet<u64>,
         now_ms: i64,
-        utc_offset_secs: i64,
+        fx: &Arc<dyn PortfolioFxRates>,
     ) {
         if self.load_error.is_some() {
             return;
         }
         for result in self.history.poll(now_ms) {
-            let Some(snapshots) = result.snapshots else {
-                continue;
-            };
-            let current = rebuild_start(
-                result.portfolio_id,
-                self.ledger.snapshot(),
-                now_ms,
-                utc_offset_secs,
-            );
-            if current == Some(result.from) {
-                let _ = self.store_snapshots(snapshots, result.portfolio_id, result.from);
-            }
+            self.accept_rebuilt(result, now_ms);
         }
         let snapshot = self.ledger.snapshot();
         let mut starts = Vec::new();
@@ -184,7 +177,9 @@ impl PortfolioHost {
             if !self.history.can_start(portfolio.id, now_ms) {
                 continue;
             }
-            if let Some(from) = rebuild_start(portfolio.id, snapshot, now_ms, utc_offset_secs) {
+            let from = rebuild_start(portfolio.id, snapshot, now_ms, local_utc_offset_secs)
+                .or_else(|| self.history.partial_due(portfolio.id, now_ms));
+            if let Some(from) = from {
                 let transactions: Vec<PortfolioTransaction> = snapshot
                     .transactions
                     .iter()
@@ -195,8 +190,15 @@ impl PortfolioHost {
             }
         }
         for (portfolio, transactions, from) in starts {
-            self.history
-                .start(ctx, &portfolio, transactions, from, now_ms, utc_offset_secs);
+            self.history.start(
+                ctx,
+                &portfolio,
+                transactions,
+                from,
+                now_ms,
+                local_utc_offset_secs,
+                Arc::clone(fx),
+            );
         }
     }
 
@@ -225,8 +227,24 @@ impl PortfolioHost {
         self.mutate(|ledger| ledger.create_portfolio(name, currency))
     }
 
+    /// Changing the selection writes the one setting, not the whole ledger: it happens on a
+    /// click, on the UI thread, with the store locked.
     pub fn select(&mut self, id: Option<u64>) -> Result<(), PortfolioHostError> {
-        self.mutate(|ledger| ledger.select(id))
+        self.ensure_loaded()?;
+        if let Some(id) = id
+            && !self.ledger.snapshot().portfolios.iter().any(|p| p.id == id)
+        {
+            return self.fail(PortfolioHostError::Mutation(
+                PortfolioError::PortfolioNotFound,
+            ));
+        }
+        if let Err(error) = self.save_setting(|store| store.set_selected_portfolio(id)) {
+            return self.fail(error);
+        }
+        // Checked above: this only moves the in-memory selection to match what was saved.
+        let _ = self.ledger.select(id);
+        self.last_error = None;
+        Ok(())
     }
 
     pub fn update_portfolio(&mut self, portfolio: Portfolio) -> Result<(), PortfolioHostError> {
@@ -277,10 +295,10 @@ impl PortfolioHost {
             .unwrap_or(false)
     }
 
-    pub fn set_privacy_mode(&self, on: bool) {
-        if let Ok(store) = self.store.lock() {
-            let _ = store.set_setting(PRIVACY_KEY, &on);
-        }
+    /// A choice that cannot be saved would come back reverted after a restart: say so.
+    pub fn set_privacy_mode(&mut self, on: bool) {
+        let saved = self.save_setting(|store| store.set_setting(PRIVACY_KEY, &on));
+        self.report(saved);
     }
 
     /// The currency amounts were last shown in for a selection (one portfolio, or all of them);
@@ -300,15 +318,34 @@ impl PortfolioHost {
         saved.unwrap_or_else(|| native_currency(self.ledger.snapshot(), selection))
     }
 
-    pub fn set_reporting_currency(&self, selection: Option<u64>, currency: PortfolioCurrency) {
-        if let Ok(store) = self.store.lock() {
+    pub fn set_reporting_currency(&mut self, selection: Option<u64>, currency: PortfolioCurrency) {
+        let saved = self.save_setting(|store| {
             let mut preferences = store
                 .setting::<ReportingPreferences>(REPORTING_KEY)
                 .unwrap_or_default();
             preferences
                 .currencies
                 .insert(preference_key(selection), currency);
-            let _ = store.set_setting(REPORTING_KEY, &preferences);
+            store.set_setting(REPORTING_KEY, &preferences)
+        });
+        self.report(saved);
+    }
+
+    fn save_setting(
+        &self,
+        write: impl FnOnce(&Store) -> rusqlite::Result<()>,
+    ) -> Result<(), PortfolioHostError> {
+        let store = self
+            .store
+            .lock()
+            .map_err(|_| PortfolioHostError::StoreUnavailable)?;
+        write(&store).map_err(|error| PortfolioHostError::Persistence(error.to_string()))
+    }
+
+    /// Keeps a failure for the error sheet; a success leaves any earlier one alone.
+    fn report(&mut self, result: Result<(), PortfolioHostError>) {
+        if let Err(error) = result {
+            self.last_error = Some(error);
         }
     }
 
@@ -334,23 +371,68 @@ impl PortfolioHost {
         self.mutate(move |ledger| ledger.import_transactions(transactions))
     }
 
+    /// Stores a finished rebuild, if the portfolio still has the transactions it was computed
+    /// from. The result is for those: if the portfolio has changed since, it is dropped and the
+    /// next frame starts a fresh rebuild.
+    fn accept_rebuilt(&mut self, result: HistoryResult, now_ms: i64) {
+        let Some(snapshots) = result.snapshots else {
+            return;
+        };
+        let basis = transactions_fingerprint(
+            &self
+                .ledger
+                .snapshot()
+                .transactions
+                .iter()
+                .filter(|transaction| transaction.portfolio_id == result.portfolio_id)
+                .cloned()
+                .collect::<Vec<_>>(),
+        );
+        if basis == result.basis
+            && self
+                .store_snapshots(snapshots, result.portfolio_id, result.from)
+                .is_err()
+        {
+            // `store_snapshots` has told the error sheet. Without a pause the next frame
+            // would rebuild the same days and fail the same way.
+            self.history.defer(result.portfolio_id, now_ms);
+        }
+    }
+
+    /// Stores a rebuilt stretch of one portfolio's history. Only that stretch and the stale
+    /// marks are written; a background save does not dismiss an error the user has not seen.
     pub fn store_snapshots(
         &mut self,
         snapshots: Vec<PortfolioSnapshot>,
         portfolio_id: u64,
         from: i64,
     ) -> Result<(), PortfolioHostError> {
-        self.mutate(move |ledger| ledger.store_snapshots(snapshots, portfolio_id, from))
+        self.ensure_loaded()?;
+        let mut invalidated = self.ledger.snapshot().invalidated_after.clone();
+        invalidated.remove(&portfolio_id);
+        if let Err(error) = self.save_setting(|store| {
+            store.replace_portfolio_history(portfolio_id, from, &snapshots, &invalidated)
+        }) {
+            return self.fail(error);
+        }
+        // Cannot fail: it only mirrors in memory what was just written.
+        let _ = self.ledger.store_snapshots(snapshots, portfolio_id, from);
+        Ok(())
+    }
+
+    fn ensure_loaded(&mut self) -> Result<(), PortfolioHostError> {
+        if let Some(error) = self.load_error.clone() {
+            self.last_error = Some(error.clone());
+            return Err(error);
+        }
+        Ok(())
     }
 
     fn mutate<T>(
         &mut self,
         mutation: impl FnOnce(&mut PortfolioLedger) -> Result<T, PortfolioError>,
     ) -> Result<T, PortfolioHostError> {
-        if let Some(error) = &self.load_error {
-            self.last_error = Some(error.clone());
-            return Err(error.clone());
-        }
+        self.ensure_loaded()?;
 
         let mut candidate = PortfolioLedger::new(self.ledger.snapshot().clone());
         let value = match mutation(&mut candidate) {
@@ -855,7 +937,12 @@ impl PortfolioTab {
             true,
             now_ms,
         );
-        host.drive_history(ui.ctx(), &portfolio_ids, now_ms, local_offset());
+        host.drive_history(
+            ui.ctx(),
+            &portfolio_ids,
+            now_ms,
+            &self.quote_feed.fx_rates(),
+        );
         let quote_state = self.quote_feed.state();
         let projected = quote_state.projection.as_ref();
         if projected.is_none() || quote_state.is_updating || quote_state.refresh_pending {
@@ -879,8 +966,13 @@ impl PortfolioTab {
         if let Some(asset) = self.new_asset.take() {
             self.open_new_editor(asset, snapshot, selected, &quotes);
         }
-        let holding_values =
-            holdings(&transactions, &portfolio_ids, None, &quotes, now_ms).unwrap_or_default();
+        // A ledger that cannot be replayed is not an empty portfolio: say so, and leave the
+        // Transactions page usable so it can be fixed.
+        let (holding_values, closed_positions, ledger_error) =
+            match holdings_and_closed(&transactions, &portfolio_ids, None, &quotes, now_ms) {
+                Ok((held, closed)) => (held, closed, None),
+                Err(error) => (Vec::new(), Vec::new(), Some(error.message())),
+            };
         let daily_history: Vec<PortfolioSnapshot> =
             projected.map_or_else(Vec::new, |projection| projection.history.clone());
         // The 1D range replays the last day at 30-minute spacing when it can; otherwise (and for
@@ -942,129 +1034,148 @@ impl PortfolioTab {
         });
         let formatter = PortfolioValueFormatter::new(self.reporting_currency, self.privacy);
         let subtitle = crate::ui::portfolio_transactions::asset_subtitle;
+        let net_contributions = net_contributions(&transactions, &portfolio_ids, None);
         let total_value: f64 = holding_values
             .iter()
             .filter_map(|holding| holding.current_value)
             .sum();
         let market_value_caption = market_value_caption(&quote_state, &holding_values);
 
-        match self.section {
-            PortfolioSection::Overview => {
-                let actions = portfolio_overview::show_overview(
+        let blocked = ledger_error
+            .as_deref()
+            .filter(|_| self.section != PortfolioSection::Transactions);
+        if let Some(message) = blocked {
+            crate::ui::portfolio_table::empty_state(
+                ui,
+                "These Transactions Can't Be Valued",
+                &format!("{message} Review them in the Transactions tab."),
+            );
+        } else {
+            match self.section {
+                PortfolioSection::Overview => {
+                    let actions = portfolio_overview::show_overview(
+                        ui,
+                        &mut self.overview,
+                        &OverviewInput {
+                            portfolio_name: selected_portfolio
+                                .map(|portfolio| portfolio.name.as_str()),
+                            holdings: &holding_values,
+                            history: overview_history,
+                            total_value,
+                            net_contributions,
+                            formatter,
+                            subtitle: &subtitle,
+                            market_value_caption: &market_value_caption,
+                            price_status: price_status(&quote_state, &holding_values),
+                            is_loading_initial: projected.is_none(),
+                            is_loading_history: host.is_rebuilding_history(&portfolio_ids),
+                            now_ms,
+                            utc_offset_secs: local_offset(),
+                        },
+                    );
+                    for action in actions {
+                        match action {
+                            OverviewAction::Select(key) => {
+                                self.transactions.filters.asset_key = Some(key);
+                                self.section = PortfolioSection::Transactions;
+                            }
+                            OverviewAction::ShowHoldings => {
+                                self.section = PortfolioSection::Holdings
+                            }
+                        }
+                    }
+                }
+                PortfolioSection::Holdings => {
+                    let saved_sort = selected_portfolio
+                        .map_or(PortfolioHoldingsSort::CurrentValue, |portfolio| {
+                            portfolio.sort
+                        });
+                    let actions = portfolio_holdings::show(
+                        ui,
+                        &mut self.holdings,
+                        &HoldingsInput {
+                            holdings: &holding_values,
+                            saved_sort,
+                            formatter,
+                            is_loading: projected.is_none(),
+                            subtitle: &subtitle,
+                        },
+                    );
+                    for action in actions {
+                        match action {
+                            HoldingsAction::SetSort(sort) => {
+                                if let Some(mut portfolio) = selected_portfolio.cloned() {
+                                    portfolio.sort = sort;
+                                    let _ = host.update_portfolio(portfolio);
+                                }
+                            }
+                            HoldingsAction::Open(key) => self.detail_key = Some(key),
+                            HoldingsAction::Remap(key) => {
+                                let ticker = holding_values
+                                    .iter()
+                                    .find(|holding| holding.asset.key == key)
+                                    .map_or_else(
+                                        || key.clone(),
+                                        |holding| holding.asset.display_ticker(),
+                                    );
+                                self.remap = Some((key, remap_picker(&ticker)));
+                            }
+                        }
+                    }
+                }
+                PortfolioSection::Transactions => {
+                    let projections: HashMap<u64, Projection> = transactions
+                        .iter()
+                        .map(|transaction| {
+                            (
+                                transaction.id,
+                                Projection {
+                                    price: transaction.price,
+                                    fee: transaction.fee,
+                                },
+                            )
+                        })
+                        .collect();
+                    let projection = |id: u64| projections.get(&id).copied();
+                    let actions = portfolio_transactions::show(
+                        ui,
+                        &mut self.transactions,
+                        &TransactionsInput {
+                            ledger: &transactions,
+                            projection: &projection,
+                            subtitle: &subtitle,
+                            formatter,
+                            utc_offset_secs: local_offset(),
+                        },
+                    );
+                    for action in actions {
+                        match action {
+                            TransactionAction::Delete(id) => {
+                                self.pending_delete_transaction = Some(id)
+                            }
+                            TransactionAction::Edit(id) => {
+                                self.open_editor(EditorMode::Edit, id, snapshot, &quotes)
+                            }
+                            TransactionAction::Duplicate(id) => {
+                                self.open_editor(EditorMode::Duplicate, id, snapshot, &quotes)
+                            }
+                            TransactionAction::Add => self.picker = Some(add_transaction_picker()),
+                        }
+                    }
+                }
+                PortfolioSection::Statistics => portfolio_overview::show_statistics(
                     ui,
-                    &mut self.overview,
-                    &OverviewInput {
-                        portfolio_name: selected_portfolio.map(|portfolio| portfolio.name.as_str()),
+                    &StatisticsInput {
                         holdings: &holding_values,
-                        history: overview_history,
-                        total_value,
+                        closed: &closed_positions,
+                        history,
+                        transactions: &transactions,
                         formatter,
-                        subtitle: &subtitle,
-                        market_value_caption: &market_value_caption,
-                        price_status: price_status(&quote_state, &holding_values),
-                        is_loading_initial: projected.is_none(),
-                        is_loading_history: host.is_rebuilding_history(&portfolio_ids),
                         now_ms,
                         utc_offset_secs: local_offset(),
                     },
-                );
-                for action in actions {
-                    match action {
-                        OverviewAction::Select(key) => {
-                            self.transactions.filters.asset_key = Some(key);
-                            self.section = PortfolioSection::Transactions;
-                        }
-                        OverviewAction::ShowHoldings => self.section = PortfolioSection::Holdings,
-                    }
-                }
+                ),
             }
-            PortfolioSection::Holdings => {
-                let saved_sort = selected_portfolio
-                    .map_or(PortfolioHoldingsSort::CurrentValue, |portfolio| {
-                        portfolio.sort
-                    });
-                let actions = portfolio_holdings::show(
-                    ui,
-                    &mut self.holdings,
-                    &HoldingsInput {
-                        holdings: &holding_values,
-                        saved_sort,
-                        formatter,
-                        is_loading: projected.is_none(),
-                        subtitle: &subtitle,
-                    },
-                );
-                for action in actions {
-                    match action {
-                        HoldingsAction::SetSort(sort) => {
-                            if let Some(mut portfolio) = selected_portfolio.cloned() {
-                                portfolio.sort = sort;
-                                let _ = host.update_portfolio(portfolio);
-                            }
-                        }
-                        HoldingsAction::Open(key) => self.detail_key = Some(key),
-                        HoldingsAction::Remap(key) => {
-                            let ticker = holding_values
-                                .iter()
-                                .find(|holding| holding.asset.key == key)
-                                .map_or_else(
-                                    || key.clone(),
-                                    |holding| holding.asset.display_ticker(),
-                                );
-                            self.remap = Some((key, remap_picker(&ticker)));
-                        }
-                    }
-                }
-            }
-            PortfolioSection::Transactions => {
-                let projections: HashMap<u64, Projection> = transactions
-                    .iter()
-                    .map(|transaction| {
-                        (
-                            transaction.id,
-                            Projection {
-                                price: transaction.price,
-                                fee: transaction.fee,
-                            },
-                        )
-                    })
-                    .collect();
-                let projection = |id: u64| projections.get(&id).copied();
-                let actions = portfolio_transactions::show(
-                    ui,
-                    &mut self.transactions,
-                    &TransactionsInput {
-                        ledger: &transactions,
-                        projection: &projection,
-                        subtitle: &subtitle,
-                        formatter,
-                        utc_offset_secs: local_offset(),
-                    },
-                );
-                for action in actions {
-                    match action {
-                        TransactionAction::Delete(id) => self.pending_delete_transaction = Some(id),
-                        TransactionAction::Edit(id) => {
-                            self.open_editor(EditorMode::Edit, id, snapshot, &quotes)
-                        }
-                        TransactionAction::Duplicate(id) => {
-                            self.open_editor(EditorMode::Duplicate, id, snapshot, &quotes)
-                        }
-                        TransactionAction::Add => self.picker = Some(add_transaction_picker()),
-                    }
-                }
-            }
-            PortfolioSection::Statistics => portfolio_overview::show_statistics(
-                ui,
-                &StatisticsInput {
-                    holdings: &holding_values,
-                    history,
-                    transactions: &transactions,
-                    formatter,
-                    now_ms,
-                    utc_offset_secs: local_offset(),
-                },
-            ),
         }
 
         if let Some(key) = self.detail_key.clone() {
@@ -1814,6 +1925,204 @@ mod tests {
             .unwrap();
         host.remap_asset("none", &destination, &scope).unwrap();
         assert!(host.last_error().is_none());
+    }
+
+    fn rebuilt(portfolio_id: u64, basis: u64) -> HistoryResult {
+        HistoryResult {
+            portfolio_id,
+            from: 0,
+            snapshots: Some(vec![PortfolioSnapshot {
+                portfolio_id,
+                timestamp: 0,
+                value: 1.0,
+                net_contributions: 1.0,
+                realized_pnl: 0.0,
+                unrealized_pnl: 0.0,
+                is_complete: true,
+            }]),
+            hopeless: false,
+            incomplete: false,
+            basis,
+        }
+    }
+
+    #[test]
+    fn a_rebuild_is_stored_only_for_the_transactions_it_was_computed_from() {
+        let mut host = PortfolioHost::load(store());
+        let portfolio = host
+            .create_portfolio("Main", PortfolioCurrency::Usd)
+            .unwrap();
+        host.add_transaction(transaction(1, portfolio, 1.0))
+            .unwrap();
+        let own =
+            |host: &PortfolioHost| transactions_fingerprint(&host.ledger.snapshot().transactions);
+        let before = own(&host);
+
+        // An edit lands while the rebuild runs, in the same day: its result is stale.
+        host.add_transaction(transaction(2, portfolio, 2.0))
+            .unwrap();
+        host.accept_rebuilt(rebuilt(portfolio, before), 10);
+        assert!(host.ledger.snapshot().historical_snapshots.is_empty());
+        assert!(
+            host.ledger
+                .snapshot()
+                .invalidated_after
+                .contains_key(&portfolio)
+        );
+
+        // A result for what the portfolio holds now is stored and settles the marker.
+        host.accept_rebuilt(rebuilt(portfolio, own(&host)), 10);
+        assert_eq!(host.ledger.snapshot().historical_snapshots.len(), 1);
+        assert!(
+            !host
+                .ledger
+                .snapshot()
+                .invalidated_after
+                .contains_key(&portfolio)
+        );
+    }
+
+    fn point(portfolio_id: u64, timestamp: i64, value: f64) -> PortfolioSnapshot {
+        PortfolioSnapshot {
+            portfolio_id,
+            timestamp,
+            value,
+            net_contributions: value,
+            realized_pnl: 0.0,
+            unrealized_pnl: 0.0,
+            is_complete: true,
+        }
+    }
+
+    /// The row ids of the two big tables: a delete-and-reinsert gives every row a new one.
+    fn row_ids(store: &SharedStore) -> (String, String) {
+        let guard = store.lock().unwrap();
+        let ids = |table: &str| -> String {
+            guard
+                .raw_connection()
+                .query_row(
+                    &format!("SELECT COALESCE(group_concat(rowid), '') FROM {table}"),
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap()
+        };
+        (ids("portfolio_transaction"), ids("portfolio_snapshot"))
+    }
+
+    #[test]
+    fn selecting_a_portfolio_does_not_rewrite_the_ledger() {
+        let store = store();
+        let mut host = PortfolioHost::load(store.clone());
+        let first = host.create_portfolio("A", PortfolioCurrency::Usd).unwrap();
+        let second = host.create_portfolio("B", PortfolioCurrency::Usd).unwrap();
+        host.add_transaction(transaction(1, first, 1.0)).unwrap();
+        host.store_snapshots(vec![point(first, 10, 1.0)], first, 0)
+            .unwrap();
+        let before = row_ids(&store);
+
+        host.select(Some(second)).unwrap();
+        host.select(Some(first)).unwrap();
+        assert_eq!(
+            row_ids(&store),
+            before,
+            "no transaction or snapshot row was rewritten"
+        );
+        assert!(matches!(
+            host.select(Some(999)),
+            Err(PortfolioHostError::Mutation(
+                PortfolioError::PortfolioNotFound
+            ))
+        ));
+        host.select(Some(second)).unwrap();
+        assert_eq!(
+            PortfolioHost::load(store).snapshot().selected_portfolio_id,
+            Some(second)
+        );
+    }
+
+    #[test]
+    fn a_rebuild_replaces_only_its_portfolios_later_history() {
+        let store = store();
+        let mut host = PortfolioHost::load(store.clone());
+        let first = host.create_portfolio("A", PortfolioCurrency::Usd).unwrap();
+        let second = host.create_portfolio("B", PortfolioCurrency::Usd).unwrap();
+        host.add_transaction(transaction(1, first, 1.0)).unwrap();
+        host.store_snapshots(
+            vec![
+                point(first, 0, 1.0),
+                point(first, 10, 2.0),
+                point(first, 20, 3.0),
+            ],
+            first,
+            0,
+        )
+        .unwrap();
+        host.store_snapshots(vec![point(second, 5, 7.0)], second, 0)
+            .unwrap();
+        let other_before: String = store
+            .lock()
+            .unwrap()
+            .raw_connection()
+            .query_row(
+                "SELECT group_concat(rowid) FROM portfolio_snapshot WHERE portfolio_id = ?1",
+                [second.to_string()],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        host.store_snapshots(vec![point(first, 10, 9.0)], first, 10)
+            .unwrap();
+
+        let other_after: String = store
+            .lock()
+            .unwrap()
+            .raw_connection()
+            .query_row(
+                "SELECT group_concat(rowid) FROM portfolio_snapshot WHERE portfolio_id = ?1",
+                [second.to_string()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            other_before, other_after,
+            "the other portfolio was not touched"
+        );
+        // What is in memory is what a restart reads.
+        let stored = store.lock().unwrap().portfolio_ledger().unwrap();
+        assert_eq!(
+            stored.historical_snapshots,
+            host.snapshot().historical_snapshots
+        );
+        let mine: Vec<(i64, f64)> = stored
+            .historical_snapshots
+            .iter()
+            .filter(|p| p.portfolio_id == first)
+            .map(|p| (p.timestamp, p.value))
+            .collect();
+        assert_eq!(mine, [(0, 1.0), (10, 9.0)], "the stale tail is gone");
+        assert!(!stored.invalidated_after.contains_key(&first));
+    }
+
+    #[test]
+    fn a_preference_that_cannot_be_saved_is_reported() {
+        let store = store();
+        let mut host = PortfolioHost::load(store.clone());
+        store
+            .lock()
+            .unwrap()
+            .raw_connection()
+            .execute_batch("DROP TABLE setting")
+            .unwrap();
+        assert!(host.last_error().is_none());
+        host.set_privacy_mode(true);
+        assert!(matches!(
+            host.last_error(),
+            Some(PortfolioHostError::Persistence(_))
+        ));
+        host.clear_error();
+        host.set_reporting_currency(None, PortfolioCurrency::Chf);
+        assert!(host.last_error().is_some());
     }
 
     #[test]

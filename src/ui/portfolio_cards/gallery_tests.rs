@@ -106,7 +106,11 @@ fn data(count: usize, up: bool, range: PortfolioHistoryRange) -> CardData {
         .collect();
     let history = history(range, up);
     let total: f64 = holdings.iter().filter_map(|h| h.current_value).sum();
-    let period_change = PortfolioPeriodChange::new(&history, total);
+    let period_change = PortfolioPeriodChange::new(
+        &history,
+        total,
+        history.last().map_or(0.0, |point| point.net_contributions),
+    );
     CardData {
         has_portfolios: true,
         scope_name: "Main".to_owned(),

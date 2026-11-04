@@ -328,6 +328,10 @@ pub enum PortfolioError {
     },
     DuplicateExternalTransaction,
     InvalidCsv(String),
+    /// A negative or non-finite price.
+    InvalidPrice,
+    /// A transaction with no asset to trade.
+    InvalidAsset,
 }
 
 impl PortfolioError {
@@ -349,6 +353,8 @@ impl PortfolioError {
                 "This imported transaction already exists.".to_owned()
             }
             Self::InvalidCsv(message) => message.clone(),
+            Self::InvalidPrice => "The price cannot be negative.".to_owned(),
+            Self::InvalidAsset => "The transaction has no asset.".to_owned(),
         }
     }
 }
@@ -375,9 +381,49 @@ pub fn is_duplicate_name(name: &str, existing: &[String]) -> bool {
         .any(|other| normalize_name(other).eq_ignore_ascii_case(&wanted))
 }
 
+/// "Main Copy", then "Main Copy 2", and so on: a name no portfolio in `existing` has, and
+/// short enough to be kept whole (a long name gives up its end, not the suffix).
+pub fn unique_copy_name(base: &str, existing: &[String]) -> String {
+    let base = normalize_name(base);
+    (1u32..)
+        .map(|number| {
+            let suffix = if number == 1 {
+                " Copy".to_owned()
+            } else {
+                format!(" Copy {number}")
+            };
+            let room = MAX_NAME_LENGTH.saturating_sub(suffix.chars().count());
+            let stem: String = base.chars().take(room).collect();
+            format!("{}{suffix}", stem.trim_end())
+        })
+        .find(|candidate| !is_duplicate_name(candidate, existing))
+        .unwrap_or_default()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn copies_get_a_free_name_that_fits() {
+        let taken = |names: &[&str]| names.iter().map(|n| n.to_string()).collect::<Vec<_>>();
+        assert_eq!(unique_copy_name("Main", &taken(&["Main"])), "Main Copy");
+        assert_eq!(
+            unique_copy_name("Main", &taken(&["Main", "main copy"])),
+            "Main Copy 2"
+        );
+        assert_eq!(
+            unique_copy_name("Main", &taken(&["Main", "Main Copy", "Main Copy 2"])),
+            "Main Copy 3"
+        );
+        let long = "x".repeat(MAX_NAME_LENGTH);
+        let copy = unique_copy_name(&long, std::slice::from_ref(&long));
+        assert_eq!(copy.chars().count(), MAX_NAME_LENGTH);
+        assert!(copy.ends_with(" Copy"));
+        let second = unique_copy_name(&long, &[long.clone(), copy]);
+        assert!(second.chars().count() <= MAX_NAME_LENGTH);
+        assert!(second.ends_with(" Copy 2"));
+    }
 
     #[test]
     fn currency_quote_symbol_mapping() {

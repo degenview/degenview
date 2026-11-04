@@ -7,7 +7,7 @@
 
 use crate::host::portfolio_host::{PortfolioHost, local_offset, now_ms};
 use crate::model::portfolio::{Portfolio, PortfolioAsset, PortfolioLedgerSnapshot};
-use crate::model::portfolio_accounting::holdings;
+use crate::model::portfolio_accounting::{holdings, net_contributions};
 use crate::model::portfolio_card::{CardData, CardKind, Performance, PortfolioCard, performance};
 use crate::model::portfolio_format::PortfolioValueFormatter;
 use crate::model::portfolio_statistics::{
@@ -115,7 +115,7 @@ impl PortfolioCardEnv {
             .feed
             .update(runtime.owner, &snapshot, &scope, currency, true, now);
         if card.kind == CardKind::ValueChart {
-            host.drive_history(ctx, &scope, now, offset);
+            host.drive_history(ctx, &scope, now, &runtime.feed.fx_rates());
         }
         let loading_history = host.is_rebuilding_history(&scope);
         drop(host);
@@ -138,12 +138,16 @@ impl PortfolioCardEnv {
             |projection| projection.transactions.clone(),
         );
         let quotes = projected.map_or_else(HashMap::new, |projection| projection.quotes.clone());
-        let holding_values =
-            holdings(&transactions, &scope, None, &quotes, now).unwrap_or_default();
+        let (holding_values, ledger_error) =
+            match holdings(&transactions, &scope, None, &quotes, now) {
+                Ok(held) => (held, None),
+                Err(error) => (Vec::new(), Some(error.message())),
+            };
         let total_value: f64 = holding_values
             .iter()
             .filter_map(|holding| holding.current_value)
             .sum();
+        let net_contributions = net_contributions(&transactions, &scope, None);
         let daily: Vec<_> =
             projected.map_or_else(Vec::new, |projection| projection.history.clone());
 
@@ -181,7 +185,7 @@ impl PortfolioCardEnv {
             .then(|| PortfolioStatistics::new(&holding_values, &daily, &transactions).day_change)
             .flatten();
         let period_change = (card.kind == CardKind::ValueChart)
-            .then(|| PortfolioPeriodChange::new(&history, total_value))
+            .then(|| PortfolioPeriodChange::new(&history, total_value, net_contributions))
             .flatten();
 
         let (performance, loading_performance) = if card.kind == CardKind::TopPerformers {
@@ -207,7 +211,7 @@ impl PortfolioCardEnv {
             formatter,
             loading: projected.is_none(),
             loading_history,
-            error: state.error,
+            error: state.error.or(ledger_error),
             performance,
             loading_performance,
             now_ms: now,

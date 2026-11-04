@@ -7,7 +7,7 @@ use std::collections::{HashMap, HashSet};
 use super::portfolio::{
     Portfolio, PortfolioAsset, PortfolioCurrency, PortfolioError, PortfolioHoldingsSort,
     PortfolioLedgerSnapshot, PortfolioSnapshot, PortfolioSource, PortfolioTransaction,
-    normalize_name,
+    normalize_name, unique_copy_name,
 };
 use super::portfolio_accounting::{holdings, validate};
 
@@ -100,7 +100,7 @@ impl PortfolioLedger {
         let copy_id = self.mint();
         let copy = Portfolio {
             id: copy_id,
-            name: format!("{} Copy", original.name),
+            name: unique_copy_name(&original.name, &self.portfolio_names()),
             base_currency: original.base_currency,
             created_at: now,
             updated_at: now,
@@ -179,18 +179,27 @@ impl PortfolioLedger {
         Ok(())
     }
 
+    fn portfolio_names(&self) -> Vec<String> {
+        self.snapshot
+            .portfolios
+            .iter()
+            .map(|portfolio| portfolio.name.clone())
+            .collect()
+    }
+
+    fn require_portfolio(&self, id: u64) -> Result<(), PortfolioError> {
+        if self.snapshot.portfolios.iter().any(|p| p.id == id) {
+            Ok(())
+        } else {
+            Err(PortfolioError::PortfolioNotFound)
+        }
+    }
+
     pub fn add_transaction(
         &mut self,
         transaction: PortfolioTransaction,
     ) -> Result<(), PortfolioError> {
-        if !self
-            .snapshot
-            .portfolios
-            .iter()
-            .any(|p| p.id == transaction.portfolio_id)
-        {
-            return Err(PortfolioError::PortfolioNotFound);
-        }
+        self.require_portfolio(transaction.portfolio_id)?;
         let portfolio_id = transaction.portfolio_id;
         let timestamp = transaction.timestamp;
         validate(&transaction, None, &self.snapshot.transactions)?;
@@ -213,11 +222,25 @@ impl PortfolioLedger {
         let old = self.snapshot.transactions[index].clone();
         let portfolio_id = transaction.portfolio_id;
         let timestamp = transaction.timestamp;
+        self.require_portfolio(portfolio_id)?;
         validate(
             &transaction,
             Some(transaction.id),
             &self.snapshot.transactions,
         )?;
+        if old.portfolio_id != portfolio_id {
+            // Leaving a portfolio takes the transaction out of its ledger: sales there that
+            // relied on it must still be covered.
+            let remaining: Vec<PortfolioTransaction> = self
+                .snapshot
+                .transactions
+                .iter()
+                .filter(|tx| tx.id != old.id)
+                .cloned()
+                .collect();
+            let ids: HashSet<u64> = [old.portfolio_id].into_iter().collect();
+            holdings(&remaining, &ids, None, &HashMap::new(), 0)?;
+        }
         self.snapshot.transactions[index] = transaction;
         self.touch(portfolio_id);
         self.invalidate(old.portfolio_id, old.timestamp.min(timestamp));
@@ -302,6 +325,7 @@ impl PortfolioLedger {
                 .then(a.created_at.cmp(&b.created_at))
         });
         for value in &chronological {
+            self.require_portfolio(value.portfolio_id)?;
             validate(value, None, &candidate)?;
             candidate.push(value.clone());
         }
@@ -501,5 +525,126 @@ mod tests {
             ledger.add_transaction(bad),
             Err(PortfolioError::InvalidQuantity)
         ));
+    }
+
+    fn ledger_with_two_portfolios() -> (PortfolioLedger, u64, u64) {
+        let mut ledger = PortfolioLedger::new(PortfolioLedgerSnapshot::default());
+        let a = ledger
+            .create_portfolio("A", PortfolioCurrency::Usd)
+            .unwrap();
+        let b = ledger
+            .create_portfolio("B", PortfolioCurrency::Usd)
+            .unwrap();
+        (ledger, a, b)
+    }
+
+    #[test]
+    fn moving_a_purchase_away_from_its_sales_is_refused() {
+        let (mut ledger, a, b) = ledger_with_two_portfolios();
+        ledger
+            .add_transaction(transaction(1, a, "btc", 1.0, 50.0))
+            .unwrap();
+        ledger
+            .add_transaction(PortfolioTransaction {
+                kind: PortfolioTransactionType::Sell,
+                ..transaction(2, a, "btc", 1.0, 60.0)
+            })
+            .unwrap();
+        let mut moved = transaction(1, a, "btc", 1.0, 50.0);
+        moved.portfolio_id = b;
+        assert!(matches!(
+            ledger.update_transaction(moved),
+            Err(PortfolioError::InsufficientHoldings { .. })
+        ));
+        // Nothing moved.
+        assert!(
+            ledger
+                .snapshot()
+                .transactions
+                .iter()
+                .all(|tx| tx.portfolio_id == a)
+        );
+    }
+
+    #[test]
+    fn moving_a_purchase_nothing_depends_on_is_allowed_and_invalidates_both() {
+        let (mut ledger, a, b) = ledger_with_two_portfolios();
+        ledger
+            .add_transaction(transaction(1, a, "btc", 1.0, 50.0))
+            .unwrap();
+        let mut moved = transaction(1, a, "btc", 1.0, 50.0);
+        moved.portfolio_id = b;
+        ledger.update_transaction(moved).unwrap();
+        assert_eq!(ledger.snapshot().transactions[0].portfolio_id, b);
+        assert!(ledger.snapshot().invalidated_after.contains_key(&a));
+        assert!(ledger.snapshot().invalidated_after.contains_key(&b));
+    }
+
+    #[test]
+    fn update_and_import_refuse_an_unknown_portfolio() {
+        let (mut ledger, a, _) = ledger_with_two_portfolios();
+        ledger
+            .add_transaction(transaction(1, a, "btc", 1.0, 50.0))
+            .unwrap();
+        let mut elsewhere = transaction(1, a, "btc", 1.0, 50.0);
+        elsewhere.portfolio_id = 999;
+        assert!(matches!(
+            ledger.update_transaction(elsewhere),
+            Err(PortfolioError::PortfolioNotFound)
+        ));
+        assert!(matches!(
+            ledger.import_transactions(vec![transaction(5, 999, "btc", 1.0, 50.0)]),
+            Err(PortfolioError::PortfolioNotFound)
+        ));
+        assert_eq!(ledger.snapshot().transactions.len(), 1);
+    }
+
+    #[test]
+    fn a_transaction_needs_an_asset_and_a_sane_price_and_fee() {
+        let (mut ledger, a, _) = ledger_with_two_portfolios();
+        let mut no_asset = transaction(1, a, "btc", 1.0, 50.0);
+        no_asset.asset.key = "  ".into();
+        assert_eq!(
+            ledger.add_transaction(no_asset),
+            Err(PortfolioError::InvalidAsset)
+        );
+        let mut negative = transaction(2, a, "btc", 1.0, -1.0);
+        negative.price = Some(-1.0);
+        assert_eq!(
+            ledger.add_transaction(negative),
+            Err(PortfolioError::InvalidPrice)
+        );
+        let mut nan_fee = transaction(3, a, "btc", 1.0, 50.0);
+        nan_fee.fee = f64::NAN;
+        assert!(ledger.add_transaction(nan_fee).is_err());
+        let mut nan_quantity = transaction(4, a, "btc", f64::NAN, 50.0);
+        nan_quantity.quantity = f64::NAN;
+        assert_eq!(
+            ledger.add_transaction(nan_quantity),
+            Err(PortfolioError::InvalidQuantity)
+        );
+        // A free asset (airdrop, reward) is still fine.
+        ledger
+            .add_transaction(transaction(5, a, "btc", 1.0, 0.0))
+            .unwrap();
+    }
+
+    #[test]
+    fn duplicating_twice_gives_distinct_names_within_the_limit() {
+        let (mut ledger, a, _) = ledger_with_two_portfolios();
+        let first = ledger.duplicate_portfolio(a).unwrap();
+        let second = ledger.duplicate_portfolio(a).unwrap();
+        let name = |id: u64| {
+            ledger
+                .snapshot()
+                .portfolios
+                .iter()
+                .find(|p| p.id == id)
+                .unwrap()
+                .name
+                .clone()
+        };
+        assert_eq!(name(first), "A Copy");
+        assert_eq!(name(second), "A Copy 2");
     }
 }

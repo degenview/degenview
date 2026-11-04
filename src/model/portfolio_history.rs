@@ -10,7 +10,7 @@ use crate::model::portfolio::{
     PortfolioAsset, PortfolioLedgerSnapshot, PortfolioQuote, PortfolioSnapshot,
     PortfolioTransaction,
 };
-use crate::model::portfolio_accounting::{holdings, net_contributions};
+use crate::model::portfolio_accounting::{holdings_and_closed, net_contributions};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 pub const DAY_MS: i64 = 86_400_000;
@@ -21,10 +21,53 @@ pub const INTRADAY_STEP_MS: i64 = 30 * 60 * 1_000;
 /// How far back the 1D chart looks.
 pub const INTRADAY_WINDOW_MS: i64 = DAY_MS;
 
+/// The UTC offset, in seconds east, in force at an instant. A bare number is a fixed offset;
+/// a function of the instant follows daylight saving, so a spring day is 23 hours long.
+pub trait ZoneOffset {
+    fn offset_secs(&self, at_ms: i64) -> i64;
+}
+
+impl ZoneOffset for i64 {
+    fn offset_secs(&self, _: i64) -> i64 {
+        *self
+    }
+}
+
+impl<F: Fn(i64) -> i64> ZoneOffset for F {
+    fn offset_secs(&self, at_ms: i64) -> i64 {
+        self(at_ms)
+    }
+}
+
 /// Midnight (local time) at or before `ms`.
-pub fn start_of_day(ms: i64, utc_offset_secs: i64) -> i64 {
-    let offset = utc_offset_secs * 1_000;
-    (ms + offset).div_euclid(DAY_MS) * DAY_MS - offset
+pub fn start_of_day(ms: i64, zone: impl ZoneOffset) -> i64 {
+    let local = ms + zone.offset_secs(ms) * 1_000;
+    let midnight = local.div_euclid(DAY_MS) * DAY_MS;
+    // The offset in force at that midnight can differ from the one at `ms`.
+    let guess = midnight - zone.offset_secs(ms) * 1_000;
+    midnight - zone.offset_secs(guess) * 1_000
+}
+
+/// Identifies the transactions of one portfolio as a history was computed from them: an edit,
+/// an addition or a deletion changes it, the order they are listed in does not.
+pub fn transactions_fingerprint(transactions: &[PortfolioTransaction]) -> u64 {
+    use std::hash::{Hash, Hasher};
+    transactions
+        .iter()
+        .map(|tx| {
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            tx.id.hash(&mut hasher);
+            tx.portfolio_id.hash(&mut hasher);
+            tx.asset.key.hash(&mut hasher);
+            std::mem::discriminant(&tx.kind).hash(&mut hasher);
+            tx.quantity.to_bits().hash(&mut hasher);
+            tx.price.map(f64::to_bits).hash(&mut hasher);
+            tx.fee.to_bits().hash(&mut hasher);
+            tx.timestamp.hash(&mut hasher);
+            tx.updated_at.hash(&mut hasher);
+            hasher.finish()
+        })
+        .fold(0u64, u64::wrapping_add)
 }
 
 /// Where a portfolio's daily history must be (re)built from, or `None` when it is up to date.
@@ -34,11 +77,11 @@ pub fn rebuild_start(
     portfolio_id: u64,
     snapshot: &PortfolioLedgerSnapshot,
     now_ms: i64,
-    utc_offset_secs: i64,
+    zone: impl ZoneOffset + Copy,
 ) -> Option<i64> {
-    let today = start_of_day(now_ms, utc_offset_secs);
+    let today = start_of_day(now_ms, zone);
     if let Some(invalidated) = snapshot.invalidated_after.get(&portfolio_id) {
-        return Some(start_of_day(*invalidated, utc_offset_secs).min(today));
+        return Some(start_of_day(*invalidated, zone).min(today));
     }
     let latest = snapshot
         .historical_snapshots
@@ -47,25 +90,29 @@ pub fn rebuild_start(
         .map(|point| point.timestamp)
         .max();
     if let Some(latest) = latest {
-        let next = start_of_day(latest, utc_offset_secs) + DAY_MS;
+        // The next midnight, found from the calendar: a day is not always 24 hours.
+        let next = start_of_day(start_of_day(latest, zone) + DAY_MS + DAY_MS / 2, zone);
         return (next <= today).then_some(next);
     }
     snapshot
         .transactions
         .iter()
         .filter(|transaction| transaction.portfolio_id == portfolio_id)
-        .map(|transaction| start_of_day(transaction.timestamp, utc_offset_secs))
+        .map(|transaction| start_of_day(transaction.timestamp, zone))
         .min()
 }
 
-/// The last bar opened at or before `ms`, in bars sorted by open time.
-fn last_bar_at_or_before(bars: &[Kline], ms: i64) -> Option<&Kline> {
-    let after = bars.partition_point(|bar| bar.open_time <= ms);
+/// The last daily bar that had finished by `ms`, in bars sorted by open time. A bar still
+/// forming at `ms` closes later than the holdings it would be paired with.
+fn last_finished_bar_at(bars: &[Kline], ms: i64) -> Option<&Kline> {
+    let after = bars.partition_point(|bar| bar.open_time + DAY_MS <= ms);
     after.checked_sub(1).map(|index| &bars[index])
 }
 
-/// One snapshot per day from `start` through `end`. `transactions` are the portfolio's own;
-/// `bars` are daily candles by asset key. A day with an unpriced holding is flagged incomplete.
+/// One snapshot per day from `start` through `end`, each at that day's local midnight: the
+/// holdings after every transaction before it, priced at the close of the last daily candle
+/// that had finished by then. `transactions` are the portfolio's own; `bars` are daily candles
+/// by asset key. A day with an unpriced holding is flagged incomplete.
 pub fn build_snapshots(
     portfolio_id: u64,
     transactions: &[PortfolioTransaction],
@@ -73,7 +120,7 @@ pub fn build_snapshots(
     bars: &HashMap<String, Vec<Kline>>,
     start: i64,
     end: i64,
-    utc_offset_secs: i64,
+    zone: impl ZoneOffset + Copy,
 ) -> Vec<PortfolioSnapshot> {
     let owned: HashMap<&str, Vec<Kline>> = bars
         .iter()
@@ -85,13 +132,13 @@ pub fn build_snapshots(
         .collect();
     let ids = HashSet::from([portfolio_id]);
     let mut points = Vec::new();
-    let mut cursor = start_of_day(start, utc_offset_secs);
+    let mut cursor = start_of_day(start, zone);
     while cursor <= end {
         let quotes: HashMap<String, PortfolioQuote> = assets
             .iter()
             .filter_map(|asset| {
-                let bar = last_bar_at_or_before(owned.get(asset.key.as_str())?, cursor)?;
-                (cursor - bar.open_time <= LOOKBACK_MS).then(|| {
+                let bar = last_finished_bar_at(owned.get(asset.key.as_str())?, cursor)?;
+                (cursor - bar.open_time <= LOOKBACK_MS + DAY_MS).then(|| {
                     (
                         asset.key.clone(),
                         PortfolioQuote {
@@ -111,7 +158,7 @@ pub fn build_snapshots(
             cursor,
         ));
         // Midnight to midnight: recomputed so a daylight-saving day is 23 or 25 hours long.
-        cursor = start_of_day(cursor + DAY_MS + DAY_MS / 2, utc_offset_secs);
+        cursor = start_of_day(cursor + DAY_MS + DAY_MS / 2, zone);
     }
     points
 }
@@ -123,7 +170,10 @@ fn snapshot_at(
     quotes: &HashMap<String, PortfolioQuote>,
     at: i64,
 ) -> PortfolioSnapshot {
-    let held = holdings(transactions, ids, Some(at), quotes, at).ok();
+    let (held, closed) = match holdings_and_closed(transactions, ids, Some(at), quotes, at) {
+        Ok((held, closed)) => (Some(held), closed),
+        Err(_) => (None, Vec::new()),
+    };
     let is_complete = held
         .as_ref()
         .is_some_and(|held| held.iter().all(|holding| holding.current_price.is_some()));
@@ -137,11 +187,16 @@ fn snapshot_at(
         .flatten()
         .map(|holding| holding.cost_basis)
         .sum();
+    // Positions closed by `at` still earned what they earned.
     let realized: f64 = held
         .iter()
         .flatten()
         .map(|holding| holding.realized_pnl)
-        .sum();
+        .sum::<f64>()
+        + closed
+            .iter()
+            .map(|position| position.realized_pnl)
+            .sum::<f64>();
     PortfolioSnapshot {
         portfolio_id,
         timestamp: at,
@@ -331,30 +386,128 @@ mod tests {
     }
 
     #[test]
-    fn daily_snapshots_price_holdings_from_the_nearest_prior_bar() {
+    fn snapshots_keep_the_realized_pnl_of_a_closed_position() {
+        let day = |n: i64| n * DAY_MS;
+        let mut sell = buy(2, day(3) + 1_000, 1.0, 15.0);
+        sell.kind = PortfolioTransactionType::Sell;
+        let transactions = vec![buy(1, day(1) + 1_000, 1.0, 10.0), sell];
+        let bars = HashMap::from([(
+            "binance:BTCUSDT".to_owned(),
+            (1..=6).map(|n| bar(day(n), 15.0)).collect(),
+        )]);
+        let points = build_snapshots(1, &transactions, &[asset()], &bars, day(1), day(6), 0);
+        // Closed on day 3: nothing held, but the 5 earned stays in every later point.
+        assert_eq!(points[3].value, 0.0);
+        assert_eq!(points[3].realized_pnl, 5.0);
+        assert_eq!(points[5].realized_pnl, 5.0);
+        assert_eq!(points[1].realized_pnl, 0.0);
+    }
+
+    #[test]
+    fn daily_snapshots_price_holdings_from_the_last_finished_bar() {
         let day = |n: i64| n * DAY_MS;
         let transactions = vec![buy(1, day(2) + 1_000, 2.0, 10.0)];
         let bars = HashMap::from([(
             "binance:BTCUSDT".to_owned(),
             vec![bar(day(1), 10.0), bar(day(3), 12.0), bar(day(4), 15.0)],
         )]);
-        let points = build_snapshots(1, &transactions, &[asset()], &bars, day(1), day(8), 0);
-        assert_eq!(points.len(), 8);
+        let points = build_snapshots(1, &transactions, &[asset()], &bars, day(1), day(9), 0);
+        assert_eq!(points.len(), 9);
 
-        // Day 1: not bought yet.
+        // Day 1: not bought yet, and no bar has finished.
         assert_eq!(points[0].value, 0.0);
         assert_eq!(points[0].net_contributions, 0.0);
-        // Day 2 midnight is before the purchase; day 3 holds 2 BTC at the day-3 bar (open <= 3).
+        // Day 2 midnight is before the purchase. Day 3 midnight holds 2 BTC at the close of
+        // the day-1 bar, the last one to have finished (day 2 has no bar).
         assert_eq!(points[1].value, 0.0);
-        assert_eq!(points[2].value, 24.0);
+        assert_eq!(points[2].value, 20.0);
         assert_eq!(points[2].net_contributions, 20.0);
         assert!(points[2].is_complete);
-        assert_eq!(points[2].unrealized_pnl, 4.0);
-        // Day 4 reprices; days 5-7 reuse day 4's bar; day 8 is more than 3 days stale.
-        assert_eq!(points[3].value, 30.0);
-        assert_eq!(points[6].value, 30.0);
-        assert_eq!(points[7].value, 0.0);
-        assert!(!points[7].is_complete);
+        assert_eq!(points[2].unrealized_pnl, 0.0);
+        // Day 4 midnight sees the day-3 close, day 5 the day-4 close, and that bar prices the
+        // days after it until it is more than 3 days old.
+        assert_eq!(points[3].value, 24.0);
+        assert_eq!(points[4].value, 30.0);
+        assert_eq!(points[7].value, 30.0);
+        assert_eq!(points[8].value, 0.0);
+        assert!(!points[8].is_complete);
+    }
+
+    #[test]
+    fn a_point_never_uses_a_candle_that_is_still_forming() {
+        let day = |n: i64| n * DAY_MS;
+        // Bought during day 3, whose own candle closes at 50 after the buy at 10.
+        let transactions = vec![buy(1, day(3) + 3_600_000, 1.0, 10.0)];
+        let bars = HashMap::from([(
+            "binance:BTCUSDT".to_owned(),
+            vec![bar(day(2), 10.0), bar(day(3), 50.0)],
+        )]);
+        let points = build_snapshots(1, &transactions, &[asset()], &bars, day(3), day(5), 0);
+        // Midnight of day 3: nothing held yet, however the day ended.
+        assert_eq!(points[0].value, 0.0);
+        // Midnight of day 4 holds it, priced at day 3's finished close, and counts its cost.
+        assert_eq!(points[1].value, 50.0);
+        assert_eq!(points[1].net_contributions, 10.0);
+        assert_eq!(points[1].unrealized_pnl, 40.0);
+    }
+
+    /// New York in 2024: 5 hours behind, 4 hours from 2 am on day 10 (07:00 UTC).
+    fn spring_forward(ms: i64) -> i64 {
+        if ms < 10 * DAY_MS + 7 * 3_600_000 {
+            -5 * 3_600
+        } else {
+            -4 * 3_600
+        }
+    }
+
+    #[test]
+    fn a_daylight_saving_day_is_23_hours_between_two_midnights() {
+        let day = |n: i64| n * DAY_MS;
+        let points = build_snapshots(
+            1,
+            &[],
+            &[],
+            &HashMap::new(),
+            day(8),
+            day(13),
+            spring_forward,
+        );
+        let gaps: Vec<i64> = points
+            .windows(2)
+            .map(|pair| (pair[1].timestamp - pair[0].timestamp) / 3_600_000)
+            .collect();
+        assert!(gaps.contains(&23), "{gaps:?}");
+        assert!(gaps.iter().all(|gap| *gap == 24 || *gap == 23), "{gaps:?}");
+        // Every point is a local midnight in the offset of its own day.
+        for point in &points {
+            let local = point.timestamp + spring_forward(point.timestamp) * 1_000;
+            assert_eq!(local.rem_euclid(DAY_MS), 0, "{}", point.timestamp);
+        }
+    }
+
+    #[test]
+    fn rebuild_start_steps_over_a_daylight_saving_day() {
+        let day = |n: i64| n * DAY_MS;
+        let mut ledger = PortfolioLedgerSnapshot::default();
+        ledger.transactions.push(buy(1, day(5), 1.0, 10.0));
+        // Stored through the midnight before the 23-hour day.
+        let before = start_of_day(day(10) + 12 * 3_600_000, spring_forward);
+        ledger.historical_snapshots.push(snapshot_point(before));
+        let now = day(14);
+        let next = rebuild_start(1, &ledger, now, spring_forward).unwrap();
+        assert_eq!(next - before, 23 * 3_600_000);
+    }
+
+    #[test]
+    fn fingerprints_change_with_an_edit_but_not_with_order() {
+        let a = buy(1, 100, 1.0, 10.0);
+        let b = buy(2, 200, 2.0, 11.0);
+        let both = transactions_fingerprint(&[a.clone(), b.clone()]);
+        assert_eq!(both, transactions_fingerprint(&[b.clone(), a.clone()]));
+        let mut edited = a.clone();
+        edited.quantity = 1.5;
+        assert_ne!(both, transactions_fingerprint(&[edited, b.clone()]));
+        assert_ne!(both, transactions_fingerprint(&[a]));
     }
 
     #[test]

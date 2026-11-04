@@ -31,6 +31,32 @@ rebuild the projection (holdings, history, cards) and flip `is_updating`, which 
 - The hero shows no "Updating…" label. A dot beside the price caption says how current the prices
   are (`PriceStatus`: green live, orange cached or partly unpriced, red failed).
 
+## Value history
+
+- A daily point is stamped at a local midnight and means the portfolio **at that instant**: the
+  holdings after every transaction before it, priced at the close of the last daily candle that had
+  finished by then (`last_finished_bar_at`). A candle still forming is never used, so a point never
+  sees a price from after its holdings. Today's point is therefore priced at yesterday's close; the
+  live value covers today.
+- Local midnights follow the system time zone through `service::timezone` (`ZoneOffset`): a
+  daylight-saving day is 23 or 25 hours. Non-macOS builds and tests read UTC. The transaction
+  editor still shows a past time with today's offset.
+- A rebuild carries `transactions_fingerprint` of the transactions it was computed from and is
+  stored only while the portfolio still has exactly those (an edit made while it ran drops it).
+- A rebuild that could not fetch some asset's candles is stored (so the chart has something) and
+  repeated every 10 minutes (`PARTIAL_RETRY_MS`) until every asset it can price comes back.
+- Candles quoted in another currency than the portfolio's are converted at each day's rate
+  (`in_currency`, the same FX service as the live valuation); a day with no rate has no candle.
+  A span over 1,000 days asks the provider for a time range (Binance, Coinbase, Alpaca and
+  DexScreener have one; the rest give their newest 1,000). Where an asset's candles begin after
+  its first transaction needs, no point is made for the days before. The 1D chart is still
+  dollar-quoted markets only.
+- A ledger that cannot be replayed (a sale of more than is held) is shown as an error, not as an
+  empty portfolio, and its history is not rebuilt into zeros.
+- Realized profit counts positions closed completely (`holdings_and_closed`), not only the open
+  holdings. Quantities carry float error, so a remainder within 1e-12 of the position's peak
+  quantity counts as zero.
+
 ## Layout
 
 - The host puts the header, the section bar and the page in one column at most

@@ -407,16 +407,24 @@ pub fn preview(csv: &str, portfolios: &[Portfolio], mint: &mut Mint) -> CsvPrevi
                 .and_then(|index| record.get(*index))
                 .map_or("", String::as_str)
         };
-        let wanted = value("portfolio");
-        let Some(portfolio) = portfolios
+        let wanted = value("portfolio").trim().to_lowercase();
+        let mut named = portfolios
             .iter()
-            .find(|portfolio| portfolio.name.to_lowercase() == wanted.to_lowercase())
-        else {
+            .filter(|portfolio| portfolio.name.trim().to_lowercase() == wanted);
+        let Some(portfolio) = named.next() else {
             result
                 .errors
                 .push(format!("Line {line}: unknown portfolio."));
             continue;
         };
+        if named.next().is_some() {
+            // Which one the rows belong to cannot be told from the name.
+            result.errors.push(format!(
+                "Line {line}: more than one portfolio is named \"{}\".",
+                value("portfolio")
+            ));
+            continue;
+        }
         let fields = (
             parse_source(value("source")),
             parse_type(value("type")),
@@ -431,6 +439,26 @@ pub fn preview(csv: &str, portfolios: &[Portfolio], mint: &mut Mint) -> CsvPrevi
             ));
             continue;
         };
+        if value("asset_id").trim().is_empty() {
+            result
+                .errors
+                .push(format!("Line {line}: missing asset_id."));
+            continue;
+        }
+        let price = decimal(value("price")).filter(|price| *price >= 0.0);
+        if price.is_none() && !value("price").trim().is_empty() {
+            result.errors.push(format!(
+                "Line {line}: the price is not a number of zero or more."
+            ));
+            continue;
+        }
+        let fee = decimal(value("fee")).filter(|fee| *fee >= 0.0);
+        if fee.is_none() && !value("fee").trim().is_empty() {
+            result.errors.push(format!(
+                "Line {line}: the fee is not a number of zero or more."
+            ));
+            continue;
+        }
         let fee_currency = parse_currency(value("fee_currency")).unwrap_or(currency);
         let name = match value("name") {
             "" => value("symbol"),
@@ -450,9 +478,9 @@ pub fn preview(csv: &str, portfolios: &[Portfolio], mint: &mut Mint) -> CsvPrevi
             },
             kind,
             quantity,
-            price: decimal(value("price")),
+            price,
             price_currency: currency,
-            fee: decimal(value("fee")).unwrap_or(0.0),
+            fee: fee.unwrap_or(0.0),
             fee_currency,
             timestamp,
             notes: value("notes").to_owned(),
@@ -931,6 +959,42 @@ mod tests {
             result.warnings,
             ["Line 3: no external_id; repeat imports cannot be deduplicated reliably."]
         );
+    }
+
+    #[test]
+    fn rows_with_a_bad_asset_price_or_fee_are_errors_not_silently_fixed() {
+        let row = |asset: &str, price: &str, fee: &str| {
+            format!(
+                "Main,{asset},SYM,Name,Binance,Buy,1,{price},USD,{fee},USD,2024-03-05T14:30:00Z,,id"
+            )
+        };
+        let csv = format!(
+            "{HEADER}\n{}\n{}\n{}\n{}\n{}",
+            row("", "1", "0"),
+            row("k", "-5", "0"),
+            row("k", "1", "abc"),
+            row("k", "1", "-1"),
+            row("k", "0", ""),
+        );
+        let result = run(|mint| preview(&csv, &portfolios(), mint));
+        assert_eq!(result.errors.len(), 4, "{:?}", result.errors);
+        assert!(result.errors[0].starts_with("Line 2: missing asset_id"));
+        assert!(result.errors[1].starts_with("Line 3: the price"));
+        assert!(result.errors[2].starts_with("Line 4: the fee"));
+        assert!(result.errors[3].starts_with("Line 5: the fee"));
+        // A free asset with no fee is fine.
+        assert_eq!(result.transactions.len(), 1);
+        assert_eq!(result.transactions[0].price, Some(0.0));
+    }
+
+    #[test]
+    fn a_name_two_portfolios_share_is_an_error_not_a_guess() {
+        let twins = vec![Portfolio::new(1, "Main", 0), Portfolio::new(2, " main ", 0)];
+        let csv =
+            format!("{HEADER}\nMain,k,SYM,Name,Binance,Buy,1,1,USD,0,USD,2024-03-05T14:30:00Z,,id");
+        let result = run(|mint| preview(&csv, &twins, mint));
+        assert!(result.transactions.is_empty());
+        assert!(result.errors[0].starts_with("Line 2: more than one portfolio"));
     }
 
     #[test]

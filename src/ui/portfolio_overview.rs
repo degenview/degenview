@@ -11,6 +11,7 @@
 use crate::model::portfolio::{
     PortfolioAsset, PortfolioHolding, PortfolioSnapshot, PortfolioTransaction,
 };
+use crate::model::portfolio_accounting::ClosedPosition;
 use crate::model::portfolio_format::{PortfolioValueFormatter, Tone};
 use crate::model::portfolio_statistics::{
     AssetResult, PortfolioHistoryRange, PortfolioPeriodChange, PortfolioStatistics, pnl_bars,
@@ -71,6 +72,8 @@ pub struct OverviewInput<'a> {
     /// The value history for the selected portfolio (intraday for 1D when there is some).
     pub history: &'a [PortfolioSnapshot],
     pub total_value: f64,
+    /// Money put in less money taken out, to today, in the reporting currency.
+    pub net_contributions: f64,
     pub formatter: PortfolioValueFormatter,
     pub subtitle: &'a dyn Fn(&PortfolioAsset) -> String,
     /// "Prices as of 14:03" and the like.
@@ -361,7 +364,7 @@ pub fn show_overview(
     let mut actions = Vec::new();
     let stats = PortfolioStatistics::new(input.holdings, input.history, &[]);
     let ranged = state.range.filter(input.history, input.now_ms);
-    let period = PortfolioPeriodChange::new(&ranged, input.total_value);
+    let period = PortfolioPeriodChange::new(&ranged, input.total_value, input.net_contributions);
 
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
@@ -1296,6 +1299,8 @@ fn card(ui: &mut egui::Ui, content: impl FnOnce(&mut egui::Ui)) {
 
 pub struct StatisticsInput<'a> {
     pub holdings: &'a [PortfolioHolding],
+    /// Positions closed completely; their realized profit still counts.
+    pub closed: &'a [ClosedPosition],
     pub history: &'a [PortfolioSnapshot],
     /// The converted transactions, for fees and activity.
     pub transactions: &'a [PortfolioTransaction],
@@ -1337,7 +1342,12 @@ const PNL_COMPACT: f32 = 520.0;
 
 pub fn show_statistics(ui: &mut egui::Ui, input: &StatisticsInput) {
     let f = input.formatter;
-    let stats = PortfolioStatistics::new(input.holdings, input.history, input.transactions);
+    let stats = PortfolioStatistics::with_closed(
+        input.holdings,
+        input.closed,
+        input.history,
+        input.transactions,
+    );
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
         .show(ui, |ui| {
