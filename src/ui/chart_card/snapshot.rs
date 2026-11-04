@@ -79,6 +79,7 @@ impl Overlays for SnapshotOverlays<'_> {
             &view.scale,
             &self.card.alert_lines,
             self.card.appearance.price_format(),
+            &self.card.alert_open,
         );
         if self.include_trading {
             self.card.paper.paint_markers(

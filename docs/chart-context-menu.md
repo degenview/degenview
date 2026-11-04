@@ -12,7 +12,7 @@ A right-click is answered by exactly one menu, chosen by what is under the point
 | --- | --- |
 | A drawing (Cursor tool, no gesture in progress) | The drawing menu (`ui::drawing_layer::menu`): Settings, Copy, Duplicate, style copy/paste, lock, hide, stacking order, vertices, Delete. |
 | A paper order or position tag | Cancel order / Close position, Show in Paper panel. |
-| A price alert tag | Edit, Pause or Resume, Delete (the pause and play icons mark the toggle). |
+| A price alert's arrow or pill | Edit, Pause or Resume, Delete (the pause and play icons mark the toggle). |
 | A script's pane | Settings, Hide or Show, Visual order, Pine logs, Open Script Manager, Remove from chart. |
 | The price axis | Reset price scale, then the four [price scale modes](price-scale.md) (Regular, Percent, Indexed to 100, Logarithmic; the active one checked). |
 | The time axis | Reset chart view. |
@@ -124,14 +124,32 @@ and cursor locks are not in history. Removing a script from a chart never touche
 or its alert subscriptions; a subscription whose instance is gone is marked changed by the
 existing reconcile, and Undo brings the instance (same id) back.
 
-## Dragging an alert tag
+## Price alerts on the chart: the arrow, the pill and dragging
 
-A price alert's tag can be dragged up or down to move its level, as a paper order's can
-(`ui::alert_lines`). The cursor is the vertical resize arrow over the tag and for the whole drag.
+`ui::alert_lines` draws each alert as a dashed line ending in a small tab with a triangle, against
+the right edge of the plot. That tab is all a line shows by default: a chart with several alerts
+stays readable. It is modelled on TradingView's small white arrow, from a screenshot of it; what
+TradingView does on hover, with many alerts close together, or after a restart is not known, and
+the choices below are inferred.
 
-- While dragged, the tag, its dashed line and its caption follow the pointer, clamped to the plot,
-  and the caption shows the level it would land on (on the market's tick) and the side that level
-  is on. Esc ends the drag, puts the tag back and saves nothing (egui reports that stop like a
+- Clicking the arrow opens a pill beside it, and the arrow turns to point at the axis; clicking it
+  again shuts the pill. The pill is a bell (a bell with a slash when the alert is paused, and then
+  the line, bell and price are grey), the level at the chart's price format, a divider and a bin.
+  There is no word "alert" and no direction or "paused" text: the tooltips and the screen-reader
+  labels carry them. The bin deletes the alert at once (`WorkspaceAction::DeleteAlert`, as the
+  menu's Delete does), and turns red under the pointer.
+- Which pills are open is `ChartCard::alert_open`: card state, never saved, never in a template.
+  Every alert starts shut, also after a restart. It is read by the snapshot painter too, so a
+  snapshot shows the chart as it is. The view only reports `Shown::toggled` and `Shown::deleted`;
+  the card flips its set, and the workspace turns deletes into actions.
+- The arrow and the pill both take the right-click menu and both drag. The cursor is a hand over the
+  arrow and the bin, the vertical resize arrow over the pill and for the whole drag. A click on an
+  arrow that is not a click (the pointer moved) is a drag.
+
+A price alert's tag can be dragged up or down to move its level, as a paper order's can.
+
+- While dragged, the tab and pill, with the dashed line, follow the pointer, clamped to the plot,
+  and the pill shows the level it would land on (on the market's tick). Esc ends the drag, puts the tag back and saves nothing (egui reports that stop like a
   release, so the view checks for the key).
 - The drop is a `WorkspaceAction::MoveAlert`: the alert as it is, with a new `CrossesAbove` or
   `CrossesBelow` level in its own currency (the USD drop times the app's FX rate; no rate, no

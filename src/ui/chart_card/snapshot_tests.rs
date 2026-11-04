@@ -312,6 +312,8 @@ fn with_account(harness: &mut Harness) {
             above: true,
             editable: true,
         }]);
+    // Open, so the pill is in both frames and in the check below.
+    harness.card.set_alert_open(7, true);
 }
 
 #[test]
@@ -334,7 +336,7 @@ fn the_account_stays_out_of_a_snapshot_unless_asked_for() {
         "the position's pill is left out: {missing}"
     );
     assert!(
-        !missing.contains("Alert"),
+        !missing.contains("230"),
         "an alert is the chart's, not the account's, and stays"
     );
 }

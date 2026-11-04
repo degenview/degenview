@@ -166,6 +166,21 @@ impl ChartCard {
         std::mem::take(&mut self.alert_moves)
     }
 
+    /// The alerts deleted from their pill since the last call.
+    pub fn take_alert_deletes(&mut self) -> Vec<crate::model::alert::AlertId> {
+        std::mem::take(&mut self.alert_deletes)
+    }
+
+    /// Opens or shuts the pill of alert `id`, for tests.
+    #[cfg(test)]
+    pub fn set_alert_open(&mut self, id: crate::model::alert::AlertId, open: bool) {
+        if open {
+            self.alert_open.insert(id);
+        } else {
+            self.alert_open.remove(&id);
+        }
+    }
+
     /// Sets the price alerts this chart draws as lines.
     pub fn set_alert_lines(&mut self, lines: Vec<crate::model::alert_line::AlertLine>) {
         if self.alert_lines != lines {

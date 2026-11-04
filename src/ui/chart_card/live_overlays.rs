@@ -16,6 +16,8 @@ pub(super) struct LiveOverlays<'a> {
     pub pane_actions: Vec<(u64, PaneAction)>,
     pub alert_menu: Option<alert_lines::LineMenu>,
     pub alert_moves: Vec<alert_lines::AlertMove>,
+    pub alert_toggled: Vec<crate::model::alert::AlertId>,
+    pub alert_deleted: Vec<crate::model::alert::AlertId>,
     pub paper: (Vec<PaperOverlayAction>, Option<MarkerMenu>),
     pub navigation: Option<chart_buttons::NavAction>,
     pub scale_mode: Option<PriceScaleMode>,
@@ -93,11 +95,14 @@ impl Overlays for LiveOverlays<'_> {
             &self.card.alert_lines,
             self.card.appearance.price_format(),
             self.card.alert_market,
+            &self.card.alert_open,
         );
         if alerts.menu.is_some() {
             self.alert_menu = alerts.menu;
         }
         self.alert_moves.extend(alerts.moves);
+        self.alert_toggled.extend(alerts.toggled);
+        self.alert_deleted.extend(alerts.deleted);
         self.paper = self.card.paper.show_markers(self.ui, plot, scale);
         if !self.replay.selecting
             && let Some(action) = chart_buttons::navigation(
