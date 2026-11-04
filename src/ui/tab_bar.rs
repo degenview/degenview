@@ -20,6 +20,11 @@ const MIN_TAB_WIDTH: f32 = 96.0;
 const MAX_TAB_WIDTH: f32 = 220.0;
 const NEW_BUTTON_WIDTH: f32 = 34.0;
 const SETTINGS_BUTTON_WIDTH: f32 = 34.0;
+const LINK_BUTTON_WIDTH: f32 = 30.0;
+/// The project's GitHub organisation and the maintainer's Buy Me a Coffee page, linked from the
+/// strip's right end on every platform and, on macOS, from the Help menu too.
+pub const GITHUB_URL: &str = "https://github.com/degenview";
+pub const COFFEE_URL: &str = "https://buymeacoffee.com/nicoswd";
 const TAB_GAP: f32 = 2.0;
 const SIDE_PADDING: f32 = 6.0;
 const CLOSE_SIZE: f32 = 18.0;
@@ -101,6 +106,9 @@ fn settings_button_width() -> f32 {
         0.0
     }
 }
+
+/// Room the GitHub and coffee buttons take at the strip's right end, left of the window buttons.
+const LINKS_WIDTH: f32 = LINK_BUTTON_WIDTH * 2.0 + 6.0;
 
 /// What one frame of the strip produced.
 pub struct TabBarOutput {
@@ -191,7 +199,8 @@ impl TabBar<'_> {
         // end before them.
         let update = update_indicator::layout(ui, self.update);
         let controls_left = full.right() - window_chrome::trailing_inset();
-        let settings_left = controls_left - settings_button_width();
+        let links_left = controls_left - LINKS_WIDTH;
+        let settings_left = links_left - settings_button_width();
         let strip = Rect::from_min_max(
             pos2(
                 full.left() + window_chrome::leading_inset(fullscreen),
@@ -316,6 +325,48 @@ impl TabBar<'_> {
             );
             if button.clicked() {
                 events.push(TabBarEvent::OpenSettings);
+            }
+        }
+
+        // Two gray links at the far right: the project on GitHub, and a coffee for its maker.
+        let links = [
+            (
+                "View project on GitHub",
+                GITHUB_URL,
+                egui::include_image!("../../assets/brand/github.svg"),
+                14.0,
+            ),
+            (
+                "Support this project by buying me a coffee",
+                COFFEE_URL,
+                egui::include_image!("../../assets/brand/coffee.svg"),
+                // The cup fills about three quarters of its 24 grid, where the GitHub mark
+                // fills all of its box, so it is drawn larger to look the same size.
+                19.0,
+            ),
+        ];
+        for (index, (name, url, logo, size)) in links.into_iter().enumerate() {
+            let rect = Rect::from_min_size(
+                pos2(
+                    links_left + 3.0 + index as f32 * LINK_BUTTON_WIDTH,
+                    full.top() + 5.0,
+                ),
+                vec2(LINK_BUTTON_WIDTH - 2.0, full.height() - 8.0),
+            );
+            let button = ui.interact(rect, self.id(name), Sense::click());
+            let button = super::accessibility::label(button, name)
+                .on_hover_text(name)
+                .on_hover_cursor(egui::CursorIcon::PointingHand);
+            let color = if button.hovered() {
+                painter.rect_filled(rect, 6.0, theme::ink(18));
+                theme::text_primary()
+            } else {
+                theme::text_secondary()
+            };
+            let glyph = Rect::from_center_size(rect.center(), Vec2::splat(size));
+            egui::Image::new(logo).tint(color).paint_at(ui, glyph);
+            if button.clicked() {
+                ctx.open_url(egui::OpenUrl::new_tab(url));
             }
         }
 
