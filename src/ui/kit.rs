@@ -433,6 +433,16 @@ pub fn tab_bar_compact<T: Copy + PartialEq>(
     tab_bar_impl(ui, id, items, selected, false);
 }
 
+/// The compact bar at 28 pt tall, so it lines up with other 28 pt controls in a header row.
+pub fn tab_bar_slim<T: Copy + PartialEq>(
+    ui: &mut Ui,
+    id: Id,
+    items: &[TabItem<T>],
+    selected: &mut T,
+) {
+    tab_bar_with(ui, id, items, selected, false, Density::Slim);
+}
+
 /// The regular `IconTabBar` (14 pt titles, 16 pt of padding) that hugs its titles, as the chart
 /// settings sheet draws it; the sheet centres it.
 pub fn tab_bar_regular<T: Copy + PartialEq>(
@@ -457,6 +467,8 @@ pub fn tab_bar_regular_width<T: Copy + PartialEq>(ui: &Ui, items: &[TabItem<T>])
 /// The two `IconTabBar` sizes: Swift's `isCompact` flag.
 #[derive(Clone, Copy, PartialEq)]
 enum Density {
+    /// A 28 pt track, the height of the Paper panel's header controls.
+    Slim,
     Compact,
     Regular,
 }
@@ -464,6 +476,7 @@ enum Density {
 impl Density {
     fn font(self) -> f32 {
         match self {
+            Self::Slim => 12.0,
             Self::Compact => 12.5,
             Self::Regular => 14.0,
         }
@@ -471,6 +484,7 @@ impl Density {
 
     fn glyph(self) -> f32 {
         match self {
+            Self::Slim => 11.5,
             Self::Compact => 12.0,
             Self::Regular => 14.0,
         }
@@ -478,6 +492,7 @@ impl Density {
 
     fn pad(self) -> f32 {
         match self {
+            Self::Slim => 10.0,
             Self::Compact => 11.0,
             Self::Regular => 16.0,
         }
@@ -485,15 +500,24 @@ impl Density {
 
     fn gap(self) -> f32 {
         match self {
-            Self::Compact => 5.0,
+            Self::Slim | Self::Compact => 5.0,
             Self::Regular => 7.0,
         }
     }
 
     fn height(self) -> f32 {
         match self {
+            Self::Slim => 22.0,
             Self::Compact => 28.0,
             Self::Regular => 34.0,
+        }
+    }
+
+    /// The track's corner radius; the plates inside sit 3 pt in, so theirs is that much less.
+    fn track_radius(self) -> f32 {
+        match self {
+            Self::Slim => 9.0,
+            Self::Compact | Self::Regular => 11.0,
         }
     }
 }
@@ -572,10 +596,10 @@ fn tab_bar_with<T: Copy + PartialEq>(
     };
     let (track, _) = ui.allocate_exact_size(vec2(track_width, height + 6.0), Sense::hover());
     ui.painter()
-        .rect_filled(track, 11.0, theme::quaternary(0.6));
+        .rect_filled(track, density.track_radius(), theme::quaternary(0.6));
     ui.painter().rect_stroke(
         track,
-        11.0,
+        density.track_radius(),
         Stroke::new(1.0, hairline()),
         StrokeKind::Inside,
     );
@@ -591,6 +615,7 @@ fn tab_bar_with<T: Copy + PartialEq>(
     for (index, item) in items.iter().enumerate() {
         let width = segment_widths[index];
         let segment = Rect::from_min_size(pos2(left, track.top() + 3.0), vec2(width, height));
+        let plate = density.track_radius() - 3.0;
         left += width + 2.0;
         let response = ui
             .interact(segment, id.with(index), Sense::click())
@@ -606,17 +631,17 @@ fn tab_bar_with<T: Copy + PartialEq>(
                     spread: 0,
                     color: Color32::from_black_alpha(40),
                 }
-                .as_shape(segment, 8.0),
+                .as_shape(segment, plate),
             );
-            painter.rect_filled(segment, 8.0, control());
+            painter.rect_filled(segment, plate, control());
             painter.rect_stroke(
                 segment,
-                8.0,
+                plate,
                 Stroke::new(1.0, hairline()),
                 StrokeKind::Inside,
             );
         } else if response.hovered() {
-            painter.rect_filled(segment, 8.0, primary(0.04));
+            painter.rect_filled(segment, plate, primary(0.04));
         }
         let title_color = if active {
             theme::text_primary()

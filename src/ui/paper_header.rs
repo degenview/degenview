@@ -17,6 +17,29 @@ use eframe::egui::{self, Id, Sense, Vec2, pos2, vec2};
 /// Width below which the tabs drop to a second row instead of being cut off.
 pub const COMPACT_WIDTH: f32 = 900.0;
 
+/// Every control in the header (badge, account switcher, tab bar, icon buttons) is this tall, so
+/// a row of them shares one top and one bottom edge.
+pub const CONTROL_HEIGHT: f32 = 28.0;
+/// The corner radius they share. The tab bar's track is this too (`kit::tab_bar_slim`).
+const CONTROL_RADIUS: f32 = 9.0;
+
+/// The quiet plate behind the switcher: the tab bar track's fill and hairline, lifted a step on
+/// hover and while the menu is open.
+fn plate(painter: &egui::Painter, rect: egui::Rect, hovered: bool, down: bool) {
+    painter.rect_filled(rect, CONTROL_RADIUS, theme::quaternary(0.6));
+    if down {
+        painter.rect_filled(rect, CONTROL_RADIUS, kit::primary(0.1));
+    } else if hovered {
+        painter.rect_filled(rect, CONTROL_RADIUS, kit::primary(0.05));
+    }
+    painter.rect_stroke(
+        rect,
+        CONTROL_RADIUS,
+        egui::Stroke::new(1.0, kit::hairline()),
+        egui::StrokeKind::Inside,
+    );
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct AccountChoice {
     pub id: u64,
@@ -108,21 +131,24 @@ pub fn eye_label(showing: bool) -> &'static str {
 /// The one "PAPER" marker, so simulated money is never mistaken for the real thing.
 pub fn badge(ui: &mut egui::Ui) {
     let galley = kit::galley(ui, "PAPER", 10.5, kit::BOLD, kit::ACCENT, f32::INFINITY);
-    let size = vec2(
-        8.0 + 9.5 + 4.0 + galley.size().x + 8.0,
-        galley.size().y + 6.0,
-    );
+    let size = vec2(10.0 + 10.0 + 5.0 + galley.size().x + 11.0, CONTROL_HEIGHT);
     let (rect, response) = ui.allocate_exact_size(size, Sense::hover());
     let painter = ui.painter();
-    painter.rect_filled(rect, size.y / 2.0, theme::with_alpha(kit::ACCENT, 0.14));
+    painter.rect_filled(rect, CONTROL_RADIUS, theme::with_alpha(kit::ACCENT, 0.14));
+    painter.rect_stroke(
+        rect,
+        CONTROL_RADIUS,
+        egui::Stroke::new(1.0, theme::with_alpha(kit::ACCENT, 0.22)),
+        egui::StrokeKind::Inside,
+    );
     icons::paint(
         painter,
-        egui::Rect::from_center_size(pos2(rect.left() + 12.75, rect.center().y), Vec2::splat(9.5)),
+        egui::Rect::from_center_size(pos2(rect.left() + 15.0, rect.center().y), Vec2::splat(10.0)),
         Icon::DocText,
         kit::ACCENT,
     );
     painter.galley(
-        pos2(rect.left() + 21.5, rect.center().y - galley.size().y / 2.0),
+        pos2(rect.left() + 25.0, rect.center().y - galley.size().y / 2.0),
         galley,
         kit::ACCENT,
     );
@@ -130,7 +156,8 @@ pub fn badge(ui: &mut egui::Ui) {
         .on_hover_text("Paper trading");
 }
 
-/// `PaperIconGlyph`'s 26-point target: it lights up on hover and, when `active`, in the accent.
+/// An icon button the height of the header's other controls: it lights up on hover and, when
+/// `active`, sits on a raised plate.
 fn glyph_response(
     ui: &mut egui::Ui,
     id: Id,
@@ -138,8 +165,10 @@ fn glyph_response(
     active: bool,
     label: &str,
 ) -> egui::Response {
-    let (rect, _) = ui.allocate_exact_size(Vec2::splat(26.0), Sense::hover());
-    let response = ui.interact(rect, id, Sense::click());
+    let (rect, _) = ui.allocate_exact_size(Vec2::splat(CONTROL_HEIGHT), Sense::hover());
+    let response = ui
+        .interact(rect, id, Sense::click())
+        .on_hover_cursor(egui::CursorIcon::PointingHand);
     let response = accessibility::label(response, label);
     let fill = if active {
         theme::selected_tint(false)
@@ -150,10 +179,10 @@ fn glyph_response(
     } else {
         egui::Color32::TRANSPARENT
     };
-    ui.painter().rect_filled(rect, 7.0, fill);
+    ui.painter().rect_filled(rect, CONTROL_RADIUS, fill);
     icons::paint(
         ui.painter(),
-        egui::Rect::from_center_size(rect.center(), Vec2::splat(13.0)),
+        egui::Rect::from_center_size(rect.center(), Vec2::splat(14.0)),
         icon,
         if active {
             theme::text_primary()
@@ -188,11 +217,11 @@ pub fn header(
     let mut actions = Vec::new();
     let compact = ui.available_width() < COMPACT_WIDTH;
     egui::Frame::new()
-        .inner_margin(egui::Margin::symmetric(12, 8))
+        .inner_margin(egui::Margin::symmetric(12, 9))
         .show(ui, |ui| {
             ui.spacing_mut().item_spacing = vec2(12.0, 0.0);
             if compact {
-                row(ui, 26.0, |ui| {
+                row(ui, CONTROL_HEIGHT, |ui| {
                     identity(ui, input, &mut actions);
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         buttons(ui, input, &mut actions);
@@ -204,8 +233,9 @@ pub fn header(
                     .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
                     .show(ui, |ui| tabs(ui, state, input));
             } else {
-                row(ui, 34.0, |ui| {
+                row(ui, CONTROL_HEIGHT, |ui| {
                     identity(ui, input, &mut actions);
+                    rule(ui);
                     tabs(ui, state, input);
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         buttons(ui, input, &mut actions);
@@ -214,6 +244,12 @@ pub fn header(
             }
         });
     actions
+}
+
+/// A hairline between the account and the sections it holds, shorter than the controls.
+fn rule(ui: &mut egui::Ui) {
+    let (rect, _) = ui.allocate_exact_size(vec2(1.0, 16.0), Sense::hover());
+    ui.painter().rect_filled(rect, 0.0, theme::separator());
 }
 
 /// One header row, `height` tall, its children centred on it.
@@ -248,24 +284,23 @@ fn account_menu(ui: &mut egui::Ui, input: &PaperHeaderInput, actions: &mut Vec<P
             f32::INFINITY,
         )
     });
-    let width = 9.0
+    let width = 11.0
         + name.size().x
-        + currency.as_ref().map_or(0.0, |code| 6.0 + code.size().x)
-        + 6.0
+        + currency.as_ref().map_or(0.0, |code| 7.0 + code.size().x)
+        + 7.0
         + 9.0
-        + 9.0;
-    let (rect, response) = ui.allocate_exact_size(vec2(width, 26.0), Sense::click());
+        + 10.0;
+    let (rect, response) = ui.allocate_exact_size(vec2(width, CONTROL_HEIGHT), Sense::click());
     let response = accessibility::label(response, "Paper account");
     let open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&response));
-    let fill = if open || response.is_pointer_button_down_on() {
-        kit::primary(0.14)
-    } else if response.hovered() {
-        kit::primary(0.1)
-    } else {
-        kit::primary(0.06)
-    };
-    ui.painter().rect_filled(rect, 7.0, fill);
-    let mut x = rect.left() + 9.0;
+    plate(
+        ui.painter(),
+        rect,
+        response.hovered(),
+        open || response.is_pointer_button_down_on(),
+    );
+    let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
+    let mut x = rect.left() + 11.0;
     let name_width = name.size().x;
     ui.painter().galley(
         pos2(x, rect.center().y - name.size().y / 2.0),
@@ -274,7 +309,7 @@ fn account_menu(ui: &mut egui::Ui, input: &PaperHeaderInput, actions: &mut Vec<P
     );
     x += name_width;
     if let Some(code) = currency {
-        x += 6.0;
+        x += 7.0;
         let code_width = code.size().x;
         ui.painter().galley(
             pos2(x, rect.center().y - code.size().y / 2.0),
@@ -285,7 +320,7 @@ fn account_menu(ui: &mut egui::Ui, input: &PaperHeaderInput, actions: &mut Vec<P
     }
     icons::paint(
         ui.painter(),
-        egui::Rect::from_center_size(pos2(x + 6.0 + 4.5, rect.center().y), Vec2::splat(9.0)),
+        egui::Rect::from_center_size(pos2(x + 7.0 + 4.5, rect.center().y), Vec2::splat(9.0)),
         Icon::ChevronDown,
         theme::text_secondary(),
     );
@@ -323,7 +358,7 @@ fn tabs(ui: &mut egui::Ui, state: &mut PaperHeaderState, input: &PaperHeaderInpu
             count: tab_count(tab, input).unwrap_or(0),
         })
         .collect();
-    kit::tab_bar_compact(ui, Id::new("paper-tab-bar"), &items, &mut state.tab);
+    kit::tab_bar_slim(ui, Id::new("paper-tab-bar"), &items, &mut state.tab);
 }
 
 fn buttons(ui: &mut egui::Ui, input: &PaperHeaderInput, actions: &mut Vec<PaperHeaderAction>) {

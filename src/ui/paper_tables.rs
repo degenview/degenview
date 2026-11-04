@@ -224,9 +224,9 @@ pub fn metric_cells(
 }
 
 /// Height of the metrics strip: the hero's three lines between 9 pt of padding.
-const STRIP_HEIGHT: f32 = 64.0;
+const STRIP_HEIGHT: f32 = 62.0;
 /// What the hero's three lines and a cell's two take, for centring them in the strip.
-const HERO_HEIGHT: f32 = 49.0;
+const HERO_HEIGHT: f32 = 46.0;
 const CELL_HEIGHT: f32 = 31.0;
 
 /// The account's numbers: equity and open P&L up front, the rest in a quieter row that scrolls
@@ -295,6 +295,8 @@ fn hero(ui: &mut egui::Ui, metrics: Option<&PaperAccountMetrics>, currency: Pape
             None => ("—".to_owned(), secondary),
         };
         ui.label(kit::text(text, 16.0, kit::SEMIBOLD, color));
+        // `horizontal` is 18 pt tall unless told otherwise; this line is a 10.5 pt caption.
+        ui.spacing_mut().interact_size.y = 13.0;
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 4.0;
             let Some(m) = metrics else {
