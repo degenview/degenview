@@ -38,6 +38,12 @@ candles, and `ChartCard::set_series` draws choices by position with end labels.
   candle per open time, finite prices, a range that holds its open and close). GeckoTerminal lists
   only intervals that traded, so `fill_gaps` adds flat zero-volume candles to keep bars evenly
   spaced. Volume units differ by source (base asset, shares, USD) and CoinGecko has none.
+- GeckoTerminal serves a pool's candles for its base token, and its base is the token contract that
+  sorts first on chain, so a pool can read "USDT / MCADE". DEXScreener (where DEX markets are
+  searched) always lists the traded token first. `geckoterminal::side_for` reads the pool's token
+  symbols once, remembers the answer and asks for `token=quote` when the base is a stablecoin or
+  wrapped native coin (`QUOTE_ASSETS`) and the quote is not; otherwise the base. Without it such a
+  market charts the stablecoin at about $1. If the tokens cannot be read the base is used, unremembered.
 - Prediction markets use `effective_span_days` and `line_chart_point_count` in `service/mod.rs`.
 
 ## Caches and live data

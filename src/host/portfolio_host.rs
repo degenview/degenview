@@ -97,6 +97,8 @@ impl PortfolioHost {
             .lock()
             .map_err(|_| PortfolioHostError::StoreUnavailable)
             .and_then(|store| {
+                // A failed repair is tried again at the next launch; it never blocks the load.
+                let _ = store.repair_dex_pool_history(crate::service::now_ms());
                 store
                     .portfolio_ledger()
                     .map_err(|error| PortfolioHostError::Load(error.to_string()))
