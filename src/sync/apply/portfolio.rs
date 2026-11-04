@@ -401,6 +401,18 @@ impl Work<'_> {
                 .and_modify(|current| *current = (*current).min(from))
                 .or_insert(from);
         }
+        // A transaction that moved here from another portfolio also changed that one's ledger.
+        if let Some(previous) = change.previous.as_ref()
+            && let Some(old_portfolio) = portfolio_of(previous)
+            && old_portfolio != change.portfolio
+        {
+            let from = timestamp_of(previous);
+            self.ledger
+                .history
+                .entry(old_portfolio)
+                .and_modify(|current| *current = (*current).min(from))
+                .or_insert(from);
+        }
         // A record that was held for the ledger is in now: its notice has nothing left to say.
         self.store
             .resolve_conflicts(kind, &change.sync_id, "ledger", self.ctx.now_ms)?;

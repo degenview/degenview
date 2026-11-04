@@ -904,9 +904,13 @@ impl PortfolioTab {
         if let Some(asset) = self.new_asset.take() {
             self.open_new_editor(asset, snapshot, selected, &quotes);
         }
-        let (holding_values, closed_positions) =
-            holdings_and_closed(&transactions, &portfolio_ids, None, &quotes, now_ms)
-                .unwrap_or_default();
+        // A ledger that cannot be replayed is not an empty portfolio: say so, and leave the
+        // Transactions page usable so it can be fixed.
+        let (holding_values, closed_positions, ledger_error) =
+            match holdings_and_closed(&transactions, &portfolio_ids, None, &quotes, now_ms) {
+                Ok((held, closed)) => (held, closed, None),
+                Err(error) => (Vec::new(), Vec::new(), Some(error.message())),
+            };
         let daily_history: Vec<PortfolioSnapshot> =
             projected.map_or_else(Vec::new, |projection| projection.history.clone());
         // The 1D range replays the last day at 30-minute spacing when it can; otherwise (and for
@@ -975,125 +979,141 @@ impl PortfolioTab {
             .sum();
         let market_value_caption = market_value_caption(&quote_state, &holding_values);
 
-        match self.section {
-            PortfolioSection::Overview => {
-                let actions = portfolio_overview::show_overview(
+        let blocked = ledger_error
+            .as_deref()
+            .filter(|_| self.section != PortfolioSection::Transactions);
+        if let Some(message) = blocked {
+            crate::ui::portfolio_table::empty_state(
+                ui,
+                "These Transactions Can't Be Valued",
+                &format!("{message} Review them in the Transactions tab."),
+            );
+        } else {
+            match self.section {
+                PortfolioSection::Overview => {
+                    let actions = portfolio_overview::show_overview(
+                        ui,
+                        &mut self.overview,
+                        &OverviewInput {
+                            portfolio_name: selected_portfolio
+                                .map(|portfolio| portfolio.name.as_str()),
+                            holdings: &holding_values,
+                            history: overview_history,
+                            total_value,
+                            net_contributions,
+                            formatter,
+                            subtitle: &subtitle,
+                            market_value_caption: &market_value_caption,
+                            price_status: price_status(&quote_state, &holding_values),
+                            is_loading_initial: projected.is_none(),
+                            is_loading_history: host.is_rebuilding_history(&portfolio_ids),
+                            now_ms,
+                            utc_offset_secs: local_offset(),
+                        },
+                    );
+                    for action in actions {
+                        match action {
+                            OverviewAction::Select(key) => {
+                                self.transactions.filters.asset_key = Some(key);
+                                self.section = PortfolioSection::Transactions;
+                            }
+                            OverviewAction::ShowHoldings => {
+                                self.section = PortfolioSection::Holdings
+                            }
+                        }
+                    }
+                }
+                PortfolioSection::Holdings => {
+                    let saved_sort = selected_portfolio
+                        .map_or(PortfolioHoldingsSort::CurrentValue, |portfolio| {
+                            portfolio.sort
+                        });
+                    let actions = portfolio_holdings::show(
+                        ui,
+                        &mut self.holdings,
+                        &HoldingsInput {
+                            holdings: &holding_values,
+                            saved_sort,
+                            formatter,
+                            is_loading: projected.is_none(),
+                            subtitle: &subtitle,
+                        },
+                    );
+                    for action in actions {
+                        match action {
+                            HoldingsAction::SetSort(sort) => {
+                                if let Some(mut portfolio) = selected_portfolio.cloned() {
+                                    portfolio.sort = sort;
+                                    let _ = host.update_portfolio(portfolio);
+                                }
+                            }
+                            HoldingsAction::Open(key) => self.detail_key = Some(key),
+                            HoldingsAction::Remap(key) => {
+                                let ticker = holding_values
+                                    .iter()
+                                    .find(|holding| holding.asset.key == key)
+                                    .map_or_else(
+                                        || key.clone(),
+                                        |holding| holding.asset.display_ticker(),
+                                    );
+                                self.remap = Some((key, remap_picker(&ticker)));
+                            }
+                        }
+                    }
+                }
+                PortfolioSection::Transactions => {
+                    let projections: HashMap<u64, Projection> = transactions
+                        .iter()
+                        .map(|transaction| {
+                            (
+                                transaction.id,
+                                Projection {
+                                    price: transaction.price,
+                                    fee: transaction.fee,
+                                },
+                            )
+                        })
+                        .collect();
+                    let projection = |id: u64| projections.get(&id).copied();
+                    let actions = portfolio_transactions::show(
+                        ui,
+                        &mut self.transactions,
+                        &TransactionsInput {
+                            ledger: &transactions,
+                            projection: &projection,
+                            subtitle: &subtitle,
+                            formatter,
+                            utc_offset_secs: local_offset(),
+                        },
+                    );
+                    for action in actions {
+                        match action {
+                            TransactionAction::Delete(id) => {
+                                self.pending_delete_transaction = Some(id)
+                            }
+                            TransactionAction::Edit(id) => {
+                                self.open_editor(EditorMode::Edit, id, snapshot, &quotes)
+                            }
+                            TransactionAction::Duplicate(id) => {
+                                self.open_editor(EditorMode::Duplicate, id, snapshot, &quotes)
+                            }
+                            TransactionAction::Add => self.picker = Some(add_transaction_picker()),
+                        }
+                    }
+                }
+                PortfolioSection::Statistics => portfolio_overview::show_statistics(
                     ui,
-                    &mut self.overview,
-                    &OverviewInput {
-                        portfolio_name: selected_portfolio.map(|portfolio| portfolio.name.as_str()),
+                    &StatisticsInput {
                         holdings: &holding_values,
-                        history: overview_history,
-                        total_value,
-                        net_contributions,
+                        closed: &closed_positions,
+                        history,
+                        transactions: &transactions,
                         formatter,
-                        subtitle: &subtitle,
-                        market_value_caption: &market_value_caption,
-                        price_status: price_status(&quote_state, &holding_values),
-                        is_loading_initial: projected.is_none(),
-                        is_loading_history: host.is_rebuilding_history(&portfolio_ids),
                         now_ms,
                         utc_offset_secs: local_offset(),
                     },
-                );
-                for action in actions {
-                    match action {
-                        OverviewAction::Select(key) => {
-                            self.transactions.filters.asset_key = Some(key);
-                            self.section = PortfolioSection::Transactions;
-                        }
-                        OverviewAction::ShowHoldings => self.section = PortfolioSection::Holdings,
-                    }
-                }
+                ),
             }
-            PortfolioSection::Holdings => {
-                let saved_sort = selected_portfolio
-                    .map_or(PortfolioHoldingsSort::CurrentValue, |portfolio| {
-                        portfolio.sort
-                    });
-                let actions = portfolio_holdings::show(
-                    ui,
-                    &mut self.holdings,
-                    &HoldingsInput {
-                        holdings: &holding_values,
-                        saved_sort,
-                        formatter,
-                        is_loading: projected.is_none(),
-                        subtitle: &subtitle,
-                    },
-                );
-                for action in actions {
-                    match action {
-                        HoldingsAction::SetSort(sort) => {
-                            if let Some(mut portfolio) = selected_portfolio.cloned() {
-                                portfolio.sort = sort;
-                                let _ = host.update_portfolio(portfolio);
-                            }
-                        }
-                        HoldingsAction::Open(key) => self.detail_key = Some(key),
-                        HoldingsAction::Remap(key) => {
-                            let ticker = holding_values
-                                .iter()
-                                .find(|holding| holding.asset.key == key)
-                                .map_or_else(
-                                    || key.clone(),
-                                    |holding| holding.asset.display_ticker(),
-                                );
-                            self.remap = Some((key, remap_picker(&ticker)));
-                        }
-                    }
-                }
-            }
-            PortfolioSection::Transactions => {
-                let projections: HashMap<u64, Projection> = transactions
-                    .iter()
-                    .map(|transaction| {
-                        (
-                            transaction.id,
-                            Projection {
-                                price: transaction.price,
-                                fee: transaction.fee,
-                            },
-                        )
-                    })
-                    .collect();
-                let projection = |id: u64| projections.get(&id).copied();
-                let actions = portfolio_transactions::show(
-                    ui,
-                    &mut self.transactions,
-                    &TransactionsInput {
-                        ledger: &transactions,
-                        projection: &projection,
-                        subtitle: &subtitle,
-                        formatter,
-                        utc_offset_secs: local_offset(),
-                    },
-                );
-                for action in actions {
-                    match action {
-                        TransactionAction::Delete(id) => self.pending_delete_transaction = Some(id),
-                        TransactionAction::Edit(id) => {
-                            self.open_editor(EditorMode::Edit, id, snapshot, &quotes)
-                        }
-                        TransactionAction::Duplicate(id) => {
-                            self.open_editor(EditorMode::Duplicate, id, snapshot, &quotes)
-                        }
-                        TransactionAction::Add => self.picker = Some(add_transaction_picker()),
-                    }
-                }
-            }
-            PortfolioSection::Statistics => portfolio_overview::show_statistics(
-                ui,
-                &StatisticsInput {
-                    holdings: &holding_values,
-                    closed: &closed_positions,
-                    history,
-                    transactions: &transactions,
-                    formatter,
-                    now_ms,
-                    utc_offset_secs: local_offset(),
-                },
-            ),
         }
 
         if let Some(key) = self.detail_key.clone() {

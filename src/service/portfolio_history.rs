@@ -10,7 +10,7 @@ use crate::model::Kline;
 use crate::model::portfolio::{
     Portfolio, PortfolioAsset, PortfolioCurrency, PortfolioSnapshot, PortfolioTransaction,
 };
-use crate::model::portfolio_accounting::unique_assets;
+use crate::model::portfolio_accounting::{holdings, unique_assets};
 use crate::model::portfolio_history::{
     DAY_MS, IntradayBars, LOOKBACK_MS, build_snapshots, intraday_snapshots, sum_intraday,
 };
@@ -206,6 +206,17 @@ fn rebuild(
     now_ms: i64,
     utc_offset_secs: i64,
 ) -> HistoryResult {
+    // A ledger that cannot be replayed would come out as a column of zeros. Keep the history as
+    // it is and look again later, once the transactions are fixed.
+    let own_ids = HashSet::from([portfolio_id]);
+    if holdings(transactions, &own_ids, None, &HashMap::new(), 0).is_err() {
+        return HistoryResult {
+            portfolio_id,
+            from,
+            snapshots: None,
+            hopeless: false,
+        };
+    }
     let assets = unique_assets(transactions);
     // A candle prices in its market's quote currency, so only markets quoted in the
     // portfolio's own currency can value it.
@@ -394,4 +405,42 @@ fn refresh(
     state.points = points;
     state.computed_for = Some((request.clone(), bucket));
     state.working = false;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::portfolio::{PortfolioCurrency, PortfolioSource, PortfolioTransactionType};
+
+    #[test]
+    fn a_ledger_that_cannot_be_replayed_is_not_rebuilt_into_zeros() {
+        let sale = PortfolioTransaction {
+            id: 1,
+            portfolio_id: 1,
+            asset: PortfolioAsset {
+                key: "binance:BTCUSDT".into(),
+                symbol: "BTC".into(),
+                name: "Bitcoin".into(),
+                source: DataSource::Binance,
+                quote_currency: PortfolioCurrency::Usd,
+                metadata: HashMap::new(),
+            },
+            kind: PortfolioTransactionType::Sell,
+            quantity: 1.0,
+            price: Some(100.0),
+            price_currency: PortfolioCurrency::Usd,
+            fee: 0.0,
+            fee_currency: PortfolioCurrency::Usd,
+            timestamp: 1_000,
+            notes: String::new(),
+            source: PortfolioSource::Manual,
+            external_transaction_id: None,
+            created_at: 1_000,
+            updated_at: 1_000,
+        };
+        // Sells what was never bought: no snapshots to store, and a later retry (not "hopeless").
+        let result = rebuild(1, PortfolioCurrency::Usd, &[sale], 0, 10 * DAY_MS, 0);
+        assert!(result.snapshots.is_none());
+        assert!(!result.hopeless);
+    }
 }

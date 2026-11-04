@@ -145,8 +145,18 @@ pub fn validate(
     replacing_id: Option<u64>,
     transactions: &[PortfolioTransaction],
 ) -> Result<(), PortfolioError> {
-    if transaction.quantity <= 0.0 {
+    if transaction.asset.key.trim().is_empty() {
+        return Err(PortfolioError::InvalidAsset);
+    }
+    if !transaction.quantity.is_finite() || transaction.quantity <= 0.0 {
         return Err(PortfolioError::InvalidQuantity);
+    }
+    // A price of zero is allowed (airdrops, rewards); a negative one is not.
+    if transaction
+        .price
+        .is_some_and(|price| !price.is_finite() || price < 0.0)
+    {
+        return Err(PortfolioError::InvalidPrice);
     }
     if matches!(
         transaction.kind,
@@ -155,7 +165,7 @@ pub fn validate(
     {
         return Err(PortfolioError::MissingPrice);
     }
-    if transaction.fee < 0.0 {
+    if !transaction.fee.is_finite() || transaction.fee < 0.0 {
         return Err(PortfolioError::InvalidQuantity);
     }
     if transaction.price_currency != transaction.fee_currency && transaction.fee != 0.0 {

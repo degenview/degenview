@@ -138,8 +138,11 @@ impl PortfolioCardEnv {
             |projection| projection.transactions.clone(),
         );
         let quotes = projected.map_or_else(HashMap::new, |projection| projection.quotes.clone());
-        let holding_values =
-            holdings(&transactions, &scope, None, &quotes, now).unwrap_or_default();
+        let (holding_values, ledger_error) =
+            match holdings(&transactions, &scope, None, &quotes, now) {
+                Ok(held) => (held, None),
+                Err(error) => (Vec::new(), Some(error.message())),
+            };
         let total_value: f64 = holding_values
             .iter()
             .filter_map(|holding| holding.current_value)
@@ -208,7 +211,7 @@ impl PortfolioCardEnv {
             formatter,
             loading: projected.is_none(),
             loading_history,
-            error: state.error,
+            error: state.error.or(ledger_error),
             performance,
             loading_performance,
             now_ms: now,
