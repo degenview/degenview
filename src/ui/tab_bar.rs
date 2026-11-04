@@ -337,7 +337,7 @@ impl TabBar<'_> {
                 14.0,
             ),
             (
-                "Buy me a coffee",
+                "Support this project by buying me a coffee",
                 COFFEE_URL,
                 egui::include_image!("../../assets/brand/coffee.svg"),
                 // The cup fills about three quarters of its 24 grid, where the GitHub mark
