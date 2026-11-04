@@ -73,6 +73,9 @@ candles, and `ChartCard::set_series` draws choices by position with end labels.
 - Quotes are transient. `WatchlistQuoteCoordinator` merges demand by `InstrumentId`, batches each
   source, shares Coinbase's socket, backs off per source, and fills `WatchlistQuoteBook`. It neither
   persists quotes nor uses the alert quote path.
+- A sidebar asks for quotes only for the market rows it draws (`WatchlistSidebarState::quote_demand`):
+  not other lists, filtered-out rows, collapsed sections or portfolio cards. The highlighted row is
+  always a drawn row, so Enter/Delete and the detail card never act on a hidden one.
 - Selecting a row focuses or opens its market in that workspace; highlighting mirrors the focused
   chart.
 

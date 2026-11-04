@@ -50,6 +50,7 @@ impl Default for Config {
     }
 }
 
+#[derive(PartialEq)]
 struct Consumer {
     instruments: BTreeMap<String, InstrumentId>,
     active: bool,
@@ -139,16 +140,18 @@ impl Engine {
         active: bool,
         now: i64,
     ) {
-        self.consumers.insert(
-            consumer,
-            Consumer {
-                instruments: instruments
-                    .into_iter()
-                    .map(|instrument| (instrument.key(), instrument))
-                    .collect(),
-                active,
-            },
-        );
+        let next = Consumer {
+            instruments: instruments
+                .into_iter()
+                .map(|instrument| (instrument.key(), instrument))
+                .collect(),
+            active,
+        };
+        // A sidebar republishes its rows every frame: an unchanged set costs nothing.
+        if self.consumers.get(&consumer) == Some(&next) {
+            return;
+        }
+        self.consumers.insert(consumer, next);
         self.reconcile(now);
     }
 

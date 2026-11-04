@@ -479,21 +479,6 @@ impl Watchlist {
             .find_map(WatchlistEntry::section)
     }
 
-    /// Instruments a collapsed section does not hide, for subscription decisions.
-    #[allow(dead_code)] // for the quote demand: collapsed sections need no prices
-    pub fn visible_instruments(&self) -> Vec<&WatchlistInstrument> {
-        let mut collapsed = false;
-        let mut visible = Vec::new();
-        for entry in &self.entries {
-            match entry {
-                WatchlistEntry::Section(section) => collapsed = section.is_collapsed,
-                WatchlistEntry::Instrument(item) if !collapsed => visible.push(item),
-                WatchlistEntry::Instrument(_) => {}
-            }
-        }
-        visible
-    }
-
     fn is_section(&self, index: usize) -> bool {
         self.entries[index].section().is_some()
     }
@@ -921,17 +906,10 @@ mod tests {
     }
 
     #[test]
-    fn owning_section_and_collapsed_visibility() {
-        let (mut list, ids) = sample();
+    fn owning_section_of_an_entry() {
+        let (list, ids) = sample();
         assert!(list.owning_section(ids[0]).is_none());
         assert_eq!(list.owning_section(ids[3]).unwrap().title, "Majors");
-        list.set_section_collapsed(ids[2], true).unwrap();
-        let visible: Vec<&str> = list
-            .visible_instruments()
-            .iter()
-            .map(|item| item.label.as_str())
-            .collect();
-        assert_eq!(visible, ["BTC", "ETH", "DOGE"]);
     }
 
     #[test]

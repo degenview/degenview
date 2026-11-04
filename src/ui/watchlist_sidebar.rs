@@ -206,6 +206,10 @@ pub struct WatchlistSidebarState {
     drag: Option<Drag>,
     synced_focus: Option<String>,
     synced_list: Option<EntryId>,
+    /// Markets of the rows drawn this frame, for the quote feed.
+    demand: Vec<InstrumentId>,
+    /// The filter box gave up focus this frame, so its Enter must not reach the rows.
+    filter_blurred: bool,
 }
 
 impl Default for WatchlistSidebarState {
@@ -227,6 +231,8 @@ impl Default for WatchlistSidebarState {
             drag: None,
             synced_focus: None,
             synced_list: None,
+            demand: Vec::new(),
+            filter_blurred: false,
         }
     }
 }
@@ -277,6 +283,24 @@ impl WatchlistSidebarState {
         found
     }
 
+    /// The markets whose quotes the rows drawn last frame need: nothing for a hidden row,
+    /// a collapsed section, a filtered-out row or a portfolio card.
+    pub fn quote_demand(&self) -> &[InstrumentId] {
+        &self.demand
+    }
+
+    /// Keeps the highlight on a row that is drawn: a filter, a collapsed section or
+    /// another list can hide it, and Enter/Delete and the detail card act on it.
+    fn reconcile_selection(&mut self, rows: &[Row]) {
+        if let Some(id) = self.selected_entry
+            && !rows
+                .iter()
+                .any(|row| matches!(row, Row::Instrument { item, .. } if item.id == id))
+        {
+            self.selected_entry = None;
+        }
+    }
+
     /// The highlighted row follows the focused chart's market.
     fn sync_selection(&mut self, list: &Watchlist, focused: Option<&InstrumentId>) {
         let key = focused.map(InstrumentId::key);
@@ -320,6 +344,8 @@ pub fn show(
             Err(mpsc::TryRecvError::Empty) => {}
         }
     }
+    state.demand.clear();
+    state.filter_blurred = false;
     let list = state.resolved(input.lists);
 
     header(ui, state, input, list, &mut actions);
@@ -343,6 +369,23 @@ pub fn show(
         );
     } else if let Some(list) = list {
         state.sync_selection(list, input.focused_market);
+        let rows = watchlist_layout::rows(
+            list,
+            &state.filter,
+            input.flags,
+            list.display.sort,
+            input.quote,
+        );
+        state.reconcile_selection(&rows);
+        state.demand = rows
+            .iter()
+            .filter_map(|row| match row {
+                Row::Instrument { item, .. } if item.card.is_none() => {
+                    Some(item.instrument.clone())
+                }
+                _ => None,
+            })
+            .collect();
         if state.shows_detail {
             let detail_height = state
                 .selected_entry
@@ -366,7 +409,7 @@ pub fn show(
                     });
             }
         }
-        content(ui, state, input, list, &mut actions);
+        content(ui, state, input, list, &rows, &mut actions);
     } else {
         centered_message(
             ui,
@@ -874,6 +917,9 @@ fn filter_field(ui: &mut egui::Ui, state: &mut WatchlistSidebarState) {
             .hint_text("Filter symbols")
             .frame(egui::Frame::NONE),
     );
+    if response.lost_focus() {
+        state.filter_blurred = true;
+    }
     if std::mem::take(&mut state.focus_filter) {
         response.request_focus();
     }
@@ -918,15 +964,9 @@ fn content(
     state: &mut WatchlistSidebarState,
     input: &WatchlistSidebarInput,
     list: &Watchlist,
+    rows: &[Row],
     actions: &mut Vec<WatchlistAction>,
 ) {
-    let rows = watchlist_layout::rows(
-        list,
-        &state.filter,
-        input.flags,
-        list.display.sort,
-        input.quote,
-    );
     if rows.is_empty() {
         empty_state(ui, state, list, actions);
         return;
@@ -1061,12 +1101,12 @@ fn content(
                 let dragged_is_symbol = matches!(rows.get(source), Some(Row::Instrument { .. }));
                 if derived_order && dragged_is_symbol {
                     if let Some(mv) =
-                        watchlist_layout::resolve_section_move(&rows, &[source], destination)
+                        watchlist_layout::resolve_section_move(rows, &[source], destination)
                     {
                         actions.push(WatchlistAction::MoveToSectionByDrop { list: list.id, mv });
                     }
                 } else if let Some(mv) =
-                    watchlist_layout::resolve_move(&rows, &[source], destination)
+                    watchlist_layout::resolve_move(rows, &[source], destination)
                 {
                     actions.push(WatchlistAction::Move { list: list.id, mv });
                 }
@@ -1074,10 +1114,16 @@ fn content(
             state.drag = None;
         }
     }
+    // Only a row that is drawn can be opened or removed from the keyboard, and not on the
+    // frame the filter box lets go of focus (its Enter confirms the filter, not a row).
     if !ui.ctx().egui_wants_keyboard_input()
-        && let Some(item) = state
-            .selected_entry
-            .and_then(|id| list.instruments().find(|item| item.id == id))
+        && !state.filter_blurred
+        && let Some(item) = state.selected_entry.and_then(|id| {
+            rows.iter().find_map(|row| match row {
+                Row::Instrument { item, .. } if item.id == id => Some(item),
+                _ => None,
+            })
+        })
     {
         if ui.input(|input| input.key_pressed(egui::Key::Enter)) {
             actions.push(WatchlistAction::Open(item.clone()));
@@ -2412,6 +2458,191 @@ mod tests {
         let create = rig.list_row(2) + egui::vec2(0.0, 9.0);
         rig.click(create);
         assert!(matches!(rig.state.prompt, Some(PromptKind::NewList)));
+    }
+
+    /// The whole sidebar for one frame, with `events`; returns what it asked for.
+    fn show_frame(
+        ctx: &egui::Context,
+        state: &mut WatchlistSidebarState,
+        lists: &[Watchlist],
+        events: Vec<egui::Event>,
+    ) -> Vec<WatchlistAction> {
+        let flags = Flags::default();
+        let quote = |_: &InstrumentId| None;
+        let input = WatchlistSidebarInput {
+            lists,
+            flags: &flags,
+            quote: &quote,
+            focused_market: None,
+            load_failed: false,
+            error: None,
+            import_report: None,
+        };
+        let mut actions = Vec::new();
+        let mut output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, egui::vec2(320.0, 600.0))),
+                events,
+                ..Default::default()
+            },
+            |ui| actions = show(ui, state, &input),
+        );
+        output.textures_delta.clear();
+        actions
+    }
+
+    /// A sidebar that has drawn once on `list` (the first frame resets the highlight to the
+    /// focused chart's row), then has `selected` highlighted.
+    fn primed(
+        ctx: &egui::Context,
+        lists: &[Watchlist],
+        selected: EntryId,
+    ) -> WatchlistSidebarState {
+        let mut state = WatchlistSidebarState::default();
+        state.select_list(lists[0].id);
+        show_frame(ctx, &mut state, lists, Vec::new());
+        state.selected_entry = Some(selected);
+        state
+    }
+
+    fn key(key: egui::Key) -> Vec<egui::Event> {
+        vec![egui::Event::Key {
+            key,
+            physical_key: Some(key),
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        }]
+    }
+
+    /// BTC and ETH at the root, then a section holding SOL.
+    fn sample_list() -> (Watchlist, [EntryId; 3], EntryId) {
+        let mut list = Watchlist::new("Majors");
+        let (btc, eth, sol) = (item("BTCUSDT"), item("ETHUSDT"), item("SOLUSDT"));
+        let ids = [btc.id, eth.id, sol.id];
+        list.add(btc, None).unwrap();
+        list.add(eth, None).unwrap();
+        let section = list.add_section("Alts", None).unwrap().id;
+        list.add(sol, Some(section)).unwrap();
+        (list, ids, section)
+    }
+
+    #[test]
+    fn only_drawn_market_rows_ask_for_quotes() {
+        use crate::model::portfolio_card::{CardKind, PortfolioCard};
+        let (mut shown, _, section) = sample_list();
+        shown
+            .add(
+                WatchlistInstrument::for_card(
+                    PortfolioCard::new(CardKind::TopPerformers, None),
+                    "All",
+                ),
+                None,
+            )
+            .unwrap();
+        let mut other = Watchlist::new("Library");
+        for symbol in ["LTCUSDT", "XRPUSDT", "DOGEUSDT"] {
+            other.add(item(symbol), None).unwrap();
+        }
+        let lists = vec![shown, other];
+        let ctx = egui::Context::default();
+        let mut state = WatchlistSidebarState::default();
+        state.select_list(lists[0].id);
+        let demanded = |state: &WatchlistSidebarState| -> Vec<String> {
+            state
+                .quote_demand()
+                .iter()
+                .map(|id| id.symbol.clone())
+                .collect()
+        };
+
+        show_frame(&ctx, &mut state, &lists, Vec::new());
+        // The other list and the card do not ask; the open section's SOL does.
+        assert_eq!(demanded(&state), ["BTCUSDT", "ETHUSDT", "SOLUSDT"]);
+
+        let mut collapsed = lists.clone();
+        collapsed[0].set_section_collapsed(section, true).unwrap();
+        show_frame(&ctx, &mut state, &collapsed, Vec::new());
+        assert_eq!(demanded(&state), ["BTCUSDT", "ETHUSDT"]);
+
+        state.filter.text = "eth".to_owned();
+        show_frame(&ctx, &mut state, &collapsed, Vec::new());
+        assert_eq!(demanded(&state), ["ETHUSDT"]);
+
+        state.filter.text = "nothing".to_owned();
+        show_frame(&ctx, &mut state, &collapsed, Vec::new());
+        assert!(demanded(&state).is_empty());
+    }
+
+    #[test]
+    fn keys_never_reach_a_row_a_filter_hides() {
+        let (list, [btc, eth, _], _) = sample_list();
+        let lists = vec![list.clone()];
+        for hidden_key in [egui::Key::Delete, egui::Key::Backspace, egui::Key::Enter] {
+            let ctx = egui::Context::default();
+            let mut state = primed(&ctx, &lists, btc);
+            state.filter.text = "eth".to_owned();
+            let actions = show_frame(&ctx, &mut state, &lists, key(hidden_key));
+            assert!(
+                !actions.iter().any(|action| matches!(
+                    action,
+                    WatchlistAction::Open(_) | WatchlistAction::RemoveEntry { .. }
+                )),
+                "{hidden_key:?} acted on a hidden row"
+            );
+            assert_eq!(state.selected_entry, None, "a hidden row stays selected");
+        }
+
+        // The same key on a drawn row still works.
+        let ctx = egui::Context::default();
+        let mut state = primed(&ctx, &lists, eth);
+        state.filter.text = "eth".to_owned();
+        let actions = show_frame(&ctx, &mut state, &lists, key(egui::Key::Delete));
+        assert!(actions.iter().any(
+            |action| matches!(action, WatchlistAction::RemoveEntry { entry, .. } if *entry == eth)
+        ));
+    }
+
+    #[test]
+    fn keys_reach_a_selected_row_that_is_drawn() {
+        let (list, [btc, ..], _) = sample_list();
+        let lists = vec![list.clone()];
+        let ctx = egui::Context::default();
+        let mut state = primed(&ctx, &lists, btc);
+        let actions = show_frame(&ctx, &mut state, &lists, key(egui::Key::Enter));
+        assert!(
+            actions
+                .iter()
+                .any(|action| matches!(action, WatchlistAction::Open(item) if item.id == btc))
+        );
+    }
+
+    #[test]
+    fn keys_never_reach_a_row_inside_a_collapsed_section() {
+        let (mut list, [_, _, sol], section) = sample_list();
+        list.set_section_collapsed(section, true).unwrap();
+        let lists = vec![list.clone()];
+        let ctx = egui::Context::default();
+        let mut state = primed(&ctx, &lists, sol);
+        let actions = show_frame(&ctx, &mut state, &lists, key(egui::Key::Delete));
+        assert!(
+            !actions
+                .iter()
+                .any(|action| matches!(action, WatchlistAction::RemoveEntry { .. }))
+        );
+        assert_eq!(state.selected_entry, None);
+    }
+
+    #[test]
+    fn a_filter_with_no_matches_leaves_nothing_selected() {
+        let (list, [btc, ..], _) = sample_list();
+        let lists = vec![list.clone()];
+        let ctx = egui::Context::default();
+        let mut state = primed(&ctx, &lists, btc);
+        state.filter.text = "nothing".to_owned();
+        let actions = show_frame(&ctx, &mut state, &lists, key(egui::Key::Delete));
+        assert!(actions.is_empty());
+        assert_eq!(state.selected_entry, None);
     }
 
     #[test]
