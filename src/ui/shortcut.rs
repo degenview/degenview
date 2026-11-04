@@ -162,6 +162,19 @@ impl Shortcut {
             .any(|chord| chord.matches(is_mac, key, modifiers))
     }
 
+    /// Whether a key struck with Option held matches an Option chord by where it sits on the
+    /// keyboard. Option turns a letter into a symbol (⌥L types `¬` on a US layout, `@` on a German
+    /// one), and which egui key that symbol resolves to depends on the layout, so the letter the
+    /// chord names cannot be read from it. The key's position can. Chords without Option still go
+    /// by the key the layout gives, so Dvorak and the like keep their own letters.
+    fn matches_option_physical(&self, is_mac: bool, physical: Key, modifiers: Modifiers) -> bool {
+        modifiers.alt
+            && self
+                .chords(is_mac)
+                .iter()
+                .any(|chord| chord.alt && chord.matches(is_mac, physical, modifiers))
+    }
+
     /// Whether this shortcut's key event is among `input`'s this frame. Leaves the event in place.
     pub fn peek(&self, input: &InputState) -> bool {
         self.matches_event(input.events.iter())
@@ -182,8 +195,11 @@ impl Shortcut {
         events.any(|event| {
             matches!(
                 event,
-                Event::Key { key, pressed: true, modifiers, .. }
+                Event::Key { key, physical_key, pressed: true, modifiers, .. }
                     if self.matches_for(is_mac(), *key, *modifiers)
+                        || physical_key.is_some_and(|physical| {
+                            self.matches_option_physical(is_mac(), physical, *modifiers)
+                        })
             )
         })
     }
@@ -845,5 +861,29 @@ mod tests {
         assert!(FIND_PREVIOUS.matches_for(false, Key::F3, shift));
         assert!(FIND_NEXT.matches_for(false, Key::G, ctrl()));
         assert!(!FIND_NEXT.matches_for(true, Key::F3, Modifiers::default()));
+    }
+
+    #[test]
+    fn an_option_chord_is_found_by_the_keys_position_when_option_changes_the_letter() {
+        let alt = Modifiers::ALT;
+        let key = |logical, physical, modifiers| {
+            let mut input = InputState::default();
+            input.events.push(Event::Key {
+                key: logical,
+                physical_key: Some(physical),
+                pressed: true,
+                repeat: false,
+                modifiers,
+            });
+            input
+        };
+        // The layout turned Option+L into a symbol that is some other egui key.
+        assert!(SCALE_LOGARITHMIC.peek(&key(Key::Pipe, Key::L, alt)));
+        assert!(SCALE_PERCENT.peek(&key(Key::P, Key::P, alt)));
+        // Another key's position does not match, and neither does a chord without Option, which
+        // keeps going by the letter the layout gives.
+        assert!(!SCALE_LOGARITHMIC.peek(&key(Key::Pipe, Key::P, alt)));
+        assert!(!UNDO.peek(&key(Key::Pipe, Key::Z, ctrl())));
+        assert!(!SCALE_LOGARITHMIC.peek(&key(Key::Pipe, Key::L, Modifiers::NONE)));
     }
 }

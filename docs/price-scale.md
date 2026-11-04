@@ -95,8 +95,8 @@ logarithmic (`Navigation::logarithmic`).
 
 A small button sits where the price axis meets the time axis (`ui::scale_menu`): the cell right of
 the plot and under it, centred, 20 pt (smaller in a tight cell, absent when the cell cannot hold it,
-the chart has no plot, or the card is a script preview). It lights in the accent colour when the
-mode is not Regular. It opens a menu in the shared kit style (`kit::menu_popup`, `menu_scope`,
+the chart has no plot, or the card is a script preview). It is drawn in the primary text ink instead of the muted one when the
+mode is not Regular (a control, so no accent colour). It opens a menu in the shared kit style (`kit::menu_popup`, `menu_scope`,
 `menu_row` with the check and shortcut slots): one row checked, Percent `⌥P` and Logarithmic `⌥L`
 (`Alt+P` / `Alt+L` elsewhere) in the muted shortcut slot. A pick closes the menu, makes that chart
 the focused one and goes to `ChartWorkspace::set_scale_mode`, as do the shortcuts and the price-axis
@@ -124,6 +124,13 @@ moves the highlight as it moves.
 logarithmic scale, as toggles. Here a press of the active mode's shortcut goes back to Regular. They
 act on the focused chart, and leave a focused text field alone (Option+letter types a character on a
 Mac). TradingView documents no shortcut for Indexed to 100, so none is invented.
+Option turns a letter into a symbol, and which egui key that symbol resolves to depends on the
+keyboard layout, so an Option chord also matches by the key's position (`Event::Key::physical_key`,
+`Shortcut::matches_option_physical`). Chords without Option still go by the letter the layout gives.
+`option_l_and_option_p_switch_...` (workspace) and `an_option_chord_is_found_by_the_keys_position...`
+(shortcut) cover this with synthetic key events; **no real Option key press was driven into a window**
+(osascript had no accessibility access), so the layout that failed for the reporter is inferred, not
+reproduced.
 
 The button is live-only: `paint_snapshot` never draws it, and `snapshot_tests` checks that the
 image is the same with or without it. It is painted from `LiveOverlays::finish`, reports through

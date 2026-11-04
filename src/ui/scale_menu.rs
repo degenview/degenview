@@ -18,7 +18,7 @@ const BUTTON: f32 = 20.0;
 const MARGIN: f32 = 2.0;
 /// The corner is left empty below this: the button would crowd the axes.
 const MIN_CELL: f32 = 18.0;
-const MENU_WIDTH: f32 = 224.0;
+const MENU_WIDTH: f32 = 168.0;
 
 /// The id of a chart's button, which the menu it opens hangs from.
 pub fn id(chart_id: u64) -> Id {
@@ -108,11 +108,12 @@ pub fn show(ui: &mut Ui, id: Id, cell: Rect, state: &ScaleButton) -> Option<Pric
         Color32::TRANSPARENT
     };
     ui.painter().rect_filled(rect, 5.0, fill);
-    // A scale other than the plain one is lit, so a chart reading in percent is told at a glance.
+    // A scale other than the plain one is set apart by a stronger ink, not by a colour: the
+    // accent belongs to selection and data, and this is a control.
     let ink = if state.mode == PriceScaleMode::Regular {
         theme::text_secondary()
     } else {
-        kit::ACCENT
+        theme::text_primary()
     };
     icons::paint(
         ui.painter(),

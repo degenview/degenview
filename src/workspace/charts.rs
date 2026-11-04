@@ -509,6 +509,41 @@ mod tests {
         assert_eq!(persisted.charts[0].symbol, "SOLUSDT");
     }
 
+    /// One frame in which `key` goes down with Option held, through the workspace's own keyboard
+    /// handler.
+    fn press_option(workspace: &mut ChartWorkspace, ctx: &egui::Context, key: egui::Key) {
+        let mut input = egui::RawInput::default();
+        input.events.push(egui::Event::Key {
+            key,
+            physical_key: Some(key),
+            pressed: true,
+            repeat: false,
+            modifiers: egui::Modifiers::ALT,
+        });
+        let mut output = ctx.run_ui(input, |ui| workspace.handle_keyboard(ui));
+        output.textures_delta.clear();
+    }
+
+    #[test]
+    fn option_l_and_option_p_switch_the_focused_charts_scale_and_press_again_to_go_back() {
+        let ctx = egui::Context::default();
+        let mut workspace = empty_workspace(3);
+        let id = workspace
+            .add_chart_for(&InstrumentId::new(DataSource::Binance, "BTCUSDT"), &ctx)
+            .chart_id;
+        let mode = |workspace: &ChartWorkspace| workspace.charts[0].scale_mode;
+        assert_eq!(workspace.resolved_focused_id(), Some(id));
+
+        press_option(&mut workspace, &ctx, egui::Key::L);
+        assert_eq!(mode(&workspace), PriceScaleMode::Logarithmic);
+        press_option(&mut workspace, &ctx, egui::Key::L);
+        assert_eq!(mode(&workspace), PriceScaleMode::Regular);
+        press_option(&mut workspace, &ctx, egui::Key::P);
+        assert_eq!(mode(&workspace), PriceScaleMode::Percent);
+        press_option(&mut workspace, &ctx, egui::Key::L);
+        assert_eq!(mode(&workspace), PriceScaleMode::Logarithmic);
+    }
+
     #[test]
     fn each_chart_keeps_its_own_scale_mode_through_a_restart_and_marks_the_layout_changed() {
         let ctx = egui::Context::default();
