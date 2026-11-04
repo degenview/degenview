@@ -3,8 +3,8 @@
 //! `UnseenAlertsStore.swift`.
 
 use crate::model::alert::{
-    AlertNotificationSettings, AlertPersistenceSnapshot, AlertRuntimeCommand, AlertRuntimeHealth,
-    AlertTriggerEvent, PriceAlert,
+    AlertCommandRejection, AlertNotificationSettings, AlertPersistenceSnapshot,
+    AlertRuntimeCommand, AlertRuntimeHealth, AlertTriggerEvent, PriceAlert,
 };
 use crate::model::alert_feed::LAST_SEEN_KEY;
 use crate::store::{Document, Store};
@@ -14,6 +14,7 @@ use serde::Serialize;
 const KEY_REVISION: &str = "alert.revision";
 const KEY_SETTINGS: &str = "alert.settings";
 const KEY_PROCESSED_COMMAND_IDS: &str = "alert.processedCommandIDs";
+const KEY_REJECTED_COMMANDS: &str = "alert.rejectedCommands";
 const KEY_HEALTH: &str = "alert.health";
 
 impl Document for PriceAlert {
@@ -38,6 +39,9 @@ impl Store {
                 .unwrap_or_default(),
             processed_command_ids: self
                 .setting_strict::<Vec<u64>>(KEY_PROCESSED_COMMAND_IDS)?
+                .unwrap_or_default(),
+            rejected_commands: self
+                .setting_strict::<Vec<AlertCommandRejection>>(KEY_REJECTED_COMMANDS)?
                 .unwrap_or_default(),
             health: self
                 .setting_strict::<AlertRuntimeHealth>(KEY_HEALTH)?
@@ -71,6 +75,7 @@ impl Store {
             self.set_setting(KEY_REVISION, &snapshot.revision)?;
             self.set_setting(KEY_SETTINGS, &snapshot.settings)?;
             self.set_setting(KEY_PROCESSED_COMMAND_IDS, &snapshot.processed_command_ids)?;
+            self.set_setting(KEY_REJECTED_COMMANDS, &snapshot.rejected_commands)?;
             self.set_setting(KEY_HEALTH, &snapshot.health)?;
             for id in command_ids {
                 self.connection.execute(
@@ -80,6 +85,14 @@ impl Store {
             }
             Ok(())
         })
+    }
+
+    /// Makes every later `enqueue_alert_command` fail, as a full disk or a locked database would.
+    #[cfg(test)]
+    pub(crate) fn break_alert_queue(&self) {
+        self.connection
+            .execute("DROP TABLE alert_command", [])
+            .expect("drop the alert queue");
     }
 
     /// Enqueues a change for whoever owns the runtime. Idempotent by command id.

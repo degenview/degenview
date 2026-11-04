@@ -401,6 +401,22 @@ impl PriceAlert {
             webhook_message: None,
         }
     }
+
+    /// Whether `other` is this alert as far as a planned edit is concerned: the same market,
+    /// condition, currency, frequency, state, note and webhook settings. What the runtime keeps
+    /// moving on its own (armed flag, last price, fingerprint, timestamps) is not compared, so
+    /// a quote tick does not invalidate a plan.
+    pub fn same_definition(&self, other: &Self) -> bool {
+        self.id == other.id
+            && self.asset.key() == other.asset.key()
+            && self.condition == other.condition
+            && self.currency == other.currency
+            && self.frequency == other.frequency
+            && self.state == other.state
+            && self.note == other.note
+            && self.webhook_endpoint_ids == other.webhook_endpoint_ids
+            && self.webhook_message == other.webhook_message
+    }
 }
 
 // MARK: Events
@@ -598,7 +614,42 @@ pub struct AlertPersistenceSnapshot {
     pub history: Vec<AlertTriggerEvent>,
     pub settings: AlertNotificationSettings,
     pub processed_command_ids: Vec<u64>,
+    /// Commands whose precondition no longer held when they were applied, newest last. Their
+    /// ids are also in `processed_command_ids`; this says why nothing happened.
+    pub rejected_commands: Vec<AlertCommandRejection>,
     pub health: AlertRuntimeHealth,
+}
+
+/// What must still be true when the runtime applies a command. The planner checked it against a
+/// snapshot that can be a second old (or older, when the background agent owns the runtime), and
+/// several requests plan against the same snapshot, so the owner of the data checks again.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub enum AlertPrecondition {
+    /// A `Save` that adds a new alert: its id is unused, there are fewer than `max_alerts`, and
+    /// no other alert has the same market, condition, currency and frequency.
+    Create { max_alerts: usize },
+    /// A `Save` that edits an alert: it still exists and still has the definition the edit was
+    /// planned from ([`PriceAlert::same_definition`]). Prevents lost updates and bringing a
+    /// deleted alert back.
+    Unchanged(Box<PriceAlert>),
+}
+
+/// Why a command was not applied.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum AlertRejectReason {
+    /// An identical alert exists (or an alert with this id).
+    Duplicate,
+    LimitReached,
+    /// The alert was deleted since the edit was planned.
+    Missing,
+    /// The alert was changed since the edit was planned.
+    Changed,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AlertCommandRejection {
+    pub command_id: u64,
+    pub reason: AlertRejectReason,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -624,7 +675,9 @@ pub enum AlertRuntimeCommandPayload {
 pub struct AlertRuntimeCommand {
     pub id: u64,
     pub created_at_ms: i64,
-    pub expected_revision: Option<u64>,
+    /// Checked by the runtime right before the payload is applied; `None` always applies.
+    #[serde(default)]
+    pub precondition: Option<AlertPrecondition>,
     pub payload: AlertRuntimeCommandPayload,
 }
 
@@ -633,9 +686,14 @@ impl AlertRuntimeCommand {
         Self {
             id: new_id(),
             created_at_ms: now_ms,
-            expected_revision: None,
+            precondition: None,
             payload,
         }
+    }
+
+    pub fn with_precondition(mut self, precondition: AlertPrecondition) -> Self {
+        self.precondition = Some(precondition);
+        self
     }
 }
 

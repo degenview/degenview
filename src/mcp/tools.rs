@@ -6,7 +6,8 @@
 //! caller could not use anyway.
 
 use crate::mcp::bridge::{
-    AlertUpdate, BridgeClient, McpCommand, McpError, McpReply, NewAlert, REQUEST_TIMEOUT,
+    AlertCommandOutcome, AlertUpdate, BridgeClient, McpCommand, McpError, McpReply, NewAlert,
+    REQUEST_TIMEOUT,
 };
 use crate::mcp::chart_data::{DEFAULT_CANDLES, MAX_CANDLES};
 use crate::mcp::drawings::{
@@ -301,6 +302,25 @@ fn same_settings(a: &AlertInfo, b: &AlertInfo) -> bool {
         &b.status,
         &b.note,
     )
+}
+
+/// Adds the diagnostics compile to an edit that already succeeded. If the compile could not run
+/// (too many script jobs, interrupted, library unreadable) the edit stands and says so, instead
+/// of reporting `compile: null` as if there were nothing to report.
+fn attach_compile(
+    result: &mut PineEditResult,
+    compiled: Result<PineCompileResult, CallToolResult>,
+) {
+    match compiled {
+        Ok(compiled) => result.compile = Some(compiled),
+        Err(_) => {
+            result.compile = None;
+            result.compile_warning = Some(
+                "The edit was applied, but its diagnostics could not be compiled right now (the script library was unreadable, too many script requests were running, or the request was interrupted). Call degenview_compile_pine_script to get them"
+                    .into(),
+            );
+        }
+    }
 }
 
 fn parse_alert_id(raw: &str) -> Result<u64, CallToolResult> {
@@ -647,6 +667,16 @@ impl DegenViewMcp {
         }
     }
 
+    /// Every tool this server routes, by name.
+    #[cfg(test)]
+    pub(crate) fn routed_tool_names(&self) -> Vec<String> {
+        self.tool_router
+            .list_all()
+            .into_iter()
+            .map(|tool| tool.name.to_string())
+            .collect()
+    }
+
     #[tool(
         name = "degenview_list_workspaces",
         description = "List DegenView chart workspaces (one per tab). Returns each workspace's stable id, title, chart count and timeframe, and which one is active. Use a workspace_id with the other chart tools.",
@@ -871,15 +901,21 @@ impl DegenViewMcp {
         if created.status == "queued" {
             let id = parse_alert_id(&created.alert.alert_id)?;
             if let Some(stored) = self
-                .settle(&client, Permission::AlertsCreate, id, |alerts| {
-                    !alerts.is_empty()
-                })
+                .settle(
+                    &client,
+                    Permission::AlertsCreate,
+                    id,
+                    created.command_id,
+                    |alerts| !alerts.is_empty(),
+                )
                 .await
+                .map_err(|error| failure(&error))?
                 .and_then(|alerts| alerts.into_iter().next())
             {
                 created = CreateAlertResult {
                     status: "created".into(),
                     alert: stored,
+                    command_id: None,
                 };
             }
         }
@@ -953,17 +989,25 @@ impl DegenViewMcp {
         if updated.status == "queued" {
             let expected = updated.alert.clone();
             if let Some(stored) = self
-                .settle(&client, Permission::AlertsEdit, alert_id, |alerts| {
-                    alerts
-                        .first()
-                        .is_some_and(|alert| same_settings(alert, &expected))
-                })
+                .settle(
+                    &client,
+                    Permission::AlertsEdit,
+                    alert_id,
+                    updated.command_id,
+                    |alerts| {
+                        alerts
+                            .first()
+                            .is_some_and(|alert| same_settings(alert, &expected))
+                    },
+                )
                 .await
+                .map_err(|error| failure(&error))?
                 .and_then(|alerts| alerts.into_iter().next())
             {
                 updated = UpdateAlertResult {
                     status: "updated".into(),
                     alert: stored,
+                    command_id: None,
                 };
             }
         }
@@ -1037,13 +1081,17 @@ impl DegenViewMcp {
             Ok(_) => return Err(unexpected()),
             Err(error) => return Err(failure(&error)),
         };
-        if self
-            .settle(&client, Permission::AlertsDelete, alert_id, |alerts| {
-                alerts.is_empty()
-            })
-            .await
-            .is_some()
-        {
+        if matches!(
+            self.settle(
+                &client,
+                Permission::AlertsDelete,
+                alert_id,
+                None,
+                |alerts| { alerts.is_empty() }
+            )
+            .await,
+            Ok(Some(_))
+        ) {
             changed.status = "deleted".into();
         }
         Ok(Json(changed))
@@ -1145,15 +1193,15 @@ impl DegenViewMcp {
         };
         // Diagnostics for the text that is now the draft: compiled off the app thread.
         let script_id = id.clone();
-        result.compile = self
+        let compiled = self
             .pine_job(&client, Permission::PineScriptsWrite, move |store| {
                 let mut compiled = pine::compile_script(store, Target::Inline(source))?;
                 compiled.script_id = Some(script_id);
                 compiled.version = "draft".into();
                 Ok(compiled)
             })
-            .await
-            .ok();
+            .await;
+        attach_compile(&mut result, compiled);
         Ok(Json(result))
     }
 
@@ -1197,18 +1245,18 @@ impl DegenViewMcp {
             Ok(_) => return Err(unexpected()),
             Err(error) => return Err(failure(&error)),
         };
-        result.compile = self
+        let compiled = self
             .pine_job(&client, Permission::PineScriptsSave, move |store| {
                 pine::compile_script(store, Target::Script(id, Version::Saved))
             })
-            .await
-            .ok();
+            .await;
+        attach_compile(&mut result, compiled);
         Ok(Json(result))
     }
 
     #[tool(
         name = "degenview_compile_pine_script",
-        description = "Compile a Pine script (saved or draft) or a source string with DegenView's own compiler and return its errors and warnings with codes and line/column positions. Compiling does not run the script: no trades, alerts, webhooks, saves or chart changes. A name nothing defines is reported as an error (PINE3050 variable, PINE3051 function). The check is lenient (a name declared anywhere counts, and members of builtin namespaces such as ta.* are judged only at run time), so a clean compile does not prove the script runs; apply it to a chart (degenview_add_indicator) and read its last-run error with degenview_get_pine_instance.",
+        description = "Compile a Pine script (saved or draft) or a source string with DegenView's own compiler and return its errors and warnings with codes and line/column positions. Compiling does not run the script: no trades, alerts, webhooks, saves or chart changes. A name nothing defines is reported as an error (PINE3050 variable, PINE3051 function). The check is lenient (a name declared anywhere counts, and members of builtin namespaces such as ta.* are judged only at run time), so a clean compile does not prove the script runs; apply it to a chart (degenview_add_pine_script_to_chart) and read its last-run error with degenview_get_pine_instance.",
         annotations(
             read_only_hint = true,
             destructive_hint = false,
@@ -1987,15 +2035,36 @@ impl DegenViewMcp {
 
     /// The alert runtime applies queued changes on its own schedule. Looks for the change to
     /// show up (briefly), so a reply can say what is true now rather than only "queued".
-    /// Returns the alert's entry (empty once deleted) as soon as `done` holds.
+    /// Returns the alert's entry (empty once deleted) as soon as `done` holds, `Ok(None)` if it
+    /// did not show up in time, and an error if the runtime refused the command
+    /// (`command_id`) because the alerts changed under it.
     async fn settle(
         &self,
         client: &ClientIdentity,
         permission: Permission,
         alert_id: u64,
+        command_id: Option<u64>,
         done: impl Fn(&[AlertInfo]) -> bool,
-    ) -> Option<Vec<AlertInfo>> {
+    ) -> Result<Option<Vec<AlertInfo>>, McpError> {
         for _ in 0..SETTLE_POLLS {
+            if let Some(command_id) = command_id {
+                let outcome = self
+                    .bridge
+                    .call(
+                        &client.id,
+                        permission,
+                        McpCommand::AlertCommandOutcome { command_id },
+                        Duration::from_secs(2),
+                    )
+                    .await;
+                match outcome {
+                    Ok(McpReply::AlertCommand(AlertCommandOutcome::Rejected(reason))) => {
+                        return Err(AlertCommandOutcome::rejection_error(reason));
+                    }
+                    Ok(_) => {}
+                    Err(_) => return Ok(None),
+                }
+            }
             let reply = self
                 .bridge
                 .call(
@@ -2008,13 +2077,15 @@ impl DegenViewMcp {
                 )
                 .await;
             match reply {
-                Ok(McpReply::Alerts(result)) if done(&result.alerts) => return Some(result.alerts),
+                Ok(McpReply::Alerts(result)) if done(&result.alerts) => {
+                    return Ok(Some(result.alerts));
+                }
                 Ok(_) => {}
-                Err(_) => return None,
+                Err(_) => return Ok(None),
             }
             tokio::time::sleep(SETTLE_INTERVAL).await;
         }
-        None
+        Ok(None)
     }
 
     async fn set_alert_paused(
@@ -2041,13 +2112,13 @@ impl DegenViewMcp {
         };
         if changed.status == "queued" {
             let wanted = if paused { "paused" } else { "active" };
-            if self
-                .settle(&client, Permission::AlertsPause, alert_id, |alerts| {
+            if matches!(
+                self.settle(&client, Permission::AlertsPause, alert_id, None, |alerts| {
                     alerts.first().is_some_and(|alert| alert.status == wanted)
                 })
-                .await
-                .is_some()
-            {
+                .await,
+                Ok(Some(_))
+            ) {
                 changed.status = wanted.into();
             }
         }
@@ -2100,7 +2171,7 @@ fn with_standard_formats(mut tool: Tool) -> Tool {
 #[tool_handler(
     router = self.tool_router,
     name = "DegenView",
-    instructions = "Inspect and add charts in DegenView, a market dashboard. List workspaces first, then list or add charts by workspace_id."
+    instructions = "Inspect and change DegenView, a market dashboard, within what this credential is allowed. Charts: list workspaces first, then list or add charts and built-in indicators by workspace_id; read candles and add, edit or delete drawings. Pine scripts: list, read, compile and edit scripts (an edit is a draft until saved, and every edit needs the revision you last read), and apply a saved script to a chart. Price alerts: list, create, edit, pause and delete. Only the tools this credential may use are listed."
 )]
 impl ServerHandler for DegenViewMcp {
     async fn call_tool(
@@ -2108,19 +2179,26 @@ impl ServerHandler for DegenViewMcp {
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
-        if let Some(permission) = required_permission(&request.name) {
-            let allowed = context
-                .extensions
-                .get::<http::request::Parts>()
-                .and_then(|parts| parts.extensions.get::<ClientIdentity>())
-                .is_some_and(|client| self.shared.allows(&client.id, permission));
-            if !allowed {
-                return Ok(failure(&McpError::PermissionDenied(format!(
-                    "This credential lacks the {} permission",
-                    permission.id()
-                )))
-                .into());
-            }
+        // Fail closed: a tool with no permission mapping is never run, however its name got
+        // routed. (It is also hidden from `tools/list`.) A new tool must be added to
+        // `required_permission`; `every_routed_tool_has_exactly_one_permission` enforces it.
+        let Some(permission) = required_permission(&request.name) else {
+            return Err(ErrorData::invalid_params(
+                format!("Unknown tool: {}", request.name),
+                None,
+            ));
+        };
+        let allowed = context
+            .extensions
+            .get::<http::request::Parts>()
+            .and_then(|parts| parts.extensions.get::<ClientIdentity>())
+            .is_some_and(|client| self.shared.allows(&client.id, permission));
+        if !allowed {
+            return Ok(failure(&McpError::PermissionDenied(format!(
+                "This credential lacks the {} permission",
+                permission.id()
+            )))
+            .into());
         }
         let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
         self.tool_router.call(tcc).await

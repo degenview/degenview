@@ -10,16 +10,18 @@
 
 use crate::model::alert::AlertCondition;
 use crate::model::alert::{
-    AlertAsset, AlertCurrency, AlertDeliveryRecord, AlertEventOrigin, AlertFrequency, AlertId,
-    AlertNotificationSettings, AlertPersistenceSnapshot, AlertRuntimeCommand,
-    AlertRuntimeCommandPayload, AlertRuntimeHealth, AlertState, AlertTriggerEvent, MarketQuote,
-    PriceAlert,
+    AlertAsset, AlertCommandRejection, AlertCurrency, AlertDeliveryRecord, AlertEventOrigin,
+    AlertFrequency, AlertId, AlertNotificationSettings, AlertPersistenceSnapshot,
+    AlertPrecondition, AlertRejectReason, AlertRuntimeCommand, AlertRuntimeCommandPayload,
+    AlertRuntimeHealth, AlertState, AlertTriggerEvent, MarketQuote, PriceAlert,
 };
 use crate::model::watchlist::new_id;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 /// The most processed command ids remembered, to ignore a replay.
 const PROCESSED_COMMAND_LIMIT: usize = 1_000;
+/// The most rejected commands remembered, so a sender can still learn why one did nothing.
+const REJECTED_COMMAND_LIMIT: usize = 200;
 /// Catch-up never invents crossings older than this.
 const CATCH_UP_WINDOW_MS: i64 = 86_400_000;
 
@@ -112,7 +114,32 @@ impl AlertEngine {
         if self.snapshot.processed_command_ids.contains(&command.id) {
             return;
         }
-        match &command.payload {
+        if let Some(reason) = self.broken_precondition(command) {
+            // Nothing is applied, but the command is consumed and the reason is kept so the
+            // sender (the MCP server) can report a conflict instead of guessing from a snapshot.
+            let rejected = &mut self.snapshot.rejected_commands;
+            rejected.push(AlertCommandRejection {
+                command_id: command.id,
+                reason,
+            });
+            if rejected.len() > REJECTED_COMMAND_LIMIT {
+                let excess = rejected.len() - REJECTED_COMMAND_LIMIT;
+                rejected.drain(..excess);
+            }
+        } else {
+            self.apply_payload(&command.payload, now_ms);
+        }
+        let ids = &mut self.snapshot.processed_command_ids;
+        ids.push(command.id);
+        if ids.len() > PROCESSED_COMMAND_LIMIT {
+            let excess = ids.len() - PROCESSED_COMMAND_LIMIT;
+            ids.drain(..excess);
+        }
+        self.touch();
+    }
+
+    fn apply_payload(&mut self, payload: &AlertRuntimeCommandPayload, now_ms: i64) {
+        match payload {
             AlertRuntimeCommandPayload::Save { alert, baseline } => {
                 self.save_alert((**alert).clone(), *baseline, now_ms);
             }
@@ -128,13 +155,46 @@ impl AlertEngine {
             }
             AlertRuntimeCommandPayload::RequestNotificationAuthorization => {}
         }
-        let ids = &mut self.snapshot.processed_command_ids;
-        ids.push(command.id);
-        if ids.len() > PROCESSED_COMMAND_LIMIT {
-            let excess = ids.len() - PROCESSED_COMMAND_LIMIT;
-            ids.drain(..excess);
+    }
+
+    /// Why `command` must not be applied to the alerts as they are now, if it must not.
+    fn broken_precondition(&self, command: &AlertRuntimeCommand) -> Option<AlertRejectReason> {
+        let precondition = command.precondition.as_ref()?;
+        let AlertRuntimeCommandPayload::Save { alert, .. } = &command.payload else {
+            return None;
+        };
+        let current = self.snapshot.alerts.iter().find(|a| a.id == alert.id);
+        match precondition {
+            AlertPrecondition::Create { max_alerts } => {
+                if current.is_some() || self.find_identical(alert).is_some() {
+                    Some(AlertRejectReason::Duplicate)
+                } else if self.snapshot.alerts.len() >= *max_alerts {
+                    Some(AlertRejectReason::LimitReached)
+                } else {
+                    None
+                }
+            }
+            AlertPrecondition::Unchanged(planned) => match current {
+                None => Some(AlertRejectReason::Missing),
+                Some(current) if !current.same_definition(planned) => {
+                    Some(AlertRejectReason::Changed)
+                }
+                // Another edit may since have made some other alert identical to this result.
+                Some(_) if self.find_identical(alert).is_some() => {
+                    Some(AlertRejectReason::Duplicate)
+                }
+                Some(_) => None,
+            },
         }
-        self.touch();
+    }
+
+    /// Whether `id` was rejected (not applied), and why. `None` if it was applied or is unknown.
+    pub fn rejection(&self, id: u64) -> Option<AlertRejectReason> {
+        self.snapshot
+            .rejected_commands
+            .iter()
+            .find(|rejection| rejection.command_id == id)
+            .map(|rejection| rejection.reason)
     }
 
     /// Assets with an active alert, once each, for the quote layer to poll.
@@ -690,6 +750,190 @@ mod tests {
             engine.snapshot().processed_command_ids.len(),
             PROCESSED_COMMAND_LIMIT
         );
+    }
+
+    fn save_command(
+        alert: &PriceAlert,
+        precondition: Option<AlertPrecondition>,
+    ) -> AlertRuntimeCommand {
+        let command = AlertRuntimeCommand::new(
+            AlertRuntimeCommandPayload::Save {
+                alert: Box::new(alert.clone()),
+                baseline: None,
+            },
+            T0,
+        );
+        match precondition {
+            Some(precondition) => command.with_precondition(precondition),
+            None => command,
+        }
+    }
+
+    fn new_alert(target: f64) -> PriceAlert {
+        PriceAlert::new(
+            asset("BTCUSDT"),
+            AlertCondition::CrossesAbove { target },
+            T0,
+        )
+    }
+
+    #[test]
+    fn two_creates_planned_from_the_same_snapshot_make_one_alert() {
+        let mut engine = AlertEngine::new(None);
+        // Both requests saw no duplicate; each minted its own id.
+        let first = save_command(
+            &new_alert(5.0),
+            Some(AlertPrecondition::Create { max_alerts: 500 }),
+        );
+        let second = save_command(
+            &new_alert(5.0),
+            Some(AlertPrecondition::Create { max_alerts: 500 }),
+        );
+        engine.apply(&first, T0);
+        engine.apply(&second, T0);
+        assert_eq!(engine.snapshot().alerts.len(), 1);
+        assert_eq!(engine.rejection(first.id), None);
+        assert_eq!(
+            engine.rejection(second.id),
+            Some(AlertRejectReason::Duplicate)
+        );
+        // The rejected command is consumed: a replay does nothing and is not recorded twice.
+        engine.apply(&second, T0);
+        assert_eq!(engine.snapshot().rejected_commands.len(), 1);
+    }
+
+    #[test]
+    fn a_burst_of_creates_cannot_pass_the_cap() {
+        let mut engine = AlertEngine::new(None);
+        let commands: Vec<_> = (1..=5)
+            .map(|n| {
+                save_command(
+                    &new_alert(f64::from(n)),
+                    Some(AlertPrecondition::Create { max_alerts: 3 }),
+                )
+            })
+            .collect();
+        for command in &commands {
+            engine.apply(command, T0);
+        }
+        assert_eq!(engine.snapshot().alerts.len(), 3);
+        assert_eq!(
+            engine.rejection(commands[3].id),
+            Some(AlertRejectReason::LimitReached)
+        );
+        assert_eq!(
+            engine.rejection(commands[4].id),
+            Some(AlertRejectReason::LimitReached)
+        );
+    }
+
+    #[test]
+    fn a_second_edit_planned_from_the_same_alert_is_rejected_not_merged_over_the_first() {
+        let mut engine = AlertEngine::new(None);
+        let original = new_alert(5.0);
+        engine.apply(&save_command(&original, None), T0);
+        // Edit one changes the note; edit two (planned from the same alert) the frequency.
+        let mut with_note = original.clone();
+        with_note.note = "first".into();
+        let mut with_frequency = original.clone();
+        with_frequency.frequency = AlertFrequency::EveryTime;
+        let planned = AlertPrecondition::Unchanged(Box::new(original.clone()));
+        let one = save_command(&with_note, Some(planned.clone()));
+        let two = save_command(&with_frequency, Some(planned));
+        engine.apply(&one, T0);
+        engine.apply(&two, T0);
+        let stored = &engine.snapshot().alerts[0];
+        assert_eq!(stored.note, "first", "the first edit survives");
+        assert_eq!(
+            stored.frequency,
+            AlertFrequency::Once,
+            "the stale full object did not land"
+        );
+        assert_eq!(engine.rejection(two.id), Some(AlertRejectReason::Changed));
+    }
+
+    #[test]
+    fn an_edit_planned_before_a_delete_cannot_bring_the_alert_back() {
+        let mut engine = AlertEngine::new(None);
+        let original = new_alert(5.0);
+        engine.apply(&save_command(&original, None), T0);
+        let mut edited = original.clone();
+        edited.note = "late".into();
+        let edit = save_command(
+            &edited,
+            Some(AlertPrecondition::Unchanged(Box::new(original.clone()))),
+        );
+        engine.apply(
+            &AlertRuntimeCommand::new(AlertRuntimeCommandPayload::Delete(original.id), T0),
+            T0,
+        );
+        engine.apply(&edit, T0);
+        assert!(engine.snapshot().alerts.is_empty());
+        assert_eq!(engine.rejection(edit.id), Some(AlertRejectReason::Missing));
+    }
+
+    #[test]
+    fn a_delete_after_an_edit_still_deletes_and_runtime_movement_does_not_reject_an_edit() {
+        let mut engine = AlertEngine::new(None);
+        let original = new_alert(5.0);
+        engine.apply(&save_command(&original, None), T0);
+        // The runtime moves its own fields (previous price, armed) between plan and apply.
+        let mut moved = engine.snapshot().alerts[0].clone();
+        moved.previous_value = Some(4.0);
+        moved.armed = false;
+        moved.updated_at_ms += 99;
+        engine.save_alert(moved, Some(4.0), T0 + 99);
+        let mut edited = original.clone();
+        edited.note = "ok".into();
+        let edit = save_command(
+            &edited,
+            Some(AlertPrecondition::Unchanged(Box::new(original.clone()))),
+        );
+        engine.apply(&edit, T0 + 100);
+        assert_eq!(engine.snapshot().alerts[0].note, "ok");
+        assert_eq!(engine.rejection(edit.id), None);
+        engine.apply(
+            &AlertRuntimeCommand::new(AlertRuntimeCommandPayload::Delete(original.id), T0),
+            T0,
+        );
+        assert!(engine.snapshot().alerts.is_empty());
+    }
+
+    #[test]
+    fn an_edit_that_would_duplicate_another_alert_is_rejected() {
+        let mut engine = AlertEngine::new(None);
+        let a = new_alert(5.0);
+        let b = new_alert(6.0);
+        engine.apply(&save_command(&a, None), T0);
+        engine.apply(&save_command(&b, None), T0);
+        // b is edited to a's target; meanwhile it is still as planned.
+        let mut edited = b.clone();
+        edited.condition = AlertCondition::CrossesAbove { target: 5.0 };
+        let edit = save_command(
+            &edited,
+            Some(AlertPrecondition::Unchanged(Box::new(b.clone()))),
+        );
+        engine.apply(&edit, T0);
+        assert_eq!(
+            engine.rejection(edit.id),
+            Some(AlertRejectReason::Duplicate)
+        );
+    }
+
+    #[test]
+    fn a_command_with_no_precondition_applies_as_before_and_old_rows_still_decode() {
+        let mut engine = AlertEngine::new(None);
+        let alert = new_alert(5.0);
+        engine.apply(&save_command(&alert, None), T0);
+        assert_eq!(engine.snapshot().alerts.len(), 1);
+        // A queued row written before `precondition` existed carried `expected_revision`.
+        let command = save_command(&alert, None);
+        let mut json = serde_json::to_value(&command).unwrap();
+        let object = json.as_object_mut().unwrap();
+        object.remove("precondition");
+        object.insert("expected_revision".into(), serde_json::Value::Null);
+        let decoded: AlertRuntimeCommand = serde_json::from_value(json).unwrap();
+        assert_eq!(decoded.precondition, None);
     }
 
     #[test]

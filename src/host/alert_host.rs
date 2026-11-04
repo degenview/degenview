@@ -70,6 +70,11 @@ impl AlertHost {
         self.engine.find_identical(candidate)
     }
 
+    /// Why command `id` was refused, if it was.
+    pub fn rejection(&self, id: u64) -> Option<crate::model::alert::AlertRejectReason> {
+        self.engine.rejection(id)
+    }
+
     pub fn settings(&self) -> &AlertNotificationSettings {
         &self.engine.snapshot().settings
     }
@@ -472,7 +477,7 @@ mod tests {
         let command = AlertRuntimeCommand {
             id: new_id(),
             created_at_ms: 1_000,
-            expected_revision: None,
+            precondition: None,
             payload: AlertRuntimeCommandPayload::ClearHistory,
         };
         store.enqueue_alert_command(&command).expect("enqueue");

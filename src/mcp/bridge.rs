@@ -45,6 +45,10 @@ pub enum McpCommand {
     },
     CreateAlert(Box<NewAlert>),
     UpdateAlert(Box<AlertUpdate>),
+    /// What became of an alert command the app queued earlier (see [`AlertCommandOutcome`]).
+    AlertCommandOutcome {
+        command_id: u64,
+    },
     SetAlertPaused {
         alert_id: AlertId,
         paused: bool,
@@ -170,6 +174,7 @@ pub enum McpReply {
     AlertCreated(CreateAlertResult),
     AlertUpdated(UpdateAlertResult),
     AlertChanged(AlertChangeResult),
+    AlertCommand(AlertCommandOutcome),
     ChartPine(AppliedPineList),
     ChartPineDetail(AppliedPineDetail),
     PineStyles(PineStylesResult),
@@ -180,6 +185,37 @@ pub enum McpReply {
     Drawings(Box<DrawingsResult>),
     DrawingsChanged(Box<DrawingsChangeResult>),
     PineEdit(Box<crate::mcp::types::PineEditResult>),
+}
+
+/// The alert runtime applies queued commands on its own schedule and may refuse one whose
+/// precondition no longer holds. This is the answer for one command.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AlertCommandOutcome {
+    /// Not applied yet (or too old to be remembered).
+    Pending,
+    Applied,
+    Rejected(crate::model::alert::AlertRejectReason),
+}
+
+impl AlertCommandOutcome {
+    /// The error a rejected command is reported as.
+    pub fn rejection_error(reason: crate::model::alert::AlertRejectReason) -> McpError {
+        use crate::model::alert::AlertRejectReason as Reason;
+        match reason {
+            Reason::Duplicate => McpError::Conflict(
+                "An identical price alert already exists (another request created it first); nothing was changed. List the alerts and retry".into(),
+            ),
+            Reason::LimitReached => McpError::ResourceLimit(
+                "The price alert limit was reached by other requests first; nothing was created".into(),
+            ),
+            Reason::Missing => McpError::Conflict(
+                "The price alert was deleted before this change could be applied; nothing was changed".into(),
+            ),
+            Reason::Changed => McpError::Conflict(
+                "The price alert was changed by another request or in DegenView before this change could be applied; nothing was changed. Read it again and retry".into(),
+            ),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -233,6 +269,21 @@ const CANCELLED: u8 = 2;
 
 type Reply = Result<McpReply, McpError>;
 
+/// Cancels a queued request when the call that queued it is dropped. A caller can disappear
+/// without reaching its own timeout (the client closed the stream, the request was cancelled,
+/// an outer future was aborted); the queued [`Request`] holds its own handle to the state and
+/// would otherwise still run. The switch only moves from `PENDING`, so once the app has
+/// started a request this does nothing and its real outcome stands.
+struct CancelOnDrop(Arc<AtomicU8>);
+
+impl Drop for CancelOnDrop {
+    fn drop(&mut self) {
+        let _ = self
+            .0
+            .compare_exchange(PENDING, CANCELLED, Ordering::AcqRel, Ordering::Acquire);
+    }
+}
+
 pub struct Request {
     pub client_id: String,
     pub permission: Permission,
@@ -255,7 +306,8 @@ impl Request {
             state,
             reply,
         } = self;
-        let refusal = if Instant::now() > deadline {
+        let refusal = if Instant::now() > deadline || reply.is_closed() {
+            // Past its deadline, or the caller dropped its end (see `CancelOnDrop`).
             Some(McpError::Timeout)
         } else if generation != shared.generation() {
             Some(McpError::AppUnavailable(
@@ -306,6 +358,7 @@ impl BridgeClient {
     ) -> Reply {
         let (reply, answer) = oneshot::channel();
         let state = Arc::new(AtomicU8::new(PENDING));
+        let _cancel_if_dropped = CancelOnDrop(state.clone());
         let request = Request {
             client_id: client_id.to_owned(),
             permission,
@@ -471,6 +524,86 @@ mod tests {
         // The app only gets to it afterwards: it must not run.
         let request = inbox.take(1).pop().expect("still queued");
         request.run(&shared, |_| panic!("an abandoned request must not execute"));
+    }
+
+    fn spawn_call(client: &BridgeClient) -> tokio::task::JoinHandle<Reply> {
+        let client = client.clone();
+        tokio::spawn(async move {
+            client
+                .call(
+                    "c1",
+                    Permission::ChartsRead,
+                    McpCommand::ListWorkspaces,
+                    Duration::from_secs(30),
+                )
+                .await
+        })
+    }
+
+    #[tokio::test]
+    async fn a_dropped_call_is_never_executed_later() {
+        let (shared, client, inbox, _) = setup(&[Permission::ChartsRead]);
+        let call = spawn_call(&client);
+        let request = loop {
+            if let Some(request) = inbox.take(1).pop() {
+                break request;
+            }
+            tokio::task::yield_now().await;
+        };
+        // The caller goes away long before its own timeout: stream closed, call cancelled.
+        call.abort();
+        assert!(call.await.unwrap_err().is_cancelled());
+        request.run(&shared, |_| {
+            panic!("a request whose caller was dropped must not execute")
+        });
+    }
+
+    #[tokio::test]
+    async fn a_dropped_call_queued_behind_others_is_skipped_but_the_others_run() {
+        let (shared, client, inbox, _) = setup(&[Permission::ChartsRead]);
+        let first = spawn_call(&client);
+        let second = spawn_call(&client);
+        let third = spawn_call(&client);
+        let mut requests = Vec::new();
+        while requests.len() < 3 {
+            requests.extend(inbox.take(3));
+            tokio::task::yield_now().await;
+        }
+        // Whichever was queued second is abandoned; the abort lands at the next yield.
+        second.abort();
+        assert!(second.await.unwrap_err().is_cancelled());
+        let runs = Arc::new(AtomicUsize::new(0));
+        for request in requests {
+            let runs = runs.clone();
+            request.run(&shared, move |command| {
+                runs.fetch_add(1, Ordering::SeqCst);
+                ok_reply(command)
+            });
+        }
+        assert_eq!(runs.load(Ordering::SeqCst), 2);
+        assert!(first.await.unwrap().is_ok());
+        assert!(third.await.unwrap().is_ok());
+    }
+
+    #[tokio::test]
+    async fn dropping_a_call_after_the_app_started_it_keeps_its_outcome() {
+        let (shared, client, inbox, _) = setup(&[Permission::ChartsRead]);
+        let call = spawn_call(&client);
+        let request = loop {
+            if let Some(request) = inbox.take(1).pop() {
+                break request;
+            }
+            tokio::task::yield_now().await;
+        };
+        let ran = Arc::new(AtomicUsize::new(0));
+        let seen = ran.clone();
+        request.run(&shared, move |command| {
+            seen.fetch_add(1, Ordering::SeqCst);
+            ok_reply(command)
+        });
+        call.abort();
+        let _ = call.await;
+        assert_eq!(ran.load(Ordering::SeqCst), 1);
     }
 
     #[tokio::test]
