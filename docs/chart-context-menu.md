@@ -134,8 +134,9 @@ the choices below are inferred.
 
 - Clicking the arrow opens a pill beside it, and the arrow turns to point at the axis; clicking it
   again shuts the pill. The pill is a bell (a bell with a slash when the alert is paused, and then
-  the line, bell and price are grey), one of four arrows (up or down for a price that is crossed
-  above or below, slanted up or down for a rise or fall by a percentage; `AlertLine::percent`), the
+  the line, bell and price are grey), one of four arrows (slanted up or down for a price that is
+  crossed above or below, straight up or down for a rise or fall by a percentage;
+  `AlertLine::percent`), the
   level at the chart's price format, a divider and a bin. There is no word "alert" and no "paused"
   text: the tooltips and the screen-reader labels carry them. The line and bell are the app's
   yellow on dark and a deeper amber on light (`alert_color`), where yellow is too pale for a thin

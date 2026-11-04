@@ -105,10 +105,10 @@ struct Hold {
 fn caption(line: &AlertLine, format: PriceFormat) -> String {
     let price = format.format(line.price);
     let direction = match (line.percent, line.above) {
-        (false, true) => "↑",
-        (false, false) => "↓",
-        (true, true) => "↗",
-        (true, false) => "↘",
+        (false, true) => "↗",
+        (false, false) => "↘",
+        (true, true) => "↑",
+        (true, false) => "↓",
     };
     if line.paused {
         format!("Alert {direction} {price} · paused")
@@ -117,14 +117,14 @@ fn caption(line: &AlertLine, format: PriceFormat) -> String {
     }
 }
 
-/// The arrow of what the alert waits for: straight up or down for a price that is crossed, slanted
-/// for a rise or fall by a percentage.
+/// The arrow of what the alert waits for: slanted for a price that is crossed above or below,
+/// straight up or down for a rise or fall by a percentage.
 fn direction_icon(line: &AlertLine) -> Icon {
     match (line.percent, line.above) {
-        (false, true) => Icon::ArrowUp,
-        (false, false) => Icon::ArrowDown,
-        (true, true) => Icon::ArrowUpRight,
-        (true, false) => Icon::ArrowDownRight,
+        (false, true) => Icon::ArrowUpRight,
+        (false, false) => Icon::ArrowDownRight,
+        (true, true) => Icon::ArrowUp,
+        (true, false) => Icon::ArrowDown,
     }
 }
 
@@ -633,12 +633,12 @@ mod tests {
             percent: false,
             editable: true,
         };
-        assert_eq!(caption(&line, PriceFormat::AUTO), "Alert ↑ 118,151");
+        assert_eq!(caption(&line, PriceFormat::AUTO), "Alert ↗ 118,151");
         line.above = false;
         line.paused = true;
         assert_eq!(
             caption(&line, PriceFormat::AUTO),
-            "Alert ↓ 118,151 · paused"
+            "Alert ↘ 118,151 · paused"
         );
     }
 
@@ -651,10 +651,10 @@ mod tests {
                 ..line(above)
             })
         };
-        assert_eq!(of(true, false), Icon::ArrowUp);
-        assert_eq!(of(false, false), Icon::ArrowDown);
-        assert_eq!(of(true, true), Icon::ArrowUpRight);
-        assert_eq!(of(false, true), Icon::ArrowDownRight);
+        assert_eq!(of(true, false), Icon::ArrowUpRight);
+        assert_eq!(of(false, false), Icon::ArrowDownRight);
+        assert_eq!(of(true, true), Icon::ArrowUp);
+        assert_eq!(of(false, true), Icon::ArrowDown);
     }
 
     #[test]
