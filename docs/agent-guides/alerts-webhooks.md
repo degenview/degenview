@@ -16,6 +16,13 @@
 - While open, a sheet holds `alert_editor::quote_owner` demand and receives the current quote each
   frame, converted by app FX for non-USD currencies.
 
+- The Create Script Alert sheet and the script alert webhooks sheet (`ui::pine_alert_editor`) are laid out
+  like the price alert sheet: header, a card for what is armed, row cards, `webhook_picker` for the
+  endpoints (`send_section` with no message for a script alert, `endpoint_picker` alone), hairline,
+  summary + Cancel/Create footer. Neutral controls only (`kit::sheet_button`, gray badges). "Add in
+  Settings" is an outcome (`OpenWebhookSettings`) the host acts on; the sheet stays open. Pictures:
+  `cargo test --lib gallery_of_the_script_alert -- --ignored` with `DEGENVIEW_GALLERY_DIR` set.
+
 ## Webhooks
 
 - Endpoints are global `store::webhook` documents. URLs and headers are plaintext templates; show

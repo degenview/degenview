@@ -200,7 +200,7 @@ fn toggle_card(ui: &mut Ui, id: Id, is_on: &mut bool, subtitle: &str, highlight:
         size::CAPTION + 0.5,
         REGULAR,
         if highlight {
-            kit::ACCENT
+            theme::text_primary()
         } else {
             theme::text_secondary()
         },
@@ -274,6 +274,21 @@ fn empty_state(ui: &mut Ui) -> bool {
             .layout(egui::Layout::right_to_left(egui::Align::Center)),
     );
     kit::push_button(&mut row, None, "Add in Settings", true).clicked()
+}
+
+/// The endpoint cards alone, or the empty card when there are none, for a sheet that only chooses
+/// endpoints. Returns whether "Add in Settings" was clicked.
+pub fn endpoint_picker(
+    ui: &mut Ui,
+    id: Id,
+    selection: &mut Vec<EndpointId>,
+    endpoints: &[WebhookEndpoint],
+) -> bool {
+    if endpoints.is_empty() {
+        return empty_state(ui);
+    }
+    endpoint_list(ui, id, selection, endpoints);
+    false
 }
 
 fn endpoint_list(
@@ -446,7 +461,7 @@ fn message_editor(ui: &mut Ui, id: Id, text: &mut String, context: &AlertMessage
                             "Use default",
                             size::CAPTION + 0.5,
                             REGULAR,
-                            kit::ACCENT,
+                            theme::text_secondary(),
                         ))
                         .sense(Sense::click()),
                     )

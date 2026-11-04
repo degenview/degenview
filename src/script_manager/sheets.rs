@@ -207,6 +207,10 @@ impl ScriptManager {
                 None
             }
             Some(PineAlertEditorOutcome::Cancel) => None,
+            Some(PineAlertEditorOutcome::OpenWebhookSettings) => {
+                self.actions.push(ScriptManagerAction::OpenWebhookSettings);
+                Some(Sheet::Alert(sheet))
+            }
             None => Some(Sheet::Alert(sheet)),
         }
     }
