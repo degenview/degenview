@@ -11,6 +11,7 @@ use crate::model::portfolio::{
     PortfolioAsset, PortfolioHolding, PortfolioSnapshot, PortfolioTransaction,
     PortfolioTransactionType,
 };
+use crate::model::portfolio_accounting::ClosedPosition;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Direction {
@@ -204,9 +205,21 @@ impl PortfolioStatistics {
         history: &[PortfolioSnapshot],
         transactions: &[PortfolioTransaction],
     ) -> Self {
+        Self::with_closed(holdings, &[], history, transactions)
+    }
+
+    /// Statistics that also count the positions closed completely: their realized profit is
+    /// part of the total, and each is a win or a loss in the results.
+    pub fn with_closed(
+        holdings: &[PortfolioHolding],
+        closed: &[ClosedPosition],
+        history: &[PortfolioSnapshot],
+        transactions: &[PortfolioTransaction],
+    ) -> Self {
         let total_value = holdings.iter().filter_map(|h| h.current_value).sum();
         let cost_basis = holdings.iter().map(|h| h.cost_basis).sum();
-        let realized_pnl = holdings.iter().map(|h| h.realized_pnl).sum();
+        let realized_pnl = holdings.iter().map(|h| h.realized_pnl).sum::<f64>()
+            + closed.iter().map(|c| c.realized_pnl).sum::<f64>();
         let unrealized_pnl: f64 = holdings.iter().filter_map(|h| h.unrealized_pnl).sum();
 
         let priced_cost: f64 = holdings
@@ -234,6 +247,11 @@ impl PortfolioStatistics {
                     pnl_percent: holding.pnl_percent(),
                 })
             })
+            .chain(closed.iter().map(|position| AssetResult {
+                asset: position.asset.clone(),
+                total_pnl: position.realized_pnl,
+                pnl_percent: None,
+            }))
             .collect();
         results.sort_by(|a, b| b.total_pnl.total_cmp(&a.total_pnl));
         let ranked = || results.iter().filter(|result| result.pnl_percent.is_some());
@@ -370,6 +388,34 @@ mod tests {
             allocation: 0.0,
             is_price_stale: false,
         }
+    }
+
+    #[test]
+    fn closed_positions_count_towards_realized_pnl_and_the_win_rate() {
+        let open = [holding("A", 1.0, 100.0, Some(110.0), None)];
+        let closed = [
+            ClosedPosition {
+                asset: asset("B"),
+                realized_pnl: 50.0,
+            },
+            ClosedPosition {
+                asset: asset("C"),
+                realized_pnl: -20.0,
+            },
+        ];
+        let stats = PortfolioStatistics::with_closed(&open, &closed, &[], &[]);
+        assert_eq!(stats.realized_pnl, 30.0);
+        assert_eq!(stats.unrealized_pnl, 10.0);
+        assert_eq!(stats.total_pnl(), 40.0);
+        assert_eq!((stats.winners, stats.losers), (2, 1));
+        assert_eq!(stats.asset_results.len(), 3);
+        // A closed position has no cost basis, so it is not ranked by percentage.
+        assert_eq!(
+            stats.best.map(|r| r.asset.key),
+            Some("binance:A".to_owned())
+        );
+        // `asset_count` is what is held.
+        assert_eq!(stats.asset_count, 1);
     }
 
     fn snapshot(timestamp: i64, value: f64, contributions: f64) -> PortfolioSnapshot {

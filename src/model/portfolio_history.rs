@@ -10,7 +10,7 @@ use crate::model::portfolio::{
     PortfolioAsset, PortfolioLedgerSnapshot, PortfolioQuote, PortfolioSnapshot,
     PortfolioTransaction,
 };
-use crate::model::portfolio_accounting::{holdings, net_contributions};
+use crate::model::portfolio_accounting::{holdings_and_closed, net_contributions};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 pub const DAY_MS: i64 = 86_400_000;
@@ -123,7 +123,10 @@ fn snapshot_at(
     quotes: &HashMap<String, PortfolioQuote>,
     at: i64,
 ) -> PortfolioSnapshot {
-    let held = holdings(transactions, ids, Some(at), quotes, at).ok();
+    let (held, closed) = match holdings_and_closed(transactions, ids, Some(at), quotes, at) {
+        Ok((held, closed)) => (Some(held), closed),
+        Err(_) => (None, Vec::new()),
+    };
     let is_complete = held
         .as_ref()
         .is_some_and(|held| held.iter().all(|holding| holding.current_price.is_some()));
@@ -137,11 +140,16 @@ fn snapshot_at(
         .flatten()
         .map(|holding| holding.cost_basis)
         .sum();
+    // Positions closed by `at` still earned what they earned.
     let realized: f64 = held
         .iter()
         .flatten()
         .map(|holding| holding.realized_pnl)
-        .sum();
+        .sum::<f64>()
+        + closed
+            .iter()
+            .map(|position| position.realized_pnl)
+            .sum::<f64>();
     PortfolioSnapshot {
         portfolio_id,
         timestamp: at,
@@ -328,6 +336,24 @@ mod tests {
         assert_eq!(rebuild_start(1, &ledger, now, 0), Some(day(12)));
         ledger.invalidated_after.insert(1, day(40));
         assert_eq!(rebuild_start(1, &ledger, now, 0), Some(day(20)));
+    }
+
+    #[test]
+    fn snapshots_keep_the_realized_pnl_of_a_closed_position() {
+        let day = |n: i64| n * DAY_MS;
+        let mut sell = buy(2, day(3) + 1_000, 1.0, 15.0);
+        sell.kind = PortfolioTransactionType::Sell;
+        let transactions = vec![buy(1, day(1) + 1_000, 1.0, 10.0), sell];
+        let bars = HashMap::from([(
+            "binance:BTCUSDT".to_owned(),
+            (1..=6).map(|n| bar(day(n), 15.0)).collect(),
+        )]);
+        let points = build_snapshots(1, &transactions, &[asset()], &bars, day(1), day(6), 0);
+        // Closed on day 3: nothing held, but the 5 earned stays in every later point.
+        assert_eq!(points[3].value, 0.0);
+        assert_eq!(points[3].realized_pnl, 5.0);
+        assert_eq!(points[5].realized_pnl, 5.0);
+        assert_eq!(points[1].realized_pnl, 0.0);
     }
 
     #[test]

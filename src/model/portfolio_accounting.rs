@@ -14,8 +14,34 @@ use super::portfolio::{
 struct Position {
     asset: PortfolioAsset,
     quantity: f64,
+    /// The largest quantity held since the position was last flat: the scale that float error
+    /// in `quantity` is measured against.
+    peak: f64,
     cost_basis: f64,
     realized_pnl: f64,
+}
+
+/// Quantities are binary floats, so `0.3 - 0.1 - 0.2` is not zero. A remainder (or shortfall)
+/// within this fraction of the position's peak quantity is rounding error, not holdings.
+const RELATIVE_TOLERANCE: f64 = 1e-12;
+
+impl Position {
+    fn tolerance(&self) -> f64 {
+        self.peak * RELATIVE_TOLERANCE
+    }
+
+    fn grow(&mut self, quantity: f64) {
+        self.quantity += quantity;
+        self.peak = self.peak.max(self.quantity);
+    }
+}
+
+/// An asset whose position has been closed completely: nothing is held, but what the trades
+/// earned still counts towards the portfolio's realized profit.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ClosedPosition {
+    pub asset: PortfolioAsset,
+    pub realized_pnl: f64,
 }
 
 /// Roll transactions up into per-asset holdings, priced by `quotes`. `through` is the
@@ -28,6 +54,19 @@ pub fn holdings(
     quotes: &HashMap<String, PortfolioQuote>,
     now_ms: i64,
 ) -> Result<Vec<PortfolioHolding>, PortfolioError> {
+    holdings_and_closed(transactions, portfolio_ids, through, quotes, now_ms)
+        .map(|(holdings, _)| holdings)
+}
+
+/// [`holdings`] plus the positions that were closed completely, with what they realized.
+/// Realized profit of the whole portfolio is the sum over both lists.
+pub fn holdings_and_closed(
+    transactions: &[PortfolioTransaction],
+    portfolio_ids: &HashSet<u64>,
+    through: Option<i64>,
+    quotes: &HashMap<String, PortfolioQuote>,
+    now_ms: i64,
+) -> Result<(Vec<PortfolioHolding>, Vec<ClosedPosition>), PortfolioError> {
     let mut positions: HashMap<String, Position> = HashMap::new();
     let mut ordered: Vec<&PortfolioTransaction> = transactions
         .iter()
@@ -40,9 +79,20 @@ pub fn holdings(
         apply(transaction, &mut positions)?;
     }
 
-    let mut holdings: Vec<PortfolioHolding> = positions
+    let (open, closed): (Vec<Position>, Vec<Position>) = positions
         .into_values()
-        .filter(|position| position.quantity != 0.0)
+        .partition(|position| position.quantity != 0.0);
+    let mut closed: Vec<ClosedPosition> = closed
+        .into_iter()
+        .map(|position| ClosedPosition {
+            asset: position.asset,
+            realized_pnl: position.realized_pnl,
+        })
+        .collect();
+    closed.sort_by(|a, b| a.asset.key.cmp(&b.asset.key));
+
+    let mut holdings: Vec<PortfolioHolding> = open
+        .into_iter()
         .map(|position| {
             let quote = quotes.get(&position.asset.key);
             let value = quote.map(|quote| position.quantity * quote.price);
@@ -51,11 +101,7 @@ pub fn holdings(
                 asset: position.asset,
                 quantity: position.quantity,
                 cost_basis: position.cost_basis,
-                average_cost: if position.quantity == 0.0 {
-                    0.0
-                } else {
-                    position.cost_basis / position.quantity
-                },
+                average_cost: position.cost_basis / position.quantity,
                 realized_pnl: position.realized_pnl,
                 current_price: quote.map(|quote| quote.price),
                 previous_day_price: quote.and_then(|quote| quote.previous_day_price),
@@ -79,7 +125,7 @@ pub fn holdings(
             holding.allocation = holding.current_value.unwrap_or(0.0) / total;
         }
     }
-    Ok(holdings)
+    Ok((holdings, closed))
 }
 
 /// A ledger may contain many events for the same asset; keep the first-seen asset per key.
@@ -174,6 +220,7 @@ fn apply(
     let mut position = positions.remove(&key).unwrap_or(Position {
         asset: transaction.asset.clone(),
         quantity: 0.0,
+        peak: 0.0,
         cost_basis: 0.0,
         realized_pnl: 0.0,
     });
@@ -185,7 +232,7 @@ fn apply(
         | PortfolioTransactionType::Airdrop
         | PortfolioTransactionType::Mining
         | PortfolioTransactionType::Interest => {
-            position.quantity += transaction.quantity;
+            position.grow(transaction.quantity);
             position.cost_basis += transaction.quantity * price + transaction.fee;
         }
         PortfolioTransactionType::Sell => {
@@ -203,36 +250,38 @@ fn apply(
         }
         PortfolioTransactionType::Adjustment => {
             if transaction.quantity >= 0.0 {
-                position.quantity += transaction.quantity;
+                position.grow(transaction.quantity);
                 position.cost_basis += transaction.quantity * price + transaction.fee;
             }
         }
     }
     if position.quantity == 0.0 {
         position.cost_basis = 0.0;
+        position.peak = 0.0;
     }
     positions.insert(key, position);
     Ok(())
 }
 
-/// Remove `quantity` at average cost, returning the disposed basis.
+/// Remove `quantity` at average cost, returning the disposed basis. Removing everything that
+/// is held, give or take float error, closes the position exactly.
 fn remove(quantity: f64, position: &mut Position) -> Result<f64, PortfolioError> {
-    if position.quantity < quantity {
+    let tolerance = position.tolerance();
+    if position.quantity + tolerance < quantity {
         return Err(PortfolioError::InsufficientHoldings {
             available: position.quantity,
         });
     }
-    let average = if position.quantity == 0.0 {
-        0.0
-    } else {
-        position.cost_basis / position.quantity
-    };
+    if (position.quantity - quantity).abs() <= tolerance {
+        let removed_basis = position.cost_basis;
+        position.quantity = 0.0;
+        position.cost_basis = 0.0;
+        return Ok(removed_basis);
+    }
+    let average = position.cost_basis / position.quantity;
     let removed_basis = average * quantity;
     position.quantity -= quantity;
     position.cost_basis -= removed_basis;
-    if position.quantity == 0.0 {
-        position.cost_basis = 0.0;
-    }
     Ok(removed_basis)
 }
 
@@ -293,6 +342,139 @@ mod tests {
 
     fn ids(single: u64) -> HashSet<u64> {
         [single].into_iter().collect()
+    }
+
+    fn closed_of(
+        transactions: &[PortfolioTransaction],
+    ) -> (Vec<PortfolioHolding>, Vec<ClosedPosition>) {
+        holdings_and_closed(transactions, &ids(1), None, &HashMap::new(), 0).unwrap()
+    }
+
+    #[test]
+    fn a_full_close_keeps_its_realized_pnl() {
+        let transactions = vec![
+            tx(1, 1, "btc", PortfolioTransactionType::Buy, 1.0, 100.0, 100),
+            tx(2, 1, "btc", PortfolioTransactionType::Sell, 1.0, 150.0, 200),
+        ];
+        let (open, closed) = closed_of(&transactions);
+        assert!(open.is_empty());
+        assert_eq!(closed.len(), 1);
+        assert_eq!(closed[0].asset.key, "btc");
+        assert_eq!(closed[0].realized_pnl, 50.0);
+        // `holdings` alone still lists open positions only.
+        assert!(
+            holdings(&transactions, &ids(1), None, &HashMap::new(), 0)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_full_close_nets_the_fee_into_realized_pnl() {
+        let mut sell = tx(2, 1, "btc", PortfolioTransactionType::Sell, 1.0, 150.0, 200);
+        sell.fee = 2.0;
+        let (_, closed) = closed_of(&[
+            tx(1, 1, "btc", PortfolioTransactionType::Buy, 1.0, 100.0, 100),
+            sell,
+        ]);
+        assert_eq!(closed[0].realized_pnl, 48.0);
+    }
+
+    #[test]
+    fn closing_and_reopening_does_not_count_the_old_profit_twice() {
+        let (open, closed) = closed_of(&[
+            tx(1, 1, "btc", PortfolioTransactionType::Buy, 1.0, 100.0, 100),
+            tx(2, 1, "btc", PortfolioTransactionType::Sell, 1.0, 150.0, 200),
+            tx(3, 1, "btc", PortfolioTransactionType::Buy, 1.0, 200.0, 300),
+        ]);
+        // The reopened position is one position: its realized profit lives on the holding.
+        assert!(closed.is_empty());
+        assert_eq!(open.len(), 1);
+        assert_eq!(open[0].realized_pnl, 50.0);
+        assert_eq!(open[0].cost_basis, 200.0);
+    }
+
+    #[test]
+    fn a_partial_close_stays_open_and_a_second_asset_closes_alone() {
+        let (open, closed) = closed_of(&[
+            tx(1, 1, "btc", PortfolioTransactionType::Buy, 2.0, 100.0, 100),
+            tx(2, 1, "btc", PortfolioTransactionType::Sell, 1.0, 150.0, 200),
+            tx(3, 1, "eth", PortfolioTransactionType::Buy, 4.0, 10.0, 100),
+            tx(4, 1, "eth", PortfolioTransactionType::Sell, 4.0, 5.0, 200),
+        ]);
+        assert_eq!(open.len(), 1);
+        assert_eq!(open[0].realized_pnl, 50.0);
+        assert_eq!(closed.len(), 1);
+        assert_eq!(closed[0].realized_pnl, -20.0);
+    }
+
+    #[test]
+    fn decimal_quantities_close_exactly() {
+        // 0.3 - 0.1 is 0.19999999999999998 in binary floating point.
+        let (open, closed) = closed_of(&[
+            tx(1, 1, "btc", PortfolioTransactionType::Buy, 0.3, 100.0, 100),
+            tx(2, 1, "btc", PortfolioTransactionType::Sell, 0.1, 100.0, 200),
+            tx(3, 1, "btc", PortfolioTransactionType::Sell, 0.2, 100.0, 300),
+        ]);
+        assert!(open.is_empty());
+        assert_eq!(closed.len(), 1);
+        assert!(closed[0].realized_pnl.abs() < 1e-9);
+    }
+
+    #[test]
+    fn summed_quantities_leave_no_dust_when_sold() {
+        // 0.1 + 0.2 is 0.30000000000000004: selling 0.3 must still close the position.
+        let (open, closed) = closed_of(&[
+            tx(1, 1, "btc", PortfolioTransactionType::Buy, 0.1, 100.0, 100),
+            tx(2, 1, "btc", PortfolioTransactionType::Buy, 0.2, 100.0, 200),
+            tx(3, 1, "btc", PortfolioTransactionType::Sell, 0.3, 100.0, 300),
+        ]);
+        assert!(open.is_empty());
+        assert_eq!(closed.len(), 1);
+    }
+
+    #[test]
+    fn selling_more_than_held_is_still_refused() {
+        let result = holdings(
+            &[
+                tx(1, 1, "btc", PortfolioTransactionType::Buy, 0.3, 100.0, 100),
+                tx(
+                    2,
+                    1,
+                    "btc",
+                    PortfolioTransactionType::Sell,
+                    0.31,
+                    100.0,
+                    200,
+                ),
+            ],
+            &ids(1),
+            None,
+            &HashMap::new(),
+            0,
+        );
+        assert!(matches!(
+            result,
+            Err(PortfolioError::InsufficientHoldings { .. })
+        ));
+    }
+
+    #[test]
+    fn a_tiny_real_remainder_is_not_swallowed() {
+        let (open, _) = closed_of(&[
+            tx(1, 1, "btc", PortfolioTransactionType::Buy, 1.0, 100.0, 100),
+            tx(
+                2,
+                1,
+                "btc",
+                PortfolioTransactionType::Sell,
+                0.99999999,
+                100.0,
+                200,
+            ),
+        ]);
+        assert_eq!(open.len(), 1);
+        assert!(open[0].quantity > 0.0);
     }
 
     #[test]

@@ -204,6 +204,7 @@ fn portfolio_gallery_statistics() {
                 ui,
                 &StatisticsInput {
                     holdings: &holdings,
+                    closed: &[],
                     history: &history,
                     transactions: &[],
                     formatter: PortfolioValueFormatter::new(PortfolioCurrency::Usd, false),

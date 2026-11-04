@@ -11,7 +11,7 @@ use crate::model::portfolio::{
     PortfolioLedgerSnapshot, PortfolioSnapshot, PortfolioSource, PortfolioTransaction,
     PortfolioTransactionType,
 };
-use crate::model::portfolio_accounting::holdings;
+use crate::model::portfolio_accounting::holdings_and_closed;
 use crate::model::portfolio_csv;
 use crate::model::portfolio_format::{PORTFOLIO_CURRENCIES, PortfolioValueFormatter};
 use crate::model::portfolio_history::rebuild_start;
@@ -879,8 +879,9 @@ impl PortfolioTab {
         if let Some(asset) = self.new_asset.take() {
             self.open_new_editor(asset, snapshot, selected, &quotes);
         }
-        let holding_values =
-            holdings(&transactions, &portfolio_ids, None, &quotes, now_ms).unwrap_or_default();
+        let (holding_values, closed_positions) =
+            holdings_and_closed(&transactions, &portfolio_ids, None, &quotes, now_ms)
+                .unwrap_or_default();
         let daily_history: Vec<PortfolioSnapshot> =
             projected.map_or_else(Vec::new, |projection| projection.history.clone());
         // The 1D range replays the last day at 30-minute spacing when it can; otherwise (and for
@@ -1058,6 +1059,7 @@ impl PortfolioTab {
                 ui,
                 &StatisticsInput {
                     holdings: &holding_values,
+                    closed: &closed_positions,
                     history,
                     transactions: &transactions,
                     formatter,

@@ -11,6 +11,7 @@
 use crate::model::portfolio::{
     PortfolioAsset, PortfolioHolding, PortfolioSnapshot, PortfolioTransaction,
 };
+use crate::model::portfolio_accounting::ClosedPosition;
 use crate::model::portfolio_format::{PortfolioValueFormatter, Tone};
 use crate::model::portfolio_statistics::{
     AssetResult, PortfolioHistoryRange, PortfolioPeriodChange, PortfolioStatistics, pnl_bars,
@@ -1296,6 +1297,8 @@ fn card(ui: &mut egui::Ui, content: impl FnOnce(&mut egui::Ui)) {
 
 pub struct StatisticsInput<'a> {
     pub holdings: &'a [PortfolioHolding],
+    /// Positions closed completely; their realized profit still counts.
+    pub closed: &'a [ClosedPosition],
     pub history: &'a [PortfolioSnapshot],
     /// The converted transactions, for fees and activity.
     pub transactions: &'a [PortfolioTransaction],
@@ -1337,7 +1340,12 @@ const PNL_COMPACT: f32 = 520.0;
 
 pub fn show_statistics(ui: &mut egui::Ui, input: &StatisticsInput) {
     let f = input.formatter;
-    let stats = PortfolioStatistics::new(input.holdings, input.history, input.transactions);
+    let stats = PortfolioStatistics::with_closed(
+        input.holdings,
+        input.closed,
+        input.history,
+        input.transactions,
+    );
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
         .show(ui, |ui| {
