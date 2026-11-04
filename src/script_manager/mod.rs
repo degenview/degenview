@@ -129,6 +129,8 @@ pub enum ScriptManagerAction {
     },
     /// Open Settings on the Alpaca tab.
     OpenAlpacaSettings,
+    /// Open the webhooks list in Settings.
+    OpenWebhookSettings,
     /// Open Settings on the AI Assistant page.
     OpenAiSettings,
 }

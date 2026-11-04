@@ -709,6 +709,7 @@ fn show_tab(
                         webhook_endpoint_ids,
                     },
                     ScriptManagerAction::OpenAlpacaSettings => AppAction::OpenAlpacaSettings,
+                    ScriptManagerAction::OpenWebhookSettings => AppAction::OpenWebhookSettings,
                     ScriptManagerAction::OpenAiSettings => AppAction::OpenAiSettings,
                 }));
             }
@@ -2619,6 +2620,11 @@ impl DegenViewApp {
                             *slot = None;
                         }
                         Some(PineAlertWebhooksOutcome::Cancel) => *slot = None,
+                        Some(PineAlertWebhooksOutcome::OpenSettings) => {
+                            if let Ok(mut host) = webhook_host.lock() {
+                                host.open_webhooks();
+                            }
+                        }
                         None => {}
                     }
                 }
