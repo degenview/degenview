@@ -40,6 +40,19 @@ struct Stub {
     draw_calls: Mutex<Vec<String>>,
     /// The watchlists the app holds: the real store over an in-memory database.
     watchlists: StubWatchlists,
+    paper: StubPaper,
+}
+
+/// The paper-trading host the stub app serves: the real host over an in-memory database.
+struct StubPaper(Mutex<crate::host::paper_host::PaperHost>);
+
+impl Default for StubPaper {
+    fn default() -> Self {
+        let shared = crate::store::SharedStore::new(Mutex::new(
+            crate::store::Store::open_in_memory().expect("store"),
+        ));
+        Self(Mutex::new(crate::host::paper_host::PaperHost::load(shared)))
+    }
 }
 
 struct StubWatchlists(Mutex<crate::store::watchlist::WatchlistStore>);
@@ -207,6 +220,11 @@ impl Harness {
         self.stub.draw_calls.lock().unwrap().clone()
     }
 
+    /// The paper host behind the stub app, to seed accounts and orders.
+    pub fn paper(&self) -> std::sync::MutexGuard<'_, crate::host::paper_host::PaperHost> {
+        self.stub.paper.0.lock().unwrap()
+    }
+
     pub fn url(&self) -> String {
         format!("http://127.0.0.1:{}/mcp", self.port)
     }
@@ -263,6 +281,30 @@ fn stub_app(
             active: true,
             timeframe: "1D".into(),
         }])),
+        McpCommand::ListPaperAccounts => {
+            let host = stub.paper.0.lock().unwrap();
+            mcp_host::list_paper_accounts(&host).map(McpReply::PaperAccounts)
+        }
+        McpCommand::GetPaperAccount { account_id } => {
+            let host = stub.paper.0.lock().unwrap();
+            mcp_host::get_paper_account(&host, account_id)
+                .map(|detail| McpReply::PaperAccount(Box::new(detail)))
+        }
+        McpCommand::ListPaperHistory {
+            account_id,
+            closed_trades,
+            offset,
+            limit,
+        } => {
+            let host = stub.paper.0.lock().unwrap();
+            if closed_trades {
+                mcp_host::paper_trades(&host, account_id, offset, limit)
+                    .map(|result| McpReply::PaperTrades(Box::new(result)))
+            } else {
+                mcp_host::paper_fills(&host, account_id, offset, limit)
+                    .map(|result| McpReply::PaperFills(Box::new(result)))
+            }
+        }
         McpCommand::ListWatchlists => {
             let store = stub.watchlists.0.lock().unwrap();
             mcp_host::list_watchlists(&store).map(McpReply::Watchlists)
@@ -3348,3 +3390,4 @@ fn tool_schemas_use_only_standard_formats() {
 mod chart_control_tests;
 mod indicator_tests;
 mod market_tests;
+mod paper_tests;

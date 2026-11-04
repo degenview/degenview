@@ -18,6 +18,7 @@ next. Nothing here is started.
 | 8 | Markets and watchlists: search symbols, read quotes, list/read watchlists (with quotes), create, rename, add/remove markets, delete | `markets.read`, `watchlists.read`, `watchlists.write`, `watchlists.delete` |
 | 9 | Indicator values and removal: RSI, EMA, Bollinger and trend-flip series for a chart, and take a built-in indicator off | `charts.candles.read`, `charts.indicators.write` |
 | 10 | Chart control: set a workspace's timeframe, a chart's type, and remove a chart | `charts.view.write`, `charts.delete` |
+| 11 | Paper trading, read-only: accounts and metrics, positions, working orders, fills, closed trades | `paper.read` |
 
 ## 0. What a trader still cannot do over MCP
 
@@ -28,8 +29,8 @@ Ranked by how soon someone would ask. Not started unless listed under "Done so f
 - Indicators: hide and show one without removing it (`degenview_remove_indicator` and
   `degenview_get_indicator_values` are done); the chart's EMA period is changed through
   `degenview_add_indicator`.
-- Paper trading: accounts and metrics, positions, orders, submit/modify/cancel, close/reverse. Needs
-  the confirmation policy (item 3) first, and its own off-by-default permissions. No real-broker
+- Paper trading writes: submit/modify/cancel, close/reverse. Reading is done. Writing needs the
+  confirmation policy (item 3) first, and its own off-by-default permissions. No real-broker
   order tool: Alpaca is data only.
 - Portfolio read (holdings, transactions, P&L); replay control; a chart snapshot image.
 - Drawing tools other than trend lines and rectangles (item 4b); candles by symbol and timeframe

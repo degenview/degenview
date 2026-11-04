@@ -26,7 +26,7 @@ client → 127.0.0.1:<port>/mcp → bearer/Host/Origin/size checks
 
 Permissions separate reads and mutations: charts read/create/indicator-write/Pine-instance-write/candles-read/view-write/delete; drawings read/write/delete; alerts
 read/create/edit/pause/delete; Pine script list/read/write/save plus diagnostics, inputs, styles,
-reports, and alert reads; markets read (symbol search and quotes); watchlists read/write/delete.
+reports, and alert reads; markets read (symbol search and quotes); watchlists read/write/delete; paper-trading read (no write).
 Delete and saved-source writes require their own grants.
 
 ## Tool behavior
@@ -39,6 +39,7 @@ Delete and saved-source writes require their own grants.
 | Candles and drawings | `get_candles`, `get_indicator_values`, `list_drawings`, `add_drawings`, `update_drawing`, `delete_drawings` |
 | Markets | `search_symbols`, `get_quotes` |
 | Watchlists | `list_watchlists`, `get_watchlist`, `create_watchlist`, `update_watchlist`, `delete_watchlist` |
+| Paper trading (read-only) | `list_paper_accounts`, `get_paper_account`, `list_paper_fills`, `list_paper_trades` |
 | Pine instances | `list_chart_pine_instances`, `get_pine_instance`, `get_pine_styles`, `get_pine_report`, `list_pine_alerts`, `add_pine_script_to_chart`, `update_pine_instance`, `remove_pine_instance` |
 
 - Workspace ids are persisted tab ids. Reject Portfolio/Pine Studio tabs. Timeframe is
@@ -80,6 +81,15 @@ Delete and saved-source writes require their own grants.
   none. Ids come from `next_free_id` (the counter, but never one already stored). A locked drawing
   is never edited or removed, a chart holds at most 500 drawings, and a call carries at most 25
   (add) or 50 (delete). Only trend lines and rectangles are writable.
+- Paper-trading tools (`mcp::paper`, `mcp::paper_tools`) only read the app's `PaperHost` on the app
+  thread: accounts with the engine's own metrics, positions marked the way the panel marks them
+  (bid for a long, ask for a short, last as fallback; no quote → null mark and no profit figure),
+  orders that can still fill, fills and closed trades newest first, paged to 200. An account another
+  Mac runs is reported in `run_by_another_mac`. **There is no tool that places, changes or cancels
+  an order**, and none is planned before the confirmation policy exists
+  (`docs/mcp-remaining-work.md` item 3): paper money is simulated, but an agent trading on its own
+  with no step the user sees is the case that policy is for. Alpaca is data-only; no tool reaches a
+  real broker.
 - Chart control (`mcp::chart_control`) calls the workspace's own methods: `set_timeframe` is the
   toolbar's timeframe change (`ChartWorkspace::reload_for_timeframe`, shared with the toolbar) and
   moves every chart in the workspace, since the timeframe belongs to the workspace; it reloads, so

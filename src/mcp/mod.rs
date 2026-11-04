@@ -16,6 +16,8 @@ pub mod indicator_tools;
 pub mod indicator_values;
 pub mod market_tools;
 pub mod markets;
+pub mod paper;
+pub mod paper_tools;
 pub mod pine;
 pub mod state;
 pub mod tools;

@@ -6,6 +6,7 @@
 //! Persist first, then publish: a write that fails changes nothing the server can see.
 
 use crate::host::alert_host::AlertHost;
+use crate::host::paper_host::{PaperHost, owner_text};
 use crate::mcp::McpServer;
 use crate::mcp::auth::{generate_token, verifier_hex};
 use crate::mcp::bridge::{
@@ -18,6 +19,10 @@ use crate::mcp::indicator_values::{
     IndicatorValuesResult, ReadingMeta, ReadingRequest, indicator_values,
 };
 use crate::mcp::markets::{self, WatchlistChangeResult, WatchlistPage, WatchlistsResult};
+use crate::mcp::paper::{
+    self, PaperAccountDetail, PaperAccountInfo, PaperAccountsResult, PaperFillsResult,
+    PaperTradesResult,
+};
 use crate::mcp::pine::{InputArgs, ScriptToApply};
 use crate::mcp::state::{McpShared, McpStatus};
 use crate::mcp::types::{
@@ -1645,6 +1650,119 @@ pub fn remove_chart(
         chart: None,
         charts_in_workspace: workspace.chart_count(),
     })
+}
+
+// MARK: Paper trading (run on the app thread, read-only)
+
+fn paper_account(
+    host: &PaperHost,
+    account_id: u64,
+) -> Result<&crate::model::paper::PaperAccount, McpError> {
+    if host.load_failed() {
+        return Err(McpError::AppUnavailable(
+            "Paper-trading data could not be read, so it is unavailable".into(),
+        ));
+    }
+    host.snapshot()
+        .accounts
+        .iter()
+        .find(|account| account.id == account_id)
+        .ok_or_else(|| {
+            McpError::NotFound(
+                "No such paper account: use an account_id from degenview_list_paper_accounts"
+                    .into(),
+            )
+        })
+}
+
+fn paper_account_info(
+    host: &PaperHost,
+    account: &crate::model::paper::PaperAccount,
+) -> PaperAccountInfo {
+    paper::account_info(
+        account,
+        &host.metrics(account.id),
+        host.snapshot().selected_account_id == Some(account.id),
+        host.owned_elsewhere(account.id).map(owner_text),
+    )
+}
+
+pub fn list_paper_accounts(host: &PaperHost) -> Result<PaperAccountsResult, McpError> {
+    if host.load_failed() {
+        return Err(McpError::AppUnavailable(
+            "Paper-trading data could not be read, so it is unavailable".into(),
+        ));
+    }
+    Ok(PaperAccountsResult {
+        accounts: host
+            .snapshot()
+            .accounts
+            .iter()
+            .map(|account| paper_account_info(host, account))
+            .collect(),
+    })
+}
+
+pub fn get_paper_account(
+    host: &PaperHost,
+    account_id: u64,
+) -> Result<PaperAccountDetail, McpError> {
+    let account = paper_account(host, account_id)?;
+    let snapshot = host.snapshot();
+    Ok(PaperAccountDetail {
+        account: paper_account_info(host, account),
+        positions: snapshot
+            .positions
+            .iter()
+            .filter(|position| position.account_id == account_id && position.signed_quantity != 0.0)
+            .map(|position| {
+                paper::position_info(
+                    position,
+                    host.mark(position),
+                    host.unrealized_pnl(position),
+                    host.return_ratio(position),
+                )
+            })
+            .collect(),
+        open_orders: snapshot
+            .orders
+            .iter()
+            .filter(|order| order.account_id == account_id && paper::is_open(order))
+            .map(paper::order_info)
+            .collect(),
+    })
+}
+
+pub fn paper_fills(
+    host: &PaperHost,
+    account_id: u64,
+    offset: usize,
+    limit: usize,
+) -> Result<PaperFillsResult, McpError> {
+    paper_account(host, account_id)?;
+    let fills: Vec<_> = host
+        .snapshot()
+        .fills
+        .iter()
+        .filter(|fill| fill.account_id == account_id)
+        .collect();
+    Ok(paper::fills_result(account_id, &fills, offset, limit))
+}
+
+pub fn paper_trades(
+    host: &PaperHost,
+    account_id: u64,
+    offset: usize,
+    limit: usize,
+) -> Result<PaperTradesResult, McpError> {
+    paper_account(host, account_id)?;
+    let trades: Vec<_> = host
+        .snapshot()
+        .closed_trades
+        .iter()
+        .filter(|trade| trade.account_id == account_id)
+        .collect();
+    Ok(paper::trades_result(account_id, &trades, offset, limit))
 }
 
 // MARK: Watchlists (run on the app thread)

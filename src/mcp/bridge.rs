@@ -164,6 +164,17 @@ pub enum McpCommand {
         workspace_id: u64,
         chart_id: u64,
     },
+    ListPaperAccounts,
+    GetPaperAccount {
+        account_id: u64,
+    },
+    /// Fills (`closed_trades: false`) or closed trades of an account, newest first.
+    ListPaperHistory {
+        account_id: u64,
+        closed_trades: bool,
+        offset: usize,
+        limit: usize,
+    },
     ListWatchlists,
     /// One page of a watchlist's entries. Quotes are not read here (the tool waits for them
     /// off the app thread); the reply names the markets on the page.
@@ -237,6 +248,10 @@ pub enum McpReply {
     IndicatorValues(Box<crate::mcp::indicator_values::IndicatorValuesResult>),
     Timeframe(crate::mcp::chart_control::TimeframeResult),
     ChartChanged(Box<crate::mcp::chart_control::ChartChangeResult>),
+    PaperAccounts(crate::mcp::paper::PaperAccountsResult),
+    PaperAccount(Box<crate::mcp::paper::PaperAccountDetail>),
+    PaperFills(Box<crate::mcp::paper::PaperFillsResult>),
+    PaperTrades(Box<crate::mcp::paper::PaperTradesResult>),
     Watchlists(crate::mcp::markets::WatchlistsResult),
     Watchlist(Box<crate::mcp::markets::WatchlistPage>),
     WatchlistChanged(Box<crate::mcp::markets::WatchlistChangeResult>),

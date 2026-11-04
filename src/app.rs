@@ -413,6 +413,10 @@ fn alerts_unavailable() -> McpError {
     McpError::AppUnavailable("Price alerts are unavailable right now".into())
 }
 
+fn paper_unavailable() -> McpError {
+    McpError::AppUnavailable("Paper trading is unavailable right now".into())
+}
+
 fn watchlists_unavailable() -> McpError {
     McpError::AppUnavailable("Watchlists are unavailable right now".into())
 }
@@ -1706,6 +1710,30 @@ impl DegenViewApp {
                 )
                 .map(|report| McpReply::PineReport(Box::new(report)))
             }),
+            McpCommand::ListPaperAccounts => {
+                let host = self.paper.lock().map_err(|_| paper_unavailable())?;
+                mcp_host::list_paper_accounts(&host).map(McpReply::PaperAccounts)
+            }
+            McpCommand::GetPaperAccount { account_id } => {
+                let host = self.paper.lock().map_err(|_| paper_unavailable())?;
+                mcp_host::get_paper_account(&host, account_id)
+                    .map(|detail| McpReply::PaperAccount(Box::new(detail)))
+            }
+            McpCommand::ListPaperHistory {
+                account_id,
+                closed_trades,
+                offset,
+                limit,
+            } => {
+                let host = self.paper.lock().map_err(|_| paper_unavailable())?;
+                if closed_trades {
+                    mcp_host::paper_trades(&host, account_id, offset, limit)
+                        .map(|result| McpReply::PaperTrades(Box::new(result)))
+                } else {
+                    mcp_host::paper_fills(&host, account_id, offset, limit)
+                        .map(|result| McpReply::PaperFills(Box::new(result)))
+                }
+            }
             McpCommand::ListWatchlists => {
                 let store = self
                     .watchlist
