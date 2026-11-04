@@ -121,6 +121,10 @@ pub struct PersistedWorkspace {
     /// have none and open linked, the default.
     #[serde(default)]
     pub sync: ChartSyncSettings,
+    /// The saved layout this tab has open, so a restart shows its name again instead of
+    /// "Unnamed". Rows from before this field, and tabs on no layout, have none.
+    #[serde(default)]
+    pub active_view: Option<u64>,
 }
 
 impl crate::store::Document for PersistedWorkspace {
@@ -444,7 +448,18 @@ impl ChartWorkspace {
             columns,
             focused,
             sync,
+            active_view,
         } = saved;
+
+        // The layout may have been deleted (here or on another Mac) since the tab was saved.
+        let active_view = active_view.and_then(|id| {
+            store
+                .lock()
+                .ok()?
+                .saved_views()
+                .into_iter()
+                .find(|view| view.id == id)
+        });
 
         let mut workspace = Self::blank(
             id,
@@ -457,6 +472,10 @@ impl ChartWorkspace {
         workspace.watchlist_visible = watchlist_visible;
         workspace.sync = sync;
         workspace.focused = focused;
+        if let Some(view) = active_view {
+            workspace.active_view_id = Some(view.id);
+            workspace.active_view_name = Some(view.name);
+        }
         workspace.charts = charts
             .into_iter()
             .map(|saved| Chart::restored(saved, timeframe, ctx))
@@ -900,6 +919,7 @@ mod tests {
                 horizontal_position: true,
                 horizontal_zoom: false,
             },
+            active_view: Some(42),
         };
         let encoded = serde_json::to_string(&saved).expect("serialize workspace");
         let decoded: PersistedWorkspace =
@@ -952,6 +972,48 @@ mod tests {
             one_off,
             "a change persists as well"
         );
+    }
+
+    #[test]
+    fn a_restart_keeps_the_open_layout_and_its_name() {
+        let ctx = egui::Context::default();
+        let workspace = empty_workspace(8);
+        let view: SavedView = serde_json::from_str(
+            r#"{"id":77,"name":"Swing setups","timeframe":"Hour","created_at_ms":1000,"charts":[]}"#,
+        )
+        .expect("layout");
+        workspace
+            .store
+            .lock()
+            .expect("store")
+            .replace_saved_views(&[view])
+            .expect("save layout");
+
+        let restore = |active_view: Option<u64>| {
+            let mut saved = workspace.persisted();
+            saved.active_view = active_view;
+            ChartWorkspace::restored(
+                saved,
+                workspace.watchlist.clone(),
+                workspace.quote_book.clone(),
+                workspace.quote_coordinator.clone(),
+                workspace.store.clone(),
+                &ctx,
+            )
+        };
+
+        let restored = restore(Some(77));
+        assert_eq!(restored.active_view_id, Some(77));
+        assert_eq!(restored.active_view_name.as_deref(), Some("Swing setups"));
+        assert_eq!(restored.persisted().active_view, Some(77));
+
+        let deleted = restore(Some(78));
+        assert_eq!(
+            deleted.active_view_id, None,
+            "a deleted layout is not reopened"
+        );
+        assert_eq!(deleted.active_view_name, None);
+        assert_eq!(restore(None).active_view_id, None);
     }
 
     #[test]
