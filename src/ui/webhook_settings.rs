@@ -458,13 +458,12 @@ fn endpoint_row(
                         true,
                         true,
                     );
-                    egui::Popup::menu(&response)
-                        .frame(kit::menu_frame())
-                        .align(egui::RectAlign::BOTTOM_END)
-                        .gap(4.0)
-                        .show(|ui| {
-                            ui.set_width(170.0);
-                            ui.spacing_mut().item_spacing.y = 0.0;
+                    kit::fitted_menu(
+                        ui,
+                        &response,
+                        egui::RectAlign::BOTTOM_END,
+                        &["Edit\u{2026}", "Disable", "Delete\u{2026}"],
+                        |ui| {
                             if kit::menu_item(ui, Icon::Pencil, "Edit…", true, false) {
                                 state.editor = Some(WebhookEditorState::editing(
                                     endpoint,
@@ -486,7 +485,8 @@ fn endpoint_row(
                                 state.pending_delete = Some(endpoint.id);
                                 ui.close();
                             }
-                        });
+                        },
+                    );
 
                     let testing = test == WebhookTestState::Testing;
                     if testing {

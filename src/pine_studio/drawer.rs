@@ -18,7 +18,6 @@ use eframe::egui::{
 use std::time::{Duration, Instant};
 
 pub const BAR_HEIGHT: f32 = super::bottom_bar::HEIGHT;
-const PROBLEM_MENU_WIDTH: f32 = 180.0;
 
 impl DrawerTab {
     pub const ALL: [Self; 5] = [
@@ -306,7 +305,7 @@ pub fn problems(
                     hairline(ui);
                 }
                 let response = problem_row(ui, diagnostic);
-                problem_menu(&response, diagnostic);
+                problem_menu(ui, &response, diagnostic);
                 if response.clicked() {
                     jump = Some(diagnostic.clone());
                 }
@@ -317,11 +316,12 @@ pub fn problems(
 }
 
 /// The right-click menu of a problem row: copy it whole, or only its message.
-fn problem_menu(response: &egui::Response, diagnostic: &Diagnostic) {
-    kit::context_popup(response)
-        .width(PROBLEM_MENU_WIDTH)
-        .show(|ui| {
-            kit::menu_scope(ui, PROBLEM_MENU_WIDTH - 20.0);
+fn problem_menu(ui: &Ui, response: &egui::Response, diagnostic: &Diagnostic) {
+    kit::fitted_context_menu(
+        ui,
+        response,
+        &[("Copy problem", None), ("Copy message", None)],
+        |ui| {
             if kit::menu_item(ui, Icon::CopyDoc, "Copy problem", true, false) {
                 ui.ctx().copy_text(problem_line(diagnostic));
                 ui.close();
@@ -330,7 +330,8 @@ fn problem_menu(response: &egui::Response, diagnostic: &Diagnostic) {
                 ui.ctx().copy_text(diagnostic.message.clone());
                 ui.close();
             }
-        });
+        },
+    );
 }
 
 fn problem_row(ui: &mut Ui, diagnostic: &Diagnostic) -> egui::Response {

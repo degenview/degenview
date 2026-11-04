@@ -406,9 +406,18 @@ fn look_chip(
     let chip = kit::value_chip(ui, &format!("{}px{dash}", level.width), false);
     egui::Popup::menu(&chip)
         .frame(kit::menu_frame())
-        .width(190.0)
         .show(|ui| {
-            kit::menu_scope(ui, 190.0);
+            kit::menu_scope(ui, 0.0);
+            kit::menu_fit_rows(
+                ui,
+                &[
+                    ("Thickness", None),
+                    ("Line style", None),
+                    ("Dashed", None),
+                    ("Dotted", None),
+                    ("Move down", None),
+                ],
+            );
             kit::menu_heading(ui, "Thickness");
             ui.horizontal(|ui| {
                 ui.add_space(14.0);

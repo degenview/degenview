@@ -29,8 +29,13 @@ See [the architecture map](../architecture.md) before changing module boundaries
 - Pull-down menus are as wide as their longest row, never wider. Menu rows fill
   `ui.available_width()`, so a menu with no width of its own grows to egui's default popup width and
   a short list ("New Account…", "Export…") ends up half blank. Use `kit::fitted_menu` for a menu on
-  a button (it measures the labels, pads for the icon gutter, caps at `MENU_MAX_WIDTH`), or
-  `kit::menu_fit(ui, labels)` inside `menu_popup` / `context_popup`. Do not guess a width with
+  a button (it measures the labels, pads for the icon gutter, caps at `MENU_MAX_WIDTH`; rows with
+  a shortcut hint use `fitted_menu_rows`), `kit::fitted_context_menu` for a right-click, or
+  `kit::menu_fit` / `kit::menu_fit_rows` inside `menu_popup` / `context_popup`. A menu hanging off a
+  row or card drawn every frame is only measured while it is open (the helpers do this). When the
+  rows are fixed and the popup width must be a constant, keep a test that measures the rows with
+  `kit::menu_width_for_rows` and fails when the constant is narrower or more than a few points
+  wider (see `menu_widths_fit_their_rows` in `watchlist_sidebar.rs`). Do not guess a width with
   `set_min_width(180.0)` / `set_width(200.0)`: a guess is always too wide for some menu, and a
   minimum is the usual cause of blank space. Look at the opened menu in a picture before shipping
   it: the right edge of the longest label should sit one row inset from the menu's edge.

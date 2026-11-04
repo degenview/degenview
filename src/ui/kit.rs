@@ -1166,6 +1166,13 @@ pub fn menu_fit(ui: &mut Ui, labels: &[&str]) {
     ui.set_width((widest + MENU_ROW_INSET).ceil());
 }
 
+/// `menu_fit` for rows that carry a shortcut hint: `(label, shortcut)` per row. Call it after
+/// `menu_scope(ui, 0.0)`, inside the menu body.
+pub fn menu_fit_rows(ui: &mut Ui, rows: &[(&str, Option<&str>)]) {
+    let width = menu_width_for_rows(ui, rows, 0.0) - MENU_FRAME_MARGIN;
+    ui.set_width(width);
+}
+
 /// A menu row that opens a submenu holding `content`, lit while that submenu is open. Rows of the
 /// submenu are placed like the main menu's (`menu_scope`, at least `min_width` wide).
 pub fn menu_submenu<R>(
@@ -1756,20 +1763,32 @@ pub(crate) const MENU_FRAME_MARGIN: f32 = 10.0;
 /// at most `MENU_MAX_WIDTH`. The trigger can be capped narrower than its choices (a long title
 /// would crowd its card), so the menu is sized by its content, not the trigger.
 pub(crate) fn menu_width_for(ui: &Ui, labels: &[impl AsRef<str>], trigger_width: f32) -> f32 {
-    let widest = labels
+    let rows: Vec<(&str, Option<&str>)> = labels.iter().map(|l| (l.as_ref(), None)).collect();
+    menu_width_for_rows(ui, &rows, trigger_width)
+}
+
+/// `menu_width_for` for rows that may end in a keyboard shortcut hint: each row is its label and
+/// its shortcut, and the widest label-plus-hint sets the width.
+pub(crate) fn menu_width_for_rows(
+    ui: &Ui,
+    rows: &[(&str, Option<&str>)],
+    trigger_width: f32,
+) -> f32 {
+    let text = |text: &str| {
+        galley(
+            ui,
+            text,
+            size::BODY,
+            REGULAR,
+            Color32::PLACEHOLDER,
+            f32::INFINITY,
+        )
+        .size()
+        .x
+    };
+    let widest = rows
         .iter()
-        .map(|label| {
-            galley(
-                ui,
-                label.as_ref(),
-                size::BODY,
-                REGULAR,
-                Color32::PLACEHOLDER,
-                f32::INFINITY,
-            )
-            .size()
-            .x
-        })
+        .map(|(label, hint)| text(label) + hint.map_or(0.0, |hint| text(hint) + 12.0))
         .fold(0.0, f32::max);
     let wanted = (widest + MENU_ROW_INSET + MENU_FRAME_MARGIN).max(trigger_width.max(72.0));
     // A trigger already wider than the cap keeps its own width.
@@ -1786,7 +1805,25 @@ pub fn fitted_menu<R>(
     labels: &[impl AsRef<str>],
     body: impl FnOnce(&mut Ui) -> R,
 ) -> Option<R> {
-    let width = menu_width_for(ui, labels, 0.0);
+    let rows: Vec<(&str, Option<&str>)> = labels.iter().map(|l| (l.as_ref(), None)).collect();
+    fitted_menu_rows(ui, response, align, &rows, body)
+}
+
+/// `fitted_menu` for rows that carry a shortcut hint: `(label, shortcut)` per row.
+pub fn fitted_menu_rows<R>(
+    ui: &Ui,
+    response: &egui::Response,
+    align: egui::RectAlign,
+    rows: &[(&str, Option<&str>)],
+    body: impl FnOnce(&mut Ui) -> R,
+) -> Option<R> {
+    // Menus hang off rows and cards drawn every frame: measure only once one is wanted.
+    let wanted = response.clicked()
+        || egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(response));
+    if !wanted {
+        return None;
+    }
+    let width = menu_width_for_rows(ui, rows, 0.0);
     egui::Popup::menu(response)
         .frame(menu_frame())
         .align(align)
@@ -1795,6 +1832,30 @@ pub fn fitted_menu<R>(
         .show(|ui| {
             ui.set_width(width - MENU_FRAME_MARGIN);
             ui.spacing_mut().item_spacing = Vec2::ZERO;
+            body(ui)
+        })
+        .map(|shown| shown.inner)
+}
+
+/// `fitted_menu_rows` for a right-click on `response`, opening at the pointer.
+pub fn fitted_context_menu<R>(
+    ui: &Ui,
+    response: &egui::Response,
+    rows: &[(&str, Option<&str>)],
+    body: impl FnOnce(&mut Ui) -> R,
+) -> Option<R> {
+    // Rows are drawn by the hundred and this runs for each: measure only once a menu is wanted.
+    let wanted = response.secondary_clicked()
+        || egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(response));
+    if !wanted {
+        return None;
+    }
+    let width = menu_width_for_rows(ui, rows, 0.0);
+    context_popup(response)
+        .width(width)
+        .show(|ui| {
+            menu_scope(ui, 0.0);
+            ui.set_width(width - MENU_FRAME_MARGIN);
             body(ui)
         })
         .map(|shown| shown.inner)
@@ -2432,6 +2493,47 @@ pub fn color_well(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A menu is as wide as its widest row and no wider: never padded to a guess, never below the
+    /// floor or above the cap, and a shortcut hint widens the row it sits on.
+    #[test]
+    fn a_menu_is_as_wide_as_its_rows_need() {
+        let ctx = egui::Context::default();
+        crate::ui::theme::install_offscreen(&ctx);
+        let mut widths = Vec::new();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let long = "x".repeat(200);
+            for rows in [
+                vec![("I", None)],
+                vec![("I", None), ("Export Trading Data\u{2026}", None)],
+                vec![("Export Trading Data\u{2026}", Some("\u{2318}\u{21e7}E"))],
+                vec![(long.as_str(), None)],
+            ] {
+                widths.push(menu_width_for_rows(ui, &rows, 0.0));
+            }
+            // A wider trigger is the floor.
+            widths.push(menu_width_for_rows(ui, &[("I", None)], 150.0));
+        });
+        output.textures_delta.clear();
+        assert_eq!(widths[0], 72.0, "short menus stop at the floor");
+        assert!(widths[1] > widths[0] && widths[1] < 200.0, "{widths:?}");
+        let plain = menu_width_for_rows_plain(&ctx, "Export Trading Data\u{2026}");
+        assert!(
+            widths[2] > plain,
+            "a hint widens its row: {widths:?} vs {plain}"
+        );
+        assert_eq!(widths[3], MENU_MAX_WIDTH, "long labels hit the cap");
+        assert_eq!(widths[4], 150.0, "a wide trigger is the floor");
+    }
+
+    fn menu_width_for_rows_plain(ctx: &egui::Context, label: &str) -> f32 {
+        let mut width = 0.0;
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            width = menu_width_for_rows(ui, &[(label, None)], 0.0);
+        });
+        output.textures_delta.clear();
+        width
+    }
 
     #[test]
     fn a_filling_bar_is_equal_unless_a_title_would_be_cut() {

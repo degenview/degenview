@@ -667,19 +667,21 @@ fn method_menu(ui: &mut egui::Ui, method: &mut WebhookHttpMethod) {
         Icon::ChevronUpDown,
         color,
     );
-    egui::Popup::menu(&response)
-        .frame(kit::menu_frame())
-        .gap(8.0)
-        .show(|ui| {
-            ui.set_width(104.0);
-            ui.spacing_mut().item_spacing.y = 0.0;
+    let labels = WebhookHttpMethod::ALL.map(WebhookHttpMethod::as_str);
+    kit::fitted_menu(
+        ui,
+        &response,
+        egui::RectAlign::BOTTOM_START,
+        &labels,
+        |ui| {
             for choice in WebhookHttpMethod::ALL {
                 if kit::menu_item_marked(ui, Icon::Check, choice.as_str(), choice == *method) {
                     *method = choice;
                     ui.close();
                 }
             }
-        });
+        },
+    );
     response.on_hover_text("HTTP method");
 }
 
@@ -689,45 +691,45 @@ fn secret_section(ui: &mut egui::Ui, state: &mut WebhookEditorState) {
     optional_title(ui, "Secret", |ui| {
         let button = link_button(ui, Icon::Plus, "Use secret", true)
             .on_hover_text("Put the secret in the URL or in a header");
-        egui::Popup::menu(&button)
-            .frame(kit::menu_frame())
-            .align(egui::RectAlign::BOTTOM_END)
-            .gap(4.0)
-            .show(|ui| {
-                ui.set_width(236.0);
-                ui.spacing_mut().item_spacing.y = 0.0;
-                let choices = [
-                    (
-                        Icon::Link,
-                        "Add to the URL as ?token=",
-                        SecretPlacement::UrlParameter("token".to_owned()),
-                    ),
-                    (
-                        Icon::Key,
-                        "Send as a Bearer token",
-                        SecretPlacement::BearerToken,
-                    ),
-                    (
-                        Icon::Key,
-                        "Send as an X-API-Key header",
-                        SecretPlacement::ApiKey,
-                    ),
-                    (
-                        Icon::List,
-                        "Send in a custom header…",
-                        SecretPlacement::CustomHeader,
-                    ),
-                ];
-                for (index, (icon, label, choice)) in choices.into_iter().enumerate() {
-                    if index == 1 {
-                        kit::menu_separator(ui);
-                    }
-                    if kit::menu_item(ui, icon, label, true, false) {
-                        state.apply_placement(&choice);
-                        ui.close();
-                    }
+        let labels = [
+            "Add to the URL as ?token=",
+            "Send as a Bearer token",
+            "Send as an X-API-Key header",
+            "Send in a custom header\u{2026}",
+        ];
+        kit::fitted_menu(ui, &button, egui::RectAlign::BOTTOM_END, &labels, |ui| {
+            let choices = [
+                (
+                    Icon::Link,
+                    "Add to the URL as ?token=",
+                    SecretPlacement::UrlParameter("token".to_owned()),
+                ),
+                (
+                    Icon::Key,
+                    "Send as a Bearer token",
+                    SecretPlacement::BearerToken,
+                ),
+                (
+                    Icon::Key,
+                    "Send as an X-API-Key header",
+                    SecretPlacement::ApiKey,
+                ),
+                (
+                    Icon::List,
+                    "Send in a custom header…",
+                    SecretPlacement::CustomHeader,
+                ),
+            ];
+            for (index, (icon, label, choice)) in choices.into_iter().enumerate() {
+                if index == 1 {
+                    kit::menu_separator(ui);
                 }
-            });
+                if kit::menu_item(ui, icon, label, true, false) {
+                    state.apply_placement(&choice);
+                    ui.close();
+                }
+            }
+        });
     });
     ui.add_space(8.0);
 

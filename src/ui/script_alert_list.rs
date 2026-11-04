@@ -234,9 +234,15 @@ fn card(ui: &mut egui::Ui, row: &ScriptAlertRow, actions: &mut Vec<AlertCenterAc
         Pos2::new(rect.right() - 14.0 - 26.0, center_y - 13.0),
         Vec2::splat(26.0),
     );
-    alert_center::more_button(ui, more, Id::new(("script-alert-more", row.id)), |ui| {
-        menu(ui, row, actions);
-    });
+    alert_center::more_button(
+        ui,
+        more,
+        Id::new(("script-alert-more", row.id)),
+        &SCRIPT_MENU,
+        |ui| {
+            menu(ui, row, actions);
+        },
+    );
     let badge = kit::paint_status_badge(ui, more.left() - 8.0, center_y, row.status, row.tone);
 
     alert_center::identity(
@@ -249,14 +255,14 @@ fn card(ui: &mut egui::Ui, row: &ScriptAlertRow, actions: &mut Vec<AlertCenterAc
         |_, _, _| 0.0,
     );
 
-    egui::Popup::context_menu(&response)
-        .frame(kit::menu_frame())
-        .show(|ui| {
-            ui.set_width(180.0);
-            ui.spacing_mut().item_spacing.y = 0.0;
-            menu(ui, row, actions);
-        });
+    let rows = SCRIPT_MENU.map(|label| (label, None));
+    kit::fitted_context_menu(ui, &response, &rows, |ui| {
+        menu(ui, row, actions);
+    });
 }
+
+/// Every row the script alert menu can show, for sizing it.
+const SCRIPT_MENU: [&str; 4] = ["Pause", "Re-arm", "Webhooks\u{2026}", "Delete"];
 
 #[cfg(test)]
 mod tests {

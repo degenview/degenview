@@ -30,8 +30,6 @@ const TEXT_SIZE: f32 = 12.0;
 const STAMP_SIZE: f32 = 10.5;
 /// Rows laid out beyond the window, so a scroll does not show a blank edge.
 const OVERSCAN: f32 = 240.0;
-/// The row menu's width: its longest entry, "Scroll to bar", with its icon.
-const MENU_WIDTH: f32 = 170.0;
 /// The search field's width: it grows with the pane up to the larger and does not shrink below the
 /// smaller.
 const SEARCH_WIDTH: std::ops::RangeInclusive<f32> = 150.0..=280.0;
@@ -690,7 +688,7 @@ fn list(
                 rect.bottom() - 0.5,
                 egui::Stroke::new(1.0, theme::ink(10)),
             );
-            row_menu(&response, event, actions);
+            row_menu(ui, &response, event, actions);
             if ui.rect_contains_pointer(rect) {
                 row_buttons(ui, rect, event.sequence, actions);
             }
@@ -862,9 +860,15 @@ fn row_buttons(ui: &mut Ui, row: Rect, sequence: u64, actions: &mut Vec<LogsActi
     }
 }
 
-fn row_menu(response: &egui::Response, event: &LogEvent, actions: &mut Vec<LogsAction>) {
-    kit::context_popup(response).width(MENU_WIDTH).show(|ui| {
-        kit::menu_scope(ui, MENU_WIDTH - 20.0);
+fn row_menu(ui: &Ui, response: &egui::Response, event: &LogEvent, actions: &mut Vec<LogsAction>) {
+    const ROWS: [(&str, Option<&str>); 5] = [
+        ("Source code", None),
+        ("Scroll to bar", None),
+        ("Copy message", None),
+        ("Copy with time", None),
+        ("Clear logs", None),
+    ];
+    kit::fitted_context_menu(ui, response, &ROWS, |ui| {
         if kit::menu_item(ui, Icon::Code, "Source code", true, false) {
             actions.push(LogsAction::Source(event.sequence));
             ui.close();
