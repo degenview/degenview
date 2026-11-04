@@ -6,9 +6,19 @@ use crate::host::portfolio_card_host::PortfolioCardEnv;
 use crate::model::portfolio_card::PortfolioCard;
 use crate::model::price_scale::PriceScaleMode;
 use crate::model::watchlist::WatchlistInstrument;
-use crate::model::{DataSource, Drawing, IndicatorConfig, InstrumentId, Kline};
+use crate::model::{
+    ChartType, DataSource, Drawing, IndicatorConfig, InstrumentId, Kline, Timeframe,
+};
 use crate::service::SearchResult;
 use eframe::egui;
+
+/// Why [`ChartWorkspace::set_chart_type_for_mcp`] refused.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ChartTypeError {
+    NoSuchChart,
+    /// The market cannot draw this type; says why.
+    Unsupported(&'static str),
+}
 
 /// What a remote caller (the MCP server) may see of one chart: identity and state, never candles.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -270,6 +280,67 @@ impl ChartWorkspace {
         if result.is_some() {
             self.removing_chart = None;
         }
+    }
+
+    /// Puts every chart on `timeframe` and reloads its candles: what the toolbar's timeframe
+    /// buttons do. Replay re-bases and rulers (which measure bars of the old timeframe) go.
+    pub(super) fn reload_for_timeframe(&mut self, timeframe: Timeframe, ctx: &egui::Context) {
+        self.timeframe = timeframe;
+        self.replay_rebase |= self.replay.session.is_some();
+        self.drop_rulers();
+        for chart in &mut self.charts {
+            chart.chart.reset_view();
+            chart.candles.clear();
+            chart.reset_history();
+            chart.last_live_open_time = None;
+            chart.fetch(self.timeframe, ctx);
+        }
+    }
+
+    /// Moves the whole workspace to `timeframe` for an agent. `false` when it already was there,
+    /// so nothing reloads.
+    pub fn set_timeframe_for_mcp(&mut self, timeframe: Timeframe, ctx: &egui::Context) -> bool {
+        if self.timeframe == timeframe {
+            return false;
+        }
+        self.reload_for_timeframe(timeframe, ctx);
+        true
+    }
+
+    /// Switches a market chart's type, as the chart's type menu does. `Ok(false)` when it already
+    /// drew that type; the reason is given when the market cannot draw it.
+    pub fn set_chart_type_for_mcp(
+        &mut self,
+        chart_id: u64,
+        chart_type: ChartType,
+    ) -> Result<bool, ChartTypeError> {
+        let chart = self
+            .charts
+            .iter_mut()
+            .find(|chart| chart.id == chart_id && chart.is_market())
+            .ok_or(ChartTypeError::NoSuchChart)?;
+        if let Some(reason) = chart_type.unsupported_reason(chart.source) {
+            return Err(ChartTypeError::Unsupported(reason));
+        }
+        if chart.chart.effective_chart_type(chart.source) == chart_type {
+            return Ok(false);
+        }
+        chart.chart.set_chart_type(chart_type);
+        Ok(true)
+    }
+
+    /// Removes a market chart (and with it its drawings) as the chart's Remove button does once
+    /// confirmed. `false` for an unknown chart or a portfolio card.
+    pub fn remove_market_chart(&mut self, chart_id: u64) -> bool {
+        if !self
+            .charts
+            .iter()
+            .any(|chart| chart.id == chart_id && chart.is_market())
+        {
+            return false;
+        }
+        self.remove_chart(chart_id);
+        true
     }
 
     pub(super) fn remove_chart(&mut self, chart_id: u64) {

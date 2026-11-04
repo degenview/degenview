@@ -202,6 +202,11 @@ impl Harness {
         }
     }
 
+    /// Candle, drawing and chart-control commands that reached the stub app, in order.
+    pub fn draw_calls(&self) -> Vec<String> {
+        self.stub.draw_calls.lock().unwrap().clone()
+    }
+
     pub fn url(&self) -> String {
         format!("http://127.0.0.1:{}/mcp", self.port)
     }
@@ -717,6 +722,63 @@ fn stub_app(
                     trend_flips: false,
                 },
             }))
+        }
+        McpCommand::SetTimeframe {
+            workspace_id,
+            timeframe,
+        } => {
+            if workspace_id != 1 {
+                return Err(McpError::NotFound("No such workspace".into()));
+            }
+            stub.draw_calls
+                .lock()
+                .unwrap()
+                .push(format!("timeframe:{}", timeframe.label()));
+            Ok(McpReply::Timeframe(
+                crate::mcp::chart_control::TimeframeResult {
+                    workspace_id: "1".into(),
+                    timeframe: timeframe.label().into(),
+                    previous_timeframe: "1D".into(),
+                    status: "changed".into(),
+                    chart_count: 1,
+                },
+            ))
+        }
+        McpCommand::SetChartType {
+            workspace_id,
+            chart_id,
+            chart_type,
+        } => {
+            stub_chart_known(workspace_id, chart_id)?;
+            stub.draw_calls
+                .lock()
+                .unwrap()
+                .push(format!("chart_type:{}", chart_type.slug()));
+            Ok(McpReply::ChartChanged(Box::new(
+                crate::mcp::chart_control::ChartChangeResult {
+                    workspace_id: "1".into(),
+                    chart_id: "2".into(),
+                    status: "changed".into(),
+                    chart: None,
+                    charts_in_workspace: 1,
+                },
+            )))
+        }
+        McpCommand::RemoveChart {
+            workspace_id,
+            chart_id,
+        } => {
+            stub_chart_known(workspace_id, chart_id)?;
+            stub.draw_calls.lock().unwrap().push("remove_chart".into());
+            Ok(McpReply::ChartChanged(Box::new(
+                crate::mcp::chart_control::ChartChangeResult {
+                    workspace_id: "1".into(),
+                    chart_id: "2".into(),
+                    status: "removed".into(),
+                    chart: None,
+                    charts_in_workspace: 0,
+                },
+            )))
         }
         McpCommand::RemoveIndicator {
             workspace_id,
@@ -3283,5 +3345,6 @@ fn tool_schemas_use_only_standard_formats() {
     assert!(reply.body.contains("\"minimum\":0"), "{}", reply.body);
 }
 
+mod chart_control_tests;
 mod indicator_tests;
 mod market_tests;

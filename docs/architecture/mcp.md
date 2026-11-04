@@ -24,7 +24,7 @@ client → 127.0.0.1:<port>/mcp → bearer/Host/Origin/size checks
   Undecodable MCP settings/clients keep the server off without rewriting data.
 - Protocol support is rmcp 3.5 / MCP `2025-03-26` through `2026-07-28`, stateless JSON.
 
-Permissions separate reads and mutations: charts read/create/indicator-write/Pine-instance-write/candles-read; drawings read/write/delete; alerts
+Permissions separate reads and mutations: charts read/create/indicator-write/Pine-instance-write/candles-read/view-write/delete; drawings read/write/delete; alerts
 read/create/edit/pause/delete; Pine script list/read/write/save plus diagnostics, inputs, styles,
 reports, and alert reads; markets read (symbol search and quotes); watchlists read/write/delete.
 Delete and saved-source writes require their own grants.
@@ -33,7 +33,7 @@ Delete and saved-source writes require their own grants.
 
 | Area | Tools (`degenview_…`) |
 | --- | --- |
-| Charts | `list_workspaces`, `list_charts`, `add_chart`, `list_indicators`, `add_indicator`, `remove_indicator` |
+| Charts | `list_workspaces`, `list_charts`, `add_chart`, `list_indicators`, `add_indicator`, `remove_indicator`, `set_timeframe`, `set_chart_type`, `remove_chart` |
 | Price alerts | `list_price_alerts`, `create_price_alert`, `update_price_alert`, `pause_price_alert`, `resume_price_alert`, `delete_price_alert` |
 | Pine scripts | `list_pine_scripts`, `get_pine_script`, `update_pine_script`, `save_pine_script`, `compile_pine_script`, `get_pine_inputs` |
 | Candles and drawings | `get_candles`, `get_indicator_values`, `list_drawings`, `add_drawings`, `update_drawing`, `delete_drawings` |
@@ -80,6 +80,15 @@ Delete and saved-source writes require their own grants.
   none. Ids come from `next_free_id` (the counter, but never one already stored). A locked drawing
   is never edited or removed, a chart holds at most 500 drawings, and a call carries at most 25
   (add) or 50 (delete). Only trend lines and rectangles are writable.
+- Chart control (`mcp::chart_control`) calls the workspace's own methods: `set_timeframe` is the
+  toolbar's timeframe change (`ChartWorkspace::reload_for_timeframe`, shared with the toolbar) and
+  moves every chart in the workspace, since the timeframe belongs to the workspace; it reloads, so
+  charts read `loading` for a moment. `set_chart_type` uses `ChartCard::set_chart_type` after
+  `ChartType::unsupported_reason` (a line-drawn market, volume candles without volume → `UNSUPPORTED`)
+  and names types by `ChartType::slug`. `remove_chart` is the Remove button's `remove_chart`, so the
+  chart's drawings go with it; it has its own permission (`charts.delete`) and is refused for a
+  portfolio card. The first two need `charts.view.write`. All three answer `unchanged` where they can,
+  so a retry is harmless (not `remove_chart`: the second call is `NOT_FOUND`).
 - `get_indicator_values` (`mcp::indicator_tools`, pure part in `mcp::indicator_values`) computes RSI 14,
   an EMA of any length 2 to 400, Bollinger (20, 2) and Supertrend flips with `model::indicators`,
   the functions the chart draws with, over every candle the chart holds (the market's own, cut at

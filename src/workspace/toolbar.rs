@@ -48,16 +48,7 @@ impl ChartWorkspace {
         for action in workspace_toolbar::show(ui, &input) {
             match action {
                 ToolbarAction::SetTimeframe(timeframe) => {
-                    self.timeframe = timeframe;
-                    self.replay_rebase |= self.replay.session.is_some();
-                    self.drop_rulers();
-                    for chart in &mut self.charts {
-                        chart.chart.reset_view();
-                        chart.candles.clear();
-                        chart.reset_history();
-                        chart.last_live_open_time = None;
-                        chart.fetch(self.timeframe, ctx);
-                    }
+                    self.reload_for_timeframe(timeframe, ctx);
                 }
                 ToolbarAction::SaveLayout => save_clicked = true,
                 ToolbarAction::CopyLayout => copy_clicked = true,

@@ -9,6 +9,7 @@ use crate::mcp::bridge::{
     AlertCommandOutcome, AlertUpdate, BridgeClient, McpCommand, McpError, McpReply, NewAlert,
     REQUEST_TIMEOUT,
 };
+use crate::mcp::chart_control::{REMOVE_CHART, SET_CHART_TYPE, SET_TIMEFRAME};
 use crate::mcp::chart_data::{DEFAULT_CANDLES, MAX_CANDLES};
 use crate::mcp::drawings::{
     AnchorArg, DrawingEdit, MAX_DELETES_PER_CALL, MAX_DRAWINGS_PER_CALL, McpDash, NewDrawingArg,
@@ -88,6 +89,8 @@ pub fn required_permission(tool: &str) -> Option<Permission> {
         ADD_PINE_TO_CHART | UPDATE_PINE_INSTANCE | REMOVE_PINE_INSTANCE => {
             Some(Permission::ChartsPineInstancesWrite)
         }
+        SET_TIMEFRAME | SET_CHART_TYPE => Some(Permission::ChartsViewWrite),
+        REMOVE_CHART => Some(Permission::ChartsDelete),
         GET_CANDLES | GET_INDICATOR_VALUES => Some(Permission::ChartsCandlesRead),
         LIST_DRAWINGS => Some(Permission::DrawingsRead),
         ADD_DRAWINGS | UPDATE_DRAWING => Some(Permission::DrawingsWrite),
@@ -672,7 +675,10 @@ impl DegenViewMcp {
         Self {
             bridge,
             shared,
-            tool_router: Self::tool_router() + Self::market_router() + Self::indicator_router(),
+            tool_router: Self::tool_router()
+                + Self::market_router()
+                + Self::indicator_router()
+                + Self::chart_control_router(),
         }
     }
 
@@ -2180,7 +2186,7 @@ fn with_standard_formats(mut tool: Tool) -> Tool {
 #[tool_handler(
     router = self.tool_router,
     name = "DegenView",
-    instructions = "Inspect and change DegenView, a market dashboard, within what this credential is allowed. Charts: list workspaces first, then list or add charts and built-in indicators by workspace_id; read candles and indicator values (RSI, EMA, Bollinger, trend flips), add or remove built-in indicators, and add, edit or delete drawings. Pine scripts: list, read, compile and edit scripts (an edit is a draft until saved, and every edit needs the revision you last read), and apply a saved script to a chart. Price alerts: list, create, edit, pause and delete. Markets: search the providers for symbols and read quotes. Watchlists: list and read them (optionally with quotes), create, edit and delete. Only the tools this credential may use are listed."
+    instructions = "Inspect and change DegenView, a market dashboard, within what this credential is allowed. Charts: list workspaces first, then list or add charts and built-in indicators by workspace_id; read candles and indicator values (RSI, EMA, Bollinger, trend flips), add or remove built-in indicators, change a workspace's timeframe and a chart's type, remove charts, and add, edit or delete drawings. Pine scripts: list, read, compile and edit scripts (an edit is a draft until saved, and every edit needs the revision you last read), and apply a saved script to a chart. Price alerts: list, create, edit, pause and delete. Markets: search the providers for symbols and read quotes. Watchlists: list and read them (optionally with quotes), create, edit and delete. Only the tools this credential may use are listed."
 )]
 impl ServerHandler for DegenViewMcp {
     async fn call_tool(

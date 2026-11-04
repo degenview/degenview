@@ -465,6 +465,60 @@ mod tests {
     }
 
     #[test]
+    fn mcp_chart_control_changes_timeframe_type_and_removes_charts() {
+        use crate::model::{ChartType, Timeframe};
+        let ctx = egui::Context::default();
+        let mut workspace = empty_workspace(5);
+        let btc = workspace
+            .add_chart_for(&InstrumentId::new(DataSource::Binance, "BTCUSDT"), &ctx)
+            .chart_id;
+        let gecko = workspace
+            .add_chart_for(&InstrumentId::new(DataSource::CoinGecko, "bitcoin"), &ctx)
+            .chart_id;
+
+        let before = workspace.timeframe();
+        assert!(
+            !workspace.set_timeframe_for_mcp(before, &ctx),
+            "same timeframe is a no-op"
+        );
+        let other = if before == Timeframe::Week {
+            Timeframe::Day
+        } else {
+            Timeframe::Week
+        };
+        assert!(workspace.set_timeframe_for_mcp(other, &ctx));
+        assert_eq!(workspace.timeframe(), other);
+
+        assert_eq!(
+            workspace.set_chart_type_for_mcp(btc, ChartType::Renko),
+            Ok(true)
+        );
+        assert_eq!(
+            workspace.set_chart_type_for_mcp(btc, ChartType::Renko),
+            Ok(false)
+        );
+        let summary = workspace
+            .chart_summaries()
+            .into_iter()
+            .find(|chart| chart.id == btc)
+            .unwrap();
+        assert_eq!(summary.chart_type, ChartType::Renko);
+        // CoinGecko reports no volume, so volume candles are refused with the reason.
+        assert!(matches!(
+            workspace.set_chart_type_for_mcp(gecko, ChartType::VolumeCandles),
+            Err(crate::workspace::ChartTypeError::Unsupported(_))
+        ));
+        assert_eq!(
+            workspace.set_chart_type_for_mcp(999, ChartType::Bars),
+            Err(crate::workspace::ChartTypeError::NoSuchChart)
+        );
+
+        assert!(workspace.remove_market_chart(btc));
+        assert!(!workspace.remove_market_chart(btc));
+        assert_eq!(workspace.chart_count(), 1);
+    }
+
+    #[test]
     fn remove_indicator_takes_it_off_and_reports_when_it_was_not_there() {
         let ctx = egui::Context::default();
         let mut workspace = empty_workspace(5);

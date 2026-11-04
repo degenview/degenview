@@ -64,7 +64,7 @@ mod toolbar;
 mod undo;
 mod watchlist;
 
-pub use charts::ChartSummary;
+pub use charts::{ChartSummary, ChartTypeError};
 pub use pine::{
     IndicatorError, IndicatorOutcome, PineChartTarget, PineInstanceView, RemoveOutcome,
 };

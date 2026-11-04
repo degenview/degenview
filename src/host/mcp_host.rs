@@ -11,6 +11,7 @@ use crate::mcp::auth::{generate_token, verifier_hex};
 use crate::mcp::bridge::{
     self, AlertCommandOutcome, AlertUpdate, BridgeClient, BridgeInbox, McpError, NewAlert, Request,
 };
+use crate::mcp::chart_control::{ChartChangeResult, TimeframeResult};
 use crate::mcp::chart_data;
 use crate::mcp::drawings::{DrawingEdit, NewDrawing};
 use crate::mcp::indicator_values::{
@@ -36,13 +37,17 @@ use crate::model::mcp::{
 };
 use crate::model::pine_alert::PineAlertSubscription;
 use crate::model::watchlist::{Watchlist, WatchlistError, WatchlistInstrument, new_id, now_ms};
-use crate::model::{BuiltIn, DataSource, Drawing, DrawingCommand, IndicatorConfig, InstrumentId};
+use crate::model::{
+    BuiltIn, ChartType, DataSource, Drawing, DrawingCommand, IndicatorConfig, InstrumentId,
+    Timeframe,
+};
 use crate::service::watchlist_quotes::WatchlistQuoteBook;
 use crate::store::SharedStore;
 use crate::store::watchlist::{ListEdit, WatchlistStore};
 use crate::ui::alert_editor::{Direction, PriceAlertEditorState};
 use crate::workspace::{
-    ChartSummary, ChartWorkspace, IndicatorError, IndicatorOutcome, PineInstanceView, RemoveOutcome,
+    ChartSummary, ChartTypeError, ChartWorkspace, IndicatorError, IndicatorOutcome,
+    PineInstanceView, RemoveOutcome,
 };
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -1573,6 +1578,73 @@ pub fn indicator_readings(
         now_ms: now_ms(),
     };
     Ok(indicator_values(&meta, data.candles, request))
+}
+
+/// Moves the workspace to another timeframe through the toolbar's own path.
+pub fn set_timeframe(
+    workspace: &mut ChartWorkspace,
+    timeframe: Timeframe,
+    ctx: &eframe::egui::Context,
+) -> TimeframeResult {
+    let previous = workspace.timeframe();
+    let changed = workspace.set_timeframe_for_mcp(timeframe, ctx);
+    TimeframeResult {
+        workspace_id: workspace.id().to_string(),
+        timeframe: workspace.timeframe().label().to_owned(),
+        previous_timeframe: previous.label().to_owned(),
+        status: if changed { "changed" } else { "unchanged" }.to_owned(),
+        chart_count: workspace.chart_count(),
+    }
+}
+
+fn chart_now(workspace: &ChartWorkspace, chart_id: u64) -> Option<ChartInfo> {
+    let summary = workspace
+        .chart_summaries()
+        .into_iter()
+        .find(|chart| chart.id == chart_id)?;
+    Some(chart_info(workspace, summary))
+}
+
+/// Switches a market chart's type through the chart's own method.
+pub fn set_chart_type(
+    workspace: &mut ChartWorkspace,
+    chart_id: u64,
+    chart_type: ChartType,
+) -> Result<ChartChangeResult, McpError> {
+    let changed = match workspace.set_chart_type_for_mcp(chart_id, chart_type) {
+        Ok(changed) => changed,
+        Err(ChartTypeError::NoSuchChart) => return Err(no_chart(workspace, chart_id)),
+        Err(ChartTypeError::Unsupported(reason)) => {
+            return Err(McpError::Unsupported(format!(
+                "{} is not available on this chart: {reason}",
+                chart_type.label()
+            )));
+        }
+    };
+    Ok(ChartChangeResult {
+        workspace_id: workspace.id().to_string(),
+        chart_id: chart_id.to_string(),
+        status: if changed { "changed" } else { "unchanged" }.to_owned(),
+        chart: chart_now(workspace, chart_id),
+        charts_in_workspace: workspace.chart_count(),
+    })
+}
+
+/// Removes a market chart through the workspace's own path.
+pub fn remove_chart(
+    workspace: &mut ChartWorkspace,
+    chart_id: u64,
+) -> Result<ChartChangeResult, McpError> {
+    if !workspace.remove_market_chart(chart_id) {
+        return Err(no_chart(workspace, chart_id));
+    }
+    Ok(ChartChangeResult {
+        workspace_id: workspace.id().to_string(),
+        chart_id: chart_id.to_string(),
+        status: "removed".to_owned(),
+        chart: None,
+        charts_in_workspace: workspace.chart_count(),
+    })
 }
 
 // MARK: Watchlists (run on the app thread)

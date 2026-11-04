@@ -150,6 +150,20 @@ pub enum McpCommand {
         chart_id: u64,
         request: crate::mcp::indicator_values::ReadingRequest,
     },
+    /// Moves the whole workspace to another timeframe.
+    SetTimeframe {
+        workspace_id: u64,
+        timeframe: crate::model::Timeframe,
+    },
+    SetChartType {
+        workspace_id: u64,
+        chart_id: u64,
+        chart_type: crate::model::ChartType,
+    },
+    RemoveChart {
+        workspace_id: u64,
+        chart_id: u64,
+    },
     ListWatchlists,
     /// One page of a watchlist's entries. Quotes are not read here (the tool waits for them
     /// off the app thread); the reply names the markets on the page.
@@ -221,6 +235,8 @@ pub enum McpReply {
     DrawingsChanged(Box<DrawingsChangeResult>),
     PineEdit(Box<crate::mcp::types::PineEditResult>),
     IndicatorValues(Box<crate::mcp::indicator_values::IndicatorValuesResult>),
+    Timeframe(crate::mcp::chart_control::TimeframeResult),
+    ChartChanged(Box<crate::mcp::chart_control::ChartChangeResult>),
     Watchlists(crate::mcp::markets::WatchlistsResult),
     Watchlist(Box<crate::mcp::markets::WatchlistPage>),
     WatchlistChanged(Box<crate::mcp::markets::WatchlistChangeResult>),
