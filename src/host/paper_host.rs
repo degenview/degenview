@@ -148,6 +148,20 @@ impl PaperHost {
         }
     }
 
+    /// Whether this Mac has a working order or an open position on the instrument, in an account
+    /// it runs. Quotes for anything else matter only to an open panel.
+    pub fn tracks(&self, instrument_key: &str) -> bool {
+        let snapshot = self.snapshot();
+        snapshot.orders.iter().any(|order| {
+            order.instrument.key == instrument_key
+                && order.status.is_working()
+                && !self.elsewhere.contains_key(&order.account_id)
+        }) || snapshot.positions.iter().any(|position| {
+            position.instrument.key == instrument_key
+                && !self.elsewhere.contains_key(&position.account_id)
+        })
+    }
+
     /// Who runs the account when it is not this Mac.
     pub fn owned_elsewhere(&self, account_id: u64) -> Option<&Elsewhere> {
         self.elsewhere.get(&account_id)
@@ -1262,6 +1276,36 @@ mod tests {
         .unwrap();
         assert!(text.starts_with("Closed 1 of 3 positions."), "{text}");
         assert!(text.ends_with("(and 1 more)"), "{text}");
+    }
+
+    #[test]
+    fn tracks_only_instruments_with_a_working_order_or_a_position() {
+        let mut host = PaperHost::load(store());
+        let account_id = account(&mut host);
+        let instrument = PaperInstrument::chart("BTCUSDT", "Bitcoin", DataSource::Binance);
+        assert!(!host.tracks(&instrument.key));
+
+        host.process_quote(PaperQuote {
+            instrument_key: instrument.key.clone(),
+            bid: None,
+            ask: None,
+            last: Some(100.0),
+            timestamp: crate::model::watchlist::now_ms(),
+            is_market_open: true,
+        })
+        .unwrap();
+        let mut request = market_request(account_id);
+        request.kind = PaperOrderType::Limit;
+        request.limit_price = Some(50.0);
+        let order = host.submit(request).unwrap();
+        assert!(host.tracks(&instrument.key), "a resting order is tracked");
+        assert!(!host.tracks("binance:ETHUSDT"));
+
+        host.cancel(order).unwrap();
+        assert!(!host.tracks(&instrument.key));
+
+        host.submit(market_request(account_id)).unwrap();
+        assert!(host.tracks(&instrument.key), "an open position is tracked");
     }
 
     #[test]

@@ -42,6 +42,9 @@ pub(super) struct Chart {
     pub(super) drawings: Vec<Drawing>,
     pub(super) next_drawing_id: u64,
     pub(super) last_paper_quote: Option<(f64, Instant)>,
+    /// Wall-clock time (epoch ms) the candles last arrived from the provider or its live feed.
+    /// Paper trading stamps its quotes with this, never with the time they are read.
+    pub(super) last_data_ms: Option<i64>,
     pub(super) last_live_open_time: Option<i64>,
     /// Prediction markets: the choices charted together as lines, when there are several.
     pub(super) pm_series: Vec<PmSeries>,
@@ -110,6 +113,7 @@ impl Chart {
             drawings: Vec::new(),
             next_drawing_id: 1,
             last_paper_quote: None,
+            last_data_ms: None,
             last_live_open_time: None,
             pm_series: Vec::new(),
             image_url: None,
@@ -168,6 +172,7 @@ impl Chart {
         self.chart.set_series(Vec::new());
         self.pm_series.clear();
         self.last_paper_quote = None;
+        self.last_data_ms = None;
         self.last_live_open_time = None;
         self.candles.clear();
         self.reset_history();
@@ -353,6 +358,7 @@ impl Chart {
                         .set_series(SeriesLine::build(&self.pm_series, fetched.series));
                 }
                 self.error = None;
+                self.last_data_ms = Some(crate::model::watchlist::now_ms());
             }
             Err(message) => self.error = Some(message),
         }

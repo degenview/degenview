@@ -5,21 +5,23 @@ use super::chart::{Chart, REFRESH_INTERVAL};
 use crate::host::paper_host::PaperHost;
 use crate::model::DataSource;
 use crate::model::paper::{PaperCurrency, PaperInstrument, PaperQuote};
+use crate::model::watchlist_quote::{Freshness, evaluate_freshness};
 use crate::ui::paper_chart_trading::PaperOverlayAction;
 use std::time::{Duration, Instant};
 
 const PAPER_QUOTE_FLUSH_INTERVAL: Duration = Duration::from_millis(500);
 
 impl ChartWorkspace {
+    /// Hands each market chart's latest price to the paper host. Runs whether or not the Paper
+    /// Trading panel is open, so a working order keeps filling while any chart for its instrument
+    /// is on screen. With the panel closed only instruments the host holds an order or a position
+    /// on are sent. Nothing runs while the app is quit, asleep or showing no such chart.
     pub(super) fn sync_paper_quotes(&mut self, host: &mut PaperHost) {
-        if !self.paper_panel_visible {
-            return;
+        if self.paper_panel_visible {
+            let _ = host.ensure_default_account();
         }
-        let _ = host.ensure_default_account();
         let now = Instant::now();
-        let timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |duration| duration.as_millis() as i64);
+        let wall_clock = crate::model::watchlist::now_ms();
         for chart in &mut self.charts {
             if !chart.is_market() || !Self::supports_paper_trading(chart.source) {
                 continue;
@@ -27,7 +29,8 @@ impl ChartWorkspace {
             let Some(last) = chart.candles.last().map(|candle| candle.close) else {
                 continue;
             };
-            if !last.is_finite() || last <= 0.0 {
+            let instrument = Self::paper_instrument(chart);
+            if !self.paper_panel_visible && !host.tracks(&instrument.key) {
                 continue;
             }
             let should_send = chart.last_paper_quote.is_none_or(|(price, sent_at)| {
@@ -38,15 +41,16 @@ impl ChartWorkspace {
             if !should_send {
                 continue;
             }
-            let instrument = Self::paper_instrument(chart);
-            let _ = host.process_quote(PaperQuote {
-                instrument_key: instrument.key,
-                bid: None,
-                ask: None,
-                last: Some(last),
-                timestamp,
-                is_market_open: true,
-            });
+            let Some(quote) = paper_quote(
+                instrument.key,
+                chart.source,
+                last,
+                chart.last_data_ms,
+                wall_clock,
+            ) else {
+                continue;
+            };
+            let _ = host.process_quote(quote);
             chart.last_paper_quote = Some((last, now));
         }
     }
@@ -137,6 +141,36 @@ impl ChartWorkspace {
     }
 }
 
+/// The quote a chart's last price is worth to the paper engine, or `None` when it must not be
+/// traded on. The timestamp is when the price arrived, not when it is read; a price older than
+/// its source's window is withheld, and a stock outside US hours is sent as closed so no order
+/// fills at yesterday's close.
+fn paper_quote(
+    instrument_key: String,
+    source: DataSource,
+    last: f64,
+    data_ms: Option<i64>,
+    now_ms: i64,
+) -> Option<PaperQuote> {
+    if !last.is_finite() || last <= 0.0 {
+        return None;
+    }
+    let received_at = data_ms?;
+    let is_market_open = match evaluate_freshness(source, received_at, now_ms) {
+        Freshness::Live => true,
+        Freshness::MarketClosed => false,
+        _ => return None,
+    };
+    Some(PaperQuote {
+        instrument_key,
+        bid: None,
+        ask: None,
+        last: Some(last),
+        timestamp: received_at,
+        is_market_open,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -153,6 +187,70 @@ mod tests {
         assert!(ChartWorkspace::supports_paper_trading(
             DataSource::Polymarket
         ));
+    }
+
+    #[test]
+    fn quote_carries_the_arrival_time_not_the_read_time() {
+        let quote = paper_quote(
+            "binance:BTCUSDT".into(),
+            DataSource::Binance,
+            10.0,
+            Some(9_000),
+            10_000,
+        )
+        .expect("fresh price");
+        assert_eq!(quote.timestamp, 9_000);
+        assert!(quote.is_market_open);
+    }
+
+    #[test]
+    fn a_price_older_than_its_window_is_withheld() {
+        // Binance allows 45 s.
+        assert!(
+            paper_quote(
+                "binance:BTCUSDT".into(),
+                DataSource::Binance,
+                10.0,
+                Some(0),
+                46_000
+            )
+            .is_none()
+        );
+        assert!(
+            paper_quote(
+                "binance:BTCUSDT".into(),
+                DataSource::Binance,
+                10.0,
+                None,
+                1_000
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn a_stock_outside_us_hours_is_sent_as_closed() {
+        // 2026-11-01 is a Sunday.
+        let sunday = 1_793_491_200_000_i64;
+        let quote = paper_quote(
+            "alpaca:AAPL".into(),
+            DataSource::Alpaca,
+            200.0,
+            Some(sunday),
+            sunday + 1_000,
+        )
+        .expect("quote");
+        assert!(!quote.is_market_open);
+        // The same instant on a 24/7 venue is open.
+        let crypto = paper_quote(
+            "binance:BTCUSDT".into(),
+            DataSource::Binance,
+            1.0,
+            Some(sunday),
+            sunday + 1_000,
+        )
+        .expect("quote");
+        assert!(crypto.is_market_open);
     }
 
     #[test]

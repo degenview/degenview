@@ -62,5 +62,6 @@ impl ChartWorkspace {
             chart.candles.push(kline);
         }
         chart.last_live_open_time = chart.candles.last().map(|candle| candle.open_time);
+        chart.last_data_ms = Some(crate::model::watchlist::now_ms());
     }
 }
