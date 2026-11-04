@@ -205,8 +205,6 @@ const CONTROL: f32 = 24.0;
 /// The primary action of a start row.
 const ACTION: f32 = 26.0;
 const GAP: f32 = 8.0;
-/// Width of the speed and resolution menus.
-const MENU_WIDTH: f32 = 148.0;
 /// Space the dismissible notice adds below the row.
 const NOTICE: f32 = 38.0;
 
@@ -894,15 +892,9 @@ fn picker_chip(ui: &mut egui::Ui, chip: PickerChip) -> Option<usize> {
         .clone()
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     let mut picked = None;
-    kit::menu_popup(&response).width(MENU_WIDTH).show(|ui| {
-        kit::menu_scope(ui, MENU_WIDTH - kit::MENU_FRAME_MARGIN);
-        kit::menu_heading(
-            ui,
-            match chip.caption {
-                "Speed" => "Playback speed",
-                _ => "Bar resolution",
-            },
-        );
+    let width = kit::menu_width_for(ui, chip.options, 0.0);
+    kit::menu_popup(&response).width(width).show(|ui| {
+        kit::menu_scope(ui, width - kit::MENU_FRAME_MARGIN);
         for (index, label) in chip.options.iter().enumerate() {
             let row = kit::menu_row(
                 ui,
@@ -1318,26 +1310,26 @@ fn start_options(ui: &mut egui::Ui, actions: &mut Vec<ReplayBarAction>, armed: b
             "Choose where the replay starts",
             false,
         );
-        kit::menu_popup(&response)
-            .width(MENU_WIDTH + 36.0)
-            .show(|ui| {
-                kit::menu_scope(ui, MENU_WIDTH + 36.0 - kit::MENU_FRAME_MARGIN);
-                let mut entries = vec![("Select Bar on Chart", ReplayBarAction::SelectOnChart)];
-                entries.extend(START_CHOICES.iter().map(|c| (c.title, c.action)));
-                for (label, action) in entries {
-                    let row = kit::menu_row(
-                        ui,
-                        kit::MenuRow {
-                            reserve_icon: false,
-                            ..kit::MenuRow::new(label)
-                        },
-                    );
-                    if row.clicked() {
-                        actions.push(action);
-                        ui.close();
-                    }
+        let mut entries = vec![("Select Bar on Chart", ReplayBarAction::SelectOnChart)];
+        entries.extend(START_CHOICES.iter().map(|c| (c.title, c.action)));
+        let titles: Vec<&str> = entries.iter().map(|(title, _)| *title).collect();
+        let width = kit::menu_width_for(ui, &titles, 0.0);
+        kit::menu_popup(&response).width(width).show(|ui| {
+            kit::menu_scope(ui, width - kit::MENU_FRAME_MARGIN);
+            for (label, action) in entries {
+                let row = kit::menu_row(
+                    ui,
+                    kit::MenuRow {
+                        reserve_icon: false,
+                        ..kit::MenuRow::new(label)
+                    },
+                );
+                if row.clicked() {
+                    actions.push(action);
+                    ui.close();
                 }
-            });
+            }
+        });
         return;
     }
     let labels = room >= 650.0;
