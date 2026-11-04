@@ -34,6 +34,18 @@ enum ChartCommand {
     Snapshot(u64, crate::model::snapshot::SnapshotAction),
 }
 
+/// The markets of the Favorites list, by `InstrumentId::key`, so the star reads "on" for a
+/// market however its row was spelled and agrees with what adding to the list refuses.
+fn favorite_keys(lists: &[crate::model::watchlist::Watchlist]) -> HashSet<String> {
+    lists
+        .iter()
+        .find(|list| list.is_favorites)
+        .into_iter()
+        .flat_map(|list| list.instruments())
+        .map(|item| item.instrument.key())
+        .collect()
+}
+
 impl ChartWorkspace {
     pub(super) fn place_in_grid(&mut self, chart_id: u64) {
         if self.columns.is_empty() || self.columns.len() < 2 {
@@ -297,16 +309,9 @@ impl ChartWorkspace {
         let mut quick_trade = None;
         let mut new_alert: Option<AlertRequest> = None;
         let mut context_request: Option<(u64, ui::ContextRequest)> = None;
-        let (favorites, watchlist_memberships): (HashSet<InstrumentId>, Vec<_>) = {
+        let (favorites, watchlist_memberships): (HashSet<String>, Vec<_>) = {
             let store = self.watchlist.lock().expect("watchlist lock poisoned");
-            let favorites = store
-                .lists()
-                .iter()
-                .find(|list| list.is_favorites)
-                .into_iter()
-                .flat_map(|list| list.instruments())
-                .map(|item| item.instrument.clone())
-                .collect();
+            let favorites = favorite_keys(store.lists());
             let memberships = store
                 .lists()
                 .iter()
@@ -315,8 +320,8 @@ impl ChartWorkspace {
                         list.id,
                         list.name.clone(),
                         list.instruments()
-                            .map(|item| item.instrument.clone())
-                            .collect::<HashSet<_>>(),
+                            .map(|item| item.instrument.key())
+                            .collect::<HashSet<String>>(),
                     )
                 })
                 .collect();
@@ -409,7 +414,7 @@ impl ChartWorkspace {
                                                             id: *id,
                                                             name: name.clone(),
                                                             contains_market: instruments
-                                                                .contains(&instrument),
+                                                                .contains(&instrument.key()),
                                                         }
                                                     })
                                                     .collect();
@@ -430,7 +435,7 @@ impl ChartWorkspace {
                                                     &shown,
                                                     &scope,
                                                     chart_id,
-                                                    favorites.contains(&instrument),
+                                                    favorites.contains(&instrument.key()),
                                                     &memberships,
                                                     &mut action,
                                                 );
@@ -468,7 +473,7 @@ impl ChartWorkspace {
                                                         id: *id,
                                                         name: name.clone(),
                                                         contains_market: instruments
-                                                            .contains(&instrument),
+                                                            .contains(&instrument.key()),
                                                     }
                                                 })
                                                 .collect();
@@ -481,7 +486,7 @@ impl ChartWorkspace {
                                                 &chart.indicators,
                                                 candles,
                                                 replay_ms.is_some(),
-                                                favorites.contains(&instrument),
+                                                favorites.contains(&instrument.key()),
                                                 &memberships,
                                                 &mut action,
                                                 &snapshot_menu,
@@ -689,7 +694,7 @@ impl ChartWorkspace {
             for chart_id in favorite_toggles {
                 if let Some(chart) = self.charts.iter().find(|chart| chart.id == chart_id) {
                     let instrument = Self::chart_instrument(chart);
-                    if favorites.contains(&instrument) {
+                    if favorites.contains(&instrument.key()) {
                         store.remove_from_list(list_id, &instrument);
                     } else {
                         store.add_to_list(list_id, self.favorite_item(chart));
@@ -892,5 +897,37 @@ impl ChartWorkspace {
                 self.selected_drawing = None;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod favorite_tests {
+    use super::*;
+    use crate::model::DataSource;
+    use crate::model::watchlist::{Watchlist, WatchlistInstrument};
+
+    #[test]
+    fn the_star_is_on_for_a_favorite_spelled_differently_from_the_chart() {
+        let mut favorites = Watchlist::new("Favorites");
+        favorites.is_favorites = true;
+        for (source, symbol) in [
+            (DataSource::Binance, "btc"),
+            (DataSource::Coinbase, "ETH/USD"),
+        ] {
+            favorites
+                .add(
+                    WatchlistInstrument::new(InstrumentId::new(source, symbol), symbol, symbol),
+                    None,
+                )
+                .unwrap();
+        }
+        let keys = favorite_keys(&[Watchlist::new("Other"), favorites]);
+        for (source, symbol) in [
+            (DataSource::Binance, "BTCUSDT"),
+            (DataSource::Coinbase, "ETH-USD"),
+        ] {
+            assert!(keys.contains(&InstrumentId::new(source, symbol).key()));
+        }
+        assert!(!keys.contains(&InstrumentId::new(DataSource::Binance, "ETHUSDT").key()));
     }
 }

@@ -363,5 +363,5 @@ found while validating:
 | H1 | Sidebar demand is a 3 s lease renewed per drawn frame; closing the sidebar suspends at once |
 | H3, M1, M6 | Status classification, isolation budget, rate-limit short-circuit, per-request failures in `Outcome` (a transient DexScreener chain lookup failure staying permanent is not yet fixed) |
 | L1 | Idle markets are forgotten after a 10 min grace period, book included |
-| M2 | Pending |
+| M2 | `InstrumentId::key()` is built from `api_symbol`, used by the grid star, memberships and the sync merge key; old duplicate rows and flags are collapsed/re-keyed on load. `is_same_market` is unchanged (it stays case-insensitive for DEX addresses, where EVM casing is not significant) |
 | M3, M4, M7, L2 | Pending |

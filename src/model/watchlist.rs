@@ -479,6 +479,25 @@ impl Watchlist {
             .find_map(WatchlistEntry::section)
     }
 
+    /// Appends a row without the duplicate check, as old stored data can hold one.
+    #[cfg(test)]
+    pub fn push_unchecked(&mut self, item: WatchlistInstrument) {
+        self.entries.push(WatchlistEntry::Instrument(item));
+    }
+
+    /// Drops a market's second and later rows (the same `InstrumentId::key`, which now counts
+    /// `BTC` and `BTCUSDT` as one market). The first row stays, with its place and name.
+    /// Returns whether any row went.
+    pub fn collapse_duplicate_markets(&mut self) -> bool {
+        let mut seen = std::collections::HashSet::new();
+        let before = self.entries.len();
+        self.entries.retain(|entry| match entry {
+            WatchlistEntry::Instrument(item) => seen.insert(item.instrument.key()),
+            WatchlistEntry::Section(_) => true,
+        });
+        self.entries.len() != before
+    }
+
     fn is_section(&self, index: usize) -> bool {
         self.entries[index].section().is_some()
     }
@@ -903,6 +922,36 @@ mod tests {
             list.add(item("LTCUSDT"), Some(ids[0])),
             Err(WatchlistError::NotFound)
         );
+    }
+
+    #[test]
+    fn spellings_of_one_market_are_one_row() {
+        let mut list = Watchlist::new("L");
+        list.add(item("BTCUSDT"), None).unwrap();
+        assert!(matches!(
+            list.add(item("btc"), None),
+            Err(WatchlistError::Duplicate(_))
+        ));
+        assert!(list.contains(&InstrumentId::new(DataSource::Binance, "BTC/USDT")));
+        assert!(list.remove_instrument(&InstrumentId::new(DataSource::Binance, "BTC")));
+        assert_eq!(list.instruments().count(), 0);
+    }
+
+    #[test]
+    fn collapsing_keeps_the_first_row_of_a_market_and_every_section() {
+        let mut list = Watchlist::new("L");
+        // Rows saved before aliases shared a key can sit side by side.
+        list.entries.push(WatchlistEntry::Instrument(item("BTC")));
+        list.add_section("Alts", None).unwrap();
+        list.entries
+            .push(WatchlistEntry::Instrument(item("BTCUSDT")));
+        list.entries
+            .push(WatchlistEntry::Instrument(item("ETHUSDT")));
+        assert!(list.collapse_duplicate_markets());
+        let labels: Vec<String> = list.instruments().map(|item| item.label.clone()).collect();
+        assert_eq!(labels, ["BTC", "ETH"]);
+        assert_eq!(list.sections().count(), 1);
+        assert!(!list.collapse_duplicate_markets(), "nothing left to drop");
     }
 
     #[test]

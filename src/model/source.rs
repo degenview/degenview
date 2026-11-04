@@ -43,6 +43,22 @@ impl DataSource {
         }
     }
 
+    /// The source a `watchlist_slug` names, in any case.
+    pub fn from_watchlist_slug(slug: &str) -> Option<Self> {
+        const ALL: [DataSource; 8] = [
+            DataSource::Binance,
+            DataSource::Coinbase,
+            DataSource::CoinGecko,
+            DataSource::DexScreener,
+            DataSource::Alpaca,
+            DataSource::Polymarket,
+            DataSource::Kalshi,
+            DataSource::CoinMarketCap,
+        ];
+        ALL.into_iter()
+            .find(|source| source.watchlist_slug().eq_ignore_ascii_case(slug))
+    }
+
     /// Whether this source quotes probabilities in 0…1, charted as lines.
     pub fn is_prediction_market(self) -> bool {
         matches!(self, Self::Polymarket | Self::Kalshi)

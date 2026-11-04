@@ -23,6 +23,29 @@ pub struct WatchlistStore {
     last_error: Option<String>,
 }
 
+/// Flags saved under a spelling `InstrumentId::key` no longer uses (`BINANCE:BTC`) move to the
+/// market's key; a flag already on that key wins. Returns whether any moved.
+fn respell_flags(flags: Flags) -> (Flags, bool) {
+    let mut respelled = Flags::new();
+    let mut moved = false;
+    let mut later = Vec::new();
+    for (key, flag) in flags {
+        match InstrumentId::rekey(&key) {
+            Some(current) if current != key => {
+                moved = true;
+                later.push((current, flag));
+            }
+            _ => {
+                respelled.insert(key, flag);
+            }
+        }
+    }
+    for (key, flag) in later {
+        respelled.entry(key).or_insert(flag);
+    }
+    (respelled, moved)
+}
+
 impl WatchlistStore {
     pub fn new(store: SharedStore) -> Self {
         let (mut lists, flags, load_failed, last_error) = {
@@ -46,6 +69,7 @@ impl WatchlistStore {
             favorites.is_favorites = true;
             lists.push(favorites);
         }
+        let (flags, flags_respelled) = respell_flags(flags);
         let mut this = Self {
             store,
             lists,
@@ -54,7 +78,11 @@ impl WatchlistStore {
             last_error,
         };
         if !this.load_failed {
+            this.collapse_duplicate_markets();
             this.persist();
+            if flags_respelled {
+                this.persist_flags();
+            }
         }
         this
     }
@@ -90,7 +118,9 @@ impl WatchlistStore {
             return;
         }
         let mut lists = loaded.unwrap_or_default();
-        self.flags = loaded_flags.unwrap_or_default().unwrap_or_default();
+        let (flags, flags_respelled) =
+            respell_flags(loaded_flags.unwrap_or_default().unwrap_or_default());
+        self.flags = flags;
         self.load_failed = false;
         self.last_error = None;
         let had_favorites = lists.iter().any(|list| list.is_favorites);
@@ -100,9 +130,22 @@ impl WatchlistStore {
             lists.push(favorites);
         }
         self.lists = lists;
-        if !had_favorites {
+        let collapsed = self.collapse_duplicate_markets();
+        if !had_favorites || collapsed {
             self.persist();
         }
+        if flags_respelled {
+            self.persist_flags();
+        }
+    }
+
+    /// Rows saved when `BTC` and `BTCUSDT` were two markets are one now: the first stays.
+    fn collapse_duplicate_markets(&mut self) -> bool {
+        let mut any = false;
+        for list in &mut self.lists {
+            any |= list.collapse_duplicate_markets();
+        }
+        any
     }
 
     pub fn load_failed(&self) -> bool {
@@ -433,6 +476,65 @@ mod tests {
             reloaded
                 .flags()
                 .contains_key(&InstrumentId::new(DataSource::Binance, "BTCUSDT").key())
+        );
+    }
+
+    #[test]
+    fn rows_and_flags_saved_under_two_spellings_of_one_market_load_as_one() {
+        let shared = SharedStore::new(std::sync::Mutex::new(
+            Store::open_in_memory().expect("store"),
+        ));
+        {
+            let mut favorites = Watchlist::new("Favorites");
+            favorites.is_favorites = true;
+            for symbol in ["BTC", "ETHUSDT", "BTCUSDT"] {
+                favorites.add(item(symbol), None).ok();
+            }
+            // Rows from before the spellings shared a key: both sit in the document.
+            favorites.push_unchecked(item("BTCUSDT"));
+            let store = shared.lock().unwrap();
+            store
+                .replace_documents("watchlist", &[favorites])
+                .expect("seed lists");
+            store
+                .set_setting(
+                    "watchlist.flags",
+                    &Flags::from([
+                        ("BINANCE:BTC".to_owned(), WatchlistFlag::Blue),
+                        ("BINANCE:ETHUSDT".to_owned(), WatchlistFlag::Red),
+                    ]),
+                )
+                .expect("seed flags");
+        }
+        let loaded = WatchlistStore::new(shared.clone());
+        let favorites = loaded
+            .lists()
+            .iter()
+            .find(|list| list.is_favorites)
+            .unwrap();
+        let symbols: Vec<&str> = favorites
+            .instruments()
+            .map(|item| item.instrument.symbol.as_str())
+            .collect();
+        assert_eq!(symbols, ["BTC", "ETHUSDT"], "the first BTC row stays, once");
+        assert_eq!(
+            loaded.flags().get("BINANCE:BTCUSDT"),
+            Some(&WatchlistFlag::Blue),
+            "the flag follows the market"
+        );
+        assert!(!loaded.flags().contains_key("BINANCE:BTC"));
+        // And it was written back, so the next start has nothing to repair.
+        let again = WatchlistStore::new(shared);
+        assert_eq!(again.flags(), loaded.flags());
+        assert_eq!(
+            again
+                .lists()
+                .iter()
+                .find(|list| list.is_favorites)
+                .unwrap()
+                .instruments()
+                .count(),
+            2
         );
     }
 

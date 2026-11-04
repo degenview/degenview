@@ -65,8 +65,11 @@ candles, and `ChartCard::set_series` draws choices by position with end labels.
 - `WatchlistStore` is authoritative: one ordered document row per list containing flat instrument
   and section entries. Validate, persist in one transaction, then publish. Do not overwrite a list
   that failed to decode. Favorites are the `isFavorites` list; Swift favorite rows import once.
-- Identity is `InstrumentId` (source plus provider id); chain is metadata and ticker text is not an
-  identity. CoinMarketCap portfolio cards are not instruments.
+- Identity is `InstrumentId::key()` (source plus the provider id as the provider takes it): Binance
+  `BTC`/`btcusdt`/`BTC/USDT` and Coinbase `ETH`/`ETH/USD`/`eth-usd` are one market. Use the key, not the
+  derived `Eq`/`Hash` on the struct, for membership, flags, quote lookup and sync merging. Rows and
+  flags saved under older spellings are collapsed and re-keyed on load. Chain is metadata and ticker
+  text is not an identity. CoinMarketCap portfolio cards are not instruments.
 - Flags are global by market in `watchlist.flags`. They sync with the Watchlists switch (not
   Preferences) and merge per key; `sync::policy::category_of` / `merge_of` decide per setting key.
   Sorting/filtering is presentation-only and stays within sections through `watchlist_layout`.
