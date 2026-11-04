@@ -47,6 +47,14 @@ pub fn save_script(prompt: &str, default_name: &str) -> String {
     )
 }
 
+/// "choose folder": the user picks where a set of files goes.
+pub fn folder_script(prompt: &str) -> String {
+    format!(
+        "POSIX path of (choose folder with prompt {})",
+        applescript_string(prompt)
+    )
+}
+
 /// What the script printed, as a path; empty output (a cancel) is None.
 pub fn parse_path(output: &str) -> Option<PathBuf> {
     let trimmed = output.trim_end_matches(['\n', '\r']);
@@ -70,6 +78,10 @@ mod portal {
             .set_title(title)
             .add_filter(filter, extensions)
             .pick_file()
+    }
+
+    pub fn folder(title: &str) -> Option<PathBuf> {
+        rfd::FileDialog::new().set_title(title).pick_folder()
     }
 
     pub fn save(title: &str, default_name: &str) -> Option<PathBuf> {
@@ -150,6 +162,18 @@ pub fn choose_save_path(prompt: &str, default_name: &str) -> Result<Option<PathB
     }
 }
 
+/// Asks for a folder to write several files into.
+pub fn choose_folder(prompt: &str) -> Result<Option<PathBuf>, String> {
+    #[cfg(target_os = "linux")]
+    {
+        Ok(portal::folder(prompt))
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        run(&folder_script(prompt))
+    }
+}
+
 /// Reads a chosen file as UTF-8 text.
 pub fn read_text(path: &std::path::Path) -> Result<String, String> {
     std::fs::read_to_string(path)
@@ -188,6 +212,14 @@ mod tests {
         assert_eq!(applescript_string("say \"hi\""), "\"say \\\"hi\\\"\"");
         assert_eq!(applescript_string("a\\b"), "\"a\\\\b\"");
         assert_eq!(applescript_string("two\nlines"), "\"two lines\"");
+    }
+
+    #[test]
+    fn the_folder_panel_asks_for_a_folder() {
+        assert_eq!(
+            folder_script("Export"),
+            "POSIX path of (choose folder with prompt \"Export\")"
+        );
     }
 
     #[test]

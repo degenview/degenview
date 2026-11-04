@@ -38,6 +38,7 @@ pub mod measure;
 pub mod object_tree;
 pub mod paper;
 pub mod paper_engine;
+pub mod paper_export;
 pub mod paper_format;
 pub mod paper_ticket;
 pub mod pattern;
