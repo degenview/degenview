@@ -46,11 +46,15 @@ share) can add to more than 100% down a column because nested regions are counte
 **line time cannot**: line times, plus the *not attributed* row, add to the script total exactly.
 
 * *Not attributed*: time inside a bar that no region covers (setting the bar up, committing
-  histories, the strategy broker's fills, `indicator()` itself).
+  histories, the strategy broker's fills, `indicator()` itself), and the part of the profiler's own
+  bookkeeping that runs outside a region's clock reads.
 * *Profiler overhead (estimated)*: every measured execution costs two clock reads and some
-  bookkeeping. That cost is measured once per profile on this machine (an empty region, many times,
-  median) and multiplied by the number of measured executions. It is **reported, never subtracted**:
-  a region's time is what the clock saw, and the profiled run is slower than a normal one.
+  bookkeeping, and a function call costs more than a statement (it also finds its call site). Both
+  costs are measured once per profile on this machine (an empty region, many times, median) and
+  multiplied by the number of statements and of calls. It is **reported, never subtracted**: a
+  region's time is what the clock saw, and the profiled run is slower than a normal one. Most of the
+  cost lands in the line measured; the rest in *not attributed*, so the estimate is a size, not an
+  exact share of any one figure.
 * Compilation is not part of any of this; the profile states how long it took separately.
 
 Recursion: a region already on the call stack adds its elapsed time to *line time* but not again to
@@ -90,13 +94,19 @@ script does with the candles afterwards is timed like anything else.
   sets the controller's cancellation flag; dropping the session does the same, so closing the tab,
   switching scripts or quitting ends the thread.
 * The deadline: a profiled run is slower than a normal one, so each bar extends the deadline by its
-  estimated overhead; a script that would have finished in time normally finishes in time profiled.
+  estimated overhead (statements and calls at their own cost); a script that would have finished in
+  time normally finishes in time profiled.
   The instruction and call-depth limits are untouched.
 * A run that is cancelled or runs out of time keeps what it measured, labelled **partial** with the
-  reason; a partial profile is never presented as complete. A run that **fails** has no profile: what
-  it measured leaves out the failing bar and everything after it, so the Profile tab says "Profile
-  failed: the script failed after N bars: …", nothing is drawn beside the code, and a profile of the
-  text before is dropped too. The engine still returns the partial report
+  reason; a partial profile is never presented as complete. A bar is counted once it has started
+  running: a run stopped before its first statement counts no bar, and a bar stopped part-way is
+  counted and in the total but is not a finished bar (`Summary::cut_bar`; the caveat says "during bar
+  N" instead of "after N bars", and the progress counter does not include it). If a panic unwinds past
+  the interpreter, the recorder closes the open bar the same way, so the report still adds up. A run
+  that **fails** has no profile: the failing bar is counted (it is the bar N in "failed on bar N"),
+  but what was measured stops there and leaves out everything after it, so the Profile tab says
+  "Profile failed: the script failed on bar N: …", nothing is drawn beside the code, and a profile of
+  the text before is dropped too. The engine still returns the partial report
   (`Completeness::Partial(Interruption::Failed)`); `Profiler::finish` turns it into a failure.
 
 ## In the window
@@ -106,7 +116,7 @@ script does with the candles afterwards is timed like anything else.
   amber when the profile is partial or out of date, red when it failed, and its tooltip says which.
   Turning it on opens the drawer's **Profile** tab.
 * **A failure is also a problem.** A script that compiles and then fails (an unknown function, an
-  index out of range) ends the profile with no data ("the script failed after N bars: …"), and the
+  index out of range) ends the profile with no data ("the script failed on bar N: …"), and the
   same error is listed in the Problems tab, counted on its badge and in the chip under the editor, and
   underlined at the failing call, exactly as the chart's own run reports it (`pine_studio::problems`).
   Only if the profile is of the text on screen; a cancelled or timed-out run is not a failure.

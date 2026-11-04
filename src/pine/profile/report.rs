@@ -61,18 +61,24 @@ pub struct Summary {
     pub realtime_bars: u64,
     /// The time of all the bars, from the start of each to its end: the denominator of every share.
     pub total_ns: u64,
+    /// The last counted bar started and stopped early (cancelled, out of time, or the script failed
+    /// in it): it is in `bars` and `total_ns`, but it is not a finished bar.
+    pub cut_bar: bool,
     /// The time spent in regions, each moment counted once: the sum of all line times.
     pub attributed_ns: u64,
     /// Executions that were timed (statements and function calls).
     pub measured_executions: u64,
-    /// What measuring them is estimated to have added to `total_ns`: the number of timed executions
-    /// times the cost of timing one. Reported, never subtracted from anything.
+    /// What measuring them is estimated to have added to `total_ns`: each timed statement at
+    /// `pair_cost_ns` and each timed call at `call_pair_cost_ns`. Reported, never subtracted from
+    /// anything.
     pub overhead_ns: u64,
     /// Time the run spent waiting for data it asked for (`request.security()` reading another
     /// symbol). It is in no region and not in `total_ns`.
     pub waited_ns: u64,
-    /// The cost of timing one execution on this machine.
+    /// The cost of timing one statement on this machine.
     pub pair_cost_ns: u64,
+    /// The cost of timing one user-function call, which also finds its call site.
+    pub call_pair_cost_ns: u64,
     /// The smallest difference the clock reports.
     pub resolution_ns: u64,
 }

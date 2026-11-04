@@ -290,7 +290,7 @@ impl Profiler {
                 self.failure = Some(Failure {
                     key: run.key,
                     message: format!(
-                        "The script failed after {} bars: {}",
+                        "The script failed on bar {}: {}",
                         report.summary.bars, error.message
                     ),
                     not_runnable: false,

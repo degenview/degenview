@@ -18,7 +18,7 @@ pub(crate) mod support;
 mod tests;
 
 pub use clock::{Clock, MonotonicClock, SteppingClock, resolution_ns};
-pub use recorder::ProfileRuntime;
+pub use recorder::{BarOutcome, ProfileRuntime};
 pub use regions::{Region, RegionKind, RegionTable};
 pub use report::{
     CallSiteStats, Completeness, Interruption, LineStats, ProfileReport, RegionStats, Summary,

@@ -572,11 +572,24 @@ impl Session {
         let hooked = self.hooks.is_some();
         let realtime = event.phase.is_realtime();
         if hooked {
+            // A bar that is cancelled or out of time before it starts is not a measured bar:
+            // `execute_bar` would fail on its first line, after the recorder had opened it.
+            if let Err(error) = self.check_interruption() {
+                if owns_deadline {
+                    self.deadline_at = None;
+                }
+                return Err(error);
+            }
             self.hook_begin_bar();
         }
         let result = self.execute_bar(event, is_last, is_last_history);
         if hooked {
-            self.hook_end_bar(!matches!(result, Err(RunError::Rejection(_))), realtime);
+            let outcome = match &result {
+                Ok(_) => super::profile::BarOutcome::Completed,
+                Err(RunError::Rejection(_)) => super::profile::BarOutcome::Skipped,
+                Err(_) => super::profile::BarOutcome::Cut,
+            };
+            self.hook_end_bar(outcome, realtime);
         }
         if owns_deadline {
             self.deadline_at = None;
@@ -1409,9 +1422,9 @@ impl Session {
     /// slower than a normal one, and must not time out where the normal one would not.
     #[cold]
     #[inline(never)]
-    fn hook_end_bar(&mut self, counted: bool, realtime: bool) {
+    fn hook_end_bar(&mut self, outcome: super::profile::BarOutcome, realtime: bool) {
         if let Some(Hooks::Profile(profile)) = self.hooks.as_deref_mut() {
-            let added = profile.end_bar(counted, realtime);
+            let added = profile.end_bar(outcome, realtime);
             if let Some(deadline) = self.deadline_at.as_mut() {
                 *deadline += added;
             }

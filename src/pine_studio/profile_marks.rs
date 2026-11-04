@@ -388,7 +388,7 @@ fn summary(report: &ProfileReport, text: &str, compile_ns: u64) -> Vec<SummaryRo
         measured,
         "Not in any line",
         Some(format!(
-            "{} of the total: setting bars up, committing them, orders",
+            "{} of the total: setting bars up, committing them, orders, and part of the profiler's own bookkeeping",
             percent(report.share(s.unattributed_ns()))
         )),
         duration(s.unattributed_ns()),
@@ -407,8 +407,9 @@ fn summary(report: &ProfileReport, text: &str, compile_ns: u64) -> Vec<SummaryRo
         measured,
         "Profiler overhead",
         Some(format!(
-            "About {} per measured execution; inside every time, not subtracted",
-            duration(s.pair_cost_ns)
+            "About {} per statement and {} per function call, mostly inside the line measured; estimated, not subtracted",
+            duration(s.pair_cost_ns),
+            duration(s.call_pair_cost_ns)
         )),
         format!("\u{2248} {}", duration(s.overhead_ns)),
         None,
@@ -444,12 +445,18 @@ fn caveat(report: &ProfileReport) -> Option<String> {
         return None;
     };
     let bars = count(report.summary.bars);
+    // The last counted bar may have been stopped part-way: it is in the figures, but not finished.
+    let reached = if report.summary.cut_bar {
+        format!("during bar {bars}")
+    } else {
+        format!("after {bars} bars")
+    };
     Some(match why {
-        Interruption::Cancelled => format!("Partial: cancelled after {bars} bars."),
-        Interruption::TimedOut => format!("Partial: the script ran out of time after {bars} bars."),
+        Interruption::Cancelled => format!("Partial: cancelled {reached}."),
+        Interruption::TimedOut => format!("Partial: the script ran out of time {reached}."),
         Interruption::Failed(error) => {
             format!(
-                "Partial: the script failed after {bars} bars: {}",
+                "Partial: the script failed on bar {bars}: {}",
                 error.message
             )
         }
@@ -764,6 +771,12 @@ mod tests {
         report.completeness = Completeness::Partial(Interruption::Cancelled);
         let caveat = ProfileMarks::build(&report, "", 0).caveat.unwrap();
         assert_eq!(caveat, "Partial: cancelled after 25 bars.");
+        report.summary.cut_bar = true;
+        assert_eq!(
+            ProfileMarks::build(&report, "", 0).caveat.unwrap(),
+            "Partial: cancelled during bar 25."
+        );
+        report.summary.cut_bar = false;
         report.completeness = Completeness::Partial(Interruption::TimedOut);
         assert!(
             ProfileMarks::build(&report, "", 0)

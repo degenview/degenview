@@ -136,7 +136,7 @@ fn a_script_that_fails_when_it_runs_has_no_profile() {
         unreachable!()
     };
     assert!(
-        message.starts_with("The script failed after") && message.contains("out of bounds"),
+        message.starts_with("The script failed on bar") && message.contains("out of bounds"),
         "{message}"
     );
     // No numbers of any kind: not in the drawer, not beside the code.
