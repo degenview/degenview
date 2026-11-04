@@ -130,6 +130,25 @@ impl RegionTable {
         }
     }
 
+    /// One user function whose body starts at offset 0, to measure the cost of timing a call.
+    pub(super) fn single_function() -> Self {
+        let position = SourcePosition::new(1, 1, 0);
+        Self {
+            regions: vec![Region {
+                kind: RegionKind::Function,
+                offset: 0,
+                start: position,
+                end: position,
+                parent: None,
+                blocks: Vec::new(),
+                name: Some("f".to_owned()),
+                has_children: false,
+            }],
+            by_offset: vec![(0, 0)],
+            function_bodies: vec![(0, 0)],
+        }
+    }
+
     pub fn len(&self) -> usize {
         self.regions.len()
     }

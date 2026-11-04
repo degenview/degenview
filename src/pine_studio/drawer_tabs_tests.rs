@@ -415,3 +415,79 @@ fn profile_fits_the_drawer() {
         }
     }
 }
+
+/// A finished profile of a small script, to draw.
+fn finished_profile() -> super::profiler::Profile {
+    use super::preview::RunIdentity;
+    use super::profile_marks::ProfileMarks;
+    use super::profiler::{Profile, ProfileKey};
+    let body =
+        "sq(x) =>\n    x * x\ntotal = 0.0\nfor i = 1 to 20\n    total += sq(i)\nplot(total)\n";
+    let source = format!("//@version=6\nindicator(\"T\")\n{body}");
+    let report = crate::pine::profile::support::report(body, 40, 1_000);
+    let marks = ProfileMarks::build(&report, &source, 1_234_000);
+    Profile {
+        key: ProfileKey::new("demo", &source, RunIdentity::for_test()),
+        source: source.as_str().into(),
+        label: "BTCUSDT \u{b7} 1H".to_owned(),
+        report: std::sync::Arc::new(report),
+        marks: std::sync::Arc::new(marks),
+    }
+}
+
+#[test]
+fn a_finished_profile_fits_the_drawer_current_or_stale() {
+    let profile = finished_profile();
+    for (name, status, lines_match) in [
+        ("ready", Status::Ready, true),
+        ("stale-data", Status::Stale, true),
+        ("stale-text", Status::Stale, false),
+    ] {
+        for size in SIZES {
+            fits("profile", name, size, |ui| {
+                let view = TabView {
+                    status: &status,
+                    profile: Some(&profile),
+                    lines_match,
+                };
+                profile_ui::tab(ui, &view);
+            });
+        }
+    }
+}
+
+#[test]
+fn a_stale_profile_of_the_same_text_is_navigable_and_not_current() {
+    use super::profile_ui::Freshness;
+    let fresh = |status: &Status, lines| Freshness::of(status, lines);
+    assert_eq!(
+        fresh(&Status::Ready, true),
+        Freshness {
+            navigable: true,
+            current: true
+        }
+    );
+    assert_eq!(
+        fresh(&Status::Partial, true),
+        Freshness {
+            navigable: true,
+            current: true
+        },
+        "a partial profile is of what is on screen"
+    );
+    assert_eq!(
+        fresh(&Status::Stale, true),
+        Freshness {
+            navigable: true,
+            current: false
+        },
+        "its rows can be followed, but its figures are not current"
+    );
+    assert_eq!(
+        fresh(&Status::Stale, false),
+        Freshness {
+            navigable: false,
+            current: false
+        }
+    );
+}

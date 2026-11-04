@@ -158,6 +158,34 @@ pub struct TabView<'a> {
     pub lines_match: bool,
 }
 
+/// How much of a result the person can rely on. Two separate facts: whether the profile's line
+/// numbers still mean what they do in the editor (its rows can be followed), and whether it is of
+/// what is on screen (its figures are current). A profile of the same text with other inputs or data
+/// is navigable and not current.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Freshness {
+    pub navigable: bool,
+    pub current: bool,
+}
+
+impl Freshness {
+    pub fn of(status: &Status, lines_match: bool) -> Self {
+        Self {
+            navigable: lines_match,
+            current: !matches!(status, Status::Stale),
+        }
+    }
+}
+
+/// `color`, faded when the figure it paints is not current.
+fn faded(color: Color32, current: bool) -> Color32 {
+    if current {
+        color
+    } else {
+        color.gamma_multiply(0.5)
+    }
+}
+
 /// The Profile tab.
 pub fn tab(ui: &mut Ui, view: &TabView<'_>) -> Vec<Action> {
     let mut actions = Vec::new();
@@ -322,7 +350,7 @@ fn running(ui: &mut Ui, done: u64, total: u64, actions: &mut Vec<Action>) {
 // MARK: A result
 
 fn result(ui: &mut Ui, view: &TabView<'_>, profile: &Profile, actions: &mut Vec<Action>) {
-    let navigable = view.lines_match;
+    let fresh = Freshness::of(view.status, view.lines_match);
     chrome::scroll(ui, "profile-result", |ui| {
         ui.spacing_mut().item_spacing.y = 0.0;
         if let Some(caveat) = &profile.marks.caveat {
@@ -331,18 +359,18 @@ fn result(ui: &mut Ui, view: &TabView<'_>, profile: &Profile, actions: &mut Vec<
         if *view.status == Status::Stale {
             banner(
                 ui,
-                if navigable {
+                if fresh.navigable {
                     "This profile is of earlier inputs or data. Its lines still match the editor."
                 } else {
                     "This profile is of earlier text. Its lines no longer match the editor."
                 },
             );
         }
-        totals(ui, &profile.marks, navigable);
+        totals(ui, &profile.marks, fresh);
         ui.add_space(16.0);
         let hottest_lines = |ui: &mut Ui, actions: &mut Vec<Action>| {
             caption(ui, "Hottest lines");
-            hottest(ui, profile, navigable, actions);
+            hottest(ui, profile, fresh, actions);
         };
         let groups = |ui: &mut Ui, actions: &mut Vec<Action>, first: bool| {
             let mut first = first;
@@ -360,7 +388,7 @@ fn result(ui: &mut Ui, view: &TabView<'_>, profile: &Profile, actions: &mut Vec<
                     ui.add_space(16.0);
                 }
                 caption(ui, group.title());
-                details(ui, &rows, navigable, actions);
+                details(ui, &rows, fresh, actions);
             }
         };
         let any_group = profile.marks.summary.iter().any(|row| {
@@ -394,7 +422,8 @@ const TILE_ICON: f32 = 24.0;
 const TILE_ICON_MIN_WIDTH: f32 = 120.0;
 
 /// The run's three figures, side by side.
-fn totals(ui: &mut Ui, marks: &ProfileMarks, current: bool) {
+fn totals(ui: &mut Ui, marks: &ProfileMarks, fresh: Freshness) {
+    let current = fresh.current;
     let gap = 8.0;
     let width = ((ui.available_width() - gap * 2.0) / 3.0).max(40.0);
     let tone = if current {
@@ -435,6 +464,7 @@ fn totals(ui: &mut Ui, marks: &ProfileMarks, current: bool) {
                     pos2(rect.right() - 10.0 - TILE_ICON, top),
                     Vec2::splat(TILE_ICON),
                 );
+                let tint = faded(tint, current);
                 ui.painter()
                     .rect_filled(chip, 7.0, theme::with_alpha(tint, 0.14));
                 icons::paint(
@@ -470,7 +500,7 @@ fn totals(ui: &mut Ui, marks: &ProfileMarks, current: bool) {
     });
 }
 
-fn hottest(ui: &mut Ui, profile: &Profile, navigable: bool, actions: &mut Vec<Action>) {
+fn hottest(ui: &mut Ui, profile: &Profile, fresh: Freshness, actions: &mut Vec<Action>) {
     if profile.marks.hot.is_empty() {
         ui.label(muted("No line took a measurable share of the time."));
         return;
@@ -480,7 +510,7 @@ fn hottest(ui: &mut Ui, profile: &Profile, navigable: bool, actions: &mut Vec<Ac
             if index > 0 {
                 hairline(ui);
             }
-            if hot_row(ui, row, navigable).clicked() && navigable {
+            if hot_row(ui, row, fresh).clicked() && fresh.navigable {
                 actions.push(Action::Reveal(row.line));
             }
         }
@@ -489,7 +519,8 @@ fn hottest(ui: &mut Ui, profile: &Profile, navigable: bool, actions: &mut Vec<Ac
 
 /// One ranked line: where it is, what it says, and on the right how long it took itself and how
 /// often it ran. A thin bar along its foot is its share of the script's time.
-fn hot_row(ui: &mut Ui, row: &HotRow, navigable: bool) -> egui::Response {
+fn hot_row(ui: &mut Ui, row: &HotRow, fresh: Freshness) -> egui::Response {
+    let Freshness { navigable, current } = fresh;
     let (rect, response) = ui.allocate_exact_size(
         vec2(ui.available_width(), ROW_HEIGHT),
         if navigable {
@@ -507,7 +538,7 @@ fn hot_row(ui: &mut Ui, row: &HotRow, navigable: bool) -> egui::Response {
         ui.ctx().set_cursor_icon(CursorIcon::PointingHand);
     }
     let painter = ui.painter().with_clip_rect(rect);
-    let primary = if navigable {
+    let primary = if current {
         theme::text_primary()
     } else {
         theme::text_secondary()
@@ -521,7 +552,7 @@ fn hot_row(ui: &mut Ui, row: &HotRow, navigable: bool) -> egui::Response {
             vec2((rect.width() - 24.0) * fraction, 2.0),
         ),
         1.0,
-        theme::profiler_heat(fraction.sqrt()),
+        faded(theme::profiler_heat(fraction.sqrt()), current),
     );
     painter.text(
         pos2(rect.min.x + 12.0, mid - 1.0),
@@ -569,14 +600,14 @@ fn hot_row(ui: &mut Ui, row: &HotRow, navigable: bool) -> egui::Response {
 
 /// A card of label-and-value rows: the label and what it is of on the left, the figure on the
 /// right, a hairline between rows. A row that names a line goes to it.
-fn details(ui: &mut Ui, rows: &[&SummaryRow], navigable: bool, actions: &mut Vec<Action>) {
+fn details(ui: &mut Ui, rows: &[&SummaryRow], fresh: Freshness, actions: &mut Vec<Action>) {
     card(ui, |ui| {
         for (index, row) in rows.iter().enumerate() {
             if index > 0 {
                 hairline(ui);
             }
-            let clickable = navigable && row.line.is_some();
-            let response = detail_row(ui, row, clickable, navigable);
+            let clickable = fresh.navigable && row.line.is_some();
+            let response = detail_row(ui, row, clickable, fresh.current);
             if response.clicked()
                 && let Some(line) = row.line
             {
@@ -604,12 +635,17 @@ fn detail_row(ui: &mut Ui, row: &SummaryRow, clickable: bool, current: bool) -> 
         width * 0.45,
     );
     let text_width = (width - PAD_X * 2.0 - value.size().x - 14.0).max(40.0);
+    let label_color = if current {
+        theme::text_primary()
+    } else {
+        theme::text_secondary()
+    };
     let label = kit::galley(
         ui,
         row.label,
         kit::size::BODY,
         kit::REGULAR,
-        theme::text_primary(),
+        label_color,
         text_width,
     );
     let note = row.note.as_ref().map(|note| {
@@ -640,7 +676,7 @@ fn detail_row(ui: &mut Ui, row: &SummaryRow, clickable: bool, current: bool) -> 
     painter.galley(
         pos2(rect.left() + PAD_X, rect.top() + PAD_Y),
         label.clone(),
-        theme::text_primary(),
+        label_color,
     );
     if let Some(note) = note {
         painter.galley(

@@ -21,9 +21,11 @@ is described exactly, so a number on screen has one meaning.
    click one to go to it.
 4. A profile belongs to the text, inputs, chart and bars it was made for. Edit the script and it is
    **stale**: the column goes empty (its line numbers describe other text), and the tab keeps the old
-   figures, dimmed, with a banner. Change an input, the symbol or timeframe, or let the live chart get
-   a new candle, and it is stale too, but the text is the same, so the marks stay on the column,
-   faded, and rows of the list still go to their lines. *Run again* replaces it.
+   figures, dimmed, with a banner. Change an input, the symbol, data source or timeframe, switch the
+   theme, let the live chart get a new candle, or have any candle's values change or the last one
+   close, and it is stale too, but the text is the same, so the marks stay on the column, faded, and
+   rows of the list still go to their lines. For a script that reads `chart.left_visible_bar_time` or
+   `chart.right_visible_bar_time`, panning or zooming the preview does the same. *Run again* replaces it.
 
 ## What is measured
 
@@ -46,11 +48,15 @@ share) can add to more than 100% down a column because nested regions are counte
 **line time cannot**: line times, plus the *not attributed* row, add to the script total exactly.
 
 * *Not attributed*: time inside a bar that no region covers (setting the bar up, committing
-  histories, the strategy broker's fills, `indicator()` itself).
+  histories, the strategy broker's fills, `indicator()` itself), and the part of the profiler's own
+  bookkeeping that runs outside a region's clock reads.
 * *Profiler overhead (estimated)*: every measured execution costs two clock reads and some
-  bookkeeping. That cost is measured once per profile on this machine (an empty region, many times,
-  median) and multiplied by the number of measured executions. It is **reported, never subtracted**:
-  a region's time is what the clock saw, and the profiled run is slower than a normal one.
+  bookkeeping, and a function call costs more than a statement (it also finds its call site). Both
+  costs are measured once per profile on this machine (an empty region, many times, median) and
+  multiplied by the number of statements and of calls. It is **reported, never subtracted**: a
+  region's time is what the clock saw, and the profiled run is slower than a normal one. Most of the
+  cost lands in the line measured; the rest in *not attributed*, so the estimate is a size, not an
+  exact share of any one figure.
 * Compilation is not part of any of this; the profile states how long it took separately.
 
 Recursion: a region already on the call stack adds its elapsed time to *line time* but not again to
@@ -90,26 +96,35 @@ script does with the candles afterwards is timed like anything else.
   sets the controller's cancellation flag; dropping the session does the same, so closing the tab,
   switching scripts or quitting ends the thread.
 * The deadline: a profiled run is slower than a normal one, so each bar extends the deadline by its
-  estimated overhead; a script that would have finished in time normally finishes in time profiled.
+  estimated overhead (statements and calls at their own cost); a script that would have finished in
+  time normally finishes in time profiled.
   The instruction and call-depth limits are untouched.
 * A run that is cancelled or runs out of time keeps what it measured, labelled **partial** with the
-  reason; a partial profile is never presented as complete. A run that **fails** has no profile: what
-  it measured leaves out the failing bar and everything after it, so the Profile tab says "Profile
-  failed: the script failed after N bars: …", nothing is drawn beside the code, and a profile of the
-  text before is dropped too. The engine still returns the partial report
+  reason; a partial profile is never presented as complete. A bar is counted once it has started
+  running: a run stopped before its first statement counts no bar, and a bar stopped part-way is
+  counted and in the total but is not a finished bar (`Summary::cut_bar`; the caveat says "during bar
+  N" instead of "after N bars", and the progress counter does not include it). If a panic unwinds past
+  the interpreter, the recorder closes the open bar the same way, so the report still adds up. A run
+  that **fails** has no profile: the failing bar is counted (it is the bar N in "failed on bar N"),
+  but what was measured stops there and leaves out everything after it, so the Profile tab says
+  "Profile failed: the script failed on bar N: …", nothing is drawn beside the code, and a profile of
+  the text before is dropped too. The engine still returns the partial report
   (`Completeness::Partial(Interruption::Failed)`); `Profiler::finish` turns it into a failure.
 
 ## In the window
 
 * **Toolbar** (right side, between the debugger's bug and the preview chart's buttons): the stopwatch
-  turns the profiler on and off (⌥⌘R, Ctrl+Alt+R elsewhere). It is blue while the profiler is on,
-  amber when the profile is partial or out of date, red when it failed, and its tooltip says which.
+  turns the profiler on and off (⌥⌘R, Ctrl+Alt+R elsewhere). It is the primary text colour while the
+  profiler is on (never blue) and the secondary one while off, amber when the profile is partial or
+  out of date, red when it failed, and its tooltip says which.
   Turning it on opens the drawer's **Profile** tab.
 * **A failure is also a problem.** A script that compiles and then fails (an unknown function, an
-  index out of range) ends the profile with no data ("the script failed after N bars: …"), and the
+  index out of range) ends the profile with no data ("the script failed on bar N: …"), and the
   same error is listed in the Problems tab, counted on its badge and in the chip under the editor, and
   underlined at the failing call, exactly as the chart's own run reports it (`pine_studio::problems`).
-  Only if the profile is of the text on screen; a cancelled or timed-out run is not a failure.
+  Only if the profile is of the text on screen, on the same data and settings: a failure that
+  depended on an input or a candle may not happen after it changes, so it stops being listed. A
+  cancelled or timed-out run is not a failure.
 * **The column** beside the line numbers, present only while the profiler is on, so the text moves
   once, when it is turned on, and never when a profile arrives. Each measured line has a bar, the
   line's share of the script's time as a number, and, for the three hottest lines (if at least four
@@ -131,8 +146,9 @@ script does with the candles afterwards is timed like anything else.
   goes* (hottest line, block and function, each a click away from its line) and *How it was
   measured* (what is in no line, waiting for data, the profiler's overhead, the clock's resolution,
   compile time), each with a note saying what the figure is of. A partial profile says so at the top.
-  A stale one says so and is dimmed; its rows go to their lines only while the editor still holds the
-  text that was profiled. All text in the tab is the secondary label colour or darker, so it reads in
+  A stale one says so and is dimmed (figures, labels, bars and icon chips all fade, whether the text
+  changed or only the inputs or data); its rows go to their lines only while the editor still holds the
+  text that was profiled, which is a separate fact from being current (`profile_ui::Freshness`). All text in the tab is the secondary label colour or darker, so it reads in
   both appearances. Where the drawer is wide, the introduction puts its picture beside the steps and
   the hottest lines stand beside the two cards of figures; the body scrolls instead of being cut off
   in a short drawer.
@@ -153,8 +169,13 @@ editor, so showing it there would mislabel it.
 A profile is of the script **open in the Pine Studio** on the **preview chart's** bars (up to the
 500 candles the preview holds), with the preview's inputs, symbol and timeframe: the same scope as the
 debugger. It is not the run of a script already applied to a chart, whose text, inputs and bars can be
-different. Each profile records the source text, the inputs, the symbol, timeframe, number of bars and
-the replay state it was produced for, and is stale as soon as any of them changes. The Pine Studio
+different. Each profile records what the script could see when it ran: its text, the inputs, every
+field of every candle and whether the last one had closed, the symbol, data source and timeframe, the
+theme (`chart.bg_color`), and, for a script that reads it, the visible range (also what the run is
+given, so a branch on `chart.left_visible_bar_time` runs as it does in the preview). It is stale as
+soon as any of them changes. The candle part is `ui::candles_fingerprint`, the one the chart's own
+runs use; the key is made of numbers (`ProfileKey` is `Copy`), so asking for it every frame while
+the profiler is on allocates nothing. The script text is still hashed each frame, one pass over it. The Pine Studio
 has no bar replay; there is no future to expose.
 
 ## Performance
@@ -222,7 +243,7 @@ The run's own slowdown is in the table above; nothing is subtracted from any fig
   does not compile, no bars, cancelling keeps a labelled partial profile, a failing script engine-side
   keeps what ran before it (the window then shows none of it), dropping a session ends its thread, two sessions are independent).
 * `cargo test --lib pine_studio::profile` (and the editor's tests): the words (units, percentages,
-  separators), bars, heat, flames, tooltips, the ranked list and summary, partial and stale profiles,
+  separators; a unit boundary promotes after rounding, and `100%` is only a whole share), bars, heat, flames, tooltips, the ranked list and summary, partial and stale profiles,
   and through the whole window: off by default and hashing nothing, turning on, editing, inputs, bars
   and scripts making a profile stale, errors and libraries, cancelling, turning it off ending the
   thread, two windows. The editor's column moves the text once and washes the hovered block.
@@ -230,6 +251,9 @@ The run's own slowdown is in the table above; nothing is subtracted from any fig
   `profiled_*` twins.
 * Pictures: `DEGENVIEW_GALLERY_DIR=… cargo test --lib pine_studio::profiler_gallery -- --ignored`
   (off, ready, hovering, stale; wide and narrow; dark and light).
+* `cargo test --lib pine_studio::drawer_tabs_tests` draws a finished profile, current and stale (same text
+  and other text), at the five drawer sizes and asserts it fits; with `DEGENVIEW_GALLERY_DIR` set it
+  writes the pictures.
 
 ## Not verified / limitations
 

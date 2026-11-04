@@ -428,7 +428,7 @@ fn recursion_adds_a_regions_inclusive_time_once() {
     assert!(runtime.enter_statement(0));
     runtime.exit();
     runtime.exit();
-    runtime.end_bar(true, false);
+    runtime.end_bar(BarOutcome::Completed, false);
     let report = runtime.finish(Completeness::Complete);
     let stats = report.stats_of(0);
     assert_eq!(stats.executions, 2);
@@ -452,7 +452,7 @@ fn a_region_left_open_is_closed_by_the_end_of_the_bar() {
     let mut runtime = single();
     runtime.begin_bar();
     runtime.enter_statement(0);
-    runtime.end_bar(true, true);
+    runtime.end_bar(BarOutcome::Completed, true);
     let report = runtime.finish(Completeness::Complete);
     assert_eq!(report.stats_of(0).executions, 1);
     assert_eq!(report.summary.realtime_bars, 1);
@@ -469,7 +469,7 @@ fn an_offset_that_is_not_a_region_is_not_timed() {
     runtime.begin_bar();
     assert!(!runtime.enter_statement(7));
     assert!(!runtime.enter_function(7, 0));
-    runtime.end_bar(true, false);
+    runtime.end_bar(BarOutcome::Completed, false);
     let report = runtime.finish(Completeness::Complete);
     assert_eq!(report.summary.measured_executions, 0);
 }
@@ -478,7 +478,7 @@ fn an_offset_that_is_not_a_region_is_not_timed() {
 fn a_refused_bar_is_not_counted() {
     let mut runtime = single();
     runtime.begin_bar();
-    runtime.end_bar(false, false);
+    runtime.end_bar(BarOutcome::Skipped, false);
     let report = runtime.finish(Completeness::Complete);
     assert_eq!((report.summary.bars, report.summary.total_ns), (0, 0));
 }
@@ -489,7 +489,7 @@ fn shares_are_of_the_script_total_and_an_empty_profile_has_none() {
     runtime.begin_bar();
     runtime.enter_statement(0);
     runtime.exit();
-    runtime.end_bar(true, false);
+    runtime.end_bar(BarOutcome::Completed, false);
     let report = runtime.finish(Completeness::Complete);
     assert!((report.share(STEP) - 1.0 / 3.0).abs() < 1e-12);
     let empty = single().finish(Completeness::Complete);
@@ -507,7 +507,7 @@ fn calibration_reports_what_measuring_costs_and_never_subtracts_it() {
         runtime.enter_statement(0);
         runtime.exit();
     }
-    runtime.end_bar(true, false);
+    runtime.end_bar(BarOutcome::Completed, false);
     let report = runtime.finish(Completeness::Complete);
     let summary = report.summary;
     assert!(summary.pair_cost_ns > 0, "measuring takes time");
@@ -910,7 +910,7 @@ fn an_untimed_frame_passes_what_ran_inside_it_to_the_region_around_it() {
     runtime.exit();
     runtime.exit();
     runtime.exit();
-    runtime.end_bar(true, false);
+    runtime.end_bar(BarOutcome::Completed, false);
     let report = runtime.finish(Completeness::Complete);
     let stats = report.stats_of(0);
     assert_eq!(stats.executions, 2);
@@ -938,7 +938,7 @@ fn time_spent_waiting_for_data_is_in_no_region_and_not_in_the_total() {
     // A fetch of 400 ns happens here, while the statement is open.
     waited.fetch_add(400, std::sync::atomic::Ordering::Relaxed);
     runtime.exit(); // the clock reads 2000; less the 400 waited
-    runtime.end_bar(true, false); // 3000 less 400
+    runtime.end_bar(BarOutcome::Completed, false); // 3000 less 400
     let report = runtime.finish(Completeness::Complete);
     assert_eq!(report.stats_of(0).inclusive_ns, STEP - 400);
     assert_eq!(report.summary.total_ns, 3 * STEP - 400);
@@ -1012,4 +1012,211 @@ fn a_slow_fetch_is_not_charged_to_the_line_that_asked_for_it() {
     );
     assert!(report.summary.total_ns < report.summary.waited_ns);
     assert_consistent(&report);
+}
+
+// MARK: Interrupted and exceptional runs
+
+/// Runs `source` on a controller with a profiler, as a session does, but on this thread so that
+/// the cancellation flag can be set at an exact moment. `steps` are (bars to run, then raise the
+/// flag before the next update).
+fn controller_run(
+    source: &str,
+    data: &[Kline],
+    limits: Limits,
+    cancel: &Arc<std::sync::atomic::AtomicBool>,
+    steps: &[usize],
+) -> (ProfileReport, u64) {
+    use crate::pine::execution::ExecutionController;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    let progress = Arc::new(AtomicU64::new(0));
+    let waited = Arc::new(AtomicU64::new(0));
+    let mut controller = ExecutionController::new(
+        source,
+        Default::default(),
+        Default::default(),
+        None,
+        limits,
+        &NoLibraries,
+        None,
+        Some(Arc::clone(cancel)),
+    )
+    .expect("compiles")
+    .with_profiler(Arc::clone(&progress), waited);
+    let now = data.last().unwrap().close_time + 1;
+    let mut last = controller.update(&data[..0], None, now);
+    for &count in steps {
+        last = controller.update(&data[..count], None, now);
+        if count < data.len() {
+            cancel.store(true, Ordering::Release);
+        }
+    }
+    let completeness = match last.error {
+        None => Completeness::Complete,
+        Some(error) if error.code == "PINE8008" => Completeness::Partial(Interruption::Cancelled),
+        Some(error) if error.code == "PINE8007" => Completeness::Partial(Interruption::TimedOut),
+        Some(error) => Completeness::Partial(Interruption::Failed(error)),
+    };
+    let report = controller.finish_profile(completeness).expect("a recorder");
+    (report, progress.load(Ordering::Relaxed))
+}
+
+#[test]
+fn a_run_cancelled_before_its_first_bar_counts_no_bar() {
+    let cancel = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let data = bars(10, 60_000);
+    let (report, progress) = controller_run(
+        &script("x = close\nplot(x)\n"),
+        &data,
+        Limits::default(),
+        &cancel,
+        &[10],
+    );
+    assert_eq!(
+        report.completeness,
+        Completeness::Partial(Interruption::Cancelled)
+    );
+    assert_eq!(
+        (report.summary.bars, report.summary.total_ns, progress),
+        (0, 0, 0)
+    );
+    assert_eq!(report.summary.measured_executions, 0);
+    assert!(!report.summary.cut_bar);
+    assert_consistent(&report);
+}
+
+#[test]
+fn a_run_with_no_time_left_counts_no_bar() {
+    let data = bars(10, 60_000);
+    let now = data.last().unwrap().close_time + 1;
+    let mut config = config(&script("x = close\nplot(x)\n"), data);
+    config.now_ms = now;
+    config.limits.deadline_seconds = 0.0;
+    let mut session = ProfileSession::start(config, Arc::new(|| {})).unwrap();
+    let report = wait(&mut session).result.expect("a partial profile");
+    assert_eq!(
+        report.completeness,
+        Completeness::Partial(Interruption::TimedOut)
+    );
+    assert_eq!((report.summary.bars, report.summary.total_ns), (0, 0));
+    assert!(!report.summary.cut_bar);
+    assert_consistent(&report);
+}
+
+#[test]
+fn a_run_cancelled_between_bars_keeps_the_bars_it_finished() {
+    let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let data = bars(10, 60_000);
+    // Three bars run, the flag goes up, and the update for the rest stops before its first bar.
+    let (report, progress) = controller_run(
+        &script("x = close\nplot(x)\n"),
+        &data,
+        Limits::default(),
+        &cancel,
+        &[3, 10],
+    );
+    assert_eq!(
+        report.completeness,
+        Completeness::Partial(Interruption::Cancelled)
+    );
+    assert_eq!((report.summary.bars, progress), (3, 3));
+    assert!(!report.summary.cut_bar, "no bar was cut short");
+    assert_consistent(&report);
+}
+
+#[test]
+fn a_bar_that_runs_out_of_time_is_kept_and_marked_cut() {
+    let cancel = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let data = bars(10, 60_000);
+    let limits = Limits {
+        deadline_seconds: 0.01,
+        ..Limits::default()
+    };
+    let (report, progress) = controller_run(
+        &script("t = 0.0\nfor i = 0 to 1000000\n    t += i\nplot(t)\n"),
+        &data,
+        limits,
+        &cancel,
+        &[10],
+    );
+    assert_eq!(
+        report.completeness,
+        Completeness::Partial(Interruption::TimedOut)
+    );
+    assert_eq!(report.summary.bars, 1, "the bar that was cut short");
+    assert_eq!(progress, 0, "and it is not a finished bar");
+    assert!(report.summary.cut_bar);
+    assert!(report.summary.measured_executions > 0);
+    assert_consistent(&report);
+}
+
+#[test]
+fn a_bar_that_never_ended_still_adds_up() {
+    // What a panic leaves behind: a bar begun, regions open, no end_bar.
+    let mut runtime = ProfileRuntime::with_clock(
+        Arc::new(RegionTable::single_function()),
+        Box::new(SteppingClock::new(STEP)),
+    );
+    runtime.begin_bar();
+    assert!(runtime.enter_function(0, 1));
+    assert!(runtime.enter_function(0, 2));
+    let report = runtime.finish(Completeness::Partial(Interruption::Cancelled));
+    assert_consistent(&report);
+    assert_eq!(report.summary.bars, 0, "not a finished bar");
+    assert!(report.summary.cut_bar);
+    assert!(report.summary.total_ns >= report.summary.attributed_ns);
+    assert!(report.summary.total_ns > 0, "its time is in the total");
+}
+
+#[test]
+fn a_panic_inside_a_security_fetch_leaves_a_consistent_failed_report() {
+    use crate::pine::runtime_support::{SecurityDataProvider, SecurityKey};
+
+    struct Panics;
+    impl SecurityDataProvider for Panics {
+        fn candles(&self, _: &SecurityKey) -> Option<Vec<Kline>> {
+            panic!("provider failure (expected by this test)");
+        }
+    }
+    let data = bars(10, 60_000);
+    let now = data.last().unwrap().close_time + 1;
+    let mut config = config(
+        &script("htf = request.security(\"OTHER\", \"5\", close)\nplot(htf)\n"),
+        data,
+    );
+    config.now_ms = now;
+    config.security_data = Some(Box::new(Panics));
+    let mut session = ProfileSession::start(config, Arc::new(|| {})).unwrap();
+    let report = wait(&mut session).result.expect("a report");
+    assert!(matches!(
+        report.completeness,
+        Completeness::Partial(Interruption::Failed(_))
+    ));
+    assert_consistent(&report);
+}
+
+// MARK: The cost of measuring
+
+#[test]
+fn statements_and_calls_are_calibrated_and_charged_separately() {
+    let mut runtime = ProfileRuntime::new(Arc::new(RegionTable::single_function()));
+    runtime.begin_bar();
+    for _ in 0..300 {
+        runtime.enter_function(0, 1);
+        runtime.exit();
+    }
+    let added = runtime.end_bar(BarOutcome::Completed, false);
+    let report = runtime.finish(Completeness::Complete);
+    let summary = report.summary;
+    assert!(summary.pair_cost_ns > 0 && summary.call_pair_cost_ns > 0);
+    assert_eq!(
+        summary.overhead_ns,
+        300 * summary.call_pair_cost_ns,
+        "calls are charged at the call cost, not the statement cost"
+    );
+    assert_eq!(
+        added.as_nanos() as u64,
+        summary.overhead_ns,
+        "and the deadline gets back the same"
+    );
 }

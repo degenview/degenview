@@ -7,63 +7,53 @@
 //!
 //! The panel holds no egui types. The manager starts runs and asks it what to show.
 
-use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
 use crate::pine::profile::{
     Completeness, Interruption, ProfileConfig, ProfileOutcome, ProfileReport, ProfileSession,
 };
-use crate::pine::program::InputValue;
 use crate::pine::token::Diagnostic;
 
+use super::preview::RunIdentity;
 use super::profile_marks::{ProfileColumn, ProfileMarks};
 
 /// How often a running profile asks for a frame, to show its progress.
 const PROGRESS_FRAME: Duration = Duration::from_millis(100);
 
 /// What a profile was produced for. Two keys are equal exactly when running the script again would
-/// measure the same thing.
-#[derive(Clone, Debug, Eq, PartialEq)]
+/// measure the same thing. It holds numbers only, so building one every frame allocates nothing.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct ProfileKey {
-    pub script_id: String,
-    pub source: u64,
-    pub inputs: u64,
-    /// The symbol and timeframe, as the preview names them.
-    pub chart: String,
-    /// Bars, first bar's open time and last bar's open time: a new bar is different data, a tick on
-    /// the last one is not.
-    pub bars: Option<(usize, i64, i64)>,
+    script: u64,
+    source: u64,
+    /// The candles, market, appearance, inputs and visible range the script ran on.
+    run: RunIdentity,
 }
 
 impl ProfileKey {
-    /// Whether `other` is the same script with the same text, so that line numbers mean the same.
-    pub fn same_text(&self, other: &Self) -> bool {
-        self.script_id == other.script_id && self.source == other.source
-    }
-
-    pub fn new(
-        script_id: &str,
-        source: &str,
-        inputs: &HashMap<String, InputValue>,
-        chart: &str,
-        bars: Option<(usize, i64, i64)>,
-    ) -> Self {
+    pub fn new(script_id: &str, source: &str, run: RunIdentity) -> Self {
         Self {
-            script_id: script_id.to_owned(),
+            script: fingerprint(script_id.as_bytes()),
             source: fingerprint(source.as_bytes()),
-            inputs: fingerprint(canonical_inputs(inputs).as_bytes()),
-            chart: chart.to_owned(),
-            bars,
+            run,
         }
     }
-}
 
-/// The inputs in a fixed order, so the same values always make the same text.
-fn canonical_inputs(inputs: &HashMap<String, InputValue>) -> String {
-    let mut entries: Vec<(&String, &InputValue)> = inputs.iter().collect();
-    entries.sort_by(|a, b| a.0.cmp(b.0));
-    format!("{entries:?}")
+    /// Whether `other` is the same script with the same text, so that line numbers mean the same.
+    pub fn same_text(&self, other: &Self) -> bool {
+        self.script == other.script && self.source == other.source
+    }
+
+    /// Whether `other` would run the same text on the same data with the same settings, so a
+    /// measurement of one describes the other.
+    pub fn same_execution(&self, other: &Self) -> bool {
+        self == other
+    }
+
+    pub fn is_script(&self, id: &str) -> bool {
+        self.script == fingerprint(id.as_bytes())
+    }
 }
 
 fn fingerprint(bytes: &[u8]) -> u64 {
@@ -180,9 +170,9 @@ impl Profiler {
 
     /// The profile belongs to a script that no longer exists.
     pub fn script_deleted(&mut self, id: &str) {
-        let concerned = self.profile.as_ref().is_some_and(|p| p.key.script_id == id)
-            || self.run.as_ref().is_some_and(|r| r.key.script_id == id)
-            || self.failure.as_ref().is_some_and(|f| f.key.script_id == id);
+        let concerned = self.profile.as_ref().is_some_and(|p| p.key.is_script(id))
+            || self.run.as_ref().is_some_and(|r| r.key.is_script(id))
+            || self.failure.as_ref().is_some_and(|f| f.key.is_script(id));
         if concerned {
             self.script_changed();
         }
@@ -290,7 +280,7 @@ impl Profiler {
                 self.failure = Some(Failure {
                     key: run.key,
                     message: format!(
-                        "The script failed after {} bars: {}",
+                        "The script failed on bar {}: {}",
                         report.summary.bars, error.message
                     ),
                     not_runnable: false,
@@ -328,11 +318,13 @@ impl Profiler {
         self.run.as_ref().map(|_| PROGRESS_FRAME)
     }
 
-    /// Forgets a refusal that the script's new text may have cured, and lets a run start again.
+    /// Forgets a refusal that the script's new text may have cured, and lets a run start again. A
+    /// refusal is about the text (it does not compile, it is a library), so a new candle, an input
+    /// or the theme neither cures it nor is a reason to ask again.
     pub fn text_changed(&mut self, current: &ProfileKey) {
         if let Some(failure) = &self.failure
             && failure.not_runnable
-            && failure.key != *current
+            && !failure.key.same_text(current)
         {
             self.failure = None;
             self.auto = self.on;
@@ -364,7 +356,9 @@ impl Profiler {
             };
         }
         if let Some(failure) = &self.failure
-            && current == Some(&failure.key)
+            && let Some(current) = current
+            && (failure.key.same_execution(current)
+                || (failure.not_runnable && failure.key.same_text(current)))
         {
             return Status::Failed(failure.message.clone());
         }
@@ -374,11 +368,12 @@ impl Profiler {
         }
     }
 
-    /// How the script failed in the profile run for the text in the editor, if it did. A run that
-    /// was cancelled or ran out of time did not fail.
+    /// How the script failed in the profile run for what is on screen, if it did: the same text on
+    /// the same data with the same settings, because a failure that depended on an input or a
+    /// candle may not happen on another. A run that was cancelled or ran out of time did not fail.
     pub fn failure(&self, current: Option<&ProfileKey>) -> Option<&Diagnostic> {
         let failure = self.failure.as_ref()?;
-        if failure.key.same_text(current?) {
+        if failure.key.same_execution(current?) {
             failure.error.as_ref()
         } else {
             None

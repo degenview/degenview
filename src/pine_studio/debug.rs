@@ -31,6 +31,9 @@ pub struct DebugFeed {
     pub symbol: SymbolInfo,
     pub inputs: HashMap<String, InputValue>,
     pub now_ms: i64,
+    /// Open times of the first and last candle the preview shows: what a script reading
+    /// `chart.left_visible_bar_time` and `chart.right_visible_bar_time` sees.
+    pub visible_range: Option<(i64, i64)>,
     pub theme: ChartTheme,
     /// "BTCUSDT · 1D": shown beside the bar context.
     pub label: String,

@@ -71,6 +71,7 @@ impl ProfileTool {
             feed.now_ms,
         );
         config.inputs = feed.inputs.clone();
+        config.visible_range = feed.visible_range;
         config.theme = Some(feed.theme);
         config.libraries = Box::new(LibraryRegistry);
         config.security_data = Some(Box::new(KlineSecurityDataProvider));
@@ -98,10 +99,10 @@ impl ProfileTool {
                 return Outcome::error(format!("The script could not be run: {}", error.message));
             }
         };
-        // What it measured leaves out the failing bar and all after it, so a failure has no profile.
+        // What it measured stops at the failing bar and leaves out all after it, so a failure has no profile.
         if let Completeness::Partial(Interruption::Failed(error)) = &report.completeness {
             return Outcome::error(format!(
-                "The script failed after {} bars, so there is no profile: {}",
+                "The script failed on bar {}, so there is no profile: {}",
                 count(report.summary.bars),
                 error.message
             ));
@@ -247,9 +248,10 @@ fn describe(
         ));
     }
     out.push_str(&format!(
-        "\nHow to read it: one profile covers at most 500 bars, so the shares are meaningful and the absolute times are of this run only. It is measured per statement, not per expression: split a long line to learn which part costs. A time under {} is below what the clock can tell apart. The profiler's own cost (about {} per measured execution) is inside every time.\n",
+        "\nHow to read it: one profile covers at most 500 bars, so the shares are meaningful and the absolute times are of this run only. It is measured per statement, not per expression: split a long line to learn which part costs. A time under {} is below what the clock can tell apart. The profiler's own cost (about {} per statement and {} per function call) is inside the times, mostly in the line measured.\n",
         duration(report.summary.resolution_ns),
-        duration(report.summary.pair_cost_ns)
+        duration(report.summary.pair_cost_ns),
+        duration(report.summary.call_pair_cost_ns)
     ));
     out
 }
@@ -288,6 +290,7 @@ mod tests {
             bars: data,
             symbol: SymbolInfo::default(),
             inputs: HashMap::new(),
+            visible_range: None,
             theme: ChartTheme::DARK,
             label: "TEST \u{b7} 1m".to_owned(),
         }

@@ -137,14 +137,56 @@ impl Picker {
     }
 }
 
-/// What a profile of the preview's run is of besides the script's text.
-pub struct RunContext<'a> {
-    /// The symbol and timeframe, as the preview names them.
-    pub chart: String,
-    /// The bars: how many, and the first and last open times.
-    pub bars: Option<(usize, i64, i64)>,
-    /// The inputs the script runs on.
-    pub inputs: &'a HashMap<String, InputValue>,
+/// Everything about the preview's run, besides the script's text, that a script can see: the
+/// candles (every field, and whether the last one has closed), the market and timeframe, the
+/// appearance, the inputs and, for a script that reads it, the visible range. Two identities are
+/// equal exactly when running the script again would measure the same thing. It is `Copy` and made
+/// without allocating, because the Pine Studio asks for it every frame while the profiler is on.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct RunIdentity {
+    candles: u64,
+    last_is_closed: bool,
+    market: u64,
+    light: bool,
+    inputs: u64,
+    visible_range: Option<(i64, i64)>,
+}
+
+#[cfg(test)]
+impl RunIdentity {
+    /// Some identity, for a test that needs a key and not what it describes.
+    pub(crate) fn for_test() -> Self {
+        Self {
+            candles: 0,
+            last_is_closed: true,
+            market: 0,
+            light: false,
+            inputs: 0,
+            visible_range: None,
+        }
+    }
+}
+
+/// The inputs as one number, whatever order the map holds them in: each entry hashes by itself and
+/// the results are added.
+fn inputs_fingerprint(inputs: &HashMap<String, InputValue>) -> u64 {
+    use std::hash::{Hash, Hasher};
+    inputs
+        .iter()
+        .map(|(name, value)| {
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            name.hash(&mut hasher);
+            match value {
+                InputValue::Int(value) => (0u8, *value).hash(&mut hasher),
+                InputValue::Float(value) => (1u8, value.to_bits()).hash(&mut hasher),
+                InputValue::Bool(value) => (2u8, *value).hash(&mut hasher),
+                InputValue::String(value) => (3u8, value).hash(&mut hasher),
+                InputValue::Color(value) => (4u8, *value).hash(&mut hasher),
+                InputValue::Source(value) => (5u8, value).hash(&mut hasher),
+            }
+            hasher.finish()
+        })
+        .fold(0u64, u64::wrapping_add)
 }
 
 pub struct PreviewState {
@@ -153,6 +195,8 @@ pub struct PreviewState {
     recents: Vec<PreviewMarket>,
     timeframe: Timeframe,
     candles: Vec<Kline>,
+    /// `candles_fingerprint(&candles)`, made when the candles are replaced and not every frame.
+    candles_fingerprint: u64,
     loading: bool,
     error: Option<String>,
     inbox: Option<Receiver<Result<Vec<Kline>, String>>>,
@@ -230,6 +274,7 @@ impl PreviewState {
             recents,
             timeframe,
             candles: Vec::new(),
+            candles_fingerprint: crate::ui::candles_fingerprint(&[]),
             loading: false,
             error: None,
             inbox: None,
@@ -326,6 +371,12 @@ impl PreviewState {
     /// Stands in for the candles the preview would fetch.
     #[cfg(test)]
     pub(crate) fn set_candles_for_test(&mut self, candles: Vec<Kline>) {
+        self.set_candles(candles);
+    }
+
+    /// Replaces the candles, keeping their fingerprint with them.
+    fn set_candles(&mut self, candles: Vec<Kline>) {
+        self.candles_fingerprint = crate::ui::candles_fingerprint(&candles);
         self.candles = candles;
     }
 
@@ -344,13 +395,39 @@ impl PreviewState {
         self.input_values.insert(name.to_owned(), value);
     }
 
-    /// What a profile of the preview's run is of besides the script's text: the chart's name, its
-    /// bars, and the inputs the script runs on.
-    pub fn run_context(&self) -> RunContext<'_> {
-        RunContext {
-            chart: format!("{} \u{b7} {}", self.market.ticker, self.timeframe.label()),
-            bars: self.bar_key(),
-            inputs: &self.input_values,
+    /// Switches to the same symbol on another data source, leaving the candles as they were.
+    #[cfg(test)]
+    pub(crate) fn select_source_for_test(&mut self, source: DataSource) {
+        let candles = self.candles.clone();
+        self.select_market(PreviewMarket {
+            ticker: self.market.ticker.clone(),
+            source,
+        });
+        self.set_candles(candles);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_visible_candles_for_test(&mut self, count: usize) {
+        self.card.set_visible_candles(count);
+    }
+
+    /// What a profile of `source` has to be of, besides the text, to be current now. The visible
+    /// range is part of it only for a script that reads it, as for the chart's own runs.
+    pub fn run_identity(&self, source: &str, now_ms: i64, light: bool) -> RunIdentity {
+        use std::hash::{Hash, Hasher};
+        let mut market = std::collections::hash_map::DefaultHasher::new();
+        self.market.ticker.hash(&mut market);
+        self.market.source.hash(&mut market);
+        self.timeframe.label().hash(&mut market);
+        RunIdentity {
+            candles: self.candles_fingerprint,
+            last_is_closed: crate::ui::last_candle_is_closed(&self.candles, now_ms),
+            market: market.finish(),
+            light,
+            inputs: inputs_fingerprint(&self.input_values),
+            visible_range: crate::ui::reads_visible_range(source)
+                .then(|| self.card.visible_open_range(&self.candles))
+                .flatten(),
         }
     }
 
@@ -370,6 +447,7 @@ impl PreviewState {
             symbol: ChartCard::pine_symbol_info(&self.market.ticker, self.market.source),
             inputs: self.input_values.clone(),
             now_ms,
+            visible_range: self.card.visible_open_range(&self.candles),
             theme: if light {
                 crate::pine::program::ChartTheme::LIGHT
             } else {
@@ -631,7 +709,7 @@ impl PreviewState {
         self.loading = false;
         match result {
             Ok(candles) => {
-                self.candles = candles;
+                self.set_candles(candles);
                 self.error = None;
             }
             Err(message) => self.error = Some(message),
@@ -640,7 +718,7 @@ impl PreviewState {
 
     fn select_market(&mut self, market: PreviewMarket) {
         if market != self.market {
-            self.candles.clear();
+            self.set_candles(Vec::new());
             self.show_newest_bars();
             self.market = market.clone();
             self.fetched_for = None;
@@ -656,7 +734,7 @@ impl PreviewState {
     fn select_timeframe(&mut self, timeframe: Timeframe) {
         if timeframe != self.timeframe {
             self.timeframe = timeframe;
-            self.candles.clear();
+            self.set_candles(Vec::new());
             self.show_newest_bars();
             self.fetched_for = None;
             self.save(TIMEFRAME_KEY, &timeframe);

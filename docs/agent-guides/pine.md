@@ -27,7 +27,10 @@
   `hook_enter_function` its `hook_leave_function`. A region is a statement or a user function,
   identified by the offset the parser anchored it at; library code (`context.scope`) is never timed.
   A change to timing must keep `Σ line time + not attributed = total` exactly (the tests run on a
-  stepping clock and assert it). Check a change to `session.rs` with `tools/pine-bench.sh <base-rev>
+  stepping clock and assert it). What a profile is "of" (`ProfileKey`: text plus
+  `PreviewState::run_identity`) must cover everything a script can see in the preview run; when the
+  chart's run gains an input (`run_revision`, `ChartCard::pine_outputs`), add it to the identity and
+  to `DebugFeed` too. Check a change to `session.rs` with `tools/pine-bench.sh <base-rev>
   <head-rev>` (head must be a commit; the `profiled_*` workloads are the recorder's cost).
 - `request.footprint()` handles are stateless (a footprint is a bar index, a `volume_row` a bar index
   plus a row number) and the data lives in `Session::footprints`, outside `RuntimeState`; keep it

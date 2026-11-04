@@ -63,11 +63,13 @@ fn current_time_ms() -> i64 {
 
 /// Whether a script asks where the chart is scrolled (`chart.left_visible_bar_time` and its
 /// right-hand twin), the only thing about the viewport a run can depend on.
-fn reads_visible_range(source: &str) -> bool {
+pub(crate) fn reads_visible_range(source: &str) -> bool {
     source.contains("visible_bar_time")
 }
 
-fn run_revision(candles: &[Kline], visible_range: Option<(i64, i64)>, now_ms: i64) -> RunRevision {
+/// A hash of every field of every candle: two series with equal fingerprints run a script the same
+/// way. The chart's run revision and the Pine Studio's profiler both identify their data by it.
+pub(crate) fn candles_fingerprint(candles: &[Kline]) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     candles.len().hash(&mut hasher);
     for candle in candles {
@@ -79,10 +81,20 @@ fn run_revision(candles: &[Kline], visible_range: Option<(i64, i64)>, now_ms: i6
         candle.close.to_bits().hash(&mut hasher);
         candle.volume.to_bits().hash(&mut hasher);
     }
+    hasher.finish()
+}
+
+/// Whether the last candle has closed by `now_ms`: a forming candle runs a script as a realtime
+/// tick, a closed one as a bar.
+pub(crate) fn last_candle_is_closed(candles: &[Kline], now_ms: i64) -> bool {
+    candles.last().is_some_and(|bar| bar.close_time <= now_ms)
+}
+
+fn run_revision(candles: &[Kline], visible_range: Option<(i64, i64)>, now_ms: i64) -> RunRevision {
     RunRevision {
-        candles: hasher.finish(),
+        candles: candles_fingerprint(candles),
         visible_range,
-        last_is_closed: candles.last().is_some_and(|bar| bar.close_time <= now_ms),
+        last_is_closed: last_candle_is_closed(candles, now_ms),
     }
 }
 
@@ -1146,10 +1158,7 @@ impl ChartCard {
             self.runs.clear();
             return Vec::new();
         }
-        let window = self.window(candles.len());
-        let visible_range = candles
-            .get(window.start..window.end)
-            .and_then(|visible| Some((visible.first()?.open_time, visible.last()?.open_time)));
+        let visible_range = self.visible_open_range(candles);
         let now_ms = current_time_ms();
         // Hashing every candle is the one pass over the whole series a frame makes; a chart with
         // no script has no use for it.
@@ -1628,6 +1637,15 @@ impl ChartCard {
             slot_width: self.slot_width(plot),
             lead: window.lead,
         })
+    }
+
+    /// The open times of the first and last candle the plot shows: what `chart.left_visible_bar_time`
+    /// and `chart.right_visible_bar_time` read. A run that reads them is given this range.
+    pub(crate) fn visible_open_range(&self, candles: &[Kline]) -> Option<(i64, i64)> {
+        let window = self.window(candles.len());
+        candles
+            .get(window.start..window.end)
+            .and_then(|visible| Some((visible.first()?.open_time, visible.last()?.open_time)))
     }
 
     /// The bars the plot shows out of `len`, and where they sit in its slots.

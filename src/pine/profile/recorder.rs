@@ -38,6 +38,19 @@ struct CallSite {
     active: u32,
 }
 
+/// How a bar ended, for [`ProfileRuntime::end_bar`].
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BarOutcome {
+    /// The interpreter refused the bar before running it, or never started it: nothing ran, so
+    /// nothing is counted.
+    Skipped,
+    /// The bar ran to its end.
+    Completed,
+    /// The bar started and stopped early (cancelled, out of time, or the script failed in it). What
+    /// ran is kept and its time is in the total, but it is not a finished bar.
+    Cut,
+}
+
 /// Marks a frame that is not a region: code the profile does not time, kept on the stack so that
 /// every start has an end to match.
 const UNTIMED: u32 = u32::MAX;
@@ -63,12 +76,23 @@ pub struct ProfileRuntime {
     call_sites: FastMap<(usize, u32), CallSite>,
     stack: Vec<Frame>,
     bar_started: u64,
-    bar_frames: u64,
+    /// A bar has begun and not ended: a panic that unwinds past the interpreter leaves it so.
+    bar_open: bool,
+    /// Statement and call frames started over the whole run; the difference to the values at the
+    /// start of a bar is that bar's, which the deadline is given back.
+    statement_frames: u64,
+    call_frames: u64,
+    bar_statement_base: u64,
+    bar_call_base: u64,
     bars: u64,
     realtime_bars: u64,
+    /// The last counted bar was cut short.
+    cut_bar: bool,
     total_ns: u64,
-    /// What one measured execution costs to measure, in nanoseconds; zero if not calibrated.
-    pair_cost_ns: u64,
+    /// What one measured statement costs to measure, in nanoseconds; zero if not calibrated.
+    statement_cost_ns: u64,
+    /// The same for a user-function call, which also finds its call site.
+    call_cost_ns: u64,
     resolution_ns: u64,
     /// Bars finished, readable from another thread while the run goes on.
     progress: Arc<AtomicU64>,
@@ -83,7 +107,12 @@ impl ProfileRuntime {
     /// machine now. That takes a few milliseconds.
     pub fn new(table: Arc<RegionTable>) -> Self {
         let mut runtime = Self::with_clock(table, Box::new(MonotonicClock::new()));
-        runtime.pair_cost_ns = calibrate_pair_cost();
+        runtime.statement_cost_ns = calibrate(RegionTable::single(), |runtime| {
+            runtime.enter_statement(0);
+        });
+        runtime.call_cost_ns = calibrate(RegionTable::single_function(), |runtime| {
+            runtime.enter_function(0, 1);
+        });
         runtime.resolution_ns = resolution_ns(&mut MonotonicClock::new());
         runtime
     }
@@ -97,11 +126,17 @@ impl ProfileRuntime {
             call_sites: FastMap::default(),
             stack: Vec::with_capacity(64),
             bar_started: 0,
-            bar_frames: 0,
+            bar_open: false,
+            statement_frames: 0,
+            call_frames: 0,
+            bar_statement_base: 0,
+            bar_call_base: 0,
             bars: 0,
             realtime_bars: 0,
+            cut_bar: false,
             total_ns: 0,
-            pair_cost_ns: 0,
+            statement_cost_ns: 0,
+            call_cost_ns: 0,
             resolution_ns: 1,
             progress: Arc::new(AtomicU64::new(0)),
             waited: Arc::new(AtomicU64::new(0)),
@@ -143,27 +178,39 @@ impl ProfileRuntime {
 
     pub fn begin_bar(&mut self) {
         self.stack.clear();
-        self.bar_frames = 0;
+        self.bar_statement_base = self.statement_frames;
+        self.bar_call_base = self.call_frames;
+        self.bar_open = true;
         self.bar_started = self.now();
     }
 
-    /// Ends the bar. `counted` is false when the interpreter refused the bar before running it. The
-    /// returned time is what measuring this bar is estimated to have added to it, which the caller
-    /// gives back to the run's deadline.
-    pub fn end_bar(&mut self, counted: bool, realtime: bool) -> Duration {
+    /// Ends the bar. The returned time is what measuring this bar is estimated to have added to it,
+    /// which the caller gives back to the run's deadline.
+    pub fn end_bar(&mut self, outcome: BarOutcome, realtime: bool) -> Duration {
         let now = self.now();
         // A region left open (the run was cut short, or an error unwound past it) ends with the bar.
         while !self.stack.is_empty() {
             self.pop(now);
         }
-        if !counted {
+        self.bar_open = false;
+        if outcome == BarOutcome::Skipped {
             return Duration::ZERO;
         }
         self.total_ns += now.saturating_sub(self.bar_started);
         self.bars += 1;
         self.realtime_bars += u64::from(realtime);
-        self.progress.store(self.bars, Ordering::Relaxed);
-        Duration::from_nanos(self.bar_frames.saturating_mul(self.pair_cost_ns))
+        if outcome == BarOutcome::Completed {
+            self.progress.store(self.bars, Ordering::Relaxed);
+        } else {
+            self.cut_bar = true;
+        }
+        let statements = self.statement_frames - self.bar_statement_base;
+        let calls = self.call_frames - self.bar_call_base;
+        Duration::from_nanos(
+            statements
+                .saturating_mul(self.statement_cost_ns)
+                .saturating_add(calls.saturating_mul(self.call_cost_ns)),
+        )
     }
 
     // MARK: Regions
@@ -235,7 +282,11 @@ impl ProfileRuntime {
             }
             None => false,
         };
-        self.bar_frames += 1;
+        if call.is_some() {
+            self.call_frames += 1;
+        } else {
+            self.statement_frames += 1;
+        }
         // The clock is read last, so the work above is not charged to the region.
         let start = self.now();
         self.stack.push(Frame {
@@ -305,6 +356,14 @@ impl ProfileRuntime {
         while !self.stack.is_empty() {
             self.pop(now);
         }
+        if self.bar_open {
+            // A bar that never ended: the interpreter unwound past it (a panic). Its time belongs to
+            // the total, or its regions would add up to more than the run took. It is not a
+            // finished bar, so it is not counted among the bars.
+            self.total_ns += now.saturating_sub(self.bar_started);
+            self.cut_bar = true;
+            self.bar_open = false;
+        }
         let stats: Vec<RegionStats> = self
             .counters
             .iter()
@@ -317,6 +376,11 @@ impl ProfileRuntime {
             .collect();
         let measured: u64 = stats.iter().map(|stats| stats.executions).sum();
         let attributed: u64 = stats.iter().map(|stats| stats.exclusive_ns).sum();
+        debug_assert!(
+            attributed <= self.total_ns,
+            "regions took {attributed} ns of a total of {}",
+            self.total_ns
+        );
         let mut call_sites: Vec<CallSiteStats> = self
             .call_sites
             .iter()
@@ -337,11 +401,16 @@ impl ProfileRuntime {
                 bars: self.bars,
                 realtime_bars: self.realtime_bars,
                 total_ns: self.total_ns,
-                attributed_ns: attributed.min(self.total_ns),
+                cut_bar: self.cut_bar,
+                attributed_ns: attributed,
                 measured_executions: measured,
-                overhead_ns: measured.saturating_mul(self.pair_cost_ns),
+                overhead_ns: self
+                    .statement_frames
+                    .saturating_mul(self.statement_cost_ns)
+                    .saturating_add(self.call_frames.saturating_mul(self.call_cost_ns)),
                 waited_ns: self.waited.load(Ordering::Relaxed),
-                pair_cost_ns: self.pair_cost_ns,
+                pair_cost_ns: self.statement_cost_ns,
+                call_pair_cost_ns: self.call_cost_ns,
                 resolution_ns: self.resolution_ns,
             },
             completeness,
@@ -349,21 +418,19 @@ impl ProfileRuntime {
     }
 }
 
-/// What it costs, in nanoseconds, to measure one execution of a region: the median over several
-/// rounds of starting and ending an empty region through the recorder itself.
-fn calibrate_pair_cost() -> u64 {
+/// What it costs, in nanoseconds, to measure one execution of the kind of region `table` holds: the
+/// median over several rounds of starting (`enter`) and ending an empty region through the recorder
+/// itself.
+fn calibrate(table: RegionTable, enter: impl Fn(&mut ProfileRuntime)) -> u64 {
     const ROUNDS: usize = 7;
-    const PAIRS: u32 = 20_000;
-    let mut runtime = ProfileRuntime::with_clock(
-        Arc::new(RegionTable::single()),
-        Box::new(MonotonicClock::new()),
-    );
+    const PAIRS: u32 = 10_000;
+    let mut runtime = ProfileRuntime::with_clock(Arc::new(table), Box::new(MonotonicClock::new()));
     runtime.begin_bar();
     let mut rounds = [0u64; ROUNDS];
     for round in &mut rounds {
         let started = Instant::now();
         for _ in 0..PAIRS {
-            runtime.enter_statement(0);
+            enter(&mut runtime);
             runtime.exit();
         }
         *round = started.elapsed().as_nanos() as u64 / u64::from(PAIRS);
