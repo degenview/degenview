@@ -15,7 +15,8 @@
 //! provider for are reported as skipped, never guessed at.
 
 use crate::model::watchlist::{
-    Watchlist, WatchlistEntry, WatchlistError, WatchlistInstrument, WatchlistSection,
+    MAX_NAME_CHARS, Watchlist, WatchlistEntry, WatchlistError, WatchlistInstrument,
+    WatchlistSection,
 };
 use crate::model::{DataSource, InstrumentId};
 
@@ -59,7 +60,16 @@ pub struct Skipped {
 pub struct Parsed {
     pub rows: Vec<Row>,
     pub skipped: Vec<Skipped>,
+    /// The text was longer than `MAX_IMPORT_BYTES` or `MAX_IMPORT_LINES`; the rest was left unread.
+    pub truncated: bool,
 }
+
+/// The most text one import reads. A list holds at most 5,000 items, a line is short.
+pub const MAX_IMPORT_BYTES: usize = 1 << 20;
+/// The most lines (or comma-separated items) one import reads.
+pub const MAX_IMPORT_LINES: usize = 10_000;
+/// Skipped lines kept in a report; the rest are only counted.
+const MAX_SKIPPED_SHOWN: usize = 200;
 
 /// What an import did, shown once so nothing is dropped silently.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -68,6 +78,10 @@ pub struct ImportReport {
     pub duplicates: usize,
     pub sections_added: usize,
     pub skipped: Vec<Skipped>,
+    /// Lines skipped beyond the `skipped` kept for display.
+    pub skipped_not_shown: usize,
+    /// Some of the text was not imported: it was too long, or the list filled up.
+    pub truncated: bool,
 }
 
 impl ImportReport {
@@ -84,14 +98,42 @@ impl ImportReport {
         if self.duplicates > 0 {
             parts.push(format!("{} already in the list", self.duplicates));
         }
-        if !self.skipped.is_empty() {
-            parts.push(format!("{} skipped", self.skipped.len()));
+        let skipped = self.skipped.len() + self.skipped_not_shown;
+        if skipped > 0 {
+            parts.push(format!("{skipped} skipped"));
+        }
+        if self.truncated {
+            parts.push("stopped early: too much to import".to_owned());
         }
         parts.join(", ")
     }
 }
 
 // MARK: Export
+
+/// A file name to suggest for exporting the list `name`: path separators, drive colons and
+/// control characters become spaces, so the save dialog never opens on a stray folder or an
+/// unusable name. The list keeps its own name.
+pub fn export_file_name(name: &str) -> String {
+    let cleaned: String = name
+        .chars()
+        .map(|c| {
+            if c.is_control() || matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') {
+                ' '
+            } else {
+                c
+            }
+        })
+        .collect();
+    let cleaned = cleaned.split_whitespace().collect::<Vec<_>>().join(" ");
+    let cleaned = cleaned.trim_start_matches('.').trim();
+    let stem: String = cleaned.chars().take(100).collect();
+    if stem.is_empty() {
+        "Watchlist.txt".to_owned()
+    } else {
+        format!("{stem}.txt")
+    }
+}
 
 pub fn export(list: &Watchlist) -> String {
     list.entries
@@ -124,24 +166,42 @@ fn line_for(item: &WatchlistInstrument) -> String {
 // MARK: Import
 
 pub fn parse(text: &str) -> Parsed {
-    let lines: Vec<&str> = text.lines().collect();
-    let non_empty = lines.iter().filter(|line| !line.trim().is_empty()).count();
-    let tokens: Vec<&str> = if non_empty == 1 && text.contains(',') {
-        text.split(',').collect()
-    } else {
-        lines
-    };
-
     let mut parsed = Parsed::default();
-    for (offset, raw) in tokens.iter().enumerate() {
+    let mut text = text;
+    if text.len() > MAX_IMPORT_BYTES {
+        let mut end = MAX_IMPORT_BYTES;
+        while !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        text = &text[..end];
+        parsed.truncated = true;
+    }
+    // One line holding commas is a comma-separated list; otherwise one item per line.
+    let comma_list = text.contains(',')
+        && text
+            .lines()
+            .filter(|line| !line.trim().is_empty())
+            .take(2)
+            .count()
+            == 1;
+    let tokens: Box<dyn Iterator<Item = &str>> = if comma_list {
+        Box::new(text.split(','))
+    } else {
+        Box::new(text.lines())
+    };
+    for (offset, raw) in tokens.enumerate() {
+        if offset >= MAX_IMPORT_LINES {
+            parsed.truncated = true;
+            break;
+        }
         let token = raw.trim();
         if token.is_empty() {
             continue;
         }
         if let Some(title) = token.strip_prefix("###") {
-            let title = title.trim();
+            let title = Watchlist::sanitized_name(title);
             parsed.rows.push(Row::Section(
-                if title.is_empty() { "Section" } else { title }.to_owned(),
+                if title.is_empty() { "Section" } else { &title }.to_owned(),
             ));
             continue;
         }
@@ -149,7 +209,7 @@ pub fn parse(text: &str) -> Parsed {
             Ok(item) => parsed.rows.push(Row::Instrument(item)),
             Err(reason) => parsed.skipped.push(Skipped {
                 line: offset + 1,
-                text: token.to_owned(),
+                text: token.chars().take(MAX_NAME_CHARS).collect(),
                 reason,
             }),
         }
@@ -195,8 +255,8 @@ fn instrument_from(token: &str) -> Result<WatchlistInstrument, String> {
     let mut rest = rest.trim().to_owned();
     let mut title = None;
     if let Some((symbol, candidate)) = rest.clone().split_once('|') {
-        let candidate = candidate.trim();
-        title = (!candidate.is_empty()).then(|| candidate.to_owned());
+        let candidate = Watchlist::sanitized_name(candidate);
+        title = (!candidate.is_empty()).then_some(candidate);
         rest = symbol.trim().to_owned();
     }
     if rest.is_empty() {
@@ -314,32 +374,55 @@ fn item(source: DataSource, symbol: &str, name: &str, label: &str) -> WatchlistI
 /// Adds every valid row of `parsed` to `list`. Sections are reused by title, instruments
 /// already present are counted, bad rows are reported and never block good ones.
 pub fn import_into(list: &mut Watchlist, parsed: &Parsed) -> Result<ImportReport, WatchlistError> {
+    let mut skipped = parsed.skipped.clone();
+    let not_shown = skipped.len().saturating_sub(MAX_SKIPPED_SHOWN);
+    skipped.truncate(MAX_SKIPPED_SHOWN);
     let mut report = ImportReport {
-        skipped: parsed.skipped.clone(),
+        skipped,
+        skipped_not_shown: not_shown,
+        truncated: parsed.truncated,
         ..ImportReport::default()
     };
     let mut current_section = None;
+    let mut keys: std::collections::HashSet<String> = list
+        .instruments()
+        .map(|item| item.instrument.key())
+        .collect();
     for row in &parsed.rows {
-        match row {
+        let outcome = match row {
             Row::Section(title) => {
                 let existing: Option<&WatchlistSection> = list
                     .sections()
                     .find(|section| section.title.to_lowercase() == title.to_lowercase());
                 if let Some(existing) = existing {
                     current_section = Some(existing.id);
+                    Ok(())
                 } else {
-                    current_section = Some(list.add_section(title, None)?.id);
-                    report.sections_added += 1;
+                    list.add_section(title, None).map(|section| {
+                        current_section = Some(section.id);
+                        report.sections_added += 1;
+                    })
                 }
             }
             Row::Instrument(item) => {
-                if list.contains(&item.instrument) {
+                if !keys.insert(item.instrument.key()) {
                     report.duplicates += 1;
+                    Ok(())
                 } else {
-                    list.add(item.clone(), current_section)?;
-                    report.added += 1;
+                    list.add_checked(item.clone(), current_section).map(|()| {
+                        report.added += 1;
+                    })
                 }
             }
+        };
+        match outcome {
+            Ok(()) => {}
+            // A full list keeps what fit and says so.
+            Err(WatchlistError::ListFull) => {
+                report.truncated = true;
+                break;
+            }
+            Err(error) => return Err(error),
         }
     }
     Ok(report)
@@ -554,5 +637,53 @@ mod tests {
         assert!(validate_market(DataSource::Binance, "BTCUSDT|x").is_err());
         assert!(validate_market(DataSource::Binance, "COINBASE:BTC-USD").is_err());
         assert!(validate_market(DataSource::Binance, "BTC\nUSDT").is_err());
+    }
+
+    #[test]
+    fn an_oversize_import_reads_what_it_may_and_says_so() {
+        let many: String = (0..MAX_IMPORT_LINES + 5)
+            .map(|index| format!("BINANCE:S{index}USDT\n"))
+            .collect();
+        let parsed = parse(&many);
+        assert!(parsed.truncated);
+        assert_eq!(parsed.rows.len(), MAX_IMPORT_LINES);
+
+        let huge = format!("BINANCE:BTCUSDT\n{}", "é".repeat(MAX_IMPORT_BYTES));
+        let parsed = parse(&huge);
+        assert!(parsed.truncated);
+        assert_eq!(
+            parsed.rows.len(),
+            1,
+            "cut on a character boundary, no panic"
+        );
+
+        let fine = parse("BINANCE:BTCUSDT\nBINANCE:ETHUSDT");
+        assert!(!fine.truncated);
+        let commas = parse("BINANCE:BTCUSDT,BINANCE:ETHUSDT");
+        assert_eq!(commas.rows.len(), 2);
+    }
+
+    #[test]
+    fn imported_titles_are_made_fit_for_a_name() {
+        let long = "t".repeat(MAX_NAME_CHARS + 50);
+        let parsed = parse(&format!("###\u{7}Ma\tjors\nPOLYMARKET:abc|{long}"));
+        assert_eq!(parsed.rows[0], Row::Section("Ma jors".to_owned()));
+        let Row::Instrument(item) = &parsed.rows[1] else {
+            panic!("a prediction market row")
+        };
+        assert_eq!(
+            item.display_name.as_deref().map(str::len),
+            Some(MAX_NAME_CHARS)
+        );
+    }
+
+    #[test]
+    fn the_suggested_export_name_is_a_safe_file_name() {
+        assert_eq!(export_file_name("Swing"), "Swing.txt");
+        assert_eq!(export_file_name("a/b\\c:d"), "a b c d.txt");
+        assert_eq!(export_file_name("  ..hidden "), "hidden.txt");
+        assert_eq!(export_file_name("///"), "Watchlist.txt");
+        assert_eq!(export_file_name("bell\u{7}"), "bell.txt");
+        assert_eq!(export_file_name(&"x".repeat(500)).chars().count(), 104);
     }
 }

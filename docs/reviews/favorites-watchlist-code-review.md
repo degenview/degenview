@@ -364,4 +364,4 @@ found while validating:
 | H3, M1, M6 | Status classification, isolation budget, rate-limit short-circuit, per-request failures in `Outcome` (a transient DexScreener chain lookup failure staying permanent is not yet fixed) |
 | L1 | Idle markets are forgotten after a 10 min grace period, book included |
 | M2 | `InstrumentId::key()` is built from `api_symbol`, used by the grid star, memberships and the sync merge key; old duplicate rows and flags are collapsed/re-keyed on load. `is_same_market` is unchanged (it stays case-insensitive for DEX addresses, where EVM casing is not significant) |
-| M3, M4, M7, L2 | Pending |
+| M3, M4, M7, L2 | Typed `Result<bool, WatchlistError>` from every store mutation, built on a copy and written only when changed; shared bounds and name cleaning; load-time repair (extra Favorites, repeated row ids, repeated markets); remote validator rejects unknown row shapes; bounded import, sanitized export file name; `updated_at_ms` stamped on content edits. Not done: merge still strips an unparseable row on a true three-way conflict (a list with one is now rejected earlier, by the validator); no recovery UI for a list that fails to load |

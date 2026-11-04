@@ -15,8 +15,8 @@ pub const MAX_SCRIPT_NAME_CHARS: usize = 200;
 pub const MAX_DRAWING_ARRAY: usize = crate::model::drawings::MAX_POINTS;
 pub const MAX_DRAWING_STRING: usize = 10_000;
 pub const MAX_CHARTS_PER_LAYOUT: usize = 64;
-pub const MAX_WATCHLIST_ENTRIES: usize = 5_000;
-pub const MAX_NAME_CHARS: usize = 200;
+pub const MAX_WATCHLIST_ENTRIES: usize = crate::model::watchlist::MAX_ENTRIES_PER_LIST;
+pub const MAX_NAME_CHARS: usize = crate::model::watchlist::MAX_NAME_CHARS;
 /// A paper account's history is bounded by the record's size, this only stops absurd shapes.
 pub const MAX_PAPER_ROWS: usize = 20_000;
 pub const MAX_DEVICE_ID_CHARS: usize = 64;
@@ -125,6 +125,25 @@ fn check(record: &SyncRecord, value: &Value) -> Result<(), String> {
             let entries = array(object, "entries")?;
             if entries.len() > MAX_WATCHLIST_ENTRIES {
                 return Err(format!("watchlist has {} entries", entries.len()));
+            }
+            // A row this build does not know (a newer shape) keeps the whole list in the
+            // inbox unchanged, instead of being stripped when the list is merged.
+            for entry in entries {
+                let known = entry.as_object().is_some_and(|variant| {
+                    variant.len() == 1
+                        && (variant.contains_key("Instrument") || variant.contains_key("Section"))
+                });
+                if !known {
+                    return Err("watchlist has a row this version does not know".to_owned());
+                }
+                if let Some(title) = entry
+                    .get("Section")
+                    .and_then(|section| section.get("title"))
+                    .and_then(Value::as_str)
+                    && title.chars().count() > MAX_NAME_CHARS
+                {
+                    return Err("a section title is too long".to_owned());
+                }
             }
             Ok(())
         }
@@ -675,6 +694,36 @@ mod tests {
         assert!(rejected(&bad_name).contains("layout.chart.drawing"));
         let no_drawing = record(EntityKind::LayoutDrawing, "1.2.3", json!({}));
         assert!(rejected(&no_drawing).contains("missing"));
+    }
+
+    #[test]
+    fn a_watchlist_row_this_version_does_not_know_is_not_taken() {
+        let ok = record(
+            EntityKind::Watchlist,
+            "7",
+            json!({"id": 7, "name": "x", "entries": [
+                {"Instrument": {"id": 1}}, {"Section": {"id": 2, "title": "S"}}]}),
+        );
+        assert!(matches!(validate(&ok), Verdict::Accept(_)));
+        for entry in [
+            json!({"Futures": {"id": 3}}),
+            json!({"Instrument": {"id": 1}, "Extra": {}}),
+            json!("a string"),
+        ] {
+            let list = record(
+                EntityKind::Watchlist,
+                "7",
+                json!({"id": 7, "name": "x", "entries": [entry]}),
+            );
+            assert!(rejected(&list).contains("does not know"), "{list:?}");
+        }
+        let long = record(
+            EntityKind::Watchlist,
+            "7",
+            json!({"id": 7, "name": "x", "entries": [
+                {"Section": {"id": 2, "title": "t".repeat(MAX_NAME_CHARS + 1)}}]}),
+        );
+        assert!(rejected(&long).contains("too long"));
     }
 
     #[test]

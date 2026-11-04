@@ -93,6 +93,16 @@ candles, and `ChartCard::set_series` draws choices by position with end labels.
 - The engine forgets a market nobody has asked for after `Config::idle_grace_ms` (10 min): its quote,
   confirmation time, refusal and Coinbase bookkeeping, and the book entry. Resolved DEX networks
   (`chains`) are kept. A market that returns later shows no old price until it is fetched.
+- Store mutations return `Result<bool, WatchlistError>` (`Ok(false)` = nothing changed, nothing written).
+  Each runs on a copy of one list (`WatchlistStore::modify`), so a refused change leaves the list as it
+  was; the workspace shows the reason (`report_watchlist`). Names go through `Watchlist::validated`
+  (whitespace collapsed, no control characters, `MAX_NAME_CHARS`); lists hold at most
+  `MAX_ENTRIES_PER_LIST` rows and there are at most `MAX_LISTS` lists (the sync validator shares these).
+  `updated_at_ms` is stamped by `Watchlist::touch` on content edits (rows, names), not on sort, column or
+  collapse changes. Text import reads at most `MAX_IMPORT_BYTES`/`MAX_IMPORT_LINES` and reports when it
+  stopped early; the suggested export file name is `export_file_name(name)`.
+- On load a second Favorites list is demoted, a repeated row id gets a new one and repeated markets are
+  collapsed (`WatchlistStore::repair`); nothing is deleted otherwise.
 - Selecting a row focuses or opens its market in that workspace; highlighting mirrors the focused
   chart.
 

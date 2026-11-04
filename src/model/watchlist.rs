@@ -33,12 +33,28 @@ pub fn now_ms() -> i64 {
         .map_or(0, |elapsed| elapsed.as_millis() as i64)
 }
 
+/// The most markets and sections one list holds. iCloud Sync refuses a larger record, so a
+/// list that grew past it here would silently stop syncing.
+pub const MAX_ENTRIES_PER_LIST: usize = 5_000;
+/// The most characters in a list or section name (and in an imported title).
+pub const MAX_NAME_CHARS: usize = 200;
+/// The most lists. Nothing syncs or draws well past this; it stops runaway imports.
+pub const MAX_LISTS: usize = 200;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum WatchlistError {
     Duplicate(String),
     NotFound,
     EmptyName,
+    NameTooLong,
+    InvalidName,
+    /// The list is at `MAX_ENTRIES_PER_LIST`.
+    ListFull,
+    /// There are already `MAX_LISTS` lists.
+    TooManyLists,
     PersistenceUnavailable,
+    /// The change was refused by the database; the lists are as they were.
+    SaveFailed,
 }
 
 impl std::fmt::Display for WatchlistError {
@@ -47,6 +63,17 @@ impl std::fmt::Display for WatchlistError {
             Self::Duplicate(name) => write!(formatter, "\"{name}\" is already in this watchlist"),
             Self::NotFound => formatter.write_str("That watchlist item no longer exists"),
             Self::EmptyName => formatter.write_str("A name can't be empty"),
+            Self::NameTooLong => write!(
+                formatter,
+                "A name can be at most {MAX_NAME_CHARS} characters"
+            ),
+            Self::InvalidName => formatter.write_str("A name can't contain control characters"),
+            Self::ListFull => write!(
+                formatter,
+                "A watchlist holds at most {MAX_ENTRIES_PER_LIST} items"
+            ),
+            Self::TooManyLists => write!(formatter, "You can have at most {MAX_LISTS} watchlists"),
+            Self::SaveFailed => formatter.write_str("Your watchlists couldn't be saved"),
             Self::PersistenceUnavailable => formatter.write_str(
                 "Your saved watchlists couldn't be read, so changes are turned off to protect them",
             ),
@@ -462,8 +489,8 @@ impl Watchlist {
     }
 
     pub fn entry_for(&self, instrument: &InstrumentId) -> Option<&WatchlistInstrument> {
-        self.instruments()
-            .find(|item| item.instrument.key() == instrument.key())
+        let key = instrument.key();
+        self.instruments().find(|item| item.instrument.key() == key)
     }
 
     pub fn index_of(&self, entry_id: EntryId) -> Option<usize> {
@@ -485,10 +512,29 @@ impl Watchlist {
         self.entries.push(WatchlistEntry::Instrument(item));
     }
 
+    /// Puts the rows right where it can without losing one: a repeated market goes (the first
+    /// stays) and a repeated row id gets a fresh one. Returns whether anything changed.
+    pub fn repair(&mut self) -> bool {
+        let mut changed = self.collapse_duplicate_markets();
+        let mut ids = std::collections::HashSet::new();
+        for entry in &mut self.entries {
+            if !ids.insert(entry.id()) {
+                let fresh = new_id();
+                match entry {
+                    WatchlistEntry::Instrument(item) => item.id = fresh,
+                    WatchlistEntry::Section(section) => section.id = fresh,
+                }
+                ids.insert(fresh);
+                changed = true;
+            }
+        }
+        changed
+    }
+
     /// Drops a market's second and later rows (the same `InstrumentId::key`, which now counts
     /// `BTC` and `BTCUSDT` as one market). The first row stays, with its place and name.
     /// Returns whether any row went.
-    pub fn collapse_duplicate_markets(&mut self) -> bool {
+    fn collapse_duplicate_markets(&mut self) -> bool {
         let mut seen = std::collections::HashSet::new();
         let before = self.entries.len();
         self.entries.retain(|entry| match entry {
@@ -519,6 +565,19 @@ impl Watchlist {
             || self.entries.iter().any(|entry| entry.id() == instrument.id)
         {
             return Err(WatchlistError::Duplicate(instrument.name));
+        }
+        self.add_checked(instrument, section_id)
+    }
+
+    /// `add` for a caller that has already ruled out a repeated market (an import keeps a set
+    /// of the keys it has seen, which beats comparing every row of a long list per line).
+    pub(crate) fn add_checked(
+        &mut self,
+        instrument: WatchlistInstrument,
+        section_id: Option<EntryId>,
+    ) -> Result<()> {
+        if self.entries.len() >= MAX_ENTRIES_PER_LIST {
+            return Err(WatchlistError::ListFull);
         }
         let index = match section_id {
             Some(section_id) => {
@@ -676,6 +735,9 @@ impl Watchlist {
         before: Option<EntryId>,
     ) -> Result<WatchlistSection> {
         let section = WatchlistSection::new(Self::validated(title)?);
+        if self.entries.len() >= MAX_ENTRIES_PER_LIST {
+            return Err(WatchlistError::ListFull);
+        }
         let destination = before
             .and_then(|id| self.index_of(id))
             .unwrap_or(self.entries.len());
@@ -760,13 +822,39 @@ impl Watchlist {
         problems
     }
 
+    /// A list or section name as it is stored: runs of whitespace (a pasted newline, a tab)
+    /// become one space, and an empty, over-long or control-character name is refused.
     pub fn validated(name: &str) -> Result<String> {
-        let clean = name.trim();
+        let clean = name.split_whitespace().collect::<Vec<_>>().join(" ");
         if clean.is_empty() {
             Err(WatchlistError::EmptyName)
+        } else if clean.chars().any(char::is_control) {
+            Err(WatchlistError::InvalidName)
+        } else if clean.chars().count() > MAX_NAME_CHARS {
+            Err(WatchlistError::NameTooLong)
         } else {
-            Ok(clean.to_owned())
+            Ok(clean)
         }
+    }
+
+    /// Imported or pasted text made fit for a name: control characters dropped, whitespace
+    /// collapsed, cut at `MAX_NAME_CHARS`. Empty if nothing is left.
+    pub fn sanitized_name(text: &str) -> String {
+        let kept: String = text
+            .chars()
+            .filter(|c| !c.is_control() || c.is_whitespace())
+            .collect();
+        kept.split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .chars()
+            .take(MAX_NAME_CHARS)
+            .collect()
+    }
+
+    /// Records that the list's content was edited (rows or names, not how it is shown).
+    pub fn touch(&mut self) {
+        self.updated_at_ms = now_ms().max(self.updated_at_ms);
     }
 
     // MARK: Block geometry
@@ -947,11 +1035,72 @@ mod tests {
             .push(WatchlistEntry::Instrument(item("BTCUSDT")));
         list.entries
             .push(WatchlistEntry::Instrument(item("ETHUSDT")));
-        assert!(list.collapse_duplicate_markets());
+        assert!(list.repair());
         let labels: Vec<String> = list.instruments().map(|item| item.label.clone()).collect();
         assert_eq!(labels, ["BTC", "ETH"]);
         assert_eq!(list.sections().count(), 1);
-        assert!(!list.collapse_duplicate_markets(), "nothing left to drop");
+        assert!(!list.repair(), "nothing left to drop");
+    }
+
+    #[test]
+    fn names_are_cleaned_then_checked() {
+        assert_eq!(Watchlist::validated("  a \n b\t"), Ok("a b".to_owned()));
+        assert_eq!(Watchlist::validated(" \n "), Err(WatchlistError::EmptyName));
+        assert_eq!(
+            Watchlist::validated("a\u{1b}b"),
+            Err(WatchlistError::InvalidName)
+        );
+        let at_limit = "é".repeat(MAX_NAME_CHARS);
+        assert!(Watchlist::validated(&at_limit).is_ok());
+        assert_eq!(
+            Watchlist::validated(&format!("{at_limit}é")),
+            Err(WatchlistError::NameTooLong)
+        );
+        assert_eq!(Watchlist::sanitized_name("a\u{7} b\n c"), "a b c");
+        assert_eq!(
+            Watchlist::sanitized_name(&"x".repeat(MAX_NAME_CHARS + 9))
+                .chars()
+                .count(),
+            MAX_NAME_CHARS
+        );
+    }
+
+    #[test]
+    fn a_list_stops_at_its_entry_limit() {
+        let mut list = Watchlist::new("Big");
+        for index in 0..MAX_ENTRIES_PER_LIST {
+            list.push_unchecked(item(&format!("S{index:04}USDT")));
+        }
+        assert_eq!(
+            list.add(item("LASTUSDT"), None),
+            Err(WatchlistError::ListFull)
+        );
+        assert_eq!(
+            list.add_section("More", None),
+            Err(WatchlistError::ListFull)
+        );
+        list.remove_instrument(&InstrumentId::new(DataSource::Binance, "S0000USDT"));
+        assert!(list.add(item("LASTUSDT"), None).is_ok());
+    }
+
+    #[test]
+    fn a_repeated_row_id_gets_a_fresh_one_and_no_row_is_lost() {
+        let mut list = Watchlist::new("L");
+        let (a, mut b) = (item("BTCUSDT"), item("ETHUSDT"));
+        b.id = a.id;
+        let section = WatchlistSection::new("S".to_owned());
+        list.push_unchecked(a);
+        list.push_unchecked(b);
+        list.entries.push(WatchlistEntry::Section(WatchlistSection {
+            id: section.id,
+            ..section.clone()
+        }));
+        list.entries.push(WatchlistEntry::Section(section));
+        assert_eq!(list.validate().len(), 2);
+        assert!(list.repair());
+        assert!(list.validate().is_empty());
+        assert_eq!(list.entries.len(), 4);
+        assert!(!list.repair());
     }
 
     #[test]

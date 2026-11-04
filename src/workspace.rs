@@ -710,10 +710,13 @@ impl ChartWorkspace {
                         .as_ref()
                         .map_or_else(Vec::new, PortfolioCardEnv::portfolios);
                     if let Ok(mut store) = self.watchlist.lock() {
-                        store.add_to_list(
-                            list_id,
-                            WatchlistInstrument::for_card(card, &card.scope_name(&scope)),
-                        );
+                        let result = store
+                            .add_to_list(
+                                list_id,
+                                WatchlistInstrument::for_card(card, &card.scope_name(&scope)),
+                            )
+                            .map(|_| ());
+                        watchlist::report_watchlist(&mut self.watchlist_error, result);
                     }
                 } else {
                     self.add_card(card);
@@ -734,7 +737,8 @@ impl ChartWorkspace {
                             .event
                             .as_ref()
                             .and_then(|event| event.image_url.clone());
-                        store.add_to_list(list_id, item);
+                        let result = store.add_to_list(list_id, item).map(|_| ());
+                        watchlist::report_watchlist(&mut self.watchlist_error, result);
                     }
                 } else {
                     self.add_from_search(&result, &ctx);
