@@ -55,6 +55,8 @@ const PROFILE_BAR_HEIGHT: f32 = 6.0;
 /// left of the line numbers.
 const MARKER_X: f32 = 21.0;
 const MARKER_RADIUS: f32 = 5.0;
+/// A breakpoint marker's radius on the line the script is stopped at, drawn over the arrow.
+const STOPPED_MARKER_RADIUS: f32 = 3.0;
 /// The change column at the gutter's left edge: the bar's inset and width, and the (much wider,
 /// so no one has to aim at three points) strip that takes the click.
 const CHANGE_INSET: f32 = 2.0;
@@ -1644,11 +1646,23 @@ fn paint_gutter(
             },
         );
         let center = egui::pos2(gutter.min.x + MARKER_X, top + height / 2.0);
-        if let Some(mark) = marks.breakpoint_at(line) {
-            paint_breakpoint(&painter, center, mark);
-        }
-        if let Some(stop) = marks.stop.filter(|stop| stop.line == line) {
+        let stop = marks.stop.filter(|stop| stop.line == line);
+        if let Some(stop) = stop {
             paint_stop_arrow(&painter, center, stop);
+        }
+        if let Some(mark) = marks.breakpoint_at(line) {
+            if stop.is_some() {
+                // The arrow is shorter than a dot is wide, so on the same line the breakpoint is a
+                // smaller marker on top of it, set off by a ring of gutter colour: both stay visible.
+                painter.circle_filled(
+                    center,
+                    STOPPED_MARKER_RADIUS + 1.2,
+                    theme::gutter_background(),
+                );
+                paint_breakpoint(&painter, center, mark, STOPPED_MARKER_RADIUS);
+            } else {
+                paint_breakpoint(&painter, center, mark, MARKER_RADIUS);
+            }
         }
     }
 }
@@ -1815,14 +1829,13 @@ fn profile_tooltip(ui: &mut Ui, mark: &LineMark) {
     }
 }
 
-fn paint_breakpoint(painter: &egui::Painter, center: egui::Pos2, mark: &BreakpointMark) {
+fn paint_breakpoint(painter: &egui::Painter, center: egui::Pos2, mark: &BreakpointMark, r: f32) {
     let live = mark.enabled && !mark.unverified;
     let color = if live {
         theme::editor_breakpoint()
     } else {
         theme::editor_breakpoint_muted()
     };
-    let r = MARKER_RADIUS;
     match mark.kind {
         MarkKind::Logpoint => {
             let points = vec![
@@ -1846,10 +1859,11 @@ fn paint_breakpoint(painter: &egui::Painter, center: egui::Pos2, mark: &Breakpoi
             if mark.kind == MarkKind::Conditional {
                 // An equals sign cut into the dot: it stops only when something holds.
                 let ink = if live { Color32::WHITE } else { color };
-                for dy in [-1.4, 1.4] {
+                let (half, dy) = (r * 0.48, r * 0.28);
+                for dy in [-dy, dy] {
                     painter.line_segment(
-                        [center + Vec2::new(-2.4, dy), center + Vec2::new(2.4, dy)],
-                        Stroke::new(1.3, ink),
+                        [center + Vec2::new(-half, dy), center + Vec2::new(half, dy)],
+                        Stroke::new(1.3 * r / MARKER_RADIUS, ink),
                     );
                 }
             }
@@ -1857,7 +1871,7 @@ fn paint_breakpoint(painter: &egui::Painter, center: egui::Pos2, mark: &Breakpoi
     }
 }
 
-/// The marker for the line a stopped script is at; it covers a breakpoint on the same line.
+/// The marker for the line a stopped script is at. A breakpoint on the same line is drawn over it.
 fn paint_stop_arrow(painter: &egui::Painter, center: egui::Pos2, stop: StopMark) {
     let color = if stop.error {
         theme::editor_breakpoint()
@@ -1874,8 +1888,7 @@ fn paint_stop_arrow(painter: &egui::Painter, center: egui::Pos2, stop: StopMark)
     if stop.innermost || stop.error {
         painter.add(Shape::convex_polygon(points, color, Stroke::NONE));
     } else {
-        // A caller's line: the same arrow, outlined, over the gutter so a breakpoint beneath does
-        // not show through it.
+        // A caller's line: the same arrow, outlined and filled with the gutter colour.
         painter.add(Shape::convex_polygon(
             points,
             theme::gutter_background(),
