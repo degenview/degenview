@@ -197,6 +197,9 @@ pub struct ChartWorkspace {
     redo: Vec<UndoEntry>,
     replay: ReplayEngine,
     replay_last_step: Instant,
+    /// The timeframe changed under a replay: its bars are being reloaded, and the replay moves
+    /// onto them once they are in.
+    replay_rebase: bool,
     watchlist: Arc<Mutex<WatchlistStore>>,
     watchlist_sidebar: WatchlistSidebarState,
     date_sheet: ReplayDateSheetState,
@@ -358,6 +361,7 @@ impl ChartWorkspace {
             redo: Vec::new(),
             replay: ReplayEngine::default(),
             replay_last_step: Instant::now(),
+            replay_rebase: false,
             watchlist,
             watchlist_sidebar: WatchlistSidebarState::default(),
             date_sheet: ReplayDateSheetState::default(),

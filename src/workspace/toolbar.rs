@@ -59,6 +59,7 @@ impl ChartWorkspace {
             match action {
                 ToolbarAction::SetTimeframe(timeframe) => {
                     self.timeframe = timeframe;
+                    self.replay_rebase |= self.replay.session.is_some();
                     self.drop_rulers();
                     for chart in &mut self.charts {
                         chart.chart.reset_view();

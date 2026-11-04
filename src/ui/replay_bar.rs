@@ -11,8 +11,7 @@ use crate::ui::kit::{self, MEDIUM, REGULAR, SEMIBOLD};
 use crate::ui::theme;
 use crate::ui::workspace_toolbar::paint_bubble;
 use eframe::egui::{
-    self, Align2, Color32, FontId, Id, Key, Modifiers, Pos2, Rect, Response, Sense, Shape, Stroke,
-    Vec2,
+    self, Align2, Color32, FontId, Key, Modifiers, Pos2, Rect, Response, Sense, Shape, Stroke, Vec2,
 };
 
 /// Below this width the timeline drops to a second row.
@@ -312,6 +311,7 @@ fn wide_row(ui: &mut egui::Ui, input: &ReplayBarInput, actions: &mut Vec<ReplayB
             scrubber(ui, input, timeline, actions);
         },
         |ui, actions| {
+            close_button(ui, actions);
             live_button(ui, actions);
             change_start_button(ui, actions);
             clock(ui, input.engine, false);
@@ -330,6 +330,7 @@ fn narrow_rows(ui: &mut egui::Ui, input: &ReplayBarInput, actions: &mut Vec<Repl
             transport(ui, input, actions);
         },
         |ui, actions| {
+            close_button(ui, actions);
             live_button(ui, actions);
             change_start_button(ui, actions);
             clock(ui, input.engine, true);
@@ -356,9 +357,12 @@ fn ready_row(ui: &mut egui::Ui, input: &ReplayBarInput, actions: &mut Vec<Replay
         |ui, actions| {
             header(ui, input, ui.available_width() > 360.0);
             divider(ui);
-            ui.add_enabled_ui(!input.is_preparing, |ui| start_options(ui, actions));
+            ui.add_enabled_ui(!input.is_preparing, |ui| start_options(ui, actions, false));
         },
-        live_button,
+        |ui, actions| {
+            close_button(ui, actions);
+            live_button(ui, actions);
+        },
     );
 }
 
@@ -367,22 +371,10 @@ fn selecting_row(ui: &mut egui::Ui, input: &ReplayBarInput, actions: &mut Vec<Re
         ui,
         ROW,
         actions,
-        |ui, _| {
+        |ui, actions| {
             header(ui, input, ui.available_width() > 460.0);
             divider(ui);
-            let (icon, _) = ui.allocate_exact_size(Vec2::splat(16.0), Sense::hover());
-            paint_glyph(
-                ui.painter(),
-                icon.center(),
-                Glyph::Scope,
-                theme::text_primary(),
-            );
-            ui.label(kit::text(
-                "Click a candle to start the replay",
-                kit::size::BODY - 1.0,
-                MEDIUM,
-                theme::text_primary(),
-            ));
+            start_options(ui, actions, true);
             if ui.available_width() > 130.0 {
                 keycap(ui, "Esc");
                 ui.label(kit::text(
@@ -394,6 +386,7 @@ fn selecting_row(ui: &mut egui::Ui, input: &ReplayBarInput, actions: &mut Vec<Re
             }
         },
         |ui, actions| {
+            close_button(ui, actions);
             if pill_button(ui, "Cancel", "Cancel (Esc)").clicked() {
                 actions.push(ReplayBarAction::CancelSelection);
             }
@@ -1111,6 +1104,12 @@ fn clock(ui: &mut egui::Ui, engine: &ReplayEngine, compact: bool) {
     response.on_hover_text("Time of the replay cursor, in your time zone");
 }
 
+fn close_button(ui: &mut egui::Ui, actions: &mut Vec<ReplayBarAction>) {
+    if glyph_button(ui, Glyph::Close, true, "Close Replay").clicked() {
+        actions.push(ReplayBarAction::ReturnToLive);
+    }
+}
+
 fn change_start_button(ui: &mut egui::Ui, actions: &mut Vec<ReplayBarAction>) {
     if glyph_button(ui, Glyph::Scope, true, "Choose a new starting point").clicked() {
         actions.push(ReplayBarAction::ChangeStart);
@@ -1191,6 +1190,7 @@ fn primary_button(
     label: &str,
     dropdown: bool,
     tip: &str,
+    armed: bool,
 ) -> Response {
     let ink = theme::chrome();
     let text = kit::galley(
@@ -1202,8 +1202,17 @@ fn primary_button(
         f32::INFINITY,
     );
     let width = 11.0 + 15.0 + 5.0 + text.size().x + if dropdown { 7.0 + 8.0 } else { 0.0 } + 13.0;
-    let (rect, response) = ui.allocate_exact_size(Vec2::new(width, ACTION), Sense::click());
-    let fill = if response.is_pointer_button_down_on() {
+    let (rect, response) = ui.allocate_exact_size(
+        Vec2::new(width, ACTION),
+        if armed {
+            Sense::hover()
+        } else {
+            Sense::click()
+        },
+    );
+    let fill = if armed {
+        theme::text_primary().gamma_multiply(0.92)
+    } else if response.is_pointer_button_down_on() {
         theme::text_primary().gamma_multiply(0.78)
     } else if response.hovered() {
         theme::text_primary()
@@ -1221,6 +1230,17 @@ fn primary_button(
         .as_shape(rect.shrink(1.0), ACTION / 2.0),
     );
     painter.rect_filled(rect, ACTION / 2.0, fill);
+    if armed {
+        // Waiting for a click on the chart: a ring that breathes.
+        let breath = ((ui.input(|input| input.time) * 2.4).sin() as f32 + 1.0) / 2.0;
+        painter.rect_stroke(
+            rect.expand(2.5),
+            ACTION / 2.0 + 2.5,
+            Stroke::new(1.5, theme::REPLAY.gamma_multiply(0.35 + 0.5 * breath)),
+            egui::StrokeKind::Inside,
+        );
+        ui.ctx().request_repaint();
+    }
     paint_glyph(
         painter,
         Pos2::new(rect.left() + 11.0 + 7.5, rect.center().y),
@@ -1286,7 +1306,8 @@ const START_CHOICES: [StartChoice; 3] = [
 ];
 
 /// How much room the start row has decides how much of it is spelled out.
-fn start_options(ui: &mut egui::Ui, actions: &mut Vec<ReplayBarAction>) {
+/// `armed`: the replay is waiting for a click on a chart; the other ways to start stay open.
+fn start_options(ui: &mut egui::Ui, actions: &mut Vec<ReplayBarAction>, armed: bool) {
     let room = ui.available_width();
     if room < START_OPTIONS_MIN_WIDTH {
         let response = primary_button(
@@ -1295,6 +1316,7 @@ fn start_options(ui: &mut egui::Ui, actions: &mut Vec<ReplayBarAction>) {
             "Start",
             true,
             "Choose where the replay starts",
+            false,
         );
         kit::menu_popup(&response)
             .width(MENU_WIDTH + 36.0)
@@ -1319,16 +1341,23 @@ fn start_options(ui: &mut egui::Ui, actions: &mut Vec<ReplayBarAction>) {
         return;
     }
     let labels = room >= 650.0;
+    let label = match (armed, labels) {
+        (true, true) => "Click a candle",
+        (true, false) => "Picking",
+        (false, true) => "Select bar on chart",
+        (false, false) => "Select",
+    };
     if primary_button(
         ui,
         Glyph::Scope,
-        if labels {
-            "Select bar on chart"
-        } else {
-            "Select"
-        },
+        label,
         false,
-        "Click a candle on a chart to start the replay there",
+        if armed {
+            "Click a candle on a chart to start the replay there (Esc cancels)"
+        } else {
+            "Click a candle on a chart to start the replay there"
+        },
+        armed,
     )
     .clicked()
     {
@@ -1384,7 +1413,7 @@ fn start_group(ui: &mut egui::Ui, labels: bool, actions: &mut Vec<ReplayBarActio
         x += width;
         let response = ui.interact(
             segment,
-            Id::new(("replay-start", choice.title)),
+            ui.id().with(("replay-start", choice.title)),
             Sense::click(),
         );
         let hovered = response.hovered();
