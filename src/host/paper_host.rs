@@ -11,9 +11,11 @@ use crate::model::paper::{
     PaperTradingError, PaperTradingSnapshot,
 };
 use crate::model::paper_engine::PaperTradingEngine;
+use crate::model::paper_export;
 use crate::model::paper_ticket::TicketDraft;
 use crate::store::SharedStore;
 use crate::store::sync::Elsewhere;
+use crate::ui::icons::{self, Icon};
 use crate::ui::paper_account_sheet::{
     AccountSheetOutcome, PaperAccountSheetState, show as show_account_sheet,
 };
@@ -499,7 +501,40 @@ impl PaperHost {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PaperPanelAction {
     Close,
-    Export,
+}
+
+/// What a finished export tells the panel: the folder it wrote to, or why it did not.
+type ExportOutcome = Result<Option<(std::path::PathBuf, String)>, String>;
+
+/// A line under the header that says what an action did (or why it did nothing), until it is
+/// dismissed or, for good news and plain facts, a few seconds pass.
+struct PanelNotice {
+    text: String,
+    is_error: bool,
+    since: std::time::Instant,
+}
+
+impl PanelNotice {
+    const LINGER: std::time::Duration = std::time::Duration::from_secs(8);
+
+    fn info(text: impl Into<String>) -> Self {
+        Self {
+            text: text.into(),
+            is_error: false,
+            since: std::time::Instant::now(),
+        }
+    }
+
+    fn error(text: impl Into<String>) -> Self {
+        Self {
+            is_error: true,
+            ..Self::info(text)
+        }
+    }
+
+    fn expired(&self) -> bool {
+        !self.is_error && self.since.elapsed() >= Self::LINGER
+    }
 }
 
 /// Per-chart-window presentation state over the app-wide `PaperHost`.
@@ -512,6 +547,11 @@ pub struct PaperPanel {
     pending_delete: Option<u64>,
     ticket: Option<PaperTicketState>,
     show_trading_on_charts: bool,
+    notice: Option<PanelNotice>,
+    /// The folder dialog and the writing behind it, on a worker thread.
+    export_job: Option<std::sync::mpsc::Receiver<ExportOutcome>>,
+    /// Set by the header menu and the footer; taken at the end of the frame.
+    export_requested: bool,
 }
 
 impl Default for PaperPanel {
@@ -524,6 +564,9 @@ impl Default for PaperPanel {
             pending_delete: None,
             ticket: None,
             show_trading_on_charts: true,
+            notice: None,
+            export_job: None,
+            export_requested: false,
         }
     }
 }
@@ -639,6 +682,8 @@ impl PaperPanel {
             },
         );
         divider(ui);
+        self.poll_export(ui.ctx());
+        self.show_notice(ui);
         if let Some(elsewhere) = account_id.and_then(|id| host.owned_elsewhere(id)) {
             owner_note(ui, elsewhere);
         }
@@ -704,11 +749,138 @@ impl PaperPanel {
 
         self.apply_header_actions(header_actions, host, account, &mut panel_actions);
         self.apply_table_actions(table_actions, host);
-        self.apply_footer_actions(footer_actions, host, account_id, &mut panel_actions);
+        self.apply_footer_actions(footer_actions, host, account_id);
+        if std::mem::take(&mut self.export_requested) {
+            self.begin_export(ui.ctx(), host, account_id);
+        }
         self.show_account_sheet(ui.ctx(), host, account_id);
         self.show_delete_confirm(ui.ctx(), host);
         self.show_ticket(ui.ctx(), host, currency);
         panel_actions
+    }
+
+    /// "Export Trading Data": with nothing to write, say so instead of opening a dialog; otherwise
+    /// ask for a folder and write the three CSV files there, off the UI thread.
+    fn begin_export(&mut self, ctx: &egui::Context, host: &PaperHost, account_id: Option<u64>) {
+        if self.export_job.is_some() {
+            return;
+        }
+        let Some(account_id) = account_id else {
+            self.notice = Some(PanelNotice::info(
+                "Create a paper account first; there is nothing to export yet.",
+            ));
+            return;
+        };
+        let export = paper_export::export_account(host.snapshot(), account_id);
+        if export.is_empty() {
+            self.notice = Some(PanelNotice::info(
+                "Nothing to export yet. Orders, fills and closed trades show up here once you trade.",
+            ));
+            return;
+        }
+        let (sender, receiver) = std::sync::mpsc::channel();
+        let ctx = ctx.clone();
+        std::thread::spawn(move || {
+            let outcome = crate::service::file_dialog::choose_folder("Export").and_then(|folder| {
+                let Some(folder) = folder else {
+                    return Ok(None);
+                };
+                for (name, text) in export.files() {
+                    crate::service::file_dialog::write_text(&folder.join(name), text)?;
+                }
+                Ok(Some((folder, export.summary())))
+            });
+            let _ = sender.send(outcome);
+            ctx.request_repaint();
+        });
+        self.export_job = Some(receiver);
+        self.notice = None;
+    }
+
+    fn poll_export(&mut self, ctx: &egui::Context) {
+        let Some(job) = &self.export_job else {
+            return;
+        };
+        match job.try_recv() {
+            Ok(Ok(Some((folder, summary)))) => {
+                let name = folder.file_name().map_or_else(
+                    || folder.display().to_string(),
+                    |n| n.to_string_lossy().into(),
+                );
+                self.notice = Some(PanelNotice::info(format!(
+                    "Exported {summary} to \u{201c}{name}\u{201d}."
+                )));
+                self.export_job = None;
+            }
+            Ok(Ok(None)) => self.export_job = None,
+            Ok(Err(message)) => {
+                self.notice = Some(PanelNotice::error(message));
+                self.export_job = None;
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => {
+                ctx.request_repaint_after(std::time::Duration::from_millis(200));
+            }
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => self.export_job = None,
+        }
+    }
+
+    fn show_notice(&mut self, ui: &mut egui::Ui) {
+        if self.notice.as_ref().is_some_and(PanelNotice::expired) {
+            self.notice = None;
+        }
+        let Some(notice) = &self.notice else {
+            return;
+        };
+        if !notice.is_error {
+            ui.ctx()
+                .request_repaint_after(PanelNotice::LINGER.saturating_sub(notice.since.elapsed()));
+        }
+        let (tint, icon) = if notice.is_error {
+            (crate::ui::theme::DOWN, Icon::TriangleFill)
+        } else {
+            (crate::ui::theme::text_secondary(), Icon::InfoCircle)
+        };
+        let mut dismissed = false;
+        egui::Frame::new()
+            .fill(if notice.is_error {
+                tint.gamma_multiply(0.14)
+            } else {
+                crate::ui::theme::quaternary(0.5)
+            })
+            .inner_margin(egui::Margin::symmetric(12, 7))
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 8.0;
+                    icons::inline(ui, icon, 12.0, tint);
+                    ui.label(crate::ui::kit::text(
+                        &notice.text,
+                        12.0,
+                        crate::ui::kit::REGULAR,
+                        if notice.is_error {
+                            tint
+                        } else {
+                            crate::ui::theme::text_primary()
+                        },
+                    ));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let (rect, _) =
+                            ui.allocate_exact_size(egui::vec2(20.0, 20.0), egui::Sense::hover());
+                        dismissed = crate::ui::kit::hover_button(
+                            ui,
+                            rect,
+                            egui::Id::new("paper-notice-dismiss"),
+                            Icon::Xmark,
+                            "Dismiss",
+                            true,
+                            true,
+                        )
+                        .clicked();
+                    });
+                });
+            });
+        if dismissed {
+            self.notice = None;
+        }
     }
 
     fn apply_header_actions(
@@ -726,7 +898,7 @@ impl PaperPanel {
                 PaperHeaderAction::NewAccount => {
                     self.account_sheet = Some(PaperAccountSheetState::create());
                 }
-                PaperHeaderAction::ExportData => panel_actions.push(PaperPanelAction::Export),
+                PaperHeaderAction::ExportData => self.export_requested = true,
                 PaperHeaderAction::ResetAccount => {
                     if let Some(account) = account {
                         self.account_sheet = Some(PaperAccountSheetState::reset(account));
@@ -770,7 +942,6 @@ impl PaperPanel {
         actions: Vec<PaperFooterAction>,
         host: &mut PaperHost,
         account_id: Option<u64>,
-        panel_actions: &mut Vec<PaperPanelAction>,
     ) {
         for action in actions {
             match (action, account_id) {
@@ -780,7 +951,7 @@ impl PaperPanel {
                 (PaperFooterAction::CancelAllOrders, Some(id)) => {
                     let _ = host.cancel_all_orders(id);
                 }
-                (PaperFooterAction::Export, _) => panel_actions.push(PaperPanelAction::Export),
+                (PaperFooterAction::Export, _) => self.export_requested = true,
                 _ => {}
             }
         }
@@ -1246,6 +1417,109 @@ mod tests {
 
         let restored = PaperHost::load(store);
         assert!(restored.snapshot().quotes.is_empty());
+    }
+
+    #[test]
+    fn exporting_with_nothing_to_export_says_so_and_opens_no_dialog() {
+        let mut host = PaperHost::load(store());
+        let ctx = egui::Context::default();
+        let mut panel = PaperPanel::default();
+
+        panel.begin_export(&ctx, &host, None);
+        assert!(
+            panel
+                .notice
+                .as_ref()
+                .is_some_and(|notice| notice.text.contains("Create a paper account"))
+        );
+
+        let id = account(&mut host);
+        panel.notice = None;
+        panel.begin_export(&ctx, &host, Some(id));
+        let notice = panel.notice.as_ref().expect("the user is told");
+        assert!(
+            notice.text.starts_with("Nothing to export yet"),
+            "{}",
+            notice.text
+        );
+        assert!(!notice.is_error);
+        assert!(
+            panel.export_job.is_none(),
+            "no folder dialog for an empty account"
+        );
+    }
+
+    #[test]
+    fn an_info_notice_fades_but_an_error_stays_until_dismissed() {
+        let mut notice = PanelNotice::info("done");
+        assert!(!notice.expired());
+        notice.since -= PanelNotice::LINGER;
+        assert!(notice.expired());
+        let mut error = PanelNotice::error("disk full");
+        error.since -= PanelNotice::LINGER * 10;
+        assert!(!error.expired());
+    }
+
+    /// The notice line, as pictures: `DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib paper_host::tests::gallery -- --ignored`.
+    #[test]
+    #[ignore = "writes pictures"]
+    fn gallery_of_the_notice() {
+        use crate::ui::render_tests::Screen;
+        let _restore = crate::ui::theme::RestoreDefaultTheme;
+        let mut host = PaperHost::load(store());
+        account(&mut host);
+        for (name, notice) in [
+            (
+                "empty",
+                PanelNotice::info(
+                    "Nothing to export yet. Orders, fills and closed trades show up here once you trade.",
+                ),
+            ),
+            (
+                "done",
+                PanelNotice::info(
+                    "Exported 3 orders, 2 fills and 1 closed trade to \u{201c}Documents\u{201d}.",
+                ),
+            ),
+            (
+                "error",
+                PanelNotice::error(
+                    "Could not write /Volumes/x/paper-orders.csv: Read-only file system",
+                ),
+            ),
+        ] {
+            for light in [false, true] {
+                let mut screen = Screen::new(egui::vec2(900.0, 260.0));
+                screen.ctx.set_theme(if light {
+                    egui::ThemePreference::Light
+                } else {
+                    egui::ThemePreference::Dark
+                });
+                let mut panel = PaperPanel {
+                    notice: Some(PanelNotice {
+                        text: notice.text.clone(),
+                        ..notice
+                    }),
+                    ..PaperPanel::default()
+                };
+                let mut last = None;
+                for _ in 0..4 {
+                    last = Some(screen.run(vec![], |ui| {
+                        crate::ui::theme::sync(ui.ctx());
+                        egui::Panel::bottom(egui::Id::new("g"))
+                            .exact_size(260.0)
+                            .frame(egui::Frame::new().fill(crate::ui::kit::window()))
+                            .show(ui, |ui| {
+                                panel.ui(ui, &mut host);
+                            });
+                    }));
+                }
+                screen.save(
+                    &format!("notice-{name}-{}", if light { "light" } else { "dark" }),
+                    last.expect("ran"),
+                );
+            }
+        }
     }
 
     fn now_ms() -> i64 {
