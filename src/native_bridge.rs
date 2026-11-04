@@ -97,12 +97,12 @@ mod platform {
     use objc2::ffi;
     use objc2::rc::Retained;
     use objc2::runtime::{AnyClass, AnyObject, Bool, ProtocolObject, Sel};
-    use objc2::{AnyThread, sel};
+    use objc2::sel;
     use objc2_app_kit::{
-        NSAccessibility, NSApplication, NSApplicationDelegate, NSEventModifierFlags, NSImage,
-        NSMenu, NSMenuItem, NSWindow,
+        NSAccessibility, NSApplication, NSApplicationDelegate, NSEventModifierFlags, NSMenu,
+        NSMenuItem, NSWindow,
     };
-    use objc2_foundation::{MainThreadMarker, NSData, NSSize, NSString, ns_string};
+    use objc2_foundation::{MainThreadMarker, NSString, ns_string};
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{Mutex, OnceLock};
 
@@ -652,21 +652,15 @@ mod platform {
         // Help: the project's GitHub organisation and the maintainer's Buy Me a Coffee page.
         let help_item = NSMenuItem::new(mtm);
         let help_menu = NSMenu::initWithTitle(mtm.alloc(), ns_string!("Help"));
-        for (title, selector, icon) in [
-            (
-                ns_string!("DegenView on GitHub"),
-                sel!(openGitHub:),
-                &include_bytes!("../assets/brand/menu-github.png")[..],
-            ),
+        for (title, selector) in [
+            (ns_string!("DegenView on GitHub"), sel!(openGitHub:)),
             (
                 ns_string!("Help supporting this project"),
                 sel!(openCoffee:),
-                &include_bytes!("../assets/brand/menu-coffee.png")[..],
             ),
         ] {
             let item = menu_item(mtm, title, Some(selector), ns_string!(""));
             unsafe { item.setTarget(Some(delegate)) };
-            item.setImage(menu_icon(icon).as_deref());
             help_menu.addItem(&item);
         }
         help_item.setSubmenu(Some(&help_menu));
@@ -685,28 +679,6 @@ mod platform {
         if let Some(index) = about {
             menu.removeItemAtIndex(index);
         }
-    }
-
-    #[cfg(test)]
-    #[test]
-    fn menu_icons_decode() {
-        for png in [
-            &include_bytes!("../assets/brand/menu-github.png")[..],
-            &include_bytes!("../assets/brand/menu-coffee.png")[..],
-        ] {
-            let image = menu_icon(png).expect("PNG decodes");
-            assert!(image.isTemplate());
-            assert_eq!(image.size().width, 16.0);
-        }
-    }
-
-    /// A 64 px PNG shown 16 pt square, as a template so AppKit tints it for the menu (light, dark,
-    /// highlighted).
-    fn menu_icon(png: &[u8]) -> Option<Retained<NSImage>> {
-        let image = NSImage::initWithData(NSImage::alloc(), &NSData::with_bytes(png))?;
-        image.setSize(NSSize::new(16.0, 16.0));
-        image.setTemplate(true);
-        Some(image)
     }
 
     fn menu_item(
