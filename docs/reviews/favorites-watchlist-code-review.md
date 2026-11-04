@@ -361,7 +361,7 @@ found while validating:
 | --- | --- |
 | H2, M5 | Sidebar draws rows once, reconciles the highlight, publishes demand from the drawn rows |
 | H1 | Sidebar demand is a 3 s lease renewed per drawn frame; closing the sidebar suspends at once |
-| H3, M1, M6 | Pending |
+| H3, M1, M6 | Status classification, isolation budget, rate-limit short-circuit, per-request failures in `Outcome` (a transient DexScreener chain lookup failure staying permanent is not yet fixed) |
 | L1 | Pending |
 | M2 | Pending |
 | M3, M4, M7, L2 | Pending |

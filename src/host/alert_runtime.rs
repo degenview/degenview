@@ -262,7 +262,9 @@ mod tests {
     use crate::model::watchlist_quote::{Freshness, WatchlistQuote};
     use crate::model::{DataSource, InstrumentId};
     use crate::service::macos_notifications::Notifier;
-    use crate::service::watchlist_quotes::{Config, QuoteFailure, QuoteProvider, QuoteRequest};
+    use crate::service::watchlist_quotes::{
+        Config, Outcome, QuoteFailure, QuoteProvider, QuoteRequest,
+    };
     use crate::store::Store;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::{Arc, Mutex};
@@ -270,13 +272,8 @@ mod tests {
     struct NoNetwork;
 
     impl QuoteProvider for NoNetwork {
-        fn quotes(
-            &self,
-            _: DataSource,
-            _: &[QuoteRequest],
-        ) -> Result<HashMap<String, crate::model::watchlist_quote::SourceQuote>, QuoteFailure>
-        {
-            Ok(HashMap::new())
+        fn quotes(&self, _: DataSource, _: &[QuoteRequest]) -> Result<Outcome, QuoteFailure> {
+            Ok(Outcome::default())
         }
 
         fn resolve_chain(&self, _: &str) -> Option<String> {

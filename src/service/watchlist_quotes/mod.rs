@@ -13,7 +13,7 @@ mod provider;
 
 pub use book::WatchlistQuoteBook;
 #[allow(unused_imports)]
-pub use engine::Config;
+pub use engine::{Config, Outcome};
 #[allow(unused_imports)]
 pub use provider::{QuoteFailure, QuoteProvider, QuoteRequest};
 

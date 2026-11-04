@@ -81,6 +81,12 @@ candles, and `ChartCard::set_series` draws choices by position with end labels.
   stops polling by itself. Closing the sidebar suspends it at once. The coordinator thread asks for a
   repaint when a lease is half spent so an idle visible sidebar renews. Other owners (alerts,
   portfolio cards) use `set_demand`, which never lapses.
+- Quote failures are classified by `provider::classify_status`: only a documented symbol-level
+  answer (Binance/Alpaca 400, Coinbase 404) is `Rejected` and makes the engine bisect for the bad
+  symbol, within `ISOLATION_BUDGET` requests per round; credentials, region, endpoint and ban
+  statuses back the whole source off. A rate limit stops the round's remaining requests. A provider
+  returns an `Outcome` (quotes, rejected, and the requests that failed with their symbols), so a failed
+  page or product marks only its own rows stale while the rest publish.
 - Selecting a row focuses or opens its market in that workspace; highlighting mirrors the focused
   chart.
 
