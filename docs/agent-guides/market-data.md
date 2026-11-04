@@ -75,3 +75,15 @@ candles, and `ChartCard::set_series` draws choices by position with end labels.
   persists quotes nor uses the alert quote path.
 - Selecting a row focuses or opens its market in that workspace; highlighting mirrors the focused
   chart.
+
+## Paper-trading quotes
+
+- Paper orders fill from chart prices, not from a feed of their own. `sync_paper_quotes` hands each
+  rendered market chart's last candle close to `PaperHost`, whether or not the Paper Trading panel
+  is open (closed: only instruments with a working order or position). Nothing fills while the app
+  is quit or asleep, or when no chart for the instrument is rendered.
+- A quote's timestamp is when the candles arrived (`Chart::last_data_ms`), never when they are
+  read. A price older than `watchlist_quote::maximum_age_secs` is withheld, and an Alpaca price
+  outside US hours is sent with `is_market_open = false`, so an old close cannot fill an order.
+- In replay the quote is still the live price; the ticket's reference follows the replay slice.
+  Unresolved: decide whether paper orders should be blocked during replay.
