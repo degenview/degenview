@@ -9,6 +9,8 @@ use eframe::egui::{
 
 const PREVIEW_HEIGHT: f32 = 92.0;
 const TILE_GAP: f32 = 12.0;
+/// Each tile keeps this width however wide the window is; extra room stays empty on the right.
+const TILE_WIDTH: f32 = 170.0;
 
 /// The theme tiles. Returns the theme picked this frame.
 pub fn body(ui: &mut egui::Ui, current: AppTheme) -> Option<AppTheme> {
@@ -21,8 +23,7 @@ pub fn body(ui: &mut egui::Ui, current: AppTheme) -> Option<AppTheme> {
             crate::platform::computer()
         )),
         |ui| {
-            let width = ui.available_width();
-            let tile_width = (width - TILE_GAP * 2.0) / 3.0;
+            let width = TILE_WIDTH * 3.0 + TILE_GAP * 2.0;
             let (row, _) = ui.allocate_exact_size(
                 Vec2::new(width, 10.0 + PREVIEW_HEIGHT + 10.0 + 18.0 + 10.0),
                 Sense::hover(),
@@ -30,10 +31,10 @@ pub fn body(ui: &mut egui::Ui, current: AppTheme) -> Option<AppTheme> {
             for (index, theme) in AppTheme::ALL.into_iter().enumerate() {
                 let rect = Rect::from_min_size(
                     pos2(
-                        row.left() + index as f32 * (tile_width + TILE_GAP),
+                        row.left() + index as f32 * (TILE_WIDTH + TILE_GAP),
                         row.top(),
                     ),
-                    Vec2::new(tile_width, row.height()),
+                    Vec2::new(TILE_WIDTH, row.height()),
                 );
                 if tile(ui, rect, theme, theme == current) {
                     picked = Some(theme);
