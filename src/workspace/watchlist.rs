@@ -4,16 +4,19 @@ use super::ChartWorkspace;
 use super::alerts::AlertRequest;
 use crate::model::InstrumentId;
 use crate::model::alert::AlertAsset;
-use crate::model::watchlist::{WatchlistError, WatchlistInstrument};
+use crate::model::watchlist::{WatchlistError, WatchlistInstrument, WatchlistNotice};
 use crate::ui::watchlist_sidebar::{self, WatchlistAction, WatchlistSidebarInput};
 use eframe::egui;
 use std::sync::{Arc, mpsc};
 
 /// Shows why a change was refused. A failed save already shows the store's own message.
-pub(super) fn report_watchlist(slot: &mut Option<String>, result: Result<(), WatchlistError>) {
+pub(super) fn report_watchlist(
+    slot: &mut Option<WatchlistNotice>,
+    result: Result<(), WatchlistError>,
+) {
     match result {
         Ok(()) | Err(WatchlistError::SaveFailed) => {}
-        Err(error) => *slot = Some(error.to_string()),
+        Err(error) => *slot = Some(error.notice()),
     }
 }
 
@@ -22,7 +25,7 @@ impl ChartWorkspace {
         if let Some(receiver) = &self.watchlist_file_result {
             match receiver.try_recv() {
                 Ok(Err(error)) => {
-                    self.watchlist_error = Some(error);
+                    self.watchlist_error = Some(WatchlistNotice::new("File Error", error));
                     self.watchlist_file_result = None;
                 }
                 Ok(Ok(())) | Err(mpsc::TryRecvError::Disconnected) => {
@@ -41,16 +44,16 @@ impl ChartWorkspace {
                 .resolved_focused_id()
                 .and_then(|id| self.charts.iter().find(|chart| chart.id == id))
                 .map(|chart| InstrumentId::new(chart.source, &chart.symbol));
+            let store_notice = store
+                .last_error()
+                .map(|message| WatchlistNotice::new("Couldn\u{2019}t Save", message));
             let input = WatchlistSidebarInput {
                 lists,
                 flags,
                 quote: &quote,
                 focused_market: focused_market.as_ref(),
                 load_failed: store.load_failed(),
-                error: self
-                    .watchlist_error
-                    .as_deref()
-                    .or_else(|| store.last_error()),
+                error: self.watchlist_error.as_ref().or(store_notice.as_ref()),
                 import_report: self.import_report.as_ref(),
             };
             watchlist_sidebar::show(ui, &mut self.watchlist_sidebar, &input)

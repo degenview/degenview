@@ -1551,6 +1551,59 @@ pub struct Alert<'a> {
 /// update): `tint` colours the badge and the accept button, and the dismiss button says
 /// what it does.
 pub fn alert(ctx: &egui::Context, id: Id, spec: &Alert) -> Option<ConfirmOutcome> {
+    alert_sheet(ctx, id, ALERT_WIDTH, spec, |ui| {
+        let mut outcome = None;
+        if alert_button(ui, spec.accept, Some(spec.tint)).clicked() {
+            outcome = Some(ConfirmOutcome::Confirmed);
+        }
+        ui.add_space(8.0);
+        if alert_button(ui, spec.dismiss, None).clicked() {
+            outcome = Some(ConfirmOutcome::Cancelled);
+        }
+        outcome
+    })
+}
+
+/// What `notice` says: an icon badge in `tint`, a title and the message.
+pub struct Notice<'a> {
+    pub icon: Icon,
+    pub tint: Color32,
+    pub title: &'a str,
+    pub message: &'a str,
+}
+
+/// A one-button alert that only informs ("Already in Watchlist"). Return, Escape, the button or
+/// a click outside all dismiss it. Returns true on the frame it is dismissed.
+pub fn notice(ctx: &egui::Context, id: Id, spec: &Notice) -> bool {
+    let alert = Alert {
+        icon: spec.icon,
+        tint: spec.tint,
+        title: spec.title,
+        message: spec.message,
+        accept: "OK",
+        dismiss: "",
+    };
+    let clicked = alert_sheet(ctx, id, NOTICE_WIDTH, &alert, |ui| {
+        alert_button(ui, "OK", None)
+            .clicked()
+            .then_some(ConfirmOutcome::Cancelled)
+    });
+    let entered = ctx.input(|input| input.key_pressed(egui::Key::Enter));
+    clicked.is_some() || entered
+}
+
+const ALERT_WIDTH: f32 = 232.0;
+const NOTICE_WIDTH: f32 = 272.0;
+
+/// The badge, title and message of an alert, then whatever `buttons` draws. `buttons` returns the
+/// outcome; a click outside or Escape cancels.
+fn alert_sheet(
+    ctx: &egui::Context,
+    id: Id,
+    width: f32,
+    spec: &Alert,
+    buttons: impl FnOnce(&mut Ui) -> Option<ConfirmOutcome>,
+) -> Option<ConfirmOutcome> {
     let mut outcome = None;
     let modal = egui::Modal::new(id)
         .backdrop_color(Color32::from_black_alpha(90))
@@ -1571,7 +1624,7 @@ pub fn alert(ctx: &egui::Context, id: Id, spec: &Alert) -> Option<ConfirmOutcome
                 }),
         )
         .show(ctx, |ui| {
-            ui.set_width(232.0);
+            ui.set_width(width);
             ui.spacing_mut().item_spacing.y = 0.0;
             ui.vertical_centered(|ui| {
                 let (badge, _) = ui.allocate_exact_size(Vec2::splat(52.0), Sense::hover());
@@ -1584,12 +1637,16 @@ pub fn alert(ctx: &egui::Context, id: Id, spec: &Alert) -> Option<ConfirmOutcome
                     spec.tint,
                 );
                 ui.add_space(12.0);
-                ui.label(text(
-                    spec.title,
-                    size::HEADLINE,
-                    BOLD,
-                    theme::text_primary(),
-                ));
+                ui.add(
+                    egui::Label::new(text(
+                        spec.title,
+                        size::HEADLINE,
+                        BOLD,
+                        theme::text_primary(),
+                    ))
+                    .wrap()
+                    .halign(egui::Align::Center),
+                );
                 ui.add_space(6.0);
                 ui.add(
                     egui::Label::new(text(
@@ -1602,13 +1659,7 @@ pub fn alert(ctx: &egui::Context, id: Id, spec: &Alert) -> Option<ConfirmOutcome
                     .halign(egui::Align::Center),
                 );
                 ui.add_space(16.0);
-                if alert_button(ui, spec.accept, Some(spec.tint)).clicked() {
-                    outcome = Some(ConfirmOutcome::Confirmed);
-                }
-                ui.add_space(8.0);
-                if alert_button(ui, spec.dismiss, None).clicked() {
-                    outcome = Some(ConfirmOutcome::Cancelled);
-                }
+                outcome = buttons(ui);
             });
         });
     if outcome.is_none() && modal.should_close() {
@@ -2635,6 +2686,49 @@ mod tests {
         assert!(menu.width() <= MENU_MAX_WIDTH + 2.5, "{}", menu.width());
         assert!(menu.height() <= MENU_MAX_HEIGHT + 20.0, "{}", menu.height());
     }
+
+    #[test]
+    fn a_notice_keeps_its_size_from_frame_to_frame() {
+        let ctx = egui::Context::default();
+        let id = Id::new("notice-size");
+        let spec = Notice {
+            icon: Icon::Triangle,
+            tint: theme::ORANGE,
+            title: "Already in Watchlist",
+            message: "\u{201c}BTC\u{201d} is already in this watchlist.",
+        };
+        let mut heights = Vec::new();
+        let mut dismissed = false;
+        for frame in 0..8 {
+            let raw = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(pos2(0.0, 0.0), vec2(900.0, 700.0))),
+                time: Some(f64::from(frame) * 0.1),
+                ..Default::default()
+            };
+            let mut output = ctx.run_ui(raw, |ui| {
+                dismissed |= notice(ui.ctx(), id, &spec);
+            });
+            output.textures_delta.clear();
+            let rect = ctx
+                .memory(|memory| memory.area_rect(Id::new(id).with("Modal")))
+                .or_else(|| ctx.memory(|memory| memory.area_rect(id)));
+            if let Some(rect) = rect {
+                heights.push(rect.height());
+            }
+        }
+        assert!(!dismissed, "nothing dismissed it");
+        assert!(!heights.is_empty(), "the notice was laid out");
+        let last = *heights.last().unwrap();
+        assert!(last < 300.0, "a one-line notice is small, not {last}");
+        assert!(
+            heights
+                .windows(2)
+                .skip(2)
+                .all(|w| (w[0] - w[1]).abs() < 0.5),
+            "the height settles: {heights:?}"
+        );
+    }
+
     /// A menu with one submenu row and one child, driven by pointer events.
     struct SubmenuRig {
         ctx: egui::Context,

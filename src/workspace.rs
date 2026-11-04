@@ -210,7 +210,7 @@ pub struct ChartWorkspace {
     quote_book: WatchlistQuoteBook,
     quote_coordinator: WatchlistQuoteCoordinator,
     import_report: Option<ImportReport>,
-    watchlist_error: Option<String>,
+    watchlist_error: Option<crate::model::watchlist::WatchlistNotice>,
     watchlist_file_result: Option<Receiver<Result<(), String>>>,
     paper_panel_visible: bool,
     /// A chart's bell (or a watchlist row's menu) asked for a price alert this frame; `ui`

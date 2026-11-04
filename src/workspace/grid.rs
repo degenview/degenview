@@ -37,7 +37,10 @@ enum ChartCommand {
 
 /// A star or membership toggle that finds the market already in (or already out of) the list
 /// has nothing to report; anything else says why it was refused.
-fn star_result(slot: &mut Option<String>, result: Result<bool, WatchlistError>) {
+fn star_result(
+    slot: &mut Option<crate::model::watchlist::WatchlistNotice>,
+    result: Result<bool, WatchlistError>,
+) {
     let result = match result {
         Err(WatchlistError::Duplicate(_) | WatchlistError::NotFound) => Ok(false),
         other => other,

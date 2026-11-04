@@ -83,6 +83,43 @@ impl std::fmt::Display for WatchlistError {
 
 impl std::error::Error for WatchlistError {}
 
+/// A refusal as the sidebar shows it: a short title and the sentence under it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WatchlistNotice {
+    pub title: &'static str,
+    pub message: String,
+}
+
+impl WatchlistNotice {
+    pub fn new(title: &'static str, message: impl Into<String>) -> Self {
+        Self {
+            title,
+            message: message.into(),
+        }
+    }
+}
+
+impl WatchlistError {
+    pub fn notice(&self) -> WatchlistNotice {
+        let title = match self {
+            Self::Duplicate(_) => "Already in Watchlist",
+            Self::NotFound => "Item Not Found",
+            Self::EmptyName | Self::NameTooLong | Self::InvalidName => "Invalid Name",
+            Self::ListFull => "Watchlist Full",
+            Self::TooManyLists => "Too Many Watchlists",
+            Self::PersistenceUnavailable => "Changes Turned Off",
+            Self::SaveFailed => "Couldn\u{2019}t Save",
+        };
+        let message = match self {
+            Self::Duplicate(name) => {
+                format!("\u{201c}{name}\u{201d} is already in this watchlist.")
+            }
+            other => format!("{other}."),
+        };
+        WatchlistNotice::new(title, message)
+    }
+}
+
 /// A column the sidebar can show next to the symbol, which is always present.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub enum WatchlistColumn {
@@ -881,6 +918,19 @@ impl Watchlist {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_refusal_reads_as_a_titled_sentence() {
+        let notice = WatchlistError::Duplicate("BTC".to_owned()).notice();
+        assert_eq!(notice.title, "Already in Watchlist");
+        assert_eq!(
+            notice.message,
+            "\u{201c}BTC\u{201d} is already in this watchlist."
+        );
+        let full = WatchlistError::ListFull.notice();
+        assert_eq!(full.title, "Watchlist Full");
+        assert!(full.message.ends_with("items."), "{}", full.message);
+    }
+
     use super::*;
     use crate::model::DataSource;
 
