@@ -115,7 +115,7 @@ impl PortfolioCardEnv {
             .feed
             .update(runtime.owner, &snapshot, &scope, currency, true, now);
         if card.kind == CardKind::ValueChart {
-            host.drive_history(ctx, &scope, now);
+            host.drive_history(ctx, &scope, now, &runtime.feed.fx_rates());
         }
         let loading_history = host.is_rebuilding_history(&scope);
         drop(host);

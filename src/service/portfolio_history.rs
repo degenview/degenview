@@ -49,11 +49,30 @@ pub(crate) fn days(span_ms: i64) -> u32 {
 }
 
 /// Ascending daily candles covering `start` (and the days just before it) through now.
-/// A failed request is an empty series: that asset simply goes unpriced.
+/// A failed request is an empty series: that asset simply goes unpriced. A span of more than
+/// `MAX_BARS` days asks the provider for a time range where it has one; otherwise the newest
+/// `MAX_BARS` are all there is, and the caller sees where they begin.
 pub(crate) fn daily_bars(asset: &PortfolioAsset, start_ms: i64, now_ms: i64) -> Vec<Kline> {
-    let limit = days(now_ms - (start_ms - LOOKBACK_MS)).min(MAX_BARS);
-    let mut bars = crate::service::fetch_klines(asset.source, &market_symbol(asset), "1d", limit)
-        .unwrap_or_default();
+    let first = start_ms - LOOKBACK_MS;
+    let wanted = days(now_ms - first);
+    let symbol = market_symbol(asset);
+    let recent = |limit: u32| crate::service::fetch_klines(asset.source, &symbol, "1d", limit);
+    let mut bars = if wanted > MAX_BARS {
+        crate::service::fetch_klines_range(
+            asset.source,
+            &symbol,
+            "1d",
+            first - DAY_MS,
+            now_ms + DAY_MS,
+            wanted as usize,
+        )
+        .ok()
+        .filter(|bars| !bars.is_empty())
+        .or_else(|| recent(MAX_BARS).ok())
+        .unwrap_or_default()
+    } else {
+        recent(wanted).unwrap_or_default()
+    };
     bars.sort_by_key(|bar| bar.open_time);
     bars
 }
@@ -198,6 +217,7 @@ impl HistoryRebuilder {
     }
 
     /// Starts rebuilding `portfolio`'s history from `from`. `transactions` are its own.
+    #[allow(clippy::too_many_arguments)]
     pub fn start(
         &mut self,
         ctx: &egui::Context,
@@ -206,6 +226,7 @@ impl HistoryRebuilder {
         from: i64,
         now_ms: i64,
         zone: fn(i64) -> i64,
+        fx: Arc<dyn PortfolioFxRates>,
     ) {
         self.in_flight.insert(portfolio.id);
         let sender = self.sender.clone();
@@ -213,13 +234,26 @@ impl HistoryRebuilder {
         let portfolio_id = portfolio.id;
         let base = portfolio.base_currency;
         crate::service::work_queue::submit(move || {
-            let result = rebuild(portfolio_id, base, &transactions, from, now_ms, zone);
+            let result = rebuild(
+                portfolio_id,
+                base,
+                &transactions,
+                from,
+                now_ms,
+                zone,
+                &*fx,
+                &daily_bars,
+            );
             let _ = sender.send(result);
             ctx.request_repaint();
         });
     }
 }
 
+/// Rebuilds one portfolio's daily history. `candles` fetches an asset's daily candles from
+/// `from` (a function, so a test can serve its own). Candles quoted in another currency than
+/// the portfolio's are converted at each day's rate, as the live valuation converts.
+#[allow(clippy::too_many_arguments)]
 fn rebuild(
     portfolio_id: u64,
     base: PortfolioCurrency,
@@ -227,43 +261,54 @@ fn rebuild(
     from: i64,
     now_ms: i64,
     zone: fn(i64) -> i64,
+    fx: &dyn PortfolioFxRates,
+    candles: &(dyn Fn(&PortfolioAsset, i64, i64) -> Vec<Kline> + Sync),
 ) -> HistoryResult {
     let basis = transactions_fingerprint(transactions);
+    let nothing = |incomplete| HistoryResult {
+        portfolio_id,
+        from,
+        snapshots: None,
+        hopeless: false,
+        incomplete,
+        basis,
+    };
     // A ledger that cannot be replayed would come out as a column of zeros. Keep the history as
     // it is and look again later, once the transactions are fixed.
     let own_ids = HashSet::from([portfolio_id]);
     if holdings(transactions, &own_ids, None, &HashMap::new(), 0).is_err() {
-        return HistoryResult {
-            portfolio_id,
-            from,
-            snapshots: None,
-            hopeless: false,
-            incomplete: false,
-            basis,
-        };
+        return nothing(false);
     }
     let assets = unique_assets(transactions);
-    // A candle prices in its market's quote currency, so only markets quoted in the
-    // portfolio's own currency can value it.
-    let priceable: Vec<PortfolioAsset> = assets
-        .iter()
-        .filter(|asset| asset.quote_currency == base)
-        .cloned()
-        .collect();
-    let bars = fetch_all(&priceable, |asset| {
-        Some(daily_bars(asset, from, now_ms)).filter(|bars| !bars.is_empty())
+    let mut bars = fetch_all(&assets, |asset| {
+        let series = candles(asset, from, now_ms);
+        let series = if asset.quote_currency == base {
+            series
+        } else {
+            in_currency(series, asset.quote_currency, base, fx)
+        };
+        Some(series).filter(|series| !series.is_empty())
     });
     if bars.is_empty() {
-        return HistoryResult {
-            portfolio_id,
-            from,
-            snapshots: None,
-            hopeless: priceable.is_empty(),
-            incomplete: false,
-            basis,
-        };
+        return nothing(false);
     }
-    let snapshots = build_snapshots(
+    // Where an asset's candles begin, when that is later than its first transaction needs: the
+    // days before are unpriced, not worth nothing, so no point is made for them.
+    let covered_from = assets
+        .iter()
+        .filter_map(|asset| {
+            let series = bars.get(&asset.key)?;
+            let first_bar = series.first()?.open_time;
+            let first_held = transactions
+                .iter()
+                .filter(|tx| tx.asset.key == asset.key)
+                .map(|tx| tx.timestamp)
+                .min()?;
+            (first_bar > first_held + LOOKBACK_MS + DAY_MS).then_some(first_bar + DAY_MS)
+        })
+        .max();
+    let incomplete = bars.len() < assets.len();
+    let mut snapshots = build_snapshots(
         portfolio_id,
         transactions,
         &assets,
@@ -272,14 +317,43 @@ fn rebuild(
         now_ms,
         zone,
     );
+    if let Some(covered_from) = covered_from {
+        snapshots.retain(|point| point.timestamp >= covered_from);
+    }
+    bars.clear();
     HistoryResult {
         portfolio_id,
         from,
         snapshots: Some(snapshots),
         hopeless: false,
-        incomplete: bars.len() < priceable.len(),
+        incomplete,
         basis,
     }
+}
+
+/// `series` priced in `to` instead of `from_currency`, each candle at its own day's rate. A day
+/// with no rate has no candle: the asset goes unpriced for it rather than at a wrong price.
+fn in_currency(
+    series: Vec<Kline>,
+    from_currency: PortfolioCurrency,
+    to: PortfolioCurrency,
+    fx: &dyn PortfolioFxRates,
+) -> Vec<Kline> {
+    let dates: Vec<i64> = series.iter().map(|bar| bar.open_time).collect();
+    let rates = fx.conversions(from_currency, to, &dates);
+    series
+        .into_iter()
+        .filter_map(|bar| {
+            let rate = rates.get(&bar.open_time)?.as_ref().ok()?.rate;
+            Some(Kline {
+                open: bar.open * rate,
+                high: bar.high * rate,
+                low: bar.low * rate,
+                close: bar.close * rate,
+                ..bar
+            })
+        })
+        .collect()
 }
 
 // MARK: Intraday
@@ -439,38 +513,222 @@ fn refresh(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::portfolio::{PortfolioCurrency, PortfolioSource, PortfolioTransactionType};
+    use crate::model::portfolio::{PortfolioSource, PortfolioTransactionType};
+    use crate::service::fx_rates::Conversion;
 
-    #[test]
-    fn a_ledger_that_cannot_be_replayed_is_not_rebuilt_into_zeros() {
-        let sale = PortfolioTransaction {
-            id: 1,
+    /// Dollars are worth 0.9 euros, except on `no_rate_on`.
+    struct Fx {
+        no_rate_on: Option<i64>,
+    }
+
+    impl PortfolioFxRates for Fx {
+        fn conversion(
+            &self,
+            _: PortfolioCurrency,
+            _: PortfolioCurrency,
+            _: Option<i64>,
+        ) -> Result<Conversion, String> {
+            unreachable!("history asks for dated rates")
+        }
+
+        fn conversions(
+            &self,
+            _: PortfolioCurrency,
+            _: PortfolioCurrency,
+            dates: &[i64],
+        ) -> HashMap<i64, Result<Conversion, String>> {
+            dates
+                .iter()
+                .map(|date| {
+                    let answer = if Some(*date) == self.no_rate_on {
+                        Err("no rate".to_owned())
+                    } else {
+                        Ok(Conversion {
+                            rate: 0.9,
+                            observation_ms: *date,
+                            is_cached: false,
+                        })
+                    };
+                    (*date, answer)
+                })
+                .collect()
+        }
+    }
+
+    fn asset(key: &str, quote_currency: PortfolioCurrency) -> PortfolioAsset {
+        PortfolioAsset {
+            key: key.into(),
+            symbol: key.into(),
+            name: key.into(),
+            source: DataSource::Binance,
+            quote_currency,
+            metadata: HashMap::new(),
+        }
+    }
+
+    fn trade(
+        id: u64,
+        asset: PortfolioAsset,
+        kind: PortfolioTransactionType,
+        quantity: f64,
+        timestamp: i64,
+    ) -> PortfolioTransaction {
+        PortfolioTransaction {
+            id,
             portfolio_id: 1,
-            asset: PortfolioAsset {
-                key: "binance:BTCUSDT".into(),
-                symbol: "BTC".into(),
-                name: "Bitcoin".into(),
-                source: DataSource::Binance,
-                quote_currency: PortfolioCurrency::Usd,
-                metadata: HashMap::new(),
-            },
-            kind: PortfolioTransactionType::Sell,
-            quantity: 1.0,
+            asset,
+            kind,
+            quantity,
             price: Some(100.0),
             price_currency: PortfolioCurrency::Usd,
             fee: 0.0,
             fee_currency: PortfolioCurrency::Usd,
-            timestamp: 1_000,
+            timestamp,
             notes: String::new(),
             source: PortfolioSource::Manual,
             external_transaction_id: None,
-            created_at: 1_000,
-            updated_at: 1_000,
-        };
+            created_at: timestamp,
+            updated_at: timestamp,
+        }
+    }
+
+    fn buy(id: u64, asset: PortfolioAsset, timestamp: i64) -> PortfolioTransaction {
+        trade(id, asset, PortfolioTransactionType::Buy, 1.0, timestamp)
+    }
+
+    /// One candle a day at 100, from day `first` through day `last`.
+    fn flat(first: i64, last: i64) -> Vec<Kline> {
+        (first..=last)
+            .map(|day| Kline {
+                open_time: day * DAY_MS,
+                close_time: (day + 1) * DAY_MS - 1,
+                open: 100.0,
+                high: 100.0,
+                low: 100.0,
+                close: 100.0,
+                volume: 1.0,
+            })
+            .collect()
+    }
+
+    fn run(
+        base: PortfolioCurrency,
+        transactions: &[PortfolioTransaction],
+        from: i64,
+        now: i64,
+        fx: &Fx,
+        candles: &(dyn Fn(&PortfolioAsset, i64, i64) -> Vec<Kline> + Sync),
+    ) -> HistoryResult {
+        rebuild(1, base, transactions, from, now, |_| 0, fx, candles)
+    }
+
+    #[test]
+    fn a_ledger_that_cannot_be_replayed_is_not_rebuilt_into_zeros() {
+        let sale = trade(
+            1,
+            asset("btc", PortfolioCurrency::Usd),
+            PortfolioTransactionType::Sell,
+            1.0,
+            1_000,
+        );
         // Sells what was never bought: no snapshots to store, and a later retry (not "hopeless").
-        let result = rebuild(1, PortfolioCurrency::Usd, &[sale], 0, 10 * DAY_MS, |_| 0);
+        let result = run(
+            PortfolioCurrency::Usd,
+            &[sale],
+            0,
+            10 * DAY_MS,
+            &Fx { no_rate_on: None },
+            &|_, _, _| panic!("no candles are asked for"),
+        );
         assert!(result.snapshots.is_none());
         assert!(!result.hopeless);
+    }
+
+    #[test]
+    fn an_asset_quoted_in_another_currency_is_converted_not_dropped() {
+        let btc = asset("btc", PortfolioCurrency::Usd);
+        let result = run(
+            PortfolioCurrency::Eur,
+            &[buy(1, btc, 2 * DAY_MS)],
+            2 * DAY_MS,
+            10 * DAY_MS,
+            &Fx { no_rate_on: None },
+            &|_, _, _| flat(0, 10),
+        );
+        let points = result.snapshots.expect("snapshots");
+        assert!(!result.hopeless && !result.incomplete);
+        // 1 BTC at 100 dollars is 90 euros, from the day after the purchase.
+        let held = points.iter().find(|p| p.timestamp == 4 * DAY_MS).unwrap();
+        assert!((held.value - 90.0).abs() < 1e-9, "{}", held.value);
+        assert!(held.is_complete);
+    }
+
+    #[test]
+    fn a_day_without_a_rate_is_unpriced_not_priced_wrongly() {
+        let btc = asset("btc", PortfolioCurrency::Usd);
+        let result = run(
+            PortfolioCurrency::Eur,
+            &[buy(1, btc, 2 * DAY_MS)],
+            2 * DAY_MS,
+            10 * DAY_MS,
+            &Fx {
+                no_rate_on: Some(5 * DAY_MS),
+            },
+            &|_, _, _| flat(0, 10),
+        );
+        let points = result.snapshots.unwrap();
+        let at = |day: i64| points.iter().find(|p| p.timestamp == day * DAY_MS).unwrap();
+        // The day-5 candle is gone, so day 6 falls back to the day-4 candle (inside the
+        // look-back) rather than inventing a price.
+        assert!((at(6).value - 90.0).abs() < 1e-9);
+        assert!(at(6).is_complete);
+    }
+
+    #[test]
+    fn history_older_than_the_candles_begins_where_they_do() {
+        let btc = asset("btc", PortfolioCurrency::Usd);
+        // Bought on day 500, but the provider's newest 1,000 days begin on day 1000.
+        let now = 2_000 * DAY_MS;
+        let result = run(
+            PortfolioCurrency::Usd,
+            &[buy(1, btc, 500 * DAY_MS)],
+            500 * DAY_MS,
+            now,
+            &Fx { no_rate_on: None },
+            &|_, _, _| flat(1_000, 2_000),
+        );
+        let points = result.snapshots.unwrap();
+        let first = points.first().unwrap();
+        assert_eq!(first.timestamp, 1_001 * DAY_MS, "first finished candle");
+        assert!(
+            points.iter().all(|p| p.is_complete && p.value > 0.0),
+            "no leading run of zeros"
+        );
+    }
+
+    #[test]
+    fn one_asset_missing_marks_the_rebuild_incomplete_but_keeps_the_rest() {
+        let btc = asset("btc", PortfolioCurrency::Usd);
+        let eth = asset("eth", PortfolioCurrency::Usd);
+        let result = run(
+            PortfolioCurrency::Usd,
+            &[buy(1, btc, 2 * DAY_MS), buy(2, eth, 2 * DAY_MS)],
+            2 * DAY_MS,
+            10 * DAY_MS,
+            &Fx { no_rate_on: None },
+            &|asset, _, _| {
+                if asset.key == "btc" {
+                    flat(0, 10)
+                } else {
+                    Vec::new()
+                }
+            },
+        );
+        assert!(result.incomplete);
+        let points = result.snapshots.unwrap();
+        let last = points.last().unwrap();
+        assert!((last.value - 100.0).abs() < 1e-9, "btc priced, eth not");
+        assert!(!last.is_complete);
     }
 
     fn finished(portfolio_id: u64, incomplete: bool) -> HistoryResult {

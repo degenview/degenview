@@ -22,7 +22,7 @@ use crate::service::asset_auto_mapper::asset_from_search_result;
 use crate::service::portfolio_history::{
     HistoryRebuilder, HistoryResult, IntradayFeed, IntradayRequest,
 };
-use crate::service::portfolio_quotes::{PortfolioQuoteFeed, PortfolioQuoteState};
+use crate::service::portfolio_quotes::{PortfolioFxRates, PortfolioQuoteFeed, PortfolioQuoteState};
 use crate::service::timezone::local_utc_offset_secs;
 use crate::store::{SharedStore, Store};
 use crate::ui::header_controls;
@@ -49,6 +49,7 @@ use crate::ui::theme;
 use eframe::egui;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
+use std::sync::Arc;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum PortfolioHostError {
@@ -153,7 +154,13 @@ impl PortfolioHost {
     /// Keeps the daily value history of `scope` current: stores what finished rebuilding and
     /// starts a rebuild for any portfolio whose history is missing days. A result is dropped
     /// when the ledger changed under it (the next frame starts a fresh one).
-    pub fn drive_history(&mut self, ctx: &egui::Context, scope: &HashSet<u64>, now_ms: i64) {
+    pub fn drive_history(
+        &mut self,
+        ctx: &egui::Context,
+        scope: &HashSet<u64>,
+        now_ms: i64,
+        fx: &Arc<dyn PortfolioFxRates>,
+    ) {
         if self.load_error.is_some() {
             return;
         }
@@ -190,6 +197,7 @@ impl PortfolioHost {
                 from,
                 now_ms,
                 local_utc_offset_secs,
+                Arc::clone(fx),
             );
         }
     }
@@ -896,7 +904,12 @@ impl PortfolioTab {
             true,
             now_ms,
         );
-        host.drive_history(ui.ctx(), &portfolio_ids, now_ms);
+        host.drive_history(
+            ui.ctx(),
+            &portfolio_ids,
+            now_ms,
+            &self.quote_feed.fx_rates(),
+        );
         let quote_state = self.quote_feed.state();
         let projected = quote_state.projection.as_ref();
         if projected.is_none() || quote_state.is_updating || quote_state.refresh_pending {

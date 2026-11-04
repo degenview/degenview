@@ -45,6 +45,12 @@ rebuild the projection (holdings, history, cards) and flip `is_updating`, which 
   stored only while the portfolio still has exactly those (an edit made while it ran drops it).
 - A rebuild that could not fetch some asset's candles is stored (so the chart has something) and
   repeated every 10 minutes (`PARTIAL_RETRY_MS`) until every asset it can price comes back.
+- Candles quoted in another currency than the portfolio's are converted at each day's rate
+  (`in_currency`, the same FX service as the live valuation); a day with no rate has no candle.
+  A span over 1,000 days asks the provider for a time range (Binance, Coinbase, Alpaca and
+  DexScreener have one; the rest give their newest 1,000). Where an asset's candles begin after
+  its first transaction needs, no point is made for the days before. The 1D chart is still
+  dollar-quoted markets only.
 - A ledger that cannot be replayed (a sale of more than is held) is shown as an error, not as an
   empty portfolio, and its history is not rebuilt into zeros.
 - Realized profit counts positions closed completely (`holdings_and_closed`), not only the open
