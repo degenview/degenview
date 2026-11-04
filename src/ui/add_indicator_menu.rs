@@ -8,7 +8,7 @@ use super::kit::{self, MenuRow};
 use super::script_catalog;
 use super::theme;
 use crate::model::{BuiltIn, DataSource, IndicatorConfig};
-use crate::script_manager::model::{LocalScript, ScriptType};
+use crate::pine_studio::model::{LocalScript, ScriptType};
 use eframe::egui::{self, Key, Modifiers, RectAlign, Response, Ui};
 use std::sync::Arc;
 
@@ -192,8 +192,7 @@ fn body(ui: &mut Ui, env: &Env, state: &mut State, action: &mut Option<Action>) 
     }
 
     kit::menu_separator(ui);
-    if has_scripts_section && kit::menu_item(ui, Icon::Curlybraces, "Script Manager…", true, false)
-    {
+    if has_scripts_section && kit::menu_item(ui, Icon::Curlybraces, "Pine Studio…", true, false) {
         *action = Some(Action::OpenScriptSettings);
         ui.close();
     }
@@ -313,7 +312,7 @@ fn quiet(ui: &mut Ui, text: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::script_manager::model::ScriptType;
+    use crate::pine_studio::model::ScriptType;
     use crate::ui::script_catalog::sample;
 
     fn scripts() -> Vec<Arc<LocalScript>> {
@@ -458,7 +457,7 @@ mod tests {
             "{text}"
         );
         assert!(text.contains("Search indicators"), "{text}");
-        assert!(!text.contains("Script Manager"), "{text}");
+        assert!(!text.contains("Pine Studio"), "{text}");
     }
 
     /// The menu as pictures. Run by hand with `DEGENVIEW_GALLERY_DIR` set.

@@ -245,7 +245,7 @@ pub const OPEN_SETTINGS: Shortcut = Shortcut::new(
     &[Chord::new(Key::Comma).primary()],
 );
 
-/// Create a script in the Script Manager. macOS gets ⌘N from File ▸ New Script; this is for every
+/// Create a script in the Pine Studio. macOS gets ⌘N from File ▸ New Script; this is for every
 /// other platform.
 pub const NEW_SCRIPT: Shortcut = Shortcut::new(
     &[Chord::new(Key::N).primary()],
@@ -270,13 +270,13 @@ pub const PREVIOUS_TAB: Shortcut = Shortcut::new(
     &[Chord::new(Key::Tab).primary().shift()],
 );
 
-/// Show or hide the Script Manager's script list.
+/// Show or hide the Pine Studio's script list.
 pub const TOGGLE_SCRIPT_LIST: Shortcut = Shortcut::new(
     &[Chord::new(Key::S).control().primary()],
     &[Chord::new(Key::B).primary()],
 );
 
-/// Show or hide the Script Manager's preview chart.
+/// Show or hide the Pine Studio's preview chart.
 pub const TOGGLE_PREVIEW_CHART: Shortcut = Shortcut::new(
     &[Chord::new(Key::P).alt().primary()],
     &[Chord::new(Key::P).primary().shift()],
@@ -406,7 +406,7 @@ pub const DEBUG_RESTART: Shortcut = Shortcut::new(
     &[Chord::new(Key::R).primary().shift()],
     &[Chord::new(Key::F5).primary().shift()],
 );
-/// Turns the Script Manager's profiler on or off.
+/// Turns the Pine Studio's profiler on or off.
 pub const PROFILER_TOGGLE: Shortcut = Shortcut::new(
     &[Chord::new(Key::R).alt().primary()],
     &[Chord::new(Key::R).alt().primary()],

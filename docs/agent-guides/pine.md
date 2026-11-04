@@ -1,4 +1,4 @@
-# Pine and Script Manager guidance
+# Pine and Pine Studio guidance
 
 ## Runtime
 
@@ -111,7 +111,7 @@
   `pine::input_arguments` (each function has its own order; `input.int`/`float` take a range or, when the
   third place holds a list, `options`). `InputDefinition::control` says what edits it beyond its value type:
   `input.price` is a float, `symbol`/`session`/`text_area` and a `timeframe` without `options` are strings
-  with their own controls (`script_manager::inputs`), and the stored value of each is the plain
+  with their own controls (`pine_studio::inputs`), and the stored value of each is the plain
   `InputValue` it always was, so saved inputs are unchanged. `display` is warned about.
 - `active` is compiled by `pine::input_activity` into `InputDefinition::active`: an expression over inputs
   declared above it (kept by name) and the script's constants (folded to literals), evaluated by
@@ -133,10 +133,10 @@
 
 ## Editor
 
-- Editing assistance belongs in pure `script_manager::edit_ops`, not `editor.rs`. Operations take
+- Editing assistance belongs in pure `pine_studio::edit_ops`, not `editor.rs`. Operations take
   text plus selection and return one `Edit` or `None`. Indices are character offsets. Indentation is
   four spaces; Pine braces are not paired.
-- `script_manager::syntax` is the sole per-text classification. Strings come from the lexer;
+- `pine_studio::syntax` is the sole per-text classification. Strings come from the lexer;
   comment scanning respects strings; names match whole tokens. Do not use lexer indent/dedent to
   decide editor indentation because incomplete parentheses erase them. It produces `SyntaxRole`s,
   never colours: `classify(source, Some(&table))` takes the cached `EditorState::symbols()` (scope-aware,
@@ -150,7 +150,7 @@
   theme and font are kept by `host::editor_theme_host` (saved after a pause, never while Settings draws);
   change them through it so every window repaints. See [Editor themes](../editor-themes.md).
 - Completion does not compile, run, re-lex, or access network/storage. Builtins come from the symbol
-  catalog and signatures from `script_manager::signature`. Add new builtins to both tables.
+  catalog and signatures from `pine_studio::signature`. Add new builtins to both tables.
   `array.*` and `map.*` names are offered straight from `array_builtins::KNOWN` / `map_builtins::NAMES`
   (and their signatures from `parameters()`), so a new one needs no editor edit.
   The suggestion list shows `COMPLETION_ROWS` (10) rows and scrolls to the highlight on ↑/↓: the key
@@ -158,13 +158,13 @@
   `CompletionView::scroll_to_selected` instead of reading `key_pressed`. Accepting an `Item` with
   `callable` set (builtin functions, user `name(args) =>` definitions) writes `name()` with the caret
   between the parentheses, unless a `(` already follows.
-- `script_manager::diff` is the sole saved-vs-source comparison. Cache `EditorState::changes()` for
+- `pine_studio::diff` is the sole saved-vs-source comparison. Cache `EditorState::changes()` for
   gutter, status, popover, and revert; never diff while painting. Hunks use zero-based half-open
   ranges and preserve terminators. Deleted hunks sit at `new_lines.start`, without fake rows;
   `is_dirty()` remains a string comparison.
 - `revert_edit` must reject stale text. Apply through `apply_hunk_edit` so revert is one undo step.
   Only `mark_saved`/`replace_source(saved)` move the baseline. Use `theme::editor_diff_*` colors.
-- `script_manager::symbols` resolves names for go-to-definition and rename. It reads lexer tokens, not
+- `pine_studio::symbols` resolves names for go-to-definition and rename. It reads lexer tokens, not
   the AST (which has no span for parameters, loop variables, tuple names or aliases and drops every
   statement it cannot parse), so it works on a script mid-edit. Scopes come from each statement's raw
   leading whitespace; a declaration is visible from the end of its statement and block; values and
@@ -174,7 +174,7 @@
   Test it with CRLF and astral characters; every range is a char index.
 - Multiple carets: egui's text field keeps the *primary* caret (it draws and moves it);
   `editor/carets.rs` holds the others in `CaretState::extra`. While extras exist, `carets::apply` takes
-  the editing and moving keys before egui and runs them through pure `script_manager::multi_cursor`,
+  the editing and moving keys before egui and runs them through pure `pine_studio::multi_cursor`,
   which reuses `edit_ops` per caret against one shared scan and lays the edits down together (an edit
   overlapping an earlier one drops its caret). Extras belong to the text they were made in: any other
   change (egui typing, undo, find/replace, rename, sync) fails the `hash` check and drops them, which is
@@ -195,7 +195,7 @@
 
 ## Drawer tabs
 
-- The preview drawer's Report, Problems and Profile tabs share `script_manager::tab_chrome`: a 46px
+- The preview drawer's Report, Problems and Profile tabs share `pine_studio::tab_chrome`: a 46px
   toolbar with a `state_field`, a hairline, then cards of rows. The Logs tab (`ui::pine_logs_view`,
   shared with the chart workspace) mirrors its constants; keep `TOOLBAR_HEIGHT`, `MARGIN` and
   `BUTTON` equal.
@@ -208,7 +208,7 @@
 - A tab with nothing to show says so with `centered` + `pine_logs_view::intro` (picture, three steps,
   an example; see `drawer_intro`), never a bare text placeholder. That covers Inputs too
   (`drawer_intro::inputs`); `drawer_tabs_tests::inputs_fit_the_drawer` checks it at the five sizes.
-- The Script Manager with no scripts at all uses the same pieces (`script_manager::empty_library`): the detail
+- The Pine Studio with no scripts at all uses the same pieces (`pine_studio::empty_library`): the detail
   area is `centered` + `intro` with the two ways to begin as its footer, the sidebar list a short form with the
   same picture. A search with no match stays the small "No matches" tile. Pictures: `cargo test --lib
   empty_library -- --ignored` with `DEGENVIEW_GALLERY_DIR` set.
@@ -220,7 +220,7 @@
 ## Manager lifecycle
 
 - **Scripts edited outside the app** (a person's editor, a coding agent working in the Scripts folder)
-  reach the open editor through `script_manager::external` (a pure state machine; `mod.rs` does the
+  reach the open editor through `pine_studio::external` (a pure state machine; `mod.rs` does the
   I/O, `disk_banner` draws the question). The sidebar already followed the folder (1.5 s rescan); the
   open script's *text* now does too: every ~400 ms only the file's metadata is read
   (`ScriptStore::file_stamp`), and a moved file, or one still settling, triggers a rescan and
@@ -235,11 +235,11 @@
   then asks at once, `Watch::force`). Equality ignores a missing final newline (`external::same_text`).
   Not covered: chart instances keep the source they were added with (as after any Save), an outside edit
   makes no revision, and a draft of a script that is not open is not protected from an outside edit.
-- `ScriptManager` owns its window. `workspace::PreviewState` drives one crypto/stock preview with
-  debounced apply and stale output; it has no alert coordinator. `script_manager::inputs` renders a
+- `PineStudio` owns its window. `workspace::PreviewState` drives one crypto/stock preview with
+  debounced apply and stale output; it has no alert coordinator. `pine_studio::inputs` renders a
   precompiled `InputSchema` and is shared with chart settings.
 - A script can fail at run time after it compiles (the compiler judges some names only when they run).
-  `script_manager::problems` is the one list of what is wrong: the compile diagnostics plus the chart's
+  `pine_studio::problems` is the one list of what is wrong: the compile diagnostics plus the chart's
   and the profile's failure, each only if its run was of the text now in the editor and never beside a
   compile error. The Problems tab and its badge, the editor's chip and the red underline all read it, so
   a failure must not be handled in one place only. `ExecutionController` remembers its last failure
@@ -282,11 +282,11 @@
   show it are `many_ta`, `many_math`, `many_str`, `plots_and_drawings`, `containers`, `map_counting`.
 - A script that fails when it runs has no profile (`Profiler::finish`), only the failure, which the
   Problems list also shows.
-- Never close a Script Manager tab or quit over unsaved editor text or retained drafts without the
+- Never close a Pine Studio tab or quit over unsaved editor text or retained drafts without the
   `unsaved` flow. Tab close starts `begin_exit(CloseTab)` and cancels close; app quit/update restart
   use `DegenViewApp::request_quit` plus the native termination intercept. A failed save cancels exit.
   Don't Save restores saved text and calls `ScriptStore::discard_draft`.
-- `script_manager::demo` seeds examples once and on demand from an empty state. Deleted demos stay
+- `pine_studio::demo` seeds examples once and on demand from an empty state. Deleted demos stay
   deleted. Names equal filenames without a “Demo” prefix. Examples must be original GPL-compatible
   work and compile with zero diagnostics, including warnings.
 

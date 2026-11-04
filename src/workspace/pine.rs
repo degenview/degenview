@@ -153,8 +153,8 @@ impl ChartWorkspace {
         Ok((outcome, chart.indicators))
     }
 
-    /// Adds a Pine script to the focused chart, after the ones already there (the Script
-    /// Manager's "Add to Chart").
+    /// Adds a Pine script to the focused chart, after the ones already there (the Pine
+    /// Studio's "Add to Chart").
     pub fn add_pine_on_focused(&mut self, script_id: Option<String>, name: &str, source: &str) {
         if let Some(id) = self.resolved_focused_id()
             && let Some(chart) = self.charts.iter_mut().find(|chart| chart.id == id)

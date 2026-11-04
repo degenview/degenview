@@ -569,7 +569,7 @@ fn applied_info(view: &PineInstanceView) -> AppliedPineInfo {
         script_id: instance.script_id.clone(),
         script_name: instance.name.clone(),
         visible: instance.visible,
-        source_hash: crate::script_manager::store::hash_source(&instance.source),
+        source_hash: crate::pine_studio::store::hash_source(&instance.source),
         run_status: run_status.to_owned(),
         error,
         is_strategy,
@@ -638,7 +638,7 @@ pub fn list_chart_pine(
     })
 }
 
-/// `script_status` is filled in by the caller, who can read the Script Manager off this thread.
+/// `script_status` is filled in by the caller, who can read the Pine Studio off this thread.
 pub fn chart_pine_detail(
     workspace: &ChartWorkspace,
     chart_id: u64,
@@ -1069,7 +1069,7 @@ fn report_of(
             kind: "chart_instance".into(),
             script_id: view.instance.script_id.clone(),
             script_name: view.instance.name.clone(),
-            source_hash: crate::script_manager::store::hash_source(&view.instance.source),
+            source_hash: crate::pine_studio::store::hash_source(&view.instance.source),
             script_status: String::new(),
             instrument: view.instrument.key(),
             timeframe: view.timeframe.label().to_owned(),
@@ -2611,7 +2611,7 @@ mod tests {
         assert_eq!(context.script_id.as_deref(), Some("script-1"));
         assert_eq!(
             context.source_hash,
-            crate::script_manager::store::hash_source(STRATEGY_SOURCE)
+            crate::pine_studio::store::hash_source(STRATEGY_SOURCE)
         );
         assert_eq!(
             context.inputs["len"],
@@ -2739,7 +2739,7 @@ mod tests {
         assert_eq!(info.script_id.as_deref(), Some("script-1"));
         assert_eq!(
             info.source_hash,
-            crate::script_manager::store::hash_source(STRATEGY_SOURCE)
+            crate::pine_studio::store::hash_source(STRATEGY_SOURCE)
         );
 
         assert_eq!(applied_info(&view(Some(run(None, None)))).run_status, "ok");

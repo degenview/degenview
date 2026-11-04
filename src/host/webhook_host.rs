@@ -57,7 +57,7 @@ impl Default for StorageEvents {
 pub struct WebhookHost {
     /// The snapshot choices the Snapshots page edits.
     snapshots: crate::host::snapshot_host::SnapshotHost,
-    /// The editor's themes and typography, which the Script Manager page edits.
+    /// The editor's themes and typography, which the Pine Studio page edits.
     editor_themes: crate::host::editor_theme_host::EditorThemeHost,
     /// The saved assistant settings, read from the store when Settings first needs them.
     ai_prefs: Option<AiPrefs>,
@@ -92,7 +92,7 @@ impl WebhookHost {
         self.open = open;
     }
 
-    /// Opens Settings on the Alpaca page (the Script Manager's "Open Settings").
+    /// Opens Settings on the Alpaca page (the Pine Studio's "Open Settings").
     pub fn open_alpaca(&mut self) {
         self.state.section = crate::ui::settings_window::SettingsSection::Alpaca;
         self.open = true;
@@ -185,7 +185,7 @@ impl WebhookHost {
                     self.ai_prefs_read_at = Some(std::time::Instant::now());
                 }
                 SettingsAction::Ai(crate::ui::settings_ai::AiAction::ClearHistory) => {
-                    use crate::script_manager::ai_history::History;
+                    use crate::pine_studio::ai_history::History;
                     let mut history = History::load(store);
                     history.clear();
                     self.state.ai.status = Some(match history.save(store) {

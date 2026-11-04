@@ -1081,7 +1081,7 @@ When right-clicking an indicator or Pine visual, show relevant actions:
 - Add alert where supported
 - Open Pine source where appropriate
 
-Reuse the existing indicator strip, Pine instance settings, and Script Manager.
+Reuse the existing indicator strip, Pine instance settings, and Pine Studio.
 
 Do not remove a Pine script's source file when removing its chart instance.
 

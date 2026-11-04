@@ -25,7 +25,7 @@ pub(super) struct PineLogsPane {
     pub(super) picking: bool,
     prefs_loaded: bool,
     prefs_saved: LogsPrefs,
-    /// What the pane asks of the app (open the Script Manager), handed on with the frame's actions.
+    /// What the pane asks of the app (open the Pine Studio), handed on with the frame's actions.
     outbox: Vec<WorkspaceAction>,
 }
 
@@ -197,7 +197,7 @@ impl ChartWorkspace {
         Some((instance, event))
     }
 
-    /// "Source code": the Script Manager on the call that wrote the message.
+    /// "Source code": the Pine Studio on the call that wrote the message.
     fn open_log_source(&mut self, chart_id: u64, sequence: u64) {
         let Some((instance, event)) = self.selected_log(chart_id, sequence) else {
             return;

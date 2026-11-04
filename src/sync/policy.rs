@@ -328,7 +328,7 @@ mod tests {
             "alert.processedCommandIDs",
             "alerts.lastSeenAt",
             "session.next_id",
-            "scriptManager.layout",
+            "pineStudio.layout",
             "pineLogs.prefs",
             "scriptDebug.state",
             // Names this user's own account and server.

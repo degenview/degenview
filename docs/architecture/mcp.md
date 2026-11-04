@@ -38,7 +38,7 @@ reports, and alert reads. Delete and saved-source writes require their own grant
 | Candles and drawings | `get_candles`, `list_drawings`, `add_drawings`, `update_drawing`, `delete_drawings` |
 | Pine instances | `list_chart_pine_instances`, `get_pine_instance`, `get_pine_styles`, `get_pine_report`, `list_pine_alerts`, `add_pine_script_to_chart`, `update_pine_instance`, `remove_pine_instance` |
 
-- Workspace ids are persisted tab ids. Reject Portfolio/Script Manager tabs. Timeframe is
+- Workspace ids are persisted tab ids. Reject Portfolio/Pine Studio tabs. Timeframe is
   workspace-wide; adding an existing market returns its chart.
 - Indicators use `model::BuiltIn` and `ChartWorkspace::apply_indicator`: one instance per chart,
   EMA alone takes one of `EMA_PERIODS`, and Volume is invalid on line charts.
@@ -79,7 +79,7 @@ reports, and alert reads. Delete and saved-source writes require their own grant
   (add) or 50 (delete). Only trend lines and rectangles are writable.
 - Draft update and save have separate permissions. Both compare `expected_revision` to live editor
   text, else draft, else saved source. The app thread atomically checks, writes, and calls
-  `ScriptManager::adopt_external_text`. Save rejects compile errors but keeps the draft. Text is
+  `PineStudio::adopt_external_text`. Save rejects compile errors but keeps the draft. Text is
   capped at 200,000 characters and excludes controls other than tab/newline.
 
 The Settings page shows status/port, a global maximum, credential rows, and a shared permissions

@@ -8,7 +8,7 @@ use super::popover;
 use super::theme;
 pub use crate::model::BuiltIn;
 use crate::model::{DataSource, EMA_PERIODS, IndicatorConfig};
-use crate::script_manager::model::LocalScript;
+use crate::pine_studio::model::LocalScript;
 use eframe::egui::{self, Color32, FontId, Galley, Rect, Sense, Ui, Vec2, pos2, vec2};
 use std::sync::Arc;
 

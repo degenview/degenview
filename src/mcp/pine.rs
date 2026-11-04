@@ -1,4 +1,4 @@
-//! Read-only views of the Script Manager's scripts, built on the worker thread.
+//! Read-only views of the Pine Studio's scripts, built on the worker thread.
 //!
 //! These read through `ScriptStore` (the owner of script files) and the real Pine compiler, so
 //! the saved/draft distinction, content hashes and diagnostics are exactly the app's. Nothing is
@@ -16,9 +16,9 @@ use crate::pine::program::{
     CompiledProgram, InputDefinition, InputSchema, InputValue, ScriptType as DeclaredType,
 };
 use crate::pine::token::{Diagnostic, DiagnosticCategory, DiagnosticSeverity, Limits};
-use crate::script_manager::model::{CompileStatus, LocalScript, ScriptDraft, ScriptId, ScriptType};
-use crate::script_manager::registry::LibraryRegistry;
-use crate::script_manager::store::{COMPILER_VERSION, ScriptStore, hash_source};
+use crate::pine_studio::model::{CompileStatus, LocalScript, ScriptDraft, ScriptId, ScriptType};
+use crate::pine_studio::registry::LibraryRegistry;
+use crate::pine_studio::store::{COMPILER_VERSION, ScriptStore, hash_source};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashMap};
@@ -376,7 +376,7 @@ fn edit_result(
 
 /// Writes `source` as the script's draft. The saved source, chart-applied scripts and alert
 /// subscriptions are untouched; nothing is compiled into a record or run. `live` is the text of
-/// the script's open Script Manager editor, if it is open: the revision is checked against that,
+/// the script's open Pine Studio editor, if it is open: the revision is checked against that,
 /// never against a stale file.
 pub fn update_draft(
     store: &mut ScriptStore,
@@ -405,7 +405,7 @@ pub fn update_draft(
         .save_draft(&ScriptDraft {
             script_id: script.id.clone(),
             source: source.to_owned(),
-            modified_at_ms: crate::script_manager::model::now_ms(),
+            modified_at_ms: crate::pine_studio::model::now_ms(),
             based_on_revision_id: script.latest_revision_id.clone(),
         })
         .map_err(store_error)?;

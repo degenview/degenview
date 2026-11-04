@@ -1,7 +1,7 @@
 # Pine profiler
 
-Shows where a script's execution time goes: a bar and a share beside each line of the Script
-Manager's editor, the cost of whole loops and branches as code blocks, and a ranked list of the
+Shows where a script's execution time goes: a bar and a share beside each line of the Pine
+Studio's editor, the cost of whole loops and branches as code blocks, and a ranked list of the
 hottest regions. The engine measures; the editor only draws what it is handed.
 
 TradingView documents the *presentation* of its profiler (bars and percentages beside significant
@@ -11,7 +11,7 @@ is described exactly, so a number on screen has one meaning.
 
 ## Using it
 
-1. Open a script in the Script Manager and click the profiler button in the toolbar (the stopwatch,
+1. Open a script in the Pine Studio and click the profiler button in the toolbar (the stopwatch,
    next to the debugger's). The profiler is **off** by default and costs nothing while off.
 2. Turning it on runs the script once on the preview chart's bars, on a thread of its own. The button
    reads *Profiling…* with a progress count, then *Profile ready*.
@@ -108,7 +108,7 @@ script does with the candles afterwards is timed like anything else.
 * **A failure is also a problem.** A script that compiles and then fails (an unknown function, an
   index out of range) ends the profile with no data ("the script failed after N bars: …"), and the
   same error is listed in the Problems tab, counted on its badge and in the chip under the editor, and
-  underlined at the failing call, exactly as the chart's own run reports it (`script_manager::problems`).
+  underlined at the failing call, exactly as the chart's own run reports it (`pine_studio::problems`).
   Only if the profile is of the text on screen; a cancelled or timed-out run is not a failure.
 * **The column** beside the line numbers, present only while the profiler is on, so the text moves
   once, when it is turned on, and never when a profile arrives. Each measured line has a bar, the
@@ -141,7 +141,7 @@ script does with the candles afterwards is timed like anything else.
 
 ## The AI assistant's profile
 
-The Script Manager's assistant can call `profile` on its own draft (`script_manager::ai_profile`, see
+The Pine Studio's assistant can call `profile` on its own draft (`pine_studio::ai_profile`, see
 [AI assistant](ai-assistant.md)). It uses the same engine, `ProfileSession`, on a frozen copy of the
 preview chart's bars, and turns the report into text with `ProfileMarks`. It is a session of its own: it
 does not use the editor's profiler state, so it never draws a column or fills the Profile tab, and a
@@ -150,11 +150,11 @@ editor, so showing it there would mislabel it.
 
 ## Scope and what a profile belongs to
 
-A profile is of the script **open in the Script Manager** on the **preview chart's** bars (up to the
+A profile is of the script **open in the Pine Studio** on the **preview chart's** bars (up to the
 500 candles the preview holds), with the preview's inputs, symbol and timeframe: the same scope as the
 debugger. It is not the run of a script already applied to a chart, whose text, inputs and bars can be
 different. Each profile records the source text, the inputs, the symbol, timeframe, number of bars and
-the replay state it was produced for, and is stale as soon as any of them changes. The Script Manager
+the replay state it was produced for, and is stale as soon as any of them changes. The Pine Studio
 has no bar replay; there is no future to expose.
 
 ## Performance
@@ -221,14 +221,14 @@ The run's own slowdown is in the table above; nothing is subtracted from any fig
   `request.security`, a failing script failing the same way, and sessions (own thread, a script that
   does not compile, no bars, cancelling keeps a labelled partial profile, a failing script engine-side
   keeps what ran before it (the window then shows none of it), dropping a session ends its thread, two sessions are independent).
-* `cargo test --lib script_manager::profile` (and the editor's tests): the words (units, percentages,
+* `cargo test --lib pine_studio::profile` (and the editor's tests): the words (units, percentages,
   separators), bars, heat, flames, tooltips, the ranked list and summary, partial and stale profiles,
   and through the whole window: off by default and hashing nothing, turning on, editing, inputs, bars
   and scripts making a profile stale, errors and libraries, cancelling, turning it off ending the
   thread, two windows. The editor's column moves the text once and washes the hovered block.
 * `cargo test --lib pine::bench_tests -- --ignored` prints one workload per line, including the
   `profiled_*` twins.
-* Pictures: `DEGENVIEW_GALLERY_DIR=… cargo test --lib script_manager::profiler_gallery -- --ignored`
+* Pictures: `DEGENVIEW_GALLERY_DIR=… cargo test --lib pine_studio::profiler_gallery -- --ignored`
   (off, ready, hovering, stale; wide and narrow; dark and light).
 
 ## Not verified / limitations
@@ -236,7 +236,7 @@ The run's own slowdown is in the table above; nothing is subtracted from any fig
 * **Nothing is checked against TradingView's numbers**, which are not documented. Only its
   presentation was followed.
 * **A profile is of the open script on the preview chart's bars** (up to 500 candles), not of a
-  script applied to a chart. The Script Manager has no bar replay, so none is handled. A profile of a
+  script applied to a chart. The Pine Studio has no bar replay, so none is handled. A profile of a
   few hundred bars runs for milliseconds: shares are meaningful, absolute times are of that run, and a
   second run differs (TradingView's own documentation shows the same spread). Run it again and compare.
 * **Measurement is per statement.** Expressions inside one are not separated, and a line that costs

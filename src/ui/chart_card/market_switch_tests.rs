@@ -1,4 +1,4 @@
-//! A chart that keeps its card while its market changes (the Script Manager's preview): what the
+//! A chart that keeps its card while its market changes (the Pine Studio's preview): what the
 //! card draws for the new market after a price range was placed for the old one.
 
 use super::canvas_tests::{Harness, SIZE, gather, series};

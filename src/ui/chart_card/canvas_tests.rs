@@ -1126,7 +1126,7 @@ fn a_new_overlay_script_never_claims_a_pane_while_it_evaluates() {
 }
 
 #[test]
-fn the_script_manager_preview_also_waits_for_real_output() {
+fn the_pine_studio_preview_also_waits_for_real_output() {
     let mut harness = Harness::new(ChartCanvas::default());
     harness
         .card

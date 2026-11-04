@@ -1,5 +1,5 @@
 //! What the Portfolio tab says while it has nothing to show: a picture for each page, in the
-//! style of the Script Manager's Logs, Problems and Profile introductions, and a smaller one for
+//! style of the Pine Studio's Logs, Problems and Profile introductions, and a smaller one for
 //! a panel that is waiting on prices. Painter code over the shared [`Art`] helpers, so every
 //! picture follows the theme.
 

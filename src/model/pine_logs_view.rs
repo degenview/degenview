@@ -15,7 +15,7 @@ use std::ops::Range;
 /// The most matches one message highlights.
 pub const MAX_HIGHLIGHTS: usize = 200;
 
-/// Where a message's call is, for the Script Manager to open.
+/// Where a message's call is, for the Pine Studio to open.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SourceTarget {
     /// The saved script the chart's instance came from.

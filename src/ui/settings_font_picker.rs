@@ -1,5 +1,5 @@
 //! The editor's font picker: a button that opens a searchable list of the installed monospaced
-//! fonts, the system's own at the top. Used by Settings ▸ Script Manager, for the editor's font and
+//! fonts, the system's own at the top. Used by Settings ▸ Pine Studio, for the editor's font and
 //! for a theme's.
 //!
 //! Names are drawn in the app's font: loading every installed font to draw its name in its own

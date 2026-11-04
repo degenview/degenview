@@ -8,7 +8,7 @@
 //! formats are pure (`openai`, `anthropic`) and tested against recorded frames; `HttpProvider` is
 //! the only part that touches the network.
 
-// Transient: the Settings page and the Script Manager assistant wire these up next.
+// Transient: the Settings page and the Pine Studio assistant wire these up next.
 #![allow(dead_code)]
 
 pub mod anthropic;

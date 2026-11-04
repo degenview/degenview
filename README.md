@@ -36,7 +36,7 @@ leaving your device.
   chart from Pine Script v6.
 - **Typed `input.*` controls** — int, float, bool, color, time, and string inputs re-evaluate
   the script live without recompiling.
-- **Script Manager** — a `.pine` file library with a code editor (go to definition, rename,
+- **Pine Studio** — a `.pine` file library with a code editor (go to definition, rename,
   multiple cursors), diagnostics, and a live preview chart that re-runs as you type.
 - **Pine alerts** — a script's `alert()` fires on a live bar (see [Alerts](#alerts)).
 

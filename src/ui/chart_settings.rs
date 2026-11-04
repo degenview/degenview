@@ -17,8 +17,8 @@ use crate::model::{
     IndicatorConfig, PriceFormat, RSI_OVERBOUGHT, RSI_OVERSOLD, RSI_PERIOD, SUPERTREND_MULTIPLIER,
     SUPERTREND_PERIOD, SmallPrices,
 };
-use crate::script_manager::drawer;
-use crate::script_manager::model::{LocalScript, ScriptType};
+use crate::pine_studio::drawer;
+use crate::pine_studio::model::{LocalScript, ScriptType};
 use crate::store::SharedStore;
 use eframe::egui::{
     self, Align, Align2, Color32, CornerRadius, CursorIcon, FontId, Id, Layout, Margin, Rect,
@@ -121,7 +121,7 @@ pub struct ChartSettingsContext<'a> {
 pub enum ChartSettingsAction {
     Done,
     RemoveChart,
-    OpenScriptManager,
+    OpenPineStudio,
     /// Open (or put away) the Inputs and Style popover of an applied script, pointing at `Rect`.
     ConfigureScript(u64, Rect),
     /// Give every chart of the workspace this look.
@@ -781,11 +781,11 @@ fn scripts_page(
             );
         });
         ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-            if kit::push_button(ui, Some(Icon::Curlybraces), "Script Manager", true)
+            if kit::push_button(ui, Some(Icon::Curlybraces), "Pine Studio", true)
                 .on_hover_text("Write, edit and organise scripts")
                 .clicked()
             {
-                action = Some(ChartSettingsAction::OpenScriptManager);
+                action = Some(ChartSettingsAction::OpenPineStudio);
             }
         });
     });
@@ -1031,7 +1031,7 @@ fn empty_state(ui: &mut Ui, action: &mut Option<ChartSettingsAction>) {
                 ui.add_space(12.0);
                 let (title, message) = (
                     "No scripts yet",
-                    "Write one in the Script Manager and it shows up here.",
+                    "Write one in the Pine Studio and it shows up here.",
                 );
                 ui.label(kit::text(
                     title,
@@ -1047,8 +1047,8 @@ fn empty_state(ui: &mut Ui, action: &mut Option<ChartSettingsAction>) {
                     theme::text_secondary(),
                 ));
                 ui.add_space(12.0);
-                if kit::sheet_button(ui, "Open Script Manager", true, true).clicked() {
-                    *action = Some(ChartSettingsAction::OpenScriptManager);
+                if kit::sheet_button(ui, "Open Pine Studio", true, true).clicked() {
+                    *action = Some(ChartSettingsAction::OpenPineStudio);
                 }
             });
         });

@@ -7,7 +7,7 @@ use eframe::egui::{
     Ui, Vec2, epaint::PathShape, vec2,
 };
 
-/// The glyph set the Script Manager uses; a few (eye, braces, bell) wait for its phase-2 panels.
+/// The glyph set the Pine Studio uses; a few (eye, braces, bell) wait for its phase-2 panels.
 #[allow(dead_code)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Icon {

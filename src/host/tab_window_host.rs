@@ -63,7 +63,7 @@ impl Default for Placement {
 pub enum TabRequest {
     /// The `+`: a new empty tab in this window.
     New(WindowId),
-    /// Close one tab (a Script Manager with edits asks first).
+    /// Close one tab (a Pine Studio with edits asks first).
     Close(TabId),
     /// The OS close button: close every tab of the window.
     CloseWindow(WindowId),

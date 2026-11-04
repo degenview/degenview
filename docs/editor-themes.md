@@ -1,7 +1,7 @@
 # Editor themes
 
 What the Pine editor looks like: the colour of every kind of text and of the surfaces around it, and
-the font the code is set in. Settings ▸ Script Manager chooses and edits them; every window's editor
+the font the code is set in. Settings ▸ Pine Studio chooses and edits them; every window's editor
 follows at once.
 
 **Status.** Built-in Dark, Light and Dracula; custom themes (create, duplicate, rename, delete,
@@ -45,7 +45,7 @@ scheme. `theme::syntax` still exists for the few non-editor uses of a code-like 
 
 ## How a name gets its role
 
-`script_manager::syntax::classify(source, table)` is the only classification of Pine text. With the
+`pine_studio::syntax::classify(source, table)` is the only classification of Pine text. With the
 script's `SymbolTable` its answer for a name is final: a name the table resolves is the script's (a
 variable, parameter, function or type), a name it does not place is looked up in the catalog. So a
 local `hl2` is the script's inside its function and the builtin outside it, and a read of `close`
@@ -140,14 +140,14 @@ is the host that loaded the saved choice); `EditorThemeHost::default()`, a place
 default or a test's stand-in, builds the same host but publishes nothing. This matters because publishing
 replaces what every editor in the process draws: `WebhookHost::new` fills the fields it is not given from
 `Self::default()`, which builds a throwaway `EditorThemeHost`, and when that throwaway published (as
-`new` did) it put Automatic over the saved theme before the first frame, so the Script Manager opened Dark
+`new` did) it put Automatic over the saved theme before the first frame, so the Pine Studio opened Dark
 although Dracula was selected (and Settings, reading the real host, still showed Dracula); picking any
 theme again published from the real host and healed it. Tests hold both halves
 (`a_placeholder_host_never_undoes_the_real_hosts_choice`,
 `webhook_host::tests::building_the_host_leaves_the_editors_theme_alone`). Any new code that builds
 a host outside `DegenViewApp::new` must use `default()`, never `new()`.
 
-The preview's sample (`script_manager::theme_preview`) is editable. It is compiled with the real Pine
+The preview's sample (`pine_studio::theme_preview`) is editable. It is compiled with the real Pine
 compiler whenever its text changes (hashed, so a repaint or a theme change does not compile again), and the
 compiler's diagnostics feed the editor's underlines, so they follow the code as lines are added, removed
 or retyped, and vanish when the code is fixed. The sample ends with two lines that do produce problems
@@ -277,7 +277,7 @@ Where there are no file dialogs (Windows) Import is not offered and Export write
 
 ## The page
 
-Settings ▸ Script Manager (after Appearance): the theme tiles (Automatic, the built-ins, your own; each
+Settings ▸ Pine Studio (after Appearance): the theme tiles (Automatic, the built-ins, your own; each
 a miniature of the editor in its colours, a Built-in/Custom caption, a mark for the one worn, a menu
 and a right-click menu: Edit, Duplicate, Rename, Export, Delete for yours, Duplicate & Customize and
 Export for the built-ins), **Create Theme** (a name and which theme to start from, checked as you
@@ -312,14 +312,14 @@ size in both appearances, keyboard navigation, the sheets, delete and reset conf
 export results); the real editor painting each surface and role colour, and repainting on a change
 without touching text, caret or span cache; the gutter and line height at 9 and 32 points.
 
-Pictures: `DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib -- settings_script_manager::tests::gallery
+Pictures: `DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib -- settings_pine_studio::tests::gallery
 settings_theme_editor::tests::gallery --ignored` writes the page and every tab of the editor at three
 sizes in both appearances; they were looked at, and the layout was changed for what they showed (the
 tile miniatures, a preview that left no room for the colours, tabs that ran into the search at 320
 points).
 
-A release build was launched against a throwaway home folder with `editor.prefs` set to Dracula, a Script
-Manager tab and a script selected (`setting` rows `editor.prefs`, `scriptManager.layout` with
+A release build was launched against a throwaway home folder with `editor.prefs` set to Dracula, a Pine
+Studio tab and a script selected (`setting` rows `editor.prefs`, `pineStudio.layout` with
 `selectedScriptId`, and a `tab` row `{"id":2,"kind":"pine"}`), and **only that window was captured** by its
 window id: the first frames drew the Dark colours (background `#181F22`, blue and red syntax) until the
 bug above was fixed; afterwards they draw Dracula (`#282A36`, pink, yellow and purple), with the app in
@@ -331,7 +331,7 @@ A release build was launched against an empty home folder: it ran for minutes, c
 table in a fresh database and did not crash. **No one has used the page in a real window**: the
 pictures above are rendered by the tests, not captured from the app, and driving the real window from
 a script was not possible here (the macOS automation prompt was never answered). Open Settings ▸
-Script Manager, pick each theme, edit a colour, change the font and size, and open a script with a
+Pine Studio, pick each theme, edit a colour, change the font and size, and open a script with a
 second window before calling it done.
 
 Not verified: how JetBrains Mono looks in a real window next to the old SF Mono (it is wider, 0.6 em per
