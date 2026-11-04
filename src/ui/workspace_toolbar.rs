@@ -2,7 +2,7 @@
 //! control on the left; the layout menu, Portfolio and Pine Studio, the watchlist toggle and
 //! Add Chart as separate bubbles on the right. Replay and Alerts live on the tool strip.
 
-use crate::model::{ChartSyncSettings, Timeframe};
+use crate::model::Timeframe;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, MEDIUM, REGULAR, SEMIBOLD, size};
 use crate::ui::shortcut;
@@ -24,12 +24,6 @@ pub struct ToolbarInput<'a> {
     pub layouts: &'a [(u64, String)],
     pub active_layout: Option<u64>,
     pub watchlist_visible: bool,
-    /// What the charts share of horizontal navigation.
-    pub sync: ChartSyncSettings,
-    /// Whether the layout holds more than one chart to link.
-    pub can_link: bool,
-    /// Charts that cannot take part in linking, by title.
-    pub unlinkable: &'a [String],
 }
 
 /// What the layout menu's Autosave row shows.
@@ -55,7 +49,6 @@ pub enum ToolbarAction {
     OpenPortfolio,
     OpenPineStudio,
     AddChart,
-    SetSync(ChartSyncSettings),
 }
 
 pub fn show(ui: &mut Ui, input: &ToolbarInput) -> Vec<ToolbarAction> {
@@ -174,74 +167,8 @@ pub fn show(ui: &mut Ui, input: &ToolbarInput) -> Vec<ToolbarAction> {
     }
     right = group.left() - GAP;
 
-    let layout_left = layout_menu(ui, right, y, input, &mut actions);
-    link_menu(ui, layout_left - GAP, y, input, &mut actions);
+    layout_menu(ui, right, y, input, &mut actions);
     actions
-}
-
-/// The Link charts bubble, its right edge at `right`: a chain while charts are linked, a broken
-/// one while not, and a popover with the two options. Not drawn while there is nothing to link.
-fn link_menu(
-    ui: &mut Ui,
-    right: f32,
-    y: f32,
-    input: &ToolbarInput,
-    actions: &mut Vec<ToolbarAction>,
-) {
-    if !input.can_link {
-        return;
-    }
-    let rect = Rect::from_min_max(pos2(right - 38.0, y), pos2(right, y + BUBBLE));
-    let linked = input.sync.is_linked();
-    let response = ui.interact(rect, Id::new("toolbar-link"), Sense::click());
-    paint_bubble(
-        ui,
-        rect,
-        response.hovered(),
-        response.is_pointer_button_down_on(),
-    );
-    if linked {
-        ui.painter().rect_filled(
-            rect,
-            rect.height() / 2.0,
-            theme::with_alpha(kit::ACCENT, 0.16),
-        );
-    }
-    if response.has_focus() {
-        ui.painter().rect_stroke(
-            rect.expand(1.0),
-            (rect.height() + 2.0) / 2.0,
-            Stroke::new(2.0, kit::ACCENT),
-            StrokeKind::Inside,
-        );
-    }
-    let tip = crate::ui::link_charts::summary(input.sync);
-    let response = response.on_hover_text(tip);
-    let response = crate::ui::accessibility::label(response, tip.to_owned());
-    icons::paint(
-        ui.painter(),
-        Rect::from_center_size(rect.center(), Vec2::splat(18.0)),
-        if linked {
-            Icon::ChainLinked
-        } else {
-            Icon::ChainBroken
-        },
-        if linked {
-            kit::ACCENT
-        } else {
-            theme::text_primary()
-        },
-    );
-    egui::Popup::from_toggle_button_response(&response)
-        .frame(kit::menu_frame())
-        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
-        .align(egui::RectAlign::BOTTOM_END)
-        .gap(6.0)
-        .show(|ui| {
-            if let Some(next) = crate::ui::link_charts::show(ui, input.sync, input.unlinkable) {
-                actions.push(ToolbarAction::SetSync(next));
-            }
-        });
 }
 
 /// The bubble every toolbar control sits in: a faint capsule that lifts on hover.
@@ -660,12 +587,6 @@ mod tests {
                 layouts: &layouts,
                 active_layout: active,
                 watchlist_visible: true,
-                sync: ChartSyncSettings {
-                    horizontal_position: unsaved,
-                    horizontal_zoom: false,
-                },
-                can_link: active.is_some(),
-                unlinkable: &["ETHUSDT (Renko)".to_owned()],
             };
             let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
                 assert!(show(ui, &input).is_empty(), "nothing was clicked");

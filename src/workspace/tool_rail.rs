@@ -1,5 +1,6 @@
 //! The drawing tool rail beside the charts and which tool each of its grouped tiles shows.
 
+use super::chart::Chart;
 use super::{ChartWorkspace, WorkspaceAction};
 use crate::model::{DataSource, Tool};
 use crate::ui::tool_sidebar::{self, ToolSidebarAction};
@@ -30,6 +31,14 @@ impl ChartWorkspace {
                 .iter()
                 .any(|chart| chart.is_market() && chart.source != DataSource::CoinMarketCap),
             unseen_alerts: self.unseen_alerts,
+            sync: self.sync,
+            can_link: self.market_charts() > 1,
+            unlinkable: self
+                .charts
+                .iter()
+                .filter(|chart| chart.is_market() && !chart.chart.takes_part_in_sync(chart.source))
+                .map(Chart::display_title)
+                .collect(),
         };
         let mut actions = Vec::new();
         for action in tool_sidebar::show(ui, &input) {
@@ -54,6 +63,7 @@ impl ChartWorkspace {
                 }
                 ToolSidebarAction::ToggleReplay => self.toggle_replay(),
                 ToolSidebarAction::OpenAlerts => actions.push(WorkspaceAction::OpenAlerts),
+                ToolSidebarAction::SetSync(sync) => self.set_sync(sync),
             }
         }
         self.save_drawing_prefs();

@@ -1,6 +1,5 @@
 //! The workspace toolbar and what its buttons ask for.
 
-use super::chart::Chart;
 use super::{ChartWorkspace, WorkspaceAction};
 use crate::ui::layout_prompts::NamePrompt;
 use crate::ui::workspace_toolbar::{self, ToolbarAction};
@@ -22,12 +21,6 @@ impl ChartWorkspace {
         let mut open_id: Option<u64> = None;
         let mut delete_id: Option<u64> = None;
         let layouts = &layout_index.layouts;
-        let unlinkable: Vec<String> = self
-            .charts
-            .iter()
-            .filter(|chart| chart.is_market() && !chart.chart.takes_part_in_sync(chart.source))
-            .map(Chart::display_title)
-            .collect();
         let dirty = self.is_dirty();
         let autosave_on = active_view_id.is_some_and(|id| layout_index.autosave.contains(&id));
         // An Autosave layout also saves drawing-only edits; the toolbar's "unsaved" state does not
@@ -51,9 +44,6 @@ impl ChartWorkspace {
             layouts,
             active_layout: active_view_id,
             watchlist_visible: self.watchlist_visible,
-            sync: self.sync,
-            can_link: self.market_charts() > 1,
-            unlinkable: &unlinkable,
         };
         for action in workspace_toolbar::show(ui, &input) {
             match action {
@@ -82,7 +72,6 @@ impl ChartWorkspace {
                     actions.push(WorkspaceAction::OpenPineScripts);
                 }
                 ToolbarAction::AddChart => self.add_chart.open(),
-                ToolbarAction::SetSync(sync) => self.set_sync(sync),
             }
         }
 
