@@ -31,6 +31,22 @@ impl WatchlistQuoteBook {
         self.inner.revision.load(Ordering::Acquire)
     }
 
+    /// Forgets quotes nobody asks for any more. Returns whether any was held.
+    pub fn remove(&self, keys: &[String]) -> bool {
+        let Ok(mut quotes) = self.inner.quotes.write() else {
+            return false;
+        };
+        let before = quotes.len();
+        for key in keys {
+            quotes.remove(key);
+        }
+        let changed = quotes.len() != before;
+        if changed {
+            self.inner.revision.fetch_add(1, Ordering::AcqRel);
+        }
+        changed
+    }
+
     /// Replaces quotes for the given keys; an unchanged quote does not count as a change.
     /// Returns whether anything changed.
     pub fn apply(&self, updates: HashMap<String, WatchlistQuote>) -> bool {
@@ -82,6 +98,19 @@ mod tests {
 
         assert!(book.apply(HashMap::from([(id.key(), quote(2.0))])));
         assert_eq!(reader.revision(), 2);
+    }
+
+    #[test]
+    fn removing_forgets_quotes_and_bumps_the_revision_only_when_one_was_held() {
+        let book = WatchlistQuoteBook::default();
+        let id = InstrumentId::new(DataSource::Binance, "BTCUSDT");
+        book.apply(HashMap::from([(id.key(), quote(1.0))]));
+        let revision = book.revision();
+        assert!(!book.remove(&["BINANCE:ETHUSDT".to_owned()]));
+        assert_eq!(book.revision(), revision);
+        assert!(book.remove(&[id.key()]));
+        assert!(book.get(&id).is_none());
+        assert_eq!(book.revision(), revision + 1);
     }
 
     #[test]

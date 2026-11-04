@@ -29,6 +29,8 @@ pub struct Config {
     /// A rate limit backs off further.
     pub rate_limit_backoff: (f64, f64),
     pub rejected_retry_ms: i64,
+    /// What the engine remembers about a market nobody asks for is dropped after this long.
+    pub idle_grace_ms: i64,
     /// Coinbase products the socket has not answered yet are filled from REST after this long...
     pub coinbase_fallback_delay_ms: i64,
     /// ...and any product the socket has been quiet about is refreshed from REST this often.
@@ -43,6 +45,7 @@ impl Default for Config {
             failure_backoff: (5.0, 30.0),
             rate_limit_backoff: (15.0, 60.0),
             rejected_retry_ms: 600_000,
+            idle_grace_ms: 600_000,
             coinbase_fallback_delay_ms: 6_000,
             coinbase_refresh_ms: 30_000,
             chain_lookups_per_round: 5,
@@ -54,6 +57,9 @@ impl Default for Config {
 /// frame it is on screen; one on a background tab or in a hidden or covered window
 /// draws none, so its demand lapses instead of polling for nobody.
 pub const SIDEBAR_LEASE_MS: i64 = 3_000;
+
+/// The least time between two passes that forget idle markets.
+const PRUNE_EVERY_MS: i64 = 5_000;
 
 struct Consumer {
     instruments: BTreeMap<String, InstrumentId>,
@@ -154,6 +160,9 @@ pub struct Engine {
     /// Upper-case product id -> instrument key.
     coinbase_products: HashMap<String, String>,
     coinbase_subscribed_at: HashMap<String, i64>,
+    /// When each remembered market stopped being asked for (see `Config::idle_grace_ms`).
+    idle_since: HashMap<String, i64>,
+    last_prune_ms: i64,
 }
 
 impl Engine {
@@ -170,6 +179,8 @@ impl Engine {
             unresolved_chains: HashSet::new(),
             coinbase_products: HashMap::new(),
             coinbase_subscribed_at: HashMap::new(),
+            idle_since: HashMap::new(),
+            last_prune_ms: i64::MIN / 2,
         }
     }
 
@@ -239,6 +250,10 @@ impl Engine {
     /// Silences leased consumers that stopped asking; true when any did. They keep their
     /// place and wake on their next `update_leased`.
     pub fn expire_leases(&mut self, now: i64) -> bool {
+        // The loop calls this every tick, even with nothing subscribed: the moment to
+        // forget markets that nobody has asked for in a while.
+        let wanted = self.wanted();
+        self.prune(&wanted, now);
         let mut expired = false;
         for consumer in self.consumers.values_mut() {
             if consumer.leased && consumer.active && now - consumer.seen_ms > SIDEBAR_LEASE_MS {
@@ -329,6 +344,7 @@ impl Engine {
 
     fn reconcile(&mut self, now: i64) {
         let wanted = self.wanted();
+        self.prune(&wanted, now);
         if wanted.is_empty() {
             self.coinbase_products.clear();
             return;
@@ -351,6 +367,62 @@ impl Engine {
         // Prices that aged while nothing was polling must not read as live on return.
         self.age_quotes(now);
         self.sync_coinbase(&wanted, now);
+    }
+
+    /// Forgets markets nobody has asked for during the grace period: their prices, the
+    /// moments they were confirmed, their refusals and Coinbase bookkeeping. Without this a
+    /// long session that imports, deletes and browses many markets only ever grows, and a
+    /// market that returns hours later would show an hours-old price at once.
+    fn prune(&mut self, wanted: &BTreeMap<String, InstrumentId>, now: i64) {
+        // Reconciling and planning are frequent; forgetting is not urgent.
+        if now - self.last_prune_ms < PRUNE_EVERY_MS {
+            return;
+        }
+        self.last_prune_ms = now;
+        let remembered: Vec<String> = self
+            .known
+            .keys()
+            .chain(self.received.keys())
+            .chain(self.rejected.keys())
+            .chain(self.coinbase_subscribed_at.keys())
+            .chain(self.unresolved_chains.iter())
+            .cloned()
+            .collect();
+        for key in &remembered {
+            if wanted.contains_key(key) {
+                self.idle_since.remove(key);
+            } else {
+                self.idle_since.entry(key.clone()).or_insert(now);
+            }
+        }
+        let expired: Vec<String> = self
+            .idle_since
+            .iter()
+            .filter(|(_, since)| now - **since > self.config.idle_grace_ms)
+            .map(|(key, _)| key.clone())
+            .collect();
+        if expired.is_empty() {
+            return;
+        }
+        for key in &expired {
+            self.idle_since.remove(key);
+            self.known.remove(key);
+            self.received.remove(key);
+            self.rejected.remove(key);
+            self.coinbase_subscribed_at.remove(key);
+            self.unresolved_chains.remove(key);
+        }
+        self.book.remove(&expired);
+    }
+
+    #[cfg(test)]
+    pub fn remembered_markets(&self) -> usize {
+        self.known.len()
+            + self.received.len()
+            + self.rejected.len()
+            + self.coinbase_subscribed_at.len()
+            + self.unresolved_chains.len()
+            + self.idle_since.len()
     }
 
     fn sync_coinbase(&mut self, wanted: &BTreeMap<String, InstrumentId>, now: i64) {
@@ -442,8 +514,9 @@ impl Engine {
 
     /// One round: every due source gets one batched request.
     pub fn plan(&mut self, now: i64) -> Vec<Planned> {
-        self.age_quotes(now);
         let wanted = self.wanted();
+        self.prune(&wanted, now);
+        self.age_quotes(now);
         let mut by_source: BTreeMap<u8, Planned> = BTreeMap::new();
         for (key, instrument) in &wanted {
             let Some(source) = self.polled(key, instrument, now) else {
@@ -1219,6 +1292,77 @@ mod tests {
                 assert_eq!(quote.freshness, Freshness::Live, "{index}");
             }
         }
+    }
+
+    #[test]
+    fn markets_nobody_asks_for_are_forgotten_after_the_grace_period() {
+        let (engine, book, provider) = setup();
+        let grace = Config::default().idle_grace_ms;
+        provider.price("BTCUSDT", 100.0);
+        let btc = id(DataSource::Binance, "BTCUSDT");
+        lock(&engine).update(1, vec![btc.clone()], true, T0);
+        round(&engine, &provider, T0);
+        assert_eq!(last(&book, &btc), Some(100.0));
+
+        // Dropped from every sidebar: kept through the grace period, then forgotten.
+        lock(&engine).update(1, Vec::new(), true, T0 + 10_000);
+        round(&engine, &provider, T0 + 20_000);
+        assert_eq!(last(&book, &btc), Some(100.0), "still remembered");
+        lock(&engine).expire_leases(T0 + 10_000 + grace + 1);
+        assert!(book.get(&btc).is_none());
+        assert_eq!(lock(&engine).remembered_markets(), 0);
+
+        // It comes back with no old price to show.
+        lock(&engine).update(1, vec![btc.clone()], true, T0 + 2 * grace);
+        assert!(book.get(&btc).is_none(), "nothing live until it is fetched");
+    }
+
+    #[test]
+    fn a_market_asked_for_again_inside_the_grace_period_keeps_its_price() {
+        let (engine, book, provider) = setup();
+        provider.price("BTCUSDT", 100.0);
+        let btc = id(DataSource::Binance, "BTCUSDT");
+        lock(&engine).update(1, vec![btc.clone()], true, T0);
+        round(&engine, &provider, T0);
+        lock(&engine).update(1, Vec::new(), true, T0 + 10_000);
+        lock(&engine).update(1, vec![btc.clone()], true, T0 + 60_000);
+        lock(&engine).update(1, Vec::new(), true, T0 + 70_000);
+        // The idle clock restarted at +70 s, so +10 min after the first drop is too soon.
+        lock(&engine).expire_leases(T0 + 10_000 + 600_001);
+        assert_eq!(last(&book, &btc), Some(100.0));
+        lock(&engine).expire_leases(T0 + 70_000 + 600_001);
+        assert!(book.get(&btc).is_none());
+    }
+
+    #[test]
+    fn churning_through_many_markets_keeps_the_engine_bounded() {
+        let (engine, book, provider) = setup();
+        let grace = Config::default().idle_grace_ms;
+        let mut now = T0;
+        for batch in 0..20 {
+            let markets: Vec<InstrumentId> = (0..50)
+                .map(|index| id(DataSource::Binance, &format!("B{batch:02}M{index:02}USDT")))
+                .collect();
+            for market in &markets {
+                provider.price(&market.symbol, 1.0);
+            }
+            lock(&engine).update(1, markets, true, now);
+            round(&engine, &provider, now);
+            now += grace / 2;
+        }
+        // 1,000 markets passed through; only those of the last grace period remain.
+        let remembered = lock(&engine).remembered_markets();
+        assert!(
+            remembered < 4 * 150,
+            "{remembered} entries retained for 1,000 markets"
+        );
+        lock(&engine).update(1, Vec::new(), true, now);
+        lock(&engine).expire_leases(now + 2 * grace);
+        assert_eq!(lock(&engine).remembered_markets(), 0);
+        assert!(
+            book.get(&id(DataSource::Binance, "B00M00USDT")).is_none(),
+            "the book is pruned too"
+        );
     }
 
     #[test]
