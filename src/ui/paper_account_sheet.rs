@@ -277,7 +277,7 @@ fn form(ui: &mut egui::Ui, state: &mut PaperAccountSheetState) {
     let tint = if state.is_reset {
         kit::RED
     } else {
-        kit::ACCENT
+        theme::text_primary()
     };
     sheet::header(
         ui,
@@ -380,14 +380,13 @@ fn footer(
 ) {
     ui.horizontal(|ui| {
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let tint = if state.is_reset {
-                kit::RED
-            } else {
-                kit::ACCENT
-            };
             let enabled = state.can_submit();
-            let clicked =
-                kit::tinted_button(ui, state.submit_title(), tint, enabled, false, 130.0).clicked();
+            let clicked = if state.is_reset {
+                kit::tinted_button(ui, state.submit_title(), kit::RED, enabled, false, 130.0)
+            } else {
+                kit::large_prominent_button(ui, state.submit_title(), enabled, 130.0)
+            }
+            .clicked();
             let entered = enabled && ui.input(|input| input.key_pressed(egui::Key::Enter));
             if (clicked || entered)
                 && let Some(result) = state.result()
@@ -436,7 +435,7 @@ fn leverage_field(ui: &mut egui::Ui, state: &mut PaperAccountSheetState) {
 fn leverage_preset(ui: &mut egui::Ui, preset: f64, selected: bool) -> egui::Response {
     let label = format!("{preset}×");
     let color = if selected {
-        kit::ACCENT
+        theme::text_primary()
     } else {
         theme::text_secondary()
     };
@@ -455,7 +454,7 @@ fn leverage_preset(ui: &mut egui::Ui, preset: f64, selected: bool) -> egui::Resp
     let response = crate::ui::accessibility::label(response, label)
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     let fill = if selected {
-        theme::with_alpha(kit::ACCENT, 0.14)
+        kit::primary(0.2)
     } else if response.hovered() {
         kit::primary(0.09)
     } else {

@@ -92,7 +92,7 @@ pub fn text_field(
             title,
             kit::size::CAPTION + 1.0,
             kit::SEMIBOLD,
-            kit::ACCENT,
+            theme::text_secondary(),
             f32::INFINITY,
         );
         let (button, response) = inner.allocate_exact_size(
@@ -102,13 +102,17 @@ pub fn text_field(
         let response = crate::ui::accessibility::label(response, title)
             .on_hover_cursor(egui::CursorIcon::PointingHand);
         if response.hovered() {
-            inner
-                .painter()
-                .rect_filled(button, 6.0, theme::with_alpha(kit::ACCENT, 0.14));
+            inner.painter().rect_filled(button, 6.0, kit::primary(0.1));
         }
-        inner
-            .painter()
-            .galley(button.center() - galley.size() / 2.0, galley, kit::ACCENT);
+        inner.painter().galley(
+            button.center() - galley.size() / 2.0,
+            galley,
+            if response.hovered() {
+                theme::text_primary()
+            } else {
+                theme::text_secondary()
+            },
+        );
         clicked = response.clicked();
     }
     let room = inner.available_width().max(36.0);

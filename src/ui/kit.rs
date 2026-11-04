@@ -1982,6 +1982,52 @@ pub fn large_button(ui: &mut Ui, label: &str) -> egui::Response {
     response
 }
 
+/// `large_button`'s emphasised twin, for a sheet's primary action: the same 32 pt size on a
+/// stronger neutral fill, so it reads as the default without any colour. Greyed when disabled.
+pub fn large_prominent_button(
+    ui: &mut Ui,
+    label: &str,
+    enabled: bool,
+    min_width: f32,
+) -> egui::Response {
+    let color = if enabled {
+        theme::text_primary()
+    } else {
+        theme::text_tertiary()
+    };
+    let text = galley(ui, label, size::BODY + 1.0, MEDIUM, color, f32::INFINITY);
+    let (rect, response) = ui.allocate_exact_size(
+        vec2((text.size().x + 36.0).max(min_width), 32.0),
+        if enabled {
+            Sense::click()
+        } else {
+            Sense::hover()
+        },
+    );
+    let response = crate::ui::accessibility::label(response, label);
+    let hovered = response.hovered() && enabled;
+    let fill = primary(
+        match (enabled, response.is_pointer_button_down_on(), hovered) {
+            (false, _, _) => 0.05,
+            (true, true, _) => 0.3,
+            (true, false, true) => 0.24,
+            _ => 0.2,
+        },
+    );
+    ui.painter().rect_filled(rect, 8.0, fill);
+    if enabled {
+        ui.painter().rect_stroke(
+            rect,
+            8.0,
+            Stroke::new(1.0, primary(0.12)),
+            StrokeKind::Inside,
+        );
+    }
+    ui.painter()
+        .galley(rect.center() - text.size() / 2.0, text, color);
+    response
+}
+
 /// A large (32 pt) button filled with `tint`: the order ticket's Buy / Sell. While `busy` a
 /// spinner replaces the label's left margin and the button ignores clicks.
 pub fn tinted_button(

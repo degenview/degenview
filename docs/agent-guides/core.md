@@ -38,8 +38,8 @@ See [the architecture map](../architecture.md) before changing module boundaries
   `card_highlight` with `text_primary` for its label. A destructive action is `kit::destructive_sheet_button`.
   Colour belongs to state and data (a selected row or tab, a link, a chart series), never to the
   control you press. Check a new button against the neighbouring sheets before adding colour.
-  Known breach to remove, not to copy: the paper account sheet's submit button is a
-  `tinted_button` in `kit::ACCENT`. The rest of the app has not been audited for others.
+  A sheet's large primary action is `kit::large_prominent_button`. The app has not been audited
+  for buttons that still use the accent.
 - Links are always gray. A hyperlink or link-like text (documentation, community scripts, "learn more")
   is `theme::text_secondary()` with an underline, never `kit::ACCENT`, `theme::ACCENT` or
   `theme::SYSTEM_ACCENT`. More generally do not reach for the blue accent in new UI: it is not a

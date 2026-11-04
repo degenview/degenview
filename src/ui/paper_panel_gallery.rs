@@ -200,3 +200,62 @@ fn gallery_of_the_panel() {
         }
     }
 }
+
+#[test]
+#[ignore = "writes pictures"]
+fn gallery_of_the_sheets() {
+    use crate::model::paper_ticket::TicketDraft;
+    use crate::ui::paper_account_sheet::{self, PaperAccountSheetState};
+    use crate::ui::paper_order_ticket::{self, PaperTicketInput, PaperTicketState};
+    let _restore = theme::RestoreDefaultTheme;
+    for light in [false, true] {
+        let tag = if light { "light" } else { "dark" };
+        let theme_pref = if light {
+            egui::ThemePreference::Light
+        } else {
+            egui::ThemePreference::Dark
+        };
+        for (name, kind) in [("create", 0), ("ticket-market", 1), ("ticket-limit", 2)] {
+            let mut screen = Screen::new(Vec2::new(760.0, 900.0));
+            screen.ctx.set_theme(theme_pref);
+            let mut sheet = PaperAccountSheetState::create();
+            let mut draft = TicketDraft::opening(
+                instrument("BTCUSDT", "Bitcoin", DataSource::Binance, 0.01),
+                Some(61_250.0),
+                PaperOrderSide::Buy,
+            );
+            draft.bid = Some(61_249.5);
+            draft.ask = Some(61_250.5);
+            draft.last = Some(61_250.0);
+            draft.available_funds = Some(9_120.0);
+            draft.leverage = 1.0;
+            if kind == 2 {
+                draft.kind = PaperOrderType::Limit;
+            }
+            let mut ticket = PaperTicketState::new(draft);
+            let mut last = None;
+            for _ in 0..4 {
+                last = Some(screen.run(vec![], |ui| {
+                    theme::sync(ui.ctx());
+                    ui.painter()
+                        .rect_filled(ui.max_rect(), 0.0, theme::background());
+                    let ctx = ui.ctx().clone();
+                    if kind == 0 {
+                        paper_account_sheet::show(&ctx, &mut sheet);
+                    } else {
+                        paper_order_ticket::show(
+                            &ctx,
+                            &mut ticket,
+                            &PaperTicketInput {
+                                account_id: Some(1),
+                                currency: PaperCurrency::Usd,
+                                error: None,
+                            },
+                        );
+                    }
+                }));
+            }
+            screen.save(&format!("sheet-{name}-{tag}"), last.expect("ran"));
+        }
+    }
+}
