@@ -18,7 +18,7 @@ The implementation should not be promoted as production-ready until those issues
 ## Status
 
 Updated after validating every finding against the code on `main` (d782f68) and fixing them in one
-pull request: PR_LINK. `cargo test --lib` (5,395 tests, corpus excluded),
+pull request: [#318](https://github.com/degenview/degenview/pull/318). `cargo test --lib` (5,395 tests, corpus excluded),
 `cargo fmt --check` and `cargo clippy --all-targets -D warnings` pass. Each new regression test for the bridge and alert fixes was
 run once with its fix removed and failed; the others were not
 checked that way. Nothing here was exercised with a real MCP client, against the background agent
