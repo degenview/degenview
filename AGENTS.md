@@ -39,6 +39,12 @@ Links are always gray (`theme::text_secondary()`, underlined), and the blue acce
 new UI: not for links, buttons or decoration. Details and the existing exceptions are in
 [Core guidance](docs/agent-guides/core.md).
 
+## Menus fit their rows
+
+A pull-down is as wide as its longest row and no wider. Never guess a width (`set_min_width(180.0)`):
+use `kit::fitted_menu` (or `kit::menu_fit`), and look at the opened menu in a picture before shipping
+it. Details in [Core guidance](docs/agent-guides/core.md).
+
 ## Choosing the release type
 
 When a task ends with "should we release this?", or the user asks what to release, look at what

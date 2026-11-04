@@ -595,19 +595,25 @@ pub fn positions_table(
                         true,
                         true,
                     );
-                    egui::Popup::menu(&response)
-                        .frame(kit::menu_frame())
-                        .align(egui::RectAlign::BOTTOM_END)
-                        .gap(4.0)
-                        .show(|ui| {
-                            ui.set_width(150.0);
-                            ui.spacing_mut().item_spacing.y = 0.0;
-                            if kit::menu_item(ui, Icon::ArrowLeftRight, "Reverse…", true, false) {
+                    kit::fitted_menu(
+                        ui,
+                        &response,
+                        egui::RectAlign::BOTTOM_END,
+                        &["Reverse\u{2026}"],
+                        |ui| {
+                            if kit::menu_item(
+                                ui,
+                                Icon::ArrowLeftRight,
+                                "Reverse\u{2026}",
+                                true,
+                                false,
+                            ) {
                                 state.pending_reverse =
                                     Some((position.account_id, position.instrument.key.clone()));
                                 ui.close();
                             }
-                        });
+                        },
+                    );
                     if small_button(ui, "Close", true)
                         .on_hover_text("Close at market")
                         .clicked()

@@ -325,13 +325,18 @@ fn account_menu(ui: &mut egui::Ui, input: &PaperHeaderInput, actions: &mut Vec<P
         theme::text_secondary(),
     );
     let response = response.on_hover_text("Switch paper account");
-    egui::Popup::menu(&response)
-        .frame(kit::menu_frame())
-        .align(egui::RectAlign::BOTTOM_START)
-        .gap(4.0)
-        .show(|ui| {
-            ui.set_min_width(180.0);
-            ui.spacing_mut().item_spacing.y = 0.0;
+    let labels: Vec<&str> = input
+        .accounts
+        .iter()
+        .map(|account| account.name.as_str())
+        .chain(["New Account\u{2026}"])
+        .collect();
+    kit::fitted_menu(
+        ui,
+        &response,
+        egui::RectAlign::BOTTOM_START,
+        &labels,
+        |ui| {
             for account in input.accounts {
                 let selected = input.selected == Some(account.id);
                 if kit::menu_item_marked(ui, Icon::Check, &account.name, selected) {
@@ -340,11 +345,12 @@ fn account_menu(ui: &mut egui::Ui, input: &PaperHeaderInput, actions: &mut Vec<P
                 }
             }
             kit::menu_separator(ui);
-            if kit::menu_item(ui, Icon::Plus, "New Account…", true, false) {
+            if kit::menu_item(ui, Icon::Plus, "New Account\u{2026}", true, false) {
                 actions.push(PaperHeaderAction::NewAccount);
                 ui.close();
             }
-        });
+        },
+    );
 }
 
 /// The section tabs: Swift's compact `IconTabBar`, with the live counts.
@@ -374,33 +380,44 @@ fn buttons(ui: &mut egui::Ui, input: &PaperHeaderInput, actions: &mut Vec<PaperH
         false,
         "Account actions",
     );
-    egui::Popup::menu(&more)
-        .frame(kit::menu_frame())
-        .align(egui::RectAlign::BOTTOM_END)
-        .gap(4.0)
-        .show(|ui| {
-            ui.set_min_width(200.0);
-            ui.spacing_mut().item_spacing.y = 0.0;
-            if kit::menu_item(ui, Icon::Plus, "New Account…", true, false) {
+    kit::fitted_menu(
+        ui,
+        &more,
+        egui::RectAlign::BOTTOM_END,
+        &[
+            "New Account\u{2026}",
+            "Export Trading Data\u{2026}",
+            "Reset Account\u{2026}",
+            "Delete Account\u{2026}",
+        ],
+        |ui| {
+            if kit::menu_item(ui, Icon::Plus, "New Account\u{2026}", true, false) {
                 actions.push(PaperHeaderAction::NewAccount);
                 ui.close();
             }
             kit::menu_separator(ui);
-            if kit::menu_item(ui, Icon::ShareUp, "Export Trading Data…", true, false) {
+            if kit::menu_item(
+                ui,
+                Icon::ShareUp,
+                "Export Trading Data\u{2026}",
+                true,
+                false,
+            ) {
                 actions.push(PaperHeaderAction::ExportData);
                 ui.close();
             }
-            if kit::menu_item(ui, Icon::Undo, "Reset Account…", true, true) {
+            if kit::menu_item(ui, Icon::Undo, "Reset Account\u{2026}", true, true) {
                 actions.push(PaperHeaderAction::ResetAccount);
                 ui.close();
             }
             if can_delete_account(input)
-                && kit::menu_item(ui, Icon::Trash, "Delete Account…", true, true)
+                && kit::menu_item(ui, Icon::Trash, "Delete Account\u{2026}", true, true)
             {
                 actions.push(PaperHeaderAction::DeleteAccount);
                 ui.close();
             }
-        });
+        },
+    );
     let showing = input.show_trading_on_charts;
     let icon = if showing { Icon::Eye } else { Icon::EyeSlash };
     if icon_button(ui, icon, eye_label(showing), showing).clicked() {

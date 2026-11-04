@@ -1776,6 +1776,30 @@ pub(crate) fn menu_width_for(ui: &Ui, labels: &[impl AsRef<str>], trigger_width:
     wanted.min(MENU_MAX_WIDTH.max(trigger_width))
 }
 
+/// A pull-down on `response` that is exactly as wide as its rows need (`labels` are the rows'
+/// texts), at least 72 pt and at most `MENU_MAX_WIDTH`, never padded out to a guessed width.
+/// Rows touch; a click inside ends the menu only where the row calls `ui.close()`.
+pub fn fitted_menu<R>(
+    ui: &Ui,
+    response: &egui::Response,
+    align: egui::RectAlign,
+    labels: &[impl AsRef<str>],
+    body: impl FnOnce(&mut Ui) -> R,
+) -> Option<R> {
+    let width = menu_width_for(ui, labels, 0.0);
+    egui::Popup::menu(response)
+        .frame(menu_frame())
+        .align(align)
+        .gap(4.0)
+        .width(width)
+        .show(|ui| {
+            ui.set_width(width - MENU_FRAME_MARGIN);
+            ui.spacing_mut().item_spacing = Vec2::ZERO;
+            body(ui)
+        })
+        .map(|shown| shown.inner)
+}
+
 /// `Picker` in the `.menu` style: a bordered pull-down showing the current choice with up/down
 /// chevrons. Returns the index chosen from `labels` this frame.
 ///

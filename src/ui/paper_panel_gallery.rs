@@ -103,13 +103,45 @@ fn gallery_of_the_panel() {
         order(1, "BTCUSDT", PaperOrderSide::Buy, PaperOrderType::Limit),
         order(2, "ETHUSDT", PaperOrderSide::Sell, PaperOrderType::Stop),
     ];
+    // `click` is a point to press and release on, to open the menu there.
     let cases = [
-        ("positions", PaperTab::Positions, 1_240.0, 300.0, false),
-        ("orders", PaperTab::Orders, 1_240.0, 300.0, false),
-        ("empty", PaperTab::Orders, 1_240.0, 300.0, true),
-        ("compact", PaperTab::Positions, 760.0, 340.0, false),
+        (
+            "positions",
+            PaperTab::Positions,
+            1_240.0,
+            300.0,
+            false,
+            None,
+        ),
+        ("orders", PaperTab::Orders, 1_240.0, 300.0, false, None),
+        ("empty", PaperTab::Orders, 1_240.0, 300.0, true, None),
+        ("compact", PaperTab::Positions, 760.0, 340.0, false, None),
+        (
+            "menu-account",
+            PaperTab::Positions,
+            1_240.0,
+            300.0,
+            false,
+            Some(egui::pos2(130.0, 24.0)),
+        ),
+        (
+            "menu-more",
+            PaperTab::Positions,
+            1_240.0,
+            300.0,
+            false,
+            Some(egui::pos2(1_184.0, 24.0)),
+        ),
+        (
+            "menu-row",
+            PaperTab::Positions,
+            1_240.0,
+            300.0,
+            false,
+            Some(egui::pos2(1_204.0, 197.0)),
+        ),
     ];
-    for (name, tab, width, height, empty) in cases {
+    for (name, tab, width, height, empty, click) in cases {
         for light in [false, true] {
             let mut screen = Screen::new(Vec2::new(width, height));
             screen.ctx.set_theme(if light {
@@ -124,8 +156,21 @@ fn gallery_of_the_panel() {
             let shown_orders: &[PaperOrder] = if empty { &[] } else { &orders };
             let mut last = None;
             let hover = egui::pos2(width * 0.5, 150.0);
-            for _ in 0..4 {
-                last = Some(screen.run(vec![egui::Event::PointerMoved(hover)], |ui| {
+            for frame in 0..8 {
+                let button = |at, pressed| egui::Event::PointerButton {
+                    pos: at,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                };
+                let events = match (click, frame) {
+                    (Some(at), 1..=2) => vec![egui::Event::PointerMoved(at)],
+                    (Some(at), 3) => vec![button(at, true)],
+                    (Some(at), 4) => vec![button(at, false)],
+                    (Some(_), _) => vec![],
+                    (None, _) => vec![egui::Event::PointerMoved(hover)],
+                };
+                last = Some(screen.run(events, |ui| {
                     theme::sync(ui.ctx());
                     let context = Context {
                         currency: PaperCurrency::Usd,
@@ -215,10 +260,21 @@ fn gallery_of_the_sheets() {
         } else {
             egui::ThemePreference::Dark
         };
-        for (name, kind) in [("create", 0), ("ticket-market", 1), ("ticket-limit", 2)] {
+        for (name, kind) in [
+            ("create", 0),
+            ("reset", 3),
+            ("ticket-market", 1),
+            ("ticket-limit", 2),
+        ] {
             let mut screen = Screen::new(Vec2::new(760.0, 900.0));
             screen.ctx.set_theme(theme_pref);
-            let mut sheet = PaperAccountSheetState::create();
+            let mut sheet = if kind == 3 {
+                let mut account = crate::model::paper::PaperAccount::new(3, "Swing", 0);
+                account.initial_balance = 25_000.5;
+                PaperAccountSheetState::reset(&account)
+            } else {
+                PaperAccountSheetState::create()
+            };
             let mut draft = TicketDraft::opening(
                 instrument("BTCUSDT", "Bitcoin", DataSource::Binance, 0.01),
                 Some(61_250.0),
@@ -240,7 +296,7 @@ fn gallery_of_the_sheets() {
                     ui.painter()
                         .rect_filled(ui.max_rect(), 0.0, theme::background());
                     let ctx = ui.ctx().clone();
-                    if kind == 0 {
+                    if kind == 0 || kind == 3 {
                         paper_account_sheet::show(&ctx, &mut sheet);
                     } else {
                         paper_order_ticket::show(

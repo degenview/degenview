@@ -26,6 +26,14 @@ See [the architecture map](../architecture.md) before changing module boundaries
   `kit::menu_scope` first in the body. Do not put bare `ui.button`, `radio`, `checkbox` or
   `menu_button` in a menu: egui frames those itself, so they miss the menu style. Menus stay open
   on a click, so a row that ends the menu calls `ui.close()` and a toggle does not.
+- Pull-down menus are as wide as their longest row, never wider. Menu rows fill
+  `ui.available_width()`, so a menu with no width of its own grows to egui's default popup width and
+  a short list ("New Account…", "Export…") ends up half blank. Use `kit::fitted_menu` for a menu on
+  a button (it measures the labels, pads for the icon gutter, caps at `MENU_MAX_WIDTH`), or
+  `kit::menu_fit(ui, labels)` inside `menu_popup` / `context_popup`. Do not guess a width with
+  `set_min_width(180.0)` / `set_width(200.0)`: a guess is always too wide for some menu, and a
+  minimum is the usual cause of blank space. Look at the opened menu in a picture before shipping
+  it: the right edge of the longest label should sit one row inset from the menu's edge.
 - Code that runs every frame (anything reached from `update`/`ui`) must not touch SQLite beyond a
   cheap change check, parse JSON, or make a blocking system call (XPC, `SMAppService`). Cache the
   result keyed on a change signal (`Store::layout_index`) or query on a thread and poll the channel
