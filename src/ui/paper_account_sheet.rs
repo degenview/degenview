@@ -14,7 +14,7 @@ use crate::model::paper_format as fmt;
 use crate::model::paper_ticket::{decimal_text, parse_decimal};
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit;
-use crate::ui::paper_form::{field_footer, field_label, text_field};
+use crate::ui::paper_form::{dropdown_field, field_footer, field_label, text_field};
 use crate::ui::sheet;
 use crate::ui::theme;
 use eframe::egui::{self, Id};
@@ -99,6 +99,8 @@ pub struct PaperAccountSheetState {
     pub leverage_text: String,
     pub commission_kind: CommissionKind,
     pub commission_text: String,
+    /// The name field takes the keyboard when a new sheet opens; a reset leaves the name alone.
+    focus_pending: bool,
 }
 
 impl PaperAccountSheetState {
@@ -112,6 +114,7 @@ impl PaperAccountSheetState {
             leverage_text: "1".to_owned(),
             commission_kind: CommissionKind::None,
             commission_text: "0".to_owned(),
+            focus_pending: true,
         }
     }
 
@@ -127,6 +130,7 @@ impl PaperAccountSheetState {
             leverage_text: decimal_text(account.settings.leverage.crypto, false),
             commission_kind,
             commission_text: decimal_text(commission, false),
+            focus_pending: false,
         }
     }
 
@@ -259,12 +263,9 @@ pub fn show(
     let mut outcome = None;
     sheet::show(ctx, Id::new("paper-account-sheet"), WIDTH, |ui| {
         ui.add_space(24.0);
-        sheet::inset(ui, |ui| {
-            form(ui, state);
-            ui.add_space(GAP);
-            footer(ui, state, &mut outcome);
-        });
+        sheet::inset(ui, |ui| form(ui, state));
         ui.add_space(24.0);
+        footer(ui, state, &mut outcome);
     });
     if outcome.is_none() && ctx.input(|input| input.key_pressed(egui::Key::Escape)) {
         outcome = Some(AccountSheetOutcome::Cancel);
@@ -277,7 +278,7 @@ fn form(ui: &mut egui::Ui, state: &mut PaperAccountSheetState) {
     let tint = if state.is_reset {
         kit::RED
     } else {
-        kit::ACCENT
+        theme::text_primary()
     };
     sheet::header(
         ui,
@@ -307,6 +308,9 @@ fn form(ui: &mut egui::Ui, state: &mut PaperAccountSheetState) {
     }
 
     field_label(ui, "Account name");
+    if std::mem::take(&mut state.focus_pending) {
+        ui.memory_mut(|memory| memory.request_focus(Id::new(("paper-text-field", "account-name"))));
+    }
     ui.add_enabled_ui(!state.is_reset, |ui| {
         text_field(
             ui,
@@ -322,35 +326,49 @@ fn form(ui: &mut egui::Ui, state: &mut PaperAccountSheetState) {
 
     let balance_error = state.visible_balance_error();
     let code = state.currency.code();
-    ui.columns(2, |columns| {
-        let [balance, currency] = columns else {
-            return;
-        };
-        field_label(balance, "Starting balance");
-        text_field(
-            balance,
-            "account-balance",
-            &mut state.balance_text,
-            "100000",
-            code,
-            balance_error.is_some(),
-            None,
+    let labels: Vec<String> = PaperCurrency::ALL
+        .iter()
+        .map(|currency| currency.code().to_owned())
+        .collect();
+    let selected = PaperCurrency::ALL
+        .iter()
+        .position(|currency| *currency == state.currency)
+        .unwrap_or(0);
+    let width = ui.available_width();
+    let currency_width = 120.0;
+    let gap = 12.0;
+    ui.horizontal_top(|ui| {
+        ui.spacing_mut().item_spacing = egui::Vec2::ZERO;
+        ui.allocate_ui_with_layout(
+            egui::vec2(width - currency_width - gap, 0.0),
+            egui::Layout::top_down(egui::Align::Min),
+            |ui| {
+                ui.set_width(width - currency_width - gap);
+                field_label(ui, "Starting balance");
+                text_field(
+                    ui,
+                    "account-balance",
+                    &mut state.balance_text,
+                    "100000",
+                    code,
+                    balance_error.is_some(),
+                    None,
+                );
+                field_footer(ui, balance_error.map(str::to_owned).as_ref(), None);
+            },
         );
-        field_footer(balance, balance_error.map(str::to_owned).as_ref(), None);
-        field_label(currency, "Currency");
-        // The picker is 24 pt; centre it on the 34 pt field beside it.
-        currency.add_space(5.0);
-        let labels: Vec<String> = PaperCurrency::ALL
-            .iter()
-            .map(|currency| currency.code().to_owned())
-            .collect();
-        let selected = PaperCurrency::ALL
-            .iter()
-            .position(|currency| *currency == state.currency)
-            .unwrap_or(0);
-        if let Some(index) = kit::menu_picker(currency, 96.0, &labels, selected, true) {
-            state.currency = PaperCurrency::ALL[index];
-        }
+        ui.add_space(gap);
+        ui.allocate_ui_with_layout(
+            egui::vec2(currency_width, 0.0),
+            egui::Layout::top_down(egui::Align::Min),
+            |ui| {
+                ui.set_width(currency_width);
+                field_label(ui, "Currency");
+                if let Some(index) = dropdown_field(ui, &labels, selected, true) {
+                    state.currency = PaperCurrency::ALL[index];
+                }
+            },
+        );
     });
     ui.add_space(GAP);
 
@@ -373,31 +391,39 @@ fn form(ui: &mut egui::Ui, state: &mut PaperAccountSheetState) {
     }
 }
 
+/// The action bar: a hairline across the whole sheet, Cancel on the left and the one primary
+/// action on the right, as the order ticket's footer is laid out.
 fn footer(
     ui: &mut egui::Ui,
     state: &PaperAccountSheetState,
     outcome: &mut Option<AccountSheetOutcome>,
 ) {
-    ui.horizontal(|ui| {
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            let tint = if state.is_reset {
-                kit::RED
-            } else {
-                kit::ACCENT
-            };
-            let enabled = state.can_submit();
-            let clicked =
-                kit::tinted_button(ui, state.submit_title(), tint, enabled, false, 130.0).clicked();
-            let entered = enabled && ui.input(|input| input.key_pressed(egui::Key::Enter));
-            if (clicked || entered)
-                && let Some(result) = state.result()
-            {
-                *outcome = Some(AccountSheetOutcome::Submit(Box::new(result)));
-            }
+    let (line, _) =
+        ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
+    ui.painter().rect_filled(line, 0.0, theme::separator());
+    sheet::inset(ui, |ui| {
+        ui.add_space(14.0);
+        ui.horizontal(|ui| {
             if kit::large_button(ui, "Cancel").clicked() {
                 *outcome = Some(AccountSheetOutcome::Cancel);
             }
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let enabled = state.can_submit();
+                let clicked = if state.is_reset {
+                    kit::tinted_button(ui, state.submit_title(), kit::RED, enabled, false, 130.0)
+                } else {
+                    kit::large_prominent_button(ui, state.submit_title(), enabled, 130.0)
+                }
+                .clicked();
+                let entered = enabled && ui.input(|input| input.key_pressed(egui::Key::Enter));
+                if (clicked || entered)
+                    && let Some(result) = state.result()
+                {
+                    *outcome = Some(AccountSheetOutcome::Submit(Box::new(result)));
+                }
+            });
         });
+        ui.add_space(14.0);
     });
 }
 
@@ -418,9 +444,13 @@ fn leverage_field(ui: &mut egui::Ui, state: &mut PaperAccountSheetState) {
             );
         });
         let current = state.leverage();
+        // The presets share what the field leaves, so the row ends where the others do.
+        let gap = ui.spacing().item_spacing.x;
+        let count = LEVERAGE_PRESETS.len() as f32;
+        let each = ((ui.available_width() - gap * (count - 1.0)) / count).max(32.0);
         for preset in LEVERAGE_PRESETS {
             let selected = current == Some(preset);
-            if leverage_preset(ui, preset, selected).clicked() {
+            if leverage_preset(ui, preset, selected, each).clicked() {
                 state.leverage_text = decimal_text(preset, false);
             }
         }
@@ -433,10 +463,10 @@ fn leverage_field(ui: &mut egui::Ui, state: &mut PaperAccountSheetState) {
 }
 
 /// A "10×" capsule, tinted when it is the current leverage.
-fn leverage_preset(ui: &mut egui::Ui, preset: f64, selected: bool) -> egui::Response {
+fn leverage_preset(ui: &mut egui::Ui, preset: f64, selected: bool, width: f32) -> egui::Response {
     let label = format!("{preset}×");
     let color = if selected {
-        kit::ACCENT
+        theme::text_primary()
     } else {
         theme::text_secondary()
     };
@@ -448,20 +478,17 @@ fn leverage_preset(ui: &mut egui::Ui, preset: f64, selected: bool) -> egui::Resp
         color,
         f32::INFINITY,
     );
-    let (rect, response) = ui.allocate_exact_size(
-        egui::vec2(galley.size().x + 14.0, galley.size().y + 10.0),
-        egui::Sense::click(),
-    );
+    let (rect, response) = ui.allocate_exact_size(egui::vec2(width, 28.0), egui::Sense::click());
     let response = crate::ui::accessibility::label(response, label)
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     let fill = if selected {
-        theme::with_alpha(kit::ACCENT, 0.14)
+        kit::primary(0.2)
     } else if response.hovered() {
         kit::primary(0.09)
     } else {
         kit::primary(0.05)
     };
-    ui.painter().rect_filled(rect, rect.height() / 2.0, fill);
+    ui.painter().rect_filled(rect, 8.0, fill);
     ui.painter()
         .galley(rect.center() - galley.size() / 2.0, galley, color);
     response

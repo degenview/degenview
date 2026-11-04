@@ -641,9 +641,6 @@ impl ChartWorkspace {
             for action in panel_actions {
                 match action {
                     PaperPanelAction::Close => self.paper_panel_visible = false,
-                    // File dialogs/export plumbing is a follow-up; the panel keeps the action
-                    // explicit instead of silently exporting to an arbitrary directory.
-                    PaperPanelAction::Export => {}
                 }
             }
         }

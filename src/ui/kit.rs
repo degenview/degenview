@@ -433,6 +433,16 @@ pub fn tab_bar_compact<T: Copy + PartialEq>(
     tab_bar_impl(ui, id, items, selected, false);
 }
 
+/// The compact bar at 28 pt tall, so it lines up with other 28 pt controls in a header row.
+pub fn tab_bar_slim<T: Copy + PartialEq>(
+    ui: &mut Ui,
+    id: Id,
+    items: &[TabItem<T>],
+    selected: &mut T,
+) {
+    tab_bar_with(ui, id, items, selected, false, Density::Slim);
+}
+
 /// The regular `IconTabBar` (14 pt titles, 16 pt of padding) that hugs its titles, as the chart
 /// settings sheet draws it; the sheet centres it.
 pub fn tab_bar_regular<T: Copy + PartialEq>(
@@ -457,6 +467,8 @@ pub fn tab_bar_regular_width<T: Copy + PartialEq>(ui: &Ui, items: &[TabItem<T>])
 /// The two `IconTabBar` sizes: Swift's `isCompact` flag.
 #[derive(Clone, Copy, PartialEq)]
 enum Density {
+    /// A 28 pt track, the height of the Paper panel's header controls.
+    Slim,
     Compact,
     Regular,
 }
@@ -464,6 +476,7 @@ enum Density {
 impl Density {
     fn font(self) -> f32 {
         match self {
+            Self::Slim => 12.0,
             Self::Compact => 12.5,
             Self::Regular => 14.0,
         }
@@ -471,6 +484,7 @@ impl Density {
 
     fn glyph(self) -> f32 {
         match self {
+            Self::Slim => 11.5,
             Self::Compact => 12.0,
             Self::Regular => 14.0,
         }
@@ -478,6 +492,7 @@ impl Density {
 
     fn pad(self) -> f32 {
         match self {
+            Self::Slim => 10.0,
             Self::Compact => 11.0,
             Self::Regular => 16.0,
         }
@@ -485,15 +500,24 @@ impl Density {
 
     fn gap(self) -> f32 {
         match self {
-            Self::Compact => 5.0,
+            Self::Slim | Self::Compact => 5.0,
             Self::Regular => 7.0,
         }
     }
 
     fn height(self) -> f32 {
         match self {
+            Self::Slim => 22.0,
             Self::Compact => 28.0,
             Self::Regular => 34.0,
+        }
+    }
+
+    /// The track's corner radius; the plates inside sit 3 pt in, so theirs is that much less.
+    fn track_radius(self) -> f32 {
+        match self {
+            Self::Slim => 9.0,
+            Self::Compact | Self::Regular => 11.0,
         }
     }
 }
@@ -572,10 +596,10 @@ fn tab_bar_with<T: Copy + PartialEq>(
     };
     let (track, _) = ui.allocate_exact_size(vec2(track_width, height + 6.0), Sense::hover());
     ui.painter()
-        .rect_filled(track, 11.0, theme::quaternary(0.6));
+        .rect_filled(track, density.track_radius(), theme::quaternary(0.6));
     ui.painter().rect_stroke(
         track,
-        11.0,
+        density.track_radius(),
         Stroke::new(1.0, hairline()),
         StrokeKind::Inside,
     );
@@ -591,6 +615,7 @@ fn tab_bar_with<T: Copy + PartialEq>(
     for (index, item) in items.iter().enumerate() {
         let width = segment_widths[index];
         let segment = Rect::from_min_size(pos2(left, track.top() + 3.0), vec2(width, height));
+        let plate = density.track_radius() - 3.0;
         left += width + 2.0;
         let response = ui
             .interact(segment, id.with(index), Sense::click())
@@ -606,17 +631,17 @@ fn tab_bar_with<T: Copy + PartialEq>(
                     spread: 0,
                     color: Color32::from_black_alpha(40),
                 }
-                .as_shape(segment, 8.0),
+                .as_shape(segment, plate),
             );
-            painter.rect_filled(segment, 8.0, control());
+            painter.rect_filled(segment, plate, control());
             painter.rect_stroke(
                 segment,
-                8.0,
+                plate,
                 Stroke::new(1.0, hairline()),
                 StrokeKind::Inside,
             );
         } else if response.hovered() {
-            painter.rect_filled(segment, 8.0, primary(0.04));
+            painter.rect_filled(segment, plate, primary(0.04));
         }
         let title_color = if active {
             theme::text_primary()
@@ -1751,6 +1776,30 @@ pub(crate) fn menu_width_for(ui: &Ui, labels: &[impl AsRef<str>], trigger_width:
     wanted.min(MENU_MAX_WIDTH.max(trigger_width))
 }
 
+/// A pull-down on `response` that is exactly as wide as its rows need (`labels` are the rows'
+/// texts), at least 72 pt and at most `MENU_MAX_WIDTH`, never padded out to a guessed width.
+/// Rows touch; a click inside ends the menu only where the row calls `ui.close()`.
+pub fn fitted_menu<R>(
+    ui: &Ui,
+    response: &egui::Response,
+    align: egui::RectAlign,
+    labels: &[impl AsRef<str>],
+    body: impl FnOnce(&mut Ui) -> R,
+) -> Option<R> {
+    let width = menu_width_for(ui, labels, 0.0);
+    egui::Popup::menu(response)
+        .frame(menu_frame())
+        .align(align)
+        .gap(4.0)
+        .width(width)
+        .show(|ui| {
+            ui.set_width(width - MENU_FRAME_MARGIN);
+            ui.spacing_mut().item_spacing = Vec2::ZERO;
+            body(ui)
+        })
+        .map(|shown| shown.inner)
+}
+
 /// `Picker` in the `.menu` style: a bordered pull-down showing the current choice with up/down
 /// chevrons. Returns the index chosen from `labels` this frame.
 ///
@@ -1954,6 +2003,52 @@ pub fn large_button(ui: &mut Ui, label: &str) -> egui::Response {
         text,
         theme::text_primary(),
     );
+    response
+}
+
+/// `large_button`'s emphasised twin, for a sheet's primary action: the same 32 pt size on a
+/// stronger neutral fill, so it reads as the default without any colour. Greyed when disabled.
+pub fn large_prominent_button(
+    ui: &mut Ui,
+    label: &str,
+    enabled: bool,
+    min_width: f32,
+) -> egui::Response {
+    let color = if enabled {
+        theme::text_primary()
+    } else {
+        theme::text_tertiary()
+    };
+    let text = galley(ui, label, size::BODY + 1.0, MEDIUM, color, f32::INFINITY);
+    let (rect, response) = ui.allocate_exact_size(
+        vec2((text.size().x + 36.0).max(min_width), 32.0),
+        if enabled {
+            Sense::click()
+        } else {
+            Sense::hover()
+        },
+    );
+    let response = crate::ui::accessibility::label(response, label);
+    let hovered = response.hovered() && enabled;
+    let fill = primary(
+        match (enabled, response.is_pointer_button_down_on(), hovered) {
+            (false, _, _) => 0.05,
+            (true, true, _) => 0.3,
+            (true, false, true) => 0.24,
+            _ => 0.2,
+        },
+    );
+    ui.painter().rect_filled(rect, 8.0, fill);
+    if enabled {
+        ui.painter().rect_stroke(
+            rect,
+            8.0,
+            Stroke::new(1.0, primary(0.12)),
+            StrokeKind::Inside,
+        );
+    }
+    ui.painter()
+        .galley(rect.center() - text.size() / 2.0, text, color);
     response
 }
 
