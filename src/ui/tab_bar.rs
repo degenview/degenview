@@ -329,9 +329,19 @@ impl TabBar<'_> {
         }
 
         // Two gray links at the far right: the project on GitHub, and a coffee for its maker.
-        let github = egui::Image::new(egui::include_image!("../../assets/brand/github.svg"));
-        let links = [("GitHub", GITHUB_URL), ("Buy me a coffee", COFFEE_URL)];
-        for (index, (name, url)) in links.into_iter().enumerate() {
+        let links = [
+            (
+                "GitHub",
+                GITHUB_URL,
+                egui::include_image!("../../assets/brand/github.svg"),
+            ),
+            (
+                "Buy me a coffee",
+                COFFEE_URL,
+                egui::include_image!("../../assets/brand/coffee.svg"),
+            ),
+        ];
+        for (index, (name, url, logo)) in links.into_iter().enumerate() {
             let rect = Rect::from_min_size(
                 pos2(
                     links_left + 3.0 + index as f32 * LINK_BUTTON_WIDTH,
@@ -350,11 +360,7 @@ impl TabBar<'_> {
                 theme::text_secondary()
             };
             let glyph = Rect::from_center_size(rect.center(), Vec2::splat(14.0));
-            if index == 0 {
-                github.clone().tint(color).paint_at(ui, glyph);
-            } else {
-                icons::paint(&painter, glyph, Icon::Coffee, color);
-            }
+            egui::Image::new(logo).tint(color).paint_at(ui, glyph);
             if button.clicked() {
                 ctx.open_url(egui::OpenUrl::new_tab(url));
             }
