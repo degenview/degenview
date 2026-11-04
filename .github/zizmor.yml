@@ -1,0 +1,6 @@
+rules:
+  # `uses: ./.github/workflows/flatpak.yml` runs the workflow from the same checkout, which is what
+  # we want (a PR tests its own copy, a release builds the tagged one). The suggested
+  # `owner/repo/...@ref` form would fetch it from a ref instead.
+  self-repository:
+    disable: true

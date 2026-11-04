@@ -14,6 +14,10 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Wait a week before proposing a brand-new release: a hijacked or malicious version is usually
+    # yanked or flagged within days.
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     groups:
       actions:
@@ -22,6 +26,8 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 5
     groups:
       cargo-minor-patch:
