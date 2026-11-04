@@ -6,7 +6,8 @@ use eframe::egui::{self, Color32, RichText, Sense, Stroke, Vec2};
 
 use crate::format::{civil_from_days, days_from_civil};
 use crate::service::timezone::local_utc_offset_secs;
-use crate::ui::icons::{self, Icon};
+use crate::ui::icons::Icon;
+use crate::ui::kit;
 use crate::ui::replay_bar::{date_text, time_text};
 use crate::ui::sheet;
 use crate::ui::theme;
@@ -64,7 +65,7 @@ pub fn show(
             .inner_margin(egui::Margin::same(20))
             .show(ui, |ui| {
                 ui.set_width(360.0);
-                ui.spacing_mut().item_spacing.y = 16.0;
+                ui.spacing_mut().item_spacing.y = 14.0;
                 header(ui);
                 let before_preset = state.draft_ms;
                 presets(ui, &mut state.draft_ms, range);
@@ -86,26 +87,13 @@ pub fn show(
 // MARK: Pieces
 
 fn header(ui: &mut egui::Ui) {
-    ui.horizontal_centered(|ui| {
-        let (badge, _) = ui.allocate_exact_size(Vec2::splat(46.0), Sense::hover());
-        ui.painter()
-            .rect_filled(badge, 12.0, theme::SYSTEM_ACCENT.gamma_multiply(0.14));
-        icons::paint(
-            ui.painter(),
-            egui::Rect::from_center_size(badge.center(), Vec2::splat(21.0)),
-            Icon::ClockArrow,
-            theme::SYSTEM_ACCENT,
-        );
-        ui.vertical(|ui| {
-            ui.spacing_mut().item_spacing.y = 2.0;
-            ui.label(RichText::new("Start Replay").strong().size(20.0));
-            ui.label(
-                RichText::new("Pick the moment the chart rewinds to.")
-                    .color(theme::text_secondary())
-                    .size(12.0),
-            );
-        });
-    });
+    sheet::header(
+        ui,
+        Icon::ClockArrow,
+        "Start Replay",
+        "Pick the moment the chart rewinds to.",
+        theme::REPLAY,
+    );
 }
 
 fn presets(ui: &mut egui::Ui, draft_ms: &mut i64, range: Option<(i64, i64)>) {
@@ -152,6 +140,7 @@ fn picker(ui: &mut egui::Ui, state: &mut ReplayDateSheetState, range: Option<(i6
         .inner_margin(egui::Margin::same(12))
         .show(ui, |ui| {
             ui.set_width(336.0);
+            ui.spacing_mut().item_spacing.y = 6.0;
             calendar_header(ui, state, lo, hi);
             ui.add_space(7.0);
             calendar_grid(ui, state, lo, hi);
@@ -178,7 +167,7 @@ const MONTHS: [&str; 12] = [
 ];
 
 fn calendar_header(ui: &mut egui::Ui, state: &mut ReplayDateSheetState, lo: i64, hi: i64) {
-    ui.horizontal_centered(|ui| {
+    ui.horizontal(|ui| {
         ui.label(
             RichText::new(format!(
                 "{} {}",
@@ -233,7 +222,7 @@ fn calendar_grid(ui: &mut egui::Ui, state: &mut ReplayDateSheetState, lo: i64, h
                 );
             }
             ui.end_row();
-            for slot in 0..42 {
+            for slot in 0..(offset + month_days).div_ceil(7) * 7 {
                 if slot >= offset && slot - offset < month_days {
                     let day = (slot - offset + 1) as i64;
                     let (hour, minute) = (selected.3, selected.4);
@@ -277,7 +266,7 @@ fn calendar_grid(ui: &mut egui::Ui, state: &mut ReplayDateSheetState, lo: i64, h
 
 fn time_picker(ui: &mut egui::Ui, state: &mut ReplayDateSheetState, lo: i64, hi: i64) {
     let (year, month, day, mut hour, mut minute, _) = local_fields(state.draft_ms);
-    ui.horizontal_centered(|ui| {
+    ui.horizontal(|ui| {
         ui.label(
             RichText::new("Time")
                 .size(12.0)
@@ -349,18 +338,20 @@ fn buttons(
     draft_ms: i64,
     has_range: bool,
 ) {
-    ui.add_space(8.0);
-    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        if ui
-            .add_enabled(has_range, egui::Button::new("Start Replay"))
-            .clicked()
-        {
-            *result = Some(ReplayDateSheetResult::Start(draft_ms));
-        }
-        if ui.button("Cancel").clicked() {
-            *result = Some(ReplayDateSheetResult::Cancel);
-        }
-    });
+    // A row of its own height: a bare right-to-left layout takes all the height it is offered.
+    let width = ui.available_width();
+    ui.allocate_ui_with_layout(
+        Vec2::new(width, 28.0),
+        egui::Layout::right_to_left(egui::Align::Center),
+        |ui| {
+            if kit::sheet_button(ui, "Start Replay", true, has_range).clicked() {
+                *result = Some(ReplayDateSheetResult::Start(draft_ms));
+            }
+            if kit::sheet_button(ui, "Cancel", false, true).clicked() {
+                *result = Some(ReplayDateSheetResult::Cancel);
+            }
+        },
+    );
 }
 
 // MARK: Helpers
@@ -493,5 +484,34 @@ mod tests {
         assert_eq!((state.display_year, state.display_month), (2025, 12));
         shift_month(&mut state, 2);
         assert_eq!((state.display_year, state.display_month), (2026, 2));
+    }
+
+    /// The sheet is as tall as its content, not the window (a centred row inside a modal fills
+    /// the height it is given).
+    #[test]
+    fn the_sheet_is_no_taller_than_its_content() {
+        use crate::ui::render_tests::Screen;
+        let timeline: Vec<i64> = (0..400)
+            .map(|i| 1_700_000_000_000 + i * 3_600_000)
+            .collect();
+        let mut state = ReplayDateSheetState::default();
+        state.open(&timeline);
+        let mut screen = Screen::new(Vec2::new(900.0, 1_400.0));
+        let mut last = None;
+        for _ in 0..3 {
+            last = Some(screen.run(vec![], |ui| {
+                show(ui.ctx(), &mut state, &timeline);
+            }));
+        }
+        let rect = screen
+            .ctx
+            .memory(|memory| memory.area_rect(egui::Id::new("start-replay")))
+            .expect("the sheet is on screen");
+        assert!(
+            rect.height() < 700.0,
+            "sheet is {} tall on a 1400pt screen",
+            rect.height()
+        );
+        screen.save("replay-date-sheet", last.unwrap());
     }
 }

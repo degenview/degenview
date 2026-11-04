@@ -20,7 +20,7 @@ See [the architecture map](../architecture.md) before changing module boundaries
 - Docked panel edges use egui's panel separator only (`theme::border()`). Do not add `Frame::stroke`
   or hand-painted edge lines to a docked `egui::Panel`: they stack with the separator and make
   borders look thicker where panels meet. Use `show_separator_line(false)` only when the panel paints
-  a deliberate replacement, as the replay bar's tinted line does.
+  a deliberate replacement.
 - Pop-up menus are built from `kit::menu_row`, `menu_item`, `menu_heading`, `menu_separator` and
   `menu_submenu`, inside `kit::menu_popup` (or `kit::context_popup` for a right-click) with
   `kit::menu_scope` first in the body. Do not put bare `ui.button`, `radio`, `checkbox` or

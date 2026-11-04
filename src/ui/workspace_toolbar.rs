@@ -172,7 +172,7 @@ pub fn show(ui: &mut Ui, input: &ToolbarInput) -> Vec<ToolbarAction> {
 }
 
 /// The bubble every toolbar control sits in: a faint capsule that lifts on hover.
-fn paint_bubble(ui: &Ui, rect: Rect, hovered: bool, pressed: bool) {
+pub(crate) fn paint_bubble(ui: &Ui, rect: Rect, hovered: bool, pressed: bool) {
     let painter = ui.painter();
     painter.rect_filled(
         rect,

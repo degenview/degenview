@@ -1866,29 +1866,39 @@ impl ChartCard {
                             action.settings_requested = source != DataSource::CoinMarketCap;
                         }
                         if show_replay_badge {
-                            egui::Frame::new()
-                                .fill(theme::REPLAY.gamma_multiply(0.14))
-                                .corner_radius(999.0)
-                                .inner_margin(egui::Margin::symmetric(7, 2))
-                                .show(ui, |ui| {
-                                    ui.horizontal(|ui| {
-                                        ui.spacing_mut().item_spacing.x = 4.0;
-                                        let (icon, _) = ui
-                                            .allocate_exact_size(Vec2::splat(11.0), Sense::hover());
-                                        crate::ui::icons::paint(
-                                            ui.painter(),
-                                            icon,
-                                            crate::ui::icons::Icon::ClockArrow,
-                                            theme::REPLAY,
-                                        );
-                                        ui.label(
-                                            egui::RichText::new("Replay")
-                                                .size(10.0)
-                                                .strong()
-                                                .color(theme::REPLAY),
-                                        );
-                                    });
-                                });
+                            // The size and fill of an indicator pill (chart_indicator_strip).
+                            let label = crate::ui::kit::galley(
+                                ui,
+                                "Replay",
+                                10.0,
+                                crate::ui::kit::MEDIUM,
+                                crate::ui::kit::primary(0.7),
+                                f32::INFINITY,
+                            );
+                            let (rect, response) = ui.allocate_exact_size(
+                                Vec2::new(8.0 + 9.0 + 4.0 + label.size().x + 8.0, 20.0),
+                                Sense::hover(),
+                            );
+                            ui.painter()
+                                .rect_filled(rect, 10.0, crate::ui::kit::primary(0.06));
+                            crate::ui::icons::paint(
+                                ui.painter(),
+                                Rect::from_center_size(
+                                    Pos2::new(rect.left() + 8.0 + 4.5, rect.center().y),
+                                    Vec2::splat(9.0),
+                                ),
+                                crate::ui::icons::Icon::ClockArrow,
+                                theme::REPLAY,
+                            );
+                            ui.painter().galley(
+                                Pos2::new(
+                                    rect.left() + 21.0,
+                                    rect.center().y - label.size().y / 2.0,
+                                ),
+                                label,
+                                crate::ui::kit::primary(0.7),
+                            );
+                            response.on_hover_text("Historical replay");
                         }
                         // CoinMarketCap's indices aren't price series: nothing to overlay.
                         if source != DataSource::CoinMarketCap {

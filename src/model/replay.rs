@@ -270,6 +270,36 @@ impl ReplayEngine {
         self.status = ReplayStatus::Inactive;
     }
 
+    /// Carries the session over to `timeline`, the bars of another timeframe: the cursor keeps
+    /// its time (snapped to a bar that exists now), the start keeps its own, and playing or
+    /// picking a start carries on. Returns false when the new bars begin after the cursor, which
+    /// then sits on their first bar instead.
+    pub fn rebase(&mut self, timeline: Vec<i64>) -> bool {
+        let Some(session) = &self.session else {
+            return true;
+        };
+        let (cursor, before) = (session.current_ms, self.status);
+        let mut valid = timeline;
+        valid.sort_unstable();
+        valid.dedup();
+        if valid.is_empty() {
+            return true;
+        }
+        let covered = valid[0] <= cursor;
+        let index = Self::index_at_or_before(cursor, &valid).unwrap_or(0);
+        self.timeline = valid;
+        self.seek_to_index(index);
+        if self.status == ReplayStatus::Paused
+            && matches!(before, ReplayStatus::Playing | ReplayStatus::SelectingStart)
+        {
+            self.status = before;
+            if let Some(session) = &mut self.session {
+                session.status = before;
+            }
+        }
+        covered
+    }
+
     /// Cancel a start selection: back to Paused if a session exists, else Ready.
     pub fn cancel_selection(&mut self) {
         if self.session.is_some() {
@@ -365,5 +395,39 @@ mod tests {
         assert_eq!(engine.session.as_ref().unwrap().bar_index, 4);
         assert!(engine.step_backward());
         assert_eq!(engine.session.as_ref().unwrap().bar_index, 3);
+    }
+
+    #[test]
+    fn rebase_keeps_the_cursor_time_on_the_new_bars() {
+        let mut engine = ReplayEngine::default();
+        engine.start(1_100, "X", timeline());
+        engine.seek(0.5); // 1_200
+        engine.play();
+        // Finer bars: the cursor snaps to the last one at or before 1_200.
+        let covered = engine.rebase((0..20).map(|i| 1_000 + i * 50).collect());
+        assert!(covered);
+        assert_eq!(engine.current_ms(), Some(1_200));
+        assert_eq!(engine.status, ReplayStatus::Playing);
+        assert_eq!(engine.session.as_ref().map(|s| s.start_ms), Some(1_100));
+    }
+
+    #[test]
+    fn rebase_onto_bars_that_start_later_lands_on_the_first_one() {
+        let mut engine = ReplayEngine::default();
+        engine.start(1_000, "X", timeline());
+        assert!(!engine.rebase(vec![5_000, 5_100, 5_200]));
+        assert_eq!(engine.current_ms(), Some(5_000));
+        assert_eq!(engine.status, ReplayStatus::Paused);
+    }
+
+    #[test]
+    fn rebase_leaves_a_completed_replay_playable_when_there_are_more_bars() {
+        let mut engine = ReplayEngine::default();
+        engine.start(1_000, "X", timeline());
+        engine.seek(1.0);
+        assert_eq!(engine.status, ReplayStatus::Completed);
+        assert!(engine.rebase((0..20).map(|i| 1_000 + i * 50).collect()));
+        assert_eq!(engine.status, ReplayStatus::Paused);
+        assert!(engine.rebase(vec![]));
     }
 }

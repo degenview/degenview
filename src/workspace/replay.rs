@@ -24,8 +24,52 @@ impl ChartWorkspace {
         }
     }
 
+    /// After a timeframe change: once the focused chart has its new bars, the replay moves onto
+    /// them at the same time (candles cut at the old timeframe's cursor would otherwise hide a
+    /// chart whose bars begin later).
+    fn finish_replay_rebase(&mut self) {
+        let Some(chart) = self
+            .resolved_focused_id()
+            .and_then(|id| self.charts.iter().find(|chart| chart.id == id))
+        else {
+            self.replay_rebase = false;
+            return;
+        };
+        if chart.loading {
+            return;
+        }
+        let timeline: Vec<i64> = chart.candles.iter().map(|kline| kline.open_time).collect();
+        self.replay_rebase = false;
+        if timeline.is_empty() {
+            self.replay.stop();
+            self.say(
+                format!(
+                    "Replay stopped: no {} history to replay.",
+                    self.timeframe.label()
+                ),
+                true,
+            );
+        } else if !self.replay.rebase(timeline) {
+            self.say(
+                format!(
+                    "{} history starts after the replay position, so the replay moved to its first bar.",
+                    self.timeframe.label()
+                ),
+                false,
+            );
+        }
+        self.replay_last_step = Instant::now();
+    }
+
     pub(super) fn tick_replay(&mut self) {
-        if self.replay.status != ReplayStatus::Playing {
+        if self.replay_rebase {
+            if self.replay.session.is_none() {
+                self.replay_rebase = false;
+            } else {
+                self.finish_replay_rebase();
+            }
+        }
+        if self.replay_rebase || self.replay.status != ReplayStatus::Playing {
             return;
         }
         let delay = self
@@ -78,7 +122,7 @@ impl ChartWorkspace {
         let available = [ReplayInterval::Automatic, ReplayInterval::ChartBar];
         let input = ReplayBarInput {
             engine: &self.replay,
-            is_preparing: false,
+            is_preparing: self.replay_rebase,
             notice: None,
             resolved_interval: None,
             available_intervals: &available,
