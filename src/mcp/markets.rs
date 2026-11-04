@@ -77,6 +77,27 @@ pub struct SymbolSearchResult {
     pub source_errors: Vec<SearchSourceError>,
 }
 
+// MARK: Candles by symbol
+
+/// Candles for a market that need not be on any chart.
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
+pub struct MarketCandlesResult {
+    pub instrument: String,
+    pub source: String,
+    pub symbol: String,
+    pub timeframe: String,
+    /// The meaning of each position in a `bars` row.
+    pub columns: Vec<String>,
+    /// Oldest first. Times are ISO-8601 UTC.
+    pub bars: Vec<crate::mcp::types::CandleRow>,
+    pub count: usize,
+    pub range: Option<crate::mcp::types::CandleRange>,
+    pub summary: Option<crate::mcp::types::CandleSummary>,
+    /// Whether the newest bar is still forming (its period has not ended).
+    pub last_bar_forming: bool,
+    pub notes: Vec<String>,
+}
+
 // MARK: Quotes
 
 #[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]

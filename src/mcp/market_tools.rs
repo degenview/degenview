@@ -31,6 +31,7 @@ use std::time::{Duration, Instant};
 
 pub const SEARCH_SYMBOLS: &str = "degenview_search_symbols";
 pub const GET_QUOTES: &str = "degenview_get_quotes";
+pub const GET_MARKET_CANDLES: &str = "degenview_get_market_candles";
 pub const LIST_WATCHLISTS: &str = "degenview_list_watchlists";
 pub const GET_WATCHLIST: &str = "degenview_get_watchlist";
 pub const CREATE_WATCHLIST: &str = "degenview_create_watchlist";
@@ -95,6 +96,24 @@ pub struct GetQuotesParams {
     #[schemars(range(min = 0, max = 15))]
     pub wait_seconds: Option<u32>,
 }
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MarketCandlesParams {
+    /// The market data provider.
+    pub source: McpSource,
+    /// The provider's own symbol, as `degenview_search_symbols` returns it.
+    #[schemars(length(min = 1, max = 128))]
+    pub symbol: String,
+    /// The bar length.
+    pub timeframe: crate::mcp::chart_control::McpTimeframe,
+    /// How many of the newest bars to return, 1 to 1000. Default 200. A provider may hold fewer.
+    #[schemars(range(min = 1, max = 1000))]
+    pub limit: Option<u32>,
+}
+
+/// Longest a provider fetch is waited for.
+const CANDLE_DEADLINE: Duration = Duration::from_secs(30);
 
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -378,6 +397,100 @@ impl DegenViewMcp {
             .collect();
         let (quotes, pending) = self.read_quotes(&client, markets, wait).await?;
         Ok(Json(QuotesResult { quotes, pending }))
+    }
+
+    #[tool(
+        name = "degenview_get_market_candles",
+        description = "Read the price candles of any market straight from its provider, with no chart needed: the newest `limit` bars (default 200, max 1000) at 1H, 1D, 1W, 1M, 3M or 1Y, oldest first, as rows under named `columns` (time, open, high, low, close, volume). The same bars a chart of that market would load, through the same provider calls and caches, so it can lag a live chart by a refresh. Slow providers (CoinGecko, DEXScreener) are rate limited and may take several seconds. Older history than the newest `limit` bars is not available here; open a chart and scroll back, or use degenview_get_candles on one. Volume is null where a provider reports none. For many markets at once use degenview_get_quotes.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = true
+        )
+    )]
+    async fn get_market_candles(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(params): Parameters<MarketCandlesParams>,
+    ) -> Result<Json<crate::mcp::markets::MarketCandlesResult>, CallToolResult> {
+        use crate::mcp::chart_data::{CandleMeta, DEFAULT_CANDLES, MAX_CANDLES, candles_result};
+        let client = client_of(&parts)?;
+        let limit = params.limit.map_or(DEFAULT_CANDLES, |limit| limit as usize);
+        if !(1..=MAX_CANDLES).contains(&limit) {
+            return Err(invalid(format!(
+                "limit must be between 1 and {MAX_CANDLES}"
+            )));
+        }
+        let source = params.source.data_source();
+        let instrument = market_item(source, &params.symbol)
+            .map_err(invalid)?
+            .instrument;
+        if source == DataSource::Alpaca && !alpaca_configured().await {
+            return Err(failure(&McpError::Unsupported(
+                "Alpaca needs API credentials: add them in DegenView Settings > API Keys".into(),
+            )));
+        }
+        let timeframe = params.timeframe.timeframe();
+        let Some(permit) = self.shared.try_candle_job() else {
+            return Err(failure(&McpError::ResourceLimit(
+                "Too many candle requests are running; try again shortly".into(),
+            )));
+        };
+        let fetch = self.shared.candle_fetch();
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        {
+            let symbol = instrument.symbol.clone();
+            // The chart's own lane for that provider, so a slow or rate-limited one queues here
+            // exactly as it does for a chart.
+            crate::service::work_queue::submit_for(source, move || {
+                let _permit = permit;
+                let _ = sender.send(fetch(source, &symbol, timeframe.interval(), limit as u32));
+            });
+        }
+        let candles = match tokio::time::timeout(CANDLE_DEADLINE, receiver).await {
+            Ok(Ok(Ok(candles))) => candles,
+            Ok(Ok(Err(message))) => {
+                return Err(failure(&McpError::AppUnavailable(
+                    message.chars().take(300).collect::<String>(),
+                )));
+            }
+            Ok(Err(_)) => {
+                return Err(failure(&McpError::AppUnavailable(
+                    "The request was interrupted".into(),
+                )));
+            }
+            Err(_) => return Err(failure(&McpError::Timeout)),
+        };
+        self.still_allowed(&client, Permission::MarketsRead)?;
+        let meta = CandleMeta {
+            workspace_id: 0,
+            chart_id: 0,
+            instrument: instrument.clone(),
+            timeframe: timeframe.label().to_owned(),
+            chart_type: crate::model::ChartType::Candles,
+            older_supported: false,
+            replay_ms: None,
+            now_ms: crate::model::watchlist::now_ms(),
+        };
+        let result = candles_result(&meta, &candles, limit, None);
+        let mut notes = result.notes;
+        if candles.is_empty() {
+            notes.push("The provider returned no candles for this market and timeframe.".into());
+        }
+        Ok(Json(crate::mcp::markets::MarketCandlesResult {
+            instrument: instrument.key(),
+            source: source_id(source).to_owned(),
+            symbol: instrument.symbol,
+            timeframe: result.timeframe,
+            columns: result.columns,
+            count: result.count,
+            range: result.range,
+            summary: result.summary,
+            last_bar_forming: result.last_bar_forming,
+            bars: result.bars,
+            notes,
+        }))
     }
 
     #[tool(

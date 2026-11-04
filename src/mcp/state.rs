@@ -21,10 +21,18 @@ pub type ScriptLocator = Box<dyn Fn() -> Option<ScriptStore> + Send + Sync>;
 pub type MarketSearch =
     Arc<dyn Fn(DataSource, &str) -> Result<Vec<SearchResult>, String> + Send + Sync>;
 
+/// Fetches candles from a provider: `(source, symbol, interval token, limit)`. Replaceable so
+/// tests never reach the network.
+pub type CandleFetch = Arc<
+    dyn Fn(DataSource, &str, &str, u32) -> Result<Vec<crate::model::Kline>, String> + Send + Sync,
+>;
+
 /// Script reads and compiles running at once.
 const PINE_JOBS: usize = 2;
 /// Provider searches running at once. Each is a blocking network call.
 const SEARCH_JOBS: usize = 4;
+/// Provider candle fetches running at once for the market candles tool.
+const CANDLE_JOBS: usize = 3;
 /// Quote requests running at once. Each holds a demand on the quote coordinator while it waits.
 const QUOTE_JOBS: usize = 4;
 /// Where the demand ids of MCP quote requests start: clear of every window, alert and card owner.
@@ -100,6 +108,8 @@ pub struct McpShared {
     script_locator: RwLock<ScriptLocator>,
     search_jobs: Arc<tokio::sync::Semaphore>,
     quote_jobs: Arc<tokio::sync::Semaphore>,
+    candle_jobs: Arc<tokio::sync::Semaphore>,
+    candle_fetch: RwLock<CandleFetch>,
     market_search: RwLock<MarketSearch>,
     quotes: RwLock<Option<QuoteAccess>>,
     next_quote_owner: AtomicU64,
@@ -122,6 +132,8 @@ impl McpShared {
             script_locator: RwLock::new(Box::new(ScriptStore::default_location)),
             search_jobs: Arc::new(tokio::sync::Semaphore::new(SEARCH_JOBS)),
             quote_jobs: Arc::new(tokio::sync::Semaphore::new(QUOTE_JOBS)),
+            candle_jobs: Arc::new(tokio::sync::Semaphore::new(CANDLE_JOBS)),
+            candle_fetch: RwLock::new(Arc::new(crate::service::fetch_klines)),
             market_search: RwLock::new(Arc::new(|source, query| {
                 crate::service::search(source, query)
             })),
@@ -238,6 +250,27 @@ impl McpShared {
     /// A permit for one quote request, or `None` when too many are already waiting.
     pub fn try_quote_job(&self) -> Option<tokio::sync::OwnedSemaphorePermit> {
         self.quote_jobs.clone().try_acquire_owned().ok()
+    }
+
+    /// A permit for one candle fetch, or `None` when too many are already running.
+    pub fn try_candle_job(&self) -> Option<tokio::sync::OwnedSemaphorePermit> {
+        self.candle_jobs.clone().try_acquire_owned().ok()
+    }
+
+    pub fn candle_fetch(&self) -> CandleFetch {
+        self.candle_fetch
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+
+    /// Points candle fetches somewhere else (tests serve canned bars).
+    #[cfg(test)]
+    pub fn set_candle_fetch(&self, fetch: CandleFetch) {
+        *self
+            .candle_fetch
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = fetch;
     }
 
     pub fn market_search(&self) -> MarketSearch {

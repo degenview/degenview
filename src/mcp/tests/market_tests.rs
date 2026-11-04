@@ -104,7 +104,11 @@ fn the_new_tools_are_listed_only_for_the_permissions_that_unlock_them() {
     let url = harness.url();
     assert_eq!(
         tool_names(&url, "m-tok"),
-        ["degenview_get_quotes", "degenview_search_symbols"]
+        [
+            "degenview_get_market_candles",
+            "degenview_get_quotes",
+            "degenview_search_symbols"
+        ]
     );
     assert_eq!(
         tool_names(&url, "l-tok"),
@@ -564,4 +568,120 @@ fn each_watchlist_and_market_permission_gates_only_its_own_tools() {
         json!({"watchlist_id": id, "include_quotes": true}),
     );
     assert_eq!(error_code(&result), "PERMISSION_DENIED");
+}
+
+fn bar(day: i64, close: f64) -> crate::model::Kline {
+    let open_time = 1_760_918_400_000 + day * 86_400_000;
+    crate::model::Kline {
+        open_time,
+        close_time: open_time + 86_399_999,
+        open: close - 1.0,
+        high: close + 2.0,
+        low: close - 3.0,
+        close,
+        volume: 10.0 + day as f64,
+    }
+}
+
+#[test]
+fn candles_of_any_market_come_from_the_provider_with_no_chart() {
+    let harness = Harness::start(&[("c", "tok", SEARCH)]);
+    let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    {
+        let seen = seen.clone();
+        harness
+            .shared
+            .set_candle_fetch(Arc::new(move |source, symbol, interval, limit| {
+                seen.lock()
+                    .unwrap()
+                    .push(format!("{source:?} {symbol} {interval} {limit}"));
+                Ok((0..5).map(|day| bar(day, 100.0 + day as f64)).collect())
+            }));
+    }
+    let result = call(
+        &harness.url(),
+        "tok",
+        "degenview_get_market_candles",
+        json!({"source": "binance", "symbol": "btcusdt", "timeframe": "1D", "limit": 3}),
+    );
+    assert_eq!(result["isError"], json!(false), "{result}");
+    let out = &result["structuredContent"];
+    assert_eq!(*seen.lock().unwrap(), ["Binance BTCUSDT 1d 3"]);
+    assert_eq!(out["instrument"], "BINANCE:BTCUSDT");
+    assert_eq!(out["timeframe"], "1D");
+    assert_eq!(
+        out["columns"],
+        json!(["time", "open", "high", "low", "close", "volume"])
+    );
+    // The provider gave five; the newest three are returned, oldest first.
+    assert_eq!(out["count"], 3);
+    assert_eq!(out["bars"][0][4], 102.0);
+    assert_eq!(out["bars"][2][4], 104.0);
+    assert_eq!(out["summary"]["last_close"], 104.0);
+    assert_eq!(out["summary"]["high"], 106.0);
+    assert_eq!(out["summary"]["low"], 99.0);
+    assert_eq!(out["range"]["to"], "2025-10-24T00:00:00Z");
+}
+
+#[test]
+fn a_provider_failure_and_an_empty_answer_are_reported_not_hidden() {
+    let harness = Harness::start(&[("c", "tok", SEARCH)]);
+    let url = harness.url();
+    harness
+        .shared
+        .set_candle_fetch(Arc::new(|_, _, _, _| Err("Binance is down".into())));
+    let args = json!({"source": "binance", "symbol": "BTCUSDT", "timeframe": "1H"});
+    let failed = call(&url, "tok", "degenview_get_market_candles", args.clone());
+    assert_eq!(error_code(&failed), "APP_UNAVAILABLE");
+    assert!(
+        failed["structuredContent"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("Binance is down")
+    );
+    harness
+        .shared
+        .set_candle_fetch(Arc::new(|_, _, _, _| Ok(Vec::new())));
+    let empty = call(&url, "tok", "degenview_get_market_candles", args);
+    assert_eq!(structured(&empty)["count"], 0);
+    assert!(
+        structured(&empty)["notes"]
+            .to_string()
+            .contains("no candles")
+    );
+}
+
+#[test]
+fn bad_candle_requests_never_reach_the_provider() {
+    let harness = Harness::start(&[
+        ("c", "tok", SEARCH),
+        ("n", "n-tok", &[Permission::ChartsRead]),
+    ]);
+    harness.shared.set_candle_fetch(Arc::new(|_, _, _, _| {
+        panic!("a refused request must not fetch")
+    }));
+    let url = harness.url();
+    let tool = "degenview_get_market_candles";
+    for arguments in [
+        json!({"source": "binance", "symbol": "BTCUSDT", "timeframe": "4h"}),
+        json!({"source": "binance", "symbol": "BTCUSDT"}),
+        json!({"source": "binance", "symbol": "BTC-USD", "timeframe": "1D"}),
+        json!({"source": "binance", "symbol": "", "timeframe": "1D"}),
+        json!({"source": "polymarket", "symbol": "0xabc", "timeframe": "1D"}),
+        json!({"source": "binance", "symbol": "BTCUSDT", "timeframe": "1D", "limit": 0}),
+        json!({"source": "binance", "symbol": "BTCUSDT", "timeframe": "1D", "limit": 1001}),
+        json!({"source": "binance", "symbol": "BTCUSDT", "timeframe": "1D", "before": "2025-01-01T00:00:00Z"}),
+    ] {
+        assert!(
+            rejected(&url, "tok", tool, arguments.clone()),
+            "{arguments}"
+        );
+    }
+    let denied = call(
+        &url,
+        "n-tok",
+        tool,
+        json!({"source": "binance", "symbol": "BTCUSDT", "timeframe": "1D"}),
+    );
+    assert_eq!(error_code(&denied), "PERMISSION_DENIED");
 }

@@ -37,7 +37,7 @@ Delete and saved-source writes require their own grants.
 | Price alerts | `list_price_alerts`, `create_price_alert`, `update_price_alert`, `pause_price_alert`, `resume_price_alert`, `delete_price_alert` |
 | Pine scripts | `list_pine_scripts`, `get_pine_script`, `update_pine_script`, `save_pine_script`, `compile_pine_script`, `get_pine_inputs` |
 | Candles and drawings | `get_candles`, `get_indicator_values`, `list_drawings`, `add_drawings`, `update_drawing`, `delete_drawings` |
-| Markets | `search_symbols`, `get_quotes` |
+| Markets | `search_symbols`, `get_quotes`, `get_market_candles` |
 | Watchlists | `list_watchlists`, `get_watchlist`, `create_watchlist`, `update_watchlist`, `delete_watchlist` |
 | Paper trading (read-only) | `list_paper_accounts`, `get_paper_account`, `list_paper_fills`, `list_paper_trades` |
 | Portfolio (read-only) | `list_portfolios`, `get_portfolio_holdings`, `list_portfolio_transactions` |
@@ -132,6 +132,12 @@ Delete and saved-source writes require their own grants.
   is settled when it is priced or carries a reason (`note`, `unsupported`); `pending` counts the
   rest. Quote status and change basis are the watchlist's (`Freshness`, `ChangeBasis`): a stock
   outside US hours reads `market_closed`, and Alpaca's change is since the previous close.
+- `get_market_candles` reads candles for any market with no chart: it calls `service::fetch_klines`
+  (the same provider calls and caches a chart uses, via `McpShared::candle_fetch` so tests never
+  reach the network) on the provider's own `work_queue` lane, so a rate-limited provider queues as it
+  does for a chart. At most three run at once and the call waits 30 s. It returns the newest
+  `limit` bars (max 1000) with a summary, through the same `candles_result` as `get_candles`.
+  There is no `before`: older history needs a chart (`get_candles`). It needs `markets.read`.
 - Watchlist reads and writes run on the app thread against the shared `WatchlistStore`, the same
   path the sidebar uses (so iCloud Sync queues the write in the same transaction).
   `update_watchlist` is `WatchlistStore::edit_list`: rename, removals then additions, one copy, one
