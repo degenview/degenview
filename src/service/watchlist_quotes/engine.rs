@@ -50,10 +50,18 @@ impl Default for Config {
     }
 }
 
-#[derive(PartialEq)]
+/// How long a sidebar's demand lasts without being renewed. A sidebar draws every
+/// frame it is on screen; one on a background tab or in a hidden or covered window
+/// draws none, so its demand lapses instead of polling for nobody.
+pub const SIDEBAR_LEASE_MS: i64 = 3_000;
+
 struct Consumer {
     instruments: BTreeMap<String, InstrumentId>,
     active: bool,
+    /// Demand that lapses unless renewed (see `SIDEBAR_LEASE_MS`).
+    leased: bool,
+    /// When the consumer last asked.
+    seen_ms: i64,
 }
 
 #[derive(Clone)]
@@ -140,22 +148,78 @@ impl Engine {
         active: bool,
         now: i64,
     ) {
-        let next = Consumer {
-            instruments: instruments
-                .into_iter()
-                .map(|instrument| (instrument.key(), instrument))
-                .collect(),
-            active,
-        };
-        // A sidebar republishes its rows every frame: an unchanged set costs nothing.
-        if self.consumers.get(&consumer) == Some(&next) {
+        self.put(consumer, instruments, active, false, now);
+    }
+
+    /// Like `update`, for a sidebar: the demand also lapses when it stops being renewed
+    /// (a background tab, a hidden or covered window), see `expire_leases`.
+    pub fn update_leased(
+        &mut self,
+        consumer: u64,
+        instruments: Vec<InstrumentId>,
+        active: bool,
+        now: i64,
+    ) {
+        self.put(consumer, instruments, active, true, now);
+    }
+
+    fn put(
+        &mut self,
+        consumer: u64,
+        instruments: Vec<InstrumentId>,
+        active: bool,
+        leased: bool,
+        now: i64,
+    ) {
+        let instruments: BTreeMap<String, InstrumentId> = instruments
+            .into_iter()
+            .map(|instrument| (instrument.key(), instrument))
+            .collect();
+        // A sidebar republishes its rows every frame: an unchanged set only renews.
+        if let Some(held) = self.consumers.get_mut(&consumer)
+            && held.instruments == instruments
+            && held.active == active
+            && held.leased == leased
+        {
+            held.seen_ms = now;
             return;
         }
-        self.consumers.insert(consumer, next);
+        self.consumers.insert(
+            consumer,
+            Consumer {
+                instruments,
+                active,
+                leased,
+                seen_ms: now,
+            },
+        );
         self.reconcile(now);
     }
 
-    #[allow(dead_code)] // reached through the coordinator's `release`
+    /// Silences leased consumers that stopped asking; true when any did. They keep their
+    /// place and wake on their next `update_leased`.
+    pub fn expire_leases(&mut self, now: i64) -> bool {
+        let mut expired = false;
+        for consumer in self.consumers.values_mut() {
+            if consumer.leased && consumer.active && now - consumer.seen_ms > SIDEBAR_LEASE_MS {
+                consumer.active = false;
+                expired = true;
+            }
+        }
+        if expired {
+            self.reconcile(now);
+        }
+        expired
+    }
+
+    /// A leased consumer is half way to lapsing: the caller asks the UI to draw so a
+    /// visible sidebar renews (a hidden one will not, and lapses).
+    pub fn lease_aging(&self, now: i64) -> bool {
+        self.consumers.values().any(|consumer| {
+            consumer.leased && consumer.active && now - consumer.seen_ms > SIDEBAR_LEASE_MS / 2
+        })
+    }
+
     pub fn release(&mut self, consumer: u64, now: i64) {
         self.consumers.remove(&consumer);
         self.reconcile(now);
@@ -806,6 +870,59 @@ mod tests {
 
         lock(&engine).release(1, T0 + 2_000);
         assert!(lock(&engine).wanted().is_empty());
+    }
+
+    #[test]
+    fn a_sidebar_that_stops_drawing_lapses_and_wakes_when_it_draws_again() {
+        let (engine, book, provider) = setup();
+        provider.price("BTCUSDT", 100.0);
+        let btc = id(DataSource::Binance, "BTCUSDT");
+        lock(&engine).update_leased(1, vec![btc.clone()], true, T0);
+        round(&engine, &provider, T0);
+        assert_eq!(provider.calls().len(), 1);
+
+        // Drawing every frame renews the lease however long it goes on.
+        for step in 1..=10 {
+            let at = T0 + step * 1_000;
+            lock(&engine).update_leased(1, vec![btc.clone()], true, at);
+            assert!(!lock(&engine).expire_leases(at));
+        }
+        assert!(lock(&engine).has_subscriptions());
+
+        // Half way to lapsing the loop asks the UI to draw; a covered window will not.
+        let last_draw = T0 + 10_000;
+        assert!(!lock(&engine).lease_aging(last_draw + 1_000));
+        assert!(lock(&engine).lease_aging(last_draw + SIDEBAR_LEASE_MS / 2 + 1));
+        assert!(lock(&engine).expire_leases(last_draw + SIDEBAR_LEASE_MS + 1));
+        assert!(!lock(&engine).has_subscriptions());
+        assert!(!lock(&engine).lease_aging(last_draw + SIDEBAR_LEASE_MS + 2));
+        let calls = provider.calls().len();
+        round(&engine, &provider, last_draw + 60_000);
+        assert_eq!(
+            provider.calls().len(),
+            calls,
+            "a lapsed sidebar polls nothing"
+        );
+        assert_eq!(
+            last(&book, &btc),
+            Some(100.0),
+            "its prices stay in the book"
+        );
+
+        // Drawing again wakes it.
+        lock(&engine).update_leased(1, vec![btc.clone()], true, last_draw + 61_000);
+        assert!(lock(&engine).has_subscriptions());
+        round(&engine, &provider, last_draw + 61_000);
+        assert_eq!(provider.calls().len(), calls + 1);
+    }
+
+    #[test]
+    fn demand_that_is_not_leased_never_lapses() {
+        let (engine, _book, _provider) = setup();
+        let btc = id(DataSource::Binance, "BTCUSDT");
+        lock(&engine).update(1, vec![btc], true, T0);
+        assert!(!lock(&engine).expire_leases(T0 + 10 * SIDEBAR_LEASE_MS));
+        assert!(lock(&engine).has_subscriptions());
     }
 
     #[test]

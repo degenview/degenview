@@ -76,6 +76,11 @@ candles, and `ChartCard::set_series` draws choices by position with end labels.
 - A sidebar asks for quotes only for the market rows it draws (`WatchlistSidebarState::quote_demand`):
   not other lists, filtered-out rows, collapsed sections or portfolio cards. The highlighted row is
   always a drawn row, so Enter/Delete and the detail card never act on a hidden one.
+- A sidebar's demand is a lease (`set_sidebar_demand`, `SIDEBAR_LEASE_MS`): it renews on every frame
+  the sidebar draws and lapses 3 s after the last one, so a background tab, a hidden or covered window
+  stops polling by itself. Closing the sidebar suspends it at once. The coordinator thread asks for a
+  repaint when a lease is half spent so an idle visible sidebar renews. Other owners (alerts,
+  portfolio cards) use `set_demand`, which never lapses.
 - Selecting a row focuses or opens its market in that workspace; highlighting mirrors the focused
   chart.
 

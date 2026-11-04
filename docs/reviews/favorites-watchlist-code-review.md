@@ -360,7 +360,7 @@ found while validating:
 | ID | Fix |
 | --- | --- |
 | H2, M5 | Sidebar draws rows once, reconciles the highlight, publishes demand from the drawn rows |
-| H1 | Pending |
+| H1 | Sidebar demand is a 3 s lease renewed per drawn frame; closing the sidebar suspends at once |
 | H3, M1, M6 | Pending |
 | L1 | Pending |
 | M2 | Pending |

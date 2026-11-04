@@ -48,12 +48,19 @@ impl ChartWorkspace {
             watchlist_sidebar::show(ui, &mut self.watchlist_sidebar, &input)
         };
         // Only the rows on screen ask for prices, not every list in the library.
-        self.quote_coordinator.set_demand(
+        self.quote_coordinator.set_sidebar_demand(
             self.id,
             self.watchlist_sidebar.quote_demand().to_vec(),
-            self.watchlist_visible,
+            true,
         );
         self.apply_watchlist_actions(actions, ctx);
+    }
+
+    /// Closing the sidebar stops its quote demand at once; a background tab or a covered
+    /// window never reaches here and is covered by the demand's lease.
+    pub(super) fn suspend_watchlist_demand(&self) {
+        self.quote_coordinator
+            .set_sidebar_demand(self.id, Vec::new(), false);
     }
 
     fn apply_watchlist_actions(&mut self, actions: Vec<WatchlistAction>, ctx: &egui::Context) {
