@@ -474,38 +474,67 @@ fn snippet(text: &str, line: usize) -> String {
     cut
 }
 
-/// "22.3%", "0.4%", "<0.1%", "100%". One decimal under 10%, none from 100%.
+/// "22.3%", "0.4%", "<0.1%", "100%". One decimal under 100%; "100%" only for a share that is all of
+/// it, so a share just under (99.96%) reads "99.9%", not as certainty.
 pub fn percent(share: f64) -> String {
     let percent = share * 100.0;
     if percent <= 0.0 {
         "0%".to_owned()
     } else if percent < 0.1 {
         "<0.1%".to_owned()
-    } else if percent >= 99.95 {
+    } else if share >= 1.0 - 1e-9 {
         "100%".to_owned()
     } else {
-        format!("{percent:.1}%")
+        format!("{:.1}%", percent.min(99.9))
     }
 }
 
-/// A time with three significant figures at most: "850 ns", "12.3 \u{b5}s", "329 ms", "1.50 s".
+/// A time with three significant figures at most: "850 ns", "12.3 \u{b5}s", "329 ms", "1.50 s". The
+/// unit is chosen after rounding, so 999,999 ns is "1.00 ms", not "1000 \u{b5}s".
 pub fn duration(ns: u64) -> String {
-    let (value, unit) = if ns < 1_000 {
+    if ns < 1_000 {
         return format!("{ns} ns");
-    } else if ns < 1_000_000 {
-        (ns as f64 / 1e3, "\u{b5}s")
-    } else if ns < 1_000_000_000 {
-        (ns as f64 / 1e6, "ms")
-    } else {
-        (ns as f64 / 1e9, "s")
-    };
-    if value >= 100.0 {
-        format!("{value:.0} {unit}")
-    } else if value >= 10.0 {
-        format!("{value:.1} {unit}")
-    } else {
-        format!("{value:.2} {unit}")
     }
+    const UNITS: [(&str, f64); 3] = [("\u{b5}s", 1e3), ("ms", 1e6), ("s", 1e9)];
+    let mut unit = if ns < 1_000_000 {
+        0
+    } else if ns < 1_000_000_000 {
+        1
+    } else {
+        2
+    };
+    loop {
+        let (name, scale) = UNITS[unit];
+        let value = ns as f64 / scale;
+        let rounded = three_figures(value);
+        if rounded >= 1000.0 && unit + 1 < UNITS.len() {
+            unit += 1;
+            continue;
+        }
+        let decimals = decimals_for(rounded);
+        return format!("{rounded:.decimals$} {name}");
+    }
+}
+
+/// How many decimals keep three significant figures of `value`.
+fn decimals_for(value: f64) -> usize {
+    if value >= 100.0 {
+        0
+    } else if value >= 10.0 {
+        1
+    } else {
+        2
+    }
+}
+
+/// `value` rounded to three significant figures. Rounding can carry into the next digit (99.96 is
+/// 100.0), which has one figure fewer to show, so it is rounded again at that precision.
+fn three_figures(value: f64) -> f64 {
+    let round = |value: f64| {
+        let factor = 10f64.powi(decimals_for(value) as i32);
+        (value * factor).round() / factor
+    };
+    round(round(value))
 }
 
 /// "5,460".
@@ -542,7 +571,30 @@ mod tests {
         assert_eq!(duration(12_345), "12.3 \u{b5}s");
         assert_eq!(duration(329_000_000), "329 ms");
         assert_eq!(duration(1_500_000_000), "1.50 s");
-        assert_eq!(duration(999_999), "1000 \u{b5}s");
+    }
+
+    #[test]
+    fn a_duration_is_promoted_to_the_next_unit_when_rounding_reaches_a_thousand() {
+        assert_eq!(duration(999), "999 ns");
+        assert_eq!(duration(1_000), "1.00 \u{b5}s");
+        assert_eq!(duration(999_499), "999 \u{b5}s");
+        assert_eq!(duration(999_500), "1.00 ms");
+        assert_eq!(duration(999_999), "1.00 ms");
+        assert_eq!(
+            duration(99_960),
+            "100 \u{b5}s",
+            "carried into the next digit"
+        );
+        assert_eq!(duration(9_996), "10.0 \u{b5}s");
+        assert_eq!(duration(999_499_999), "999 ms");
+        assert_eq!(duration(999_999_999), "1.00 s");
+        assert_eq!(duration(1_000_000_000), "1.00 s");
+        assert_eq!(duration(1_500_000_000), "1.50 s");
+        assert_eq!(
+            duration(2_000_000_000_000),
+            "2000 s",
+            "seconds have no next unit"
+        );
     }
 
     #[test]
@@ -552,8 +604,19 @@ mod tests {
         assert_eq!(percent(0.001), "0.1%");
         assert_eq!(percent(0.223), "22.3%");
         assert_eq!(percent(0.567), "56.7%");
-        assert_eq!(percent(0.9996), "100%");
         assert_eq!(percent(0.99), "99.0%");
+    }
+
+    #[test]
+    fn a_share_is_a_hundred_percent_only_when_it_is_all_of_it() {
+        assert_eq!(percent(0.9994), "99.9%");
+        assert_eq!(percent(0.99949), "99.9%");
+        assert_eq!(percent(0.9995), "99.9%");
+        assert_eq!(percent(0.9999), "99.9%");
+        assert_eq!(percent(0.999_999), "99.9%");
+        assert_eq!(percent(1.0), "100%");
+        assert_eq!(percent(1.0 + 1e-12), "100%");
+        assert_eq!(percent(1.5), "100%");
     }
 
     #[test]

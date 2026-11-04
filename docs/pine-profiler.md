@@ -114,8 +114,9 @@ script does with the candles afterwards is timed like anything else.
 ## In the window
 
 * **Toolbar** (right side, between the debugger's bug and the preview chart's buttons): the stopwatch
-  turns the profiler on and off (⌥⌘R, Ctrl+Alt+R elsewhere). It is blue while the profiler is on,
-  amber when the profile is partial or out of date, red when it failed, and its tooltip says which.
+  turns the profiler on and off (⌥⌘R, Ctrl+Alt+R elsewhere). It is the primary text colour while the
+  profiler is on (never blue) and the secondary one while off, amber when the profile is partial or
+  out of date, red when it failed, and its tooltip says which.
   Turning it on opens the drawer's **Profile** tab.
 * **A failure is also a problem.** A script that compiles and then fails (an unknown function, an
   index out of range) ends the profile with no data ("the script failed on bar N: …"), and the
@@ -145,8 +146,9 @@ script does with the candles afterwards is timed like anything else.
   goes* (hottest line, block and function, each a click away from its line) and *How it was
   measured* (what is in no line, waiting for data, the profiler's overhead, the clock's resolution,
   compile time), each with a note saying what the figure is of. A partial profile says so at the top.
-  A stale one says so and is dimmed; its rows go to their lines only while the editor still holds the
-  text that was profiled. All text in the tab is the secondary label colour or darker, so it reads in
+  A stale one says so and is dimmed (figures, labels, bars and icon chips all fade, whether the text
+  changed or only the inputs or data); its rows go to their lines only while the editor still holds the
+  text that was profiled, which is a separate fact from being current (`profile_ui::Freshness`). All text in the tab is the secondary label colour or darker, so it reads in
   both appearances. Where the drawer is wide, the introduction puts its picture beside the steps and
   the hottest lines stand beside the two cards of figures; the body scrolls instead of being cut off
   in a short drawer.
@@ -241,7 +243,7 @@ The run's own slowdown is in the table above; nothing is subtracted from any fig
   does not compile, no bars, cancelling keeps a labelled partial profile, a failing script engine-side
   keeps what ran before it (the window then shows none of it), dropping a session ends its thread, two sessions are independent).
 * `cargo test --lib pine_studio::profile` (and the editor's tests): the words (units, percentages,
-  separators), bars, heat, flames, tooltips, the ranked list and summary, partial and stale profiles,
+  separators; a unit boundary promotes after rounding, and `100%` is only a whole share), bars, heat, flames, tooltips, the ranked list and summary, partial and stale profiles,
   and through the whole window: off by default and hashing nothing, turning on, editing, inputs, bars
   and scripts making a profile stale, errors and libraries, cancelling, turning it off ending the
   thread, two windows. The editor's column moves the text once and washes the hovered block.
@@ -249,6 +251,9 @@ The run's own slowdown is in the table above; nothing is subtracted from any fig
   `profiled_*` twins.
 * Pictures: `DEGENVIEW_GALLERY_DIR=… cargo test --lib pine_studio::profiler_gallery -- --ignored`
   (off, ready, hovering, stale; wide and narrow; dark and light).
+* `cargo test --lib pine_studio::drawer_tabs_tests` draws a finished profile, current and stale (same text
+  and other text), at the five drawer sizes and asserts it fits; with `DEGENVIEW_GALLERY_DIR` set it
+  writes the pictures.
 
 ## Not verified / limitations
 

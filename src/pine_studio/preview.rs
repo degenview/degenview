@@ -152,6 +152,21 @@ pub struct RunIdentity {
     visible_range: Option<(i64, i64)>,
 }
 
+#[cfg(test)]
+impl RunIdentity {
+    /// Some identity, for a test that needs a key and not what it describes.
+    pub(crate) fn for_test() -> Self {
+        Self {
+            candles: 0,
+            last_is_closed: true,
+            market: 0,
+            light: false,
+            inputs: 0,
+            visible_range: None,
+        }
+    }
+}
+
 /// The inputs as one number, whatever order the map holds them in: each entry hashes by itself and
 /// the results are added.
 fn inputs_fingerprint(inputs: &HashMap<String, InputValue>) -> u64 {
