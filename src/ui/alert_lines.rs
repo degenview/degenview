@@ -35,6 +35,9 @@ const PILL_GAP: f32 = 4.0;
 const PAD: f32 = 9.0;
 const ICON: f32 = 16.0;
 const ICON_GAP: f32 = 6.0;
+/// The arrow that says what the alert waits for, between the bell and the price.
+const DIRECTION: f32 = 12.0;
+const DIRECTION_GAP: f32 = 5.0;
 const BIN_WIDTH: f32 = 28.0;
 const PILL_RADIUS: f32 = 6.0;
 /// The longest a dropped tag waits at its new level for the alert list to show it. The app drains
@@ -101,11 +104,27 @@ struct Hold {
 /// The pill itself shows a bell and the level, never the word.
 fn caption(line: &AlertLine, format: PriceFormat) -> String {
     let price = format.format(line.price);
-    let direction = if line.above { "↑" } else { "↓" };
+    let direction = match (line.percent, line.above) {
+        (false, true) => "↑",
+        (false, false) => "↓",
+        (true, true) => "↗",
+        (true, false) => "↘",
+    };
     if line.paused {
         format!("Alert {direction} {price} · paused")
     } else {
         format!("Alert {direction} {price}")
+    }
+}
+
+/// The arrow of what the alert waits for: straight up or down for a price that is crossed, slanted
+/// for a rise or fall by a percentage.
+fn direction_icon(line: &AlertLine) -> Icon {
+    match (line.percent, line.above) {
+        (false, true) => Icon::ArrowUp,
+        (false, false) => Icon::ArrowDown,
+        (true, true) => Icon::ArrowUpRight,
+        (true, false) => Icon::ArrowDownRight,
     }
 }
 
@@ -141,11 +160,17 @@ struct Hover {
     bin: bool,
 }
 
+/// The alert's colour: the app's yellow on dark, a deeper amber on light, where yellow is too
+/// pale to read as a thin dashed line.
+fn alert_color() -> Color32 {
+    theme::pick(theme::YELLOW, Color32::from_rgb(196, 118, 0))
+}
+
 fn tint_of(line: &AlertLine) -> Color32 {
     if line.paused {
         theme::text_tertiary()
     } else {
-        theme::YELLOW
+        alert_color()
     }
 }
 
@@ -174,7 +199,8 @@ fn place(
         };
         let price =
             painter.layout_no_wrap(format.format(line.price), FontId::proportional(11.5), color);
-        let width = PAD + ICON + ICON_GAP + price.size().x + PAD + BIN_WIDTH;
+        let width =
+            PAD + ICON + ICON_GAP + DIRECTION + DIRECTION_GAP + price.size().x + PAD + BIN_WIDTH;
         let body = Rect::from_min_size(
             Pos2::new(handle.left() - PILL_GAP - width, y - HEIGHT / 2.0),
             Vec2::new(width, HEIGHT),
@@ -189,7 +215,10 @@ fn place(
 fn draw(painter: &egui::Painter, plot: Rect, line: &AlertLine, placed: &Placed, hover: Hover) {
     let tint = tint_of(line);
     let y = placed.handle.center().y;
-    let stroke = Stroke::new(1.0, tint.gamma_multiply(0.75));
+    let stroke = Stroke::new(
+        theme::pick_value(1.0, 1.25),
+        tint.gamma_multiply(theme::pick_value(0.75, 0.95)),
+    );
     for dash in Shape::dashed_line(
         &[Pos2::new(plot.left(), y), Pos2::new(placed.line_end(), y)],
         stroke,
@@ -266,9 +295,23 @@ fn draw(painter: &egui::Painter, plot: Rect, line: &AlertLine, placed: &Placed, 
         },
         tint,
     );
+    let direction = pill.body.left() + PAD + ICON + ICON_GAP;
+    icons::paint(
+        painter,
+        Rect::from_center_size(
+            Pos2::new(direction + DIRECTION / 2.0, centre),
+            Vec2::splat(DIRECTION),
+        ),
+        direction_icon(line),
+        if line.paused {
+            theme::text_tertiary()
+        } else {
+            theme::text_secondary()
+        },
+    );
     painter.galley(
         Pos2::new(
-            pill.body.left() + PAD + ICON + ICON_GAP,
+            direction + DIRECTION + DIRECTION_GAP,
             centre - pill.price.size().y / 2.0,
         ),
         pill.price.clone(),
@@ -566,6 +609,7 @@ mod tests {
             price: 110.0,
             paused: false,
             above,
+            percent: false,
             editable: true,
         }
     }
@@ -586,6 +630,7 @@ mod tests {
             price: 118_150.99,
             paused: false,
             above: true,
+            percent: false,
             editable: true,
         };
         assert_eq!(caption(&line, PriceFormat::AUTO), "Alert ↑ 118,151");
@@ -595,6 +640,21 @@ mod tests {
             caption(&line, PriceFormat::AUTO),
             "Alert ↓ 118,151 · paused"
         );
+    }
+
+    #[test]
+    fn the_pill_arrow_is_one_of_four_by_side_and_by_percent() {
+        let of = |above, percent| {
+            direction_icon(&AlertLine {
+                above,
+                percent,
+                ..line(above)
+            })
+        };
+        assert_eq!(of(true, false), Icon::ArrowUp);
+        assert_eq!(of(false, false), Icon::ArrowDown);
+        assert_eq!(of(true, true), Icon::ArrowUpRight);
+        assert_eq!(of(false, true), Icon::ArrowDownRight);
     }
 
     #[test]
@@ -1043,18 +1103,19 @@ mod tests {
     fn gallery_of_the_alert_lines() {
         use crate::ui::render_tests::Screen;
         let lines: Vec<AlertLine> = [
-            (1, 110.0, false),
-            (2, 105.0, false),
-            (3, 100.0, false),
-            (4, 95.0, true),
-            (5, 90.0, true),
+            (1, 110.0, false, true, false),
+            (2, 105.0, false, true, true),
+            (3, 100.0, false, false, false),
+            (4, 95.0, true, false, true),
+            (5, 90.0, true, true, false),
         ]
         .into_iter()
-        .map(|(id, price, paused)| AlertLine {
+        .map(|(id, price, paused, above, percent)| AlertLine {
             id,
             price,
             paused,
-            above: true,
+            above,
+            percent,
             editable: true,
         })
         .collect();
@@ -1068,16 +1129,31 @@ mod tests {
         let right = plot().right();
         let bin_x = right - MARGIN - HANDLE_WIDTH - PILL_GAP - BIN_WIDTH / 2.0;
         let handle_x = right - MARGIN - HANDLE_WIDTH / 2.0;
-        for (name, hover) in [
-            ("alerts-rest", None),
-            ("alerts-hover-bin", Some(Pos2::new(bin_x, y_of(3)))),
-            ("alerts-hover-arrow", Some(Pos2::new(handle_x, y_of(1)))),
+        let _restore = theme::RestoreDefaultTheme;
+        for (name, hover, light) in [
+            ("alerts-rest", None, false),
+            ("alerts-hover-bin", Some(Pos2::new(bin_x, y_of(3))), false),
+            (
+                "alerts-hover-arrow",
+                Some(Pos2::new(handle_x, y_of(1))),
+                false,
+            ),
+            ("alerts-rest-light", None, true),
+            (
+                "alerts-hover-bin-light",
+                Some(Pos2::new(bin_x, y_of(3))),
+                true,
+            ),
         ] {
             let mut screen = Screen::new(Vec2::new(600.0, 400.0));
+            if light {
+                screen.ctx.set_theme(egui::ThemePreference::Light);
+            }
             let mut last = None;
             for _ in 0..4 {
                 let events = hover.map(egui::Event::PointerMoved).into_iter().collect();
                 last = Some(screen.run(events, |ui| {
+                    theme::sync(ui.ctx());
                     let rect = plot();
                     ui.painter().rect_filled(rect, 0.0, theme::background());
                     // A few bars to sit behind the pills.

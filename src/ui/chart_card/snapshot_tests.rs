@@ -310,6 +310,7 @@ fn with_account(harness: &mut Harness) {
             price: 230.0,
             paused: false,
             above: true,
+            percent: false,
             editable: true,
         }]);
     // Open, so the pill is in both frames and in the check below.
