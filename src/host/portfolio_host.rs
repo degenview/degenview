@@ -227,8 +227,24 @@ impl PortfolioHost {
         self.mutate(|ledger| ledger.create_portfolio(name, currency))
     }
 
+    /// Changing the selection writes the one setting, not the whole ledger: it happens on a
+    /// click, on the UI thread, with the store locked.
     pub fn select(&mut self, id: Option<u64>) -> Result<(), PortfolioHostError> {
-        self.mutate(|ledger| ledger.select(id))
+        self.ensure_loaded()?;
+        if let Some(id) = id
+            && !self.ledger.snapshot().portfolios.iter().any(|p| p.id == id)
+        {
+            return self.fail(PortfolioHostError::Mutation(
+                PortfolioError::PortfolioNotFound,
+            ));
+        }
+        if let Err(error) = self.save_setting(|store| store.set_selected_portfolio(id)) {
+            return self.fail(error);
+        }
+        // Checked above: this only moves the in-memory selection to match what was saved.
+        let _ = self.ledger.select(id);
+        self.last_error = None;
+        Ok(())
     }
 
     pub fn update_portfolio(&mut self, portfolio: Portfolio) -> Result<(), PortfolioHostError> {
@@ -383,23 +399,40 @@ impl PortfolioHost {
         }
     }
 
+    /// Stores a rebuilt stretch of one portfolio's history. Only that stretch and the stale
+    /// marks are written; a background save does not dismiss an error the user has not seen.
     pub fn store_snapshots(
         &mut self,
         snapshots: Vec<PortfolioSnapshot>,
         portfolio_id: u64,
         from: i64,
     ) -> Result<(), PortfolioHostError> {
-        self.mutate(move |ledger| ledger.store_snapshots(snapshots, portfolio_id, from))
+        self.ensure_loaded()?;
+        let mut invalidated = self.ledger.snapshot().invalidated_after.clone();
+        invalidated.remove(&portfolio_id);
+        if let Err(error) = self.save_setting(|store| {
+            store.replace_portfolio_history(portfolio_id, from, &snapshots, &invalidated)
+        }) {
+            return self.fail(error);
+        }
+        // Cannot fail: it only mirrors in memory what was just written.
+        let _ = self.ledger.store_snapshots(snapshots, portfolio_id, from);
+        Ok(())
+    }
+
+    fn ensure_loaded(&mut self) -> Result<(), PortfolioHostError> {
+        if let Some(error) = self.load_error.clone() {
+            self.last_error = Some(error.clone());
+            return Err(error);
+        }
+        Ok(())
     }
 
     fn mutate<T>(
         &mut self,
         mutation: impl FnOnce(&mut PortfolioLedger) -> Result<T, PortfolioError>,
     ) -> Result<T, PortfolioHostError> {
-        if let Some(error) = &self.load_error {
-            self.last_error = Some(error.clone());
-            return Err(error.clone());
-        }
+        self.ensure_loaded()?;
 
         let mut candidate = PortfolioLedger::new(self.ledger.snapshot().clone());
         let value = match mutation(&mut candidate) {
@@ -1947,6 +1980,128 @@ mod tests {
                 .invalidated_after
                 .contains_key(&portfolio)
         );
+    }
+
+    fn point(portfolio_id: u64, timestamp: i64, value: f64) -> PortfolioSnapshot {
+        PortfolioSnapshot {
+            portfolio_id,
+            timestamp,
+            value,
+            net_contributions: value,
+            realized_pnl: 0.0,
+            unrealized_pnl: 0.0,
+            is_complete: true,
+        }
+    }
+
+    /// The row ids of the two big tables: a delete-and-reinsert gives every row a new one.
+    fn row_ids(store: &SharedStore) -> (String, String) {
+        let guard = store.lock().unwrap();
+        let ids = |table: &str| -> String {
+            guard
+                .raw_connection()
+                .query_row(
+                    &format!("SELECT COALESCE(group_concat(rowid), '') FROM {table}"),
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap()
+        };
+        (ids("portfolio_transaction"), ids("portfolio_snapshot"))
+    }
+
+    #[test]
+    fn selecting_a_portfolio_does_not_rewrite_the_ledger() {
+        let store = store();
+        let mut host = PortfolioHost::load(store.clone());
+        let first = host.create_portfolio("A", PortfolioCurrency::Usd).unwrap();
+        let second = host.create_portfolio("B", PortfolioCurrency::Usd).unwrap();
+        host.add_transaction(transaction(1, first, 1.0)).unwrap();
+        host.store_snapshots(vec![point(first, 10, 1.0)], first, 0)
+            .unwrap();
+        let before = row_ids(&store);
+
+        host.select(Some(second)).unwrap();
+        host.select(Some(first)).unwrap();
+        assert_eq!(
+            row_ids(&store),
+            before,
+            "no transaction or snapshot row was rewritten"
+        );
+        assert!(matches!(
+            host.select(Some(999)),
+            Err(PortfolioHostError::Mutation(
+                PortfolioError::PortfolioNotFound
+            ))
+        ));
+        host.select(Some(second)).unwrap();
+        assert_eq!(
+            PortfolioHost::load(store).snapshot().selected_portfolio_id,
+            Some(second)
+        );
+    }
+
+    #[test]
+    fn a_rebuild_replaces_only_its_portfolios_later_history() {
+        let store = store();
+        let mut host = PortfolioHost::load(store.clone());
+        let first = host.create_portfolio("A", PortfolioCurrency::Usd).unwrap();
+        let second = host.create_portfolio("B", PortfolioCurrency::Usd).unwrap();
+        host.add_transaction(transaction(1, first, 1.0)).unwrap();
+        host.store_snapshots(
+            vec![
+                point(first, 0, 1.0),
+                point(first, 10, 2.0),
+                point(first, 20, 3.0),
+            ],
+            first,
+            0,
+        )
+        .unwrap();
+        host.store_snapshots(vec![point(second, 5, 7.0)], second, 0)
+            .unwrap();
+        let other_before: String = store
+            .lock()
+            .unwrap()
+            .raw_connection()
+            .query_row(
+                "SELECT group_concat(rowid) FROM portfolio_snapshot WHERE portfolio_id = ?1",
+                [second.to_string()],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        host.store_snapshots(vec![point(first, 10, 9.0)], first, 10)
+            .unwrap();
+
+        let other_after: String = store
+            .lock()
+            .unwrap()
+            .raw_connection()
+            .query_row(
+                "SELECT group_concat(rowid) FROM portfolio_snapshot WHERE portfolio_id = ?1",
+                [second.to_string()],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            other_before, other_after,
+            "the other portfolio was not touched"
+        );
+        // What is in memory is what a restart reads.
+        let stored = store.lock().unwrap().portfolio_ledger().unwrap();
+        assert_eq!(
+            stored.historical_snapshots,
+            host.snapshot().historical_snapshots
+        );
+        let mine: Vec<(i64, f64)> = stored
+            .historical_snapshots
+            .iter()
+            .filter(|p| p.portfolio_id == first)
+            .map(|p| (p.timestamp, p.value))
+            .collect();
+        assert_eq!(mine, [(0, 1.0), (10, 9.0)], "the stale tail is gone");
+        assert!(!stored.invalidated_after.contains_key(&first));
     }
 
     #[test]
