@@ -11,9 +11,6 @@ use std::collections::HashMap;
 
 const KEY_SELECTED: &str = "portfolio.selectedPortfolioID";
 const KEY_INVALIDATED_AFTER: &str = "portfolio.invalidatedAfter";
-/// Set once the history built before DEX pools were charted by their traded token was dropped.
-/// Local to this Mac: every Mac repairs its own stored history.
-const KEY_DEX_SIDE_REPAIRED: &str = "portfolio.dexSideRepaired";
 
 impl Document for Portfolio {
     fn document_id(&self) -> String {
@@ -36,41 +33,6 @@ impl Store {
                 .setting_strict(KEY_INVALIDATED_AFTER)?
                 .unwrap_or_default(),
         })
-    }
-
-    /// Once per Mac: drops the recent valuation history of every portfolio that holds a
-    /// DEXScreener market, so it is rebuilt. Until the charts followed
-    /// the traded token of a pool that lists a stablecoin first, such a market was priced as the
-    /// stablecoin (about $1 a coin), which put spikes of many times the portfolio's value in the
-    /// history. GeckoTerminal serves no candles older than 180 days, so no older point can be
-    /// wrong this way and the rest of the history is kept, as is a portfolio that never held one.
-    pub fn repair_dex_pool_history(&self, now_ms: i64) -> rusqlite::Result<()> {
-        if self
-            .setting_strict::<bool>(KEY_DEX_SIDE_REPAIRED)?
-            .unwrap_or(false)
-        {
-            return Ok(());
-        }
-        let transactions: Vec<crate::model::portfolio::PortfolioTransaction> =
-            self.payloads_strict("SELECT payload FROM portfolio_transaction")?;
-        // Past the 180 days of candles, with a margin for the local midnight of the first point.
-        let oldest_candle = now_ms - 200 * 86_400_000;
-        let mut from = std::collections::BTreeMap::new();
-        for transaction in transactions
-            .iter()
-            .filter(|tx| tx.asset.source == crate::model::DataSource::DexScreener)
-        {
-            from.entry(transaction.portfolio_id)
-                .and_modify(|first: &mut i64| *first = (*first).min(transaction.timestamp))
-                .or_insert(transaction.timestamp);
-        }
-        for first in from.values_mut() {
-            *first = (*first).max(oldest_candle);
-        }
-        if !from.is_empty() {
-            self.invalidate_portfolio_history(&from)?;
-        }
-        self.set_setting(KEY_DEX_SIDE_REPAIRED, &true)
     }
 
     /// Remembers which portfolio is selected, without rewriting the ledger.
@@ -354,58 +316,6 @@ mod tests {
         assert_eq!(loaded.historical_snapshots.len(), 1);
         assert_eq!(loaded.selected_portfolio_id, Some(3));
         assert_eq!(loaded.invalidated_after.get(&3), Some(&2_500));
-    }
-
-    #[test]
-    fn dex_history_is_dropped_once_from_the_oldest_candle_and_only_where_one_is_held() {
-        const DAY: i64 = 86_400_000;
-        let now = 1_000 * DAY;
-        let store = Store::open_in_memory().expect("open");
-        let mut dex = transaction(1, 3);
-        dex.asset.source = DataSource::DexScreener;
-        dex.timestamp = now - 500 * DAY;
-        let mut binance = transaction(2, 4);
-        binance.asset.source = DataSource::Binance;
-        binance.timestamp = now - 500 * DAY;
-        let point = |portfolio_id, days_ago: i64| PortfolioSnapshot {
-            portfolio_id,
-            timestamp: now - days_ago * DAY,
-            value: 1.0,
-            net_contributions: 1.0,
-            realized_pnl: 0.0,
-            unrealized_pnl: 0.0,
-            is_complete: true,
-        };
-        let snapshot = PortfolioLedgerSnapshot {
-            portfolios: vec![portfolio(3), portfolio(4)],
-            transactions: vec![dex, binance],
-            historical_snapshots: vec![point(3, 300), point(3, 100), point(4, 100)],
-            selected_portfolio_id: None,
-            invalidated_after: HashMap::new(),
-        };
-        store.save_portfolio_ledger(&snapshot).expect("save");
-
-        store.repair_dex_pool_history(now).expect("repair");
-        let loaded = store.portfolio_ledger().expect("load");
-        let kept: Vec<(u64, i64)> = loaded
-            .historical_snapshots
-            .iter()
-            .map(|point| (point.portfolio_id, (now - point.timestamp) / DAY))
-            .collect();
-        assert_eq!(kept, vec![(3, 300), (4, 100)]);
-        assert_eq!(
-            loaded.invalidated_after,
-            HashMap::from([(3, now - 200 * DAY)])
-        );
-
-        // Done once: a point stored since is not dropped at the next launch.
-        store
-            .replace_portfolio_history(3, now - 50 * DAY, &[point(3, 50)], &HashMap::new())
-            .expect("rebuild");
-        store.repair_dex_pool_history(now).expect("again");
-        let loaded = store.portfolio_ledger().expect("load");
-        assert_eq!(loaded.historical_snapshots.len(), 3);
-        assert!(loaded.invalidated_after.is_empty());
     }
 
     // MARK: Sync tracking
