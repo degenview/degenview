@@ -14,6 +14,7 @@ use crate::mcp::drawings::{
     AnchorArg, DrawingEdit, MAX_DELETES_PER_CALL, MAX_DRAWINGS_PER_CALL, McpDash, NewDrawingArg,
     StylePatch, TimeArg, parse_drawing_id, parse_time,
 };
+use crate::mcp::indicator_tools::{GET_INDICATOR_VALUES, REMOVE_INDICATOR};
 use crate::mcp::market_tools::{
     CREATE_WATCHLIST, DELETE_WATCHLIST, GET_QUOTES, GET_WATCHLIST, LIST_WATCHLISTS, SEARCH_SYMBOLS,
     UPDATE_WATCHLIST,
@@ -83,11 +84,11 @@ pub fn required_permission(tool: &str) -> Option<Permission> {
     match tool {
         LIST_WORKSPACES | LIST_CHARTS | LIST_INDICATORS => Some(Permission::ChartsRead),
         ADD_CHART => Some(Permission::ChartsCreate),
-        ADD_INDICATOR => Some(Permission::ChartsIndicatorsWrite),
+        ADD_INDICATOR | REMOVE_INDICATOR => Some(Permission::ChartsIndicatorsWrite),
         ADD_PINE_TO_CHART | UPDATE_PINE_INSTANCE | REMOVE_PINE_INSTANCE => {
             Some(Permission::ChartsPineInstancesWrite)
         }
-        GET_CANDLES => Some(Permission::ChartsCandlesRead),
+        GET_CANDLES | GET_INDICATOR_VALUES => Some(Permission::ChartsCandlesRead),
         LIST_DRAWINGS => Some(Permission::DrawingsRead),
         ADD_DRAWINGS | UPDATE_DRAWING => Some(Permission::DrawingsWrite),
         DELETE_DRAWINGS => Some(Permission::DrawingsDelete),
@@ -150,7 +151,7 @@ pub enum McpIndicator {
 }
 
 impl McpIndicator {
-    fn built_in(self) -> BuiltIn {
+    pub(super) fn built_in(self) -> BuiltIn {
         match self {
             Self::Volume => BuiltIn::Volume,
             Self::Rsi => BuiltIn::Rsi,
@@ -590,7 +591,7 @@ pub struct DeleteDrawingsParams {
     pub drawing_ids: Vec<String>,
 }
 
-fn parse_chart_id(raw: &str) -> Result<u64, CallToolResult> {
+pub(super) fn parse_chart_id(raw: &str) -> Result<u64, CallToolResult> {
     raw.trim()
         .parse::<u64>()
         .map_err(|_| invalid("chart_id must be an id returned by degenview_list_charts"))
@@ -635,7 +636,7 @@ pub(super) fn invalid(message: impl Into<String>) -> CallToolResult {
     failure(&McpError::InvalidArgument(message.into()))
 }
 
-fn parse_id(raw: &str, what: &str) -> Result<u64, CallToolResult> {
+pub(super) fn parse_id(raw: &str, what: &str) -> Result<u64, CallToolResult> {
     raw.trim().parse::<u64>().map_err(|_| {
         invalid(format!(
             "{what} must be an id returned by degenview_list_workspaces"
@@ -671,7 +672,7 @@ impl DegenViewMcp {
         Self {
             bridge,
             shared,
-            tool_router: Self::tool_router() + Self::market_router(),
+            tool_router: Self::tool_router() + Self::market_router() + Self::indicator_router(),
         }
     }
 
@@ -2179,7 +2180,7 @@ fn with_standard_formats(mut tool: Tool) -> Tool {
 #[tool_handler(
     router = self.tool_router,
     name = "DegenView",
-    instructions = "Inspect and change DegenView, a market dashboard, within what this credential is allowed. Charts: list workspaces first, then list or add charts and built-in indicators by workspace_id; read candles and add, edit or delete drawings. Pine scripts: list, read, compile and edit scripts (an edit is a draft until saved, and every edit needs the revision you last read), and apply a saved script to a chart. Price alerts: list, create, edit, pause and delete. Markets: search the providers for symbols and read quotes. Watchlists: list and read them (optionally with quotes), create, edit and delete. Only the tools this credential may use are listed."
+    instructions = "Inspect and change DegenView, a market dashboard, within what this credential is allowed. Charts: list workspaces first, then list or add charts and built-in indicators by workspace_id; read candles and indicator values (RSI, EMA, Bollinger, trend flips), add or remove built-in indicators, and add, edit or delete drawings. Pine scripts: list, read, compile and edit scripts (an edit is a draft until saved, and every edit needs the revision you last read), and apply a saved script to a chart. Price alerts: list, create, edit, pause and delete. Markets: search the providers for symbols and read quotes. Watchlists: list and read them (optionally with quotes), create, edit and delete. Only the tools this credential may use are listed."
 )]
 impl ServerHandler for DegenViewMcp {
     async fn call_tool(

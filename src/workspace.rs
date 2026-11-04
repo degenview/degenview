@@ -65,7 +65,9 @@ mod undo;
 mod watchlist;
 
 pub use charts::ChartSummary;
-pub use pine::{IndicatorError, IndicatorOutcome, PineChartTarget, PineInstanceView};
+pub use pine::{
+    IndicatorError, IndicatorOutcome, PineChartTarget, PineInstanceView, RemoveOutcome,
+};
 // Named only by the MCP host's tests; it is the type of `PineInstanceView::run`.
 #[cfg(test)]
 pub use pine::PineRunView;

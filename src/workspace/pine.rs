@@ -39,6 +39,14 @@ pub struct PineInstanceView {
     pub run: Option<PineRunView>,
 }
 
+/// What [`ChartWorkspace::remove_indicator`] did.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RemoveOutcome {
+    Removed,
+    /// It was not on the chart, so nothing changed.
+    NotApplied,
+}
+
 /// What [`ChartWorkspace::apply_indicator`] did.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum IndicatorOutcome {
@@ -151,6 +159,25 @@ impl ChartWorkspace {
             IndicatorOutcome::AlreadyApplied
         };
         Ok((outcome, chart.indicators))
+    }
+
+    /// Takes a built-in indicator off a chart (its chip's close button). A hidden indicator
+    /// counts as applied. Returns the chart's resulting configuration.
+    pub fn remove_indicator(
+        &mut self,
+        chart_id: u64,
+        kind: BuiltIn,
+    ) -> Result<(RemoveOutcome, IndicatorConfig), IndicatorError> {
+        let chart = self
+            .charts
+            .iter_mut()
+            .find(|chart| chart.id == chart_id)
+            .ok_or(IndicatorError::NoSuchChart)?;
+        if !kind.applied(&chart.indicators) {
+            return Ok((RemoveOutcome::NotApplied, chart.indicators));
+        }
+        kind.set_applied(&mut chart.indicators, false);
+        Ok((RemoveOutcome::Removed, chart.indicators))
     }
 
     /// Adds a Pine script to the focused chart, after the ones already there (the Pine
@@ -435,6 +462,33 @@ mod tests {
         assert_eq!(instance(&workspace)[0].input_values(), inputs);
         workspace.undo();
         assert!(instance(&workspace).is_empty());
+    }
+
+    #[test]
+    fn remove_indicator_takes_it_off_and_reports_when_it_was_not_there() {
+        let ctx = egui::Context::default();
+        let mut workspace = empty_workspace(5);
+        let btc = workspace
+            .add_chart_for(&InstrumentId::new(DataSource::Binance, "BTCUSDT"), &ctx)
+            .chart_id;
+        assert_eq!(
+            workspace.remove_indicator(btc, BuiltIn::Rsi).unwrap().0,
+            RemoveOutcome::NotApplied
+        );
+        workspace.apply_indicator(btc, BuiltIn::Rsi, None).unwrap();
+        // A hidden indicator is still applied, so it can be removed.
+        BuiltIn::Rsi.toggle_visible(&mut workspace.charts[0].indicators);
+        let (outcome, config) = workspace.remove_indicator(btc, BuiltIn::Rsi).unwrap();
+        assert_eq!(outcome, RemoveOutcome::Removed);
+        assert!(!config.show_rsi);
+        assert_eq!(
+            workspace.remove_indicator(btc, BuiltIn::Rsi).unwrap().0,
+            RemoveOutcome::NotApplied
+        );
+        assert_eq!(
+            workspace.remove_indicator(999, BuiltIn::Rsi),
+            Err(IndicatorError::NoSuchChart)
+        );
     }
 
     #[test]

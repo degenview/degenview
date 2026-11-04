@@ -33,10 +33,10 @@ Delete and saved-source writes require their own grants.
 
 | Area | Tools (`degenview_…`) |
 | --- | --- |
-| Charts | `list_workspaces`, `list_charts`, `add_chart`, `list_indicators`, `add_indicator` |
+| Charts | `list_workspaces`, `list_charts`, `add_chart`, `list_indicators`, `add_indicator`, `remove_indicator` |
 | Price alerts | `list_price_alerts`, `create_price_alert`, `update_price_alert`, `pause_price_alert`, `resume_price_alert`, `delete_price_alert` |
 | Pine scripts | `list_pine_scripts`, `get_pine_script`, `update_pine_script`, `save_pine_script`, `compile_pine_script`, `get_pine_inputs` |
-| Candles and drawings | `get_candles`, `list_drawings`, `add_drawings`, `update_drawing`, `delete_drawings` |
+| Candles and drawings | `get_candles`, `get_indicator_values`, `list_drawings`, `add_drawings`, `update_drawing`, `delete_drawings` |
 | Markets | `search_symbols`, `get_quotes` |
 | Watchlists | `list_watchlists`, `get_watchlist`, `create_watchlist`, `update_watchlist`, `delete_watchlist` |
 | Pine instances | `list_chart_pine_instances`, `get_pine_instance`, `get_pine_styles`, `get_pine_report`, `list_pine_alerts`, `add_pine_script_to_chart`, `update_pine_instance`, `remove_pine_instance` |
@@ -80,6 +80,14 @@ Delete and saved-source writes require their own grants.
   none. Ids come from `next_free_id` (the counter, but never one already stored). A locked drawing
   is never edited or removed, a chart holds at most 500 drawings, and a call carries at most 25
   (add) or 50 (delete). Only trend lines and rectangles are writable.
+- `get_indicator_values` (`mcp::indicator_tools`, pure part in `mcp::indicator_values`) computes RSI 14,
+  an EMA of any length 2 to 400, Bollinger (20, 2) and Supertrend flips with `model::indicators`,
+  the functions the chart draws with, over every candle the chart holds (the market's own, cut at
+  the replay position), then returns the newest `limit` bars as columns aligned with `times` and
+  `closes`. Values are warm at the first returned bar; `null` is warm-up (or, for `trend_flip`, no
+  flip, and the newest bar's flip is never reported). It needs `charts.candles.read` and the
+  indicator need not be applied. `remove_indicator` is `ChartWorkspace::remove_indicator`
+  (`charts.indicators.write`); removing one that is not there answers `not_applied`.
 - Markets and watchlists live in `mcp::market_tools` (a second `tool_router`, merged in
   `DegenViewMcp::new`) and `mcp::markets` (result types and pure projections). `search_symbols`
   runs `service::search` for each named provider side by side on a blocking worker (at most four

@@ -138,6 +138,18 @@ pub enum McpCommand {
         expected_revision: String,
         source: Option<String>,
     },
+    /// Takes a built-in indicator off a chart.
+    RemoveIndicator {
+        workspace_id: u64,
+        chart_id: u64,
+        indicator: BuiltIn,
+    },
+    /// Built-in indicator readings over a chart's candles.
+    GetIndicatorValues {
+        workspace_id: u64,
+        chart_id: u64,
+        request: crate::mcp::indicator_values::ReadingRequest,
+    },
     ListWatchlists,
     /// One page of a watchlist's entries. Quotes are not read here (the tool waits for them
     /// off the app thread); the reply names the markets on the page.
@@ -208,6 +220,7 @@ pub enum McpReply {
     Drawings(Box<DrawingsResult>),
     DrawingsChanged(Box<DrawingsChangeResult>),
     PineEdit(Box<crate::mcp::types::PineEditResult>),
+    IndicatorValues(Box<crate::mcp::indicator_values::IndicatorValuesResult>),
     Watchlists(crate::mcp::markets::WatchlistsResult),
     Watchlist(Box<crate::mcp::markets::WatchlistPage>),
     WatchlistChanged(Box<crate::mcp::markets::WatchlistChangeResult>),

@@ -16,6 +16,7 @@ next. Nothing here is started.
 | 6 | Pine on charts: apply a saved script (with input overrides), change an applied script's inputs and visibility, remove it | `charts.pine_instances.write` |
 | 7 | Candles and drawings: read a chart's candles, list drawings, add/move/restyle/delete trend lines and rectangles | `charts.candles.read`, `drawings.read`, `drawings.write`, `drawings.delete` |
 | 8 | Markets and watchlists: search symbols, read quotes, list/read watchlists (with quotes), create, rename, add/remove markets, delete | `markets.read`, `watchlists.read`, `watchlists.write`, `watchlists.delete` |
+| 9 | Indicator values and removal: RSI, EMA, Bollinger and trend-flip series for a chart, and take a built-in indicator off | `charts.candles.read`, `charts.indicators.write` |
 
 ## 0. What a trader still cannot do over MCP
 
@@ -23,8 +24,9 @@ Ranked by how soon someone would ask. Not started unless listed under "Done so f
 
 - Chart control: set a chart's symbol, timeframe, chart type or price scale mode, scroll to a time,
   close a chart. `add_chart` is the only chart mutator, so an agent piles up charts.
-- Indicators beyond adding: list the ones applied, remove or reconfigure them, and read their values
-  (EMA, RSI, Bollinger) instead of recomputing from candles.
+- Indicators: hide and show one without removing it (`degenview_remove_indicator` and
+  `degenview_get_indicator_values` are done); the chart's EMA period is changed through
+  `degenview_add_indicator`.
 - Paper trading: accounts and metrics, positions, orders, submit/modify/cancel, close/reverse. Needs
   the confirmation policy (item 3) first, and its own off-by-default permissions. No real-broker
   order tool: Alpaca is data only.

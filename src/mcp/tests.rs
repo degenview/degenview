@@ -718,6 +718,50 @@ fn stub_app(
                 },
             }))
         }
+        McpCommand::RemoveIndicator {
+            workspace_id,
+            chart_id,
+            indicator,
+        } => {
+            stub_chart_known(workspace_id, chart_id)?;
+            stub.draw_calls
+                .lock()
+                .unwrap()
+                .push(format!("remove_indicator:{}", indicator.id()));
+            Ok(McpReply::IndicatorApplied(AddIndicatorResult {
+                workspace_id: "1".into(),
+                chart_id: "2".into(),
+                indicator: indicator.id().to_owned(),
+                status: "removed".into(),
+                indicators: IndicatorsInfo {
+                    volume: false,
+                    rsi: false,
+                    ema: false,
+                    ema_period: 20,
+                    bollinger: false,
+                    trend_flips: false,
+                },
+            }))
+        }
+        McpCommand::GetIndicatorValues {
+            workspace_id,
+            chart_id,
+            request,
+        } => {
+            stub_chart_known(workspace_id, chart_id)?;
+            let chart = stub.chart.lock().unwrap();
+            let meta = crate::mcp::indicator_values::ReadingMeta {
+                workspace_id,
+                chart_id,
+                instrument: "BINANCE:BTCUSDT".into(),
+                timeframe: "1D".into(),
+                replay_ms: None,
+                now_ms: i64::MAX,
+            };
+            Ok(McpReply::IndicatorValues(Box::new(
+                crate::mcp::indicator_values::indicator_values(&meta, &chart.candles, &request),
+            )))
+        }
         McpCommand::AddChart {
             workspace_id,
             instrument,
@@ -2812,7 +2856,10 @@ fn candles_and_drawings_have_their_own_permissions() {
             }
         }
     }
-    assert_eq!(tool_names(&url, "candles-tok"), ["degenview_get_candles"]);
+    assert_eq!(
+        tool_names(&url, "candles-tok"),
+        ["degenview_get_candles", "degenview_get_indicator_values"]
+    );
     assert_eq!(tool_names(&url, "read-tok"), ["degenview_list_drawings"]);
     assert_eq!(
         tool_names(&url, "write-tok"),
@@ -3236,4 +3283,5 @@ fn tool_schemas_use_only_standard_formats() {
     assert!(reply.body.contains("\"minimum\":0"), "{}", reply.body);
 }
 
+mod indicator_tests;
 mod market_tests;

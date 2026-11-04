@@ -11,6 +11,8 @@ pub mod auth;
 pub mod bridge;
 pub mod chart_data;
 pub mod drawings;
+pub mod indicator_tools;
+pub mod indicator_values;
 pub mod market_tools;
 pub mod markets;
 pub mod pine;

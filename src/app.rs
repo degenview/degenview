@@ -1865,6 +1865,22 @@ impl DegenViewApp {
                 mcp_host::apply_indicator(workspace, chart_id, indicator, ema_period)
                     .map(McpReply::IndicatorApplied)
             }),
+            McpCommand::RemoveIndicator {
+                workspace_id,
+                chart_id,
+                indicator,
+            } => self.with_mcp_workspace(workspace_id, |workspace| {
+                mcp_host::remove_indicator(workspace, chart_id, indicator)
+                    .map(McpReply::IndicatorApplied)
+            }),
+            McpCommand::GetIndicatorValues {
+                workspace_id,
+                chart_id,
+                request,
+            } => self.with_mcp_workspace(workspace_id, |workspace| {
+                mcp_host::indicator_readings(workspace, chart_id, &request)
+                    .map(|result| McpReply::IndicatorValues(Box::new(result)))
+            }),
             McpCommand::AddChart {
                 workspace_id,
                 instrument,

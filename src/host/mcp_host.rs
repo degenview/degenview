@@ -13,6 +13,9 @@ use crate::mcp::bridge::{
 };
 use crate::mcp::chart_data;
 use crate::mcp::drawings::{DrawingEdit, NewDrawing};
+use crate::mcp::indicator_values::{
+    IndicatorValuesResult, ReadingMeta, ReadingRequest, indicator_values,
+};
 use crate::mcp::markets::{self, WatchlistChangeResult, WatchlistPage, WatchlistsResult};
 use crate::mcp::pine::{InputArgs, ScriptToApply};
 use crate::mcp::state::{McpShared, McpStatus};
@@ -39,7 +42,7 @@ use crate::store::SharedStore;
 use crate::store::watchlist::{ListEdit, WatchlistStore};
 use crate::ui::alert_editor::{Direction, PriceAlertEditorState};
 use crate::workspace::{
-    ChartSummary, ChartWorkspace, IndicatorError, IndicatorOutcome, PineInstanceView,
+    ChartSummary, ChartWorkspace, IndicatorError, IndicatorOutcome, PineInstanceView, RemoveOutcome,
 };
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -1527,6 +1530,49 @@ pub fn alert_command_outcome(host: &AlertHost, id: u64) -> AlertCommandOutcome {
 pub fn plan_delete_alert(host: &AlertHost, id: AlertId) -> Result<AlertId, McpError> {
     require_loaded(host)?;
     find_alert(host, id).map(|alert| alert.id)
+}
+
+/// Takes a built-in indicator off a chart through the workspace's own method.
+pub fn remove_indicator(
+    workspace: &mut ChartWorkspace,
+    chart_id: u64,
+    indicator: BuiltIn,
+) -> Result<AddIndicatorResult, McpError> {
+    let workspace_id = workspace.id();
+    match workspace.remove_indicator(chart_id, indicator) {
+        Ok((outcome, config)) => Ok(AddIndicatorResult {
+            workspace_id: workspace_id.to_string(),
+            chart_id: chart_id.to_string(),
+            indicator: indicator.id().to_owned(),
+            status: match outcome {
+                RemoveOutcome::Removed => "removed",
+                RemoveOutcome::NotApplied => "not_applied",
+            }
+            .to_owned(),
+            indicators: indicators_info(config),
+        }),
+        Err(_) => Err(no_chart(workspace, chart_id)),
+    }
+}
+
+/// Indicator readings over a market chart's own candles, cut at the replay position.
+pub fn indicator_readings(
+    workspace: &ChartWorkspace,
+    chart_id: u64,
+    request: &ReadingRequest,
+) -> Result<IndicatorValuesResult, McpError> {
+    let data = workspace
+        .chart_data(chart_id)
+        .ok_or_else(|| no_chart(workspace, chart_id))?;
+    let meta = ReadingMeta {
+        workspace_id: workspace.id(),
+        chart_id,
+        instrument: data.instrument.key(),
+        timeframe: workspace.timeframe().label().to_owned(),
+        replay_ms: data.replay_ms,
+        now_ms: now_ms(),
+    };
+    Ok(indicator_values(&meta, data.candles, request))
 }
 
 // MARK: Watchlists (run on the app thread)
