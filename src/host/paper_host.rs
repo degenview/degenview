@@ -6,7 +6,8 @@
 #![allow(dead_code)]
 
 use crate::model::paper::{
-    PaperAccountMetrics, PaperAccountSettings, PaperCurrency, PaperInstrument, PaperOrderChanges,
+    PaperAccount, PaperAccountMetrics, PaperAccountSettings, PaperClosedTrade, PaperCurrency,
+    PaperInstrument, PaperJournalEntry, PaperOrder, PaperOrderChanges, PaperOrderEvent,
     PaperOrderRequest, PaperOrderSide, PaperOrderType, PaperPosition, PaperQuote, PaperTimeInForce,
     PaperTradingError, PaperTradingSnapshot,
 };
@@ -39,6 +40,8 @@ pub enum PaperHostError {
     Load(String),
     Engine(PaperTradingError),
     Persistence(String),
+    /// The data disagrees with itself; nothing was saved or shown from it.
+    Integrity(String),
     StoreUnavailable,
 }
 
@@ -48,6 +51,9 @@ impl PaperHostError {
             Self::Load(message) => format!("Could not load paper trading: {message}"),
             Self::Engine(error) => error.message(),
             Self::Persistence(message) => format!("Could not save paper trading: {message}"),
+            Self::Integrity(message) => {
+                format!("Paper trading data failed a consistency check: {message}")
+            }
             Self::StoreUnavailable => "The paper-trading database is unavailable.".to_owned(),
         }
     }
@@ -69,6 +75,34 @@ pub struct PaperHost {
     /// Accounts another Mac runs through iCloud Sync. They are shown but never filled here, so a
     /// working order is not filled twice; acting on one takes it over.
     elsewhere: HashMap<u64, Elsewhere>,
+    /// Counts every change to what the panel lists (orders, positions, history, accounts), not a
+    /// quote tick, so a view built from the snapshot is rebuilt only when it could differ.
+    revision: u64,
+}
+
+/// Whether two snapshots hold the same accounts and history, ignoring the transient quotes.
+fn same_ledger(a: &PaperTradingSnapshot, b: &PaperTradingSnapshot) -> bool {
+    a.selected_account_id == b.selected_account_id
+        && a.accounts == b.accounts
+        && a.orders == b.orders
+        && a.fills == b.fills
+        && a.positions == b.positions
+        && a.order_events == b.order_events
+        && a.closed_trades == b.closed_trades
+        && a.journal == b.journal
+}
+
+/// Refuses a snapshot whose rows disagree with each other.
+fn check_integrity(snapshot: &PaperTradingSnapshot) -> Result<(), PaperHostError> {
+    let issues = snapshot.integrity_issues();
+    match issues.first() {
+        None => Ok(()),
+        Some(first) => Err(PaperHostError::Integrity(if issues.len() > 1 {
+            format!("{first} (and {} more)", issues.len() - 1)
+        } else {
+            first.clone()
+        })),
+    }
 }
 
 impl PaperHost {
@@ -81,7 +115,7 @@ impl PaperHost {
                     .paper_trading()
                     .map_err(|error| PaperHostError::Load(error.to_string()))
             });
-        match loaded {
+        match loaded.and_then(|snapshot| check_integrity(&snapshot).map(|()| snapshot)) {
             Ok(mut snapshot) => {
                 // A quote restored from an earlier process is stale by definition. Keeping it
                 // would put the previous session's price into a new order ticket until the first
@@ -93,6 +127,7 @@ impl PaperHost {
                     load_error: None,
                     last_error: None,
                     elsewhere: HashMap::new(),
+                    revision: 0,
                 };
                 host.refresh_ownership();
                 host
@@ -103,6 +138,7 @@ impl PaperHost {
                 load_error: Some(error.clone()),
                 last_error: Some(error),
                 elsewhere: HashMap::new(),
+                revision: 0,
             },
         }
     }
@@ -132,7 +168,7 @@ impl PaperHost {
                     .paper_trading()
                     .map_err(|error| PaperHostError::Load(error.to_string()))
             });
-        match loaded {
+        match loaded.and_then(|snapshot| check_integrity(&snapshot).map(|()| snapshot)) {
             Ok(mut snapshot) => {
                 snapshot.quotes = self.engine.snapshot().quotes.clone();
                 let selected_exists = snapshot
@@ -142,6 +178,7 @@ impl PaperHost {
                     snapshot.selected_account_id = snapshot.accounts.first().map(|a| a.id);
                 }
                 self.engine = PaperTradingEngine::new(snapshot);
+                self.revision = self.revision.wrapping_add(1);
                 self.refresh_ownership();
             }
             Err(error) => self.last_error = Some(error),
@@ -169,6 +206,11 @@ impl PaperHost {
 
     pub fn snapshot(&self) -> &PaperTradingSnapshot {
         self.engine.snapshot()
+    }
+
+    /// Changes whenever the lists the panel shows could differ; not on a quote tick.
+    pub fn revision(&self) -> u64 {
+        self.revision
     }
 
     pub fn load_failed(&self) -> bool {
@@ -331,9 +373,23 @@ impl PaperHost {
                     && order.status.is_working()
                     && !skip.contains(&order.account_id)
             });
+        if !should_persist {
+            // Nothing can fill: record the mark in place. Cloning the whole history to do that
+            // cost more than everything else a tick does.
+            let _ = self.engine.process_except(quote, &skip);
+            self.last_error = None;
+            return Ok(());
+        }
         let mut candidate = PaperTradingEngine::new(self.engine.snapshot().clone());
         let result = candidate.process_except(quote, &skip);
-        if should_persist {
+        if let Err(error) = check_integrity(candidate.snapshot()) {
+            self.last_error = Some(error.clone());
+            return Err(error);
+        }
+        // A mark that filled, rejected or changed nothing is not worth a rewrite of every table
+        // (80 ms at 5,000 fills): quotes are cleared on load anyway, so only a changed ledger is
+        // saved.
+        if !same_ledger(candidate.snapshot(), self.engine.snapshot()) {
             let saved = self
                 .store
                 .lock()
@@ -347,6 +403,7 @@ impl PaperHost {
                 self.last_error = Some(error.clone());
                 return Err(error);
             }
+            self.revision = self.revision.wrapping_add(1);
         }
 
         self.engine = candidate;
@@ -461,6 +518,10 @@ impl PaperHost {
 
         let mut candidate = PaperTradingEngine::new(self.engine.snapshot().clone());
         let result = operation(&mut candidate);
+        if let Err(error) = check_integrity(candidate.snapshot()) {
+            self.last_error = Some(error.clone());
+            return Err(error);
+        }
         // Acting on a mirrored account takes it over, and so does a refused order the engine
         // recorded for audit: that already changed the account, which must not stay owned by the
         // Mac that did not see it. A refusal that changed nothing (an unknown order, an invalid
@@ -503,6 +564,7 @@ impl PaperHost {
         }
 
         self.engine = candidate;
+        self.revision = self.revision.wrapping_add(1);
         match result {
             Ok(value) => {
                 self.last_error = None;
@@ -524,6 +586,72 @@ pub enum PaperPanelAction {
 
 /// What a finished export tells the panel: the folder it wrote to, or why it did not.
 type ExportOutcome = Result<Option<(std::path::PathBuf, String)>, String>;
+
+/// What the panel lists for the selected account.
+struct PanelView {
+    revision: u64,
+    account_id: Option<u64>,
+    account: Option<PaperAccount>,
+    accounts: Vec<AccountChoice>,
+    positions: Vec<PaperPosition>,
+    working_orders: Vec<PaperOrder>,
+    events: Vec<PaperOrderEvent>,
+    trades: Vec<PaperClosedTrade>,
+    journal: Vec<PaperJournalEntry>,
+}
+
+impl PanelView {
+    fn build(host: &PaperHost) -> Self {
+        let snapshot = host.snapshot();
+        let account_id = snapshot.selected_account_id;
+        let mine = |owner: u64| Some(owner) == account_id;
+        Self {
+            revision: host.revision(),
+            account_id,
+            account: account_id
+                .and_then(|id| snapshot.accounts.iter().find(|item| item.id == id))
+                .cloned(),
+            accounts: snapshot
+                .accounts
+                .iter()
+                .map(|account| AccountChoice {
+                    id: account.id,
+                    name: account.name.clone(),
+                })
+                .collect(),
+            positions: snapshot
+                .positions
+                .iter()
+                .filter(|position| mine(position.account_id))
+                .cloned()
+                .collect(),
+            working_orders: snapshot
+                .orders
+                .iter()
+                .filter(|order| mine(order.account_id) && order.status.is_working())
+                .cloned()
+                .collect(),
+            events: snapshot
+                .order_events
+                .iter()
+                .filter(|event| mine(event.account_id))
+                .cloned()
+                .collect(),
+            trades: snapshot
+                .closed_trades
+                .iter()
+                .filter(|trade| mine(trade.account_id))
+                .cloned()
+                .collect(),
+            journal: snapshot
+                .journal
+                .iter()
+                .filter(|entry| mine(entry.account_id))
+                .cloned()
+                .collect(),
+        }
+    }
+}
 
 /// A line under the header that says what an action did (or why it did nothing), until it is
 /// dismissed or, for good news and plain facts, a few seconds pass.
@@ -567,6 +695,9 @@ pub struct PaperPanel {
     ticket: Option<PaperTicketState>,
     show_trading_on_charts: bool,
     notice: Option<PanelNotice>,
+    /// The lists the panel shows for the selected account, rebuilt only when the host's data
+    /// changed. Filtering and cloning the whole history every frame cost far more than drawing it.
+    cached_view: Option<std::sync::Arc<PanelView>>,
     /// The folder dialog and the writing behind it, on a worker thread.
     export_job: Option<std::sync::mpsc::Receiver<ExportOutcome>>,
     /// Set by the header menu and the footer; taken at the end of the frame.
@@ -584,6 +715,7 @@ impl Default for PaperPanel {
             ticket: None,
             show_trading_on_charts: true,
             notice: None,
+            cached_view: None,
             export_job: None,
             export_requested: false,
         }
@@ -640,48 +772,16 @@ impl PaperPanel {
         let mut panel_actions = Vec::new();
         ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
         let _ = host.ensure_default_account();
-        let snapshot = host.snapshot().clone();
-        let account_id = snapshot.selected_account_id;
-        let account = account_id.and_then(|id| snapshot.accounts.iter().find(|item| item.id == id));
+        let view = self.view(host);
+        let account_id = view.account_id;
+        let account = view.account.as_ref();
         let currency = account.map_or(PaperCurrency::Usd, |account| account.base_currency);
-        let accounts: Vec<AccountChoice> = snapshot
-            .accounts
-            .iter()
-            .map(|account| AccountChoice {
-                id: account.id,
-                name: account.name.clone(),
-            })
-            .collect();
-        let positions: Vec<_> = snapshot
-            .positions
-            .iter()
-            .filter(|position| Some(position.account_id) == account_id)
-            .cloned()
-            .collect();
-        let working_orders: Vec<_> = snapshot
-            .orders
-            .iter()
-            .filter(|order| Some(order.account_id) == account_id && order.status.is_working())
-            .cloned()
-            .collect();
-        let events: Vec<_> = snapshot
-            .order_events
-            .iter()
-            .filter(|event| Some(event.account_id) == account_id)
-            .cloned()
-            .collect();
-        let trades: Vec<_> = snapshot
-            .closed_trades
-            .iter()
-            .filter(|trade| Some(trade.account_id) == account_id)
-            .cloned()
-            .collect();
-        let journal: Vec<_> = snapshot
-            .journal
-            .iter()
-            .filter(|entry| Some(entry.account_id) == account_id)
-            .cloned()
-            .collect();
+        let accounts = &view.accounts;
+        let positions = &view.positions;
+        let working_orders = &view.working_orders;
+        let events = &view.events;
+        let trades = &view.trades;
+        let journal = &view.journal;
         let metrics = account_id.map(|id| host.metrics(id));
         let unrealized_total = positions
             .iter()
@@ -692,7 +792,7 @@ impl PaperPanel {
             ui,
             &mut self.header,
             &PaperHeaderInput {
-                accounts: &accounts,
+                accounts,
                 selected: account_id,
                 currency: account.map(|account| account.base_currency),
                 position_count: positions.len(),
@@ -729,7 +829,7 @@ impl PaperPanel {
                         ui,
                         &mut self.positions,
                         &PositionsInput {
-                            positions: &positions,
+                            positions,
                             ctx: context,
                             mark: &|position| host.mark(position),
                             unrealized_pnl: &|position| host.unrealized_pnl(position),
@@ -741,25 +841,25 @@ impl PaperPanel {
                     table_actions = paper_tables::orders_table(
                         ui,
                         &OrdersInput {
-                            orders: &working_orders,
+                            orders: working_orders,
                             ctx: context,
                         },
                     );
                 }
-                PaperTab::History => paper_tables::history_table(ui, &events, context),
-                PaperTab::Trades => paper_tables::trades_table(ui, &trades, context),
-                PaperTab::Journal => paper_tables::journal_table(ui, &journal, context),
+                PaperTab::History => paper_tables::history_table(ui, events, context),
+                PaperTab::Trades => paper_tables::trades_table(ui, trades, context),
+                PaperTab::Journal => paper_tables::journal_table(ui, journal, context),
             }
             footer_actions = paper_header::footer(
                 ui,
                 &mut self.footer,
                 self.header.tab,
                 &FooterFacts {
-                    positions: &positions,
+                    positions,
                     unrealized_total,
                     working_orders: working_orders.len(),
                     events: events.len(),
-                    trades: &trades,
+                    trades,
                     journal_entries: journal.len(),
                     currency,
                 },
@@ -841,6 +941,20 @@ impl PaperPanel {
             }
             Err(std::sync::mpsc::TryRecvError::Disconnected) => self.export_job = None,
         }
+    }
+
+    /// The selected account's lists, from the cache while the host's data has not changed.
+    fn view(&mut self, host: &PaperHost) -> std::sync::Arc<PanelView> {
+        let selected = host.snapshot().selected_account_id;
+        if let Some(view) = &self.cached_view
+            && view.revision == host.revision()
+            && view.account_id == selected
+        {
+            return std::sync::Arc::clone(view);
+        }
+        let view = std::sync::Arc::new(PanelView::build(host));
+        self.cached_view = Some(std::sync::Arc::clone(&view));
+        view
     }
 
     /// Puts what failed in a notice that stays until dismissed. The host's own banner holds only
@@ -1276,6 +1390,161 @@ mod tests {
         .unwrap();
         assert!(text.starts_with("Closed 1 of 3 positions."), "{text}");
         assert!(text.ends_with("(and 1 more)"), "{text}");
+    }
+
+    #[test]
+    fn a_tick_that_fills_nothing_changes_no_list_and_saves_nothing() {
+        let store = store();
+        let mut host = PaperHost::load(store.clone());
+        let account_id = account(&mut host);
+        let key = "Binance:BTCUSDT";
+        let tick = |last: f64, timestamp: i64| PaperQuote {
+            instrument_key: key.to_owned(),
+            bid: None,
+            ask: None,
+            last: Some(last),
+            timestamp,
+            is_market_open: true,
+        };
+        let now = crate::model::watchlist::now_ms();
+        let before = host.revision();
+        host.process_quote(tick(100.0, now)).unwrap();
+        host.process_quote(tick(101.0, now + 1)).unwrap();
+        assert_eq!(
+            host.revision(),
+            before,
+            "no order to evaluate: only the mark moves"
+        );
+        assert_eq!(host.snapshot().quotes[key].last, Some(101.0));
+        assert!(
+            store
+                .lock()
+                .unwrap()
+                .paper_trading()
+                .unwrap()
+                .quotes
+                .is_empty(),
+            "a bare tick is not saved"
+        );
+
+        // With a resting order the tick is evaluated, but while nothing fills nothing is saved
+        // or counted either.
+        let mut request = market_request(account_id);
+        request.kind = PaperOrderType::Limit;
+        request.limit_price = Some(50.0);
+        host.submit(request).unwrap();
+        let after_submit = host.revision();
+        host.process_quote(tick(102.0, now + 2)).unwrap();
+        assert_eq!(host.revision(), after_submit);
+        assert_eq!(host.snapshot().quotes[key].last, Some(102.0));
+
+        // A tick that fills it is saved and counted.
+        host.process_quote(tick(40.0, now + 3)).unwrap();
+        assert!(host.revision() > after_submit);
+        assert_eq!(host.snapshot().positions.len(), 1);
+        assert_eq!(
+            store
+                .lock()
+                .unwrap()
+                .paper_trading()
+                .unwrap()
+                .positions
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn data_that_disagrees_with_itself_is_not_loaded() {
+        let store = store();
+        {
+            let mut host = PaperHost::load(store.clone());
+            let id = account(&mut host);
+            host.submit(market_request(id)).ok();
+        }
+        {
+            let guard = store.lock().unwrap();
+            let mut snapshot = guard.paper_trading().unwrap();
+            snapshot.accounts[0].id = 424_242;
+            guard.save_paper_trading(&snapshot).unwrap();
+        }
+        let mut host = PaperHost::load(store);
+        assert!(host.load_failed(), "orders now point at a missing account");
+        assert!(matches!(
+            host.last_error(),
+            Some(PaperHostError::Integrity(_))
+        ));
+        assert!(host.submit(market_request(424_242)).is_err());
+    }
+
+    /// `cargo test --lib paper_host_cost -- --ignored --nocapture`
+    #[test]
+    #[ignore = "timing"]
+    fn paper_host_cost() {
+        use std::time::Instant;
+        for fills in [100usize, 1_000, 5_000] {
+            let store = store();
+            let mut host = PaperHost::load(store.clone());
+            let id = account(&mut host);
+            let key = "Binance:BTCUSDT";
+            let now = crate::model::watchlist::now_ms();
+            let tick = |last: f64, n: i64| PaperQuote {
+                instrument_key: key.to_owned(),
+                bid: Some(last - 0.5),
+                ask: Some(last + 0.5),
+                last: Some(last),
+                timestamp: now + n,
+                is_market_open: true,
+            };
+            host.process_quote(tick(100.0, 0)).unwrap();
+            // Build the history inside one engine, then save it once.
+            let mut engine = PaperTradingEngine::new(host.snapshot().clone());
+            for index in 0..fills {
+                let mut request = market_request(id);
+                request.side = if index % 2 == 0 {
+                    PaperOrderSide::Buy
+                } else {
+                    PaperOrderSide::Sell
+                };
+                engine.submit(request).unwrap();
+            }
+            store
+                .lock()
+                .unwrap()
+                .save_paper_trading(engine.snapshot())
+                .unwrap();
+            let mut host = PaperHost::load(store.clone());
+            host.process_quote(tick(100.0, 1_000_000)).unwrap();
+
+            let started = Instant::now();
+            for n in 0..100 {
+                host.process_quote(tick(100.0 + n as f64, 2_000_000 + n))
+                    .unwrap();
+            }
+            let bare_tick = started.elapsed() / 100;
+
+            let mut request = market_request(id);
+            request.kind = PaperOrderType::Limit;
+            request.limit_price = Some(50.0);
+            let started = Instant::now();
+            host.submit(request).unwrap();
+            let submit = started.elapsed();
+
+            let started = Instant::now();
+            for n in 0..10 {
+                host.process_quote(tick(100.0 + n as f64, 3_000_000 + n))
+                    .unwrap();
+            }
+            let evaluated_tick = started.elapsed() / 10;
+
+            let started = Instant::now();
+            let view = PanelView::build(&host);
+            let build_view = started.elapsed();
+            println!(
+                "{fills:>5} fills: bare tick {bare_tick:?}, tick with a working order {evaluated_tick:?}, submit {submit:?}, panel view build {build_view:?} ({} events)",
+                view.events.len()
+            );
+        }
     }
 
     #[test]
