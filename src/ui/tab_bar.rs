@@ -334,14 +334,18 @@ impl TabBar<'_> {
                 "GitHub",
                 GITHUB_URL,
                 egui::include_image!("../../assets/brand/github.svg"),
+                14.0,
             ),
             (
                 "Buy me a coffee",
                 COFFEE_URL,
                 egui::include_image!("../../assets/brand/coffee.svg"),
+                // The cup fills about three quarters of its 24 grid, where the GitHub mark
+                // fills all of its box, so it is drawn larger to look the same size.
+                19.0,
             ),
         ];
-        for (index, (name, url, logo)) in links.into_iter().enumerate() {
+        for (index, (name, url, logo, size)) in links.into_iter().enumerate() {
             let rect = Rect::from_min_size(
                 pos2(
                     links_left + 3.0 + index as f32 * LINK_BUTTON_WIDTH,
@@ -359,7 +363,7 @@ impl TabBar<'_> {
             } else {
                 theme::text_secondary()
             };
-            let glyph = Rect::from_center_size(rect.center(), Vec2::splat(14.0));
+            let glyph = Rect::from_center_size(rect.center(), Vec2::splat(size));
             egui::Image::new(logo).tint(color).paint_at(ui, glyph);
             if button.clicked() {
                 ctx.open_url(egui::OpenUrl::new_tab(url));
