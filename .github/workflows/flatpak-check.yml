@@ -12,6 +12,7 @@ on:
       - assets/brand/DegenView-512-rounded.png
       - .github/workflows/flatpak.yml
       - .github/workflows/flatpak-check.yml
+      - tools/requirements/flatpak-generator.txt
   workflow_dispatch:
 
 permissions:

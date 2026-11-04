@@ -96,9 +96,12 @@ pub struct ReleaseAsset {
 
 /// The largest download the updater will accept.
 const MAX_ASSET_BYTES: u64 = 256 * 1024 * 1024;
-/// Accounts GitHub may record as a release's author: the release workflow's bot, and the
-/// maintainer for a release they published by hand.
-const RELEASE_AUTHORS: &[&str] = &["github-actions[bot]", "nicoSWD"];
+/// Accounts GitHub may record as a release's author: the release workflow's bot, and nobody else.
+/// The maintainer's own account is deliberately absent: a token that can act as the maintainer
+/// (the one `gh` keeps on a developer machine) could otherwise publish an immutable release with
+/// its own assets for a signed tag, with no workflow run and so no provenance attestation. A
+/// release made by hand is a manual download.
+const RELEASE_AUTHORS: &[&str] = &["github-actions[bot]"];
 const DOWNLOAD_PREFIX: &str = "https://github.com/degenview/degenview/releases/download/";
 
 #[derive(Deserialize)]
@@ -268,8 +271,8 @@ fn pick(releases: Vec<ReleaseDto>, running: &Version, channel: Channel) -> Updat
 }
 
 fn offer(release: ReleaseDto) -> Release {
-    // Only install what cannot be swapped after publishing and that the maintainer or the release
-    // workflow published; anything else is left to a manual download.
+    // Only install what cannot be swapped after publishing and that the release workflow published;
+    // anything else is left to a manual download.
     let manual_only = if !release.immutable {
         Some("Not published as an immutable release, so it needs a manual download.")
     } else if !release.author.as_ref().is_some_and(|author| {
@@ -277,9 +280,7 @@ fn offer(release: ReleaseDto) -> Release {
             .iter()
             .any(|login| login.eq_ignore_ascii_case(&author.login))
     }) {
-        Some(
-            "Not published by the maintainer or the release workflow, so it needs a manual download.",
-        )
+        Some("Not published by the release workflow, so it needs a manual download.")
     } else {
         None
     };
@@ -591,12 +592,16 @@ mod tests {
     fn only_immutable_releases_from_the_workflow_are_installable() {
         let hand_made = available(one(&reply_by("v0.2.0", true, "someone"), "0.1.0"));
         assert!(hand_made.asset.is_none());
-        assert!(hand_made.manual_only.unwrap().contains("maintainer"));
-        // The maintainer's own account is accepted, case-insensitively like GitHub logins.
+        assert!(hand_made.manual_only.unwrap().contains("release workflow"));
+        // Not even the maintainer's own account: only the workflow (which records provenance).
         for login in ["nicoSWD", "nicoswd"] {
             let by_maintainer = available(one(&reply_by("v0.2.0", true, login), "0.1.0"));
-            assert_eq!(by_maintainer.manual_only, None, "{login}");
+            assert!(by_maintainer.asset.is_none(), "{login}");
+            assert!(by_maintainer.manual_only.is_some(), "{login}");
         }
+        // The bot's login is matched case-insensitively, like GitHub logins.
+        let by_bot = available(one(&reply_by("v0.2.0", true, "GitHub-Actions[bot]"), "0.1.0"));
+        assert_eq!(by_bot.manual_only, None);
         let mutable = available(one(
             &reply_by("v0.2.0", false, "github-actions[bot]"),
             "0.1.0",

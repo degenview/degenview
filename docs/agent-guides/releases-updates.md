@@ -52,11 +52,12 @@ release lists everything since the previous stable tag, so `0.6.0` repeats what 
 a release candidate lists only what is new since the previous tag. The workflow file runs from the
 tag's own commit, so a change to the notes step must be on `main` before the tag is cut.
 
-A tag run can only restore caches saved from `main`, so `release-cache.yml` builds the release
-profile there (on a `Cargo.lock`/`Cargo.toml` change and weekly; `linux-arm64` runs on the free
-`ubuntu-22.04-arm` runner) under the shared key
-`release-<target>` (`release-<target>-glibc-2.35` for the two Linux legs, see below), and `release.yml` saves no cache itself on a tag. Keep the two builds identical
-(runners, features, `--release`); if you change one, change the other.
+Release builds restore **no build cache**. A release is signed and notarized from what the job
+compiles, so it must not start from compiled output saved by some earlier run: whatever could write
+that cache would be in the next release. (There used to be a `release-cache.yml` that warmed one
+from `main`; it is gone, and so is its weekly glibc check, which `release.yml` still runs on every
+Linux build.) A clean release build is slower; that is intended. `ci.yml` and the check workflows
+still use `rust-cache`, on pull requests only, where nothing is signed.
 
 The Flatpak is built by the reusable `flatpak.yml` (`release.yml` calls it as the `flatpak` job, and
 the `release` job needs it, so the bundle exists before the immutable release is published).
@@ -89,9 +90,12 @@ version. Re-run a failed tagged build through the Release workflow dispatch.
   Developer ID check on top). Immutability locks a published release, but a token that can create
   releases could publish its own assets for a signed tag that has no release yet: the minutes the
   workflow takes to build, or after a failed run (the tag stays). A signed manifest or Authenticode
-  is the follow-up; until then do not leave a signed tag without its release.
-- The release must be immutable and authored by `github-actions[bot]` or an allowed maintainer.
-  Keep Immutable releases enabled. Assets must be uploaded before publication; never upload to an
+  is the follow-up; until then do not leave a signed tag without its release. Only the workflow's
+  bot is an accepted author (`RELEASE_AUTHORS`), so the maintainer's own token cannot do this
+  through the API either, but a token that can add a signing key to the account still can forge the
+  tag itself: keep `admin:ssh_signing_key` off every token on a developer machine.
+- The release must be immutable and authored by `github-actions[bot]`; a release made by hand (the
+  maintainer's account included) is a manual download. Keep Immutable releases enabled. Assets must be uploaded before publication; never upload to an
   immutable release afterward. Old mutable releases are manual-download only.
 - Keep macOS suffixes `-macos-arm64.zip`/`-macos-x64.zip` and the `DegenView.app` layout, and the
   Windows suffix `-windows-x64.zip` with `degenview.exe` at the zip root (see Windows below). The updater
@@ -117,6 +121,48 @@ version. Re-run a failed tagged build through the Release workflow dispatch.
   `HOME`, `DEGENVIEW_CACHE_DIR`, `DEGENVIEW_NO_KEYCHAIN`, and `DEGENVIEW_NO_NOTIFICATIONS`. Never
   forward credentials; helper argv is visible to other users.
 
+## Build hardening
+
+What keeps a hostile change out of a signed release, and what to do when you touch it. The point of
+each rule is in `release.yml`; this is the list.
+
+- **Every `uses:` is pinned to a commit hash**, with the version in a trailing comment
+  (`actions/checkout@<40 hex> # v7`). Dependabot (`.github/dependabot.yml`) proposes new hashes;
+  `zizmor` (`supply-chain.yml`) fails a pull request that adds an unpinned one. Never add a
+  third-party action to a job that has secrets, or to the release path, without a reason.
+- **Permissions are per job.** The workflow default is `contents: read`; only the `release` job
+  gets `contents: write` (plus `id-token` and `attestations` for the provenance). Checkouts use
+  `persist-credentials: false`.
+- **One commit.** `verify` resolves the signed tag to a commit, checks it is in `main`'s history,
+  and every later job checks out that hash, not the tag name. `release` checks the tag still names
+  it.
+- **Signing material arrives last.** On macOS the dependency graph is compiled
+  (`Build macOS release binaries`) and `dmgbuild` installed before the certificate is imported, so
+  no build script or proc-macro runs with the Developer ID or the notarization key available.
+  `tools/bundle.sh` skips its own build when `DEGENVIEW_SKIP_BUILD` is set. If you add a step that
+  runs third-party code to the macOS job, put it before the import.
+- **`--locked` everywhere** a release or the Flatpak is built, so `Cargo.lock` as committed is
+  what ships.
+- **No build cache** in release jobs (see above), and the compiler is `RUST_TOOLCHAIN` in the
+  workflows (an exact version, bumped by its own pull request), not whatever `stable` is that day.
+- **pip installs are hash-locked**: `tools/requirements/dmgbuild.txt` and
+  `flatpak-generator.txt`, installed with `--require-hashes`. Regenerate one by resolving the
+  versions with `pip download`, then taking each release file's sha256 from PyPI; review the diff.
+  The Flatpak container image is pinned by digest in `flatpak.yml` (update the tag and digest
+  together); the Flatpak `prepare` job runs on `ubuntu-24.04`, not `-latest`, to match the Python
+  the generator file is locked for.
+- **Provenance.** `release` attests every asset (`actions/attest-build-provenance`); anyone can run
+  `gh attestation verify <file> --repo degenview/degenview`. This does not replace a signature
+  checked by the app (the follow-up in "Trust and packaging").
+- **Dependencies.** `supply-chain.yml` runs `cargo deny` (`deny.toml`: RustSec advisories, yanked
+  crates, crates.io as the only source, a license allow list, banned TLS stacks) on every pull
+  request and weekly. An `ignore` in `deny.toml` needs a reason. Run it locally with
+  `cargo install cargo-deny --locked && cargo deny check`.
+- **Repository settings** the workflows rely on but cannot set: a `release` environment that
+  holds the signing secrets and only deploys from `v*` tags, a ruleset that blocks creating or
+  moving `v*` tags except by the maintainer, required status checks on `main`, and "Require actions
+  to be pinned to a full-length commit SHA". See `SECURITY.md` for the public side.
+
 ## macOS disk image
 
 `DegenView-<tag>-macos-<arch>.dmg` is what a person downloads to install: opening it shows
@@ -124,9 +170,9 @@ version. Re-run a failed tagged build through the Release workflow dispatch.
 the same app and is what the in-app updater downloads; the updater never reads the image, and the
 `.dmg` name can never match its `-macos-<arch>.zip` suffix (a test pins that). Keep both assets.
 
-- **Build**: `tools/make-dmg.sh <app> <out.dmg>` with dmgbuild (pinned in `release.yml` and
-  `macos-dmg-check.yml`, `DMGBUILD_VERSION`; 1.6.5 because later ones need Python 3.10 and
-  Xcode's is 3.9), settings in `packaging/macos/dmg-settings.py`. dmgbuild writes the Finder layout
+- **Build**: `tools/make-dmg.sh <app> <out.dmg>` with dmgbuild (pinned, with every dependency's
+  hash, in `tools/requirements/dmgbuild.txt`, installed with `--require-hashes` by `release.yml` and
+  `macos-dmg-check.yml`; 1.6.5 because later ones need Python 3.10 and Xcode's is 3.9), settings in `packaging/macos/dmg-settings.py`. dmgbuild writes the Finder layout
   itself, which runs headless; `create-dmg` drives Finder through AppleScript and is flaky on CI.
   `make-dmg.sh` signs nothing, so it also works on the unsigned `target/DegenView.app` that
   `tools/bundle.sh` builds.
@@ -161,7 +207,7 @@ the same app and is what the in-app updater downloads; the updater never reads t
 ## Linux glibc baseline
 
 The Linux release binaries must start on **glibc 2.35** (Ubuntu 22.04, Debian 12, Fedora 36 and
-newer), so the Linux release and cache legs run on `ubuntu-22.04` and `ubuntu-22.04-arm`, the oldest
+newer), so the Linux release legs run on `ubuntu-22.04` and `ubuntu-22.04-arm`, the oldest
 runner images, not `ubuntu-latest`. A binary needs the glibc it was linked against, and building on
 a newer distro silently raises that floor. Older distros (RHEL 9 and clones, glibc 2.34) use the
 Flatpak, which brings its own runtime.
@@ -176,7 +222,7 @@ Flatpak, which brings its own runtime.
   a *required* version exceeds the baseline; weak-only versions are reported, not failed. It is not
   `strings | grep GLIBC_`, which cannot tell weak from required and would call the x64 binary too new.
   `release.yml` runs it on each Linux build (a failing check fails the release before anything is
-  published) and `release-cache.yml` runs it weekly. On a 22.04 builder the link itself already refuses
+  published). On a 22.04 builder the link itself already refuses
   a symbol newer than 2.35, so the check mostly guards against the build host drifting (someone writing
   `ubuntu-latest` again) and states the promise in CI. `linux-glibc-check.yml` builds the release on both
   22.04 runners for any pull request that changes `Cargo.toml`/`Cargo.lock`, the check, or those
@@ -184,12 +230,10 @@ Flatpak, which brings its own runtime.
   builds on 24.04 and would not see it), and it also proves the check can fail. It also runs
   `tools/test-check-glibc.py`, which builds small ELF files to test weak versus required versions and that
   a damaged file gives an error message rather than a traceback.
-- **Cache key**: the Linux legs use `release-<target>-glibc-2.35` (matrix `cache`), not
-  `release-<target>`, so they never restore a cache made on the 24.04 image: a build script or C object
-  (`ring`, bundled SQLite) compiled there would carry its glibc requirement into the new build.
-  After this merges, `release-cache.yml` runs on `main` (its own file changed) and fills the new keys.
-- **Changing the baseline** is a decision: edit `tools/check-glibc.py`, both workflows' runners and
-  `cache` keys, `linux-glibc-check.yml`, and the README. When GitHub retires the 22.04 runner, build
+- **No cache on release builds**, so a build script or C object (`ring`, bundled SQLite) compiled on
+  a newer image can never carry its glibc requirement into the release.
+- **Changing the baseline** is a decision: edit `tools/check-glibc.py`, the release workflow's runners,
+  `linux-glibc-check.yml`, and the README. When GitHub retires the 22.04 runner, build
   in an `ubuntu:22.04` container on the new runner (or `cargo-zigbuild` with a glibc suffix) rather than
   moving the baseline by accident.
 - **Not verified**: the first build on 22.04 (this PR's `linux-glibc-check` run is it), whether arm64
@@ -248,7 +292,7 @@ installs the ARM64 installer over it (same `AppId`) or unzips the ARM64 zip. The
   own, and update from it. Builds before the first updater-capable release have to be replaced by
   hand once.
 - **Windows ARM64**: built natively on the `windows-11-arm` runner (free for public repositories) as
-  matrix leg `windows-arm64` in `release.yml` and `release-cache.yml`; the `test-windows` job in `ci.yml`
+  matrix leg `windows-arm64` in `release.yml`; the `test-windows` job in `ci.yml`
   runs on it too, so `ring` (rustls), the bundled SQLite (`cc`), `winresource` and the windowing stack
   are built for `aarch64-pc-windows-msvc` on every PR. If `ring` ever needs a tool the image lacks, fix
   it in the workflow (install LLVM, set `CC`), not in the code.

@@ -42,7 +42,15 @@ fi
 
 features=""
 [ -n "$icloud" ] && features="--features icloud"
-"$CARGO_BIN" build --release $features --bin degenview --bin degenview-alert-agent
+# The release workflow compiles first, before the signing certificate is imported, so the build
+# scripts of the dependency graph never run with it available; it then sets DEGENVIEW_SKIP_BUILD.
+# --locked: the build must use Cargo.lock as committed, never resolve anything new.
+if [ -z "${DEGENVIEW_SKIP_BUILD:-}" ]; then
+    "$CARGO_BIN" build --release --locked $features --bin degenview --bin degenview-alert-agent
+elif [ ! -x target/release/degenview ] || [ ! -x target/release/degenview-alert-agent ]; then
+    echo "DEGENVIEW_SKIP_BUILD is set but target/release has no built binaries" >&2
+    exit 1
+fi
 
 app="target/DegenView.app"
 helper="$app/Contents/Library/LoginItems/DegenViewAlertAgent.app"

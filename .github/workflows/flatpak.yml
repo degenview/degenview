@@ -30,11 +30,14 @@ jobs:
   # work: the offline crate list, the stamped files and the lint. The next job only builds.
   prepare:
     name: Prepare Flatpak sources
-    runs-on: ubuntu-latest
+    # Not `ubuntu-latest`: tools/requirements/flatpak-generator.txt is pinned, with hashes, for the
+    # Python (3.12) this image ships, and a new default image must not change what gets installed.
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ inputs.ref }}
+          persist-credentials: false
 
       # `flatpak-cargo-generator.py` turns Cargo.lock into the `cargo-sources.json` the manifest
       # builds from (a Flatpak build has no network). Pinned to a commit: it is build tooling.
@@ -43,7 +46,7 @@ jobs:
           GENERATOR_COMMIT: 9d86d336a39b9af38b86f114b6ce5820fe260f91
         run: |
           python3 -m venv "$RUNNER_TEMP/generator"
-          "$RUNNER_TEMP/generator/bin/pip" install --quiet 'aiohttp>=3.9.5,<4' 'PyYAML>=6.0.2,<7' 'tomlkit>=0.13.3,<1'
+          "$RUNNER_TEMP/generator/bin/pip" install --quiet --require-hashes -r tools/requirements/flatpak-generator.txt
           curl -fsSL -o "$RUNNER_TEMP/flatpak-cargo-generator.py" \
             "https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/${GENERATOR_COMMIT}/cargo/flatpak-cargo-generator.py"
           "$RUNNER_TEMP/generator/bin/python" "$RUNNER_TEMP/flatpak-cargo-generator.py" \
@@ -72,7 +75,7 @@ jobs:
           # No network: the screenshot lives on `main` and may not exist yet on a new branch.
           appstreamcli validate --pedantic --no-net "$MANIFEST_DIR/es.nico.degenview.metainfo.xml"
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: flatpak-sources
           path: ${{ env.MANIFEST_DIR }}
@@ -89,21 +92,24 @@ jobs:
       matrix: ${{ fromJSON(inputs.arm64 && '{"include":[{"arch":"x86_64","label":"x64","runner":"ubuntu-latest"},{"arch":"aarch64","label":"arm64","runner":"ubuntu-24.04-arm"}]}' || '{"include":[{"arch":"x86_64","label":"x64","runner":"ubuntu-latest"}]}') }}
     container:
       # The tag must match `runtime-version` in the manifest.
-      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-26.08
+      # The digest is what runs (this image gets `--privileged` and builds the shipped bundle); the
+      # tag only says which one it is. Update both together, from the registry's current digest.
+      image: ghcr.io/flathub-infra/flatpak-github-actions:freedesktop-26.08@sha256:6ed6921bb5a9e1a916989971844f159b854b7b225880c381fa34f7a158863039
       options: --privileged
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ inputs.ref }}
+          persist-credentials: false
 
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: flatpak-sources
           path: ${{ env.MANIFEST_DIR }}
 
       # No cache: a tag run cannot restore one saved elsewhere (docs/agent-guides/releases-updates.md),
       # so saving it would only use up space.
-      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@79327416609af08178ad73b352877e51450790b3 # v6
         with:
           bundle: ${{ inputs.bundle-prefix }}-${{ matrix.label }}.flatpak
           arch: ${{ matrix.arch }}
@@ -115,7 +121,7 @@ jobs:
           upload-artifact: false
 
       # The release job downloads every `DegenView-*` artifact into dist/.
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: DegenView-linux-${{ matrix.label }}-flatpak
           path: ${{ inputs.bundle-prefix }}-${{ matrix.label }}.flatpak
