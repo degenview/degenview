@@ -518,7 +518,11 @@ impl ChartWorkspace {
             }
             Command::DeleteAlert(id) => actions.push(WorkspaceAction::DeleteAlert(id)),
             Command::CancelOrder(id) => {
-                Self::apply_paper_overlay_actions(host, vec![PaperOverlayAction::CancelOrder(id)]);
+                let failures = Self::apply_paper_overlay_actions(
+                    host,
+                    vec![PaperOverlayAction::CancelOrder(id)],
+                );
+                self.paper_panel.report_messages(&failures);
             }
             Command::ClosePosition(key) => {
                 let account = self.charts[index]
@@ -529,13 +533,14 @@ impl ChartWorkspace {
                     .find(|(position, _)| position.instrument.key == key)
                     .map(|(position, _)| position.account_id);
                 if let Some(account_id) = account {
-                    Self::apply_paper_overlay_actions(
+                    let failures = Self::apply_paper_overlay_actions(
                         host,
                         vec![PaperOverlayAction::ClosePosition {
                             account_id,
                             instrument_key: key,
                         }],
                     );
+                    self.paper_panel.report_messages(&failures);
                 }
             }
             Command::ShowPaperPanel => self.paper_panel_visible = true,

@@ -6,9 +6,7 @@
 // Transient: the paper-trading host opens the ticket once it is wired.
 #![allow(dead_code)]
 
-use crate::model::paper::{
-    PaperCurrency, PaperOrderRequest, PaperOrderSide, PaperOrderType, PaperTimeInForce,
-};
+use crate::model::paper::{PaperCurrency, PaperOrderRequest, PaperOrderSide, PaperOrderType};
 use crate::model::paper_format as fmt;
 use crate::model::paper_ticket::{self as ticket, TicketDraft, TicketField, decimal_text};
 use crate::ui::icons::{self, Icon};
@@ -307,18 +305,8 @@ fn form(ui: &mut egui::Ui, state: &mut PaperTicketState, input: &PaperTicketInpu
     }
     ui.add_space(SECTION_GAP);
     protection(ui, state, &issues);
-    if state.draft.kind != PaperOrderType::Market {
-        ui.add_space(SECTION_GAP);
-        field_label(ui, "Time in force");
-        let width = ui.available_width();
-        kit::segmented_filling(
-            ui,
-            Id::new("paper-time-in-force"),
-            &PaperTimeInForce::ALL.map(|tif| (tif, tif.label())),
-            &mut state.draft.time_in_force,
-            width,
-        );
-    }
+    // No time-in-force control: the engine does not expire a Day order, so offering one would
+    // promise what it does not do. Every ticket places a good-til-canceled order.
     ui.add_space(SECTION_GAP);
     summary_card(ui, &state.draft, input.currency);
     if let Some(error) = input.error {
