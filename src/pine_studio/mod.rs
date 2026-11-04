@@ -199,6 +199,16 @@ pub(crate) enum Cmd {
     OpenAlpacaSettings,
 }
 
+/// How the open editor stands against the file on disk. A write from outside the editor (the
+/// MCP server) must honour it the way the editor's own Save does.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct OpenDiskState {
+    /// The file's text as the editor last read it.
+    pub saved_source: String,
+    /// The file changed under unsaved typing and the person has not chosen which to keep.
+    pub conflict: bool,
+}
+
 /// The script open in the editor.
 pub(crate) struct OpenScript {
     pub id: ScriptId,
@@ -1027,6 +1037,26 @@ impl PineStudio {
             .as_ref()
             .filter(|open| open.id == id)
             .map(|open| open.editor.source.clone())
+    }
+
+    /// What the open editor last read from disk, and whether the file has since changed under
+    /// unsaved typing with no decision yet. `None` unless `id` is the open script.
+    pub(crate) fn open_disk_state(&self, id: &str) -> Option<OpenDiskState> {
+        self.open
+            .as_ref()
+            .filter(|open| open.id == id)
+            .map(|open| OpenDiskState {
+                saved_source: open.editor.saved_source().to_owned(),
+                conflict: open.watch.conflict.is_some(),
+            })
+    }
+
+    /// Looks at the open script's file at once instead of waiting for it to settle: an outside
+    /// write was just refused, so a conflict question should appear over the typing.
+    pub(crate) fn look_at_disk_now(&mut self, id: &str) {
+        if let Some(open) = self.open.as_mut().filter(|open| open.id == id) {
+            open.watch.force = true;
+        }
     }
 
     /// Shows an edit made from outside in the open editor (`saved`: it is also the saved source

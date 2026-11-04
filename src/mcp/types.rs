@@ -160,6 +160,11 @@ pub struct CreateAlertResult {
     /// (an identical alert is returned instead of a duplicate).
     pub status: String,
     pub alert: AlertInfo,
+    /// The queued command, so the server can ask whether the runtime refused it. Not part of
+    /// the tool's output.
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub command_id: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
@@ -169,6 +174,11 @@ pub struct UpdateAlertResult {
     pub status: String,
     /// The alert as edited.
     pub alert: AlertInfo,
+    /// The queued command, so the server can ask whether the runtime refused it. Not part of
+    /// the tool's output.
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub command_id: Option<u64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
@@ -535,8 +545,11 @@ pub struct PineEditResult {
     pub applied_to_open_editor: bool,
     /// Whether an unsaved draft remains afterwards.
     pub has_draft: bool,
-    /// The compile result of the text now current.
+    /// The compile result of the text now current. Absent when `compile_warning` says why.
     pub compile: Option<PineCompileResult>,
+    /// Why `compile` is absent although the edit itself succeeded (the compile could not run).
+    /// The edit is not undone; call `degenview_compile_pine_script` for the diagnostics.
+    pub compile_warning: Option<String>,
 }
 
 /// The built-in indicators the app actually has, from the same list the chart menu uses.

@@ -247,6 +247,9 @@ fn stub_app(
             charts: Vec::new(),
         })),
         McpCommand::ListCharts { .. } => Err(McpError::NotFound("No such workspace".into())),
+        McpCommand::AlertCommandOutcome { .. } => Ok(McpReply::AlertCommand(
+            crate::mcp::bridge::AlertCommandOutcome::Applied,
+        )),
         McpCommand::ListAlerts { only } => {
             let alerts = stub.alerts.lock().unwrap();
             let matching: Vec<_> = alerts
@@ -276,6 +279,7 @@ fn stub_app(
                 return Ok(McpReply::AlertCreated(CreateAlertResult {
                     status: "already_exists".into(),
                     alert: existing.clone(),
+                    command_id: None,
                 }));
             }
             let alert = AlertInfo {
@@ -300,6 +304,7 @@ fn stub_app(
             Ok(McpReply::AlertCreated(CreateAlertResult {
                 status: "queued".into(),
                 alert,
+                command_id: None,
             }))
         }
         McpCommand::ListChartPine { .. }
@@ -407,9 +412,13 @@ fn stub_app(
                     &source,
                     None,
                 ),
-                None => {
-                    crate::mcp::pine::save_script(&mut store, &script_id, &expected_revision, None)
-                }
+                None => crate::mcp::pine::save_script(
+                    &mut store,
+                    &script_id,
+                    &expected_revision,
+                    None,
+                    None,
+                ),
             }?;
             Ok(McpReply::PineEdit(Box::new(result)))
         }
@@ -588,6 +597,7 @@ fn stub_app(
             Ok(McpReply::AlertUpdated(UpdateAlertResult {
                 status: status.into(),
                 alert: alert.clone(),
+                command_id: None,
             }))
         }
         McpCommand::SetAlertPaused { alert_id, paused } => {
@@ -922,6 +932,39 @@ fn bad_arguments_never_reach_the_app() {
         assert!(rejected, "accepted {arguments}: {}", reply.body);
     }
     assert!(harness.added.lock().unwrap().is_empty());
+}
+
+#[test]
+fn every_routed_tool_has_a_permission_and_an_unmapped_name_is_not_run() {
+    use crate::mcp::tools::{DegenViewMcp, required_permission};
+    let shared = McpShared::new();
+    let (bridge, _inbox) = crate::mcp::bridge::channel(shared.clone(), Arc::new(|| {}));
+    let routed = DegenViewMcp::new(bridge, shared).routed_tool_names();
+    assert!(routed.len() >= 30, "{routed:?}");
+    for name in &routed {
+        assert!(
+            required_permission(name).is_some(),
+            "{name} is routed but has no permission: it would be callable by anyone with a token"
+        );
+    }
+    // The other direction: a name with no tool behind it maps to nothing.
+    assert_eq!(required_permission("degenview_not_a_tool"), None);
+
+    let harness = Harness::start(&[("full", "full-tok", BOTH)]);
+    let url = harness.url();
+    let unknown = rpc(
+        &url,
+        Some("full-tok"),
+        "tools/call",
+        json!({"name": "degenview_not_a_tool", "arguments": {}}),
+    );
+    let body = unknown.json();
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .is_some_and(|message| message.contains("Unknown tool")),
+        "{body}"
+    );
 }
 
 #[test]

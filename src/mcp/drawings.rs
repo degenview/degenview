@@ -184,8 +184,28 @@ fn parse_color(text: &str) -> Option<(Rgba, bool)> {
     }
 }
 
+/// The milliseconds in the digits after a decimal point (`5` is 500, `250Z` is 250, `1239` is
+/// 123: finer than a millisecond is cut off, never rounded up into the next one). One to nine
+/// digits and an optional `Z`; anything else, including no digits at all, is not a fraction.
+fn fraction_millis(fraction: &str) -> Option<i64> {
+    let digits = fraction.strip_suffix(['Z', 'z']).unwrap_or(fraction);
+    if digits.is_empty() || digits.len() > 9 || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let mut millis = 0;
+    for position in 0..3 {
+        let digit = digits
+            .as_bytes()
+            .get(position)
+            .map_or(0, |b| i64::from(b - b'0'));
+        millis = millis * 10 + digit;
+    }
+    Some(millis)
+}
+
 /// Epoch milliseconds from a client's time: an integer, digits as text, or ISO-8601 UTC with
-/// optional fractional seconds and a `Z`. Offsets other than UTC are refused.
+/// optional fractional seconds (kept to the millisecond) and a `Z`. Offsets other than UTC are
+/// refused.
 pub fn parse_time(arg: &TimeArg) -> Result<i64, McpError> {
     let bad = |what: &str| {
         invalid(format!(
@@ -206,15 +226,12 @@ pub fn parse_time(arg: &TimeArg) -> Result<i64, McpError> {
                     Some((head, fraction)) => (head, Some(fraction)),
                     None => (text, None),
                 };
-                if let Some(fraction) = fraction
-                    && !fraction
-                        .trim_end_matches(['Z', 'z'])
-                        .chars()
-                        .all(|c| c.is_ascii_digit())
-                {
-                    return Err(bad(text));
-                }
-                parse_timestamp(head).ok_or_else(|| bad(text))?
+                let whole = parse_timestamp(head).ok_or_else(|| bad(text))?;
+                let millis = match fraction {
+                    None => 0,
+                    Some(fraction) => fraction_millis(fraction).ok_or_else(|| bad(text))?,
+                };
+                whole.checked_add(millis).ok_or_else(|| bad(text))?
             }
         }
     };
@@ -395,6 +412,25 @@ mod tests {
     }
 
     #[test]
+    fn fractional_seconds_are_kept_to_the_millisecond_and_never_rounded_up() {
+        let day = 1_760_918_400_000;
+        for (written, extra) in [
+            ("2025-10-20T00:00:00.999Z", 999),
+            ("2025-10-20T00:00:00.5Z", 500),
+            ("2025-10-20T00:00:00.25", 250),
+            ("2025-10-20T00:00:00.007Z", 7),
+            ("2025-10-20T00:00:00.1239Z", 123),
+            ("2025-10-20T00:00:00.999999999Z", 999),
+        ] {
+            assert_eq!(
+                parse_time(&text(written)).unwrap(),
+                day + extra,
+                "{written}"
+            );
+        }
+    }
+
+    #[test]
     fn bad_times_are_refused() {
         for arg in [
             text(""),
@@ -403,6 +439,10 @@ mod tests {
             text("2025-02-30T00:00:00Z"),
             text("2025-10-20T00:00:00+02:00"),
             text("2025-10-20T00:00:00.5x"),
+            text("2025-10-20T00:00:00."),
+            text("2025-10-20T00:00:00.Z"),
+            text("2025-10-20T00:00:00.5ZZ"),
+            text("2025-10-20T00:00:00.1234567890Z"),
             text(&"9".repeat(41)),
             text("99999999999999999999"),
             TimeArg::Millis(0),

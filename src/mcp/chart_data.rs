@@ -395,6 +395,14 @@ pub fn plan_add(
     first_id: u64,
     specs: &[NewDrawing],
 ) -> Result<Vec<Drawing>, McpError> {
+    // The ids `first_id..first_id + specs.len()`, and the counter after them, must exist. A
+    // stored drawing with the highest possible id (a corrupt or newer-version layout) leaves none:
+    // refuse instead of wrapping to zero or to an id already in use.
+    if first_id.checked_add(specs.len() as u64).is_none() {
+        return Err(McpError::ResourceLimit(
+            "This chart has run out of drawing ids; no more drawings can be added".into(),
+        ));
+    }
     if counted(existing) + specs.len() > MAX_DRAWINGS_PER_CHART {
         return Err(McpError::ResourceLimit(format!(
             "A chart holds at most {MAX_DRAWINGS_PER_CHART} drawings; this one has {}",
@@ -904,6 +912,39 @@ mod tests {
         // The counter has fallen behind the stored ids: the drawings win.
         assert_eq!(next_free_id(&drawings, 2), 13);
         assert_eq!(next_free_id(&drawings, 40), 40);
+    }
+
+    #[test]
+    fn running_out_of_drawing_ids_is_refused_not_wrapped() {
+        let data = bars(3);
+        let one = spec(
+            (T0, value(100.0)),
+            (T0 + DAY, value(101.0)),
+            McpDrawingTool::TrendLine,
+        );
+        let two = vec![one.clone(), one.clone()];
+        // The last id still fits one drawing; two would need an id past it.
+        assert!(plan_add(&[], &data, u64::MAX - 1, std::slice::from_ref(&one)).is_ok());
+        assert!(matches!(
+            plan_add(&[], &data, u64::MAX - 1, &two),
+            Err(McpError::ResourceLimit(_))
+        ));
+        assert!(matches!(
+            plan_add(&[], &data, u64::MAX, std::slice::from_ref(&one)),
+            Err(McpError::ResourceLimit(_))
+        ));
+        // A stored drawing holding the highest id leaves the counter at the saturated maximum.
+        let top = plan_add(&[], &data, u64::MAX - 1, std::slice::from_ref(&one)).unwrap();
+        assert_eq!(next_free_id(&top, 1), u64::MAX);
+        assert!(matches!(
+            plan_add(
+                &top,
+                &data,
+                next_free_id(&top, 1),
+                std::slice::from_ref(&one)
+            ),
+            Err(McpError::ResourceLimit(_))
+        ));
     }
 
     #[test]

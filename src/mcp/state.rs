@@ -107,19 +107,35 @@ impl McpShared {
     /// constant time, so the response time does not reveal how much of a token matched.
     /// Records the use for the "last used" column.
     pub fn authenticate(&self, token: &str) -> Option<ClientIdentity> {
+        self.authenticate_with(token, || {})
+    }
+
+    /// [`Self::authenticate`] with a hook that runs after the match, while no lock is held.
+    /// Tests use it to replace the client list at the one moment that used to matter.
+    ///
+    /// The match is carried across the unlocked gap as the client's id, never as a position in
+    /// the list (a revocation shifts positions), and the verifier is checked again against
+    /// whichever client now has that id. So a token only ever yields the client whose verifier
+    /// matched it, or nothing once that client is gone or its credential was replaced.
+    fn authenticate_with(&self, token: &str, between: impl FnOnce()) -> Option<ClientIdentity> {
         let presented = crate::mcp::auth::verifier_hex(token);
-        let mut matched = None;
+        let mut matched: Option<String> = None;
         {
             let config = self.read();
-            for (index, client) in config.clients.iter().enumerate() {
+            // Every verifier is compared, with no early exit, so timing does not reveal
+            // which one matched.
+            for client in &config.clients {
                 if crate::mcp::auth::verifiers_match(&client.verifier, &presented) {
-                    matched = Some(index);
+                    matched = Some(client.id.clone());
                 }
             }
         }
-        let index = matched?;
+        let id = matched?;
+        between();
         let mut config = self.write();
-        let client = config.clients.get_mut(index)?;
+        let client = config.clients.iter_mut().find(|client| {
+            client.id == id && crate::mcp::auth::verifiers_match(&client.verifier, &presented)
+        })?;
         client.last_used_ms = Some(now_ms());
         self.usage_dirty.store(true, Ordering::Release);
         Some(ClientIdentity {
@@ -149,6 +165,11 @@ impl McpShared {
         self.usage_dirty
             .swap(false, Ordering::AcqRel)
             .then(|| self.clients())
+    }
+
+    /// Marks the "last used" times as not yet saved again, after a failed save.
+    pub fn mark_usage_dirty(&self) {
+        self.usage_dirty.store(true, Ordering::Release);
     }
 
     /// A permit for one script read/compile, or `None` when too many are already running.
@@ -234,6 +255,66 @@ mod tests {
                 .is_none()
         );
         assert!(shared.take_usage_update().is_none());
+    }
+
+    #[test]
+    fn a_token_never_resolves_to_another_client_when_the_list_shifts_mid_check() {
+        let shared = McpShared::new();
+        shared.replace(
+            vec![
+                client("a", "token-a", &[]),
+                client("b", "token-b", &[]),
+                client("c", "token-c", &[]),
+            ],
+            PermissionSet::none(),
+        );
+        // Token B matches client B at position 1; then client A is revoked, so position 1
+        // is now client C. The old code returned C here.
+        let identity = shared.authenticate_with("token-b", || {
+            shared.replace(
+                vec![client("b", "token-b", &[]), client("c", "token-c", &[])],
+                PermissionSet::none(),
+            );
+        });
+        assert_eq!(identity.unwrap().id, "b");
+        let clients = shared.clients();
+        assert!(
+            clients
+                .iter()
+                .find(|c| c.id == "b")
+                .unwrap()
+                .last_used_ms
+                .is_some()
+        );
+        assert!(
+            clients
+                .iter()
+                .find(|c| c.id == "c")
+                .unwrap()
+                .last_used_ms
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn a_token_whose_client_is_revoked_mid_check_gets_no_identity() {
+        let shared = McpShared::new();
+        shared.replace(
+            vec![client("a", "token-a", &[]), client("b", "token-b", &[])],
+            PermissionSet::none(),
+        );
+        let identity = shared.authenticate_with("token-b", || {
+            shared.replace(Vec::new(), PermissionSet::none())
+        });
+        assert!(identity.is_none());
+        assert!(shared.take_usage_update().is_none());
+
+        // A credential replaced under the same id no longer matches the old token.
+        shared.replace(vec![client("b", "token-b", &[])], PermissionSet::none());
+        let identity = shared.authenticate_with("token-b", || {
+            shared.replace(vec![client("b", "token-b2", &[])], PermissionSet::none());
+        });
+        assert!(identity.is_none());
     }
 
     #[test]

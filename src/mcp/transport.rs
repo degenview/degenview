@@ -22,6 +22,9 @@ use tower::limit::ConcurrencyLimitLayer;
 
 pub const MAX_BODY_BYTES: usize = 256 * 1024;
 const MAX_CONCURRENT_REQUESTS: usize = 16;
+/// Requests in flight before any token is looked at. Bounds what a flood of bad credentials can
+/// occupy (hashing, scanning the client list, building responses) on this loopback service.
+const MAX_UNAUTHENTICATED_REQUESTS: usize = 64;
 const REQUEST_DEADLINE: Duration = Duration::from_secs(30);
 
 async fn deadline(request: Request, next: Next) -> Response {
@@ -57,6 +60,8 @@ pub fn router(
         .route_service("/mcp", service)
         .layer(middleware::from_fn(deadline))
         .layer(ConcurrencyLimitLayer::new(MAX_CONCURRENT_REQUESTS))
-        // Outermost: nothing, not even a 404, is answered without a valid token.
+        // Nothing, not even a 404, is answered without a valid token.
         .layer(middleware::from_fn_with_state(shared, require_bearer))
+        // Outermost: a cap that holds before authentication, so bad tokens cannot pile up.
+        .layer(ConcurrencyLimitLayer::new(MAX_UNAUTHENTICATED_REQUESTS))
 }

@@ -16,8 +16,8 @@ use crate::mcp::bridge::{McpCommand, McpError, McpReply};
 use crate::mcp::types::{AlertChangeResult, CreateAlertResult, UpdateAlertResult};
 use crate::model::Timeframe;
 use crate::model::alert::{
-    AlertCurrency, AlertRuntimeCommand, AlertRuntimeCommandPayload, AlertRuntimeOwner,
-    AlertServiceState, AlertState,
+    AlertCurrency, AlertPrecondition, AlertRuntimeCommand, AlertRuntimeCommandPayload,
+    AlertRuntimeOwner, AlertServiceState, AlertState,
 };
 use crate::model::pine_alert::{PineAlertState, PineAlertSubscription};
 use crate::model::tab_windows::WindowId;
@@ -358,10 +358,39 @@ fn commit_price_alert(
     baseline: Option<f64>,
     now: i64,
 ) {
-    let _ = store.enqueue_alert_command(&AlertRuntimeCommand::new(
-        AlertRuntimeCommandPayload::Save { alert, baseline },
+    // The sheets have always ignored a failed save; the side effects below are skipped though.
+    let _ = commit_price_alert_checked(
+        store,
+        notifier,
+        background_service,
+        runtime_control,
+        alert,
+        baseline,
+        None,
         now,
-    ));
+    );
+}
+
+/// [`commit_price_alert`] for a caller that must know whether the alert reached the queue: the
+/// MCP server. Returns the id of the queued save command. A save that could not be queued is an
+/// error and has no side effects: no notification authorization is requested and no service is
+/// registered for an alert that does not exist. `precondition` is checked by the runtime.
+#[allow(clippy::too_many_arguments)]
+fn commit_price_alert_checked(
+    store: &crate::store::Store,
+    notifier: &Arc<dyn Notifier>,
+    background_service: &Arc<Mutex<BackgroundAlertService>>,
+    runtime_control: &Arc<Mutex<AlertRuntimeControl>>,
+    alert: Box<crate::model::alert::PriceAlert>,
+    baseline: Option<f64>,
+    precondition: Option<crate::model::alert::AlertPrecondition>,
+    now: i64,
+) -> rusqlite::Result<u64> {
+    let mut save =
+        AlertRuntimeCommand::new(AlertRuntimeCommandPayload::Save { alert, baseline }, now);
+    save.precondition = precondition;
+    store.enqueue_alert_command(&save)?;
+    // Best effort from here: the alert itself is safely queued.
     let _ = store.enqueue_alert_command(&AlertRuntimeCommand::new(
         AlertRuntimeCommandPayload::RequestNotificationAuthorization,
         now,
@@ -377,6 +406,7 @@ fn commit_price_alert(
     if let Ok(mut control) = runtime_control.lock() {
         control.retrying(service_state, now);
     }
+    Ok(save.id)
 }
 
 fn alerts_unavailable() -> McpError {
@@ -1506,28 +1536,45 @@ impl DegenViewApp {
                         Ok(McpReply::AlertCreated(CreateAlertResult {
                             status: "already_exists".into(),
                             alert: *alert,
+                            command_id: None,
                         }))
                     }
                     mcp_host::CreatePlan::New { alert, baseline } => {
                         let info = mcp_host::alert_info(&alert, None);
                         let store = self.store.lock().map_err(|_| alerts_unavailable())?;
-                        // The same commit the price-alert sheet's Save does.
-                        commit_price_alert(
+                        // The same commit the price-alert sheet's Save does, but a save that
+                        // never reached the queue is an error here, not a "queued".
+                        let command_id = commit_price_alert_checked(
                             &store,
                             &self.notifier,
                             &self.background_service,
                             &self.alert_runtime_control,
                             alert,
                             baseline,
+                            // Other requests in this frame planned against the same snapshot:
+                            // the runtime decides again (duplicate, cap) when it applies.
+                            Some(AlertPrecondition::Create {
+                                max_alerts: mcp_host::MAX_ALERTS,
+                            }),
                             now,
-                        );
+                        )
+                        .map_err(|_| {
+                            McpError::AppUnavailable("Could not queue the alert".into())
+                        })?;
                         ctx.request_repaint();
                         Ok(McpReply::AlertCreated(CreateAlertResult {
                             status: "queued".into(),
                             alert: info,
+                            command_id: Some(command_id),
                         }))
                     }
                 }
+            }
+            McpCommand::AlertCommandOutcome { command_id } => {
+                let host = self.alert_host.lock().map_err(|_| alerts_unavailable())?;
+                Ok(McpReply::AlertCommand(mcp_host::alert_command_outcome(
+                    &host, command_id,
+                )))
             }
             McpCommand::UpdateAlert(request) => {
                 let now = now_ms();
@@ -1546,17 +1593,26 @@ impl DegenViewApp {
                         Ok(McpReply::AlertUpdated(UpdateAlertResult {
                             status: "unchanged".into(),
                             alert: *alert,
+                            command_id: None,
                         }))
                     }
-                    mcp_host::UpdatePlan::Change { alert, baseline } => {
+                    mcp_host::UpdatePlan::Change {
+                        alert,
+                        base,
+                        baseline,
+                    } => {
                         let info = mcp_host::alert_info(&alert, None);
-                        self.queue_alert_command(
+                        // Planned from a snapshot other requests may also have planned from:
+                        // the runtime applies it only to the alert it was planned from.
+                        let command_id = self.queue_alert_command(
                             ctx,
                             AlertRuntimeCommandPayload::Save { alert, baseline },
+                            Some(AlertPrecondition::Unchanged(base)),
                         )?;
                         Ok(McpReply::AlertUpdated(UpdateAlertResult {
                             status: "queued".into(),
                             alert: info,
+                            command_id: Some(command_id),
                         }))
                     }
                 }
@@ -1577,6 +1633,7 @@ impl DegenViewApp {
                                 state,
                                 baseline: None,
                             },
+                            None,
                         )?;
                         "queued"
                     }
@@ -1591,7 +1648,7 @@ impl DegenViewApp {
                     let host = self.alert_host.lock().map_err(|_| alerts_unavailable())?;
                     mcp_host::plan_delete_alert(&host, alert_id)?
                 };
-                self.queue_alert_command(ctx, AlertRuntimeCommandPayload::Delete(id))?;
+                self.queue_alert_command(ctx, AlertRuntimeCommandPayload::Delete(id), None)?;
                 Ok(McpReply::AlertChanged(AlertChangeResult {
                     alert_id: id.to_string(),
                     status: "queued".into(),
@@ -1770,6 +1827,28 @@ impl DegenViewApp {
         })
     }
 
+    /// How the Pine Studio editor that has `id` open stands against the file on disk.
+    fn open_script_disk_state(&self, id: &str) -> Option<crate::pine_studio::OpenDiskState> {
+        self.tabs.iter().find_map(|tab| {
+            let content = tab.content.lock().ok()?;
+            match &*content {
+                TabContent::Pine(manager) => manager.open_disk_state(id),
+                _ => None,
+            }
+        })
+    }
+
+    /// Asks the editor that has `id` open to look at the file now.
+    fn look_at_open_script_disk(&self, id: &str) {
+        for tab in &self.tabs {
+            if let Ok(mut content) = tab.content.lock()
+                && let TabContent::Pine(manager) = &mut *content
+            {
+                manager.look_at_disk_now(id);
+            }
+        }
+    }
+
     /// Shows an edit in the Pine Studio editor that has `id` open. Returns whether one did.
     fn show_in_open_editor(&self, id: &str, text: &str, saved: bool) -> bool {
         self.tabs.iter().any(|tab| {
@@ -1810,7 +1889,19 @@ impl DegenViewApp {
                 live.as_deref(),
             )?,
             None => {
-                crate::mcp::pine::save_script(&mut store, id, expected_revision, live.as_deref())?
+                let open = self.open_script_disk_state(id);
+                let saved = crate::mcp::pine::save_script(
+                    &mut store,
+                    id,
+                    expected_revision,
+                    live.as_deref(),
+                    open.as_ref(),
+                );
+                if matches!(saved, Err(McpError::Conflict(_))) && open.is_some() {
+                    // Same as the editor's own refused Save: raise the file/typing question now.
+                    self.look_at_open_script_disk(id);
+                }
+                saved?
             }
         };
         if result.status != "unchanged" {
@@ -1834,17 +1925,21 @@ impl DegenViewApp {
     }
 
     /// Hands a change to the alert runtime through the command queue, as the Alerts window does.
+    /// Returns the command's id, which [`McpCommand::AlertCommandOutcome`] can be asked about.
     fn queue_alert_command(
         &self,
         ctx: &egui::Context,
         payload: AlertRuntimeCommandPayload,
-    ) -> Result<(), McpError> {
+        precondition: Option<AlertPrecondition>,
+    ) -> Result<u64, McpError> {
+        let mut command = AlertRuntimeCommand::new(payload, now_ms());
+        command.precondition = precondition;
         let store = self.store.lock().map_err(|_| alerts_unavailable())?;
         store
-            .enqueue_alert_command(&AlertRuntimeCommand::new(payload, now_ms()))
+            .enqueue_alert_command(&command)
             .map_err(|_| McpError::AppUnavailable("Could not queue the alert change".into()))?;
         ctx.request_repaint();
-        Ok(())
+        Ok(command.id)
     }
 
     /// Runs `action` on the chart workspace with this id. Portfolio and Pine Studio tabs share
@@ -2875,6 +2970,62 @@ mod tests {
         assert_eq!(title_commands(&ctx, "BTCUSDT"), 0);
         assert_eq!(title_commands(&ctx, "ETHUSDT"), 1);
         assert_eq!(title_commands(&ctx, "ETHUSDT"), 0);
+    }
+
+    #[derive(Default)]
+    struct CountingNotifier(std::sync::atomic::AtomicUsize);
+
+    impl Notifier for CountingNotifier {
+        fn deliver(
+            &self,
+            _: &crate::model::alert_notification::NotificationContent,
+        ) -> Result<(), String> {
+            Ok(())
+        }
+
+        fn request_authorization(
+            &self,
+        ) -> Result<crate::model::alert::AlertNotificationPermission, String> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Ok(crate::model::alert::AlertNotificationPermission::Unknown)
+        }
+    }
+
+    #[test]
+    fn an_alert_whose_save_never_reached_the_queue_is_an_error_with_no_side_effects() {
+        let store = crate::store::Store::open_in_memory().unwrap();
+        store.break_alert_queue();
+        let counting = Arc::new(CountingNotifier::default());
+        let notifier: Arc<dyn Notifier> = counting.clone();
+        let service = Arc::new(Mutex::new(BackgroundAlertService::default()));
+        let control = Arc::new(Mutex::new(AlertRuntimeControl::new(
+            AlertServiceState::Disabled,
+            0,
+        )));
+        let alert = Box::new(crate::model::alert::PriceAlert::new(
+            crate::model::alert::AlertAsset::new(
+                crate::model::InstrumentId::new(DataSource::Binance, "BTCUSDT"),
+                "BTC",
+                "Bitcoin",
+            ),
+            crate::model::alert::AlertCondition::CrossesAbove { target: 1.0 },
+            1,
+        ));
+        let result =
+            commit_price_alert_checked(&store, &notifier, &service, &control, alert, None, None, 1);
+        assert!(result.is_err());
+        // Give a wrongly spawned authorization thread the chance to show itself.
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        assert_eq!(
+            counting.0.load(Ordering::SeqCst),
+            0,
+            "no authorization is requested for an alert that does not exist"
+        );
+        assert_eq!(
+            control.lock().unwrap().service_state,
+            AlertServiceState::Disabled,
+            "no service setup either"
+        );
     }
 
     #[test]

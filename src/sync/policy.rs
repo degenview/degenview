@@ -326,6 +326,7 @@ mod tests {
             "alert.health",
             "alert.revision",
             "alert.processedCommandIDs",
+            "alert.rejectedCommands",
             "alerts.lastSeenAt",
             "session.next_id",
             "pineStudio.layout",

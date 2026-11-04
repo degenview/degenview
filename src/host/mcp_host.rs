@@ -9,7 +9,7 @@ use crate::host::alert_host::AlertHost;
 use crate::mcp::McpServer;
 use crate::mcp::auth::{generate_token, verifier_hex};
 use crate::mcp::bridge::{
-    self, AlertUpdate, BridgeClient, BridgeInbox, McpError, NewAlert, Request,
+    self, AlertCommandOutcome, AlertUpdate, BridgeClient, BridgeInbox, McpError, NewAlert, Request,
 };
 use crate::mcp::chart_data;
 use crate::mcp::drawings::{DrawingEdit, NewDrawing};
@@ -178,10 +178,16 @@ impl McpHost {
             return;
         }
         self.last_usage_save = Instant::now();
-        if let Some(clients) = self.shared.take_usage_update()
-            && let Ok(store) = self.store.lock()
-        {
-            let _ = store.replace_mcp_clients(&clients);
+        if let Some(clients) = self.shared.take_usage_update() {
+            let saved = self
+                .store
+                .lock()
+                .is_ok_and(|store| store.replace_mcp_clients(&clients).is_ok());
+            if !saved {
+                // The times were taken before they were written; put them back so the next
+                // tick tries again instead of losing them until the client's next request.
+                self.shared.mark_usage_dirty();
+            }
         }
     }
 
@@ -857,7 +863,8 @@ pub fn add_drawings(
     let first_id = chart_data::next_free_id(data.drawings, data.next_drawing_id);
     let drawings = chart_data::plan_add(data.drawings, data.candles, first_id, specs)?;
     let ids: Vec<u64> = drawings.iter().map(Drawing::id).collect();
-    let next_free = first_id + ids.len() as u64;
+    // `plan_add` already refused a range that does not fit.
+    let next_free = first_id.saturating_add(ids.len() as u64);
     let commands = drawings.into_iter().map(DrawingCommand::Add).collect();
     workspace.apply_planned_drawings(chart_id, commands, next_free);
     drawings_changed(workspace, chart_id, "added", &ids)
@@ -1208,7 +1215,7 @@ pub fn pine_alerts(
 /// Alerts one `degenview_list_price_alerts` call returns.
 const ALERT_PAGE: usize = 200;
 /// No further alert is accepted from a client beyond this many in total.
-const MAX_ALERTS: usize = 500;
+pub const MAX_ALERTS: usize = 500;
 
 /// A number as a plain decimal (`70000`, `0.00000278`, `2.5`): rounded to 12 significant digits,
 /// which drops float noise (`110.00000000000001`) but not any digit a quote carries, and never
@@ -1364,6 +1371,9 @@ pub enum UpdatePlan {
     Unchanged(Box<AlertInfo>),
     Change {
         alert: Box<PriceAlert>,
+        /// The alert as the edit was planned from: the runtime applies the edit only while the
+        /// alert is still like this.
+        base: Box<PriceAlert>,
         baseline: Option<f64>,
     },
 }
@@ -1447,6 +1457,7 @@ pub fn plan_update_alert(
     Ok(UpdatePlan::Change {
         baseline: editor.current_price(),
         alert: Box::new(alert),
+        base: Box::new(existing),
     })
 }
 
@@ -1499,6 +1510,18 @@ pub fn plan_pause_alert(
     })
 }
 
+/// What became of the alert command `id`: applied, refused because the alerts changed under it,
+/// or not applied yet.
+pub fn alert_command_outcome(host: &AlertHost, id: u64) -> AlertCommandOutcome {
+    if let Some(reason) = host.rejection(id) {
+        AlertCommandOutcome::Rejected(reason)
+    } else if host.snapshot().processed_command_ids.contains(&id) {
+        AlertCommandOutcome::Applied
+    } else {
+        AlertCommandOutcome::Pending
+    }
+}
+
 pub fn plan_delete_alert(host: &AlertHost, id: AlertId) -> Result<AlertId, McpError> {
     require_loaded(host)?;
     find_alert(host, id).map(|alert| alert.id)
@@ -1517,6 +1540,26 @@ mod tests {
 
     fn host(store: &SharedStore) -> McpHost {
         McpHost::load(store.clone(), Arc::new(|| {}))
+    }
+
+    #[test]
+    fn last_used_times_that_could_not_be_saved_are_kept_for_the_next_try() {
+        let store = store();
+        let mut host = host(&store);
+        host.shared.mark_usage_dirty();
+        // The store cannot be locked (a panic while it was held).
+        let poisoner = store.clone();
+        let _ = std::thread::spawn(move || {
+            let _held = poisoner.lock().unwrap();
+            panic!("poison the store lock");
+        })
+        .join();
+        host.last_usage_save = Instant::now() - USAGE_SAVE_INTERVAL - Duration::from_secs(1);
+        host.tick();
+        assert!(
+            host.shared.take_usage_update().is_some(),
+            "the failed save must not clear the pending update"
+        );
     }
 
     fn enable_on_free_port(host: &mut McpHost, store: &SharedStore) {
@@ -1762,7 +1805,9 @@ mod tests {
 
     // MARK: Price alerts against the real alert host
 
-    use crate::model::alert::{AlertAsset, AlertRuntimeCommand, AlertRuntimeCommandPayload};
+    use crate::model::alert::{
+        AlertAsset, AlertPrecondition, AlertRuntimeCommand, AlertRuntimeCommandPayload,
+    };
     use crate::model::watchlist_quote::{Freshness, WatchlistQuote};
     use std::collections::HashMap;
 
@@ -2146,7 +2191,10 @@ mod tests {
         request: &AlertUpdate,
     ) -> Result<UpdatePlan, McpError> {
         let plan = plan_update_alert(host, book, &HashMap::new(), request, NOW)?;
-        if let UpdatePlan::Change { alert, baseline } = &plan {
+        if let UpdatePlan::Change {
+            alert, baseline, ..
+        } = &plan
+        {
             command(
                 store,
                 host,
@@ -2950,5 +2998,202 @@ mod tests {
             !json.contains("424242") && !json.contains(STRATEGY_SOURCE.trim()),
             "{json}"
         );
+    }
+
+    // MARK: Several requests in one frame, applied by the runtime afterwards
+
+    /// What the app does with a request: plan against the snapshot as it is now, queue the save
+    /// with its precondition, and leave applying to the runtime (nothing is drained here).
+    fn queue_create(store: &Store, host: &AlertHost, request: &NewAlert) -> Option<u64> {
+        let plan = plan_create_alert(
+            host,
+            &WatchlistQuoteBook::default(),
+            &HashMap::new(),
+            request,
+            NOW,
+        )
+        .ok()?;
+        let CreatePlan::New { alert, baseline } = plan else {
+            return None;
+        };
+        let command =
+            AlertRuntimeCommand::new(AlertRuntimeCommandPayload::Save { alert, baseline }, NOW)
+                .with_precondition(AlertPrecondition::Create {
+                    max_alerts: MAX_ALERTS,
+                });
+        store.enqueue_alert_command(&command).unwrap();
+        Some(command.id)
+    }
+
+    fn queue_update(store: &Store, host: &AlertHost, request: &AlertUpdate) -> Option<u64> {
+        let plan = plan_update_alert(
+            host,
+            &WatchlistQuoteBook::default(),
+            &HashMap::new(),
+            request,
+            NOW,
+        )
+        .ok()?;
+        let UpdatePlan::Change {
+            alert,
+            base,
+            baseline,
+        } = plan
+        else {
+            return None;
+        };
+        let command =
+            AlertRuntimeCommand::new(AlertRuntimeCommandPayload::Save { alert, baseline }, NOW)
+                .with_precondition(AlertPrecondition::Unchanged(base));
+        store.enqueue_alert_command(&command).unwrap();
+        Some(command.id)
+    }
+
+    #[test]
+    fn identical_creates_in_one_frame_make_one_alert_and_the_other_is_refused() {
+        let (store, mut host) = alert_host();
+        let first = queue_create(&store, &host, &request(true, "70000")).unwrap();
+        let second = queue_create(&store, &host, &request(true, "70000")).unwrap();
+        assert_eq!(
+            alert_command_outcome(&host, first),
+            AlertCommandOutcome::Pending
+        );
+        host.drain_commands(&store, NOW);
+        assert_eq!(host.snapshot().alerts.len(), 1);
+        assert_eq!(
+            alert_command_outcome(&host, first),
+            AlertCommandOutcome::Applied
+        );
+        assert_eq!(
+            alert_command_outcome(&host, second),
+            AlertCommandOutcome::Rejected(crate::model::alert::AlertRejectReason::Duplicate)
+        );
+    }
+
+    #[test]
+    fn a_burst_of_creates_at_the_cap_cannot_exceed_it() {
+        let (store, mut host) = alert_host();
+        for index in 0..MAX_ALERTS - 1 {
+            let alert = PriceAlert::new(
+                AlertAsset::new(
+                    InstrumentId::new(DataSource::Binance, "BTCUSDT"),
+                    "BTC",
+                    "Bitcoin",
+                ),
+                AlertCondition::CrossesAbove {
+                    target: 1.0 + index as f64,
+                },
+                NOW,
+            );
+            store
+                .enqueue_alert_command(&AlertRuntimeCommand::new(
+                    AlertRuntimeCommandPayload::Save {
+                        alert: Box::new(alert),
+                        baseline: None,
+                    },
+                    NOW,
+                ))
+                .unwrap();
+        }
+        host.drain_commands(&store, NOW);
+        assert_eq!(host.snapshot().alerts.len(), MAX_ALERTS - 1);
+        // Every one of these sees 499 alerts and passes the planner's own cap check.
+        let ids: Vec<_> = ["900001", "900002", "900003"]
+            .iter()
+            .map(|target| queue_create(&store, &host, &request(true, target)).unwrap())
+            .collect();
+        host.drain_commands(&store, NOW);
+        assert_eq!(host.snapshot().alerts.len(), MAX_ALERTS);
+        assert_eq!(
+            alert_command_outcome(&host, ids[0]),
+            AlertCommandOutcome::Applied
+        );
+        for id in &ids[1..] {
+            assert_eq!(
+                alert_command_outcome(&host, *id),
+                AlertCommandOutcome::Rejected(crate::model::alert::AlertRejectReason::LimitReached)
+            );
+        }
+    }
+
+    #[test]
+    fn two_edits_of_different_settings_in_one_frame_do_not_lose_the_first() {
+        let (store, mut host, id) = seeded();
+        let mut note = update(id);
+        note.note = Some("first".into());
+        let mut frequency = update(id);
+        frequency.frequency = Some(AlertFrequency::EveryTime);
+        let one = queue_update(&store, &host, &note).unwrap();
+        let two = queue_update(&store, &host, &frequency).unwrap();
+        host.drain_commands(&store, NOW);
+        let stored = &host.snapshot().alerts[0];
+        assert_eq!(stored.note, "first", "the first edit is kept");
+        assert_eq!(
+            stored.frequency,
+            AlertFrequency::Once,
+            "not overwritten by a stale copy"
+        );
+        assert_eq!(
+            alert_command_outcome(&host, one),
+            AlertCommandOutcome::Applied
+        );
+        assert_eq!(
+            alert_command_outcome(&host, two),
+            AlertCommandOutcome::Rejected(crate::model::alert::AlertRejectReason::Changed)
+        );
+    }
+
+    #[test]
+    fn an_edit_and_a_delete_in_one_frame_agree_in_either_order() {
+        // Delete first, then an edit planned from the old snapshot: the alert stays deleted.
+        let (store, mut host, id) = seeded();
+        let mut note = update(id);
+        note.note = Some("late".into());
+        let delete = AlertRuntimeCommand::new(AlertRuntimeCommandPayload::Delete(id), NOW);
+        store.enqueue_alert_command(&delete).unwrap();
+        let edit = queue_update(&store, &host, &note).unwrap();
+        host.drain_commands(&store, NOW);
+        assert!(host.snapshot().alerts.is_empty());
+        assert_eq!(
+            alert_command_outcome(&host, edit),
+            AlertCommandOutcome::Rejected(crate::model::alert::AlertRejectReason::Missing)
+        );
+
+        // Edit first, then the delete: the delete still wins.
+        let (store, mut host, id) = seeded();
+        let mut note = update(id);
+        note.note = Some("early".into());
+        let edit = queue_update(&store, &host, &note).unwrap();
+        store
+            .enqueue_alert_command(&AlertRuntimeCommand::new(
+                AlertRuntimeCommandPayload::Delete(id),
+                NOW,
+            ))
+            .unwrap();
+        host.drain_commands(&store, NOW);
+        assert!(host.snapshot().alerts.is_empty());
+        assert_eq!(
+            alert_command_outcome(&host, edit),
+            AlertCommandOutcome::Applied
+        );
+    }
+
+    #[test]
+    fn a_rejection_survives_a_reload_from_the_store() {
+        // The background agent may apply commands; the app only sees them after a reload.
+        let (store, mut host) = alert_host();
+        let first = queue_create(&store, &host, &request(true, "70000")).unwrap();
+        let second = queue_create(&store, &host, &request(true, "70000")).unwrap();
+        host.drain_commands(&store, NOW);
+        host.save_if_dirty(&store);
+        let reloaded = AlertHost::load(&store, NOW);
+        assert_eq!(
+            alert_command_outcome(&reloaded, first),
+            AlertCommandOutcome::Applied
+        );
+        assert!(matches!(
+            alert_command_outcome(&reloaded, second),
+            AlertCommandOutcome::Rejected(_)
+        ));
     }
 }

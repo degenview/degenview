@@ -142,9 +142,12 @@ bypass.
 ## 10. Hardening
 
 - Per-client and failed-authentication rate limiting (today: a concurrency cap and 256-bit tokens).
-- JSON nesting depth limit; confirm rmcp's body limit and header limits are enough.
+- Header count/size limits (hyper defaults today). JSON nesting is already capped by serde_json's
+  recursion limit of 128; the body limit is 256 KiB.
 - IPv6 loopback (`::1`) with the same Host/Origin checks, if wanted.
-- Timeouts and cancellation: map MCP cancellation notifications onto the bridge's cancel switch.
+- Timeouts and cancellation: a dropped bridge call now cancels its queued request. Passing rmcp's
+  per-request cancellation token into Pine worker orchestration is still open, and no real client
+  has been used to confirm that closing a request stream drops the call.
 - Behaviour when the app is quitting or a window closes mid-request (covered for stop and revoke, not
   for every window event).
 
@@ -174,3 +177,14 @@ From the design brief's test and invariant lists: SQLite lock contention, UI/win
 request, app shutdown during a backtest (once backtests exist), a real-client end-to-end run of the
 acceptance scenario, and the final implementation report (architecture, protocol revision and SDK,
 permission matrix, tool catalog, limitations, tests run, example client configuration).
+
+## 14. Open items from the production-readiness review
+
+[The review](reviews/mcp-server-code-review.md) has the status of each finding. Still open:
+audit log (item 2) and confirmation (item 3) as release requirements; failed-authentication and
+per-client rate limits and header limits (item 10); compile work for Pine saves and input changes
+still runs on the app thread (a burst of permitted calls can stall a frame: prepare off-thread, then
+recheck the revision and commit); a draft with no open editor can still overwrite a later outside edit
+of the file (`based_on_revision_id` is never recorded); passing the permission to bridge calls from the
+command instead of each handler; resources or an explicit tools-only statement (item 8); and a
+real-client acceptance run.

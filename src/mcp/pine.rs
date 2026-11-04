@@ -18,7 +18,7 @@ use crate::pine::program::{
 use crate::pine::token::{Diagnostic, DiagnosticCategory, DiagnosticSeverity, Limits};
 use crate::pine_studio::model::{CompileStatus, LocalScript, ScriptDraft, ScriptId, ScriptType};
 use crate::pine_studio::registry::LibraryRegistry;
-use crate::pine_studio::store::{COMPILER_VERSION, ScriptStore, hash_source};
+use crate::pine_studio::store::{COMPILER_VERSION, ScriptStore, ScriptStoreError, hash_source};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashMap};
@@ -54,6 +54,12 @@ pub enum Target {
 fn store_error<E>(_: E) -> McpError {
     // The reason can name file paths; the caller only learns that the library was unreadable.
     McpError::AppUnavailable("The script library could not be read".into())
+}
+
+fn changed_on_disk() -> McpError {
+    McpError::Conflict(
+        "The script's file was changed outside DegenView after it was opened, so nothing was saved. Resolve it in Pine Studio (keep the file's text or your editor's), then read the script again and retry".into(),
+    )
 }
 
 fn type_name(script_type: ScriptType) -> &'static str {
@@ -371,6 +377,7 @@ fn edit_result(
         applied_to_open_editor: false,
         has_draft,
         compile: None,
+        compile_warning: None,
     }
 }
 
@@ -423,11 +430,18 @@ pub fn update_draft(
 /// Saves the current draft over the saved source (which records a revision, as the editor's Save
 /// does) — but only a draft that compiles without errors, and only the text the caller reviewed.
 /// Charts keep their own copy of the source they were applied with.
+///
+/// The write is compared against what the file held when its author last saw it, exactly like the
+/// editor's Save (`ScriptStore::save_if_unchanged`): `open` is the open editor's disk baseline
+/// (`None` when the script is not open, then the file as read at the start of this call). An
+/// outside edit the editor has not reconciled yet is therefore never overwritten; the call is a
+/// `CONFLICT` and the editor, draft and file are left as they were.
 pub fn save_script(
     store: &mut ScriptStore,
     id: &str,
     expected_revision: &str,
     live: Option<&str>,
+    open: Option<&crate::pine_studio::OpenDiskState>,
 ) -> Result<PineEditResult, McpError> {
     let script = find_script(store, id)?;
     let draft = real_draft(store, &script);
@@ -462,7 +476,16 @@ pub fn save_script(
             "The draft has {errors} error(s), so it was not saved over the saved source (first: {first}). Fix it, or compile it for the full list"
         )));
     }
-    let saved = store.save(id, &working.text).map_err(store_error)?;
+    if open.is_some_and(|open| open.conflict) {
+        return Err(changed_on_disk());
+    }
+    let baseline = open.map_or(script.source.as_str(), |open| open.saved_source.as_str());
+    let saved = store
+        .save_if_unchanged(id, &working.text, baseline)
+        .map_err(|error| match error {
+            ScriptStoreError::ChangedOnDisk => changed_on_disk(),
+            other => store_error(other),
+        })?;
     Ok(edit_result(
         &saved,
         "save",
@@ -1337,12 +1360,12 @@ plot(ta.sma(close, len) * mult)\n";
 
         // A wrong revision saves nothing.
         assert!(matches!(
-            save_script(&mut store, &script.id, &hash_source(V1), None),
+            save_script(&mut store, &script.id, &hash_source(V1), None, None),
             Err(McpError::Conflict(_))
         ));
         assert_eq!(store.script(&script.id).unwrap().unwrap().source, V1);
 
-        let saved = save_script(&mut store, &script.id, &hash_source(V2), None).unwrap();
+        let saved = save_script(&mut store, &script.id, &hash_source(V2), None, None).unwrap();
         assert_eq!(
             (saved.action.as_str(), saved.status.as_str()),
             ("save", "saved")
@@ -1361,7 +1384,7 @@ plot(ta.sma(close, len) * mult)\n";
         assert_eq!(store.revisions(&script.id).unwrap()[0].source, V2);
 
         // Nothing left to save.
-        let again = save_script(&mut store, &script.id, &hash_source(V2), None).unwrap();
+        let again = save_script(&mut store, &script.id, &hash_source(V2), None, None).unwrap();
         assert_eq!(again.status, "unchanged");
         assert_eq!(store.revisions(&script.id).unwrap().len(), 1);
         let _ = std::fs::remove_dir_all(root);
@@ -1371,7 +1394,7 @@ plot(ta.sma(close, len) * mult)\n";
     fn a_draft_with_errors_is_never_saved_over_a_working_script() {
         let (mut store, script, root) = edit_store("broken");
         update_draft(&mut store, &script.id, &hash_source(V1), BROKEN, None).unwrap();
-        let result = save_script(&mut store, &script.id, &hash_source(BROKEN), None);
+        let result = save_script(&mut store, &script.id, &hash_source(BROKEN), None, None);
         let Err(McpError::CompilationFailed(message)) = result else {
             panic!("expected COMPILATION_FAILED");
         };
@@ -1393,7 +1416,92 @@ plot(ta.sma(close, len) * mult)\n";
     #[test]
     fn saving_what_an_open_editor_shows_works_without_a_draft_file() {
         let (mut store, script, root) = edit_store("save-live");
-        let saved = save_script(&mut store, &script.id, &hash_source(V2), Some(V2)).unwrap();
+        let saved = save_script(&mut store, &script.id, &hash_source(V2), Some(V2), None).unwrap();
+        assert_eq!(saved.status, "saved");
+        assert_eq!(store.script(&script.id).unwrap().unwrap().source, V2);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    fn open_editor(saved: &str, conflict: bool) -> crate::pine_studio::OpenDiskState {
+        crate::pine_studio::OpenDiskState {
+            saved_source: saved.to_owned(),
+            conflict,
+        }
+    }
+
+    /// Another program rewrites the script's file behind the app.
+    fn edit_outside(store: &mut ScriptStore, id: &str, text: &str) {
+        let path = store.file_path(id).unwrap().expect("script has a file");
+        std::fs::write(path, text).unwrap();
+    }
+
+    #[test]
+    fn an_outside_edit_is_not_overwritten_when_the_open_editor_is_clean() {
+        let (mut store, script, root) = edit_store("outside-clean");
+        // The editor shows V1 (what it read), the file became V3 before it noticed.
+        edit_outside(&mut store, &script.id, V3);
+        let result = save_script(
+            &mut store,
+            &script.id,
+            &hash_source(V1),
+            Some(V1),
+            Some(&open_editor(V1, false)),
+        );
+        // The editor's V1 is stale: writing it would silently undo the outside edit.
+        assert!(matches!(result, Err(McpError::Conflict(_))), "{result:?}");
+        let path = store.file_path(&script.id).unwrap().unwrap();
+        assert_eq!(std::fs::read_to_string(path).unwrap(), V3);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn an_outside_edit_is_not_overwritten_when_the_open_editor_is_dirty() {
+        let (mut store, script, root) = edit_store("outside-dirty");
+        // Editor: opened V1, typed V2 (unsaved). Another program writes V3 to the file.
+        edit_outside(&mut store, &script.id, V3);
+        let result = save_script(
+            &mut store,
+            &script.id,
+            &hash_source(V2),
+            Some(V2),
+            Some(&open_editor(V1, false)),
+        );
+        assert!(matches!(result, Err(McpError::Conflict(_))), "{result:?}");
+        let path = store.file_path(&script.id).unwrap().unwrap();
+        assert_eq!(std::fs::read_to_string(path).unwrap(), V3);
+        assert!(
+            store.revisions(&script.id).unwrap().is_empty(),
+            "no revision was recorded"
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn an_unresolved_conflict_in_the_editor_blocks_the_save() {
+        let (mut store, script, root) = edit_store("outside-conflict");
+        let result = save_script(
+            &mut store,
+            &script.id,
+            &hash_source(V2),
+            Some(V2),
+            Some(&open_editor(V1, true)),
+        );
+        assert!(matches!(result, Err(McpError::Conflict(_))), "{result:?}");
+        assert_eq!(store.script(&script.id).unwrap().unwrap().source, V1);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn an_open_editor_that_has_seen_the_file_can_save() {
+        let (mut store, script, root) = edit_store("outside-seen");
+        let saved = save_script(
+            &mut store,
+            &script.id,
+            &hash_source(V2),
+            Some(V2),
+            Some(&open_editor(V1, false)),
+        )
+        .unwrap();
         assert_eq!(saved.status, "saved");
         assert_eq!(store.script(&script.id).unwrap().unwrap().source, V2);
         let _ = std::fs::remove_dir_all(root);

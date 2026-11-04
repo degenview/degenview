@@ -27,6 +27,9 @@ use std::sync::Arc;
 use std::thread::JoinHandle;
 use tokio_util::sync::CancellationToken;
 
+/// How long [`McpServer::start`] waits for the server thread to own the listener.
+const STARTUP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
 /// A running listener. Dropping it (or [`McpServer::stop`]) closes the port immediately.
 pub struct McpServer {
     shared: Arc<McpShared>,
@@ -61,15 +64,47 @@ impl McpServer {
             .map_err(|error| fail(format!("Could not configure the listener: {error}")))?;
 
         let cancel = CancellationToken::new();
+        // The server thread reports once the runtime owns the listener (or why it never will).
+        // Until then the status stays `Starting`: it is never `Running` on the parent's say-so.
+        let (ready, started) = std::sync::mpsc::sync_channel::<Result<(), String>>(1);
         let thread = {
             let shared = shared.clone();
             let cancel = cancel.clone();
             std::thread::Builder::new()
                 .name("mcp-server".into())
-                .spawn(move || run(listener, shared, bridge, port, cancel))
+                .spawn(move || {
+                    let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        run(
+                            listener,
+                            shared.clone(),
+                            bridge,
+                            port,
+                            cancel.clone(),
+                            ready,
+                        );
+                    }));
+                    // A panic is a failure, not a silent end; stopping on purpose is not.
+                    if outcome.is_err() && !cancel.is_cancelled() {
+                        shared.set_status(McpStatus::Failed(
+                            "The MCP server stopped unexpectedly".into(),
+                        ));
+                    }
+                })
                 .map_err(|error| fail(format!("Could not start the server thread: {error}")))?
         };
-        shared.set_status(McpStatus::Running { port });
+        match started.recv_timeout(STARTUP_TIMEOUT) {
+            Ok(Ok(())) => {}
+            Ok(Err(message)) => {
+                let _ = thread.join();
+                return Err(fail(message));
+            }
+            Err(_) => {
+                // Timed out, or the thread ended before it could answer.
+                cancel.cancel();
+                let _ = thread.join();
+                return Err(fail("The MCP server did not start".into()));
+            }
+        }
         Ok(Self {
             shared,
             cancel,
@@ -104,6 +139,7 @@ fn run(
     bridge: BridgeClient,
     port: u16,
     cancel: CancellationToken,
+    ready: std::sync::mpsc::SyncSender<Result<(), String>>,
 ) {
     let runtime = match tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -111,9 +147,7 @@ fn run(
     {
         Ok(runtime) => runtime,
         Err(error) => {
-            shared.set_status(McpStatus::Failed(format!(
-                "Could not start the runtime: {error}"
-            )));
+            let _ = ready.send(Err(format!("Could not start the runtime: {error}")));
             return;
         }
     };
@@ -121,11 +155,15 @@ fn run(
         let listener = match tokio::net::TcpListener::from_std(listener) {
             Ok(listener) => listener,
             Err(error) => {
-                shared.set_status(McpStatus::Failed(format!("Listener error: {error}")));
+                let _ = ready.send(Err(format!("Listener error: {error}")));
                 return;
             }
         };
         let app = transport::router(shared.clone(), bridge, port, cancel.clone());
+        // The runtime owns the listener and the app is built: this is the moment the server is
+        // running. Set before answering, so a later failure cannot be overwritten by the caller.
+        shared.set_status(McpStatus::Running { port });
+        let _ = ready.send(Ok(()));
         tokio::select! {
             result = axum::serve(listener, app) => {
                 if let Err(error) = result && !cancel.is_cancelled() {
