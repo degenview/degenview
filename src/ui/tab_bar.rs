@@ -21,8 +21,8 @@ const MAX_TAB_WIDTH: f32 = 220.0;
 const NEW_BUTTON_WIDTH: f32 = 34.0;
 const SETTINGS_BUTTON_WIDTH: f32 = 34.0;
 const LINK_BUTTON_WIDTH: f32 = 30.0;
-/// The project's GitHub organisation and the maintainer's Buy Me a Coffee page. macOS links them
-/// from its Help menu; Windows and Linux have no menu bar, so the strip carries them.
+/// The project's GitHub organisation and the maintainer's Buy Me a Coffee page, linked from the
+/// strip's right end on every platform and, on macOS, from the Help menu too.
 pub const GITHUB_URL: &str = "https://github.com/degenview";
 pub const COFFEE_URL: &str = "https://buymeacoffee.com/nicoswd";
 const TAB_GAP: f32 = 2.0;
@@ -107,15 +107,8 @@ fn settings_button_width() -> f32 {
     }
 }
 
-/// Room the GitHub and coffee buttons take at the strip's right end, left of the window buttons:
-/// only where the strip draws those buttons, because macOS has them in its Help menu.
-fn links_width() -> f32 {
-    if window_chrome::trailing_inset() > 0.0 {
-        LINK_BUTTON_WIDTH * 2.0 + 6.0
-    } else {
-        0.0
-    }
-}
+/// Room the GitHub and coffee buttons take at the strip's right end, left of the window buttons.
+const LINKS_WIDTH: f32 = LINK_BUTTON_WIDTH * 2.0 + 6.0;
 
 /// What one frame of the strip produced.
 pub struct TabBarOutput {
@@ -206,7 +199,7 @@ impl TabBar<'_> {
         // end before them.
         let update = update_indicator::layout(ui, self.update);
         let controls_left = full.right() - window_chrome::trailing_inset();
-        let links_left = controls_left - links_width();
+        let links_left = controls_left - LINKS_WIDTH;
         let settings_left = links_left - settings_button_width();
         let strip = Rect::from_min_max(
             pos2(
@@ -337,12 +330,8 @@ impl TabBar<'_> {
 
         // Two gray links at the far right: the project on GitHub, and a coffee for its maker.
         let github = egui::Image::new(egui::include_image!("../../assets/brand/github.svg"));
-        let links: &[(&str, &str)] = if links_width() > 0.0 {
-            &[("GitHub", GITHUB_URL), ("Buy me a coffee", COFFEE_URL)]
-        } else {
-            &[]
-        };
-        for (index, &(name, url)) in links.iter().enumerate() {
+        let links = [("GitHub", GITHUB_URL), ("Buy me a coffee", COFFEE_URL)];
+        for (index, (name, url)) in links.into_iter().enumerate() {
             let rect = Rect::from_min_size(
                 pos2(
                     links_left + 3.0 + index as f32 * LINK_BUTTON_WIDTH,
