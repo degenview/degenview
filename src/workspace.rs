@@ -566,9 +566,7 @@ impl ChartWorkspace {
             .inner;
 
         if self.replay.is_bar_visible() {
-            // The bar paints its own tinted bottom line, so egui's separator would double it.
             egui::Panel::top("replay_bar")
-                .show_separator_line(false)
                 .exact_size(replay_bar::preferred_height(
                     self.replay.status,
                     ui.available_width(),
