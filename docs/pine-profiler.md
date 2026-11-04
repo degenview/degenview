@@ -21,9 +21,11 @@ is described exactly, so a number on screen has one meaning.
    click one to go to it.
 4. A profile belongs to the text, inputs, chart and bars it was made for. Edit the script and it is
    **stale**: the column goes empty (its line numbers describe other text), and the tab keeps the old
-   figures, dimmed, with a banner. Change an input, the symbol or timeframe, or let the live chart get
-   a new candle, and it is stale too, but the text is the same, so the marks stay on the column,
-   faded, and rows of the list still go to their lines. *Run again* replaces it.
+   figures, dimmed, with a banner. Change an input, the symbol, data source or timeframe, switch the
+   theme, let the live chart get a new candle, or have any candle's values change or the last one
+   close, and it is stale too, but the text is the same, so the marks stay on the column, faded, and
+   rows of the list still go to their lines. For a script that reads `chart.left_visible_bar_time` or
+   `chart.right_visible_bar_time`, panning or zooming the preview does the same. *Run again* replaces it.
 
 ## What is measured
 
@@ -119,7 +121,9 @@ script does with the candles afterwards is timed like anything else.
   index out of range) ends the profile with no data ("the script failed on bar N: …"), and the
   same error is listed in the Problems tab, counted on its badge and in the chip under the editor, and
   underlined at the failing call, exactly as the chart's own run reports it (`pine_studio::problems`).
-  Only if the profile is of the text on screen; a cancelled or timed-out run is not a failure.
+  Only if the profile is of the text on screen, on the same data and settings: a failure that
+  depended on an input or a candle may not happen after it changes, so it stops being listed. A
+  cancelled or timed-out run is not a failure.
 * **The column** beside the line numbers, present only while the profiler is on, so the text moves
   once, when it is turned on, and never when a profile arrives. Each measured line has a bar, the
   line's share of the script's time as a number, and, for the three hottest lines (if at least four
@@ -163,8 +167,13 @@ editor, so showing it there would mislabel it.
 A profile is of the script **open in the Pine Studio** on the **preview chart's** bars (up to the
 500 candles the preview holds), with the preview's inputs, symbol and timeframe: the same scope as the
 debugger. It is not the run of a script already applied to a chart, whose text, inputs and bars can be
-different. Each profile records the source text, the inputs, the symbol, timeframe, number of bars and
-the replay state it was produced for, and is stale as soon as any of them changes. The Pine Studio
+different. Each profile records what the script could see when it ran: its text, the inputs, every
+field of every candle and whether the last one had closed, the symbol, data source and timeframe, the
+theme (`chart.bg_color`), and, for a script that reads it, the visible range (also what the run is
+given, so a branch on `chart.left_visible_bar_time` runs as it does in the preview). It is stale as
+soon as any of them changes. The candle part is `ui::candles_fingerprint`, the one the chart's own
+runs use; the key is made of numbers (`ProfileKey` is `Copy`), so asking for it every frame while
+the profiler is on allocates nothing. The script text is still hashed each frame, one pass over it. The Pine Studio
 has no bar replay; there is no future to expose.
 
 ## Performance

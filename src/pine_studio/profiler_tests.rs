@@ -221,10 +221,7 @@ fn a_run_asked_for_while_the_preview_has_no_bars_starts_when_they_arrive() {
         rig.manager
             .profiler
             .profile()
-            .unwrap()
-            .key
-            .bars
-            .map(|b| b.0),
+            .map(|p| p.report.summary.bars),
         Some(45),
         "the new profile is of the bars that arrived"
     );
@@ -327,7 +324,7 @@ fn switching_scripts_drops_the_profile_of_the_first() {
         rig.manager
             .profiler
             .profile()
-            .is_none_or(|p| p.key.script_id == other),
+            .is_none_or(|p| p.key.is_script(&other)),
         "a profile is never shown for another script"
     );
 }
@@ -359,4 +356,222 @@ fn two_windows_profile_independently() {
         .measured_executions;
     assert_ne!(a_bars, b_bars);
     a.frame();
+}
+
+// MARK: What a profile is of
+
+/// A rig with a ready profile of `SOURCE` over `bars`.
+fn ready_on(tag: &str, bars: Vec<crate::model::Kline>) -> Rig {
+    let mut rig = Rig::new(tag);
+    rig.set_source(SOURCE);
+    rig.manager.preview.set_candles_for_test(bars);
+    rig.manager.cmds.push(Cmd::ProfilerToggle);
+    until(&mut rig, "a profile", |s| *s == Status::Ready);
+    rig
+}
+
+fn stale_after(rig: &mut Rig, what: &str) {
+    rig.frame();
+    assert_eq!(status(rig), Status::Stale, "{what} makes a profile stale");
+}
+
+#[test]
+fn a_changed_price_on_an_unchanged_timestamp_makes_the_profile_stale() {
+    let mut data = super::debug_tests::bars(45);
+    let mut rig = ready_on("profiler-ohlcv", data.clone());
+    data[10].close += 1.0;
+    rig.manager.preview.set_candles_for_test(data);
+    stale_after(&mut rig, "a corrected close");
+}
+
+#[test]
+fn a_changed_close_time_or_volume_makes_the_profile_stale() {
+    let mut data = super::debug_tests::bars(45);
+    let mut rig = ready_on("profiler-close-time", data.clone());
+    data[44].close_time += 1;
+    rig.manager.preview.set_candles_for_test(data.clone());
+    stale_after(&mut rig, "a later close time");
+    rig.manager.cmds.push(Cmd::ProfilerRun);
+    until(&mut rig, "a new profile", |s| *s == Status::Ready);
+    data[44].volume += 5.0;
+    rig.manager.preview.set_candles_for_test(data);
+    stale_after(&mut rig, "a changed volume");
+}
+
+#[test]
+fn a_forming_candle_that_closes_makes_the_profile_stale() {
+    let rig = Rig::new("profiler-closes");
+    let preview = &rig.manager.preview;
+    let last_close = super::debug_tests::bars(40).last().unwrap().close_time;
+    let forming = preview.run_identity("", last_close - 1, false);
+    let closed = preview.run_identity("", last_close, false);
+    assert_ne!(forming, closed);
+    assert_eq!(forming, preview.run_identity("", last_close - 2, false));
+}
+
+#[test]
+fn the_theme_the_chart_is_drawn_on_is_part_of_what_a_profile_is_of() {
+    let rig = Rig::new("profiler-theme");
+    let preview = &rig.manager.preview;
+    assert_ne!(
+        preview.run_identity("", 0, true),
+        preview.run_identity("", 0, false)
+    );
+}
+
+#[test]
+fn the_same_ticker_on_another_source_is_another_profile() {
+    use crate::model::DataSource;
+    let mut rig = ready_on("profiler-source", super::debug_tests::bars(45));
+    // The preview opens on a Binance market.
+    let other = DataSource::CoinGecko;
+    rig.manager.preview.select_source_for_test(other);
+    stale_after(&mut rig, "another data source");
+}
+
+#[test]
+fn changing_an_input_makes_the_profile_stale() {
+    use crate::pine::program::InputValue;
+    let mut rig = ready_on("profiler-input", super::debug_tests::bars(45));
+    rig.manager
+        .preview
+        .set_input_for_test("Length", InputValue::Int(7));
+    stale_after(&mut rig, "an input");
+}
+
+#[test]
+fn an_unchanged_ready_profile_stays_current_and_its_key_is_plain_data() {
+    fn copy<T: Copy>() {}
+    copy::<super::profiler::ProfileKey>();
+    let mut rig = ready_on("profiler-steady", super::debug_tests::bars(45));
+    let key = rig.manager.profiler_now;
+    for _ in 0..20 {
+        rig.frame();
+    }
+    assert_eq!(status(&rig), Status::Ready);
+    assert_eq!(rig.manager.profiler_now, key);
+}
+
+// MARK: The visible range
+
+/// Counts the bars whose open time lies between the two visible-bar-time builtins: line 5 runs
+/// once for each.
+const READS_RANGE: &str = "//@version=6
+indicator(\"Visible\")
+x = 0.0
+if time >= chart.left_visible_bar_time and time <= chart.right_visible_bar_time
+    x := close
+plot(x)
+";
+
+#[test]
+fn a_script_that_reads_the_visible_range_is_profiled_over_the_range_on_screen() {
+    let mut rig = Rig::new("profiler-range");
+    rig.set_source(READS_RANGE);
+    rig.manager
+        .preview
+        .set_candles_for_test(super::debug_tests::bars(40));
+    rig.manager.preview.set_visible_candles_for_test(12);
+    let feed = rig
+        .manager
+        .preview
+        .debug_feed(super::model::now_ms(), false)
+        .expect("a feed");
+    let (left, right) = feed.visible_range.expect("a range");
+    let inside = feed
+        .bars
+        .iter()
+        .filter(|bar| bar.open_time >= left && bar.open_time <= right)
+        .count();
+    assert!(inside < 40, "the range is not the whole series");
+    rig.manager.cmds.push(Cmd::ProfilerToggle);
+    until(&mut rig, "a profile", |s| *s == Status::Ready);
+    assert_eq!(executions(&rig, 5), inside.to_string());
+}
+
+#[test]
+fn panning_makes_only_a_script_that_reads_the_range_stale() {
+    let rig = Rig::new("profiler-pan");
+    let mut preview_rig = rig;
+    preview_rig
+        .manager
+        .preview
+        .set_candles_for_test(super::debug_tests::bars(40));
+    let before_reader = preview_rig
+        .manager
+        .preview
+        .run_identity(READS_RANGE, 0, false);
+    let before_plain = preview_rig.manager.preview.run_identity(SOURCE, 0, false);
+    preview_rig.manager.preview.set_visible_candles_for_test(8);
+    assert_ne!(
+        before_reader,
+        preview_rig
+            .manager
+            .preview
+            .run_identity(READS_RANGE, 0, false)
+    );
+    assert_eq!(
+        before_plain,
+        preview_rig.manager.preview.run_identity(SOURCE, 0, false)
+    );
+}
+
+// MARK: Failures and the data they happened on
+
+const INPUT_FAILS: &str = "//@version=6
+indicator(\"Input fails\")
+n = input.int(5, \"Length\")
+var values = array.new_float()
+x = 0.0
+if barstate.islast
+    x := array.get(values, n)
+plot(close + x)
+";
+
+#[test]
+fn a_failure_is_not_a_problem_once_an_input_or_the_data_has_changed() {
+    use crate::pine::program::InputValue;
+    let mut rig = Rig::new("profiler-failure-fresh");
+    rig.set_source(INPUT_FAILS);
+    rig.manager.cmds.push(Cmd::ProfilerToggle);
+    until(&mut rig, "the failure", |s| matches!(s, Status::Failed(_)));
+    let listed = |rig: &Rig| {
+        rig.manager
+            .profiler
+            .failure(rig.manager.profiler_now.as_ref())
+            .is_some()
+    };
+    assert!(listed(&rig), "the failure of this run is a problem");
+    rig.manager
+        .preview
+        .set_input_for_test("Length", InputValue::Int(0));
+    rig.frame();
+    assert!(!listed(&rig), "the input is not the one that failed");
+    assert!(!matches!(status(&rig), Status::Failed(_)));
+}
+
+#[test]
+fn a_new_candle_neither_cures_nor_repeats_a_refusal_but_a_new_text_does() {
+    let mut rig = Rig::new("profiler-refusal");
+    rig.set_source("//@version=6\nindicator(\"Bad\")\nx = nope(\nplot(x)\n");
+    rig.manager.cmds.push(Cmd::ProfilerToggle);
+    until(&mut rig, "a refusal", |s| matches!(s, Status::Failed(_)));
+    rig.manager.preview.set_candles_for_test({
+        let mut data = super::debug_tests::bars(40);
+        data[39].close += 3.0;
+        data
+    });
+    rig.frame();
+    assert!(
+        matches!(status(&rig), Status::Failed(_)),
+        "still the same refusal, about the same text"
+    );
+    assert!(
+        !rig.manager.profiler.wants_start(),
+        "and not asked again for a candle"
+    );
+    rig.set_source(SOURCE);
+    until(&mut rig, "a profile of the fixed script", |s| {
+        *s == Status::Ready
+    });
 }

@@ -30,14 +30,12 @@ impl PineStudio {
     /// What a profile of the open script would have to be of to be current, now.
     fn profiler_key(&self) -> Option<ProfileKey> {
         let open = self.open.as_ref()?;
-        let context = self.preview.run_context();
-        Some(ProfileKey::new(
-            &open.id,
+        let run = self.preview.run_identity(
             &open.editor.source,
-            context.inputs,
-            &context.chart,
-            context.bars,
-        ))
+            super::model::now_ms(),
+            theme::is_light(),
+        );
+        Some(ProfileKey::new(&open.id, &open.editor.source, run))
     }
 
     /// Once a frame, before anything is drawn: the key is brought up to date (only while the
@@ -122,6 +120,7 @@ impl PineStudio {
         };
         let mut config = ProfileConfig::new(source.clone(), feed.symbol, feed.bars, feed.now_ms);
         config.inputs = feed.inputs;
+        config.visible_range = feed.visible_range;
         config.theme = Some(feed.theme);
         config.libraries = Box::new(LibraryRegistry);
         config.security_data = Some(Box::new(crate::host::pine_host::KlineSecurityDataProvider));

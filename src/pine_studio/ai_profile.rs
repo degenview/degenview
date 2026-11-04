@@ -71,6 +71,7 @@ impl ProfileTool {
             feed.now_ms,
         );
         config.inputs = feed.inputs.clone();
+        config.visible_range = feed.visible_range;
         config.theme = Some(feed.theme);
         config.libraries = Box::new(LibraryRegistry);
         config.security_data = Some(Box::new(KlineSecurityDataProvider));
@@ -289,6 +290,7 @@ mod tests {
             bars: data,
             symbol: SymbolInfo::default(),
             inputs: HashMap::new(),
+            visible_range: None,
             theme: ChartTheme::DARK,
             label: "TEST \u{b7} 1m".to_owned(),
         }
