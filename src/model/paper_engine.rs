@@ -807,15 +807,9 @@ impl PaperTradingEngine {
             return;
         }
         let group = self.mint();
-        let exit_side = if parent.side == PaperOrderSide::Buy {
-            PaperOrderSide::Sell
-        } else {
-            PaperOrderSide::Buy
-        };
         if let Some(price) = take_profit {
             self.append_bracket_child(
                 parent,
-                exit_side,
                 group,
                 PaperOrderType::Limit,
                 price,
@@ -826,7 +820,6 @@ impl PaperTradingEngine {
         if let Some(price) = stop_loss {
             self.append_bracket_child(
                 parent,
-                exit_side,
                 group,
                 PaperOrderType::Stop,
                 price,
@@ -839,13 +832,17 @@ impl PaperTradingEngine {
     fn append_bracket_child(
         &mut self,
         parent: &PaperOrder,
-        side: PaperOrderSide,
         group: u64,
         kind: PaperOrderType,
         price: f64,
         role: PaperOrderRole,
         quantity: f64,
     ) {
+        let side = if parent.side == PaperOrderSide::Buy {
+            PaperOrderSide::Sell
+        } else {
+            PaperOrderSide::Buy
+        };
         let child = PaperOrder {
             id: self.mint(),
             account_id: parent.account_id,
