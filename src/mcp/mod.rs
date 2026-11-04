@@ -22,6 +22,7 @@ pub mod pine;
 pub mod portfolio;
 pub mod portfolio_tools;
 pub mod replay_tools;
+pub mod snapshot_tools;
 pub mod state;
 pub mod tools;
 pub mod transport;

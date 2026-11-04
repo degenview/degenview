@@ -22,6 +22,7 @@ pub enum Permission {
     ChartsViewWrite,
     ChartsDelete,
     ChartsReplayWrite,
+    ChartsSnapshotRead,
     DrawingsRead,
     DrawingsWrite,
     DrawingsDelete,
@@ -62,7 +63,7 @@ impl Permission {
         "Portfolio",
     ];
 
-    pub const ALL: [Permission; 34] = [
+    pub const ALL: [Permission; 35] = [
         Permission::ChartsRead,
         Permission::ChartsCreate,
         Permission::ChartsIndicatorsWrite,
@@ -71,6 +72,7 @@ impl Permission {
         Permission::ChartsViewWrite,
         Permission::ChartsDelete,
         Permission::ChartsReplayWrite,
+        Permission::ChartsSnapshotRead,
         Permission::DrawingsRead,
         Permission::DrawingsWrite,
         Permission::DrawingsDelete,
@@ -110,6 +112,7 @@ impl Permission {
             Self::ChartsViewWrite => "charts.view.write",
             Self::ChartsDelete => "charts.delete",
             Self::ChartsReplayWrite => "charts.replay.write",
+            Self::ChartsSnapshotRead => "charts.snapshot.read",
             Self::DrawingsRead => "drawings.read",
             Self::DrawingsWrite => "drawings.write",
             Self::DrawingsDelete => "drawings.delete",
@@ -155,6 +158,7 @@ impl Permission {
             Self::ChartsViewWrite => "Change timeframe and chart type",
             Self::ChartsDelete => "Remove charts",
             Self::ChartsReplayWrite => "Control chart replay",
+            Self::ChartsSnapshotRead => "Take chart pictures",
             Self::DrawingsRead => "Read chart drawings",
             Self::DrawingsWrite => "Draw on charts and edit drawings",
             Self::DrawingsDelete => "Delete chart drawings",
@@ -203,6 +207,9 @@ impl Permission {
             }
             Self::ChartsDelete => {
                 "Remove a chart from a workspace, together with the drawings on it."
+            }
+            Self::ChartsSnapshotRead => {
+                "Take a picture (PNG) of a chart as it is drawn: candles, indicators, scripts and drawings, and orders and positions only if Settings includes them in snapshots. Nothing is saved or shared."
             }
             Self::ChartsReplayWrite => {
                 "Start, step, seek and stop a workspace's replay. While it runs every chart in the workspace shows the past, and the candle tools read it."
@@ -260,7 +267,8 @@ impl Permission {
             | Self::ChartsCandlesRead
             | Self::ChartsViewWrite
             | Self::ChartsDelete
-            | Self::ChartsReplayWrite => "Charts",
+            | Self::ChartsReplayWrite
+            | Self::ChartsSnapshotRead => "Charts",
             Self::DrawingsRead | Self::DrawingsWrite | Self::DrawingsDelete => "Drawings",
             Self::AlertsRead
             | Self::AlertsCreate
@@ -291,6 +299,7 @@ impl Permission {
         match self {
             Self::ChartsRead
             | Self::ChartsCandlesRead
+            | Self::ChartsSnapshotRead
             | Self::DrawingsRead
             | Self::AlertsRead
             | Self::PineScriptsList

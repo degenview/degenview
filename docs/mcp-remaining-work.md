@@ -25,6 +25,7 @@ next. Nothing here is started.
 | 15 | Replay: read the workspace's replay and start, step, seek, play, pause, set speed and stop it | `charts.read`, `charts.replay.write` |
 | 16 | Paper trading writes: place (dry run, request id), modify, cancel, close positions; never on an account another Mac runs | `paper.orders.place`, `paper.orders.cancel`, `paper.positions.close` |
 | 17 | More drawing tools: rays, extended lines, arrows, Fibonacci retracement, horizontal / vertical lines, crosslines, text | `drawings.write` |
+| 18 | Chart snapshot: a PNG of a chart as the camera draws it, returned as an image | `charts.snapshot.read` |
 
 ## 0. What a trader still cannot do over MCP
 
@@ -38,7 +39,7 @@ Ranked by how soon someone would ask. Not started unless listed under "Done so f
 - Paper trading: reverse a position, close at a limit, edit an account's settings, create or reset
   accounts. Orders and closes are done, behind three off-by-default permissions; the confirmation
   policy (item 3) is still to come. No real-broker order tool: Alpaca is data only.
-- Portfolio: cross-currency totals (needs the FX service the Portfolio tab uses), value history and statistics; a chart snapshot image.
+- Portfolio: cross-currency totals (needs the FX service the Portfolio tab uses), value history and statistics. Snapshots: hosted sharing (copy link, tweet) is not exposed and will not be.
 - Drawing tools beyond the eleven (item 4b); swing, support/resistance and
   volatility helpers; older history for `get_market_candles` (needs a time-range fetch).
 - Watchlist sorting, columns, collapsed sections and flags (not exposed), and trending symbols.

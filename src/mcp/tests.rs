@@ -44,6 +44,8 @@ struct Stub {
     portfolio: StubPortfolio,
     /// The replay clock over the stub chart's thirty bars.
     replay: Mutex<crate::model::ReplayEngine>,
+    /// Polls seen per picture job: the first answers `pending`, the next the picture.
+    snapshot_polls: Mutex<std::collections::HashMap<u64, u32>>,
 }
 
 /// The paper-trading host the stub app serves: the real host over an in-memory database.
@@ -92,6 +94,9 @@ impl Default for StubWatchlists {
         )))
     }
 }
+
+/// The picture the stub hands out: the eight-byte PNG signature and a few bytes after it.
+const STUB_PNG: &[u8] = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDRstub";
 
 /// 2025-10-20T00:00:00Z.
 const T0: i64 = 1_760_918_400_000;
@@ -323,6 +328,46 @@ fn stub_app(
             active: true,
             timeframe: "1D".into(),
         }])),
+        McpCommand::BeginSnapshot {
+            workspace_id,
+            chart_id,
+            scale,
+        } => {
+            stub_chart_known(workspace_id, chart_id)?;
+            stub.draw_calls
+                .lock()
+                .unwrap()
+                .push(format!("snapshot:{scale:?}"));
+            let factor = scale.factor() as u32;
+            stub.snapshot_polls.lock().unwrap().insert(7, 0);
+            Ok(McpReply::SnapshotStarted(
+                crate::mcp::snapshot_tools::SnapshotStarted {
+                    job_id: 7,
+                    width: 640 * factor,
+                    height: 400 * factor,
+                },
+            ))
+        }
+        McpCommand::PollSnapshot { job_id } => {
+            let mut polls = stub.snapshot_polls.lock().unwrap();
+            let Some(seen) = polls.get_mut(&job_id) else {
+                return Err(McpError::NotFound("No such picture job".into()));
+            };
+            *seen += 1;
+            if *seen < 2 {
+                return Ok(McpReply::SnapshotProgress(
+                    crate::mcp::snapshot_tools::SnapshotProgress::Pending,
+                ));
+            }
+            polls.remove(&job_id);
+            Ok(McpReply::SnapshotProgress(
+                crate::mcp::snapshot_tools::SnapshotProgress::Ready {
+                    png: Arc::new(STUB_PNG.to_vec()),
+                    width: 640,
+                    height: 400,
+                },
+            ))
+        }
         McpCommand::GetReplay { workspace_id } => {
             if workspace_id != 1 {
                 return Err(McpError::NotFound("No such workspace".into()));
@@ -3555,3 +3600,4 @@ mod market_tests;
 mod paper_tests;
 mod portfolio_tests;
 mod replay_tests;
+mod snapshot_tests;

@@ -24,7 +24,7 @@ client → 127.0.0.1:<port>/mcp → bearer/Host/Origin/size checks
   Undecodable MCP settings/clients keep the server off without rewriting data.
 - Protocol support is rmcp 3.5 / MCP `2025-03-26` through `2026-07-28`, stateless JSON.
 
-Permissions separate reads and mutations: charts read/create/indicator-write/Pine-instance-write/candles-read/view-write/delete/replay-write; drawings read/write/delete; alerts
+Permissions separate reads and mutations: charts read/create/indicator-write/Pine-instance-write/candles-read/snapshot-read/view-write/delete/replay-write; drawings read/write/delete; alerts
 read/create/edit/pause/delete; Pine script list/read/write/save plus diagnostics, inputs, styles,
 reports, and alert reads; markets read (symbol search and quotes); watchlists read/write/delete; paper-trading read, place/change, cancel and close; portfolio read.
 Delete and saved-source writes require their own grants.
@@ -33,7 +33,7 @@ Delete and saved-source writes require their own grants.
 
 | Area | Tools (`degenview_…`) |
 | --- | --- |
-| Charts | `list_workspaces`, `list_charts`, `add_chart`, `list_indicators`, `add_indicator`, `remove_indicator`, `set_timeframe`, `set_chart_type`, `remove_chart`, `get_replay`, `control_replay` |
+| Charts | `list_workspaces`, `list_charts`, `add_chart`, `list_indicators`, `add_indicator`, `remove_indicator`, `set_timeframe`, `set_chart_type`, `remove_chart`, `get_replay`, `control_replay`, `get_chart_snapshot` |
 | Price alerts | `list_price_alerts`, `create_price_alert`, `update_price_alert`, `pause_price_alert`, `resume_price_alert`, `delete_price_alert` |
 | Pine scripts | `list_pine_scripts`, `get_pine_script`, `update_pine_script`, `save_pine_script`, `compile_pine_script`, `get_pine_inputs` |
 | Candles and drawings | `get_candles`, `get_indicator_values`, `list_drawings`, `add_drawings`, `update_drawing`, `delete_drawings` |
@@ -125,6 +125,19 @@ Delete and saved-source writes require their own grants.
   chart's drawings go with it; it has its own permission (`charts.delete`) and is refused for a
   portfolio card. The first two need `charts.view.write`. All three answer `unchanged` where they can,
   so a retry is harmless (not `remove_chart`: the second call is `NOT_FOUND`).
+- `get_chart_snapshot` (`mcp::snapshot_tools`, `charts.snapshot.read`) returns the chart as the app's
+  camera would draw it, as an MCP image block (PNG, base64) plus a text block with its size. It is the
+  same renderer (`ChartCard::snapshot_scene`, frozen on the UI thread in one frame by
+  `ChartWorkspace::capture_scene`, then rasterized and encoded on the snapshot worker), so it holds
+  what the chart shows and the camera menu would save: replay cut-off, indicators, scripts, drawings,
+  alert lines, and orders and positions **only if** Settings includes them in snapshots (the same
+  privacy choice; the tool does not override it). Nothing is saved, copied or uploaded and no notice
+  is shown. The bridge never waits on a frame: `BeginSnapshot` starts a job (`SnapshotJobs`, at most
+  four, forgotten after 120 s unless collected) and the tool polls `PollSnapshot` every 100 ms for up
+  to 45 s. Default 1x (smaller to send), 2x on request; a chart too large for the scale is drawn
+  smaller. The chart must have been drawn on screen once, so a window that has never shown it has no
+  size and answers `CONFLICT`. Base64 is a small local encoder (`snapshot_tools::base64`, tested against
+  the RFC 4648 vectors) so no dependency is added.
 - Replay (`mcp::replay_tools`) drives the workspace's one `ReplayEngine`, the clock behind the
   replay bar, through `ChartWorkspace::replay_command` (`start` on a chart's bars, then
   `model::ClockCommand`s: play, pause, step, restart, seek by time, speed, stop). Replay is

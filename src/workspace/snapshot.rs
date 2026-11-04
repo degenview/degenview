@@ -15,11 +15,15 @@ use crate::model::snapshot::{
     self, SnapshotAction, SnapshotDimensions, SnapshotHost as HostAddress, SnapshotRequest,
 };
 use crate::service::snapshot_job::{self, Outcome, Retry, SystemBackend};
+use crate::service::snapshot_raster;
 use crate::service::{keychain_snapshot_token, timezone, work_queue};
 use crate::ui::SnapshotInput;
 use crate::ui::icons::Icon;
 use crate::ui::kit;
 use eframe::egui::{Context, Id};
+
+/// The PNG of a picture made for an agent, or why it could not be made.
+pub type PngReceiver = Receiver<Result<Vec<u8>, String>>;
 
 /// A snapshot being made on a worker.
 struct Running {
@@ -124,20 +128,18 @@ impl ChartWorkspace {
         }
     }
 
-    fn start_snapshot(
-        &mut self,
+    /// Freezes chart `chart_id` into a scene, at the scale `options` asks for (smaller if the
+    /// chart is too large for it), from the very data the chart on screen is drawn from. Runs on
+    /// the UI thread and reads, never changes, the workspace.
+    fn capture_scene(
+        &self,
         ctx: &Context,
-        request: SnapshotRequest,
-        host: Option<HostAddress>,
-    ) {
-        let SnapshotRequest {
-            chart_id,
-            action,
-            options,
-        } = request;
-        let Some(index) = self.chart_index(chart_id) else {
-            return;
-        };
+        chart_id: u64,
+        options: snapshot::SnapshotOptions,
+    ) -> Result<(snapshot_raster::Scene, SnapshotDimensions), String> {
+        let index = self
+            .chart_index(chart_id)
+            .ok_or_else(|| "There is no such chart.".to_owned())?;
         let replay_ms = if self.replay.is_active() {
             self.replay.current_ms()
         } else {
@@ -145,10 +147,8 @@ impl ChartWorkspace {
         };
         let chart = &self.charts[index];
         let size = chart.chart.snapshot_size();
-        let Some(dimensions) = SnapshotDimensions::fit(size.x, size.y, options.scale) else {
-            self.say("There is no chart to take a picture of yet.", true);
-            return;
-        };
+        let dimensions = SnapshotDimensions::fit(size.x, size.y, options.scale)
+            .ok_or_else(|| "There is no chart to take a picture of yet.".to_owned())?;
         let open_notes = chart.chart.open_notes();
         let images = snapshot_images(ctx, &chart.drawings);
         let input = SnapshotInput {
@@ -164,16 +164,72 @@ impl ChartWorkspace {
             replay_active: replay_ms.is_some(),
             include_trading: options.include_trading,
         };
-        let scene = match chart
+        chart
             .chart
             .snapshot_scene(&input, dimensions, ui::theme::surface())
+            .map(|scene| (scene, dimensions))
+            .map_err(|error| error.message().to_owned())
+    }
+
+    /// Starts a picture of chart `chart_id` for an agent: the scene is frozen now, on the UI
+    /// thread, and the rasterizing and PNG run on the snapshot worker. The PNG comes back through
+    /// the receiver; nothing is saved, copied or uploaded, and no notice is shown. It is drawn
+    /// as the Settings say (orders and positions only if the user included them) at `scale`.
+    pub fn snapshot_png_for_mcp(
+        &self,
+        ctx: &Context,
+        chart_id: u64,
+        scale: snapshot::SnapshotScale,
+    ) -> Result<(PngReceiver, SnapshotDimensions), String> {
+        if !self
+            .chart_index(chart_id)
+            .is_some_and(|index| self.charts[index].is_market())
         {
-            Ok(scene) => scene,
-            Err(error) => {
-                self.say(error.message(), true);
+            return Err("There is no such market chart.".to_owned());
+        }
+        let options = snapshot::SnapshotOptions {
+            scale,
+            ..self.snapshot_prefs().options()
+        };
+        let (scene, dimensions) = self.capture_scene(ctx, chart_id, options)?;
+        let (sender, receiver) = mpsc::channel();
+        work_queue::SNAPSHOTS.submit(move || {
+            let png = snapshot_raster::rasterize(&scene)
+                .map_err(|_| "Could not draw the image.".to_owned())
+                .and_then(|image| {
+                    crate::service::snapshot_export::encode_png(&image)
+                        .map_err(|error| error.message().to_owned())
+                });
+            let _ = sender.send(png);
+        });
+        Ok((receiver, dimensions))
+    }
+
+    fn start_snapshot(
+        &mut self,
+        ctx: &Context,
+        request: SnapshotRequest,
+        host: Option<HostAddress>,
+    ) {
+        let SnapshotRequest {
+            chart_id,
+            action,
+            options,
+        } = request;
+        let (scene, _) = match self.capture_scene(ctx, chart_id, options) {
+            Ok(captured) => captured,
+            Err(message) => {
+                // An unknown chart was always silent; the rest is worth saying.
+                if self.chart_index(chart_id).is_some() {
+                    self.say(message, true);
+                }
                 return;
             }
         };
+        let Some(index) = self.chart_index(chart_id) else {
+            return;
+        };
+        let chart = &self.charts[index];
         let timeframe = self.timeframe.label().to_owned();
         let title = chart.display_title();
         let now = now_ms();
@@ -879,6 +935,43 @@ mod tests {
         assert_eq!(
             (rig.workspace.focused, rig.workspace.hide_all_drawings),
             (focused, hidden)
+        );
+    }
+
+    #[test]
+    fn a_png_for_an_agent_is_a_real_picture_made_without_any_effect_on_the_window() {
+        use crate::model::snapshot::SnapshotScale;
+        let rig = rig();
+        let png_of = |scale| {
+            let (receiver, dimensions) = rig
+                .workspace
+                .snapshot_png_for_mcp(&rig.ctx, rig.chart_id, scale)
+                .expect("the chart can be pictured");
+            let png = receiver
+                .recv_timeout(Duration::from_secs(60))
+                .expect("the worker answers")
+                .expect("a picture");
+            (png, dimensions)
+        };
+        let (small, small_size) = png_of(SnapshotScale::X1);
+        let (large, large_size) = png_of(SnapshotScale::X2);
+        assert_eq!(&small[..8], b"\x89PNG\r\n\x1a\n");
+        assert_eq!((small_size.width, small_size.height), (640, 400));
+        assert_eq!((large_size.width, large_size.height), (1280, 800));
+        assert!(large.len() > small.len(), "a larger picture holds more");
+        // IHDR says the same size as the dimensions.
+        let width = u32::from_be_bytes(small[16..20].try_into().unwrap());
+        let height = u32::from_be_bytes(small[20..24].try_into().unwrap());
+        assert_eq!((width, height), (640, 400));
+        // Nothing is shown, saved, copied or left running.
+        assert_eq!(rig.notice(), None);
+        assert!(!rig.workspace.snapshot_busy());
+        assert!(rig.fake.written.lock().unwrap().is_empty());
+        // An unknown chart, and a chart that has not been drawn yet, say why instead.
+        assert!(
+            rig.workspace
+                .snapshot_png_for_mcp(&rig.ctx, 999, SnapshotScale::X1)
+                .is_err()
         );
     }
 }

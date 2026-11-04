@@ -207,6 +207,16 @@ pub enum McpCommand {
         offset: usize,
         limit: usize,
     },
+    /// Starts a picture of a chart; the answer says which job to ask about.
+    BeginSnapshot {
+        workspace_id: u64,
+        chart_id: u64,
+        scale: crate::model::snapshot::SnapshotScale,
+    },
+    /// Whether the picture a job is making is ready, and takes it if so.
+    PollSnapshot {
+        job_id: u64,
+    },
     GetReplay {
         workspace_id: u64,
     },
@@ -295,6 +305,8 @@ pub enum McpReply {
     Portfolios(crate::mcp::portfolio::PortfoliosResult),
     PortfolioHoldings(Box<crate::mcp::portfolio::HoldingsBase>),
     PortfolioTransactions(Box<crate::mcp::portfolio::TransactionsResult>),
+    SnapshotStarted(crate::mcp::snapshot_tools::SnapshotStarted),
+    SnapshotProgress(crate::mcp::snapshot_tools::SnapshotProgress),
     Replay(crate::mcp::replay_tools::ReplayResult),
     Watchlists(crate::mcp::markets::WatchlistsResult),
     Watchlist(Box<crate::mcp::markets::WatchlistPage>),

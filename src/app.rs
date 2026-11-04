@@ -311,6 +311,8 @@ pub struct DegenViewApp {
     paper: Arc<Mutex<PaperHost>>,
     /// Orders placed over MCP by `request_id`, so a retried call places nothing twice.
     mcp_orders: Mutex<mcp_host::OrderMemory>,
+    /// Chart pictures being made for MCP clients.
+    mcp_snapshots: Mutex<mcp_host::SnapshotJobs>,
     webhook_host: Arc<Mutex<WebhookHost>>,
     /// What the user chose about chart snapshots, shared by every window and Settings.
     snapshots: SnapshotHost,
@@ -413,6 +415,10 @@ fn commit_price_alert_checked(
 
 fn alerts_unavailable() -> McpError {
     McpError::AppUnavailable("Price alerts are unavailable right now".into())
+}
+
+fn snapshot_unavailable() -> McpError {
+    McpError::AppUnavailable("Chart pictures are unavailable right now".into())
 }
 
 fn portfolio_unavailable() -> McpError {
@@ -996,6 +1002,7 @@ impl DegenViewApp {
             portfolio,
             paper,
             mcp_orders: Mutex::new(mcp_host::OrderMemory::default()),
+            mcp_snapshots: Mutex::new(mcp_host::SnapshotJobs::default()),
             webhook_host,
             snapshots,
             editor_themes,
@@ -1986,6 +1993,27 @@ impl DegenViewApp {
                 mcp_host::remove_chart(workspace, chart_id)
                     .map(|result| McpReply::ChartChanged(Box::new(result)))
             }),
+            McpCommand::BeginSnapshot {
+                workspace_id,
+                chart_id,
+                scale,
+            } => {
+                let mut jobs = self
+                    .mcp_snapshots
+                    .lock()
+                    .map_err(|_| snapshot_unavailable())?;
+                let started = self.with_mcp_workspace(workspace_id, |workspace| {
+                    jobs.begin(workspace, chart_id, scale, ctx)
+                })?;
+                Ok(McpReply::SnapshotStarted(started))
+            }
+            McpCommand::PollSnapshot { job_id } => {
+                let mut jobs = self
+                    .mcp_snapshots
+                    .lock()
+                    .map_err(|_| snapshot_unavailable())?;
+                jobs.poll(job_id).map(McpReply::SnapshotProgress)
+            }
             McpCommand::GetReplay { workspace_id } => self
                 .with_mcp_workspace(workspace_id, |workspace| {
                     Ok(McpReply::Replay(mcp_host::replay_state(workspace)))
