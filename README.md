@@ -8,7 +8,7 @@ CoinMarketCap market-wide indices in customizable charts.
 Its headline feature is a **local Pine Script v6 engine** — write TradingView-style scripts,
 run them on your own machine, keep every line of source on your device.
 
-![DegenView showing four linked candlestick charts with indicators and a watchlist](assets/screenshots/screenshot.png)
+![DegenView showing a candlestick chart with indicators and a watchlist](assets/screenshots/screenshot.png)
 
 ## Features
 
