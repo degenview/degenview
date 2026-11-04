@@ -316,6 +316,19 @@ impl PaperHost {
             .map(|order| order.account_id)
     }
 
+    /// Whether `request` would be accepted right now, decided on a throwaway copy: nothing is
+    /// saved, no order is recorded (not even a refused one) and no account changes hands.
+    pub fn check_order(&self, request: PaperOrderRequest) -> Result<(), PaperHostError> {
+        if let Some(error) = &self.load_error {
+            return Err(error.clone());
+        }
+        let mut candidate = PaperTradingEngine::new(self.engine.snapshot().clone());
+        candidate
+            .submit(request)
+            .map(|_| ())
+            .map_err(PaperHostError::Engine)
+    }
+
     pub fn cancel(&mut self, order_id: u64) -> Result<(), PaperHostError> {
         let account = self.account_of_order(order_id);
         self.apply_for(account, |engine| engine.cancel(order_id))

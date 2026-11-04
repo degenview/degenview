@@ -6,7 +6,7 @@
 //! Persist first, then publish: a write that fails changes nothing the server can see.
 
 use crate::host::alert_host::AlertHost;
-use crate::host::paper_host::{PaperHost, owner_text};
+use crate::host::paper_host::{PaperHost, PaperHostError, owner_text};
 use crate::host::portfolio_host::PortfolioHost;
 use crate::mcp::McpServer;
 use crate::mcp::auth::{generate_token, verifier_hex};
@@ -21,8 +21,8 @@ use crate::mcp::indicator_values::{
 };
 use crate::mcp::markets::{self, WatchlistChangeResult, WatchlistPage, WatchlistsResult};
 use crate::mcp::paper::{
-    self, PaperAccountDetail, PaperAccountInfo, PaperAccountsResult, PaperFillsResult,
-    PaperTradesResult,
+    self, PaperAccountDetail, PaperAccountInfo, PaperAccountsResult, PaperChangeResult,
+    PaperFillsResult, PaperOrderResult, PaperTradesResult,
 };
 use crate::mcp::pine::{InputArgs, ScriptToApply};
 use crate::mcp::portfolio::{
@@ -1805,6 +1805,253 @@ pub fn paper_trades(
         .filter(|trade| trade.account_id == account_id)
         .collect();
     Ok(paper::trades_result(account_id, &trades, offset, limit))
+}
+
+// MARK: Paper trading writes (run on the app thread)
+
+/// Placed orders by `request_id`, so a retry of a call that timed out does not place a second
+/// order. Held in memory only and bounded: it is a guard against an agent's retry, not a ledger.
+#[derive(Default)]
+pub struct OrderMemory {
+    entries: std::collections::VecDeque<(String, u64)>,
+}
+
+impl OrderMemory {
+    const CAPACITY: usize = 512;
+
+    fn key(account_id: u64, request_id: &str) -> String {
+        format!("{account_id}:{request_id}")
+    }
+
+    pub fn recall(&self, account_id: u64, request_id: &str) -> Option<u64> {
+        let key = Self::key(account_id, request_id);
+        self.entries
+            .iter()
+            .find(|(known, _)| *known == key)
+            .map(|(_, order_id)| *order_id)
+    }
+
+    pub fn remember(&mut self, account_id: u64, request_id: &str, order_id: u64) {
+        if self.entries.len() >= Self::CAPACITY {
+            self.entries.pop_front();
+        }
+        self.entries
+            .push_back((Self::key(account_id, request_id), order_id));
+    }
+}
+
+fn paper_error(error: PaperHostError) -> McpError {
+    use crate::model::paper::PaperTradingError as E;
+    let message = error.message();
+    match error {
+        PaperHostError::Engine(E::AccountNotFound | E::OrderNotFound) => {
+            McpError::NotFound(message)
+        }
+        PaperHostError::Engine(
+            E::InvalidQuantity(_) | E::InvalidPrice(_) | E::UnsupportedSymbol,
+        ) => McpError::InvalidArgument(message),
+        PaperHostError::Engine(_) => McpError::Conflict(message),
+        _ => McpError::AppUnavailable(message),
+    }
+}
+
+/// An account this Mac runs. One another Mac runs is not touched: acting on it from the GUI takes
+/// it over, which an agent must not do silently.
+fn tradable_account(host: &PaperHost, account_id: u64) -> Result<(), McpError> {
+    paper_account(host, account_id)?;
+    if let Some(elsewhere) = host.owned_elsewhere(account_id) {
+        return Err(McpError::Conflict(format!(
+            "{} Change it in DegenView to take it over; it is not changed over MCP.",
+            owner_text(elsewhere)
+        )));
+    }
+    Ok(())
+}
+
+fn account_after(host: &PaperHost, account_id: u64) -> Result<PaperAccountInfo, McpError> {
+    paper_account(host, account_id).map(|account| paper_account_info(host, account))
+}
+
+fn fills_of(host: &PaperHost, order_ids: &[u64]) -> Vec<paper::PaperFillInfo> {
+    host.snapshot()
+        .fills
+        .iter()
+        .filter(|fill| order_ids.contains(&fill.order_id))
+        .map(paper::fill_info)
+        .collect()
+}
+
+fn orders_of(host: &PaperHost, order_ids: &[u64]) -> Vec<paper::PaperOrderInfo> {
+    order_ids
+        .iter()
+        .filter_map(|id| host.snapshot().orders.iter().find(|order| order.id == *id))
+        .map(paper::order_info)
+        .collect()
+}
+
+pub fn place_paper_order(
+    host: &mut PaperHost,
+    memory: &mut OrderMemory,
+    request: crate::model::paper::PaperOrderRequest,
+    dry_run: bool,
+    request_id: Option<&str>,
+) -> Result<PaperOrderResult, McpError> {
+    let account_id = request.account_id;
+    tradable_account(host, account_id)?;
+    if let Some(order_id) = request_id.and_then(|id| memory.recall(account_id, id)) {
+        let ids = [order_id];
+        if let Some(order) = orders_of(host, &ids).into_iter().next() {
+            return Ok(PaperOrderResult {
+                status: "already_placed".into(),
+                order: Some(order),
+                bracket_orders: bracket_of(host, order_id),
+                fills: fills_of(host, &ids),
+                account: account_after(host, account_id)?,
+            });
+        }
+    }
+    if dry_run {
+        host.check_order(request).map_err(paper_error)?;
+        return Ok(PaperOrderResult {
+            status: "would_place".into(),
+            order: None,
+            bracket_orders: Vec::new(),
+            fills: Vec::new(),
+            account: account_after(host, account_id)?,
+        });
+    }
+    let order_id = host.submit(request).map_err(paper_error)?;
+    if let Some(request_id) = request_id {
+        memory.remember(account_id, request_id, order_id);
+    }
+    Ok(PaperOrderResult {
+        status: "placed".into(),
+        order: orders_of(host, &[order_id]).into_iter().next(),
+        bracket_orders: bracket_of(host, order_id),
+        fills: fills_of(host, &[order_id]),
+        account: account_after(host, account_id)?,
+    })
+}
+
+/// The exit orders of a bracket, which are children of its entry order.
+fn bracket_of(host: &PaperHost, entry_id: u64) -> Vec<paper::PaperOrderInfo> {
+    host.snapshot()
+        .orders
+        .iter()
+        .filter(|order| order.parent_order_id == Some(entry_id))
+        .map(paper::order_info)
+        .collect()
+}
+
+pub fn modify_paper_order(
+    host: &mut PaperHost,
+    order_id: u64,
+    changes: crate::model::paper::PaperOrderChanges,
+) -> Result<PaperChangeResult, McpError> {
+    let account_id = host
+        .snapshot()
+        .orders
+        .iter()
+        .find(|order| order.id == order_id)
+        .map(|order| order.account_id)
+        .ok_or_else(|| McpError::NotFound("No such paper order".into()))?;
+    tradable_account(host, account_id)?;
+    host.modify(order_id, changes).map_err(paper_error)?;
+    Ok(PaperChangeResult {
+        status: "modified".into(),
+        orders: orders_of(host, &[order_id]),
+        fills: fills_of(host, &[order_id]),
+        failures: Vec::new(),
+        account: account_after(host, account_id)?,
+    })
+}
+
+pub fn cancel_paper_orders(
+    host: &mut PaperHost,
+    account_id: u64,
+    order_ids: Option<&[u64]>,
+) -> Result<PaperChangeResult, McpError> {
+    tradable_account(host, account_id)?;
+    let working: Vec<u64> = host
+        .snapshot()
+        .orders
+        .iter()
+        .filter(|order| order.account_id == account_id && order.status.is_working())
+        .map(|order| order.id)
+        .collect();
+    let targets: Vec<u64> = match order_ids {
+        None => working.clone(),
+        Some(ids) => ids.to_vec(),
+    };
+    let (mut done, mut failures) = (Vec::new(), Vec::new());
+    for id in &targets {
+        // Naming an order of another account is refused, not cancelled.
+        let belongs = host
+            .snapshot()
+            .orders
+            .iter()
+            .any(|order| order.id == *id && order.account_id == account_id);
+        if !belongs {
+            failures.push(format!("Order {id}: not an order of this account"));
+            continue;
+        }
+        match host.cancel(*id) {
+            Ok(()) => done.push(*id),
+            Err(error) => failures.push(format!("Order {id}: {}", error.message())),
+        }
+    }
+    Ok(PaperChangeResult {
+        status: if done.is_empty() && failures.is_empty() {
+            "nothing_to_do"
+        } else {
+            "canceled"
+        }
+        .into(),
+        orders: orders_of(host, &done),
+        fills: Vec::new(),
+        failures,
+        account: account_after(host, account_id)?,
+    })
+}
+
+pub fn close_paper_positions(
+    host: &mut PaperHost,
+    account_id: u64,
+    instrument_key: Option<&str>,
+) -> Result<PaperChangeResult, McpError> {
+    tradable_account(host, account_id)?;
+    let keys: Vec<String> = host
+        .snapshot()
+        .positions
+        .iter()
+        .filter(|position| position.account_id == account_id && position.signed_quantity != 0.0)
+        .map(|position| position.instrument.key.clone())
+        .filter(|key| instrument_key.is_none_or(|wanted| wanted == key))
+        .collect();
+    if keys.is_empty() && instrument_key.is_some() {
+        return Err(McpError::NotFound(
+            "That account has no open position in that market".into(),
+        ));
+    }
+    let (mut order_ids, mut failures) = (Vec::new(), Vec::new());
+    for key in &keys {
+        match host.close_position(account_id, key) {
+            Ok(order_id) => order_ids.push(order_id),
+            Err(error) => failures.push(format!("{key}: {}", error.message())),
+        }
+    }
+    Ok(PaperChangeResult {
+        status: if keys.is_empty() {
+            "nothing_to_do"
+        } else {
+            "closed"
+        }
+        .into(),
+        orders: orders_of(host, &order_ids),
+        fills: fills_of(host, &order_ids),
+        failures,
+        account: account_after(host, account_id)?,
+    })
 }
 
 // MARK: Portfolio (run on the app thread, read-only)

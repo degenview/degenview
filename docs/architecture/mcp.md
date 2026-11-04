@@ -26,7 +26,7 @@ client → 127.0.0.1:<port>/mcp → bearer/Host/Origin/size checks
 
 Permissions separate reads and mutations: charts read/create/indicator-write/Pine-instance-write/candles-read/view-write/delete/replay-write; drawings read/write/delete; alerts
 read/create/edit/pause/delete; Pine script list/read/write/save plus diagnostics, inputs, styles,
-reports, and alert reads; markets read (symbol search and quotes); watchlists read/write/delete; paper-trading read (no write); portfolio read.
+reports, and alert reads; markets read (symbol search and quotes); watchlists read/write/delete; paper-trading read, place/change, cancel and close; portfolio read.
 Delete and saved-source writes require their own grants.
 
 ## Tool behavior
@@ -39,7 +39,7 @@ Delete and saved-source writes require their own grants.
 | Candles and drawings | `get_candles`, `get_indicator_values`, `list_drawings`, `add_drawings`, `update_drawing`, `delete_drawings` |
 | Markets | `search_symbols`, `get_quotes`, `get_market_candles` |
 | Watchlists | `list_watchlists`, `get_watchlist`, `create_watchlist`, `update_watchlist`, `delete_watchlist` |
-| Paper trading (read-only) | `list_paper_accounts`, `get_paper_account`, `list_paper_fills`, `list_paper_trades` |
+| Paper trading | `list_paper_accounts`, `get_paper_account`, `list_paper_fills`, `list_paper_trades`, `place_paper_order`, `modify_paper_order`, `cancel_paper_orders`, `close_paper_positions` |
 | Portfolio (read-only) | `list_portfolios`, `get_portfolio_holdings`, `list_portfolio_transactions` |
 | Pine instances | `list_chart_pine_instances`, `get_pine_instance`, `get_pine_styles`, `get_pine_report`, `list_pine_alerts`, `add_pine_script_to_chart`, `update_pine_instance`, `remove_pine_instance` |
 
@@ -92,15 +92,25 @@ Delete and saved-source writes require their own grants.
   and value but no profit, return or allocation (`currency_mismatch`) and is left out of `totals`,
   and totals are per currency, never summed across them. Privacy mode only hides amounts on screen;
   a client with `portfolio.read` gets the figures (and `list_portfolios` reports the mode).
-- Paper-trading tools (`mcp::paper`, `mcp::paper_tools`) only read the app's `PaperHost` on the app
-  thread: accounts with the engine's own metrics, positions marked the way the panel marks them
-  (bid for a long, ask for a short, last as fallback; no quote → null mark and no profit figure),
-  orders that can still fill, fills and closed trades newest first, paged to 200. An account another
-  Mac runs is reported in `run_by_another_mac`. **There is no tool that places, changes or cancels
-  an order**, and none is planned before the confirmation policy exists
-  (`docs/mcp-remaining-work.md` item 3): paper money is simulated, but an agent trading on its own
-  with no step the user sees is the case that policy is for. Alpaca is data-only; no tool reaches a
-  real broker.
+- Paper-trading tools (`mcp::paper`, `mcp::paper_tools`) read and write the app's `PaperHost` on the
+  app thread. Reads: accounts with the engine's own metrics, positions marked the way the panel marks
+  them (bid for a long, ask for a short, last as fallback; no quote → null mark and no profit
+  figure), orders that can still fill, fills and closed trades newest first. Writes go through the
+  host's own `submit`, `modify`, `cancel` and `close_position`, so the engine validates (margin,
+  increments, stale or missing prices) and persists exactly as the order ticket does, and the
+  integrity check runs on a candidate copy first. **Simulated money only: nothing reaches a broker,
+  and Alpaca stays data-only.** Safeguards, because an agent can trade here with no step the user
+  sees: three off-by-default permissions (`paper.orders.place`, which also covers changing an
+  order, `paper.orders.cancel`, `paper.positions.close`); an account another Mac runs
+  (`PaperHost::owned_elsewhere`) is never changed over MCP, since acting on it from the GUI takes it
+  over; `place_paper_order` takes `dry_run` (checked on a throwaway engine copy, nothing recorded,
+  not even a refused order) and `request_id` (`OrderMemory`, in memory, 512 entries: a retried call
+  returns the order already placed instead of a second one); quantities and prices must be finite,
+  positive and under 1e15; order type decides which of limit and stop price is required or
+  forbidden. Orders fill from the prices of open charts (`sync_paper_quotes`), so a market with no
+  chart is refused for lack of a price, and a working order fills only while the app runs; replay
+  does not hold orders back. The confirmation policy (`docs/mcp-remaining-work.md` item 3) is still
+  to come and would sit on top of these.
 - Chart control (`mcp::chart_control`) calls the workspace's own methods: `set_timeframe` is the
   toolbar's timeframe change (`ChartWorkspace::reload_for_timeframe`, shared with the toolbar) and
   moves every chart in the workspace, since the timeframe belongs to the workspace; it reloads, so

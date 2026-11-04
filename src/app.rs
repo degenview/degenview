@@ -309,6 +309,8 @@ pub struct DegenViewApp {
     alert_fx_refreshed_at: Option<Instant>,
     portfolio: Arc<Mutex<PortfolioHost>>,
     paper: Arc<Mutex<PaperHost>>,
+    /// Orders placed over MCP by `request_id`, so a retried call places nothing twice.
+    mcp_orders: Mutex<mcp_host::OrderMemory>,
     webhook_host: Arc<Mutex<WebhookHost>>,
     /// What the user chose about chart snapshots, shared by every window and Settings.
     snapshots: SnapshotHost,
@@ -993,6 +995,7 @@ impl DegenViewApp {
             alert_fx_refreshed_at: None,
             portfolio,
             paper,
+            mcp_orders: Mutex::new(mcp_host::OrderMemory::default()),
             webhook_host,
             snapshots,
             editor_themes,
@@ -1737,6 +1740,52 @@ impl DegenViewApp {
                     mcp_host::paper_fills(&host, account_id, offset, limit)
                         .map(|result| McpReply::PaperFills(Box::new(result)))
                 }
+            }
+            McpCommand::PlacePaperOrder {
+                request,
+                dry_run,
+                request_id,
+            } => {
+                let mut host = self.paper.lock().map_err(|_| paper_unavailable())?;
+                let mut memory = self.mcp_orders.lock().map_err(|_| paper_unavailable())?;
+                let result = mcp_host::place_paper_order(
+                    &mut host,
+                    &mut memory,
+                    *request,
+                    dry_run,
+                    request_id.as_deref(),
+                )?;
+                ctx.request_repaint();
+                Ok(McpReply::PaperOrder(Box::new(result)))
+            }
+            McpCommand::ModifyPaperOrder { order_id, changes } => {
+                let mut host = self.paper.lock().map_err(|_| paper_unavailable())?;
+                let result = mcp_host::modify_paper_order(&mut host, order_id, changes)?;
+                ctx.request_repaint();
+                Ok(McpReply::PaperChange(Box::new(result)))
+            }
+            McpCommand::CancelPaperOrders {
+                account_id,
+                order_ids,
+            } => {
+                let mut host = self.paper.lock().map_err(|_| paper_unavailable())?;
+                let result =
+                    mcp_host::cancel_paper_orders(&mut host, account_id, order_ids.as_deref())?;
+                ctx.request_repaint();
+                Ok(McpReply::PaperChange(Box::new(result)))
+            }
+            McpCommand::ClosePaperPositions {
+                account_id,
+                instrument_key,
+            } => {
+                let mut host = self.paper.lock().map_err(|_| paper_unavailable())?;
+                let result = mcp_host::close_paper_positions(
+                    &mut host,
+                    account_id,
+                    instrument_key.as_deref(),
+                )?;
+                ctx.request_repaint();
+                Ok(McpReply::PaperChange(Box::new(result)))
             }
             McpCommand::ListPortfolios => {
                 let host = self.portfolio.lock().map_err(|_| portfolio_unavailable())?;

@@ -393,6 +393,39 @@ pub fn fills_result(
     }
 }
 
+/// What placing an order did.
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
+pub struct PaperOrderResult {
+    /// `placed`, `already_placed` (the same `request_id` was placed before: that order is
+    /// returned and nothing new was submitted) or `would_place` (a dry run: the order is valid
+    /// and nothing was submitted).
+    pub status: String,
+    /// The order as it stands after submission: `working`, `filled`, `partially_filled`. Null for
+    /// a dry run.
+    pub order: Option<PaperOrderInfo>,
+    /// The take-profit and stop-loss exit orders of a bracket, once the entry has filled.
+    pub bracket_orders: Vec<PaperOrderInfo>,
+    /// Fills the order produced at once (a market order, or a limit already marketable).
+    pub fills: Vec<PaperFillInfo>,
+    /// The account afterwards (cash, equity, margin, available funds).
+    pub account: PaperAccountInfo,
+}
+
+/// What changing, cancelling or closing did, one entry per order or position touched.
+#[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
+pub struct PaperChangeResult {
+    /// `modified`, `canceled`, `closed`, or `nothing_to_do` (no working order / open position).
+    pub status: String,
+    /// The orders acted on, as they are now.
+    pub orders: Vec<PaperOrderInfo>,
+    /// Fills produced (closing a position is a market order).
+    pub fills: Vec<PaperFillInfo>,
+    /// Anything that could not be done, with why. The rest still happened: these are separate
+    /// orders and positions.
+    pub failures: Vec<String>,
+    pub account: PaperAccountInfo,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

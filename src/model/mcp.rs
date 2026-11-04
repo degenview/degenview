@@ -44,6 +44,9 @@ pub enum Permission {
     WatchlistsWrite,
     WatchlistsDelete,
     PaperRead,
+    PaperOrdersPlace,
+    PaperOrdersCancel,
+    PaperPositionsClose,
     PortfolioRead,
 }
 
@@ -59,7 +62,7 @@ impl Permission {
         "Portfolio",
     ];
 
-    pub const ALL: [Permission; 31] = [
+    pub const ALL: [Permission; 34] = [
         Permission::ChartsRead,
         Permission::ChartsCreate,
         Permission::ChartsIndicatorsWrite,
@@ -90,6 +93,9 @@ impl Permission {
         Permission::WatchlistsWrite,
         Permission::WatchlistsDelete,
         Permission::PaperRead,
+        Permission::PaperOrdersPlace,
+        Permission::PaperOrdersCancel,
+        Permission::PaperPositionsClose,
         Permission::PortfolioRead,
     ];
 
@@ -126,6 +132,9 @@ impl Permission {
             Self::WatchlistsWrite => "watchlists.write",
             Self::WatchlistsDelete => "watchlists.delete",
             Self::PaperRead => "paper.read",
+            Self::PaperOrdersPlace => "paper.orders.place",
+            Self::PaperOrdersCancel => "paper.orders.cancel",
+            Self::PaperPositionsClose => "paper.positions.close",
             Self::PortfolioRead => "portfolio.read",
         }
     }
@@ -168,6 +177,9 @@ impl Permission {
             Self::WatchlistsWrite => "Create and edit watchlists",
             Self::WatchlistsDelete => "Delete watchlists",
             Self::PaperRead => "Read paper trading",
+            Self::PaperOrdersPlace => "Place and change paper orders",
+            Self::PaperOrdersCancel => "Cancel paper orders",
+            Self::PaperPositionsClose => "Close paper positions",
             Self::PortfolioRead => "Read portfolios",
         }
     }
@@ -223,7 +235,14 @@ impl Permission {
                 "Permanently remove watchlists (Favorites cannot be removed)."
             }
             Self::PaperRead => {
-                "Read paper-trading accounts, positions, orders, fills and closed trades. Placing or changing orders is not possible."
+                "Read paper-trading accounts, positions, orders, fills and closed trades."
+            }
+            Self::PaperOrdersPlace => {
+                "Place simulated orders (market, limit, stop, stop-limit, with take-profit and stop-loss) and change a working order's price or size. Simulated money only; nothing reaches a broker."
+            }
+            Self::PaperOrdersCancel => "Cancel working paper orders.",
+            Self::PaperPositionsClose => {
+                "Close paper positions at the market, one or all of an account's."
             }
             Self::PortfolioRead => {
                 "Read portfolios, what they hold and what it is worth, and their transactions. Nothing can be changed."
@@ -259,7 +278,10 @@ impl Permission {
             | Self::PineAlertsRead => "Pine Scripts",
             Self::MarketsRead => "Markets",
             Self::WatchlistsRead | Self::WatchlistsWrite | Self::WatchlistsDelete => "Watchlists",
-            Self::PaperRead => "Paper Trading",
+            Self::PaperRead
+            | Self::PaperOrdersPlace
+            | Self::PaperOrdersCancel
+            | Self::PaperPositionsClose => "Paper Trading",
             Self::PortfolioRead => "Portfolio",
         }
     }
@@ -288,6 +310,9 @@ impl Permission {
             | Self::ChartsViewWrite
             | Self::ChartsDelete
             | Self::ChartsReplayWrite
+            | Self::PaperOrdersPlace
+            | Self::PaperOrdersCancel
+            | Self::PaperPositionsClose
             | Self::DrawingsWrite
             | Self::DrawingsDelete
             | Self::AlertsCreate

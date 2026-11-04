@@ -47,14 +47,22 @@ struct Stub {
 }
 
 /// The paper-trading host the stub app serves: the real host over an in-memory database.
-struct StubPaper(Mutex<crate::host::paper_host::PaperHost>);
+struct StubPaper(
+    Mutex<crate::host::paper_host::PaperHost>,
+    Mutex<mcp_host::OrderMemory>,
+    crate::store::SharedStore,
+);
 
 impl Default for StubPaper {
     fn default() -> Self {
         let shared = crate::store::SharedStore::new(Mutex::new(
             crate::store::Store::open_in_memory().expect("store"),
         ));
-        Self(Mutex::new(crate::host::paper_host::PaperHost::load(shared)))
+        Self(
+            Mutex::new(crate::host::paper_host::PaperHost::load(shared.clone())),
+            Mutex::new(mcp_host::OrderMemory::default()),
+            shared,
+        )
     }
 }
 
@@ -237,6 +245,11 @@ impl Harness {
         self.stub.draw_calls.lock().unwrap().clone()
     }
 
+    /// The database behind the stub paper host, to seed what another Mac would have written.
+    pub fn paper_store(&self) -> crate::store::SharedStore {
+        self.stub.paper.2.clone()
+    }
+
     /// The paper host behind the stub app, to seed accounts and orders.
     pub fn paper(&self) -> std::sync::MutexGuard<'_, crate::host::paper_host::PaperHost> {
         self.stub.paper.0.lock().unwrap()
@@ -385,6 +398,43 @@ fn stub_app(
             let host = stub.portfolio.0.lock().unwrap();
             mcp_host::portfolio_transactions(&host, portfolio_id, asset.as_deref(), offset, limit)
                 .map(|result| McpReply::PortfolioTransactions(Box::new(result)))
+        }
+        McpCommand::PlacePaperOrder {
+            request,
+            dry_run,
+            request_id,
+        } => {
+            let mut host = stub.paper.0.lock().unwrap();
+            let mut memory = stub.paper.1.lock().unwrap();
+            mcp_host::place_paper_order(
+                &mut host,
+                &mut memory,
+                *request,
+                dry_run,
+                request_id.as_deref(),
+            )
+            .map(|result| McpReply::PaperOrder(Box::new(result)))
+        }
+        McpCommand::ModifyPaperOrder { order_id, changes } => {
+            let mut host = stub.paper.0.lock().unwrap();
+            mcp_host::modify_paper_order(&mut host, order_id, changes)
+                .map(|result| McpReply::PaperChange(Box::new(result)))
+        }
+        McpCommand::CancelPaperOrders {
+            account_id,
+            order_ids,
+        } => {
+            let mut host = stub.paper.0.lock().unwrap();
+            mcp_host::cancel_paper_orders(&mut host, account_id, order_ids.as_deref())
+                .map(|result| McpReply::PaperChange(Box::new(result)))
+        }
+        McpCommand::ClosePaperPositions {
+            account_id,
+            instrument_key,
+        } => {
+            let mut host = stub.paper.0.lock().unwrap();
+            mcp_host::close_paper_positions(&mut host, account_id, instrument_key.as_deref())
+                .map(|result| McpReply::PaperChange(Box::new(result)))
         }
         McpCommand::ListPaperAccounts => {
             let host = stub.paper.0.lock().unwrap();

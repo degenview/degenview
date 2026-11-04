@@ -23,6 +23,7 @@ next. Nothing here is started.
 | 13 | Candles of any market by symbol and timeframe, no chart needed | `markets.read` |
 | 14 | Watchlist sections: add, rename, delete, and put or move markets into them | `watchlists.write` |
 | 15 | Replay: read the workspace's replay and start, step, seek, play, pause, set speed and stop it | `charts.read`, `charts.replay.write` |
+| 16 | Paper trading writes: place (dry run, request id), modify, cancel, close positions; never on an account another Mac runs | `paper.orders.place`, `paper.orders.cancel`, `paper.positions.close` |
 
 ## 0. What a trader still cannot do over MCP
 
@@ -33,9 +34,9 @@ Ranked by how soon someone would ask. Not started unless listed under "Done so f
 - Indicators: hide and show one without removing it (`degenview_remove_indicator` and
   `degenview_get_indicator_values` are done); the chart's EMA period is changed through
   `degenview_add_indicator`.
-- Paper trading writes: submit/modify/cancel, close/reverse. Reading is done. Writing needs the
-  confirmation policy (item 3) first, and its own off-by-default permissions. No real-broker
-  order tool: Alpaca is data only.
+- Paper trading: reverse a position, close at a limit, edit an account's settings, create or reset
+  accounts. Orders and closes are done, behind three off-by-default permissions; the confirmation
+  policy (item 3) is still to come. No real-broker order tool: Alpaca is data only.
 - Portfolio: cross-currency totals (needs the FX service the Portfolio tab uses), value history and statistics; a chart snapshot image.
 - Drawing tools other than trend lines and rectangles (item 4b); swing, support/resistance and
   volatility helpers; older history for `get_market_candles` (needs a time-range fetch).

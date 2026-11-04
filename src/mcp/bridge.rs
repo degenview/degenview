@@ -175,6 +175,27 @@ pub enum McpCommand {
         offset: usize,
         limit: usize,
     },
+    /// Places a paper order (or only checks it, for a dry run). `request_id` makes a retry
+    /// return the order already placed instead of placing another.
+    PlacePaperOrder {
+        request: Box<crate::model::paper::PaperOrderRequest>,
+        dry_run: bool,
+        request_id: Option<String>,
+    },
+    ModifyPaperOrder {
+        order_id: u64,
+        changes: crate::model::paper::PaperOrderChanges,
+    },
+    /// Cancels the named working orders, or every working order of the account.
+    CancelPaperOrders {
+        account_id: u64,
+        order_ids: Option<Vec<u64>>,
+    },
+    /// Closes one position (by instrument key) or every open position of the account.
+    ClosePaperPositions {
+        account_id: u64,
+        instrument_key: Option<String>,
+    },
     ListPortfolios,
     /// The ledger side of a holdings read: one portfolio, or every unarchived one.
     GetPortfolioHoldings {
@@ -269,6 +290,8 @@ pub enum McpReply {
     PaperAccount(Box<crate::mcp::paper::PaperAccountDetail>),
     PaperFills(Box<crate::mcp::paper::PaperFillsResult>),
     PaperTrades(Box<crate::mcp::paper::PaperTradesResult>),
+    PaperOrder(Box<crate::mcp::paper::PaperOrderResult>),
+    PaperChange(Box<crate::mcp::paper::PaperChangeResult>),
     Portfolios(crate::mcp::portfolio::PortfoliosResult),
     PortfolioHoldings(Box<crate::mcp::portfolio::HoldingsBase>),
     PortfolioTransactions(Box<crate::mcp::portfolio::TransactionsResult>),
