@@ -40,6 +40,7 @@ pub mod paper;
 pub mod paper_engine;
 pub mod paper_export;
 pub mod paper_format;
+pub mod paper_integrity;
 pub mod paper_ticket;
 pub mod pattern;
 mod persisted;
