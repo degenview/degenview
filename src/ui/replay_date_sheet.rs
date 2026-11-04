@@ -65,7 +65,7 @@ pub fn show(
             .inner_margin(egui::Margin::same(20))
             .show(ui, |ui| {
                 ui.set_width(360.0);
-                ui.spacing_mut().item_spacing.y = 16.0;
+                ui.spacing_mut().item_spacing.y = 14.0;
                 header(ui);
                 let before_preset = state.draft_ms;
                 presets(ui, &mut state.draft_ms, range);
@@ -338,15 +338,20 @@ fn buttons(
     draft_ms: i64,
     has_range: bool,
 ) {
-    ui.add_space(8.0);
-    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        if kit::sheet_button(ui, "Start Replay", true, has_range).clicked() {
-            *result = Some(ReplayDateSheetResult::Start(draft_ms));
-        }
-        if kit::sheet_button(ui, "Cancel", false, true).clicked() {
-            *result = Some(ReplayDateSheetResult::Cancel);
-        }
-    });
+    // A row of its own height: a bare right-to-left layout takes all the height it is offered.
+    let width = ui.available_width();
+    ui.allocate_ui_with_layout(
+        Vec2::new(width, 28.0),
+        egui::Layout::right_to_left(egui::Align::Center),
+        |ui| {
+            if kit::sheet_button(ui, "Start Replay", true, has_range).clicked() {
+                *result = Some(ReplayDateSheetResult::Start(draft_ms));
+            }
+            if kit::sheet_button(ui, "Cancel", false, true).clicked() {
+                *result = Some(ReplayDateSheetResult::Cancel);
+            }
+        },
+    );
 }
 
 // MARK: Helpers
