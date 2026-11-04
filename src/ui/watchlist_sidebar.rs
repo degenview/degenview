@@ -8,7 +8,7 @@
 use crate::model::InstrumentId;
 use crate::model::watchlist::{
     EntryId, Watchlist, WatchlistColumn, WatchlistError, WatchlistFlag, WatchlistInstrument,
-    WatchlistSort, WatchlistSortKey,
+    WatchlistNotice, WatchlistSort, WatchlistSortKey,
 };
 use crate::model::watchlist_layout::{self, Filter, Flags, Row};
 use crate::model::watchlist_quote::WatchlistQuote;
@@ -136,7 +136,7 @@ pub struct WatchlistSidebarInput<'a> {
     pub focused_market: Option<&'a InstrumentId>,
     /// The saved lists couldn't be read, so changes are off.
     pub load_failed: bool,
-    pub error: Option<&'a str>,
+    pub error: Option<&'a WatchlistNotice>,
     /// What the last import did, shown in the import sheet.
     pub import_report: Option<&'a ImportReport>,
 }
@@ -1852,25 +1852,18 @@ fn modals(
     prompt_window(ctx, state, actions);
     delete_window(ctx, state, list, actions);
     import_window(ctx, state, input, list, actions);
-    if let Some(message) = input.error {
-        sheet::show(ctx, Id::new("watchlist-error"), 340.0, |ui| {
-            ui.add_space(20.0);
-            sheet::inset(ui, |ui| {
-                sheet::header(ui, Icon::Triangle, "Watchlist", message, theme::ORANGE);
-                ui.add_space(20.0);
-            });
-            ui.separator();
-            sheet::inset(ui, |ui| {
-                ui.add_space(12.0);
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    if ui.button("OK").clicked() {
-                        actions.push(WatchlistAction::DismissError);
-                    }
-                });
-                ui.add_space(12.0);
-            });
-        });
-        if ctx.input(|input| input.key_pressed(egui::Key::Escape)) {
+    if let Some(notice) = input.error {
+        let dismissed = kit::notice(
+            ctx,
+            Id::new("watchlist-error"),
+            &kit::Notice {
+                icon: Icon::Triangle,
+                tint: theme::ORANGE,
+                title: notice.title,
+                message: &notice.message,
+            },
+        );
+        if dismissed {
             actions.push(WatchlistAction::DismissError);
         }
     }
