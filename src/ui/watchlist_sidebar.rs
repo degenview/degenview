@@ -482,8 +482,18 @@ fn header(
 /// The header "…" menu and the row menus, and their submenus. Measured against their rows by
 /// `menu_widths_fit_their_rows`, which fails if either drifts too narrow or wide. (The list menu
 /// is sized from its list names when it opens.)
+///
+/// The system font sets the width: macOS's measures 179 and 173, the font a Linux machine with no
+/// system fonts falls back to (egui's own) 190 and 179, so the other platforms get a few points
+/// more rather than a cut label. Windows is not measured; its UI font is assumed no wider.
+#[cfg(target_os = "macos")]
 const MENU_WIDTH: f32 = 186.0;
+#[cfg(target_os = "macos")]
 const SUBMENU_WIDTH: f32 = 178.0;
+#[cfg(not(target_os = "macos"))]
+const MENU_WIDTH: f32 = 194.0;
+#[cfg(not(target_os = "macos"))]
+const SUBMENU_WIDTH: f32 = 184.0;
 /// What the menu frame's margins take from its width.
 const MENU_FRAME: f32 = 10.0;
 
