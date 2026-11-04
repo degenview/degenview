@@ -44,6 +44,7 @@ mod drawer_intro;
 mod drawer_tabs_tests;
 pub mod edit_ops;
 pub mod editor;
+mod empty_library;
 mod external;
 #[cfg(test)]
 mod external_gallery;

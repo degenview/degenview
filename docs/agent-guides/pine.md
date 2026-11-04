@@ -208,6 +208,10 @@
 - A tab with nothing to show says so with `centered` + `pine_logs_view::intro` (picture, three steps,
   an example; see `drawer_intro`), never a bare text placeholder. That covers Inputs too
   (`drawer_intro::inputs`); `drawer_tabs_tests::inputs_fit_the_drawer` checks it at the five sizes.
+- The Script Manager with no scripts at all uses the same pieces (`script_manager::empty_library`): the detail
+  area is `centered` + `intro` with the two ways to begin as its footer, the sidebar list a short form with the
+  same picture. A search with no match stays the small "No matches" tile. Pictures: `cargo test --lib
+  empty_library -- --ignored` with `DEGENVIEW_GALLERY_DIR` set.
 - The Problems tab's copy button copies every problem (errors first); a right-click on a row copies that
   problem or only its message.
 - `pine_report::show` / `report_content` (chart settings) keep the compact look; the drawer lays out

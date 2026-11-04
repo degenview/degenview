@@ -14,12 +14,9 @@ use super::profile_ui::{self, TabView};
 use super::profiler::{Profile, Status};
 use super::{Cmd, OpenScript, ScriptManager};
 use crate::pine::token::Diagnostic;
-use crate::ui::icons::{self, Icon};
 use crate::ui::split::{self, Axis, DefaultLength, SplitSpec, SplitState};
 use crate::ui::theme;
-use eframe::egui::{
-    self, Align, Color32, FontId, Id, RichText, Sense, Stroke, Ui, Vec2, pos2, vec2,
-};
+use eframe::egui::{self, Align, Id, RichText, Ui, pos2};
 use std::cell::{Cell, RefCell};
 use std::time::Instant;
 
@@ -65,75 +62,7 @@ impl ScriptManager {
     }
 
     fn empty_library(&mut self, ui: &mut Ui) {
-        let rect = ui.max_rect();
-        let mut column = ui.new_child(
-            egui::UiBuilder::new()
-                .max_rect(rect)
-                .layout(egui::Layout::top_down(Align::Center)),
-        );
-        column.add_space((rect.height() / 2.0 - 120.0).max(24.0));
-        column.spacing_mut().item_spacing.y = 12.0;
-        column.label(crate::ui::kit::text(
-            "No scripts yet",
-            13.0,
-            crate::ui::kit::SEMIBOLD,
-            theme::text_primary(),
-        ));
-        column.label(
-            RichText::new("Write a Pine Script indicator or strategy and run it on your charts.")
-                .size(13.0)
-                .color(theme::text_secondary()),
-        );
-        column.add_space(4.0);
-        if bordered_button(&mut column, Icon::Plus, "Create Your First Script").clicked() {
-            self.cmds.push(Cmd::NewScript);
-        }
-        if bordered_button(&mut column, Icon::Download, "Add Example Scripts").clicked() {
-            self.cmds.push(Cmd::AddExamples);
-        }
-        column.add_space(4.0);
-        // Plain accent links, as Swift's `Link`s draw.
-        column.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 16.0;
-            let links = [
-                ("Pine Script documentation", DOCS_URL),
-                ("Community scripts", super::sidebar::COMMUNITY_URL),
-            ];
-            let widths: Vec<f32> = links
-                .iter()
-                .map(|(label, _)| {
-                    crate::ui::kit::galley(
-                        ui,
-                        label,
-                        13.0,
-                        crate::ui::kit::REGULAR,
-                        theme::text_primary(),
-                        300.0,
-                    )
-                    .size()
-                    .x
-                })
-                .collect();
-            let total = widths.iter().sum::<f32>() + 16.0;
-            ui.add_space(((ui.available_width() - total) / 2.0).max(0.0));
-            for (label, url) in links {
-                let response = ui
-                    .add(
-                        egui::Label::new(crate::ui::kit::text(
-                            label,
-                            13.0,
-                            crate::ui::kit::REGULAR,
-                            crate::ui::kit::ACCENT,
-                        ))
-                        .sense(Sense::click()),
-                    )
-                    .on_hover_cursor(egui::CursorIcon::PointingHand)
-                    .on_hover_text(url);
-                if response.clicked() {
-                    ui.ctx().open_url(egui::OpenUrl::new_tab(url));
-                }
-            }
-        });
+        super::empty_library::library(ui, &mut self.cmds);
     }
 
     fn workspace_ui(&mut self, ui: &mut Ui) {
@@ -502,51 +431,6 @@ fn preview_pane(
         cmds.borrow_mut().push(Cmd::ToggleDrawer);
     }
 }
-
-fn bordered_button(ui: &mut Ui, icon: Icon, label: &str) -> egui::Response {
-    sized_button(ui, icon, label)
-}
-
-/// A large (`.controlSize(.large)`) button with a leading icon.
-fn sized_button(ui: &mut Ui, icon: Icon, label: &str) -> egui::Response {
-    let font = FontId::proportional(13.0);
-    let galley = ui
-        .painter()
-        .layout_no_wrap(label.to_owned(), font.clone(), Color32::PLACEHOLDER);
-    let size = vec2(galley.size().x + 52.0, 32.0);
-    let (rect, response) = ui.allocate_exact_size(size, Sense::click());
-    let base = theme::control_fill();
-    let ink = theme::text_primary();
-    let color = if response.is_pointer_button_down_on() {
-        base.gamma_multiply(0.8)
-    } else if response.hovered() {
-        base.gamma_multiply(1.12)
-    } else {
-        base
-    };
-    let painter = ui.painter();
-    painter.rect_filled(rect, 7.0, color);
-    painter.rect_stroke(
-        rect,
-        7.0,
-        Stroke::new(1.0, theme::separator()),
-        egui::StrokeKind::Inside,
-    );
-    icons::paint(
-        painter,
-        egui::Rect::from_center_size(pos2(rect.min.x + 20.0, rect.center().y), Vec2::splat(13.0)),
-        icon,
-        ink,
-    );
-    painter.galley(
-        pos2(rect.min.x + 36.0, rect.center().y - galley.size().y / 2.0),
-        galley,
-        ink,
-    );
-    response.on_hover_cursor(egui::CursorIcon::PointingHand)
-}
-
-const DOCS_URL: &str = "https://www.tradingview.com/pine-script-docs/";
 
 #[allow(dead_code)]
 fn _keep(_: Instant, _: Align) {}
