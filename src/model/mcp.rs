@@ -21,6 +21,7 @@ pub enum Permission {
     ChartsCandlesRead,
     ChartsViewWrite,
     ChartsDelete,
+    ChartsReplayWrite,
     DrawingsRead,
     DrawingsWrite,
     DrawingsDelete,
@@ -58,7 +59,7 @@ impl Permission {
         "Portfolio",
     ];
 
-    pub const ALL: [Permission; 30] = [
+    pub const ALL: [Permission; 31] = [
         Permission::ChartsRead,
         Permission::ChartsCreate,
         Permission::ChartsIndicatorsWrite,
@@ -66,6 +67,7 @@ impl Permission {
         Permission::ChartsCandlesRead,
         Permission::ChartsViewWrite,
         Permission::ChartsDelete,
+        Permission::ChartsReplayWrite,
         Permission::DrawingsRead,
         Permission::DrawingsWrite,
         Permission::DrawingsDelete,
@@ -101,6 +103,7 @@ impl Permission {
             Self::ChartsCandlesRead => "charts.candles.read",
             Self::ChartsViewWrite => "charts.view.write",
             Self::ChartsDelete => "charts.delete",
+            Self::ChartsReplayWrite => "charts.replay.write",
             Self::DrawingsRead => "drawings.read",
             Self::DrawingsWrite => "drawings.write",
             Self::DrawingsDelete => "drawings.delete",
@@ -142,6 +145,7 @@ impl Permission {
             Self::ChartsCandlesRead => "Read chart candles",
             Self::ChartsViewWrite => "Change timeframe and chart type",
             Self::ChartsDelete => "Remove charts",
+            Self::ChartsReplayWrite => "Control chart replay",
             Self::DrawingsRead => "Read chart drawings",
             Self::DrawingsWrite => "Draw on charts and edit drawings",
             Self::DrawingsDelete => "Delete chart drawings",
@@ -188,6 +192,9 @@ impl Permission {
             Self::ChartsDelete => {
                 "Remove a chart from a workspace, together with the drawings on it."
             }
+            Self::ChartsReplayWrite => {
+                "Start, step, seek and stop a workspace's replay. While it runs every chart in the workspace shows the past, and the candle tools read it."
+            }
             Self::DrawingsRead => "List the trend lines, rectangles and other drawings on a chart.",
             Self::DrawingsWrite => {
                 "Add trend lines and rectangles, and move, restyle or hide the ones that are not locked."
@@ -233,7 +240,8 @@ impl Permission {
             | Self::ChartsPineInstancesWrite
             | Self::ChartsCandlesRead
             | Self::ChartsViewWrite
-            | Self::ChartsDelete => "Charts",
+            | Self::ChartsDelete
+            | Self::ChartsReplayWrite => "Charts",
             Self::DrawingsRead | Self::DrawingsWrite | Self::DrawingsDelete => "Drawings",
             Self::AlertsRead
             | Self::AlertsCreate
@@ -279,6 +287,7 @@ impl Permission {
             | Self::ChartsPineInstancesWrite
             | Self::ChartsViewWrite
             | Self::ChartsDelete
+            | Self::ChartsReplayWrite
             | Self::DrawingsWrite
             | Self::DrawingsDelete
             | Self::AlertsCreate

@@ -28,6 +28,7 @@ use crate::mcp::pine::{InputArgs, ScriptToApply};
 use crate::mcp::portfolio::{
     self, HoldingBase, HoldingsBase, PortfolioInfo, PortfoliosResult, TransactionsResult,
 };
+use crate::mcp::replay_tools::{self, ReplayResult};
 use crate::mcp::state::{McpShared, McpStatus};
 use crate::mcp::types::{
     AddChartResult, AddIndicatorResult, AlertInfo, AlertsResult, AppliedPineDetail,
@@ -56,7 +57,7 @@ use crate::store::watchlist::{ListChanges, ListEdit, Place, WatchlistStore};
 use crate::ui::alert_editor::{Direction, PriceAlertEditorState};
 use crate::workspace::{
     ChartSummary, ChartTypeError, ChartWorkspace, IndicatorError, IndicatorOutcome,
-    PineInstanceView, RemoveOutcome,
+    PineInstanceView, RemoveOutcome, ReplayCommand, ReplayError,
 };
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -1654,6 +1655,43 @@ pub fn remove_chart(
         chart: None,
         charts_in_workspace: workspace.chart_count(),
     })
+}
+
+// MARK: Replay (run on the app thread)
+
+pub fn replay_state(workspace: &ChartWorkspace) -> ReplayResult {
+    replay_tools::replay_result(
+        workspace.id(),
+        workspace.timeframe().label(),
+        &workspace.replay_view(),
+    )
+}
+
+pub fn control_replay(
+    workspace: &mut ChartWorkspace,
+    command: ReplayCommand,
+) -> Result<ReplayResult, McpError> {
+    let view =
+        workspace.replay_command(command).map_err(|error| {
+            match error {
+        ReplayError::NoSuchChart => McpError::NotFound(format!(
+            "No market chart with that id in workspace {}",
+            workspace.id()
+        )),
+        ReplayError::NoCandles => McpError::Conflict(
+            "The chart has no candles yet (it may still be loading), so there is nothing to replay"
+                .into(),
+        ),
+        ReplayError::NotRunning => McpError::Conflict(
+            "No replay is running in this workspace: start one with action `start`".into(),
+        ),
+    }
+        })?;
+    Ok(replay_tools::replay_result(
+        workspace.id(),
+        workspace.timeframe().label(),
+        &view,
+    ))
 }
 
 // MARK: Paper trading (run on the app thread, read-only)

@@ -1937,6 +1937,16 @@ impl DegenViewApp {
                 mcp_host::remove_chart(workspace, chart_id)
                     .map(|result| McpReply::ChartChanged(Box::new(result)))
             }),
+            McpCommand::GetReplay { workspace_id } => self
+                .with_mcp_workspace(workspace_id, |workspace| {
+                    Ok(McpReply::Replay(mcp_host::replay_state(workspace)))
+                }),
+            McpCommand::ControlReplay {
+                workspace_id,
+                command,
+            } => self.with_mcp_workspace(workspace_id, |workspace| {
+                mcp_host::control_replay(workspace, command).map(McpReply::Replay)
+            }),
             McpCommand::RemoveIndicator {
                 workspace_id,
                 chart_id,

@@ -186,6 +186,13 @@ pub enum McpCommand {
         offset: usize,
         limit: usize,
     },
+    GetReplay {
+        workspace_id: u64,
+    },
+    ControlReplay {
+        workspace_id: u64,
+        command: crate::workspace::ReplayCommand,
+    },
     ListWatchlists,
     /// One page of a watchlist's entries. Quotes are not read here (the tool waits for them
     /// off the app thread); the reply names the markets on the page.
@@ -265,6 +272,7 @@ pub enum McpReply {
     Portfolios(crate::mcp::portfolio::PortfoliosResult),
     PortfolioHoldings(Box<crate::mcp::portfolio::HoldingsBase>),
     PortfolioTransactions(Box<crate::mcp::portfolio::TransactionsResult>),
+    Replay(crate::mcp::replay_tools::ReplayResult),
     Watchlists(crate::mcp::markets::WatchlistsResult),
     Watchlist(Box<crate::mcp::markets::WatchlistPage>),
     WatchlistChanged(Box<crate::mcp::markets::WatchlistChangeResult>),

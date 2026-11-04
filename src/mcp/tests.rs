@@ -42,6 +42,8 @@ struct Stub {
     watchlists: StubWatchlists,
     paper: StubPaper,
     portfolio: StubPortfolio,
+    /// The replay clock over the stub chart's thirty bars.
+    replay: Mutex<crate::model::ReplayEngine>,
 }
 
 /// The paper-trading host the stub app serves: the real host over an in-memory database.
@@ -303,6 +305,68 @@ fn stub_app(
             active: true,
             timeframe: "1D".into(),
         }])),
+        McpCommand::GetReplay { workspace_id } => {
+            if workspace_id != 1 {
+                return Err(McpError::NotFound("No such workspace".into()));
+            }
+            let engine = stub.replay.lock().unwrap();
+            Ok(McpReply::Replay(crate::mcp::replay_tools::replay_result(
+                1,
+                "1D",
+                &engine.view(false),
+            )))
+        }
+        McpCommand::ControlReplay {
+            workspace_id,
+            command,
+        } => {
+            use crate::workspace::{ReplayCommand, ReplayStart};
+            if workspace_id != 1 {
+                return Err(McpError::NotFound("No such workspace".into()));
+            }
+            let mut engine = stub.replay.lock().unwrap();
+            let clock = match command {
+                ReplayCommand::Start { chart_id, at } => {
+                    if chart_id.is_some_and(|id| id != 2) {
+                        return Err(McpError::NotFound("No such chart".into()));
+                    }
+                    let timeline: Vec<i64> = stub
+                        .chart
+                        .lock()
+                        .unwrap()
+                        .candles
+                        .iter()
+                        .map(|bar| bar.open_time)
+                        .collect();
+                    let requested = match at {
+                        ReplayStart::First => timeline[0],
+                        ReplayStart::At(time) => time,
+                    };
+                    engine.start(requested, "BTCUSDT", timeline);
+                    return Ok(McpReply::Replay(crate::mcp::replay_tools::replay_result(
+                        1,
+                        "1D",
+                        &engine.view(false),
+                    )));
+                }
+                ReplayCommand::Play => crate::model::ClockCommand::Play,
+                ReplayCommand::Pause => crate::model::ClockCommand::Pause,
+                ReplayCommand::StepForward(steps) => crate::model::ClockCommand::StepForward(steps),
+                ReplayCommand::StepBack(steps) => crate::model::ClockCommand::StepBack(steps),
+                ReplayCommand::Restart => crate::model::ClockCommand::Restart,
+                ReplayCommand::Seek(time) => crate::model::ClockCommand::Seek(time),
+                ReplayCommand::SetSpeed(speed) => crate::model::ClockCommand::SetSpeed(speed),
+                ReplayCommand::Stop => crate::model::ClockCommand::Stop,
+            };
+            if !engine.apply(clock) {
+                return Err(McpError::Conflict("No replay is running".into()));
+            }
+            Ok(McpReply::Replay(crate::mcp::replay_tools::replay_result(
+                1,
+                "1D",
+                &engine.view(false),
+            )))
+        }
         McpCommand::ListPortfolios => {
             let host = stub.portfolio.0.lock().unwrap();
             mcp_host::list_portfolios(&host).map(McpReply::Portfolios)
@@ -1098,6 +1162,7 @@ fn discovery_and_calls_work_for_a_permitted_client() {
         tool_names(&url, "tok"),
         [
             "degenview_add_chart",
+            "degenview_get_replay",
             "degenview_list_charts",
             "degenview_list_indicators",
             "degenview_list_workspaces"
@@ -1215,6 +1280,7 @@ fn permissions_are_enforced_on_every_call_not_just_discovery() {
     assert_eq!(
         tool_names(&url, "read-tok"),
         [
+            "degenview_get_replay",
             "degenview_list_charts",
             "degenview_list_indicators",
             "degenview_list_workspaces"
@@ -1262,6 +1328,7 @@ fn permissions_are_enforced_on_every_call_not_just_discovery() {
     assert_eq!(
         tool_names(&url, "write-tok"),
         [
+            "degenview_get_replay",
             "degenview_list_charts",
             "degenview_list_indicators",
             "degenview_list_workspaces"
@@ -3431,3 +3498,4 @@ mod indicator_tests;
 mod market_tests;
 mod paper_tests;
 mod portfolio_tests;
+mod replay_tests;

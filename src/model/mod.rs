@@ -101,7 +101,9 @@ pub use layout::{ChartColumn, ChartConfig, ChartLayout, LayoutSnapshot};
 pub use persisted::PersistedChart;
 pub use pm_series::PmSeries;
 pub use price_format::{PriceFormat, SmallPrices};
-pub use replay::{ReplayEngine, ReplayInterval, ReplaySpeed, ReplayStatus};
+pub use replay::{
+    ClockCommand, ReplayEngine, ReplayInterval, ReplaySpeed, ReplayStatus, ReplayView,
+};
 pub use saved_view::SavedView;
 pub use source::DataSource;
 pub use timeframe::Timeframe;

@@ -68,6 +68,7 @@ pub use charts::{ChartSummary, ChartTypeError};
 pub use pine::{
     IndicatorError, IndicatorOutcome, PineChartTarget, PineInstanceView, RemoveOutcome,
 };
+pub use replay::{ReplayCommand, ReplayError, ReplayStart};
 // Named only by the MCP host's tests; it is the type of `PineInstanceView::run`.
 #[cfg(test)]
 pub use pine::PineRunView;

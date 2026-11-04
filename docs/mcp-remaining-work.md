@@ -22,6 +22,7 @@ next. Nothing here is started.
 | 12 | Portfolio, read-only: portfolios, holdings valued at live prices (per currency), transactions | `portfolio.read` |
 | 13 | Candles of any market by symbol and timeframe, no chart needed | `markets.read` |
 | 14 | Watchlist sections: add, rename, delete, and put or move markets into them | `watchlists.write` |
+| 15 | Replay: read the workspace's replay and start, step, seek, play, pause, set speed and stop it | `charts.read`, `charts.replay.write` |
 
 ## 0. What a trader still cannot do over MCP
 
@@ -35,7 +36,7 @@ Ranked by how soon someone would ask. Not started unless listed under "Done so f
 - Paper trading writes: submit/modify/cancel, close/reverse. Reading is done. Writing needs the
   confirmation policy (item 3) first, and its own off-by-default permissions. No real-broker
   order tool: Alpaca is data only.
-- Portfolio: cross-currency totals (needs the FX service the Portfolio tab uses), value history and statistics; replay control; a chart snapshot image.
+- Portfolio: cross-currency totals (needs the FX service the Portfolio tab uses), value history and statistics; a chart snapshot image.
 - Drawing tools other than trend lines and rectangles (item 4b); swing, support/resistance and
   volatility helpers; older history for `get_market_candles` (needs a time-range fetch).
 - Watchlist sorting, columns, collapsed sections and flags (not exposed), and trending symbols.

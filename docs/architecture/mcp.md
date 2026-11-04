@@ -24,7 +24,7 @@ client → 127.0.0.1:<port>/mcp → bearer/Host/Origin/size checks
   Undecodable MCP settings/clients keep the server off without rewriting data.
 - Protocol support is rmcp 3.5 / MCP `2025-03-26` through `2026-07-28`, stateless JSON.
 
-Permissions separate reads and mutations: charts read/create/indicator-write/Pine-instance-write/candles-read/view-write/delete; drawings read/write/delete; alerts
+Permissions separate reads and mutations: charts read/create/indicator-write/Pine-instance-write/candles-read/view-write/delete/replay-write; drawings read/write/delete; alerts
 read/create/edit/pause/delete; Pine script list/read/write/save plus diagnostics, inputs, styles,
 reports, and alert reads; markets read (symbol search and quotes); watchlists read/write/delete; paper-trading read (no write); portfolio read.
 Delete and saved-source writes require their own grants.
@@ -33,7 +33,7 @@ Delete and saved-source writes require their own grants.
 
 | Area | Tools (`degenview_…`) |
 | --- | --- |
-| Charts | `list_workspaces`, `list_charts`, `add_chart`, `list_indicators`, `add_indicator`, `remove_indicator`, `set_timeframe`, `set_chart_type`, `remove_chart` |
+| Charts | `list_workspaces`, `list_charts`, `add_chart`, `list_indicators`, `add_indicator`, `remove_indicator`, `set_timeframe`, `set_chart_type`, `remove_chart`, `get_replay`, `control_replay` |
 | Price alerts | `list_price_alerts`, `create_price_alert`, `update_price_alert`, `pause_price_alert`, `resume_price_alert`, `delete_price_alert` |
 | Pine scripts | `list_pine_scripts`, `get_pine_script`, `update_pine_script`, `save_pine_script`, `compile_pine_script`, `get_pine_inputs` |
 | Candles and drawings | `get_candles`, `get_indicator_values`, `list_drawings`, `add_drawings`, `update_drawing`, `delete_drawings` |
@@ -110,6 +110,17 @@ Delete and saved-source writes require their own grants.
   chart's drawings go with it; it has its own permission (`charts.delete`) and is refused for a
   portfolio card. The first two need `charts.view.write`. All three answer `unchanged` where they can,
   so a retry is harmless (not `remove_chart`: the second call is `NOT_FOUND`).
+- Replay (`mcp::replay_tools`) drives the workspace's one `ReplayEngine`, the clock behind the
+  replay bar, through `ChartWorkspace::replay_command` (`start` on a chart's bars, then
+  `model::ClockCommand`s: play, pause, step, restart, seek by time, speed, stop). Replay is
+  workspace-wide and runs on one chart's candles, so `start` focuses the chart it names. While it
+  runs `chart_data` cuts every chart's candles at the position, so `get_candles` and
+  `get_indicator_values` show the past exactly as the chart does; this is how an agent walks a
+  market bar by bar without seeing the future. `get_replay` needs `charts.read`, `control_replay`
+  `charts.replay.write`. Stepping is deterministic (up to 500 bars); `play` runs in real time at
+  the chosen speed. Each action accepts only its own arguments. Paper orders still fill at live
+  prices during replay (the unresolved question in `docs/agent-guides/market-data.md`), which the
+  tool description says.
 - `get_indicator_values` (`mcp::indicator_tools`, pure part in `mcp::indicator_values`) computes RSI 14,
   an EMA of any length 2 to 400, Bollinger (20, 2) and Supertrend flips with `model::indicators`,
   the functions the chart draws with, over every candle the chart holds (the market's own, cut at
