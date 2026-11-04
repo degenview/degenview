@@ -33,6 +33,12 @@ scenario matches the work:
 For cross-cutting work, load all matching guides. These files contain implementation constraints,
 not general background; do not skip a guide because the code looks self-explanatory.
 
+## Never blue
+
+Links are always gray (`theme::text_secondary()`, underlined), and the blue accent is not used for
+new UI: not for links, buttons or decoration. Details and the existing exceptions are in
+[Core guidance](docs/agent-guides/core.md).
+
 ## Choosing the release type
 
 When a task ends with "should we release this?", or the user asks what to release, look at what

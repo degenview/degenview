@@ -40,6 +40,11 @@ See [the architecture map](../architecture.md) before changing module boundaries
   control you press. Check a new button against the neighbouring sheets before adding colour.
   Known breach to remove, not to copy: the paper account sheet's submit button is a
   `tinted_button` in `kit::ACCENT`. The rest of the app has not been audited for others.
+- Links are always gray. A hyperlink or link-like text (documentation, community scripts, "learn more")
+  is `theme::text_secondary()` with an underline, never `kit::ACCENT`, `theme::ACCENT` or
+  `theme::SYSTEM_ACCENT`. More generally do not reach for the blue accent in new UI: it is not a
+  link colour, a button colour or decoration. Existing uses (selection, focus, the intro step badges)
+  are not a precedent; do not extend them, and do not recolour them unasked.
 - Outside `src/mcp/`, use background threads and `std::sync::mpsc`, not an async runtime. Shared
   state is `Arc<Mutex<...>>`; keep store locks short.
 - User data lives in bundled-rusqlite SQLite through `store::Store`. Document tables are ordered

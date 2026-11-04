@@ -946,7 +946,7 @@ fn onboarding(ui: &mut Ui) {
                                 "log functions",
                                 kit::size::SUBHEADLINE,
                                 kit::MEDIUM,
-                                kit::ACCENT,
+                                theme::text_secondary(),
                             )
                             .underline(),
                         )

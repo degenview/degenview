@@ -194,29 +194,26 @@ impl ScriptManager {
     }
 
     /// Nothing to list: either the folder is empty or the search matched nothing.
-    fn empty_list(&self, ui: &mut Ui) {
-        let searching = !self.search.trim().is_empty();
-        let (icon, title, detail) = if searching {
-            (
-                Icon::Magnifier,
-                "No matches",
-                "No script's name or source contains that text.",
-            )
-        } else {
-            (
-                Icon::Curlybraces,
-                "No scripts yet",
-                "Create one with the button below.",
-            )
-        };
+    fn empty_list(&mut self, ui: &mut Ui) {
+        if self.search.trim().is_empty() {
+            super::empty_library::sidebar(ui, &mut self.cmds);
+            return;
+        }
         let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 150.0), Sense::hover());
         let width = rect.width() - 2.0 * (GUTTER + 12.0);
         let painter = ui.painter();
-        let title = kit::galley(ui, title, 12.0, kit::SEMIBOLD, theme::text_primary(), width);
+        let title = kit::galley(
+            ui,
+            "No matches",
+            12.0,
+            kit::SEMIBOLD,
+            theme::text_primary(),
+            width,
+        );
         let detail = {
             let mut job = egui::text::LayoutJob::default();
             job.append(
-                detail,
+                "No script's name or source contains that text.",
                 0.0,
                 egui::TextFormat {
                     font_id: FontId::proportional(11.0),
@@ -234,7 +231,7 @@ impl ScriptManager {
         icons::paint(
             painter,
             Rect::from_center_size(tile.center(), Vec2::splat(14.0)),
-            icon,
+            Icon::Magnifier,
             theme::text_secondary(),
         );
         y += 28.0 + 10.0;
