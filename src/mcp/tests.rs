@@ -1,5 +1,6 @@
 //! End-to-end tests over a real loopback socket, with a stub standing in for the app thread.
 
+use crate::host::mcp_host;
 use crate::mcp::McpServer;
 use crate::mcp::auth::verifier_hex;
 use crate::mcp::bridge::{self, McpCommand, McpError, McpReply};
@@ -37,6 +38,21 @@ struct Stub {
     chart: Mutex<StubChart>,
     /// Candle and drawing commands that reached the app, by kind.
     draw_calls: Mutex<Vec<String>>,
+    /// The watchlists the app holds: the real store over an in-memory database.
+    watchlists: StubWatchlists,
+}
+
+struct StubWatchlists(Mutex<crate::store::watchlist::WatchlistStore>);
+
+impl Default for StubWatchlists {
+    fn default() -> Self {
+        let shared = crate::store::SharedStore::new(Mutex::new(
+            crate::store::Store::open_in_memory().expect("store"),
+        ));
+        Self(Mutex::new(crate::store::watchlist::WatchlistStore::new(
+            shared,
+        )))
+    }
 }
 
 /// 2025-10-20T00:00:00Z.
@@ -242,6 +258,39 @@ fn stub_app(
             active: true,
             timeframe: "1D".into(),
         }])),
+        McpCommand::ListWatchlists => {
+            let store = stub.watchlists.0.lock().unwrap();
+            mcp_host::list_watchlists(&store).map(McpReply::Watchlists)
+        }
+        McpCommand::GetWatchlist {
+            watchlist_id,
+            offset,
+            limit,
+        } => {
+            let store = stub.watchlists.0.lock().unwrap();
+            mcp_host::get_watchlist(&store, watchlist_id, offset, limit)
+                .map(|page| McpReply::Watchlist(Box::new(page)))
+        }
+        McpCommand::CreateWatchlist { name, markets } => {
+            let mut store = stub.watchlists.0.lock().unwrap();
+            mcp_host::create_watchlist(&mut store, &name, markets)
+                .map(|result| McpReply::WatchlistChanged(Box::new(result)))
+        }
+        McpCommand::UpdateWatchlist {
+            watchlist_id,
+            rename,
+            add,
+            remove,
+        } => {
+            let mut store = stub.watchlists.0.lock().unwrap();
+            mcp_host::update_watchlist(&mut store, watchlist_id, rename.as_deref(), add, &remove)
+                .map(|result| McpReply::WatchlistChanged(Box::new(result)))
+        }
+        McpCommand::DeleteWatchlist { watchlist_id } => {
+            let mut store = stub.watchlists.0.lock().unwrap();
+            mcp_host::delete_watchlist(&mut store, watchlist_id)
+                .map(|result| McpReply::WatchlistChanged(Box::new(result)))
+        }
         McpCommand::ListCharts { workspace_id: 1 } => Ok(McpReply::Charts(ChartsResult {
             workspace_id: "1".into(),
             charts: Vec::new(),
@@ -3186,3 +3235,5 @@ fn tool_schemas_use_only_standard_formats() {
     // Unsigned integers still say they are non-negative.
     assert!(reply.body.contains("\"minimum\":0"), "{}", reply.body);
 }
+
+mod market_tests;

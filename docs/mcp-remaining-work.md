@@ -15,6 +15,24 @@ next. Nothing here is started.
 | 5 | Pine source editing: draft update and explicit save, revision-checked against the open editor | `pine.scripts.write`, `pine.scripts.save` |
 | 6 | Pine on charts: apply a saved script (with input overrides), change an applied script's inputs and visibility, remove it | `charts.pine_instances.write` |
 | 7 | Candles and drawings: read a chart's candles, list drawings, add/move/restyle/delete trend lines and rectangles | `charts.candles.read`, `drawings.read`, `drawings.write`, `drawings.delete` |
+| 8 | Markets and watchlists: search symbols, read quotes, list/read watchlists (with quotes), create, rename, add/remove markets, delete | `markets.read`, `watchlists.read`, `watchlists.write`, `watchlists.delete` |
+
+## 0. What a trader still cannot do over MCP
+
+Ranked by how soon someone would ask. Not started unless listed under "Done so far".
+
+- Chart control: set a chart's symbol, timeframe, chart type or price scale mode, scroll to a time,
+  close a chart. `add_chart` is the only chart mutator, so an agent piles up charts.
+- Indicators beyond adding: list the ones applied, remove or reconfigure them, and read their values
+  (EMA, RSI, Bollinger) instead of recomputing from candles.
+- Paper trading: accounts and metrics, positions, orders, submit/modify/cancel, close/reverse. Needs
+  the confirmation policy (item 3) first, and its own off-by-default permissions. No real-broker
+  order tool: Alpaca is data only.
+- Portfolio read (holdings, transactions, P&L); replay control; a chart snapshot image.
+- Drawing tools other than trend lines and rectangles (item 4b); candles by symbol and timeframe
+  without an open chart; swing, support/resistance and volatility helpers.
+- Watchlist sections, sorting, columns and flags (read-only today), and trending symbols.
+- On-demand backtests and a watchlist screener (item 6); percentage alerts (item 7); layouts.
 
 ## 1. Try it with real MCP clients
 

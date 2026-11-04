@@ -36,12 +36,23 @@ pub enum Permission {
     PineStylesRead,
     PineReportsRead,
     PineAlertsRead,
+    MarketsRead,
+    WatchlistsRead,
+    WatchlistsWrite,
+    WatchlistsDelete,
 }
 
 impl Permission {
-    pub const GROUPS: [&'static str; 4] = ["Charts", "Drawings", "Price Alerts", "Pine Scripts"];
+    pub const GROUPS: [&'static str; 6] = [
+        "Charts",
+        "Drawings",
+        "Price Alerts",
+        "Pine Scripts",
+        "Markets",
+        "Watchlists",
+    ];
 
-    pub const ALL: [Permission; 22] = [
+    pub const ALL: [Permission; 26] = [
         Permission::ChartsRead,
         Permission::ChartsCreate,
         Permission::ChartsIndicatorsWrite,
@@ -64,6 +75,10 @@ impl Permission {
         Permission::PineStylesRead,
         Permission::PineReportsRead,
         Permission::PineAlertsRead,
+        Permission::MarketsRead,
+        Permission::WatchlistsRead,
+        Permission::WatchlistsWrite,
+        Permission::WatchlistsDelete,
     ];
 
     /// The stable wire/storage identifier, e.g. `charts.read`.
@@ -91,6 +106,10 @@ impl Permission {
             Self::PineStylesRead => "pine.styles.read",
             Self::PineReportsRead => "pine.reports.read",
             Self::PineAlertsRead => "pine.alerts.read",
+            Self::MarketsRead => "markets.read",
+            Self::WatchlistsRead => "watchlists.read",
+            Self::WatchlistsWrite => "watchlists.write",
+            Self::WatchlistsDelete => "watchlists.delete",
         }
     }
 
@@ -124,6 +143,10 @@ impl Permission {
             Self::PineStylesRead => "Read script style options",
             Self::PineReportsRead => "Read strategy reports",
             Self::PineAlertsRead => "Read script alerts",
+            Self::MarketsRead => "Search markets and read quotes",
+            Self::WatchlistsRead => "Read watchlists",
+            Self::WatchlistsWrite => "Create and edit watchlists",
+            Self::WatchlistsDelete => "Delete watchlists",
         }
     }
 
@@ -160,6 +183,14 @@ impl Permission {
             Self::PineStylesRead => "Read plot and style options of applied scripts.",
             Self::PineReportsRead => "Read strategy backtest reports.",
             Self::PineAlertsRead => "List script alert subscriptions.",
+            Self::MarketsRead => {
+                "Search the data providers for symbols, and read the last price, 24-hour change and volume of a market."
+            }
+            Self::WatchlistsRead => "List watchlists and the markets in them.",
+            Self::WatchlistsWrite => "Create watchlists, rename them, and add or remove markets.",
+            Self::WatchlistsDelete => {
+                "Permanently remove watchlists (Favorites cannot be removed)."
+            }
         }
     }
 
@@ -186,6 +217,8 @@ impl Permission {
             | Self::PineStylesRead
             | Self::PineReportsRead
             | Self::PineAlertsRead => "Pine Scripts",
+            Self::MarketsRead => "Markets",
+            Self::WatchlistsRead | Self::WatchlistsWrite | Self::WatchlistsDelete => "Watchlists",
         }
     }
 
@@ -202,7 +235,9 @@ impl Permission {
             | Self::PineInputsRead
             | Self::PineStylesRead
             | Self::PineReportsRead
-            | Self::PineAlertsRead => false,
+            | Self::PineAlertsRead
+            | Self::MarketsRead
+            | Self::WatchlistsRead => false,
             Self::ChartsCreate
             | Self::ChartsIndicatorsWrite
             | Self::ChartsPineInstancesWrite
@@ -213,6 +248,8 @@ impl Permission {
             | Self::AlertsPause
             | Self::PineScriptsWrite
             | Self::PineScriptsSave
+            | Self::WatchlistsWrite
+            | Self::WatchlistsDelete
             | Self::AlertsDelete => true,
         }
     }

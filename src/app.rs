@@ -413,6 +413,10 @@ fn alerts_unavailable() -> McpError {
     McpError::AppUnavailable("Price alerts are unavailable right now".into())
 }
 
+fn watchlists_unavailable() -> McpError {
+    McpError::AppUnavailable("Watchlists are unavailable right now".into())
+}
+
 /// What every window callback needs; cloned into each deferred viewport.
 #[derive(Clone)]
 struct WindowEnv {
@@ -832,6 +836,15 @@ impl DegenViewApp {
                 Arc::new(move || ctx.request_repaint()),
             )))
         };
+        // The server reads quotes from the feed the watchlists already run, on its own threads.
+        mcp_host
+            .lock()
+            .expect("mcp host lock poisoned")
+            .shared()
+            .attach_quotes(crate::mcp::state::QuoteAccess {
+                book: quote_book.clone(),
+                coordinator: quote_coordinator.clone(),
+            });
         let alert_host = Arc::new(Mutex::new({
             let store = store.lock().expect("store lock poisoned");
             AlertHost::load(&store, now_ms())
@@ -1693,6 +1706,63 @@ impl DegenViewApp {
                 )
                 .map(|report| McpReply::PineReport(Box::new(report)))
             }),
+            McpCommand::ListWatchlists => {
+                let store = self
+                    .watchlist
+                    .lock()
+                    .map_err(|_| watchlists_unavailable())?;
+                mcp_host::list_watchlists(&store).map(McpReply::Watchlists)
+            }
+            McpCommand::GetWatchlist {
+                watchlist_id,
+                offset,
+                limit,
+            } => {
+                let store = self
+                    .watchlist
+                    .lock()
+                    .map_err(|_| watchlists_unavailable())?;
+                mcp_host::get_watchlist(&store, watchlist_id, offset, limit)
+                    .map(|page| McpReply::Watchlist(Box::new(page)))
+            }
+            McpCommand::CreateWatchlist { name, markets } => {
+                let mut store = self
+                    .watchlist
+                    .lock()
+                    .map_err(|_| watchlists_unavailable())?;
+                let result = mcp_host::create_watchlist(&mut store, &name, markets)?;
+                ctx.request_repaint();
+                Ok(McpReply::WatchlistChanged(Box::new(result)))
+            }
+            McpCommand::UpdateWatchlist {
+                watchlist_id,
+                rename,
+                add,
+                remove,
+            } => {
+                let mut store = self
+                    .watchlist
+                    .lock()
+                    .map_err(|_| watchlists_unavailable())?;
+                let result = mcp_host::update_watchlist(
+                    &mut store,
+                    watchlist_id,
+                    rename.as_deref(),
+                    add,
+                    &remove,
+                )?;
+                ctx.request_repaint();
+                Ok(McpReply::WatchlistChanged(Box::new(result)))
+            }
+            McpCommand::DeleteWatchlist { watchlist_id } => {
+                let mut store = self
+                    .watchlist
+                    .lock()
+                    .map_err(|_| watchlists_unavailable())?;
+                let result = mcp_host::delete_watchlist(&mut store, watchlist_id)?;
+                ctx.request_repaint();
+                Ok(McpReply::WatchlistChanged(Box::new(result)))
+            }
             McpCommand::EditPineScript {
                 script_id,
                 expected_revision,

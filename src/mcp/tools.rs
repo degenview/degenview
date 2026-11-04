@@ -14,6 +14,10 @@ use crate::mcp::drawings::{
     AnchorArg, DrawingEdit, MAX_DELETES_PER_CALL, MAX_DRAWINGS_PER_CALL, McpDash, NewDrawingArg,
     StylePatch, TimeArg, parse_drawing_id, parse_time,
 };
+use crate::mcp::market_tools::{
+    CREATE_WATCHLIST, DELETE_WATCHLIST, GET_QUOTES, GET_WATCHLIST, LIST_WATCHLISTS, SEARCH_SYMBOLS,
+    UPDATE_WATCHLIST,
+};
 use crate::mcp::pine::{self, InputArgs, Target, Version};
 use crate::mcp::state::{ClientIdentity, McpShared};
 use crate::mcp::types::{
@@ -102,6 +106,10 @@ pub fn required_permission(tool: &str) -> Option<Permission> {
         GET_PINE_STYLES => Some(Permission::PineStylesRead),
         GET_PINE_REPORT => Some(Permission::PineReportsRead),
         LIST_PINE_ALERTS => Some(Permission::PineAlertsRead),
+        SEARCH_SYMBOLS | GET_QUOTES => Some(Permission::MarketsRead),
+        LIST_WATCHLISTS | GET_WATCHLIST => Some(Permission::WatchlistsRead),
+        CREATE_WATCHLIST | UPDATE_WATCHLIST => Some(Permission::WatchlistsWrite),
+        DELETE_WATCHLIST => Some(Permission::WatchlistsDelete),
         _ => None,
     }
 }
@@ -119,7 +127,7 @@ pub enum McpSource {
 }
 
 impl McpSource {
-    fn data_source(self) -> DataSource {
+    pub(super) fn data_source(self) -> DataSource {
         match self {
             Self::Binance => DataSource::Binance,
             Self::Coinbase => DataSource::Coinbase,
@@ -616,14 +624,14 @@ pub struct AddChartParams {
     pub symbol: String,
 }
 
-fn failure(error: &McpError) -> CallToolResult {
+pub(super) fn failure(error: &McpError) -> CallToolResult {
     CallToolResult::structured_error(json!({
         "error": error.code(),
         "message": error.message(),
     }))
 }
 
-fn invalid(message: impl Into<String>) -> CallToolResult {
+pub(super) fn invalid(message: impl Into<String>) -> CallToolResult {
     failure(&McpError::InvalidArgument(message.into()))
 }
 
@@ -636,7 +644,7 @@ fn parse_id(raw: &str, what: &str) -> Result<u64, CallToolResult> {
 }
 
 /// The client the HTTP guard authenticated for this request.
-fn client_of(parts: &http::request::Parts) -> Result<ClientIdentity, CallToolResult> {
+pub(super) fn client_of(parts: &http::request::Parts) -> Result<ClientIdentity, CallToolResult> {
     parts
         .extensions
         .get::<ClientIdentity>()
@@ -644,7 +652,7 @@ fn client_of(parts: &http::request::Parts) -> Result<ClientIdentity, CallToolRes
         .ok_or_else(|| failure(&McpError::PermissionDenied("Not authenticated".into())))
 }
 
-fn unexpected() -> CallToolResult {
+pub(super) fn unexpected() -> CallToolResult {
     failure(&McpError::AppUnavailable(
         "Unexpected response from DegenView".into(),
     ))
@@ -652,8 +660,8 @@ fn unexpected() -> CallToolResult {
 
 #[derive(Clone)]
 pub struct DegenViewMcp {
-    bridge: BridgeClient,
-    shared: Arc<McpShared>,
+    pub(super) bridge: BridgeClient,
+    pub(super) shared: Arc<McpShared>,
     tool_router: ToolRouter<Self>,
 }
 
@@ -663,7 +671,7 @@ impl DegenViewMcp {
         Self {
             bridge,
             shared,
-            tool_router: Self::tool_router(),
+            tool_router: Self::tool_router() + Self::market_router(),
         }
     }
 
@@ -2127,7 +2135,7 @@ impl DegenViewMcp {
 }
 
 /// The Keychain read stays off the async worker.
-async fn alpaca_configured() -> bool {
+pub(super) async fn alpaca_configured() -> bool {
     tokio::task::spawn_blocking(|| {
         crate::service::keychain_api_keys::AlpacaCredentialsStore::shared().is_configured()
     })
@@ -2171,7 +2179,7 @@ fn with_standard_formats(mut tool: Tool) -> Tool {
 #[tool_handler(
     router = self.tool_router,
     name = "DegenView",
-    instructions = "Inspect and change DegenView, a market dashboard, within what this credential is allowed. Charts: list workspaces first, then list or add charts and built-in indicators by workspace_id; read candles and add, edit or delete drawings. Pine scripts: list, read, compile and edit scripts (an edit is a draft until saved, and every edit needs the revision you last read), and apply a saved script to a chart. Price alerts: list, create, edit, pause and delete. Only the tools this credential may use are listed."
+    instructions = "Inspect and change DegenView, a market dashboard, within what this credential is allowed. Charts: list workspaces first, then list or add charts and built-in indicators by workspace_id; read candles and add, edit or delete drawings. Pine scripts: list, read, compile and edit scripts (an edit is a draft until saved, and every edit needs the revision you last read), and apply a saved script to a chart. Price alerts: list, create, edit, pause and delete. Markets: search the providers for symbols and read quotes. Watchlists: list and read them (optionally with quotes), create, edit and delete. Only the tools this credential may use are listed."
 )]
 impl ServerHandler for DegenViewMcp {
     async fn call_tool(

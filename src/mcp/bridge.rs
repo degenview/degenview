@@ -138,6 +138,29 @@ pub enum McpCommand {
         expected_revision: String,
         source: Option<String>,
     },
+    ListWatchlists,
+    /// One page of a watchlist's entries. Quotes are not read here (the tool waits for them
+    /// off the app thread); the reply names the markets on the page.
+    GetWatchlist {
+        watchlist_id: u64,
+        offset: usize,
+        limit: usize,
+    },
+    /// A new list, optionally with markets already in it.
+    CreateWatchlist {
+        name: String,
+        markets: Vec<crate::model::watchlist::WatchlistInstrument>,
+    },
+    /// Renames a list and/or adds and removes markets, all or nothing.
+    UpdateWatchlist {
+        watchlist_id: u64,
+        rename: Option<String>,
+        add: Vec<crate::model::watchlist::WatchlistInstrument>,
+        remove: Vec<InstrumentId>,
+    },
+    DeleteWatchlist {
+        watchlist_id: u64,
+    },
 }
 
 /// A validated request to create a price alert. The target stays text: the alert editor parses
@@ -185,6 +208,9 @@ pub enum McpReply {
     Drawings(Box<DrawingsResult>),
     DrawingsChanged(Box<DrawingsChangeResult>),
     PineEdit(Box<crate::mcp::types::PineEditResult>),
+    Watchlists(crate::mcp::markets::WatchlistsResult),
+    Watchlist(Box<crate::mcp::markets::WatchlistPage>),
+    WatchlistChanged(Box<crate::mcp::markets::WatchlistChangeResult>),
 }
 
 /// The alert runtime applies queued commands on its own schedule and may refuse one whose

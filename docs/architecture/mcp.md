@@ -26,7 +26,8 @@ client → 127.0.0.1:<port>/mcp → bearer/Host/Origin/size checks
 
 Permissions separate reads and mutations: charts read/create/indicator-write/Pine-instance-write/candles-read; drawings read/write/delete; alerts
 read/create/edit/pause/delete; Pine script list/read/write/save plus diagnostics, inputs, styles,
-reports, and alert reads. Delete and saved-source writes require their own grants.
+reports, and alert reads; markets read (symbol search and quotes); watchlists read/write/delete.
+Delete and saved-source writes require their own grants.
 
 ## Tool behavior
 
@@ -36,6 +37,8 @@ reports, and alert reads. Delete and saved-source writes require their own grant
 | Price alerts | `list_price_alerts`, `create_price_alert`, `update_price_alert`, `pause_price_alert`, `resume_price_alert`, `delete_price_alert` |
 | Pine scripts | `list_pine_scripts`, `get_pine_script`, `update_pine_script`, `save_pine_script`, `compile_pine_script`, `get_pine_inputs` |
 | Candles and drawings | `get_candles`, `list_drawings`, `add_drawings`, `update_drawing`, `delete_drawings` |
+| Markets | `search_symbols`, `get_quotes` |
+| Watchlists | `list_watchlists`, `get_watchlist`, `create_watchlist`, `update_watchlist`, `delete_watchlist` |
 | Pine instances | `list_chart_pine_instances`, `get_pine_instance`, `get_pine_styles`, `get_pine_report`, `list_pine_alerts`, `add_pine_script_to_chart`, `update_pine_instance`, `remove_pine_instance` |
 
 - Workspace ids are persisted tab ids. Reject Portfolio/Pine Studio tabs. Timeframe is
@@ -77,6 +80,29 @@ reports, and alert reads. Delete and saved-source writes require their own grant
   none. Ids come from `next_free_id` (the counter, but never one already stored). A locked drawing
   is never edited or removed, a chart holds at most 500 drawings, and a call carries at most 25
   (add) or 50 (delete). Only trend lines and rectangles are writable.
+- Markets and watchlists live in `mcp::market_tools` (a second `tool_router`, merged in
+  `DegenViewMcp::new`) and `mcp::markets` (result types and pure projections). `search_symbols`
+  runs `service::search` for each named provider side by side on a blocking worker (at most four
+  searches at once, 20 s ceiling), keeps only hits of the provider asked, and reports a failing
+  provider in `source_errors` while the others answer; the search function is
+  `McpShared::market_search` so tests never reach the network. `get_quotes` needs no app thread:
+  `McpShared::lease_quotes` puts a demand on the app's own `WatchlistQuoteCoordinator` under a
+  fresh owner id (so concurrent calls never replace each other's demand), polls the
+  `WatchlistQuoteBook` every 100 ms for up to `wait_seconds` (default 5, max 15), and releases the
+  demand when the lease drops, including when the call is cancelled. The app hands the feed over
+  once at startup (`McpShared::attach_quotes`); without it quotes answer `APP_UNAVAILABLE`. A quote
+  is settled when it is priced or carries a reason (`note`, `unsupported`); `pending` counts the
+  rest. Quote status and change basis are the watchlist's (`Freshness`, `ChangeBasis`): a stock
+  outside US hours reads `market_closed`, and Alpaca's change is since the previous close.
+- Watchlist reads and writes run on the app thread against the shared `WatchlistStore`, the same
+  path the sidebar uses (so iCloud Sync queues the write in the same transaction).
+  `update_watchlist` is `WatchlistStore::edit_list`: rename, removals then additions, one copy, one
+  save; a refusal leaves the list as it was, and a market already present or absent is skipped and
+  reported, so a retry is harmless. Symbols are checked with the import rules
+  (`watchlist_text::market_item`), so `BTC/USDT` is refused where the Add Chart sheet would also
+  want `BTCUSDT`. Favorites cannot be deleted. `get_watchlist` pages entries (max 500) and, with
+  `include_quotes`, needs `markets.read` as well and at most 50 markets per page. Sections can be
+  read but not yet created or edited, and neither can display settings (sort, columns) or flags.
 - Draft update and save have separate permissions. Both compare `expected_revision` to live editor
   text, else draft, else saved source. The app thread atomically checks, writes, and calls
   `PineStudio::adopt_external_text`. Save rejects compile errors but keeps the draft. Text is
