@@ -196,13 +196,9 @@ fn style_info(style: &DrawingStyle) -> DrawingStyleInfo {
     }
 }
 
-/// Whether this server may change `drawing`: a trend line or rectangle, and not locked.
+/// The tool of a drawing this server can change, if it is one.
 fn mcp_tool(tool: Option<Tool>) -> Option<McpDrawingTool> {
-    match tool? {
-        Tool::TrendLine => Some(McpDrawingTool::TrendLine),
-        Tool::Rectangle => Some(McpDrawingTool::Rectangle),
-        _ => None,
-    }
+    McpDrawingTool::of_tool(tool?)
 }
 
 /// One drawing as a client sees it. `None` for the transient ruler and for rows this version
@@ -317,27 +313,21 @@ pub fn resolve_anchor(
     })
 }
 
-fn tool_of(tool: McpDrawingTool) -> Tool {
-    match tool {
-        McpDrawingTool::TrendLine => Tool::TrendLine,
-        McpDrawingTool::Rectangle => Tool::Rectangle,
-    }
-}
-
 /// Applies a client's style changes to `style` for a drawing by `tool`.
 fn apply_patch(
     style: &mut DrawingStyle,
     patch: &StylePatch,
     tool: McpDrawingTool,
 ) -> Result<(), McpError> {
+    tool.check_patch(patch)?;
     let rectangle = tool == McpDrawingTool::Rectangle;
-    if !rectangle && (patch.fill_color.is_some() || patch.text.is_some()) {
-        return Err(invalid(
-            "fill_color and text apply to rectangles, not trend lines",
-        ));
-    }
     if let Some(color) = patch.color {
-        style.stroke.color = color;
+        if tool == McpDrawingTool::Text {
+            // A label has no line: its colour is its text's.
+            style.text.color = color;
+        } else {
+            style.stroke.color = color;
+        }
         if rectangle {
             style.text.color = color;
             style.middle_line.color = color;
@@ -365,8 +355,12 @@ fn apply_patch(
     Ok(())
 }
 
-/// A box with no width or no height cannot be seen, so it is not a rectangle.
-fn check_extent(tool: McpDrawingTool, a: Anchor, b: Anchor) -> Result<(), McpError> {
+/// A line with no length or a box with no width or no height cannot be seen, so it is not a
+/// drawing. One-point drawings have nothing to check.
+fn check_extent(tool: McpDrawingTool, points: &[Anchor]) -> Result<(), McpError> {
+    let [a, b] = points else {
+        return Ok(());
+    };
     if a == b {
         return Err(invalid("The two points must differ"));
     }
@@ -419,15 +413,18 @@ pub fn plan_add(
                 }
                 other => other,
             };
-            let (a, b) = (
-                resolve_anchor(&spec.a, candles, "a").map_err(label)?,
-                resolve_anchor(&spec.b, candles, "b").map_err(label)?,
-            );
-            check_extent(spec.tool, a, b).map_err(label)?;
-            let tool = tool_of(spec.tool);
+            let mut points = vec![resolve_anchor(&spec.a, candles, "a").map_err(label)?];
+            if let Some(b) = &spec.b {
+                points.push(resolve_anchor(b, candles, "b").map_err(label)?);
+            }
+            if points.len() != spec.tool.points() {
+                return Err(label(invalid("The number of points does not fit the tool")));
+            }
+            check_extent(spec.tool, &points).map_err(label)?;
+            let tool = spec.tool.tool();
             let mut style = tool.default_style();
             apply_patch(&mut style, &spec.patch, spec.tool).map_err(label)?;
-            let mut drawing = Drawing::build(tool, first_id + index as u64, &[a, b], style)
+            let mut drawing = Drawing::build(tool, first_id + index as u64, &points, style)
                 .ok_or_else(|| label(invalid("The points do not make that drawing")))?;
             if let Some(text) = &spec.patch.text {
                 drawing.set_text(text);
@@ -455,7 +452,10 @@ pub fn plan_edit(
             ))
         })?;
     let tool = mcp_tool(current.tool()).ok_or_else(|| {
-        McpError::Unsupported("Only trend lines and rectangles can be changed over MCP".to_owned())
+        McpError::Unsupported(
+            "Only trend lines, rectangles, rays, extended lines, arrows, Fibonacci retracements, horizontal and vertical lines, crosslines and text labels can be changed over MCP"
+                .to_owned(),
+        )
     })?;
     if current.locked() {
         return Err(McpError::Conflict(format!(
@@ -473,6 +473,11 @@ pub fn plan_edit(
                 .map(|spec| resolve_anchor(&spec, candles, "b"))
                 .transpose()?,
         );
+        if b.is_some() && tool.points() < 2 {
+            return Err(invalid(format!(
+                "A {tool:?} has one point: change `a` only"
+            )));
+        }
         let mut points = next.anchors_mut();
         if let (Some(a), Some(slot)) = (a, points.get_mut(0)) {
             **slot = a;
@@ -480,9 +485,7 @@ pub fn plan_edit(
         if let (Some(b), Some(slot)) = (b, points.get_mut(1)) {
             **slot = b;
         }
-        if let [first, second, ..] = next.anchors()[..] {
-            check_extent(tool, first, second)?;
-        }
+        check_extent(tool, &next.anchors())?;
     }
     if let Some(style) = next.style().copied() {
         let mut style = style;
@@ -494,6 +497,9 @@ pub fn plan_edit(
         ));
     }
     if let Some(text) = &edit.patch.text {
+        if tool == McpDrawingTool::Text && text.trim().is_empty() {
+            return Err(invalid("A text drawing needs text: delete it instead"));
+        }
         next.set_text(text);
     }
     if let Some(hidden) = edit.hidden {
@@ -723,10 +729,10 @@ mod tests {
                 time_ms: a.0,
                 price: a.1,
             },
-            b: AnchorSpec {
+            b: Some(AnchorSpec {
                 time_ms: b.0,
                 price: b.1,
-            },
+            }),
             patch: StylePatch::default(),
         }
     }
@@ -1054,8 +1060,9 @@ mod tests {
     #[test]
     fn editing_respects_locks_unknown_ids_and_unsupported_tools() {
         let data = bars(10);
+        // An ellipse is a tool this server lists but does not edit.
         let fib = Drawing::build(
-            Tool::FibRetracement,
+            Tool::Ellipse,
             4,
             &[
                 Anchor {
@@ -1300,7 +1307,12 @@ mod tests {
             let info = drawing_info(&drawing).unwrap_or_else(|| panic!("{tool:?} is listed"));
             assert_eq!(info.tool, name);
             assert_eq!(info.anchor_count, usize::from(count));
-            assert!(!info.editable, "{name} cannot be edited over MCP");
+            // Only the retracement among the Fibonacci and Gann tools can be drawn over MCP.
+            assert_eq!(
+                info.editable,
+                tool == Tool::FibRetracement,
+                "{name} editable over MCP"
+            );
         }
     }
 
@@ -1333,7 +1345,12 @@ mod tests {
                 .unwrap_or_else(|| panic!("{tool:?}"));
             let info = drawing_info(&drawing).unwrap_or_else(|| panic!("{tool:?} is listed"));
             assert_eq!(info.tool, name);
-            assert!(!info.editable, "{name} cannot be edited over MCP");
+            // Of the text and content tools only the plain label can be drawn over MCP.
+            assert_eq!(
+                info.editable,
+                tool == Tool::Text,
+                "{name} editable over MCP"
+            );
         }
     }
 }

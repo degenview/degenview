@@ -713,7 +713,7 @@ pub struct DrawingInfo {
     pub text: Option<String>,
     pub locked: bool,
     pub hidden: bool,
-    /// Whether this server can change it: trend lines and rectangles that are not locked.
+    /// Whether this server can change it: a tool `degenview_add_drawings` draws, not locked.
     pub editable: bool,
 }
 

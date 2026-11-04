@@ -81,7 +81,12 @@ Delete and saved-source writes require their own grants.
   reads that bar. Arguments are checked on the tool thread (`mcp::drawings`); everything is all or
   none. Ids come from `next_free_id` (the counter, but never one already stored). A locked drawing
   is never edited or removed, a chart holds at most 500 drawings, and a call carries at most 25
-  (add) or 50 (delete). Only trend lines and rectangles are writable.
+  (add) or 50 (delete). Writable tools are `McpDrawingTool::ALL`: trend line, rectangle, ray, extended
+  line, arrow and Fibonacci retracement (two points) and horizontal line, horizontal ray, vertical line,
+  crossline and text (one point, no `b`). A tool takes only the points and styles it has
+  (`McpDrawingTool::points`/`check_patch`): fill is for rectangles, text for rectangles and labels
+  (a label needs it), extension flags for trend lines and rectangles. Every other tool is listed
+  read-only and deletable. The Fibonacci retracement is drawn with the app's default levels.
 - Portfolio tools (`mcp::portfolio`, `mcp::portfolio_tools`) are read-only. Holdings come from
   `model::portfolio_accounting::holdings_and_closed` on the app thread (the app's own weighted-average
   accounting, so a sale realizes profit against the average cost and a position sold to nothing still

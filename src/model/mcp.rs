@@ -209,7 +209,7 @@ impl Permission {
             }
             Self::DrawingsRead => "List the trend lines, rectangles and other drawings on a chart.",
             Self::DrawingsWrite => {
-                "Add trend lines and rectangles, and move, restyle or hide the ones that are not locked."
+                "Draw trend lines, rectangles, rays, arrows, levels, Fibonacci retracements and text, and move, restyle or hide the ones that are not locked."
             }
             Self::DrawingsDelete => "Permanently remove drawings that are not locked.",
             Self::AlertsRead => "List price alerts.",

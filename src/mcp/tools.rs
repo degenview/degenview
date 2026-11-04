@@ -1806,7 +1806,7 @@ impl DegenViewMcp {
 
     #[tool(
         name = "degenview_list_drawings",
-        description = "List the drawings on a chart in stacking order: id, tool (trend_line, rectangle, fib_retracement, brush, …), points as ISO time + price, style, label, and whether it is locked, hidden or editable by this server (trend lines and rectangles that are not locked).",
+        description = "List the drawings on a chart in stacking order: id, tool (trend_line, rectangle, fib_retracement, brush, …), points as ISO time + price, style, label, and whether it is locked, hidden or editable by this server (the tools degenview_add_drawings can draw, when not locked).",
         annotations(
             read_only_hint = true,
             destructive_hint = false,
@@ -1843,7 +1843,7 @@ impl DegenViewMcp {
 
     #[tool(
         name = "degenview_add_drawings",
-        description = "Draw trend lines and rectangles on a chart. Each point is a time and a price: copy the time from degenview_get_candles (it snaps to that bar), and give a price or `price_from` (open/high/low/close of the bar at that time, so a line can touch the wicks exactly). A time past the newest bar is allowed, so a line can run into the future; `extend_right` prolongs it to the chart edge. Up to 25 drawings per call, added as one undo step in the app, or none if any is invalid. Drawings are market-anchored: they stay put across timeframes. Returns the new ids and the drawings.",
+        description = "Draw on a chart. Tools: trend_line, rectangle, ray, extended_line, arrow and fib_retracement (two points, `a` and `b`); horizontal_line, horizontal_ray, vertical_line, crossline and text (one point, `a`, no `b`; text needs `text`). Each point is a time and a price: copy the time from degenview_get_candles (it snaps to that bar), and give a price or `price_from` (open/high/low/close of the bar at that time, so a line can touch the wicks exactly). A time past the newest bar is allowed, so a line can run into the future; `extend_left` / `extend_right` prolong a trend line or rectangle to the chart edge (the others have their own reach). `fill_color` is for rectangles; `text` labels a rectangle or is the text of a `text` drawing; a style a tool does not have is refused. Other tools (circles, channels, pitchforks, brushes, …) are listed but not drawn. Up to 25 drawings per call, added as one undo step in the app, or none if any is invalid. Drawings are market-anchored: they stay put across timeframes. Returns the new ids and the drawings.",
         annotations(
             read_only_hint = false,
             destructive_hint = false,
@@ -1900,7 +1900,7 @@ impl DegenViewMcp {
 
     #[tool(
         name = "degenview_update_drawing",
-        description = "Change a trend line or rectangle: move its points (same time/price rules as degenview_add_drawings), restyle it, relabel a rectangle, or hide/show it. Only what you give changes. Locked drawings are refused (CONFLICT): unlock them in DegenView first. The change is one undo step in the app.",
+        description = "Change a drawing degenview_add_drawings can draw: move its points (same time/price rules; a one-point drawing has only `a`), restyle it, relabel a rectangle or text, or hide/show it. Only what you give changes. Locked drawings are refused (CONFLICT): unlock them in DegenView first. The change is one undo step in the app.",
         annotations(
             read_only_hint = false,
             destructive_hint = false,

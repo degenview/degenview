@@ -262,6 +262,11 @@ impl Harness {
         self.stub.portfolio.0.lock().unwrap()
     }
 
+    /// The stub chart (workspace 1, chart 2), to seed what a person drew.
+    fn stub_chart(&self) -> std::sync::MutexGuard<'_, StubChart> {
+        self.stub.chart.lock().unwrap()
+    }
+
     pub fn url(&self) -> String {
         format!("http://127.0.0.1:{}/mcp", self.port)
     }
@@ -3544,6 +3549,7 @@ fn tool_schemas_use_only_standard_formats() {
 }
 
 mod chart_control_tests;
+mod drawing_tools_tests;
 mod indicator_tests;
 mod market_tests;
 mod paper_tests;

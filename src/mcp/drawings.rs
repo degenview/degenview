@@ -29,10 +29,134 @@ const DEFAULT_FILL_ALPHA: u8 = 51;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum McpDrawingTool {
-    /// A line through two points, optionally prolonged to the left and/or right.
+    /// A line through two points (`a`, `b`), optionally prolonged to the left and/or right.
     TrendLine,
-    /// A box between two opposite corners, optionally prolonged to the left and/or right.
+    /// A box between two opposite corners (`a`, `b`), optionally prolonged left and/or right.
     Rectangle,
+    /// A line from `a` through `b`, running on to the right edge of the chart.
+    Ray,
+    /// A line through `a` and `b`, running to both edges of the chart.
+    ExtendedLine,
+    /// An arrow from `a` to `b`.
+    Arrow,
+    /// Fibonacci retracement levels between `a` (the start of the move) and `b` (its end).
+    FibRetracement,
+    /// A horizontal line across the chart at the price of `a` (give no `b`; the time is
+    /// ignored).
+    HorizontalLine,
+    /// A horizontal ray from `a` to the right edge (give no `b`).
+    HorizontalRay,
+    /// A vertical line at the time of `a` (give no `b`; the price is ignored but still needed).
+    VerticalLine,
+    /// A horizontal and a vertical line crossing at `a` (give no `b`).
+    Crossline,
+    /// A text label at `a` (give no `b`); needs `text`.
+    Text,
+}
+
+impl McpDrawingTool {
+    pub const ALL: [Self; 11] = [
+        Self::TrendLine,
+        Self::Rectangle,
+        Self::Ray,
+        Self::ExtendedLine,
+        Self::Arrow,
+        Self::FibRetracement,
+        Self::HorizontalLine,
+        Self::HorizontalRay,
+        Self::VerticalLine,
+        Self::Crossline,
+        Self::Text,
+    ];
+
+    /// The app's tool.
+    pub fn tool(self) -> crate::model::Tool {
+        use crate::model::Tool;
+        match self {
+            Self::TrendLine => Tool::TrendLine,
+            Self::Rectangle => Tool::Rectangle,
+            Self::Ray => Tool::Ray,
+            Self::ExtendedLine => Tool::ExtendedLine,
+            Self::Arrow => Tool::Arrow,
+            Self::FibRetracement => Tool::FibRetracement,
+            Self::HorizontalLine => Tool::HorizontalLine,
+            Self::HorizontalRay => Tool::HorizontalRay,
+            Self::VerticalLine => Tool::VerticalLine,
+            Self::Crossline => Tool::Crossline,
+            Self::Text => Tool::Text,
+        }
+    }
+
+    /// The tool this server can edit, if `tool` is one.
+    pub fn of_tool(tool: crate::model::Tool) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|candidate| candidate.tool() == tool)
+    }
+
+    /// How many points place it: one for a level, a marker or a label, two for the rest.
+    pub fn points(self) -> usize {
+        match self {
+            Self::HorizontalLine
+            | Self::HorizontalRay
+            | Self::VerticalLine
+            | Self::Crossline
+            | Self::Text => 1,
+            _ => 2,
+        }
+    }
+
+    /// Whether a fill colour applies.
+    pub fn takes_fill(self) -> bool {
+        self == Self::Rectangle
+    }
+
+    /// Whether text applies (a label inside a box, or the label itself).
+    pub fn takes_text(self) -> bool {
+        matches!(self, Self::Rectangle | Self::Text)
+    }
+
+    /// Whether the tool has its own left and right extension to set.
+    pub fn takes_extension(self) -> bool {
+        matches!(self, Self::TrendLine | Self::Rectangle)
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::TrendLine => "trend lines",
+            Self::Rectangle => "rectangles",
+            Self::Ray => "rays",
+            Self::ExtendedLine => "extended lines",
+            Self::Arrow => "arrows",
+            Self::FibRetracement => "Fibonacci retracements",
+            Self::HorizontalLine => "horizontal lines",
+            Self::HorizontalRay => "horizontal rays",
+            Self::VerticalLine => "vertical lines",
+            Self::Crossline => "crosslines",
+            Self::Text => "text labels",
+        }
+    }
+
+    /// The patch is refused when it names something this tool does not take.
+    pub fn check_patch(self, patch: &StylePatch) -> Result<(), McpError> {
+        if patch.fill_color.is_some() && !self.takes_fill() {
+            return Err(invalid(format!(
+                "fill_color does not apply to {}",
+                self.name()
+            )));
+        }
+        if patch.text.is_some() && !self.takes_text() {
+            return Err(invalid(format!("text does not apply to {}", self.name())));
+        }
+        if (patch.extend_left.is_some() || patch.extend_right.is_some()) && !self.takes_extension()
+        {
+            return Err(invalid(format!(
+                "extend_left and extend_right do not apply to {}",
+                self.name()
+            )));
+        }
+        Ok(())
+    }
 }
 
 /// A moment: ISO-8601 UTC text as `degenview_get_candles` writes it, or epoch milliseconds.
@@ -124,7 +248,8 @@ impl StylePatch {
 pub struct NewDrawing {
     pub tool: McpDrawingTool,
     pub a: AnchorSpec,
-    pub b: AnchorSpec,
+    /// Present exactly for the tools that take two points.
+    pub b: Option<AnchorSpec>,
     pub patch: StylePatch,
 }
 
@@ -145,8 +270,10 @@ pub struct NewDrawingArg {
     pub tool: McpDrawingTool,
     /// First point: one end of a trend line, or one corner of a rectangle.
     pub a: AnchorArg,
-    /// Second point: the other end, or the opposite corner.
-    pub b: AnchorArg,
+    /// Second point: the other end, or the opposite corner. Required for two-point tools
+    /// (trend_line, rectangle, ray, extended_line, arrow, fib_retracement), refused for
+    /// one-point tools (horizontal_line, horizontal_ray, vertical_line, crossline, text).
+    pub b: Option<AnchorArg>,
     /// Line colour as `#RRGGBB` or `#RRGGBBAA`. Default: the app's own for that tool.
     #[schemars(length(max = 9))]
     pub color: Option<String>,
@@ -161,7 +288,7 @@ pub struct NewDrawingArg {
     /// Rectangles only: the fill as `#RRGGBB` (translucent) or `#RRGGBBAA`.
     #[schemars(length(max = 9))]
     pub fill_color: Option<String>,
-    /// Rectangles only: a label inside the box.
+    /// Rectangles: a label inside the box. Text: the label itself (required).
     #[schemars(length(max = 500))]
     pub text: Option<String>,
 }
@@ -350,17 +477,32 @@ impl NewDrawingArg {
             self.fill_color.as_deref(),
             self.text.as_deref(),
         )?;
-        if self.tool == McpDrawingTool::TrendLine
-            && (patch.fill_color.is_some() || patch.text.is_some())
+        self.tool.check_patch(&patch)?;
+        if self.tool == McpDrawingTool::Text
+            && patch
+                .text
+                .as_deref()
+                .is_none_or(|text| text.trim().is_empty())
         {
-            return Err(invalid(
-                "fill_color and text apply to rectangles, not trend lines",
-            ));
+            return Err(invalid("a text drawing needs text"));
         }
+        let b = match (self.tool.points(), &self.b) {
+            (2, Some(b)) => Some(b.check("b")?),
+            (2, None) => {
+                return Err(invalid(format!("{:?} needs a second point `b`", self.tool)));
+            }
+            (_, None) => None,
+            (_, Some(_)) => {
+                return Err(invalid(format!(
+                    "{:?} takes one point: leave `b` out",
+                    self.tool
+                )));
+            }
+        };
         Ok(NewDrawing {
             tool: self.tool,
             a: self.a.check("a")?,
-            b: self.b.check("b")?,
+            b,
             patch,
         })
     }
@@ -528,7 +670,7 @@ mod tests {
         let arg = |fill: Option<&str>, label: Option<&str>| NewDrawingArg {
             tool: McpDrawingTool::TrendLine,
             a: anchor(TimeArg::Millis(1_000), Some(1.0), None),
-            b: anchor(TimeArg::Millis(2_000), Some(2.0), None),
+            b: Some(anchor(TimeArg::Millis(2_000), Some(2.0), None)),
             color: None,
             width: None,
             dash: None,
