@@ -331,7 +331,7 @@ impl TabBar<'_> {
         // Two gray links at the far right: the project on GitHub, and a coffee for its maker.
         let links = [
             (
-                "GitHub",
+                "View project on GitHub",
                 GITHUB_URL,
                 egui::include_image!("../../assets/brand/github.svg"),
                 14.0,
