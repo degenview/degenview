@@ -13,6 +13,9 @@
   Sync; the toolbar's unsaved state still ignores them.) `store::saved_view` owns
   the library; the workspace owns the active layout. Named layouts autosave after two seconds and
   flush before switch/quit; Unnamed never autosaves.
+- A tab's open layout is saved with it (`PersistedWorkspace::active_view`, an id) and its name is
+  looked up in the library on restore; a deleted layout restores as Unnamed. The restored tab's dirty
+  baseline is the restored state, so changes left unsaved at quit show as clean after a restart.
 - Tab title is focused-chart title, then active-layout name, then “New tab”. Session persistence is
   debounced ten seconds and also runs on save/quit.
 

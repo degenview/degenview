@@ -46,6 +46,7 @@ impl ChartWorkspace {
             columns: self.columns.clone(),
             focused: self.focused,
             sync: self.sync,
+            active_view: self.active_view_id,
         }
     }
 
