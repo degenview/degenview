@@ -260,14 +260,15 @@ impl PaperTradingEngine {
         take_profit: Option<f64>,
         stop_loss: Option<f64>,
     ) -> Result<(), PaperTradingError> {
-        order.reserved_margin = self.required_margin(order, account)?;
-        let available = self.metrics(account.id).available_funds;
-        if order.reserved_margin > available {
+        let (margin, needed) = self.funds_needed(order, account)?;
+        let available = self.available_excluding(account.id, order.id);
+        if needed > available {
             return Err(PaperTradingError::InsufficientFunds {
-                required: order.reserved_margin,
+                required: needed,
                 available,
             });
         }
+        order.reserved_margin = margin;
         order.status = PaperOrderStatus::Working;
         order.updated_at = timestamp;
         self.replace(order.clone());
@@ -342,14 +343,30 @@ impl PaperTradingEngine {
         }
         order.updated_at = now_ms();
         let account = self.account(order.account_id)?;
-        order.reserved_margin = self.required_margin(&order, &account)?;
+        // The same check as at submission, so a modification cannot grow an order past what the
+        // account could have placed. The order's own current reservation is not held against it.
+        let (margin, needed) = self.funds_needed(&order, &account)?;
+        let available = self.available_excluding(account.id, order.id);
+        if needed > available {
+            return Err(PaperTradingError::InsufficientFunds {
+                required: needed,
+                available,
+            });
+        }
+        order.reserved_margin = margin;
         self.replace(order.clone());
         self.event(
             order.clone(),
             PaperOrderEventKind::Modified,
             "PAPER order modified".to_owned(),
         );
-        self.evaluate(order.id, None)
+        match self.evaluate(order.id, None) {
+            Err(error @ PaperTradingError::InsufficientFunds { .. }) => {
+                self.reject_working(order.id, &error);
+                Err(error)
+            }
+            other => other,
+        }
     }
 
     /// Feed a live quote. Only quotes that could have moved an order are persisted.
@@ -385,10 +402,41 @@ impl PaperTradingEngine {
             working.sort_by_key(|order| order.created_at);
             working.iter().map(|order| order.id).collect()
         };
+        // One order's failure must not leave the rest of the quote's orders unevaluated.
+        let mut first_error = None;
         for id in ids {
-            self.evaluate(id, None)?;
+            match self.evaluate(id, None) {
+                Ok(()) => {}
+                Err(error @ PaperTradingError::InsufficientFunds { .. }) => {
+                    // Reserved at a better price than it filled at (a gap through a stop, slippage,
+                    // a commission): the order is refused, not filled into a deficit.
+                    self.reject_working(id, &error);
+                }
+                Err(error) => {
+                    first_error.get_or_insert(error);
+                }
+            }
         }
-        Ok(())
+        first_error.map_or(Ok(()), Err)
+    }
+
+    /// Ends a working order that can no longer be afforded, with an audit row.
+    fn reject_working(&mut self, order_id: u64, error: &PaperTradingError) {
+        let Some(mut order) = self
+            .snapshot
+            .orders
+            .iter()
+            .find(|order| order.id == order_id && order.status.is_working())
+            .cloned()
+        else {
+            return;
+        };
+        order.status = PaperOrderStatus::Rejected;
+        order.rejection_reason = Some(error.message());
+        order.reserved_margin = 0.0;
+        order.updated_at = now_ms();
+        self.replace(order.clone());
+        self.event(order, PaperOrderEventKind::Rejected, error.message());
     }
 
     // MARK: Metrics
@@ -561,6 +609,7 @@ impl PaperTradingEngine {
             return Ok(());
         }
         let account = self.account(order.account_id)?;
+        self.check_fill_funds(order, &account, quantity, price)?;
         let commission = commission(
             &account.settings.commission,
             quantity,
@@ -715,7 +764,6 @@ impl PaperTradingEngine {
         position.commissions -= allocated_entry_commission;
         position.signed_quantity += delta;
         position.updated_at = fill.timestamp;
-        let remaining = position.signed_quantity.abs();
         if position.signed_quantity == 0.0 {
             self.snapshot.positions.remove(index);
         } else if (old_signed > 0.0) != (position.signed_quantity > 0.0) {
@@ -726,7 +774,7 @@ impl PaperTradingEngine {
         } else {
             self.snapshot.positions[index] = position;
         }
-        self.resize_protective_orders(fill.account_id, &fill.instrument.key, remaining);
+        self.rebalance_protection(fill.account_id, &fill.instrument.key);
         gross
     }
 
@@ -737,6 +785,25 @@ impl PaperTradingEngine {
         stop_loss: Option<f64>,
     ) {
         if take_profit.is_none() && stop_loss.is_none() {
+            return;
+        }
+        // Protection is sized to the position the entry left, on the entry's side: an entry that
+        // only reduced or reversed an existing position must not arm an exit larger than it.
+        let protected = self
+            .snapshot
+            .positions
+            .iter()
+            .find(|position| {
+                position.account_id == parent.account_id
+                    && position.instrument.key == parent.instrument.key
+            })
+            .filter(|position| {
+                (position.signed_quantity > 0.0) == (parent.side == PaperOrderSide::Buy)
+            })
+            .map_or(0.0, |position| {
+                position.quantity().min(parent.filled_quantity)
+            });
+        if protected <= 0.0 {
             return;
         }
         let group = self.mint();
@@ -753,6 +820,7 @@ impl PaperTradingEngine {
                 PaperOrderType::Limit,
                 price,
                 PaperOrderRole::TakeProfit,
+                protected,
             );
         }
         if let Some(price) = stop_loss {
@@ -763,6 +831,7 @@ impl PaperTradingEngine {
                 PaperOrderType::Stop,
                 price,
                 PaperOrderRole::StopLoss,
+                protected,
             );
         }
     }
@@ -775,6 +844,7 @@ impl PaperTradingEngine {
         kind: PaperOrderType,
         price: f64,
         role: PaperOrderRole,
+        quantity: f64,
     ) {
         let child = PaperOrder {
             id: self.mint(),
@@ -782,7 +852,7 @@ impl PaperTradingEngine {
             instrument: parent.instrument.clone(),
             side,
             kind,
-            original_quantity: parent.filled_quantity,
+            original_quantity: quantity,
             filled_quantity: 0.0,
             average_fill_price: None,
             limit_price: (kind == PaperOrderType::Limit).then_some(price),
@@ -835,7 +905,20 @@ impl PaperTradingEngine {
         }
     }
 
-    fn resize_protective_orders(&mut self, account_id: u64, instrument_key: &str, remaining: f64) {
+    /// Keeps stops and take-profits honest after the position changed. Protection that no longer
+    /// reduces the position (it was closed, or reversed so the old exit now adds to the new side)
+    /// is canceled; protection larger than what is left is shrunk to it, never grown. Every
+    /// change is audited. A protective order can therefore at worst close the position.
+    fn rebalance_protection(&mut self, account_id: u64, instrument_key: &str) {
+        let signed = self
+            .snapshot
+            .positions
+            .iter()
+            .find(|position| {
+                position.account_id == account_id && position.instrument.key == instrument_key
+            })
+            .map_or(0.0, |position| position.signed_quantity);
+        let size = signed.abs();
         let indices: Vec<usize> = self
             .snapshot
             .orders
@@ -850,13 +933,31 @@ impl PaperTradingEngine {
             .map(|(index, _)| index)
             .collect();
         for index in indices {
-            if remaining == 0.0 {
+            let order = &self.snapshot.orders[index];
+            let reduces = (signed > 0.0 && order.side == PaperOrderSide::Sell)
+                || (signed < 0.0 && order.side == PaperOrderSide::Buy);
+            if !reduces {
+                let message = if size == 0.0 {
+                    "PAPER protection canceled; the position is closed"
+                } else {
+                    "PAPER protection canceled; the position reversed"
+                };
                 self.snapshot.orders[index].status = PaperOrderStatus::Canceled;
-            } else {
-                let filled = self.snapshot.orders[index].filled_quantity;
-                self.snapshot.orders[index].original_quantity = filled + remaining;
+                self.snapshot.orders[index].reserved_margin = 0.0;
+                self.snapshot.orders[index].updated_at = now_ms();
+                let order = self.snapshot.orders[index].clone();
+                self.event(order, PaperOrderEventKind::Canceled, message.to_owned());
+            } else if order.original_quantity > order.filled_quantity + size {
+                self.snapshot.orders[index].original_quantity =
+                    self.snapshot.orders[index].filled_quantity + size;
+                self.snapshot.orders[index].updated_at = now_ms();
+                let order = self.snapshot.orders[index].clone();
+                self.event(
+                    order,
+                    PaperOrderEventKind::Modified,
+                    format!("PAPER protection resized to the remaining {size}"),
+                );
             }
-            self.snapshot.orders[index].updated_at = now_ms();
         }
     }
 
@@ -926,36 +1027,34 @@ impl PaperTradingEngine {
         Ok(())
     }
 
-    fn required_margin(
-        &self,
-        order: &PaperOrder,
-        account: &PaperAccount,
-    ) -> Result<f64, PaperTradingError> {
-        if order.role != PaperOrderRole::Entry {
-            return Ok(0.0);
-        }
-        let price: f64;
+    /// The price an entry order is sized at: its limit or stop, else what the quote offers.
+    fn reference_price(&self, order: &PaperOrder) -> Result<f64, PaperTradingError> {
         if matches!(
             order.kind,
             PaperOrderType::Limit | PaperOrderType::StopLimit
         ) && let Some(limit) = order.limit_price
         {
-            price = limit;
-        } else if order.kind == PaperOrderType::Stop
+            return Ok(limit);
+        }
+        if order.kind == PaperOrderType::Stop
             && let Some(stop) = order.stop_price
         {
-            price = stop;
-        } else if let Some((quote, _)) = self
-            .snapshot
+            return Ok(stop);
+        }
+        self.snapshot
             .quotes
             .get(&order.instrument.key)
             .and_then(|quote| quote.executable_price(order.side))
-        {
-            price = quote;
-        } else {
-            return Err(PaperTradingError::NoMarketData);
-        }
-        let signed_position = self
+            .map(|(price, _)| price)
+            .ok_or(PaperTradingError::NoMarketData)
+    }
+
+    /// How much of the open position this order may count as reducing: the position, less what
+    /// older working entry orders on the same side already counted. Without that, any number of
+    /// one-unit exits against a one-unit position would each reserve nothing, and the second to
+    /// fill would open an unfunded short.
+    fn reducible_quantity(&self, order: &PaperOrder) -> f64 {
+        let signed = self
             .snapshot
             .positions
             .iter()
@@ -964,20 +1063,122 @@ impl PaperTradingEngine {
                     && position.instrument.key == order.instrument.key
             })
             .map_or(0.0, |position| position.signed_quantity);
-        let reduces_existing = (signed_position > 0.0 && order.side == PaperOrderSide::Sell)
-            || (signed_position < 0.0 && order.side == PaperOrderSide::Buy);
-        let reducible_quantity = if reduces_existing {
-            signed_position.abs()
-        } else {
-            0.0
-        };
-        let exposure_increasing = (order.remaining_quantity() - reducible_quantity).max(0.0);
-        let leverage = account
+        let reduces = (signed > 0.0 && order.side == PaperOrderSide::Sell)
+            || (signed < 0.0 && order.side == PaperOrderSide::Buy);
+        if !reduces {
+            return 0.0;
+        }
+        let claimed: f64 = self
+            .snapshot
+            .orders
+            .iter()
+            .filter(|other| {
+                other.id != order.id
+                    && other.account_id == order.account_id
+                    && other.instrument.key == order.instrument.key
+                    && other.side == order.side
+                    && other.role == PaperOrderRole::Entry
+                    && other.status.is_working()
+                    && (other.created_at, other.id) < (order.created_at, order.id)
+            })
+            .map(PaperOrder::remaining_quantity)
+            .sum();
+        (signed.abs() - claimed).max(0.0)
+    }
+
+    fn leverage(account: &PaperAccount, instrument: &PaperInstrument) -> f64 {
+        account
             .settings
             .leverage
-            .leverage(order.instrument.asset_class)
-            .max(1.0);
-        Ok(exposure_increasing * price * order.instrument.contract_multiplier / leverage)
+            .leverage(instrument.asset_class)
+            .max(1.0)
+    }
+
+    /// The margin an entry order reserves, and the funds it needs in all: the margin plus its
+    /// commission, when it adds exposure. An order that only closes needs neither, so a fully
+    /// invested account can always get out.
+    fn funds_needed(
+        &self,
+        order: &PaperOrder,
+        account: &PaperAccount,
+    ) -> Result<(f64, f64), PaperTradingError> {
+        if order.role != PaperOrderRole::Entry {
+            return Ok((0.0, 0.0));
+        }
+        let price = self.reference_price(order)?;
+        let increase = (order.remaining_quantity() - self.reducible_quantity(order)).max(0.0);
+        let margin = increase * price * order.instrument.contract_multiplier
+            / Self::leverage(account, &order.instrument);
+        if increase == 0.0 {
+            return Ok((margin, margin));
+        }
+        let fee = commission(
+            &account.settings.commission,
+            order.remaining_quantity(),
+            price,
+            &order.instrument,
+        );
+        Ok((margin, margin + fee))
+    }
+
+    /// Funds free for one order: equity less position margin and every other order's reservation.
+    fn available_excluding(&self, account_id: u64, order_id: u64) -> f64 {
+        let metrics = self.metrics(account_id);
+        let own = self
+            .snapshot
+            .orders
+            .iter()
+            .find(|order| order.id == order_id && order.status.is_working())
+            .map_or(0.0, |order| order.reserved_margin);
+        (metrics.equity - metrics.position_margin - (metrics.orders_margin - own)).max(0.0)
+    }
+
+    /// The last check before a fill: the order was reserved at its limit or stop, but fills at the
+    /// executable price, plus slippage and commission. A fill that adds exposure the account
+    /// cannot carry is refused rather than booked into a deficit.
+    fn check_fill_funds(
+        &self,
+        order: &PaperOrder,
+        account: &PaperAccount,
+        quantity: f64,
+        price: f64,
+    ) -> Result<(), PaperTradingError> {
+        if order.role != PaperOrderRole::Entry {
+            return Ok(());
+        }
+        let signed = self
+            .snapshot
+            .positions
+            .iter()
+            .find(|position| {
+                position.account_id == order.account_id
+                    && position.instrument.key == order.instrument.key
+            })
+            .map_or(0.0, |position| position.signed_quantity);
+        let reduces = (signed > 0.0 && order.side == PaperOrderSide::Sell)
+            || (signed < 0.0 && order.side == PaperOrderSide::Buy);
+        let increase = (quantity - if reduces { signed.abs() } else { 0.0 }).max(0.0);
+        if increase == 0.0 {
+            return Ok(());
+        }
+        let margin = increase * price * order.instrument.contract_multiplier
+            / Self::leverage(account, &order.instrument);
+        let needed = margin
+            + commission(
+                &account.settings.commission,
+                quantity,
+                price,
+                &order.instrument,
+            );
+        let available = self.available_excluding(account.id, order.id);
+        // A fill within a cent of the funds is not a deficit worth refusing over.
+        if needed > available + 0.005 {
+            return Err(PaperTradingError::InsufficientFunds {
+                required: needed,
+                available,
+            });
+        }
+        Ok(())
     }
 
     fn liquidation_price(&self, position: &PaperPosition) -> Option<f64> {
@@ -1357,5 +1558,267 @@ mod tests {
             engine.submit(request(account, PaperOrderType::Market, 1.0)),
             Err(PaperTradingError::NoMarketData)
         ));
+    }
+
+    // MARK: Funds and protection
+
+    fn find(engine: &PaperTradingEngine, id: u64) -> &PaperOrder {
+        engine
+            .snapshot()
+            .orders
+            .iter()
+            .find(|order| order.id == id)
+            .unwrap()
+    }
+
+    fn sell_limit(account_id: u64, quantity: f64) -> PaperOrderRequest {
+        PaperOrderRequest {
+            side: PaperOrderSide::Sell,
+            limit_price: Some(200.0),
+            ..request(account_id, PaperOrderType::Limit, quantity)
+        }
+    }
+
+    fn bracketed_buy(account_id: u64, quantity: f64) -> PaperOrderRequest {
+        PaperOrderRequest {
+            take_profit: Some(120.0),
+            stop_loss: Some(50.0),
+            ..request(account_id, PaperOrderType::Market, quantity)
+        }
+    }
+
+    fn working_protection(engine: &PaperTradingEngine) -> Vec<&PaperOrder> {
+        engine
+            .snapshot()
+            .orders
+            .iter()
+            .filter(|order| order.role != PaperOrderRole::Entry && order.status.is_working())
+            .collect()
+    }
+
+    fn small_engine(balance: f64, settings: PaperAccountSettings) -> (PaperTradingEngine, u64) {
+        let mut engine = PaperTradingEngine::new(PaperTradingSnapshot::default());
+        let id = engine
+            .create_account("Small", PaperCurrency::Usd, balance, settings)
+            .unwrap();
+        (engine, id)
+    }
+
+    #[test]
+    fn a_modification_cannot_grow_an_order_past_the_funds() {
+        let (mut engine, account) = engine_with_account();
+        engine.process(quote("Binance:BTCUSDT", 110.0)).unwrap();
+        let id = engine
+            .submit(request(account, PaperOrderType::Limit, 1.0))
+            .unwrap();
+        let result = engine.modify(
+            id,
+            PaperOrderChanges {
+                quantity: Some(2_000.0),
+                ..PaperOrderChanges::default()
+            },
+        );
+        assert!(matches!(
+            result,
+            Err(PaperTradingError::InsufficientFunds { .. })
+        ));
+        assert_eq!(find(&engine, id).original_quantity, 1.0);
+        assert_eq!(find(&engine, id).reserved_margin, 100.0);
+        // A modification that still fits goes through, and is not charged against itself.
+        engine
+            .modify(
+                id,
+                PaperOrderChanges {
+                    quantity: Some(1_000.0),
+                    ..PaperOrderChanges::default()
+                },
+            )
+            .unwrap();
+        assert_eq!(find(&engine, id).reserved_margin, 100_000.0);
+    }
+
+    #[test]
+    fn exits_beyond_the_position_reserve_margin_for_the_short_they_could_open() {
+        let (mut engine, account) = small_engine(1_000.0, PaperAccountSettings::default());
+        engine.process(quote("Binance:BTCUSDT", 100.0)).unwrap();
+        engine
+            .submit(request(account, PaperOrderType::Market, 5.0))
+            .unwrap();
+        let first = engine.submit(sell_limit(account, 5.0)).unwrap();
+        assert_eq!(find(&engine, first).reserved_margin, 0.0);
+        // The position is already spoken for by the first exit, so a second one opens a short.
+        let second = engine.submit(sell_limit(account, 5.0));
+        assert!(matches!(
+            second,
+            Err(PaperTradingError::InsufficientFunds { .. })
+        ));
+    }
+
+    #[test]
+    fn overlapping_exits_on_a_funded_account_each_reserve_what_they_could_open() {
+        let (mut engine, account) = engine_with_account();
+        engine.process(quote("Binance:BTCUSDT", 100.0)).unwrap();
+        engine
+            .submit(request(account, PaperOrderType::Market, 1.0))
+            .unwrap();
+        let first = engine.submit(sell_limit(account, 1.0)).unwrap();
+        let second = engine.submit(sell_limit(account, 1.0)).unwrap();
+        let third = engine.submit(sell_limit(account, 1.0)).unwrap();
+        assert_eq!(find(&engine, first).reserved_margin, 0.0);
+        assert_eq!(find(&engine, second).reserved_margin, 200.0);
+        assert_eq!(find(&engine, third).reserved_margin, 200.0);
+    }
+
+    #[test]
+    fn a_fill_that_gaps_past_the_reserved_price_is_refused() {
+        let (mut engine, account) = small_engine(1_000.0, PaperAccountSettings::default());
+        engine.process(quote("Binance:BTCUSDT", 100.0)).unwrap();
+        let id = engine
+            .submit(PaperOrderRequest {
+                stop_price: Some(101.0),
+                ..request(account, PaperOrderType::Stop, 9.0)
+            })
+            .unwrap();
+        assert_eq!(find(&engine, id).status, PaperOrderStatus::Working);
+
+        // The stop reserved 9 x 101; the market gaps to 200.5 and the fill would cost twice that.
+        engine.process(quote("Binance:BTCUSDT", 200.0)).unwrap();
+        let order = find(&engine, id);
+        assert_eq!(order.status, PaperOrderStatus::Rejected);
+        assert!(order.rejection_reason.is_some());
+        assert!(engine.snapshot().positions.is_empty());
+        assert!(
+            engine
+                .snapshot()
+                .order_events
+                .iter()
+                .any(|event| event.order_id == id && event.kind == PaperOrderEventKind::Rejected)
+        );
+    }
+
+    #[test]
+    fn commission_counts_toward_the_funds_an_opening_order_needs() {
+        let settings = PaperAccountSettings {
+            commission: PaperCommissionConfiguration::FixedPerOrder { value: 50.0 },
+            ..PaperAccountSettings::default()
+        };
+        let (mut engine, account) = small_engine(1_000.0, settings);
+        engine.process(quote("Binance:BTCUSDT", 100.0)).unwrap();
+        // 9.9 x 100.5 = 994.95 fits 1,000 alone; with the 50 fee it does not.
+        let result = engine.submit(request(account, PaperOrderType::Market, 9.9));
+        assert!(matches!(
+            result,
+            Err(PaperTradingError::InsufficientFunds { .. })
+        ));
+    }
+
+    #[test]
+    fn closing_is_never_refused_for_its_commission() {
+        let settings = PaperAccountSettings {
+            commission: PaperCommissionConfiguration::FixedPerOrder { value: 50.0 },
+            ..PaperAccountSettings::default()
+        };
+        let (mut engine, account) = small_engine(1_000.0, settings);
+        engine.process(quote("Binance:BTCUSDT", 100.0)).unwrap();
+        engine
+            .submit(request(account, PaperOrderType::Market, 9.0))
+            .unwrap();
+        engine
+            .submit(PaperOrderRequest {
+                side: PaperOrderSide::Sell,
+                ..request(account, PaperOrderType::Market, 9.0)
+            })
+            .unwrap();
+        assert!(engine.snapshot().positions.is_empty());
+    }
+
+    #[test]
+    fn reversing_a_position_cancels_the_protection_that_would_now_add_to_it() {
+        let (mut engine, account) = engine_with_account();
+        engine.process(quote("Binance:BTCUSDT", 100.0)).unwrap();
+        engine.submit(bracketed_buy(account, 1.0)).unwrap();
+        assert_eq!(working_protection(&engine).len(), 2);
+
+        engine
+            .submit(PaperOrderRequest {
+                side: PaperOrderSide::Sell,
+                ..request(account, PaperOrderType::Market, 2.0)
+            })
+            .unwrap();
+        assert_eq!(engine.snapshot().positions[0].signed_quantity, -1.0);
+        assert!(working_protection(&engine).is_empty());
+        let canceled = engine
+            .snapshot()
+            .order_events
+            .iter()
+            .filter(|event| {
+                event.kind == PaperOrderEventKind::Canceled && event.message.contains("reversed")
+            })
+            .count();
+        assert_eq!(canceled, 2, "both exits are audited");
+    }
+
+    #[test]
+    fn a_take_profit_fill_audits_the_cancel_of_its_stop() {
+        let (mut engine, account) = engine_with_account();
+        engine.process(quote("Binance:BTCUSDT", 100.0)).unwrap();
+        engine.submit(bracketed_buy(account, 1.0)).unwrap();
+        let stop = engine
+            .snapshot()
+            .orders
+            .iter()
+            .find(|order| order.role == PaperOrderRole::StopLoss)
+            .unwrap()
+            .id;
+
+        engine.process(quote("Binance:BTCUSDT", 125.0)).unwrap();
+        assert!(engine.snapshot().positions.is_empty());
+        assert_eq!(find(&engine, stop).status, PaperOrderStatus::Canceled);
+        assert!(
+            engine
+                .snapshot()
+                .order_events
+                .iter()
+                .any(|event| event.order_id == stop && event.kind == PaperOrderEventKind::Canceled)
+        );
+    }
+
+    #[test]
+    fn a_partial_close_shrinks_protection_to_what_is_left() {
+        let (mut engine, account) = engine_with_account();
+        engine.process(quote("Binance:BTCUSDT", 100.0)).unwrap();
+        engine.submit(bracketed_buy(account, 2.0)).unwrap();
+        engine
+            .submit(PaperOrderRequest {
+                side: PaperOrderSide::Sell,
+                ..request(account, PaperOrderType::Market, 1.0)
+            })
+            .unwrap();
+        let protection = working_protection(&engine);
+        assert_eq!(protection.len(), 2);
+        assert!(
+            protection
+                .iter()
+                .all(|order| order.original_quantity == 1.0)
+        );
+    }
+
+    #[test]
+    fn an_entry_that_only_reduces_arms_no_protection() {
+        let (mut engine, account) = engine_with_account();
+        engine.process(quote("Binance:BTCUSDT", 100.0)).unwrap();
+        engine
+            .submit(request(account, PaperOrderType::Market, 1.0))
+            .unwrap();
+        engine
+            .submit(PaperOrderRequest {
+                side: PaperOrderSide::Sell,
+                take_profit: Some(90.0),
+                stop_loss: Some(150.0),
+                ..request(account, PaperOrderType::Market, 1.0)
+            })
+            .unwrap();
+        assert!(engine.snapshot().positions.is_empty());
+        assert!(working_protection(&engine).is_empty());
     }
 }

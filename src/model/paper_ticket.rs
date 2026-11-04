@@ -1,7 +1,7 @@
 //! Everything the order ticket needs to know about what is typed into it: parsed values, the
 //! figures in the summary and which fields are wrong. Kept out of the view so it can be tested.
 //!
-//! The margin and tick rules mirror `paper_engine` (`required_margin`, `validate_step`): margin is
+//! The margin and tick rules mirror `paper_engine` (`funds_needed`, `validate_step`): margin is
 //! charged only for the part of an order that adds exposure, and quantities and prices must sit on
 //! the instrument's increments. The engine stays the authority; this only warns before submitting.
 
