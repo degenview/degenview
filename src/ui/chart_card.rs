@@ -368,6 +368,10 @@ pub struct ChartCard {
     /// workspace last took them.
     alert_market: alert_lines::Market,
     alert_moves: Vec<alert_lines::AlertMove>,
+    /// The alerts whose pill is open (the rest show only their arrow), and the ones deleted from
+    /// their pill since the workspace last took them. Never saved.
+    alert_open: std::collections::HashSet<crate::model::alert::AlertId>,
+    alert_deletes: Vec<crate::model::alert::AlertId>,
     /// Whether the corner carries the price-scale menu (a script preview has none), and the mode
     /// picked from it since the workspace last took it.
     scale_menu: bool,
@@ -672,6 +676,8 @@ impl Default for ChartCard {
             alert_menu: None,
             alert_market: alert_lines::Market::default(),
             alert_moves: Vec::new(),
+            alert_open: std::collections::HashSet::new(),
+            alert_deletes: Vec::new(),
             scale_menu: true,
             scale_request: None,
         }
@@ -2199,6 +2205,8 @@ impl ChartCard {
             pane_actions: Vec::new(),
             alert_menu: None,
             alert_moves: Vec::new(),
+            alert_toggled: Vec::new(),
+            alert_deleted: Vec::new(),
             paper: (Vec::new(), None),
             navigation: None,
             scale_mode: None,
@@ -2222,6 +2230,8 @@ impl ChartCard {
             pane_actions,
             alert_menu,
             alert_moves,
+            alert_toggled,
+            alert_deleted,
             paper,
             navigation,
             scale_mode,
@@ -2233,6 +2243,8 @@ impl ChartCard {
                 pane_actions,
                 alert_menu,
                 alert_moves,
+                alert_toggled,
+                alert_deleted,
                 paper,
                 navigation,
                 scale_mode,

@@ -826,10 +826,18 @@ impl ChartWorkspace {
         }
     }
 
-    /// Turns the alert tags dropped on a new level since the last frame into saves.
+    /// Turns the alert tags dropped on a new level since the last frame into saves, and the bins
+    /// clicked into deletes.
     fn apply_alert_moves(&mut self) -> Vec<WorkspaceAction> {
         let mut actions = Vec::new();
         for index in 0..self.charts.len() {
+            actions.extend(
+                self.charts[index]
+                    .chart
+                    .take_alert_deletes()
+                    .into_iter()
+                    .map(WorkspaceAction::DeleteAlert),
+            );
             for moved in self.charts[index].chart.take_alert_moves() {
                 actions.extend(self.move_alert(index, moved));
             }

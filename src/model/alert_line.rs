@@ -19,6 +19,9 @@ pub struct AlertLine {
     pub paused: bool,
     /// Whether the alert fires when the price rises to the level.
     pub above: bool,
+    /// Whether the level follows from a percentage (rises or falls by) rather than being a
+    /// price that is crossed: the pill shows a slanted arrow for it.
+    pub percent: bool,
     /// Whether dragging the line may move the level. A percentage alert's level follows from its
     /// percent and reference, so moving it would make it a different alert.
     pub editable: bool,
@@ -65,6 +68,10 @@ pub fn lines_for(
                 price: level / rate,
                 paused: alert.state == AlertState::Paused,
                 above: alert.condition.crosses_above(),
+                percent: matches!(
+                    alert.condition,
+                    AlertCondition::RisesBy { .. } | AlertCondition::FallsBy { .. }
+                ),
                 editable: matches!(
                     alert.condition,
                     AlertCondition::CrossesAbove { .. } | AlertCondition::CrossesBelow { .. }
@@ -95,6 +102,18 @@ mod tests {
     }
 
     #[test]
+    fn a_percentage_alert_is_marked_as_one_and_keeps_its_side() {
+        let alerts = [
+            alert(1, "BTCUSDT", AlertCondition::rises_by(5.0, 100.0)),
+            alert(2, "BTCUSDT", AlertCondition::falls_by(5.0, 100.0)),
+            alert(3, "BTCUSDT", AlertCondition::CrossesAbove { target: 110.0 }),
+        ];
+        let lines = lines_for(&alerts, &market("BTCUSDT"), &HashMap::new());
+        let flags: Vec<(bool, bool)> = lines.iter().map(|l| (l.percent, l.above)).collect();
+        assert_eq!(flags, [(true, true), (true, false), (false, true)]);
+    }
+
+    #[test]
     fn only_this_markets_live_alerts_become_lines() {
         let mut paused = alert(2, "BTCUSDT", AlertCondition::CrossesBelow { target: 90.0 });
         paused.state = AlertState::Paused;
@@ -115,6 +134,7 @@ mod tests {
                     price: 110.0,
                     paused: false,
                     above: true,
+                    percent: false,
                     editable: true
                 },
                 AlertLine {
@@ -122,6 +142,7 @@ mod tests {
                     price: 90.0,
                     paused: true,
                     above: false,
+                    percent: false,
                     editable: true
                 },
             ]

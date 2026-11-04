@@ -23,6 +23,8 @@ pub(super) struct OverlayResults {
     pub pane_actions: Vec<(u64, PaneAction)>,
     pub alert_menu: Option<alert_lines::LineMenu>,
     pub alert_moves: Vec<alert_lines::AlertMove>,
+    pub alert_toggled: Vec<crate::model::alert::AlertId>,
+    pub alert_deleted: Vec<crate::model::alert::AlertId>,
     pub paper: (Vec<PaperOverlayAction>, Option<MarkerMenu>),
     pub navigation: Option<chart_buttons::NavAction>,
     pub scale_mode: Option<PriceScaleMode>,
@@ -192,6 +194,8 @@ impl ChartCard {
             pane_actions,
             alert_menu,
             alert_moves,
+            alert_toggled,
+            alert_deleted,
             paper,
             navigation,
             scale_mode,
@@ -203,6 +207,12 @@ impl ChartCard {
             self.alert_menu = alert_menu;
         }
         self.alert_moves.extend(alert_moves);
+        for id in alert_toggled {
+            if !self.alert_open.remove(&id) {
+                self.alert_open.insert(id);
+            }
+        }
+        self.alert_deletes.extend(alert_deleted);
         self.paper.actions.extend(paper.0);
         self.paper.menu = paper.1.or(self.paper.menu.take());
         if let Some(action) = navigation {
