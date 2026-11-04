@@ -10,6 +10,16 @@ run them on your own machine, keep every line of source on your device.
 
 ![DegenView showing a candlestick chart with indicators and a watchlist](assets/screenshots/screenshot.png)
 
+| Step debugger | Profiler |
+| :---: | :---: |
+| ![Pine Studio paused on a breakpoint, with variables, watches and the call stack](assets/screenshots/pine-debugger.png) | ![Pine Studio profiler showing per-line time bars and the hottest lines and blocks](assets/screenshots/pine-profiler.png) |
+
+The Pine Studio ships with a **step debugger** and a **profiler**. Set breakpoints, step over, into
+and out, and inspect variables, watches and the call stack while the script runs on the preview
+chart's bars. The profiler shows where the time goes, with a bar and share beside each line and a
+ranked list of the hottest lines and blocks. See [Pine debugger](docs/pine-debugger.md) and
+[Pine profiler](docs/pine-profiler.md).
+
 ## Features
 
 ### Markets and live data
@@ -37,7 +47,8 @@ leaving your device.
 - **Typed `input.*` controls** — int, float, bool, color, time, and string inputs re-evaluate
   the script live without recompiling.
 - **Pine Studio** — a `.pine` file library with a code editor (go to definition, rename,
-  multiple cursors), diagnostics, and a live preview chart that re-runs as you type.
+  multiple cursors), diagnostics, a step debugger, a profiler, and a live preview chart that
+  re-runs as you type.
 - **Pine alerts** — a script's `alert()` fires on a live bar (see [Alerts](#alerts)).
 
 ### Charts and analysis
