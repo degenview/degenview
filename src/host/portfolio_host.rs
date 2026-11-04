@@ -14,13 +14,16 @@ use crate::model::portfolio::{
 use crate::model::portfolio_accounting::{holdings_and_closed, net_contributions};
 use crate::model::portfolio_csv;
 use crate::model::portfolio_format::{PORTFOLIO_CURRENCIES, PortfolioValueFormatter};
-use crate::model::portfolio_history::rebuild_start;
+use crate::model::portfolio_history::{rebuild_start, transactions_fingerprint};
 use crate::model::portfolio_ledger::PortfolioLedger;
 use crate::model::portfolio_statistics::PortfolioHistoryRange;
 use crate::model::watchlist::new_id;
 use crate::service::asset_auto_mapper::asset_from_search_result;
-use crate::service::portfolio_history::{HistoryRebuilder, IntradayFeed, IntradayRequest};
+use crate::service::portfolio_history::{
+    HistoryRebuilder, HistoryResult, IntradayFeed, IntradayRequest,
+};
 use crate::service::portfolio_quotes::{PortfolioQuoteFeed, PortfolioQuoteState};
+use crate::service::timezone::local_utc_offset_secs;
 use crate::store::{SharedStore, Store};
 use crate::ui::header_controls;
 use crate::ui::icons::Icon;
@@ -150,35 +153,12 @@ impl PortfolioHost {
     /// Keeps the daily value history of `scope` current: stores what finished rebuilding and
     /// starts a rebuild for any portfolio whose history is missing days. A result is dropped
     /// when the ledger changed under it (the next frame starts a fresh one).
-    pub fn drive_history(
-        &mut self,
-        ctx: &egui::Context,
-        scope: &HashSet<u64>,
-        now_ms: i64,
-        utc_offset_secs: i64,
-    ) {
+    pub fn drive_history(&mut self, ctx: &egui::Context, scope: &HashSet<u64>, now_ms: i64) {
         if self.load_error.is_some() {
             return;
         }
         for result in self.history.poll(now_ms) {
-            let Some(snapshots) = result.snapshots else {
-                continue;
-            };
-            let current = rebuild_start(
-                result.portfolio_id,
-                self.ledger.snapshot(),
-                now_ms,
-                utc_offset_secs,
-            );
-            if current == Some(result.from)
-                && self
-                    .store_snapshots(snapshots, result.portfolio_id, result.from)
-                    .is_err()
-            {
-                // `store_snapshots` has told the error sheet. Without a pause the next frame
-                // would rebuild the same days and fail the same way.
-                self.history.defer(result.portfolio_id, now_ms);
-            }
+            self.accept_rebuilt(result, now_ms);
         }
         let snapshot = self.ledger.snapshot();
         let mut starts = Vec::new();
@@ -190,7 +170,9 @@ impl PortfolioHost {
             if !self.history.can_start(portfolio.id, now_ms) {
                 continue;
             }
-            if let Some(from) = rebuild_start(portfolio.id, snapshot, now_ms, utc_offset_secs) {
+            let from = rebuild_start(portfolio.id, snapshot, now_ms, local_utc_offset_secs)
+                .or_else(|| self.history.partial_due(portfolio.id, now_ms));
+            if let Some(from) = from {
                 let transactions: Vec<PortfolioTransaction> = snapshot
                     .transactions
                     .iter()
@@ -201,8 +183,14 @@ impl PortfolioHost {
             }
         }
         for (portfolio, transactions, from) in starts {
-            self.history
-                .start(ctx, &portfolio, transactions, from, now_ms, utc_offset_secs);
+            self.history.start(
+                ctx,
+                &portfolio,
+                transactions,
+                from,
+                now_ms,
+                local_utc_offset_secs,
+            );
         }
     }
 
@@ -357,6 +345,34 @@ impl PortfolioHost {
         transactions: Vec<PortfolioTransaction>,
     ) -> Result<(), PortfolioHostError> {
         self.mutate(move |ledger| ledger.import_transactions(transactions))
+    }
+
+    /// Stores a finished rebuild, if the portfolio still has the transactions it was computed
+    /// from. The result is for those: if the portfolio has changed since, it is dropped and the
+    /// next frame starts a fresh rebuild.
+    fn accept_rebuilt(&mut self, result: HistoryResult, now_ms: i64) {
+        let Some(snapshots) = result.snapshots else {
+            return;
+        };
+        let basis = transactions_fingerprint(
+            &self
+                .ledger
+                .snapshot()
+                .transactions
+                .iter()
+                .filter(|transaction| transaction.portfolio_id == result.portfolio_id)
+                .cloned()
+                .collect::<Vec<_>>(),
+        );
+        if basis == result.basis
+            && self
+                .store_snapshots(snapshots, result.portfolio_id, result.from)
+                .is_err()
+        {
+            // `store_snapshots` has told the error sheet. Without a pause the next frame
+            // would rebuild the same days and fail the same way.
+            self.history.defer(result.portfolio_id, now_ms);
+        }
     }
 
     pub fn store_snapshots(
@@ -880,7 +896,7 @@ impl PortfolioTab {
             true,
             now_ms,
         );
-        host.drive_history(ui.ctx(), &portfolio_ids, now_ms, local_offset());
+        host.drive_history(ui.ctx(), &portfolio_ids, now_ms);
         let quote_state = self.quote_feed.state();
         let projected = quote_state.projection.as_ref();
         if projected.is_none() || quote_state.is_updating || quote_state.refresh_pending {
@@ -1863,6 +1879,61 @@ mod tests {
             .unwrap();
         host.remap_asset("none", &destination, &scope).unwrap();
         assert!(host.last_error().is_none());
+    }
+
+    fn rebuilt(portfolio_id: u64, basis: u64) -> HistoryResult {
+        HistoryResult {
+            portfolio_id,
+            from: 0,
+            snapshots: Some(vec![PortfolioSnapshot {
+                portfolio_id,
+                timestamp: 0,
+                value: 1.0,
+                net_contributions: 1.0,
+                realized_pnl: 0.0,
+                unrealized_pnl: 0.0,
+                is_complete: true,
+            }]),
+            hopeless: false,
+            incomplete: false,
+            basis,
+        }
+    }
+
+    #[test]
+    fn a_rebuild_is_stored_only_for_the_transactions_it_was_computed_from() {
+        let mut host = PortfolioHost::load(store());
+        let portfolio = host
+            .create_portfolio("Main", PortfolioCurrency::Usd)
+            .unwrap();
+        host.add_transaction(transaction(1, portfolio, 1.0))
+            .unwrap();
+        let own =
+            |host: &PortfolioHost| transactions_fingerprint(&host.ledger.snapshot().transactions);
+        let before = own(&host);
+
+        // An edit lands while the rebuild runs, in the same day: its result is stale.
+        host.add_transaction(transaction(2, portfolio, 2.0))
+            .unwrap();
+        host.accept_rebuilt(rebuilt(portfolio, before), 10);
+        assert!(host.ledger.snapshot().historical_snapshots.is_empty());
+        assert!(
+            host.ledger
+                .snapshot()
+                .invalidated_after
+                .contains_key(&portfolio)
+        );
+
+        // A result for what the portfolio holds now is stored and settles the marker.
+        host.accept_rebuilt(rebuilt(portfolio, own(&host)), 10);
+        assert_eq!(host.ledger.snapshot().historical_snapshots.len(), 1);
+        assert!(
+            !host
+                .ledger
+                .snapshot()
+                .invalidated_after
+                .contains_key(&portfolio)
+        );
     }
 
     #[test]

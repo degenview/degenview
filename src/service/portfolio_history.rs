@@ -13,6 +13,7 @@ use crate::model::portfolio::{
 use crate::model::portfolio_accounting::{holdings, unique_assets};
 use crate::model::portfolio_history::{
     DAY_MS, IntradayBars, LOOKBACK_MS, build_snapshots, intraday_snapshots, sum_intraday,
+    transactions_fingerprint,
 };
 use crate::service::portfolio_quotes::PortfolioFxRates;
 use eframe::egui;
@@ -26,6 +27,8 @@ const MAX_BARS: u32 = 1_000;
 const PARALLEL_FETCHES: usize = 6;
 /// A failed rebuild waits this long before the next attempt.
 const RETRY_MS: i64 = 60_000;
+/// A rebuild that priced only some of the assets is stored, and tried again after this long.
+const PARTIAL_RETRY_MS: i64 = 10 * 60_000;
 /// Fresh enough that a 1D refresh reuses the candles it already has.
 const INTRADAY_FRESH_MS: i64 = 5 * 60 * 1_000;
 
@@ -107,6 +110,12 @@ pub struct HistoryResult {
     pub snapshots: Option<Vec<PortfolioSnapshot>>,
     /// Never retry: no asset of the portfolio can be priced in its currency.
     pub hopeless: bool,
+    /// Some asset that could have been priced had no candles (a failed request, usually), so
+    /// the snapshots leave it out and the rebuild is worth repeating.
+    pub incomplete: bool,
+    /// [`transactions_fingerprint`] of the transactions it was computed from: the result is
+    /// stored only while the portfolio still has exactly these.
+    pub basis: u64,
 }
 
 /// Rebuilds portfolios' daily history off the UI thread.
@@ -115,6 +124,8 @@ pub struct HistoryRebuilder {
     receiver: Receiver<HistoryResult>,
     in_flight: HashSet<u64>,
     retry_after: HashMap<u64, i64>,
+    /// Portfolios whose stored history is missing an asset: where to rebuild from, and when.
+    partial: HashMap<u64, (i64, i64)>,
 }
 
 impl Default for HistoryRebuilder {
@@ -125,6 +136,7 @@ impl Default for HistoryRebuilder {
             receiver,
             in_flight: HashSet::new(),
             retry_after: HashMap::new(),
+            partial: HashMap::new(),
         }
     }
 }
@@ -141,6 +153,15 @@ impl HistoryRebuilder {
                 .retry_after
                 .get(&portfolio_id)
                 .is_none_or(|after| now_ms >= *after)
+    }
+
+    /// Where to rebuild `portfolio_id` from to fill in an asset a stored history lacks, once
+    /// it is time to look again.
+    pub fn partial_due(&self, portfolio_id: u64, now_ms: i64) -> Option<i64> {
+        self.partial
+            .get(&portfolio_id)
+            .filter(|(_, after)| now_ms >= *after)
+            .map(|(from, _)| *from)
     }
 
     /// Holds back the next rebuild of `portfolio_id` for a while, after its result could not be
@@ -163,6 +184,14 @@ impl HistoryRebuilder {
                 self.retry_after.insert(result.portfolio_id, after);
             } else {
                 self.retry_after.remove(&result.portfolio_id);
+                if result.incomplete {
+                    self.partial.insert(
+                        result.portfolio_id,
+                        (result.from, now_ms + PARTIAL_RETRY_MS),
+                    );
+                } else {
+                    self.partial.remove(&result.portfolio_id);
+                }
             }
         }
         finished
@@ -176,7 +205,7 @@ impl HistoryRebuilder {
         transactions: Vec<PortfolioTransaction>,
         from: i64,
         now_ms: i64,
-        utc_offset_secs: i64,
+        zone: fn(i64) -> i64,
     ) {
         self.in_flight.insert(portfolio.id);
         let sender = self.sender.clone();
@@ -184,14 +213,7 @@ impl HistoryRebuilder {
         let portfolio_id = portfolio.id;
         let base = portfolio.base_currency;
         crate::service::work_queue::submit(move || {
-            let result = rebuild(
-                portfolio_id,
-                base,
-                &transactions,
-                from,
-                now_ms,
-                utc_offset_secs,
-            );
+            let result = rebuild(portfolio_id, base, &transactions, from, now_ms, zone);
             let _ = sender.send(result);
             ctx.request_repaint();
         });
@@ -204,8 +226,9 @@ fn rebuild(
     transactions: &[PortfolioTransaction],
     from: i64,
     now_ms: i64,
-    utc_offset_secs: i64,
+    zone: fn(i64) -> i64,
 ) -> HistoryResult {
+    let basis = transactions_fingerprint(transactions);
     // A ledger that cannot be replayed would come out as a column of zeros. Keep the history as
     // it is and look again later, once the transactions are fixed.
     let own_ids = HashSet::from([portfolio_id]);
@@ -215,6 +238,8 @@ fn rebuild(
             from,
             snapshots: None,
             hopeless: false,
+            incomplete: false,
+            basis,
         };
     }
     let assets = unique_assets(transactions);
@@ -234,6 +259,8 @@ fn rebuild(
             from,
             snapshots: None,
             hopeless: priceable.is_empty(),
+            incomplete: false,
+            basis,
         };
     }
     let snapshots = build_snapshots(
@@ -243,13 +270,15 @@ fn rebuild(
         &bars,
         from,
         now_ms,
-        utc_offset_secs,
+        zone,
     );
     HistoryResult {
         portfolio_id,
         from,
         snapshots: Some(snapshots),
         hopeless: false,
+        incomplete: bars.len() < priceable.len(),
+        basis,
     }
 }
 
@@ -439,8 +468,38 @@ mod tests {
             updated_at: 1_000,
         };
         // Sells what was never bought: no snapshots to store, and a later retry (not "hopeless").
-        let result = rebuild(1, PortfolioCurrency::Usd, &[sale], 0, 10 * DAY_MS, 0);
+        let result = rebuild(1, PortfolioCurrency::Usd, &[sale], 0, 10 * DAY_MS, |_| 0);
         assert!(result.snapshots.is_none());
         assert!(!result.hopeless);
+    }
+
+    fn finished(portfolio_id: u64, incomplete: bool) -> HistoryResult {
+        HistoryResult {
+            portfolio_id,
+            from: 5_000,
+            snapshots: Some(Vec::new()),
+            hopeless: false,
+            incomplete,
+            basis: 0,
+        }
+    }
+
+    #[test]
+    fn a_rebuild_missing_an_asset_is_stored_and_tried_again_later() {
+        let mut history = HistoryRebuilder::default();
+        history.sender.send(finished(1, true)).unwrap();
+        assert_eq!(history.poll(1_000).len(), 1);
+        assert_eq!(history.partial_due(1, 1_000), None, "not yet");
+        assert_eq!(
+            history.partial_due(1, 1_000 + PARTIAL_RETRY_MS),
+            Some(5_000),
+            "from where it was rebuilt"
+        );
+        // Another portfolio is unaffected.
+        assert_eq!(history.partial_due(2, i64::MAX), None);
+        // A complete rebuild ends the retrying.
+        history.sender.send(finished(1, false)).unwrap();
+        history.poll(2_000);
+        assert_eq!(history.partial_due(1, i64::MAX), None);
     }
 }
