@@ -104,7 +104,7 @@ fn links(ui: &mut Ui) {
                 label,
                 kit::size::SUBHEADLINE,
                 kit::MEDIUM,
-                kit::ACCENT,
+                theme::text_secondary(),
                 f32::INFINITY,
             )
             .size()
@@ -117,7 +117,13 @@ fn links(ui: &mut Ui) {
         let response = ui
             .add(
                 egui::Label::new(
-                    kit::text(label, kit::size::SUBHEADLINE, kit::MEDIUM, kit::ACCENT).underline(),
+                    kit::text(
+                        label,
+                        kit::size::SUBHEADLINE,
+                        kit::MEDIUM,
+                        theme::text_secondary(),
+                    )
+                    .underline(),
                 )
                 .sense(Sense::click()),
             )
