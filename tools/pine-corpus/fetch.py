@@ -174,7 +174,7 @@ def fetch_import(path):
 
 def fetch_imports():
     """Fetches the libraries the cached scripts import (and those they import), into `.pine-corpus/imports/`,
-    so the corpus run can resolve `import` the way the app resolves it from the Script Manager."""
+    so the corpus run can resolve `import` the way the app resolves it from the Pine Studio."""
     known = {}
     if os.path.exists(IMPORTS_MANIFEST):
         with open(IMPORTS_MANIFEST) as handle:

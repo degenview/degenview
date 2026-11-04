@@ -105,8 +105,8 @@ the Methods page's `maintainQueue`/`calcBB`, `getType`, `fill`/`featureScale` an
 - Static resolution depends on what the checker infers. A receiver it cannot type (many `ta.*`, `str.*`
   and `request.*` results, tuple elements) stays dynamic.
 - The editor does not offer user methods after a `.` and does not jump from `x.method()` to its
-  declaration (`script_manager::symbols` does not resolve members, by design).
-- Not opened in a real window: the Script Manager and a chart were not used to apply a method script.
+  declaration (`pine_studio::symbols` does not resolve members, by design).
+- Not opened in a real window: the Pine Studio and a chart were not used to apply a method script.
 
 ## Performance
 

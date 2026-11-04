@@ -186,7 +186,7 @@ pub enum Command {
     PaneToggle(u64),
     PaneRemove(u64),
     PaneOrder(u64, VisualOrder),
-    OpenScriptManager,
+    OpenPineStudio,
     /// Open the Pine logs pane on this script.
     PineLogs(u64),
     EditAlert(AlertId),
@@ -664,7 +664,7 @@ fn pane(instance: u64, facts: &Facts) -> Vec<Entry> {
             )
             .glyph(Glyph::Layers),
             Item::new(Command::PineLogs(instance), "Pine logs"),
-            Item::new(Command::OpenScriptManager, "Open Script Manager"),
+            Item::new(Command::OpenPineStudio, "Open Pine Studio"),
         ],
         vec![Item::new(Command::PaneRemove(instance), "Remove from chart").destructive()],
     ])

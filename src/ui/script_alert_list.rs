@@ -166,11 +166,11 @@ pub fn view(
         Icon::Curlybraces,
         "Script alerts are created from alert() calls in your scripts.",
         Icon::Curlybraces,
-        "Open Script Manager",
+        "Open Pine Studio",
         true,
         "Write and manage the scripts whose alert() calls appear here",
     ) {
-        actions.push(AlertCenterAction::OpenScriptManager);
+        actions.push(AlertCenterAction::OpenPineStudio);
     }
 }
 

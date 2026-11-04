@@ -25,9 +25,9 @@ use crate::model::watchlist::{WatchlistInstrument, new_id};
 use crate::model::watchlist_quote::Freshness;
 use crate::model::webhook::WebhookDeliveryState;
 use crate::native_bridge::{self, NativeCommand};
-use crate::script_manager::editor::EditAction;
-use crate::script_manager::store::hash_source;
-use crate::script_manager::{ExitReason, ScriptManager, ScriptManagerAction};
+use crate::pine_studio::editor::EditAction;
+use crate::pine_studio::store::hash_source;
+use crate::pine_studio::{ExitReason, PineStudio, PineStudioAction};
 use crate::service::background_service::BackgroundAlertService;
 use crate::service::fx_rates::FxRateService;
 use crate::service::macos_notifications::{self, Notifier};
@@ -123,7 +123,7 @@ impl AlertRuntimeControl {
 enum TabContent {
     Chart(Box<ChartWorkspace>),
     Portfolio(Box<PortfolioTab>),
-    Pine(Box<ScriptManager>),
+    Pine(Box<PineStudio>),
 }
 
 impl TabContent {
@@ -213,13 +213,13 @@ impl crate::store::Document for PersistedTab {
 enum AppAction {
     /// Quit, after asking about unsaved scripts.
     Quit,
-    /// A Script Manager answered the "save changes?" question a quit raised.
+    /// A Pine Studio answered the "save changes?" question a quit raised.
     QuitDecided {
         proceed: bool,
     },
     OpenPortfolio,
     OpenPine,
-    /// Open the Script Manager on the source of a Pine logs message.
+    /// Open the Pine Studio on the source of a Pine logs message.
     OpenPineSource(crate::model::pine_logs_view::SourceTarget),
     /// Open Settings on the Alpaca page.
     OpenAlpacaSettings,
@@ -246,13 +246,13 @@ enum AppAction {
         baseline: Option<f64>,
     },
     OpenWatchlistInNewTab(WatchlistInstrument),
-    /// Add a Pine script to the focused chart (the Script Manager's "Add to Chart").
+    /// Add a Pine script to the focused chart (the Pine Studio's "Add to Chart").
     AddPineScript {
         script_id: Option<String>,
         name: String,
         source: String,
     },
-    /// Create a Pine alert subscription on the focused chart (the Script Manager's "Create Alert").
+    /// Create a Pine alert subscription on the focused chart (the Pine Studio's "Create Alert").
     CreatePineAlert {
         chart_id: u64,
         instance_id: u64,
@@ -313,7 +313,7 @@ pub struct DegenViewApp {
     updates: UpdateHost,
     /// iCloud Sync: applies other Macs' changes and carries out the Settings page's requests.
     sync: crate::host::sync_host::SyncHost,
-    /// The Script Manager's library as last seen by sync, to notice a save.
+    /// The Pine Studio's library as last seen by sync, to notice a save.
     script_signature: u64,
     alert_editor: Arc<Mutex<Option<PriceAlertEditorState>>>,
     /// The Alerts window's tab, search and dialogs, kept across frames.
@@ -420,7 +420,7 @@ fn show_window(
     ui: &mut egui::Ui,
     env: &WindowEnv,
     window_id: WindowId,
-    chart_info: Option<crate::script_manager::ChartInfo>,
+    chart_info: Option<crate::pine_studio::ChartInfo>,
 ) {
     let ctx = ui.ctx().clone();
     if ui.input(|input| input.viewport().close_requested()) {
@@ -602,7 +602,7 @@ fn show_tab(
     env: &WindowEnv,
     id: u64,
     content: &Arc<Mutex<TabContent>>,
-    chart_info: Option<crate::script_manager::ChartInfo>,
+    chart_info: Option<crate::pine_studio::ChartInfo>,
 ) {
     let Ok(mut content) = content.lock() else {
         return;
@@ -676,7 +676,7 @@ fn show_tab(
                 && let Ok(mut pending) = env.app_actions.lock()
             {
                 pending.extend(pine_actions.into_iter().map(|action| match action {
-                    ScriptManagerAction::AddToChart {
+                    PineStudioAction::AddToChart {
                         script_id,
                         name,
                         source,
@@ -685,7 +685,7 @@ fn show_tab(
                         name,
                         source,
                     },
-                    ScriptManagerAction::CreateAlert {
+                    PineStudioAction::CreateAlert {
                         chart_id,
                         instance_id,
                         script_id,
@@ -708,9 +708,9 @@ fn show_tab(
                         note,
                         webhook_endpoint_ids,
                     },
-                    ScriptManagerAction::OpenAlpacaSettings => AppAction::OpenAlpacaSettings,
-                    ScriptManagerAction::OpenWebhookSettings => AppAction::OpenWebhookSettings,
-                    ScriptManagerAction::OpenAiSettings => AppAction::OpenAiSettings,
+                    PineStudioAction::OpenAlpacaSettings => AppAction::OpenAlpacaSettings,
+                    PineStudioAction::OpenWebhookSettings => AppAction::OpenWebhookSettings,
+                    PineStudioAction::OpenAiSettings => AppAction::OpenAiSettings,
                 }));
             }
         }
@@ -805,7 +805,7 @@ impl DegenViewApp {
             crate::host::sync_host::SyncHost::new(
                 store.clone(),
                 sync_factory,
-                crate::script_manager::store::ScriptStore::default_location(),
+                crate::pine_studio::store::ScriptStore::default_location(),
                 backups,
                 // The sync page lives in the Settings window, a viewport of its own: waking only the
                 // root one leaves that page showing stale state until the mouse moves.
@@ -888,9 +888,10 @@ impl DegenViewApp {
                         kind: PersistedSpecialTabKind::Pine,
                     }) if !has_pine => {
                         has_pine = true;
-                        Some(TabSlot::new(TabContent::Pine(Box::new(
-                            ScriptManager::new(id, store.clone()),
-                        ))))
+                        Some(TabSlot::new(TabContent::Pine(Box::new(PineStudio::new(
+                            id,
+                            store.clone(),
+                        )))))
                     }
                     PersistedTab::Special(_) => None,
                 })
@@ -1002,8 +1003,8 @@ impl DegenViewApp {
         self.register(slot, None);
     }
 
-    /// The focused tab's Script Manager, if that is what has the keyboard, for the Edit menu.
-    fn with_focused_script_manager<R>(&self, f: impl FnOnce(&mut ScriptManager) -> R) -> Option<R> {
+    /// The focused tab's Pine Studio, if that is what has the keyboard, for the Edit menu.
+    fn with_focused_pine_studio<R>(&self, f: impl FnOnce(&mut PineStudio) -> R) -> Option<R> {
         let focused = self.focused_tab.load(Ordering::Acquire);
         for tab in &self.tabs {
             let Ok(mut content) = tab.content.lock() else {
@@ -1020,17 +1021,17 @@ impl DegenViewApp {
 
     fn process_commands(&mut self, ctx: &egui::Context) {
         native_bridge::set_edit_menu(
-            self.with_focused_script_manager(|pine| pine.edit_menu())
+            self.with_focused_pine_studio(|pine| pine.edit_menu())
                 .unwrap_or_default(),
         );
         native_bridge::set_new_script_enabled(
-            self.with_focused_script_manager(|pine| pine.can_create_script())
+            self.with_focused_pine_studio(|pine| pine.can_create_script())
                 .unwrap_or(false),
         );
         for command in native_bridge::take_commands() {
             match command {
                 NativeCommand::NewScript => {
-                    self.with_focused_script_manager(|pine| pine.new_script());
+                    self.with_focused_pine_studio(|pine| pine.new_script());
                     ctx.request_repaint();
                 }
                 NativeCommand::EditCut
@@ -1045,7 +1046,7 @@ impl DegenViewApp {
                         NativeCommand::GoToDefinition => EditAction::GoToDefinition,
                         _ => EditAction::Rename,
                     };
-                    self.with_focused_script_manager(|pine| pine.edit_command(action));
+                    self.with_focused_pine_studio(|pine| pine.edit_command(action));
                     ctx.request_repaint();
                 }
                 NativeCommand::NewTab => {
@@ -1070,7 +1071,7 @@ impl DegenViewApp {
                 NativeCommand::SaveCurrentLayout => {
                     let focused = self.focused_tab.load(Ordering::Acquire);
                     // File ▸ Save (⌘S) belongs to the focused tab: a chart saves its layout,
-                    // the Script Manager saves the script open in its editor.
+                    // the Pine Studio saves the script open in its editor.
                     for tab in &self.tabs {
                         let Ok(mut content) = tab.content.lock() else {
                             continue;
@@ -1246,7 +1247,7 @@ impl DegenViewApp {
         }
     }
 
-    /// Closes `tab`, unless it is a Script Manager with unsaved edits: that one comes to the front
+    /// Closes `tab`, unless it is a Pine Studio with unsaved edits: that one comes to the front
     /// and asks first (its answer closes it through `TabWindowHost::close_tab`).
     fn close_tab_request(&mut self, ctx: &egui::Context, tab: u64) {
         let asking = self.tabs.iter().any(|slot| {
@@ -1315,7 +1316,7 @@ impl DegenViewApp {
         self.register(slot, None);
     }
 
-    /// Quits, but first lets each Script Manager window ask about its unsaved scripts, one window
+    /// Quits, but first lets each Pine Studio window ask about its unsaved scripts, one window
     /// at a time. Closing the hidden root window ends the app through the same exit path ⌘Q
     /// always took, so the session is saved first.
     /// Saves the editor's themes a moment after they last changed, and picks up a font that has
@@ -1369,14 +1370,14 @@ impl DegenViewApp {
 
         let id = self.next_id;
         self.next_id += 1;
-        let slot = TabSlot::new(TabContent::Pine(Box::new(ScriptManager::new(
+        let slot = TabSlot::new(TabContent::Pine(Box::new(PineStudio::new(
             id,
             self.store.clone(),
         ))));
         self.register(slot, None);
     }
 
-    /// Opens the Script Manager (the tab there already is, or a new one) on a log message's call.
+    /// Opens the Pine Studio (the tab there already is, or a new one) on a log message's call.
     fn open_pine_source(
         &mut self,
         ctx: &egui::Context,
@@ -1729,7 +1730,7 @@ impl DegenViewApp {
         Ok(store.pine_subscriptions())
     }
 
-    /// The text of `id` in a Script Manager editor that has it open, if any: what the person sees.
+    /// The text of `id` in a Pine Studio editor that has it open, if any: what the person sees.
     fn open_script_text(&self, id: &str) -> Option<String> {
         self.tabs.iter().find_map(|tab| {
             let content = tab.content.lock().ok()?;
@@ -1740,7 +1741,7 @@ impl DegenViewApp {
         })
     }
 
-    /// Shows an edit in the Script Manager editor that has `id` open. Returns whether one did.
+    /// Shows an edit in the Pine Studio editor that has `id` open. Returns whether one did.
     fn show_in_open_editor(&self, id: &str, text: &str, saved: bool) -> bool {
         self.tabs.iter().any(|tab| {
             tab.content
@@ -1752,7 +1753,7 @@ impl DegenViewApp {
         })
     }
 
-    /// Writes a script edit through `ScriptStore`, checked against the text the Script Manager
+    /// Writes a script edit through `ScriptStore`, checked against the text the Pine Studio
     /// shows (its open editor if there is one), and updates that editor. `source: Some` is a
     /// draft edit; `None` saves the current draft. Runs on the app thread, so no frame can
     /// type into the editor between the check and the write.
@@ -1817,7 +1818,7 @@ impl DegenViewApp {
         Ok(())
     }
 
-    /// Runs `action` on the chart workspace with this id. Portfolio and Script Manager tabs share
+    /// Runs `action` on the chart workspace with this id. Portfolio and Pine Studio tabs share
     /// the id space but are not chart workspaces.
     fn with_mcp_workspace<R>(
         &self,
@@ -1841,7 +1842,7 @@ impl DegenViewApp {
                 }
                 TabContent::Pine(manager) if manager.id() == workspace_id => {
                     return Err(McpError::InvalidArgument(format!(
-                        "{workspace_id} is the Script Manager, not a chart workspace"
+                        "{workspace_id} is the Pine Studio, not a chart workspace"
                     )));
                 }
                 _ => {}
@@ -2107,19 +2108,19 @@ impl DegenViewApp {
 
     fn sync_viewports(&self, ctx: &egui::Context) {
         // What a script alert would watch: the focused chart's market.
-        let chart_info =
-            self.focused_pine_target()
-                .map(|target| crate::script_manager::ChartInfo {
-                    chart_id: target.chart_id,
-                    title: target
-                        .instrument
-                        .source
-                        .display_symbol(&target.instrument.symbol),
-                    source_name: target.instrument.source.display_name().to_owned(),
-                    timeframe: target.timeframe.interval().to_owned(),
-                    symbol_key: target.instrument.key(),
-                    instances: target.instances,
-                });
+        let chart_info = self
+            .focused_pine_target()
+            .map(|target| crate::pine_studio::ChartInfo {
+                chart_id: target.chart_id,
+                title: target
+                    .instrument
+                    .source
+                    .display_symbol(&target.instrument.symbol),
+                source_name: target.instrument.source.display_name().to_owned(),
+                timeframe: target.timeframe.interval().to_owned(),
+                symbol_key: target.instrument.key(),
+                instances: target.instances,
+            });
         let env = WindowEnv {
             host: self.tab_host.clone(),
             registry: Arc::clone(&self.registry),
@@ -2146,7 +2147,7 @@ impl DegenViewApp {
                     Some((content.title(), matches!(&*content, TabContent::Pine(_))))
                 })
                 .unwrap_or_default();
-            // The Script Manager shrinks to what its panes' minimums allow.
+            // The Pine Studio shrinks to what its panes' minimums allow.
             let min = if is_scripts {
                 [620.0, 420.0]
             } else {
@@ -2168,7 +2169,7 @@ impl DegenViewApp {
                 show_window(ui, &env, window_id, chart_info.clone());
             });
         }
-        // With a Script Manager open, ⌘Q is answered by the app (see `request_quit`).
+        // With a Pine Studio open, ⌘Q is answered by the app (see `request_quit`).
         native_bridge::intercept_quit(self.tabs.iter().any(|tab| {
             tab.content
                 .lock()
@@ -2531,7 +2532,7 @@ impl DegenViewApp {
                                 *slot = Some((id, PineAlertWebhooksState::new(&subscription)));
                             }
                         }
-                        AlertCenterAction::OpenScriptManager => {
+                        AlertCenterAction::OpenPineStudio => {
                             if let Ok(mut pending) = app_actions.lock() {
                                 pending.push(AppAction::OpenPine);
                             }

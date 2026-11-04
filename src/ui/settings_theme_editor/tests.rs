@@ -3,7 +3,7 @@ use crate::host::editor_theme_host::EditorThemeHost;
 use crate::model::editor_theme::{BuiltInTheme, LineHeight, ThemeSource, TypographyOverride};
 use crate::ui::editor_appearance::RestorePublished;
 use crate::ui::render_tests::{Screen, gallery_dir};
-use crate::ui::settings_script_manager::Controls;
+use crate::ui::settings_pine_studio::Controls;
 use crate::ui::theme::{self, AppTheme, RestoreDefaultTheme};
 use eframe::egui::Vec2;
 

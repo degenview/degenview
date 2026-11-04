@@ -376,7 +376,7 @@ impl Default for EditorThemeHost {
     /// draws, so merely constructing a placeholder must never undo the real host's choice. That is
     /// exactly what happened at launch: `WebhookHost::new`'s `..Self::default()` builds a throwaway
     /// default host for the field it then overwrites, and the throwaway published Automatic over the
-    /// saved theme, so the Script Manager opened Dark although Dracula was selected.
+    /// saved theme, so the Pine Studio opened Dark although Dracula was selected.
     fn default() -> Self {
         Self::build(
             Loaded {

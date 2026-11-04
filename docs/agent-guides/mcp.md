@@ -17,7 +17,7 @@
   change_pine_instance,remove_pine_instance_from}`, which take the undo step; validate scripts and
   inputs with `mcp::pine` before queuing, and apply only the saved text, never the draft.
 - Pine edits use revision-checked `mcp::pine::{update_draft,save_script}` on the app thread, followed
-  by `ScriptManager::adopt_external_text`. Never bypass the live editor revision or write script
+  by `PineStudio::adopt_external_text`. Never bypass the live editor revision or write script
   files from a worker.
 - Drawings from MCP are planned from `ChartWorkspace::chart_data` with `mcp::chart_data` and
   committed through `apply_planned_drawings` (the pointer's path, one undo step); tool threads never

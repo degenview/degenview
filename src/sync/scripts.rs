@@ -6,8 +6,8 @@
 //! never uploaded either, or every Mac would upload its own copy of the same nine examples.
 
 use super::project::{Projected, ScriptSnapshot, project_script};
-use crate::script_manager::demo::BUNDLED;
-use crate::script_manager::store::{ScriptStore, with_trailing_newline};
+use crate::pine_studio::demo::BUNDLED;
+use crate::pine_studio::store::{ScriptStore, with_trailing_newline};
 use crate::store::Store;
 use crate::store::sync::Reconciled;
 use std::collections::{HashMap, HashSet};
@@ -92,13 +92,13 @@ impl ScriptSink for NoScripts {
 }
 
 /// The real sink over the app's `ScriptStore`. `unsaved` holds the ids with unsaved editor text
-/// or a pending draft, supplied by the Script Manager.
+/// or a pending draft, supplied by the Pine Studio.
 pub struct StoreScriptSink<'a> {
     pub store: &'a mut ScriptStore,
     pub unsaved: HashSet<String>,
 }
 
-fn snapshot(script: &crate::script_manager::model::LocalScript) -> ScriptSnapshot {
+fn snapshot(script: &crate::pine_studio::model::LocalScript) -> ScriptSnapshot {
     ScriptSnapshot {
         id: script.id.clone(),
         name: script.name.clone(),

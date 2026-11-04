@@ -12,7 +12,7 @@ use crate::pine::runtime_support::{
 };
 use crate::pine::session::{RunError, Session};
 use crate::pine::token::{Diagnostic, DiagnosticSeverity, Limits};
-use crate::script_manager::registry::LibraryRegistry;
+use crate::pine_studio::registry::LibraryRegistry;
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -225,7 +225,7 @@ pub fn run_script(source: &str, bars: &[Kline], symbol: &SymbolInfo) -> VisualOu
 }
 
 /// `run_script` with the user's input overrides (by input id); anything absent runs at its
-/// default. `import`s resolve against the Script Manager's library scripts.
+/// default. `import`s resolve against the Pine Studio's library scripts.
 pub fn run_script_with_inputs(
     source: &str,
     bars: &[Kline],

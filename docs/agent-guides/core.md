@@ -75,7 +75,7 @@ is `degenview`.
 
 CI runs `cargo test --locked` on macOS and Linux for every pull request, but not clippy or fmt.
 Unit tests cover pure engines, parsing, layout, storage, and policy. Manually verify affected UI;
-outside the Script Manager, the app has not had a complete manual GUI pass.
+outside the Pine Studio, the app has not had a complete manual GUI pass.
 
 Tests disable Keychain. For development launches set `DEGENVIEW_NO_KEYCHAIN=1` to avoid signing-based
 Keychain prompts, and optionally `DEGENVIEW_CACHE_DIR=<scratch-dir>`. Live provider checks require

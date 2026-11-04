@@ -298,7 +298,7 @@ pub struct PineInputsResult {
 #[derive(Debug, Clone, PartialEq, Serialize, JsonSchema)]
 pub struct AppliedPineInfo {
     pub instance_id: String,
-    /// The Script Manager script it was applied from, when it came from one.
+    /// The Pine Studio script it was applied from, when it came from one.
     pub script_id: Option<String>,
     pub script_name: String,
     pub visible: bool,
@@ -345,7 +345,7 @@ pub struct AppliedPineDetail {
     pub style_overrides: std::collections::BTreeMap<String, String>,
     /// Bars the last run covered.
     pub bar_count: Option<usize>,
-    /// How the instance's source compares with its Script Manager script now: `unchanged`,
+    /// How the instance's source compares with its Pine Studio script now: `unchanged`,
     /// `changed`, `deleted`, or `unlinked` (not applied from a saved script).
     pub script_status: String,
 }
@@ -531,7 +531,7 @@ pub struct PineEditResult {
     pub revision: String,
     /// The saved revision id, after a save.
     pub saved_revision_id: Option<String>,
-    /// Whether the script was open in the Script Manager, whose editor now shows this text.
+    /// Whether the script was open in the Pine Studio, whose editor now shows this text.
     pub applied_to_open_editor: bool,
     /// Whether an unsaved draft remains afterwards.
     pub has_draft: bool,

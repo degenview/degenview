@@ -6,7 +6,7 @@
 
 use crate::model::mcp::{McpClient, Permission, PermissionSet};
 use crate::model::watchlist::now_ms;
-use crate::script_manager::store::ScriptStore;
+use crate::pine_studio::store::ScriptStore;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
 

@@ -1,4 +1,4 @@
-//! Settings ▸ AI Assistant: which provider and model the Script Manager's assistant uses, and the
+//! Settings ▸ AI Assistant: which provider and model the Pine Studio's assistant uses, and the
 //! API key for it. The key goes to the Keychain through the shared `AiKeyStore`; provider, model
 //! and server are the local `ai.prefs` setting, which the host saves when this page asks. Every
 //! rule (what may be saved, what the badge says, what a test reports) is a plain method tested

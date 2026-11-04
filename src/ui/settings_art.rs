@@ -1,5 +1,5 @@
 //! The picture at the head of each Settings page: a soft disc in the section's colour, a card, and
-//! a few marks that say what the page is about — the same recipe as the Script Manager's empty
+//! a few marks that say what the page is about — the same recipe as the Pine Studio's empty
 //! tabs (`drawer_intro`), one small scene per page. Painter code only, so it follows the theme.
 //!
 //! The Swift app has a plain icon badge here; these pictures are an addition, not a port.
@@ -24,7 +24,7 @@ pub fn paint(ui: &Ui, rect: Rect, section: SettingsSection) {
     };
     match section {
         SettingsSection::Appearance => art.appearance(),
-        SettingsSection::ScriptManager => art.script_manager(),
+        SettingsSection::PineStudio => art.pine_studio(),
         SettingsSection::Alpaca => art.alpaca(),
         SettingsSection::CoinMarketCap => art.coinmarketcap(),
         SettingsSection::Ai => art.ai(),
@@ -117,7 +117,7 @@ impl Art<'_> {
     }
 
     /// Source lines in colour with a gutter and a caret, and the curly braces on a chip.
-    fn script_manager(&self) {
+    fn pine_studio(&self) {
         let card = self.scene();
         let gutter = card.left() + 15.0;
         self.painter.vline(

@@ -428,7 +428,7 @@ fn visuals(theme: egui::Theme, palette: &Palette) -> egui::Visuals {
     visuals
 }
 
-// MARK: Script Manager tokens (Swift dark appearance: macOS system colours, quaternary fills)
+// MARK: Pine Studio tokens (Swift dark appearance: macOS system colours, quaternary fills)
 
 pub const YELLOW: Color32 = Color32::from_rgb(255, 214, 10);
 pub const ORANGE: Color32 = Color32::from_rgb(255, 159, 10);
@@ -521,7 +521,7 @@ pub mod syntax {
     }
 }
 
-/// macOS's default system accent (`Color.accentColor`), which the Swift Script Manager uses for
+/// macOS's default system accent (`Color.accentColor`), which the Swift Pine Studio uses for
 /// selection, tabs and links. The rest of the Rust app keeps its own `ACCENT`.
 pub const SYSTEM_ACCENT: Color32 = Color32::from_rgb(10, 132, 255);
 

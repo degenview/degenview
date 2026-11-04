@@ -128,7 +128,7 @@ is hidden) on the right. The search field and the range pill are DegenView's lay
 Hovering a row shows two buttons (the same two are in its right-click menu): **Source code**
 (`</>`) and **Scroll to bar**.
 
-- **Source code** opens the Script Manager (the tab there already is, or a new one) on the saved
+- **Source code** opens the Pine Studio (the tab there already is, or a new one) on the saved
   script the chart's instance came from, with the caret on the `log.*()` call: the call's
   `SourceRange` start, which is already the UTF-16 offset the editor takes, never a search for the
   message text. A message written by library code opens the library (found by the name in its
@@ -142,7 +142,7 @@ Hovering a row shows two buttons (the same two are in its right-click menu): **S
   chart goes to its oldest bar and says so. See
   [Chart navigation](chart-navigation.md#scrolling-to-a-bar).
 
-### In the Script Manager
+### In the Pine Studio
 
 The drawer under the preview chart has a **Logs** tab beside Inputs, Report and Problems: the same
 pane (toolbar, list, filters, search, bar range, the hover actions) over the preview chart's run
@@ -151,7 +151,7 @@ script). There "Source code"
 moves the caret in the editor you are in, and "Scroll to bar" moves the preview chart, which only
 holds the candles it fetched. The bar range is dragged on the preview chart (the chart is shown if
 it was hidden), and an arm of the debugger's "Select bar" is dropped when it is asked for. TradingView opens the pane from the editor's More menu; DegenView's
-Script Manager has no such menu, so the drawer tab is its way in. The level and search options are
+Pine Studio has no such menu, so the drawer tab is its way in. The level and search options are
 the same local `pineLogs.prefs` setting as the chart's pane. Where the drawer is wide, the
 introduction puts its picture beside its steps.
 
@@ -179,6 +179,6 @@ no `\xhh`/`\uhhhh` escapes, lookarounds or named groups, and a step budget bound
   the two overloads.
 - The pane, Source code and Scroll to bar were checked through headless egui frames, unit tests and
   rendered pictures, not in a real window.
-- Source code in the Script Manager offers a script edited since as a note rather than showing a
+- Source code in the Pine Studio offers a script edited since as a note rather than showing a
   diff, and an offset into text that changed may land on a different line.
 - A formatted message whose first argument is `na` is the text `NaN`.

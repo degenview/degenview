@@ -7,7 +7,7 @@ use eframe::egui;
 
 impl ChartWorkspace {
     /// The chart settings sheet over the focused window; returns what the workspace's host should
-    /// do (opening the Script Manager).
+    /// do (opening the Pine Studio).
     pub(super) fn show_settings_window(&mut self, ctx: &egui::Context) -> Vec<WorkspaceAction> {
         let Some(chart_id) = self.settings_chart else {
             return Vec::new();
@@ -42,7 +42,7 @@ impl ChartWorkspace {
                 self.script_popover = None;
                 self.remove_chart(chart_id);
             }
-            Some(ChartSettingsAction::OpenScriptManager) => {
+            Some(ChartSettingsAction::OpenPineStudio) => {
                 self.settings_chart = None;
                 self.script_popover = None;
                 actions.push(WorkspaceAction::OpenPineScripts);

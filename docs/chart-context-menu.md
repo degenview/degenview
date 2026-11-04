@@ -13,7 +13,7 @@ A right-click is answered by exactly one menu, chosen by what is under the point
 | A drawing (Cursor tool, no gesture in progress) | The drawing menu (`ui::drawing_layer::menu`): Settings, Copy, Duplicate, style copy/paste, lock, hide, stacking order, vertices, Delete. |
 | A paper order or position tag | Cancel order / Close position, Show in Paper panel. |
 | A price alert's arrow or pill | Edit, Pause or Resume, Delete (the pause and play icons mark the toggle). |
-| A script's pane | Settings, Hide or Show, Visual order, Pine logs, Open Script Manager, Remove from chart. |
+| A script's pane | Settings, Hide or Show, Visual order, Pine logs, Open Pine Studio, Remove from chart. |
 | The price axis | Reset price scale, then the four [price scale modes](price-scale.md) (Regular, Percent, Indexed to 100, Logarithmic; the active one checked). |
 | The time axis | Reset chart view. |
 | Empty plot | The background menu (below). |

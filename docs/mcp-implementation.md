@@ -90,7 +90,7 @@ src/pine/type_checker.rs
 src/pine/program.rs
 src/pine/outputs.rs
 src/pine/broker.rs
-src/script_manager/
+src/pine_studio/
 src/ui/pine_report.rs
 src/ui/pine_settings_popover.rs
 src/ui/pine_style_view.rs
@@ -101,8 +101,8 @@ src/ui/pine_style_view.rs
 ```text
 src/store/mod.rs
 src/store/pine.rs
-src/script_manager/store.rs
-src/script_manager/model.rs
+src/pine_studio/store.rs
+src/pine_studio/model.rs
 src/ui/settings_window.rs
 src/ui/settings_card.rs
 src/service/keychain_api_keys.rs
@@ -689,7 +689,7 @@ Use actual application identities.
 
 Do not rely on tab indices or window titles as stable identifiers.
 
-Account for the architecture's `TabSlot` variants: chart workspaces, portfolio tabs, and Script Manager tabs are not interchangeable.
+Account for the architecture's `TabSlot` variants: chart workspaces, portfolio tabs, and Pine Studio tabs are not interchangeable.
 
 Only chart workspaces should be valid targets for chart creation.
 
@@ -1012,11 +1012,11 @@ pine::broker
 Scripts are managed through:
 
 ```text
-script_manager::store::ScriptStore
-script_manager::registry::LibraryRegistry
+pine_studio::store::ScriptStore
+pine_studio::registry::LibraryRegistry
 ```
 
-The Script Manager supports:
+The Pine Studio supports:
 
 - File-backed Pine source.
 - Script metadata.
@@ -1071,7 +1071,7 @@ Include:
 
 Do not expose arbitrary filesystem paths unless necessary and authorized.
 
-Do not read files outside the Script Manager's managed script library.
+Do not read files outside the Pine Studio's managed script library.
 
 ---
 
@@ -1151,7 +1151,7 @@ If the script changed since the client read it, reject with a conflict.
 
 Do not overwrite a user's newer edits.
 
-Do not replace the entire Script Manager state with stale MCP data.
+Do not replace the entire Pine Studio state with stale MCP data.
 
 ---
 
@@ -1459,8 +1459,8 @@ pine::broker
 pine::strategy
 pine::outputs
 ui::pine_report
-script_manager::preview
-script_manager::drawer
+pine_studio::preview
+pine_studio::drawer
 ```
 
 Reuse existing report calculations.
@@ -1490,7 +1490,7 @@ Execution timestamp
 Distinguish:
 
 - A cached report from an existing chart.
-- A Script Manager preview report.
+- A Pine Studio preview report.
 - A newly requested backtest.
 
 Do not silently return a stale report as though it represents the current draft.
@@ -2131,7 +2131,7 @@ The implementation is complete when the following works:
 23. Confirm subsequent source requests are rejected.
 24. Grant Pine source write permission.
 25. Update a script draft with an expected revision.
-26. Confirm the Script Manager reflects the change.
+26. Confirm the Pine Studio reflects the change.
 27. Attempt an edit with a stale revision and confirm a conflict.
 28. Revoke the client credential.
 29. Confirm all subsequent requests using that credential fail.

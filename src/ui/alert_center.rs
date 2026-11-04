@@ -98,7 +98,7 @@ pub enum AlertCenterAction {
     DeleteScript(u64),
     /// Choose which webhook endpoints a script alert also posts to.
     EditScriptWebhooks(u64),
-    OpenScriptManager,
+    OpenPineStudio,
 }
 
 pub struct AlertCenterInput<'a> {

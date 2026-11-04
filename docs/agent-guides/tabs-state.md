@@ -3,7 +3,7 @@
 ## Ownership
 
 - Each tab owns one `ChartWorkspace`; never treat it as app-global. `DegenViewApp` owns `TabSlot`s
-  containing a workspace, portfolio tab, or Script Manager.
+  containing a workspace, portfolio tab, or Pine Studio.
 - Per-workspace live feeds and refreshes follow that workspace window's visibility/occlusion;
   hidden tabs suspend. Stores and portfolio/paper/alert/webhook/Pine hosts are shared `Arc<Mutex>`;
   presentation state is per tab/window.

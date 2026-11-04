@@ -13,7 +13,7 @@ use crate::pine::execution::ExecutionController;
 use crate::pine::program::SymbolInfo;
 use crate::pine::state::AlertEvent;
 use crate::pine::token::Limits;
-use crate::script_manager::registry::LibraryRegistry;
+use crate::pine_studio::registry::LibraryRegistry;
 use crate::store::Store;
 use std::collections::HashMap;
 
@@ -105,7 +105,7 @@ impl PineSubscriptionHost {
                 changed = true;
                 continue;
             };
-            let current_hash = crate::script_manager::store::hash_source(&instance.source);
+            let current_hash = crate::pine_studio::store::hash_source(&instance.source);
             if subscription.source_hash != current_hash {
                 subscription.state = PineAlertState::ScriptChanged;
                 changed = true;
@@ -182,7 +182,7 @@ impl PineSubscriptionHost {
                 || !subscription.instance_id.is_some_and(|instance_id| {
                     instances.iter().any(|instance| {
                         instance.id == instance_id
-                            && crate::script_manager::store::hash_source(&instance.source)
+                            && crate::pine_studio::store::hash_source(&instance.source)
                                 == subscription.source_hash
                     })
                 })
@@ -291,7 +291,7 @@ mod tests {
             inputs: Default::default(),
             symbol_key: "binance:BTCUSDT".into(),
             timeframe: "1h".into(),
-            source_hash: crate::script_manager::store::hash_source(source),
+            source_hash: crate::pine_studio::store::hash_source(source),
             note: String::new(),
             state: PineAlertState::Active,
             created_at_ms: 0,

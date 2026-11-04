@@ -4,7 +4,7 @@
 //! with no Keychain a save reports the failure, but the key is still kept for the session so the
 //! assistant works until the app quits.
 
-// Transient: the Script Manager assistant reads keys through `key` next.
+// Transient: the Pine Studio assistant reads keys through `key` next.
 #![allow(dead_code)]
 
 use crate::service::keychain_api_keys::{KeyBackend, default_backend};

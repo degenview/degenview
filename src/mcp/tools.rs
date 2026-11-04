@@ -26,7 +26,7 @@ use crate::model::alert::{AlertCurrency, AlertFrequency};
 use crate::model::mcp::Permission;
 use crate::model::watchlist_text::validate_market;
 use crate::model::{BuiltIn, DataSource, EMA_PERIODS};
-use crate::script_manager::store::ScriptStore;
+use crate::pine_studio::store::ScriptStore;
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::tool::Extension;
 use rmcp::handler::server::wrapper::{Json, Parameters};
@@ -1051,7 +1051,7 @@ impl DegenViewMcp {
 
     #[tool(
         name = "degenview_list_pine_scripts",
-        description = "List the Pine scripts in DegenView's Script Manager: id, name, type (indicator, strategy, library), whether an unsaved draft exists, and the last compile status. No file paths are returned.",
+        description = "List the Pine scripts in DegenView's Pine Studio: id, name, type (indicator, strategy, library), whether an unsaved draft exists, and the last compile status. No file paths are returned.",
         annotations(
             read_only_hint = true,
             destructive_hint = false,
@@ -1098,7 +1098,7 @@ impl DegenViewMcp {
 
     #[tool(
         name = "degenview_update_pine_script",
-        description = "Replace a Pine script's DRAFT with new source text. Only the draft changes: the saved source, charts using the script and alert subscriptions are untouched, and nothing is run. The edit is checked against what the user sees now (their open editor, else the draft, else the saved source) using expected_revision; if that moved, it is refused with CONFLICT. The open Script Manager editor shows the new text. Returns the new revision and the draft's compile diagnostics. Use degenview_save_pine_script to make it the saved source.",
+        description = "Replace a Pine script's DRAFT with new source text. Only the draft changes: the saved source, charts using the script and alert subscriptions are untouched, and nothing is run. The edit is checked against what the user sees now (their open editor, else the draft, else the saved source) using expected_revision; if that moved, it is refused with CONFLICT. The open Pine Studio editor shows the new text. Returns the new revision and the draft's compile diagnostics. Use degenview_save_pine_script to make it the saved source.",
         annotations(
             read_only_hint = false,
             destructive_hint = false,
@@ -1159,7 +1159,7 @@ impl DegenViewMcp {
 
     #[tool(
         name = "degenview_save_pine_script",
-        description = "Save a Pine script's current draft over its saved source, as the editor's Save does (records a revision, keeps history). Needs expected_revision to match the draft you reviewed, and the draft must compile without errors (COMPILATION_FAILED otherwise; the draft is kept). Charts keep running the source they were applied with; alert subscriptions to this script will show 'script changed'. Saving cannot be undone from here (revision history stays in the Script Manager).",
+        description = "Save a Pine script's current draft over its saved source, as the editor's Save does (records a revision, keeps history). Needs expected_revision to match the draft you reviewed, and the draft must compile without errors (COMPILATION_FAILED otherwise; the draft is kept). Charts keep running the source they were applied with; alert subscriptions to this script will show 'script changed'. Saving cannot be undone from here (revision history stays in the Pine Studio).",
         annotations(
             read_only_hint = false,
             destructive_hint = true,

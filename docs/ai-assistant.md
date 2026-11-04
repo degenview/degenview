@@ -1,6 +1,6 @@
 # AI assistant
 
-Lets a user prompt an LLM from the Script Manager to change the open Pine script, using **their
+Lets a user prompt an LLM from the Pine Studio to change the open Pine script, using **their
 own API key**. This page records what exists, why it is shaped this way, and what is not verified.
 
 ## Status
@@ -170,14 +170,14 @@ the editor's Profile column or tab and a profile the user made is not disturbed.
   turn; a failed call; Ask refused; step cap; repeat guard; cancel; refused tools; no tools = one request),
   the draft becoming a proposal (CRLF kept, nothing changed, failure and Stop and step limit keep the work),
   and the whole window (an edit through tools, Apply, the trail drawing at a small size).
-  Pictures: `script_manager::ai_gallery` (scenes "tools", "tools-incomplete").
+  Pictures: `pine_studio::ai_gallery` (scenes "tools", "tools-incomplete").
 - **Not verified**: any of this against a real model. The scripted provider returns what the wire
   formats say a model returns; how well real models use these tools, how many rounds a typical request
   takes, and what it costs have not been measured.
 
 ## The panel (phase 2)
 
-- `ai_panel` (view), `ai_host` (`impl ScriptManager`), `ai` (state), `ai_prompt` (pure text rules).
+- `ai_panel` (view), `ai_host` (`impl PineStudio`), `ai` (state), `ai_prompt` (pure text rules).
   The toolbar's sparkles button toggles it (`prefs.ai_open`, `ai_height`); it sits under the editor
   and the debugger's panel, in an outer split.
 - **One conversation per open script.** Opening another script, or Start over, forgets it and stops
@@ -202,7 +202,7 @@ the editor's Profile column or tab and a profile the user made is not disturbed.
 - The panel says what it sends ("Sent to OpenAI: this script and your message") above the Send
   button, and a missing key shows a setup card with Open Settings.
 - Pictures for a person to look at: `DEGENVIEW_GALLERY_DIR=… cargo test --lib
-  script_manager::ai_gallery -- --ignored` (both themes, wide and narrow).
+  pine_studio::ai_gallery -- --ignored` (both themes, wide and narrow).
 
 ## Manual and Auto
 

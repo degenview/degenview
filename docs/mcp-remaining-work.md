@@ -153,8 +153,8 @@ bypass.
 - A freshly drawn chart is needed for styles and reports of applied scripts (`not_run` until then).
 - Draft reads can lag the open editor by about a second (the editor writes drafts after a 1 s pause);
   edits are checked against the live text, so this is a staleness, not a data-loss, risk.
-- `ScriptStore` scans have housekeeping side effects (metadata for unseen files), as when the Script
-  Manager opens.
+- `ScriptStore` scans have housekeeping side effects (metadata for unseen files), as when the Pine
+  Studio opens.
 - Creating a price alert goes through the sheet's Save path, which may prompt for notification
   permission.
 - Alerts, script alerts and strategies run only while DegenView does.

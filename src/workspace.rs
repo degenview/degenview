@@ -73,9 +73,9 @@ pub use pine::PineRunView;
 #[derive(Clone, Debug, PartialEq)]
 pub enum WorkspaceAction {
     OpenPortfolio,
-    /// Open the Script Manager tab.
+    /// Open the Pine Studio tab.
     OpenPineScripts,
-    /// Open the Script Manager on the source of a Pine logs message.
+    /// Open the Pine Studio on the source of a Pine logs message.
     OpenPineSource(crate::model::pine_logs_view::SourceTarget),
     OpenAlerts,
     /// The price-alert sheet's Save: queue the alert for the runtime. `baseline` is the price

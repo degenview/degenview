@@ -2,7 +2,7 @@
 
 ## Objective
 
-Implement a complete, high-performance **Pine Script Profiler** in DegenView's existing Pine engine and Script Manager.
+Implement a complete, high-performance **Pine Script Profiler** in DegenView's existing Pine engine and Pine Studio.
 
 The profiler must allow users to identify exactly which parts of their Pine scripts consume the most execution time, how frequently those parts execute, and where performance bottlenecks occur.
 
@@ -14,7 +14,7 @@ This is not a prototype. The final implementation must be polished, performant, 
 
 ### Non-negotiable requirements
 
-1. Integrate directly into the existing Pine compiler, runtime, execution controller, and Script Manager.
+1. Integrate directly into the existing Pine compiler, runtime, execution controller, and Pine Studio.
 2. Identify slow individual lines, expressions, loops, functions, and code blocks.
 3. Display accurate execution counts, elapsed time, and relative performance costs.
 4. Present profiling results directly alongside the corresponding source code.
@@ -87,7 +87,7 @@ Where TradingView's implementation details are unknown, choose a technically sou
 
 Inspect the actual repository before modifying anything.
 
-The existing architecture includes a custom Rust Pine compiler and runtime, a Script Manager, chart integration, indicators, strategies, alerts, and execution controls.
+The existing architecture includes a custom Rust Pine compiler and runtime, a Pine Studio, chart integration, indicators, strategies, alerts, and execution controls.
 
 Relevant areas may include:
 
@@ -104,9 +104,9 @@ Relevant areas may include:
     src/pine_subscription_host.rs
     src/model/pine_instance.rs
 
-    src/script_manager/
-    src/script_manager/model.rs
-    src/script_manager/store.rs
+    src/pine_studio/
+    src/pine_studio/model.rs
+    src/pine_studio/store.rs
 
     src/ui/pine_report.rs
     src/ui/pine_settings_popover.rs
@@ -130,7 +130,7 @@ Determine:
 - How execution limits and timeouts work.
 - How script compilation and execution errors are reported.
 - How script instances are associated with charts.
-- How the Script Manager manages editor state.
+- How the Pine Studio manages editor state.
 - How syntax highlighting and line numbers are rendered.
 - How scripts are applied, edited, saved, and rerun.
 - How background execution and cancellation currently work.
@@ -175,7 +175,7 @@ Conceptually:
              Profile Result
                   |
                   v
-             Script Manager UI
+             Pine Studio UI
 
 The normal execution path must remain the authoritative execution path.
 
@@ -446,15 +446,15 @@ If a built-in operation has separate execution phases, make attribution consiste
 
 ---
 
-# 6. Script Manager Integration
+# 6. Pine Studio Integration
 
-The profiler must feel like a native part of DegenView's Script Manager.
+The profiler must feel like a native part of DegenView's Pine Studio.
 
 Do not create a disconnected profiling window or separate source-code viewer.
 
 ## 6.1 Profiler controls
 
-Add a clearly discoverable profiler control to the Script Manager's existing toolbar.
+Add a clearly discoverable profiler control to the Pine Studio's existing toolbar.
 
 Suggested states:
 
@@ -604,7 +604,7 @@ When the user enables profiling:
 3. Initialize an isolated profiling session.
 4. Execute the script using the instrumented runtime.
 5. Aggregate results.
-6. Publish the completed profile to the Script Manager.
+6. Publish the completed profile to the Pine Studio.
 7. Display source annotations.
 
 Do not assume an editor's selected script is necessarily the same revision as a script already applied to a chart.
@@ -745,7 +745,7 @@ Do not modify live alert subscriptions or their deduplication state.
 
 # 10. Threading and UI Responsiveness
 
-Profiling expensive scripts must not freeze the Script Manager or chart UI.
+Profiling expensive scripts must not freeze the Pine Studio or chart UI.
 
 Follow DegenView's existing background-work architecture.
 
@@ -1020,7 +1020,7 @@ Work in the following order.
 
 ### Phase 1 — Research and architecture audit
 
-Study TradingView's profiler and DegenView's existing compiler, runtime, and Script Manager.
+Study TradingView's profiler and DegenView's existing compiler, runtime, and Pine Studio.
 
 Document the proposed timing semantics and source attribution model.
 
@@ -1034,7 +1034,7 @@ Establish correct timing and execution counts before adding UI.
 
 Implement profiling sessions, aggregation, cancellation, revision tracking, and result delivery.
 
-### Phase 4 — Script Manager integration
+### Phase 4 — Pine Studio integration
 
 Implement the toolbar control, profiling gutter, performance bars, source highlighting, tooltips, and summary.
 
@@ -1060,7 +1060,7 @@ Do not stop after implementing the instrumentation backend. The user-facing prof
 
 The feature is complete only when all of the following are true:
 
-- [ ] The profiler can be enabled and disabled from the Script Manager.
+- [ ] The profiler can be enabled and disabled from the Pine Studio.
 - [ ] Profiling results map correctly to source code.
 - [ ] Slow lines and expensive code blocks are immediately identifiable.
 - [ ] Execution counts are correct.
@@ -1091,7 +1091,7 @@ After implementation, provide a concise engineering report containing:
 1. **Architecture:** How profiling integrates with the existing Pine compiler and runtime.
 2. **Instrumentation:** How execution regions are identified and measured.
 3. **Attribution:** How inclusive time, exclusive time, line time, and execution counts are calculated.
-4. **UI:** How the profiler integrates with the Script Manager.
+4. **UI:** How the profiler integrates with the Pine Studio.
 5. **Lifecycle:** How profiling sessions, source revisions, cancellation, and errors are handled.
 6. **Performance:** Release-mode benchmark results, including disabled overhead.
 7. **Testing:** Tests added and their results.

@@ -1,4 +1,4 @@
-//! The theme editor of Settings ▸ Script Manager: every colour the editor paints, in groups, with
+//! The theme editor of Settings ▸ Pine Studio: every colour the editor paints, in groups, with
 //! the real editor pinned above so each change is seen where it lands.
 //!
 //! Changes apply as they are made (the host publishes them and saves a moment later), so there is
@@ -12,9 +12,9 @@ use crate::model::editor_theme::{
     ColorKey, EditorTheme, Palette, Rgba, SYSTEM_FONT, SurfaceColor, SurfaceGroup, SyntaxGroup,
     SyntaxRole, ThemeId, TypographyOverride,
 };
-use crate::script_manager::theme_preview::ThemePreview;
+use crate::pine_studio::theme_preview::ThemePreview;
 use crate::ui::icons::{self, Icon};
-use crate::ui::settings_script_manager::{Controls, Dialog, TypographyShown, typography_controls};
+use crate::ui::settings_pine_studio::{Controls, Dialog, TypographyShown, typography_controls};
 use crate::ui::settings_window::{FOOTER_HEIGHT, INSET, card, divider, footer_row};
 use crate::ui::{kit, theme};
 use eframe::egui::{self, Color32, Id, Rect, Sense, Stroke, Ui, pos2, vec2};

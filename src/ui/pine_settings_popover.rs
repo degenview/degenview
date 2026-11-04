@@ -12,8 +12,8 @@ use crate::pine::compiler;
 use crate::pine::program::InputSchema;
 use crate::pine::style_overrides::{StyleOverrides, StyleRow};
 use crate::pine::token::Limits;
-use crate::script_manager::inputs::{self, InputValues};
-use crate::script_manager::registry::LibraryRegistry;
+use crate::pine_studio::inputs::{self, InputValues};
+use crate::pine_studio::registry::LibraryRegistry;
 use eframe::egui::{Align, Context, Id, Layout, Rect, ScrollArea, Ui};
 use std::collections::HashMap;
 

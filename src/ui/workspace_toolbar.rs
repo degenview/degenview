@@ -1,5 +1,5 @@
 //! The chart window's toolbar, laid out like the Swift one: the timeframe as a segmented
-//! control on the left; the layout menu, Portfolio and Script Manager, the watchlist toggle and
+//! control on the left; the layout menu, Portfolio and Pine Studio, the watchlist toggle and
 //! Add Chart as separate bubbles on the right. Replay and Alerts live on the tool strip.
 
 use crate::model::{ChartSyncSettings, Timeframe};
@@ -53,7 +53,7 @@ pub enum ToolbarAction {
     DeleteLayout(u64),
     ToggleWatchlist,
     OpenPortfolio,
-    OpenScriptManager,
+    OpenPineStudio,
     AddChart,
     SetSync(ChartSyncSettings),
 }
@@ -127,7 +127,7 @@ pub fn show(ui: &mut Ui, input: &ToolbarInput) -> Vec<ToolbarAction> {
     }
     right = sidebar.left() - GAP;
 
-    // Portfolio and Script Manager share one bubble, as the Swift title-bar group does.
+    // Portfolio and Pine Studio share one bubble, as the Swift title-bar group does.
     let group = Rect::from_min_max(pos2(right - 76.0, y), pos2(right, y + BUBBLE));
     paint_bubble(ui, group, false, false);
     let halves = [
@@ -138,8 +138,8 @@ pub fn show(ui: &mut Ui, input: &ToolbarInput) -> Vec<ToolbarAction> {
         ),
         (
             Icon::Curlybraces,
-            "Script Manager",
-            ToolbarAction::OpenScriptManager,
+            "Pine Studio",
+            ToolbarAction::OpenPineStudio,
         ),
     ];
     for (index, (icon, tip, action)) in halves.into_iter().enumerate() {

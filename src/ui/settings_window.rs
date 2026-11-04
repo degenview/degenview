@@ -32,7 +32,7 @@ pub const WINDOW_SIZE: Vec2 = Vec2::new(800.0, 580.0);
 pub enum SettingsSection {
     #[default]
     Appearance,
-    ScriptManager,
+    PineStudio,
     Alpaca,
     CoinMarketCap,
     Ai,
@@ -48,7 +48,7 @@ pub enum SettingsSection {
 impl SettingsSection {
     pub const ALL: [Self; 12] = [
         Self::Appearance,
-        Self::ScriptManager,
+        Self::PineStudio,
         Self::Alpaca,
         Self::CoinMarketCap,
         Self::Ai,
@@ -71,7 +71,7 @@ impl SettingsSection {
     pub fn title(self) -> &'static str {
         match self {
             Self::Appearance => "Appearance",
-            Self::ScriptManager => "Script Manager",
+            Self::PineStudio => "Pine Studio",
             Self::Alpaca => "Alpaca",
             Self::CoinMarketCap => "CoinMarketCap",
             Self::Ai => "AI Assistant",
@@ -89,7 +89,7 @@ impl SettingsSection {
     pub fn tint(self) -> Color32 {
         match self {
             Self::Appearance => Color32::from_rgb(94, 92, 230),
-            Self::ScriptManager => Color32::from_rgb(172, 142, 104),
+            Self::PineStudio => Color32::from_rgb(172, 142, 104),
             Self::Alpaca => Color32::from_rgb(255, 159, 10),
             Self::CoinMarketCap => Color32::from_rgb(10, 132, 255),
             Self::Ai => Color32::from_rgb(255, 214, 10),
@@ -107,7 +107,7 @@ impl SettingsSection {
     pub fn key(self) -> &'static str {
         match self {
             Self::Appearance => "appearance",
-            Self::ScriptManager => "scriptmanager",
+            Self::PineStudio => "pinestudio",
             Self::Alpaca => "alpaca",
             Self::CoinMarketCap => "coinmarketcap",
             Self::Ai => "ai",
@@ -172,7 +172,7 @@ pub struct SettingsState {
     pub storage: StorageState,
     pub mcp: McpSettingsState,
     pub snapshots: crate::ui::settings_snapshots::SnapshotsState,
-    pub script_manager: crate::ui::settings_script_manager::ScriptManagerState,
+    pub pine_studio: crate::ui::settings_pine_studio::PineStudioState,
 }
 
 // MARK: Pure labels
@@ -328,7 +328,7 @@ impl SettingsSection {
     pub(super) fn icon(self) -> Icon {
         match self {
             Self::Appearance => Icon::Paintbrush,
-            Self::ScriptManager => Icon::Curlybraces,
+            Self::PineStudio => Icon::Curlybraces,
             Self::Alpaca => Icon::ChartLine,
             Self::CoinMarketCap => Icon::Gauge,
             Self::Ai => Icon::Sparkles,
@@ -475,9 +475,9 @@ pub fn show(
         // Coming back to the page reads the sizes again.
         state.storage.leave();
     }
-    if section != SettingsSection::ScriptManager {
+    if section != SettingsSection::PineStudio {
         // Coming back to the page starts at the themes, not in the middle of an edit.
-        state.script_manager.leave();
+        state.pine_studio.leave();
     }
     match section {
         SettingsSection::Appearance => {
@@ -495,11 +495,11 @@ pub fn show(
                 },
             );
         }
-        SettingsSection::ScriptManager => {
-            crate::ui::settings_script_manager::page(
+        SettingsSection::PineStudio => {
+            crate::ui::settings_pine_studio::page(
                 &mut page,
                 section,
-                &mut state.script_manager,
+                &mut state.pine_studio,
                 input.editor_themes,
             );
         }

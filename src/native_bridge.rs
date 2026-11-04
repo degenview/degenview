@@ -4,7 +4,7 @@ use eframe::egui;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum NativeCommand {
     NewTab,
-    /// File ▸ New Script, for the focused Script Manager.
+    /// File ▸ New Script, for the focused Pine Studio.
     NewScript,
     OpenSettings,
     SaveCurrentLayout,
@@ -18,7 +18,7 @@ pub enum NativeCommand {
     SelectPreviousTab,
     /// ⌘Q, the Dock's Quit or a logout, held back while the app asks about unsaved scripts.
     Quit,
-    /// Edit ▸ Cut, Copy, Paste, Go to Definition and Rename Symbol…: for the Script Manager's
+    /// Edit ▸ Cut, Copy, Paste, Go to Definition and Rename Symbol…: for the Pine Studio's
     /// code editor, whenever it has the keyboard.
     EditCut,
     EditCopy,
@@ -27,7 +27,7 @@ pub enum NativeCommand {
     RenameSymbol,
 }
 
-/// What the Edit menu can do right now. Everything is off unless a Script Manager editor has the
+/// What the Edit menu can do right now. Everything is off unless a Pine Studio editor has the
 /// keyboard; an item that is off is grey, and AppKit then leaves its key to the window, so ⌘C in
 /// a chart or a text field elsewhere behaves exactly as it did before the menu existed.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -70,8 +70,8 @@ pub fn set_edit_menu(menu: EditMenu) {
 static NEW_SCRIPT_ENABLED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
-/// Tells File ▸ New Script whether it may run: the app says so every frame, on only while a Script
-/// Manager has focus and no sheet is up. Kept apart from [`EditMenu`], which the editor rewrites.
+/// Tells File ▸ New Script whether it may run: the app says so every frame, on only while a Pine
+/// Studio has focus and no sheet is up. Kept apart from [`EditMenu`], which the editor rewrites.
 pub fn set_new_script_enabled(enabled: bool) {
     NEW_SCRIPT_ENABLED.store(enabled, std::sync::atomic::Ordering::Release);
 }
@@ -121,7 +121,7 @@ mod platform {
         }
     }
 
-    /// `NSApplicationTerminateReply`: with the Script Manager open, the app asks before it goes;
+    /// `NSApplicationTerminateReply`: with the Pine Studio open, the app asks before it goes;
     /// it quits itself once the answer is in. Otherwise AppKit terminates as it always did.
     extern "C-unwind" fn should_terminate(
         _delegate: &AnyObject,
@@ -553,7 +553,7 @@ mod platform {
         menubar.addItem(&file_item);
 
         // Edit: the code editor's clipboard and navigation. Items are grey (and their keys left to
-        // the window) unless a Script Manager editor has the keyboard; see `EditMenu`.
+        // the window) unless a Pine Studio editor has the keyboard; see `EditMenu`.
         let edit_item = NSMenuItem::new(mtm);
         let edit_menu = NSMenu::initWithTitle(mtm.alloc(), ns_string!("Edit"));
         for (title, selector, key) in [

@@ -18,7 +18,7 @@ use crate::pine::program::ChartTheme;
 use crate::pine::program::{InputValue, SymbolInfo, VisualOutput};
 use crate::pine::style_overrides::{StyleOverrides, StyleRow, style_rows};
 use crate::pine::token::{Diagnostic, Limits};
-use crate::script_manager::registry::LibraryRegistry;
+use crate::pine_studio::registry::LibraryRegistry;
 use crate::ui::alert_lines;
 use crate::ui::canvas_render::{self, CanvasStyle};
 use crate::ui::chart_buttons::{self, PaneAction};
@@ -321,7 +321,7 @@ pub struct ChartCard {
     /// the others share a pane under them.
     instances: Vec<PineInstance>,
     /// The preview's input overrides, kept here so they reach an instance made after they were set
-    /// (the Script Manager sets a script's saved inputs before its source arrives).
+    /// (the Pine Studio sets a script's saved inputs before its source arrives).
     preview_inputs: HashMap<String, InputValue>,
     /// What each instance's last run produced, by instance id.
     runs: HashMap<u64, Run>,
@@ -392,7 +392,7 @@ struct ConstructedSeries {
     klines: Vec<Kline>,
 }
 
-/// The instance the Script Manager's single-script preview chart runs.
+/// The instance the Pine Studio's single-script preview chart runs.
 pub const PREVIEW_INSTANCE: u64 = 0;
 
 /// One instance's last run, cached so the card does not recompile every frame.
@@ -1083,7 +1083,7 @@ impl ChartCard {
             })
     }
 
-    // The single-script preview (Script Manager): one instance, id 0, that keeps its last good
+    // The single-script preview (Pine Studio): one instance, id 0, that keeps its last good
     // output while a newer source fails to run.
 
     /// Sets (or clears) the one script the preview chart runs.

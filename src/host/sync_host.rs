@@ -6,7 +6,7 @@
 //! user sees on screen (applying remote data, reading script files) happens in `tick`, on the app
 //! thread, where those owners live.
 
-use crate::script_manager::store::ScriptStore;
+use crate::pine_studio::store::ScriptStore;
 use crate::store::SharedStore;
 use crate::store::sync::ConflictSummary;
 use crate::sync::account::{self, AccountChoice};
@@ -349,8 +349,8 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 impl SyncHost {
-    /// `scripts` is the user's script library (a separate handle on the same files as the Script
-    /// Manager's); `None` leaves scripts out of sync.
+    /// `scripts` is the user's script library (a separate handle on the same files as the Pine
+    /// Studio's); `None` leaves scripts out of sync.
     pub fn new(
         store: SharedStore,
         factory: Option<Arc<dyn TransportFactory>>,
@@ -441,7 +441,7 @@ impl SyncHost {
         (self.repaint)();
     }
 
-    /// Text typed but not saved in the Script Manager, which sync must never overwrite.
+    /// Text typed but not saved in the Pine Studio, which sync must never overwrite.
     pub fn set_unsaved_scripts(&self, ids: HashSet<String>) {
         lock(&self.shared).unsaved_scripts = ids;
     }

@@ -1,6 +1,6 @@
 # Pine debugger
 
-A source-level debugger for the script open in the Script Manager: breakpoints, stepping, variables,
+A source-level debugger for the script open in the Pine Studio: breakpoints, stepping, variables,
 watches, the call stack, and a pause on runtime errors, driving the real engine. TradingView offers
 nothing like it (its docs describe `log.*()` for debugging), so nothing here is checked against
 TradingView; the Pine language semantics it relies on are the engine's own.
@@ -200,7 +200,7 @@ that), and anything stateful.
   counting, the bar context says Realtime / Unconfirmed. A session holds a frozen snapshot, so it
   runs the last bar once as a tick, then ends; it does not follow later ticks.
 * **Synthetic chart types** (Renko, Heikin Ashi, …): the debugger is fed whatever bars it is given.
-  The Script Manager's preview is always plain candles, so a synthetic series is exercised only by
+  The Pine Studio's preview is always plain candles, so a synthetic series is exercised only by
   the engine's tests, not through the window.
 * **Strategies** run on the session's own broker; nothing reaches the paper account, the chart or
   any alert route.
@@ -219,7 +219,7 @@ same flat field as the watchlist's); Watches (add, edit in place, remove, expand
 Call Stack (click a frame to show its variables and watches and mark its line); Breakpoints (switch,
 condition, hit rule, logpoint message, hit count, why one is unresolved or invalid, remove, enable or
 disable all, stop at a bar); Console (evaluate, history). Wide windows put the variables left and
-the lists right; narrow ones stack. Sizes and open sections persist in the Script Manager's layout.
+the lists right; narrow ones stack. Sizes and open sections persist in the Pine Studio's layout.
 
 In the editor: the breakpoint column beside the line numbers (filled dot, conditional dot with `=`,
 logpoint diamond, hollow ring for disabled or unverified), an arrow and band on the stopped line
@@ -293,11 +293,11 @@ prints the time from a Pause request to the stop and from a step to the next sto
 ## Tests
 
 `cargo test --lib pine::debug` (engine: stepping matrix, breakpoints, inspection, watches, Pine
-specifics, realtime, sessions, stress) and `script_manager::debug_*` (through the window).
+specifics, realtime, sessions, stress) and `pine_studio::debug_*` (through the window).
 `tools/pine-bench.sh <base> [head]` is the A/B benchmark; `cargo test --release --lib
 pine::bench_tests -- --ignored --nocapture` prints one workload per line, with
 `--features alloc-count` adding allocations and peak memory. Pictures: `DEGENVIEW_GALLERY_DIR=… cargo
-test --lib script_manager::debug_gallery -- --ignored`.
+test --lib pine_studio::debug_gallery -- --ignored`.
 
 ## Not verified / limitations
 
@@ -306,7 +306,7 @@ test --lib script_manager::debug_gallery -- --ignored`.
   (see the PR for exactly what was done); there has been no wider manual pass. The scroll to a stop
   is tested headless with the scroll animation off; the animated scroll was not watched.
 * A session is a frozen copy of the preview's bars; it cannot follow live ticks, and a chart-applied
-  instance cannot be debugged (only the Script Manager's script).
+  instance cannot be debugged (only the Pine Studio's script).
 * Library code is stepped over; breakpoints in a library or in code reached only through one are not
   supported.
 * `ta.*`, `fixnan` and other per-call-site state cannot appear in an expression.

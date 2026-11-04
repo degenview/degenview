@@ -491,7 +491,7 @@ impl ChartWorkspace {
                     .chart
                     .set_pine_visual_order(instance, order);
             }
-            Command::OpenScriptManager => actions.push(WorkspaceAction::OpenPineScripts),
+            Command::OpenPineStudio => actions.push(WorkspaceAction::OpenPineScripts),
             Command::PineLogs(instance) => self.open_pine_logs(chart_id, Some(instance)),
             Command::EditAlert(id) => {
                 if let Some(alert) = self.context.alerts.iter().find(|alert| alert.id == id) {

@@ -130,7 +130,7 @@ pub fn conflict_detail(kind: &str) -> &'static str {
             "Changed on two Macs at once. The other version is kept as a layout with \u{201c}conflict from\u{201d} in its name. Delete the one you don't need."
         }
         "script" => {
-            "Changed on two Macs at once. The other version is kept as a script with \u{201c}conflict from\u{201d} in its name. Delete the one you don't need in the Script Manager."
+            "Changed on two Macs at once. The other version is kept as a script with \u{201c}conflict from\u{201d} in its name. Delete the one you don't need in the Pine Studio."
         }
         "ledger" => {
             "These would have left a portfolio with more sold than bought, so they wait until the missing transactions arrive."

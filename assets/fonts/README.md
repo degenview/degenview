@@ -20,7 +20,7 @@ their own licence.
 (`OFL-JetBrainsMono.txt`, byte for byte the upstream `OFL.txt` of that release). It has no Reserved Font Name.
 Typeface by JetBrains; <https://www.jetbrains.com/lp/mono/>.
 
-It is the default font of the Pine editor (Settings ▸ Script Manager ▸ Typography). Only the **NL**
+It is the default font of the Pine editor (Settings ▸ Pine Studio ▸ Typography). Only the **NL**
 (no ligatures) **Regular** build is bundled, and the file is **unmodified**: the same bytes as the
 release's `fonts/ttf/JetBrainsMonoNL-Regular.ttf` (208,576 bytes). NL has the same glyphs and metrics as the
 regular build, minus the code ligatures: DegenView draws each syntax colour as its own run of text and cannot

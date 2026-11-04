@@ -141,7 +141,7 @@ Done. The card, pill, status dot and problem list the import sheets use live in
 
 ## Empty states
 
-`portfolio_empty` draws them with the `Art` helpers the Script Manager's Logs, Problems and Profile
+`portfolio_empty` draws them with the `Art` helpers the Pine Studio's Logs, Problems and Profile
 introductions use: a disc and a card, with a badge for the page.
 
 - **A page with no transactions** (`portfolio_empty::page`): one picture per section, three steps,
