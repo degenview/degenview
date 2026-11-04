@@ -366,12 +366,10 @@ fn stub_app(
         }
         McpCommand::UpdateWatchlist {
             watchlist_id,
-            rename,
-            add,
-            remove,
+            changes,
         } => {
             let mut store = stub.watchlists.0.lock().unwrap();
-            mcp_host::update_watchlist(&mut store, watchlist_id, rename.as_deref(), add, &remove)
+            mcp_host::update_watchlist(&mut store, watchlist_id, *changes)
                 .map(|result| McpReply::WatchlistChanged(Box::new(result)))
         }
         McpCommand::DeleteWatchlist { watchlist_id } => {

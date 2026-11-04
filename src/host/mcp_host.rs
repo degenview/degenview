@@ -52,7 +52,7 @@ use crate::model::{
 };
 use crate::service::watchlist_quotes::WatchlistQuoteBook;
 use crate::store::SharedStore;
-use crate::store::watchlist::{ListEdit, WatchlistStore};
+use crate::store::watchlist::{ListChanges, ListEdit, Place, WatchlistStore};
 use crate::ui::alert_editor::{Direction, PriceAlertEditorState};
 use crate::workspace::{
     ChartSummary, ChartTypeError, ChartWorkspace, IndicatorError, IndicatorOutcome,
@@ -1930,9 +1930,10 @@ fn watchlist_error(error: WatchlistError) -> McpError {
     match error {
         WatchlistError::NotFound => McpError::NotFound(error.to_string()),
         WatchlistError::Duplicate(_) => McpError::Conflict(error.to_string()),
-        WatchlistError::EmptyName | WatchlistError::NameTooLong | WatchlistError::InvalidName => {
-            McpError::InvalidArgument(error.to_string())
-        }
+        WatchlistError::EmptyName
+        | WatchlistError::NameTooLong
+        | WatchlistError::InvalidName
+        | WatchlistError::AmbiguousSection(_) => McpError::InvalidArgument(error.to_string()),
         WatchlistError::ListFull | WatchlistError::TooManyLists => {
             McpError::ResourceLimit(error.to_string())
         }
@@ -2003,6 +2004,10 @@ fn change_result(
         already_present: key(edit.already_present),
         removed: key(edit.removed),
         not_present: key(edit.not_present),
+        moved: key(edit.moved),
+        sections_added: edit.sections_added,
+        sections_renamed: edit.sections_renamed,
+        sections_deleted: edit.sections_deleted,
     }
 }
 
@@ -2016,7 +2021,13 @@ pub fn create_watchlist(
     let edit = if markets.is_empty() {
         ListEdit::default()
     } else {
-        match store.edit_list(id, None, markets, &[]) {
+        match store.edit_list(
+            id,
+            ListChanges {
+                add: markets.into_iter().map(|item| (item, Place::End)).collect(),
+                ..ListChanges::default()
+            },
+        ) {
             Ok((edit, _)) => edit,
             Err(error) => {
                 // The list was meant to be created with its markets or not at all.
@@ -2031,14 +2042,10 @@ pub fn create_watchlist(
 pub fn update_watchlist(
     store: &mut WatchlistStore,
     id: u64,
-    rename: Option<&str>,
-    add: Vec<WatchlistInstrument>,
-    remove: &[InstrumentId],
+    changes: ListChanges,
 ) -> Result<WatchlistChangeResult, McpError> {
     watchlist_by_id(store, id)?;
-    let (edit, changed) = store
-        .edit_list(id, rename, add, remove)
-        .map_err(watchlist_error)?;
+    let (edit, changed) = store.edit_list(id, changes).map_err(watchlist_error)?;
     Ok(change_result(
         if changed { "updated" } else { "unchanged" },
         store,
@@ -2070,6 +2077,10 @@ pub fn delete_watchlist(
         removed: Vec::new(),
         not_present: Vec::new(),
         renamed_to: None,
+        moved: Vec::new(),
+        sections_added: Vec::new(),
+        sections_renamed: Vec::new(),
+        sections_deleted: Vec::new(),
     })
 }
 

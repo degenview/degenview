@@ -685,3 +685,172 @@ fn bad_candle_requests_never_reach_the_provider() {
     );
     assert_eq!(error_code(&denied), "PERMISSION_DENIED");
 }
+
+#[test]
+fn sections_are_made_filled_moved_renamed_and_deleted_through_the_update_tool() {
+    let harness = Harness::start(&[(
+        "c",
+        "tok",
+        &[Permission::WatchlistsRead, Permission::WatchlistsWrite],
+    )]);
+    let url = harness.url();
+    let created = call(
+        &url,
+        "tok",
+        "degenview_create_watchlist",
+        json!({"name": "Desk", "markets": [{"source": "binance", "symbol": "BTCUSDT"}]}),
+    );
+    let id = structured(&created)["watchlist"]["watchlist_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let result = call(
+        &url,
+        "tok",
+        "degenview_update_watchlist",
+        json!({
+            "watchlist_id": id,
+            "add_sections": ["Alts", "Stables"],
+            "add": [
+                {"source": "binance", "symbol": "ETHUSDT", "section": "alts"},
+                {"source": "binance", "symbol": "USDCUSDT", "section": "Stables"},
+            ],
+        }),
+    );
+    let changed = structured(&result);
+    assert_eq!(changed["sections_added"], json!(["Alts", "Stables"]));
+    assert_eq!(changed["watchlist"]["section_count"], 2);
+    assert_eq!(changed["watchlist"]["market_count"], 3);
+
+    let read = call(
+        &url,
+        "tok",
+        "degenview_get_watchlist",
+        json!({"watchlist_id": id}),
+    );
+    let entries = structured(&read)["entries"].as_array().unwrap().clone();
+    let shape: Vec<_> = entries
+        .iter()
+        .map(|e| {
+            format!(
+                "{}:{}",
+                e["kind"].as_str().unwrap(),
+                e["title"].as_str().unwrap()
+            )
+        })
+        .collect();
+    assert_eq!(
+        shape,
+        [
+            "market:BTCUSDT",
+            "section:Alts",
+            "market:ETHUSDT",
+            "section:Stables",
+            "market:USDCUSDT"
+        ]
+    );
+    assert_eq!(entries[2]["section"], "Alts");
+    assert_eq!(entries[4]["section"], "Stables");
+    let stables_id = entries[3]["entry_id"].as_str().unwrap().to_owned();
+
+    // Rename by title, move BTC into the renamed section, delete Stables by its id.
+    let result = call(
+        &url,
+        "tok",
+        "degenview_update_watchlist",
+        json!({
+            "watchlist_id": id,
+            "rename_sections": [{"section": "Alts", "title": "Altcoins"}],
+            "move_markets": [
+                {"source": "binance", "symbol": "BTCUSDT", "section": "Altcoins"},
+                {"source": "binance", "symbol": "SOLUSDT"},
+            ],
+            "delete_sections": [stables_id],
+        }),
+    );
+    let changed = structured(&result);
+    assert_eq!(changed["sections_renamed"], json!(["Altcoins"]));
+    assert_eq!(changed["moved"], json!(["BINANCE:BTCUSDT"]));
+    assert_eq!(changed["not_present"], json!(["BINANCE:SOLUSDT"]));
+    assert_eq!(changed["watchlist"]["section_count"], 1);
+    assert_eq!(
+        changed["watchlist"]["market_count"], 3,
+        "deleting a header keeps its markets"
+    );
+}
+
+#[test]
+fn a_bad_section_changes_nothing_and_bad_section_arguments_are_refused() {
+    let harness = Harness::start(&[(
+        "c",
+        "tok",
+        &[Permission::WatchlistsRead, Permission::WatchlistsWrite],
+    )]);
+    let url = harness.url();
+    let created = call(
+        &url,
+        "tok",
+        "degenview_create_watchlist",
+        json!({"name": "Desk"}),
+    );
+    let id = structured(&created)["watchlist"]["watchlist_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let unknown = call(
+        &url,
+        "tok",
+        "degenview_update_watchlist",
+        json!({
+            "watchlist_id": id,
+            "add_sections": ["New"],
+            "add": [{"source": "binance", "symbol": "BTCUSDT", "section": "Nope"}],
+        }),
+    );
+    assert_eq!(error_code(&unknown), "NOT_FOUND");
+    let read = call(
+        &url,
+        "tok",
+        "degenview_get_watchlist",
+        json!({"watchlist_id": id}),
+    );
+    assert_eq!(
+        structured(&read)["total_entries"],
+        0,
+        "no 'New' section was kept"
+    );
+
+    call(
+        &url,
+        "tok",
+        "degenview_update_watchlist",
+        json!({"watchlist_id": id, "add_sections": ["Same", "same"]}),
+    );
+    let ambiguous = call(
+        &url,
+        "tok",
+        "degenview_update_watchlist",
+        json!({"watchlist_id": id, "add": [{"source": "binance", "symbol": "BTCUSDT", "section": "SAME"}]}),
+    );
+    assert_eq!(error_code(&ambiguous), "INVALID_ARGUMENT");
+
+    for extra in [
+        json!({"add": [{"source": "binance", "symbol": "BTCUSDT", "section": ""}]}),
+        json!({"add_sections": ["a\nb"]}),
+        json!({"rename_sections": [{"section": "x", "title": ""}]}),
+        json!({"move_markets": [{"source": "binance", "symbol": "BTC-USD"}]}),
+        json!({"add": [{"source": "binance", "symbol": "BTCUSDT"}], "remove": [{"source": "binance", "symbol": "BTCUSDT"}]}),
+        json!({"add": [{"source": "binance", "symbol": "BTCUSDT"}], "move_markets": [{"source": "binance", "symbol": "BTCUSDT"}], "remove": [{"source": "binance", "symbol": "BTCUSDT"}]}),
+        json!({"delete_sections": [""]}),
+    ] {
+        let mut args = json!({"watchlist_id": id});
+        args.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        assert!(
+            rejected(&url, "tok", "degenview_update_watchlist", args.clone()),
+            "{args}"
+        );
+    }
+}

@@ -199,12 +199,11 @@ pub enum McpCommand {
         name: String,
         markets: Vec<crate::model::watchlist::WatchlistInstrument>,
     },
-    /// Renames a list and/or adds and removes markets, all or nothing.
+    /// Renames a list, edits its sections and adds, removes and moves its markets, all or
+    /// nothing.
     UpdateWatchlist {
         watchlist_id: u64,
-        rename: Option<String>,
-        add: Vec<crate::model::watchlist::WatchlistInstrument>,
-        remove: Vec<InstrumentId>,
+        changes: Box<crate::store::watchlist::ListChanges>,
     },
     DeleteWatchlist {
         watchlist_id: u64,

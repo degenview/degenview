@@ -20,6 +20,7 @@ use crate::model::watchlist::WatchlistInstrument;
 use crate::model::watchlist_quote::{Freshness, WatchlistQuote};
 use crate::model::watchlist_text::market_item;
 use crate::model::{DataSource, InstrumentId};
+use crate::store::watchlist::{ListChanges, Place};
 use rmcp::handler::server::tool::Extension;
 use rmcp::handler::server::wrapper::{Json, Parameters};
 use rmcp::model::CallToolResult;
@@ -154,6 +155,45 @@ pub struct CreateWatchlistParams {
     pub markets: Option<Vec<MarketRef>>,
 }
 
+/// A market to add, and where.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct AddMarket {
+    /// The market data provider.
+    pub source: McpSource,
+    /// The provider's own symbol, as `degenview_search_symbols` returns it.
+    #[schemars(length(min = 1, max = 128))]
+    pub symbol: String,
+    /// The section to put it in: its id (a section entry's `entry_id`) or its title (case ignored), including
+    /// one made by `add_sections` in the same call. Omit for the end of the list.
+    #[schemars(length(min = 1, max = 200))]
+    pub section: Option<String>,
+}
+
+/// A market to move to a section.
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MoveMarket {
+    pub source: McpSource,
+    #[schemars(length(min = 1, max = 128))]
+    pub symbol: String,
+    /// The section to move it to (its id or title). Omit to move it to the top of the
+    /// list, ahead of every section.
+    #[schemars(length(min = 1, max = 200))]
+    pub section: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RenameSection {
+    /// The section: its id or its title.
+    #[schemars(length(min = 1, max = 200))]
+    pub section: String,
+    /// Its new title, up to 200 characters.
+    #[schemars(length(min = 1, max = 200))]
+    pub title: String,
+}
+
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateWatchlistParams {
@@ -163,12 +203,164 @@ pub struct UpdateWatchlistParams {
     /// A new name.
     #[schemars(length(min = 1, max = 200))]
     pub rename: Option<String>,
-    /// Markets to add at the end of the list, up to 100. One already in the list is skipped.
-    #[schemars(length(max = 100))]
-    pub add: Option<Vec<MarketRef>>,
+    /// Sections to add, by title, at the end of the list (up to 20).
+    #[schemars(length(max = 20))]
+    pub add_sections: Option<Vec<String>>,
+    /// Sections to rename (up to 20).
+    #[schemars(length(max = 20))]
+    pub rename_sections: Option<Vec<RenameSection>>,
     /// Markets to remove, up to 100. One not in the list is skipped.
     #[schemars(length(max = 100))]
     pub remove: Option<Vec<MarketRef>>,
+    /// Markets already in the list to move to a section or the top, up to 100.
+    #[schemars(length(max = 100))]
+    pub move_markets: Option<Vec<MoveMarket>>,
+    /// Markets to add, up to 100, each optionally into a section. One already in the list is
+    /// skipped (it is not moved: use `move_markets`).
+    #[schemars(length(max = 100))]
+    pub add: Option<Vec<AddMarket>>,
+    /// Sections to delete (up to 20), by id or title. Only the header goes: its markets
+    /// stay, joining the section above or the top of the list.
+    #[schemars(length(max = 20))]
+    pub delete_sections: Option<Vec<String>>,
+}
+
+/// A section named in a request: 1 to 200 characters, no control characters.
+fn clean_section(raw: &str) -> Result<String, CallToolResult> {
+    let section = raw.trim();
+    if section.is_empty() || section.chars().count() > 200 || section.chars().any(char::is_control)
+    {
+        return Err(invalid(
+            "a section is a section_id or a title of 1 to 200 characters, without control characters",
+        ));
+    }
+    Ok(section.to_owned())
+}
+
+fn clean_sections(
+    raw: Option<&[String]>,
+    most: usize,
+    what: &str,
+) -> Result<Vec<String>, CallToolResult> {
+    let raw = raw.unwrap_or(&[]);
+    if raw.len() > most {
+        return Err(invalid(format!("give at most {most} {what}")));
+    }
+    raw.iter().map(|section| clean_section(section)).collect()
+}
+
+fn place_of(section: Option<&str>) -> Result<Place, CallToolResult> {
+    section
+        .map(|section| clean_section(section).map(Place::Section))
+        .transpose()
+        .map(Option::unwrap_or_default)
+}
+
+/// The change a tool call asks of a list, or the first argument that is wrong.
+fn list_changes(params: &UpdateWatchlistParams) -> Result<ListChanges, CallToolResult> {
+    let adds = params.add.as_deref().unwrap_or(&[]);
+    let refs: Vec<MarketRef> = adds
+        .iter()
+        .map(|add| MarketRef {
+            source: add.source,
+            symbol: add.symbol.clone(),
+        })
+        .collect();
+    let items = resolve_markets(&refs)?;
+    // `resolve_markets` drops repeats, so pair each kept row with the place of its first mention.
+    let mut add = Vec::new();
+    for item in items {
+        let key = item.instrument.key();
+        let first = adds
+            .iter()
+            .find(|add| {
+                market_item(add.source.data_source(), &add.symbol)
+                    .is_ok_and(|candidate| candidate.instrument.key() == key)
+            })
+            .and_then(|add| add.section.as_deref());
+        add.push((item, place_of(first)?));
+    }
+    let remove: Vec<InstrumentId> = resolve_markets(params.remove.as_deref().unwrap_or(&[]))?
+        .into_iter()
+        .map(|item| item.instrument)
+        .collect();
+    let moves_in = params.move_markets.as_deref().unwrap_or(&[]);
+    let move_refs: Vec<MarketRef> = moves_in
+        .iter()
+        .map(|moved| MarketRef {
+            source: moved.source,
+            symbol: moved.symbol.clone(),
+        })
+        .collect();
+    let mut moves = Vec::new();
+    for (moved, item) in moves_in.iter().zip(
+        move_refs
+            .iter()
+            .map(|reference| resolve_markets(std::slice::from_ref(reference))),
+    ) {
+        let instrument = item?
+            .into_iter()
+            .next()
+            .map(|item| item.instrument)
+            .ok_or_else(|| invalid("a market to move is missing"))?;
+        let place = match moved.section.as_deref() {
+            None => Place::Top,
+            Some(section) => Place::Section(clean_section(section)?),
+        };
+        moves.push((instrument, place));
+    }
+    let rename_in = params.rename_sections.as_deref().unwrap_or(&[]);
+    if rename_in.len() > 20 {
+        return Err(invalid("give at most 20 rename_sections"));
+    }
+    let rename_sections = rename_in
+        .iter()
+        .map(|rename| {
+            Ok((
+                clean_section(&rename.section)?,
+                clean_section(&rename.title)?,
+            ))
+        })
+        .collect::<Result<Vec<_>, CallToolResult>>()?;
+    let changes = ListChanges {
+        rename: params.rename.clone(),
+        add_sections: clean_sections(params.add_sections.as_deref(), 20, "add_sections")?,
+        rename_sections,
+        remove,
+        moves,
+        add,
+        delete_sections: clean_sections(params.delete_sections.as_deref(), 20, "delete_sections")?,
+    };
+    if changes.rename.is_none()
+        && changes.add_sections.is_empty()
+        && changes.rename_sections.is_empty()
+        && changes.remove.is_empty()
+        && changes.moves.is_empty()
+        && changes.add.is_empty()
+        && changes.delete_sections.is_empty()
+    {
+        return Err(invalid(
+            "give at least one of rename, add_sections, rename_sections, remove, move_markets, add, delete_sections",
+        ));
+    }
+    let removing: HashSet<String> = changes.remove.iter().map(InstrumentId::key).collect();
+    for (item, _) in &changes.add {
+        if removing.contains(&item.instrument.key()) {
+            return Err(invalid(format!(
+                "{} is in both add and remove",
+                item.instrument.key()
+            )));
+        }
+    }
+    for (instrument, _) in &changes.moves {
+        if removing.contains(&instrument.key()) {
+            return Err(invalid(format!(
+                "{} is in both move_markets and remove",
+                instrument.key()
+            )));
+        }
+    }
+    Ok(changes)
 }
 
 fn parse_watchlist_id(raw: &str) -> Result<u64, CallToolResult> {
@@ -622,7 +814,7 @@ impl DegenViewMcp {
 
     #[tool(
         name = "degenview_update_watchlist",
-        description = "Rename a watchlist and/or add and remove markets (`source` + `symbol`), all in one change: if anything is refused (a bad name, a full list) nothing changes. Removals run first. A market already in the list, or one to remove that is not, is skipped and reported (`already_present`, `not_present`), so a retry is harmless. New markets go at the end of the list.",
+        description = "Change a watchlist in one step: rename it, add / rename / delete sections, and remove, move and add markets (`source` + `symbol`). If anything is refused (a bad name, an unknown or ambiguous section, a full list) nothing changes. Order of application: rename, new sections, renamed sections, removals, moves, additions, deleted sections, so a section made by `add_sections` can be used by `move_markets` and `add` in the same call. A section is named by its id (the `entry_id` of a `section` entry in degenview_get_watchlist) or its title, case ignored; two sections with the same title must be named by id. A market already in the list, or one to remove or move that is not, is skipped and reported (`already_present`, `not_present`), so a retry is harmless. New markets go at the end of the list (the end of its last section) unless given a `section`. A section is a divider: the markets after it, up to the next, belong to it; deleting one keeps its markets.",
         annotations(
             read_only_hint = false,
             destructive_hint = false,
@@ -637,32 +829,13 @@ impl DegenViewMcp {
     ) -> Result<Json<WatchlistChangeResult>, CallToolResult> {
         let client = client_of(&parts)?;
         let watchlist_id = parse_watchlist_id(&params.watchlist_id)?;
-        let add = resolve_markets(params.add.as_deref().unwrap_or(&[]))?;
-        let remove: Vec<InstrumentId> = resolve_markets(params.remove.as_deref().unwrap_or(&[]))?
-            .into_iter()
-            .map(|item| item.instrument)
-            .collect();
-        if params.rename.is_none() && add.is_empty() && remove.is_empty() {
-            return Err(invalid("give rename, add or remove"));
-        }
-        let removing: HashSet<String> = remove.iter().map(InstrumentId::key).collect();
-        if let Some(both) = add
-            .iter()
-            .find(|item| removing.contains(&item.instrument.key()))
-        {
-            return Err(invalid(format!(
-                "{} is in both add and remove",
-                both.instrument.key()
-            )));
-        }
+        let changes = list_changes(&params)?;
         self.change_watchlist(
             &client,
             Permission::WatchlistsWrite,
             McpCommand::UpdateWatchlist {
                 watchlist_id,
-                rename: params.rename,
-                add,
-                remove,
+                changes: Box::new(changes),
             },
         )
         .await

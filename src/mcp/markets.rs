@@ -356,10 +356,18 @@ pub struct WatchlistChangeResult {
     pub already_present: Vec<String>,
     /// Markets removed.
     pub removed: Vec<String>,
-    /// Markets asked to be removed that were not in the list.
+    /// Markets asked to be removed or moved that were not in the list.
     pub not_present: Vec<String>,
     /// Set when the list was renamed.
     pub renamed_to: Option<String>,
+    /// Markets moved to another section (or the top), by `instrument`.
+    pub moved: Vec<String>,
+    /// Titles of the sections made.
+    pub sections_added: Vec<String>,
+    /// New titles of the sections renamed.
+    pub sections_renamed: Vec<String>,
+    /// The sections deleted, as they were named in the request. Their markets stay in the list.
+    pub sections_deleted: Vec<String>,
 }
 
 #[cfg(test)]

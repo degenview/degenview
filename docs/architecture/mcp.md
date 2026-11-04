@@ -140,13 +140,17 @@ Delete and saved-source writes require their own grants.
   There is no `before`: older history needs a chart (`get_candles`). It needs `markets.read`.
 - Watchlist reads and writes run on the app thread against the shared `WatchlistStore`, the same
   path the sidebar uses (so iCloud Sync queues the write in the same transaction).
-  `update_watchlist` is `WatchlistStore::edit_list`: rename, removals then additions, one copy, one
-  save; a refusal leaves the list as it was, and a market already present or absent is skipped and
-  reported, so a retry is harmless. Symbols are checked with the import rules
+  `update_watchlist` is `WatchlistStore::edit_list(id, ListChanges)`: rename, new sections, renamed
+  sections, removals, moves, additions, deleted sections, in that order, on one copy with one save;
+  a refusal leaves the list as it was, and a market already present or absent is skipped and
+  reported, so a retry is harmless. A section is named by id or by title (`Watchlist::resolve_section`,
+  case ignored, two sections with one title are `INVALID_ARGUMENT` until named by id), and one made
+  in the same call can be used by the moves and additions after it. Deleting a section removes the
+  header only; its markets stay. Symbols are checked with the import rules
   (`watchlist_text::market_item`), so `BTC/USDT` is refused where the Add Chart sheet would also
   want `BTCUSDT`. Favorites cannot be deleted. `get_watchlist` pages entries (max 500) and, with
-  `include_quotes`, needs `markets.read` as well and at most 50 markets per page. Sections can be
-  read but not yet created or edited, and neither can display settings (sort, columns) or flags.
+  `include_quotes`, needs `markets.read` as well and at most 50 markets per page. Display settings
+  (sort, columns, collapsed sections) and flags are not exposed.
 - Draft update and save have separate permissions. Both compare `expected_revision` to live editor
   text, else draft, else saved source. The app thread atomically checks, writes, and calls
   `PineStudio::adopt_external_text`. Save rejects compile errors but keeps the draft. Text is

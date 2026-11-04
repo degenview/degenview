@@ -1793,21 +1793,13 @@ impl DegenViewApp {
             }
             McpCommand::UpdateWatchlist {
                 watchlist_id,
-                rename,
-                add,
-                remove,
+                changes,
             } => {
                 let mut store = self
                     .watchlist
                     .lock()
                     .map_err(|_| watchlists_unavailable())?;
-                let result = mcp_host::update_watchlist(
-                    &mut store,
-                    watchlist_id,
-                    rename.as_deref(),
-                    add,
-                    &remove,
-                )?;
+                let result = mcp_host::update_watchlist(&mut store, watchlist_id, *changes)?;
                 ctx.request_repaint();
                 Ok(McpReply::WatchlistChanged(Box::new(result)))
             }
