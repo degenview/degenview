@@ -687,6 +687,19 @@ mod platform {
         }
     }
 
+    #[cfg(test)]
+    #[test]
+    fn menu_icons_decode() {
+        for png in [
+            &include_bytes!("../assets/brand/menu-github.png")[..],
+            &include_bytes!("../assets/brand/menu-coffee.png")[..],
+        ] {
+            let image = menu_icon(png).expect("PNG decodes");
+            assert!(image.isTemplate());
+            assert_eq!(image.size().width, 16.0);
+        }
+    }
+
     /// A 64 px PNG shown 16 pt square, as a template so AppKit tints it for the menu (light, dark,
     /// highlighted).
     fn menu_icon(png: &[u8]) -> Option<Retained<NSImage>> {
