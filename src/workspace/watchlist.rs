@@ -23,16 +23,11 @@ impl ChartWorkspace {
                 Err(mpsc::TryRecvError::Empty) => {}
             }
         }
-        let (actions, instruments) = {
+        let actions = {
             let watchlist = Arc::clone(&self.watchlist);
             let store = watchlist.lock().expect("watchlist lock poisoned");
             let lists = store.lists();
             let flags = store.flags();
-            let instruments: Vec<InstrumentId> = lists
-                .iter()
-                .flat_map(|list| list.instruments())
-                .map(|item| item.instrument.clone())
-                .collect();
             let quote = |id: &InstrumentId| self.quote_book.get(id);
             let focused_market = self
                 .resolved_focused_id()
@@ -50,12 +45,22 @@ impl ChartWorkspace {
                     .or_else(|| store.last_error()),
                 import_report: self.import_report.as_ref(),
             };
-            let actions = watchlist_sidebar::show(ui, &mut self.watchlist_sidebar, &input);
-            (actions, instruments)
+            watchlist_sidebar::show(ui, &mut self.watchlist_sidebar, &input)
         };
-        self.quote_coordinator
-            .set_demand(self.id, instruments, self.watchlist_visible);
+        // Only the rows on screen ask for prices, not every list in the library.
+        self.quote_coordinator.set_sidebar_demand(
+            self.id,
+            self.watchlist_sidebar.quote_demand().to_vec(),
+            true,
+        );
         self.apply_watchlist_actions(actions, ctx);
+    }
+
+    /// Closing the sidebar stops its quote demand at once; a background tab or a covered
+    /// window never reaches here and is covered by the demand's lease.
+    pub(super) fn suspend_watchlist_demand(&self) {
+        self.quote_coordinator
+            .set_sidebar_demand(self.id, Vec::new(), false);
     }
 
     fn apply_watchlist_actions(&mut self, actions: Vec<WatchlistAction>, ctx: &egui::Context) {

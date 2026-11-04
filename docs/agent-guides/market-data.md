@@ -65,14 +65,34 @@ candles, and `ChartCard::set_series` draws choices by position with end labels.
 - `WatchlistStore` is authoritative: one ordered document row per list containing flat instrument
   and section entries. Validate, persist in one transaction, then publish. Do not overwrite a list
   that failed to decode. Favorites are the `isFavorites` list; Swift favorite rows import once.
-- Identity is `InstrumentId` (source plus provider id); chain is metadata and ticker text is not an
-  identity. CoinMarketCap portfolio cards are not instruments.
+- Identity is `InstrumentId::key()` (source plus the provider id as the provider takes it): Binance
+  `BTC`/`btcusdt`/`BTC/USDT` and Coinbase `ETH`/`ETH/USD`/`eth-usd` are one market. Use the key, not the
+  derived `Eq`/`Hash` on the struct, for membership, flags, quote lookup and sync merging. Rows and
+  flags saved under older spellings are collapsed and re-keyed on load. Chain is metadata and ticker
+  text is not an identity. CoinMarketCap portfolio cards are not instruments.
 - Flags are global by market in `watchlist.flags`. They sync with the Watchlists switch (not
   Preferences) and merge per key; `sync::policy::category_of` / `merge_of` decide per setting key.
   Sorting/filtering is presentation-only and stays within sections through `watchlist_layout`.
 - Quotes are transient. `WatchlistQuoteCoordinator` merges demand by `InstrumentId`, batches each
   source, shares Coinbase's socket, backs off per source, and fills `WatchlistQuoteBook`. It neither
   persists quotes nor uses the alert quote path.
+- A sidebar asks for quotes only for the market rows it draws (`WatchlistSidebarState::quote_demand`):
+  not other lists, filtered-out rows, collapsed sections or portfolio cards. The highlighted row is
+  always a drawn row, so Enter/Delete and the detail card never act on a hidden one.
+- A sidebar's demand is a lease (`set_sidebar_demand`, `SIDEBAR_LEASE_MS`): it renews on every frame
+  the sidebar draws and lapses 3 s after the last one, so a background tab, a hidden or covered window
+  stops polling by itself. Closing the sidebar suspends it at once. The coordinator thread asks for a
+  repaint when a lease is half spent so an idle visible sidebar renews. Other owners (alerts,
+  portfolio cards) use `set_demand`, which never lapses.
+- Quote failures are classified by `provider::classify_status`: only a documented symbol-level
+  answer (Binance/Alpaca 400, Coinbase 404) is `Rejected` and makes the engine bisect for the bad
+  symbol, within `ISOLATION_BUDGET` requests per round; credentials, region, endpoint and ban
+  statuses back the whole source off. A rate limit stops the round's remaining requests. A provider
+  returns an `Outcome` (quotes, rejected, and the requests that failed with their symbols), so a failed
+  page or product marks only its own rows stale while the rest publish.
+- The engine forgets a market nobody has asked for after `Config::idle_grace_ms` (10 min): its quote,
+  confirmation time, refusal and Coinbase bookkeeping, and the book entry. Resolved DEX networks
+  (`chains`) are kept. A market that returns later shows no old price until it is fetched.
 - Selecting a row focuses or opens its market in that workspace; highlighting mirrors the focused
   chart.
 

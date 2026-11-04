@@ -17,10 +17,11 @@ impl InstrumentId {
         }
     }
 
-    /// Stable identity, case-insensitive where the provider is. DEX addresses and
-    /// prediction-market ids are case-sensitive. Consumed by watchlist persistence
-    /// (Stage 6); exercised by tests today.
-    #[allow(dead_code)]
+    /// Stable identity for equality, flags, list membership, quote lookup and sync merging:
+    /// the market, however it was spelled. Binance and Coinbase spellings that the provider
+    /// takes as one market (`BTC`, `btcusdt`, `BTC/USDT`; `ETH`, `ETH/USD`, `eth-usd`) share a
+    /// key, because it is built from `api_symbol`. Otherwise case-insensitive where the
+    /// provider is: DEX addresses and prediction-market ids are case-sensitive.
     pub fn key(&self) -> String {
         format!(
             "{}:{}",
@@ -62,11 +63,19 @@ impl InstrumentId {
         self.source == other.source && self.api_symbol().eq_ignore_ascii_case(&other.api_symbol())
     }
 
+    /// The key of the market a stored `key()` string names, spelled the way `key()` spells
+    /// it now; `None` for a string that is not a key. Flags saved before aliases shared a
+    /// key (`BINANCE:BTC`) are moved to the key of the market they were set on.
+    pub fn rekey(key: &str) -> Option<String> {
+        let (slug, symbol) = key.split_once(':')?;
+        let source = DataSource::from_watchlist_slug(slug)?;
+        Some(Self::new(source, symbol).key())
+    }
+
     fn normalized(symbol: &str, source: DataSource) -> String {
         match source {
-            DataSource::Binance | DataSource::Coinbase | DataSource::Alpaca => {
-                symbol.to_uppercase()
-            }
+            DataSource::Binance | DataSource::Coinbase => Self::new(source, symbol).api_symbol(),
+            DataSource::Alpaca => symbol.to_uppercase(),
             DataSource::CoinGecko => symbol.to_lowercase(),
             _ => symbol.to_owned(),
         }
@@ -87,6 +96,58 @@ mod tests {
 
         let coingecko = InstrumentId::new(DataSource::CoinGecko, "Bitcoin");
         assert_eq!(coingecko.key(), "COINGECKO:bitcoin");
+    }
+
+    #[test]
+    fn spellings_of_one_market_share_a_key() {
+        let key = |source, symbol: &str| InstrumentId::new(source, symbol).key();
+        for symbol in ["BTC", "btc", "BTCUSDT", "btcusdt", "BTC/USDT"] {
+            assert_eq!(
+                key(DataSource::Binance, symbol),
+                "BINANCE:BTCUSDT",
+                "{symbol}"
+            );
+        }
+        for symbol in ["ETH", "eth-usd", "ETH/USD", "ETH-USD"] {
+            assert_eq!(
+                key(DataSource::Coinbase, symbol),
+                "COINBASE:ETH-USD",
+                "{symbol}"
+            );
+        }
+        // A different quote is a different market.
+        assert_ne!(
+            key(DataSource::Binance, "BTC"),
+            key(DataSource::Binance, "BTCFDUSD")
+        );
+        assert_ne!(
+            key(DataSource::Coinbase, "BTC-USD"),
+            key(DataSource::Coinbase, "BTC-EUR")
+        );
+        // Case-sensitive providers keep their case.
+        assert_ne!(
+            key(DataSource::DexScreener, "AbC"),
+            key(DataSource::DexScreener, "abc")
+        );
+        assert_eq!(key(DataSource::Alpaca, "aapl"), "ALPACA:AAPL");
+    }
+
+    #[test]
+    fn a_stored_key_is_respelled_as_the_market_it_names() {
+        assert_eq!(
+            InstrumentId::rekey("BINANCE:BTC").as_deref(),
+            Some("BINANCE:BTCUSDT")
+        );
+        assert_eq!(
+            InstrumentId::rekey("COINBASE:ETH/USD").as_deref(),
+            Some("COINBASE:ETH-USD")
+        );
+        assert_eq!(
+            InstrumentId::rekey("COINGECKO:bitcoin").as_deref(),
+            Some("COINGECKO:bitcoin")
+        );
+        assert_eq!(InstrumentId::rekey("nonsense"), None);
+        assert_eq!(InstrumentId::rekey("NOPE:BTC"), None);
     }
 
     #[test]

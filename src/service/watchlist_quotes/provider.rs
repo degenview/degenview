@@ -2,6 +2,7 @@
 //! wraps each exchange's endpoint; tests substitute a recorder. Parsers are pure so the
 //! response shapes are covered without a network.
 
+use super::engine::Outcome;
 use crate::model::DataSource;
 use crate::model::watchlist_quote::{SourceQuote, VolumeKind};
 use serde_json::Value;
@@ -41,12 +42,14 @@ impl QuoteFailure {
 }
 
 /// Quotes keyed by `QuoteRequest::symbol`; a symbol the provider did not answer is omitted.
+/// An adapter that makes several requests reports the ones that failed in the `Outcome`
+/// and keeps the rest; `Err` is for a call that failed as a whole.
 pub trait QuoteProvider: Send + Sync {
     fn quotes(
         &self,
         source: DataSource,
         requests: &[QuoteRequest],
-    ) -> Result<HashMap<String, SourceQuote>, QuoteFailure>;
+    ) -> Result<Outcome, QuoteFailure>;
 
     /// The network of a DEX pair saved without one, from its address.
     fn resolve_chain(&self, address: &str) -> Option<String>;
@@ -76,36 +79,60 @@ impl QuoteProvider for LiveProvider {
         &self,
         source: DataSource,
         requests: &[QuoteRequest],
-    ) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
+    ) -> Result<Outcome, QuoteFailure> {
         if requests.is_empty() {
-            return Ok(HashMap::new());
+            return Ok(Outcome::default());
         }
         match source {
-            DataSource::Binance => binance(requests),
-            DataSource::Coinbase => coinbase(requests),
-            DataSource::CoinGecko => coingecko(requests),
-            DataSource::DexScreener => dexscreener(requests),
-            DataSource::Alpaca => alpaca(requests),
+            DataSource::Binance => binance(requests).map(Outcome::from_quotes),
+            DataSource::Coinbase => Ok(coinbase(requests)),
+            DataSource::CoinGecko => coingecko(requests).map(Outcome::from_quotes),
+            DataSource::DexScreener => Ok(dexscreener(requests)),
+            DataSource::Alpaca => alpaca(requests).map(Outcome::from_quotes),
             DataSource::Polymarket | DataSource::Kalshi => Ok(prediction(source, requests)),
-            DataSource::CoinMarketCap => Ok(HashMap::new()),
+            DataSource::CoinMarketCap => Ok(Outcome::default()),
         }
     }
 
     fn resolve_chain(&self, address: &str) -> Option<String> {
-        let body = get(&format!("{DEX_URL}/search?q={address}"), &[]).ok()?;
+        let body = get(
+            DataSource::DexScreener,
+            &format!("{DEX_URL}/search?q={address}"),
+            &[],
+        )
+        .ok()?;
         parse_chain(&body, address)
     }
 }
 
 /// A GET that maps HTTP failures onto `QuoteFailure`.
-fn get(url: &str, headers: &[(&str, &str)]) -> Result<String, QuoteFailure> {
+fn get(source: DataSource, url: &str, headers: &[(&str, &str)]) -> Result<String, QuoteFailure> {
     match crate::service::http::get_text(url, headers, crate::service::http::Retry::Never) {
         Ok(body) => Ok(body),
-        Err(crate::service::http::Error::Status(429)) => Err(QuoteFailure::RateLimited),
-        Err(crate::service::http::Error::Status(code)) if (400..500).contains(&code) => Err(
-            QuoteFailure::Rejected(format!("The provider answered HTTP {code}")),
-        ),
+        Err(crate::service::http::Error::Status(code)) => Err(classify_status(source, code)),
         Err(error) => Err(QuoteFailure::Failed(format!("Network error: {error}"))),
+    }
+}
+
+/// What an HTTP status means for a quote request. Only a status the provider documents
+/// as "a symbol in this request is unknown" is `Rejected`, which makes the engine search
+/// for the bad symbol; every other refusal (credentials, region, a changed endpoint, a
+/// ban) belongs to the whole source and backs it off instead.
+pub fn classify_status(source: DataSource, code: u16) -> QuoteFailure {
+    match (source, code) {
+        (_, 429) => QuoteFailure::RateLimited,
+        (DataSource::Alpaca, 401 | 403) => {
+            QuoteFailure::Failed("Alpaca refused your API key. Check it in Settings".to_owned())
+        }
+        // Binance answers an unknown symbol in a batch with 400; so does Alpaca.
+        (DataSource::Binance | DataSource::Alpaca, 400) => {
+            QuoteFailure::Rejected("The provider answered HTTP 400".to_owned())
+        }
+        // Coinbase is asked one product at a time: a 404 names that product.
+        (DataSource::Coinbase, 404) => {
+            QuoteFailure::Rejected("The provider answered HTTP 404".to_owned())
+        }
+        _ => QuoteFailure::Failed(format!("The provider answered HTTP {code}")),
     }
 }
 
@@ -122,30 +149,62 @@ pub fn binance_url(requests: &[QuoteRequest]) -> String {
 }
 
 fn binance(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
-    let body = get(&binance_url(requests), &[])?;
+    let body = get(DataSource::Binance, &binance_url(requests), &[])?;
     parse_binance(&body, requests)
 }
 
-fn coinbase(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
+/// How many answers in a row may fail before an adapter stops asking: the endpoint is
+/// down, and the rest of the batch would only add requests.
+const CONSECUTIVE_FAILURES: usize = 3;
+
+fn coinbase(requests: &[QuoteRequest]) -> Outcome {
     // No multi-product price call; `/stats` is one small request per product, paced under
-    // the exchange's public limit. A product that fails is left out, not failing the rest.
-    let mut quotes = HashMap::new();
+    // the exchange's public limit. A product that fails is reported, and the rest still answer.
+    let mut outcome = Outcome::default();
+    let mut streak = 0;
     for (index, request) in requests.iter().enumerate() {
         if index > 0 {
             std::thread::sleep(Duration::from_millis(125));
         }
         let id = crate::service::coinbase::product_id(&request.symbol);
-        match get(&format!("{COINBASE_URL}/products/{id}/stats"), &[]) {
+        match get(
+            DataSource::Coinbase,
+            &format!("{COINBASE_URL}/products/{id}/stats"),
+            &[],
+        ) {
             Ok(body) => {
+                streak = 0;
                 if let Some(quote) = parse_coinbase_stats(&body, &id) {
-                    quotes.insert(request.symbol.clone(), quote);
+                    outcome.quotes.insert(request.symbol.clone(), quote);
                 }
             }
-            Err(QuoteFailure::RateLimited) => return Err(QuoteFailure::RateLimited),
-            Err(_) => {}
+            Err(QuoteFailure::Rejected(_)) => {
+                streak = 0;
+                outcome.rejected.insert(request.symbol.clone());
+            }
+            Err(failure) => {
+                let stop = matches!(failure, QuoteFailure::RateLimited) || {
+                    streak += 1;
+                    streak >= CONSECUTIVE_FAILURES
+                };
+                let upto = if stop { requests.len() } else { index + 1 };
+                outcome
+                    .failed
+                    .push((symbols_of(&requests[index..upto]), failure));
+                if stop {
+                    break;
+                }
+            }
         }
     }
-    Ok(quotes)
+    outcome
+}
+
+fn symbols_of(requests: &[QuoteRequest]) -> Vec<String> {
+    requests
+        .iter()
+        .map(|request| request.symbol.clone())
+        .collect()
 }
 
 fn coingecko(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
@@ -161,31 +220,44 @@ fn coingecko(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, 
          &sparkline=false&price_change_percentage=24h&per_page={}",
         requests.len().min(250)
     );
-    parse_coingecko_markets(&get(&url, &[])?, requests)
+    parse_coingecko_markets(&get(DataSource::CoinGecko, &url, &[])?, requests)
 }
 
-fn dexscreener(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
+fn dexscreener(requests: &[QuoteRequest]) -> Outcome {
     // One request per chain for up to 30 pools each. Pairs without a known chain are left out.
-    let mut by_chain: HashMap<&str, Vec<&QuoteRequest>> = HashMap::new();
+    let mut by_chain: Vec<(&str, Vec<&QuoteRequest>)> = Vec::new();
     for request in requests {
         if let Some(chain) = request.chain.as_deref().filter(|chain| *chain != "unknown") {
-            by_chain.entry(chain).or_default().push(request);
-        }
-    }
-    let mut quotes = HashMap::new();
-    for (chain, pairs) in by_chain {
-        for page in pairs.chunks(chunk_size(DataSource::DexScreener)) {
-            let addresses = page
-                .iter()
-                .map(|request| request.symbol.as_str())
-                .collect::<Vec<_>>()
-                .join(",");
-            if let Ok(body) = get(&format!("{DEX_URL}/pairs/{chain}/{addresses}"), &[]) {
-                quotes.extend(parse_dex_pairs(&body, page));
+            match by_chain.iter_mut().find(|(name, _)| *name == chain) {
+                Some((_, pairs)) => pairs.push(request),
+                None => by_chain.push((chain, vec![request])),
             }
         }
     }
-    Ok(quotes)
+    let mut outcome = Outcome::default();
+    let mut limited = false;
+    for (chain, pairs) in by_chain {
+        for page in pairs.chunks(chunk_size(DataSource::DexScreener)) {
+            let names: Vec<String> = page.iter().map(|request| request.symbol.clone()).collect();
+            if limited {
+                outcome.failed.push((names, QuoteFailure::RateLimited));
+                continue;
+            }
+            let addresses = names.join(",");
+            match get(
+                DataSource::DexScreener,
+                &format!("{DEX_URL}/pairs/{chain}/{addresses}"),
+                &[],
+            ) {
+                Ok(body) => outcome.quotes.extend(parse_dex_pairs(&body, page)),
+                Err(failure) => {
+                    limited = matches!(failure, QuoteFailure::RateLimited);
+                    outcome.failed.push((names, failure));
+                }
+            }
+        }
+    }
+    outcome
 }
 
 fn alpaca(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
@@ -199,6 +271,7 @@ fn alpaca(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, Quo
         .join(",");
     let url = format!("https://data.alpaca.markets/v2/stocks/snapshots?symbols={symbols}&feed=iex");
     let body = get(
+        DataSource::Alpaca,
         &url,
         &[("APCA-API-KEY-ID", &key), ("APCA-API-SECRET-KEY", &secret)],
     )?;
@@ -206,14 +279,31 @@ fn alpaca(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, Quo
 }
 
 /// Last price of the past day's series, and its first price as the comparison.
-fn prediction(source: DataSource, requests: &[QuoteRequest]) -> HashMap<String, SourceQuote> {
-    let mut quotes = HashMap::new();
-    for request in requests {
-        let Ok(series) = crate::service::fetch_klines(source, &request.symbol, "1h", 30) else {
-            continue;
+fn prediction(source: DataSource, requests: &[QuoteRequest]) -> Outcome {
+    let mut outcome = Outcome::default();
+    let mut streak = 0;
+    for (index, request) in requests.iter().enumerate() {
+        let series = match crate::service::fetch_klines(source, &request.symbol, "1h", 30) {
+            Ok(series) => {
+                streak = 0;
+                series
+            }
+            Err(message) => {
+                streak += 1;
+                let stop = streak >= CONSECUTIVE_FAILURES;
+                let upto = if stop { requests.len() } else { index + 1 };
+                outcome.failed.push((
+                    symbols_of(&requests[index..upto]),
+                    QuoteFailure::Failed(message),
+                ));
+                if stop {
+                    break;
+                }
+                continue;
+            }
         };
         if let (Some(first), Some(last)) = (series.first(), series.last()) {
-            quotes.insert(
+            outcome.quotes.insert(
                 request.symbol.clone(),
                 SourceQuote {
                     price: last.close,
@@ -223,7 +313,7 @@ fn prediction(source: DataSource, requests: &[QuoteRequest]) -> HashMap<String, 
             );
         }
     }
-    quotes
+    outcome
 }
 
 // MARK: Parsers
@@ -478,6 +568,50 @@ pub fn parse_iso_ms(text: &str) -> Option<i64> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn only_a_symbol_level_refusal_makes_the_engine_search_for_the_bad_symbol() {
+        use super::classify_status as classify;
+        let rejected = |source, code| matches!(classify(source, code), QuoteFailure::Rejected(_));
+        // Documented "unknown symbol in this request" answers.
+        assert!(rejected(DataSource::Binance, 400));
+        assert!(rejected(DataSource::Alpaca, 400));
+        assert!(rejected(DataSource::Coinbase, 404));
+        // Everything that is about the request, the key, the region or the endpoint.
+        for (source, code) in [
+            (DataSource::Binance, 401),
+            (DataSource::Binance, 403),
+            (DataSource::Binance, 404),
+            (DataSource::Binance, 418),
+            (DataSource::Binance, 451),
+            (DataSource::Alpaca, 401),
+            (DataSource::Alpaca, 403),
+            (DataSource::Alpaca, 404),
+            (DataSource::CoinGecko, 400),
+            (DataSource::CoinGecko, 404),
+            (DataSource::DexScreener, 404),
+            (DataSource::Coinbase, 400),
+            (DataSource::Coinbase, 403),
+        ] {
+            assert!(
+                matches!(classify(source, code), QuoteFailure::Failed(_)),
+                "{source:?} {code}"
+            );
+        }
+        for source in [
+            DataSource::Binance,
+            DataSource::Alpaca,
+            DataSource::Coinbase,
+        ] {
+            assert_eq!(classify(source, 429), QuoteFailure::RateLimited);
+        }
+        assert!(
+            classify(DataSource::Alpaca, 401)
+                .message()
+                .contains("API key"),
+            "a refused key says so"
+        );
+    }
+
     use super::*;
 
     fn request(symbol: &str) -> QuoteRequest {

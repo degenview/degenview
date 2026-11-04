@@ -628,6 +628,8 @@ impl ChartWorkspace {
                         .inner_margin(egui::Margin::ZERO),
                 )
                 .show(ui, |ui| self.show_watchlist(ui, &ctx));
+        } else {
+            self.suspend_watchlist_demand();
         }
 
         if self.paper_panel_visible {
@@ -785,6 +787,18 @@ mod tests {
     use super::*;
     use crate::model::{IndicatorConfig, SavedView};
     use crate::workspace::test_support::empty_workspace;
+
+    #[test]
+    fn closing_the_sidebar_stops_its_quote_demand_at_once() {
+        let workspace = empty_workspace(1);
+        let btc = crate::model::InstrumentId::new(crate::model::DataSource::Binance, "BTCUSDT");
+        workspace
+            .quote_coordinator
+            .set_sidebar_demand(workspace.id, vec![btc], true);
+        assert!(workspace.quote_coordinator.has_subscriptions());
+        workspace.suspend_watchlist_demand();
+        assert!(!workspace.quote_coordinator.has_subscriptions());
+    }
 
     #[test]
     fn watchlist_tab_is_titled_by_the_row_not_the_opaque_symbol() {

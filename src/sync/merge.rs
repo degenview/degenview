@@ -200,19 +200,25 @@ struct Entry {
     value: Value,
 }
 
-/// A market is identified by provider and symbol, so adding the same market on two Macs yields
-/// one row. A section has no natural identity beyond its id.
+/// A market is identified by `InstrumentId::key`, so adding the same market on two Macs yields
+/// one row however each spelled it (`BTC`, `btcusdt`). A section has no natural identity beyond
+/// its id.
 fn entry_key(entry: &Value) -> Option<String> {
     let object = entry.as_object()?;
     let (variant, body) = object.iter().next()?;
     match variant.as_str() {
         "Instrument" => {
             let instrument = body.get("instrument")?;
-            Some(format!(
-                "i:{}:{}",
-                instrument.get("source")?,
-                instrument.get("symbol")?.as_str()?
-            ))
+            // A source this build does not know keeps its raw spelling rather than going
+            // unmerged (and being dropped).
+            match serde_json::from_value::<crate::model::InstrumentId>(instrument.clone()) {
+                Ok(parsed) => Some(format!("i:{}", parsed.key())),
+                Err(_) => Some(format!(
+                    "i:{}:{}",
+                    instrument.get("source")?,
+                    instrument.get("symbol")?.as_str()?
+                )),
+            }
         }
         "Section" => Some(format!("s:{}", body.get("id")?)),
         _ => None,
@@ -624,6 +630,20 @@ mod tests {
         let base = wl("Tech", vec![]);
         let a = wl("Tech", vec![inst(11, "BTC")]);
         let b = wl("Tech", vec![inst(22, "BTC")]);
+        let out = merged(Some(&base), &a, &b);
+        assert_eq!(symbols(&out).len(), 1);
+        assert_eq!(out, merged_swapped(Some(&base), &a, &b));
+    }
+
+    #[test]
+    fn the_same_market_spelled_differently_on_two_macs_appears_once() {
+        let spelled = |id: u64, symbol: &str| {
+            json!({"Instrument": {"id": id, "instrument": {"source": "binance", "symbol": symbol},
+                "name": symbol, "label": symbol}})
+        };
+        let base = wl("Tech", vec![]);
+        let a = wl("Tech", vec![spelled(11, "btc")]);
+        let b = wl("Tech", vec![spelled(22, "BTCUSDT")]);
         let out = merged(Some(&base), &a, &b);
         assert_eq!(symbols(&out).len(), 1);
         assert_eq!(out, merged_swapped(Some(&base), &a, &b));

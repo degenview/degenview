@@ -479,19 +479,23 @@ impl Watchlist {
             .find_map(WatchlistEntry::section)
     }
 
-    /// Instruments a collapsed section does not hide, for subscription decisions.
-    #[allow(dead_code)] // for the quote demand: collapsed sections need no prices
-    pub fn visible_instruments(&self) -> Vec<&WatchlistInstrument> {
-        let mut collapsed = false;
-        let mut visible = Vec::new();
-        for entry in &self.entries {
-            match entry {
-                WatchlistEntry::Section(section) => collapsed = section.is_collapsed,
-                WatchlistEntry::Instrument(item) if !collapsed => visible.push(item),
-                WatchlistEntry::Instrument(_) => {}
-            }
-        }
-        visible
+    /// Appends a row without the duplicate check, as old stored data can hold one.
+    #[cfg(test)]
+    pub fn push_unchecked(&mut self, item: WatchlistInstrument) {
+        self.entries.push(WatchlistEntry::Instrument(item));
+    }
+
+    /// Drops a market's second and later rows (the same `InstrumentId::key`, which now counts
+    /// `BTC` and `BTCUSDT` as one market). The first row stays, with its place and name.
+    /// Returns whether any row went.
+    pub fn collapse_duplicate_markets(&mut self) -> bool {
+        let mut seen = std::collections::HashSet::new();
+        let before = self.entries.len();
+        self.entries.retain(|entry| match entry {
+            WatchlistEntry::Instrument(item) => seen.insert(item.instrument.key()),
+            WatchlistEntry::Section(_) => true,
+        });
+        self.entries.len() != before
     }
 
     fn is_section(&self, index: usize) -> bool {
@@ -921,17 +925,40 @@ mod tests {
     }
 
     #[test]
-    fn owning_section_and_collapsed_visibility() {
-        let (mut list, ids) = sample();
+    fn spellings_of_one_market_are_one_row() {
+        let mut list = Watchlist::new("L");
+        list.add(item("BTCUSDT"), None).unwrap();
+        assert!(matches!(
+            list.add(item("btc"), None),
+            Err(WatchlistError::Duplicate(_))
+        ));
+        assert!(list.contains(&InstrumentId::new(DataSource::Binance, "BTC/USDT")));
+        assert!(list.remove_instrument(&InstrumentId::new(DataSource::Binance, "BTC")));
+        assert_eq!(list.instruments().count(), 0);
+    }
+
+    #[test]
+    fn collapsing_keeps_the_first_row_of_a_market_and_every_section() {
+        let mut list = Watchlist::new("L");
+        // Rows saved before aliases shared a key can sit side by side.
+        list.entries.push(WatchlistEntry::Instrument(item("BTC")));
+        list.add_section("Alts", None).unwrap();
+        list.entries
+            .push(WatchlistEntry::Instrument(item("BTCUSDT")));
+        list.entries
+            .push(WatchlistEntry::Instrument(item("ETHUSDT")));
+        assert!(list.collapse_duplicate_markets());
+        let labels: Vec<String> = list.instruments().map(|item| item.label.clone()).collect();
+        assert_eq!(labels, ["BTC", "ETH"]);
+        assert_eq!(list.sections().count(), 1);
+        assert!(!list.collapse_duplicate_markets(), "nothing left to drop");
+    }
+
+    #[test]
+    fn owning_section_of_an_entry() {
+        let (list, ids) = sample();
         assert!(list.owning_section(ids[0]).is_none());
         assert_eq!(list.owning_section(ids[3]).unwrap().title, "Majors");
-        list.set_section_collapsed(ids[2], true).unwrap();
-        let visible: Vec<&str> = list
-            .visible_instruments()
-            .iter()
-            .map(|item| item.label.as_str())
-            .collect();
-        assert_eq!(visible, ["BTC", "ETH", "DOGE"]);
     }
 
     #[test]

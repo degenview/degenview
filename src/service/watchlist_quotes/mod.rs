@@ -13,7 +13,7 @@ mod provider;
 
 pub use book::WatchlistQuoteBook;
 #[allow(unused_imports)]
-pub use engine::Config;
+pub use engine::{Config, Outcome};
 #[allow(unused_imports)]
 pub use provider::{QuoteFailure, QuoteProvider, QuoteRequest};
 
@@ -77,14 +77,33 @@ impl WatchlistQuoteCoordinator {
             .update(owner, instruments, visible, now_ms());
     }
 
+    /// Like `set_demand`, for a workspace's sidebar. The demand also lapses when the
+    /// sidebar stops asking for `SIDEBAR_LEASE_MS`: it asks on every frame it draws, so
+    /// a background tab or a hidden or covered window stops costing requests by itself.
+    pub fn set_sidebar_demand(&self, owner: u64, instruments: Vec<InstrumentId>, visible: bool) {
+        self.inner
+            .engine
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .update_leased(owner, instruments, visible, now_ms());
+    }
+
     /// Drops a window's demand when it closes.
-    #[allow(dead_code)] // called once windows release their sidebar
     pub fn release(&self, owner: u64) {
         self.inner
             .engine
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .release(owner, now_ms());
+    }
+
+    #[cfg(test)]
+    pub fn has_subscriptions(&self) -> bool {
+        self.inner
+            .engine
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .has_subscriptions()
     }
 
     pub fn provider_health(&self) -> Vec<AlertProviderHealth> {
@@ -117,14 +136,20 @@ fn run(
     while !shutdown.load(Ordering::Acquire) {
         std::thread::sleep(TICK);
         let now = now_ms();
-        let (products, interval, active) = {
-            let guard = engine.lock().unwrap_or_else(PoisonError::into_inner);
+        let (products, interval, active, renew) = {
+            let mut guard = engine.lock().unwrap_or_else(PoisonError::into_inner);
+            guard.expire_leases(now);
             (
                 guard.coinbase_products(),
                 guard.poll_interval_ms(),
                 guard.has_subscriptions(),
+                guard.lease_aging(now),
             )
         };
+        if renew {
+            // A sidebar that is on screen answers by drawing; one that is not lapses.
+            repaint();
+        }
 
         // One socket for every Coinbase product any visible sidebar shows.
         if socket.as_ref().map(CoinbaseSocket::products) != Some(products.as_slice())
