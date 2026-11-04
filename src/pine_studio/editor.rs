@@ -55,8 +55,9 @@ const PROFILE_BAR_HEIGHT: f32 = 6.0;
 /// left of the line numbers.
 const MARKER_X: f32 = 21.0;
 const MARKER_RADIUS: f32 = 5.0;
-/// A breakpoint marker's radius on the line the script is stopped at, drawn over the arrow.
-const STOPPED_MARKER_RADIUS: f32 = 3.0;
+/// A breakpoint marker's radius on the line the script is stopped at, where it sits inside the
+/// larger arrow.
+const STOPPED_MARKER_RADIUS: f32 = 4.0;
 /// The change column at the gutter's left edge: the bar's inset and width, and the (much wider,
 /// so no one has to aim at three points) strip that takes the click.
 const CHANGE_INSET: f32 = 2.0;
@@ -1647,22 +1648,23 @@ fn paint_gutter(
         );
         let center = egui::pos2(gutter.min.x + MARKER_X, top + height / 2.0);
         let stop = marks.stop.filter(|stop| stop.line == line);
+        let mark = marks.breakpoint_at(line);
         if let Some(stop) = stop {
-            paint_stop_arrow(&painter, center, stop);
+            // With a breakpoint on the line the arrow is drawn larger and carries it in its body.
+            paint_stop_arrow(&painter, center, stop, mark.is_some().then_some(*height));
         }
-        if let Some(mark) = marks.breakpoint_at(line) {
-            if stop.is_some() {
-                // The arrow is shorter than a dot is wide, so on the same line the breakpoint is a
-                // smaller marker on top of it, set off by a ring of gutter colour: both stay visible.
+        match (mark, stop) {
+            (Some(mark), Some(_)) => {
+                // A ring of gutter colour sets the dot off from the arrow it sits in.
                 painter.circle_filled(
                     center,
-                    STOPPED_MARKER_RADIUS + 1.2,
+                    STOPPED_MARKER_RADIUS + 1.0,
                     theme::gutter_background(),
                 );
                 paint_breakpoint(&painter, center, mark, STOPPED_MARKER_RADIUS);
-            } else {
-                paint_breakpoint(&painter, center, mark, MARKER_RADIUS);
             }
+            (Some(mark), None) => paint_breakpoint(&painter, center, mark, MARKER_RADIUS),
+            _ => {}
         }
     }
 }
@@ -1871,20 +1873,41 @@ fn paint_breakpoint(painter: &egui::Painter, center: egui::Pos2, mark: &Breakpoi
     }
 }
 
-/// The marker for the line a stopped script is at. A breakpoint on the same line is drawn over it.
-fn paint_stop_arrow(painter: &egui::Painter, center: egui::Pos2, stop: StopMark) {
+/// The marker for the line a stopped script is at. `carrying` is the row height when a breakpoint
+/// shares the line: the arrow is then larger (as far as the row allows) and the breakpoint is drawn
+/// inside its body, so neither hides the other.
+fn paint_stop_arrow(
+    painter: &egui::Painter,
+    center: egui::Pos2,
+    stop: StopMark,
+    carrying: Option<f32>,
+) {
     let color = if stop.error {
         theme::editor_breakpoint()
     } else {
         theme::editor_debug_line()
     };
-    let points = vec![
-        center + Vec2::new(-5.6, -3.8),
-        center + Vec2::new(0.6, -3.8),
-        center + Vec2::new(5.8, 0.0),
-        center + Vec2::new(0.6, 3.8),
-        center + Vec2::new(-5.6, 3.8),
-    ];
+    let points = match carrying {
+        Some(row) => {
+            let k = ((row - 3.0) / 13.0).clamp(0.5, 1.0);
+            [
+                (-7.0, -6.5),
+                (1.5, -6.5),
+                (8.5, 0.0),
+                (1.5, 6.5),
+                (-7.0, 6.5),
+            ]
+            .map(|(x, y)| center + Vec2::new(x, y * k))
+            .to_vec()
+        }
+        None => vec![
+            center + Vec2::new(-5.6, -3.8),
+            center + Vec2::new(0.6, -3.8),
+            center + Vec2::new(5.8, 0.0),
+            center + Vec2::new(0.6, 3.8),
+            center + Vec2::new(-5.6, 3.8),
+        ],
+    };
     if stop.innermost || stop.error {
         painter.add(Shape::convex_polygon(points, color, Stroke::NONE));
     } else {

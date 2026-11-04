@@ -224,7 +224,7 @@ the lists right; narrow ones stack. Sizes and open sections persist in the Pine 
 In the editor: the breakpoint column beside the line numbers (filled dot, conditional dot with `=`,
 logpoint diamond, hollow ring for disabled or unverified), an arrow and band on the stopped line
 (outlined arrow and fainter band for a caller's line, red for a failure; a breakpoint on that line is
-drawn smaller on top of the arrow, ringed in gutter colour, so both show), the values of the line's
+drawn inside a larger arrow, ringed in gutter colour, so both show), the values of the line's
 names after its text, and a tooltip with a name's value on hover. Picking a row of the variables gives
 the list the keyboard: Up/Down, Home/End, Right opens (or steps into) a row, Left closes it (or goes to
 its parent), Return toggles; the other lists are reached with the mouse and Tab.
