@@ -7,7 +7,7 @@
 
 use crate::host::portfolio_host::{PortfolioHost, local_offset, now_ms};
 use crate::model::portfolio::{Portfolio, PortfolioAsset, PortfolioLedgerSnapshot};
-use crate::model::portfolio_accounting::holdings;
+use crate::model::portfolio_accounting::{holdings, net_contributions};
 use crate::model::portfolio_card::{CardData, CardKind, Performance, PortfolioCard, performance};
 use crate::model::portfolio_format::PortfolioValueFormatter;
 use crate::model::portfolio_statistics::{
@@ -144,6 +144,7 @@ impl PortfolioCardEnv {
             .iter()
             .filter_map(|holding| holding.current_value)
             .sum();
+        let net_contributions = net_contributions(&transactions, &scope, None);
         let daily: Vec<_> =
             projected.map_or_else(Vec::new, |projection| projection.history.clone());
 
@@ -181,7 +182,7 @@ impl PortfolioCardEnv {
             .then(|| PortfolioStatistics::new(&holding_values, &daily, &transactions).day_change)
             .flatten();
         let period_change = (card.kind == CardKind::ValueChart)
-            .then(|| PortfolioPeriodChange::new(&history, total_value))
+            .then(|| PortfolioPeriodChange::new(&history, total_value, net_contributions))
             .flatten();
 
         let (performance, loading_performance) = if card.kind == CardKind::TopPerformers {

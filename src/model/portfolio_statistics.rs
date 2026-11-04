@@ -133,14 +133,19 @@ pub struct PortfolioPeriodChange {
 }
 
 impl PortfolioPeriodChange {
-    /// `snapshots` are the history inside the range, oldest first; `current_value` is
-    /// today's value, which stands in for the end of the range.
-    pub fn new(snapshots: &[PortfolioSnapshot], current_value: f64) -> Option<Self> {
-        let (first, last) = (snapshots.first()?, snapshots.last()?);
+    /// `snapshots` are the history inside the range, oldest first. `current_value` and
+    /// `current_net_contributions` are today's, taken from the ledger: they stand in for the
+    /// end of the range, so money moved after the last stored point is not read as profit.
+    pub fn new(
+        snapshots: &[PortfolioSnapshot],
+        current_value: f64,
+        current_net_contributions: f64,
+    ) -> Option<Self> {
+        let first = snapshots.first()?;
         let start_profit = first.value - first.net_contributions;
-        let end_profit = current_value - last.net_contributions;
+        let end_profit = current_value - current_net_contributions;
         let profit = end_profit - start_profit;
-        let deposited = (last.net_contributions - first.net_contributions).max(0.0);
+        let deposited = (current_net_contributions - first.net_contributions).max(0.0);
         let capital = first.value + deposited;
         Some(Self {
             profit,
@@ -455,7 +460,7 @@ mod tests {
             snapshot(0, 1_000.0, 1_000.0),
             snapshot(10, 2_000.0, 2_000.0),
         ];
-        let change = PortfolioPeriodChange::new(&history, 2_100.0).unwrap();
+        let change = PortfolioPeriodChange::new(&history, 2_100.0, 2_000.0).unwrap();
         assert!(
             (change.profit - 100.0).abs() < 1e-9,
             "only the $100 above the money put in"
@@ -468,17 +473,35 @@ mod tests {
     #[test]
     fn a_withdrawal_is_not_a_loss_and_an_empty_range_has_no_change() {
         let history = [snapshot(0, 2_000.0, 1_000.0), snapshot(10, 1_500.0, 500.0)];
-        let change = PortfolioPeriodChange::new(&history, 1_500.0).unwrap();
+        let change = PortfolioPeriodChange::new(&history, 1_500.0, 500.0).unwrap();
         // P&L went from 1,000 to 1,000: nothing gained or lost despite value falling.
         assert!(change.profit.abs() < 1e-9);
         assert_eq!(change.direction(), Direction::Unchanged);
-        assert_eq!(PortfolioPeriodChange::new(&[], 100.0), None);
+        assert_eq!(PortfolioPeriodChange::new(&[], 100.0, 0.0), None);
+    }
+
+    #[test]
+    fn money_moved_after_the_last_point_is_not_profit_or_loss() {
+        // The last stored point is worth 1,000 with 1,000 in.
+        let history = [
+            snapshot(0, 1_000.0, 1_000.0),
+            snapshot(10, 1_000.0, 1_000.0),
+        ];
+        // A 500 buy since then: worth 1,500 with 1,500 in.
+        let bought = PortfolioPeriodChange::new(&history, 1_500.0, 1_500.0).unwrap();
+        assert!(bought.profit.abs() < 1e-9, "a buy is not a gain");
+        // A 400 withdrawal since then: worth 600 with 600 in.
+        let sold = PortfolioPeriodChange::new(&history, 600.0, 600.0).unwrap();
+        assert!(sold.profit.abs() < 1e-9, "a sale is not a loss");
+        // A gain on top of the new money still shows.
+        let gained = PortfolioPeriodChange::new(&history, 1_600.0, 1_500.0).unwrap();
+        assert!((gained.profit - 100.0).abs() < 1e-9);
     }
 
     #[test]
     fn a_range_that_started_empty_has_no_percentage() {
         let history = [snapshot(0, 0.0, 0.0)];
-        let change = PortfolioPeriodChange::new(&history, 0.0).unwrap();
+        let change = PortfolioPeriodChange::new(&history, 0.0, 0.0).unwrap();
         assert_eq!(change.percentage, None);
     }
 

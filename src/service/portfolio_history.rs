@@ -143,6 +143,12 @@ impl HistoryRebuilder {
                 .is_none_or(|after| now_ms >= *after)
     }
 
+    /// Holds back the next rebuild of `portfolio_id` for a while, after its result could not be
+    /// stored.
+    pub fn defer(&mut self, portfolio_id: u64, now_ms: i64) {
+        self.retry_after.insert(portfolio_id, now_ms + RETRY_MS);
+    }
+
     /// Finished rebuilds, with their bookkeeping settled.
     pub fn poll(&mut self, now_ms: i64) -> Vec<HistoryResult> {
         let finished: Vec<HistoryResult> = self.receiver.try_iter().collect();

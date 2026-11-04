@@ -10,7 +10,8 @@ use crate::model::portfolio::{
     PortfolioAsset, PortfolioCurrency, PortfolioLedgerSnapshot, PortfolioQuote, PortfolioSnapshot,
     PortfolioTransaction,
 };
-use crate::model::portfolio_accounting::unique_assets;
+use crate::model::portfolio_accounting::{holdings, unique_assets};
+use crate::model::portfolio_history::DAY_MS;
 use crate::model::watchlist_quote::Freshness;
 use crate::service::fx_rates::{Conversion, FxRateService};
 use crate::service::watchlist_quotes::{WatchlistQuoteBook, WatchlistQuoteCoordinator};
@@ -349,7 +350,21 @@ fn eligible_assets(
         .filter(|transaction| portfolio_ids.contains(&transaction.portfolio_id))
         .cloned()
         .collect();
-    unique_assets(&transactions)
+    open_assets(&transactions, portfolio_ids)
+}
+
+/// The assets the portfolios hold now. A position sold down to nothing needs no price: asking
+/// for one only adds a market that may never answer and a "partly unpriced" warning for
+/// exposure that is gone. (History looks at every asset ever traded; that is another path.)
+fn open_assets(
+    transactions: &[PortfolioTransaction],
+    portfolio_ids: &HashSet<u64>,
+) -> Vec<PortfolioAsset> {
+    match holdings(transactions, portfolio_ids, None, &HashMap::new(), 0) {
+        Ok(held) => held.into_iter().map(|holding| holding.asset).collect(),
+        // A ledger that cannot be replayed is reported elsewhere; price all it mentions.
+        Err(_) => unique_assets(transactions),
+    }
 }
 
 fn build_projection(
@@ -405,6 +420,20 @@ fn build_projection(
         }
     }
 
+    // The change over the last day compares today's price with yesterday's, so yesterday's
+    // price is converted at yesterday's rate: a flat dollar asset is not flat in euros when the
+    // exchange rate moved.
+    let day_ago_ms = now_ms - DAY_MS;
+    let assets = open_assets(&selected_transactions, portfolio_ids);
+    for asset in &assets {
+        if asset.quote_currency != reporting_currency {
+            dates_by_pair
+                .entry((asset.quote_currency, reporting_currency))
+                .or_default()
+                .push(day_ago_ms);
+        }
+    }
+
     let mut historical = HashMap::new();
     for ((from, to), dates) in dates_by_pair {
         historical.insert((from, to), fx.conversions(from, to, &dates));
@@ -437,7 +466,6 @@ fn build_projection(
         transactions.push(transaction);
     }
 
-    let assets = unique_assets(&transactions);
     let mut current_rates: HashMap<PortfolioCurrency, Conversion> = HashMap::new();
     let mut quotes = HashMap::new();
     let mut awaiting_asset_count = 0;
@@ -472,6 +500,23 @@ fn build_projection(
             conversion
         };
         used_cache |= conversion.is_cached;
+        // Yesterday's rate, or today's when that day's is unavailable.
+        let previous_rate = if asset.quote_currency == reporting_currency {
+            conversion.rate
+        } else {
+            match historical_conversion(
+                &historical,
+                asset.quote_currency,
+                reporting_currency,
+                day_ago_ms,
+            ) {
+                Ok(previous) => {
+                    used_cache |= previous.is_cached;
+                    previous.rate
+                }
+                Err(_) => conversion.rate,
+            }
+        };
         let timestamp = if matches!(source.freshness, Freshness::Live | Freshness::MarketClosed) {
             now_ms
         } else {
@@ -481,9 +526,7 @@ fn build_projection(
             asset.key.clone(),
             PortfolioQuote {
                 price: price * conversion.rate,
-                previous_day_price: source
-                    .change
-                    .map(|change| (price - change) * conversion.rate),
+                previous_day_price: source.change.map(|change| (price - change) * previous_rate),
                 timestamp,
             },
         );
@@ -707,6 +750,109 @@ mod tests {
             Some(16_200.0)
         );
         assert_eq!(projection.unpriced_asset_count, 0);
+    }
+
+    /// Dollars are worth 0.8 euros a day ago and 0.9 now.
+    struct MovingFx;
+
+    impl PortfolioFxRates for MovingFx {
+        fn conversion(
+            &self,
+            _: PortfolioCurrency,
+            _: PortfolioCurrency,
+            on: Option<i64>,
+        ) -> Result<Conversion, String> {
+            Ok(Conversion {
+                rate: 0.9,
+                observation_ms: on.unwrap_or(0),
+                is_cached: false,
+            })
+        }
+
+        fn conversions(
+            &self,
+            _: PortfolioCurrency,
+            _: PortfolioCurrency,
+            dates: &[i64],
+        ) -> HashMap<i64, Result<Conversion, String>> {
+            dates
+                .iter()
+                .map(|date| {
+                    let rate = if *date == NOW - DAY_MS { 0.8 } else { 0.9 };
+                    (
+                        *date,
+                        Ok(Conversion {
+                            rate,
+                            observation_ms: *date,
+                            is_cached: false,
+                        }),
+                    )
+                })
+                .collect()
+        }
+    }
+
+    const NOW: i64 = 200_000_000;
+
+    fn live_quote(book: &WatchlistQuoteBook, last: f64, change: f64) {
+        book.apply(HashMap::from([(
+            instrument_for(&asset()).key(),
+            WatchlistQuote {
+                last: Some(last),
+                change: Some(change),
+                timestamp_ms: Some(NOW),
+                freshness: Freshness::Live,
+                ..WatchlistQuote::default()
+            },
+        )]));
+    }
+
+    #[test]
+    fn a_flat_asset_moves_in_the_reporting_currency_when_the_exchange_rate_does() {
+        let book = WatchlistQuoteBook::default();
+        live_quote(&book, 20_000.0, 0.0);
+        let projection = build_projection(
+            &snapshot(),
+            &HashSet::from([1]),
+            PortfolioCurrency::Eur,
+            &book,
+            &MovingFx,
+            NOW,
+        )
+        .expect("projection");
+        let quote = &projection.quotes["binance:BTCUSDT"];
+        assert!((quote.price - 18_000.0).abs() < 1e-6, "today at 0.9");
+        let previous = quote.previous_day_price.unwrap();
+        assert!((previous - 16_000.0).abs() < 1e-6, "yesterday at 0.8");
+    }
+
+    fn sold_out() -> PortfolioLedgerSnapshot {
+        let mut snapshot = snapshot();
+        let mut sell = snapshot.transactions[0].clone();
+        sell.id = 3;
+        sell.kind = PortfolioTransactionType::Sell;
+        sell.timestamp = 3_000;
+        sell.created_at = 3_000;
+        snapshot.transactions.push(sell);
+        snapshot
+    }
+
+    #[test]
+    fn a_sold_out_asset_is_not_priced_or_awaited() {
+        let ids = HashSet::from([1]);
+        assert!(eligible_assets(&snapshot(), &ids).len() == 1);
+        assert!(eligible_assets(&sold_out(), &ids).is_empty());
+        let projection = build_projection(
+            &sold_out(),
+            &ids,
+            PortfolioCurrency::Usd,
+            &WatchlistQuoteBook::default(),
+            &FakeFx,
+            10_000,
+        )
+        .expect("projection");
+        assert_eq!(projection.unpriced_asset_count, 0);
+        assert_eq!(projection.awaiting_asset_count, 0);
     }
 
     #[test]

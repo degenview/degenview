@@ -11,7 +11,7 @@ use crate::model::portfolio::{
     PortfolioLedgerSnapshot, PortfolioSnapshot, PortfolioSource, PortfolioTransaction,
     PortfolioTransactionType,
 };
-use crate::model::portfolio_accounting::holdings_and_closed;
+use crate::model::portfolio_accounting::{holdings_and_closed, net_contributions};
 use crate::model::portfolio_csv;
 use crate::model::portfolio_format::{PORTFOLIO_CURRENCIES, PortfolioValueFormatter};
 use crate::model::portfolio_history::rebuild_start;
@@ -21,7 +21,7 @@ use crate::model::watchlist::new_id;
 use crate::service::asset_auto_mapper::asset_from_search_result;
 use crate::service::portfolio_history::{HistoryRebuilder, IntradayFeed, IntradayRequest};
 use crate::service::portfolio_quotes::{PortfolioQuoteFeed, PortfolioQuoteState};
-use crate::store::SharedStore;
+use crate::store::{SharedStore, Store};
 use crate::ui::header_controls;
 use crate::ui::icons::Icon;
 use crate::ui::kit::{self, Confirm, ConfirmOutcome};
@@ -170,8 +170,14 @@ impl PortfolioHost {
                 now_ms,
                 utc_offset_secs,
             );
-            if current == Some(result.from) {
-                let _ = self.store_snapshots(snapshots, result.portfolio_id, result.from);
+            if current == Some(result.from)
+                && self
+                    .store_snapshots(snapshots, result.portfolio_id, result.from)
+                    .is_err()
+            {
+                // `store_snapshots` has told the error sheet. Without a pause the next frame
+                // would rebuild the same days and fail the same way.
+                self.history.defer(result.portfolio_id, now_ms);
             }
         }
         let snapshot = self.ledger.snapshot();
@@ -277,10 +283,10 @@ impl PortfolioHost {
             .unwrap_or(false)
     }
 
-    pub fn set_privacy_mode(&self, on: bool) {
-        if let Ok(store) = self.store.lock() {
-            let _ = store.set_setting(PRIVACY_KEY, &on);
-        }
+    /// A choice that cannot be saved would come back reverted after a restart: say so.
+    pub fn set_privacy_mode(&mut self, on: bool) {
+        let saved = self.save_setting(|store| store.set_setting(PRIVACY_KEY, &on));
+        self.report(saved);
     }
 
     /// The currency amounts were last shown in for a selection (one portfolio, or all of them);
@@ -300,15 +306,34 @@ impl PortfolioHost {
         saved.unwrap_or_else(|| native_currency(self.ledger.snapshot(), selection))
     }
 
-    pub fn set_reporting_currency(&self, selection: Option<u64>, currency: PortfolioCurrency) {
-        if let Ok(store) = self.store.lock() {
+    pub fn set_reporting_currency(&mut self, selection: Option<u64>, currency: PortfolioCurrency) {
+        let saved = self.save_setting(|store| {
             let mut preferences = store
                 .setting::<ReportingPreferences>(REPORTING_KEY)
                 .unwrap_or_default();
             preferences
                 .currencies
                 .insert(preference_key(selection), currency);
-            let _ = store.set_setting(REPORTING_KEY, &preferences);
+            store.set_setting(REPORTING_KEY, &preferences)
+        });
+        self.report(saved);
+    }
+
+    fn save_setting(
+        &self,
+        write: impl FnOnce(&Store) -> rusqlite::Result<()>,
+    ) -> Result<(), PortfolioHostError> {
+        let store = self
+            .store
+            .lock()
+            .map_err(|_| PortfolioHostError::StoreUnavailable)?;
+        write(&store).map_err(|error| PortfolioHostError::Persistence(error.to_string()))
+    }
+
+    /// Keeps a failure for the error sheet; a success leaves any earlier one alone.
+    fn report(&mut self, result: Result<(), PortfolioHostError>) {
+        if let Err(error) = result {
+            self.last_error = Some(error);
         }
     }
 
@@ -943,6 +968,7 @@ impl PortfolioTab {
         });
         let formatter = PortfolioValueFormatter::new(self.reporting_currency, self.privacy);
         let subtitle = crate::ui::portfolio_transactions::asset_subtitle;
+        let net_contributions = net_contributions(&transactions, &portfolio_ids, None);
         let total_value: f64 = holding_values
             .iter()
             .filter_map(|holding| holding.current_value)
@@ -959,6 +985,7 @@ impl PortfolioTab {
                         holdings: &holding_values,
                         history: overview_history,
                         total_value,
+                        net_contributions,
                         formatter,
                         subtitle: &subtitle,
                         market_value_caption: &market_value_caption,
@@ -1816,6 +1843,27 @@ mod tests {
             .unwrap();
         host.remap_asset("none", &destination, &scope).unwrap();
         assert!(host.last_error().is_none());
+    }
+
+    #[test]
+    fn a_preference_that_cannot_be_saved_is_reported() {
+        let store = store();
+        let mut host = PortfolioHost::load(store.clone());
+        store
+            .lock()
+            .unwrap()
+            .raw_connection()
+            .execute_batch("DROP TABLE setting")
+            .unwrap();
+        assert!(host.last_error().is_none());
+        host.set_privacy_mode(true);
+        assert!(matches!(
+            host.last_error(),
+            Some(PortfolioHostError::Persistence(_))
+        ));
+        host.clear_error();
+        host.set_reporting_currency(None, PortfolioCurrency::Chf);
+        assert!(host.last_error().is_some());
     }
 
     #[test]

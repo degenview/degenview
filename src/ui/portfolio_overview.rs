@@ -72,6 +72,8 @@ pub struct OverviewInput<'a> {
     /// The value history for the selected portfolio (intraday for 1D when there is some).
     pub history: &'a [PortfolioSnapshot],
     pub total_value: f64,
+    /// Money put in less money taken out, to today, in the reporting currency.
+    pub net_contributions: f64,
     pub formatter: PortfolioValueFormatter,
     pub subtitle: &'a dyn Fn(&PortfolioAsset) -> String,
     /// "Prices as of 14:03" and the like.
@@ -362,7 +364,7 @@ pub fn show_overview(
     let mut actions = Vec::new();
     let stats = PortfolioStatistics::new(input.holdings, input.history, &[]);
     let ranged = state.range.filter(input.history, input.now_ms);
-    let period = PortfolioPeriodChange::new(&ranged, input.total_value);
+    let period = PortfolioPeriodChange::new(&ranged, input.total_value, input.net_contributions);
 
     egui::ScrollArea::vertical()
         .auto_shrink([false, false])
