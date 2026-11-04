@@ -10,8 +10,6 @@ use super::theme;
 use crate::model::snapshot::SnapshotAction;
 use eframe::egui::{self, Color32, Rect, Sense, Vec2};
 
-const MENU_WIDTH: f32 = 224.0;
-
 /// What the menu needs to know besides the chart.
 pub struct SnapshotMenu<'a> {
     /// A snapshot is already being made.
@@ -67,11 +65,30 @@ pub fn button(ui: &mut egui::Ui, menu: &SnapshotMenu) -> Option<SnapshotAction> 
         );
     }
     let mut picked = None;
+    if !(open || response.clicked()) {
+        return picked;
+    }
+    // As wide as the rows and their shortcuts need, worked out only while the menu is open.
+    let hints: Vec<Option<String>> = SnapshotAction::ALL
+        .into_iter()
+        .map(|action| {
+            unavailable(action, menu)
+                .is_none()
+                .then(|| (menu.shortcut)(action))
+                .flatten()
+        })
+        .collect();
+    let rows: Vec<(&str, Option<&str>)> = SnapshotAction::ALL
+        .into_iter()
+        .zip(&hints)
+        .map(|(action, hint)| (action.label(), hint.as_deref()))
+        .collect();
+    let width = kit::menu_width_for_rows(ui, &rows, 0.0);
     egui::Popup::menu(&response)
         .frame(kit::menu_frame())
-        .width(MENU_WIDTH)
+        .width(width)
         .show(|ui| {
-            ui.set_min_width(MENU_WIDTH - 10.0);
+            ui.set_width(width - kit::MENU_FRAME_MARGIN);
             ui.spacing_mut().item_spacing = Vec2::ZERO;
             kit::menu_heading(ui, "Chart snapshot");
             for action in SnapshotAction::ALL {

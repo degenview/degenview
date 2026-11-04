@@ -660,11 +660,7 @@ fn the_row_menu_is_narrow_and_can_clear_the_logs() {
         .text_and_menu("Clear logs")
         .expect("the row menu is open with Clear logs");
     let (_, menu) = rig.text_and_menu("Source code").expect("the menu");
-    assert!(
-        menu.width() <= MENU_WIDTH + 24.0,
-        "the menu is {} wide",
-        menu.width()
-    );
+    assert!(menu.width() <= 160.0, "the menu is {} wide", menu.width());
     for entry in ["Scroll to bar", "Copy message", "Copy with time"] {
         assert!(rig.text().contains(entry), "{entry}");
     }

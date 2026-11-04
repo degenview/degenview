@@ -801,23 +801,17 @@ pub(super) fn value_column(
     }
 }
 
-/// The always-visible "More actions" button at the right of a card; its menu is `items`.
+/// The always-visible "More actions" button at the right of a card; its menu is `items`, as wide
+/// as the longest of `labels` (every row `items` can show) needs.
 pub(super) fn more_button(
     ui: &mut egui::Ui,
     rect: Rect,
     id: Id,
+    labels: &[&str],
     items: impl FnOnce(&mut egui::Ui),
 ) {
     let response = kit::hover_button(ui, rect, id, Icon::Ellipsis, "More actions", true, true);
-    egui::Popup::menu(&response)
-        .frame(kit::menu_frame())
-        .align(egui::RectAlign::BOTTOM_END)
-        .gap(4.0)
-        .show(|ui| {
-            ui.set_width(180.0);
-            ui.spacing_mut().item_spacing.y = 0.0;
-            items(ui);
-        });
+    kit::fitted_menu(ui, &response, egui::RectAlign::BOTTOM_END, labels, items);
 }
 
 fn condition_chip_parts(chip: &(&'static str, String, Option<bool>)) -> (Icon, Color32) {
@@ -953,7 +947,19 @@ fn rule_row(
     let mut right = rect.right() - 14.0;
     let more = Rect::from_min_size(Pos2::new(right - 26.0, center_y - 13.0), Vec2::splat(26.0));
     let watch = input.sync_enabled.then(|| !input.muted.contains(&alert.id));
-    more_button(ui, more, Id::new(("alert-more", alert.id)), |ui| {
+    let watch_label = match watch {
+        Some(true) => "Stop Watching on This Mac",
+        Some(false) => "Watch on This Mac",
+        None => "Edit\u{2026}",
+    };
+    let labels = [
+        "Edit\u{2026}",
+        toggle_title(alert.state),
+        watch_label,
+        "Duplicate",
+        "Delete\u{2026}",
+    ];
+    more_button(ui, more, Id::new(("alert-more", alert.id)), &labels, |ui| {
         rule_menu(ui, state, alert, watch, actions);
     });
     let toggle = more.translate(Vec2::new(-28.0, 0.0));

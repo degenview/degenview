@@ -456,8 +456,27 @@ pub(super) fn context_menu(
         let has_usages = target
             .and_then(|index| table.usages_of(index))
             .is_some_and(|calls| !calls.is_empty());
-        kit::menu_scope(ui, 200.0);
-        kit::menu_fit(ui, &["Go to Definition", "Find Usages", "Rename Symbol…"]);
+        kit::menu_scope(ui, 0.0);
+        let (cut, copy, paste) = (
+            shortcut::CUT.label(),
+            shortcut::COPY.label(),
+            shortcut::PASTE.label(),
+        );
+        let (definition_hint, rename_hint) = (
+            shortcut::GO_TO_DEFINITION.label(),
+            shortcut::RENAME_SYMBOL.label(),
+        );
+        kit::menu_fit_rows(
+            ui,
+            &[
+                ("Cut", Some(&cut)),
+                ("Copy", Some(&copy)),
+                ("Paste", Some(&paste)),
+                ("Go to Definition", Some(&definition_hint)),
+                ("Find Usages", None),
+                ("Rename Symbol…", Some(&rename_hint)),
+            ],
+        );
         let selected = TextEditState::load(ctx, state.id)
             .and_then(|edit| edit.cursor.char_range())
             .is_some_and(|range| range.primary != range.secondary);
