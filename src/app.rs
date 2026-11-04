@@ -1067,6 +1067,12 @@ impl DegenViewApp {
                     self.tab_host.cycle(false);
                 }
                 NativeCommand::OpenSettings => self.open_settings(),
+                NativeCommand::OpenGitHub => {
+                    ctx.open_url(egui::OpenUrl::new_tab(tab_bar::GITHUB_URL));
+                }
+                NativeCommand::OpenCoffee => {
+                    ctx.open_url(egui::OpenUrl::new_tab(tab_bar::COFFEE_URL));
+                }
                 NativeCommand::Quit => self.request_quit(ctx),
                 NativeCommand::SaveCurrentLayout => {
                     let focused = self.focused_tab.load(Ordering::Acquire);

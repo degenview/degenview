@@ -232,6 +232,7 @@ pub enum Icon {
     StopFill,
     Restart,
     Bug,
+    Coffee,
 }
 
 /// Stroke width on the 16 grid.
@@ -1984,6 +1985,12 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
                 line(&[p(side - sign * 0.2, 9.8), p(8.0 + sign * 7.0, 9.8)]);
                 line(&[p(side, 11.4), p(8.0 + sign * 6.4, 13.0)]);
             }
+        }
+        Icon::Coffee => {
+            // A takeaway cup: a lid, the tapered body and its sleeve.
+            closed(&[p(4.2, 2.4), p(11.8, 2.4), p(12.6, 5.0), p(3.4, 5.0)]);
+            closed(&[p(4.0, 5.0), p(12.0, 5.0), p(11.2, 14.0), p(4.8, 14.0)]);
+            line(&[p(4.5, 8.6), p(11.5, 8.6)]);
         }
         Icon::Magnet => {
             // A horseshoe: one thick outline, and its two poles struck solid below a gap so the

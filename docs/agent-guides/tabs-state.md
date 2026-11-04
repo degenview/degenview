@@ -58,6 +58,8 @@
   all platforms support next/previous tab actions. Windows/Linux have no menu bar, so Settings opens
   with Ctrl+, or the strip's settings button (left of the window buttons); both become
   `TabRequest::OpenSettings`. macOS keeps Settings… in its menu and draws no button.
+  The project's GitHub and Buy Me a Coffee links follow the same split: gray icons at the strip's
+  far right on Windows/Linux (`tab_bar::GITHUB_URL`/`COFFEE_URL`), the Help menu on macOS.
 - The first window opens at 80% of the main screen's usable area (`NSScreen.visibleFrame`,
   `native_bridge::main_work_area`), at least 960x620, at most 2000x1300, never bigger than the area,
   centered (`Placement::for_work_area`). Windows and Linux have no screen lookup and open at the

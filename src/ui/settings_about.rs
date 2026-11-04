@@ -13,7 +13,7 @@ pub const NAME: &str = "DegenView";
 pub use crate::host::update_host::VERSION;
 pub const LICENSE: &str = "GPL-3.0-only";
 pub const REPOSITORY_URL: &str = "https://github.com/degenview/degenview";
-pub const DONATION_URL: &str = "https://buymeacoffee.com/degenview";
+pub const DONATION_URL: &str = crate::ui::tab_bar::COFFEE_URL;
 const COPYRIGHT: &str = "Copyright © 2026 Nico Oelgart. Licensed under GPL-3.0-only.";
 
 const MAX_WIDTH: f32 = 480.0;

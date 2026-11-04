@@ -7,6 +7,10 @@ pub enum NativeCommand {
     /// File ▸ New Script, for the focused Pine Studio.
     NewScript,
     OpenSettings,
+    /// Help ▸ DegenView on GitHub.
+    OpenGitHub,
+    /// Help ▸ Buy Me a Coffee.
+    OpenCoffee,
     SaveCurrentLayout,
     /// File ▸ Close Tab.
     CloseTab,
@@ -161,6 +165,14 @@ mod platform {
         if let Some(ctx) = CONTEXT.get() {
             ctx.request_repaint();
         }
+    }
+
+    extern "C-unwind" fn open_github(_d: &AnyObject, _s: Sel, _sender: Option<&AnyObject>) {
+        push(NativeCommand::OpenGitHub);
+    }
+
+    extern "C-unwind" fn open_coffee(_d: &AnyObject, _s: Sel, _sender: Option<&AnyObject>) {
+        push(NativeCommand::OpenCoffee);
     }
 
     extern "C-unwind" fn save_current_layout(
@@ -405,6 +417,8 @@ mod platform {
         install_action(delegate_class, sel!(newWindowForTab:), new_window_for_tab);
         install_action(delegate_class, sel!(newScript:), new_script);
         install_action(delegate_class, sel!(openSettings:), open_settings);
+        install_action(delegate_class, sel!(openGitHub:), open_github);
+        install_action(delegate_class, sel!(openCoffee:), open_coffee);
         install_action(
             delegate_class,
             sel!(saveCurrentLayout:),
@@ -634,6 +648,21 @@ mod platform {
         window_item.setSubmenu(Some(&window_menu));
         menubar.addItem(&window_item);
         app.setWindowsMenu(Some(&window_menu));
+
+        // Help: the project's GitHub organisation and the maintainer's Buy Me a Coffee page.
+        let help_item = NSMenuItem::new(mtm);
+        let help_menu = NSMenu::initWithTitle(mtm.alloc(), ns_string!("Help"));
+        for (title, selector) in [
+            (ns_string!("DegenView on GitHub"), sel!(openGitHub:)),
+            (ns_string!("Buy Me a Coffee"), sel!(openCoffee:)),
+        ] {
+            let item = menu_item(mtm, title, Some(selector), ns_string!(""));
+            unsafe { item.setTarget(Some(delegate)) };
+            help_menu.addItem(&item);
+        }
+        help_item.setSubmenu(Some(&help_menu));
+        menubar.addItem(&help_item);
+        app.setHelpMenu(Some(&help_menu));
         app.setMainMenu(Some(&menubar));
     }
 
