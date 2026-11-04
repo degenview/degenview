@@ -44,19 +44,19 @@ Severity meanings used below:
 
 | ID | Severity | Finding | Status |
 | --- | --- | --- | --- |
-| H1 | High | The profile key omits candle values, realtime/closed state, theme, and full symbol identity | Planned: run-identity PR |
-| H2 | High | Visible-range scripts are profiled with a different context from the preview | Planned: run-identity PR |
-| M1 | Medium | Cancellation and timeout can count a bar that never started executing | **Fixed** (this PR) |
-| M2 | Medium | A panic can produce internally inconsistent region and total times | **Fixed** (this PR) |
-| M3 | Medium | Overhead calibration does not model function-call hooks and biases attribution/deadlines | **Fixed** (this PR) |
-| M4 | Medium | Profile failure state uses incompatible notions of “current” in the drawer and Problems list | Planned: run-identity PR |
-| L1 | Low | Keeping the profiler enabled allocates and hashes the full identity every frame | Planned: run-identity PR |
-| L2 | Low | Stale same-text results are navigable but are not actually dimmed as documented | Planned: presentation PR |
-| L3 | Low | Boundary formatting reports `1000 µs` and rounds sub-100% shares to `100%` | Planned: presentation PR |
+| H1 | High | The profile key omits candle values, realtime/closed state, theme, and full symbol identity | **Fixed** ([#321](https://github.com/degenview/degenview/pull/321)) |
+| H2 | High | Visible-range scripts are profiled with a different context from the preview | **Fixed** ([#321](https://github.com/degenview/degenview/pull/321)) |
+| M1 | Medium | Cancellation and timeout can count a bar that never started executing | **Fixed** ([#320](https://github.com/degenview/degenview/pull/320)) |
+| M2 | Medium | A panic can produce internally inconsistent region and total times | **Fixed** ([#320](https://github.com/degenview/degenview/pull/320)) |
+| M3 | Medium | Overhead calibration does not model function-call hooks and biases attribution/deadlines | **Fixed** ([#320](https://github.com/degenview/degenview/pull/320)) |
+| M4 | Medium | Profile failure state uses incompatible notions of “current” in the drawer and Problems list | **Fixed** ([#321](https://github.com/degenview/degenview/pull/321)) |
+| L1 | Low | Keeping the profiler enabled allocates and hashes the full identity every frame | **Fixed** ([#321](https://github.com/degenview/degenview/pull/321)) |
+| L2 | Low | Stale same-text results are navigable but are not actually dimmed as documented | **Fixed** ([#322](https://github.com/degenview/degenview/pull/322)) |
+| L3 | Low | Boundary formatting reports `1000 µs` and rounds sub-100% shares to `100%` | **Fixed** ([#322](https://github.com/degenview/degenview/pull/322)) |
 
 All nine findings were re-checked against the code at `d782f68` before any change; every one is real.
-The fixes are three stacked pull requests: accounting (M1–M3, with this file), run identity
-(H1, H2, L1, M4) and presentation (L2, L3, documentation drift). The sections below record what was
+The fixes are three stacked pull requests: accounting (M1–M3, with this file, #320), run identity
+(H1, H2, L1, M4, #321) and presentation (L2, L3, documentation drift, #322). The sections below record what was
 done and where it differs from the recommendation. Nothing here was exercised in a real window; the
 checks are unit tests, the focused suites named under each status, `cargo clippy --all-targets
 --all-features -- -D warnings` and `cargo fmt`.
@@ -328,7 +328,7 @@ untracked review files; they were not modified.
 
 ## Fix status
 
-### M1 — fixed (this PR)
+### M1 — fixed (#320)
 
 Confirmed, with one correction to the finding: counting the *failing* bar on a runtime error is
 deliberate (its time is real and the report keeps what ran), the tests pin it, and the documentation
@@ -347,7 +347,7 @@ and a comment were wrong. The behaviour stays; the wording changed.
 - Tests: pre-raised cancellation flag, zero deadline, cancellation between bars, a timeout inside a
   long bar.
 
-### M2 — fixed (this PR)
+### M2 — fixed (#320)
 
 Confirmed at the engine level. Today the Pine Studio discards a failed report, so no screen showed the
 inconsistency, but the engine and the AI layer received it.
@@ -361,7 +361,7 @@ inconsistency, but the engine and the AI layer received it.
 - Tests: a recorder finished with an open nested function frame, and a session whose
   `request.security` provider panics.
 
-### M3 — fixed (this PR)
+### M3 — fixed (#320)
 
 Confirmed. The recorder now calibrates a statement pair and a function-call pair separately
 (`Summary::pair_cost_ns` and `call_pair_cost_ns`), counts each kind of frame, and uses the same split
@@ -375,6 +375,63 @@ two calibrations cost about what one did.
   another; the documentation now describes it instead.
 - Test: a call-only run is charged at the call cost, and the deadline receives the same figure.
 
-### H1, H2, M4, L1 — planned (run-identity PR)
+### H1, H2, M4, L1 — fixed (#321, stacked on #320)
 
-### L2, L3 and documentation drift — planned (presentation PR)
+**H1** confirmed. The key is now `(script, source, RunIdentity)`, all numbers. `RunIdentity`
+(`PreviewState::run_identity`) covers a fingerprint of every field of every candle, whether the last
+candle has closed, the ticker, data source and timeframe, the theme, the inputs, and the visible
+range for a script that reads it. The candle fingerprint is `ui::candles_fingerprint`, extracted from
+the chart's `run_revision`, so the chart and the profiler share one definition. Tests: a changed close
+on an unchanged timestamp, a changed close time, a changed volume, a candle closing, the theme, the
+same ticker on another source, an input.
+
+**H2** confirmed. `DebugFeed` carries `visible_range` (from the new `ChartCard::visible_open_range`,
+which `pine_outputs` now uses too); `profiler_start` and the AI `profile` tool pass it into
+`ProfileConfig`. End-to-end test: a script branching on both builtins is profiled over exactly the
+candles on screen, fewer than the series. Differences from the recommendation: the effective bar
+seconds are not added, because the chart passes none for plain candles (`source_bar_seconds` is `None`
+unless the bars were constructed) and the preview draws plain candles; and the debugger's own start
+still ignores the range (it shares `DebugFeed`, so it is a one-line follow-up, but it is outside this
+review).
+
+**M4** confirmed. `ProfileKey` now has `same_text` and `same_execution`. The Problems list, underline,
+badge and chip (`Profiler::failure`) require `same_execution`; `text_changed` retries a compile or
+library refusal only when the text changed, so a new candle no longer clears and repeats it; the
+Profile tab keeps showing a refusal while the text is the same. Tests: an input-dependent failure
+stops being a problem when the input changes; a refusal survives a new candle and is retried on new
+text.
+
+**L1** partly fixed. Building the key no longer clones strings, sorts, or formats `Debug`; the candle
+fingerprint is made when candles arrive, not per frame, and the inputs hash order-independently
+without allocating. The script text is still hashed once per frame while the profiler is on (an FNV
+pass over the source), which I judged not worth a revision counter on the editor. There is no
+allocation-count test; `ProfileKey` being `Copy` is asserted instead.
+
+A consequence worth knowing: a live preview whose last candle changes on each refetch now marks a
+profile stale each time, which is what H1 asked for.
+
+### L2, L3 and documentation drift — fixed (#322, stacked on #321)
+
+**L2** confirmed. The result view had one boolean (`lines_match`) for two facts. `Freshness
+{ navigable, current }` separates them: rows stay clickable while the text matches, but a stale
+profile's totals, icon chips, heat bars, labels and figures all fade. The drawer test now draws a
+finished profile, ready and stale (same text and other text), at the five drawer sizes, and a test
+pins the mapping from status to freshness. I also rendered the ready and stale pictures and looked
+at them.
+
+**L3** confirmed. `duration` rounds to three figures and then picks the unit (`999,999 ns` is
+`1.00 ms`; `99.96 µs` is `100 µs`); `percent` prints `100%` only for a whole share and caps anything
+less at `99.9%`. The test that locked `1000 µs` in was replaced, with every unit boundary and
+99.94 / 99.95 / 99.99 / 100% covered.
+
+**Documentation drift** fixed in `docs/pine-profiler.md`: the failing bar (#320), stale dimming (now
+true), and the toolbar colour (the code uses the primary text colour while on, so the doc was wrong,
+not the code).
+
+## Not done
+
+- A real-window pass (tooltip placement near the window edge, UI scales, keyboard navigation,
+  cancellation feedback). Everything above was checked headlessly and in rendered pictures.
+- The debugger's own start still ignores the preview's visible range (it shares `DebugFeed`).
+- The script text is still hashed once per frame while the profiler is on (L1, partial).
+- No allocation-count test for the key; `ProfileKey` being `Copy` is asserted instead.
