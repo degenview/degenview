@@ -4,6 +4,7 @@ use super::ChartWorkspace;
 use super::alerts::AlertRequest;
 use super::chart::displayed_candles;
 use crate::host::paper_host::PaperHost;
+use crate::model::watchlist::WatchlistError;
 use crate::model::{
     ChartColumn, ChartLayout, Drawing, DrawingCommand, DrawingStyle, InstrumentId, ReplayStatus,
     Tool,
@@ -32,6 +33,16 @@ enum ChartCommand {
     SetChartType(u64, crate::model::ChartType),
     /// A row of one chart card's camera menu was picked.
     Snapshot(u64, crate::model::snapshot::SnapshotAction),
+}
+
+/// A star or membership toggle that finds the market already in (or already out of) the list
+/// has nothing to report; anything else says why it was refused.
+fn star_result(slot: &mut Option<String>, result: Result<bool, WatchlistError>) {
+    let result = match result {
+        Err(WatchlistError::Duplicate(_) | WatchlistError::NotFound) => Ok(false),
+        other => other,
+    };
+    super::watchlist::report_watchlist(slot, result.map(|_| ()));
 }
 
 /// The markets of the Favorites list, by `InstrumentId::key`, so the star reads "on" for a
@@ -694,21 +705,23 @@ impl ChartWorkspace {
             for chart_id in favorite_toggles {
                 if let Some(chart) = self.charts.iter().find(|chart| chart.id == chart_id) {
                     let instrument = Self::chart_instrument(chart);
-                    if favorites.contains(&instrument.key()) {
-                        store.remove_from_list(list_id, &instrument);
+                    let result = if favorites.contains(&instrument.key()) {
+                        store.remove_from_list(list_id, &instrument)
                     } else {
-                        store.add_to_list(list_id, self.favorite_item(chart));
-                    }
+                        store.add_to_list(list_id, self.favorite_item(chart))
+                    };
+                    star_result(&mut self.watchlist_error, result);
                 }
             }
             for (chart_id, (list_id, included)) in watchlist_changes {
                 if let Some(chart) = self.charts.iter().find(|chart| chart.id == chart_id) {
                     let instrument = Self::chart_instrument(chart);
-                    if included {
-                        store.add_to_list(list_id, self.favorite_item(chart));
+                    let result = if included {
+                        store.add_to_list(list_id, self.favorite_item(chart))
                     } else {
-                        store.remove_from_list(list_id, &instrument);
-                    }
+                        store.remove_from_list(list_id, &instrument)
+                    };
+                    star_result(&mut self.watchlist_error, result);
                 }
             }
         }

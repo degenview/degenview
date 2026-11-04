@@ -4,10 +4,18 @@ use super::ChartWorkspace;
 use super::alerts::AlertRequest;
 use crate::model::InstrumentId;
 use crate::model::alert::AlertAsset;
-use crate::model::watchlist::WatchlistInstrument;
+use crate::model::watchlist::{WatchlistError, WatchlistInstrument};
 use crate::ui::watchlist_sidebar::{self, WatchlistAction, WatchlistSidebarInput};
 use eframe::egui;
 use std::sync::{Arc, mpsc};
+
+/// Shows why a change was refused. A failed save already shows the store's own message.
+pub(super) fn report_watchlist(slot: &mut Option<String>, result: Result<(), WatchlistError>) {
+    match result {
+        Ok(()) | Err(WatchlistError::SaveFailed) => {}
+        Err(error) => *slot = Some(error.to_string()),
+    }
+}
 
 impl ChartWorkspace {
     pub(super) fn show_watchlist(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
@@ -95,66 +103,103 @@ impl ChartWorkspace {
                         )));
                     }
                     WatchlistAction::CreateList { name, with } => {
-                        store.create_list(&name, with);
+                        let result = store.create_list(&name, with).map(|_| ());
+                        report_watchlist(&mut self.watchlist_error, result);
                     }
-                    WatchlistAction::RenameList { id, name } => store.rename_list(id, &name),
+                    WatchlistAction::RenameList { id, name } => {
+                        let result = store.rename_list(id, &name).map(|_| ());
+                        report_watchlist(&mut self.watchlist_error, result);
+                    }
                     WatchlistAction::DuplicateList { id, name } => {
-                        store.duplicate_list(id, &name);
+                        let result = store.duplicate_list(id, &name).map(|_| ());
+                        report_watchlist(&mut self.watchlist_error, result);
                     }
-                    WatchlistAction::DeleteList(id) => store.delete_list(id),
-                    WatchlistAction::AddToList { list, item } => store.add_to_list(list, item),
+                    WatchlistAction::DeleteList(id) => {
+                        let result = store.delete_list(id).map(|_| ());
+                        report_watchlist(&mut self.watchlist_error, result);
+                    }
+                    WatchlistAction::AddToList { list, item } => {
+                        let result = store.add_to_list(list, item).map(|_| ());
+                        report_watchlist(&mut self.watchlist_error, result);
+                    }
                     WatchlistAction::RemoveFromList { list, instrument } => {
-                        store.remove_from_list(list, &instrument);
+                        let result = store.remove_from_list(list, &instrument).map(|_| ());
+                        report_watchlist(&mut self.watchlist_error, result);
                     }
                     WatchlistAction::RemoveEntry { list, entry } => {
-                        store.remove_entry(list, entry);
+                        let result = store.remove_entry(list, entry).map(|_| ());
+                        report_watchlist(&mut self.watchlist_error, result);
                     }
                     WatchlistAction::MoveToSection {
                         list,
                         entry,
                         section,
-                    } => store.move_instruments(list, &[entry], section),
+                    } => {
+                        let result = store.move_instruments(list, &[entry], section).map(|_| ());
+                        report_watchlist(&mut self.watchlist_error, result);
+                    }
                     WatchlistAction::Move { list, mv } => {
-                        store.move_entries(list, &mv.ids, mv.before);
+                        let result = store.move_entries(list, &mv.ids, mv.before).map(|_| ());
+                        report_watchlist(&mut self.watchlist_error, result);
                     }
                     WatchlistAction::MoveToSectionByDrop { list, mv } => {
-                        store.move_instruments(list, &mv.ids, mv.section);
+                        let result = store
+                            .move_instruments(list, &mv.ids, mv.section)
+                            .map(|_| ());
+                        report_watchlist(&mut self.watchlist_error, result);
                     }
-                    WatchlistAction::AddSection { list, title } => store.add_section(list, &title),
+                    WatchlistAction::AddSection { list, title } => {
+                        let result = store.add_section(list, &title).map(|_| ());
+                        report_watchlist(&mut self.watchlist_error, result);
+                    }
                     WatchlistAction::RenameSection {
                         list,
                         section,
                         title,
-                    } => store.rename_section(list, section, &title),
+                    } => {
+                        let result = store.rename_section(list, section, &title).map(|_| ());
+                        report_watchlist(&mut self.watchlist_error, result);
+                    }
                     WatchlistAction::DeleteSection { list, section } => {
-                        store.delete_section(list, section);
+                        let result = store.delete_section(list, section).map(|_| ());
+                        report_watchlist(&mut self.watchlist_error, result);
                     }
                     WatchlistAction::SetSectionCollapsed {
                         list,
                         section,
                         collapsed,
-                    } => store.set_section_collapsed(list, section, collapsed),
-                    WatchlistAction::SetSort { list, sort } => store.set_sort(list, sort),
+                    } => {
+                        let result = store
+                            .set_section_collapsed(list, section, collapsed)
+                            .map(|_| ());
+                        report_watchlist(&mut self.watchlist_error, result);
+                    }
+                    WatchlistAction::SetSort { list, sort } => {
+                        let result = store.set_sort(list, sort).map(|_| ());
+                        report_watchlist(&mut self.watchlist_error, result);
+                    }
                     WatchlistAction::SetColumn {
                         list,
                         column,
                         visible,
-                    } => store.set_column(list, column, visible),
+                    } => {
+                        let result = store.set_column(list, column, visible).map(|_| ());
+                        report_watchlist(&mut self.watchlist_error, result);
+                    }
                     WatchlistAction::SetShowsDescription { list, shows } => {
-                        store.set_shows_description(list, shows);
+                        let result = store.set_shows_description(list, shows).map(|_| ());
+                        report_watchlist(&mut self.watchlist_error, result);
                     }
                     WatchlistAction::SetFlag { instrument, flag } => {
                         store.set_flag(&instrument, flag);
                     }
                     WatchlistAction::Import { list, text } => {
                         match store.import_into(list, &text) {
-                            Some(report) => {
+                            Ok(report) => {
                                 self.import_report = Some(report);
                                 self.watchlist_error = None;
                             }
-                            None => {
-                                self.watchlist_error = Some("Import failed".to_owned());
-                            }
+                            Err(error) => report_watchlist(&mut self.watchlist_error, Err(error)),
                         }
                     }
                     WatchlistAction::BeginImport => self.import_report = None,
@@ -171,7 +216,7 @@ impl ChartWorkspace {
                             std::thread::spawn(move || {
                                 let result = crate::service::file_dialog::choose_save_path(
                                     "Export watchlist",
-                                    &format!("{name}.txt"),
+                                    &crate::model::watchlist_text::export_file_name(&name),
                                 )
                                 .and_then(|path| {
                                     path.map(|path| {

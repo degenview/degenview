@@ -3,7 +3,8 @@
 
 use crate::model::InstrumentId;
 use crate::model::watchlist::{
-    EntryId, Watchlist, WatchlistColumn, WatchlistFlag, WatchlistInstrument, WatchlistSort,
+    EntryId, MAX_LISTS, Watchlist, WatchlistColumn, WatchlistError, WatchlistFlag,
+    WatchlistInstrument, WatchlistSort,
 };
 use crate::model::watchlist_layout::Flags;
 use crate::model::watchlist_text::ImportReport;
@@ -78,7 +79,7 @@ impl WatchlistStore {
             last_error,
         };
         if !this.load_failed {
-            this.collapse_duplicate_markets();
+            this.repair();
             this.persist();
             if flags_respelled {
                 this.persist_flags();
@@ -130,8 +131,8 @@ impl WatchlistStore {
             lists.push(favorites);
         }
         self.lists = lists;
-        let collapsed = self.collapse_duplicate_markets();
-        if !had_favorites || collapsed {
+        let repaired = self.repair();
+        if !had_favorites || repaired {
             self.persist();
         }
         if flags_respelled {
@@ -139,11 +140,22 @@ impl WatchlistStore {
         }
     }
 
-    /// Rows saved when `BTC` and `BTCUSDT` were two markets are one now: the first stays.
-    fn collapse_duplicate_markets(&mut self) -> bool {
+    /// Puts stored lists right where they can be without losing anything the user chose: a
+    /// second Favorites list becomes an ordinary one, rows saved when `BTC` and `BTCUSDT`
+    /// were two markets are one now (the first stays), and a repeated row id gets a new one.
+    /// Returns whether anything changed.
+    fn repair(&mut self) -> bool {
         let mut any = false;
+        let mut seen_favorites = false;
         for list in &mut self.lists {
-            any |= list.collapse_duplicate_markets();
+            if list.is_favorites {
+                if seen_favorites {
+                    list.is_favorites = false;
+                    any = true;
+                }
+                seen_favorites = true;
+            }
+            any |= list.repair();
         }
         any
     }
@@ -199,10 +211,6 @@ impl WatchlistStore {
         }
     }
 
-    fn list_mut(&mut self, id: EntryId) -> Option<&mut Watchlist> {
-        self.lists.iter_mut().find(|list| list.id == id)
-    }
-
     /// The Favorites list id (always present after construction).
     pub fn favorites(&self) -> EntryId {
         self.lists
@@ -212,141 +220,228 @@ impl WatchlistStore {
             .unwrap_or_else(|| self.lists[0].id)
     }
 
+    /// Runs `change` on a copy of one list; when it differs from the stored list, keeps it
+    /// (stamping `updated_at_ms` for `edit`s of content) and saves. A change that fails
+    /// leaves the lists as they were, and one that changes nothing writes nothing. Returns
+    /// whether the list changed.
+    fn modify(
+        &mut self,
+        id: EntryId,
+        edit: bool,
+        change: impl FnOnce(&mut Watchlist) -> Result<(), WatchlistError>,
+    ) -> Result<bool, WatchlistError> {
+        if self.load_failed {
+            return Err(WatchlistError::PersistenceUnavailable);
+        }
+        let index = self
+            .lists
+            .iter()
+            .position(|list| list.id == id)
+            .ok_or(WatchlistError::NotFound)?;
+        let mut candidate = self.lists[index].clone();
+        change(&mut candidate)?;
+        if candidate == self.lists[index] {
+            return Ok(false);
+        }
+        if edit {
+            candidate.touch();
+        }
+        self.lists[index] = candidate;
+        if self.persist() {
+            Ok(true)
+        } else {
+            Err(WatchlistError::SaveFailed)
+        }
+    }
+
     // MARK: Lists
 
     pub fn create_list(
         &mut self,
         name: &str,
         with: Option<WatchlistInstrument>,
-    ) -> Option<EntryId> {
-        let mut list = Watchlist::new(name);
+    ) -> Result<EntryId, WatchlistError> {
+        if self.load_failed {
+            return Err(WatchlistError::PersistenceUnavailable);
+        }
+        if self.lists.len() >= MAX_LISTS {
+            return Err(WatchlistError::TooManyLists);
+        }
+        let mut list = Watchlist::new(Watchlist::validated(name)?);
         if let Some(item) = with {
+            // A market already refused (a card, say) still gets its list.
             let _ = list.add(item, None);
         }
         let id = list.id;
         self.lists.push(list);
-        self.persist().then_some(id)
-    }
-
-    pub fn rename_list(&mut self, id: EntryId, name: &str) {
-        if let Some(list) = self.list_mut(id) {
-            list.name = name.to_owned();
-            self.persist();
+        if self.persist() {
+            Ok(id)
+        } else {
+            Err(WatchlistError::SaveFailed)
         }
     }
 
-    pub fn duplicate_list(&mut self, id: EntryId, name: &str) -> Option<EntryId> {
+    pub fn rename_list(&mut self, id: EntryId, name: &str) -> Result<bool, WatchlistError> {
+        let name = Watchlist::validated(name)?;
+        self.modify(id, true, |list| {
+            list.name = name;
+            Ok(())
+        })
+    }
+
+    pub fn duplicate_list(&mut self, id: EntryId, name: &str) -> Result<EntryId, WatchlistError> {
+        if self.load_failed {
+            return Err(WatchlistError::PersistenceUnavailable);
+        }
+        if self.lists.len() >= MAX_LISTS {
+            return Err(WatchlistError::TooManyLists);
+        }
+        let name = Watchlist::validated(name)?;
         let copy = self
             .lists
             .iter()
             .find(|list| list.id == id)
-            .map(|list| list.duplicated(name))?;
+            .map(|list| list.duplicated(&name))
+            .ok_or(WatchlistError::NotFound)?;
         let new_id = copy.id;
         self.lists.push(copy);
-        self.persist().then_some(new_id)
+        if self.persist() {
+            Ok(new_id)
+        } else {
+            Err(WatchlistError::SaveFailed)
+        }
     }
 
-    /// Deletes a list; Favorites never deletes.
-    pub fn delete_list(&mut self, id: EntryId) {
-        let Some(list) = self.lists.iter().find(|list| list.id == id) else {
-            return;
-        };
+    /// Deletes a list; Favorites never deletes (`Ok(false)`).
+    pub fn delete_list(&mut self, id: EntryId) -> Result<bool, WatchlistError> {
+        if self.load_failed {
+            return Err(WatchlistError::PersistenceUnavailable);
+        }
+        let list = self
+            .lists
+            .iter()
+            .find(|list| list.id == id)
+            .ok_or(WatchlistError::NotFound)?;
         if list.is_favorites {
-            return;
+            return Ok(false);
         }
         self.lists.retain(|list| list.id != id);
-        self.persist();
+        if self.persist() {
+            Ok(true)
+        } else {
+            Err(WatchlistError::SaveFailed)
+        }
     }
 
     // MARK: Contents
 
-    pub fn add_to_list(&mut self, list: EntryId, item: WatchlistInstrument) {
-        if let Some(list) = self.list_mut(list) {
-            let _ = list.add(item, None);
-            self.persist();
-        }
+    pub fn add_to_list(
+        &mut self,
+        list: EntryId,
+        item: WatchlistInstrument,
+    ) -> Result<bool, WatchlistError> {
+        self.modify(list, true, |list| list.add(item, None))
     }
 
-    pub fn remove_from_list(&mut self, list: EntryId, instrument: &InstrumentId) {
-        if let Some(list) = self.list_mut(list)
-            && list.remove_instrument(instrument)
-        {
-            self.persist();
-        }
+    pub fn remove_from_list(
+        &mut self,
+        list: EntryId,
+        instrument: &InstrumentId,
+    ) -> Result<bool, WatchlistError> {
+        self.modify(list, true, |list| {
+            list.remove_instrument(instrument)
+                .then_some(())
+                .ok_or(WatchlistError::NotFound)
+        })
     }
 
-    pub fn remove_entry(&mut self, list: EntryId, entry: EntryId) {
-        if let Some(list) = self.list_mut(list) {
-            let _ = list.remove_entry(entry);
-            self.persist();
-        }
+    pub fn remove_entry(&mut self, list: EntryId, entry: EntryId) -> Result<bool, WatchlistError> {
+        self.modify(list, true, |list| list.remove_entry(entry))
     }
 
-    pub fn move_entries(&mut self, list: EntryId, ids: &[EntryId], before: Option<EntryId>) {
-        if let Some(list) = self.list_mut(list) {
-            let _ = list.move_entries(ids, before);
-            self.persist();
-        }
+    pub fn move_entries(
+        &mut self,
+        list: EntryId,
+        ids: &[EntryId],
+        before: Option<EntryId>,
+    ) -> Result<bool, WatchlistError> {
+        self.modify(list, true, |list| list.move_entries(ids, before))
     }
 
-    pub fn move_instruments(&mut self, list: EntryId, ids: &[EntryId], section: Option<EntryId>) {
-        if let Some(list) = self.list_mut(list) {
-            let _ = list.move_instruments(ids, section);
-            self.persist();
-        }
+    pub fn move_instruments(
+        &mut self,
+        list: EntryId,
+        ids: &[EntryId],
+        section: Option<EntryId>,
+    ) -> Result<bool, WatchlistError> {
+        self.modify(list, true, |list| list.move_instruments(ids, section))
     }
 
     // MARK: Sections
 
-    pub fn add_section(&mut self, list: EntryId, title: &str) {
-        if let Some(list) = self.list_mut(list) {
-            let _ = list.add_section(title, None);
-            self.persist();
-        }
+    pub fn add_section(&mut self, list: EntryId, title: &str) -> Result<bool, WatchlistError> {
+        self.modify(list, true, |list| list.add_section(title, None).map(|_| ()))
     }
 
-    pub fn rename_section(&mut self, list: EntryId, section: EntryId, title: &str) {
-        if let Some(list) = self.list_mut(list) {
-            let _ = list.rename_section(section, title);
-            self.persist();
-        }
+    pub fn rename_section(
+        &mut self,
+        list: EntryId,
+        section: EntryId,
+        title: &str,
+    ) -> Result<bool, WatchlistError> {
+        self.modify(list, true, |list| list.rename_section(section, title))
     }
 
-    pub fn delete_section(&mut self, list: EntryId, section: EntryId) {
-        if let Some(list) = self.list_mut(list) {
-            let _ = list.delete_section(section);
-            self.persist();
-        }
+    pub fn delete_section(
+        &mut self,
+        list: EntryId,
+        section: EntryId,
+    ) -> Result<bool, WatchlistError> {
+        self.modify(list, true, |list| list.delete_section(section))
     }
 
-    pub fn set_section_collapsed(&mut self, list: EntryId, section: EntryId, collapsed: bool) {
-        if let Some(list) = self.list_mut(list) {
-            let _ = list.set_section_collapsed(section, collapsed);
-            self.persist();
-        }
+    /// How a section is shown, not what the list holds, so it does not count as an edit.
+    pub fn set_section_collapsed(
+        &mut self,
+        list: EntryId,
+        section: EntryId,
+        collapsed: bool,
+    ) -> Result<bool, WatchlistError> {
+        self.modify(list, false, |list| {
+            list.set_section_collapsed(section, collapsed)
+        })
     }
 
     // MARK: Display
 
-    pub fn set_sort(&mut self, list: EntryId, sort: WatchlistSort) {
-        if let Some(list) = self.list_mut(list) {
+    pub fn set_sort(&mut self, list: EntryId, sort: WatchlistSort) -> Result<bool, WatchlistError> {
+        self.modify(list, false, |list| {
             list.display.sort = sort;
-            self.persist();
-        }
+            Ok(())
+        })
     }
 
-    pub fn set_column(&mut self, list: EntryId, column: WatchlistColumn, visible: bool) {
-        if let Some(list) = self.list_mut(list) {
+    pub fn set_column(
+        &mut self,
+        list: EntryId,
+        column: WatchlistColumn,
+        visible: bool,
+    ) -> Result<bool, WatchlistError> {
+        self.modify(list, false, |list| {
             list.display.set_column(column, visible);
-            self.persist();
-        }
+            Ok(())
+        })
     }
 
-    pub fn set_shows_description(&mut self, list: EntryId, shows: bool) {
-        if let Some(list) = self.list_mut(list) {
+    pub fn set_shows_description(
+        &mut self,
+        list: EntryId,
+        shows: bool,
+    ) -> Result<bool, WatchlistError> {
+        self.modify(list, false, |list| {
             list.display.shows_description = shows;
-            self.persist();
-        }
+            Ok(())
+        })
     }
 
     // MARK: Flags
@@ -356,6 +451,9 @@ impl WatchlistStore {
             return;
         }
         let key = instrument.key();
+        if self.flags.get(&key) == flag.as_ref() {
+            return;
+        }
         match flag {
             Some(flag) => {
                 self.flags.insert(key, flag);
@@ -369,13 +467,19 @@ impl WatchlistStore {
 
     // MARK: Import / export
 
-    pub fn import_into(&mut self, list: EntryId, text: &str) -> Option<ImportReport> {
+    /// Imports `text` into a list. The list is replaced only when the whole import worked.
+    pub fn import_into(
+        &mut self,
+        list: EntryId,
+        text: &str,
+    ) -> Result<ImportReport, WatchlistError> {
         let parsed = crate::model::watchlist_text::parse(text);
-        let target = self.list_mut(list)?;
-        match crate::model::watchlist_text::import_into(target, &parsed) {
-            Ok(report) => self.persist().then_some(report),
-            Err(_) => None,
-        }
+        let mut report = None;
+        self.modify(list, true, |target| {
+            report = Some(crate::model::watchlist_text::import_into(target, &parsed)?);
+            Ok(())
+        })?;
+        Ok(report.unwrap_or_default())
     }
 
     pub fn export(&self, list: EntryId) -> Option<String> {
@@ -403,7 +507,7 @@ mod tests {
         ));
         let mut store = WatchlistStore::new(shared.clone());
         let favorites = store.favorites();
-        store.add_to_list(favorites, item("BTCUSDT"));
+        store.add_to_list(favorites, item("BTCUSDT")).unwrap();
         // Another writer (iCloud Sync) stores a new list behind this store's back.
         let mut lists: Vec<Watchlist> = shared
             .lock()
@@ -424,7 +528,7 @@ mod tests {
         store.reload();
         assert_eq!(store.lists().len(), 2);
         // The next edit keeps the other writer's list rather than writing the old copy back.
-        store.add_to_list(favorites, item("ETHUSDT"));
+        store.add_to_list(favorites, item("ETHUSDT")).unwrap();
         let stored: Vec<Watchlist> = shared
             .lock()
             .unwrap()
@@ -457,7 +561,7 @@ mod tests {
         {
             let mut store = WatchlistStore::new(shared.clone());
             let favorites = store.favorites();
-            store.add_to_list(favorites, item("BTCUSDT"));
+            store.add_to_list(favorites, item("BTCUSDT")).unwrap();
             let id = store
                 .create_list("Meme", Some(item("DOGEUSDT")))
                 .expect("list");
@@ -616,7 +720,10 @@ mod tests {
                  BEGIN SELECT RAISE(ABORT, 'save failed'); END;",
             )
             .expect("trigger");
-        assert!(watchlists.create_list("Unsaved", None).is_none());
+        assert_eq!(
+            watchlists.create_list("Unsaved", None),
+            Err(WatchlistError::SaveFailed)
+        );
         assert!(watchlists.last_error().is_some());
         assert_eq!(watchlists.lists().len(), 1);
         assert_eq!(watchlists.favorites(), favorites);
@@ -628,5 +735,215 @@ mod tests {
                 .len(),
             1
         );
+    }
+
+    fn seeded() -> (WatchlistStore, EntryId, SharedStore) {
+        let shared = SharedStore::new(std::sync::Mutex::new(
+            Store::open_in_memory().expect("store"),
+        ));
+        let store = WatchlistStore::new(shared.clone());
+        let favorites = store.favorites();
+        (store, favorites, shared)
+    }
+
+    #[test]
+    fn a_refused_change_says_why_and_leaves_the_list_as_it_was() {
+        let (mut store, favorites, _) = seeded();
+        assert_eq!(store.add_to_list(favorites, item("BTCUSDT")), Ok(true));
+        let before = store.lists().to_vec();
+        assert!(matches!(
+            store.add_to_list(favorites, item("btc")),
+            Err(WatchlistError::Duplicate(_))
+        ));
+        assert_eq!(
+            store.add_to_list(9, item("ETHUSDT")),
+            Err(WatchlistError::NotFound)
+        );
+        assert_eq!(
+            store.remove_entry(favorites, 12345),
+            Err(WatchlistError::NotFound)
+        );
+        assert_eq!(
+            store.add_section(favorites, "   "),
+            Err(WatchlistError::EmptyName)
+        );
+        assert_eq!(store.lists(), before.as_slice());
+    }
+
+    #[test]
+    fn a_change_that_changes_nothing_writes_nothing() {
+        let (mut store, favorites, shared) = seeded();
+        store.add_to_list(favorites, item("BTCUSDT")).unwrap();
+        // Any write now fails: an unchanged toggle must not even try.
+        shared
+            .lock()
+            .unwrap()
+            .connection
+            .execute_batch(
+                "CREATE TRIGGER no_writes BEFORE DELETE ON watchlist
+                 BEGIN SELECT RAISE(ABORT, 'written'); END;",
+            )
+            .unwrap();
+        let sort = store.lists()[0].display.sort;
+        assert_eq!(store.set_sort(favorites, sort), Ok(false));
+        assert_eq!(
+            store.set_shows_description(favorites, store.lists()[0].display.shows_description),
+            Ok(false)
+        );
+        assert_eq!(store.rename_list(favorites, "Favorites"), Ok(false));
+        let id = store.lists()[0].instruments().next().unwrap().id;
+        assert_eq!(store.move_instruments(favorites, &[id], None), Ok(false));
+        assert_eq!(store.last_error(), None, "nothing was written");
+        // A real change does try, and reports the failed save.
+        assert_eq!(
+            store.rename_list(favorites, "Other"),
+            Err(WatchlistError::SaveFailed)
+        );
+        assert_eq!(
+            store.lists()[0].name,
+            "Favorites",
+            "the unsaved name is not kept"
+        );
+    }
+
+    #[test]
+    fn names_are_cleaned_and_bounded() {
+        let (mut store, favorites, _) = seeded();
+        let long = "x".repeat(crate::model::watchlist::MAX_NAME_CHARS);
+        assert!(store.create_list(&long, None).is_ok());
+        assert_eq!(
+            store.create_list(&format!("{long}x"), None),
+            Err(WatchlistError::NameTooLong)
+        );
+        assert_eq!(
+            store.create_list("a\u{7}b", None),
+            Err(WatchlistError::InvalidName)
+        );
+        assert_eq!(
+            store.create_list("  ", None),
+            Err(WatchlistError::EmptyName)
+        );
+        let id = store.create_list("  Two\n words\t here ", None).unwrap();
+        let name = store
+            .lists()
+            .iter()
+            .find(|list| list.id == id)
+            .unwrap()
+            .name
+            .clone();
+        assert_eq!(name, "Two words here");
+        assert_eq!(
+            store.rename_list(favorites, ""),
+            Err(WatchlistError::EmptyName)
+        );
+        assert_eq!(
+            store.duplicate_list(favorites, "\u{0}"),
+            Err(WatchlistError::InvalidName)
+        );
+    }
+
+    #[test]
+    fn only_an_edit_of_the_content_moves_the_timestamp() {
+        let (mut store, favorites, _) = seeded();
+        let stamp = |store: &WatchlistStore| store.lists()[0].updated_at_ms;
+        store
+            .lists
+            .iter_mut()
+            .for_each(|list| list.updated_at_ms = 1);
+        store
+            .set_sort(favorites, crate::model::watchlist::WatchlistSort::default())
+            .unwrap();
+        store
+            .set_column(
+                favorites,
+                crate::model::watchlist::WatchlistColumn::Volume,
+                true,
+            )
+            .unwrap();
+        assert_eq!(stamp(&store), 1, "display settings are not an edit");
+        store.add_to_list(favorites, item("BTCUSDT")).unwrap();
+        let added = stamp(&store);
+        assert!(added > 1);
+        let _ = store.add_to_list(favorites, item("btc"));
+        assert_eq!(stamp(&store), added, "a refused add is not an edit");
+        store.rename_list(favorites, "Mine").unwrap();
+        assert!(stamp(&store) >= added);
+    }
+
+    #[test]
+    fn a_failed_import_changes_nothing_and_a_full_list_keeps_what_fit() {
+        let (mut store, favorites, _) = seeded();
+        let text: String = (0..crate::model::watchlist::MAX_ENTRIES_PER_LIST + 50)
+            .map(|index| format!("BINANCE:S{index:04}USDT\n"))
+            .collect();
+        let report = store.import_into(favorites, &text).unwrap();
+        assert_eq!(report.added, crate::model::watchlist::MAX_ENTRIES_PER_LIST);
+        assert!(report.truncated);
+        assert!(report.summary().contains("stopped early"));
+        assert_eq!(
+            store.add_to_list(favorites, item("EXTRAUSDT")),
+            Err(WatchlistError::ListFull)
+        );
+        assert_eq!(
+            store.import_into(77, "BINANCE:BTCUSDT"),
+            Err(WatchlistError::NotFound)
+        );
+    }
+
+    #[test]
+    fn the_list_count_is_bounded() {
+        let (mut store, _, _) = seeded();
+        while store.lists().len() < MAX_LISTS {
+            store.create_list("L", None).unwrap();
+        }
+        assert_eq!(
+            store.create_list("one more", None),
+            Err(WatchlistError::TooManyLists)
+        );
+        let first = store.lists()[0].id;
+        assert_eq!(
+            store.duplicate_list(first, "copy"),
+            Err(WatchlistError::TooManyLists)
+        );
+    }
+
+    #[test]
+    fn a_second_favorites_list_and_a_repeated_row_id_are_repaired_on_load() {
+        let shared = SharedStore::new(std::sync::Mutex::new(
+            Store::open_in_memory().expect("store"),
+        ));
+        {
+            let mut first = Watchlist::new("Favorites");
+            first.is_favorites = true;
+            let mut second = Watchlist::new("Also favorites");
+            second.is_favorites = true;
+            let a = item("BTCUSDT");
+            let mut b = item("ETHUSDT");
+            b.id = a.id;
+            second.push_unchecked(a);
+            second.push_unchecked(b);
+            shared
+                .lock()
+                .unwrap()
+                .replace_documents("watchlist", &[first, second])
+                .unwrap();
+        }
+        let loaded = WatchlistStore::new(shared.clone());
+        assert!(!loaded.load_failed());
+        assert_eq!(
+            loaded
+                .lists()
+                .iter()
+                .filter(|list| list.is_favorites)
+                .count(),
+            1
+        );
+        assert_eq!(
+            loaded.lists()[1].name,
+            "Also favorites",
+            "nothing was deleted"
+        );
+        assert!(loaded.lists().iter().all(|list| list.validate().is_empty()));
+        assert_eq!(loaded.lists()[1].instruments().count(), 2);
     }
 }

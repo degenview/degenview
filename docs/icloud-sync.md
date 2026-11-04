@@ -252,7 +252,7 @@ converge. Randomized tests exercise this. Ordering ties break on `(revision, edi
 
 | Entity | Rule |
 | --- | --- |
-| Watchlist | three-way: a market is its `InstrumentId::key` (`BTC` and `btcusdt` on Binance are one market), so the same market added on two Macs is one row; edit beats delete; order follows whichever side reordered; concurrent inserts ordered by key |
+| Watchlist | three-way: a market is its `InstrumentId::key` (`BTC` and `btcusdt` on Binance are one market), so the same market added on two Macs is one row; edit beats delete; order follows whichever side reordered; concurrent inserts ordered by key; a list holding a row this build does not know (a newer shape) is rejected into the inbox rather than merged, and a list stays within the shared 5,000-row / 200-character bounds |
 | Layout | revision-aware; if only cosmetic fields differ, last writer; if charts/columns differ, the loser is kept as a copy named `Name (conflict from <Mac> <date>)` |
 | Drawing | per record last writer; a delete never touches other drawings (stacking order is deliberately **not** synced: it would make one deletion look like an edit of every later drawing) |
 | Pine script | the loser always survives as a conflict-copy script; text being typed is never overwritten (the update waits until it is saved); a name taken here is suffixed and the suffix is not uploaded |

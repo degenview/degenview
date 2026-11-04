@@ -1890,7 +1890,7 @@ fn prompt_window(
     let mut cancel = false;
     let message = kind.message();
     let field_id = Id::new("watchlist-prompt-name");
-    let valid = !state.prompt_text.trim().is_empty();
+    let valid = Watchlist::validated(&state.prompt_text).is_ok();
     let fresh = ctx.data_mut(|data| data.get_temp::<bool>(field_id).is_none());
     sheet::show(ctx, Id::new("watchlist-prompt"), PROMPT_WIDTH, |ui| {
         ui.add_space(24.0);
@@ -1910,6 +1910,14 @@ fn prompt_window(
                     kit::REGULAR,
                     width,
                 );
+                // A name is at most `MAX_NAME_CHARS`; a longer paste is cut, not refused.
+                if let Some((end, _)) = state
+                    .prompt_text
+                    .char_indices()
+                    .nth(crate::model::watchlist::MAX_NAME_CHARS)
+                {
+                    state.prompt_text.truncate(end);
+                }
                 if fresh {
                     response.request_focus();
                     // Select the current name so typing replaces it.
@@ -2073,6 +2081,7 @@ fn import_window(
                 ui.add_sized(
                     [ui.available_width(), 155.0],
                     egui::TextEdit::multiline(text)
+                        .char_limit(crate::model::watchlist_text::MAX_IMPORT_BYTES)
                         .font(egui::TextStyle::Monospace)
                         .hint_text("BINANCE:BTCUSDT\nCOINBASE:ETH-USD"),
                 );
@@ -2100,8 +2109,13 @@ fn import_window(
                         let result =
                             crate::service::file_dialog::choose_csv("Choose watchlist symbols")
                                 .and_then(|path| {
-                                    path.map(|path| crate::service::file_dialog::read_text(&path))
-                                        .transpose()
+                                    path.map(|path| {
+                                        crate::service::file_dialog::read_text_up_to(
+                                            &path,
+                                            crate::model::watchlist_text::MAX_IMPORT_BYTES,
+                                        )
+                                    })
+                                    .transpose()
                                 });
                         let _ = sender.send(result);
                     });
