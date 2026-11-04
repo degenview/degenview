@@ -5,7 +5,7 @@ implements is the "Linked Chart Zoom and Horizontal Position" document; this fil
 built, what is verified, and what is not.
 
 Code: `model::chart_sync` (pure model and tests), `ui/chart_card/sync.rs` (a chart's side),
-`ui/link_charts.rs` (the popover), the toolbar button in `ui/workspace_toolbar.rs`, and the loop in
+`ui/link_charts.rs` (the popover), the tool-strip tile in `ui/tool_sidebar.rs`, and the loop in
 `workspace::ChartWorkspace::render_grid`. Tests: `model/chart_sync/tests.rs` and
 `ui/chart_card/sync_tests.rs` (several charts through egui's real pointer pipeline).
 
@@ -132,9 +132,10 @@ every chart where it is. Changing a switch resets the hub, so a stale event is n
 
 ## UI
 
-A bubble beside the layout menu: a chain (accent) while linked, a broken chain while not, and not
-drawn at all while the layout holds a single chart. It opens a popover
-with two switches, each a full-width row with its description. Rows take the keyboard (Tab, Space or
+A tile on the left tool strip, under the hide-all-drawings eye behind its own separator: a chain on a
+grey wash (never the blue accent) while linked, a broken chain while not, and not drawn at all while
+the layout holds a single chart (or on a window too short for the options). It opens a popover to
+the right of the strip with two switches, each a full-width row with its description. Rows take the keyboard (Tab, Space or
 Enter) and show a focus ring, carry checkbox accessibility info, and use the app's theme colors.
 
 ## Measurements
@@ -156,8 +157,8 @@ and CPU in the running app, hundreds of drawings or several Pine overlays togeth
 
 ## Not verified, not done
 
-- **Not run in the real app.** Nothing here was driven with a physical mouse, and the toolbar
-  button and popover were not looked at on screen (only drawn headlessly by a test): the
+- **Not run in the real app.** Nothing here was driven with a physical mouse, and the strip
+  tile and popover were not looked at on screen (only drawn headlessly by a test): the
   behaviours above were exercised through egui's input pipeline. Check the icon, the popover's
   spacing in light and dark, and the keyboard focus ring by eye.
 - Trackpad pinch does not zoom a chart in this app (only the wheel and a vertical swipe do), so

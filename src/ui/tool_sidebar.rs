@@ -1,7 +1,7 @@
 //! The vertical tool strip down the left edge of a chart window (Swift `ToolSidebar`): the
 //! drawing tools at the top; Paper Trading, Replay and the alerts bell at the bottom.
 
-use crate::model::{MagnetMode, Tool, ToolGroup};
+use crate::model::{ChartSyncSettings, MagnetMode, Tool, ToolGroup};
 use crate::ui::icons::{self, Icon};
 use crate::ui::{kit, shortcut, theme};
 use eframe::egui::{
@@ -46,6 +46,12 @@ pub struct ToolSidebarInput {
     pub has_market: bool,
     /// Alerts fired since the Alerts window was last looked at.
     pub unseen_alerts: usize,
+    /// What the charts share of horizontal navigation.
+    pub sync: ChartSyncSettings,
+    /// The layout holds more than one chart to link; the Link charts tile only shows then.
+    pub can_link: bool,
+    /// Charts that cannot take part in linking, by title.
+    pub unlinkable: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -61,6 +67,7 @@ pub enum ToolSidebarAction {
     TogglePaper,
     ToggleReplay,
     OpenAlerts,
+    SetSync(ChartSyncSettings),
 }
 
 /// How an active tile is drawn: a lit accent tile for an armed tool, or a tinted glyph on a
@@ -445,8 +452,10 @@ pub fn show(ui: &mut Ui, input: &ToolSidebarInput) -> Vec<ToolSidebarAction> {
             ToolSidebarAction::ToggleHideAll,
         ),
     ];
+    let mut all_options_fit = true;
     for (tile, action) in options {
         if y + BUTTON > limit {
+            all_options_fit = false;
             break;
         }
         let rect = Rect::from_min_size(pos2(x, y), Vec2::splat(BUTTON));
@@ -454,6 +463,20 @@ pub fn show(ui: &mut Ui, input: &ToolSidebarInput) -> Vec<ToolSidebarAction> {
             actions.push(action);
         }
         y += BUTTON + SPACING;
+    }
+
+    // Link charts sits under the options behind its own rule, and only while there is more than
+    // one chart to link. On a short window it is dropped with the options.
+    if input.can_link && all_options_fit && y + 2.0 + SPACING / 2.0 + 2.0 + BUTTON <= limit {
+        y += 2.0;
+        ui.painter().rect_filled(
+            Rect::from_center_size(pos2(strip.center().x, y - SPACING / 2.0), vec2(22.0, 1.0)),
+            0.5,
+            theme::separator(),
+        );
+        y += SPACING / 2.0 + 2.0;
+        let rect = Rect::from_min_size(pos2(x, y), Vec2::splat(BUTTON));
+        link_tile(ui, rect, input, strip.right(), &mut actions);
     }
 
     // The bottom group, laid out upwards from the strip's foot.
@@ -567,6 +590,51 @@ pub fn show(ui: &mut Ui, input: &ToolSidebarInput) -> Vec<ToolSidebarAction> {
 
 /// A tile that opens a menu of tools: it shows the last tool used from the menu, arms it on a
 /// click, and opens the menu from its corner, a right-click or the keyboard.
+/// The Link charts tile: a chain while charts are linked (a grey wash, like every other selected
+/// surface), a broken one while not. It opens the popover with the two options to the right.
+fn link_tile(
+    ui: &mut Ui,
+    rect: Rect,
+    input: &ToolSidebarInput,
+    strip_right: f32,
+    actions: &mut Vec<ToolSidebarAction>,
+) {
+    let linked = input.sync.is_linked();
+    let tip = crate::ui::link_charts::summary(input.sync);
+    let response = tile_button(
+        ui,
+        rect,
+        &Tile {
+            icon: if linked {
+                Icon::ChainLinked
+            } else {
+                Icon::ChainBroken
+            },
+            label: tip,
+            tooltip: tip,
+            active: if linked { Active::Tinted } else { Active::Off },
+            tint: None,
+            enabled: true,
+            badge: 0,
+            key: "link",
+            notch: false,
+            mark: None,
+        },
+        strip_right,
+    );
+    egui::Popup::from_toggle_button_response(&response)
+        .frame(kit::menu_frame())
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+        .align(RectAlign::RIGHT_START)
+        .align_alternatives(&[RectAlign::RIGHT_END])
+        .gap(10.0)
+        .show(|ui| {
+            if let Some(next) = crate::ui::link_charts::show(ui, input.sync, &input.unlinkable) {
+                actions.push(ToolSidebarAction::SetSync(next));
+            }
+        });
+}
+
 fn menu_tile(
     ui: &mut Ui,
     rect: Rect,
@@ -1019,6 +1087,12 @@ mod tests {
                 replay_open: replay,
                 has_market: market,
                 unseen_alerts: unseen,
+                sync: ChartSyncSettings {
+                    horizontal_position: replay,
+                    horizontal_zoom: false,
+                },
+                can_link: market,
+                unlinkable: vec!["ETHUSDT (Renko)".to_owned()],
             };
             let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
                 assert!(show(ui, &state).is_empty(), "nothing was clicked");
@@ -1045,6 +1119,9 @@ mod tests {
             replay_open: false,
             has_market: true,
             unseen_alerts: 0,
+            sync: ChartSyncSettings::default(),
+            can_link: true,
+            unlinkable: Vec::new(),
         }
     }
 
@@ -1102,6 +1179,44 @@ mod tests {
         frame(ctx, time, size, vec![egui::Event::PointerMoved(at)], input);
         frame(ctx, time, size, vec![button(true)], input);
         frame(ctx, time, size, vec![button(false)], input).0
+    }
+
+    /// Clicks down the strip's left half in fresh contexts and returns the `y` values at which a
+    /// popup opened (no tile opens one from a plain click except Link charts).
+    fn popups_opened_by_plain_clicks(input: &ToolSidebarInput, height: f32) -> Vec<f32> {
+        let size = vec2(900.0, height);
+        (0..(height as i32 / 4))
+            .map(|row| row as f32 * 4.0)
+            .filter(|y| {
+                let ctx = egui::Context::default();
+                let mut time = 0.0;
+                for _ in 0..3 {
+                    frame(&ctx, &mut time, size, Vec::new(), input);
+                }
+                click(&ctx, &mut time, size, pos2(10.0, *y), input);
+                frame(&ctx, &mut time, size, Vec::new(), input).1.is_some()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn link_charts_sits_under_the_options_and_only_shows_with_more_than_one_chart() {
+        let mut input = state();
+        input.can_link = false;
+        assert!(
+            popups_opened_by_plain_clicks(&input, 900.0).is_empty(),
+            "no Link charts tile with a single chart"
+        );
+
+        input.can_link = true;
+        let opened = popups_opened_by_plain_clicks(&input, 900.0);
+        assert!(!opened.is_empty(), "the tile opens its popover");
+        // Under the hide-all eye: the options are the four tiles above it.
+        let tile_top = opened.first().copied().unwrap();
+        assert!(tile_top > 300.0, "below the tool tiles: {tile_top}");
+
+        // A short window drops it with the options instead of drawing over the bottom group.
+        assert!(popups_opened_by_plain_clicks(&input, 330.0).is_empty());
     }
 
     /// The grouped tile's corner, where the menu opens from.
