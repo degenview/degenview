@@ -62,7 +62,7 @@ rfd = { version = "0.17", default-features = false, features = ["xdg-portal"] }
 # Asks the X server whether a compositor is running, which decides whether windows round their
 # corners (`ui::window_chrome::rounded_corners`). Already in the tree through winit; the core
 # protocol only.
-x11rb = { version = "0.13", default-features = false }
+x11rb = { version = "0.14", default-features = false }
 
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"
