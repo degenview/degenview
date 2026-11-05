@@ -817,11 +817,11 @@ impl DegenViewMcp {
 
     #[tool(
         name = "degenview_update_watchlist",
-        description = "Change a watchlist in one step: rename it, add / rename / delete sections, and remove, move and add markets (`source` + `symbol`). If anything is refused (a bad name, an unknown or ambiguous section, a full list) nothing changes. Order of application: rename, new sections, renamed sections, removals, moves, additions, deleted sections, so a section made by `add_sections` can be used by `move_markets` and `add` in the same call. A section is named by its id (the `entry_id` of a `section` entry in degenview_get_watchlist) or its title, case ignored; two sections with the same title must be named by id. A market already in the list, or one to remove or move that is not, is skipped and reported (`already_present`, `not_present`), so a retry is harmless. New markets go at the end of the list (the end of its last section) unless given a `section`. A section is a divider: the markets after it, up to the next, belong to it; deleting one keeps its markets.",
+        description = "Change a watchlist in one step: rename it, add / rename / delete sections, and remove, move and add markets (`source` + `symbol`). If anything is refused (a bad name, an unknown or ambiguous section, a full list) nothing changes. Order of application: rename, new sections, renamed sections, removals, moves, additions, deleted sections, so a section made by `add_sections` can be used by `move_markets` and `add` in the same call. A section is named by its id (the `entry_id` of a `section` entry in degenview_get_watchlist) or its title, case ignored; two sections with the same title must be named by id. A market already in the list, or one to remove or move that is not, is skipped and reported (`already_present`, `not_present`), so retrying market changes is harmless. Section changes are not: a retried `add_sections` adds the dividers again, and a retried rename or delete of a section by its old title can fail. Read the list before retrying. New markets go at the end of the list (the end of its last section) unless given a `section`. A section is a divider: the markets after it, up to the next, belong to it; deleting one keeps its markets.",
         annotations(
             read_only_hint = false,
             destructive_hint = false,
-            idempotent_hint = true,
+            idempotent_hint = false,
             open_world_hint = false
         )
     )]

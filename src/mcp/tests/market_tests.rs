@@ -651,6 +651,25 @@ fn a_watchlist_read_is_refused_if_its_grant_is_revoked_during_the_quote_wait() {
     assert_eq!(error_code(&result), "PERMISSION_DENIED", "{result}");
 }
 
+#[test]
+fn update_watchlist_does_not_claim_to_be_idempotent() {
+    // Sections are not deduplicated, so a retry is not harmless and a client must not be told so.
+    let harness = Harness::start(&[("w", "tok", &[Permission::WatchlistsWrite])]);
+    let reply = rpc(&harness.url(), Some("tok"), "tools/list", json!({}));
+    let tools = reply.json()["result"]["tools"].clone();
+    let update = tools
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|tool| tool["name"] == "degenview_update_watchlist")
+        .expect("listed");
+    assert_eq!(
+        update["annotations"]["idempotentHint"],
+        json!(false),
+        "{update}"
+    );
+}
+
 fn bar(day: i64, close: f64) -> crate::model::Kline {
     let open_time = 1_760_918_400_000 + day * 86_400_000;
     crate::model::Kline {
