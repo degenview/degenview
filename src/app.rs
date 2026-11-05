@@ -238,6 +238,8 @@ enum AppAction {
     OpenAlpacaSettings,
     /// Open Settings on the AI Assistant page.
     OpenAiSettings,
+    /// Open Settings on the Snapshots page.
+    OpenSnapshotSettings,
     OpenAlerts,
     /// The price-alert sheet in a chart window saved an alert.
     SavePriceAlert {
@@ -702,6 +704,7 @@ fn show_tab(
                         AppAction::OpenWatchlistInNewTab(item)
                     }
                     WorkspaceAction::OpenAlpacaSettings => AppAction::OpenAlpacaSettings,
+                    WorkspaceAction::OpenSnapshotSettings => AppAction::OpenSnapshotSettings,
                     WorkspaceAction::SetAlertState { id, state } => {
                         AppAction::SetAlertState { id, state }
                     }
@@ -1196,6 +1199,9 @@ impl DegenViewApp {
                 }
                 AppAction::OpenAiSettings => {
                     self.open_settings_page(ctx, WebhookHost::open_ai);
+                }
+                AppAction::OpenSnapshotSettings => {
+                    self.open_settings_page(ctx, WebhookHost::open_snapshots);
                 }
                 AppAction::OpenAlerts => {
                     if self.alerts_open.swap(true, Ordering::AcqRel) {

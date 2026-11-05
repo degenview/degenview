@@ -33,6 +33,8 @@ enum ChartCommand {
     SetChartType(u64, crate::model::ChartType),
     /// A row of one chart card's camera menu was picked.
     Snapshot(u64, crate::model::snapshot::SnapshotAction),
+    /// The camera menu's "Configure Snapshots…" row was picked.
+    SnapshotSettings,
 }
 
 /// A star or membership toggle that finds the market already in (or already out of) the list
@@ -652,6 +654,9 @@ impl ChartWorkspace {
                                 if let Some(action) = drawn.inner.inner.snapshot {
                                     commands.push(ChartCommand::Snapshot(chart_id, action));
                                 }
+                                if drawn.inner.inner.snapshot_settings {
+                                    commands.push(ChartCommand::SnapshotSettings);
+                                }
                                 if drawn.inner.inner.settings_requested {
                                     commands.push(ChartCommand::Settings(chart_id));
                                 }
@@ -735,6 +740,7 @@ impl ChartWorkspace {
                 ChartCommand::Snapshot(chart_id, action) => {
                     self.begin_snapshot(&ctx, chart_id, action);
                 }
+                ChartCommand::SnapshotSettings => self.snapshot.settings_requested = true,
                 ChartCommand::Remove(chart_id) => self.removing_chart = Some(chart_id),
                 ChartCommand::Settings(chart_id) => {
                     self.settings_state = ChartSettingsState::default();

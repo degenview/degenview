@@ -20,6 +20,18 @@ pub struct SnapshotMenu<'a> {
     pub shortcut: &'a dyn Fn(SnapshotAction) -> Option<String>,
 }
 
+/// What the menu reports when a row is picked.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Pick {
+    /// Take a snapshot and do this with it.
+    Take(SnapshotAction),
+    /// Open Settings on the Snapshots page.
+    Configure,
+}
+
+/// The row after the separator, which opens the Snapshots page of Settings.
+const CONFIGURE_LABEL: &str = "Configure Snapshots…";
+
 const fn icon(action: SnapshotAction) -> Icon {
     match action {
         SnapshotAction::Download => Icon::Download,
@@ -42,7 +54,7 @@ fn unavailable(action: SnapshotAction, menu: &SnapshotMenu) -> Option<String> {
 }
 
 /// The header button. Returns the row picked this frame.
-pub fn button(ui: &mut egui::Ui, menu: &SnapshotMenu) -> Option<SnapshotAction> {
+pub fn button(ui: &mut egui::Ui, menu: &SnapshotMenu) -> Option<Pick> {
     let size = 27.0;
     let (rect, response) = ui.allocate_exact_size(Vec2::splat(size), Sense::click());
     let response =
@@ -82,6 +94,7 @@ pub fn button(ui: &mut egui::Ui, menu: &SnapshotMenu) -> Option<SnapshotAction> 
         .into_iter()
         .zip(&hints)
         .map(|(action, hint)| (action.label(), hint.as_deref()))
+        .chain([(CONFIGURE_LABEL, None)])
         .collect();
     let width = kit::menu_width_for_rows(ui, &rows, 0.0);
     egui::Popup::menu(&response)
@@ -110,9 +123,22 @@ pub fn button(ui: &mut egui::Ui, menu: &SnapshotMenu) -> Option<SnapshotAction> 
                 if let Some(reason) = &blocked {
                     row.on_hover_text(reason);
                 } else if row.clicked() {
-                    picked = Some(action);
+                    picked = Some(Pick::Take(action));
                     ui.close();
                 }
+            }
+            // Never blocked: it is where a missing host is fixed.
+            kit::menu_separator(ui);
+            let configure = kit::menu_row(
+                ui,
+                kit::MenuRow {
+                    icon: Some(Icon::Sliders),
+                    ..kit::MenuRow::new(CONFIGURE_LABEL)
+                },
+            );
+            if configure.clicked() {
+                picked = Some(Pick::Configure);
+                ui.close();
             }
         });
     picked
@@ -188,7 +214,7 @@ mod tests {
         ctx: &egui::Context,
         menu: &SnapshotMenu,
         events: Vec<egui::Event>,
-    ) -> (Rect, Option<SnapshotAction>) {
+    ) -> (Rect, Option<Pick>) {
         let raw = egui::RawInput {
             screen_rect: Some(Rect::from_min_size(
                 egui::Pos2::ZERO,
@@ -246,6 +272,29 @@ mod tests {
         );
         let (_, first) = frame(&ctx, &menu, click(row));
         let (_, second) = frame(&ctx, &menu, Vec::new());
-        assert_eq!(first.or(second), Some(SnapshotAction::Download));
+        assert_eq!(first.or(second), Some(Pick::Take(SnapshotAction::Download)));
+    }
+
+    /// The last row, after the separator, asks for the Snapshots page of Settings, and it works
+    /// while a snapshot is being made and when no host is set.
+    #[test]
+    fn the_last_row_configures_snapshots_even_when_the_others_wait() {
+        let ctx = egui::Context::default();
+        let menu = SnapshotMenu {
+            busy: true,
+            hosting_unavailable: Some("Set a host"),
+            shortcut: &none,
+        };
+        let (button_rect, _) = frame(&ctx, &menu, Vec::new());
+        frame(&ctx, &menu, click(button_rect.center()));
+        frame(&ctx, &menu, Vec::new());
+        // Heading, five rows, then the separator, each row 24 points tall.
+        let row = egui::pos2(
+            button_rect.left() + 40.0,
+            button_rect.bottom() + 6.0 + 24.0 + 5.0 * 24.0 + 9.0 + 12.0,
+        );
+        let (_, first) = frame(&ctx, &menu, click(row));
+        let (_, second) = frame(&ctx, &menu, Vec::new());
+        assert_eq!(first.or(second), Some(Pick::Configure));
     }
 }
