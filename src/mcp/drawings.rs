@@ -106,6 +106,11 @@ impl McpDrawingTool {
         }
     }
 
+    /// Whether a line width and dash apply: a text label has no line to draw them on.
+    pub fn takes_stroke(self) -> bool {
+        self != Self::Text
+    }
+
     /// Whether a fill colour applies.
     pub fn takes_fill(self) -> bool {
         self == Self::Rectangle
@@ -139,6 +144,12 @@ impl McpDrawingTool {
 
     /// The patch is refused when it names something this tool does not take.
     pub fn check_patch(self, patch: &StylePatch) -> Result<(), McpError> {
+        if (patch.width.is_some() || patch.dash.is_some()) && !self.takes_stroke() {
+            return Err(invalid(format!(
+                "width and dash do not apply to {}",
+                self.name()
+            )));
+        }
         if patch.fill_color.is_some() && !self.takes_fill() {
             return Err(invalid(format!(
                 "fill_color does not apply to {}",
@@ -277,9 +288,10 @@ pub struct NewDrawingArg {
     /// Line colour as `#RRGGBB` or `#RRGGBBAA`. Default: the app's own for that tool.
     #[schemars(length(max = 9))]
     pub color: Option<String>,
-    /// Line width in pixels, 0.5 to 60.
+    /// Line width in pixels, 0.5 to 60. Not for `text`, which has no line.
     #[schemars(range(min = 0.5, max = 60.0))]
     pub width: Option<f64>,
+    /// Line dash. Not for `text`.
     pub dash: Option<McpDash>,
     /// Prolong to the left edge of the chart.
     pub extend_left: Option<bool>,
@@ -691,5 +703,81 @@ mod tests {
         for bad in ["", "0", "-1", "1.5", "abc", "99999999999999999999999"] {
             assert!(parse_drawing_id(bad).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn every_tool_takes_only_the_style_fields_that_show() {
+        use crate::model::chart_type::LineDash;
+        let one = |patch: StylePatch| patch;
+        for tool in McpDrawingTool::ALL {
+            let fields = [
+                (
+                    "width",
+                    one(StylePatch {
+                        width: Some(2.0),
+                        ..StylePatch::default()
+                    }),
+                    tool.takes_stroke(),
+                ),
+                (
+                    "dash",
+                    one(StylePatch {
+                        dash: Some(LineDash::Dashed),
+                        ..StylePatch::default()
+                    }),
+                    tool.takes_stroke(),
+                ),
+                (
+                    "fill_color",
+                    one(StylePatch {
+                        fill_color: Some([1, 2, 3, 4]),
+                        ..StylePatch::default()
+                    }),
+                    tool.takes_fill(),
+                ),
+                (
+                    "text",
+                    one(StylePatch {
+                        text: Some("x".into()),
+                        ..StylePatch::default()
+                    }),
+                    tool.takes_text(),
+                ),
+                (
+                    "extend_left",
+                    one(StylePatch {
+                        extend_left: Some(true),
+                        ..StylePatch::default()
+                    }),
+                    tool.takes_extension(),
+                ),
+                (
+                    "extend_right",
+                    one(StylePatch {
+                        extend_right: Some(true),
+                        ..StylePatch::default()
+                    }),
+                    tool.takes_extension(),
+                ),
+                (
+                    "color",
+                    one(StylePatch {
+                        color: Some([1, 2, 3, 255]),
+                        ..StylePatch::default()
+                    }),
+                    true,
+                ),
+            ];
+            for (field, patch, applies) in fields {
+                assert_eq!(
+                    tool.check_patch(&patch).is_ok(),
+                    applies,
+                    "{field} on {}",
+                    tool.name()
+                );
+            }
+        }
+        assert!(!McpDrawingTool::Text.takes_stroke());
+        assert!(McpDrawingTool::Crossline.takes_stroke());
     }
 }
