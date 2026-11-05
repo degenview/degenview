@@ -36,6 +36,22 @@
   committed through `apply_planned_drawings` (the pointer's path, one undo step); tool threads never
   read `Chart.drawings` or `Chart.candles`. Candles returned are the market's own, not constructed
   bars. Validate arguments in `mcp::drawings` before queueing, and never edit a locked drawing.
+- Symbol search and quotes (`mcp/market_tools.rs`) run on tool threads without the bridge: search
+  through `McpShared::market_search`, quotes through a `QuoteLease` on the app's quote feed
+  (`attach_quotes`), released on drop. Watchlist tools go through the bridge and
+  `WatchlistStore::edit_list`; never write watchlist rows from a tool thread. A tool that needs a
+  second permission (`get_watchlist` with `include_quotes`) checks it with `McpShared::allows`.
+- Paper-trading writes (`mcp/paper_tools.rs`, `mcp_host::place_paper_order` and friends) go through
+  `PaperHost::{submit,modify,cancel,close_position}` only, always check
+  `tradable_account` first (an account another Mac runs is never changed over MCP), and keep every
+  new write behind its own off-by-default permission. No tool may reach a real broker.
+- A write tool never returns data that sits behind a read grant the caller lacks: paper writes
+  drop the account unless the credential also holds `paper.read` (re-checked after the write).
+  Anything a tool waits on is re-checked after the wait, for every permission covering the final
+  payload.
+- Indicator readings use the bars the chart draws (`ChartWorkspace::constructed_bars` for Heikin
+  Ashi, Renko and the other built types), never the raw candles; `degenview_get_candles` stays the
+  market's own. A paper `request_id` is bound to its order (another order under it is `CONFLICT`).
 - Settings holds the store lock, so its MCP UI returns `McpAction`s for `McpHost::queue`; never call
   `McpHost::apply` inside the Settings closure.
 - Verify against `127.0.0.1:<port>/mcp` with seeded `mcp.settings`/`mcp_client` rows, a throwaway

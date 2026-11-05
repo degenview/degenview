@@ -9,9 +9,20 @@
 
 pub mod auth;
 pub mod bridge;
+pub mod chart_control;
 pub mod chart_data;
 pub mod drawings;
+pub mod indicator_tools;
+pub mod indicator_values;
+pub mod market_tools;
+pub mod markets;
+pub mod paper;
+pub mod paper_tools;
 pub mod pine;
+pub mod portfolio;
+pub mod portfolio_tools;
+pub mod replay_tools;
+pub mod snapshot_tools;
 pub mod state;
 pub mod tools;
 pub mod transport;

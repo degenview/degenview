@@ -138,6 +138,114 @@ pub enum McpCommand {
         expected_revision: String,
         source: Option<String>,
     },
+    /// Takes a built-in indicator off a chart.
+    RemoveIndicator {
+        workspace_id: u64,
+        chart_id: u64,
+        indicator: BuiltIn,
+    },
+    /// Built-in indicator readings over a chart's candles.
+    GetIndicatorValues {
+        workspace_id: u64,
+        chart_id: u64,
+        request: crate::mcp::indicator_values::ReadingRequest,
+    },
+    /// Moves the whole workspace to another timeframe.
+    SetTimeframe {
+        workspace_id: u64,
+        timeframe: crate::model::Timeframe,
+    },
+    SetChartType {
+        workspace_id: u64,
+        chart_id: u64,
+        chart_type: crate::model::ChartType,
+    },
+    RemoveChart {
+        workspace_id: u64,
+        chart_id: u64,
+    },
+    ListPaperAccounts,
+    GetPaperAccount {
+        account_id: u64,
+    },
+    /// Fills (`closed_trades: false`) or closed trades of an account, newest first.
+    ListPaperHistory {
+        account_id: u64,
+        closed_trades: bool,
+        offset: usize,
+        limit: usize,
+    },
+    /// Places a paper order (or only checks it, for a dry run). `request_id` makes a retry
+    /// return the order already placed instead of placing another.
+    PlacePaperOrder {
+        request: Box<crate::model::paper::PaperOrderRequest>,
+        dry_run: bool,
+        request_id: Option<String>,
+    },
+    ModifyPaperOrder {
+        order_id: u64,
+        changes: crate::model::paper::PaperOrderChanges,
+    },
+    /// Cancels the named working orders, or every working order of the account.
+    CancelPaperOrders {
+        account_id: u64,
+        order_ids: Option<Vec<u64>>,
+    },
+    /// Closes one position (by instrument key) or every open position of the account.
+    ClosePaperPositions {
+        account_id: u64,
+        instrument_key: Option<String>,
+    },
+    ListPortfolios,
+    /// The ledger side of a holdings read: one portfolio, or every unarchived one.
+    GetPortfolioHoldings {
+        portfolio_id: Option<u64>,
+    },
+    ListPortfolioTransactions {
+        portfolio_id: Option<u64>,
+        asset: Option<String>,
+        offset: usize,
+        limit: usize,
+    },
+    /// Starts a picture of a chart; the answer says which job to ask about.
+    BeginSnapshot {
+        workspace_id: u64,
+        chart_id: u64,
+        scale: crate::model::snapshot::SnapshotScale,
+    },
+    /// Whether the picture a job is making is ready, and takes it if so.
+    PollSnapshot {
+        job_id: u64,
+    },
+    GetReplay {
+        workspace_id: u64,
+    },
+    ControlReplay {
+        workspace_id: u64,
+        command: crate::workspace::ReplayCommand,
+    },
+    ListWatchlists,
+    /// One page of a watchlist's entries. Quotes are not read here (the tool waits for them
+    /// off the app thread); the reply names the markets on the page.
+    GetWatchlist {
+        watchlist_id: u64,
+        offset: usize,
+        limit: usize,
+    },
+    /// A new list, optionally with markets already in it.
+    CreateWatchlist {
+        name: String,
+        markets: Vec<crate::model::watchlist::WatchlistInstrument>,
+    },
+    /// Renames a list, edits its sections and adds, removes and moves its markets, all or
+    /// nothing.
+    UpdateWatchlist {
+        watchlist_id: u64,
+        changes: Box<crate::store::watchlist::ListChanges>,
+    },
+    DeleteWatchlist {
+        watchlist_id: u64,
+    },
 }
 
 /// A validated request to create a price alert. The target stays text: the alert editor parses
@@ -185,6 +293,24 @@ pub enum McpReply {
     Drawings(Box<DrawingsResult>),
     DrawingsChanged(Box<DrawingsChangeResult>),
     PineEdit(Box<crate::mcp::types::PineEditResult>),
+    IndicatorValues(Box<crate::mcp::indicator_values::IndicatorValuesResult>),
+    Timeframe(crate::mcp::chart_control::TimeframeResult),
+    ChartChanged(Box<crate::mcp::chart_control::ChartChangeResult>),
+    PaperAccounts(crate::mcp::paper::PaperAccountsResult),
+    PaperAccount(Box<crate::mcp::paper::PaperAccountDetail>),
+    PaperFills(Box<crate::mcp::paper::PaperFillsResult>),
+    PaperTrades(Box<crate::mcp::paper::PaperTradesResult>),
+    PaperOrder(Box<crate::mcp::paper::PaperOrderResult>),
+    PaperChange(Box<crate::mcp::paper::PaperChangeResult>),
+    Portfolios(crate::mcp::portfolio::PortfoliosResult),
+    PortfolioHoldings(Box<crate::mcp::portfolio::HoldingsBase>),
+    PortfolioTransactions(Box<crate::mcp::portfolio::TransactionsResult>),
+    SnapshotStarted(crate::mcp::snapshot_tools::SnapshotStarted),
+    SnapshotProgress(crate::mcp::snapshot_tools::SnapshotProgress),
+    Replay(crate::mcp::replay_tools::ReplayResult),
+    Watchlists(crate::mcp::markets::WatchlistsResult),
+    Watchlist(Box<crate::mcp::markets::WatchlistPage>),
+    WatchlistChanged(Box<crate::mcp::markets::WatchlistChangeResult>),
 }
 
 /// The alert runtime applies queued commands on its own schedule and may refuse one whose

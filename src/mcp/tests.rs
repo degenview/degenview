@@ -1,5 +1,6 @@
 //! End-to-end tests over a real loopback socket, with a stub standing in for the app thread.
 
+use crate::host::mcp_host;
 use crate::mcp::McpServer;
 use crate::mcp::auth::verifier_hex;
 use crate::mcp::bridge::{self, McpCommand, McpError, McpReply};
@@ -37,7 +38,65 @@ struct Stub {
     chart: Mutex<StubChart>,
     /// Candle and drawing commands that reached the app, by kind.
     draw_calls: Mutex<Vec<String>>,
+    /// The watchlists the app holds: the real store over an in-memory database.
+    watchlists: StubWatchlists,
+    paper: StubPaper,
+    portfolio: StubPortfolio,
+    /// The replay clock over the stub chart's thirty bars.
+    replay: Mutex<crate::model::ReplayEngine>,
+    /// Polls seen per picture job: the first answers `pending`, the next the picture.
+    snapshot_polls: Mutex<std::collections::HashMap<u64, u32>>,
 }
+
+/// The paper-trading host the stub app serves: the real host over an in-memory database.
+struct StubPaper(
+    Mutex<crate::host::paper_host::PaperHost>,
+    Mutex<mcp_host::OrderMemory>,
+    crate::store::SharedStore,
+);
+
+impl Default for StubPaper {
+    fn default() -> Self {
+        let shared = crate::store::SharedStore::new(Mutex::new(
+            crate::store::Store::open_in_memory().expect("store"),
+        ));
+        Self(
+            Mutex::new(crate::host::paper_host::PaperHost::load(shared.clone())),
+            Mutex::new(mcp_host::OrderMemory::default()),
+            shared,
+        )
+    }
+}
+
+/// The portfolio host the stub app serves: the real host over an in-memory database.
+struct StubPortfolio(Mutex<crate::host::portfolio_host::PortfolioHost>);
+
+impl Default for StubPortfolio {
+    fn default() -> Self {
+        let shared = crate::store::SharedStore::new(Mutex::new(
+            crate::store::Store::open_in_memory().expect("store"),
+        ));
+        Self(Mutex::new(
+            crate::host::portfolio_host::PortfolioHost::load(shared),
+        ))
+    }
+}
+
+struct StubWatchlists(Mutex<crate::store::watchlist::WatchlistStore>);
+
+impl Default for StubWatchlists {
+    fn default() -> Self {
+        let shared = crate::store::SharedStore::new(Mutex::new(
+            crate::store::Store::open_in_memory().expect("store"),
+        ));
+        Self(Mutex::new(crate::store::watchlist::WatchlistStore::new(
+            shared,
+        )))
+    }
+}
+
+/// The picture the stub hands out: the eight-byte PNG signature and a few bytes after it.
+const STUB_PNG: &[u8] = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDRstub";
 
 /// 2025-10-20T00:00:00Z.
 const T0: i64 = 1_760_918_400_000;
@@ -186,6 +245,33 @@ impl Harness {
         }
     }
 
+    /// Candle, drawing and chart-control commands that reached the stub app, in order.
+    pub fn draw_calls(&self) -> Vec<String> {
+        self.stub.draw_calls.lock().unwrap().clone()
+    }
+
+    /// The database behind the stub paper host, to seed what another Mac would have written.
+    pub fn paper_store(&self) -> crate::store::SharedStore {
+        self.stub.paper.2.clone()
+    }
+
+    /// The paper host behind the stub app, to seed accounts and orders.
+    pub fn paper(&self) -> std::sync::MutexGuard<'_, crate::host::paper_host::PaperHost> {
+        self.stub.paper.0.lock().unwrap()
+    }
+
+    /// The portfolio host behind the stub app, to seed portfolios and transactions.
+    pub fn portfolio(
+        &self,
+    ) -> std::sync::MutexGuard<'_, crate::host::portfolio_host::PortfolioHost> {
+        self.stub.portfolio.0.lock().unwrap()
+    }
+
+    /// The stub chart (workspace 1, chart 2), to seed what a person drew.
+    fn stub_chart(&self) -> std::sync::MutexGuard<'_, StubChart> {
+        self.stub.chart.lock().unwrap()
+    }
+
     pub fn url(&self) -> String {
         format!("http://127.0.0.1:{}/mcp", self.port)
     }
@@ -242,6 +328,219 @@ fn stub_app(
             active: true,
             timeframe: "1D".into(),
         }])),
+        McpCommand::BeginSnapshot {
+            workspace_id,
+            chart_id,
+            scale,
+        } => {
+            stub_chart_known(workspace_id, chart_id)?;
+            stub.draw_calls
+                .lock()
+                .unwrap()
+                .push(format!("snapshot:{scale:?}"));
+            let factor = scale.factor() as u32;
+            stub.snapshot_polls.lock().unwrap().insert(7, 0);
+            Ok(McpReply::SnapshotStarted(
+                crate::mcp::snapshot_tools::SnapshotStarted {
+                    job_id: 7,
+                    width: 640 * factor,
+                    height: 400 * factor,
+                },
+            ))
+        }
+        McpCommand::PollSnapshot { job_id } => {
+            let mut polls = stub.snapshot_polls.lock().unwrap();
+            let Some(seen) = polls.get_mut(&job_id) else {
+                return Err(McpError::NotFound("No such picture job".into()));
+            };
+            *seen += 1;
+            if *seen < 2 {
+                return Ok(McpReply::SnapshotProgress(
+                    crate::mcp::snapshot_tools::SnapshotProgress::Pending,
+                ));
+            }
+            polls.remove(&job_id);
+            Ok(McpReply::SnapshotProgress(
+                crate::mcp::snapshot_tools::SnapshotProgress::Ready {
+                    png: Arc::new(STUB_PNG.to_vec()),
+                    width: 640,
+                    height: 400,
+                },
+            ))
+        }
+        McpCommand::GetReplay { workspace_id } => {
+            if workspace_id != 1 {
+                return Err(McpError::NotFound("No such workspace".into()));
+            }
+            let engine = stub.replay.lock().unwrap();
+            Ok(McpReply::Replay(crate::mcp::replay_tools::replay_result(
+                1,
+                "1D",
+                &engine.view(false),
+            )))
+        }
+        McpCommand::ControlReplay {
+            workspace_id,
+            command,
+        } => {
+            use crate::workspace::{ReplayCommand, ReplayStart};
+            if workspace_id != 1 {
+                return Err(McpError::NotFound("No such workspace".into()));
+            }
+            let mut engine = stub.replay.lock().unwrap();
+            let clock = match command {
+                ReplayCommand::Start { chart_id, at } => {
+                    if chart_id.is_some_and(|id| id != 2) {
+                        return Err(McpError::NotFound("No such chart".into()));
+                    }
+                    let timeline: Vec<i64> = stub
+                        .chart
+                        .lock()
+                        .unwrap()
+                        .candles
+                        .iter()
+                        .map(|bar| bar.open_time)
+                        .collect();
+                    let requested = match at {
+                        ReplayStart::First => timeline[0],
+                        ReplayStart::At(time) => time,
+                    };
+                    engine.start(requested, "BTCUSDT", timeline);
+                    return Ok(McpReply::Replay(crate::mcp::replay_tools::replay_result(
+                        1,
+                        "1D",
+                        &engine.view(false),
+                    )));
+                }
+                ReplayCommand::Play => crate::model::ClockCommand::Play,
+                ReplayCommand::Pause => crate::model::ClockCommand::Pause,
+                ReplayCommand::StepForward(steps) => crate::model::ClockCommand::StepForward(steps),
+                ReplayCommand::StepBack(steps) => crate::model::ClockCommand::StepBack(steps),
+                ReplayCommand::Restart => crate::model::ClockCommand::Restart,
+                ReplayCommand::Seek(time) => crate::model::ClockCommand::Seek(time),
+                ReplayCommand::SetSpeed(speed) => crate::model::ClockCommand::SetSpeed(speed),
+                ReplayCommand::Stop => crate::model::ClockCommand::Stop,
+            };
+            if !engine.apply(clock) {
+                return Err(McpError::Conflict("No replay is running".into()));
+            }
+            Ok(McpReply::Replay(crate::mcp::replay_tools::replay_result(
+                1,
+                "1D",
+                &engine.view(false),
+            )))
+        }
+        McpCommand::ListPortfolios => {
+            let host = stub.portfolio.0.lock().unwrap();
+            mcp_host::list_portfolios(&host).map(McpReply::Portfolios)
+        }
+        McpCommand::GetPortfolioHoldings { portfolio_id } => {
+            let host = stub.portfolio.0.lock().unwrap();
+            mcp_host::portfolio_holdings_base(&host, portfolio_id, 0)
+                .map(|base| McpReply::PortfolioHoldings(Box::new(base)))
+        }
+        McpCommand::ListPortfolioTransactions {
+            portfolio_id,
+            asset,
+            offset,
+            limit,
+        } => {
+            let host = stub.portfolio.0.lock().unwrap();
+            mcp_host::portfolio_transactions(&host, portfolio_id, asset.as_deref(), offset, limit)
+                .map(|result| McpReply::PortfolioTransactions(Box::new(result)))
+        }
+        McpCommand::PlacePaperOrder {
+            request,
+            dry_run,
+            request_id,
+        } => {
+            let mut host = stub.paper.0.lock().unwrap();
+            let mut memory = stub.paper.1.lock().unwrap();
+            mcp_host::place_paper_order(
+                &mut host,
+                &mut memory,
+                *request,
+                dry_run,
+                request_id.as_deref(),
+            )
+            .map(|result| McpReply::PaperOrder(Box::new(result)))
+        }
+        McpCommand::ModifyPaperOrder { order_id, changes } => {
+            let mut host = stub.paper.0.lock().unwrap();
+            mcp_host::modify_paper_order(&mut host, order_id, changes)
+                .map(|result| McpReply::PaperChange(Box::new(result)))
+        }
+        McpCommand::CancelPaperOrders {
+            account_id,
+            order_ids,
+        } => {
+            let mut host = stub.paper.0.lock().unwrap();
+            mcp_host::cancel_paper_orders(&mut host, account_id, order_ids.as_deref())
+                .map(|result| McpReply::PaperChange(Box::new(result)))
+        }
+        McpCommand::ClosePaperPositions {
+            account_id,
+            instrument_key,
+        } => {
+            let mut host = stub.paper.0.lock().unwrap();
+            mcp_host::close_paper_positions(&mut host, account_id, instrument_key.as_deref())
+                .map(|result| McpReply::PaperChange(Box::new(result)))
+        }
+        McpCommand::ListPaperAccounts => {
+            let host = stub.paper.0.lock().unwrap();
+            mcp_host::list_paper_accounts(&host).map(McpReply::PaperAccounts)
+        }
+        McpCommand::GetPaperAccount { account_id } => {
+            let host = stub.paper.0.lock().unwrap();
+            mcp_host::get_paper_account(&host, account_id)
+                .map(|detail| McpReply::PaperAccount(Box::new(detail)))
+        }
+        McpCommand::ListPaperHistory {
+            account_id,
+            closed_trades,
+            offset,
+            limit,
+        } => {
+            let host = stub.paper.0.lock().unwrap();
+            if closed_trades {
+                mcp_host::paper_trades(&host, account_id, offset, limit)
+                    .map(|result| McpReply::PaperTrades(Box::new(result)))
+            } else {
+                mcp_host::paper_fills(&host, account_id, offset, limit)
+                    .map(|result| McpReply::PaperFills(Box::new(result)))
+            }
+        }
+        McpCommand::ListWatchlists => {
+            let store = stub.watchlists.0.lock().unwrap();
+            mcp_host::list_watchlists(&store).map(McpReply::Watchlists)
+        }
+        McpCommand::GetWatchlist {
+            watchlist_id,
+            offset,
+            limit,
+        } => {
+            let store = stub.watchlists.0.lock().unwrap();
+            mcp_host::get_watchlist(&store, watchlist_id, offset, limit)
+                .map(|page| McpReply::Watchlist(Box::new(page)))
+        }
+        McpCommand::CreateWatchlist { name, markets } => {
+            let mut store = stub.watchlists.0.lock().unwrap();
+            mcp_host::create_watchlist(&mut store, &name, markets)
+                .map(|result| McpReply::WatchlistChanged(Box::new(result)))
+        }
+        McpCommand::UpdateWatchlist {
+            watchlist_id,
+            changes,
+        } => {
+            let mut store = stub.watchlists.0.lock().unwrap();
+            mcp_host::update_watchlist(&mut store, watchlist_id, *changes)
+                .map(|result| McpReply::WatchlistChanged(Box::new(result)))
+        }
+        McpCommand::DeleteWatchlist { watchlist_id } => {
+            let mut store = stub.watchlists.0.lock().unwrap();
+            mcp_host::delete_watchlist(&mut store, watchlist_id)
+                .map(|result| McpReply::WatchlistChanged(Box::new(result)))
+        }
         McpCommand::ListCharts { workspace_id: 1 } => Ok(McpReply::Charts(ChartsResult {
             workspace_id: "1".into(),
             charts: Vec::new(),
@@ -669,6 +968,109 @@ fn stub_app(
                 },
             }))
         }
+        McpCommand::SetTimeframe {
+            workspace_id,
+            timeframe,
+        } => {
+            if workspace_id != 1 {
+                return Err(McpError::NotFound("No such workspace".into()));
+            }
+            stub.draw_calls
+                .lock()
+                .unwrap()
+                .push(format!("timeframe:{}", timeframe.label()));
+            Ok(McpReply::Timeframe(
+                crate::mcp::chart_control::TimeframeResult {
+                    workspace_id: "1".into(),
+                    timeframe: timeframe.label().into(),
+                    previous_timeframe: "1D".into(),
+                    status: "changed".into(),
+                    chart_count: 1,
+                },
+            ))
+        }
+        McpCommand::SetChartType {
+            workspace_id,
+            chart_id,
+            chart_type,
+        } => {
+            stub_chart_known(workspace_id, chart_id)?;
+            stub.draw_calls
+                .lock()
+                .unwrap()
+                .push(format!("chart_type:{}", chart_type.slug()));
+            Ok(McpReply::ChartChanged(Box::new(
+                crate::mcp::chart_control::ChartChangeResult {
+                    workspace_id: "1".into(),
+                    chart_id: "2".into(),
+                    status: "changed".into(),
+                    chart: None,
+                    charts_in_workspace: 1,
+                },
+            )))
+        }
+        McpCommand::RemoveChart {
+            workspace_id,
+            chart_id,
+        } => {
+            stub_chart_known(workspace_id, chart_id)?;
+            stub.draw_calls.lock().unwrap().push("remove_chart".into());
+            Ok(McpReply::ChartChanged(Box::new(
+                crate::mcp::chart_control::ChartChangeResult {
+                    workspace_id: "1".into(),
+                    chart_id: "2".into(),
+                    status: "removed".into(),
+                    chart: None,
+                    charts_in_workspace: 0,
+                },
+            )))
+        }
+        McpCommand::RemoveIndicator {
+            workspace_id,
+            chart_id,
+            indicator,
+        } => {
+            stub_chart_known(workspace_id, chart_id)?;
+            stub.draw_calls
+                .lock()
+                .unwrap()
+                .push(format!("remove_indicator:{}", indicator.id()));
+            Ok(McpReply::IndicatorApplied(AddIndicatorResult {
+                workspace_id: "1".into(),
+                chart_id: "2".into(),
+                indicator: indicator.id().to_owned(),
+                status: "removed".into(),
+                indicators: IndicatorsInfo {
+                    volume: false,
+                    rsi: false,
+                    ema: false,
+                    ema_period: 20,
+                    bollinger: false,
+                    trend_flips: false,
+                },
+            }))
+        }
+        McpCommand::GetIndicatorValues {
+            workspace_id,
+            chart_id,
+            request,
+        } => {
+            stub_chart_known(workspace_id, chart_id)?;
+            let chart = stub.chart.lock().unwrap();
+            let meta = crate::mcp::indicator_values::ReadingMeta {
+                workspace_id,
+                chart_id,
+                instrument: "BINANCE:BTCUSDT".into(),
+                timeframe: "1D".into(),
+                chart_type: "candles".into(),
+                constructed: false,
+                replay_ms: None,
+                now_ms: i64::MAX,
+            };
+            Ok(McpReply::IndicatorValues(Box::new(
+                crate::mcp::indicator_values::indicator_values(&meta, &chart.candles, &request),
+            )))
+        }
         McpCommand::AddChart {
             workspace_id,
             instrument,
@@ -862,6 +1264,7 @@ fn discovery_and_calls_work_for_a_permitted_client() {
         tool_names(&url, "tok"),
         [
             "degenview_add_chart",
+            "degenview_get_replay",
             "degenview_list_charts",
             "degenview_list_indicators",
             "degenview_list_workspaces"
@@ -979,6 +1382,7 @@ fn permissions_are_enforced_on_every_call_not_just_discovery() {
     assert_eq!(
         tool_names(&url, "read-tok"),
         [
+            "degenview_get_replay",
             "degenview_list_charts",
             "degenview_list_indicators",
             "degenview_list_workspaces"
@@ -1026,6 +1430,7 @@ fn permissions_are_enforced_on_every_call_not_just_discovery() {
     assert_eq!(
         tool_names(&url, "write-tok"),
         [
+            "degenview_get_replay",
             "degenview_list_charts",
             "degenview_list_indicators",
             "degenview_list_workspaces"
@@ -2763,7 +3168,10 @@ fn candles_and_drawings_have_their_own_permissions() {
             }
         }
     }
-    assert_eq!(tool_names(&url, "candles-tok"), ["degenview_get_candles"]);
+    assert_eq!(
+        tool_names(&url, "candles-tok"),
+        ["degenview_get_candles", "degenview_get_indicator_values"]
+    );
     assert_eq!(tool_names(&url, "read-tok"), ["degenview_list_drawings"]);
     assert_eq!(
         tool_names(&url, "write-tok"),
@@ -3186,3 +3594,12 @@ fn tool_schemas_use_only_standard_formats() {
     // Unsigned integers still say they are non-negative.
     assert!(reply.body.contains("\"minimum\":0"), "{}", reply.body);
 }
+
+mod chart_control_tests;
+mod drawing_tools_tests;
+mod indicator_tests;
+mod market_tests;
+mod paper_tests;
+mod portfolio_tests;
+mod replay_tests;
+mod snapshot_tests;

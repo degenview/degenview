@@ -15,6 +15,35 @@ next. Nothing here is started.
 | 5 | Pine source editing: draft update and explicit save, revision-checked against the open editor | `pine.scripts.write`, `pine.scripts.save` |
 | 6 | Pine on charts: apply a saved script (with input overrides), change an applied script's inputs and visibility, remove it | `charts.pine_instances.write` |
 | 7 | Candles and drawings: read a chart's candles, list drawings, add/move/restyle/delete trend lines and rectangles | `charts.candles.read`, `drawings.read`, `drawings.write`, `drawings.delete` |
+| 8 | Markets and watchlists: search symbols, read quotes, list/read watchlists (with quotes), create, rename, add/remove markets, delete | `markets.read`, `watchlists.read`, `watchlists.write`, `watchlists.delete` |
+| 9 | Indicator values and removal: RSI, EMA, Bollinger and trend-flip series for a chart, and take a built-in indicator off | `charts.candles.read`, `charts.indicators.write` |
+| 10 | Chart control: set a workspace's timeframe, a chart's type, and remove a chart | `charts.view.write`, `charts.delete` |
+| 11 | Paper trading, read-only: accounts and metrics, positions, working orders, fills, closed trades | `paper.read` |
+| 12 | Portfolio, read-only: portfolios, holdings valued at live prices (per currency), transactions | `portfolio.read` |
+| 13 | Candles of any market by symbol and timeframe, no chart needed | `markets.read` |
+| 14 | Watchlist sections: add, rename, delete, and put or move markets into them | `watchlists.write` |
+| 15 | Replay: read the workspace's replay and start, step, seek, play, pause, set speed and stop it | `charts.read`, `charts.replay.write` |
+| 16 | Paper trading writes: place (dry run, request id), modify, cancel, close positions; never on an account another Mac runs | `paper.orders.place`, `paper.orders.cancel`, `paper.positions.close` |
+| 17 | More drawing tools: rays, extended lines, arrows, Fibonacci retracement, horizontal / vertical lines, crosslines, text | `drawings.write` |
+| 18 | Chart snapshot: a PNG of a chart as the camera draws it, returned as an image | `charts.snapshot.read` |
+
+## 0. What a trader still cannot do over MCP
+
+Ranked by how soon someone would ask. Not started unless listed under "Done so far".
+
+- Chart control still missing: change a chart's symbol (remove and add instead), price scale mode,
+  scroll to a time, focus a chart, layouts. Timeframe, chart type and removal are done.
+- Indicators: hide and show one without removing it (`degenview_remove_indicator` and
+  `degenview_get_indicator_values` are done); the chart's EMA period is changed through
+  `degenview_add_indicator`.
+- Paper trading: reverse a position, close at a limit, edit an account's settings, create or reset
+  accounts. Orders and closes are done, behind three off-by-default permissions; the confirmation
+  policy (item 3) is still to come. No real-broker order tool: Alpaca is data only.
+- Portfolio: cross-currency totals (needs the FX service the Portfolio tab uses), value history and statistics. Snapshots: hosted sharing (copy link, tweet) is not exposed and will not be.
+- Drawing tools beyond the eleven (item 4b); swing, support/resistance and
+  volatility helpers; older history for `get_market_candles` (needs a time-range fetch).
+- Watchlist sorting, columns, collapsed sections and flags (not exposed), and trending symbols.
+- On-demand backtests and a watchlist screener (item 6); percentage alerts (item 7); layouts.
 
 ## 1. Try it with real MCP clients
 
@@ -76,18 +105,17 @@ permission alone: no confirmation step (item 3 would add one for all high-impact
 
 ## 4b. Candles and drawings: what is left
 
-Reading candles and drawing trend lines and rectangles are done (phase 7).
+Reading candles and drawing are done (phase 7, widened by the drawing-tools PR).
 
-- Only trend lines and rectangles can be created or edited. The Fibonacci and Gann tools
-  (`fib_retracement` … `gann_fan`), arrows, text, brushes, circles and
-  the rest are listed read-only (`editable: false`), including the app's horizontal and vertical
-  lines, rays, channels, regression trend and pitchforks (they can be deleted over MCP). Creating
-  them needs an argument shape with one to four anchors and per-tool settings; until then a
-  horizontal level made over MCP is a trend line with equal prices. The text, note and content tools
-  (text, note, price note, pin, table, callout, comment, price label, signpost, flag mark, image, post)
-  are the same: listed read-only by their snake-case names and deletable, never created. A
-  picture's bytes and a card's preview are not exposed; a table's cells and a pinned table's place are
-  not in `anchors` (it has none).
+- Created and edited over MCP: trend lines, rectangles, rays, extended lines, arrows, Fibonacci
+  retracements, horizontal lines and rays, vertical lines, crosslines and text labels (one point, or
+  two). The rest are listed read-only (`editable: false`) and deletable: the other Fibonacci and Gann
+  tools, brushes, circles and the other shapes, channels, regression trend, pitchforks, and the
+  note, price note, pin, table, callout, comment, price label, signpost, flag mark, image and post
+  tools. Those need an argument shape with three or four anchors and per-tool settings (levels,
+  angles, content). The retracement uses the app's default levels, which cannot be set. A picture's
+  bytes and a card's preview are not exposed; a table's cells and a pinned table's place are not in
+  `anchors` (it has none).
 - `degenview_get_candles` returns what the chart holds (about 500 bars, 1500 after one older page).
   DegenView fetches older history only as the chart is scrolled back, so an agent cannot ask for
   more; `has_older_loaded` and `older_history_available` say what is possible.

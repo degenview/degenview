@@ -307,7 +307,7 @@ mod tests {
         let mut line = NewDrawing {
             tool: McpDrawingTool::TrendLine,
             a: anchor(2, PriceSpec::Field(PriceField::Low)),
-            b: anchor(15, PriceSpec::Field(PriceField::High)),
+            b: Some(anchor(15, PriceSpec::Field(PriceField::High))),
             patch: Default::default(),
         };
         line.patch.dash = Some(LineDash::Dotted);
@@ -316,7 +316,7 @@ mod tests {
         let zone = NewDrawing {
             tool: McpDrawingTool::Rectangle,
             a: anchor(4, PriceSpec::Value(103.0)),
-            b: anchor(9, PriceSpec::Value(108.0)),
+            b: Some(anchor(9, PriceSpec::Value(108.0))),
             patch: Default::default(),
         };
         let planned =

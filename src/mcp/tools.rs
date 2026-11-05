@@ -9,12 +9,27 @@ use crate::mcp::bridge::{
     AlertCommandOutcome, AlertUpdate, BridgeClient, McpCommand, McpError, McpReply, NewAlert,
     REQUEST_TIMEOUT,
 };
+use crate::mcp::chart_control::{REMOVE_CHART, SET_CHART_TYPE, SET_TIMEFRAME};
 use crate::mcp::chart_data::{DEFAULT_CANDLES, MAX_CANDLES};
 use crate::mcp::drawings::{
     AnchorArg, DrawingEdit, MAX_DELETES_PER_CALL, MAX_DRAWINGS_PER_CALL, McpDash, NewDrawingArg,
     StylePatch, TimeArg, parse_drawing_id, parse_time,
 };
+use crate::mcp::indicator_tools::{GET_INDICATOR_VALUES, REMOVE_INDICATOR};
+use crate::mcp::market_tools::{
+    CREATE_WATCHLIST, DELETE_WATCHLIST, GET_MARKET_CANDLES, GET_QUOTES, GET_WATCHLIST,
+    LIST_WATCHLISTS, SEARCH_SYMBOLS, UPDATE_WATCHLIST,
+};
+use crate::mcp::paper_tools::{
+    CANCEL_PAPER_ORDERS, CLOSE_PAPER_POSITIONS, GET_PAPER_ACCOUNT, LIST_PAPER_ACCOUNTS,
+    LIST_PAPER_FILLS, LIST_PAPER_TRADES, MODIFY_PAPER_ORDER, PLACE_PAPER_ORDER,
+};
 use crate::mcp::pine::{self, InputArgs, Target, Version};
+use crate::mcp::portfolio_tools::{
+    GET_PORTFOLIO_HOLDINGS, LIST_PORTFOLIO_TRANSACTIONS, LIST_PORTFOLIOS,
+};
+use crate::mcp::replay_tools::{CONTROL_REPLAY, GET_REPLAY};
+use crate::mcp::snapshot_tools::GET_CHART_SNAPSHOT;
 use crate::mcp::state::{ClientIdentity, McpShared};
 use crate::mcp::types::{
     AddChartResult, AddIndicatorResult, AlertChangeResult, AlertInfo, AlertsResult,
@@ -79,11 +94,16 @@ pub fn required_permission(tool: &str) -> Option<Permission> {
     match tool {
         LIST_WORKSPACES | LIST_CHARTS | LIST_INDICATORS => Some(Permission::ChartsRead),
         ADD_CHART => Some(Permission::ChartsCreate),
-        ADD_INDICATOR => Some(Permission::ChartsIndicatorsWrite),
+        ADD_INDICATOR | REMOVE_INDICATOR => Some(Permission::ChartsIndicatorsWrite),
         ADD_PINE_TO_CHART | UPDATE_PINE_INSTANCE | REMOVE_PINE_INSTANCE => {
             Some(Permission::ChartsPineInstancesWrite)
         }
-        GET_CANDLES => Some(Permission::ChartsCandlesRead),
+        GET_REPLAY => Some(Permission::ChartsRead),
+        GET_CHART_SNAPSHOT => Some(Permission::ChartsSnapshotRead),
+        CONTROL_REPLAY => Some(Permission::ChartsReplayWrite),
+        SET_TIMEFRAME | SET_CHART_TYPE => Some(Permission::ChartsViewWrite),
+        REMOVE_CHART => Some(Permission::ChartsDelete),
+        GET_CANDLES | GET_INDICATOR_VALUES => Some(Permission::ChartsCandlesRead),
         LIST_DRAWINGS => Some(Permission::DrawingsRead),
         ADD_DRAWINGS | UPDATE_DRAWING => Some(Permission::DrawingsWrite),
         DELETE_DRAWINGS => Some(Permission::DrawingsDelete),
@@ -102,6 +122,19 @@ pub fn required_permission(tool: &str) -> Option<Permission> {
         GET_PINE_STYLES => Some(Permission::PineStylesRead),
         GET_PINE_REPORT => Some(Permission::PineReportsRead),
         LIST_PINE_ALERTS => Some(Permission::PineAlertsRead),
+        LIST_PAPER_ACCOUNTS | GET_PAPER_ACCOUNT | LIST_PAPER_FILLS | LIST_PAPER_TRADES => {
+            Some(Permission::PaperRead)
+        }
+        PLACE_PAPER_ORDER | MODIFY_PAPER_ORDER => Some(Permission::PaperOrdersPlace),
+        CANCEL_PAPER_ORDERS => Some(Permission::PaperOrdersCancel),
+        CLOSE_PAPER_POSITIONS => Some(Permission::PaperPositionsClose),
+        LIST_PORTFOLIOS | GET_PORTFOLIO_HOLDINGS | LIST_PORTFOLIO_TRANSACTIONS => {
+            Some(Permission::PortfolioRead)
+        }
+        SEARCH_SYMBOLS | GET_QUOTES | GET_MARKET_CANDLES => Some(Permission::MarketsRead),
+        LIST_WATCHLISTS | GET_WATCHLIST => Some(Permission::WatchlistsRead),
+        CREATE_WATCHLIST | UPDATE_WATCHLIST => Some(Permission::WatchlistsWrite),
+        DELETE_WATCHLIST => Some(Permission::WatchlistsDelete),
         _ => None,
     }
 }
@@ -119,7 +152,7 @@ pub enum McpSource {
 }
 
 impl McpSource {
-    fn data_source(self) -> DataSource {
+    pub(super) fn data_source(self) -> DataSource {
         match self {
             Self::Binance => DataSource::Binance,
             Self::Coinbase => DataSource::Coinbase,
@@ -142,7 +175,7 @@ pub enum McpIndicator {
 }
 
 impl McpIndicator {
-    fn built_in(self) -> BuiltIn {
+    pub(super) fn built_in(self) -> BuiltIn {
         match self {
             Self::Volume => BuiltIn::Volume,
             Self::Rsi => BuiltIn::Rsi,
@@ -582,7 +615,7 @@ pub struct DeleteDrawingsParams {
     pub drawing_ids: Vec<String>,
 }
 
-fn parse_chart_id(raw: &str) -> Result<u64, CallToolResult> {
+pub(super) fn parse_chart_id(raw: &str) -> Result<u64, CallToolResult> {
     raw.trim()
         .parse::<u64>()
         .map_err(|_| invalid("chart_id must be an id returned by degenview_list_charts"))
@@ -616,18 +649,18 @@ pub struct AddChartParams {
     pub symbol: String,
 }
 
-fn failure(error: &McpError) -> CallToolResult {
+pub(super) fn failure(error: &McpError) -> CallToolResult {
     CallToolResult::structured_error(json!({
         "error": error.code(),
         "message": error.message(),
     }))
 }
 
-fn invalid(message: impl Into<String>) -> CallToolResult {
+pub(super) fn invalid(message: impl Into<String>) -> CallToolResult {
     failure(&McpError::InvalidArgument(message.into()))
 }
 
-fn parse_id(raw: &str, what: &str) -> Result<u64, CallToolResult> {
+pub(super) fn parse_id(raw: &str, what: &str) -> Result<u64, CallToolResult> {
     raw.trim().parse::<u64>().map_err(|_| {
         invalid(format!(
             "{what} must be an id returned by degenview_list_workspaces"
@@ -636,7 +669,7 @@ fn parse_id(raw: &str, what: &str) -> Result<u64, CallToolResult> {
 }
 
 /// The client the HTTP guard authenticated for this request.
-fn client_of(parts: &http::request::Parts) -> Result<ClientIdentity, CallToolResult> {
+pub(super) fn client_of(parts: &http::request::Parts) -> Result<ClientIdentity, CallToolResult> {
     parts
         .extensions
         .get::<ClientIdentity>()
@@ -644,7 +677,7 @@ fn client_of(parts: &http::request::Parts) -> Result<ClientIdentity, CallToolRes
         .ok_or_else(|| failure(&McpError::PermissionDenied("Not authenticated".into())))
 }
 
-fn unexpected() -> CallToolResult {
+pub(super) fn unexpected() -> CallToolResult {
     failure(&McpError::AppUnavailable(
         "Unexpected response from DegenView".into(),
     ))
@@ -652,8 +685,8 @@ fn unexpected() -> CallToolResult {
 
 #[derive(Clone)]
 pub struct DegenViewMcp {
-    bridge: BridgeClient,
-    shared: Arc<McpShared>,
+    pub(super) bridge: BridgeClient,
+    pub(super) shared: Arc<McpShared>,
     tool_router: ToolRouter<Self>,
 }
 
@@ -663,7 +696,14 @@ impl DegenViewMcp {
         Self {
             bridge,
             shared,
-            tool_router: Self::tool_router(),
+            tool_router: Self::tool_router()
+                + Self::market_router()
+                + Self::indicator_router()
+                + Self::chart_control_router()
+                + Self::paper_router()
+                + Self::portfolio_router()
+                + Self::replay_router()
+                + Self::snapshot_router(),
         }
     }
 
@@ -1769,7 +1809,7 @@ impl DegenViewMcp {
 
     #[tool(
         name = "degenview_list_drawings",
-        description = "List the drawings on a chart in stacking order: id, tool (trend_line, rectangle, fib_retracement, brush, …), points as ISO time + price, style, label, and whether it is locked, hidden or editable by this server (trend lines and rectangles that are not locked).",
+        description = "List the drawings on a chart in stacking order: id, tool (trend_line, rectangle, fib_retracement, brush, …), points as ISO time + price, style, label, and whether it is locked, hidden or editable by this server (the tools degenview_add_drawings can draw, when not locked).",
         annotations(
             read_only_hint = true,
             destructive_hint = false,
@@ -1806,7 +1846,7 @@ impl DegenViewMcp {
 
     #[tool(
         name = "degenview_add_drawings",
-        description = "Draw trend lines and rectangles on a chart. Each point is a time and a price: copy the time from degenview_get_candles (it snaps to that bar), and give a price or `price_from` (open/high/low/close of the bar at that time, so a line can touch the wicks exactly). A time past the newest bar is allowed, so a line can run into the future; `extend_right` prolongs it to the chart edge. Up to 25 drawings per call, added as one undo step in the app, or none if any is invalid. Drawings are market-anchored: they stay put across timeframes. Returns the new ids and the drawings.",
+        description = "Draw on a chart. Tools: trend_line, rectangle, ray, extended_line, arrow and fib_retracement (two points, `a` and `b`); horizontal_line, horizontal_ray, vertical_line, crossline and text (one point, `a`, no `b`; text needs `text`). Each point is a time and a price: copy the time from degenview_get_candles (it snaps to that bar), and give a price or `price_from` (open/high/low/close of the bar at that time, so a line can touch the wicks exactly). A time past the newest bar is allowed, so a line can run into the future; `extend_left` / `extend_right` prolong a trend line or rectangle to the chart edge (the others have their own reach). `fill_color` is for rectangles; `text` labels a rectangle or is the text of a `text` drawing; a style a tool does not have is refused. Other tools (circles, channels, pitchforks, brushes, …) are listed but not drawn. Up to 25 drawings per call, added as one undo step in the app, or none if any is invalid. Drawings are market-anchored: they stay put across timeframes. Returns the new ids and the drawings.",
         annotations(
             read_only_hint = false,
             destructive_hint = false,
@@ -1863,7 +1903,7 @@ impl DegenViewMcp {
 
     #[tool(
         name = "degenview_update_drawing",
-        description = "Change a trend line or rectangle: move its points (same time/price rules as degenview_add_drawings), restyle it, relabel a rectangle, or hide/show it. Only what you give changes. Locked drawings are refused (CONFLICT): unlock them in DegenView first. The change is one undo step in the app.",
+        description = "Change a drawing degenview_add_drawings can draw: move its points (same time/price rules; a one-point drawing has only `a`), restyle it, relabel a rectangle or text, or hide/show it. Only what you give changes. Locked drawings are refused (CONFLICT): unlock them in DegenView first. The change is one undo step in the app.",
         annotations(
             read_only_hint = false,
             destructive_hint = false,
@@ -2127,7 +2167,7 @@ impl DegenViewMcp {
 }
 
 /// The Keychain read stays off the async worker.
-async fn alpaca_configured() -> bool {
+pub(super) async fn alpaca_configured() -> bool {
     tokio::task::spawn_blocking(|| {
         crate::service::keychain_api_keys::AlpacaCredentialsStore::shared().is_configured()
     })
@@ -2171,7 +2211,7 @@ fn with_standard_formats(mut tool: Tool) -> Tool {
 #[tool_handler(
     router = self.tool_router,
     name = "DegenView",
-    instructions = "Inspect and change DegenView, a market dashboard, within what this credential is allowed. Charts: list workspaces first, then list or add charts and built-in indicators by workspace_id; read candles and add, edit or delete drawings. Pine scripts: list, read, compile and edit scripts (an edit is a draft until saved, and every edit needs the revision you last read), and apply a saved script to a chart. Price alerts: list, create, edit, pause and delete. Only the tools this credential may use are listed."
+    instructions = "Inspect and change DegenView, a market dashboard, within what this credential is allowed. Charts: list workspaces first, then list or add charts and built-in indicators by workspace_id; read candles and indicator values (RSI, EMA, Bollinger, trend flips), add or remove built-in indicators, change a workspace's timeframe and a chart's type, control a workspace's replay, take a picture of a chart, remove charts, and add, edit or delete drawings. Pine scripts: list, read, compile and edit scripts (an edit is a draft until saved, and every edit needs the revision you last read), and apply a saved script to a chart. Price alerts: list, create, edit, pause and delete. Markets: search the providers for symbols, read quotes, and read candles of any market. Watchlists: list and read them (optionally with quotes), create, edit and delete. Paper trading (simulated money): read accounts, positions, orders, fills and closed trades; place, change and cancel orders and close positions with their own permissions. Only the tools this credential may use are listed."
 )]
 impl ServerHandler for DegenViewMcp {
     async fn call_tool(

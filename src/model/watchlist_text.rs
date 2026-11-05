@@ -224,6 +224,12 @@ const MAX_SYMBOL_LEN: usize = 128;
 /// normalised identity. The shape is all it can check: whether the market exists is only learned
 /// when the chart fetches. Prediction markets and CoinMarketCap are not chartable by symbol alone.
 pub fn validate_market(source: DataSource, symbol: &str) -> Result<InstrumentId, String> {
+    market_item(source, symbol).map(|item| item.instrument)
+}
+
+/// [`validate_market`], keeping the row an import would make: the same labels the sidebar shows
+/// for a market added from a text list.
+pub fn market_item(source: DataSource, symbol: &str) -> Result<WatchlistInstrument, String> {
     let symbol = symbol.trim();
     if symbol.is_empty() {
         return Err("Missing symbol".to_owned());
@@ -238,7 +244,7 @@ pub fn validate_market(source: DataSource, symbol: &str) -> Result<InstrumentId,
     if source.is_prediction_market() {
         return Err("Prediction markets need their event details; add them from search".to_owned());
     }
-    instrument_from(&format!("{}:{symbol}", source.watchlist_slug())).map(|item| item.instrument)
+    instrument_from(&format!("{}:{symbol}", source.watchlist_slug()))
 }
 
 fn slug_source(prefix: &str) -> Option<DataSource> {

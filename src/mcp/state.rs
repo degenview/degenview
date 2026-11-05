@@ -4,17 +4,48 @@
 //! Every request reads this fresh, so revoking a credential or changing a permission takes
 //! effect on the very next request. Nothing here knows about HTTP or egui.
 
+use crate::model::DataSource;
+use crate::model::InstrumentId;
 use crate::model::mcp::{McpClient, Permission, PermissionSet};
 use crate::model::watchlist::now_ms;
 use crate::pine_studio::store::ScriptStore;
+use crate::service::SearchResult;
+use crate::service::watchlist_quotes::{WatchlistQuoteBook, WatchlistQuoteCoordinator};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 /// Opens the script library; replaceable so tests never read the user's scripts.
 pub type ScriptLocator = Box<dyn Fn() -> Option<ScriptStore> + Send + Sync>;
 
+/// Searches a provider for symbols; replaceable so tests never reach the network.
+pub type MarketSearch =
+    Arc<dyn Fn(DataSource, &str) -> Result<Vec<SearchResult>, String> + Send + Sync>;
+
+/// Fetches candles from a provider: `(source, symbol, interval token, limit)`. Replaceable so
+/// tests never reach the network.
+pub type CandleFetch = Arc<
+    dyn Fn(DataSource, &str, &str, u32) -> Result<Vec<crate::model::Kline>, String> + Send + Sync,
+>;
+
 /// Script reads and compiles running at once.
 const PINE_JOBS: usize = 2;
+/// Provider searches running at once. Each is a blocking network call.
+const SEARCH_JOBS: usize = 4;
+/// Provider candle fetches running at once for the market candles tool.
+const CANDLE_JOBS: usize = 3;
+/// Quote requests running at once. Each holds a demand on the quote coordinator while it waits.
+const QUOTE_JOBS: usize = 4;
+/// Where the demand ids of MCP quote requests start: clear of every window, alert and card owner.
+const QUOTE_OWNER_BASE: u64 = 1 << 59;
+
+/// The live quote feed the app already runs for its watchlists. Cheap to clone and safe to use
+/// from any thread: asking for a market's quote is a short lock on the coordinator, never a
+/// workspace or the store.
+#[derive(Clone)]
+pub struct QuoteAccess {
+    pub book: WatchlistQuoteBook,
+    pub coordinator: WatchlistQuoteCoordinator,
+}
 
 /// Who a request was authenticated as. Carried in the HTTP request extensions.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -50,6 +81,24 @@ struct Config {
     global: PermissionSet,
 }
 
+/// A request's demand on the quote feed; released when dropped, even if the request is cancelled.
+pub struct QuoteLease {
+    access: QuoteAccess,
+    owner: u64,
+}
+
+impl QuoteLease {
+    pub fn book(&self) -> &WatchlistQuoteBook {
+        &self.access.book
+    }
+}
+
+impl Drop for QuoteLease {
+    fn drop(&mut self) {
+        self.access.coordinator.release(self.owner);
+    }
+}
+
 pub struct McpShared {
     config: RwLock<Config>,
     status: Mutex<McpStatus>,
@@ -57,6 +106,13 @@ pub struct McpShared {
     usage_dirty: AtomicBool,
     pine_jobs: Arc<tokio::sync::Semaphore>,
     script_locator: RwLock<ScriptLocator>,
+    search_jobs: Arc<tokio::sync::Semaphore>,
+    quote_jobs: Arc<tokio::sync::Semaphore>,
+    candle_jobs: Arc<tokio::sync::Semaphore>,
+    candle_fetch: RwLock<CandleFetch>,
+    market_search: RwLock<MarketSearch>,
+    quotes: RwLock<Option<QuoteAccess>>,
+    next_quote_owner: AtomicU64,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -74,6 +130,15 @@ impl McpShared {
             usage_dirty: AtomicBool::new(false),
             pine_jobs: Arc::new(tokio::sync::Semaphore::new(PINE_JOBS)),
             script_locator: RwLock::new(Box::new(ScriptStore::default_location)),
+            search_jobs: Arc::new(tokio::sync::Semaphore::new(SEARCH_JOBS)),
+            quote_jobs: Arc::new(tokio::sync::Semaphore::new(QUOTE_JOBS)),
+            candle_jobs: Arc::new(tokio::sync::Semaphore::new(CANDLE_JOBS)),
+            candle_fetch: RwLock::new(Arc::new(crate::service::fetch_klines)),
+            market_search: RwLock::new(Arc::new(|source, query| {
+                crate::service::search(source, query)
+            })),
+            quotes: RwLock::new(None),
+            next_quote_owner: AtomicU64::new(QUOTE_OWNER_BASE),
         })
     }
 
@@ -175,6 +240,77 @@ impl McpShared {
     /// A permit for one script read/compile, or `None` when too many are already running.
     pub fn try_pine_job(&self) -> Option<tokio::sync::OwnedSemaphorePermit> {
         self.pine_jobs.clone().try_acquire_owned().ok()
+    }
+
+    /// A permit for one provider search, or `None` when too many are already running.
+    pub fn try_search_job(&self) -> Option<tokio::sync::OwnedSemaphorePermit> {
+        self.search_jobs.clone().try_acquire_owned().ok()
+    }
+
+    /// A permit for one quote request, or `None` when too many are already waiting.
+    pub fn try_quote_job(&self) -> Option<tokio::sync::OwnedSemaphorePermit> {
+        self.quote_jobs.clone().try_acquire_owned().ok()
+    }
+
+    /// A permit for one candle fetch, or `None` when too many are already running.
+    pub fn try_candle_job(&self) -> Option<tokio::sync::OwnedSemaphorePermit> {
+        self.candle_jobs.clone().try_acquire_owned().ok()
+    }
+
+    pub fn candle_fetch(&self) -> CandleFetch {
+        self.candle_fetch
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+
+    /// Points candle fetches somewhere else (tests serve canned bars).
+    #[cfg(test)]
+    pub fn set_candle_fetch(&self, fetch: CandleFetch) {
+        *self
+            .candle_fetch
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = fetch;
+    }
+
+    pub fn market_search(&self) -> MarketSearch {
+        self.market_search
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+
+    /// Points symbol search somewhere else (tests serve canned results).
+    #[cfg(test)]
+    pub fn set_market_search(&self, search: MarketSearch) {
+        *self
+            .market_search
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = search;
+    }
+
+    /// Hands the server the app's quote feed. Until then (and in tests that never do) quotes
+    /// are unavailable.
+    pub fn attach_quotes(&self, access: QuoteAccess) {
+        *self
+            .quotes
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(access);
+    }
+
+    pub fn quotes(&self) -> Option<QuoteAccess> {
+        self.quotes
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .clone()
+    }
+
+    /// Asks for `instruments` to be quoted until the returned lease is dropped. A lease has its
+    /// own owner id, so concurrent requests never replace each other's demand.
+    pub fn lease_quotes(&self, access: QuoteAccess, instruments: Vec<InstrumentId>) -> QuoteLease {
+        let owner = self.next_quote_owner.fetch_add(1, Ordering::AcqRel);
+        access.coordinator.set_demand(owner, instruments, true);
+        QuoteLease { access, owner }
     }
 
     pub fn script_store(&self) -> Option<ScriptStore> {

@@ -16,6 +16,50 @@ impl Document for Watchlist {
     }
 }
 
+/// Where in a list a market goes.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub enum Place {
+    /// At the end of the list, which is the end of its last section.
+    #[default]
+    End,
+    /// Before the first section, with the markets that belong to none.
+    Top,
+    /// At the end of a section, named by its id or its title.
+    Section(String),
+}
+
+/// Everything one [`WatchlistStore::edit_list`] may change, applied in this order: the list's
+/// name, new sections, renamed sections, removals, moves, additions, deleted sections. Sections
+/// are named by id or title (see [`Watchlist::resolve_section`]), so a section made by this
+/// very change can be used by the moves and additions after it.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct ListChanges {
+    pub rename: Option<String>,
+    pub add_sections: Vec<String>,
+    /// `(section, new title)`.
+    pub rename_sections: Vec<(String, String)>,
+    pub remove: Vec<InstrumentId>,
+    pub moves: Vec<(InstrumentId, Place)>,
+    pub add: Vec<(WatchlistInstrument, Place)>,
+    /// Removes the header only: its markets join the section above, or the top.
+    pub delete_sections: Vec<String>,
+}
+
+/// What [`WatchlistStore::edit_list`] did, market by market.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct ListEdit {
+    pub added: Vec<InstrumentId>,
+    pub already_present: Vec<InstrumentId>,
+    pub removed: Vec<InstrumentId>,
+    /// Markets asked to be removed or moved that are not in the list.
+    pub not_present: Vec<InstrumentId>,
+    pub renamed: bool,
+    pub moved: Vec<InstrumentId>,
+    pub sections_added: Vec<String>,
+    pub sections_renamed: Vec<String>,
+    pub sections_deleted: Vec<String>,
+}
+
 pub struct WatchlistStore {
     store: SharedStore,
     lists: Vec<Watchlist>,
@@ -355,6 +399,84 @@ impl WatchlistStore {
         })
     }
 
+    /// Applies `changes` to one list in one copy and one save: a refusal (a bad name, an unknown
+    /// section, a full list) leaves the list as it was. A market already in the list, or one to
+    /// remove or move that is not, is reported and skipped rather than refused. Returns what was
+    /// done and whether the list changed.
+    pub fn edit_list(
+        &mut self,
+        id: EntryId,
+        changes: ListChanges,
+    ) -> Result<(ListEdit, bool), WatchlistError> {
+        let rename = changes
+            .rename
+            .as_deref()
+            .map(Watchlist::validated)
+            .transpose()?;
+        let mut edit = ListEdit::default();
+        let changed = self.modify(id, true, |list| {
+            if let Some(name) = rename {
+                edit.renamed = list.name != name;
+                list.name = name;
+            }
+            for title in &changes.add_sections {
+                let section = list.add_section(title, None)?;
+                edit.sections_added.push(section.title);
+            }
+            for (reference, title) in &changes.rename_sections {
+                let section = list.resolve_section(reference)?;
+                list.rename_section(section, title)?;
+                edit.sections_renamed.push(Watchlist::validated(title)?);
+            }
+            for instrument in &changes.remove {
+                if list.remove_instrument(instrument) {
+                    edit.removed.push(instrument.clone());
+                } else {
+                    edit.not_present.push(instrument.clone());
+                }
+            }
+            for (instrument, place) in &changes.moves {
+                let Some(entry) = list.entry_for(instrument).map(|item| item.id) else {
+                    edit.not_present.push(instrument.clone());
+                    continue;
+                };
+                let section = match place {
+                    Place::Section(reference) => Some(list.resolve_section(reference)?),
+                    Place::Top | Place::End => None,
+                };
+                list.move_instrument(entry, section)?;
+                edit.moved.push(instrument.clone());
+            }
+            for (item, place) in &changes.add {
+                if list.contains(&item.instrument) {
+                    edit.already_present.push(item.instrument.clone());
+                    continue;
+                }
+                let instrument = item.instrument.clone();
+                let entry = item.id;
+                match place {
+                    Place::End => list.add(item.clone(), None)?,
+                    Place::Top => {
+                        list.add(item.clone(), None)?;
+                        list.move_instrument(entry, None)?;
+                    }
+                    Place::Section(reference) => {
+                        let section = list.resolve_section(reference)?;
+                        list.add(item.clone(), Some(section))?;
+                    }
+                }
+                edit.added.push(instrument);
+            }
+            for reference in &changes.delete_sections {
+                let section = list.resolve_section(reference)?;
+                list.delete_section(section)?;
+                edit.sections_deleted.push(reference.trim().to_owned());
+            }
+            Ok(())
+        })?;
+        Ok((edit, changed))
+    }
+
     pub fn remove_entry(&mut self, list: EntryId, entry: EntryId) -> Result<bool, WatchlistError> {
         self.modify(list, true, |list| list.remove_entry(entry))
     }
@@ -494,6 +616,7 @@ impl WatchlistStore {
 mod tests {
     use super::*;
     use crate::model::DataSource;
+    use crate::model::watchlist::WatchlistEntry;
     use crate::store::Store;
 
     fn item(symbol: &str) -> WatchlistInstrument {
@@ -945,5 +1068,213 @@ mod tests {
         );
         assert!(loaded.lists().iter().all(|list| list.validate().is_empty()));
         assert_eq!(loaded.lists()[1].instruments().count(), 2);
+    }
+
+    #[test]
+    fn edit_list_is_one_change_that_reports_each_market() {
+        let shared = SharedStore::new(std::sync::Mutex::new(
+            Store::open_in_memory().expect("store"),
+        ));
+        let mut store = WatchlistStore::new(shared.clone());
+        let id = store.create_list("Majors", Some(item("BTCUSDT"))).unwrap();
+        let btc = InstrumentId::new(DataSource::Binance, "BTCUSDT");
+        let sol = InstrumentId::new(DataSource::Binance, "SOLUSDT");
+
+        let (edit, changed) = store
+            .edit_list(
+                id,
+                ListChanges {
+                    rename: Some("  Core  ".into()),
+                    add: vec![(item("BTCUSDT"), Place::End), (item("ETHUSDT"), Place::End)],
+                    remove: vec![sol.clone()],
+                    ..ListChanges::default()
+                },
+            )
+            .unwrap();
+        assert!(changed);
+        assert!(edit.renamed);
+        assert_eq!(edit.already_present, std::slice::from_ref(&btc));
+        assert_eq!(edit.added.len(), 1);
+        assert_eq!(edit.not_present, [sol]);
+        let list = store.lists().iter().find(|l| l.id == id).unwrap();
+        assert_eq!(list.name, "Core");
+        assert_eq!(list.instruments().count(), 2);
+
+        // Asking for what is already so writes nothing.
+        let (edit, changed) = store
+            .edit_list(
+                id,
+                ListChanges {
+                    rename: Some("Core".into()),
+                    add: vec![(item("BTCUSDT"), Place::End)],
+                    ..ListChanges::default()
+                },
+            )
+            .unwrap();
+        assert!(!changed);
+        assert!(!edit.renamed);
+    }
+
+    #[test]
+    fn a_refused_edit_changes_nothing() {
+        let shared = SharedStore::new(std::sync::Mutex::new(
+            Store::open_in_memory().expect("store"),
+        ));
+        let mut store = WatchlistStore::new(shared);
+        let id = store.create_list("Majors", Some(item("BTCUSDT"))).unwrap();
+        let btc = InstrumentId::new(DataSource::Binance, "BTCUSDT");
+        // A name that is refused after the markets were valid: nothing is removed or added.
+        let bad = store.edit_list(
+            id,
+            ListChanges {
+                rename: Some("   ".into()),
+                add: vec![(item("ETHUSDT"), Place::End)],
+                remove: vec![btc],
+                ..ListChanges::default()
+            },
+        );
+        assert_eq!(bad, Err(WatchlistError::EmptyName));
+        let list = store.lists().iter().find(|l| l.id == id).unwrap();
+        assert_eq!(list.name, "Majors");
+        assert_eq!(list.instruments().count(), 1);
+        assert_eq!(
+            store.edit_list(999, ListChanges::default()),
+            Err(WatchlistError::NotFound)
+        );
+    }
+
+    #[test]
+    fn sections_can_be_made_filled_renamed_and_deleted_in_one_change() {
+        let shared = SharedStore::new(std::sync::Mutex::new(
+            Store::open_in_memory().expect("store"),
+        ));
+        let mut store = WatchlistStore::new(shared);
+        let id = store.create_list("Majors", Some(item("BTCUSDT"))).unwrap();
+        let sol = InstrumentId::new(DataSource::Binance, "SOLUSDT");
+
+        // A section made by this change is usable by title in the same change.
+        let (edit, changed) = store
+            .edit_list(
+                id,
+                ListChanges {
+                    add_sections: vec!["Alts".into(), "Stables".into()],
+                    add: vec![
+                        (item("ETHUSDT"), Place::Section("alts".into())),
+                        (item("USDCUSDT"), Place::Section("Stables".into())),
+                    ],
+                    moves: vec![
+                        (
+                            InstrumentId::new(DataSource::Binance, "BTCUSDT"),
+                            Place::Top,
+                        ),
+                        (sol, Place::Top),
+                    ],
+                    ..ListChanges::default()
+                },
+            )
+            .unwrap();
+        assert!(changed);
+        assert_eq!(edit.sections_added, ["Alts", "Stables"]);
+        assert_eq!(edit.added.len(), 2);
+        assert_eq!(edit.moved.len(), 1);
+        assert_eq!(edit.not_present.len(), 1, "SOLUSDT was never in the list");
+        let list = store.lists().iter().find(|l| l.id == id).unwrap();
+        let order: Vec<String> = list
+            .entries
+            .iter()
+            .map(|entry| match entry {
+                WatchlistEntry::Section(section) => format!("[{}]", section.title),
+                WatchlistEntry::Instrument(item) => item.instrument.key(),
+            })
+            .collect();
+        assert_eq!(
+            order,
+            [
+                "BINANCE:BTCUSDT",
+                "[Alts]",
+                "BINANCE:ETHUSDT",
+                "[Stables]",
+                "BINANCE:USDCUSDT"
+            ]
+        );
+
+        // Rename by title, move a market into it, delete the other section.
+        let (edit, _) = store
+            .edit_list(
+                id,
+                ListChanges {
+                    rename_sections: vec![("Alts".into(), "Altcoins".into())],
+                    moves: vec![(
+                        InstrumentId::new(DataSource::Binance, "BTCUSDT"),
+                        Place::Section("Altcoins".into()),
+                    )],
+                    delete_sections: vec!["Stables".into()],
+                    ..ListChanges::default()
+                },
+            )
+            .unwrap();
+        assert_eq!(edit.sections_renamed, ["Altcoins"]);
+        assert_eq!(edit.sections_deleted, ["Stables"]);
+        let list = store.lists().iter().find(|l| l.id == id).unwrap();
+        assert_eq!(list.sections().count(), 1);
+        assert_eq!(list.sections().next().unwrap().title, "Altcoins");
+        // Deleting a header keeps its markets: USDC joined the section above.
+        assert_eq!(list.instruments().count(), 3);
+    }
+
+    #[test]
+    fn an_unknown_or_ambiguous_section_refuses_the_whole_change() {
+        let shared = SharedStore::new(std::sync::Mutex::new(
+            Store::open_in_memory().expect("store"),
+        ));
+        let mut store = WatchlistStore::new(shared);
+        let id = store.create_list("Mixed", None).unwrap();
+        store
+            .edit_list(
+                id,
+                ListChanges {
+                    add_sections: vec!["Same".into(), "same".into()],
+                    ..ListChanges::default()
+                },
+            )
+            .unwrap();
+        let ambiguous = store.edit_list(
+            id,
+            ListChanges {
+                add: vec![(item("BTCUSDT"), Place::Section("SAME".into()))],
+                ..ListChanges::default()
+            },
+        );
+        assert!(matches!(
+            ambiguous,
+            Err(WatchlistError::AmbiguousSection(_))
+        ));
+        let unknown = store.edit_list(
+            id,
+            ListChanges {
+                add_sections: vec!["Extra".into()],
+                add: vec![(item("BTCUSDT"), Place::Section("Nope".into()))],
+                ..ListChanges::default()
+            },
+        );
+        assert_eq!(unknown, Err(WatchlistError::NotFound));
+        let list = store.lists().iter().find(|l| l.id == id).unwrap();
+        assert_eq!(
+            list.sections().count(),
+            2,
+            "no 'Extra' section and no market"
+        );
+        assert_eq!(list.instruments().count(), 0);
+        // The section id works too, even when titles collide.
+        let first = list.sections().next().unwrap().id;
+        store
+            .edit_list(
+                id,
+                ListChanges {
+                    add: vec![(item("BTCUSDT"), Place::Section(first.to_string()))],
+                    ..ListChanges::default()
+                },
+            )
+            .unwrap();
     }
 }

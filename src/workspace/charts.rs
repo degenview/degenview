@@ -6,9 +6,19 @@ use crate::host::portfolio_card_host::PortfolioCardEnv;
 use crate::model::portfolio_card::PortfolioCard;
 use crate::model::price_scale::PriceScaleMode;
 use crate::model::watchlist::WatchlistInstrument;
-use crate::model::{DataSource, Drawing, IndicatorConfig, InstrumentId, Kline};
+use crate::model::{
+    ChartType, DataSource, Drawing, IndicatorConfig, InstrumentId, Kline, Timeframe,
+};
 use crate::service::SearchResult;
 use eframe::egui;
+
+/// Why [`ChartWorkspace::set_chart_type_for_mcp`] refused.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ChartTypeError {
+    NoSuchChart,
+    /// The market cannot draw this type; says why.
+    Unsupported(&'static str),
+}
 
 /// What a remote caller (the MCP server) may see of one chart: identity and state, never candles.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -109,6 +119,15 @@ impl ChartWorkspace {
             drawings: &chart.drawings,
             next_drawing_id: chart.next_drawing_id,
         })
+    }
+
+    /// The bars a market chart of a constructed type draws, cut at the replay position like
+    /// [`Self::chart_data`]'s candles; `None` for a chart that draws its candles, an unknown chart
+    /// or a portfolio card. Indicators and scripts read these, not the candles.
+    pub fn constructed_bars(&self, chart_id: u64) -> Option<Vec<Kline>> {
+        let data = self.chart_data(chart_id)?;
+        let chart = self.charts.iter().find(|chart| chart.id == chart_id)?;
+        chart.chart.constructed_bars(data.candles, chart.source)
     }
 
     /// Adds a chart for `instrument` through the same path as the Add Chart sheet: an existing
@@ -270,6 +289,67 @@ impl ChartWorkspace {
         if result.is_some() {
             self.removing_chart = None;
         }
+    }
+
+    /// Puts every chart on `timeframe` and reloads its candles: what the toolbar's timeframe
+    /// buttons do. Replay re-bases and rulers (which measure bars of the old timeframe) go.
+    pub(super) fn reload_for_timeframe(&mut self, timeframe: Timeframe, ctx: &egui::Context) {
+        self.timeframe = timeframe;
+        self.replay_rebase |= self.replay.session.is_some();
+        self.drop_rulers();
+        for chart in &mut self.charts {
+            chart.chart.reset_view();
+            chart.candles.clear();
+            chart.reset_history();
+            chart.last_live_open_time = None;
+            chart.fetch(self.timeframe, ctx);
+        }
+    }
+
+    /// Moves the whole workspace to `timeframe` for an agent. `false` when it already was there,
+    /// so nothing reloads.
+    pub fn set_timeframe_for_mcp(&mut self, timeframe: Timeframe, ctx: &egui::Context) -> bool {
+        if self.timeframe == timeframe {
+            return false;
+        }
+        self.reload_for_timeframe(timeframe, ctx);
+        true
+    }
+
+    /// Switches a market chart's type, as the chart's type menu does. `Ok(false)` when it already
+    /// drew that type; the reason is given when the market cannot draw it.
+    pub fn set_chart_type_for_mcp(
+        &mut self,
+        chart_id: u64,
+        chart_type: ChartType,
+    ) -> Result<bool, ChartTypeError> {
+        let chart = self
+            .charts
+            .iter_mut()
+            .find(|chart| chart.id == chart_id && chart.is_market())
+            .ok_or(ChartTypeError::NoSuchChart)?;
+        if let Some(reason) = chart_type.unsupported_reason(chart.source) {
+            return Err(ChartTypeError::Unsupported(reason));
+        }
+        if chart.chart.effective_chart_type(chart.source) == chart_type {
+            return Ok(false);
+        }
+        chart.chart.set_chart_type(chart_type);
+        Ok(true)
+    }
+
+    /// Removes a market chart (and with it its drawings) as the chart's Remove button does once
+    /// confirmed. `false` for an unknown chart or a portfolio card.
+    pub fn remove_market_chart(&mut self, chart_id: u64) -> bool {
+        if !self
+            .charts
+            .iter()
+            .any(|chart| chart.id == chart_id && chart.is_market())
+        {
+            return false;
+        }
+        self.remove_chart(chart_id);
+        true
     }
 
     pub(super) fn remove_chart(&mut self, chart_id: u64) {
@@ -643,5 +723,106 @@ mod tests {
         ));
         workspace.set_scale_mode(id, PriceScaleMode::Percent);
         assert_eq!(workspace.charts[0].scale_mode, PriceScaleMode::Regular);
+    }
+
+    /// An up-and-down run of daily bars with real ranges, so built bars differ from the candles.
+    fn wavy_candles() -> Vec<Kline> {
+        (0..80)
+            .map(|n| {
+                let close = 100.0 + (n as f64 * 0.45).sin() * 12.0 + n as f64 * 0.3;
+                Kline {
+                    open_time: 1_700_000_000_000 + n * 86_400_000,
+                    close_time: 1_700_000_000_000 + (n + 1) * 86_400_000 - 1,
+                    open: close - 1.5,
+                    high: close + 3.0,
+                    low: close - 3.0,
+                    close,
+                    volume: 5.0,
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn indicator_readings_use_the_bars_a_constructed_chart_draws() {
+        use crate::host::mcp_host::indicator_readings;
+        use crate::mcp::indicator_values::{Reading, ReadingRequest};
+        use crate::model::{RSI_PERIOD, rsi};
+        use crate::workspace::replay::{ReplayCommand, ReplayStart};
+
+        let ctx = egui::Context::default();
+        let mut workspace = empty_workspace(7);
+        let chart_id = workspace
+            .add_chart_for(&InstrumentId::new(DataSource::Binance, "BTCUSDT"), &ctx)
+            .chart_id;
+        let candles = wavy_candles();
+        workspace
+            .charts
+            .iter_mut()
+            .find(|chart| chart.id == chart_id)
+            .unwrap()
+            .candles = candles.clone();
+        let request = ReadingRequest {
+            readings: vec![Reading::Rsi],
+            ema_period: 20,
+            limit: 1000,
+            before: None,
+        };
+        let last_rsi = |bars: &[Kline]| rsi(bars, RSI_PERIOD).last().copied().flatten();
+
+        // Plain candles: the market's own bars, as before.
+        assert!(workspace.constructed_bars(chart_id).is_none());
+        let plain = indicator_readings(&workspace, chart_id, &request).unwrap();
+        assert_eq!(plain.chart_type, "candles");
+        assert_eq!(plain.loaded_bars, candles.len());
+        assert_eq!(
+            plain.series[0].values.last().copied().flatten(),
+            last_rsi(&candles)
+        );
+
+        for chart_type in [ChartType::HeikinAshi, ChartType::Renko] {
+            workspace
+                .set_chart_type_for_mcp(chart_id, chart_type)
+                .unwrap();
+            let built = workspace
+                .constructed_bars(chart_id)
+                .unwrap_or_else(|| panic!("{chart_type:?} builds its own bars"));
+            assert!(!built.is_empty(), "{chart_type:?}");
+            let read = indicator_readings(&workspace, chart_id, &request).unwrap();
+            assert_eq!(read.chart_type, chart_type.slug());
+            assert_eq!(read.loaded_bars, built.len(), "{chart_type:?}");
+            assert_eq!(read.times.len(), built.len().min(1000));
+            assert_eq!(
+                read.series[0].values.last().copied().flatten(),
+                last_rsi(&built),
+                "{chart_type:?} is read over the built bars"
+            );
+            assert_ne!(
+                read.series[0].values.last().copied().flatten(),
+                last_rsi(&candles),
+                "{chart_type:?} must not be the candles' value"
+            );
+        }
+
+        // Replay cuts the candles first, and the bars are built from what is shown.
+        workspace
+            .set_chart_type_for_mcp(chart_id, ChartType::HeikinAshi)
+            .unwrap();
+        let full = workspace.constructed_bars(chart_id).unwrap();
+        workspace
+            .replay_command(ReplayCommand::Start {
+                chart_id: None,
+                at: ReplayStart::At(candles[40].open_time),
+            })
+            .unwrap();
+        let cut = workspace.constructed_bars(chart_id).unwrap();
+        assert_eq!(cut.len(), 41);
+        assert!(cut.len() < full.len());
+        let read = indicator_readings(&workspace, chart_id, &request).unwrap();
+        assert_eq!(read.loaded_bars, 41);
+        assert_eq!(
+            read.series[0].values.last().copied().flatten(),
+            last_rsi(&cut)
+        );
     }
 }

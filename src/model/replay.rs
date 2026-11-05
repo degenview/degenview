@@ -127,6 +127,37 @@ pub struct ReplaySession {
     pub speed: ReplaySpeed,
 }
 
+/// What an agent may ask of a running replay clock. Starting one needs a chart's bars, so that is
+/// the workspace's business.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClockCommand {
+    Play,
+    Pause,
+    StepForward(usize),
+    StepBack(usize),
+    /// Back to the chosen start.
+    Restart,
+    /// To the bar at or before this time (epoch milliseconds).
+    Seek(i64),
+    SetSpeed(ReplaySpeed),
+    /// Back to live.
+    Stop,
+}
+
+/// The replay clock as an agent may read it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ReplayView {
+    pub status: ReplayStatus,
+    pub symbol: Option<String>,
+    pub start_ms: Option<i64>,
+    pub current_ms: Option<i64>,
+    pub bar_index: Option<usize>,
+    pub bars_total: usize,
+    pub speed: Option<ReplaySpeed>,
+    /// The timeframe changed under the replay and its bars are being reloaded.
+    pub preparing: bool,
+}
+
 /// One deterministic replay clock for a tab. Charts are gated by this single
 /// timestamp rather than independent indices.
 #[derive(Default)]
@@ -140,6 +171,61 @@ pub struct ReplayEngine {
 // replay bar UI (second agent); the play loop + rewind use the rest.
 #[allow(dead_code)]
 impl ReplayEngine {
+    pub fn view(&self, preparing: bool) -> ReplayView {
+        let session = self.session.as_ref();
+        ReplayView {
+            status: self.status,
+            symbol: session.map(|session| session.symbol.clone()),
+            start_ms: session.map(|session| session.start_ms),
+            current_ms: session.map(|session| session.current_ms),
+            bar_index: session.map(|session| session.bar_index),
+            bars_total: self.timeline.len(),
+            speed: session.map(|session| session.speed),
+            preparing,
+        }
+    }
+
+    /// Runs a clock command. `false` when there is no replay to act on.
+    pub fn apply(&mut self, command: ClockCommand) -> bool {
+        if self.session.is_none() {
+            return false;
+        }
+        match command {
+            ClockCommand::Play => self.play(),
+            ClockCommand::Pause => self.pause(),
+            ClockCommand::StepForward(steps) => {
+                for _ in 0..steps {
+                    if !self.step_forward() {
+                        break;
+                    }
+                }
+            }
+            ClockCommand::StepBack(steps) => {
+                for _ in 0..steps {
+                    if !self.step_backward() {
+                        break;
+                    }
+                }
+            }
+            ClockCommand::Restart => self.restart(),
+            ClockCommand::Seek(time) => {
+                let last = self.timeline.len().saturating_sub(1);
+                if last == 0 {
+                    self.seek(0.0);
+                } else {
+                    let index = self
+                        .timeline
+                        .partition_point(|candidate| *candidate <= time)
+                        .saturating_sub(1);
+                    self.seek(index as f64 / last as f64);
+                }
+            }
+            ClockCommand::SetSpeed(speed) => self.set_speed(speed),
+            ClockCommand::Stop => self.stop(),
+        }
+        true
+    }
+
     pub fn is_bar_visible(&self) -> bool {
         self.status != ReplayStatus::Inactive
     }

@@ -6,14 +6,30 @@
 //! Persist first, then publish: a write that fails changes nothing the server can see.
 
 use crate::host::alert_host::AlertHost;
+use crate::host::paper_host::{PaperHost, PaperHostError, owner_text};
+use crate::host::portfolio_host::PortfolioHost;
 use crate::mcp::McpServer;
 use crate::mcp::auth::{generate_token, verifier_hex};
 use crate::mcp::bridge::{
     self, AlertCommandOutcome, AlertUpdate, BridgeClient, BridgeInbox, McpError, NewAlert, Request,
 };
+use crate::mcp::chart_control::{ChartChangeResult, TimeframeResult};
 use crate::mcp::chart_data;
 use crate::mcp::drawings::{DrawingEdit, NewDrawing};
+use crate::mcp::indicator_values::{
+    IndicatorValuesResult, ReadingMeta, ReadingRequest, indicator_values,
+};
+use crate::mcp::markets::{self, WatchlistChangeResult, WatchlistPage, WatchlistsResult};
+use crate::mcp::paper::{
+    self, PaperAccountDetail, PaperAccountInfo, PaperAccountsResult, PaperChangeResult,
+    PaperFillsResult, PaperOrderResult, PaperTradesResult,
+};
 use crate::mcp::pine::{InputArgs, ScriptToApply};
+use crate::mcp::portfolio::{
+    self, HoldingBase, HoldingsBase, PortfolioInfo, PortfoliosResult, TransactionsResult,
+};
+use crate::mcp::replay_tools::{self, ReplayResult};
+use crate::mcp::snapshot_tools::{SnapshotProgress, SnapshotStarted};
 use crate::mcp::state::{McpShared, McpStatus};
 use crate::mcp::types::{
     AddChartResult, AddIndicatorResult, AlertInfo, AlertsResult, AppliedPineDetail,
@@ -31,13 +47,18 @@ use crate::model::mcp::{
     is_valid_port,
 };
 use crate::model::pine_alert::PineAlertSubscription;
-use crate::model::watchlist::{new_id, now_ms};
-use crate::model::{BuiltIn, DataSource, Drawing, DrawingCommand, IndicatorConfig, InstrumentId};
+use crate::model::watchlist::{Watchlist, WatchlistError, WatchlistInstrument, new_id, now_ms};
+use crate::model::{
+    BuiltIn, ChartType, DataSource, Drawing, DrawingCommand, IndicatorConfig, InstrumentId,
+    Timeframe,
+};
 use crate::service::watchlist_quotes::WatchlistQuoteBook;
 use crate::store::SharedStore;
+use crate::store::watchlist::{ListChanges, ListEdit, Place, WatchlistStore};
 use crate::ui::alert_editor::{Direction, PriceAlertEditorState};
 use crate::workspace::{
-    ChartSummary, ChartWorkspace, IndicatorError, IndicatorOutcome, PineInstanceView,
+    ChartSummary, ChartTypeError, ChartWorkspace, IndicatorError, IndicatorOutcome,
+    PineInstanceView, RemoveOutcome, ReplayCommand, ReplayError,
 };
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -1527,12 +1548,1084 @@ pub fn plan_delete_alert(host: &AlertHost, id: AlertId) -> Result<AlertId, McpEr
     find_alert(host, id).map(|alert| alert.id)
 }
 
+/// Takes a built-in indicator off a chart through the workspace's own method.
+pub fn remove_indicator(
+    workspace: &mut ChartWorkspace,
+    chart_id: u64,
+    indicator: BuiltIn,
+) -> Result<AddIndicatorResult, McpError> {
+    let workspace_id = workspace.id();
+    match workspace.remove_indicator(chart_id, indicator) {
+        Ok((outcome, config)) => Ok(AddIndicatorResult {
+            workspace_id: workspace_id.to_string(),
+            chart_id: chart_id.to_string(),
+            indicator: indicator.id().to_owned(),
+            status: match outcome {
+                RemoveOutcome::Removed => "removed",
+                RemoveOutcome::NotApplied => "not_applied",
+            }
+            .to_owned(),
+            indicators: indicators_info(config),
+        }),
+        Err(_) => Err(no_chart(workspace, chart_id)),
+    }
+}
+
+/// Indicator readings over a market chart's own candles, cut at the replay position.
+pub fn indicator_readings(
+    workspace: &ChartWorkspace,
+    chart_id: u64,
+    request: &ReadingRequest,
+) -> Result<IndicatorValuesResult, McpError> {
+    let data = workspace
+        .chart_data(chart_id)
+        .ok_or_else(|| no_chart(workspace, chart_id))?;
+    // A constructed chart type (Heikin Ashi, Renko, …) draws bars built from the candles, and its
+    // indicators are computed over those: read the same ones.
+    let constructed = workspace.constructed_bars(chart_id);
+    let meta = ReadingMeta {
+        workspace_id: workspace.id(),
+        chart_id,
+        instrument: data.instrument.key(),
+        timeframe: workspace.timeframe().label().to_owned(),
+        chart_type: data.chart_type.slug().to_owned(),
+        constructed: constructed.is_some(),
+        replay_ms: data.replay_ms,
+        now_ms: now_ms(),
+    };
+    let bars = constructed.as_deref().unwrap_or(data.candles);
+    Ok(indicator_values(&meta, bars, request))
+}
+
+/// Moves the workspace to another timeframe through the toolbar's own path.
+pub fn set_timeframe(
+    workspace: &mut ChartWorkspace,
+    timeframe: Timeframe,
+    ctx: &eframe::egui::Context,
+) -> TimeframeResult {
+    let previous = workspace.timeframe();
+    let changed = workspace.set_timeframe_for_mcp(timeframe, ctx);
+    TimeframeResult {
+        workspace_id: workspace.id().to_string(),
+        timeframe: workspace.timeframe().label().to_owned(),
+        previous_timeframe: previous.label().to_owned(),
+        status: if changed { "changed" } else { "unchanged" }.to_owned(),
+        chart_count: workspace.chart_count(),
+    }
+}
+
+fn chart_now(workspace: &ChartWorkspace, chart_id: u64) -> Option<ChartInfo> {
+    let summary = workspace
+        .chart_summaries()
+        .into_iter()
+        .find(|chart| chart.id == chart_id)?;
+    Some(chart_info(workspace, summary))
+}
+
+/// Switches a market chart's type through the chart's own method.
+pub fn set_chart_type(
+    workspace: &mut ChartWorkspace,
+    chart_id: u64,
+    chart_type: ChartType,
+) -> Result<ChartChangeResult, McpError> {
+    let changed = match workspace.set_chart_type_for_mcp(chart_id, chart_type) {
+        Ok(changed) => changed,
+        Err(ChartTypeError::NoSuchChart) => return Err(no_chart(workspace, chart_id)),
+        Err(ChartTypeError::Unsupported(reason)) => {
+            return Err(McpError::Unsupported(format!(
+                "{} is not available on this chart: {reason}",
+                chart_type.label()
+            )));
+        }
+    };
+    Ok(ChartChangeResult {
+        workspace_id: workspace.id().to_string(),
+        chart_id: chart_id.to_string(),
+        status: if changed { "changed" } else { "unchanged" }.to_owned(),
+        chart: chart_now(workspace, chart_id),
+        charts_in_workspace: workspace.chart_count(),
+    })
+}
+
+/// Removes a market chart through the workspace's own path.
+pub fn remove_chart(
+    workspace: &mut ChartWorkspace,
+    chart_id: u64,
+) -> Result<ChartChangeResult, McpError> {
+    if !workspace.remove_market_chart(chart_id) {
+        return Err(no_chart(workspace, chart_id));
+    }
+    Ok(ChartChangeResult {
+        workspace_id: workspace.id().to_string(),
+        chart_id: chart_id.to_string(),
+        status: "removed".to_owned(),
+        chart: None,
+        charts_in_workspace: workspace.chart_count(),
+    })
+}
+
+// MARK: Snapshots (run on the app thread)
+
+/// A picture being made for an agent: frozen on the UI thread, drawn on the snapshot worker.
+pub struct SnapshotJob {
+    receiver: std::sync::mpsc::Receiver<Result<Vec<u8>, String>>,
+    width: u32,
+    height: u32,
+    started: Instant,
+}
+
+/// The pictures being made for agents. Bounded, and a job nobody asks for is forgotten.
+#[derive(Default)]
+pub struct SnapshotJobs {
+    next: u64,
+    jobs: std::collections::HashMap<u64, SnapshotJob>,
+}
+
+impl SnapshotJobs {
+    const MAX_ACTIVE: usize = 4;
+    const MAX_AGE: Duration = Duration::from_secs(120);
+
+    /// Forgets the pictures nobody collected in time (and with them the PNGs they hold). The app
+    /// calls it every tick, so they do not wait for another snapshot call to be reaped.
+    pub fn expire(&mut self) {
+        self.jobs
+            .retain(|_, job| job.started.elapsed() < Self::MAX_AGE);
+    }
+
+    pub fn begin(
+        &mut self,
+        workspace: &ChartWorkspace,
+        chart_id: u64,
+        scale: crate::model::snapshot::SnapshotScale,
+        ctx: &eframe::egui::Context,
+    ) -> Result<SnapshotStarted, McpError> {
+        self.expire();
+        if self.jobs.len() >= Self::MAX_ACTIVE {
+            return Err(McpError::ResourceLimit(
+                "Too many chart pictures are being made; try again shortly".into(),
+            ));
+        }
+        let (receiver, dimensions) = workspace
+            .snapshot_png_for_mcp(ctx, chart_id, scale)
+            .map_err(|message| {
+                if message.starts_with("There is no such") {
+                    no_chart(workspace, chart_id)
+                } else {
+                    McpError::Conflict(message)
+                }
+            })?;
+        self.next += 1;
+        self.jobs.insert(
+            self.next,
+            SnapshotJob {
+                receiver,
+                width: dimensions.width,
+                height: dimensions.height,
+                started: Instant::now(),
+            },
+        );
+        Ok(SnapshotStarted {
+            job_id: self.next,
+            width: dimensions.width,
+            height: dimensions.height,
+        })
+    }
+
+    pub fn poll(&mut self, job_id: u64) -> Result<SnapshotProgress, McpError> {
+        self.expire();
+        let Some(job) = self.jobs.get(&job_id) else {
+            return Err(McpError::NotFound(
+                "No such picture job (it finished, was collected or expired)".into(),
+            ));
+        };
+        match job.receiver.try_recv() {
+            Err(std::sync::mpsc::TryRecvError::Empty) => Ok(SnapshotProgress::Pending),
+            Ok(Ok(png)) => {
+                let (width, height) = (job.width, job.height);
+                self.jobs.remove(&job_id);
+                if png.len() > crate::model::snapshot::MAX_MCP_PNG_BYTES {
+                    return Err(McpError::ResourceLimit(format!(
+                        "The picture is {} MiB, over the {} MiB an MCP reply carries; ask for \
+                         scale 1x or a chart with fewer or smaller images",
+                        png.len().div_ceil(1024 * 1024),
+                        crate::model::snapshot::MAX_MCP_PNG_BYTES / (1024 * 1024)
+                    )));
+                }
+                Ok(SnapshotProgress::Ready {
+                    png: Arc::new(png),
+                    width,
+                    height,
+                })
+            }
+            Ok(Err(message)) => {
+                self.jobs.remove(&job_id);
+                Err(McpError::AppUnavailable(message))
+            }
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                self.jobs.remove(&job_id);
+                Err(McpError::AppUnavailable(
+                    "The picture stopped before it finished".into(),
+                ))
+            }
+        }
+    }
+}
+
+// MARK: Replay (run on the app thread)
+
+pub fn replay_state(workspace: &ChartWorkspace) -> ReplayResult {
+    replay_tools::replay_result(
+        workspace.id(),
+        workspace.timeframe().label(),
+        &workspace.replay_view(),
+    )
+}
+
+pub fn control_replay(
+    workspace: &mut ChartWorkspace,
+    command: ReplayCommand,
+) -> Result<ReplayResult, McpError> {
+    let view =
+        workspace.replay_command(command).map_err(|error| {
+            match error {
+        ReplayError::NoSuchChart => McpError::NotFound(format!(
+            "No market chart with that id in workspace {}",
+            workspace.id()
+        )),
+        ReplayError::NoCandles => McpError::Conflict(
+            "The chart has no candles yet (it may still be loading), so there is nothing to replay"
+                .into(),
+        ),
+        ReplayError::NotRunning => McpError::Conflict(
+            "No replay is running in this workspace: start one with action `start`".into(),
+        ),
+    }
+        })?;
+    Ok(replay_tools::replay_result(
+        workspace.id(),
+        workspace.timeframe().label(),
+        &view,
+    ))
+}
+
+// MARK: Paper trading (run on the app thread, read-only)
+
+fn paper_account(
+    host: &PaperHost,
+    account_id: u64,
+) -> Result<&crate::model::paper::PaperAccount, McpError> {
+    if host.load_failed() {
+        return Err(McpError::AppUnavailable(
+            "Paper-trading data could not be read, so it is unavailable".into(),
+        ));
+    }
+    host.snapshot()
+        .accounts
+        .iter()
+        .find(|account| account.id == account_id)
+        .ok_or_else(|| {
+            McpError::NotFound(
+                "No such paper account: use an account_id from degenview_list_paper_accounts"
+                    .into(),
+            )
+        })
+}
+
+fn paper_account_info(
+    host: &PaperHost,
+    account: &crate::model::paper::PaperAccount,
+) -> PaperAccountInfo {
+    paper::account_info(
+        account,
+        &host.metrics(account.id),
+        host.snapshot().selected_account_id == Some(account.id),
+        host.owned_elsewhere(account.id).map(owner_text),
+    )
+}
+
+pub fn list_paper_accounts(host: &PaperHost) -> Result<PaperAccountsResult, McpError> {
+    if host.load_failed() {
+        return Err(McpError::AppUnavailable(
+            "Paper-trading data could not be read, so it is unavailable".into(),
+        ));
+    }
+    Ok(PaperAccountsResult {
+        accounts: host
+            .snapshot()
+            .accounts
+            .iter()
+            .map(|account| paper_account_info(host, account))
+            .collect(),
+    })
+}
+
+pub fn get_paper_account(
+    host: &PaperHost,
+    account_id: u64,
+) -> Result<PaperAccountDetail, McpError> {
+    let account = paper_account(host, account_id)?;
+    let snapshot = host.snapshot();
+    Ok(PaperAccountDetail {
+        account: paper_account_info(host, account),
+        positions: snapshot
+            .positions
+            .iter()
+            .filter(|position| position.account_id == account_id && position.signed_quantity != 0.0)
+            .map(|position| {
+                paper::position_info(
+                    position,
+                    host.mark(position),
+                    host.unrealized_pnl(position),
+                    host.return_ratio(position),
+                )
+            })
+            .collect(),
+        open_orders: snapshot
+            .orders
+            .iter()
+            .filter(|order| order.account_id == account_id && paper::is_open(order))
+            .map(paper::order_info)
+            .collect(),
+    })
+}
+
+pub fn paper_fills(
+    host: &PaperHost,
+    account_id: u64,
+    offset: usize,
+    limit: usize,
+) -> Result<PaperFillsResult, McpError> {
+    paper_account(host, account_id)?;
+    let fills: Vec<_> = host
+        .snapshot()
+        .fills
+        .iter()
+        .filter(|fill| fill.account_id == account_id)
+        .collect();
+    Ok(paper::fills_result(account_id, &fills, offset, limit))
+}
+
+pub fn paper_trades(
+    host: &PaperHost,
+    account_id: u64,
+    offset: usize,
+    limit: usize,
+) -> Result<PaperTradesResult, McpError> {
+    paper_account(host, account_id)?;
+    let trades: Vec<_> = host
+        .snapshot()
+        .closed_trades
+        .iter()
+        .filter(|trade| trade.account_id == account_id)
+        .collect();
+    Ok(paper::trades_result(account_id, &trades, offset, limit))
+}
+
+// MARK: Paper trading writes (run on the app thread)
+
+/// Placed orders by `request_id`, so a retry of a call that timed out does not place a second
+/// order. Held in memory only and bounded: it is a guard against an agent's retry, not a ledger.
+/// A record keeps the request it was made for, so the same id with another order is a conflict
+/// rather than a silent answer with the first one.
+#[derive(Default)]
+pub struct OrderMemory {
+    entries: std::collections::VecDeque<(String, crate::model::paper::PaperOrderRequest, u64)>,
+}
+
+impl OrderMemory {
+    const CAPACITY: usize = 512;
+
+    fn key(account_id: u64, request_id: &str) -> String {
+        format!("{account_id}:{request_id}")
+    }
+
+    /// The request and order id recorded for `request_id` on `account_id`.
+    pub fn recall(
+        &self,
+        account_id: u64,
+        request_id: &str,
+    ) -> Option<(&crate::model::paper::PaperOrderRequest, u64)> {
+        let key = Self::key(account_id, request_id);
+        self.entries
+            .iter()
+            .find(|(known, _, _)| *known == key)
+            .map(|(_, request, order_id)| (request, *order_id))
+    }
+
+    /// Drops the record, when the order it names no longer exists.
+    pub fn forget(&mut self, account_id: u64, request_id: &str) {
+        let key = Self::key(account_id, request_id);
+        self.entries.retain(|(known, _, _)| *known != key);
+    }
+
+    /// Records `order_id`, replacing any earlier record of the same id.
+    pub fn remember(
+        &mut self,
+        account_id: u64,
+        request_id: &str,
+        request: &crate::model::paper::PaperOrderRequest,
+        order_id: u64,
+    ) {
+        self.forget(account_id, request_id);
+        if self.entries.len() >= Self::CAPACITY {
+            self.entries.pop_front();
+        }
+        self.entries
+            .push_back((Self::key(account_id, request_id), request.clone(), order_id));
+    }
+}
+
+fn paper_error(error: PaperHostError) -> McpError {
+    use crate::model::paper::PaperTradingError as E;
+    let message = error.message();
+    match error {
+        PaperHostError::Engine(E::AccountNotFound | E::OrderNotFound) => {
+            McpError::NotFound(message)
+        }
+        PaperHostError::Engine(
+            E::InvalidQuantity(_) | E::InvalidPrice(_) | E::UnsupportedSymbol,
+        ) => McpError::InvalidArgument(message),
+        PaperHostError::Engine(_) => McpError::Conflict(message),
+        _ => McpError::AppUnavailable(message),
+    }
+}
+
+/// An account this Mac runs. One another Mac runs is not touched: acting on it from the GUI takes
+/// it over, which an agent must not do silently.
+fn tradable_account(host: &PaperHost, account_id: u64) -> Result<(), McpError> {
+    paper_account(host, account_id)?;
+    if let Some(elsewhere) = host.owned_elsewhere(account_id) {
+        return Err(McpError::Conflict(format!(
+            "{} Change it in DegenView to take it over; it is not changed over MCP.",
+            owner_text(elsewhere)
+        )));
+    }
+    Ok(())
+}
+
+fn account_after(host: &PaperHost, account_id: u64) -> Result<PaperAccountInfo, McpError> {
+    paper_account(host, account_id).map(|account| paper_account_info(host, account))
+}
+
+fn fills_of(host: &PaperHost, order_ids: &[u64]) -> Vec<paper::PaperFillInfo> {
+    host.snapshot()
+        .fills
+        .iter()
+        .filter(|fill| order_ids.contains(&fill.order_id))
+        .map(paper::fill_info)
+        .collect()
+}
+
+fn orders_of(host: &PaperHost, order_ids: &[u64]) -> Vec<paper::PaperOrderInfo> {
+    order_ids
+        .iter()
+        .filter_map(|id| host.snapshot().orders.iter().find(|order| order.id == *id))
+        .map(paper::order_info)
+        .collect()
+}
+
+pub fn place_paper_order(
+    host: &mut PaperHost,
+    memory: &mut OrderMemory,
+    request: crate::model::paper::PaperOrderRequest,
+    dry_run: bool,
+    request_id: Option<&str>,
+) -> Result<PaperOrderResult, McpError> {
+    let account_id = request.account_id;
+    tradable_account(host, account_id)?;
+    if let Some(request_id) = request_id
+        && let Some((earlier, order_id)) = memory
+            .recall(account_id, request_id)
+            .map(|(earlier, order_id)| (earlier.clone(), order_id))
+    {
+        let ids = [order_id];
+        if let Some(order) = orders_of(host, &ids).into_iter().next() {
+            if earlier != request {
+                return Err(McpError::Conflict(
+                    "That request_id was used for a different order. Use a new request_id for a \
+                     different order, or repeat the same order to get the first one back"
+                        .into(),
+                ));
+            }
+            return Ok(PaperOrderResult {
+                status: "already_placed".into(),
+                order: Some(order),
+                bracket_orders: bracket_of(host, order_id),
+                fills: fills_of(host, &ids),
+                account: Some(account_after(host, account_id)?),
+            });
+        }
+        // The order is gone (the account was reset): the id is free again.
+        memory.forget(account_id, request_id);
+    }
+    if dry_run {
+        host.check_order(request).map_err(paper_error)?;
+        return Ok(PaperOrderResult {
+            status: "would_place".into(),
+            order: None,
+            bracket_orders: Vec::new(),
+            fills: Vec::new(),
+            account: Some(account_after(host, account_id)?),
+        });
+    }
+    let order_id = host.submit(request.clone()).map_err(paper_error)?;
+    if let Some(request_id) = request_id {
+        memory.remember(account_id, request_id, &request, order_id);
+    }
+    Ok(PaperOrderResult {
+        status: "placed".into(),
+        order: orders_of(host, &[order_id]).into_iter().next(),
+        bracket_orders: bracket_of(host, order_id),
+        fills: fills_of(host, &[order_id]),
+        account: Some(account_after(host, account_id)?),
+    })
+}
+
+/// The exit orders of a bracket, which are children of its entry order.
+fn bracket_of(host: &PaperHost, entry_id: u64) -> Vec<paper::PaperOrderInfo> {
+    host.snapshot()
+        .orders
+        .iter()
+        .filter(|order| order.parent_order_id == Some(entry_id))
+        .map(paper::order_info)
+        .collect()
+}
+
+pub fn modify_paper_order(
+    host: &mut PaperHost,
+    order_id: u64,
+    changes: crate::model::paper::PaperOrderChanges,
+) -> Result<PaperChangeResult, McpError> {
+    let account_id = host
+        .snapshot()
+        .orders
+        .iter()
+        .find(|order| order.id == order_id)
+        .map(|order| order.account_id)
+        .ok_or_else(|| McpError::NotFound("No such paper order".into()))?;
+    tradable_account(host, account_id)?;
+    host.modify(order_id, changes).map_err(paper_error)?;
+    Ok(PaperChangeResult {
+        status: "modified".into(),
+        orders: orders_of(host, &[order_id]),
+        fills: fills_of(host, &[order_id]),
+        failures: Vec::new(),
+        account: Some(account_after(host, account_id)?),
+    })
+}
+
+pub fn cancel_paper_orders(
+    host: &mut PaperHost,
+    account_id: u64,
+    order_ids: Option<&[u64]>,
+) -> Result<PaperChangeResult, McpError> {
+    tradable_account(host, account_id)?;
+    let working: Vec<u64> = host
+        .snapshot()
+        .orders
+        .iter()
+        .filter(|order| order.account_id == account_id && order.status.is_working())
+        .map(|order| order.id)
+        .collect();
+    let targets: Vec<u64> = match order_ids {
+        None => working.clone(),
+        Some(ids) => ids.to_vec(),
+    };
+    let (mut done, mut failures) = (Vec::new(), Vec::new());
+    for id in &targets {
+        // Naming an order of another account is refused, not cancelled.
+        let belongs = host
+            .snapshot()
+            .orders
+            .iter()
+            .any(|order| order.id == *id && order.account_id == account_id);
+        if !belongs {
+            failures.push(format!("Order {id}: not an order of this account"));
+            continue;
+        }
+        match host.cancel(*id) {
+            Ok(()) => done.push(*id),
+            Err(error) => failures.push(format!("Order {id}: {}", error.message())),
+        }
+    }
+    Ok(PaperChangeResult {
+        status: if done.is_empty() && failures.is_empty() {
+            "nothing_to_do"
+        } else {
+            "canceled"
+        }
+        .into(),
+        orders: orders_of(host, &done),
+        fills: Vec::new(),
+        failures,
+        account: Some(account_after(host, account_id)?),
+    })
+}
+
+pub fn close_paper_positions(
+    host: &mut PaperHost,
+    account_id: u64,
+    instrument_key: Option<&str>,
+) -> Result<PaperChangeResult, McpError> {
+    tradable_account(host, account_id)?;
+    let keys: Vec<String> = host
+        .snapshot()
+        .positions
+        .iter()
+        .filter(|position| position.account_id == account_id && position.signed_quantity != 0.0)
+        .map(|position| position.instrument.key.clone())
+        .filter(|key| instrument_key.is_none_or(|wanted| wanted == key))
+        .collect();
+    if keys.is_empty() && instrument_key.is_some() {
+        return Err(McpError::NotFound(
+            "That account has no open position in that market".into(),
+        ));
+    }
+    let (mut order_ids, mut failures) = (Vec::new(), Vec::new());
+    for key in &keys {
+        match host.close_position(account_id, key) {
+            Ok(order_id) => order_ids.push(order_id),
+            Err(error) => failures.push(format!("{key}: {}", error.message())),
+        }
+    }
+    Ok(PaperChangeResult {
+        status: if keys.is_empty() {
+            "nothing_to_do"
+        } else {
+            "closed"
+        }
+        .into(),
+        orders: orders_of(host, &order_ids),
+        fills: fills_of(host, &order_ids),
+        failures,
+        account: Some(account_after(host, account_id)?),
+    })
+}
+
+// MARK: Portfolio (run on the app thread, read-only)
+
+fn readable_ledger(
+    host: &PortfolioHost,
+) -> Result<&crate::model::portfolio::PortfolioLedgerSnapshot, McpError> {
+    if host.load_failed() {
+        return Err(McpError::AppUnavailable(
+            "Portfolio data could not be read, so it is unavailable".into(),
+        ));
+    }
+    Ok(host.snapshot())
+}
+
+/// The portfolio ids a read covers: the one asked for, or every unarchived portfolio.
+fn portfolio_scope(
+    ledger: &crate::model::portfolio::PortfolioLedgerSnapshot,
+    portfolio_id: Option<u64>,
+) -> Result<(Option<PortfolioInfo>, std::collections::HashSet<u64>), McpError> {
+    match portfolio_id {
+        Some(id) => {
+            let portfolio = ledger
+                .portfolios
+                .iter()
+                .find(|portfolio| portfolio.id == id)
+                .ok_or_else(|| {
+                    McpError::NotFound(
+                        "No such portfolio: use a portfolio_id from degenview_list_portfolios"
+                            .into(),
+                    )
+                })?;
+            let count = ledger
+                .transactions
+                .iter()
+                .filter(|transaction| transaction.portfolio_id == id)
+                .count();
+            Ok((
+                Some(portfolio::portfolio_info(
+                    portfolio,
+                    count,
+                    ledger.selected_portfolio_id == Some(id),
+                )),
+                [id].into_iter().collect(),
+            ))
+        }
+        None => Ok((
+            None,
+            ledger
+                .portfolios
+                .iter()
+                .filter(|portfolio| !portfolio.is_archived)
+                .map(|portfolio| portfolio.id)
+                .collect(),
+        )),
+    }
+}
+
+pub fn list_portfolios(host: &PortfolioHost) -> Result<PortfoliosResult, McpError> {
+    let ledger = readable_ledger(host)?;
+    Ok(PortfoliosResult {
+        portfolios: ledger
+            .portfolios
+            .iter()
+            .map(|portfolio| {
+                portfolio::portfolio_info(
+                    portfolio,
+                    ledger
+                        .transactions
+                        .iter()
+                        .filter(|transaction| transaction.portfolio_id == portfolio.id)
+                        .count(),
+                    ledger.selected_portfolio_id == Some(portfolio.id),
+                )
+            })
+            .collect(),
+        privacy_mode: host.privacy_mode(),
+    })
+}
+
+pub fn portfolio_holdings_base(
+    host: &PortfolioHost,
+    portfolio_id: Option<u64>,
+    now_ms: i64,
+) -> Result<HoldingsBase, McpError> {
+    let ledger = readable_ledger(host)?;
+    let (info, ids) = portfolio_scope(ledger, portfolio_id)?;
+    let (holdings, closed) = crate::model::portfolio_accounting::holdings_and_closed(
+        &ledger.transactions,
+        &ids,
+        None,
+        &std::collections::HashMap::new(),
+        now_ms,
+    )
+    .map_err(|error| {
+        McpError::Conflict(format!(
+            "The ledger cannot be replayed, so there are no holdings: {}",
+            error.message()
+        ))
+    })?;
+    Ok(HoldingsBase {
+        portfolio: info,
+        holdings: holdings
+            .into_iter()
+            .map(|holding| {
+                let mut currencies = ledger
+                    .transactions
+                    .iter()
+                    .filter(|transaction| {
+                        ids.contains(&transaction.portfolio_id)
+                            && transaction.asset.key == holding.asset.key
+                            && transaction.price.is_some()
+                    })
+                    .map(|transaction| transaction.price_currency);
+                let first = currencies.next();
+                let cost_currency = first.filter(|first| currencies.all(|next| next == *first));
+                HoldingBase {
+                    instrument: portfolio::instrument_of(
+                        holding.asset.source,
+                        &holding.asset.key,
+                        &holding.asset.symbol,
+                    ),
+                    cost_currency,
+                    holding,
+                }
+            })
+            .collect(),
+        closed_realized: closed
+            .into_iter()
+            .map(|closed| (closed.asset.key, closed.realized_pnl))
+            .collect(),
+    })
+}
+
+pub fn portfolio_transactions(
+    host: &PortfolioHost,
+    portfolio_id: Option<u64>,
+    asset: Option<&str>,
+    offset: usize,
+    limit: usize,
+) -> Result<TransactionsResult, McpError> {
+    let ledger = readable_ledger(host)?;
+    let (_, ids) = portfolio_scope(ledger, portfolio_id)?;
+    let wanted = asset.map(str::to_uppercase);
+    let rows: Vec<_> = ledger
+        .transactions
+        .iter()
+        .filter(|transaction| ids.contains(&transaction.portfolio_id))
+        .filter(|transaction| {
+            wanted
+                .as_deref()
+                .is_none_or(|wanted| transaction.asset.key.to_uppercase() == wanted)
+        })
+        .collect();
+    Ok(portfolio::transactions_result(&rows, offset, limit))
+}
+
+// MARK: Watchlists (run on the app thread)
+
+fn watchlist_error(error: WatchlistError) -> McpError {
+    match error {
+        WatchlistError::NotFound => McpError::NotFound(error.to_string()),
+        WatchlistError::Duplicate(_) => McpError::Conflict(error.to_string()),
+        WatchlistError::EmptyName
+        | WatchlistError::NameTooLong
+        | WatchlistError::InvalidName
+        | WatchlistError::AmbiguousSection(_) => McpError::InvalidArgument(error.to_string()),
+        WatchlistError::ListFull | WatchlistError::TooManyLists => {
+            McpError::ResourceLimit(error.to_string())
+        }
+        WatchlistError::PersistenceUnavailable | WatchlistError::SaveFailed => {
+            McpError::AppUnavailable(error.to_string())
+        }
+    }
+}
+
+fn readable_watchlists(store: &WatchlistStore) -> Result<&[Watchlist], McpError> {
+    if store.load_failed() {
+        return Err(McpError::AppUnavailable(
+            "Watchlists could not be read, so they are unavailable".into(),
+        ));
+    }
+    Ok(store.lists())
+}
+
+fn watchlist_by_id(store: &WatchlistStore, id: u64) -> Result<&Watchlist, McpError> {
+    readable_watchlists(store)?
+        .iter()
+        .find(|list| list.id == id)
+        .ok_or_else(|| {
+            McpError::NotFound(
+                "No such watchlist: use a watchlist_id from degenview_list_watchlists".into(),
+            )
+        })
+}
+
+pub fn list_watchlists(store: &WatchlistStore) -> Result<WatchlistsResult, McpError> {
+    Ok(WatchlistsResult {
+        watchlists: readable_watchlists(store)?
+            .iter()
+            .map(markets::watchlist_summary)
+            .collect(),
+    })
+}
+
+pub fn get_watchlist(
+    store: &WatchlistStore,
+    id: u64,
+    offset: usize,
+    limit: usize,
+) -> Result<WatchlistPage, McpError> {
+    let list = watchlist_by_id(store, id)?;
+    Ok(WatchlistPage {
+        detail: markets::watchlist_detail(list, offset, limit, None),
+        markets: markets::page_markets(list, offset, limit),
+    })
+}
+
+fn change_result(
+    status: &str,
+    store: &WatchlistStore,
+    id: u64,
+    edit: ListEdit,
+) -> WatchlistChangeResult {
+    let key = |markets: Vec<InstrumentId>| markets.iter().map(InstrumentId::key).collect();
+    let list = store.lists().iter().find(|list| list.id == id);
+    WatchlistChangeResult {
+        status: status.to_owned(),
+        renamed_to: edit
+            .renamed
+            .then(|| list.map(|list| list.name.clone()))
+            .flatten(),
+        watchlist: list.map(markets::watchlist_summary),
+        added: key(edit.added),
+        already_present: key(edit.already_present),
+        removed: key(edit.removed),
+        not_present: key(edit.not_present),
+        moved: key(edit.moved),
+        sections_added: edit.sections_added,
+        sections_renamed: edit.sections_renamed,
+        sections_deleted: edit.sections_deleted,
+    }
+}
+
+pub fn create_watchlist(
+    store: &mut WatchlistStore,
+    name: &str,
+    markets: Vec<WatchlistInstrument>,
+) -> Result<WatchlistChangeResult, McpError> {
+    readable_watchlists(store)?;
+    let id = store.create_list(name, None).map_err(watchlist_error)?;
+    let edit = if markets.is_empty() {
+        ListEdit::default()
+    } else {
+        match store.edit_list(
+            id,
+            ListChanges {
+                add: markets.into_iter().map(|item| (item, Place::End)).collect(),
+                ..ListChanges::default()
+            },
+        ) {
+            Ok((edit, _)) => edit,
+            Err(error) => {
+                // The list was meant to be created with its markets or not at all.
+                let _ = store.delete_list(id);
+                return Err(watchlist_error(error));
+            }
+        }
+    };
+    Ok(change_result("created", store, id, edit))
+}
+
+pub fn update_watchlist(
+    store: &mut WatchlistStore,
+    id: u64,
+    changes: ListChanges,
+) -> Result<WatchlistChangeResult, McpError> {
+    watchlist_by_id(store, id)?;
+    let (edit, changed) = store.edit_list(id, changes).map_err(watchlist_error)?;
+    Ok(change_result(
+        if changed { "updated" } else { "unchanged" },
+        store,
+        id,
+        edit,
+    ))
+}
+
+pub fn delete_watchlist(
+    store: &mut WatchlistStore,
+    id: u64,
+) -> Result<WatchlistChangeResult, McpError> {
+    let summary = markets::watchlist_summary(watchlist_by_id(store, id)?);
+    if summary.is_favorites {
+        return Err(McpError::Conflict(
+            "Favorites cannot be deleted; remove its markets or rename it instead".into(),
+        ));
+    }
+    if !store.delete_list(id).map_err(watchlist_error)? {
+        return Err(McpError::Conflict(
+            "That watchlist cannot be deleted".into(),
+        ));
+    }
+    Ok(WatchlistChangeResult {
+        status: "deleted".into(),
+        watchlist: None,
+        added: Vec::new(),
+        already_present: Vec::new(),
+        removed: Vec::new(),
+        not_present: Vec::new(),
+        renamed_to: None,
+        moved: Vec::new(),
+        sections_added: Vec::new(),
+        sections_renamed: Vec::new(),
+        sections_deleted: Vec::new(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::mcp::state::McpStatus;
     use crate::store::Store;
     use std::sync::Mutex;
+
+    fn job(
+        started: Instant,
+    ) -> (
+        SnapshotJob,
+        std::sync::mpsc::Sender<Result<Vec<u8>, String>>,
+    ) {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        (
+            SnapshotJob {
+                receiver,
+                width: 4,
+                height: 2,
+                started,
+            },
+            sender,
+        )
+    }
+
+    #[test]
+    fn a_picture_job_is_pending_then_collected_once() {
+        let mut jobs = SnapshotJobs::default();
+        let (job, sender) = job(Instant::now());
+        jobs.jobs.insert(1, job);
+        assert_eq!(jobs.poll(1), Ok(SnapshotProgress::Pending));
+        sender.send(Ok(vec![1, 2, 3])).unwrap();
+        assert_eq!(
+            jobs.poll(1),
+            Ok(SnapshotProgress::Ready {
+                png: Arc::new(vec![1, 2, 3]),
+                width: 4,
+                height: 2
+            })
+        );
+        assert!(
+            matches!(jobs.poll(1), Err(McpError::NotFound(_))),
+            "collected once"
+        );
+    }
+
+    #[test]
+    fn a_failed_or_abandoned_picture_job_reports_and_is_forgotten() {
+        let mut jobs = SnapshotJobs::default();
+        let (failing, sender) = job(Instant::now());
+        jobs.jobs.insert(1, failing);
+        sender
+            .send(Err("Could not draw the image.".into()))
+            .unwrap();
+        assert_eq!(
+            jobs.poll(1),
+            Err(McpError::AppUnavailable("Could not draw the image.".into()))
+        );
+        let (abandoned, sender) = job(Instant::now());
+        jobs.jobs.insert(2, abandoned);
+        drop(sender);
+        assert!(matches!(jobs.poll(2), Err(McpError::AppUnavailable(_))));
+        assert!(jobs.jobs.is_empty());
+    }
+
+    #[test]
+    fn a_picture_over_the_reply_budget_is_refused_and_forgotten() {
+        let mut jobs = SnapshotJobs::default();
+        let (big, sender) = job(Instant::now());
+        jobs.jobs.insert(1, big);
+        sender
+            .send(Ok(vec![0; crate::model::snapshot::MAX_MCP_PNG_BYTES + 1]))
+            .unwrap();
+        assert!(matches!(jobs.poll(1), Err(McpError::ResourceLimit(_))));
+        assert!(jobs.jobs.is_empty(), "the oversized PNG is not kept");
+        let (fits, sender) = job(Instant::now());
+        jobs.jobs.insert(2, fits);
+        sender
+            .send(Ok(vec![0; crate::model::snapshot::MAX_MCP_PNG_BYTES]))
+            .unwrap();
+        assert!(matches!(jobs.poll(2), Ok(SnapshotProgress::Ready { .. })));
+    }
+
+    #[test]
+    fn expiring_reaps_an_uncollected_picture_without_a_poll() {
+        let mut jobs = SnapshotJobs::default();
+        let long_ago = Instant::now()
+            .checked_sub(Duration::from_secs(300))
+            .expect("the clock has run for five minutes");
+        let (stale, _sender) = job(long_ago);
+        let (fresh, _fresh_sender) = job(Instant::now());
+        jobs.jobs.insert(1, stale);
+        jobs.jobs.insert(2, fresh);
+        jobs.expire();
+        assert_eq!(jobs.jobs.len(), 1);
+        assert!(jobs.jobs.contains_key(&2));
+    }
+
+    #[test]
+    fn a_picture_nobody_collects_expires() {
+        let mut jobs = SnapshotJobs::default();
+        let long_ago = Instant::now()
+            .checked_sub(Duration::from_secs(300))
+            .expect("the clock has run for five minutes");
+        let (stale, _sender) = job(long_ago);
+        jobs.jobs.insert(1, stale);
+        assert!(matches!(jobs.poll(1), Err(McpError::NotFound(_))));
+        assert!(jobs.jobs.is_empty());
+    }
 
     fn store() -> SharedStore {
         Arc::new(Mutex::new(Store::open_in_memory().unwrap()))

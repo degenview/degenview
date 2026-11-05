@@ -309,6 +309,10 @@ pub struct DegenViewApp {
     alert_fx_refreshed_at: Option<Instant>,
     portfolio: Arc<Mutex<PortfolioHost>>,
     paper: Arc<Mutex<PaperHost>>,
+    /// Orders placed over MCP by `request_id`, so a retried call places nothing twice.
+    mcp_orders: Mutex<mcp_host::OrderMemory>,
+    /// Chart pictures being made for MCP clients.
+    mcp_snapshots: Mutex<mcp_host::SnapshotJobs>,
     webhook_host: Arc<Mutex<WebhookHost>>,
     /// What the user chose about chart snapshots, shared by every window and Settings.
     snapshots: SnapshotHost,
@@ -411,6 +415,22 @@ fn commit_price_alert_checked(
 
 fn alerts_unavailable() -> McpError {
     McpError::AppUnavailable("Price alerts are unavailable right now".into())
+}
+
+fn snapshot_unavailable() -> McpError {
+    McpError::AppUnavailable("Chart pictures are unavailable right now".into())
+}
+
+fn portfolio_unavailable() -> McpError {
+    McpError::AppUnavailable("Portfolios are unavailable right now".into())
+}
+
+fn paper_unavailable() -> McpError {
+    McpError::AppUnavailable("Paper trading is unavailable right now".into())
+}
+
+fn watchlists_unavailable() -> McpError {
+    McpError::AppUnavailable("Watchlists are unavailable right now".into())
 }
 
 /// What every window callback needs; cloned into each deferred viewport.
@@ -832,6 +852,15 @@ impl DegenViewApp {
                 Arc::new(move || ctx.request_repaint()),
             )))
         };
+        // The server reads quotes from the feed the watchlists already run, on its own threads.
+        mcp_host
+            .lock()
+            .expect("mcp host lock poisoned")
+            .shared()
+            .attach_quotes(crate::mcp::state::QuoteAccess {
+                book: quote_book.clone(),
+                coordinator: quote_coordinator.clone(),
+            });
         let alert_host = Arc::new(Mutex::new({
             let store = store.lock().expect("store lock poisoned");
             AlertHost::load(&store, now_ms())
@@ -972,6 +1001,8 @@ impl DegenViewApp {
             alert_fx_refreshed_at: None,
             portfolio,
             paper,
+            mcp_orders: Mutex::new(mcp_host::OrderMemory::default()),
+            mcp_snapshots: Mutex::new(mcp_host::SnapshotJobs::default()),
             webhook_host,
             snapshots,
             editor_themes,
@@ -1484,6 +1515,10 @@ impl DegenViewApp {
         if requests.len() == REQUESTS_PER_FRAME {
             ctx.request_repaint();
         }
+        // Pictures an agent never collected are dropped on time, not at its next snapshot call.
+        if let Ok(mut snapshots) = self.mcp_snapshots.lock() {
+            snapshots.expire();
+        }
         for request in requests {
             request.run(&shared, |command| self.run_mcp_command(ctx, command));
         }
@@ -1693,6 +1728,150 @@ impl DegenViewApp {
                 )
                 .map(|report| McpReply::PineReport(Box::new(report)))
             }),
+            McpCommand::ListPaperAccounts => {
+                let host = self.paper.lock().map_err(|_| paper_unavailable())?;
+                mcp_host::list_paper_accounts(&host).map(McpReply::PaperAccounts)
+            }
+            McpCommand::GetPaperAccount { account_id } => {
+                let host = self.paper.lock().map_err(|_| paper_unavailable())?;
+                mcp_host::get_paper_account(&host, account_id)
+                    .map(|detail| McpReply::PaperAccount(Box::new(detail)))
+            }
+            McpCommand::ListPaperHistory {
+                account_id,
+                closed_trades,
+                offset,
+                limit,
+            } => {
+                let host = self.paper.lock().map_err(|_| paper_unavailable())?;
+                if closed_trades {
+                    mcp_host::paper_trades(&host, account_id, offset, limit)
+                        .map(|result| McpReply::PaperTrades(Box::new(result)))
+                } else {
+                    mcp_host::paper_fills(&host, account_id, offset, limit)
+                        .map(|result| McpReply::PaperFills(Box::new(result)))
+                }
+            }
+            McpCommand::PlacePaperOrder {
+                request,
+                dry_run,
+                request_id,
+            } => {
+                let mut host = self.paper.lock().map_err(|_| paper_unavailable())?;
+                let mut memory = self.mcp_orders.lock().map_err(|_| paper_unavailable())?;
+                let result = mcp_host::place_paper_order(
+                    &mut host,
+                    &mut memory,
+                    *request,
+                    dry_run,
+                    request_id.as_deref(),
+                )?;
+                ctx.request_repaint();
+                Ok(McpReply::PaperOrder(Box::new(result)))
+            }
+            McpCommand::ModifyPaperOrder { order_id, changes } => {
+                let mut host = self.paper.lock().map_err(|_| paper_unavailable())?;
+                let result = mcp_host::modify_paper_order(&mut host, order_id, changes)?;
+                ctx.request_repaint();
+                Ok(McpReply::PaperChange(Box::new(result)))
+            }
+            McpCommand::CancelPaperOrders {
+                account_id,
+                order_ids,
+            } => {
+                let mut host = self.paper.lock().map_err(|_| paper_unavailable())?;
+                let result =
+                    mcp_host::cancel_paper_orders(&mut host, account_id, order_ids.as_deref())?;
+                ctx.request_repaint();
+                Ok(McpReply::PaperChange(Box::new(result)))
+            }
+            McpCommand::ClosePaperPositions {
+                account_id,
+                instrument_key,
+            } => {
+                let mut host = self.paper.lock().map_err(|_| paper_unavailable())?;
+                let result = mcp_host::close_paper_positions(
+                    &mut host,
+                    account_id,
+                    instrument_key.as_deref(),
+                )?;
+                ctx.request_repaint();
+                Ok(McpReply::PaperChange(Box::new(result)))
+            }
+            McpCommand::ListPortfolios => {
+                let host = self.portfolio.lock().map_err(|_| portfolio_unavailable())?;
+                mcp_host::list_portfolios(&host).map(McpReply::Portfolios)
+            }
+            McpCommand::GetPortfolioHoldings { portfolio_id } => {
+                let host = self.portfolio.lock().map_err(|_| portfolio_unavailable())?;
+                mcp_host::portfolio_holdings_base(&host, portfolio_id, now_ms())
+                    .map(|base| McpReply::PortfolioHoldings(Box::new(base)))
+            }
+            McpCommand::ListPortfolioTransactions {
+                portfolio_id,
+                asset,
+                offset,
+                limit,
+            } => {
+                let host = self.portfolio.lock().map_err(|_| portfolio_unavailable())?;
+                mcp_host::portfolio_transactions(
+                    &host,
+                    portfolio_id,
+                    asset.as_deref(),
+                    offset,
+                    limit,
+                )
+                .map(|result| McpReply::PortfolioTransactions(Box::new(result)))
+            }
+            McpCommand::ListWatchlists => {
+                let store = self
+                    .watchlist
+                    .lock()
+                    .map_err(|_| watchlists_unavailable())?;
+                mcp_host::list_watchlists(&store).map(McpReply::Watchlists)
+            }
+            McpCommand::GetWatchlist {
+                watchlist_id,
+                offset,
+                limit,
+            } => {
+                let store = self
+                    .watchlist
+                    .lock()
+                    .map_err(|_| watchlists_unavailable())?;
+                mcp_host::get_watchlist(&store, watchlist_id, offset, limit)
+                    .map(|page| McpReply::Watchlist(Box::new(page)))
+            }
+            McpCommand::CreateWatchlist { name, markets } => {
+                let mut store = self
+                    .watchlist
+                    .lock()
+                    .map_err(|_| watchlists_unavailable())?;
+                let result = mcp_host::create_watchlist(&mut store, &name, markets)?;
+                ctx.request_repaint();
+                Ok(McpReply::WatchlistChanged(Box::new(result)))
+            }
+            McpCommand::UpdateWatchlist {
+                watchlist_id,
+                changes,
+            } => {
+                let mut store = self
+                    .watchlist
+                    .lock()
+                    .map_err(|_| watchlists_unavailable())?;
+                let result = mcp_host::update_watchlist(&mut store, watchlist_id, *changes)?;
+                ctx.request_repaint();
+                Ok(McpReply::WatchlistChanged(Box::new(result)))
+            }
+            McpCommand::DeleteWatchlist { watchlist_id } => {
+                let mut store = self
+                    .watchlist
+                    .lock()
+                    .map_err(|_| watchlists_unavailable())?;
+                let result = mcp_host::delete_watchlist(&mut store, watchlist_id)?;
+                ctx.request_repaint();
+                Ok(McpReply::WatchlistChanged(Box::new(result)))
+            }
             McpCommand::EditPineScript {
                 script_id,
                 expected_revision,
@@ -1794,6 +1973,76 @@ impl DegenViewApp {
             } => self.with_mcp_workspace(workspace_id, |workspace| {
                 mcp_host::apply_indicator(workspace, chart_id, indicator, ema_period)
                     .map(McpReply::IndicatorApplied)
+            }),
+            McpCommand::SetTimeframe {
+                workspace_id,
+                timeframe,
+            } => self.with_mcp_workspace(workspace_id, |workspace| {
+                Ok(McpReply::Timeframe(mcp_host::set_timeframe(
+                    workspace, timeframe, ctx,
+                )))
+            }),
+            McpCommand::SetChartType {
+                workspace_id,
+                chart_id,
+                chart_type,
+            } => self.with_mcp_workspace(workspace_id, |workspace| {
+                mcp_host::set_chart_type(workspace, chart_id, chart_type)
+                    .map(|result| McpReply::ChartChanged(Box::new(result)))
+            }),
+            McpCommand::RemoveChart {
+                workspace_id,
+                chart_id,
+            } => self.with_mcp_workspace(workspace_id, |workspace| {
+                mcp_host::remove_chart(workspace, chart_id)
+                    .map(|result| McpReply::ChartChanged(Box::new(result)))
+            }),
+            McpCommand::BeginSnapshot {
+                workspace_id,
+                chart_id,
+                scale,
+            } => {
+                let mut jobs = self
+                    .mcp_snapshots
+                    .lock()
+                    .map_err(|_| snapshot_unavailable())?;
+                let started = self.with_mcp_workspace(workspace_id, |workspace| {
+                    jobs.begin(workspace, chart_id, scale, ctx)
+                })?;
+                Ok(McpReply::SnapshotStarted(started))
+            }
+            McpCommand::PollSnapshot { job_id } => {
+                let mut jobs = self
+                    .mcp_snapshots
+                    .lock()
+                    .map_err(|_| snapshot_unavailable())?;
+                jobs.poll(job_id).map(McpReply::SnapshotProgress)
+            }
+            McpCommand::GetReplay { workspace_id } => self
+                .with_mcp_workspace(workspace_id, |workspace| {
+                    Ok(McpReply::Replay(mcp_host::replay_state(workspace)))
+                }),
+            McpCommand::ControlReplay {
+                workspace_id,
+                command,
+            } => self.with_mcp_workspace(workspace_id, |workspace| {
+                mcp_host::control_replay(workspace, command).map(McpReply::Replay)
+            }),
+            McpCommand::RemoveIndicator {
+                workspace_id,
+                chart_id,
+                indicator,
+            } => self.with_mcp_workspace(workspace_id, |workspace| {
+                mcp_host::remove_indicator(workspace, chart_id, indicator)
+                    .map(McpReply::IndicatorApplied)
+            }),
+            McpCommand::GetIndicatorValues {
+                workspace_id,
+                chart_id,
+                request,
+            } => self.with_mcp_workspace(workspace_id, |workspace| {
+                mcp_host::indicator_readings(workspace, chart_id, &request)
+                    .map(|result| McpReply::IndicatorValues(Box::new(result)))
             }),
             McpCommand::AddChart {
                 workspace_id,

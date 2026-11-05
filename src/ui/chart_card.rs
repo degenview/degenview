@@ -843,6 +843,18 @@ impl ChartCard {
         built
     }
 
+    /// The bars the chart draws and its scripts and indicators read when its type builds its own
+    /// (Heikin Ashi, Renko, Kagi, Line Break, Point & Figure, Range) out of `candles`; `None`
+    /// when it draws the candles themselves. Built by the code the renderer uses.
+    pub fn constructed_bars(&self, candles: &[Kline], source: DataSource) -> Option<Vec<Kline>> {
+        if source.is_line_chart() {
+            return None;
+        }
+        let chart_type = self.appearance.style.effective_type(source);
+        self.constructed_for(candles, chart_type)
+            .map(|built| built.klines.clone())
+    }
+
     /// What [`Self::constructed_series`] answers, without keeping it.
     fn constructed_for(
         &self,

@@ -19,6 +19,10 @@ pub enum Permission {
     ChartsIndicatorsWrite,
     ChartsPineInstancesWrite,
     ChartsCandlesRead,
+    ChartsViewWrite,
+    ChartsDelete,
+    ChartsReplayWrite,
+    ChartsSnapshotRead,
     DrawingsRead,
     DrawingsWrite,
     DrawingsDelete,
@@ -36,17 +40,39 @@ pub enum Permission {
     PineStylesRead,
     PineReportsRead,
     PineAlertsRead,
+    MarketsRead,
+    WatchlistsRead,
+    WatchlistsWrite,
+    WatchlistsDelete,
+    PaperRead,
+    PaperOrdersPlace,
+    PaperOrdersCancel,
+    PaperPositionsClose,
+    PortfolioRead,
 }
 
 impl Permission {
-    pub const GROUPS: [&'static str; 4] = ["Charts", "Drawings", "Price Alerts", "Pine Scripts"];
+    pub const GROUPS: [&'static str; 8] = [
+        "Charts",
+        "Drawings",
+        "Price Alerts",
+        "Pine Scripts",
+        "Markets",
+        "Watchlists",
+        "Paper Trading",
+        "Portfolio",
+    ];
 
-    pub const ALL: [Permission; 22] = [
+    pub const ALL: [Permission; 35] = [
         Permission::ChartsRead,
         Permission::ChartsCreate,
         Permission::ChartsIndicatorsWrite,
         Permission::ChartsPineInstancesWrite,
         Permission::ChartsCandlesRead,
+        Permission::ChartsViewWrite,
+        Permission::ChartsDelete,
+        Permission::ChartsReplayWrite,
+        Permission::ChartsSnapshotRead,
         Permission::DrawingsRead,
         Permission::DrawingsWrite,
         Permission::DrawingsDelete,
@@ -64,6 +90,15 @@ impl Permission {
         Permission::PineStylesRead,
         Permission::PineReportsRead,
         Permission::PineAlertsRead,
+        Permission::MarketsRead,
+        Permission::WatchlistsRead,
+        Permission::WatchlistsWrite,
+        Permission::WatchlistsDelete,
+        Permission::PaperRead,
+        Permission::PaperOrdersPlace,
+        Permission::PaperOrdersCancel,
+        Permission::PaperPositionsClose,
+        Permission::PortfolioRead,
     ];
 
     /// The stable wire/storage identifier, e.g. `charts.read`.
@@ -74,6 +109,10 @@ impl Permission {
             Self::ChartsIndicatorsWrite => "charts.indicators.write",
             Self::ChartsPineInstancesWrite => "charts.pine_instances.write",
             Self::ChartsCandlesRead => "charts.candles.read",
+            Self::ChartsViewWrite => "charts.view.write",
+            Self::ChartsDelete => "charts.delete",
+            Self::ChartsReplayWrite => "charts.replay.write",
+            Self::ChartsSnapshotRead => "charts.snapshot.read",
             Self::DrawingsRead => "drawings.read",
             Self::DrawingsWrite => "drawings.write",
             Self::DrawingsDelete => "drawings.delete",
@@ -91,6 +130,15 @@ impl Permission {
             Self::PineStylesRead => "pine.styles.read",
             Self::PineReportsRead => "pine.reports.read",
             Self::PineAlertsRead => "pine.alerts.read",
+            Self::MarketsRead => "markets.read",
+            Self::WatchlistsRead => "watchlists.read",
+            Self::WatchlistsWrite => "watchlists.write",
+            Self::WatchlistsDelete => "watchlists.delete",
+            Self::PaperRead => "paper.read",
+            Self::PaperOrdersPlace => "paper.orders.place",
+            Self::PaperOrdersCancel => "paper.orders.cancel",
+            Self::PaperPositionsClose => "paper.positions.close",
+            Self::PortfolioRead => "portfolio.read",
         }
     }
 
@@ -107,6 +155,10 @@ impl Permission {
             Self::ChartsIndicatorsWrite => "Add and configure indicators",
             Self::ChartsPineInstancesWrite => "Apply and configure scripts on charts",
             Self::ChartsCandlesRead => "Read chart candles",
+            Self::ChartsViewWrite => "Change timeframe and chart type",
+            Self::ChartsDelete => "Remove charts",
+            Self::ChartsReplayWrite => "Control chart replay",
+            Self::ChartsSnapshotRead => "Take chart pictures",
             Self::DrawingsRead => "Read chart drawings",
             Self::DrawingsWrite => "Draw on charts and edit drawings",
             Self::DrawingsDelete => "Delete chart drawings",
@@ -124,6 +176,15 @@ impl Permission {
             Self::PineStylesRead => "Read script style options",
             Self::PineReportsRead => "Read strategy reports",
             Self::PineAlertsRead => "Read script alerts",
+            Self::MarketsRead => "Search markets and read quotes",
+            Self::WatchlistsRead => "Read watchlists",
+            Self::WatchlistsWrite => "Create and edit watchlists",
+            Self::WatchlistsDelete => "Delete watchlists",
+            Self::PaperRead => "Read paper trading",
+            Self::PaperOrdersPlace => "Place and change paper orders",
+            Self::PaperOrdersCancel => "Cancel paper orders",
+            Self::PaperPositionsClose => "Close paper positions",
+            Self::PortfolioRead => "Read portfolios",
         }
     }
 
@@ -141,9 +202,21 @@ impl Permission {
             Self::ChartsCandlesRead => {
                 "Read the price candles a chart has loaded: open, high, low, close and volume."
             }
+            Self::ChartsViewWrite => {
+                "Switch a workspace to another timeframe and a chart to another chart type."
+            }
+            Self::ChartsDelete => {
+                "Remove a chart from a workspace, together with the drawings on it."
+            }
+            Self::ChartsSnapshotRead => {
+                "Take a picture (PNG) of a chart as it is drawn: candles, indicators, scripts and drawings, and orders and positions only if Settings includes them in snapshots. Nothing is saved or shared."
+            }
+            Self::ChartsReplayWrite => {
+                "Start, step, seek and stop a workspace's replay. While it runs every chart in the workspace shows the past, and the candle tools read it."
+            }
             Self::DrawingsRead => "List the trend lines, rectangles and other drawings on a chart.",
             Self::DrawingsWrite => {
-                "Add trend lines and rectangles, and move, restyle or hide the ones that are not locked."
+                "Draw trend lines, rectangles, rays, arrows, levels, Fibonacci retracements and text, and move, restyle or hide the ones that are not locked."
             }
             Self::DrawingsDelete => "Permanently remove drawings that are not locked.",
             Self::AlertsRead => "List price alerts.",
@@ -160,6 +233,27 @@ impl Permission {
             Self::PineStylesRead => "Read plot and style options of applied scripts.",
             Self::PineReportsRead => "Read strategy backtest reports.",
             Self::PineAlertsRead => "List script alert subscriptions.",
+            Self::MarketsRead => {
+                "Search the data providers for symbols, and read the last price, 24-hour change and volume of a market."
+            }
+            Self::WatchlistsRead => "List watchlists and the markets in them.",
+            Self::WatchlistsWrite => "Create watchlists, rename them, and add or remove markets.",
+            Self::WatchlistsDelete => {
+                "Permanently remove watchlists (Favorites cannot be removed)."
+            }
+            Self::PaperRead => {
+                "Read paper-trading accounts, positions, orders, fills and closed trades."
+            }
+            Self::PaperOrdersPlace => {
+                "Place simulated orders (market, limit, stop, stop-limit, with take-profit and stop-loss) and change a working order's price or size. Simulated money only; nothing reaches a broker."
+            }
+            Self::PaperOrdersCancel => "Cancel working paper orders.",
+            Self::PaperPositionsClose => {
+                "Close paper positions at the market, one or all of an account's."
+            }
+            Self::PortfolioRead => {
+                "Read portfolios, what they hold and what it is worth, and their transactions. Nothing can be changed."
+            }
         }
     }
 
@@ -170,7 +264,11 @@ impl Permission {
             | Self::ChartsCreate
             | Self::ChartsIndicatorsWrite
             | Self::ChartsPineInstancesWrite
-            | Self::ChartsCandlesRead => "Charts",
+            | Self::ChartsCandlesRead
+            | Self::ChartsViewWrite
+            | Self::ChartsDelete
+            | Self::ChartsReplayWrite
+            | Self::ChartsSnapshotRead => "Charts",
             Self::DrawingsRead | Self::DrawingsWrite | Self::DrawingsDelete => "Drawings",
             Self::AlertsRead
             | Self::AlertsCreate
@@ -186,6 +284,13 @@ impl Permission {
             | Self::PineStylesRead
             | Self::PineReportsRead
             | Self::PineAlertsRead => "Pine Scripts",
+            Self::MarketsRead => "Markets",
+            Self::WatchlistsRead | Self::WatchlistsWrite | Self::WatchlistsDelete => "Watchlists",
+            Self::PaperRead
+            | Self::PaperOrdersPlace
+            | Self::PaperOrdersCancel
+            | Self::PaperPositionsClose => "Paper Trading",
+            Self::PortfolioRead => "Portfolio",
         }
     }
 
@@ -194,6 +299,7 @@ impl Permission {
         match self {
             Self::ChartsRead
             | Self::ChartsCandlesRead
+            | Self::ChartsSnapshotRead
             | Self::DrawingsRead
             | Self::AlertsRead
             | Self::PineScriptsList
@@ -202,10 +308,20 @@ impl Permission {
             | Self::PineInputsRead
             | Self::PineStylesRead
             | Self::PineReportsRead
-            | Self::PineAlertsRead => false,
+            | Self::PineAlertsRead
+            | Self::MarketsRead
+            | Self::PaperRead
+            | Self::PortfolioRead
+            | Self::WatchlistsRead => false,
             Self::ChartsCreate
             | Self::ChartsIndicatorsWrite
             | Self::ChartsPineInstancesWrite
+            | Self::ChartsViewWrite
+            | Self::ChartsDelete
+            | Self::ChartsReplayWrite
+            | Self::PaperOrdersPlace
+            | Self::PaperOrdersCancel
+            | Self::PaperPositionsClose
             | Self::DrawingsWrite
             | Self::DrawingsDelete
             | Self::AlertsCreate
@@ -213,6 +329,8 @@ impl Permission {
             | Self::AlertsPause
             | Self::PineScriptsWrite
             | Self::PineScriptsSave
+            | Self::WatchlistsWrite
+            | Self::WatchlistsDelete
             | Self::AlertsDelete => true,
         }
     }

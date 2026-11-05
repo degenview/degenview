@@ -94,13 +94,16 @@ pub use indicators::{
     EMA_PERIODS, IndicatorConfig, IndicatorSeries, RSI_OVERBOUGHT, RSI_OVERSOLD, RSI_PERIOD,
     SUPERTREND_MULTIPLIER, SUPERTREND_PERIOD,
 };
+pub use indicators::{bollinger, ema, rsi, supertrend_flips};
 pub use instrument::InstrumentId;
 pub use kline::Kline;
 pub use layout::{ChartColumn, ChartConfig, ChartLayout, LayoutSnapshot};
 pub use persisted::PersistedChart;
 pub use pm_series::PmSeries;
 pub use price_format::{PriceFormat, SmallPrices};
-pub use replay::{ReplayEngine, ReplayInterval, ReplaySpeed, ReplayStatus};
+pub use replay::{
+    ClockCommand, ReplayEngine, ReplayInterval, ReplaySpeed, ReplayStatus, ReplayView,
+};
 pub use saved_view::SavedView;
 pub use source::DataSource;
 pub use timeframe::Timeframe;

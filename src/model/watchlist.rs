@@ -48,6 +48,8 @@ pub enum WatchlistError {
     EmptyName,
     NameTooLong,
     InvalidName,
+    /// Two sections have the same title, so a title does not say which is meant.
+    AmbiguousSection(String),
     /// The list is at `MAX_ENTRIES_PER_LIST`.
     ListFull,
     /// There are already `MAX_LISTS` lists.
@@ -68,6 +70,10 @@ impl std::fmt::Display for WatchlistError {
                 "A name can be at most {MAX_NAME_CHARS} characters"
             ),
             Self::InvalidName => formatter.write_str("A name can't contain control characters"),
+            Self::AmbiguousSection(title) => write!(
+                formatter,
+                "More than one section is called \"{title}\": use its section_id"
+            ),
             Self::ListFull => write!(
                 formatter,
                 "A watchlist holds at most {MAX_ENTRIES_PER_LIST} items"
@@ -105,6 +111,7 @@ impl WatchlistError {
             Self::Duplicate(_) => "Already in Watchlist",
             Self::NotFound => "Item Not Found",
             Self::EmptyName | Self::NameTooLong | Self::InvalidName => "Invalid Name",
+            Self::AmbiguousSection(_) => "Ambiguous Section",
             Self::ListFull => "Watchlist Full",
             Self::TooManyLists => "Too Many Watchlists",
             Self::PersistenceUnavailable => "Changes Turned Off",
@@ -791,6 +798,25 @@ impl Watchlist {
                 _ => None,
             })
             .ok_or(WatchlistError::NotFound)
+    }
+
+    /// The section a caller means by `reference`: its id, or failing that its title (case
+    /// ignored). A title two sections share is refused rather than guessed.
+    pub fn resolve_section(&self, reference: &str) -> Result<EntryId> {
+        let reference = reference.trim();
+        if let Ok(id) = reference.parse::<EntryId>()
+            && self.sections().any(|section| section.id == id)
+        {
+            return Ok(id);
+        }
+        let mut found = self
+            .sections()
+            .filter(|section| section.title.to_lowercase() == reference.to_lowercase());
+        match (found.next(), found.next()) {
+            (Some(section), None) => Ok(section.id),
+            (Some(_), Some(_)) => Err(WatchlistError::AmbiguousSection(reference.to_owned())),
+            (None, _) => Err(WatchlistError::NotFound),
+        }
     }
 
     pub fn rename_section(&mut self, id: EntryId, title: &str) -> Result<()> {
