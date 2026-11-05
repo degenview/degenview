@@ -780,6 +780,9 @@ impl DegenViewMcp {
             for entry in detail.entries.iter_mut().filter(|e| e.kind == "market") {
                 entry.quote = quotes.next();
             }
+            // The page was read before the quote wait; the list is part of what is returned, so
+            // the grant for it must still hold now (the markets grant is checked by `read_quotes`).
+            self.still_allowed(&client, Permission::WatchlistsRead)?;
         }
         Ok(Json(detail))
     }

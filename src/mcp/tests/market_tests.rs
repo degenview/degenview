@@ -51,6 +51,24 @@ impl QuoteProvider for OneMarket {
     }
 }
 
+/// Answers nothing, after a pause: a quote wait that is still open when a test changes grants.
+struct SlowProvider;
+
+impl QuoteProvider for SlowProvider {
+    fn quotes(
+        &self,
+        _source: DataSource,
+        _requests: &[QuoteRequest],
+    ) -> Result<Outcome, QuoteFailure> {
+        std::thread::sleep(std::time::Duration::from_millis(1500));
+        Ok(Outcome::from_quotes(HashMap::new()))
+    }
+
+    fn resolve_chain(&self, _address: &str) -> Option<String> {
+        None
+    }
+}
+
 /// Binance markets only in the tests that read quotes: a Coinbase market would open the feed's
 /// real websocket and be priced from the network.
 pub(super) fn feed() -> QuoteAccess {
@@ -568,6 +586,69 @@ fn each_watchlist_and_market_permission_gates_only_its_own_tools() {
         json!({"watchlist_id": id, "include_quotes": true}),
     );
     assert_eq!(error_code(&result), "PERMISSION_DENIED");
+}
+
+#[test]
+fn a_watchlist_read_is_refused_if_its_grant_is_revoked_during_the_quote_wait() {
+    let harness = Harness::start(&[(
+        "c",
+        "tok",
+        &[
+            Permission::WatchlistsRead,
+            Permission::WatchlistsWrite,
+            Permission::MarketsRead,
+        ],
+    )]);
+    let book = WatchlistQuoteBook::default();
+    harness.shared.attach_quotes(QuoteAccess {
+        book: book.clone(),
+        coordinator: WatchlistQuoteCoordinator::with_provider(
+            book,
+            Arc::new(|| {}),
+            Arc::new(SlowProvider),
+            Config {
+                poll_interval_ms: 50,
+                ..Config::default()
+            },
+        ),
+    });
+    let url = harness.url();
+    // The provider takes 1.5 s to answer, so the read is still waiting when the grant goes.
+    let created = call(
+        &url,
+        "tok",
+        "degenview_create_watchlist",
+        json!({"name": "Waits", "markets": [{"source": "binance", "symbol": "ETHUSDT"}]}),
+    );
+    let id = structured(&created)["watchlist"]["watchlist_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    let reader = {
+        let url = url.clone();
+        std::thread::spawn(move || {
+            call(
+                &url,
+                "tok",
+                "degenview_get_watchlist",
+                json!({"watchlist_id": id, "include_quotes": true, "wait_seconds": 3}),
+            )
+        })
+    };
+    std::thread::sleep(std::time::Duration::from_millis(400));
+    // Lift the lists grant and keep the markets one.
+    harness.shared.replace(
+        harness.shared.clients(),
+        crate::model::mcp::PermissionSet::of(
+            Permission::ALL
+                .iter()
+                .copied()
+                .filter(|permission| *permission != Permission::WatchlistsRead),
+        ),
+    );
+    let result = reader.join().unwrap();
+    assert_eq!(error_code(&result), "PERMISSION_DENIED", "{result}");
 }
 
 fn bar(day: i64, close: f64) -> crate::model::Kline {
