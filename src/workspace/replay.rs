@@ -54,6 +54,7 @@ impl ChartWorkspace {
     /// Runs a command of the replay clock for an agent, through the engine the replay bar drives.
     pub fn replay_command(&mut self, command: ReplayCommand) -> Result<ReplayView, ReplayError> {
         if let ReplayCommand::Start { chart_id, at } = command {
+            let mut previous_focus = None;
             if let Some(chart_id) = chart_id {
                 if !self
                     .charts
@@ -62,10 +63,15 @@ impl ChartWorkspace {
                 {
                     return Err(ReplayError::NoSuchChart);
                 }
+                previous_focus = Some(self.focused);
                 self.focus_chart(chart_id);
             }
             let (symbol, timeline) = self.focused_chart_data();
             let Some(first) = timeline.first().copied() else {
+                // A refused start leaves the user's chart where it was.
+                if let Some(previous) = previous_focus {
+                    self.focused = previous;
+                }
                 return Err(ReplayError::NoCandles);
             };
             let requested = match at {
@@ -379,5 +385,40 @@ mod tests {
         let data = workspace.chart_data(chart_id).unwrap();
         assert_eq!(data.replay_ms, Some(1_300));
         assert_eq!(data.candles.last().map(|bar| bar.open_time), Some(1_300));
+    }
+
+    #[test]
+    fn a_refused_start_leaves_the_focused_chart_alone() {
+        let ctx = egui::Context::default();
+        let (mut workspace, first) = rig();
+        let second = workspace
+            .add_chart_for(&InstrumentId::new(DataSource::Binance, "ETHUSDT"), &ctx)
+            .chart_id;
+        workspace.focus_chart(first);
+        assert_eq!(workspace.focused, Some(first));
+        // The second chart has no candles yet (it is still loading).
+        assert_eq!(
+            workspace.replay_command(ReplayCommand::Start {
+                chart_id: Some(second),
+                at: ReplayStart::First
+            }),
+            Err(ReplayError::NoCandles)
+        );
+        assert_eq!(workspace.focused, Some(first), "focus is not moved");
+        assert_eq!(workspace.replay_view().status, ReplayStatus::Inactive);
+        // A start that works does move it.
+        workspace
+            .charts
+            .iter_mut()
+            .find(|chart| chart.id == second)
+            .unwrap()
+            .candles = (0..5).map(|n| candle(1_000 + n * 100, 10.0)).collect();
+        workspace
+            .replay_command(ReplayCommand::Start {
+                chart_id: Some(second),
+                at: ReplayStart::First,
+            })
+            .unwrap();
+        assert_eq!(workspace.focused, Some(second));
     }
 }
