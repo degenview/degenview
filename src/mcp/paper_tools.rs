@@ -116,8 +116,9 @@ pub struct PlaceOrderParams {
     pub dry_run: Option<bool>,
     /// Your own id for this order, 1 to 64 letters, digits, `-`, `_` or `.`. Calling again with
     /// the same id for the same account returns the order already placed (`already_placed`)
-    /// instead of placing another, so a call that timed out can be retried safely. Remembered
-    /// until DegenView quits.
+    /// instead of placing another, so a call that timed out can be retried safely. The same id
+    /// with a different order is refused (`CONFLICT`). Remembered until DegenView quits, and
+    /// forgotten if the order no longer exists (the account was reset).
     #[schemars(length(min = 1, max = 64))]
     pub request_id: Option<String>,
 }

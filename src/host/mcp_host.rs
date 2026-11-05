@@ -1909,9 +1909,11 @@ pub fn paper_trades(
 
 /// Placed orders by `request_id`, so a retry of a call that timed out does not place a second
 /// order. Held in memory only and bounded: it is a guard against an agent's retry, not a ledger.
+/// A record keeps the request it was made for, so the same id with another order is a conflict
+/// rather than a silent answer with the first one.
 #[derive(Default)]
 pub struct OrderMemory {
-    entries: std::collections::VecDeque<(String, u64)>,
+    entries: std::collections::VecDeque<(String, crate::model::paper::PaperOrderRequest, u64)>,
 }
 
 impl OrderMemory {
@@ -1921,20 +1923,39 @@ impl OrderMemory {
         format!("{account_id}:{request_id}")
     }
 
-    pub fn recall(&self, account_id: u64, request_id: &str) -> Option<u64> {
+    /// The request and order id recorded for `request_id` on `account_id`.
+    pub fn recall(
+        &self,
+        account_id: u64,
+        request_id: &str,
+    ) -> Option<(&crate::model::paper::PaperOrderRequest, u64)> {
         let key = Self::key(account_id, request_id);
         self.entries
             .iter()
-            .find(|(known, _)| *known == key)
-            .map(|(_, order_id)| *order_id)
+            .find(|(known, _, _)| *known == key)
+            .map(|(_, request, order_id)| (request, *order_id))
     }
 
-    pub fn remember(&mut self, account_id: u64, request_id: &str, order_id: u64) {
+    /// Drops the record, when the order it names no longer exists.
+    pub fn forget(&mut self, account_id: u64, request_id: &str) {
+        let key = Self::key(account_id, request_id);
+        self.entries.retain(|(known, _, _)| *known != key);
+    }
+
+    /// Records `order_id`, replacing any earlier record of the same id.
+    pub fn remember(
+        &mut self,
+        account_id: u64,
+        request_id: &str,
+        request: &crate::model::paper::PaperOrderRequest,
+        order_id: u64,
+    ) {
+        self.forget(account_id, request_id);
         if self.entries.len() >= Self::CAPACITY {
             self.entries.pop_front();
         }
         self.entries
-            .push_back((Self::key(account_id, request_id), order_id));
+            .push_back((Self::key(account_id, request_id), request.clone(), order_id));
     }
 }
 
@@ -1996,9 +2017,20 @@ pub fn place_paper_order(
 ) -> Result<PaperOrderResult, McpError> {
     let account_id = request.account_id;
     tradable_account(host, account_id)?;
-    if let Some(order_id) = request_id.and_then(|id| memory.recall(account_id, id)) {
+    if let Some(request_id) = request_id
+        && let Some((earlier, order_id)) = memory
+            .recall(account_id, request_id)
+            .map(|(earlier, order_id)| (earlier.clone(), order_id))
+    {
         let ids = [order_id];
         if let Some(order) = orders_of(host, &ids).into_iter().next() {
+            if earlier != request {
+                return Err(McpError::Conflict(
+                    "That request_id was used for a different order. Use a new request_id for a \
+                     different order, or repeat the same order to get the first one back"
+                        .into(),
+                ));
+            }
             return Ok(PaperOrderResult {
                 status: "already_placed".into(),
                 order: Some(order),
@@ -2007,6 +2039,8 @@ pub fn place_paper_order(
                 account: Some(account_after(host, account_id)?),
             });
         }
+        // The order is gone (the account was reset): the id is free again.
+        memory.forget(account_id, request_id);
     }
     if dry_run {
         host.check_order(request).map_err(paper_error)?;
@@ -2018,9 +2052,9 @@ pub fn place_paper_order(
             account: Some(account_after(host, account_id)?),
         });
     }
-    let order_id = host.submit(request).map_err(paper_error)?;
+    let order_id = host.submit(request.clone()).map_err(paper_error)?;
     if let Some(request_id) = request_id {
-        memory.remember(account_id, request_id, order_id);
+        memory.remember(account_id, request_id, &request, order_id);
     }
     Ok(PaperOrderResult {
         status: "placed".into(),

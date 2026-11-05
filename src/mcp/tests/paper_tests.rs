@@ -782,3 +782,52 @@ fn a_write_grant_alone_never_returns_the_account() {
         "close",
     );
 }
+
+#[test]
+fn a_request_id_is_bound_to_its_order_and_survives_a_reset() {
+    let harness = Harness::start(&[("t", "tok", TRADE)]);
+    let url = harness.url();
+    let account = funded(&harness);
+
+    let first = place(&url, "tok", account, json!({"request_id": "r-1"}));
+    assert_eq!(first["structuredContent"]["status"], "placed", "{first}");
+
+    // The same id for another order is refused, not answered with the first one.
+    let other = place(
+        &url,
+        "tok",
+        account,
+        json!({"request_id": "r-1", "quantity": 2.0}),
+    );
+    assert_eq!(error_code(&other), "CONFLICT", "{other}");
+    assert_eq!(harness.paper().snapshot().orders.len(), 1);
+
+    // After a reset the order is gone, so the id is free: the retry places once, and the next
+    // retry of that is recognised instead of placing again.
+    harness
+        .paper()
+        .reset_account(
+            account,
+            PaperCurrency::Usd,
+            100_000.0,
+            PaperAccountSettings::default(),
+        )
+        .unwrap();
+    assert!(harness.paper().snapshot().orders.is_empty());
+    let again = place(&url, "tok", account, json!({"request_id": "r-1"}));
+    assert_eq!(again["structuredContent"]["status"], "placed", "{again}");
+    let retry = place(&url, "tok", account, json!({"request_id": "r-1"}));
+    assert_eq!(
+        retry["structuredContent"]["status"], "already_placed",
+        "{retry}"
+    );
+    assert_eq!(
+        retry["structuredContent"]["order"]["order_id"],
+        again["structuredContent"]["order"]["order_id"]
+    );
+    assert_eq!(
+        harness.paper().snapshot().orders.len(),
+        1,
+        "one order, not two"
+    );
+}
