@@ -22,7 +22,21 @@ client → 127.0.0.1:<port>/mcp → bearer/Host/Origin/size checks
   pre-stop, or newly unauthorized work; started work reports its real result.
 - Settings holds the store lock, so it only queues `McpAction`; `tick_mcp` applies it later.
   Undecodable MCP settings/clients keep the server off without rewriting data.
-- Protocol support is rmcp 3.5 / MCP `2025-03-26` through `2026-07-28`, stateless JSON.
+- Protocol support is rmcp 3.5 / MCP `2025-03-26` through `2026-07-28`, stateless JSON: no
+  `Mcp-Session-Id` is issued, `GET /mcp` answers 405 (no server-to-client stream), and `initialize`
+  advertises `tools` without `listChanged`. A permission change therefore shows at the client's next
+  `tools/list` or call; nothing is pushed. An unknown `MCP-Protocol-Version` header is refused with
+  400 (test `an_unknown_protocol_version_header_is_refused`); a missing one is read as `2025-03-26`.
+  rmcp also accepts `2024-11-05`; that and `2026-07-28` (which needs per-request metadata) have not
+  been tried with a real client.
+- Tried with real clients on a release build (2026-11-05): MCP Inspector CLI
+  (`tools/list`, a read call), Claude Code (`--mcp-config` with an `http` server: sees only the
+  permitted tools, calls one) and `mcp-remote` as the Claude Desktop bridge (`initialize`,
+  `tools/list`). All worked without sessions. A second run with a read/write credential added and
+  deleted a trend line, added and removed a chart (by curl and by Claude Code), and got
+  `PERMISSION_DENIED`, `NOT_FOUND` and argument-error results as `isError: true`. Finding: Inspector's
+  `--tool-arg chart_id=999` sends a JSON integer, which the string-typed ids refuse
+  (`invalid type: integer`); a client that does the same fails every id argument.
 
 Permissions separate reads and mutations: charts read/create/indicator-write/Pine-instance-write/candles-read/snapshot-read/view-write/delete/replay-write; drawings read/write/delete; alerts
 read/create/edit/pause/delete; Pine script list/read/write/save plus diagnostics, inputs, styles,

@@ -2,7 +2,7 @@
 
 Status of the local MCP server (`src/mcp/`, `src/host/mcp_host.rs`; design in
 [architecture/mcp.md](architecture/mcp.md)) and what is still planned. Ordered by what I would do
-next. Nothing here is started.
+next. Items below are not started unless they say otherwise.
 
 ## Done so far
 
@@ -45,21 +45,22 @@ Ranked by how soon someone would ask. Not started unless listed under "Done so f
 - Watchlist sorting, columns, collapsed sections and flags (not exposed), and trending symbols.
 - On-demand backtests and a watchlist screener (item 6); percentage alerts (item 7); layouts.
 
-## 1. Try it with real MCP clients
+## 1. Real MCP clients: what is left
 
-Only curl and the loopback test suite have been used so far.
+Done (2026-11-05, release build; see [architecture/mcp.md](architecture/mcp.md)): MCP Inspector
+CLI, Claude Code and `mcp-remote` connect in stateless mode, list only the permitted tools and call
+read tools; with a read/write credential, drawings and charts were added and removed (curl and
+Claude Code) and denied, not-found and bad-argument calls came back as `isError`. An unsupported
+`MCP-Protocol-Version` is refused (tested). `list_changed` is not advertised and cannot be pushed in
+stateless mode.
 
-- Connect MCP Inspector, Claude Desktop (via a bridge such as `mcp-remote`) and Claude Code, using a
-  credential created in Settings and the "Copy Connection Details" JSON.
-- Confirm the server's stateless mode (`legacy_session_mode = false`, JSON responses) works for each
-  client; older clients may expect an `Mcp-Session-Id`. If one does, decide between enabling sessions
-  for legacy protocol versions or documenting the client as unsupported.
-- Pin and document the supported protocol revisions (rmcp 3.5 advertises `2025-03-26` through
-  `2026-07-28`) and add a test that an unsupported `MCP-Protocol-Version` is refused.
-- Check that `tools/list` filtering and `isError` tool results render sensibly in each client, and
-  fix tool descriptions that confuse models.
-- Send `notifications/tools/list_changed` when a client's effective permissions change while it is
-  connected (stateless mode has no push channel; if that is the case, say so in the docs).
+- Ids are string-typed; a client that sends `46` as an integer is refused. Decide whether to accept
+  integers for `*_id` arguments (Inspector's CLI does this).
+- Run Claude Desktop itself rather than only the bridge.
+- Decide on `2024-11-05` (rmcp accepts it) and try `2026-07-28`; then say in the docs which are
+  supported.
+- Review tool descriptions with a weaker model driving a longer task; the one short run showed no
+  confusion.
 
 ## 2. Audit log and recent-activity view
 
@@ -119,8 +120,8 @@ Reading candles and drawing are done (phase 7, widened by the drawing-tools PR).
 - `degenview_get_candles` returns what the chart holds (about 500 bars, 1500 after one older page).
   DegenView fetches older history only as the chart is scrolled back, so an agent cannot ask for
   more; `has_older_loaded` and `older_history_available` say what is possible.
-- No indicator values (EMA, RSI, Bollinger) alongside the candles, and no swing/pivot helper: the
-  agent works those out from the bars.
+- Indicator values come from `degenview_get_indicator_values` (phase 9); there is no swing/pivot
+  helper, so the agent works those out from the bars.
 - The caller's drawing defaults (templates) are not used: new drawings take the tool's built-in
   default, so a result does not depend on the person's settings.
 - Drawings reach saved layouts the way any drawing edit does; a manual layout is not marked

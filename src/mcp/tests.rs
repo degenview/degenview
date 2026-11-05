@@ -1207,6 +1207,34 @@ fn status_line(response: &str) -> &str {
 const INITIALIZE: &str = r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}"#;
 
 #[test]
+fn an_unknown_protocol_version_header_is_refused() {
+    let harness = Harness::start(&[("c1", "tok", BOTH)]);
+    let port = harness.port;
+    let base = format!("Authorization: Bearer tok\r\nHost: 127.0.0.1:{port}\r\n");
+    let list = r#"{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}"#;
+
+    for version in ["1999-01-01", "2099-12-31", "latest", ""] {
+        let head = format!("{base}MCP-Protocol-Version: {version}\r\n");
+        let response = raw_request(port, &head, list);
+        assert!(
+            status_line(&response).contains("400"),
+            "{version:?}: {response}"
+        );
+    }
+    // The revisions the server answers; a request without the header is read as 2025-03-26.
+    for version in ["2025-03-26", "2025-06-18", "2025-11-25"] {
+        let head = format!("{base}MCP-Protocol-Version: {version}\r\n");
+        let response = raw_request(port, &head, list);
+        assert!(
+            status_line(&response).contains("200"),
+            "{version}: {response}"
+        );
+    }
+    let response = raw_request(port, &base, list);
+    assert!(status_line(&response).contains("200"), "{response}");
+}
+
+#[test]
 fn every_request_needs_a_valid_token() {
     let harness = Harness::start(&[("c1", "good-token", BOTH)]);
     let url = harness.url();
