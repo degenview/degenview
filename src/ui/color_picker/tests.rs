@@ -494,3 +494,200 @@ fn hsv_matches_the_colours_designers_expect_and_round_trips() {
     // Hue wraps cleanly at both ends.
     assert_eq!(bytes(1.0, 1.0, 1.0), bytes(0.0, 1.0, 1.0));
 }
+
+// MARK: The Pine editor's picker (vertical strips)
+
+mod inline_picker {
+    use super::*;
+    use crate::ui::color_picker::inline::{
+        self, Header, Layout as InlineLayout, Output, Style, opacity_of, strip_position, strip_y,
+        transparency_percent,
+    };
+
+    #[test]
+    fn strips_map_a_pointer_to_a_fraction_and_back() {
+        let strip = Rect::from_min_size(pos2(0.0, 100.0), vec2(16.0, 160.0));
+        assert_eq!(strip_position(strip, 100.0), 0.0);
+        assert_eq!(strip_position(strip, 180.0), 0.5);
+        assert_eq!(strip_position(strip, 260.0), 1.0);
+        assert_eq!(strip_position(strip, -50.0), 0.0, "above clamps");
+        assert_eq!(strip_position(strip, 900.0), 1.0, "below clamps");
+        for fraction in [0.0, 0.25, 0.5, 1.0] {
+            assert!((strip_position(strip, strip_y(strip, fraction)) - fraction).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn a_strip_with_no_height_or_a_bad_pointer_never_gives_nan() {
+        let flat = Rect::from_min_size(pos2(0.0, 0.0), vec2(16.0, 0.0));
+        assert_eq!(strip_position(flat, 5.0), 0.0);
+        assert_eq!(strip_position(rect(), f32::NAN), 0.0);
+        assert_eq!(strip_position(rect(), f32::INFINITY), 0.0);
+    }
+
+    #[test]
+    fn pine_transparency_and_opacity_round_trip() {
+        for percent in 0..=100u8 {
+            assert_eq!(transparency_percent(opacity_of(percent)), percent);
+        }
+        assert_eq!(opacity_of(0), 1.0, "0 is opaque");
+        assert_eq!(opacity_of(100), 0.0, "100 is invisible");
+        assert_eq!(opacity_of(200), 0.0, "clamped");
+        assert_eq!(transparency_percent(2.0), 0);
+        assert_eq!(transparency_percent(-1.0), 100);
+    }
+
+    #[test]
+    fn the_transparency_strip_sits_between_the_square_and_the_hue_strip() {
+        let layout = InlineLayout::new(pos2(10.0, 20.0));
+        assert!(layout.square.right() < layout.transparency.left());
+        assert!(layout.transparency.right() < layout.hue.left());
+        assert_eq!(layout.square.top(), layout.transparency.top());
+        assert_eq!(layout.square.top(), layout.hue.top());
+        assert!(layout.header.bottom() < layout.square.top());
+        assert_eq!(layout.total.x, layout.hue.right() - 10.0);
+        assert_eq!(layout.total.y, layout.hue.bottom() - 20.0);
+        assert_eq!(layout.total.x, InlineLayout::width());
+    }
+
+    struct Inline {
+        ctx: egui::Context,
+        hsv: Hsv,
+        time: f64,
+        last: Output,
+        header: String,
+    }
+
+    impl Inline {
+        fn new(hsv: Hsv) -> Self {
+            Self {
+                ctx: egui::Context::default(),
+                hsv,
+                time: 0.0,
+                last: Output::default(),
+                header: String::new(),
+            }
+        }
+
+        fn frame(&mut self, events: Vec<Event>) {
+            self.time += 0.1;
+            let input = RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(600.0, 900.0))),
+                time: Some(self.time),
+                events,
+                ..Default::default()
+            };
+            let (mut hsv, mut last, mut header) = (self.hsv, self.last, String::new());
+            let mut output = self.ctx.run_ui(input, |ui| {
+                ui.scope_builder(
+                    UiBuilder::new().max_rect(Rect::from_min_size(ORIGIN, vec2(300.0, 400.0))),
+                    |ui| {
+                        last = inline::show(
+                            ui,
+                            ui.id().with("inline"),
+                            &mut hsv,
+                            &Header {
+                                font: egui::FontId::monospace(12.0),
+                            },
+                            Style {
+                                background: Color32::from_gray(30),
+                                focus: Color32::WHITE,
+                                text: Color32::WHITE,
+                            },
+                            |_, _| "color.red".to_owned(),
+                        );
+                    },
+                );
+                header = "color.red".to_owned();
+            });
+            output.textures_delta.clear();
+            (self.hsv, self.last, self.header) = (hsv, last, header);
+        }
+
+        fn layout(&self) -> InlineLayout {
+            InlineLayout::new(ORIGIN)
+        }
+
+        fn press(&mut self, position: Pos2) {
+            self.frame(vec![Event::PointerMoved(position)]);
+            self.frame(vec![Event::PointerButton {
+                pos: position,
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: Modifiers::NONE,
+            }]);
+        }
+
+        fn release(&mut self, position: Pos2) {
+            self.frame(vec![Event::PointerButton {
+                pos: position,
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: Modifiers::NONE,
+            }]);
+        }
+    }
+
+    fn red() -> Hsv {
+        Hsv::new(0.0, 1.0, 1.0, 1.0)
+    }
+
+    #[test]
+    fn the_hue_strip_runs_down_from_red_and_leaves_saturation_and_brightness() {
+        let mut picker = Inline::new(Hsv::new(0.0, 0.6, 0.7, 1.0));
+        let hue = picker.layout().hue;
+        let at = pos2(hue.center().x, hue.top() + hue.height() / 3.0);
+        picker.press(at);
+        assert!(picker.last.color_changed);
+        assert!(!picker.last.transparency_changed);
+        assert!((picker.hsv.h - 1.0 / 3.0).abs() < 0.01, "{}", picker.hsv.h);
+        assert_eq!((picker.hsv.s, picker.hsv.v), (0.6, 0.7));
+        picker.release(at);
+        assert!(picker.last.finished);
+    }
+
+    #[test]
+    fn the_transparency_strip_is_opaque_at_the_top() {
+        let mut picker = Inline::new(red());
+        let strip = picker.layout().transparency;
+        picker.press(pos2(strip.center().x, strip.top()));
+        assert_eq!(picker.hsv.a, 1.0);
+        let bottom = pos2(strip.center().x, strip.bottom());
+        picker.frame(vec![Event::PointerMoved(bottom)]);
+        assert_eq!(picker.hsv.a, 0.0, "invisible at the bottom");
+        assert!(picker.last.transparency_changed);
+        assert!(!picker.last.color_changed);
+        // A percent at a time: the middle is 50.
+        picker.frame(vec![Event::PointerMoved(strip.center())]);
+        assert_eq!(transparency_percent(picker.hsv.a), 50);
+        assert_eq!(picker.hsv.a, 0.5);
+    }
+
+    #[test]
+    fn a_drag_that_leaves_the_square_keeps_its_hold_and_clamps() {
+        let mut picker = Inline::new(Hsv::new(0.5, 0.5, 0.5, 1.0));
+        let square = picker.layout().square;
+        picker.press(square.center());
+        picker.frame(vec![Event::PointerMoved(pos2(
+            square.right() + 300.0,
+            square.top() - 300.0,
+        ))]);
+        assert_eq!((picker.hsv.s, picker.hsv.v), (1.0, 1.0));
+        picker.frame(vec![Event::PointerMoved(pos2(
+            square.left() - 300.0,
+            square.bottom() + 300.0,
+        ))]);
+        assert_eq!((picker.hsv.s, picker.hsv.v), (0.0, 0.0));
+        assert_eq!(picker.hsv.h, 0.5, "the hue is not disturbed");
+        assert_eq!(picker.hsv.a, 1.0, "nor the opacity");
+    }
+
+    #[test]
+    fn nothing_changes_without_input() {
+        let mut picker = Inline::new(Hsv::new(0.3, 0.4, 0.5, 0.6));
+        picker.frame(vec![]);
+        picker.frame(vec![]);
+        assert_eq!(picker.last, Output::default());
+        assert_eq!(picker.hsv, Hsv::new(0.3, 0.4, 0.5, 0.6));
+    }
+}

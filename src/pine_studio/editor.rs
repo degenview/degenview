@@ -5,6 +5,7 @@
 //! A pure view: it never compiles. The host feeds `diagnostics` and `status` back after a
 //! change (`EditorOutput::changed`).
 
+use super::color_sites::ColorMap;
 use super::completion::{self, Completion};
 use super::debug_marks::{BreakpointMark, DebugMarks, GutterEvent, MarkKind, StopMark};
 use super::diff::{self, ChangeKind, DiffHunk, DiffSnapshot};
@@ -38,11 +39,14 @@ use std::time::{Duration, Instant};
 
 mod carets;
 mod navigation;
+mod swatches;
 pub use navigation::EditAction;
 #[cfg(test)]
 mod appearance_tests;
 #[cfg(test)]
 mod navigation_tests;
+#[cfg(test)]
+mod swatch_tests;
 
 const GUTTER_WIDTH: f32 = 64.0;
 /// The profiler's column, left of the gutter while the profiler is on: a flame, a bar and a share.
@@ -178,6 +182,8 @@ pub struct EditorState {
     nav: navigation::NavState,
     /// A short note for the status strip ("Reloaded: …"), and when it was made.
     notice: Option<(String, Instant)>,
+    /// Colour swatches in front of constant colours, and the picker they open.
+    swatches: swatches::SwatchState,
 }
 
 /// The open suggestion list and its highlighted row.
@@ -248,6 +254,7 @@ impl EditorState {
             carets: carets::CaretState::default(),
             nav: navigation::NavState::default(),
             notice: None,
+            swatches: swatches::SwatchState::default(),
             #[cfg(test)]
             scroll_y: 0.0,
         }
@@ -290,6 +297,7 @@ impl EditorState {
         self.select_to = None;
         self.carets.clear();
         self.nav.rename = None;
+        self.swatches.open = None;
     }
 
     /// The file now holds `text` (someone else wrote it) and the person chose to keep what they
@@ -576,6 +584,7 @@ pub fn show(ui: &mut Ui, state: &mut EditorState) -> EditorOutput {
         run_find_bar(ui, bar_rect, state);
     }
 
+    swatches::keys(ui.ctx(), state);
     let mut edited = completion_keys(ui.ctx(), state);
     navigation::keys(ui.ctx(), state);
     navigation::call_list_keys(ui.ctx(), state);
@@ -593,7 +602,10 @@ pub fn show(ui: &mut Ui, state: &mut EditorState) -> EditorOutput {
     navigation::call_list(ui, state, &look, &font);
     edited |= renamed;
     edited |= update_completion(ui, state, &look, &font, edited && !renamed);
-    draw_signature(ui, state, &look, &font);
+    edited |= swatches::picker(ui, state, &look, &font);
+    if state.swatches.open.is_none() {
+        draw_signature(ui, state, &look, &font);
+    }
     paint_gutter(ui, gutter, &rows, &state.debug, &look, &font);
     if state.profile.is_some() {
         profile_gutter(ui, profile_column, &rows, state);
@@ -1067,6 +1079,7 @@ struct Classified {
     key: u64,
     spans: Arc<Vec<Span>>,
     table: Arc<SymbolTable>,
+    colors: Arc<ColorMap>,
 }
 
 /// What the gutter needs from the text view: each line's top and height on screen.
@@ -1088,7 +1101,11 @@ fn text_view(
     let font = code.code(ui.ctx());
     let line_height = code.line_height_points();
     let spans = state.spans();
+    let colors = state.colors();
     let current = text_hash(&state.source);
+    let char_width = ui.fonts_mut(|fonts| fonts.glyph_width(&font, ' '));
+    let metrics = swatches::Metrics::new(font.size, char_width);
+    state.swatches.gap = metrics.gap;
 
     if let Some(offset) = state.jump_to.take() {
         let index = syntax::compiled_utf16_to_char_index(&state.source, offset);
@@ -1126,38 +1143,44 @@ fn text_view(
     // Text typed this frame is classified here, once however often the field asks for a layout,
     // and handed to the state afterwards, so the next frame finds it cached.
     let typed: RefCell<Option<Classified>> = RefCell::new(None);
+    // The colours of the text the field last laid out, which is the text its galley shows.
+    let laid_out: RefCell<Arc<ColorMap>> = RefCell::new(Arc::clone(&colors));
     let mut layouter = |ui: &Ui, text: &dyn TextBuffer, _wrap: f32| {
         let key = text_hash(text.as_str());
         let mut typed = typed.borrow_mut();
-        let spans: Arc<Vec<Span>> = if key == current {
-            Arc::clone(&spans)
+        let (spans, text_colors): (Arc<Vec<Span>>, Arc<ColorMap>) = if key == current {
+            (Arc::clone(&spans), Arc::clone(&colors))
         } else if let Some(done) = typed.as_ref().filter(|done| done.key == key) {
-            Arc::clone(&done.spans)
+            (Arc::clone(&done.spans), Arc::clone(&done.colors))
         } else {
             let table = Arc::new(symbols::analyze(text.as_str()));
             let spans = Arc::new(syntax::classify(text.as_str(), Some(&table)));
+            let found = Arc::new(super::color_sites::map(text.as_str()));
             *typed = Some(Classified {
                 key,
                 spans: Arc::clone(&spans),
                 table,
+                colors: Arc::clone(&found),
             });
-            spans
+            (spans, found)
         };
-        let mut job = syntax::layout_job(
+        let mut job = syntax::layout_job_with_gaps(
             text.as_str(),
             &spans,
             font.clone(),
             line_height,
             look,
             look.role(SyntaxRole::Default),
+            &text_colors.bytes,
+            metrics.gap,
         );
+        *laid_out.borrow_mut() = text_colors;
         job.wrap.max_width = f32::INFINITY;
         ui.fonts_mut(|fonts| fonts.layout_job(job))
     };
 
     let mut pane = ui.new_child(UiBuilder::new().max_rect(area));
     pane.set_clip_rect(area.intersect(ui.clip_rect()));
-    let char_width = pane.fonts_mut(|fonts| fonts.glyph_width(&font, ' '));
     let mut rows = GutterRows {
         rows: Vec::new(),
         caret_line: None,
@@ -1395,6 +1418,8 @@ fn text_view(
             }
             ui.painter().set(behind, Shape::Vec(behind_shapes));
             ui.painter().extend(extra_over);
+            let shown_colors = Arc::clone(&laid_out.borrow());
+            swatches::paint(ui, state, &shown_colors, galley, origin, look, metrics);
 
             // Diagnostic underlines and their merged hover messages (over the text).
             let marked = state
@@ -1520,6 +1545,7 @@ fn text_view(
     {
         state.highlighted = Some((done.key, done.spans));
         state.nav.table = Some((done.key, done.table));
+        state.swatches.cache(done.key, done.colors);
     }
     #[cfg(test)]
     {
@@ -2376,6 +2402,88 @@ fn apply_undoable(ctx: &egui::Context, state: &mut EditorState, edit: &Edit) {
     state.completion_explicit = false;
     state.select_to = None;
     ctx.memory_mut(|memory| memory.request_focus(state.id));
+    ctx.request_repaint();
+}
+
+type Undoer = egui::util::undoer::Undoer<(CCursorRange, String)>;
+
+/// One edit that is made over many frames and stays one undo step: a colour picker drag. egui's
+/// undoer would cut a new step whenever the text rests for a second; holding the undoer as it was
+/// at the start keeps the whole gesture in the step that `begin` opened.
+pub(super) struct UndoGesture {
+    /// The history with the text as it was when the gesture began added to it.
+    pristine: Undoer,
+    /// The history before that, for cancelling.
+    rollback: Undoer,
+}
+
+impl UndoGesture {
+    /// Marks the text as it stands now as an undo point and returns the cursor it had.
+    pub(super) fn begin(ctx: &egui::Context, id: Id, source: &str) -> (Self, CCursorRange) {
+        let mut edit_state = TextEditState::load(ctx, id).unwrap_or_default();
+        let cursor = edit_state
+            .cursor
+            .char_range()
+            .unwrap_or_else(|| CCursorRange::one(CCursor::new(0)));
+        let rollback = edit_state.undoer();
+        let mut pristine = rollback.clone();
+        pristine.add_undo(&(cursor, source.to_owned()));
+        edit_state.set_undoer(pristine.clone());
+        edit_state.store(ctx, id);
+        (Self { pristine, rollback }, cursor)
+    }
+
+    /// Puts the history back to the gesture's start. Called after every frame's change.
+    pub(super) fn hold(&self, ctx: &egui::Context, id: Id) {
+        let mut edit_state = TextEditState::load(ctx, id).unwrap_or_default();
+        edit_state.set_undoer(self.pristine.clone());
+        edit_state.store(ctx, id);
+    }
+
+    /// Takes the gesture back: the history is what it was, and the cursor too.
+    pub(super) fn cancel(self, ctx: &egui::Context, id: Id, cursor: CCursorRange) {
+        let mut edit_state = TextEditState::load(ctx, id).unwrap_or_default();
+        edit_state.set_undoer(self.rollback);
+        edit_state.cursor.set_char_range(Some(cursor));
+        edit_state.store(ctx, id);
+    }
+}
+
+/// `cursor` after the characters in `range` were replaced by `length` characters: whatever is
+/// after the range moves with the text, and whatever was inside goes to the end of the new text.
+pub(super) fn with_range_shifted(
+    cursor: CCursorRange,
+    range: &std::ops::Range<usize>,
+    length: usize,
+) -> CCursorRange {
+    let shift = |index: usize| {
+        if index <= range.start {
+            index
+        } else if index >= range.end {
+            index - range.len() + length
+        } else {
+            range.start + length
+        }
+    };
+    CCursorRange::two(
+        CCursor::new(shift(cursor.secondary.index.0)),
+        CCursor::new(shift(cursor.primary.index.0)),
+    )
+}
+
+/// Replaces the text by `source` (an edit made outside the field) and puts the cursor at `cursor`.
+/// The undo history is the caller's business.
+pub(super) fn apply_site_text(
+    ctx: &egui::Context,
+    state: &mut EditorState,
+    source: String,
+    cursor: CCursorRange,
+) {
+    state.source = source;
+    let mut edit_state = TextEditState::load(ctx, state.id).unwrap_or_default();
+    edit_state.cursor.set_char_range(Some(cursor));
+    edit_state.store(ctx, state.id);
+    state.select_to = None;
     ctx.request_repaint();
 }
 

@@ -24,6 +24,7 @@ mod ai_tests;
 mod ai_tools;
 mod bottom_bar;
 mod call_sites;
+pub mod color_sites;
 mod completion;
 pub mod debug;
 #[cfg(test)]

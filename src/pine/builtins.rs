@@ -4,6 +4,27 @@
 use super::runtime_value::RuntimeValue;
 use crate::pine::ValueType;
 
+/// Every `color.*` constant, in the order the reference lists them.
+pub const COLOR_NAMES: [&str; 17] = [
+    "color.aqua",
+    "color.black",
+    "color.blue",
+    "color.fuchsia",
+    "color.gray",
+    "color.green",
+    "color.lime",
+    "color.maroon",
+    "color.navy",
+    "color.olive",
+    "color.orange",
+    "color.purple",
+    "color.red",
+    "color.silver",
+    "color.teal",
+    "color.white",
+    "color.yellow",
+];
+
 pub fn color(name: &str) -> Option<u32> {
     match name {
         "color.aqua" => Some(0x00bc_d4ff),

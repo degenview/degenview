@@ -330,14 +330,25 @@ fn note_pointer(ctx: &egui::Context, state: &mut EditorState, text_area: Rect) {
     }
 }
 
-fn cell_at(source: &str, galley: &Galley, origin: Pos2, char_width: f32, pos: Pos2) -> Cell {
+fn cell_at(
+    state: &mut EditorState,
+    galley: &Galley,
+    origin: Pos2,
+    char_width: f32,
+    pos: Pos2,
+) -> Cell {
     let index = galley
         .cursor_from_pos(Vec2::new(0.0, pos.y - origin.y))
         .index
         .0;
+    let line = multi_cursor::cell_of(&state.source, index).line;
+    // A line with colour swatches is wider than its characters: take the room out of the column.
+    let map = state.colors();
+    let room =
+        super::swatches::room_before(&map, galley, line, pos.x - origin.x, state.swatches.gap);
     Cell {
-        line: multi_cursor::cell_of(source, index).line,
-        column: ((pos.x - origin.x) / char_width).round().max(0.0) as usize,
+        line,
+        column: ((pos.x - origin.x - room) / char_width).round().max(0.0) as usize,
     }
 }
 
@@ -394,7 +405,7 @@ pub(super) fn resolve(
         }
     }
     if let Some(pos) = state.carets.column_press.take() {
-        state.carets.column = Some(cell_at(&state.source, galley, origin, char_width, pos));
+        state.carets.column = Some(cell_at(state, galley, origin, char_width, pos));
     }
     let Some(anchor) = state.carets.column else {
         return;
@@ -408,7 +419,7 @@ pub(super) fn resolve(
         state.carets.column = None;
         return;
     };
-    let head = cell_at(&state.source, galley, origin, char_width, pointer);
+    let head = cell_at(state, galley, origin, char_width, pointer);
     let selections = multi_cursor::column_select(&state.source, anchor, head);
     write(ctx, state, &selections);
 }

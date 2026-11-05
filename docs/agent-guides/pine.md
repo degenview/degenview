@@ -192,6 +192,11 @@
   invisible row. Do not use `Area::constrain_to`: it pins the popup to the edge instead of hiding it.
 - A jump's flash is `Flash`: the character it landed on, or (`show_line`: profile hot lines, debugger frames)
   the whole line as a band behind the text that holds, then fades over 700ms.
+- Constant colours get a swatch (`editor/swatches.rs`, [Pine colour picker](../pine-color-picker.md)). The room
+  for it is a section's `leading_space` from `syntax::layout_job_with_gaps`, so text and offsets are untouched but
+  a row with a colour is wider than `columns * char_width`: take positions from the galley, never from a column.
+  Detection reads lexer tokens in `pine_studio::color_sites`; a picker edit is rewritten from the text the
+  gesture began with and is one undo step through `UndoGesture`, never a second undo stack.
 - The right-click menu, the ⌘-hover cue and the inline rename box are `editor/navigation.rs`. An egui
   `Area` takes no focus on its first frame (it only measures), so the rename field asks for it on the
   second.
