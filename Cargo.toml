@@ -33,7 +33,7 @@ flate2 = "1"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 sha2 = "0.10.9"
-rusqlite = { version = "0.33", features = ["bundled"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
 tungstenite = { version = "0.27", features = ["rustls-tls-native-roots"] }
 ureq = "3.4.2"
 rmcp = { version = "3.5.1", features = ["transport-streamable-http-server"] }
