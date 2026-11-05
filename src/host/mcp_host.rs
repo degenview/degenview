@@ -1580,15 +1580,21 @@ pub fn indicator_readings(
     let data = workspace
         .chart_data(chart_id)
         .ok_or_else(|| no_chart(workspace, chart_id))?;
+    // A constructed chart type (Heikin Ashi, Renko, …) draws bars built from the candles, and its
+    // indicators are computed over those: read the same ones.
+    let constructed = workspace.constructed_bars(chart_id);
     let meta = ReadingMeta {
         workspace_id: workspace.id(),
         chart_id,
         instrument: data.instrument.key(),
         timeframe: workspace.timeframe().label().to_owned(),
+        chart_type: data.chart_type.slug().to_owned(),
+        constructed: constructed.is_some(),
         replay_ms: data.replay_ms,
         now_ms: now_ms(),
     };
-    Ok(indicator_values(&meta, data.candles, request))
+    let bars = constructed.as_deref().unwrap_or(data.candles);
+    Ok(indicator_values(&meta, bars, request))
 }
 
 /// Moves the workspace to another timeframe through the toolbar's own path.

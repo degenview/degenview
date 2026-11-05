@@ -124,7 +124,7 @@ fn reading_request(params: &IndicatorValuesParams) -> Result<ReadingRequest, Cal
 impl DegenViewMcp {
     #[tool(
         name = "degenview_get_indicator_values",
-        description = "Read built-in indicator values for a chart: RSI (14), an EMA of any length (default 20), Bollinger Bands (20, 2 deviations) and Supertrend trend flips, aligned with the chart's own candles and computed with the same code the chart draws. Returns `times` (oldest first), the `closes`, and one named series per indicator with a value per bar (null while warming up). Computed over every bar the chart holds, so values are warm; page back with `before`. The indicator need not be applied to the chart. Use it instead of recomputing from degenview_get_candles.",
+        description = "Read built-in indicator values for a chart: RSI (14), an EMA of any length (default 20), Bollinger Bands (20, 2 deviations) and Supertrend trend flips, aligned with the bars the chart draws (its own candles, or the built bars of a Heikin Ashi, Renko, Kagi, Line Break, Point & Figure or Range chart: see `chart_type`) and computed with the same code the chart draws. Returns `times` (oldest first), the `closes`, and one named series per indicator with a value per bar (null while warming up). Computed over every bar the chart holds, so values are warm; page back with `before`. The indicator need not be applied to the chart. Use it instead of recomputing from degenview_get_candles.",
         annotations(
             read_only_hint = true,
             destructive_hint = false,

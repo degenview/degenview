@@ -1062,6 +1062,8 @@ fn stub_app(
                 chart_id,
                 instrument: "BINANCE:BTCUSDT".into(),
                 timeframe: "1D".into(),
+                chart_type: "candles".into(),
+                constructed: false,
                 replay_ms: None,
                 now_ms: i64::MAX,
             };

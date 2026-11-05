@@ -53,6 +53,10 @@ pub struct IndicatorValuesResult {
     pub chart_id: String,
     pub instrument: String,
     pub timeframe: String,
+    /// The chart's type (`candles`, `heikin_ashi`, `renko`, …). For a type that builds its own
+    /// bars (heikin_ashi, renko, kagi, line_break, point_and_figure, range) the readings, times
+    /// and closes are those of the built bars the chart draws, not of the market's candles.
+    pub chart_type: String,
     /// Bar open times, oldest first, ISO-8601 UTC. Every series has one value per time.
     pub times: Vec<String>,
     pub series: Vec<IndicatorSeriesOut>,
@@ -73,6 +77,10 @@ pub struct ReadingMeta {
     pub chart_id: u64,
     pub instrument: String,
     pub timeframe: String,
+    /// The chart's type slug.
+    pub chart_type: String,
+    /// Whether `candles` handed to [`indicator_values`] are bars built for that type.
+    pub constructed: bool,
     pub replay_ms: Option<i64>,
     pub now_ms: i64,
 }
@@ -144,12 +152,21 @@ pub fn indicator_values(
         }
     }
     let page = &candles[start..end];
-    let mut notes = vec![
+    let mut notes = vec![if meta.constructed {
+        format!(
+            "Computed with the chart's built-in indicator code over the {} bars the chart \
+                 draws (built from the market's candles), as the chart's own indicators are. \
+                 They are not the market's candles: times and closes are those of the built bars. \
+                 Values are warm at the first bar returned unless the chart holds fewer bars \
+                 than the indicator needs.",
+            meta.chart_type
+        )
+    } else {
         "Computed from the market's own candles with the chart's built-in indicator code, over \
-         every bar the chart holds, so the values are warm at the first bar returned unless the \
-         chart holds fewer bars than the indicator needs."
-            .to_owned(),
-    ];
+             every bar the chart holds, so the values are warm at the first bar returned unless the \
+             chart holds fewer bars than the indicator needs."
+                .to_owned()
+    }];
     if let Some(replay) = meta.replay_ms {
         notes.push(format!(
             "Replay is on: bars after {} are hidden, as on the chart.",
@@ -161,6 +178,7 @@ pub fn indicator_values(
         chart_id: meta.chart_id.to_string(),
         instrument: meta.instrument.clone(),
         timeframe: meta.timeframe.clone(),
+        chart_type: meta.chart_type.clone(),
         times: page.iter().map(|bar| iso(bar.open_time)).collect(),
         series,
         closes: page.iter().map(|bar| bar.close).collect(),
@@ -199,6 +217,8 @@ mod tests {
             chart_id: 2,
             instrument: "BINANCE:BTCUSDT".into(),
             timeframe: "1D".into(),
+            chart_type: "candles".into(),
+            constructed: false,
             replay_ms: None,
             now_ms: 0,
         }
