@@ -5,6 +5,10 @@ as TradingView's does: **Download image**, **Copy image**, **Copy link**, **Open
 **Tweet image**. The first two work offline. The other three upload the image to a host the user
 sets in Settings ▸ Snapshots; DegenView hosts nothing.
 
+The menu ends with a separator and **Configure Snapshots…**, which opens Settings on the Snapshots
+page (`Pick::Configure` → `WorkspaceAction::OpenSnapshotSettings` → `WebhookHost::open_snapshots`).
+It is never disabled: it is where a missing host is set.
+
 ## Pipeline
 
 ```

@@ -104,6 +104,12 @@ impl WebhookHost {
         self.open = true;
     }
 
+    /// Opens Settings on the Snapshots page (the chart camera menu's "Configure Snapshots…").
+    pub fn open_snapshots(&mut self) {
+        self.state.section = crate::ui::settings_window::SettingsSection::Snapshots;
+        self.open = true;
+    }
+
     /// Opens Settings on the Webhooks page (an alert editor's "Add in Settings").
     pub fn open_webhooks(&mut self) {
         self.state.section = crate::ui::settings_window::SettingsSection::Webhooks;

@@ -58,6 +58,8 @@ pub(super) struct SnapshotState {
     retry: Option<AwaitingRetry>,
     /// Stands in for the save panel, the file system and the network under test.
     backend: Option<Arc<dyn snapshot_job::Backend>>,
+    /// The camera menu asked for the Snapshots page of Settings; the app takes it this frame.
+    pub(super) settings_requested: bool,
 }
 
 impl ChartWorkspace {

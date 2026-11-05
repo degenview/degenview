@@ -141,6 +141,8 @@ pub struct ChartCardAction {
     pub chart_type: Option<ChartType>,
     /// A row of the header's camera menu was picked: take that snapshot of this chart.
     pub snapshot: Option<crate::model::snapshot::SnapshotAction>,
+    /// "Configure Snapshots…" was picked in the camera menu: open that page of Settings.
+    pub snapshot_settings: bool,
 }
 
 pub struct WatchlistMembership {
@@ -2025,8 +2027,14 @@ impl ChartCard {
                         action.new_alert = true;
                     }
                     ui.spacing_mut().item_spacing.x = 4.0;
-                    if let Some(picked) = crate::ui::snapshot_menu::button(ui, snapshot) {
-                        action.snapshot = Some(picked);
+                    match crate::ui::snapshot_menu::button(ui, snapshot) {
+                        Some(crate::ui::snapshot_menu::Pick::Take(picked)) => {
+                            action.snapshot = Some(picked);
+                        }
+                        Some(crate::ui::snapshot_menu::Pick::Configure) => {
+                            action.snapshot_settings = true;
+                        }
+                        None => {}
                     }
                     let favorite_icon = if is_favorite {
                         Icon::StarFill

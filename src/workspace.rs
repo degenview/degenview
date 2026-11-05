@@ -91,6 +91,8 @@ pub enum WorkspaceAction {
     OpenWebhookSettings,
     /// Open Settings on the Alpaca page (Add Chart's "Set up Alpaca" notice).
     OpenAlpacaSettings,
+    /// Open Settings on the Snapshots page (the camera menu's "Configure Snapshots…").
+    OpenSnapshotSettings,
     /// Pause or resume a price alert (its line on a chart).
     SetAlertState {
         id: crate::model::alert::AlertId,
@@ -695,6 +697,9 @@ impl ChartWorkspace {
             .show(ui, |ui| self.render_grid(ui, paper_host));
         if let Some(item) = self.open_new_tab_request.take() {
             actions.push(WorkspaceAction::OpenWatchlistInNewTab(item));
+        }
+        if std::mem::take(&mut self.snapshot.settings_requested) {
+            actions.push(WorkspaceAction::OpenSnapshotSettings);
         }
 
         if self.add_chart.is_open()
