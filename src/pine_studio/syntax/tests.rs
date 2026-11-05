@@ -489,3 +489,71 @@ fn timings() {
         });
     }
 }
+
+#[test]
+fn gaps_open_room_before_the_given_bytes_and_add_no_text() {
+    let source = "c = color.red\nd = #00FF00 // é\n";
+    let appearance = Appearance::of(crate::model::editor_theme::BuiltInTheme::Light);
+    let spans = spans(source);
+    let first = source.find("color").unwrap();
+    let second = source.find('#').unwrap();
+    let job = layout_job_with_gaps(
+        source,
+        &spans,
+        FontId::monospace(13.0),
+        None,
+        &appearance,
+        appearance.role(SyntaxRole::Default),
+        &[first, second],
+        12.0,
+    );
+    assert_eq!(job.text, source, "the text itself is not touched");
+    // Each gap is the leading space of the section that starts at that byte, and only there.
+    let mut at = 0;
+    let mut gaps = Vec::new();
+    for section in &job.sections {
+        if section.leading_space > 0.0 {
+            gaps.push((at, section.leading_space));
+        }
+        at += section.byte_range.end.0 - section.byte_range.start.0;
+    }
+    assert_eq!(gaps, [(first, 12.0), (second, 12.0)]);
+    // And no gaps is exactly `layout_job`.
+    let plain = layout_job(
+        source,
+        &spans,
+        FontId::monospace(13.0),
+        None,
+        &appearance,
+        appearance.role(SyntaxRole::Default),
+    );
+    let none = layout_job_with_gaps(
+        source,
+        &spans,
+        FontId::monospace(13.0),
+        None,
+        &appearance,
+        appearance.role(SyntaxRole::Default),
+        &[],
+        12.0,
+    );
+    assert_eq!(plain.sections.len(), none.sections.len());
+}
+
+#[test]
+fn a_gap_at_the_start_of_a_run_or_the_text_still_gets_its_room() {
+    let appearance = Appearance::of(crate::model::editor_theme::BuiltInTheme::Light);
+    let source = "#FF0000\n";
+    let job = layout_job_with_gaps(
+        source,
+        &spans(source),
+        FontId::monospace(13.0),
+        None,
+        &appearance,
+        appearance.role(SyntaxRole::Default),
+        &[0],
+        9.0,
+    );
+    assert_eq!(job.text, source);
+    assert_eq!(job.sections[0].leading_space, 9.0);
+}

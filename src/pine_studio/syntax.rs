@@ -591,10 +591,62 @@ pub fn layout_job(
     appearance: &Appearance,
     default: Color32,
 ) -> LayoutJob {
+    layout_job_with_gaps(
+        source,
+        spans,
+        font,
+        line_height,
+        appearance,
+        default,
+        &[],
+        0.0,
+    )
+}
+
+/// [`layout_job`] with `gap_width` points of room opened before each byte offset in `gaps`
+/// (ascending), which the editor fills with a colour swatch. The room is a section's leading
+/// space, so no character is added to the text and every offset stays where it was.
+#[allow(clippy::too_many_arguments)]
+pub fn layout_job_with_gaps(
+    source: &str,
+    spans: &[Span],
+    font: FontId,
+    line_height: Option<f32>,
+    appearance: &Appearance,
+    default: Color32,
+    gaps: &[usize],
+    gap_width: f32,
+) -> LayoutJob {
     let mut job = LayoutJob::default();
     let format = |color: Color32| TextFormat {
         line_height,
         ..TextFormat::simple(font.clone(), color)
+    };
+    let mut next_gap = 0;
+    // Appends `range` in `color`, split where a gap falls so the piece after it starts with room.
+    let mut emit = |job: &mut LayoutJob, range: Range<usize>, color: Color32| {
+        let mut start = range.start;
+        while next_gap < gaps.len() && gaps[next_gap] < start {
+            next_gap += 1;
+        }
+        while next_gap < gaps.len() && gaps[next_gap] < range.end {
+            let gap = gaps[next_gap];
+            if gap > start {
+                job.append(&source[start..gap], 0.0, format(color));
+                start = gap;
+            }
+            next_gap += 1;
+            let end = gaps
+                .get(next_gap)
+                .copied()
+                .filter(|next| *next < range.end)
+                .unwrap_or(range.end);
+            job.append(&source[start..end], gap_width, format(color));
+            start = end;
+        }
+        if start < range.end {
+            job.append(&source[start..range.end], 0.0, format(color));
+        }
     };
     let mut run: Option<(Range<usize>, Color32)> = None;
     let mut add = |job: &mut LayoutJob, range: Range<usize>, color: Color32| {
@@ -606,7 +658,7 @@ pub fn layout_job(
             return;
         }
         if let Some((open, open_color)) = run.replace((range, color)) {
-            job.append(&source[open], 0.0, format(open_color));
+            emit(job, open, open_color);
         }
     };
     let mut cursor = 0;
@@ -624,7 +676,7 @@ pub fn layout_job(
         add(&mut job, cursor..source.len(), default);
     }
     if let Some((open, open_color)) = run {
-        job.append(&source[open], 0.0, format(open_color));
+        emit(&mut job, open, open_color);
     }
     job
 }

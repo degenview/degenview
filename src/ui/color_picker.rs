@@ -332,12 +332,16 @@ fn round_corners(painter: &Painter, rect: Rect, radius: f32, background: Color32
 
 /// The two-tone grid behind a translucent colour.
 fn checkerboard(painter: &Painter, rect: Rect) {
+    checkerboard_cells(painter, rect, (rect.height() / 2.0).clamp(3.0, 6.0));
+}
+
+/// [`checkerboard`] with cells of a given side, from the rect's top-left corner.
+fn checkerboard_cells(painter: &Painter, rect: Rect, cell: f32) {
     let (light, dark) = (
         theme::pick(Color32::from_gray(96), Color32::WHITE),
         theme::pick(Color32::from_gray(58), Color32::from_gray(214)),
     );
     painter.rect_filled(rect, 0.0, light);
-    let cell = (rect.height() / 2.0).clamp(3.0, 6.0);
     let mut mesh = Mesh::default();
     let (columns, rows) = (
         (rect.width() / cell).ceil() as i32,
@@ -362,7 +366,18 @@ fn checkerboard(painter: &Painter, rect: Rect) {
 
 /// A colour over its checkerboard, in a rounded rectangle with a hairline.
 pub fn paint_swatch(painter: &Painter, rect: Rect, color: Color32, radius: f32) {
-    let background = kit::menu_fill();
+    paint_swatch_on(painter, rect, color, radius, kit::menu_fill());
+}
+
+/// [`paint_swatch`] on a surface of another colour: the corners a translucent swatch cuts away
+/// are filled with `background`, which must be what is behind it.
+pub fn paint_swatch_on(
+    painter: &Painter,
+    rect: Rect,
+    color: Color32,
+    radius: f32,
+    background: Color32,
+) {
     if color.a() < 255 {
         checkerboard(painter, rect);
         painter.rect_filled(rect, 0.0, color);
@@ -419,24 +434,32 @@ fn paint_track(painter: &Painter, rect: Rect, stops: &[Color32], checkers: bool)
 
 /// The round handle on a slider or the square: a white ring with a soft shadow.
 fn paint_thumb(painter: &Painter, centre: Pos2, fill: Color32, focused: bool) {
+    let ring = focused.then(|| theme::with_alpha(kit::ACCENT, 0.8));
+    paint_thumb_sized(painter, centre, THUMB_RADIUS, fill, ring);
+}
+
+/// [`paint_thumb`] with its own radius, and a focus ring of a given colour (`None` for no ring).
+fn paint_thumb_sized(
+    painter: &Painter,
+    centre: Pos2,
+    radius: f32,
+    fill: Color32,
+    focus_ring: Option<Color32>,
+) {
     painter.circle_filled(
         centre + vec2(0.0, 1.0),
-        THUMB_RADIUS + 2.0,
+        radius + 2.0,
         Color32::from_black_alpha(80),
     );
-    painter.circle(centre, THUMB_RADIUS, fill, Stroke::new(2.5, Color32::WHITE));
+    painter.circle(centre, radius, fill, Stroke::new(2.5, Color32::WHITE));
     // A hairline outside the white ring, so a light colour on a light ground still has an edge.
     painter.circle_stroke(
         centre,
-        THUMB_RADIUS + 1.5,
+        radius + 1.5,
         Stroke::new(1.0, Color32::from_black_alpha(70)),
     );
-    if focused {
-        painter.circle_stroke(
-            centre,
-            THUMB_RADIUS + 3.5,
-            Stroke::new(2.0, theme::with_alpha(kit::ACCENT, 0.8)),
-        );
+    if let Some(color) = focus_ring {
+        painter.circle_stroke(centre, radius + 3.5, Stroke::new(2.0, color));
     }
 }
 
@@ -811,6 +834,8 @@ pub fn show(ui: &mut Ui, color: &mut Color32, alpha: Alpha) -> bool {
     }
     changed
 }
+
+pub mod inline;
 
 #[cfg(test)]
 mod tests;
