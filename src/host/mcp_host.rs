@@ -1685,7 +1685,9 @@ impl SnapshotJobs {
     const MAX_ACTIVE: usize = 4;
     const MAX_AGE: Duration = Duration::from_secs(120);
 
-    fn expire(&mut self) {
+    /// Forgets the pictures nobody collected in time (and with them the PNGs they hold). The app
+    /// calls it every tick, so they do not wait for another snapshot call to be reaped.
+    pub fn expire(&mut self) {
         self.jobs
             .retain(|_, job| job.started.elapsed() < Self::MAX_AGE);
     }
@@ -1741,6 +1743,14 @@ impl SnapshotJobs {
             Ok(Ok(png)) => {
                 let (width, height) = (job.width, job.height);
                 self.jobs.remove(&job_id);
+                if png.len() > crate::model::snapshot::MAX_MCP_PNG_BYTES {
+                    return Err(McpError::ResourceLimit(format!(
+                        "The picture is {} MiB, over the {} MiB an MCP reply carries; ask for \
+                         scale 1x or a chart with fewer or smaller images",
+                        png.len().div_ceil(1024 * 1024),
+                        crate::model::snapshot::MAX_MCP_PNG_BYTES / (1024 * 1024)
+                    )));
+                }
                 Ok(SnapshotProgress::Ready {
                     png: Arc::new(png),
                     width,
@@ -2570,6 +2580,39 @@ mod tests {
         drop(sender);
         assert!(matches!(jobs.poll(2), Err(McpError::AppUnavailable(_))));
         assert!(jobs.jobs.is_empty());
+    }
+
+    #[test]
+    fn a_picture_over_the_reply_budget_is_refused_and_forgotten() {
+        let mut jobs = SnapshotJobs::default();
+        let (big, sender) = job(Instant::now());
+        jobs.jobs.insert(1, big);
+        sender
+            .send(Ok(vec![0; crate::model::snapshot::MAX_MCP_PNG_BYTES + 1]))
+            .unwrap();
+        assert!(matches!(jobs.poll(1), Err(McpError::ResourceLimit(_))));
+        assert!(jobs.jobs.is_empty(), "the oversized PNG is not kept");
+        let (fits, sender) = job(Instant::now());
+        jobs.jobs.insert(2, fits);
+        sender
+            .send(Ok(vec![0; crate::model::snapshot::MAX_MCP_PNG_BYTES]))
+            .unwrap();
+        assert!(matches!(jobs.poll(2), Ok(SnapshotProgress::Ready { .. })));
+    }
+
+    #[test]
+    fn expiring_reaps_an_uncollected_picture_without_a_poll() {
+        let mut jobs = SnapshotJobs::default();
+        let long_ago = Instant::now()
+            .checked_sub(Duration::from_secs(300))
+            .expect("the clock has run for five minutes");
+        let (stale, _sender) = job(long_ago);
+        let (fresh, _fresh_sender) = job(Instant::now());
+        jobs.jobs.insert(1, stale);
+        jobs.jobs.insert(2, fresh);
+        jobs.expire();
+        assert_eq!(jobs.jobs.len(), 1);
+        assert!(jobs.jobs.contains_key(&2));
     }
 
     #[test]

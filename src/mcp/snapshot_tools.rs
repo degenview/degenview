@@ -3,7 +3,7 @@
 //! The chart is frozen on the app thread, in one frame and from the very data the chart on screen
 //! is drawn from; the drawing and the PNG run on the snapshot worker. The tool starts the job
 //! through the bridge, then asks after it every 100 ms until it is ready, so no request ever
-//! waits on the app thread. Nothing is saved, copied or uploaded.
+//! waits on the app thread. Nothing is saved, copied or uploaded. A picture over 8 MiB is refused (ask for `1x`).
 
 use crate::mcp::bridge::{McpCommand, McpError, McpReply, REQUEST_TIMEOUT};
 use crate::mcp::tools::{DegenViewMcp, client_of, failure, parse_chart_id, parse_id, unexpected};

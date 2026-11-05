@@ -15,6 +15,10 @@ pub const MAX_PIXELS: u64 = 33_554_432;
 const MIN_SCALE: f32 = 0.25;
 /// The most a PNG may weigh to be uploaded.
 pub const MAX_UPLOAD_BYTES: usize = 24 * 1024 * 1024;
+/// The most a PNG may weigh to be returned to an MCP client, which gets it base64-encoded (a third
+/// larger) in one reply. An ordinary chart is a few hundred KiB; one this large holds a very
+/// detailed image drawing, and the client is told to ask at `1x`.
+pub const MAX_MCP_PNG_BYTES: usize = 8 * 1024 * 1024;
 /// The longest answer from a snapshot host that is read.
 pub const MAX_RESPONSE_BYTES: usize = 16 * 1024;
 /// The longest link a host may hand back.

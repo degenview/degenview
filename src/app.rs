@@ -1515,6 +1515,10 @@ impl DegenViewApp {
         if requests.len() == REQUESTS_PER_FRAME {
             ctx.request_repaint();
         }
+        // Pictures an agent never collected are dropped on time, not at its next snapshot call.
+        if let Ok(mut snapshots) = self.mcp_snapshots.lock() {
+            snapshots.expire();
+        }
         for request in requests {
             request.run(&shared, |command| self.run_mcp_command(ctx, command));
         }
