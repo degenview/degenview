@@ -12,25 +12,36 @@ on:
         description: "Existing tag to build and release (e.g. v0.1.0)"
         required: true
 
+# Nothing gets more than read access by default. Only the `release` job below is granted write.
 permissions:
-  contents: write
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
   RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+  # The compiler every release is built with. A release is signed and shipped, so the toolchain is
+  # chosen here, in a reviewed change, not by whatever "stable" means on the day of the build. Keep
+  # in step with ci.yml and the other workflows that build; bump it with its own pull request.
+  RUST_TOOLCHAIN: "1.99.0"
   # The Windows installer compiler; keep in step with windows-installer-check.yml.
   INNO_SETUP_VERSION: "6.7.1"
-  # The macOS disk image builder (tools/make-dmg.sh); keep in step with macos-dmg-check.yml.
-  DMGBUILD_VERSION: "1.6.5"
 
 jobs:
   verify:
     name: Verify version
     runs-on: ubuntu-latest
+    # The one commit every later job builds: the commit the verified, signed tag object names.
+    # Later jobs check this out by hash, not by tag name, so a tag that moves between jobs (or
+    # between the check and the build) cannot change what gets signed.
+    outputs:
+      sha: ${{ steps.signed.outputs.commit }}
     steps:
-      - uses: actions/checkout@v7
+      # Full history, for the ancestry check below. No credentials are left in .git/config.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ env.RELEASE_TAG }}
+          fetch-depth: 0
+          persist-credentials: false
 
       # The app reports the Cargo.toml version (Settings > About, the update check), so a tag
       # that disagrees would ship a build that thinks it is out of date. Cut releases with
@@ -39,6 +50,7 @@ jobs:
       # maintainer (src/service/tag_signature.rs), so fail fast on anything else. GitHub verifies
       # the signature when the tag is pushed and can lag a moment, hence the retries.
       - name: Tag must be signed by the maintainer
+        id: signed
         env:
           GH_TOKEN: ${{ github.token }}
           MAINTAINER_EMAIL: nicoswd@gmail.com
@@ -55,12 +67,35 @@ jobs:
                 and .tag == $tag and .object.type == "commit"
                 and (.tagger.email | ascii_downcase) == $email' >/dev/null; then
               echo "${RELEASE_TAG} is signed by ${MAINTAINER_EMAIL}"
+              commit=$(gh api "repos/${GITHUB_REPOSITORY}/git/tags/${sha}" --jq .object.sha)
+              case "$commit" in
+                *[!0-9a-f]* | "") echo "::error::unexpected commit id '${commit}' for ${RELEASE_TAG}"; exit 1 ;;
+              esac
+              echo "commit=${commit}" >> "$GITHUB_OUTPUT"
               exit 0
             fi
             sleep $((attempt * 3))
           done
           echo "::error::${RELEASE_TAG} is not a verified tag by ${MAINTAINER_EMAIL}. Release with tools/release.sh."
           exit 1
+
+      # A signed tag proves who tagged, not that the commit was ever reviewed or tested. Every
+      # release is cut from `main` (tools/release.sh), which only takes changes through a pull
+      # request, so a tag on a commit that is not in main's history is not a release.
+      - name: Tag must point into main
+        env:
+          RELEASE_SHA: ${{ steps.signed.outputs.commit }}
+        run: |
+          head=$(git rev-parse HEAD)
+          if [ "$head" != "$RELEASE_SHA" ]; then
+            echo "::error::Checked out ${head} but the signed tag names ${RELEASE_SHA}."
+            exit 1
+          fi
+          git fetch --quiet origin main
+          if ! git merge-base --is-ancestor "$RELEASE_SHA" FETCH_HEAD; then
+            echo "::error::${RELEASE_TAG} (${RELEASE_SHA}) is not on main. Releases are cut from main with tools/release.sh."
+            exit 1
+          fi
 
       - name: Tag must match Cargo.toml
         run: |
@@ -72,20 +107,29 @@ jobs:
           fi
 
   # The Flatpak bundle is a Linux asset like the tarball: it must exist before the release is
-  # published, because the release is immutable. Built from source inside the Flatpak SDK, so it
-  # does not share the `build` job's cargo cache.
+  # published, because the release is immutable. Built from source inside the Flatpak SDK.
   flatpak:
     name: Build Flatpak
     needs: verify
+    permissions:
+      contents: read
     uses: ./.github/workflows/flatpak.yml
     with:
-      ref: ${{ github.event.inputs.tag || github.ref_name }}
+      ref: ${{ needs.verify.outputs.sha }}
       bundle-prefix: DegenView-${{ github.event.inputs.tag || github.ref_name }}-linux
 
   build:
     name: Build ${{ matrix.name }}
     needs: verify
     runs-on: ${{ matrix.os }}
+    # Only the macOS signing steps read secrets. Moving them into this environment (restricted to
+    # `v*` tags) is what keeps a workflow run from any other branch away from them; see
+    # docs/agent-guides/releases-updates.md.
+    environment: release
+    permissions:
+      contents: read
+    env:
+      RELEASE_SHA: ${{ needs.verify.outputs.sha }}
     strategy:
       fail-fast: false
       matrix:
@@ -106,32 +150,30 @@ jobs:
             target: aarch64-pc-windows-msvc
           # Linux is built on the OLDEST distro we support (Ubuntu 22.04, glibc 2.35): a binary needs
           # the glibc it was linked against, so building on `ubuntu-latest` (24.04) raised the floor to
-          # 2.39. `cache` keeps these builds off caches made on the newer image: a build script or C
-          # object compiled there would carry its glibc requirement into this build. See
-          # tools/check-glibc.py, which release.yml runs on the result.
+          # 2.39. See tools/check-glibc.py, which release.yml runs on the result.
           - name: linux-x64
             os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
-            cache: x86_64-unknown-linux-gnu-glibc-2.35
           - name: linux-arm64
             os: ubuntu-22.04-arm
             target: aarch64-unknown-linux-gnu
-            cache: aarch64-unknown-linux-gnu-glibc-2.35
     steps:
-      - uses: actions/checkout@v7
+      # The commit the signed tag names (see `verify`), not the tag's name. No credentials are left
+      # in .git/config for the build scripts of 580-odd crates to find.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: ${{ env.RELEASE_TAG }}
+          ref: ${{ env.RELEASE_SHA }}
+          persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
           targets: ${{ matrix.target }}
 
-      # A tag run can only restore caches saved from `main`, so release-cache.yml builds the same
-      # thing there under this key. Only a run on `main` saves one; a tag run's would never be read.
-      - uses: Swatinem/rust-cache@v2
-        with:
-          shared-key: release-${{ matrix.cache || matrix.target }}
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+      # No build cache here. A release is signed (and notarized) from what this job compiles, so it
+      # must not start from compiled output restored from somewhere else: whatever could write that
+      # cache (a merged change, a compromised action) would be in the next release. A clean build is
+      # slower; that is the price of knowing what went into it.
 
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
@@ -141,6 +183,32 @@ jobs:
             libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
             libx11-dev libxcursor-dev libxrandr-dev libxi-dev \
             libgl1-mesa-dev libegl1-mesa-dev libssl-dev pkg-config
+
+      # Everything that runs third-party code happens BEFORE the signing material exists on the
+      # runner: the disk image tool and its dependencies are installed, and the whole crate graph
+      # (every build script and proc-macro) is compiled, with no certificate, no notarization key
+      # and no provisioning profile on disk. After the import below, only Apple's tools and our own
+      # scripts run.
+      #
+      # Homebrew's Python refuses a global pip install, so dmgbuild gets a venv. Every package is
+      # pinned with its hash (tools/requirements/dmgbuild.txt), so a new upload to PyPI changes nothing.
+      - name: Install dmgbuild
+        if: runner.os == 'macOS'
+        run: |
+          python3 -m venv "$RUNNER_TEMP/dmgvenv"
+          "$RUNNER_TEMP/dmgvenv/bin/pip" install --quiet --require-hashes -r tools/requirements/dmgbuild.txt
+
+      # The same cargo command tools/bundle.sh would run (it is told to skip it below), so the
+      # signing steps find the binaries already built.
+      - name: Build macOS release binaries
+        if: runner.os == 'macOS'
+        env:
+          DEGENVIEW_ICLOUD: ${{ vars.DEGENVIEW_ICLOUD }}
+          DEGENVIEW_ICLOUD_ENVIRONMENT: Production
+        run: |
+          features=""
+          [ -n "$DEGENVIEW_ICLOUD" ] && features="--features icloud"
+          cargo build --release --locked $features --bin degenview --bin degenview-alert-agent
 
       # Developer ID signing needs the certificate in a keychain codesign can read unattended, so
       # import it into a throwaway one (deleted at the end of the job).
@@ -173,6 +241,8 @@ jobs:
           # (docs/icloud-sync.md). A release always uses the Production environment.
           DEGENVIEW_ICLOUD: ${{ vars.DEGENVIEW_ICLOUD }}
           DEGENVIEW_ICLOUD_ENVIRONMENT: Production
+          # Compiled above, before the certificate was imported.
+          DEGENVIEW_SKIP_BUILD: "1"
         run: |
           echo "$MACOS_PROFILE_APP" | base64 --decode > "$RUNNER_TEMP/app.provisionprofile"
           echo "$MACOS_PROFILE_HELPER" | base64 --decode > "$RUNNER_TEMP/helper.provisionprofile"
@@ -188,6 +258,7 @@ jobs:
           ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          DEGENVIEW_ICLOUD: ${{ vars.DEGENVIEW_ICLOUD }}
         run: |
           echo "$ASC_KEY_P8" | base64 --decode > "$RUNNER_TEMP/AuthKey.p8"
           ditto -c -k --keepParent target/DegenView.app "$RUNNER_TEMP/notarize.zip"
@@ -221,7 +292,7 @@ jobs:
           fi
           codesign --verify --deep --strict --verbose=2 target/DegenView.app
           spctl --assess --type execute --verbose=2 target/DegenView.app
-          if [ -n "${{ vars.DEGENVIEW_ICLOUD }}" ]; then
+          if [ -n "$DEGENVIEW_ICLOUD" ]; then
             ./tools/verify-icloud.sh target/DegenView.app Production
           fi
 
@@ -244,9 +315,7 @@ jobs:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
         run: |
-          # Homebrew's Python refuses a global pip install, so dmgbuild gets a venv.
-          python3 -m venv "$RUNNER_TEMP/dmgvenv"
-          "$RUNNER_TEMP/dmgvenv/bin/pip" install --quiet "dmgbuild==$DMGBUILD_VERSION"
+          # Installed with its hashes before the certificate was imported (see above).
           export PATH="$RUNNER_TEMP/dmgvenv/bin:$PATH"
           dmg="dist/DegenView-${RELEASE_TAG}-${{ matrix.name }}.dmg"
           ./tools/make-dmg.sh target/DegenView.app "$dmg"
@@ -305,7 +374,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: bash
         run: |
-          cargo build --release
+          cargo build --release --locked
           mkdir -p dist
           # The built-in fonts are under the SIL OFL, which wants its text to come with them.
           7z a "dist/DegenView-${RELEASE_TAG}-${{ matrix.name }}.zip" ./target/release/degenview.exe \
@@ -328,7 +397,7 @@ jobs:
       - name: Build Linux binary
         if: runner.os == 'Linux'
         run: |
-          cargo build --release
+          cargo build --release --locked
           # Fail the release rather than ship a binary that will not start on the oldest distro we
           # support, which is what moving this job off the 22.04 runner would do.
           python3 tools/check-glibc.py target/release/degenview
@@ -342,7 +411,7 @@ jobs:
           cp assets/fonts/README.md pkg/licenses/FONTS.md
           tar -czf "dist/DegenView-${RELEASE_TAG}-${{ matrix.name }}.tar.gz" -C pkg .
 
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: DegenView-${{ matrix.name }}
           path: dist/*
@@ -350,15 +419,35 @@ jobs:
 
   release:
     name: Publish release
-    needs: [build, flatpak]
+    needs: [verify, build, flatpak]
     runs-on: ubuntu-latest
+    environment: release
+    # The only job that can write to the repository. `id-token` and `attestations` are for the
+    # build provenance below.
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      RELEASE_SHA: ${{ needs.verify.outputs.sha }}
     steps:
-      - uses: actions/checkout@v7
+      # Full history and tags, for the release notes. Checked out by commit; the tag must still
+      # name that commit (a tag cannot move once it has an immutable release, but a run can).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: ${{ env.RELEASE_TAG }}
+          ref: ${{ env.RELEASE_SHA }}
           fetch-depth: 0
+          persist-credentials: false
 
-      - uses: actions/download-artifact@v8
+      - name: The tag still names the verified commit
+        run: |
+          tagged=$(git rev-parse -q --verify "refs/tags/${RELEASE_TAG}^{commit}" || true)
+          if [ "$tagged" != "$RELEASE_SHA" ]; then
+            echo "::error::${RELEASE_TAG} names '${tagged}', not the verified commit ${RELEASE_SHA}."
+            exit 1
+          fi
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           path: dist
           pattern: DegenView-*
@@ -427,6 +516,15 @@ jobs:
           for asset in dist/*; do
             [ -s "$asset" ] || { echo "::error::$asset is empty."; exit 1; }
           done
+
+      # Provenance for every asset: a signed statement from GitHub that this workflow, at this
+      # commit, produced these exact bytes. Anyone can check a download with
+      # `gh attestation verify <file> --repo degenview/degenview`. Recorded before the release is
+      # published, so the release never exists without it.
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/*
 
       # The app only installs a release that GitHub published as immutable, so every asset must be
       # attached before it is published: `gh release create` makes a draft, uploads, then

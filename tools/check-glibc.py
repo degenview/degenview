@@ -83,7 +83,7 @@ def main(argv):
         print(
             f"error: {path} needs GLIBC_{required}, newer than the GLIBC_{maximum} baseline.\n"
             "Build on the oldest supported distro (the ubuntu-22.04 runners), or raise the baseline on\n"
-            "purpose in tools/check-glibc.py, release.yml, release-cache.yml and README.md.",
+            "purpose in tools/check-glibc.py, release.yml and README.md.",
             file=sys.stderr,
         )
         return 1

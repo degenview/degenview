@@ -1,0 +1,70 @@
+# cargo-deny policy. Checked on every pull request (.github/workflows/supply-chain.yml).
+#
+#   cargo deny check
+#
+# Every change here is a decision about what may be compiled into a signed release, so review it
+# like code.
+
+[graph]
+# The platforms that ship (release.yml). Dependencies only another platform needs are not checked.
+targets = [
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+    "x86_64-pc-windows-msvc",
+    "aarch64-pc-windows-msvc",
+    "x86_64-unknown-linux-gnu",
+    "aarch64-unknown-linux-gnu",
+]
+
+[advisories]
+# Known vulnerabilities and unmaintained or yanked crates (RustSec) fail the check.
+version = 2
+yanked = "deny"
+# Each ignore needs a reason and a way out. These are "unmaintained" notices (nothing exploitable is
+# reported); revisit them when the owner of the dependency moves.
+ignore = [
+    # Direct dependency (font family list in Settings). Last release still works; look for a
+    # replacement (read-only name/post tables) before it stops parsing new fonts.
+    { id = "RUSTSEC-2026-0192", reason = "ttf-parser: unmaintained, direct dependency, read-only font parsing" },
+    # Linux only, through oo7 -> zbus. Merged into zbus 6; follows the oo7 release that moves to it.
+    { id = "RUSTSEC-2026-0370", reason = "zvariant: unmaintained, merged into zbus 6; follows oo7" },
+    { id = "RUSTSEC-2026-0371", reason = "zbus_names: unmaintained, merged into zbus 6; follows oo7" },
+    { id = "RUSTSEC-2026-0372", reason = "zvariant_derive: unmaintained, merged into zbus 6; follows oo7" },
+]
+
+[sources]
+# Crates come from crates.io and nowhere else: no git dependencies, no other registries, no
+# forks. A dependency from another source can change under the same version number.
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
+
+[bans]
+# Two versions of a crate are common in a tree this size and are not a security question.
+multiple-versions = "allow"
+wildcards = "deny"
+# Needed once something pulls in a C TLS stack: OpenSSL is not used, rustls is.
+deny = [{ crate = "openssl-sys" }, { crate = "openssl" }, { crate = "native-tls" }]
+
+[licenses]
+version = 2
+confidence-threshold = 0.9
+# Permissive licenses (and this project's own). A new license is a decision, not an accident.
+allow = [
+    "0BSD",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CDLA-Permissive-2.0",
+    "GPL-3.0-only",
+    "ISC",
+    "MIT",
+    "OFL-1.1",
+    "Ubuntu-font-1.0",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]

@@ -6,7 +6,9 @@
 //! a key registered on *some* GitHub account", so the tag's tagger must also be the maintainer's
 //! identity: GitHub only reports `valid` when the signing key belongs to an account that owns the
 //! tagger's email, which makes the email trustworthy on a verified tag. A repository write token
-//! cannot add a signing key to the maintainer's account, so it cannot forge a signed *tag*.
+//! cannot add a signing key to the maintainer's account, so it cannot forge a signed *tag*. (A
+//! user-level `gh` OAuth token with the `admin:ssh_signing_key` scope can: keep that scope off any
+//! token a developer machine or an agent session holds, and sign tags with a hardware-backed key.)
 //!
 //! The trust anchor is therefore GitHub's account and key registry, not a key baked into the app,
 //! and rotating the signing key means registering the new one on the account. The signature

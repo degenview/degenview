@@ -1,0 +1,34 @@
+# Dependabot opens the pull requests; nothing here merges them. Security updates for Cargo are
+# already on in the repository settings. These keep the rest from going stale:
+#
+# - github-actions: every `uses:` in the workflows is pinned to a commit. A pin that never moves
+#   misses fixes, so this proposes the new commit (and its version comment) for review.
+# - cargo: minor and patch updates in one weekly pull request, so Cargo.lock does not sit on old
+#   versions until an advisory forces it. cargo-deny (supply-chain.yml) checks the result.
+#
+# Not covered, update by hand: tools/requirements/*.txt (hashed pip pins), the Flatpak container
+# digest in flatpak.yml, and RUST_TOOLCHAIN in the workflows.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    # Wait a week before proposing a brand-new release: a hijacked or malicious version is usually
+    # yanked or flagged within days.
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    groups:
+      cargo-minor-patch:
+        update-types: [minor, patch]

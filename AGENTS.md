@@ -46,6 +46,17 @@ A pull-down is as wide as its longest row and no wider. Never guess a width (`se
 use `kit::fitted_menu` (or `kit::menu_fit`), and look at the opened menu in a picture before shipping
 it. Details in [Core guidance](docs/agent-guides/core.md).
 
+## Supply chain
+
+Nothing reaches a release that was not reviewed, pinned and built from a signed tag on `main`.
+When touching `.github/`, `tools/`, `packaging/`, `build.rs`, `Cargo.toml`/`Cargo.lock` or the
+updater (`src/service/update_*`, `tag_signature`, `self_update`): pin every `uses:` to a commit,
+keep job permissions minimal, never run third-party code on a macOS release job after the
+signing certificate is imported, use `--locked`, add no git or non-crates.io dependency, and keep
+`cargo deny check` clean. Never ask for, store or use a GitHub token with `admin:ssh_signing_key`,
+`admin:*` or `delete_repo` scope; never push a tag. Details in
+[Releases and updates](docs/agent-guides/releases-updates.md#build-hardening).
+
 ## Choosing the release type
 
 When a task ends with "should we release this?", or the user asks what to release, look at what

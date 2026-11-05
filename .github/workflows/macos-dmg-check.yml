@@ -13,14 +13,11 @@ on:
       - "tools/retry.sh"
       - "tools/test-retry.sh"
       - ".github/workflows/macos-dmg-check.yml"
+      - tools/requirements/dmgbuild.txt
   workflow_dispatch:
 
 permissions:
   contents: read
-
-env:
-  # Keep in step with release.yml.
-  DMGBUILD_VERSION: "1.6.5"
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -32,7 +29,9 @@ jobs:
     runs-on: macos-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       # The notarization retry both release steps share (tools/retry.sh); no Apple needed.
       - name: The retry helper retries
@@ -41,7 +40,7 @@ jobs:
       - name: Install dmgbuild
         run: |
           python3 -m venv "$RUNNER_TEMP/dmgvenv"
-          "$RUNNER_TEMP/dmgvenv/bin/pip" install --quiet "dmgbuild==$DMGBUILD_VERSION"
+          "$RUNNER_TEMP/dmgvenv/bin/pip" install --quiet --require-hashes -r tools/requirements/dmgbuild.txt
           echo "$RUNNER_TEMP/dmgvenv/bin" >> "$GITHUB_PATH"
 
       - name: Build the disk image around a stub app

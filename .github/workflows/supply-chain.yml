@@ -1,0 +1,54 @@
+name: Supply chain
+
+# What goes into a signed release, checked before it gets there: the crates the lockfile pulls in
+# (RustSec advisories, yanked versions, licenses, where they come from: deny.toml) and the workflows
+# themselves (unpinned actions, injectable expressions, over-broad permissions: zizmor).
+#
+# Also runs weekly: a new advisory can land against a lockfile nobody touched.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "41 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: supply-chain-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cargo-deny:
+    name: cargo deny
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      # Fails on: a vulnerability or yanked crate in Cargo.lock, a dependency that does not come from
+      # crates.io, a license outside the allow list, a banned crate. See deny.toml.
+      - uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2.1.1
+        with:
+          command: check
+          arguments: --all-features
+
+  workflows:
+    name: Workflow audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      # Static analysis of .github/workflows. Findings fail the job (no code-scanning upload, which
+      # would need more permissions than this job should have).
+      - uses: zizmorcore/zizmor-action@45d7276c9ca790aabd705e31ca99c6185c3e76dd # v0.8.1
+        with:
+          advanced-security: false
+          persona: regular
