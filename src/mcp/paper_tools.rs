@@ -9,9 +9,10 @@
 
 use crate::mcp::bridge::{McpCommand, McpReply, REQUEST_TIMEOUT};
 use crate::mcp::paper::{
-    DEFAULT_HISTORY_PAGE, MAX_HISTORY_PAGE, PaperAccountDetail, PaperAccountsResult,
-    PaperChangeResult, PaperFillsResult, PaperOrderResult, PaperTradesResult,
+    DEFAULT_HISTORY_PAGE, MAX_HISTORY_PAGE, PaperAccountDetail, PaperAccountInfo,
+    PaperAccountsResult, PaperChangeResult, PaperFillsResult, PaperOrderResult, PaperTradesResult,
 };
+use crate::mcp::state::ClientIdentity;
 use crate::mcp::tools::{DegenViewMcp, McpSource, client_of, failure, invalid, unexpected};
 use crate::model::mcp::Permission;
 use crate::model::paper::{
@@ -275,6 +276,16 @@ fn page(params: &PaperHistoryParams) -> Result<(usize, usize), CallToolResult> {
     Ok((params.offset.unwrap_or(0) as usize, limit))
 }
 
+impl DegenViewMcp {
+    /// A write grant is not a read grant: the account (cash, equity, margin) goes back only to a
+    /// credential that holds `paper.read` now, checked after the write ran.
+    fn hide_unread_account(&self, client: &ClientIdentity, account: &mut Option<PaperAccountInfo>) {
+        if !self.shared.allows(&client.id, Permission::PaperRead) {
+            *account = None;
+        }
+    }
+}
+
 #[tool_router(router = paper_router, vis = "pub(super)")]
 impl DegenViewMcp {
     #[tool(
@@ -421,7 +432,7 @@ impl DegenViewMcp {
 
     #[tool(
         name = "degenview_place_paper_order",
-        description = "Place a simulated order in a paper-trading account: market, limit, stop or stop-limit, buy or sell, optionally with take-profit and stop-loss exits. Simulated money only: nothing reaches a broker. The order fills from the prices of an open DegenView chart of that market (degenview_add_chart first; with none the order is refused for lack of a price) and, while it works, fills only while DegenView runs. The reply is the order as it stands (`filled`, `working`, or the refusal), the fills it produced and the account after. Use `dry_run` to check an order without placing it, and `request_id` so a retry after a timeout cannot place it twice. An account another Mac runs is refused. Check degenview_get_paper_account for what is open afterwards. Replay does not hold paper orders back: they fill at live prices.",
+        description = "Place a simulated order in a paper-trading account: market, limit, stop or stop-limit, buy or sell, optionally with take-profit and stop-loss exits. Simulated money only: nothing reaches a broker. The order fills from the prices of an open DegenView chart of that market (degenview_add_chart first; with none the order is refused for lack of a price) and, while it works, fills only while DegenView runs. The reply is the order as it stands (`filled`, `working`, or the refusal), the fills it produced and, if the credential also holds paper.read, the account after. Use `dry_run` to check an order without placing it, and `request_id` so a retry after a timeout cannot place it twice. An account another Mac runs is refused. Check degenview_get_paper_account for what is open afterwards. Replay does not hold paper orders back: they fill at live prices.",
         annotations(
             read_only_hint = false,
             destructive_hint = false,
@@ -452,7 +463,11 @@ impl DegenViewMcp {
             )
             .await
         {
-            Ok(McpReply::PaperOrder(result)) => Ok(Json(*result)),
+            Ok(McpReply::PaperOrder(result)) => {
+                let mut result = *result;
+                self.hide_unread_account(&client, &mut result.account);
+                Ok(Json(result))
+            }
             Ok(_) => Err(unexpected()),
             Err(error) => Err(failure(&error)),
         }
@@ -460,7 +475,7 @@ impl DegenViewMcp {
 
     #[tool(
         name = "degenview_modify_paper_order",
-        description = "Change a working paper order's quantity, limit price or stop price (only the ones that apply to its type). Returns the order afterwards and the account. An order that has filled, been canceled or been rejected cannot be changed. An account another Mac runs is refused.",
+        description = "Change a working paper order's quantity, limit price or stop price (only the ones that apply to its type). Returns the order afterwards and, if the credential also holds paper.read, the account. An order that has filled, been canceled or been rejected cannot be changed. An account another Mac runs is refused.",
         annotations(
             read_only_hint = false,
             destructive_hint = false,
@@ -493,7 +508,11 @@ impl DegenViewMcp {
             )
             .await
         {
-            Ok(McpReply::PaperChange(result)) => Ok(Json(*result)),
+            Ok(McpReply::PaperChange(result)) => {
+                let mut result = *result;
+                self.hide_unread_account(&client, &mut result.account);
+                Ok(Json(result))
+            }
             Ok(_) => Err(unexpected()),
             Err(error) => Err(failure(&error)),
         }
@@ -542,7 +561,11 @@ impl DegenViewMcp {
             )
             .await
         {
-            Ok(McpReply::PaperChange(result)) => Ok(Json(*result)),
+            Ok(McpReply::PaperChange(result)) => {
+                let mut result = *result;
+                self.hide_unread_account(&client, &mut result.account);
+                Ok(Json(result))
+            }
             Ok(_) => Err(unexpected()),
             Err(error) => Err(failure(&error)),
         }
@@ -598,7 +621,11 @@ impl DegenViewMcp {
             )
             .await
         {
-            Ok(McpReply::PaperChange(result)) => Ok(Json(*result)),
+            Ok(McpReply::PaperChange(result)) => {
+                let mut result = *result;
+                self.hide_unread_account(&client, &mut result.account);
+                Ok(Json(result))
+            }
             Ok(_) => Err(unexpected()),
             Err(error) => Err(failure(&error)),
         }

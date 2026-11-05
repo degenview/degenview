@@ -340,11 +340,19 @@ fn each_paper_write_permission_gates_only_its_own_tools() {
 
 #[test]
 fn a_market_order_fills_at_the_ask_and_a_close_takes_the_position_off() {
-    let harness = Harness::start(&[("t", "tok", TRADE), ("r", "r-tok", PAPER)]);
+    let harness = Harness::start(&[
+        ("t", "tok", TRADE),
+        ("r", "r-tok", PAPER),
+        (
+            "rw",
+            "rw-tok",
+            &[Permission::PaperOrdersPlace, Permission::PaperRead],
+        ),
+    ]);
     let url = harness.url();
     let account = funded(&harness);
 
-    let placed = place(&url, "tok", account, json!({}));
+    let placed = place(&url, "rw-tok", account, json!({}));
     assert_eq!(placed["isError"], json!(false), "{placed}");
     let out = &placed["structuredContent"];
     assert_eq!(out["status"], "placed");
@@ -370,6 +378,7 @@ fn a_market_order_fills_at_the_ask_and_a_close_takes_the_position_off() {
         "degenview_close_paper_positions",
         json!({"account_id": account.to_string(), "source": "binance", "symbol": "btcusdt"}),
     );
+    assert_eq!(closed["structuredContent"]["account"], Value::Null);
     let out = &closed["structuredContent"];
     assert_eq!(out["status"], "closed", "{closed}");
     assert_eq!(out["fills"][0]["price"], 99.0, "selling fills at the bid");
@@ -679,5 +688,97 @@ fn bad_paper_orders_never_reach_the_engine() {
     assert!(
         host.snapshot().orders.is_empty(),
         "no refused call placed anything"
+    );
+}
+
+#[test]
+fn a_write_grant_alone_never_returns_the_account() {
+    let harness = Harness::start(&[
+        ("p", "p-tok", &[Permission::PaperOrdersPlace]),
+        ("c", "c-tok", &[Permission::PaperOrdersCancel]),
+        ("x", "x-tok", &[Permission::PaperPositionsClose]),
+        (
+            "pr",
+            "pr-tok",
+            &[Permission::PaperOrdersPlace, Permission::PaperRead],
+        ),
+        (
+            "cr",
+            "cr-tok",
+            &[Permission::PaperOrdersCancel, Permission::PaperRead],
+        ),
+    ]);
+    let url = harness.url();
+    let account = funded(&harness);
+    let a = account.to_string();
+    let none = |result: &Value, what: &str| {
+        assert_eq!(result["isError"], json!(false), "{what}: {result}");
+        assert_eq!(
+            result["structuredContent"]["account"],
+            Value::Null,
+            "{what}"
+        );
+    };
+    let shown = |result: &Value, what: &str| {
+        assert_eq!(result["isError"], json!(false), "{what}: {result}");
+        assert!(
+            result["structuredContent"]["account"]["equity"].is_number(),
+            "{what}: {result}"
+        );
+    };
+
+    // Dry run, then a real order.
+    none(
+        &place(&url, "p-tok", account, json!({"dry_run": true})),
+        "dry run",
+    );
+    shown(
+        &place(&url, "pr-tok", account, json!({"dry_run": true})),
+        "dry run with read",
+    );
+    none(&place(&url, "p-tok", account, json!({})), "placed");
+
+    // A no-op cancel and a no-op close still must not show the balances.
+    none(
+        &call(
+            &url,
+            "c-tok",
+            "degenview_cancel_paper_orders",
+            json!({"account_id": a, "all": true}),
+        ),
+        "cancel nothing",
+    );
+    shown(
+        &call(
+            &url,
+            "cr-tok",
+            "degenview_cancel_paper_orders",
+            json!({"account_id": a, "all": true}),
+        ),
+        "cancel nothing with read",
+    );
+    // A partial failure (an order that is not this account's) keeps the same rule.
+    let partial = call(
+        &url,
+        "c-tok",
+        "degenview_cancel_paper_orders",
+        json!({"account_id": a, "order_ids": ["999999"]}),
+    );
+    none(&partial, "partial failure");
+    assert_eq!(
+        partial["structuredContent"]["failures"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    none(
+        &call(
+            &url,
+            "x-tok",
+            "degenview_close_paper_positions",
+            json!({"account_id": a, "all": true}),
+        ),
+        "close",
     );
 }

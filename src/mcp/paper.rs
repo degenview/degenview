@@ -407,8 +407,9 @@ pub struct PaperOrderResult {
     pub bracket_orders: Vec<PaperOrderInfo>,
     /// Fills the order produced at once (a market order, or a limit already marketable).
     pub fills: Vec<PaperFillInfo>,
-    /// The account afterwards (cash, equity, margin, available funds).
-    pub account: PaperAccountInfo,
+    /// The account afterwards (cash, equity, margin, available funds). Null unless the
+    /// credential also holds `paper.read`: placing orders does not grant sight of balances.
+    pub account: Option<PaperAccountInfo>,
 }
 
 /// What changing, cancelling or closing did, one entry per order or position touched.
@@ -423,7 +424,8 @@ pub struct PaperChangeResult {
     /// Anything that could not be done, with why. The rest still happened: these are separate
     /// orders and positions.
     pub failures: Vec<String>,
-    pub account: PaperAccountInfo,
+    /// The account afterwards. Null unless the credential also holds `paper.read`.
+    pub account: Option<PaperAccountInfo>,
 }
 
 #[cfg(test)]

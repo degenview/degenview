@@ -2004,7 +2004,7 @@ pub fn place_paper_order(
                 order: Some(order),
                 bracket_orders: bracket_of(host, order_id),
                 fills: fills_of(host, &ids),
-                account: account_after(host, account_id)?,
+                account: Some(account_after(host, account_id)?),
             });
         }
     }
@@ -2015,7 +2015,7 @@ pub fn place_paper_order(
             order: None,
             bracket_orders: Vec::new(),
             fills: Vec::new(),
-            account: account_after(host, account_id)?,
+            account: Some(account_after(host, account_id)?),
         });
     }
     let order_id = host.submit(request).map_err(paper_error)?;
@@ -2027,7 +2027,7 @@ pub fn place_paper_order(
         order: orders_of(host, &[order_id]).into_iter().next(),
         bracket_orders: bracket_of(host, order_id),
         fills: fills_of(host, &[order_id]),
-        account: account_after(host, account_id)?,
+        account: Some(account_after(host, account_id)?),
     })
 }
 
@@ -2060,7 +2060,7 @@ pub fn modify_paper_order(
         orders: orders_of(host, &[order_id]),
         fills: fills_of(host, &[order_id]),
         failures: Vec::new(),
-        account: account_after(host, account_id)?,
+        account: Some(account_after(host, account_id)?),
     })
 }
 
@@ -2108,7 +2108,7 @@ pub fn cancel_paper_orders(
         orders: orders_of(host, &done),
         fills: Vec::new(),
         failures,
-        account: account_after(host, account_id)?,
+        account: Some(account_after(host, account_id)?),
     })
 }
 
@@ -2148,7 +2148,7 @@ pub fn close_paper_positions(
         orders: orders_of(host, &order_ids),
         fills: fills_of(host, &order_ids),
         failures,
-        account: account_after(host, account_id)?,
+        account: Some(account_after(host, account_id)?),
     })
 }
 
