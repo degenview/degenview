@@ -22,6 +22,40 @@ struct Drag {
     cancelled: bool,
 }
 
+/// A view the user can be put back to, with what it takes to put it back on the same bars.
+///
+/// The offset counts from the newest bar, so a stored view drifts as bars arrive unless it is
+/// translated: [`ChartCard`] counts every bar that arrives (`arrivals`) and a restored view that did
+/// not show the newest bar is moved by what arrived since, the rule the live view follows. The
+/// `epoch` says which series the offset counts in (a price-based type, a construction setting): a
+/// step from another one is stale and is never restored.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ViewStep {
+    pub(super) viewport: ChartViewport,
+    arrivals: u64,
+    epoch: u64,
+}
+
+/// Which way applying a [`ViewStep`] takes Zoom out's history.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ViewMove {
+    /// Back to an earlier view: the history loses its newest entry, if it still has one (it keeps
+    /// only a few, so a step far back finds nothing to remove and adds nothing).
+    Back,
+    /// On to a later view: the view it replaces becomes the newest entry of the history.
+    Forward,
+}
+
+impl ViewMove {
+    /// The move that undoes this one: what redo of an undone step does.
+    pub fn inverse(self) -> Self {
+        match self {
+            Self::Back => Self::Forward,
+            Self::Forward => Self::Back,
+        }
+    }
+}
+
 /// Everything the Zoom In tool keeps on a card. View state: never saved.
 #[derive(Default)]
 pub(super) struct ZoomTool {
@@ -29,10 +63,10 @@ pub(super) struct ZoomTool {
     armed: bool,
     drag: Option<Drag>,
     /// The views zoomed away from, newest last: what Zoom out goes back to.
-    back: Vec<ChartViewport>,
+    back: Vec<ViewStep>,
     /// The view a zoom was applied to since the workspace last asked: it puts the tool down and
     /// records the step for undo.
-    zoomed: Option<ChartViewport>,
+    zoomed: Option<ViewStep>,
     /// The frame this card was last drawn in, to notice it went unseen (another tab).
     last_frame: u64,
 }
@@ -48,7 +82,7 @@ impl ChartCard {
 
     /// The view a zoom was applied to since the last call, if one was. The workspace puts the
     /// tool down on it and puts the view on the undo stack.
-    pub fn take_zoomed(&mut self) -> Option<ChartViewport> {
+    pub fn take_zoomed(&mut self) -> Option<ViewStep> {
         self.zoom.zoomed.take()
     }
 
@@ -57,30 +91,70 @@ impl ChartCard {
         !self.zoom.back.is_empty()
     }
 
-    /// Goes back to the view the last zoom came from and returns the view it left, for the undo
-    /// stack. Made outside a frame, so the card remembers where the view was and the next frame
-    /// tells linked charts about the change.
-    pub fn zoom_out(&mut self) -> Option<ChartViewport> {
-        let before = self.zoom.back.pop()?;
-        self.scroll_from.get_or_insert(self.viewport.horizontal);
-        Some(std::mem::replace(&mut self.viewport, before))
+    /// The view on screen now, as a step that can be put back later.
+    pub fn view_step(&self) -> ViewStep {
+        ViewStep {
+            viewport: self.viewport,
+            arrivals: self.arrivals,
+            epoch: self.series_epoch,
+        }
     }
 
-    /// Puts `view` on the chart and returns the one it replaces: what undo and redo of a zoom do.
-    /// Zoom out's history follows, so it still lists exactly the views a zoom came from: restoring
-    /// the top one forgets that zoom, and anything else brings the replaced view back.
-    pub fn swap_viewport(&mut self, view: ChartViewport) -> ChartViewport {
+    /// Puts a stored view on screen, moved by the bars that arrived since it was stored when it
+    /// did not show the newest bar. Made outside a frame, so the card remembers where the view was
+    /// and the next frame tells linked charts about the change.
+    fn restore_step(&mut self, step: ViewStep) {
         self.scroll_from.get_or_insert(self.viewport.horizontal);
-        let replaced = std::mem::replace(&mut self.viewport, view);
-        if self.zoom.back.last() == Some(&view) {
-            self.zoom.back.pop();
-        } else {
-            if self.zoom.back.len() >= MAX_BACK {
-                self.zoom.back.remove(0);
-            }
-            self.zoom.back.push(replaced);
+        let mut view = step.viewport;
+        if !view.horizontal.shows_newest(self.reserved_slots()) {
+            view.horizontal.right_offset += self.arrivals.saturating_sub(step.arrivals) as f64;
         }
-        replaced
+        self.viewport = view;
+    }
+
+    /// Goes back to the view the last zoom came from and returns the view it left, for the undo
+    /// stack. `None` when there is nothing to go back to.
+    pub fn zoom_out(&mut self) -> Option<ViewStep> {
+        let target = self.zoom.back.pop()?;
+        if target.epoch != self.series_epoch {
+            return None;
+        }
+        let left = self.view_step();
+        self.restore_step(target);
+        Some(left)
+    }
+
+    /// Puts `step` on the chart and returns the view it replaces: what undo and redo of a zoom do.
+    /// Zoom out's history follows in the stated direction, so it never has to guess it from what
+    /// it holds. `None` when the step belongs to a series the chart no longer shows: nothing
+    /// changes.
+    pub fn apply_view(&mut self, step: ViewStep, direction: ViewMove) -> Option<ViewStep> {
+        if step.epoch != self.series_epoch {
+            return None;
+        }
+        let replaced = self.view_step();
+        self.restore_step(step);
+        match direction {
+            ViewMove::Back => {
+                self.zoom.back.pop();
+            }
+            ViewMove::Forward => self.remember_back(replaced),
+        }
+        Some(replaced)
+    }
+
+    fn remember_back(&mut self, step: ViewStep) {
+        if self.zoom.back.len() >= MAX_BACK {
+            self.zoom.back.remove(0);
+        }
+        self.zoom.back.push(step);
+    }
+
+    /// The bars the offset counts have changed their meaning (another price-based type or
+    /// construction): every stored view of the old ones is stale, here and on the undo stack.
+    pub(super) fn new_series(&mut self) {
+        self.series_epoch += 1;
+        self.forget_zoom_history();
     }
 
     /// Forgets the views to zoom out to: they mean nothing on another series.
@@ -214,16 +288,38 @@ impl ChartCard {
             })
             .flatten();
 
-        let before = self.viewport;
-        if self.zoom.back.len() >= MAX_BACK {
-            self.zoom.back.remove(0);
-        }
-        self.zoom.back.push(before);
+        self.commit_zoom(horizontal, prices);
+    }
+
+    /// Applies a zoom: the view it leaves is Zoom out's newest entry and the workspace's undo step.
+    fn commit_zoom(
+        &mut self,
+        horizontal: crate::model::viewport::HorizontalViewport,
+        prices: Option<crate::model::viewport::PriceRange>,
+    ) {
+        let before = self.view_step();
+        self.remember_back(before);
         self.viewport.horizontal = horizontal;
         if let Some(range) = prices {
             self.viewport.vertical.manual = Some(range);
         }
         self.zoom.zoomed = Some(before);
+    }
+
+    /// How many views Zoom out remembers.
+    #[cfg(test)]
+    pub(crate) fn zoom_history_len(&self) -> usize {
+        self.zoom.back.len()
+    }
+
+    /// A zoom made without a pointer, for tests that need a stored view.
+    #[cfg(test)]
+    pub(crate) fn zoom_to_for_test(&mut self, visible: usize, right_offset: f64) {
+        let horizontal = crate::model::viewport::HorizontalViewport {
+            visible,
+            right_offset,
+        };
+        self.commit_zoom(horizontal, None);
     }
 
     /// The rectangle being dragged, over the plot. Painted by the live overlays, above the

@@ -9,6 +9,7 @@ use crate::model::{
     ChartColumn, ChartLayout, Drawing, DrawingCommand, DrawingStyle, InstrumentId, ReplayStatus,
     Tool,
 };
+use crate::ui::ViewMove;
 use crate::ui::chart_settings::{self, ChartSettingsState};
 use crate::ui::{
     self, ChartCardAction, CrosshairInfo, DrawingFrame, PickKind, ReplayChartFrame, shortcut,
@@ -891,7 +892,7 @@ impl ChartWorkspace {
             .filter_map(|chart| chart.chart.take_zoomed().map(|before| (chart.id, before)))
             .collect();
         for &(chart_id, before) in &zoomed {
-            self.remember_view(chart_id, before);
+            self.remember_view(chart_id, before, ViewMove::Back);
         }
         if let Some(&(chart_id, _)) = zoomed.last() {
             self.zoom_armed = false;

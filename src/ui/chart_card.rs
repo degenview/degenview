@@ -372,6 +372,13 @@ pub struct ChartCard {
     /// The Zoom In tool: armed state, the rectangle being dragged, the views to zoom out to.
     /// View state, never saved.
     zoom: zoom_rect::ZoomTool,
+    /// Bars that arrived at the newest end since this card began, whatever the view showed: what a
+    /// stored view is translated by (see [`zoom_rect::ViewStep`]).
+    arrivals: u64,
+    /// Which series the viewport's offset counts in; moves when that changes meaning.
+    series_epoch: u64,
+    /// The construction the card last drew, to notice one being edited. View state.
+    drawn_series: Option<Construction>,
     /// Table view is open on this chart: build its feed each frame something changes.
     table_wanted: bool,
     table_feed: Option<Arc<crate::model::chart_table::TableFeed>>,
@@ -687,6 +694,9 @@ impl Default for ChartCard {
             logs_range: None,
             scroll_from: None,
             zoom: zoom_rect::ZoomTool::default(),
+            arrivals: 0,
+            series_epoch: 0,
+            drawn_series: None,
             table_wanted: false,
             table_feed: None,
             table_stamp: 0,
@@ -783,7 +793,7 @@ impl ChartCard {
         if before != chart_type && (before.is_synthetic() || chart_type.is_synthetic()) {
             self.viewport.horizontal.right_offset = 0.0;
             self.gesture = None;
-            self.forget_zoom_history();
+            self.new_series();
         }
     }
 
@@ -2187,6 +2197,13 @@ impl ChartCard {
         };
         self.drawn_type = chart_type;
         let constructed = self.constructed_series(candles, chart_type);
+        // Editing a price-based type's construction (box size, reversal) rebuilds its bars, which
+        // is a different series for a stored view as much as another type is.
+        let drawn = constructed.as_ref().map(|built| built.construction);
+        if drawn != self.drawn_series {
+            self.drawn_series = drawn;
+            self.new_series();
+        }
         let bars: &[Kline] = constructed
             .as_ref()
             .map_or(candles, |built| built.klines.as_slice());
@@ -3192,6 +3209,7 @@ mod sync;
 mod table;
 mod zoom_rect;
 pub use bar_marker::Scrolled;
+pub use zoom_rect::{ViewMove, ViewStep};
 mod logs_range;
 mod time_lock;
 

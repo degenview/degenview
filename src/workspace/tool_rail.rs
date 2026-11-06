@@ -3,6 +3,7 @@
 use super::chart::Chart;
 use super::{ChartWorkspace, WorkspaceAction};
 use crate::model::{DataSource, Tool};
+use crate::ui::ViewMove;
 use crate::ui::tool_sidebar::{self, ToolSidebarAction};
 use eframe::egui;
 
@@ -97,7 +98,7 @@ impl ChartWorkspace {
             .find(|chart| Some(chart.id) == focused)
             .and_then(|chart| chart.chart.zoom_out().map(|left| (chart.id, left)));
         if let Some((chart_id, left)) = left {
-            self.remember_view(chart_id, left);
+            self.remember_view(chart_id, left, ViewMove::Forward);
         }
     }
 

@@ -134,6 +134,7 @@ pub use chart_card::take_table_cell_selected;
 pub use chart_card::{
     ChartCard, ChartCardAction, CrosshairInfo, PineLogs, Scrolled, SeriesLine, WatchlistMembership,
 };
+pub use chart_card::{ViewMove, ViewStep};
 pub(crate) use chart_card::{candles_fingerprint, last_candle_is_closed, reads_visible_range};
 pub use drawing_layer::{DrawingFrame, LinkRequest};
 pub use replay_overlay::{PickKind, ReplayChartFrame};

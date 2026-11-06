@@ -160,14 +160,17 @@ impl ChartCard {
     pub(super) fn keep_view_on_its_bars(&mut self, bars: &[Kline]) {
         let newest = bars.last().map(|bar| bar.open_time);
         if let (Some(previous), Some(_)) = (self.newest_bar, newest)
-            && !self.viewport.horizontal.shows_newest(self.reserved_slots())
             && let Ok(index) = bars.binary_search_by_key(&previous, |bar| bar.open_time)
         {
             let arrived = (bars.len() - 1 - index) as f64;
             if arrived > 0.0 {
-                self.viewport.horizontal.right_offset += arrived;
-                if let Some(active) = self.gesture.as_mut() {
-                    active.arrived(arrived);
+                // Counted for every view, shown or stored: a stored one is translated by it.
+                self.arrivals += arrived as u64;
+                if !self.viewport.horizontal.shows_newest(self.reserved_slots()) {
+                    self.viewport.horizontal.right_offset += arrived;
+                    if let Some(active) = self.gesture.as_mut() {
+                        active.arrived(arrived);
+                    }
                 }
             }
         }

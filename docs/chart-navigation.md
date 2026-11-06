@@ -108,16 +108,27 @@ Being outside a frame, it records the old view in `scroll_from` so linked charts
 
 Both tiles give way to the bottom group on a short window, as the options below them do.
 
-**Undo.** A zoom and a Zoom out are steps on the workspace's one undo stack (`Snapshot::View`, holding the
-whole `ChartViewport` the step left), in the order things happened with drawing and indicator steps; a
-new step ends the redo line. The card hands the view a zoom started from through `take_zoomed()`
-(Zoom out returns the one it left), the workspace records it (`remember_view`), and undo and redo swap it
-back with `ChartCard::swap_viewport`, which also keeps Zoom out's history in step (undoing a zoom forgets
-it, redoing it offers it again). The swap is made outside a frame, so it records `scroll_from` and linked
-charts follow it. A view is not part of a layout, so undoing a zoom does not mark one changed
-(`drawings_version` is left alone), and steps are forgotten with the series: a symbol or timeframe change
-drops the chart's view steps (`forget_views`). A switch to or from a price-based type clears Zoom out's
-history but not the undo steps (a stale offset there is clamped on the next frame).
+**Undo.** A zoom and a Zoom out are steps on the workspace's one undo stack (`Snapshot::View`), in the
+order things happened with drawing and indicator steps; a new step ends the redo line. A stored view is a
+`ViewStep` the card makes (`ChartCard::view_step`): the whole `ChartViewport`, plus two numbers.
+
+- `arrivals`: the card counts every bar that arrives at the newest end. The offset counts from the newest
+  bar, so a stored view that did not show the newest bar is moved by the bars that arrived since it was
+  stored when it is put back (`restore_step`), the rule the live view follows (`keep_view_on_its_bars`);
+  one that did show the newest bar keeps its offset and follows it.
+- `epoch`: which series the offset counts in. It moves when a chart switches to, from or between
+  price-based types (`set_chart_type`) and when a price-based construction is edited (noticed in the next
+  frame's draw). A step of another epoch is stale: `zoom_out` and `apply_view` refuse it, and Undo/Redo
+  drop it and take the step beneath instead of doing nothing. A symbol or timeframe change drops the
+  chart's view steps outright (`forget_views`).
+
+Zoom out's history (`MAX_BACK` = 8 views) follows undo and redo by an explicit `ViewMove`, never by
+comparing what it holds: applying a step `Back` removes the history's newest entry if it still has one
+(a zoom older than the 8 it keeps finds none and adds none), applying it `Forward` adds the view it
+replaces. A zoom records `Back`, a Zoom out records `Forward`, and applying an entry records the
+inverse. The swap is made outside a frame, so it records `scroll_from` and linked charts follow it. A
+view is not part of a layout, so undoing a zoom does not mark one changed (`drawings_version` is left
+alone).
 
 **Observed on tradingview.com** (1D BTCUSDT chart, web): the tile sits under the Ruler; a drag zooms both
 axes to the rectangle and the tool reverts to the crosshair; a click without a drag does nothing and the

@@ -1115,7 +1115,10 @@ mod zoom_in {
             .card
             .take_zoomed()
             .expect("the workspace is told to put the tool down");
-        assert_eq!(was, original, "and which view the zoom started from");
+        assert_eq!(
+            was.viewport, original,
+            "and which view the zoom started from"
+        );
         assert!(rig.card.viewport.horizontal.visible < before);
         let slot = f64::from(rig.slot_width());
         let plot = rig.probe().plot;
@@ -1458,14 +1461,140 @@ mod zoom_in {
         let before = rig.card.take_zoomed().expect("zoomed");
         let zoomed = rig.card.viewport;
         // Undo: the view the zoom left goes back, and there is nothing to zoom out of.
-        assert_eq!(rig.card.swap_viewport(before), zoomed);
-        assert_eq!(rig.card.viewport, before);
+        let undone = rig
+            .card
+            .apply_view(before, ViewMove::Back)
+            .expect("applies");
+        assert_eq!(undone.viewport, zoomed);
+        assert_eq!(rig.card.viewport, before.viewport);
         assert!(!rig.card.can_zoom_out());
         // Redo: the zoomed view is back, with the view it came from to return to.
-        assert_eq!(rig.card.swap_viewport(zoomed), before);
+        let redone = rig
+            .card
+            .apply_view(undone, ViewMove::Forward)
+            .expect("applies");
+        assert_eq!(redone.viewport, before.viewport);
+        assert_eq!(rig.card.viewport, zoomed);
         assert!(rig.card.can_zoom_out());
-        assert_eq!(rig.card.zoom_out(), Some(zoomed));
-        assert_eq!(rig.card.viewport, before);
+        assert_eq!(rig.card.zoom_out().map(|left| left.viewport), Some(zoomed));
+        assert_eq!(rig.card.viewport, before.viewport);
+    }
+
+    /// The bars the chart shows first, as (index, fractional lead): which bars are on screen.
+    fn first_bar(rig: &Rig) -> (usize, f32) {
+        let probe = rig.probe();
+        (probe.start, probe.lead)
+    }
+
+    #[test]
+    fn a_stored_view_comes_back_on_the_same_bars_after_new_bars_arrive() {
+        let mut rig = armed();
+        rig.card.viewport.horizontal.right_offset = 200.0;
+        rig.frames(&[]);
+        let shown = first_bar(&rig);
+        let from = rig.in_plot();
+        rig.drag(from, Vec2::new(200.0, 100.0));
+        assert!(rig.card.can_zoom_out());
+        // Bars arrive in two bursts while the view is on old history, then Zoom out.
+        for total in [410, 425] {
+            rig.candles = series(total);
+            rig.frames(&[]);
+        }
+        rig.card.zoom_out().expect("a view to go back to");
+        rig.frames(&[]);
+        let now = first_bar(&rig);
+        assert_eq!(now.0, shown.0, "the same bars, not 25 newer");
+        assert!((now.1 - shown.1).abs() < 1e-3);
+    }
+
+    #[test]
+    fn a_view_that_showed_the_newest_bar_still_follows_it() {
+        let mut rig = armed();
+        let from = rig.in_plot();
+        rig.drag(from, Vec2::new(200.0, 100.0));
+        rig.candles = series(430);
+        rig.frames(&[]);
+        rig.card.zoom_out().expect("a view to go back to");
+        rig.frames(&[]);
+        assert_eq!(
+            rig.offset(),
+            0.0,
+            "newest bar kept where the margin puts it"
+        );
+        assert_eq!(rig.card.viewport.horizontal.visible, DEFAULT_VISIBLE);
+    }
+
+    #[test]
+    fn redo_of_a_zoom_is_put_on_the_same_bars_after_new_bars_arrive() {
+        let mut rig = armed();
+        rig.card.viewport.horizontal.right_offset = 200.0;
+        rig.frames(&[]);
+        let from = rig.in_plot();
+        rig.drag(from, Vec2::new(200.0, 100.0));
+        rig.frames(&[]);
+        let zoomed_at = first_bar(&rig);
+        let before = rig.card.take_zoomed().expect("zoomed");
+        // Undo, then bars arrive, then redo.
+        let undone = rig
+            .card
+            .apply_view(before, ViewMove::Back)
+            .expect("applies");
+        rig.candles = series(430);
+        rig.frames(&[]);
+        rig.card
+            .apply_view(undone, ViewMove::Forward)
+            .expect("applies");
+        rig.frames(&[]);
+        let now = first_bar(&rig);
+        assert_eq!(now.0, zoomed_at.0);
+        assert!((now.1 - zoomed_at.1).abs() < 1e-3);
+    }
+
+    #[test]
+    fn a_view_of_another_series_is_never_put_back() {
+        // Candles to a price-based type, and one price-based type to another.
+        for (from_type, to_type) in [
+            (ChartType::Candles, ChartType::Renko),
+            (ChartType::Renko, ChartType::Kagi),
+        ] {
+            let mut rig = armed();
+            rig.card.set_chart_type(from_type);
+            rig.frames(&[]);
+            rig.card.zoom_to_for_test(40, 30.0);
+            let step = rig.card.take_zoomed().expect("zoomed");
+            rig.card.set_chart_type(to_type);
+            let viewport = rig.card.viewport;
+            assert!(!rig.card.can_zoom_out(), "{from_type:?} to {to_type:?}");
+            assert!(rig.card.zoom_out().is_none());
+            assert!(rig.card.apply_view(step, ViewMove::Back).is_none());
+            assert_eq!(rig.card.viewport, viewport, "nothing was restored");
+        }
+    }
+
+    #[test]
+    fn editing_a_construction_makes_earlier_views_stale_too() {
+        use crate::model::chart_type::{SizeMethod, SizeRule};
+        let rule = |amount| SizeRule {
+            method: SizeMethod::Traditional,
+            amount,
+            ..Default::default()
+        };
+        let mut rig = armed();
+        rig.card.set_chart_type(ChartType::Renko);
+        rig.card.chart_style_mut().renko.size = rule(1.0);
+        rig.frames(&[]);
+        rig.card.zoom_to_for_test(40, 30.0);
+        let step = rig.card.take_zoomed().expect("zoomed");
+        assert!(rig.card.can_zoom_out());
+        // Same type, other brick size: other bricks.
+        rig.card.chart_style_mut().renko.size = rule(5.0);
+        rig.frames(&[]);
+        assert!(!rig.card.can_zoom_out());
+        assert!(rig.card.apply_view(step, ViewMove::Back).is_none());
+        // Restyling that does not change the bricks leaves a new zoom alone.
+        rig.card.zoom_to_for_test(30, 20.0);
+        rig.frames(&[]);
+        assert!(rig.card.can_zoom_out());
     }
 
     #[test]

@@ -700,7 +700,10 @@ fn undoing_a_zoom_moves_the_linked_charts_back_too() {
     assert!(linked.view(1) != before.1);
 
     // What the workspace's Undo does, outside a frame.
-    linked.members[0].card.swap_viewport(was);
+    linked.members[0]
+        .card
+        .apply_view(was, crate::ui::ViewMove::Back)
+        .expect("applies");
     linked.frames(4);
     assert_eq!(linked.view(0), before.0);
     let (a, b) = (linked.range(0), linked.range(1));
