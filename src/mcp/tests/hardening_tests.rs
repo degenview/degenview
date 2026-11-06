@@ -340,33 +340,185 @@ fn a_call_dropped_by_the_client_never_runs() {
     assert_eq!(harness.added.lock().unwrap().len(), 1);
 }
 
-/// The protocol's own cancellation does nothing here: stateless mode serves every POST on its
-/// own, so a `notifications/cancelled` cannot find the call it names. Only a hang-up cancels (see
-/// `a_call_dropped_by_the_client_never_runs`). If protocol cancellation is ever honoured, this
-/// test should be turned around.
-#[test]
-fn a_cancel_notification_does_not_stop_the_original_call() {
-    let harness = Harness::start(&[("c1", "tok", BOTH)]);
-    let url = harness.url();
-    harness.pause_app(true);
-    let body = json!({
-        "jsonrpc": "2.0", "id": 9, "method": "tools/call",
+fn add_chart_call(id: serde_json::Value) -> String {
+    json!({
+        "jsonrpc": "2.0", "id": id, "method": "tools/call",
         "params": {"name": "degenview_add_chart",
                    "arguments": {"workspace_id": "1", "source": "binance", "symbol": "ETHUSDT"}}
     })
-    .to_string();
-    let waiting = {
-        let url = url.clone();
-        std::thread::spawn(move || super::post(&url, Some("tok"), &[super::PROTOCOL], &body))
-    };
-    std::thread::sleep(Duration::from_millis(300));
-    let cancel = json!({"jsonrpc": "2.0", "method": "notifications/cancelled",
-                        "params": {"requestId": 9, "reason": "test"}});
-    let reply = super::post(&url, Some("tok"), &[super::PROTOCOL], &cancel.to_string());
+    .to_string()
+}
+
+fn cancel_message(request_id: serde_json::Value) -> String {
+    json!({"jsonrpc": "2.0", "method": "notifications/cancelled",
+           "params": {"requestId": request_id, "reason": "test"}})
+    .to_string()
+}
+
+/// Starts `body` as a call that waits on a paused app, and returns what it eventually gets.
+fn start_call(url: &str, token: &str, body: String) -> std::thread::JoinHandle<super::Reply> {
+    let url = url.to_owned();
+    let token = token.to_owned();
+    std::thread::spawn(move || super::post(&url, Some(&token), &[super::PROTOCOL], &body))
+}
+
+fn wait_for_calls(harness: &Harness, running: usize) {
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while harness.shared.calls().running() != running {
+        assert!(
+            Instant::now() < deadline,
+            "{} calls registered, expected {running}",
+            harness.shared.calls().running()
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+#[test]
+fn a_cancel_notification_stops_the_queued_call() {
+    let harness = Harness::start(&[("c1", "tok", BOTH)]);
+    let url = harness.url();
+    harness.pause_app(true);
+    let waiting = start_call(&url, "tok", add_chart_call(json!(9)));
+    wait_for_calls(&harness, 1);
+
+    let reply = super::post(
+        &url,
+        Some("tok"),
+        &[super::PROTOCOL],
+        &cancel_message(json!(9)),
+    );
     assert_eq!(reply.status, 202, "{}", reply.body);
-    std::thread::sleep(Duration::from_millis(300));
+    let started = Instant::now();
+    let original = waiting.join().unwrap();
+    assert!(
+        started.elapsed() < Duration::from_secs(3),
+        "the call was not released by the cancel"
+    );
+    assert!(original.body.contains("cancelled"), "{}", original.body);
+
+    harness.pause_app(false);
+    std::thread::sleep(Duration::from_millis(500));
+    assert!(
+        harness.added.lock().unwrap().is_empty(),
+        "a cancelled call still changed the app"
+    );
+    wait_for_calls(&harness, 0);
+
+    // The server is unharmed.
+    let added = call(
+        &url,
+        "tok",
+        "degenview_add_chart",
+        json!({"workspace_id": "1", "source": "binance", "symbol": "ETHUSDT"}),
+    );
+    assert_eq!(added["isError"], json!(false), "{added}");
+}
+
+#[test]
+fn a_cancel_names_a_string_id_and_only_that_id() {
+    let harness = Harness::start(&[("c1", "tok", BOTH)]);
+    let url = harness.url();
+    harness.pause_app(true);
+    let kept = start_call(&url, "tok", add_chart_call(json!("7")));
+    let dropped = start_call(&url, "tok", add_chart_call(json!("job-a")));
+    wait_for_calls(&harness, 2);
+
+    // The number 7 is not the string "7"; "job-a" is.
+    super::post(
+        &url,
+        Some("tok"),
+        &[super::PROTOCOL],
+        &cancel_message(json!(7)),
+    );
+    super::post(
+        &url,
+        Some("tok"),
+        &[super::PROTOCOL],
+        &cancel_message(json!("job-a")),
+    );
+    let dropped = dropped.join().unwrap();
+    assert!(dropped.body.contains("cancelled"), "{}", dropped.body);
+
+    harness.pause_app(false);
+    let kept = kept.join().unwrap();
+    assert!(kept.body.contains("created"), "{}", kept.body);
+    assert_eq!(harness.added.lock().unwrap().len(), 1);
+}
+
+#[test]
+fn one_client_cannot_cancel_anothers_call() {
+    let harness = Harness::start(&[("c1", "one", BOTH), ("c2", "two", BOTH)]);
+    let url = harness.url();
+    harness.pause_app(true);
+    let waiting = start_call(&url, "one", add_chart_call(json!(9)));
+    wait_for_calls(&harness, 1);
+
+    // c2 names the same request id; it is answered the same way and changes nothing for c1.
+    let reply = super::post(
+        &url,
+        Some("two"),
+        &[super::PROTOCOL],
+        &cancel_message(json!(9)),
+    );
+    assert_eq!(reply.status, 202);
+    // An unknown id, and one with no token at all, do nothing either.
+    super::post(
+        &url,
+        Some("one"),
+        &[super::PROTOCOL],
+        &cancel_message(json!(12345)),
+    );
+    let anonymous = super::post(&url, None, &[super::PROTOCOL], &cancel_message(json!(9)));
+    assert_eq!(anonymous.status, 401);
+
     harness.pause_app(false);
     let original = waiting.join().unwrap();
-    assert_eq!(original.status, 200, "{}", original.body);
+    assert!(original.body.contains("created"), "{}", original.body);
     assert_eq!(harness.added.lock().unwrap().len(), 1);
+}
+
+#[test]
+fn a_cancel_gets_through_while_every_permit_is_held() {
+    let harness = Harness::start(&[("c1", "tok", BOTH)]);
+    let url = harness.url();
+    harness.shared.set_rate_limits(limits(1000, 1000));
+    harness.pause_app(true);
+    // Sixteen queued calls hold every request permit.
+    let calls: Vec<_> = (0..16)
+        .map(|n| start_call(&url, "tok", add_chart_call(json!(n))))
+        .collect();
+    wait_for_calls(&harness, 16);
+
+    let started = Instant::now();
+    let reply = super::post(
+        &url,
+        Some("tok"),
+        &[super::PROTOCOL],
+        &cancel_message(json!(0)),
+    );
+    assert_eq!(reply.status, 202, "{}", reply.body);
+    assert!(
+        started.elapsed() < Duration::from_secs(2),
+        "the cancel waited for a permit ({:?})",
+        started.elapsed()
+    );
+
+    harness.pause_app(false);
+    let replies: Vec<_> = calls.into_iter().map(|call| call.join().unwrap()).collect();
+    assert!(replies[0].body.contains("cancelled"), "{}", replies[0].body);
+    assert_eq!(harness.added.lock().unwrap().len(), 15);
+    wait_for_calls(&harness, 0);
+}
+
+#[test]
+fn finished_calls_leave_nothing_registered() {
+    let harness = Harness::start(&[("c1", "tok", BOTH)]);
+    let url = harness.url();
+    for _ in 0..3 {
+        let reply = call(&url, "tok", "degenview_list_workspaces", json!({}));
+        assert_eq!(reply["isError"], json!(false));
+    }
+    let _ = rpc(&url, Some("tok"), "tools/list", json!({}));
+    wait_for_calls(&harness, 0);
 }

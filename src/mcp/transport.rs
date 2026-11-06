@@ -10,6 +10,7 @@
 
 use crate::mcp::auth::require_bearer;
 use crate::mcp::bridge::BridgeClient;
+use crate::mcp::cancel::honour_cancellations;
 use crate::mcp::state::McpShared;
 use crate::mcp::tools::DegenViewMcp;
 use axum::Router;
@@ -29,7 +30,7 @@ const MAX_CONCURRENT_REQUESTS: usize = 16;
 /// Requests in flight before any token is looked at. Bounds what a flood of bad credentials can
 /// occupy (hashing, scanning the client list, building responses) on this loopback service.
 const MAX_UNAUTHENTICATED_REQUESTS: usize = 64;
-const REQUEST_DEADLINE: Duration = Duration::from_secs(30);
+pub(crate) const REQUEST_DEADLINE: Duration = Duration::from_secs(30);
 
 async fn deadline(request: Request, next: Next) -> Response {
     match tokio::time::timeout(REQUEST_DEADLINE, next.run(request)).await {
@@ -64,6 +65,12 @@ pub fn router(
         .route_service("/mcp", service)
         .layer(middleware::from_fn(deadline))
         .layer(ConcurrencyLimitLayer::new(MAX_CONCURRENT_REQUESTS))
+        // Outside the cap above, so a cancellation gets through even when the calls it cancels
+        // hold every permit. Inside the bearer check, so a client can only cancel its own calls.
+        .layer(middleware::from_fn_with_state(
+            shared.clone(),
+            honour_cancellations,
+        ))
         // Nothing, not even a 404, is answered without a valid token.
         .layer(middleware::from_fn_with_state(shared, require_bearer))
         // Outermost: a cap that holds before authentication, so bad tokens cannot pile up.

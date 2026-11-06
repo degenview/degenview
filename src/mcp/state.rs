@@ -4,6 +4,7 @@
 //! Every request reads this fresh, so revoking a credential or changing a permission takes
 //! effect on the very next request. Nothing here knows about HTTP or egui.
 
+use crate::mcp::cancel::CallRegistry;
 use crate::mcp::limits::{RateLimiter, RateLimits};
 use crate::model::DataSource;
 use crate::model::InstrumentId;
@@ -107,6 +108,7 @@ pub struct McpShared {
     generation: AtomicU64,
     usage_dirty: AtomicBool,
     limiter: Mutex<RateLimiter>,
+    calls: Arc<CallRegistry>,
     pine_jobs: Arc<tokio::sync::Semaphore>,
     script_locator: RwLock<ScriptLocator>,
     search_jobs: Arc<tokio::sync::Semaphore>,
@@ -132,6 +134,7 @@ impl McpShared {
             generation: AtomicU64::new(1),
             usage_dirty: AtomicBool::new(false),
             limiter: Mutex::new(RateLimiter::new(RateLimits::default())),
+            calls: Arc::new(CallRegistry::default()),
             pine_jobs: Arc::new(tokio::sync::Semaphore::new(PINE_JOBS)),
             script_locator: RwLock::new(Box::new(ScriptStore::default_location)),
             search_jobs: Arc::new(tokio::sync::Semaphore::new(SEARCH_JOBS)),
@@ -163,6 +166,11 @@ impl McpShared {
         let mut config = self.write();
         config.clients = clients;
         config.global = global;
+    }
+
+    /// The tool calls in flight, so a `notifications/cancelled` can find the one it names.
+    pub fn calls(&self) -> &Arc<CallRegistry> {
+        &self.calls
     }
 
     /// Counts one failed authentication against the shared bucket. `Err` is how long the caller

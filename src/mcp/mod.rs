@@ -9,6 +9,7 @@
 
 pub mod auth;
 pub mod bridge;
+pub mod cancel;
 pub mod chart_control;
 pub mod chart_data;
 pub mod drawings;
