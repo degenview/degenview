@@ -375,19 +375,16 @@ impl Broker {
         }
         order.sequence = self.next_sequence;
         self.next_sequence += 1;
-        match order.kind {
+        // `retain` keeps what is true: drop the pending order this one replaces (same family and
+        // id) and nothing else, so an exit placed beside a pending entry leaves the entry alone.
+        let replaced = |other: &Order| match order.kind {
             OrderKind::Entry | OrderKind::Order => {
-                self.orders
-                    .retain(|o| o.kind.is_entry_like() && o.id != order.id);
+                other.kind.is_entry_like() && other.id == order.id
             }
-            OrderKind::Exit => self
-                .orders
-                .retain(|o| o.kind == OrderKind::Exit && o.id != order.id),
-            OrderKind::Close => self
-                .orders
-                .retain(|o| o.kind == OrderKind::Close && o.id != order.id),
-            OrderKind::CloseAll => self.orders.retain(|o| o.kind != OrderKind::CloseAll),
-        }
+            OrderKind::Exit | OrderKind::Close => other.kind == order.kind && other.id == order.id,
+            OrderKind::CloseAll => other.kind == OrderKind::CloseAll,
+        };
+        self.orders.retain(|other| !replaced(other));
         // An exit with no level at all cancels the previous one.
         if order.kind == OrderKind::Exit
             && order.stop.is_none()
@@ -1088,6 +1085,99 @@ mod tests {
         assert_eq!(broker.closed_trades.len(), 1);
         assert!((broker.closed_trades[0].profit - 40.0).abs() < 1e-9);
         assert!((broker.net_profit - 40.0).abs() < 1e-9);
+    }
+
+    fn protecting_exit(id: &str, from_entry: &str) -> Order {
+        let mut exit = order(OrderKind::Exit, id, true, None);
+        exit.from_entry = Some(from_entry.to_owned());
+        exit.stop = Some(95.0);
+        exit.limit = Some(110.0);
+        exit
+    }
+
+    fn pending(broker: &Broker) -> Vec<(OrderKind, &str)> {
+        broker
+            .orders
+            .iter()
+            .map(|order| (order.kind, order.id.as_str()))
+            .collect()
+    }
+
+    #[test]
+    fn an_exit_placed_beside_a_pending_entry_does_not_cancel_it() {
+        let mut broker = Broker::new(settings());
+        broker.place(order(OrderKind::Entry, "L", true, Some(1.0)));
+        broker.place(protecting_exit("X", "L"));
+        assert_eq!(
+            pending(&broker),
+            [(OrderKind::Entry, "L"), (OrderKind::Exit, "X")]
+        );
+        // The entry fills at the open and the exit then protects it on the same bar.
+        broker.process(bar(100.0, 112.0, 99.0, 105.0), 0, 0.01);
+        assert_eq!(broker.closed_trades.len(), 1);
+        assert_eq!(broker.closed_trades[0].exit_price, 110.0);
+    }
+
+    #[test]
+    fn an_entry_placed_beside_a_pending_exit_or_close_does_not_cancel_them() {
+        let mut broker = Broker::new(settings());
+        broker.place(protecting_exit("X", "L"));
+        broker.place(order(OrderKind::Close, "C", true, None));
+        broker.place(order(OrderKind::Entry, "L", true, Some(1.0)));
+        broker.place(order(OrderKind::Order, "O", true, Some(1.0)));
+        assert_eq!(
+            pending(&broker),
+            [
+                (OrderKind::Exit, "X"),
+                (OrderKind::Close, "C"),
+                (OrderKind::Entry, "L"),
+                (OrderKind::Order, "O"),
+            ]
+        );
+    }
+
+    #[test]
+    fn placing_replaces_only_the_pending_order_of_the_same_kind_and_id() {
+        let mut broker = Broker::new(settings());
+        broker.place(order(OrderKind::Entry, "A", true, Some(1.0)));
+        broker.place(order(OrderKind::Entry, "B", true, Some(1.0)));
+        broker.place(protecting_exit("X", "A"));
+        broker.place(protecting_exit("Y", "B"));
+        broker.place(order(OrderKind::Close, "A", true, None));
+        // Same ids again: each replaces its own, keeping the others.
+        broker.place(order(OrderKind::Entry, "A", true, Some(3.0)));
+        broker.place(protecting_exit("X", "A"));
+        broker.place(order(OrderKind::Close, "A", true, None));
+        let mut kinds = pending(&broker);
+        kinds.sort_by_key(|(kind, id)| (format!("{kind:?}"), id.to_owned()));
+        assert_eq!(
+            kinds,
+            [
+                (OrderKind::Close, "A"),
+                (OrderKind::Entry, "A"),
+                (OrderKind::Entry, "B"),
+                (OrderKind::Exit, "X"),
+                (OrderKind::Exit, "Y"),
+            ]
+        );
+        let entry = broker
+            .orders
+            .iter()
+            .find(|order| order.kind == OrderKind::Entry && order.id == "A")
+            .expect("entry A");
+        assert_eq!(entry.quantity, Some(3.0));
+    }
+
+    #[test]
+    fn close_all_replaces_only_a_pending_close_all() {
+        let mut broker = Broker::new(settings());
+        broker.place(order(OrderKind::Entry, "A", true, Some(1.0)));
+        broker.place(order(OrderKind::CloseAll, "x", true, None));
+        broker.place(order(OrderKind::CloseAll, "y", true, None));
+        assert_eq!(
+            pending(&broker),
+            [(OrderKind::Entry, "A"), (OrderKind::CloseAll, "y")]
+        );
     }
 
     #[test]

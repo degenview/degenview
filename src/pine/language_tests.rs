@@ -2058,6 +2058,35 @@ fn an_exit_picks_its_comment_by_the_level_that_filled_it() {
 }
 
 #[test]
+fn an_entry_and_an_exit_called_on_the_same_bar_both_stand() {
+    // No `position_size` guard: the exit is called on the bar that places the entry, and on every
+    // bar after it. Placing the exit used to cancel the pending entry.
+    let source = "//@version=6\n\
+        strategy(\"S\", default_qty_type = strategy.fixed, default_qty_value = 1)\n\
+        if bar_index == 0\n    strategy.entry(\"L\", strategy.long)\n\
+        strategy.exit(\"X\", \"L\", limit = 105, stop = 95)\n\
+        closed = strategy.closedtrades\n\
+        exit_at = strategy.closedtrades.exit_price(0)";
+    let program = compiler::compile(source, Limits::default(), &NoLibraries);
+    assert!(program.is_valid(), "{:?}", program.diagnostics);
+    let mut session = Session::new(
+        program,
+        HashMap::new(),
+        Limits::default(),
+        None,
+        SymbolInfo::default(),
+        None,
+        None,
+    );
+    // The entry fills at the open of bar 1; bar 2 reaches the 105 target.
+    let mut bars = flat_bars(&[100.0, 100.0, 100.0]);
+    bars[2].high = 106.0;
+    session.evaluate(&bars).expect("runs");
+    assert_eq!(value(&session, "closed"), RuntimeValue::Int(1));
+    assert_eq!(value(&session, "exit_at"), RuntimeValue::Float(105.0));
+}
+
+#[test]
 fn gross_loss_percent_is_the_losses_over_the_initial_capital() {
     let session = run_strategy("pct = strategy.grossloss_percent", &STRATEGY_PRICES);
     // 40 of loss on 1000.
