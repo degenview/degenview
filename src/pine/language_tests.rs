@@ -292,6 +292,32 @@ fn what_cannot_be_honoured_is_warned_about() {
 }
 
 #[test]
+fn strategy_settings_the_broker_ignores_are_warned_about() {
+    let diagnostics = |arguments: &str| {
+        let source = format!("//@version=6\nstrategy(\"S\"{arguments})\nplot(close)");
+        let program = compiler::compile(&source, Limits::default(), &NoLibraries);
+        assert!(program.is_valid(), "{:?}", program.diagnostics);
+        program.diagnostics
+    };
+    for (arguments, name) in [
+        (", calc_on_order_fills = true", "calc_on_order_fills"),
+        (", close_entries_rule = \"ANY\"", "close_entries_rule"),
+    ] {
+        let found = diagnostics(arguments);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].code, "PINE7001");
+        assert!(found[0].message.contains(name), "{}", found[0].message);
+    }
+    // The default, written out, changes nothing and is not warned about.
+    assert!(diagnostics(", calc_on_order_fills = false, close_entries_rule = \"FIFO\"").is_empty());
+    // Standard-OHLC fills are a documented no-op on a standard chart (docs/chart-types.md), and the
+    // report says so on a price-based chart, so the argument stays quiet.
+    assert!(diagnostics(", fill_orders_on_standard_ohlc = true").is_empty());
+    // A buffer size cannot be too small here (the whole history is kept), so it stays quiet.
+    assert!(diagnostics(", max_bars_back = 500").is_empty());
+}
+
+#[test]
 fn a_parameter_may_reuse_a_builtin_function_name_with_a_warning() {
     let codes = diagnostic_codes("f(color fill) =>\n    fill\nplot(close)");
     assert_eq!(codes, ["PINE7006"]);

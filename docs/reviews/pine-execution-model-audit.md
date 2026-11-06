@@ -41,7 +41,7 @@ wrong falls in four groups:
    `f()[n]` trails differently from TradingView's per-scope buffers, and there is no buffer model at
    all (findings 5–8, 18–21).
 4. **Silent differences**: several settings are accepted and dropped without the `ignored_features`
-   warning the project requires (findings 15, 18, 27), and no execution-model compiler warnings exist
+   warning the project requires (finding 15), and no execution-model compiler warnings exist
    (finding 19).
 
 ## Findings
@@ -66,10 +66,10 @@ Severity: **bug** = the engine computes something TradingView does not and a scr
 | 12 | bug | errors | A failed closing run does not commit but clears `live_open_time` | audit | PR 6 |
 | 13 | diff | errors | A realtime runtime error does not halt the script | audit | PR 6 |
 | 14 | diff | strategy | The broker is rolled back on unconfirmed ticks | audit | — |
-| 15 | gap | strategy | `calc_on_order_fills` (and two more parameters) accepted and silently dropped | audit | PR 3 (warning) |
+| 15 | gap | strategy | `calc_on_order_fills` and `close_entries_rule = "ANY"` accepted and silently dropped | audit | PR 3 (warning) — **done** |
 | 16 | diff | strategy | `process_orders_on_close` fills market orders only | audit | — |
 | 17 | diff | declaration | `calc_bars_count` ignored (already warned) | audit | — |
-| 18 | gap | buffers | `max_bars_back` is a silent no-op; history is unbounded | audit | PR 3 (warning) |
+| 18 | gap | buffers | `max_bars_back` is a silent no-op; history is unbounded | audit | none: harmless superset (see PR 3 note) |
 | 19 | gap | warnings | No execution-model compiler warnings | audit | — |
 | 20 | diff | ta | `ta.*` in a loop pushes one state entry per iteration | audit | — |
 | 21 | diff | scopes | A function called twice per bar from one site: the second call reads the first's value | audit | — |
@@ -78,7 +78,7 @@ Severity: **bug** = the engine computes something TradingView does not and a scr
 | 24 | diff | controller | A bar closes by wall clock; a late final tick forces a full rebuild | audit | — |
 | 25 | diff | controller | A new bar first seen already closed runs as `Historical` | audit | — |
 | 26 | diff | alerts | `alertcondition` is fixed to `All`; alerts emitted before an error are dropped | audit | — |
-| 27 | gap | strategy | `strategy.exit` trailing arguments raise `PINE9005`; `trail_offset` alone is ignored | audit | PR 3 (warning) |
+| 27 | gap | strategy | `strategy.exit` trailing arguments raise `PINE9005` | audit | — (`trail_offset` alone is meaningless in TradingView too) |
 | 28 | gap | type check | A history offset's type is not checked at compile time | audit | PR 4 |
 | 29 | gap | strategy | No margin model; `max_*_count` not capped at TradingView's limits | audit | — |
 | 30 | diff | controller | Stale `last_valid` output shows after a failed or new run | audit | PR 6 |
@@ -118,15 +118,17 @@ partial candle, so a fill price can change between ticks.
 contradicts "Unsupported behavior is never silent" in `docs/agent-guides/pine.md`. TradingView re-executes the
 script on each fill tick (up to four times per historical bar, with rollback between), so an order placed
 after the open fill can fill on the same bar's high, low or close. Ours runs `broker.process`, then the script
-once, then commits (`session.rs:677-701`). `fill_orders_on_standard_ohlc` and `close_entries_rule` are
-dropped the same way (`ANY` behaves as FIFO).
+once, then commits (`session.rs:677-701`). `close_entries_rule = "ANY"` is dropped the same way (it behaves as FIFO).
+`fill_orders_on_standard_ohlc` is a documented no-op (`docs/chart-types.md`: strategies fill at a price-based
+chart's constructed prices and the report says so), so it stays quiet; the first audit pass listed it in error.
 
 **16. `process_orders_on_close` fills market orders only** (`session.rs:726`, `broker.rs:472`).
 `fill_market_orders_at_close` uses `is_market()`, so a limit or stop order the close already satisfies waits
 for the next bar.
 
 **27. Trailing stops.** `trail_price` / `trail_points` raise `PINE9005` (`strategy_builtins.rs:563-571`),
-which stops the script on that bar; `trail_offset` alone is ignored silently.
+which stops the script on that bar. `trail_offset` only applies together with one of them in TradingView, so
+its being ignored alone is not a difference.
 
 **29. Margin and counts.** No margin model (default 100 % in TradingView); `equity()` can go negative; an
 oversized `default_qty_value` opens a larger position. `max_*_count` is honoured but not clamped to
@@ -244,8 +246,9 @@ ta.sma(close, 5) : na` and the loop above compile silently.
 **18. Buffers.** History is unbounded: no 5000-bar cap, no sizing from the first 244 bars, no `RE10143`, no
 memory error. The `max_bars_back(series, n)` builtin is a no-op (`misc_builtins.rs:80-83`) and the
 declaration argument is stored (`program.rs:105`, `compiler.rs:358`) and never read, with no warning
-(`ignored_features.rs:88-110`). This is a superset of TradingView's behaviour, but `max_bars_back(close,
-6000)` is not flagged.
+(`ignored_features.rs:88-110`). This is a superset of TradingView's behaviour: no script that runs on
+TradingView can read less history here, so a warning would only be noise. Only a script that TradingView
+stops with a buffer error runs here. Not fixing.
 
 **28. Offset type.** `type_checker.rs:583-589` infers the offset but does not require an int. `close[1.5]`
 returns `na` at runtime (`session.rs:1224-1231`); TradingView rejects it at compile time. `close[-1]` is a
@@ -358,7 +361,9 @@ change except on the workload the PR targets, and PRs touching state or rollback
 1. This document and the new bench workloads (`strategy_entry_exit_same_bar`, `varip_sites`,
    `builtin_history_reads`, `index_only_vars`, `error_halt`, `realtime_strategy_ticks`).
 2. Broker order book (1).
-3. Warnings for silently ignored settings (15, 17, 18, 27).
+3. Warnings for silently ignored settings that change results (15). Done: `calc_on_order_fills = true` and
+   `close_entries_rule` other than `"FIFO"`. Not warned, on purpose: `max_bars_back` (18), lone `trail_offset` (27),
+   `fill_orders_on_standard_ohlc` (documented no-op).
 4. History of built-in variables, offset type check, history pushed only for what is indexed (5, 28, 31).
 5. `varip` per call site, UDT `varip` fields, reference-typed `varip` (2, 3, 4).
 6. A runtime error halts the script (11, 12, 13, 30).
