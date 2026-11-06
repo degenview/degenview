@@ -170,13 +170,17 @@ bypass.
 
 ## 10. Hardening
 
-- Per-client and failed-authentication rate limiting (today: a concurrency cap and 256-bit tokens).
-- Header count/size limits (hyper defaults today). JSON nesting is already capped by serde_json's
-  recursion limit of 128; the body limit is 256 KiB.
+Done: failed-authentication and per-client rate limits, header and connection limits, and
+cancellation on disconnect (see [architecture/mcp.md](architecture/mcp.md)). Left:
+
 - IPv6 loopback (`::1`) with the same Host/Origin checks, if wanted.
-- Timeouts and cancellation: a dropped bridge call now cancels its queued request. Passing rmcp's
-  per-request cancellation token into Pine worker orchestration is still open, and no real client
-  has been used to confirm that closing a request stream drops the call.
+- The limits are constants. Make them settings only if someone needs different numbers.
+- A script compile that has already started is not interrupted by a cancel; it finishes and frees
+  its permit. Stopping it part-way needs a cancel hook inside the Pine compiler. Other
+  `spawn_blocking` jobs (provider search, candle fetch) are not aborted when still queued either;
+  their permit and deadline bound them.
+- Real clients have been used to check that normal calls still work, but not that a client closing
+  its stream mid-call drops the call; the loopback test does.
 - Behaviour when the app is quitting or a window closes mid-request (covered for stop and revoke, not
   for every window event).
 
@@ -210,8 +214,7 @@ permission matrix, tool catalog, limitations, tests run, example client configur
 ## 14. Open items from the production-readiness review
 
 [The review](reviews/mcp-server-code-review.md) has the status of each finding. Still open:
-audit log (item 2) and confirmation (item 3) as release requirements; failed-authentication and
-per-client rate limits and header limits (item 10); compile work for Pine saves and input changes
+audit log (item 2) and confirmation (item 3) as release requirements; compile work for Pine saves and input changes
 still runs on the app thread (a burst of permitted calls can stall a frame: prepare off-thread, then
 recheck the revision and commit); a draft with no open editor can still overwrite a later outside edit
 of the file (`based_on_revision_id` is never recorded); passing the permission to bridge calls from the

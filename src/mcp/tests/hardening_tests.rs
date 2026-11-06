@@ -1,0 +1,339 @@
+//! Rate limits, connection and header limits, and cancellation, over real loopback sockets.
+
+use super::{BOTH, Harness, READ, call, raw_request, rpc, status_line};
+use crate::mcp::limits::RateLimits;
+use crate::mcp::transport::{ConnectionLimits, serve};
+use serde_json::json;
+use std::io::{Read, Write};
+use std::net::TcpStream;
+use std::time::{Duration, Instant};
+use tokio_util::sync::CancellationToken;
+
+const LIST: &str = r#"{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}"#;
+
+fn limits(failed_burst: u32, client_burst: u32) -> RateLimits {
+    RateLimits {
+        failed_burst,
+        // Slow enough that nothing refills while a test runs.
+        failed_per_sec: 0.001,
+        client_burst,
+        client_per_sec: 0.001,
+    }
+}
+
+fn head(port: u16, token: &str) -> String {
+    format!("Authorization: Bearer {token}\r\nHost: 127.0.0.1:{port}\r\n")
+}
+
+/// Sends a request and reads whatever comes back, tolerating a server that answers and closes
+/// before the whole request is written (an oversized head).
+fn lenient_request(port: u16, head: &str, body: &str) -> String {
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
+    let request = format!(
+        "POST /mcp HTTP/1.1\r\n{head}Content-Type: application/json\r\nAccept: application/json, text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    let _ = stream.write_all(request.as_bytes());
+    let mut response = String::new();
+    let _ = stream.read_to_string(&mut response);
+    response
+}
+
+#[test]
+fn bad_tokens_are_slowed_down_but_a_valid_token_never_is() {
+    let harness = Harness::start(&[("c1", "good", READ)]);
+    harness.shared.set_rate_limits(limits(5, 1000));
+    let port = harness.port;
+    let url = harness.url();
+
+    for attempt in 0..5 {
+        let response = raw_request(port, &head(port, "wrong"), LIST);
+        assert!(
+            status_line(&response).contains("401"),
+            "attempt {attempt}: {response}"
+        );
+    }
+    // The bucket is spent: junk is now refused with a retry time, and not looked at further.
+    let refused = raw_request(port, &head(port, "wrong"), LIST);
+    assert!(status_line(&refused).contains("429"), "{refused}");
+    let lower = refused.to_ascii_lowercase();
+    assert!(lower.contains("retry-after: "), "{refused}");
+    // A request with no token at all counts the same way.
+    let none = raw_request(port, &format!("Host: 127.0.0.1:{port}\r\n"), LIST);
+    assert!(status_line(&none).contains("429"), "{none}");
+
+    // The real credential is untouched by any of that.
+    for _ in 0..3 {
+        assert_eq!(rpc(&url, Some("good"), "tools/list", json!({})).status, 200);
+    }
+}
+
+#[test]
+fn one_client_over_its_limit_does_not_slow_another() {
+    let harness = Harness::start(&[("c1", "one", READ), ("c2", "two", READ)]);
+    harness.shared.set_rate_limits(limits(1000, 3));
+    let port = harness.port;
+    let url = harness.url();
+
+    for _ in 0..3 {
+        assert_eq!(rpc(&url, Some("one"), "tools/list", json!({})).status, 200);
+    }
+    let refused = raw_request(port, &head(port, "one"), LIST);
+    assert!(status_line(&refused).contains("429"), "{refused}");
+    assert!(
+        refused.to_ascii_lowercase().contains("retry-after: "),
+        "{refused}"
+    );
+
+    for _ in 0..3 {
+        assert_eq!(rpc(&url, Some("two"), "tools/list", json!({})).status, 200);
+    }
+}
+
+#[test]
+fn a_client_recovers_as_its_bucket_refills() {
+    let harness = Harness::start(&[("c1", "tok", READ)]);
+    harness.shared.set_rate_limits(RateLimits {
+        client_burst: 1,
+        client_per_sec: 20.0,
+        ..limits(1000, 1)
+    });
+    let url = harness.url();
+    assert_eq!(rpc(&url, Some("tok"), "tools/list", json!({})).status, 200);
+    assert_eq!(rpc(&url, Some("tok"), "tools/list", json!({})).status, 429);
+    std::thread::sleep(Duration::from_millis(200));
+    assert_eq!(rpc(&url, Some("tok"), "tools/list", json!({})).status, 200);
+}
+
+#[test]
+fn a_revoked_and_recreated_client_starts_with_a_full_bucket() {
+    let harness = Harness::start(&[("c1", "tok", READ)]);
+    harness.shared.set_rate_limits(limits(1000, 1));
+    let url = harness.url();
+    assert_eq!(rpc(&url, Some("tok"), "tools/list", json!({})).status, 200);
+    assert_eq!(rpc(&url, Some("tok"), "tools/list", json!({})).status, 429);
+
+    let clients = harness.shared.clients();
+    harness.shared.replace(Vec::new(), harness.shared.global());
+    harness.shared.replace(clients, harness.shared.global());
+    assert_eq!(rpc(&url, Some("tok"), "tools/list", json!({})).status, 200);
+}
+
+#[test]
+fn too_many_or_too_large_headers_are_refused_and_the_server_carries_on() {
+    let harness = Harness::start(&[("c1", "tok", READ)]);
+    let port = harness.port;
+    let url = harness.url();
+
+    let many: String = (0..80).map(|n| format!("X-Filler-{n}: 1\r\n")).collect();
+    let response = lenient_request(port, &format!("{}{many}", head(port, "tok")), LIST);
+    assert!(
+        status_line(&response).contains("431"),
+        "many headers: {response}"
+    );
+
+    let large = format!("X-Big: {}\r\n", "a".repeat(20 * 1024));
+    let response = lenient_request(port, &format!("{}{large}", head(port, "tok")), LIST);
+    assert!(
+        status_line(&response).contains("431"),
+        "large header: {response}"
+    );
+
+    // A normal request, and one with a handful of ordinary headers, still work.
+    assert_eq!(rpc(&url, Some("tok"), "tools/list", json!({})).status, 200);
+    let few: String = (0..20).map(|n| format!("X-Filler-{n}: 1\r\n")).collect();
+    let ok = lenient_request(port, &format!("{}{few}", head(port, "tok")), LIST);
+    assert!(status_line(&ok).contains("200"), "{ok}");
+}
+
+/// A server that answers `/` with "ok", behind `serve` with the given limits.
+struct Plain {
+    port: u16,
+    cancel: CancellationToken,
+    thread: Option<std::thread::JoinHandle<()>>,
+}
+
+impl Plain {
+    fn start(limits: ConnectionLimits) -> Self {
+        let std_listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        std_listener.set_nonblocking(true).unwrap();
+        let port = std_listener.local_addr().unwrap().port();
+        let cancel = CancellationToken::new();
+        let token = cancel.clone();
+        let thread = std::thread::spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            runtime.block_on(async {
+                let listener = tokio::net::TcpListener::from_std(std_listener).unwrap();
+                let app = axum::Router::new().route("/", axum::routing::get(|| async { "ok" }));
+                serve(listener, app, limits, token).await;
+            });
+        });
+        Self {
+            port,
+            cancel,
+            thread: Some(thread),
+        }
+    }
+
+    fn connect(&self) -> TcpStream {
+        let stream = TcpStream::connect(("127.0.0.1", self.port)).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        stream
+    }
+
+    fn get(&self) -> String {
+        let mut stream = self.connect();
+        stream
+            .write_all(b"GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
+            .unwrap();
+        let mut response = String::new();
+        let _ = stream.read_to_string(&mut response);
+        response
+    }
+}
+
+impl Drop for Plain {
+    fn drop(&mut self) {
+        self.cancel.cancel();
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
+    }
+}
+
+/// Whether the server has closed `stream` (a read returns end-of-file or an error other than
+/// the read timeout) within `wait`.
+fn closed_within(stream: &mut TcpStream, wait: Duration) -> bool {
+    stream.set_read_timeout(Some(wait)).unwrap();
+    let mut buffer = [0u8; 256];
+    match stream.read(&mut buffer) {
+        Ok(0) => true,
+        Ok(_) => true, // an error response, then the close
+        Err(error) => !matches!(
+            error.kind(),
+            std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+        ),
+    }
+}
+
+#[test]
+fn a_client_that_never_finishes_its_headers_is_dropped() {
+    let server = Plain::start(ConnectionLimits {
+        header_read_timeout: Duration::from_millis(300),
+        ..ConnectionLimits::default()
+    });
+    let mut slow = server.connect();
+    slow.write_all(b"GET / HTTP/1.1\r\nHost: x\r\n").unwrap();
+    assert!(
+        closed_within(&mut slow, Duration::from_secs(3)),
+        "the half-sent request was never cut off"
+    );
+    assert!(server.get().contains("ok"));
+}
+
+#[test]
+fn connections_past_the_cap_are_closed_and_slots_come_back() {
+    let server = Plain::start(ConnectionLimits {
+        max_connections: 3,
+        header_read_timeout: Duration::from_secs(30),
+        ..ConnectionLimits::default()
+    });
+    // Three connections, each part-way through a request, hold every slot.
+    let mut held: Vec<TcpStream> = (0..3)
+        .map(|_| {
+            let mut stream = server.connect();
+            stream.write_all(b"GET / HTTP/1.1\r\nHost: x\r\n").unwrap();
+            stream
+        })
+        .collect();
+    std::thread::sleep(Duration::from_millis(200));
+
+    let mut extra = server.connect();
+    let _ = extra.write_all(b"GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n");
+    assert!(
+        closed_within(&mut extra, Duration::from_secs(3)),
+        "a fourth connection was served"
+    );
+    let mut answered = String::new();
+    let _ = extra.read_to_string(&mut answered);
+    assert!(!answered.contains("ok"), "{answered}");
+
+    // Free a slot and the next connection is served again.
+    held.pop();
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(server.get().contains("ok"));
+}
+
+#[test]
+fn stopping_with_connections_held_open_is_prompt() {
+    let mut harness = Harness::start(&[("c1", "tok", READ)]);
+    let port = harness.port;
+    let _held: Vec<TcpStream> = (0..8)
+        .map(|_| {
+            let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+            stream
+                .write_all(b"POST /mcp HTTP/1.1\r\nHost: x\r\n")
+                .unwrap();
+            stream
+        })
+        .collect();
+    std::thread::sleep(Duration::from_millis(100));
+    let started = Instant::now();
+    harness.stop_server();
+    assert!(
+        started.elapsed() < Duration::from_secs(3),
+        "stop took {:?}",
+        started.elapsed()
+    );
+}
+
+#[test]
+fn a_call_dropped_by_the_client_never_runs() {
+    let harness = Harness::start(&[("c1", "tok", BOTH)]);
+    let port = harness.port;
+    harness.pause_app(true);
+
+    // Send an add-chart call and hang up without waiting for the answer.
+    let body = json!({
+        "jsonrpc": "2.0", "id": 9, "method": "tools/call",
+        "params": {"name": "degenview_add_chart",
+                   "arguments": {"workspace_id": "1", "source": "binance", "symbol": "ETHUSDT"}}
+    })
+    .to_string();
+    {
+        let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+        let request = format!(
+            "POST /mcp HTTP/1.1\r\n{}MCP-Protocol-Version: 2025-06-18\r\nContent-Type: application/json\r\nAccept: application/json, text/event-stream\r\nContent-Length: {}\r\n\r\n{body}",
+            head(port, "tok"),
+            body.len()
+        );
+        stream.write_all(request.as_bytes()).unwrap();
+        // Let the call reach the bridge queue, then hang up.
+        std::thread::sleep(Duration::from_millis(300));
+    }
+    std::thread::sleep(Duration::from_millis(300));
+    harness.pause_app(false);
+    std::thread::sleep(Duration::from_millis(500));
+    assert!(
+        harness.added.lock().unwrap().is_empty(),
+        "a call the client had given up on still changed the app"
+    );
+
+    // The server is unharmed: the same call from a client that waits goes through.
+    let added = call(
+        &harness.url(),
+        "tok",
+        "degenview_add_chart",
+        json!({"workspace_id": "1", "source": "binance", "symbol": "ETHUSDT"}),
+    );
+    assert_eq!(added["isError"], json!(false), "{added}");
+    assert_eq!(harness.added.lock().unwrap().len(), 1);
+}

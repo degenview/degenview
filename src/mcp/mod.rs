@@ -14,6 +14,7 @@ pub mod chart_data;
 pub mod drawings;
 pub mod indicator_tools;
 pub mod indicator_values;
+pub mod limits;
 pub mod market_tools;
 pub mod markets;
 pub mod paper;
@@ -175,13 +176,15 @@ fn run(
         // running. Set before answering, so a later failure cannot be overwritten by the caller.
         shared.set_status(McpStatus::Running { port });
         let _ = ready.send(Ok(()));
-        tokio::select! {
-            result = axum::serve(listener, app) => {
-                if let Err(error) = result && !cancel.is_cancelled() {
-                    shared.set_status(McpStatus::Failed(format!("Server stopped: {error}")));
-                }
-            }
-            () = cancel.cancelled() => {}
+        transport::serve(
+            listener,
+            app,
+            transport::ConnectionLimits::default(),
+            cancel.clone(),
+        )
+        .await;
+        if !cancel.is_cancelled() {
+            shared.set_status(McpStatus::Failed("Server stopped".into()));
         }
     });
     // Do not wait on anything still parked in a connection: the port is already closed.

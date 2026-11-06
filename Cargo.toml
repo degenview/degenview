@@ -39,6 +39,9 @@ ureq = "3.4.2"
 rmcp = { version = "3.5.1", features = ["transport-streamable-http-server"] }
 tokio = { version = "1.53.2", features = ["rt", "net", "sync", "macros", "time"] }
 axum = "0.8.9"
+# The MCP server accepts connections itself, to cap header size, header time and open connections.
+hyper = { version = "1.12.0", features = ["http1", "server"] }
+hyper-util = { version = "0.1.21", features = ["tokio"] }
 schemars = "1.2.2"
 getrandom = "0.4.3"
 subtle = "2.6.1"

@@ -169,6 +169,7 @@ pub struct Harness {
     stub: Arc<Stub>,
     server: Option<McpServer>,
     stop_app: Arc<AtomicBool>,
+    paused: Arc<AtomicBool>,
     app: Option<JoinHandle<()>>,
 }
 
@@ -210,6 +211,7 @@ impl Harness {
         let added = Arc::new(Mutex::new(Vec::new()));
         let indicators = Arc::new(Mutex::new(Vec::new()));
         let stop_app = Arc::new(AtomicBool::new(false));
+        let paused = Arc::new(AtomicBool::new(false));
         let app = {
             let shared = shared.clone();
             let added = added.clone();
@@ -217,9 +219,15 @@ impl Harness {
             let stub = stub.clone();
             let root = scripts_root.clone();
             let stop = stop_app.clone();
+            let paused = paused.clone();
             std::thread::spawn(move || {
                 while !stop.load(Ordering::Acquire) {
-                    for request in inbox.take(8) {
+                    let batch = if paused.load(Ordering::Acquire) {
+                        Vec::new()
+                    } else {
+                        inbox.take(8)
+                    };
+                    for request in batch {
                         let added = added.clone();
                         let indicators = indicators.clone();
                         let stub = stub.clone();
@@ -241,8 +249,14 @@ impl Harness {
             stub,
             server: Some(server),
             stop_app,
+            paused,
             app: Some(app),
         }
+    }
+
+    /// While paused the stub app takes nothing from the bridge, so calls stay queued.
+    pub fn pause_app(&self, paused: bool) {
+        self.paused.store(paused, Ordering::Release);
     }
 
     /// Candle, drawing and chart-control commands that reached the stub app, in order.
@@ -3625,6 +3639,7 @@ fn tool_schemas_use_only_standard_formats() {
 
 mod chart_control_tests;
 mod drawing_tools_tests;
+mod hardening_tests;
 mod indicator_tests;
 mod market_tests;
 mod paper_tests;

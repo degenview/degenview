@@ -18,6 +18,13 @@ client → 127.0.0.1:<port>/mcp → bearer/Host/Origin/size checks
 - Effective permissions are client grants intersected with the global cap, both read per call.
   New clients get `charts.read`; the cap defaults read-only. `tools/list` filters and `call_tool`
   rechecks.
+- Limits (constants in `mcp/limits.rs` and `mcp/transport.rs`): 64 requests in flight before
+  authentication and 16 after; bad tokens share a bucket of 20 refilled at 2/s, past which they get
+  429 with `Retry-After` (a valid token is never affected); each client has a bucket of 60 refilled
+  at 20/s; a request head may have 64 headers and 16 KiB (431 beyond), a client has 10 s to send it
+  (which also closes idle keep-alive connections), and 128 connections may be open (more are closed
+  on arrival); the body is capped at 256 KiB. A client that hangs up or cancels drops its tool call:
+  queued work does not run, work the app already started keeps its outcome.
 - Workers never access workspaces or SQLite. `Request::run` skips abandoned, expired, cancelled,
   pre-stop, or newly unauthorized work; started work reports its real result.
 - Settings holds the store lock, so it only queues `McpAction`; `tick_mcp` applies it later.

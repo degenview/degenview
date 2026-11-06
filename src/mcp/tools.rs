@@ -2020,6 +2020,15 @@ impl DegenViewMcp {
     }
 }
 
+/// Aborts a blocking task when dropped. A no-op once the task has started or finished.
+struct AbortOnDrop(tokio::task::AbortHandle);
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
 impl DegenViewMcp {
     /// Runs a script-library read or compile off the async workers and off the app thread, at
     /// most `PINE_JOBS` at a time. The permission is checked again once the work is done: a
@@ -2036,15 +2045,18 @@ impl DegenViewMcp {
             )));
         };
         let shared = self.shared.clone();
-        let outcome = tokio::task::spawn_blocking(move || {
+        let handle = tokio::task::spawn_blocking(move || {
             let _permit = permit;
             let mut store = shared.script_store().ok_or_else(|| {
                 McpError::AppUnavailable("The script library is unavailable".into())
             })?;
             job(&mut store)
-        })
-        .await
-        .map_err(|_| {
+        });
+        // If this call is dropped (the client went away), a job still waiting for a thread is
+        // cancelled. One already running finishes and frees its permit; nothing here can stop a
+        // compile part-way.
+        let _abort_if_dropped = AbortOnDrop(handle.abort_handle());
+        let outcome = handle.await.map_err(|_| {
             failure(&McpError::AppUnavailable(
                 "The request was interrupted".into(),
             ))
@@ -2240,8 +2252,19 @@ impl ServerHandler for DegenViewMcp {
             )))
             .into());
         }
+        // rmcp cancels `ct` when the client hangs up or sends `notifications/cancelled`, but it
+        // leaves the handler running. Dropping the tool's future instead is what stops work that
+        // has not started: a queued bridge request is cancelled by `CancelOnDrop`, a queued
+        // script job by `AbortOnDrop`. Work the app has already started keeps its real outcome.
+        let cancelled = context.ct.clone();
         let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
-        self.tool_router.call(tcc).await
+        tokio::select! {
+            result = self.tool_router.call(tcc) => result,
+            () = cancelled.cancelled() => Err(ErrorData::internal_error(
+                "The request was cancelled",
+                None,
+            )),
+        }
     }
 
     async fn list_tools(

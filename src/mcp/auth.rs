@@ -4,6 +4,7 @@
 //! the token itself is shown once when the credential is created. Tokens are accepted from the
 //! `Authorization` header only — never a URL — and are never logged.
 
+use crate::mcp::limits::retry_after_secs;
 use crate::mcp::state::McpShared;
 use axum::extract::{Request, State};
 use axum::http::{HeaderValue, StatusCode, header};
@@ -11,6 +12,7 @@ use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
+use std::time::Duration;
 use subtle::ConstantTimeEq;
 
 pub const TOKEN_PREFIX: &str = "dvmcp_";
@@ -66,9 +68,29 @@ fn unauthorized() -> Response {
     response
 }
 
+/// `429` with the seconds to wait. Used for a client over its own limit and for bad tokens past
+/// the shared failure limit.
+fn too_many_requests(wait: Duration) -> Response {
+    let mut response = (
+        StatusCode::TOO_MANY_REQUESTS,
+        [(header::CONTENT_TYPE, "application/json")],
+        r#"{"error":"too_many_requests"}"#,
+    )
+        .into_response();
+    response.headers_mut().insert(
+        header::RETRY_AFTER,
+        HeaderValue::from(retry_after_secs(wait)),
+    );
+    response
+}
+
 /// Rejects every request that does not carry a valid, unrevoked bearer token, and hands the
 /// resolved client identity to the MCP layer through the request extensions. A missing,
 /// malformed, unknown or revoked token all look the same to the caller.
+///
+/// Two rate limits sit here. Bad tokens draw from one shared bucket and, once it is empty, are
+/// answered 429 instead of 401; a valid token never touches that bucket, so a flood of junk cannot
+/// lock a real client out. A valid token draws from its own client's bucket.
 pub async fn require_bearer(
     State(shared): State<Arc<McpShared>>,
     mut request: Request,
@@ -76,11 +98,17 @@ pub async fn require_bearer(
 ) -> Response {
     let identity = bearer_token(&request).and_then(|token| shared.authenticate(token));
     match identity {
-        Some(identity) => {
-            request.extensions_mut().insert(identity);
-            next.run(request).await
-        }
-        None => unauthorized(),
+        Some(identity) => match shared.note_client_call(&identity.id) {
+            Ok(()) => {
+                request.extensions_mut().insert(identity);
+                next.run(request).await
+            }
+            Err(wait) => too_many_requests(wait),
+        },
+        None => match shared.note_failed_auth() {
+            Ok(()) => unauthorized(),
+            Err(wait) => too_many_requests(wait),
+        },
     }
 }
 
