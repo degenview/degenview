@@ -2252,8 +2252,10 @@ impl ServerHandler for DegenViewMcp {
             )))
             .into());
         }
-        // rmcp cancels `ct` when the client hangs up or sends `notifications/cancelled`, but it
-        // leaves the handler running. Dropping the tool's future instead is what stops work that
+        // rmcp cancels `ct` when the client hangs up, but leaves the handler running. (A
+        // `notifications/cancelled` does not reach it: stateless mode serves every POST on its own,
+        // so the notification cannot find the call it names. Protocol cancellation is open.)
+        // Dropping the tool's future on `ct` is what stops work that
         // has not started: a queued bridge request is cancelled by `CancelOnDrop`, a queued
         // script job by `AbortOnDrop`. Work the app has already started keeps its real outcome.
         let cancelled = context.ct.clone();

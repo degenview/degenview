@@ -337,3 +337,34 @@ fn a_call_dropped_by_the_client_never_runs() {
     assert_eq!(added["isError"], json!(false), "{added}");
     assert_eq!(harness.added.lock().unwrap().len(), 1);
 }
+
+/// The protocol's own cancellation does nothing here: stateless mode serves every POST on its
+/// own, so a `notifications/cancelled` cannot find the call it names. Only a hang-up cancels (see
+/// `a_call_dropped_by_the_client_never_runs`). If protocol cancellation is ever honoured, this
+/// test should be turned around.
+#[test]
+fn a_cancel_notification_does_not_stop_the_original_call() {
+    let harness = Harness::start(&[("c1", "tok", BOTH)]);
+    let url = harness.url();
+    harness.pause_app(true);
+    let body = json!({
+        "jsonrpc": "2.0", "id": 9, "method": "tools/call",
+        "params": {"name": "degenview_add_chart",
+                   "arguments": {"workspace_id": "1", "source": "binance", "symbol": "ETHUSDT"}}
+    })
+    .to_string();
+    let waiting = {
+        let url = url.clone();
+        std::thread::spawn(move || super::post(&url, Some("tok"), &[super::PROTOCOL], &body))
+    };
+    std::thread::sleep(Duration::from_millis(300));
+    let cancel = json!({"jsonrpc": "2.0", "method": "notifications/cancelled",
+                        "params": {"requestId": 9, "reason": "test"}});
+    let reply = super::post(&url, Some("tok"), &[super::PROTOCOL], &cancel.to_string());
+    assert_eq!(reply.status, 202, "{}", reply.body);
+    std::thread::sleep(Duration::from_millis(300));
+    harness.pause_app(false);
+    let original = waiting.join().unwrap();
+    assert_eq!(original.status, 200, "{}", original.body);
+    assert_eq!(harness.added.lock().unwrap().len(), 1);
+}

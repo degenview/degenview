@@ -23,8 +23,10 @@ client → 127.0.0.1:<port>/mcp → bearer/Host/Origin/size checks
   429 with `Retry-After` (a valid token is never affected); each client has a bucket of 60 refilled
   at 20/s; a request head may have 64 headers and 16 KiB (431 beyond), a client has 10 s to send it
   (which also closes idle keep-alive connections), and 128 connections may be open (more are closed
-  on arrival); the body is capped at 256 KiB. A client that hangs up or cancels drops its tool call:
-  queued work does not run, work the app already started keeps its outcome.
+  on arrival); the body is capped at 256 KiB. A client that hangs up drops its tool call: queued work
+  does not run, work the app already started keeps its outcome. A `notifications/cancelled` does not
+  cancel anything: stateless mode serves each POST on its own, so the notification (answered 202)
+  cannot find the call it names.
 - Workers never access workspaces or SQLite. `Request::run` skips abandoned, expired, cancelled,
   pre-stop, or newly unauthorized work; started work reports its real result.
 - Settings holds the store lock, so it only queues `McpAction`; `tick_mcp` applies it later.
