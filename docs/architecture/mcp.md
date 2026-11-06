@@ -24,9 +24,13 @@ client → 127.0.0.1:<port>/mcp → bearer/Host/Origin/size checks
   at 20/s; a request head may have 64 headers and 16 KiB (431 beyond), a client has 10 s to send it
   (which also closes idle keep-alive connections), and 128 connections may be open (more are closed
   on arrival); the body is capped at 256 KiB. A client that hangs up drops its tool call: queued work
-  does not run, work the app already started keeps its outcome. A `notifications/cancelled` does not
-  cancel anything: stateless mode serves each POST on its own, so the notification (answered 202)
-  cannot find the call it names.
+  does not run, work the app already started keeps its outcome. A `notifications/cancelled` cancels the
+  same way. Stateless mode serves it as its own POST, so `mcp/cancel.rs` keeps the tool calls in
+  flight by client and request id, and a layer reads the notification before rmcp, cancels that
+  client's matching calls (all of them, if a client reuses an id) and answers 202 itself. The layer
+  sits outside the 16-request cap, so a cancel gets through while the calls it cancels hold every
+  permit, and inside the bearer check, so a client can only cancel its own calls. Batches are not
+  read.
 - Workers never access workspaces or SQLite. `Request::run` skips abandoned, expired, cancelled,
   pre-stop, or newly unauthorized work; started work reports its real result.
 - Settings holds the store lock, so it only queues `McpAction`; `tick_mcp` applies it later.

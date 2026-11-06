@@ -179,11 +179,8 @@ cancellation on disconnect (see [architecture/mcp.md](architecture/mcp.md)). Lef
   its permit. Stopping it part-way needs a cancel hook inside the Pine compiler. Other
   `spawn_blocking` jobs (provider search, candle fetch) are not aborted when still queued either;
   their permit and deadline bound them.
-- Protocol cancellation (`notifications/cancelled`) does nothing: stateless mode serves each POST on
-  its own, so the notification cannot reach the call it names (test
-  `a_cancel_notification_does_not_stop_the_original_call`). Only a hang-up cancels. Honouring it
-  needs a registry from `(client id, request id)` to the call's token, filled in `call_tool` and
-  consulted by a layer that reads the notification before rmcp does.
+- `notifications/cancelled` is honoured for a single message, not inside a JSON-RPC batch (a
+  batch is passed on to rmcp, which cannot match it). No real client has been seen sending one.
 - Real clients have been used to check that normal calls still work, but not that a client closing
   its stream mid-call drops the call; the loopback test does.
 - Behaviour when the app is quitting or a window closes mid-request (covered for stop and revoke, not
