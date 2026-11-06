@@ -78,6 +78,29 @@ pub fn target_at(targets: &[HoverTarget], pointer: Pos2) -> Option<&HoverTarget>
         .find(|target| target.rect.contains(pointer))
 }
 
+/// The tooltips of every script on the chart, last drawn last: what is behind the chart (the
+/// `bool` of each layer), then the other scripts' labels in layer order, then every script's
+/// tables, as the frame paints them. Layers with no tooltip are not measured.
+pub fn hover_targets_in_order(
+    layers: &[(PineLayer<'_>, bool)],
+    painter: &Painter,
+) -> Vec<HoverTarget> {
+    let with_tips: Vec<&(PineLayer, bool)> = layers
+        .iter()
+        .filter(|(layer, _)| layer.has_tooltips())
+        .collect();
+    let mut targets = Vec::new();
+    for behind in [true, false] {
+        for (layer, _) in with_tips.iter().filter(|(_, b)| *b == behind) {
+            targets.extend(layer.label_targets(painter));
+        }
+    }
+    for (layer, _) in &with_tips {
+        targets.extend(layer.table_targets(painter));
+    }
+    targets
+}
+
 pub struct PineLayer<'a> {
     pub pine: &'a VisualOutput,
     /// The candles in view; per-bar series are right-aligned with these, ending `tail` bars before
@@ -1120,8 +1143,16 @@ impl PineLayer<'_> {
 
     /// The tooltips of labels and table cells with the rectangle each was drawn in, in drawing
     /// order (labels, then tables, which are painted over them). A part outside the plot is cut
-    /// off, as it is not visible there.
+    /// off, as it is not visible there. For several scripts use [`hover_targets_in_order`].
     pub fn hover_targets(&self, painter: &Painter) -> Vec<HoverTarget> {
+        let mut targets = self.label_targets(painter);
+        targets.extend(self.table_targets(painter));
+        targets
+    }
+
+    /// The labels' tooltips. A label is hovered over what it is drawn as: its bubble, its pointer
+    /// when the bubble is filled (the pointer is only painted then) and a marker's glyph.
+    pub fn label_targets(&self, painter: &Painter) -> Vec<HoverTarget> {
         let mut targets = Vec::new();
         for label in self.pine.labels.iter().filter(|l| l.is_complete()) {
             let Some(text) = label.tooltip.as_deref().filter(|t| !t.is_empty()) else {
@@ -1130,9 +1161,17 @@ impl PineLayer<'_> {
             let Some(layout) = self.label_geometry(painter, label) else {
                 continue;
             };
-            let shown = layout
+            let mut shown = layout
                 .glyph
                 .map_or(layout.body, |glyph| layout.body.union(glyph));
+            if label.color.is_some_and(is_visible)
+                && let LabelShape::Bubble { pointer } = &layout.shape
+            {
+                // The triangle's bounding box: a little more than the stem, never less.
+                for point in pointer {
+                    shown.extend_with(*point);
+                }
+            }
             let rect = shown.intersect(self.plot);
             if rect.is_positive() {
                 targets.push(HoverTarget {
@@ -1141,6 +1180,12 @@ impl PineLayer<'_> {
                 });
             }
         }
+        targets
+    }
+
+    /// The table cells' tooltips.
+    pub fn table_targets(&self, painter: &Painter) -> Vec<HoverTarget> {
+        let mut targets = Vec::new();
         for (table, layout, origin) in self.table_placements(painter) {
             for cell in &table.cells {
                 let Some(text) = cell.tooltip.as_deref() else {
@@ -2509,5 +2554,97 @@ mod tests {
         assert_eq!(at(45.0, 45.0), Some("cell"), "the later one is on top");
         assert_eq!(at(80.0, 80.0), Some("cell"));
         assert_eq!(at(95.0, 95.0), None);
+    }
+
+    #[test]
+    fn a_table_of_an_earlier_script_is_hovered_over_a_label_of_a_later_one() {
+        let candles = candles(5);
+        let (x, y) = (x_of as fn(i64) -> f32, y_of as fn(f64) -> f32);
+        // Script A has the table, script B a label that sits on its cell.
+        let mut a = empty();
+        a.tables.push(tip_table(vec![
+            tip_cell(0, "x", None),
+            tip_cell(1, "y", Some("cell of A")),
+        ]));
+        let a_layer = layer(&a, &candles, &x, &y);
+        let cell = with_painter(|painter| a_layer.table_targets(painter))[0].rect;
+        let mut b = empty();
+        let mut label = tip_label(9, 200.0 - cell.center().y as f64, "L", Some("label of B"));
+        label.style = LabelStyle::LabelCenter;
+        b.labels.push(label);
+        let over = Pos2::new(x_of(9), cell.center().y);
+        assert!(cell.contains(over), "the label is over the cell: {cell:?}");
+        let hovered = |layers: &[(PineLayer, bool)]| {
+            with_painter(|painter| {
+                target_at(&hover_targets_in_order(layers, painter), over).map(|t| t.text.clone())
+            })
+        };
+        // The frame paints every label, then every table: A's table is on top of B's label.
+        assert_eq!(
+            hovered(&[
+                (layer(&a, &candles, &x, &y), false),
+                (layer(&b, &candles, &x, &y), false)
+            ])
+            .as_deref(),
+            Some("cell of A")
+        );
+        assert_eq!(
+            hovered(&[
+                (layer(&b, &candles, &x, &y), false),
+                (layer(&a, &candles, &x, &y), false)
+            ])
+            .as_deref(),
+            Some("cell of A"),
+            "whichever order the scripts are in"
+        );
+        // A script behind the chart is painted first: its label is under another's label.
+        let mut c = empty();
+        let mut under = tip_label(9, 200.0 - cell.center().y as f64, "U", Some("label behind"));
+        under.style = LabelStyle::LabelCenter;
+        c.labels.push(under);
+        assert_eq!(
+            hovered(&[
+                (layer(&b, &candles, &x, &y), false),
+                (layer(&c, &candles, &x, &y), true)
+            ])
+            .as_deref(),
+            Some("label of B")
+        );
+        assert_eq!(
+            hovered(&[
+                (layer(&c, &candles, &x, &y), true),
+                (layer(&b, &candles, &x, &y), false)
+            ])
+            .as_deref(),
+            Some("label of B"),
+            "a label behind the chart is under the others whichever layer comes first"
+        );
+    }
+
+    #[test]
+    fn the_pointer_of_a_filled_bubble_is_hovered_and_an_unfilled_one_has_none() {
+        let candles = candles(5);
+        let (x, y) = (x_of as fn(i64) -> f32, y_of as fn(f64) -> f32);
+        let mut output = empty();
+        output.labels.push(tip_label(2, 150.0, "a", Some("tip")));
+        let down = layer(&output, &candles, &x, &y);
+        let anchor = Pos2::new(x_of(2), y_of(150.0));
+        let near_the_tip = anchor + Vec2::new(0.0, -1.0);
+        let on_the_stem = |layer: &PineLayer| {
+            with_painter(|painter| target_at(&layer.hover_targets(painter), near_the_tip).is_some())
+        };
+        assert!(
+            on_the_stem(&down),
+            "the stem just above the anchor is part of the label"
+        );
+        // No fill: only the text is drawn, so only the text is hovered.
+        output.labels[0].color = None;
+        let text_only = layer(&output, &candles, &x, &y);
+        assert!(!on_the_stem(&text_only));
+        let body = with_painter(|painter| text_only.hover_targets(painter))[0].rect;
+        assert!(
+            body.max.y < anchor.y - 1.0,
+            "the body ends above the pointer: {body:?}"
+        );
     }
 }

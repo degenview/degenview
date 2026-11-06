@@ -65,9 +65,10 @@
   points to this app's 12). Properties the chart cannot draw (font family, bold/italic) are
   accepted and warned about through `ignored_features`, never silently dropped.
 - Label and table-cell tooltips (`tooltip=`, `label.set_tooltip`, `table.cell_set_tooltip`) show on hover.
-  `PineLayer::hover_targets` returns each one's drawn rectangle (it shares `label_geometry` and
-  `table_placements` with the painters, so the hover and the picture agree; keep it that way) and
-  `pine_chart_render::target_at` picks the topmost. Only `LiveOverlays` looks (`Overlays::pointer` is
+  `hover_targets_in_order` returns each one's drawn rectangle in paint order across scripts (behind-chart
+  labels, other labels, then every script's tables; a filled bubble includes its pointer). It shares
+  `label_geometry` and `table_placements` with the painters, so the hover and the picture agree; keep it
+  that way. `pine_chart_render::target_at` picks the topmost. Only `LiveOverlays` looks (`Overlays::pointer` is
   `None` for a snapshot, which therefore never measures or shows one) and shows it through egui's own
   tooltip on a copy of the canvas response covering the target, so egui's delay and "only when still" apply.
   A repeated `table.cell` resets the cell's tooltip like every other property. Not verified against

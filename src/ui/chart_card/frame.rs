@@ -9,7 +9,7 @@
 
 use super::*;
 use crate::model::canvas::PaneHeights;
-use crate::ui::pine_chart_render::target_at;
+use crate::ui::pine_chart_render::{hover_targets_in_order, target_at};
 
 /// A script's output, how it is ordered against the chart, and the instance it belongs to.
 pub(super) type Placed = (Arc<VisualOutput>, VisualOrder, u64);
@@ -456,11 +456,7 @@ impl ChartCard {
         let mut tooltip = pointer
             .filter(|pointer| plot.contains(*pointer))
             .and_then(|pointer| {
-                let targets: Vec<HoverTarget> = pine_layers
-                    .iter()
-                    .filter(|(layer, _)| layer.has_tooltips())
-                    .flat_map(|(layer, _)| layer.hover_targets(&main_painter))
-                    .collect();
+                let targets = hover_targets_in_order(&pine_layers, &main_painter);
                 target_at(&targets, pointer).cloned()
             });
 
