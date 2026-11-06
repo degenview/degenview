@@ -62,8 +62,16 @@
   bar; `PineLayer::label_y` resolves it against the candle, so the price scale is not affected.
 - `table.cell_set_*` creates a blank cell when the cell was never defined (inferred; the reference does not
   say). A text size is `Size::Points(n)` when a script gives a number (`font_size` scales TradingView's 14
-  points to this app's 12). Properties the chart cannot draw (cell tooltips, font family, bold/italic) are
+  points to this app's 12). Properties the chart cannot draw (font family, bold/italic) are
   accepted and warned about through `ignored_features`, never silently dropped.
+- Label and table-cell tooltips (`tooltip=`, `label.set_tooltip`, `table.cell_set_tooltip`) show on hover.
+  `PineLayer::hover_targets` returns each one's drawn rectangle (it shares `label_geometry` and
+  `table_placements` with the painters, so the hover and the picture agree; keep it that way) and
+  `pine_chart_render::target_at` picks the topmost. Only `LiveOverlays` looks (`Overlays::pointer` is
+  `None` for a snapshot, which therefore never measures or shows one) and shows it through egui's own
+  tooltip on a copy of the canvas response covering the target, so egui's delay and "only when still" apply.
+  A repeated `table.cell` resets the cell's tooltip like every other property. Not verified against
+  TradingView: the delay, the wrap width (320 pt here) and whether it hides the crosshair.
 - `plotarrow()` is `ArrowOutput` (per-bar value and both colours; `offset`/`show_last` applied by
   `ArrowOutput::finished` when the output is read, like a plot's offset). The arrow length is `min_height` to
   `max_height` in proportion to the value against the series' largest absolute value (inferred: the reference

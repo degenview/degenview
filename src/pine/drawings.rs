@@ -1034,7 +1034,7 @@ fn set_table_cell(
 }
 
 /// The cell properties `table.cell` takes, by argument name; `table.cell_set_<name>` changes one.
-const CELL_PROPERTIES: [&str; 8] = [
+const CELL_PROPERTIES: [&str; 9] = [
     "text",
     "width",
     "height",
@@ -1043,6 +1043,7 @@ const CELL_PROPERTIES: [&str; 8] = [
     "text_valign",
     "text_size",
     "bgcolor",
+    "tooltip",
 ];
 
 /// A cell `table.cell` was given nothing for.
@@ -1060,6 +1061,7 @@ fn blank_cell(column: usize, row: usize) -> TableCell {
         text_vertical_align: TextAlign::Center,
         width: 0.0,
         height: 0.0,
+        tooltip: None,
     }
 }
 
@@ -1083,14 +1085,20 @@ fn set_cell_property(cell: &mut TableCell, property: &str, value: &RuntimeValue)
                 parse(value.text_value(), TextAlign::Center, TextAlign::Center);
         }
         "text_size" => cell.text_size = size_of(Some(value), Size::Normal),
+        "tooltip" => {
+            cell.tooltip = value
+                .text_value()
+                .filter(|text| !text.is_empty())
+                .map(str::to_owned);
+        }
         _ => {}
     }
 }
 
 /// `table.cell_set_text`, `cell_set_bgcolor` and the other `table.cell_set_*` setters:
 /// `(table_id, column, row, value)`. A cell `table.cell` has not defined yet is created blank first,
-/// so the setter does not lose what it was given. `cell_set_tooltip`, `cell_set_text_font_family`
-/// and `cell_set_text_formatting` change nothing the chart draws; a script is warned at compile time.
+/// so the setter does not lose what it was given. `cell_set_text_font_family` and
+/// `cell_set_text_formatting` change nothing the chart draws; a script is warned at compile time.
 fn set_cell_setter(
     member: &str,
     args: &[Arg],
@@ -1204,6 +1212,7 @@ fn merge_table_cells(
             text_vertical_align: TextAlign::Center,
             width: 0.0,
             height: 0.0,
+            tooltip: None,
         });
     anchor.column_span = (end_column - start_column + 1) as usize;
     anchor.row_span = (end_row - start_row + 1) as usize;

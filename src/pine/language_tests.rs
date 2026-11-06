@@ -1341,6 +1341,51 @@ fn the_cell_setters_change_one_property_of_a_cell() {
 }
 
 #[test]
+fn a_cell_keeps_its_tooltip_until_table_cell_redefines_it() {
+    let session = run(
+        "var table t = na\n\
+         if barstate.islast\n\
+         \x20   t := table.new(position.top_right, 3, 2)\n\
+         \x20   table.cell(t, 0, 0, \"a\", tooltip = \"from cell\")\n\
+         \x20   table.cell(t, 1, 0, \"b\", tooltip = \"old\")\n\
+         \x20   table.cell_set_tooltip(t, 1, 0, \"new\\nline\")\n\
+         \x20   table.cell(t, 2, 0, \"c\", tooltip = \"gone\")\n\
+         \x20   table.cell(t, 2, 0, \"c\")\n\
+         \x20   t.cell_set_tooltip(0, 1, \"by the setter\")\n\
+         \x20   table.cell(t, 1, 1, \"d\", tooltip = \"\")\n\
+         \x20   table.cell_set_tooltip(t, 1, 1, na)",
+        2,
+    );
+    let tables = session.output().tables;
+    let tip = |column: usize, row: usize| {
+        tables[0]
+            .cells
+            .iter()
+            .find(|c| (c.column, c.row) == (column, row))
+            .unwrap()
+            .tooltip
+            .clone()
+    };
+    assert_eq!(tip(0, 0).as_deref(), Some("from cell"));
+    assert_eq!(
+        tip(1, 0).as_deref(),
+        Some("new\nline"),
+        "the setter replaces it"
+    );
+    assert_eq!(
+        tip(2, 0),
+        None,
+        "a repeated table.cell resets every property"
+    );
+    assert_eq!(
+        tip(0, 1).as_deref(),
+        Some("by the setter"),
+        "the setter creates a blank cell"
+    );
+    assert_eq!(tip(1, 1), None, "an empty or na tooltip is none");
+}
+
+#[test]
 fn a_cell_setter_outside_the_grid_is_an_error() {
     let program = compiler::compile(
         "//@version=6\nindicator(\"T\")\nt = table.new(position.top_left, 2, 2)\ntable.cell_set_text(t, 2, 0, \"x\")",
@@ -1392,8 +1437,9 @@ fn the_cell_properties_the_chart_cannot_draw_are_warned_about() {
          table.cell_set_text_formatting(t, 0, 0, text.format_bold)\n\
          table.cell_set_text_font_family(t, 0, 0, font.family_monospace)",
     );
-    assert_eq!(codes.iter().filter(|c| *c == "PINE7001").count(), 2);
-    assert_eq!(codes.iter().filter(|c| *c == "PINE7005").count(), 3);
+    // The tooltip is drawn now: only the font family and the text formatting are still ignored.
+    assert_eq!(codes.iter().filter(|c| *c == "PINE7001").count(), 1);
+    assert_eq!(codes.iter().filter(|c| *c == "PINE7005").count(), 2);
 }
 
 #[test]

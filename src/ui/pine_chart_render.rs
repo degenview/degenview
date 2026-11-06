@@ -61,6 +61,23 @@ impl Default for CandleStyle {
     }
 }
 
+/// A place a script gave a tooltip: a label, or a table cell. `rect` is what was drawn, so the
+/// hover and the picture agree.
+#[derive(Clone, Debug, PartialEq)]
+pub struct HoverTarget {
+    pub rect: Rect,
+    pub text: String,
+}
+
+/// The tooltip under `pointer`: the last target that holds it, as the later one is drawn on top
+/// (tables over labels).
+pub fn target_at(targets: &[HoverTarget], pointer: Pos2) -> Option<&HoverTarget> {
+    targets
+        .iter()
+        .rev()
+        .find(|target| target.rect.contains(pointer))
+}
+
 pub struct PineLayer<'a> {
     pub pine: &'a VisualOutput,
     /// The candles in view; per-bar series are right-aligned with these, ending `tail` bars before
@@ -861,14 +878,11 @@ impl PineLayer<'_> {
     /// leaves just text.
     pub fn draw_labels(&self, painter: &Painter) {
         for label in self.pine.labels.iter().filter(|l| l.is_complete()) {
-            let Some(y) = self.label_y(label) else {
+            let Some(layout) = self.label_geometry(painter, label) else {
                 continue;
             };
-            let anchor = Pos2::new(self.x_bar(label.x), y);
             let size = font_size(label.size);
             let text = rgba(label.text_color);
-            let measured = measure(painter, &label.text, size);
-            let layout = label_layout(label.style, anchor, measured + LABEL_PADDING, LABEL_POINTER);
             if let Some(fill) = label.color.filter(|c| is_visible(*c)) {
                 draw_label_shape(painter, &layout, rgba(fill));
             }
@@ -881,6 +895,24 @@ impl PineLayer<'_> {
                 Align2::CENTER_CENTER,
             );
         }
+    }
+
+    /// Where a label sits: its bubble, pointer and glyph, from its anchor and measured text. None
+    /// when the bar is not on screen.
+    fn label_geometry(
+        &self,
+        painter: &Painter,
+        label: &LabelOutput,
+    ) -> Option<geometry::LabelLayout> {
+        let y = self.label_y(label)?;
+        let anchor = Pos2::new(self.x_bar(label.x), y);
+        let measured = measure(painter, &label.text, font_size(label.size));
+        Some(label_layout(
+            label.style,
+            anchor,
+            measured + LABEL_PADDING,
+            LABEL_POINTER,
+        ))
     }
 
     /// Where a label's anchor sits vertically: its own price, or just above the high / below the low
@@ -1046,19 +1078,87 @@ impl PineLayer<'_> {
     /// `table.new` grids, sized to their cell text and pinned to a plot corner or edge. Tables are
     /// never value-anchored, so callers draw them outside the series clip.
     pub fn draw_tables(&self, painter: &Painter) {
-        for table in self
-            .pine
+        for (table, layout, origin) in self.table_placements(painter) {
+            draw_table(painter, table, &layout, origin);
+        }
+    }
+
+    /// Each table that has cells, with its measured layout and the corner it is pinned at.
+    fn table_placements(
+        &self,
+        painter: &Painter,
+    ) -> Vec<(&TableOutput, geometry::TableLayout, Pos2)> {
+        let area = self.plot.shrink(geometry::TABLE_MARGIN);
+        self.pine
             .tables
             .iter()
             .filter(|t| t.columns > 0 && t.rows > 0 && !t.cells.is_empty())
-        {
-            let area = self.plot.shrink(geometry::TABLE_MARGIN);
-            let layout = geometry::measure_table(table, area.size(), &|text, size| {
-                measure(painter, text, size)
-            });
-            let origin = geometry::table_origin(layout.size(), table.position, area);
-            draw_table(painter, table, &layout, origin);
+            .map(|table| {
+                let layout = geometry::measure_table(table, area.size(), &|text, size| {
+                    measure(painter, text, size)
+                });
+                let origin = geometry::table_origin(layout.size(), table.position, area);
+                (table, layout, origin)
+            })
+            .collect()
+    }
+
+    // MARK: Tooltips
+
+    /// Whether the script gave anything a tooltip, so a caller can skip measuring when not.
+    pub fn has_tooltips(&self) -> bool {
+        self.pine
+            .labels
+            .iter()
+            .any(|l| l.tooltip.as_deref().is_some_and(|t| !t.is_empty()))
+            || self
+                .pine
+                .tables
+                .iter()
+                .any(|t| t.cells.iter().any(|c| c.tooltip.is_some()))
+    }
+
+    /// The tooltips of labels and table cells with the rectangle each was drawn in, in drawing
+    /// order (labels, then tables, which are painted over them). A part outside the plot is cut
+    /// off, as it is not visible there.
+    pub fn hover_targets(&self, painter: &Painter) -> Vec<HoverTarget> {
+        let mut targets = Vec::new();
+        for label in self.pine.labels.iter().filter(|l| l.is_complete()) {
+            let Some(text) = label.tooltip.as_deref().filter(|t| !t.is_empty()) else {
+                continue;
+            };
+            let Some(layout) = self.label_geometry(painter, label) else {
+                continue;
+            };
+            let shown = layout
+                .glyph
+                .map_or(layout.body, |glyph| layout.body.union(glyph));
+            let rect = shown.intersect(self.plot);
+            if rect.is_positive() {
+                targets.push(HoverTarget {
+                    rect,
+                    text: text.to_owned(),
+                });
+            }
         }
+        for (table, layout, origin) in self.table_placements(painter) {
+            for cell in &table.cells {
+                let Some(text) = cell.tooltip.as_deref() else {
+                    continue;
+                };
+                if cell.column >= table.columns || cell.row >= table.rows {
+                    continue;
+                }
+                let rect = layout.rect_of(cell, origin).intersect(self.plot);
+                if rect.is_positive() {
+                    targets.push(HoverTarget {
+                        rect,
+                        text: text.to_owned(),
+                    });
+                }
+            }
+        }
+        targets
     }
 }
 
@@ -2098,6 +2198,7 @@ mod tests {
                     text_vertical_align: TextAlign::Center,
                     width: 0.0,
                     height: 0.0,
+                    tooltip: None,
                 },
                 TableCell {
                     column: 1,
@@ -2115,6 +2216,7 @@ mod tests {
                         text_vertical_align: TextAlign::Center,
                         width: 0.0,
                         height: 0.0,
+                        tooltip: None,
                     }
                 },
             ],
@@ -2274,5 +2376,138 @@ mod tests {
         let mut scrolled = layer(&output, &candles, &x, &y);
         scrolled.tail = 2;
         assert_eq!(scrolled.bar_color(0), Some(rgba(0xFF00_00FF)));
+    }
+
+    // MARK: Tooltips
+
+    /// Runs `f` on a headless egui frame and returns what it gave back.
+    fn with_painter<T>(f: impl FnOnce(&Painter) -> T) -> T {
+        let ctx = egui::Context::default();
+        let mut f = Some(f);
+        let mut result = None;
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            if let Some(f) = f.take() {
+                result = Some(f(ui.painter()));
+            }
+        });
+        output.textures_delta.clear();
+        result.expect("the frame ran")
+    }
+
+    fn tip_label(x: i64, price: f64, text: &str, tooltip: Option<&str>) -> LabelOutput {
+        LabelOutput {
+            id: x as usize,
+            x,
+            y: price,
+            text: text.into(),
+            color: Some(0xFF00_00FF),
+            text_color: 0xFFFF_FFFF,
+            style: LabelStyle::LabelDown,
+            size: Size::Normal,
+            tooltip: tooltip.map(str::to_owned),
+            text_align: TextAlign::Center,
+            yloc: YLocation::Price,
+            time_anchored: false,
+        }
+    }
+
+    fn tip_cell(column: usize, text: &str, tooltip: Option<&str>) -> TableCell {
+        TableCell {
+            column,
+            row: 0,
+            text: text.into(),
+            text_color: 0xFFFF_FFFF,
+            background_color: None,
+            text_size: Size::Normal,
+            column_span: 1,
+            row_span: 1,
+            text_horizontal_align: TextAlign::Center,
+            text_vertical_align: TextAlign::Center,
+            width: 0.0,
+            height: 0.0,
+            tooltip: tooltip.map(str::to_owned),
+        }
+    }
+
+    fn tip_table(cells: Vec<TableCell>) -> TableOutput {
+        TableOutput {
+            id: 0,
+            position: TablePosition::TopRight,
+            columns: 2,
+            rows: 1,
+            background_color: None,
+            border_color: None,
+            border_width: 0,
+            frame_color: None,
+            frame_width: 0,
+            cells,
+        }
+    }
+
+    #[test]
+    fn hover_targets_are_the_labels_and_cells_that_have_a_tooltip() {
+        let candles = candles(5);
+        let (x, y) = (x_of as fn(i64) -> f32, y_of as fn(f64) -> f32);
+        let mut output = empty();
+        output
+            .labels
+            .push(tip_label(2, 150.0, "a", Some("first\nsecond")));
+        output.labels.push(tip_label(3, 150.0, "b", None));
+        output.labels.push(tip_label(4, 150.0, "c", Some("")));
+        // Below the plot (y of 150 is 50; y of 50 is 150, past its bottom of 100).
+        output
+            .labels
+            .push(tip_label(1, 50.0, "d", Some("off screen")));
+        output.tables.push(tip_table(vec![
+            tip_cell(0, "x", None),
+            tip_cell(1, "y", Some("cell tip")),
+        ]));
+        let layer = layer(&output, &candles, &x, &y);
+        assert!(layer.has_tooltips());
+        let (targets, placed) = with_painter(|painter| {
+            let placed: Vec<Rect> = layer
+                .table_placements(painter)
+                .iter()
+                .map(|(table, layout, origin)| layout.rect_of(&table.cells[1], *origin))
+                .collect();
+            (layer.hover_targets(painter), placed)
+        });
+        let texts: Vec<&str> = targets.iter().map(|t| t.text.as_str()).collect();
+        assert_eq!(texts, ["first\nsecond", "cell tip"], "in drawing order");
+        assert_eq!(
+            targets[1].rect, placed[0],
+            "a cell's target is the cell drawn"
+        );
+        assert!(targets[0].rect.contains(Pos2::new(x_of(2), 50.0 - 12.0)));
+        assert!(layer.plot.contains_rect(targets[0].rect));
+    }
+
+    #[test]
+    fn nothing_without_a_tooltip_is_measured() {
+        let candles = candles(5);
+        let (x, y) = (x_of as fn(i64) -> f32, y_of as fn(f64) -> f32);
+        let mut output = empty();
+        output.labels.push(tip_label(2, 150.0, "a", None));
+        output.tables.push(tip_table(vec![tip_cell(0, "x", None)]));
+        let layer = layer(&output, &candles, &x, &y);
+        assert!(!layer.has_tooltips());
+        assert!(with_painter(|painter| layer.hover_targets(painter)).is_empty());
+    }
+
+    #[test]
+    fn the_pointer_finds_the_target_drawn_on_top() {
+        let tip = |min: (f32, f32), max: (f32, f32), text: &str| HoverTarget {
+            rect: Rect::from_min_max(Pos2::new(min.0, min.1), Pos2::new(max.0, max.1)),
+            text: text.into(),
+        };
+        let targets = [
+            tip((0.0, 0.0), (50.0, 50.0), "label"),
+            tip((40.0, 40.0), (90.0, 90.0), "cell"),
+        ];
+        let at = |x: f32, y: f32| target_at(&targets, Pos2::new(x, y)).map(|t| t.text.as_str());
+        assert_eq!(at(10.0, 10.0), Some("label"));
+        assert_eq!(at(45.0, 45.0), Some("cell"), "the later one is on top");
+        assert_eq!(at(80.0, 80.0), Some("cell"));
+        assert_eq!(at(95.0, 95.0), None);
     }
 }

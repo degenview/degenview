@@ -478,6 +478,8 @@ pub struct TableCell {
     pub text_vertical_align: TextAlign,
     pub width: f64,
     pub height: f64,
+    /// Shown while the pointer rests on the cell; `None` for an empty or `na` string.
+    pub tooltip: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]

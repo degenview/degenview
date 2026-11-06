@@ -27,7 +27,7 @@ use crate::ui::drawing_layer::{DrawingFrame, DrawingLayer, Projection, TextMeasu
 use crate::ui::drawing_render::TimeIndex;
 use crate::ui::icons::{self, Icon};
 use crate::ui::paper_chart_trading::{self, PaperCardState};
-use crate::ui::pine_chart_render::{self, CandleStyle, PineLayer};
+use crate::ui::pine_chart_render::{self, CandleStyle, HoverTarget, PineLayer};
 use crate::ui::pine_geometry::{OverlayExtent, overlay_extent};
 use crate::ui::price_text;
 use crate::ui::replay_overlay::{self, ReplayChartFrame};
@@ -1344,14 +1344,15 @@ fn draw_script_pane(
     x_for_index: &dyn Fn(i64) -> f32,
     style: &CanvasStyle,
     tick_xs: &[f32],
-) {
+    pointer: Option<Pos2>,
+) -> Option<HoverTarget> {
     // Top and bottom leave just enough room for the outermost axis labels.
     let plot = Rect::from_min_max(
         Pos2::new(price_plot.left(), pane.top() + 8.0),
         Pos2::new(price_plot.right(), pane.bottom() - 8.0),
     );
     if plot.height() <= 1.0 {
-        return;
+        return None;
     }
     let (low, high) = crate::ui::pine_geometry::pane_value_range(pine, shown.len(), 0.1);
     let span = (high - low).max(f64::EPSILON);
@@ -1402,6 +1403,9 @@ fn draw_script_pane(
     // Tables pin to the plot's corners and are never price-anchored, so they sit outside the
     // series clip.
     layer.draw_tables(painter);
+    // The tooltip of a label or cell under the pointer, measured only while it is over the pane.
+    let pointer = pointer.filter(|pointer| plot.contains(*pointer) && layer.has_tooltips())?;
+    pine_chart_render::target_at(&layer.hover_targets(painter), pointer).cloned()
 }
 
 /// Whether a chart on `source` can raise price alerts: markets with a price quote feed.

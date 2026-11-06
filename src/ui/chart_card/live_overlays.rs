@@ -5,6 +5,7 @@ use super::frame::{FrameData, FrameLayout, Overlays, PaneSlot, paint_pane_title}
 use super::*;
 use crate::ui::paper_chart_trading::{MarkerMenu, PaperOverlayAction};
 use crate::ui::scale_menu;
+use crate::ui::{kit, theme};
 
 pub(super) struct LiveOverlays<'a> {
     pub ui: &'a mut egui::Ui,
@@ -22,6 +23,9 @@ pub(super) struct LiveOverlays<'a> {
     pub navigation: Option<chart_buttons::NavAction>,
     pub scale_mode: Option<PriceScaleMode>,
 }
+
+/// The widest a script tooltip gets before it wraps (inferred: TradingView does not document it).
+const PINE_TOOLTIP_WIDTH: f32 = 320.0;
 
 impl Overlays for LiveOverlays<'_> {
     fn after_drawings(
@@ -63,6 +67,27 @@ impl Overlays for LiveOverlays<'_> {
         if self.replay.active {
             replay_overlay::paint_active(main_painter, layout.plot);
         }
+    }
+
+    fn pointer(&self) -> Option<Pos2> {
+        self.response.hover_pos()
+    }
+
+    fn pine_tooltip(&mut self, target: &HoverTarget) {
+        // The canvas is one response; the tooltip is asked of a copy that covers the label or
+        // cell, so egui places it there and keeps its own delay and "only when still" rules.
+        let mut over = self.response.clone();
+        over.rect = target.rect;
+        over.interact_rect = target.rect;
+        over.on_hover_ui(|ui| {
+            ui.set_max_width(PINE_TOOLTIP_WIDTH);
+            ui.label(kit::text(
+                target.text.clone(),
+                12.0,
+                kit::REGULAR,
+                theme::text_primary(),
+            ));
+        });
     }
 
     fn pane(&mut self, painter: &egui::Painter, layout: &FrameLayout, slot: &PaneSlot) {
