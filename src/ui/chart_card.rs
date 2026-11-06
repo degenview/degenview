@@ -369,6 +369,9 @@ pub struct ChartCard {
     /// Where the view was before a scroll the workspace made outside a frame, until the next frame
     /// measures the change for linked charts.
     scroll_from: Option<crate::model::viewport::HorizontalViewport>,
+    /// The Zoom In tool: armed state, the rectangle being dragged, the views to zoom out to.
+    /// View state, never saved.
+    zoom: zoom_rect::ZoomTool,
     /// Table view is open on this chart: build its feed each frame something changes.
     table_wanted: bool,
     table_feed: Option<Arc<crate::model::chart_table::TableFeed>>,
@@ -683,6 +686,7 @@ impl Default for ChartCard {
             bar_marker: None,
             logs_range: None,
             scroll_from: None,
+            zoom: zoom_rect::ZoomTool::default(),
             table_wanted: false,
             table_feed: None,
             table_stamp: 0,
@@ -779,6 +783,7 @@ impl ChartCard {
         if before != chart_type && (before.is_synthetic() || chart_type.is_synthetic()) {
             self.viewport.horizontal.right_offset = 0.0;
             self.gesture = None;
+            self.forget_zoom_history();
         }
     }
 
@@ -1776,6 +1781,7 @@ impl ChartCard {
         self.viewport.reset();
         self.gesture = None;
         self.newest_bar = None;
+        self.forget_zoom_history();
     }
 
     /// Whether the price axis follows the bars on screen (no range placed by dragging).
@@ -3184,6 +3190,7 @@ mod navigation;
 mod snapshot;
 mod sync;
 mod table;
+mod zoom_rect;
 pub use bar_marker::Scrolled;
 mod logs_range;
 mod time_lock;

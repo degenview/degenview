@@ -350,5 +350,7 @@ pub struct SavedViewport {
     pub price_range: Option<PriceRange>,
 }
 
+pub mod zoom;
+
 #[cfg(test)]
 mod tests;

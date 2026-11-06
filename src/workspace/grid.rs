@@ -251,7 +251,11 @@ impl ChartWorkspace {
         let crosshair = self.crosshair;
         let mut crosshair_update: Option<CrosshairInfo> = None;
         let mut hover_update: Option<(u64, crate::model::Anchor)> = None;
-        let active_tool = self.active_tool;
+        // Zoom In and a drawing tool are one choice: whichever was picked last holds the pointer.
+        if self.active_tool != Tool::Cursor {
+            self.zoom_armed = false;
+        }
+        let (active_tool, zoom_armed) = (self.active_tool, self.zoom_armed);
         let selected_drawing = self.selected_drawing.clone();
         let (magnet, keep_drawing, hide_all_drawings) =
             (self.magnet, self.keep_drawing, self.hide_all_drawings);
@@ -537,6 +541,7 @@ impl ChartWorkspace {
                                                     })
                                                     .map(|(_, draft)| draft),
                                             );
+                                            chart.chart.set_zoom_armed(zoom_armed);
                                             let for_logs = logs_chart == Some(chart_id);
                                             chart
                                                 .chart
@@ -877,6 +882,17 @@ impl ChartWorkspace {
         if drawing_disarm {
             self.active_tool = Tool::Cursor;
         }
+        // A zoom puts the tool down and the chart it was made on becomes the focused one, which
+        // is the one Zoom out goes back on. Every chart is asked, so none keeps a stale flag.
+        let zoomed: Vec<u64> = self
+            .charts
+            .iter_mut()
+            .filter_map(|chart| chart.chart.take_zoomed().then_some(chart.id))
+            .collect();
+        if let Some(&chart_id) = zoomed.last() {
+            self.zoom_armed = false;
+            self.focus_chart(chart_id);
+        }
         self.picture_work_done();
         if picture_used {
             self.picture_used();
@@ -913,6 +929,8 @@ impl ChartWorkspace {
                 self.replay.cancel_selection();
             } else if self.context.logs.picking {
                 self.context.logs.picking = false;
+            } else if self.zoom_armed {
+                self.zoom_armed = false;
             } else if self.active_tool != Tool::Cursor {
                 self.active_tool = Tool::Cursor;
             } else {

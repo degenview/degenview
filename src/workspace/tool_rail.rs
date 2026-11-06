@@ -13,6 +13,11 @@ impl ChartWorkspace {
         let (has_drawings, all_locked) = self.drawing_lock_state();
         let input = tool_sidebar::ToolSidebarInput {
             active_tool: self.active_tool,
+            zoom_armed: self.zoom_armed,
+            can_zoom_out: self
+                .focused
+                .and_then(|id| self.charts.iter().find(|chart| chart.id == id))
+                .is_some_and(|chart| chart.chart.can_zoom_out()),
             group_tool: self.group_tool,
             line_tool: self.line_tool,
             note_tool: self.note_tool,
@@ -44,6 +49,8 @@ impl ChartWorkspace {
         for action in tool_sidebar::show(ui, &input) {
             match action {
                 ToolSidebarAction::Select(tool) => self.toggle_tool(tool),
+                ToolSidebarAction::ToggleZoomIn => self.toggle_zoom_in(),
+                ToolSidebarAction::ZoomOut => self.zoom_out_focused(),
                 ToolSidebarAction::Arm(tool) => {
                     self.active_tool = tool;
                     self.remember_group_tool(tool);
@@ -70,8 +77,33 @@ impl ChartWorkspace {
         actions
     }
 
+    /// Arms the Zoom In mode, or puts it down when it is armed. It takes the pointer from any
+    /// drawing tool, as a drawing tool takes it from Zoom In.
+    pub(super) fn toggle_zoom_in(&mut self) {
+        self.zoom_armed = !self.zoom_armed;
+        if self.zoom_armed {
+            self.active_tool = Tool::Cursor;
+            self.drop_rulers();
+        }
+    }
+
+    /// Zoom out on the focused chart: back to the view its last zoom came from.
+    pub(super) fn zoom_out_focused(&mut self) {
+        let focused = self.focused;
+        if let Some(chart) = self
+            .charts
+            .iter_mut()
+            .find(|chart| Some(chart.id) == focused)
+        {
+            chart.chart.zoom_out();
+        }
+    }
+
     /// Arms `tool`, or goes back to the crosshair when it is already armed (or is the crosshair).
     pub(super) fn toggle_tool(&mut self, tool: Tool) {
+        if tool == Tool::Cursor {
+            self.zoom_armed = false;
+        }
         self.active_tool = if self.active_tool == tool || tool == Tool::Cursor {
             Tool::Cursor
         } else {
@@ -98,5 +130,38 @@ impl ChartWorkspace {
         } else if ToolGroup::FIB_MENU.contains(&group) {
             self.fib_tool = tool;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::test_support::empty_workspace;
+    use crate::model::Tool;
+
+    #[test]
+    fn zoom_in_and_a_drawing_tool_are_one_choice() {
+        let mut workspace = empty_workspace(1);
+        workspace.toggle_tool(Tool::TrendLine);
+        assert_eq!(workspace.active_tool, Tool::TrendLine);
+        // Arming Zoom In takes the pointer from the drawing tool.
+        workspace.toggle_zoom_in();
+        assert!(workspace.zoom_armed);
+        assert_eq!(workspace.active_tool, Tool::Cursor);
+        // Arming a drawing tool puts Zoom In down, and so does the crosshair tile.
+        workspace.toggle_tool(Tool::Rectangle);
+        workspace.toggle_zoom_in();
+        workspace.toggle_tool(Tool::Cursor);
+        assert!(!workspace.zoom_armed);
+        // A second click on the tile puts it down.
+        workspace.toggle_zoom_in();
+        workspace.toggle_zoom_in();
+        assert!(!workspace.zoom_armed);
+    }
+
+    #[test]
+    fn zoom_out_with_no_focused_chart_does_nothing() {
+        let mut workspace = empty_workspace(1);
+        workspace.zoom_out_focused();
+        assert!(!workspace.zoom_armed);
     }
 }

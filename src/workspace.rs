@@ -184,6 +184,9 @@ pub struct ChartWorkspace {
     settings_state: ChartSettingsState,
     crosshair: Option<CrosshairInfo>,
     active_tool: Tool,
+    /// The Zoom In mode of the tool rail. A mode of its own, never a drawing tool: a drag on a
+    /// plot selects a rectangle to zoom to. Exclusive with `active_tool`; not saved.
+    zoom_armed: bool,
     /// The selected drawings of one chart: `(chart id, drawing ids)`.
     selected_drawing: Option<(u64, Vec<u64>)>,
     /// The tool the strip's grouped brushes, arrows and shapes tile shows: the last one used.
@@ -356,6 +359,7 @@ impl ChartWorkspace {
             settings_state: ChartSettingsState::default(),
             crosshair: None,
             active_tool: Tool::Cursor,
+            zoom_armed: false,
             selected_drawing: None,
             group_tool: Tool::Brush,
             line_tool: Tool::TrendLine,

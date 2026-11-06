@@ -66,6 +66,61 @@ focus) the gesture is dropped, so there is no stuck drag.
 
 Linking the charts of a workspace is built on this viewport: see [linked charts](chart-sync.md).
 
+## Zoom In
+
+The magnifying-glass tile under the Ruler arms a **mode** (`ChartWorkspace::zoom_armed`), not a
+drawing tool: there is no `Tool` variant, no `Geometry`, nothing stored, synced, undone or put in a
+template. Arming it puts any drawing tool down and arming a drawing tool (or the crosshair tile, or
+Escape) puts it down; a finished zoom does too, whatever the Keep drawing setting says.
+
+| Input | Result |
+| --- | --- |
+| Drag on the main plot | A rectangle (neutral ink wash and 1 pt outline, over the drawings, clipped to the plot). On release the view becomes it, on both axes, and the tool goes back to the crosshair. |
+| Any drag direction | The corners are normalised; the result is the same. A press outside the plot, or a release off it, clamps to the plot. |
+| Click, or a drag under 8 pt wide | Nothing; the tool stays armed. |
+| A drag under 8 pt tall | The time axis only; the price axis is left as it was. |
+| Escape during a drag | Drops the rectangle, changes nothing, and is spent (the next Escape puts the tool down). A second mouse button, losing the window, the card going unseen and putting the tool down do the same. |
+| Axes, script panes | Behave as before (the price axis still stretches, panes still pan). Only the main plot is a zoom surface. |
+| Cursor | `ZoomIn` over the plot and while a rectangle is dragged. |
+
+The maths is `model::viewport::zoom`, over the geometry the card already draws with:
+
+- **Time.** The rectangle's sides are slot coordinates (`first + (x - left) / slot_width`, `first` being
+  the first drawn bar minus its `lead`). `visible` is the width in slots minus the reserved right
+  margin, set through `HorizontalViewport::set_visible` (so 20 bars at least, as any zoom), and
+  `right_offset` centres the rectangle in the plot. `visible` is whole, so the edges land within half
+  a bar; a rectangle narrower than 20 bars grows about its centre. The offset is clamped like a pan, so
+  the view never leaves the bars.
+- **Price.** The prices at the rectangle's top and bottom come from `PriceScale::price`, the exact
+  inverse of the scale in use, so a logarithmic scale gives a ratio-correct range. The range becomes
+  `vertical.manual` (autoscale off, as a vertical pan does) when it can be drawn (finite, ordered,
+  positive on a log scale, wider than a billionth of the price); otherwise only the time axis zooms.
+  Percent and Indexed scales are linear in the price and store real prices.
+
+The edit is made inside the frame, so linked charts follow through the usual `end_sync_frame` diff
+(time only; prices never sync; price-based types do not take part) and older history pages as for any
+pan. Replay already hands the card replay-cut bars, so a zoom cannot show a bar that is not there.
+
+**Zoom out** appears under Zoom in (as in TradingView) while the focused chart has a zoom to go back
+from: it restores the exact view the last zoom came from. The card keeps up to 8 (`MAX_BACK`), cleared
+by `reset_view`, a symbol or timeframe change and a switch to or from a price-based type; none is saved.
+Being outside a frame, it records the old view in `scroll_from` so linked charts follow it.
+
+Both tiles give way to the bottom group on a short window, as the options below them do.
+
+**Observed on tradingview.com** (1D BTCUSDT chart, web): the tile sits under the Ruler; a drag zooms both
+axes to the rectangle and the tool reverts to the crosshair; a click without a drag does nothing and the
+tool stays armed; a contextual Zoom out tile appears under it after a zoom and restores the previous view
+exactly, then goes. **Inferred, not verified:** the 8 pt minimum and the time-only zoom for a flat
+rectangle; the 8-deep Zoom out history (one level was observed); Escape and the second-button cancel; the
+cursor glyph; clamping a release to the plot; the rectangle's colour (TradingView's is blue; ours is
+neutral by the app's no-blue rule); that Keep drawing does not apply; no keyboard shortcut; TradingView's
+undo stack also records the zoom, which is not reproduced; behaviour on log scales and in indicator panes.
+
+Tests: `model/viewport/tests.rs` (`zoom_to_a_rectangle`), `chart_card/navigation_tests.rs` (`zoom_in`),
+`sync_tests.rs`, `workspace/tool_rail.rs`, `tool_sidebar.rs`. Pictures: `gallery_of_zoom_in` (strip and chart)
+and `gallery_of_the_zoom_icons`, run by hand with `DEGENVIEW_GALLERY_DIR`.
+
 ## Price range
 
 `VerticalViewport::resolve(auto, logarithmic)` is the single place the displayed range is chosen:

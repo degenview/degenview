@@ -19,6 +19,10 @@ const TOOLTIP_DELAY: Duration = Duration::from_millis(250);
 
 pub struct ToolSidebarInput {
     pub active_tool: Tool,
+    /// The Zoom In mode is on: a drag on a plot selects the rectangle to zoom to.
+    pub zoom_armed: bool,
+    /// The focused chart has a zoom to go back from, so Zoom out is offered under Zoom in.
+    pub can_zoom_out: bool,
     /// The tool the grouped brushes, arrows and shapes tile shows and arms: the last one used.
     pub group_tool: Tool,
     /// The tool the Lines tile shows and arms: the last one used from its menu.
@@ -60,6 +64,10 @@ pub enum ToolSidebarAction {
     Select(Tool),
     /// Arm `tool` (from the grouped menu), even when it already is.
     Arm(Tool),
+    /// Arm the Zoom In mode, or put it down when it is armed.
+    ToggleZoomIn,
+    /// Go back to the view the last zoom came from.
+    ZoomOut,
     SetMagnet(MagnetMode),
     ToggleKeepDrawing,
     ToggleLockAll,
@@ -351,10 +359,47 @@ pub fn show(ui: &mut Ui, input: &ToolSidebarInput) -> Vec<ToolSidebarAction> {
         y += BUTTON + SPACING;
     }
 
+    // Zoom in sits under the ruler, as TradingView's does. It is a mode of the pointer rather
+    // than a drawing tool, so it is lit from its own state. Zoom out appears under it only while
+    // the focused chart has a zoom to go back from, and the options below make room.
+    let zoom = |icon, label, active| Tile {
+        icon,
+        label,
+        tooltip: label,
+        active,
+        tint: None,
+        enabled: input.has_market,
+        badge: 0,
+        key: "",
+        notch: false,
+        mark: None,
+    };
+    // Like the options below, they give way to the bottom group on a short window.
+    let limit = strip.bottom() - 135.0 - 10.0;
+    let rect = Rect::from_min_size(pos2(x, y), Vec2::splat(BUTTON));
+    let lit = if input.zoom_armed {
+        Active::Filled
+    } else {
+        Active::Off
+    };
+    if rect.bottom() <= limit
+        && tile_button(ui, rect, &zoom(Icon::ZoomIn, "Zoom in", lit), strip.right()).clicked()
+    {
+        actions.push(ToolSidebarAction::ToggleZoomIn);
+    }
+    y += BUTTON + SPACING;
+    if input.can_zoom_out && y + BUTTON <= limit {
+        let rect = Rect::from_min_size(pos2(x, y), Vec2::splat(BUTTON));
+        let tile = zoom(Icon::ZoomOut, "Zoom out", Active::Off);
+        if tile_button(ui, rect, &tile, strip.right()).clicked() {
+            actions.push(ToolSidebarAction::ZoomOut);
+        }
+        y += BUTTON + SPACING;
+    }
+
     // The drawing options: magnet, keep drawing, lock and hide. They take the room the bottom
     // group leaves; on a short window the last ones are dropped (their shortcuts and the plot's
     // menu still reach them).
-    let limit = strip.bottom() - 135.0 - 10.0;
     y += 2.0;
     ui.painter().rect_filled(
         Rect::from_center_size(pos2(strip.center().x, y - SPACING / 2.0), vec2(22.0, 1.0)),
@@ -1071,6 +1116,8 @@ mod tests {
             (Tool::Ruler, false, false, false, 120),
         ] {
             let state = ToolSidebarInput {
+                zoom_armed: false,
+                can_zoom_out: false,
                 active_tool: tool,
                 group_tool: Tool::Brush,
                 line_tool: Tool::TrendLine,
@@ -1103,6 +1150,8 @@ mod tests {
 
     fn state() -> ToolSidebarInput {
         ToolSidebarInput {
+            zoom_armed: false,
+            can_zoom_out: false,
             active_tool: Tool::Cursor,
             group_tool: Tool::Brush,
             line_tool: Tool::TrendLine,
@@ -1434,6 +1483,81 @@ mod tests {
     }
 
     #[test]
+    fn zoom_in_sits_under_the_ruler_and_a_click_toggles_the_mode() {
+        let ctx = egui::Context::default();
+        let (mut time, size) = (0.0, vec2(900.0, 900.0));
+        let mut input = state();
+        input.has_market = true;
+        for _ in 0..3 {
+            frame(&ctx, &mut time, size, Vec::new(), &input);
+        }
+        // The ruler is the ninth row's neighbour above: rows are 40 points apart from y = 10.
+        let ruler = 10.0 + 40.0 * 7.0 + BUTTON / 2.0;
+        let zoom = ruler + 40.0;
+        let actions = click(&ctx, &mut time, size, pos2(22.0, ruler), &input);
+        assert_eq!(actions, vec![ToolSidebarAction::Select(Tool::Ruler)]);
+        let actions = click(&ctx, &mut time, size, pos2(22.0, zoom), &input);
+        assert_eq!(actions, vec![ToolSidebarAction::ToggleZoomIn]);
+        // The mode is its own state: lit from it, whatever drawing tool is armed.
+        input.zoom_armed = true;
+        let actions = click(&ctx, &mut time, size, pos2(22.0, zoom), &input);
+        assert_eq!(actions, vec![ToolSidebarAction::ToggleZoomIn]);
+    }
+
+    #[test]
+    fn zoom_out_appears_under_zoom_in_only_with_a_zoom_to_go_back_from() {
+        let ctx = egui::Context::default();
+        let (mut time, size) = (0.0, vec2(900.0, 900.0));
+        let mut input = state();
+        input.has_market = true;
+        let zoom_out = 10.0 + 40.0 * 9.0 + BUTTON / 2.0;
+        for _ in 0..3 {
+            frame(&ctx, &mut time, size, Vec::new(), &input);
+        }
+        // Nothing there: the row below Zoom in is the magnet, whose click is not Zoom out.
+        let actions = click(&ctx, &mut time, size, pos2(22.0, zoom_out), &input);
+        assert!(!actions.contains(&ToolSidebarAction::ZoomOut));
+        input.can_zoom_out = true;
+        for _ in 0..3 {
+            frame(&ctx, &mut time, size, Vec::new(), &input);
+        }
+        let actions = click(&ctx, &mut time, size, pos2(22.0, zoom_out), &input);
+        assert_eq!(actions, vec![ToolSidebarAction::ZoomOut]);
+    }
+
+    #[test]
+    fn on_a_short_window_zoom_out_gives_way_to_the_bottom_group() {
+        let ctx = egui::Context::default();
+        let (mut time, size) = (0.0, vec2(900.0, 520.0));
+        let mut input = state();
+        input.has_market = true;
+        input.can_zoom_out = true;
+        for _ in 0..3 {
+            frame(&ctx, &mut time, size, Vec::new(), &input);
+        }
+        let zoom_out = 10.0 + 40.0 * 9.0 + BUTTON / 2.0;
+        let actions = click(&ctx, &mut time, size, pos2(22.0, zoom_out), &input);
+        assert!(!actions.contains(&ToolSidebarAction::ZoomOut));
+        // Zoom in itself still fits there.
+        let zoom = zoom_out - 40.0;
+        let actions = click(&ctx, &mut time, size, pos2(22.0, zoom), &input);
+        assert_eq!(actions, vec![ToolSidebarAction::ToggleZoomIn]);
+    }
+
+    #[test]
+    fn zoom_in_is_inert_without_a_market_chart() {
+        let ctx = egui::Context::default();
+        let (mut time, size) = (0.0, vec2(900.0, 900.0));
+        let mut input = state();
+        input.has_market = false;
+        for _ in 0..3 {
+            frame(&ctx, &mut time, size, Vec::new(), &input);
+        }
+        let zoom = 10.0 + 40.0 * 8.0 + BUTTON / 2.0;
+        assert!(click(&ctx, &mut time, size, pos2(22.0, zoom), &input).is_empty());
+    }
+
+    #[test]
     fn the_lines_tile_shows_its_last_tool_and_a_click_arms_it() {
         let ctx = egui::Context::default();
         let (mut time, size) = (0.0, vec2(900.0, 900.0));
@@ -1472,6 +1596,54 @@ mod tests {
         }
         // The tallest menu fits its rows exactly.
         assert!(Menu::Lines.height() > Menu::Shapes.height());
+    }
+
+    /// The strip around Zoom in: resting, hovered, armed, and with Zoom out offered, in both
+    /// themes. Run by hand with `DEGENVIEW_GALLERY_DIR` set.
+    #[test]
+    #[ignore = "writes images for a person to look at"]
+    fn gallery_of_zoom_in() {
+        use crate::ui::render_tests::{Screen, gallery_dir};
+        use crate::ui::theme::{self, AppTheme};
+        if gallery_dir().is_none() {
+            return;
+        }
+        let hover = pos2(22.0, 10.0 + 40.0 * 8.0 + BUTTON / 2.0);
+        for (theme_name, appearance) in [("dark", AppTheme::Dark), ("light", AppTheme::Light)] {
+            for (name, armed, zoom_out, pointer) in [
+                ("rest", false, false, None),
+                ("hover", false, false, Some(hover)),
+                ("armed", true, false, None),
+                ("zoom-out", false, true, Some(hover + vec2(0.0, 40.0))),
+            ] {
+                let mut screen = Screen::new(vec2(300.0, 640.0));
+                theme::apply(&screen.ctx, appearance);
+                let mut input = state();
+                input.has_market = true;
+                input.zoom_armed = armed;
+                input.can_zoom_out = zoom_out;
+                let mut last = None;
+                for _ in 0..5 {
+                    theme::sync(&screen.ctx);
+                    let events = pointer
+                        .map(|at| vec![egui::Event::PointerMoved(at)])
+                        .unwrap_or_default();
+                    last = Some(screen.run(events, |ui| {
+                        ui.scope_builder(
+                            egui::UiBuilder::new()
+                                .max_rect(Rect::from_min_size(Pos2::ZERO, vec2(WIDTH, 640.0))),
+                            |ui| {
+                                show(ui, &input);
+                            },
+                        );
+                    }));
+                }
+                screen.save(
+                    &format!("zoom-in-{name}-{theme_name}"),
+                    last.expect("a frame"),
+                );
+            }
+        }
     }
 
     /// Both menus as a picture. Run by hand with `DEGENVIEW_GALLERY_DIR` set.

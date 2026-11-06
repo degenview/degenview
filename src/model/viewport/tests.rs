@@ -411,3 +411,207 @@ fn a_new_drag_starts_from_the_manual_range_the_last_one_left() {
     let shown = view.vertical.manual.unwrap();
     assert!(close(shown.minimum, 120.0) && close(shown.maximum, 220.0));
 }
+
+// MARK: Zoom to a rectangle
+
+mod zoom_to_a_rectangle {
+    use super::super::zoom::{self, MIN_SELECTION, Selection, Slots};
+    use super::*;
+    use crate::model::canvas::visible_window;
+
+    const PLOT: (f32, f32, f32, f32) = (100.0, 20.0, 700.0, 420.0);
+
+    /// The slots a plot of `PLOT`'s width lays over `view`, as the card computes them.
+    fn slots_of(view: &HorizontalViewport, total: usize, reserved: usize) -> Slots {
+        let window = visible_window(total, view.visible, view.right_offset, reserved);
+        Slots {
+            first: window.start as f64 - f64::from(window.lead),
+            left: f64::from(PLOT.0),
+            width: f64::from(PLOT.2 - PLOT.0) / (view.visible + reserved) as f64,
+        }
+    }
+
+    /// The slot coordinates the plot's left and right edges show for `view`.
+    fn edges(view: &HorizontalViewport, total: usize, reserved: usize) -> (f64, f64) {
+        let right = (total + reserved) as f64 - view.right_offset;
+        (right - (view.visible + reserved) as f64, right)
+    }
+
+    #[test]
+    fn corners_dragged_in_any_direction_give_the_same_rectangle() {
+        let (a, b) = ((200.0, 80.0), (320.0, 260.0));
+        let expected = Selection::between(a, b, PLOT);
+        assert_eq!(Selection::between(b, a, PLOT), expected);
+        assert_eq!(Selection::between((a.0, b.1), (b.0, a.1), PLOT), expected);
+        assert_eq!(Selection::between((b.0, a.1), (a.0, b.1), PLOT), expected);
+        assert_eq!((expected.left, expected.right), (200.0, 320.0));
+        assert_eq!((expected.top, expected.bottom), (80.0, 260.0));
+    }
+
+    #[test]
+    fn a_rectangle_is_cut_to_the_plot_and_never_not_a_number() {
+        let s = Selection::between((-50.0, -50.0), (5000.0, 5000.0), PLOT);
+        assert_eq!((s.left, s.top, s.right, s.bottom), PLOT);
+        let s = Selection::between((f32::NAN, 100.0), (f32::INFINITY, f32::NAN), PLOT);
+        assert!(
+            [s.left, s.right, s.top, s.bottom]
+                .iter()
+                .all(|v| v.is_finite())
+        );
+        assert!(s.left <= s.right && s.top <= s.bottom);
+    }
+
+    #[test]
+    fn a_click_sized_rectangle_zooms_nothing() {
+        let view = HorizontalViewport::default();
+        let slots = slots_of(&view, 1000, 10);
+        let thin = Selection::between((300.0, 100.0), (300.0 + MIN_SELECTION - 0.5, 300.0), PLOT);
+        assert!(!thin.spans_time());
+        assert_eq!(zoom::horizontal(&thin, slots, 1000, 10), None);
+        let flat = Selection::between((300.0, 100.0), (400.0, 100.0 + MIN_SELECTION - 0.5), PLOT);
+        assert!(flat.spans_time() && !flat.spans_price());
+        assert!(zoom::horizontal(&flat, slots, 1000, 10).is_some());
+        let zero = Selection::between((300.0, 100.0), (300.0, 100.0), PLOT);
+        assert_eq!(zoom::horizontal(&zero, slots, 1000, 10), None);
+    }
+
+    #[test]
+    fn the_selected_bars_fill_the_plot_within_half_a_bar() {
+        for (offset, reserved) in [(0.0, 10), (0.0, 0), (250.0, 10), (-6.5, 4), (333.3, 0)] {
+            let view = HorizontalViewport {
+                visible: 120,
+                right_offset: offset,
+            };
+            let total = 1000;
+            let slots = slots_of(&view, total, reserved);
+            let s = Selection::between((220.0, 60.0), (520.0, 200.0), PLOT);
+            let zoomed = zoom::horizontal(&s, slots, total, reserved).expect("zooms");
+            let (first, last) = edges(&zoomed, total, reserved);
+            let (want_first, want_last) = (slots.at(s.left), slots.at(s.right));
+            assert!(
+                (first - want_first).abs() <= 0.5 + 1e-9,
+                "offset {offset}: left edge {first} vs {want_first}"
+            );
+            assert!(
+                (last - want_last).abs() <= 0.5 + 1e-9,
+                "offset {offset}: right edge {last} vs {want_last}"
+            );
+            assert!(zoomed.visible < view.visible, "it zooms in");
+        }
+    }
+
+    #[test]
+    fn a_zoom_into_old_history_stays_there() {
+        let view = HorizontalViewport {
+            visible: 120,
+            right_offset: 600.0,
+        };
+        let slots = slots_of(&view, 1000, 10);
+        let s = Selection::between((150.0, 60.0), (400.0, 200.0), PLOT);
+        let zoomed = zoom::horizontal(&s, slots, 1000, 10).expect("zooms");
+        assert!(
+            zoomed.right_offset > 500.0,
+            "still hundreds of bars back, not at the newest: {}",
+            zoomed.right_offset
+        );
+        assert!(!zoomed.follows_latest());
+    }
+
+    #[test]
+    fn a_narrow_selection_grows_to_the_fewest_bars_about_its_centre() {
+        let view = HorizontalViewport::default();
+        let total = 1000;
+        let slots = slots_of(&view, total, 0);
+        // 20 points wide is under 4 bars of 5 points each.
+        let s = Selection::between((300.0, 60.0), (320.0, 200.0), PLOT);
+        let zoomed = zoom::horizontal(&s, slots, total, 0).expect("zooms");
+        assert_eq!(zoomed.visible, MIN_VISIBLE);
+        let (first, last) = edges(&zoomed, total, 0);
+        let centre = (slots.at(s.left) + slots.at(s.right)) / 2.0;
+        assert!(((first + last) / 2.0 - centre).abs() < 1e-6);
+    }
+
+    #[test]
+    fn the_result_always_respects_the_pan_limits() {
+        // A selection in the empty space past the newest bar cannot push the view out of bounds.
+        let view = HorizontalViewport {
+            visible: 120,
+            right_offset: -80.0,
+        };
+        let total = 300;
+        let slots = slots_of(&view, total, 5);
+        let s = Selection::between((500.0, 60.0), (700.0, 200.0), PLOT);
+        let zoomed = zoom::horizontal(&s, slots, total, 5).expect("zooms");
+        let (low, high) = zoomed.offset_limits(total);
+        assert!(zoomed.right_offset >= low && zoomed.right_offset <= high);
+        assert!(zoomed.right_offset.is_finite());
+        assert!(zoomed.visible >= MIN_VISIBLE);
+    }
+
+    #[test]
+    fn unusable_geometry_is_refused_not_propagated() {
+        let s = Selection::between((200.0, 60.0), (400.0, 200.0), PLOT);
+        let slots = |first, width| Slots {
+            first,
+            left: 100.0,
+            width,
+        };
+        assert_eq!(zoom::horizontal(&s, slots(0.0, 0.0), 10, 0), None);
+        assert_eq!(zoom::horizontal(&s, slots(0.0, f64::NAN), 10, 0), None);
+        assert_eq!(zoom::horizontal(&s, slots(f64::NAN, 5.0), 10, 0), None);
+        assert_eq!(zoom::horizontal(&s, slots(0.0, f64::INFINITY), 10, 0), None);
+        // An empty chart still gives a clamped, finite answer or nothing.
+        if let Some(view) = zoom::horizontal(&s, slots(0.0, 5.0), 0, 0) {
+            assert!(view.right_offset.is_finite());
+        }
+    }
+
+    #[test]
+    fn a_huge_history_keeps_its_precision() {
+        let total = 2_000_000;
+        let view = HorizontalViewport {
+            visible: 120,
+            right_offset: 1_500_000.5,
+        };
+        let slots = slots_of(&view, total, 10);
+        let s = Selection::between((200.0, 60.0), (420.0, 200.0), PLOT);
+        let zoomed = zoom::horizontal(&s, slots, total, 10).expect("zooms");
+        let (first, last) = edges(&zoomed, total, 10);
+        assert!((first - slots.at(s.left)).abs() <= 0.5 + 1e-6);
+        assert!((last - slots.at(s.right)).abs() <= 0.5 + 1e-6);
+    }
+
+    #[test]
+    fn a_price_range_is_sorted_and_valid_for_the_scale() {
+        assert_eq!(
+            zoom::price_range(110.0, 90.0, false),
+            Some(PriceRange::new(90.0, 110.0))
+        );
+        // Negative prices are fine on a linear scale and refused on a log one.
+        assert!(zoom::price_range(-5.0, 5.0, false).is_some());
+        assert_eq!(zoom::price_range(-5.0, 5.0, true), None);
+        assert_eq!(zoom::price_range(0.0, 5.0, true), None);
+        assert!(zoom::price_range(0.5, 5.0, true).is_some());
+    }
+
+    #[test]
+    fn a_degenerate_price_range_is_refused() {
+        assert_eq!(zoom::price_range(10.0, 10.0, false), None);
+        assert_eq!(zoom::price_range(f64::NAN, 10.0, false), None);
+        assert_eq!(zoom::price_range(1.0, f64::INFINITY, false), None);
+        // Thinner than a billionth of the price cannot be drawn.
+        assert_eq!(zoom::price_range(1e6, 1e6 + 1e-4, false), None);
+        // A tiny instrument is fine when the range is relatively wide.
+        assert!(zoom::price_range(1.0e-7, 1.5e-7, false).is_some());
+        assert!(zoom::price_range(1.0e-7, 1.5e-7, true).is_some());
+    }
+
+    #[test]
+    fn a_log_range_keeps_its_ratio() {
+        // The card reads these prices from the log scale's inverse; the range stores them as is.
+        let (low, high) = (0.002_f64, 0.5_f64);
+        let range = zoom::price_range(high, low, true).expect("valid");
+        assert!(close(range.maximum / range.minimum, high / low));
+        assert!(range.minimum > 0.0);
+    }
+}
