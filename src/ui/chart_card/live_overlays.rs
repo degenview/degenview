@@ -31,7 +31,12 @@ impl Overlays for LiveOverlays<'_> {
         drawing: &mut DrawingFrame,
         layout: &FrameLayout,
     ) {
-        if layout.main_visible && !self.replay.selecting {
+        if layout.main_visible
+            && !self.replay.selecting
+            && !self
+                .card
+                .zoom_is_live(layout.main_visible, self.replay.selecting)
+        {
             layer.overlay(self.ui, projection, drawing);
         }
     }
@@ -63,6 +68,7 @@ impl Overlays for LiveOverlays<'_> {
         if self.replay.active {
             replay_overlay::paint_active(main_painter, layout.plot);
         }
+        self.card.paint_zoom(self.ui, main_painter, layout.plot);
     }
 
     fn pane(&mut self, painter: &egui::Painter, layout: &FrameLayout, slot: &PaneSlot) {

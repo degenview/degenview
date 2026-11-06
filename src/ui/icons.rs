@@ -23,6 +23,8 @@ pub enum Icon {
     StarFill,
     Plus,
     Magnifier,
+    ZoomIn,
+    ZoomOut,
     ChevronDown,
     ChevronUp,
     ChevronRight,
@@ -485,6 +487,15 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
         Icon::Magnifier => {
             circle(p(7.0, 7.0), 4.4, false);
             line(&[p(10.3, 10.3), p(13.6, 13.6)]);
+        }
+        // A thin lens with a short handle toward the bottom right, a plus (or minus) centred in it.
+        Icon::ZoomIn | Icon::ZoomOut => {
+            circle(p(6.6, 6.6), 4.6, false);
+            line(&[p(10.1, 10.1), p(13.8, 13.8)]);
+            line(&[p(4.6, 6.6), p(8.6, 6.6)]);
+            if icon == Icon::ZoomIn {
+                line(&[p(6.6, 4.6), p(6.6, 8.6)]);
+            }
         }
         Icon::ChevronDown => line(&[p(3.5, 6.0), p(8.0, 10.5), p(12.5, 6.0)]),
         Icon::ChevronUp => line(&[p(3.5, 10.0), p(8.0, 5.5), p(12.5, 10.0)]),
@@ -2268,6 +2279,8 @@ mod tests {
             StarFill,
             Plus,
             Magnifier,
+            ZoomIn,
+            ZoomOut,
             ChevronDown,
             ChevronUp,
             ChevronRight,
@@ -2514,6 +2527,59 @@ mod tests {
             }));
         }
         screen.save("magnet", last.expect("a frame"));
+    }
+
+    /// The zoom icons at the sizes they are used, beside the ruler and magnifier they sit with, on
+    /// a dark and a light ground. Run by hand with `DEGENVIEW_GALLERY_DIR` set.
+    #[test]
+    #[ignore = "writes images for a person to look at"]
+    fn gallery_of_the_zoom_icons() {
+        use crate::ui::render_tests::{Screen, gallery_dir};
+        if gallery_dir().is_none() {
+            return;
+        }
+        let mut screen = Screen::new(egui::vec2(420.0, 220.0));
+        let mut last = None;
+        for _ in 0..3 {
+            last = Some(screen.run(Vec::new(), |ui| {
+                let painter = ui.painter();
+                for (row, (ground, ink)) in [
+                    (Color32::from_gray(24), Color32::from_gray(210)),
+                    (Color32::from_gray(245), Color32::from_gray(40)),
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    let top = row as f32 * 110.0;
+                    painter.rect_filled(
+                        Rect::from_min_size(pos2(0.0, top), egui::vec2(420.0, 110.0)),
+                        0.0,
+                        ground,
+                    );
+                    let mut x = 12.0;
+                    for (size, icon) in [
+                        (18.0, Icon::Ruler),
+                        (18.0, Icon::ZoomIn),
+                        (18.0, Icon::ZoomOut),
+                        (18.0, Icon::Magnifier),
+                        (24.0, Icon::ZoomIn),
+                        (24.0, Icon::ZoomOut),
+                    ] {
+                        let rect = Rect::from_min_size(pos2(x, top + 12.0), Vec2::splat(size));
+                        paint(painter, rect, icon, ink);
+                        x += size + 16.0;
+                    }
+                    for (k, icon) in [Icon::ZoomIn, Icon::ZoomOut].into_iter().enumerate() {
+                        let rect = Rect::from_min_size(
+                            pos2(12.0 + k as f32 * 76.0, top + 40.0),
+                            Vec2::splat(64.0),
+                        );
+                        paint(painter, rect, icon, ink);
+                    }
+                }
+            }));
+        }
+        screen.save("zoom-icons", last.expect("a frame"));
     }
 
     /// The clipboard icons of the editor menu, small as used and large to judge the drawing.

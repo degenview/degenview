@@ -35,6 +35,10 @@ behavior.
   `chart.*_visible_bar_time` depends on the range) or write the Canvas. Viewport state is
   chart/layout state and is not part of a template.
 - See [chart navigation](../chart-navigation.md) for gestures, history paging and what is unverified.
+- Zoom In is a workspace mode, not a `Tool`: the rectangle is transient `ChartCard` state, its maths is
+  `model::viewport::zoom`, and it edits the same `ChartViewport` inside the frame so linked charts follow.
+  Do not add a second viewport, and do not store the rectangle as a drawing (see
+  [chart navigation](../chart-navigation.md#zoom-in)).
 - Linked charts ([design](../chart-sync.md)) translate a viewport to a time range and back; they
   never copy an offset, a bar index, or anything vertical. Followers are edited through
   `ChartCard::follow_sync` before they draw, and only the user's own navigation is published, never

@@ -151,10 +151,17 @@ impl ChartCard {
         replay.picked_ms = None;
         replay.picked_range = None;
         let view = self.view(bars, plot, data.scale_mode, data.chart_type);
+        let regions = navigation::Regions {
+            plot,
+            main: layout.rect,
+            chart: layout.full_rect,
+        };
+        // The Zoom In tool owns the plot's pointer while it is armed: nothing is drawn or picked.
+        let zooming = self.zoom_is_live(layout.main_visible, replay.selecting);
         if layout.main_visible
             && let Some(view) = &view
         {
-            if replay.selecting {
+            if replay.selecting || zooming {
                 self.layer.clear_hover();
             } else {
                 self.layer.update(
@@ -165,11 +172,8 @@ impl ChartCard {
                 );
             }
         }
-        let regions = navigation::Regions {
-            plot,
-            main: layout.rect,
-            chart: layout.full_rect,
-        };
+        drawing.escape_consumed |=
+            self.handle_zoom(ui, response, view.as_ref(), &regions, bars.len(), zooming);
         let navigation = navigation::Navigation {
             regions,
             shown: view
@@ -180,6 +184,7 @@ impl ChartCard {
             logarithmic: view.as_ref().is_some_and(|view| view.scale.logarithmic),
             // Dragging over bars for the logs pane is not a pan.
             drawing_claims: self.layer.claims_drag()
+                || self.zoom_claims_drag()
                 || (replay.selecting && self.pick_kind == replay_overlay::PickKind::LogsRange),
             response,
         };
