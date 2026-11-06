@@ -98,13 +98,15 @@ fn a_client_recovers_as_its_bucket_refills() {
     let harness = Harness::start(&[("c1", "tok", READ)]);
     harness.shared.set_rate_limits(RateLimits {
         client_burst: 1,
-        client_per_sec: 20.0,
+        // One token every 500 ms: slow enough that the second call still finds the bucket empty
+        // on a loaded machine.
+        client_per_sec: 2.0,
         ..limits(1000, 1)
     });
     let url = harness.url();
     assert_eq!(rpc(&url, Some("tok"), "tools/list", json!({})).status, 200);
     assert_eq!(rpc(&url, Some("tok"), "tools/list", json!({})).status, 429);
-    std::thread::sleep(Duration::from_millis(200));
+    std::thread::sleep(Duration::from_millis(700));
     assert_eq!(rpc(&url, Some("tok"), "tools/list", json!({})).status, 200);
 }
 
