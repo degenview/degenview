@@ -3,6 +3,7 @@
 use super::ChartWorkspace;
 use super::chart::Chart;
 use super::drawings::is_ruler;
+use crate::model::viewport::ChartViewport;
 use crate::model::{Drawing, DrawingCommand, IndicatorConfig};
 use std::time::{Duration, Instant};
 
@@ -22,9 +23,17 @@ pub(super) enum Snapshot {
         config: IndicatorConfig,
         scripts: Vec<crate::model::pine_instance::PineInstance>,
     },
+    /// What part of the chart was on screen before a Zoom In or Zoom out.
+    View(ChartViewport),
 }
 
 impl Snapshot {
+    /// Whether restoring this changes what a layout stores. A view does not: it is not saved
+    /// with a layout, so undoing a zoom leaves the layout as clean as it found it.
+    fn changes_layout(&self) -> bool {
+        !matches!(self, Self::View(_))
+    }
+
     /// Puts this snapshot on `chart` and returns what the chart held, to undo the undo.
     fn swap_into(self, chart: &mut Chart) -> Snapshot {
         match self {
@@ -41,6 +50,7 @@ impl Snapshot {
                 chart.chart.set_pine_instances(scripts);
                 current
             }
+            Self::View(view) => Self::View(chart.chart.swap_viewport(view)),
         }
     }
 }
@@ -109,6 +119,28 @@ impl ChartWorkspace {
         }
     }
 
+    /// Puts the view a zoom left on the undo stack: Zoom In and Zoom out are steps like any edit,
+    /// and a new step ends the redo line.
+    pub(super) fn remember_view(&mut self, chart_id: u64, before: ChartViewport) {
+        self.undo.push(UndoEntry {
+            chart_id,
+            before: Snapshot::View(before),
+        });
+        self.redo.clear();
+        self.last_restyle = None;
+    }
+
+    /// Forgets the views `chart_id` could be put back to (all charts when `None`): they were
+    /// positions in a series that is no longer there.
+    pub(super) fn forget_views(&mut self, chart_id: Option<u64>) {
+        let gone = |entry: &UndoEntry| {
+            matches!(entry.before, Snapshot::View(_))
+                && chart_id.is_none_or(|id| entry.chart_id == id)
+        };
+        self.undo.retain(|entry| !gone(entry));
+        self.redo.retain(|entry| !gone(entry));
+    }
+
     pub(super) fn undo(&mut self) {
         self.last_restyle = None;
         let Some(entry) = self.undo.pop() else {
@@ -119,8 +151,9 @@ impl ChartWorkspace {
             .iter_mut()
             .find(|chart| chart.id == entry.chart_id)
         {
+            let layout = entry.before.changes_layout();
             let after = entry.before.swap_into(chart);
-            self.drawings_version += 1;
+            self.drawings_version += u64::from(layout);
             self.redo.push(UndoEntry {
                 chart_id: entry.chart_id,
                 before: after,
@@ -138,8 +171,9 @@ impl ChartWorkspace {
             .iter_mut()
             .find(|chart| chart.id == entry.chart_id)
         {
+            let layout = entry.before.changes_layout();
             let after = entry.before.swap_into(chart);
-            self.drawings_version += 1;
+            self.drawings_version += u64::from(layout);
             self.undo.push(UndoEntry {
                 chart_id: entry.chart_id,
                 before: after,
@@ -329,5 +363,121 @@ mod tests {
         workspace.apply_drawing_commands(chart, vec![DrawingCommand::Add(rectangle(2, 300))]);
         workspace.apply_drawing_commands(chart, vec![restyle(10.0)]);
         assert_eq!(workspace.undo.len(), 3);
+    }
+
+    // MARK: Zoom steps
+
+    fn view(visible: usize, right_offset: f64) -> ChartViewport {
+        let mut view = ChartViewport::default();
+        view.horizontal.visible = visible;
+        view.horizontal.right_offset = right_offset;
+        view
+    }
+
+    fn chart_offset(workspace: &ChartWorkspace, chart_id: u64) -> f64 {
+        let saved = workspace
+            .charts
+            .iter()
+            .find(|chart| chart.id == chart_id)
+            .expect("chart")
+            .chart
+            .saved_viewport();
+        saved.right_offset
+    }
+
+    #[test]
+    fn a_zoom_is_an_undo_step_and_redo_replays_it() {
+        let mut workspace = empty_workspace(9);
+        let chart = chart_with_drawings(&mut workspace, "BTCUSDT", &[1]);
+        let version = workspace.drawings_version;
+        // The zoom has been applied by the card; the workspace is handed the view it left.
+        let before = ChartViewport::default();
+        let card = &mut workspace.charts[0].chart;
+        card.swap_viewport(view(40, 30.0));
+        workspace.remember_view(chart, before);
+
+        workspace.undo();
+        assert_eq!(chart_offset(&workspace, chart), 0.0, "back where it was");
+        workspace.redo();
+        assert_eq!(chart_offset(&workspace, chart), 30.0, "zoomed again");
+        workspace.undo();
+        assert_eq!(chart_offset(&workspace, chart), 0.0);
+        assert_eq!(
+            workspace.drawings_version, version,
+            "a view is not part of what a layout stores"
+        );
+    }
+
+    #[test]
+    fn a_new_step_ends_the_redo_line_and_steps_run_in_the_order_they_happened() {
+        let mut workspace = empty_workspace(9);
+        let chart = chart_with_drawings(&mut workspace, "BTCUSDT", &[1]);
+        workspace.apply_drawing_commands(chart, vec![DrawingCommand::Remove(1)]);
+        workspace.charts[0].chart.swap_viewport(view(40, 30.0));
+        workspace.remember_view(chart, ChartViewport::default());
+
+        // Undo takes the zoom first, then the removal.
+        workspace.undo();
+        assert_eq!(chart_offset(&workspace, chart), 0.0);
+        assert!(
+            drawing_ids(&workspace, chart).is_empty(),
+            "the zoom came last"
+        );
+        workspace.undo();
+        assert_eq!(drawing_ids(&workspace, chart), vec![1]);
+
+        // Zooming again after an undo drops what could have been redone.
+        workspace.charts[0].chart.swap_viewport(view(60, 10.0));
+        workspace.remember_view(chart, ChartViewport::default());
+        assert!(workspace.redo.is_empty());
+    }
+
+    #[test]
+    fn zoom_out_is_an_undo_step_and_the_history_follows_undo_and_redo() {
+        let mut workspace = empty_workspace(9);
+        let chart = chart_with_drawings(&mut workspace, "BTCUSDT", &[1]);
+        workspace.focused = Some(chart);
+        // A zoom: the card holds the zoomed view and one view to go back to.
+        workspace.charts[0].chart.swap_viewport(view(40, 30.0));
+        workspace.remember_view(chart, ChartViewport::default());
+        assert!(workspace.charts[0].chart.can_zoom_out());
+
+        workspace.zoom_out_focused();
+        assert_eq!(chart_offset(&workspace, chart), 0.0);
+        assert!(!workspace.charts[0].chart.can_zoom_out());
+        assert_eq!(workspace.undo.len(), 2, "Zoom out is a step too");
+
+        // Undoing it zooms back in, and Zoom out is offered again.
+        workspace.undo();
+        assert_eq!(chart_offset(&workspace, chart), 30.0);
+        assert!(workspace.charts[0].chart.can_zoom_out());
+        // Undoing the zoom itself leaves nothing to zoom out of.
+        workspace.undo();
+        assert_eq!(chart_offset(&workspace, chart), 0.0);
+        assert!(!workspace.charts[0].chart.can_zoom_out());
+        // Redo brings both back, history included.
+        workspace.redo();
+        assert_eq!(chart_offset(&workspace, chart), 30.0);
+        assert!(workspace.charts[0].chart.can_zoom_out());
+        workspace.redo();
+        assert_eq!(chart_offset(&workspace, chart), 0.0);
+        assert!(!workspace.charts[0].chart.can_zoom_out());
+    }
+
+    #[test]
+    fn views_are_forgotten_with_the_series_they_belonged_to() {
+        let mut workspace = empty_workspace(9);
+        let first = chart_with_drawings(&mut workspace, "BTCUSDT", &[1]);
+        let second = chart_with_drawings(&mut workspace, "ETHUSDT", &[2]);
+        workspace.remember_view(first, ChartViewport::default());
+        workspace.remember_view(second, ChartViewport::default());
+        workspace.apply_drawing_commands(first, vec![DrawingCommand::Remove(1)]);
+        workspace.forget_views(Some(first));
+        // The other chart's view and the drawing step stay.
+        assert_eq!(workspace.undo.len(), 2);
+        assert!(workspace.undo.iter().any(|e| e.chart_id == second));
+        workspace.forget_views(None);
+        assert_eq!(workspace.undo.len(), 1);
+        assert!(matches!(workspace.undo[0].before, Snapshot::Drawings(_)));
     }
 }

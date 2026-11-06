@@ -87,15 +87,17 @@ impl ChartWorkspace {
         }
     }
 
-    /// Zoom out on the focused chart: back to the view its last zoom came from.
+    /// Zoom out on the focused chart: back to the view its last zoom came from. It is an undo
+    /// step, so Undo puts the zoom back.
     pub(super) fn zoom_out_focused(&mut self) {
         let focused = self.focused;
-        if let Some(chart) = self
+        let left = self
             .charts
             .iter_mut()
             .find(|chart| Some(chart.id) == focused)
-        {
-            chart.chart.zoom_out();
+            .and_then(|chart| chart.chart.zoom_out().map(|left| (chart.id, left)));
+        if let Some((chart_id, left)) = left {
+            self.remember_view(chart_id, left);
         }
     }
 

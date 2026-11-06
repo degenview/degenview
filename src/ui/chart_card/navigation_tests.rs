@@ -1107,13 +1107,15 @@ mod zoom_in {
         let (first, last) = (bar_at(&rig, from.x), bar_at(&rig, to.x));
         let (top, bottom) = (price_at(&rig, from.y), price_at(&rig, to.y));
         let before = rig.card.viewport.horizontal.visible;
+        let original = rig.card.viewport;
         rig.press(from);
         rig.drag_to(from, to);
         rig.release(to);
-        assert!(
-            rig.card.take_zoomed(),
-            "the workspace is told to put the tool down"
-        );
+        let was = rig
+            .card
+            .take_zoomed()
+            .expect("the workspace is told to put the tool down");
+        assert_eq!(was, original, "and which view the zoom started from");
         assert!(rig.card.viewport.horizontal.visible < before);
         let slot = f64::from(rig.slot_width());
         let plot = rig.probe().plot;
@@ -1152,7 +1154,7 @@ mod zoom_in {
             rig.press(a);
             rig.drag_to(a, b);
             rig.release(b);
-            assert!(rig.card.take_zoomed());
+            assert!(rig.card.take_zoomed().is_some());
             views.push((
                 rig.card.viewport.horizontal.visible,
                 rig.card.viewport.horizontal.right_offset,
@@ -1193,7 +1195,7 @@ mod zoom_in {
         assert_eq!(rig.drawings, before);
         assert_eq!(rig.commands, 0);
         assert!(
-            rig.card.take_zoomed(),
+            rig.card.take_zoomed().is_some(),
             "it zoomed instead of moving the line or panning"
         );
     }
@@ -1204,7 +1206,7 @@ mod zoom_in {
         let from = rig.in_plot();
         rig.drag(from, Vec2::new(100.0, 0.0));
         assert!(rig.offset() > 1.0);
-        assert!(!rig.card.take_zoomed());
+        assert!(rig.card.take_zoomed().is_none());
         assert!(!rig.card.can_zoom_out());
     }
 
@@ -1224,7 +1226,7 @@ mod zoom_in {
         rig.drag_to(to, to + Vec2::new(20.0, 20.0));
         rig.release(to);
         assert_eq!(rig.card.viewport, viewport);
-        assert!(!rig.card.take_zoomed());
+        assert!(rig.card.take_zoomed().is_none());
         assert!(!rig.card.zoom_claims_drag());
         // Idle, an Escape is not the card's: the workspace disarms the tool with it.
         rig.escape_consumed = false;
@@ -1247,7 +1249,7 @@ mod zoom_in {
         }]);
         rig.release(to);
         assert_eq!(rig.card.viewport, viewport);
-        assert!(!rig.card.take_zoomed());
+        assert!(rig.card.take_zoomed().is_none());
     }
 
     #[test]
@@ -1286,7 +1288,7 @@ mod zoom_in {
             assert!(!rig.card.zoom_claims_drag(), "case {how}");
             rig.release(to);
             assert_eq!(rig.card.viewport, viewport, "case {how}");
-            assert!(!rig.card.take_zoomed(), "case {how}");
+            assert!(rig.card.take_zoomed().is_none(), "case {how}");
         }
     }
 
@@ -1298,7 +1300,7 @@ mod zoom_in {
         // Past egui's drag threshold, under the minimum selection.
         rig.drag(from, Vec2::new(7.0, 7.0));
         assert_eq!(rig.card.viewport, viewport);
-        assert!(!rig.card.take_zoomed());
+        assert!(rig.card.take_zoomed().is_none());
         assert!(rig.card.zoom_is_live(true, false));
         // A plain click does nothing either.
         rig.press(from);
@@ -1312,7 +1314,7 @@ mod zoom_in {
         let from = rig.in_plot();
         let before = rig.card.viewport.horizontal.visible;
         rig.drag(from, Vec2::new(200.0, 3.0));
-        assert!(rig.card.take_zoomed());
+        assert!(rig.card.take_zoomed().is_some());
         assert!(rig.card.viewport.horizontal.visible < before);
         assert!(
             rig.card.viewport.vertical.is_auto(),
@@ -1327,7 +1329,7 @@ mod zoom_in {
         rig.frames(&[]);
         let from = rig.in_plot();
         rig.drag(from, Vec2::new(150.0, 100.0));
-        assert!(rig.card.take_zoomed());
+        assert!(rig.card.take_zoomed().is_some());
         assert!(
             rig.offset() > 150.0,
             "not thrown to the newest bar: {}",
@@ -1375,7 +1377,7 @@ mod zoom_in {
         rig.press(from);
         rig.drag_to(from, to);
         rig.release(to);
-        assert!(rig.card.take_zoomed());
+        assert!(rig.card.take_zoomed().is_some());
         let range = rig.card.viewport.vertical.manual.expect("manual range");
         // Prices read through the log map, not linearly.
         let at =
@@ -1404,7 +1406,7 @@ mod zoom_in {
             rig.card.viewport.vertical.zoom != 1.0,
             "the price axis still stretches"
         );
-        assert!(!rig.card.take_zoomed());
+        assert!(rig.card.take_zoomed().is_none());
         let visible = rig.card.viewport.horizontal.visible;
         let axis = rig.on_time_axis();
         rig.drag(axis, Vec2::new(-80.0, 0.0));
@@ -1412,7 +1414,7 @@ mod zoom_in {
             rig.card.viewport.horizontal.visible != visible,
             "the time axis still stretches"
         );
-        assert!(!rig.card.take_zoomed());
+        assert!(rig.card.take_zoomed().is_none());
     }
 
     #[test]
@@ -1421,7 +1423,7 @@ mod zoom_in {
         rig.selecting = true;
         let from = rig.in_plot();
         rig.drag(from, Vec2::new(160.0, 90.0));
-        assert!(!rig.card.take_zoomed(), "the picker is not a zoom");
+        assert!(rig.card.take_zoomed().is_none(), "the picker is not a zoom");
         assert!(!rig.card.can_zoom_out());
     }
 
@@ -1432,13 +1434,13 @@ mod zoom_in {
         let first = rig.card.viewport;
         let from = rig.in_plot();
         rig.drag(from, Vec2::new(250.0, 150.0));
-        assert!(rig.card.take_zoomed());
+        assert!(rig.card.take_zoomed().is_some());
         let second = rig.card.viewport;
         assert!(rig.card.can_zoom_out());
         rig.card.set_zoom_armed(true);
         let from = rig.in_plot();
         rig.drag(from, Vec2::new(120.0, 80.0));
-        assert!(rig.card.take_zoomed());
+        assert!(rig.card.take_zoomed().is_some());
         rig.card.zoom_out();
         assert_eq!(rig.card.viewport, second);
         rig.card.zoom_out();
@@ -1446,6 +1448,24 @@ mod zoom_in {
         assert!(!rig.card.can_zoom_out());
         rig.card.zoom_out();
         assert_eq!(rig.card.viewport, first, "nothing left is not an error");
+    }
+
+    #[test]
+    fn undoing_and_redoing_a_zoom_keeps_zoom_outs_history_in_step() {
+        let mut rig = armed();
+        let from = rig.in_plot();
+        rig.drag(from, Vec2::new(250.0, 150.0));
+        let before = rig.card.take_zoomed().expect("zoomed");
+        let zoomed = rig.card.viewport;
+        // Undo: the view the zoom left goes back, and there is nothing to zoom out of.
+        assert_eq!(rig.card.swap_viewport(before), zoomed);
+        assert_eq!(rig.card.viewport, before);
+        assert!(!rig.card.can_zoom_out());
+        // Redo: the zoomed view is back, with the view it came from to return to.
+        assert_eq!(rig.card.swap_viewport(zoomed), before);
+        assert!(rig.card.can_zoom_out());
+        assert_eq!(rig.card.zoom_out(), Some(zoomed));
+        assert_eq!(rig.card.viewport, before);
     }
 
     #[test]

@@ -646,7 +646,7 @@ fn a_zoom_rectangle_zooms_the_linked_charts_to_the_same_time_range() {
     let mut linked = Linked::pair(BOTH);
     linked.members[0].card.set_zoom_armed(true);
     linked.drag(linked.in_plot(0), Vec2::new(180.0, 120.0));
-    assert!(linked.members[0].card.take_zoomed());
+    assert!(linked.members[0].card.take_zoomed().is_some());
     assert!(linked.view(0).visible < DEFAULT_VISIBLE);
 
     let (a, b) = (linked.range(0), linked.range(1));
@@ -657,7 +657,7 @@ fn a_zoom_rectangle_zooms_the_linked_charts_to_the_same_time_range() {
     assert!(linked.vertical_is_default(1));
     // The follower never took the tool or a history of its own.
     assert!(!linked.members[1].card.can_zoom_out());
-    assert!(!linked.members[1].card.take_zoomed());
+    assert!(linked.members[1].card.take_zoomed().is_none());
 }
 
 #[test]
@@ -665,7 +665,7 @@ fn a_zoom_rectangle_does_not_touch_unlinked_charts() {
     let mut linked = Linked::pair(ChartSyncSettings::UNLINKED);
     linked.members[0].card.set_zoom_armed(true);
     linked.drag(linked.in_plot(0), Vec2::new(180.0, 120.0));
-    assert!(linked.members[0].card.take_zoomed());
+    assert!(linked.members[0].card.take_zoomed().is_some());
     assert_eq!(linked.view(1), HorizontalViewport::default());
     assert!(linked.vertical_is_default(1));
 }
@@ -688,4 +688,22 @@ fn zoom_out_is_followed_like_any_navigation_and_does_not_echo() {
     let settled = (linked.view(0), linked.view(1));
     linked.frames(4);
     assert_eq!((linked.view(0), linked.view(1)), settled);
+}
+
+#[test]
+fn undoing_a_zoom_moves_the_linked_charts_back_too() {
+    let mut linked = Linked::pair(BOTH);
+    let before = (linked.view(0), linked.view(1));
+    linked.members[0].card.set_zoom_armed(true);
+    linked.drag(linked.in_plot(0), Vec2::new(180.0, 120.0));
+    let was = linked.members[0].card.take_zoomed().expect("zoomed");
+    assert!(linked.view(1) != before.1);
+
+    // What the workspace's Undo does, outside a frame.
+    linked.members[0].card.swap_viewport(was);
+    linked.frames(4);
+    assert_eq!(linked.view(0), before.0);
+    let (a, b) = (linked.range(0), linked.range(1));
+    assert_eq!(a.right, b.right, "the follower followed the undo");
+    assert!(near(a.left, b.left, HOUR as f64));
 }

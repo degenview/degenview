@@ -30,8 +30,9 @@ pub(super) struct ZoomTool {
     drag: Option<Drag>,
     /// The views zoomed away from, newest last: what Zoom out goes back to.
     back: Vec<ChartViewport>,
-    /// A zoom was applied since the workspace last asked; it puts the tool down.
-    zoomed: bool,
+    /// The view a zoom was applied to since the workspace last asked: it puts the tool down and
+    /// records the step for undo.
+    zoomed: Option<ChartViewport>,
     /// The frame this card was last drawn in, to notice it went unseen (another tab).
     last_frame: u64,
 }
@@ -45,9 +46,10 @@ impl ChartCard {
         }
     }
 
-    /// Whether a zoom was applied since the last call. The workspace puts the tool down on it.
-    pub fn take_zoomed(&mut self) -> bool {
-        std::mem::take(&mut self.zoom.zoomed)
+    /// The view a zoom was applied to since the last call, if one was. The workspace puts the
+    /// tool down on it and puts the view on the undo stack.
+    pub fn take_zoomed(&mut self) -> Option<ChartViewport> {
+        self.zoom.zoomed.take()
     }
 
     /// Whether Zoom out has a view to go back to.
@@ -55,13 +57,30 @@ impl ChartCard {
         !self.zoom.back.is_empty()
     }
 
-    /// Goes back to the view the last zoom came from. Made outside a frame, so the card remembers
-    /// where the view was and the next frame tells linked charts about the change.
-    pub fn zoom_out(&mut self) {
-        if let Some(before) = self.zoom.back.pop() {
-            self.scroll_from.get_or_insert(self.viewport.horizontal);
-            self.viewport = before;
+    /// Goes back to the view the last zoom came from and returns the view it left, for the undo
+    /// stack. Made outside a frame, so the card remembers where the view was and the next frame
+    /// tells linked charts about the change.
+    pub fn zoom_out(&mut self) -> Option<ChartViewport> {
+        let before = self.zoom.back.pop()?;
+        self.scroll_from.get_or_insert(self.viewport.horizontal);
+        Some(std::mem::replace(&mut self.viewport, before))
+    }
+
+    /// Puts `view` on the chart and returns the one it replaces: what undo and redo of a zoom do.
+    /// Zoom out's history follows, so it still lists exactly the views a zoom came from: restoring
+    /// the top one forgets that zoom, and anything else brings the replaced view back.
+    pub fn swap_viewport(&mut self, view: ChartViewport) -> ChartViewport {
+        self.scroll_from.get_or_insert(self.viewport.horizontal);
+        let replaced = std::mem::replace(&mut self.viewport, view);
+        if self.zoom.back.last() == Some(&view) {
+            self.zoom.back.pop();
+        } else {
+            if self.zoom.back.len() >= MAX_BACK {
+                self.zoom.back.remove(0);
+            }
+            self.zoom.back.push(replaced);
         }
+        replaced
     }
 
     /// Forgets the views to zoom out to: they mean nothing on another series.
@@ -195,15 +214,16 @@ impl ChartCard {
             })
             .flatten();
 
+        let before = self.viewport;
         if self.zoom.back.len() >= MAX_BACK {
             self.zoom.back.remove(0);
         }
-        self.zoom.back.push(self.viewport);
+        self.zoom.back.push(before);
         self.viewport.horizontal = horizontal;
         if let Some(range) = prices {
             self.viewport.vertical.manual = Some(range);
         }
-        self.zoom.zoomed = true;
+        self.zoom.zoomed = Some(before);
     }
 
     /// The rectangle being dragged, over the plot. Painted by the live overlays, above the

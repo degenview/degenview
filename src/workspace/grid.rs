@@ -882,14 +882,18 @@ impl ChartWorkspace {
         if drawing_disarm {
             self.active_tool = Tool::Cursor;
         }
-        // A zoom puts the tool down and the chart it was made on becomes the focused one, which
-        // is the one Zoom out goes back on. Every chart is asked, so none keeps a stale flag.
-        let zoomed: Vec<u64> = self
+        // A zoom puts the tool down, is an undo step, and the chart it was made on becomes the
+        // focused one, which is the one Zoom out goes back on. Every chart is asked, so none keeps
+        // a stale flag.
+        let zoomed: Vec<(u64, _)> = self
             .charts
             .iter_mut()
-            .filter_map(|chart| chart.chart.take_zoomed().then_some(chart.id))
+            .filter_map(|chart| chart.chart.take_zoomed().map(|before| (chart.id, before)))
             .collect();
-        if let Some(&chart_id) = zoomed.last() {
+        for &(chart_id, before) in &zoomed {
+            self.remember_view(chart_id, before);
+        }
+        if let Some(&(chart_id, _)) = zoomed.last() {
             self.zoom_armed = false;
             self.focus_chart(chart_id);
         }

@@ -69,8 +69,8 @@ Linking the charts of a workspace is built on this viewport: see [linked charts]
 ## Zoom In
 
 The magnifying-glass tile under the Ruler arms a **mode** (`ChartWorkspace::zoom_armed`), not a
-drawing tool: there is no `Tool` variant, no `Geometry`, nothing stored, synced, undone or put in a
-template. Arming it puts any drawing tool down and arming a drawing tool (or the crosshair tile, or
+drawing tool: there is no `Tool` variant, no `Geometry`, nothing stored, synced or put in a
+template. The zoom itself is an undo step (below). Arming it puts any drawing tool down and arming a drawing tool (or the crosshair tile, or
 Escape) puts it down; a finished zoom does too, whatever the Keep drawing setting says.
 
 | Input | Result |
@@ -108,14 +108,25 @@ Being outside a frame, it records the old view in `scroll_from` so linked charts
 
 Both tiles give way to the bottom group on a short window, as the options below them do.
 
+**Undo.** A zoom and a Zoom out are steps on the workspace's one undo stack (`Snapshot::View`, holding the
+whole `ChartViewport` the step left), in the order things happened with drawing and indicator steps; a
+new step ends the redo line. The card hands the view a zoom started from through `take_zoomed()`
+(Zoom out returns the one it left), the workspace records it (`remember_view`), and undo and redo swap it
+back with `ChartCard::swap_viewport`, which also keeps Zoom out's history in step (undoing a zoom forgets
+it, redoing it offers it again). The swap is made outside a frame, so it records `scroll_from` and linked
+charts follow it. A view is not part of a layout, so undoing a zoom does not mark one changed
+(`drawings_version` is left alone), and steps are forgotten with the series: a symbol or timeframe change
+drops the chart's view steps (`forget_views`). A switch to or from a price-based type clears Zoom out's
+history but not the undo steps (a stale offset there is clamped on the next frame).
+
 **Observed on tradingview.com** (1D BTCUSDT chart, web): the tile sits under the Ruler; a drag zooms both
 axes to the rectangle and the tool reverts to the crosshair; a click without a drag does nothing and the
 tool stays armed; a contextual Zoom out tile appears under it after a zoom and restores the previous view
 exactly, then goes. **Inferred, not verified:** the 8 pt minimum and the time-only zoom for a flat
 rectangle; the 8-deep Zoom out history (one level was observed); Escape and the second-button cancel; the
 cursor glyph; clamping a release to the plot; the rectangle's colour (TradingView's is blue; ours is
-neutral by the app's no-blue rule); that Keep drawing does not apply; no keyboard shortcut; TradingView's
-undo stack also records the zoom, which is not reproduced; behaviour on log scales and in indicator panes.
+neutral by the app's no-blue rule); that Keep drawing does not apply; no keyboard shortcut; that Zoom out is itself an undo step (TradingView's
+undo button turned on after a zoom, nothing more was checked); behaviour on log scales and in indicator panes.
 
 Tests: `model/viewport/tests.rs` (`zoom_to_a_rectangle`), `chart_card/navigation_tests.rs` (`zoom_in`),
 `sync_tests.rs`, `workspace/tool_rail.rs`, `tool_sidebar.rs`. Pictures: `gallery_of_zoom_in` (strip and chart)
