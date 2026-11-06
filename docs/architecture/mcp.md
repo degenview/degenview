@@ -18,6 +18,19 @@ client → 127.0.0.1:<port>/mcp → bearer/Host/Origin/size checks
 - Effective permissions are client grants intersected with the global cap, both read per call.
   New clients get `charts.read`; the cap defaults read-only. `tools/list` filters and `call_tool`
   rechecks.
+- Limits (constants in `mcp/limits.rs` and `mcp/transport.rs`): 64 requests in flight before
+  authentication and 16 after; bad tokens share a bucket of 20 refilled at 2/s, past which they get
+  429 with `Retry-After` (a valid token is never affected); each client has a bucket of 60 refilled
+  at 20/s; a request head may have 64 headers and 16 KiB (431 beyond), a client has 10 s to send it
+  (which also closes idle keep-alive connections), and 128 connections may be open (more are closed
+  on arrival); the body is capped at 256 KiB. A client that hangs up drops its tool call: queued work
+  does not run, work the app already started keeps its outcome. A `notifications/cancelled` cancels the
+  same way. Stateless mode serves it as its own POST, so `mcp/cancel.rs` keeps the tool calls in
+  flight by client and request id, and a layer reads the notification before rmcp, cancels that
+  client's matching calls (all of them, if a client reuses an id) and answers 202 itself. The layer
+  sits outside the 16-request cap, so a cancel gets through while the calls it cancels hold every
+  permit, and inside the bearer check, so a client can only cancel its own calls. Batches are not
+  read.
 - Workers never access workspaces or SQLite. `Request::run` skips abandoned, expired, cancelled,
   pre-stop, or newly unauthorized work; started work reports its real result.
 - Settings holds the store lock, so it only queues `McpAction`; `tick_mcp` applies it later.

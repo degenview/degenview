@@ -12,7 +12,16 @@
   never tokens. `McpShared::authenticate` carries a match across its lock gap as the client id and
   re-checks the verifier; never carry a list index.
 - A bridge call that is dropped (client closed the stream, request cancelled) cancels its queued
-  `Request` (`CancelOnDrop`); keep it that way when changing `BridgeClient::call`.
+  `Request` (`CancelOnDrop`); keep it that way when changing `BridgeClient::call`. rmcp does not
+  drop a handler when the client leaves, so `call_tool` races the tool against `context.ct`: keep
+  that race, and never spawn work from a tool that outlives its future without a drop guard.
+  A `notifications/cancelled` is a separate POST in stateless mode: `call_tool` registers each call
+  in `McpShared::calls()` and `cancel::honour_cancellations` cancels it. Keep that layer outside the
+  concurrency cap and inside the bearer check.
+- Rate limits live in `mcp/limits.rs` and are applied in `require_bearer`. Bad tokens may be
+  refused with 429; a valid token must never be refused because of other callers' failures.
+  Connections are accepted by `transport::serve` (not `axum::serve`) so header, time and
+  connection limits hold; keep new limits there.
 - Price-alert tools plan against `AlertHost` in `host/mcp_host.rs`, then enqueue
   `AlertRuntimeCommand`; they never write alert tables or reimplement `PriceAlertEditorState`.
   A plan is made from a snapshot that is up to a second old and shared by every request of the

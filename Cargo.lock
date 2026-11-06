@@ -1003,6 +1003,8 @@ dependencies = [
  "flate2",
  "getrandom 0.4.3",
  "http",
+ "hyper",
+ "hyper-util",
  "image",
  "libc",
  "objc2 0.6.5",
