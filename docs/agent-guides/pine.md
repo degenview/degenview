@@ -36,6 +36,11 @@
   plus a row number) and the data lives in `Session::footprints`, outside `RuntimeState`; keep it
   there so rollback does not copy it. Read [Pine volume footprints](../pine-footprint.md) before
   changing its algorithm: most of it is inferred.
+- Known gaps against TradingView's execution model are in
+  [the audit](../reviews/pine-execution-model-audit.md); read it before relying on rollback exceptions.
+  Until its fixes land: `varip` is keyed by name (not per call site), cannot be a UDT field, and a `varip`
+  reference does not survive a tick; a broker order does not survive a rolled-back tick; a runtime error
+  does not halt the script; `[]` works only on the builtins `commit_histories` records.
 - Breakpoints and watches live in the local `scriptDebug.state` setting (never synced; listed in
   `sync::policy`'s local keys).
 - A `once` structure's finished flag is `RuntimeState::once_finished` (by site key), in the working
