@@ -279,6 +279,60 @@ fn script_labels_lines_boxes_shapes_and_tables_snapshot_as_they_draw() {
     );
 }
 
+const TOOLTIP_VISUALS: &str = "//@version=6
+indicator(\"Tips\", overlay = true)
+var t = table.new(position.top_right, 1, 1)
+table.cell(t, 0, 0, \"table text\", tooltip = \"cell tip\\nsecond line\")
+";
+
+#[test]
+fn a_cell_tooltip_shows_on_hover_in_the_live_chart_and_never_in_a_snapshot() {
+    let mut harness = Harness::new(ChartCanvas::default());
+    let id = harness
+        .card
+        .add_pine_instance(None, "Tips", TOOLTIP_VISUALS);
+    wait_for_run(&mut harness, id);
+    harness.ctx.all_styles_mut(|style| {
+        style.interaction.tooltip_delay = 0.0;
+        style.interaction.show_tooltips_only_when_still = false;
+    });
+    let shows_tip = |harness: &mut Harness, at: Pos2| {
+        harness.pointer = Some(at);
+        let mut last = harness.frame();
+        for _ in 0..3 {
+            last = harness.frame();
+        }
+        dumped(&last.0)
+            .iter()
+            .any(|shape| shape.contains("cell tip"))
+    };
+    // Nothing is pointed at: no tooltip.
+    assert!(!shows_tip(&mut harness, Pos2::new(5.0, SIZE.y / 2.0)));
+    // The table is pinned to the plot's top right: look for the cell, which must be found.
+    let mut found = None;
+    'scan: for y in (4..80).step_by(4) {
+        for x in ((SIZE.x as i32 - 140)..(SIZE.x as i32 - 40)).step_by(4) {
+            let at = Pos2::new(x as f32, y as f32);
+            if shows_tip(&mut harness, at) {
+                found = Some(at);
+                break 'scan;
+            }
+        }
+    }
+    let at = found.expect("the cell's tooltip shows while the pointer rests on it");
+    // The pointer leaves the cell: the tooltip goes.
+    assert!(!shows_tip(&mut harness, Pos2::new(5.0, at.y)));
+    // A snapshot has no pointer and no tooltip.
+    harness.pointer = Some(at);
+    let (_, rect) = settled(&mut harness);
+    assert!(
+        !dumped(&snapshot_shapes(&harness, rect, false))
+            .iter()
+            .any(|shape| shape.contains("cell tip")),
+        "the snapshot shows no tooltip"
+    );
+}
+
 #[test]
 fn script_panes_snapshot_as_they_draw() {
     same_as_live(&mut with_panes(ChartCanvas::default()), false);

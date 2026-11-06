@@ -136,6 +136,8 @@ indicators and Pine foreground → drawings → replay overlay → last-price ta
 script panes and their separators → crosshair → paper-trading markers → navigation buttons.
 `barcolor()`, `plotcandle()`, `plotbar()`, tables, drawings, alert levels and replay overlays are
 drawn exactly as before.
+Script label and table-cell tooltips are not a layer: the live chart asks egui for one over the
+hovered label or cell after the tables are drawn (see the Pine guide), and a snapshot has none.
 
 ## Templates
 

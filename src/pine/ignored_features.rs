@@ -73,7 +73,6 @@ fn ignored_arguments() -> HashMap<&'static str, HashMap<&'static str, &'static s
 
 fn table_cell() -> HashMap<&'static str, &'static str> {
     HashMap::from([
-        ("tooltip", "Cell tooltips are not shown."),
         (
             "text_font_family",
             "Cell text is always drawn in the chart's own font.",
@@ -265,7 +264,6 @@ fn stubbed_functions() -> Vec<(&'static str, &'static str)> {
             "No exchange rates are available: the amount is returned unchanged, which is right only while the account and the symbol share a currency.",
         ));
     }
-    table.push(("table.cell_set_tooltip", "Cell tooltips are not shown."));
     table.push((
         "table.cell_set_text_font_family",
         "Cell text is always drawn in the chart's own font.",

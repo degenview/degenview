@@ -1095,6 +1095,7 @@ mod tests {
             text_vertical_align: TextAlign::Center,
             width: 0.0,
             height: 0.0,
+            tooltip: None,
         }
     }
 

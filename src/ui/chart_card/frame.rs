@@ -9,6 +9,7 @@
 
 use super::*;
 use crate::model::canvas::PaneHeights;
+use crate::ui::pine_chart_render::{hover_targets_in_order, target_at};
 
 /// A script's output, how it is ordered against the chart, and the instance it belongs to.
 pub(super) type Placed = (Arc<VisualOutput>, VisualOrder, u64);
@@ -115,6 +116,15 @@ pub(super) trait Overlays {
 
     /// For each script pane, once its contents and axis edge are painted.
     fn pane(&mut self, _painter: &egui::Painter, _layout: &FrameLayout, _slot: &PaneSlot) {}
+
+    /// Where the pointer is, when script tooltips should be looked for under it; a snapshot has
+    /// no pointer, so it measures nothing.
+    fn pointer(&self) -> Option<Pos2> {
+        None
+    }
+
+    /// The tooltip a script gave the label or table cell under the pointer.
+    fn pine_tooltip(&mut self, _target: &HoverTarget) {}
 
     /// Last, over the whole plot: alert lines, trading markers, the navigation pill.
     fn finish(&mut self, _data: &FrameData, _layout: &FrameLayout, _view: &View) {}
@@ -441,6 +451,14 @@ impl ChartCard {
             pine_layer.draw_tables(&clipped);
         }
         overlays.after_tables(&main_painter, data, layout, view);
+        // Script tooltips: only looked for while the pointer is over the plot.
+        let pointer = overlays.pointer();
+        let mut tooltip = pointer
+            .filter(|pointer| plot.contains(*pointer))
+            .and_then(|pointer| {
+                let targets = hover_targets_in_order(&pine_layers, &main_painter);
+                target_at(&targets, pointer).cloned()
+            });
 
         self.draw_last_price(
             &main_painter,
@@ -475,7 +493,7 @@ impl ChartCard {
                 }
             }
             if !collapsed {
-                draw_script_pane(
+                let pane_tooltip = draw_script_pane(
                     painter,
                     *pane_rect,
                     plot,
@@ -486,7 +504,9 @@ impl ChartCard {
                     &x_for_index,
                     style,
                     &tick_xs,
+                    pointer,
                 );
+                tooltip = tooltip.or(pane_tooltip);
             }
             // The price axis' edge runs on through the pane.
             canvas_render::vertical(
@@ -515,6 +535,10 @@ impl ChartCard {
                     },
                 );
             }
+        }
+
+        if let Some(target) = &tooltip {
+            overlays.pine_tooltip(target);
         }
 
         if decor.time_lock {
