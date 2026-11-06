@@ -821,9 +821,25 @@ pub fn enclosing_call(text: &str, caret: usize) -> Option<CallAt> {
             _ => {}
         }
     }
-    let segment: String = context.chars[segment_start..caret.min(context.chars.len())]
-        .iter()
-        .collect();
+    // The keyword may be the word the caret is in (`tool|tip = x`), so the argument is read on to
+    // its end: the next comma or closing bracket at its own depth, never past the line (a call
+    // still being typed has no closer, and the lines below are not its arguments).
+    let caret = caret.min(context.chars.len());
+    let mut end = caret;
+    let mut ahead = 0usize;
+    while end < context.chars.len() && !matches!(context.chars[end], '\n' | '\r') {
+        if !context.in_text(end) {
+            match context.chars[end] {
+                '(' | '[' => ahead += 1,
+                ')' | ']' if ahead == 0 => break,
+                ')' | ']' => ahead -= 1,
+                ',' if ahead == 0 => break,
+                _ => {}
+            }
+        }
+        end += 1;
+    }
+    let segment: String = context.chars[segment_start..end].iter().collect();
     let keyword = segment.split_once('=').and_then(|(left, right)| {
         let left = left.trim();
         let valid = !left.is_empty() && left.chars().all(|c| c.is_alphanumeric() || c == '_');
@@ -1191,5 +1207,30 @@ mod tests {
             })
         );
         assert_eq!(at("x == "), None);
+    }
+
+    #[test]
+    fn the_keyword_is_found_when_the_caret_is_inside_its_name() {
+        let text = "f(a, 1, tooltip = ttMa, text_size = 2)";
+        let keyword = |caret: usize| enclosing_call(text, caret).and_then(|c| c.keyword);
+        let start = text.find("tooltip").unwrap();
+        for caret in start..=start + "tooltip".len() {
+            assert_eq!(keyword(caret).as_deref(), Some("tooltip"), "caret {caret}");
+        }
+        // The next argument's keyword is not this one's, and a comma ends the look-ahead.
+        let size = text.find("text_size").unwrap();
+        assert_eq!(keyword(size + 2).as_deref(), Some("text_size"));
+        let second = text.find("1,").unwrap();
+        assert_eq!(keyword(second + 1), None);
+        // An unclosed call stops at the end of the line.
+        let open = "plot(close, ti\nx = 5";
+        assert_eq!(enclosing_call(open, 14).and_then(|c| c.keyword), None);
+        assert_eq!(
+            enclosing_call("g(a, \nx = 5", 5).and_then(|c| c.keyword),
+            None
+        );
+        // A call in the value does not make its own `=` this argument's keyword.
+        let nested = "f(a, b(x = 1), c)";
+        assert_eq!(enclosing_call(nested, 5).and_then(|c| c.keyword), None);
     }
 }

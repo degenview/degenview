@@ -633,6 +633,32 @@ mod tests {
     }
 
     #[test]
+    fn a_caret_inside_a_keyword_marks_that_parameter() {
+        // `plot(series, title, color, linewidth, ...)`: the caret is in the name of an argument
+        // that skips parameters, so position 3 would point at the wrong one.
+        let text = "plot(close, color = red, linewidth = 2)";
+        let caret = |needle: &str, offset: usize| {
+            let start = text.find(needle).unwrap();
+            text[..start].chars().count() + offset
+        };
+        let active = |caret: usize| help(text, caret).unwrap().active;
+        let linewidth = Some(3);
+        assert_eq!(active(caret("linewidth", 0)), linewidth, "before the name");
+        assert_eq!(active(caret("linewidth", 4)), linewidth, "inside the name");
+        assert_eq!(active(caret("linewidth", 9)), linewidth, "after the name");
+        assert_eq!(active(caret("color", 2)), Some(2), "an earlier keyword");
+        // A user function with named arguments out of order.
+        let source = "f(a, b, c, d) => a\nx = f(1, 2, d = 4, c = 3)";
+        let at_name = |name: &str| {
+            let start = source.rfind(name).unwrap();
+            help(source, source[..start].chars().count() + 1)
+                .unwrap()
+                .active
+        };
+        assert_eq!((at_name("d ="), at_name("c =")), (Some(3), Some(2)));
+    }
+
+    #[test]
     fn collections_use_the_engines_own_parameter_names() {
         let push = help("array.push(", 11).unwrap();
         assert_eq!(push.parameters.first().map(String::as_str), Some("id"));
