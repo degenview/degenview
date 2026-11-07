@@ -1060,6 +1060,7 @@ dependencies = [
  "rfd",
  "rmcp",
  "rusqlite",
+ "rustls-webpki",
  "schemars",
  "serde",
  "serde_json",

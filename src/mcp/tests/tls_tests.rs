@@ -133,6 +133,53 @@ fn a_named_interface_without_tls_is_refused_before_any_socket_opens() {
 }
 
 #[test]
+fn an_address_that_could_not_have_been_chosen_is_refused_even_with_a_matching_certificate() {
+    // `BindMode::Interface` can be written down without going through `BindMode::interface`, so
+    // the one place that opens the socket judges the address itself. Each of these has a
+    // certificate made for exactly its address, which is all the other checks look at.
+    for text in [
+        "0.0.0.0",
+        "::",
+        "224.0.0.1",
+        "ff02::1",
+        "255.255.255.255",
+        "fe80::1",
+        // This machine's own address, which is `Loopback` and nothing else.
+        "127.0.0.1",
+        "::1",
+    ] {
+        let address: IpAddr = text.parse().unwrap();
+        // A port nothing holds, so a socket opened after all would show.
+        let port = {
+            let probe = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+            probe.local_addr().unwrap().port()
+        };
+        let shared = McpShared::new();
+        let (bridge, _inbox) = bridge::channel(shared.clone(), Arc::new(|| {}));
+        let error = McpServer::start_listening(
+            shared.clone(),
+            bridge,
+            Listen {
+                bind: BindMode::Interface(address),
+                port,
+                tls: Some(TlsIdentity::generate(address).unwrap()),
+            },
+        )
+        .err()
+        .unwrap_or_else(|| panic!("{text} must be refused"));
+        assert!(
+            !error.contains("Could not listen") && !error.contains("already in use"),
+            "{text} reached the socket: {error}"
+        );
+        assert!(matches!(shared.status(), McpStatus::Failed(message) if message == error));
+        assert!(
+            std::net::TcpListener::bind(("127.0.0.1", port)).is_ok(),
+            "{text} left a listener on the port"
+        );
+    }
+}
+
+#[test]
 fn a_certificate_made_for_another_address_is_refused() {
     let shared = McpShared::new();
     let (bridge, _inbox) = bridge::channel(shared.clone(), Arc::new(|| {}));
