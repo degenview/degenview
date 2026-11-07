@@ -3,6 +3,7 @@ use crate::host::alert_runtime::{
     AlertRuntimeLease, AlertRuntimeRunner, GuiRuntimeDecision, gui_runtime_decision,
 };
 use crate::host::editor_theme_host::EditorThemeHost;
+use crate::host::mcp_confirmation::{self, ConfirmationHost};
 use crate::host::mcp_host::{self, McpHost};
 use crate::host::paper_host::PaperHost;
 use crate::host::pine_subscription_host::PineSubscriptionHost;
@@ -322,6 +323,8 @@ pub struct DegenViewApp {
     editor_themes: EditorThemeHost,
     /// The MCP server's lifecycle, credentials and request queue.
     mcp_host: Arc<Mutex<McpHost>>,
+    /// The questions MCP clients' high-impact requests raise, waiting for the user.
+    mcp_confirmations: Arc<Mutex<ConfirmationHost>>,
     alert_host: Arc<Mutex<AlertHost>>,
     alert_runner: AlertRuntimeRunner,
     alert_runtime_control: Arc<Mutex<AlertRuntimeControl>>,
@@ -450,6 +453,7 @@ struct WindowEnv {
     session_save_error: Arc<Mutex<Option<String>>>,
     updates: UpdateHost,
     snapshots: SnapshotHost,
+    mcp_confirmations: Arc<Mutex<ConfirmationHost>>,
 }
 
 impl WindowEnv {
@@ -568,6 +572,7 @@ fn show_window(
     }
     if focused {
         show_restart_prompt(&ctx, env, &update);
+        show_mcp_confirmation(&ctx, &env.mcp_confirmations);
         let cycle = ui.input_mut(|input| {
             // macOS reaches these two through File ▸ New Tab / Close Tab.
             if !shortcut::is_mac() && shortcut::NEW_TAB.consume(input) {
@@ -621,6 +626,26 @@ fn show_window(
                 ui.label(message);
                 ui.label("The app will retry automatically.");
             });
+    }
+}
+
+/// The question an MCP client's request raises, if one is open. Drawn by the focused window only,
+/// so one question shows however many windows are open; the answer goes to the host.
+fn show_mcp_confirmation(ctx: &egui::Context, host: &Mutex<ConfirmationHost>) {
+    let now = Instant::now();
+    let pending = host
+        .lock()
+        .map(|host| host.pending(now))
+        .unwrap_or_default();
+    let answer = crate::ui::mcp_confirmation::show(ctx, &pending);
+    let Some(answer) = answer else {
+        return;
+    };
+    if let Ok(mut host) = host.lock() {
+        match answer {
+            crate::ui::mcp_confirmation::Answer::Allow(id) => host.approve(now, id),
+            crate::ui::mcp_confirmation::Answer::Deny(id) => host.deny(now, id),
+        }
     }
 }
 
@@ -855,6 +880,9 @@ impl DegenViewApp {
                 Arc::new(move || ctx.request_repaint()),
             )))
         };
+        let mcp_confirmations = Arc::new(Mutex::new(ConfirmationHost::new(
+            mcp_host.lock().expect("mcp host lock poisoned").shared(),
+        )));
         // The server reads quotes from the feed the watchlists already run, on its own threads.
         mcp_host
             .lock()
@@ -1010,6 +1038,7 @@ impl DegenViewApp {
             snapshots,
             editor_themes,
             mcp_host,
+            mcp_confirmations,
             alert_host,
             alert_runner: AlertRuntimeRunner::new(AlertRuntimeOwner::App),
             alert_runtime_control,
@@ -1526,7 +1555,171 @@ impl DegenViewApp {
             snapshots.expire();
         }
         for request in requests {
-            request.run(&shared, |command| self.run_mcp_command(ctx, command));
+            let client_id = request.client_id.clone();
+            request.run(&shared, |command| {
+                self.run_gated(ctx, &shared, &client_id, command)
+            });
+        }
+        // Questions nobody answered run out, and a new one is announced where the user can see it.
+        let fresh = match self.mcp_confirmations.lock() {
+            Ok(mut confirmations) => {
+                confirmations.tick(Instant::now());
+                confirmations.take_fresh()
+            }
+            Err(_) => Vec::new(),
+        };
+        if !fresh.is_empty() {
+            self.announce_questions(ctx, &fresh);
+        }
+    }
+
+    /// Runs `command`, but a high-impact one only once the user has approved this exact request
+    /// (see `mcp::confirm`). Until then the caller is told the question to put to the user.
+    fn run_gated(
+        &self,
+        ctx: &egui::Context,
+        shared: &crate::mcp::state::McpShared,
+        client_id: &str,
+        command: McpCommand,
+    ) -> Result<McpReply, McpError> {
+        if crate::mcp::confirm::gate(&command) == crate::mcp::confirm::Gate::Ask {
+            let name = shared
+                .clients()
+                .into_iter()
+                .find(|client| client.id == client_id)
+                .map(|client| client.name)
+                .unwrap_or_default();
+            mcp_confirmation::gate_command(
+                &self.mcp_confirmations,
+                Instant::now(),
+                client_id,
+                &name,
+                &command,
+                || self.confirmation_summary(&command),
+            )?;
+        }
+        self.run_mcp_command(ctx, command)
+    }
+
+    /// What `command` would do, in words, from what the app knows about its target. A target that
+    /// does not exist is refused with the error the command itself would give, unasked. A gated
+    /// command with no description here is refused rather than run unasked.
+    fn confirmation_summary(
+        &self,
+        command: &McpCommand,
+    ) -> Result<crate::mcp::confirm::Summary, McpError> {
+        match command {
+            McpCommand::DeleteAlert { alert_id } => {
+                let host = self.alert_host.lock().map_err(|_| alerts_unavailable())?;
+                mcp_confirmation::delete_alert(&host, *alert_id)
+            }
+            McpCommand::DeleteWatchlist { watchlist_id } => {
+                let store = self
+                    .watchlist
+                    .lock()
+                    .map_err(|_| watchlists_unavailable())?;
+                mcp_confirmation::delete_watchlist(&store, *watchlist_id)
+            }
+            McpCommand::RemoveChart {
+                workspace_id,
+                chart_id,
+            } => self.with_mcp_workspace(*workspace_id, |workspace| {
+                mcp_confirmation::remove_chart(workspace, *chart_id)
+            }),
+            McpCommand::RemoveDrawings {
+                workspace_id,
+                chart_id,
+                drawing_ids,
+            } => self.with_mcp_workspace(*workspace_id, |workspace| {
+                mcp_confirmation::remove_drawings(workspace, *chart_id, drawing_ids)
+            }),
+            McpCommand::RemovePineInstance {
+                workspace_id,
+                chart_id,
+                instance_id,
+            } => {
+                let alerts = self.pine_subscriptions_for_mcp()?;
+                self.with_mcp_workspace(*workspace_id, |workspace| {
+                    mcp_confirmation::remove_pine_instance(
+                        workspace,
+                        *chart_id,
+                        *instance_id,
+                        &alerts,
+                    )
+                })
+            }
+            McpCommand::EditPineScript { script_id, .. } => {
+                let shared = self
+                    .mcp_host
+                    .lock()
+                    .map_err(|_| McpError::AppUnavailable("The MCP host is unavailable".into()))?
+                    .shared();
+                let mut store = shared.script_store().ok_or_else(|| {
+                    McpError::AppUnavailable("The script library is unavailable".into())
+                })?;
+                let script = store
+                    .script(script_id)
+                    .map_err(|_| {
+                        McpError::AppUnavailable("The script library is unavailable".into())
+                    })?
+                    .ok_or_else(|| McpError::NotFound(format!("No script {script_id}")))?;
+                Ok(mcp_confirmation::save_script(&script.name))
+            }
+            McpCommand::PlacePaperOrder { request, .. } => {
+                let host = self.paper.lock().map_err(|_| paper_unavailable())?;
+                mcp_confirmation::place_order(&host, request)
+            }
+            McpCommand::ModifyPaperOrder { order_id, changes } => {
+                let host = self.paper.lock().map_err(|_| paper_unavailable())?;
+                mcp_confirmation::modify_order(&host, *order_id, changes)
+            }
+            McpCommand::CancelPaperOrders {
+                account_id,
+                order_ids,
+            } => {
+                let host = self.paper.lock().map_err(|_| paper_unavailable())?;
+                mcp_confirmation::cancel_orders(&host, *account_id, order_ids.as_deref())
+            }
+            McpCommand::ClosePaperPositions {
+                account_id,
+                instrument_key,
+            } => {
+                let host = self.paper.lock().map_err(|_| paper_unavailable())?;
+                mcp_confirmation::close_positions(&host, *account_id, instrument_key.as_deref())
+            }
+            // `mcp::confirm::gate` asks only for the commands above.
+            _ => Err(McpError::AppUnavailable(
+                "This request cannot be described, so it was not run".into(),
+            )),
+        }
+    }
+
+    /// A new question is up: wake every window so the focused one draws it, and tell the user
+    /// outside the app too, if they have notifications on.
+    fn announce_questions(&self, ctx: &egui::Context, fresh: &[crate::mcp::confirm::PendingView]) {
+        ctx.request_repaint_of(egui::ViewportId::ROOT);
+        ctx.request_repaint_of(settings_viewport_id());
+        for (window, _) in self.tab_host.snapshot() {
+            ctx.request_repaint_of(Self::viewport_id(window.id));
+        }
+        let enabled = self.alert_host.lock().is_ok_and(|host| {
+            crate::model::alert_notification::notifications_enabled(host.settings())
+        });
+        if !enabled {
+            return;
+        }
+        for view in fresh {
+            macos_notifications::notify_async(
+                Arc::clone(&self.notifier),
+                crate::model::alert_notification::NotificationContent {
+                    title: format!("“{}” is asking permission", view.client_name),
+                    body: view.summary.line(),
+                    identifier: format!("mcp-confirmation-{}", view.id),
+                    sound: false,
+                    user_info: Vec::new(),
+                },
+                |_, _| {},
+            );
         }
     }
 
@@ -2513,6 +2706,7 @@ impl DegenViewApp {
             session_save_error: Arc::clone(&self.session_save_error),
             updates: self.updates.clone(),
             snapshots: self.snapshots.clone(),
+            mcp_confirmations: Arc::clone(&self.mcp_confirmations),
         };
         for (window, placement) in self.tab_host.snapshot() {
             let active = self
@@ -2575,6 +2769,7 @@ impl DegenViewApp {
         let app_actions = Arc::clone(&self.actions);
         let updates = self.updates.clone();
         let sync = self.sync.clone();
+        let mcp_confirmations = Arc::clone(&self.mcp_confirmations);
         let builder = crate::ui::window_chrome::branded(
             egui::ViewportBuilder::default()
                 .with_title("Settings")
@@ -2655,6 +2850,10 @@ impl DegenViewApp {
                     now,
                     &reference_count,
                 );
+                // A question from an MCP client is answered where the user is looking.
+                if ui.input(|input| input.viewport().focused == Some(true)) {
+                    show_mcp_confirmation(ui.ctx(), &mcp_confirmations);
+                }
                 for action in actions {
                     match action {
                         WebhookHostAction::Mcp(action) => {

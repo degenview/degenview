@@ -42,6 +42,28 @@ client → 127.0.0.1:<port>/mcp → bearer/Host/Origin/size checks
   fixed list of argument names, kept only if they look like ids (digits or a hex hash). Never a
   token, a script, a note, a message or any other argument value. Rate-limited calls are counted into
   one row per client per minute; bad tokens and `tools/list` are not rows.
+- Confirmation (`mcp::confirm`, `host::mcp_confirmation`, `ui::mcp_confirmation`): with "Ask before
+  high-impact requests" on (`McpSettings.require_confirmation`, default on, also for settings saved
+  before it existed; published to `McpShared` so the app thread reads it without the host lock),
+  these commands wait for the user: delete alert / watchlist / drawings, remove chart or script
+  instance, save a script over its saved source (a draft write is free), and paper order place (a dry
+  run is free), modify, cancel and close. `confirm::gate` decides, as an exhaustive match, so a new
+  `McpCommand` cannot compile until someone says whether it asks. The gate runs on the app thread in
+  `App::run_gated`, before dispatch, and never parks a worker: the first call answers
+  `CONFIRMATION_REQUIRED` at once (with `confirmation_id`, `expires_in_seconds`, `operation`,
+  `next_step`; nothing changed) and opens a question; the user answers in a modal drawn by the
+  focused window (tab windows and Settings), with an OS notification if notifications are on; the
+  agent repeats the exact same call, which then runs once. An approval is tied to the client and to
+  the exact `McpCommand` (`PartialEq`, so any changed argument asks again, and another client's call
+  never matches) and is used up by the call that runs it. A question lives 120 s, an approval 120 s
+  after it is given, a "no" 300 s (the agent gets `CONFIRMATION_DENIED`, not another question); a
+  client may have 8 open and the app 32 (`RESOURCE_LIMIT` beyond). The summary the user reads is
+  built by the app from what it knows of the target (`host::mcp_confirmation::delete_alert` and
+  the others; a target that does not exist is refused with its own error, unasked), never from
+  agent text, and is cut to one clean line. Revoking a client or turning the setting off drops what
+  was open. Answers and expiries are rows in the activity log (`Confirmation` kind: Approved,
+  Declined, Expired); the held call itself is a `Held` row. Return alone never approves: a button
+  must be chosen, and Escape or a click outside is a No. Turning the setting off is asked about.
 - Workers never access workspaces or SQLite. `Request::run` skips abandoned, expired, cancelled,
   pre-stop, or newly unauthorized work; started work reports its real result.
 - Settings holds the store lock, so it only queues `McpAction`; `tick_mcp` applies it later.
@@ -152,8 +174,8 @@ Delete and saved-source writes require their own grants.
   positive and under 1e15; order type decides which of limit and stop price is required or
   forbidden. Orders fill from the prices of open charts (`sync_paper_quotes`), so a market with no
   chart is refused for lack of a price, and a working order fills only while the app runs; replay
-  does not hold orders back. The confirmation policy (`docs/mcp-remaining-work.md` item 3) is still
-  to come and would sit on top of these.
+  does not hold orders back. With confirmation on, each write waits for the user's approval (next
+  bullet).
 - Chart control (`mcp::chart_control`) calls the workspace's own methods: `set_timeframe` is the
   toolbar's timeframe change (`ChartWorkspace::reload_for_timeframe`, shared with the toolbar) and
   moves every chart in the workspace, since the timeframe belongs to the workspace; it reloads, so

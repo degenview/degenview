@@ -651,10 +651,16 @@ pub struct AddChartParams {
 }
 
 pub(super) fn failure(error: &McpError) -> CallToolResult {
-    CallToolResult::structured_error(json!({
+    let mut value = json!({
         "error": error.code(),
         "message": error.message(),
-    }))
+    });
+    if let (Some(fields), Some(object)) = (error.details(), value.as_object_mut())
+        && let Value::Object(fields) = fields
+    {
+        object.extend(fields);
+    }
+    CallToolResult::structured_error(value)
 }
 
 pub(super) fn invalid(message: impl Into<String>) -> CallToolResult {
@@ -1093,7 +1099,7 @@ impl DegenViewMcp {
 
     #[tool(
         name = "degenview_delete_price_alert",
-        description = "Permanently delete a price alert. This cannot be undone.",
+        description = "Permanently delete a price alert. This cannot be undone. Asks the user to approve it in DegenView first: the first call answers CONFIRMATION_REQUIRED with a confirmation_id and changes nothing; once the user has approved, repeat the exact same call (any change to the arguments is a new question). If the user declines you get CONFIRMATION_DENIED: do not retry it.",
         annotations(
             read_only_hint = false,
             destructive_hint = true,
@@ -1248,7 +1254,7 @@ impl DegenViewMcp {
 
     #[tool(
         name = "degenview_save_pine_script",
-        description = "Save a Pine script's current draft over its saved source, as the editor's Save does (records a revision, keeps history). Needs expected_revision to match the draft you reviewed, and the draft must compile without errors (COMPILATION_FAILED otherwise; the draft is kept). Charts keep running the source they were applied with; alert subscriptions to this script will show 'script changed'. Saving cannot be undone from here (revision history stays in the Pine Studio).",
+        description = "Save a Pine script's current draft over its saved source, as the editor's Save does (records a revision, keeps history). Needs expected_revision to match the draft you reviewed, and the draft must compile without errors (COMPILATION_FAILED otherwise; the draft is kept). Charts keep running the source they were applied with; alert subscriptions to this script will show 'script changed'. Saving cannot be undone from here (revision history stays in the Pine Studio). Asks the user to approve it in DegenView first: the first call answers CONFIRMATION_REQUIRED with a confirmation_id and changes nothing; once the user has approved, repeat the exact same call (any change to the arguments is a new question). If the user declines you get CONFIRMATION_DENIED: do not retry it.",
         annotations(
             read_only_hint = false,
             destructive_hint = true,
@@ -1720,7 +1726,7 @@ impl DegenViewMcp {
 
     #[tool(
         name = "degenview_remove_pine_instance",
-        description = "Take a script off a chart. The saved script is left alone, and the user can undo the removal in the app. Refused with CONFLICT while a script alert is armed on the instance, because removing it would silence that alert.",
+        description = "Take a script off a chart. The saved script is left alone, and the user can undo the removal in the app. Refused with CONFLICT while a script alert is armed on the instance, because removing it would silence that alert. Asks the user to approve it in DegenView first: the first call answers CONFIRMATION_REQUIRED with a confirmation_id and changes nothing; once the user has approved, repeat the exact same call (any change to the arguments is a new question). If the user declines you get CONFIRMATION_DENIED: do not retry it.",
         annotations(
             read_only_hint = false,
             destructive_hint = true,
@@ -1973,7 +1979,7 @@ impl DegenViewMcp {
 
     #[tool(
         name = "degenview_delete_drawings",
-        description = "Remove drawings from a chart (up to 50). All or none: if any id is unknown or locked, nothing is removed. The user can undo the removal in the app.",
+        description = "Remove drawings from a chart (up to 50). All or none: if any id is unknown or locked, nothing is removed. The user can undo the removal in the app. Asks the user to approve it in DegenView first: the first call answers CONFIRMATION_REQUIRED with a confirmation_id and changes nothing; once the user has approved, repeat the exact same call (any change to the arguments is a new question). If the user declines you get CONFIRMATION_DENIED: do not retry it.",
         annotations(
             read_only_hint = false,
             destructive_hint = true,
@@ -2301,7 +2307,7 @@ fn with_standard_formats(mut tool: Tool) -> Tool {
 #[tool_handler(
     router = self.tool_router,
     name = "DegenView",
-    instructions = "Inspect and change DegenView, a market dashboard, within what this credential is allowed. Charts: list workspaces first, then list or add charts and built-in indicators by workspace_id; read candles and indicator values (RSI, EMA, Bollinger, trend flips), add or remove built-in indicators, change a workspace's timeframe and a chart's type, control a workspace's replay, take a picture of a chart, remove charts, and add, edit or delete drawings. Pine scripts: list, read, compile and edit scripts (an edit is a draft until saved, and every edit needs the revision you last read), and apply a saved script to a chart. Price alerts: list, create, edit, pause and delete. Markets: search the providers for symbols, read quotes, and read candles of any market. Watchlists: list and read them (optionally with quotes), create, edit and delete. Paper trading (simulated money): read accounts, positions, orders, fills and closed trades; place, change and cancel orders and close positions with their own permissions. Only the tools this credential may use are listed."
+    instructions = "Inspect and change DegenView, a market dashboard, within what this credential is allowed. Charts: list workspaces first, then list or add charts and built-in indicators by workspace_id; read candles and indicator values (RSI, EMA, Bollinger, trend flips), add or remove built-in indicators, change a workspace's timeframe and a chart's type, control a workspace's replay, take a picture of a chart, remove charts, and add, edit or delete drawings. Pine scripts: list, read, compile and edit scripts (an edit is a draft until saved, and every edit needs the revision you last read), and apply a saved script to a chart. Price alerts: list, create, edit, pause and delete. Markets: search the providers for symbols, read quotes, and read candles of any market. Watchlists: list and read them (optionally with quotes), create, edit and delete. Paper trading (simulated money): read accounts, positions, orders, fills and closed trades; place, change and cancel orders and close positions with their own permissions. Some changes wait for the user's approval in DegenView: deleting alerts, charts, drawings, watchlists or script instances, saving over a script, and paper orders, changes and closes. Such a call answers CONFIRMATION_REQUIRED (with a confirmation_id and what it would do) and changes nothing; ask the user to approve it, then repeat the exact same call. CONFIRMATION_DENIED means the user said no: do not repeat it unless they ask. Only the tools this credential may use are listed."
 )]
 impl ServerHandler for DegenViewMcp {
     async fn call_tool(

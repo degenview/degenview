@@ -846,7 +846,7 @@ impl DegenViewMcp {
 
     #[tool(
         name = "degenview_delete_watchlist",
-        description = "Permanently delete a watchlist and its markets and sections. This cannot be undone from here. Favorites (is_favorites) cannot be deleted.",
+        description = "Permanently delete a watchlist and its markets and sections. This cannot be undone from here. Favorites (is_favorites) cannot be deleted. Asks the user to approve it in DegenView first: the first call answers CONFIRMATION_REQUIRED with a confirmation_id and changes nothing; once the user has approved, repeat the exact same call (any change to the arguments is a new question). If the user declines you get CONFIRMATION_DENIED: do not retry it.",
         annotations(
             read_only_hint = false,
             destructive_hint = true,

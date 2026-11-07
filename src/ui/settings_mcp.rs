@@ -57,6 +57,8 @@ pub struct McpSettingsState {
     confirm_revoke: bool,
     /// The "Clear the activity log?" alert is open.
     confirm_clear: bool,
+    /// The "Turn off approvals?" alert is open.
+    confirm_unprotect: bool,
     copied: Option<(Copied, Instant)>,
 }
 
@@ -392,6 +394,7 @@ pub fn body(
     activity_section(ui, state, input);
     permissions_sheet(ui.ctx(), state, input, actions);
     clear_activity_alert(ui.ctx(), state, actions);
+    turn_off_approvals_alert(ui.ctx(), state, actions);
 }
 
 fn server_section(
@@ -413,6 +416,26 @@ fn server_section(
                 let mut enabled = input.settings.enabled;
                 if settings_card::switch_enabled(ui, &mut enabled, !locked) {
                     actions.push(McpAction::SetEnabled(enabled));
+                }
+            },
+        );
+        ui.add_space(10.0);
+        settings_card::card(
+            ui,
+            Icon::CheckCircle,
+            "Ask before high-impact requests",
+            Some(
+                "Deleting alerts, charts, drawings or watchlists, saving over a script, and every paper order wait for your approval in DegenView. On unless you turn it off.",
+            ),
+            |ui| {
+                let mut required = input.settings.require_confirmation;
+                if settings_card::switch_enabled(ui, &mut required, !locked) {
+                    if required {
+                        actions.push(McpAction::SetRequireConfirmation(true));
+                    } else {
+                        // Turning protection off is asked about; turning it on is not.
+                        state.confirm_unprotect = true;
+                    }
                 }
             },
         );
@@ -795,17 +818,24 @@ fn outcome_tag(entry: &McpAuditEntry) -> (&'static str, Color32) {
         (McpAuditKind::RateLimited, _) => ("Limited", kit::ORANGE),
         (McpAuditKind::Gap, _) => ("Gap", kit::ORANGE),
         (McpAuditKind::Cleared, _) => ("Cleared", theme::text_secondary()),
-        (McpAuditKind::Call, McpAuditOutcome::Succeeded) => ("Done", kit::GREEN),
-        (McpAuditKind::Call, McpAuditOutcome::Failed) => ("Failed", kit::RED),
-        (McpAuditKind::Call, McpAuditOutcome::Denied) => ("Denied", kit::ORANGE),
-        (McpAuditKind::Call, McpAuditOutcome::Cancelled) => ("Cancelled", theme::text_secondary()),
+        (McpAuditKind::Call | McpAuditKind::Confirmation, outcome) => match outcome {
+            McpAuditOutcome::Succeeded => ("Done", kit::GREEN),
+            McpAuditOutcome::Failed => ("Failed", kit::RED),
+            McpAuditOutcome::Denied => ("Denied", kit::ORANGE),
+            McpAuditOutcome::Cancelled => ("Cancelled", theme::text_secondary()),
+            // Waiting for the user: nothing ran.
+            McpAuditOutcome::Held => ("Held", kit::ORANGE),
+            McpAuditOutcome::Approved => ("Approved", kit::GREEN),
+            McpAuditOutcome::Declined => ("Declined", kit::ORANGE),
+            McpAuditOutcome::Expired => ("Expired", theme::text_secondary()),
+        },
     }
 }
 
 /// An activity row's headline.
 fn activity_title(entry: &McpAuditEntry) -> String {
     match entry.kind {
-        McpAuditKind::Call => tool_title(&entry.tool),
+        McpAuditKind::Call | McpAuditKind::Confirmation => tool_title(&entry.tool),
         McpAuditKind::RateLimited => "Rate limit reached".to_owned(),
         McpAuditKind::Cleared => "Activity log cleared".to_owned(),
         McpAuditKind::Gap => "Some activity was not recorded".to_owned(),
@@ -834,6 +864,20 @@ fn activity_detail(entry: &McpAuditEntry) -> String {
                 parts.push(entry.code.clone());
             }
             parts.push(format!("{} ms", entry.duration_ms));
+        }
+        McpAuditKind::Confirmation => {
+            if !entry.client_name.is_empty() {
+                parts.push(entry.client_name.clone());
+            }
+            parts.push(
+                match entry.outcome {
+                    McpAuditOutcome::Approved => "you approved it",
+                    McpAuditOutcome::Declined => "you declined it",
+                    McpAuditOutcome::Expired => "nobody answered in time",
+                    _ => "waiting for you",
+                }
+                .to_owned(),
+            );
         }
         McpAuditKind::RateLimited => {
             parts.push(entry.client_name.clone());
@@ -947,6 +991,34 @@ fn activity_section(ui: &mut Ui, state: &mut McpSettingsState, input: &McpSettin
             });
         },
     );
+}
+
+/// "Turn off approvals?" Nothing changes until it is confirmed.
+fn turn_off_approvals_alert(
+    ctx: &egui::Context,
+    state: &mut McpSettingsState,
+    actions: &mut Vec<McpAction>,
+) {
+    if !state.confirm_unprotect {
+        return;
+    }
+    match kit::confirm(
+        ctx,
+        Id::new("mcp-turn-off-approvals"),
+        &kit::Confirm {
+            icon: Icon::LockFill,
+            title: "Turn off approvals?",
+            message: "Clients with write access will delete alerts, charts, drawings, watchlists and saved scripts, and place paper orders, without asking you first. The activity log still records every call.",
+            destructive: "Turn Off",
+        },
+    ) {
+        Some(kit::ConfirmOutcome::Confirmed) => {
+            state.confirm_unprotect = false;
+            actions.push(McpAction::SetRequireConfirmation(false));
+        }
+        Some(kit::ConfirmOutcome::Cancelled) => state.confirm_unprotect = false,
+        None => {}
+    }
 }
 
 /// "Clear the activity log?" Nothing is deleted until it is confirmed.
@@ -1477,6 +1549,7 @@ mod tests {
         let settings = McpSettings {
             enabled: true,
             port: 8765,
+            ..McpSettings::default()
         };
         let global = PermissionSet::read_only();
         let rows: Vec<McpAuditEntry> = (0..100)
@@ -1511,7 +1584,10 @@ mod tests {
     }
 
     /// Runs frames over a page with a pending "Clear the activity log?" alert, pressing `keys`.
-    fn clear_alert_after(keys: &[egui::Key]) -> (Vec<McpAction>, bool) {
+    fn alert_after(
+        state: McpSettingsState,
+        keys: &[egui::Key],
+    ) -> (Vec<McpAction>, McpSettingsState) {
         let status = McpStatus::Disabled;
         let settings = McpSettings::default();
         let global = PermissionSet::read_only();
@@ -1519,10 +1595,7 @@ mod tests {
         let mut input = sample(&status, &settings, &[], &global);
         input.activity = &rows;
         input.activity_total = 1;
-        let mut state = McpSettingsState {
-            confirm_clear: true,
-            ..Default::default()
-        };
+        let mut state = state;
         let ctx = egui::Context::default();
         let mut actions = Vec::new();
         let run = |ctx: &egui::Context,
@@ -1561,7 +1634,43 @@ mod tests {
                 time + 0.1,
             );
         }
+        (actions, state)
+    }
+
+    fn clear_alert_after(keys: &[egui::Key]) -> (Vec<McpAction>, bool) {
+        let (actions, state) = alert_after(
+            McpSettingsState {
+                confirm_clear: true,
+                ..Default::default()
+            },
+            keys,
+        );
         (actions, state.confirm_clear)
+    }
+
+    fn unprotect_alert_after(keys: &[egui::Key]) -> (Vec<McpAction>, bool) {
+        let (actions, state) = alert_after(
+            McpSettingsState {
+                confirm_unprotect: true,
+                ..Default::default()
+            },
+            keys,
+        );
+        (actions, state.confirm_unprotect)
+    }
+
+    #[test]
+    fn turning_off_approvals_asks_first_and_only_a_chosen_button_does_it() {
+        let (actions, open) = unprotect_alert_after(&[]);
+        assert!(actions.is_empty() && open);
+        // Return alone does nothing; Escape cancels without changing anything.
+        let (actions, open) = unprotect_alert_after(&[egui::Key::Enter]);
+        assert!(actions.is_empty() && open);
+        let (actions, open) = unprotect_alert_after(&[egui::Key::Escape]);
+        assert!(actions.is_empty() && !open);
+        let (actions, open) = unprotect_alert_after(&[egui::Key::Tab, egui::Key::Enter]);
+        assert_eq!(actions, [McpAction::SetRequireConfirmation(false)]);
+        assert!(!open);
     }
 
     #[test]
@@ -1588,6 +1697,7 @@ mod tests {
         let settings = McpSettings {
             enabled: true,
             port: 8765,
+            ..McpSettings::default()
         };
         let clients = [
             client("a", "Claude Desktop", PermissionSet::read_only()),

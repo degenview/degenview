@@ -1614,8 +1614,13 @@ COMPILATION_FAILED
 RESOURCE_LIMIT
 TIMEOUT
 APP_UNAVAILABLE
+CONFIRMATION_REQUIRED
+CONFIRMATION_DENIED
 INTERNAL_ERROR
 ```
+
+`CONFIRMATION_REQUIRED` and `CONFIRMATION_DENIED` carry extra fields beside `error` and `message`
+(`confirmation_id`, `expires_in_seconds`, `operation`, `next_step`); see `docs/architecture/mcp.md`.
 
 Map them correctly to transport/protocol/application errors.
 

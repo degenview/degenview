@@ -102,6 +102,7 @@ mod tests {
         let settings = McpSettings {
             enabled: true,
             port: 9001,
+            ..McpSettings::default()
         };
         store.set_mcp_settings(&settings).unwrap();
         assert_eq!(store.mcp_settings().unwrap(), settings);

@@ -117,10 +117,12 @@ pub fn outcome_of(result: &CallToolResult) -> (McpAuditOutcome, String) {
         .map(|code| clean(code, FIELD_LIMIT, &[]))
         .filter(|code| !code.is_empty())
         .unwrap_or_else(|| unstructured_error_code(result).to_owned());
-    let outcome = if code == "PERMISSION_DENIED" {
-        McpAuditOutcome::Denied
-    } else {
-        McpAuditOutcome::Failed
+    let outcome = match code.as_str() {
+        // Refused: the credential lacks it, or the user said no to this exact call.
+        "PERMISSION_DENIED" | "CONFIRMATION_DENIED" => McpAuditOutcome::Denied,
+        // Nothing ran: it is waiting for the user.
+        "CONFIRMATION_REQUIRED" => McpAuditOutcome::Held,
+        _ => McpAuditOutcome::Failed,
     };
     (outcome, code)
 }

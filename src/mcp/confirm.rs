@@ -1,0 +1,709 @@
+//! The confirmation step for high-impact tool calls.
+//!
+//! Some commands cannot be undone from here (a delete, a saved script) or move money, even
+//! simulated money (a paper order). With "Require confirmation" on, the app asks the user before
+//! it runs one. The step never parks a worker waiting for a person: the first call answers
+//! `CONFIRMATION_REQUIRED` straight away with an id and an expiry, the user approves or declines
+//! in the app, and the agent repeats the exact same call, which then runs once.
+//!
+//! This module is the egui-free half: which commands are gated ([`gate`], an exhaustive match so a
+//! new command cannot be added without deciding), and the [`ConfirmationBook`] of what is waiting
+//! for an answer. An approval is tied to the client and to the exact command, not to a tool name:
+//! a repeat with any argument changed is a different operation and asks again. An approval is
+//! used up by the call that runs it.
+//!
+//! All times are passed in, so tests never sleep.
+
+use crate::mcp::bridge::McpCommand;
+use std::time::{Duration, Instant};
+
+/// How long a question waits for an answer.
+pub const PENDING_TTL: Duration = Duration::from_secs(120);
+/// How long an approval waits for the agent to repeat its call.
+pub const APPROVED_TTL: Duration = Duration::from_secs(120);
+/// How long a "no" is remembered, so an agent that repeats the call is told, not asked again.
+pub const DENIED_TTL: Duration = Duration::from_secs(300);
+/// Questions one client may have open at once.
+pub const MAX_PENDING_PER_CLIENT: usize = 8;
+/// Questions open at once, across clients.
+pub const MAX_PENDING_TOTAL: usize = 32;
+/// Longest a summary line is kept, so a long name cannot make a dialog unreadable.
+pub const SUMMARY_LIMIT: usize = 140;
+
+/// Whether a command needs the user's approval.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Gate {
+    /// Runs as soon as the permission allows it.
+    Free,
+    /// Asks the user first (unless the user turned confirmation off).
+    Ask,
+}
+
+/// The decision for every command. An exhaustive match on purpose: adding a command to
+/// `McpCommand` fails to compile here until someone decides whether it needs approval.
+pub fn gate(command: &McpCommand) -> Gate {
+    use McpCommand as C;
+    match command {
+        // Cannot be undone from here.
+        C::DeleteAlert { .. }
+        | C::DeleteWatchlist { .. }
+        | C::RemoveDrawings { .. }
+        | C::RemoveChart { .. }
+        | C::RemovePineInstance { .. }
+        // Overwrites the saved source. Writing a draft is free; saving is the step that counts.
+        | C::EditPineScript { source: None, .. }
+        // Simulated money, but the orders are real to the paper account. A dry run only checks.
+        | C::PlacePaperOrder { dry_run: false, .. }
+        | C::ModifyPaperOrder { .. }
+        | C::CancelPaperOrders { .. }
+        | C::ClosePaperPositions { .. } => Gate::Ask,
+
+        C::EditPineScript { source: Some(_), .. }
+        | C::PlacePaperOrder { dry_run: true, .. } => Gate::Free,
+
+        // Reads.
+        C::ListWorkspaces
+        | C::ListCharts { .. }
+        | C::ListAlerts { .. }
+        | C::AlertCommandOutcome { .. }
+        | C::ListChartPine { .. }
+        | C::GetChartPine { .. }
+        | C::GetPineStyles { .. }
+        | C::GetPineReport { .. }
+        | C::ListPineAlerts
+        | C::GetCandles { .. }
+        | C::ListDrawings { .. }
+        | C::GetIndicatorValues { .. }
+        | C::ListPaperAccounts
+        | C::GetPaperAccount { .. }
+        | C::ListPaperHistory { .. }
+        | C::ListPortfolios
+        | C::GetPortfolioHoldings { .. }
+        | C::ListPortfolioTransactions { .. }
+        | C::BeginSnapshot { .. }
+        | C::PollSnapshot { .. }
+        | C::GetReplay { .. }
+        | C::ListWatchlists
+        | C::GetWatchlist { .. } => Gate::Free,
+
+        // Changes, but easy to see and to undo in the app.
+        C::AddChart { .. }
+        | C::CreateAlert(_)
+        | C::UpdateAlert(_)
+        | C::SetAlertPaused { .. }
+        | C::ApplyIndicator { .. }
+        | C::RemoveIndicator { .. }
+        | C::AddPineInstance { .. }
+        | C::UpdatePineInstance { .. }
+        | C::AddDrawings { .. }
+        | C::EditDrawing { .. }
+        | C::SetTimeframe { .. }
+        | C::SetChartType { .. }
+        | C::ControlReplay { .. }
+        | C::CreateWatchlist { .. }
+        | C::UpdateWatchlist { .. } => Gate::Free,
+    }
+}
+
+/// The tools whose calls can raise a question: what [`tool_of`] can answer. The tests check that
+/// each one explains the step in its description, so a model learns of it from the tool list.
+#[cfg(test)]
+pub const GATED_TOOLS: [&str; 10] = [
+    "degenview_delete_price_alert",
+    "degenview_delete_watchlist",
+    "degenview_delete_drawings",
+    "degenview_remove_chart",
+    "degenview_remove_pine_instance",
+    "degenview_save_pine_script",
+    "degenview_place_paper_order",
+    "degenview_modify_paper_order",
+    "degenview_cancel_paper_orders",
+    "degenview_close_paper_positions",
+];
+
+/// The tool whose call produced a gated command (for the activity log), or `None` for a command
+/// that is not gated.
+pub fn tool_of(command: &McpCommand) -> Option<&'static str> {
+    use McpCommand as C;
+    if gate(command) == Gate::Free {
+        return None;
+    }
+    Some(match command {
+        C::DeleteAlert { .. } => "degenview_delete_price_alert",
+        C::DeleteWatchlist { .. } => "degenview_delete_watchlist",
+        C::RemoveDrawings { .. } => "degenview_delete_drawings",
+        C::RemoveChart { .. } => "degenview_remove_chart",
+        C::RemovePineInstance { .. } => "degenview_remove_pine_instance",
+        C::EditPineScript { .. } => "degenview_save_pine_script",
+        C::PlacePaperOrder { .. } => "degenview_place_paper_order",
+        C::ModifyPaperOrder { .. } => "degenview_modify_paper_order",
+        C::CancelPaperOrders { .. } => "degenview_cancel_paper_orders",
+        C::ClosePaperPositions { .. } => "degenview_close_paper_positions",
+        // `gate` says Ask only for the commands above.
+        _ => return None,
+    })
+}
+
+/// What a command would do, in words the user reads before answering. Built by the app from what
+/// it knows (never from text the agent sent), so an agent cannot dress up a request.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Summary {
+    /// What is asked: "Delete a price alert".
+    pub action: String,
+    /// What it applies to: "BTC/USDT crosses above 70,000".
+    pub target: String,
+    /// A consequence worth knowing: "Its drawings go with it."
+    pub note: Option<String>,
+}
+
+impl Summary {
+    pub fn new(action: impl Into<String>, target: impl Into<String>) -> Self {
+        Self {
+            action: shorten(&action.into()),
+            target: shorten(&target.into()),
+            note: None,
+        }
+    }
+
+    pub fn with_note(mut self, note: impl Into<String>) -> Self {
+        self.note = Some(shorten(&note.into()));
+        self
+    }
+
+    /// One line, for a notification and the tool result: "Delete a price alert: BTC/USDT ...".
+    pub fn line(&self) -> String {
+        if self.target.is_empty() {
+            self.action.clone()
+        } else {
+            format!("{}: {}", self.action, self.target)
+        }
+    }
+}
+
+/// Cuts text to [`SUMMARY_LIMIT`] characters, drops control characters and keeps one line.
+pub fn shorten(text: &str) -> String {
+    let flat: String = text
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect();
+    let flat = flat.split_whitespace().collect::<Vec<_>>().join(" ");
+    if flat.chars().count() <= SUMMARY_LIMIT {
+        return flat;
+    }
+    let mut cut: String = flat.chars().take(SUMMARY_LIMIT - 1).collect();
+    cut.push('…');
+    cut
+}
+
+/// What a client is told while its question is open.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingInfo {
+    pub id: u64,
+    /// The summary line.
+    pub operation: String,
+    /// Seconds left to answer, rounded up.
+    pub expires_in_secs: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum State {
+    Pending,
+    Approved,
+    Denied,
+}
+
+struct Entry {
+    id: u64,
+    client_id: String,
+    client_name: String,
+    command: McpCommand,
+    summary: Summary,
+    state: State,
+    expires: Instant,
+}
+
+/// How an open question ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Settlement {
+    Approved,
+    Declined,
+    /// Nobody answered in time.
+    Expired,
+}
+
+/// A question that has been answered or has run out of time.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Settled {
+    pub id: u64,
+    pub client_id: String,
+    pub client_name: String,
+    pub tool: &'static str,
+    pub summary: Summary,
+    pub how: Settlement,
+}
+
+/// An open question, as the dialog shows it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PendingView {
+    pub id: u64,
+    pub client_name: String,
+    pub summary: Summary,
+    pub expires_in: Duration,
+}
+
+/// What to do with a gated call.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Verdict {
+    /// It was approved: run it. The approval is used up.
+    Run,
+    /// The same call is already waiting for an answer.
+    Waiting(PendingInfo),
+    /// The user said no to this exact call a moment ago; the text says what it was.
+    Declined(String),
+    /// Nothing is known about it: describe it and [`ConfirmationBook::open`] a question.
+    Ask,
+}
+
+/// Why a question could not be opened.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OpenError {
+    /// This client already has [`MAX_PENDING_PER_CLIENT`] questions open.
+    ClientFull,
+    /// [`MAX_PENDING_TOTAL`] questions are open.
+    Full,
+}
+
+/// The questions waiting for the user, and the answers waiting for the agent to come back.
+#[derive(Default)]
+pub struct ConfirmationBook {
+    next_id: u64,
+    entries: Vec<Entry>,
+}
+
+fn remaining(expires: Instant, now: Instant) -> Duration {
+    expires.saturating_duration_since(now)
+}
+
+fn secs_up(duration: Duration) -> u64 {
+    duration.as_secs() + u64::from(duration.subsec_nanos() > 0)
+}
+
+impl ConfirmationBook {
+    /// `first_id` makes ids unique across restarts (the app passes `new_id()`).
+    pub fn new(first_id: u64) -> Self {
+        Self {
+            next_id: first_id.max(1),
+            entries: Vec::new(),
+        }
+    }
+
+    fn live(entry: &Entry, now: Instant) -> bool {
+        entry.expires > now
+    }
+
+    /// What to do with `client_id` making `command`. Only the exact same command by the same
+    /// client matches; an expired entry never does.
+    pub fn verdict(&mut self, now: Instant, client_id: &str, command: &McpCommand) -> Verdict {
+        let Some(index) = self.entries.iter().position(|entry| {
+            entry.client_id == client_id && entry.command == *command && Self::live(entry, now)
+        }) else {
+            return Verdict::Ask;
+        };
+        let entry = &self.entries[index];
+        match entry.state {
+            State::Approved => {
+                // Used up by the call that runs it.
+                self.entries.remove(index);
+                Verdict::Run
+            }
+            State::Pending => Verdict::Waiting(PendingInfo {
+                id: entry.id,
+                operation: entry.summary.line(),
+                expires_in_secs: secs_up(remaining(entry.expires, now)),
+            }),
+            State::Denied => Verdict::Declined(entry.summary.line()),
+        }
+    }
+
+    /// Opens a question for `command`, unless this client or the app has too many open.
+    pub fn open(
+        &mut self,
+        now: Instant,
+        client_id: &str,
+        client_name: &str,
+        command: McpCommand,
+        summary: Summary,
+    ) -> Result<PendingInfo, OpenError> {
+        let pending = |entry: &&Entry| entry.state == State::Pending && Self::live(entry, now);
+        if self.entries.iter().filter(pending).count() >= MAX_PENDING_TOTAL {
+            return Err(OpenError::Full);
+        }
+        if self
+            .entries
+            .iter()
+            .filter(pending)
+            .filter(|entry| entry.client_id == client_id)
+            .count()
+            >= MAX_PENDING_PER_CLIENT
+        {
+            return Err(OpenError::ClientFull);
+        }
+        let id = self.next_id;
+        self.next_id += 1;
+        let info = PendingInfo {
+            id,
+            operation: summary.line(),
+            expires_in_secs: PENDING_TTL.as_secs(),
+        };
+        self.entries.push(Entry {
+            id,
+            client_id: client_id.to_owned(),
+            client_name: client_name.to_owned(),
+            command,
+            summary,
+            state: State::Pending,
+            expires: now + PENDING_TTL,
+        });
+        Ok(info)
+    }
+
+    /// The open questions, oldest first.
+    pub fn pending(&self, now: Instant) -> Vec<PendingView> {
+        self.entries
+            .iter()
+            .filter(|entry| entry.state == State::Pending && Self::live(entry, now))
+            .map(|entry| PendingView {
+                id: entry.id,
+                client_name: entry.client_name.clone(),
+                summary: entry.summary.clone(),
+                expires_in: remaining(entry.expires, now),
+            })
+            .collect()
+    }
+
+    fn settle(&mut self, now: Instant, id: u64, approve: bool) -> Option<Settled> {
+        let entry = self.entries.iter_mut().find(|entry| {
+            entry.id == id && entry.state == State::Pending && Self::live(entry, now)
+        })?;
+        let (state, ttl, how) = if approve {
+            (State::Approved, APPROVED_TTL, Settlement::Approved)
+        } else {
+            (State::Denied, DENIED_TTL, Settlement::Declined)
+        };
+        entry.state = state;
+        entry.expires = now + ttl;
+        Some(Settled {
+            id: entry.id,
+            client_id: entry.client_id.clone(),
+            client_name: entry.client_name.clone(),
+            tool: tool_of(&entry.command).unwrap_or(""),
+            summary: entry.summary.clone(),
+            how,
+        })
+    }
+
+    /// The user said yes. `None` if the question is gone (answered, expired, or never existed).
+    pub fn approve(&mut self, now: Instant, id: u64) -> Option<Settled> {
+        self.settle(now, id, true)
+    }
+
+    /// The user said no.
+    pub fn deny(&mut self, now: Instant, id: u64) -> Option<Settled> {
+        self.settle(now, id, false)
+    }
+
+    /// Drops what has run out of time and returns the questions nobody answered.
+    pub fn sweep(&mut self, now: Instant) -> Vec<Settled> {
+        let mut expired = Vec::new();
+        self.entries.retain(|entry| {
+            if Self::live(entry, now) {
+                return true;
+            }
+            if entry.state == State::Pending {
+                expired.push(Settled {
+                    id: entry.id,
+                    client_id: entry.client_id.clone(),
+                    client_name: entry.client_name.clone(),
+                    tool: tool_of(&entry.command).unwrap_or(""),
+                    summary: entry.summary.clone(),
+                    how: Settlement::Expired,
+                });
+            }
+            false
+        });
+        expired
+    }
+
+    /// Forgets what any client not in `known` asked or was told (it was revoked).
+    pub fn retain_clients(&mut self, known: &[String]) {
+        self.entries
+            .retain(|entry| known.contains(&entry.client_id));
+    }
+
+    /// Forgets everything (the server stopped, or confirmation was turned off).
+    pub fn clear(&mut self) {
+        self.entries.clear();
+    }
+
+    #[cfg(test)]
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn delete(alert_id: u64) -> McpCommand {
+        McpCommand::DeleteAlert { alert_id }
+    }
+
+    fn summary(text: &str) -> Summary {
+        Summary::new("Delete a price alert", text)
+    }
+
+    fn open(
+        book: &mut ConfirmationBook,
+        now: Instant,
+        client: &str,
+        command: McpCommand,
+    ) -> PendingInfo {
+        book.open(now, client, "Claude", command, summary("BTC/USDT"))
+            .expect("room for another question")
+    }
+
+    #[test]
+    fn a_new_call_asks_then_waits_then_runs_once_after_approval() {
+        let t0 = Instant::now();
+        let mut book = ConfirmationBook::new(10);
+        assert_eq!(book.verdict(t0, "c1", &delete(1)), Verdict::Ask);
+        let info = open(&mut book, t0, "c1", delete(1));
+        assert_eq!(info.id, 10);
+        assert_eq!(info.expires_in_secs, PENDING_TTL.as_secs());
+        assert_eq!(info.operation, "Delete a price alert: BTC/USDT");
+
+        // The agent asks again before the user has answered: the same question, fewer seconds.
+        let later = t0 + Duration::from_secs(30);
+        match book.verdict(later, "c1", &delete(1)) {
+            Verdict::Waiting(again) => {
+                assert_eq!(again.id, 10);
+                assert_eq!(again.expires_in_secs, 90);
+            }
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(
+            book.pending(later).len(),
+            1,
+            "no second question was opened"
+        );
+
+        let settled = book.approve(later, 10).expect("it was open");
+        assert_eq!(settled.how, Settlement::Approved);
+        assert_eq!(settled.tool, "degenview_delete_price_alert");
+        assert_eq!(settled.client_id, "c1");
+        assert!(book.pending(later).is_empty());
+
+        assert_eq!(book.verdict(later, "c1", &delete(1)), Verdict::Run);
+        // Used up: the same call again is a new operation and asks again.
+        assert_eq!(book.verdict(later, "c1", &delete(1)), Verdict::Ask);
+        assert_eq!(book.len(), 0);
+    }
+
+    #[test]
+    fn an_approval_covers_exactly_one_command_for_exactly_one_client() {
+        let t0 = Instant::now();
+        let mut book = ConfirmationBook::new(1);
+        let info = open(&mut book, t0, "c1", delete(1));
+        book.approve(t0, info.id).unwrap();
+        // Another client, and another alert, are not covered.
+        assert_eq!(book.verdict(t0, "c2", &delete(1)), Verdict::Ask);
+        assert_eq!(book.verdict(t0, "c1", &delete(2)), Verdict::Ask);
+        // The approved one is still there for its owner.
+        assert_eq!(book.verdict(t0, "c1", &delete(1)), Verdict::Run);
+    }
+
+    #[test]
+    fn a_no_is_remembered_so_the_agent_is_told_instead_of_asking_again() {
+        let t0 = Instant::now();
+        let mut book = ConfirmationBook::new(1);
+        let info = open(&mut book, t0, "c1", delete(1));
+        let settled = book.deny(t0, info.id).unwrap();
+        assert_eq!(settled.how, Settlement::Declined);
+        let soon = t0 + Duration::from_secs(60);
+        let declined = Verdict::Declined("Delete a price alert: BTC/USDT".into());
+        assert_eq!(book.verdict(soon, "c1", &delete(1)), declined);
+        assert_eq!(
+            book.verdict(soon, "c1", &delete(1)),
+            declined,
+            "not used up"
+        );
+        // Long afterwards it is a fresh question.
+        assert_eq!(
+            book.verdict(t0 + DENIED_TTL + Duration::from_secs(1), "c1", &delete(1)),
+            Verdict::Ask
+        );
+    }
+
+    #[test]
+    fn questions_and_approvals_run_out() {
+        let t0 = Instant::now();
+        let mut book = ConfirmationBook::new(1);
+        let a = open(&mut book, t0, "c1", delete(1));
+        let b = open(&mut book, t0, "c1", delete(2));
+        book.approve(t0, b.id).unwrap();
+
+        let late = t0 + PENDING_TTL + Duration::from_secs(1);
+        // Too late to answer the first; the approved one has run out too.
+        assert!(book.approve(late, a.id).is_none());
+        assert_eq!(book.verdict(late, "c1", &delete(1)), Verdict::Ask);
+        assert_eq!(book.verdict(late, "c1", &delete(2)), Verdict::Ask);
+
+        // Sweeping reports only the question nobody answered.
+        let mut book = ConfirmationBook::new(1);
+        let a = open(&mut book, t0, "c1", delete(1));
+        let b = open(&mut book, t0, "c1", delete(2));
+        book.approve(t0, b.id).unwrap();
+        let expired = book.sweep(late);
+        assert_eq!(expired.len(), 1);
+        assert_eq!((expired[0].id, expired[0].how), (a.id, Settlement::Expired));
+        assert_eq!(book.len(), 0);
+    }
+
+    #[test]
+    fn an_answer_is_taken_once_and_only_for_an_open_question() {
+        let t0 = Instant::now();
+        let mut book = ConfirmationBook::new(1);
+        let info = open(&mut book, t0, "c1", delete(1));
+        assert!(book.approve(t0, info.id + 99).is_none(), "no such question");
+        assert!(book.deny(t0, info.id).is_some());
+        assert!(book.approve(t0, info.id).is_none(), "already answered");
+        assert!(book.deny(t0, info.id).is_none());
+    }
+
+    #[test]
+    fn an_agent_cannot_fill_the_screen_with_questions() {
+        let t0 = Instant::now();
+        let mut book = ConfirmationBook::new(1);
+        for n in 0..MAX_PENDING_PER_CLIENT as u64 {
+            open(&mut book, t0, "c1", delete(n));
+        }
+        assert_eq!(
+            book.open(t0, "c1", "Claude", delete(100), summary("x")),
+            Err(OpenError::ClientFull)
+        );
+        // Another client is not held back by it, until the app-wide limit.
+        for client in ["c2", "c3", "c4"] {
+            for n in 0..MAX_PENDING_PER_CLIENT as u64 {
+                open(&mut book, t0, client, delete(n));
+            }
+        }
+        assert_eq!(book.pending(t0).len(), MAX_PENDING_TOTAL);
+        assert_eq!(
+            book.open(t0, "c5", "Claude", delete(1), summary("x")),
+            Err(OpenError::Full)
+        );
+        // Answering one makes room.
+        let first = book.pending(t0)[0].id;
+        book.deny(t0, first).unwrap();
+        assert!(
+            book.open(t0, "c5", "Claude", delete(1), summary("x"))
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn a_revoked_client_loses_its_questions_and_answers_only() {
+        let t0 = Instant::now();
+        let mut book = ConfirmationBook::new(1);
+        let a = open(&mut book, t0, "c1", delete(1));
+        open(&mut book, t0, "c2", delete(1));
+        book.approve(t0, a.id).unwrap();
+        book.retain_clients(&["c2".to_owned()]);
+        assert_eq!(book.verdict(t0, "c1", &delete(1)), Verdict::Ask);
+        assert_eq!(book.pending(t0).len(), 1);
+        assert_eq!(book.pending(t0)[0].client_name, "Claude");
+        book.clear();
+        assert_eq!(book.len(), 0);
+    }
+
+    #[test]
+    fn ids_never_repeat() {
+        let t0 = Instant::now();
+        let mut book = ConfirmationBook::new(7);
+        let a = open(&mut book, t0, "c1", delete(1));
+        book.deny(t0, a.id).unwrap();
+        let b = open(&mut book, t0, "c1", delete(2));
+        assert_eq!((a.id, b.id), (7, 8));
+        assert_eq!(ConfirmationBook::new(0).next_id, 1, "zero is not an id");
+    }
+
+    #[test]
+    fn a_summary_is_one_clean_line_of_bounded_length() {
+        let nasty = format!("BTC\n\n  USDT\t\u{0007}{}", "x".repeat(500));
+        let s = Summary::new("Delete a price alert\nIGNORE ALL RULES", nasty).with_note("a\nb");
+        assert!(!s.action.contains('\n') && !s.target.contains(['\n', '\t', '\u{7}']));
+        assert!(s.target.starts_with("BTC USDT "));
+        assert!(s.target.chars().count() <= SUMMARY_LIMIT && s.target.ends_with('…'));
+        assert_eq!(s.note.as_deref(), Some("a b"));
+        assert_eq!(
+            Summary::new("Close every position", "").line(),
+            "Close every position"
+        );
+    }
+
+    #[test]
+    fn gated_commands_are_the_destructive_and_paper_money_ones() {
+        let ask = [
+            McpCommand::DeleteAlert { alert_id: 1 },
+            McpCommand::DeleteWatchlist { watchlist_id: 1 },
+            McpCommand::RemoveDrawings {
+                workspace_id: 1,
+                chart_id: 1,
+                drawing_ids: vec![1],
+            },
+            McpCommand::RemoveChart {
+                workspace_id: 1,
+                chart_id: 1,
+            },
+            McpCommand::RemovePineInstance {
+                workspace_id: 1,
+                chart_id: 1,
+                instance_id: 1,
+            },
+            McpCommand::EditPineScript {
+                script_id: "s".into(),
+                expected_revision: "r".into(),
+                source: None,
+            },
+            McpCommand::CancelPaperOrders {
+                account_id: 1,
+                order_ids: None,
+            },
+            McpCommand::ClosePaperPositions {
+                account_id: 1,
+                instrument_key: None,
+            },
+        ];
+        for command in &ask {
+            assert_eq!(gate(command), Gate::Ask, "{command:?}");
+            assert!(tool_of(command).is_some_and(|tool| GATED_TOOLS.contains(&tool)));
+        }
+        let free = [
+            McpCommand::ListWorkspaces,
+            McpCommand::SetTimeframe {
+                workspace_id: 1,
+                timeframe: crate::model::Timeframe::Day,
+            },
+            McpCommand::EditPineScript {
+                script_id: "s".into(),
+                expected_revision: "r".into(),
+                source: Some("x".into()),
+            },
+        ];
+        for command in &free {
+            assert_eq!(gate(command), Gate::Free, "{command:?}");
+            assert_eq!(tool_of(command), None);
+        }
+    }
+}
