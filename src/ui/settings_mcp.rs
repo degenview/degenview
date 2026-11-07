@@ -36,6 +36,8 @@ pub struct McpSettingsInput<'a> {
     /// `(client name, token)` of a credential created this session and not yet dismissed.
     pub fresh_token: Option<(&'a str, &'a str)>,
     pub load_error: Option<&'a str>,
+    /// The error is a failed seal check: offer to reset MCP access.
+    pub can_reset: bool,
     pub notice: Option<&'a str>,
     pub now_ms: i64,
 }
@@ -49,6 +51,8 @@ pub struct McpSettingsState {
     sheet: Option<Editing>,
     /// The sheet's footer is asking "Revoke it?".
     confirm_revoke: bool,
+    /// The load-error banner is asking "Revoke everything?".
+    confirm_reset: bool,
     copied: Option<(Copied, Instant)>,
 }
 
@@ -371,6 +375,10 @@ pub fn body(
 ) {
     if let Some(error) = input.load_error {
         status_message(ui, error, true);
+        ui.add_space(8.0);
+        if input.can_reset {
+            reset_row(ui, state, actions);
+        }
         ui.add_space(12.0);
     }
     server_section(ui, state, input, actions);
@@ -381,6 +389,30 @@ pub fn body(
     ui.add_space(22.0);
     clients_section(ui, state, input);
     permissions_sheet(ui.ctx(), state, input, actions);
+}
+
+/// "Reset MCP Access…", then a one-line confirmation: it revokes every credential.
+fn reset_row(ui: &mut Ui, state: &mut McpSettingsState, actions: &mut Vec<McpAction>) {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 10.0;
+        if state.confirm_reset {
+            ui.label(kit::text(
+                "Revoke every credential and turn the server off?",
+                kit::size::BODY,
+                kit::MEDIUM,
+                theme::text_primary(),
+            ));
+            if kit::destructive_sheet_button(ui, Icon::Xmark, "Reset").clicked() {
+                actions.push(McpAction::ResetAccess);
+                state.confirm_reset = false;
+            }
+            if kit::sheet_button(ui, "Cancel", false, true).clicked() {
+                state.confirm_reset = false;
+            }
+        } else if kit::destructive_sheet_button(ui, Icon::Xmark, "Reset MCP Access…").clicked() {
+            state.confirm_reset = true;
+        }
+    });
 }
 
 fn server_section(
@@ -1154,6 +1186,7 @@ mod tests {
             global,
             fresh_token: None,
             load_error: None,
+            can_reset: false,
             notice: None,
             now_ms: 10_000,
         }

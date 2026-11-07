@@ -29,6 +29,7 @@ use crate::mcp::portfolio::{
     self, HoldingBase, HoldingsBase, PortfolioInfo, PortfoliosResult, TransactionsResult,
 };
 use crate::mcp::replay_tools::{self, ReplayResult};
+use crate::mcp::seal;
 use crate::mcp::snapshot_tools::{SnapshotProgress, SnapshotStarted};
 use crate::mcp::state::{McpShared, McpStatus};
 use crate::mcp::types::{
@@ -52,6 +53,8 @@ use crate::model::{
     BuiltIn, ChartType, DataSource, Drawing, DrawingCommand, IndicatorConfig, InstrumentId,
     Timeframe,
 };
+use crate::service::keychain_mcp_seal::{KeyState, SealKey, SealKeyStore};
+use crate::service::keychain_webhook_secrets::is_disabled as keychain_disabled;
 use crate::service::watchlist_quotes::WatchlistQuoteBook;
 use crate::store::SharedStore;
 use crate::store::watchlist::{ListChanges, ListEdit, Place, WatchlistStore};
@@ -84,6 +87,13 @@ pub struct McpHost {
     /// Set when persisted MCP state could not be read: the server stays off and nothing is
     /// written, so unreadable credentials or permissions are never replaced by defaults.
     load_error: Option<String>,
+    /// The saved state failed the seal check (or its key is gone), so the Settings page offers
+    /// "Reset MCP Access". Never set for a plain read failure.
+    can_reset: bool,
+    /// Where the seal key lives; `None` when sealing is off (`DEGENVIEW_NO_KEYCHAIN`, tests).
+    keys: Option<SealKeyStore>,
+    /// The key every write is sealed with, once the saved state has been checked against it.
+    sealed_by: Option<SealKey>,
     fresh_token: Option<FreshToken>,
     notice: Option<String>,
     last_usage_save: Instant,
@@ -96,6 +106,17 @@ impl McpHost {
     /// Loads persisted state and, only if the user previously enabled the server, starts it.
     /// `wake` runs a UI frame when a request is queued.
     pub fn load(store: SharedStore, wake: Arc<dyn Fn() + Send + Sync>) -> Self {
+        // Without a Keychain a key would be new on every launch and lock the user out.
+        let keys = (!keychain_disabled()).then(SealKeyStore::system);
+        Self::load_with_keys(store, wake, keys)
+    }
+
+    /// [`McpHost::load`] with the seal key store chosen by the caller (`None` turns sealing off).
+    pub fn load_with_keys(
+        store: SharedStore,
+        wake: Arc<dyn Fn() + Send + Sync>,
+        keys: Option<SealKeyStore>,
+    ) -> Self {
         let shared = McpShared::new();
         let (bridge, inbox) = bridge::channel(shared.clone(), wake);
         let mut host = Self {
@@ -106,6 +127,9 @@ impl McpHost {
             server: None,
             settings: McpSettings::default(),
             load_error: None,
+            can_reset: false,
+            keys,
+            sealed_by: None,
             fresh_token: None,
             notice: None,
             last_usage_save: Instant::now(),
@@ -119,6 +143,8 @@ impl McpHost {
     }
 
     fn reload(&mut self) {
+        self.can_reset = false;
+        self.sealed_by = None;
         let loaded = self
             .store
             .lock()
@@ -129,22 +155,150 @@ impl McpHost {
                 let global = store
                     .mcp_global_permissions()
                     .map_err(|error| error.to_string())?;
-                Ok((settings, clients, global))
+                let stored = store.mcp_seal().map_err(|error| error.to_string())?;
+                Ok((settings, clients, global, stored))
             });
         match loaded {
-            Ok((settings, clients, global)) => {
-                self.settings = settings;
-                self.shared.replace(clients, global);
-                self.load_error = None;
+            Ok((settings, clients, global, stored)) => {
+                match self.check_seal(&settings, &global, &clients, stored.as_deref()) {
+                    Ok(()) => {
+                        self.settings = settings;
+                        self.shared.replace(clients, global);
+                        self.load_error = None;
+                    }
+                    Err(error) => self.fail_closed(error, true),
+                }
             }
-            Err(error) => {
-                // Fail closed: no credentials are loaded, so nothing can authenticate.
-                self.shared.replace(Vec::new(), PermissionSet::none());
-                self.settings.enabled = false;
-                self.load_error = Some(format!(
-                    "Saved MCP settings could not be read, so the server stays off ({error})"
+            Err(error) => self.fail_closed(
+                format!("Saved MCP settings could not be read, so the server stays off ({error})"),
+                false,
+            ),
+        }
+    }
+
+    /// Fail closed: no credentials are loaded, so nothing can authenticate.
+    fn fail_closed(&mut self, message: String, can_reset: bool) {
+        self.shared.replace(Vec::new(), PermissionSet::none());
+        self.settings.enabled = false;
+        self.load_error = Some(message);
+        self.can_reset = can_reset;
+    }
+
+    /// Checks what was loaded against the seal in the Keychain, and sets `sealed_by` so every
+    /// later write is sealed. An error means the saved state is not what this app wrote.
+    ///
+    /// | key in Keychain | seal in database | outcome |
+    /// | --- | --- | --- |
+    /// | yes | matches | trusted |
+    /// | yes | differs | refused: changed outside the app |
+    /// | yes | none | trusted only if nothing was ever configured, else refused |
+    /// | none | none | first run of a sealing build: adopt what is saved, once, and seal it |
+    /// | none | yes | refused: the key was deleted |
+    /// | unreadable | any | refused |
+    ///
+    /// The "adopt" row cannot tell credentials made before sealing existed from a planted one;
+    /// it trusts them once. Everything written after it is protected.
+    fn check_seal(
+        &mut self,
+        settings: &McpSettings,
+        global: &PermissionSet,
+        clients: &[McpClient],
+        stored: Option<&str>,
+    ) -> Result<(), String> {
+        const CHANGED: &str = "The saved MCP credentials do not match the seal kept in the Keychain, so they were changed outside DegenView. The server stays off.";
+        const KEY_LOST: &str = "The Keychain key that protects the saved MCP credentials is missing, so they cannot be trusted. The server stays off.";
+        const KEY_UNREADABLE: &str = "The Keychain key that protects the saved MCP credentials could not be read, so the server stays off. Restart DegenView to try again.";
+
+        let Some(keys) = &self.keys else {
+            return Ok(());
+        };
+        let (key, write_seal) = match (keys.load(), stored) {
+            (KeyState::Ready(key), Some(stored)) => {
+                if !seal::verify(&key.0, settings, global, clients, stored) {
+                    return Err(CHANGED.into());
+                }
+                (key, false)
+            }
+            (KeyState::Ready(key), None) => {
+                if !seal::is_pristine(settings, global, clients) {
+                    return Err(CHANGED.into());
+                }
+                (key, true)
+            }
+            (KeyState::Missing, None) => match keys.create() {
+                Ok(key) => (key, true),
+                Err(error) => {
+                    self.notice = Some(format!(
+                        "MCP credentials cannot be protected against edits to the database on this Mac ({})",
+                        error.0
+                    ));
+                    return Ok(());
+                }
+            },
+            (KeyState::Missing, Some(_)) => return Err(KEY_LOST.into()),
+            (KeyState::Unreadable, _) => return Err(KEY_UNREADABLE.into()),
+        };
+        if write_seal {
+            let sealed = seal::seal(&key.0, settings, global, clients);
+            let saved = self
+                .store
+                .lock()
+                .map(|store| store.save_mcp_state(settings, global, clients, Some(&sealed)))
+                .unwrap_or_else(|_| Err(rusqlite::Error::InvalidQuery));
+            if let Err(error) = saved {
+                return Err(format!(
+                    "The MCP credentials could not be sealed, so the server stays off ({error})"
                 ));
             }
+        }
+        self.sealed_by = Some(key);
+        Ok(())
+    }
+
+    /// Writes settings, cap, clients and their seal in one transaction. Callers publish to the
+    /// server only after this succeeds.
+    fn persist(
+        &self,
+        settings: &McpSettings,
+        global: &PermissionSet,
+        clients: &[McpClient],
+    ) -> rusqlite::Result<()> {
+        let sealed = self
+            .sealed_by
+            .as_ref()
+            .map(|key| seal::seal(&key.0, settings, global, clients));
+        self.store
+            .lock()
+            .map_err(|_| rusqlite::Error::InvalidQuery)?
+            .save_mcp_state(settings, global, clients, sealed.as_deref())
+    }
+
+    /// The user's "Reset MCP Access": forgets every credential and setting (the saved state
+    /// cannot be trusted), drops the key, and starts again sealed and off.
+    fn reset_access(&mut self) {
+        if !self.can_reset {
+            return;
+        }
+        self.stop_server();
+        let cleared = self
+            .store
+            .lock()
+            .map(|store| store.clear_mcp_state())
+            .unwrap_or_else(|_| Err(rusqlite::Error::InvalidQuery));
+        if cleared.is_err() {
+            self.notice = Some("Could not reset MCP access".into());
+            return;
+        }
+        if let Some(keys) = &self.keys {
+            keys.delete();
+        }
+        self.fresh_token = None;
+        self.settings = McpSettings::default();
+        self.reload();
+        if self.load_error.is_none() && self.notice.is_none() {
+            self.notice = Some(
+                "MCP access was reset: every credential is revoked and the server is off".into(),
+            );
         }
     }
 
@@ -162,6 +316,11 @@ impl McpHost {
 
     pub fn load_error(&self) -> Option<&str> {
         self.load_error.as_deref()
+    }
+
+    /// Whether Settings should offer "Reset MCP Access".
+    pub fn can_reset(&self) -> bool {
+        self.can_reset
     }
 
     pub fn notice(&self) -> Option<&str> {
@@ -214,6 +373,10 @@ impl McpHost {
 
     pub fn apply(&mut self, action: McpAction) {
         self.notice = None;
+        if matches!(action, McpAction::ResetAccess) {
+            self.reset_access();
+            return;
+        }
         if self.load_error.is_some() {
             self.notice = Some("MCP settings are unreadable; nothing can be changed".into());
             return;
@@ -250,15 +413,12 @@ impl McpHost {
             }
             McpAction::SetGlobalPermissions(permissions) => self.replace_global(permissions),
             McpAction::DismissToken => self.fresh_token = None,
+            McpAction::ResetAccess => {}
         }
     }
 
     fn save_settings(&mut self, settings: McpSettings) -> bool {
-        let saved = self
-            .store
-            .lock()
-            .map(|store| store.set_mcp_settings(&settings))
-            .unwrap_or_else(|_| Err(rusqlite::Error::InvalidQuery));
+        let saved = self.persist(&settings, &self.shared.global(), &self.shared.clients());
         match saved {
             Ok(()) => {
                 self.settings = settings;
@@ -327,11 +487,7 @@ impl McpHost {
     fn edit_clients(&mut self, edit: impl FnOnce(&mut Vec<McpClient>)) -> bool {
         let mut clients = self.shared.clients();
         edit(&mut clients);
-        let saved = self
-            .store
-            .lock()
-            .map(|store| store.replace_mcp_clients(&clients))
-            .unwrap_or_else(|_| Err(rusqlite::Error::InvalidQuery));
+        let saved = self.persist(&self.settings, &self.shared.global(), &clients);
         match saved {
             Ok(()) => {
                 self.shared.replace(clients, self.shared.global());
@@ -397,11 +553,7 @@ impl McpHost {
     }
 
     fn replace_global(&mut self, global: PermissionSet) {
-        let saved = self
-            .store
-            .lock()
-            .map(|store| store.set_mcp_global_permissions(&global))
-            .unwrap_or_else(|_| Err(rusqlite::Error::InvalidQuery));
+        let saved = self.persist(&self.settings, &global, &self.shared.clients());
         match saved {
             Ok(()) => self.shared.replace(self.shared.clients(), global),
             Err(_) => self.notice = Some("Could not save the MCP permissions".into()),
@@ -4288,5 +4440,329 @@ mod tests {
             alert_command_outcome(&reloaded, second),
             AlertCommandOutcome::Rejected(_)
         ));
+    }
+
+    // MARK: Sealed credentials
+
+    use crate::service::keychain_api_keys::{KeyBackend, MemoryBackend};
+    use crate::service::keychain_webhook_secrets::Scope;
+    use crate::service::webhook_delivery::SecretStoreError;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    /// A Keychain two host loads can share, standing in for the real one across a restart.
+    #[derive(Default)]
+    struct SharedKeychain {
+        items: MemoryBackend,
+        refuse_writes: AtomicBool,
+    }
+
+    impl KeyBackend for Arc<SharedKeychain> {
+        fn read(&self, scope: Scope, account: &str) -> Option<String> {
+            self.items.read(scope, account)
+        }
+        fn exists(&self, scope: Scope, account: &str) -> bool {
+            self.items.exists(scope, account)
+        }
+        fn write(&self, scope: Scope, account: &str, value: &str) -> Result<(), SecretStoreError> {
+            if self.refuse_writes.load(Ordering::Relaxed) {
+                return Err(SecretStoreError("no keyring".into()));
+            }
+            self.items.write(scope, account, value)
+        }
+        fn delete(&self, scope: Scope, account: &str) {
+            self.items.delete(scope, account)
+        }
+    }
+
+    fn sealed_host(store: &SharedStore, keychain: &Arc<SharedKeychain>) -> McpHost {
+        McpHost::load_with_keys(
+            store.clone(),
+            Arc::new(|| {}),
+            Some(SealKeyStore::with_backend(Box::new(keychain.clone()))),
+        )
+    }
+
+    fn create_client(host: &mut McpHost, name: &str) -> String {
+        host.apply(McpAction::CreateClient(name.into()));
+        host.fresh_token()
+            .expect("a credential was made")
+            .token
+            .clone()
+    }
+
+    /// What an attacker with write access to the file (and no Keychain) can do: add a client
+    /// whose verifier is the hash of a token they chose.
+    fn plant_client(store: &SharedStore, token: &str) {
+        let store = store.lock().unwrap();
+        let mut clients = store.mcp_clients().unwrap();
+        clients.push(McpClient {
+            id: "planted".into(),
+            name: "planted".into(),
+            verifier: verifier_hex(token),
+            permissions: PermissionSet::of(Permission::ALL),
+            created_at_ms: 1,
+            last_used_ms: None,
+        });
+        store.replace_mcp_clients(&clients).unwrap();
+        store
+            .set_mcp_settings(&McpSettings {
+                enabled: true,
+                port: 49_999,
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn a_first_load_creates_the_key_and_seals_the_empty_state() {
+        let (store, keychain) = (store(), Arc::new(SharedKeychain::default()));
+        let host = sealed_host(&store, &keychain);
+        assert!(host.load_error().is_none());
+        assert!(host.sealed_by.is_some());
+        assert!(matches!(
+            SealKeyStore::with_backend(Box::new(keychain.clone())).load(),
+            KeyState::Ready(_)
+        ));
+        assert!(store.lock().unwrap().mcp_seal().unwrap().is_some());
+    }
+
+    #[test]
+    fn a_credential_planted_in_the_database_is_refused_after_a_restart() {
+        let (store, keychain) = (store(), Arc::new(SharedKeychain::default()));
+        let mut first = sealed_host(&store, &keychain);
+        let real = create_client(&mut first, "Claude");
+        drop(first);
+
+        plant_client(&store, "attacker-token");
+        let second = sealed_host(&store, &keychain);
+
+        assert!(second.load_error().is_some_and(|e| e.contains("seal")));
+        assert!(second.can_reset());
+        assert!(
+            !second.settings().enabled,
+            "the planted settings are not used"
+        );
+        assert!(second.clients().is_empty());
+        assert!(second.shared().authenticate("attacker-token").is_none());
+        assert!(
+            second.shared().authenticate(&real).is_none(),
+            "nothing authenticates while the state is untrusted"
+        );
+    }
+
+    #[test]
+    fn each_kind_of_edit_is_caught() {
+        type Edit = Box<dyn Fn(&Store)>;
+        let edits: [(&str, Edit); 5] = [
+            (
+                "enabling the server",
+                Box::new(|s| {
+                    s.set_mcp_settings(&McpSettings {
+                        enabled: true,
+                        port: 8765,
+                    })
+                    .unwrap()
+                }),
+            ),
+            (
+                "widening the global cap",
+                Box::new(|s| {
+                    s.set_mcp_global_permissions(&PermissionSet::of(Permission::ALL))
+                        .unwrap()
+                }),
+            ),
+            (
+                "widening a client's grants",
+                Box::new(|s| {
+                    let mut clients = s.mcp_clients().unwrap();
+                    clients[0].permissions = PermissionSet::of(Permission::ALL);
+                    s.replace_mcp_clients(&clients).unwrap();
+                }),
+            ),
+            (
+                "swapping a verifier",
+                Box::new(|s| {
+                    let mut clients = s.mcp_clients().unwrap();
+                    clients[0].verifier = verifier_hex("attacker-token");
+                    s.replace_mcp_clients(&clients).unwrap();
+                }),
+            ),
+            (
+                "deleting the seal",
+                Box::new(|s| s.remove_setting(crate::store::mcp::SEAL_KEY).unwrap()),
+            ),
+        ];
+        for (what, edit) in edits {
+            let (store, keychain) = (store(), Arc::new(SharedKeychain::default()));
+            let mut host = sealed_host(&store, &keychain);
+            create_client(&mut host, "Claude");
+            drop(host);
+            edit(&store.lock().unwrap());
+            let host = sealed_host(&store, &keychain);
+            assert!(host.load_error().is_some(), "{what} went unnoticed");
+            assert!(host.clients().is_empty(), "{what}");
+        }
+    }
+
+    #[test]
+    fn a_deleted_or_unreadable_key_refuses_the_saved_state() {
+        let (store, keychain) = (store(), Arc::new(SharedKeychain::default()));
+        let mut host = sealed_host(&store, &keychain);
+        create_client(&mut host, "Claude");
+        drop(host);
+
+        let key = SealKeyStore::with_backend(Box::new(keychain.clone()));
+        key.delete();
+        let lost = sealed_host(&store, &keychain);
+        assert!(lost.load_error().is_some_and(|e| e.contains("missing")));
+        assert!(lost.clients().is_empty());
+        drop(lost);
+
+        keychain
+            .items
+            .write(
+                Scope {
+                    service: "es.nico.degenview.mcp",
+                    shared_group: false,
+                },
+                "seal-key-v1",
+                "garbage",
+            )
+            .unwrap();
+        let unreadable = sealed_host(&store, &keychain);
+        assert!(unreadable.load_error().is_some_and(|e| e.contains("read")));
+        assert!(unreadable.clients().is_empty());
+    }
+
+    #[test]
+    fn every_change_the_app_makes_survives_a_restart() {
+        let (store, keychain) = (store(), Arc::new(SharedKeychain::default()));
+        let mut host = sealed_host(&store, &keychain);
+        let token = create_client(&mut host, "Claude");
+        let second = create_client(&mut host, "Automation");
+        let id = host.clients()[0].id.clone();
+        host.apply(McpAction::SetClientPermission {
+            client_id: id.clone(),
+            permission: Permission::ChartsCreate,
+            allowed: true,
+        });
+        host.apply(McpAction::SetGlobalPermission {
+            permission: Permission::ChartsCreate,
+            allowed: true,
+        });
+        host.apply(McpAction::SetPort(50_123));
+        host.apply(McpAction::SetEnabled(true));
+        host.apply(McpAction::SetEnabled(false));
+        host.apply(McpAction::RevokeClient(host.clients()[1].id.clone()));
+        // A use recorded and saved must not disturb the seal.
+        assert!(host.shared().authenticate(&token).is_some());
+        host.last_usage_save = Instant::now() - USAGE_SAVE_INTERVAL - Duration::from_secs(1);
+        host.tick();
+        let expected = (
+            host.clients(),
+            host.global_permissions(),
+            host.settings().clone(),
+        );
+        drop(host);
+
+        let reloaded = sealed_host(&store, &keychain);
+        assert!(
+            reloaded.load_error().is_none(),
+            "{:?}",
+            reloaded.load_error()
+        );
+        assert_eq!(
+            (
+                reloaded.clients(),
+                reloaded.global_permissions(),
+                reloaded.settings().clone()
+            ),
+            expected
+        );
+        assert!(reloaded.shared().authenticate(&token).is_some());
+        assert!(reloaded.shared().authenticate(&second).is_none());
+    }
+
+    #[test]
+    fn credentials_made_before_sealing_existed_are_adopted_once() {
+        let (store, keychain) = (store(), Arc::new(SharedKeychain::default()));
+        // An older build: no sealing.
+        let mut old = McpHost::load_with_keys(store.clone(), Arc::new(|| {}), None);
+        let token = create_client(&mut old, "Claude");
+        drop(old);
+        assert_eq!(store.lock().unwrap().mcp_seal().unwrap(), None);
+
+        let upgraded = sealed_host(&store, &keychain);
+        assert!(upgraded.load_error().is_none());
+        assert!(upgraded.shared().authenticate(&token).is_some());
+        assert!(store.lock().unwrap().mcp_seal().unwrap().is_some());
+        drop(upgraded);
+
+        // From then on a planted credential is caught.
+        plant_client(&store, "attacker-token");
+        assert!(sealed_host(&store, &keychain).load_error().is_some());
+    }
+
+    #[test]
+    fn a_state_that_was_never_configured_needs_no_seal_to_be_trusted() {
+        let (store, keychain) = (store(), Arc::new(SharedKeychain::default()));
+        drop(sealed_host(&store, &keychain));
+        store
+            .lock()
+            .unwrap()
+            .remove_setting(crate::store::mcp::SEAL_KEY)
+            .unwrap();
+        let host = sealed_host(&store, &keychain);
+        assert!(host.load_error().is_none());
+        assert!(store.lock().unwrap().mcp_seal().unwrap().is_some());
+    }
+
+    #[test]
+    fn resetting_access_recovers_and_revokes_everything() {
+        let (store, keychain) = (store(), Arc::new(SharedKeychain::default()));
+        let mut host = sealed_host(&store, &keychain);
+        create_client(&mut host, "Claude");
+        drop(host);
+        plant_client(&store, "attacker-token");
+
+        let mut host = sealed_host(&store, &keychain);
+        assert!(host.load_error().is_some());
+        host.apply(McpAction::ResetAccess);
+
+        assert!(host.load_error().is_none());
+        assert!(!host.can_reset());
+        assert!(host.clients().is_empty());
+        assert!(!host.settings().enabled);
+        assert!(host.shared().authenticate("attacker-token").is_none());
+        assert!(host.notice().is_some_and(|n| n.contains("reset")));
+        drop(host);
+
+        // It starts sealed again: the next restart trusts it, and a new edit is caught.
+        assert!(sealed_host(&store, &keychain).load_error().is_none());
+        plant_client(&store, "attacker-token");
+        assert!(sealed_host(&store, &keychain).load_error().is_some());
+    }
+
+    #[test]
+    fn reset_is_ignored_unless_the_state_failed_its_check() {
+        let (store, keychain) = (store(), Arc::new(SharedKeychain::default()));
+        let mut host = sealed_host(&store, &keychain);
+        create_client(&mut host, "Claude");
+        host.apply(McpAction::ResetAccess);
+        assert_eq!(host.clients().len(), 1);
+    }
+
+    #[test]
+    fn with_no_keyring_it_runs_unsealed_and_says_so() {
+        let (store, keychain) = (store(), Arc::new(SharedKeychain::default()));
+        keychain.refuse_writes.store(true, Ordering::Relaxed);
+        let mut host = sealed_host(&store, &keychain);
+        assert!(host.load_error().is_none());
+        assert!(host.notice().is_some_and(|n| n.contains("protected")));
+        assert!(host.sealed_by.is_none());
+        let token = create_client(&mut host, "Claude");
+        drop(host);
+        assert_eq!(store.lock().unwrap().mcp_seal().unwrap(), None);
+        let again = sealed_host(&store, &keychain);
+        assert!(again.shared().authenticate(&token).is_some());
     }
 }

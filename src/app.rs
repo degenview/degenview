@@ -2624,6 +2624,7 @@ impl DegenViewApp {
                         mcp.fresh_token().cloned(),
                         mcp.load_error().map(str::to_owned),
                         mcp.notice().map(str::to_owned),
+                        mcp.can_reset(),
                     )
                 };
                 let mcp_input = McpSettingsInput {
@@ -2636,6 +2637,7 @@ impl DegenViewApp {
                         .as_ref()
                         .map(|fresh| (fresh.client_name.as_str(), fresh.token.as_str())),
                     load_error: mcp.5.as_deref(),
+                    can_reset: mcp.7,
                     notice: mcp.6.as_deref(),
                     now_ms: now,
                 };
