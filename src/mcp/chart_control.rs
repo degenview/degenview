@@ -201,7 +201,7 @@ impl DegenViewMcp {
 
     #[tool(
         name = "degenview_remove_chart",
-        description = "Remove a market chart from a workspace, as the chart's Remove button does. The drawings on it go with it and cannot be brought back from here; alerts and watchlists are not touched, and degenview_add_chart can chart the market again (with a clean chart). Portfolio cards cannot be removed this way.",
+        description = "Remove a market chart from a workspace, as the chart's Remove button does. The drawings on it go with it and cannot be brought back from here; alerts and watchlists are not touched, and degenview_add_chart can chart the market again (with a clean chart). Portfolio cards cannot be removed this way. Asks the user to approve it in DegenView first: the first call answers CONFIRMATION_REQUIRED with a confirmation_id and changes nothing; once the user has approved, repeat the exact same call (any change to the arguments is a new question). If the user declines you get CONFIRMATION_DENIED: do not retry it.",
         annotations(
             read_only_hint = false,
             destructive_hint = true,

@@ -144,6 +144,8 @@ impl McpHost {
             });
         match loaded {
             Ok((settings, clients, global)) => {
+                self.shared
+                    .set_require_confirmation(settings.require_confirmation);
                 self.settings = settings;
                 self.shared.replace(clients, global);
                 self.load_error = None;
@@ -325,6 +327,13 @@ impl McpHost {
             McpAction::SetGlobalPermissions(permissions) => self.replace_global(permissions),
             McpAction::DismissToken => self.fresh_token = None,
             McpAction::ClearActivity => self.clear_activity(),
+            McpAction::SetRequireConfirmation(required) => {
+                let settings = McpSettings {
+                    require_confirmation: required,
+                    ..self.settings.clone()
+                };
+                self.save_settings(settings);
+            }
         }
     }
 
@@ -336,6 +345,8 @@ impl McpHost {
             .unwrap_or_else(|_| Err(rusqlite::Error::InvalidQuery));
         match saved {
             Ok(()) => {
+                self.shared
+                    .set_require_confirmation(settings.require_confirmation);
                 self.settings = settings;
                 true
             }
@@ -802,7 +813,7 @@ pub fn add_pine_instance(
 /// instance's inputs into the alert it arms, and silences the alert when the instance goes, so
 /// changing either from a client that holds only the chart permission would alter alerts that
 /// have their own (deferred) permissions. The person can still do it in the app.
-fn guard_armed_alerts(
+pub(super) fn guard_armed_alerts(
     subscriptions: &[PineAlertSubscription],
     chart_id: u64,
     instance_id: u64,
@@ -879,7 +890,7 @@ pub fn remove_pine_instance(
 
 // MARK: Candles and drawings (run on the app thread)
 
-fn no_chart(workspace: &ChartWorkspace, chart_id: u64) -> McpError {
+pub(super) fn no_chart(workspace: &ChartWorkspace, chart_id: u64) -> McpError {
     McpError::NotFound(format!(
         "No chart {chart_id} in workspace {}",
         workspace.id()
@@ -1424,7 +1435,7 @@ pub enum CreatePlan {
     },
 }
 
-fn require_loaded(host: &AlertHost) -> Result<(), McpError> {
+pub(super) fn require_loaded(host: &AlertHost) -> Result<(), McpError> {
     match host.load_error() {
         None => Ok(()),
         Some(_) => Err(McpError::AppUnavailable(
@@ -1576,7 +1587,7 @@ pub enum StatePlan {
     },
 }
 
-fn find_alert(host: &AlertHost, id: AlertId) -> Result<&PriceAlert, McpError> {
+pub(super) fn find_alert(host: &AlertHost, id: AlertId) -> Result<&PriceAlert, McpError> {
     host.snapshot()
         .alerts
         .iter()
@@ -2088,6 +2099,15 @@ fn tradable_account(host: &PaperHost, account_id: u64) -> Result<(), McpError> {
     Ok(())
 }
 
+/// The name of a paper account an agent may trade: it exists and this Mac runs it.
+pub(super) fn tradable_paper_account(
+    host: &PaperHost,
+    account_id: u64,
+) -> Result<String, McpError> {
+    tradable_account(host, account_id)?;
+    Ok(paper_account(host, account_id)?.name.clone())
+}
+
 fn account_after(host: &PaperHost, account_id: u64) -> Result<PaperAccountInfo, McpError> {
     paper_account(host, account_id).map(|account| paper_account_info(host, account))
 }
@@ -2470,7 +2490,7 @@ fn readable_watchlists(store: &WatchlistStore) -> Result<&[Watchlist], McpError>
     Ok(store.lists())
 }
 
-fn watchlist_by_id(store: &WatchlistStore, id: u64) -> Result<&Watchlist, McpError> {
+pub(super) fn watchlist_by_id(store: &WatchlistStore, id: u64) -> Result<&Watchlist, McpError> {
     readable_watchlists(store)?
         .iter()
         .find(|list| list.id == id)
@@ -2897,6 +2917,7 @@ mod tests {
             .set_mcp_settings(&McpSettings {
                 enabled: false,
                 port: 0,
+                ..McpSettings::default()
             })
             .unwrap();
         host.settings.port = 0;
@@ -2947,6 +2968,7 @@ mod tests {
             .set_mcp_settings(&McpSettings {
                 enabled: true,
                 port: 0,
+                ..McpSettings::default()
             })
             .unwrap();
         let host = host(&store);
@@ -3044,6 +3066,7 @@ mod tests {
                 .set_mcp_settings(&McpSettings {
                     enabled: true,
                     port: 0,
+                    ..McpSettings::default()
                 })
                 .unwrap();
             guard.insert_raw_mcp_client("x", "{broken");
@@ -4521,6 +4544,68 @@ mod tests {
         assert!(matches!(
             alert_command_outcome(&reloaded, second),
             AlertCommandOutcome::Rejected(_)
+        ));
+    }
+    #[test]
+    fn confirmation_summaries_name_the_alert_the_chart_the_drawings_and_the_script() {
+        use crate::host::mcp_confirmation as describe;
+        const SOURCE: &str = "//@version=6\nindicator(\"My script\")\nplot(close)\n";
+
+        let (_store, host, id) = seeded();
+        let alert = describe::delete_alert(&host, id).unwrap();
+        assert_eq!(alert.action, "Delete a price alert");
+        assert!(
+            alert.target.contains("crosses above") && alert.target.contains("70000"),
+            "{}",
+            alert.target
+        );
+        assert_eq!(alert.note.as_deref(), Some("Its trigger history is kept."));
+        assert!(matches!(
+            describe::delete_alert(&host, id + 1),
+            Err(McpError::NotFound(_))
+        ));
+
+        let ctx = eframe::egui::Context::default();
+        let mut workspace = empty_workspace(3);
+        let chart_id = workspace
+            .add_chart_for(&InstrumentId::new(DataSource::Binance, "BTCUSDT"), &ctx)
+            .chart_id;
+        let chart = describe::remove_chart(&workspace, chart_id).unwrap();
+        assert_eq!(chart.action, "Remove a chart");
+        assert!(
+            chart.target.starts_with("BTC/USDT in “"),
+            "{}",
+            chart.target
+        );
+        assert!(chart.note.unwrap().contains("drawings go with it"));
+        assert!(matches!(
+            describe::remove_chart(&workspace, chart_id + 99),
+            Err(McpError::NotFound(_))
+        ));
+        // A drawing that is not there is refused unasked, as the removal itself would refuse it.
+        assert!(matches!(
+            describe::remove_drawings(&workspace, chart_id, &[42]),
+            Err(McpError::NotFound(_))
+        ));
+
+        let script = ScriptToApply {
+            script_id: "s1".into(),
+            name: "My script".into(),
+            source: SOURCE.into(),
+            inputs: Default::default(),
+        };
+        let added = add_pine_instance(&mut workspace, chart_id, &script, true).unwrap();
+        let instance: u64 = added.instance_id.parse().unwrap();
+        let removed = describe::remove_pine_instance(&workspace, chart_id, instance, &[]).unwrap();
+        assert_eq!(removed.action, "Remove a script from a chart");
+        assert!(
+            removed.target.starts_with("My script on BTC/USDT"),
+            "{}",
+            removed.target
+        );
+        assert!(matches!(
+            describe::remove_pine_instance(&workspace, chart_id, instance + 1, &[]),
+            Err(McpError::NotFound(_))
         ));
     }
 }
