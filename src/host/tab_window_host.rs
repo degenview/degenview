@@ -88,6 +88,9 @@ struct Geometry {
     inner: Rect,
     /// The strip in the window's own coordinates.
     strip: Rect,
+    /// How far the strip's tabs are scrolled: a point `x` in the strip is over content at
+    /// `x + scroll`, where the tabs' slots are laid out.
+    scroll: f32,
     /// Minimized, maximized or fullscreen: not a frame to remember.
     transient: bool,
 }
@@ -161,14 +164,19 @@ impl State {
     /// The strip under `cursor` (not `floating`, the window being dragged) and the slot there.
     /// With overlapping windows the most recently focused one wins.
     fn hover_target(&self, floating: WindowId, cursor: Pos2) -> Option<(WindowId, usize)> {
-        let candidates: Vec<(WindowId, Rect, usize)> = self
+        let candidates: Vec<(WindowId, Rect, usize, f32)> = self
             .windows
             .windows()
             .iter()
             .filter(|window| window.id != floating)
             .filter_map(|window| {
                 let geometry = self.geometry.get(&window.id)?;
-                Some((window.id, geometry.strip_on_screen(), window.tabs.len()))
+                Some((
+                    window.id,
+                    geometry.strip_on_screen(),
+                    window.tabs.len(),
+                    geometry.scroll,
+                ))
             })
             .collect();
         hover_slot(&candidates, &self.focus, cursor)
@@ -443,6 +451,7 @@ impl TabWindowHost {
         outer: Option<Rect>,
         inner: Option<Rect>,
         strip: Rect,
+        scroll: f32,
         transient: bool,
     ) {
         let mut state = self.lock();
@@ -454,6 +463,7 @@ impl TabWindowHost {
                         outer,
                         inner,
                         strip,
+                        scroll,
                         transient,
                     },
                 );
@@ -519,8 +529,12 @@ impl TabWindowHost {
             && let Some(pointer) = drag.pointer
         {
             let width = tab_bar::tab_width(count, geometry.strip.width());
-            let left =
-                tab_bar::dragged_left(pointer.x - geometry.strip.left(), drag.grab.x, count, width);
+            let left = tab_bar::dragged_left(
+                pointer.x - geometry.strip.left() + geometry.scroll,
+                drag.grab.x,
+                count,
+                width,
+            );
             view.dragging = Some((drag.tab, left));
         }
         if let Some((target, slot)) = drag.hover
@@ -528,8 +542,13 @@ impl TabWindowHost {
             && let Some(cursor) = drag.cursor
         {
             let width = tab_bar::tab_width(count + 1, geometry.strip.width());
-            let left = (cursor.x - geometry.strip_on_screen().left() - drag.grab.x)
-                .clamp(tab_bar::tab_left(0, width), tab_bar::tab_left(count, width));
+            // Where the ghost is drawn is on screen, so the slots are shifted by the scroll.
+            let low = (tab_bar::tab_left(0, width) - geometry.scroll).max(0.0);
+            let high = (tab_bar::tab_left(count, width) - geometry.scroll)
+                .min(geometry.strip.width() - width)
+                .max(low);
+            let left =
+                (cursor.x - geometry.strip_on_screen().left() - drag.grab.x).clamp(low, high);
             view.incoming = Some((drag.tab, slot, left));
         }
         view
@@ -675,8 +694,12 @@ impl TabWindowHost {
         };
         if !tab_bar::is_outside_tear_off_zone(pointer, geometry.strip) {
             let width = tab_bar::tab_width(count, geometry.strip.width());
-            let left =
-                tab_bar::dragged_left(pointer.x - geometry.strip.left(), drag.grab.x, count, width);
+            let left = tab_bar::dragged_left(
+                pointer.x - geometry.strip.left() + geometry.scroll,
+                drag.grab.x,
+                count,
+                width,
+            );
             state
                 .windows
                 .reorder(drag.tab, tab_bar::dragged_slot(left, count, width));
@@ -749,7 +772,7 @@ const DROP_SLACK: f32 = 14.0;
 /// The strip (`id`, screen rect, tab count) the cursor is over and the slot there, preferring
 /// the window focused most recently.
 fn hover_slot(
-    strips: &[(WindowId, Rect, usize)],
+    strips: &[(WindowId, Rect, usize, f32)],
     focus: &[WindowId],
     cursor: Pos2,
 ) -> Option<(WindowId, usize)> {
@@ -761,13 +784,13 @@ fn hover_slot(
     };
     strips
         .iter()
-        .filter(|(_, strip, _)| strip.expand2(vec2(0.0, DROP_SLACK)).contains(cursor))
-        .min_by_key(|(id, _, _)| rank(*id))
-        .map(|(id, strip, count)| {
+        .filter(|(_, strip, _, _)| strip.expand2(vec2(0.0, DROP_SLACK)).contains(cursor))
+        .min_by_key(|(id, _, _, _)| rank(*id))
+        .map(|(id, strip, count, scroll)| {
             let width = tab_bar::tab_width(*count, strip.width());
             (
                 *id,
-                tab_bar::insertion_at(cursor.x - strip.left(), *count, width),
+                tab_bar::insertion_at(cursor.x - strip.left() + scroll, *count, width),
             )
         })
 }
@@ -882,7 +905,7 @@ mod tests {
 
     #[test]
     fn the_cursor_over_a_strip_picks_its_slot() {
-        let strips = [(1, strip(0.0, 100.0), 3)];
+        let strips = [(1, strip(0.0, 100.0), 3, 0.0)];
         assert_eq!(hover_slot(&strips, &[], pos2(5.0, 110.0)), Some((1, 0)));
         assert_eq!(hover_slot(&strips, &[], pos2(795.0, 110.0)), Some((1, 3)));
         // A little above or below still counts; well away does not.
@@ -893,7 +916,10 @@ mod tests {
 
     #[test]
     fn overlapping_strips_go_to_the_window_focused_most_recently() {
-        let strips = [(1, strip(0.0, 100.0), 2), (2, strip(0.0, 100.0), 2)];
+        let strips = [
+            (1, strip(0.0, 100.0), 2, 0.0),
+            (2, strip(0.0, 100.0), 2, 0.0),
+        ];
         assert_eq!(
             hover_slot(&strips, &[2, 1], pos2(10.0, 110.0)).unwrap().0,
             2
@@ -944,7 +970,7 @@ mod tests {
         let strip = Rect::from_min_size(pos2(0.0, 0.0), vec2(800.0, tab_bar::HEIGHT));
         let inner = Rect::from_min_size(pos2(100.0, 128.0), vec2(800.0, 600.0));
         let outer = Rect::from_min_size(pos2(100.0, 100.0), vec2(800.0, 628.0));
-        host.publish_geometry(window, Some(outer), Some(inner), strip, false);
+        host.publish_geometry(window, Some(outer), Some(inner), strip, 0.0, false);
         host.apply(
             window,
             vec![TabBarEvent::DragStarted {
@@ -973,6 +999,37 @@ mod tests {
         assert_eq!(host.drag_view(window).dragging, Some((2, left)));
         assert_eq!(host.ordered_tabs(), vec![2, 1]);
         assert_eq!(host.drag_view(window).incoming, None);
+    }
+
+    #[test]
+    fn a_scrolled_strip_reorders_by_the_slot_under_the_pointer_not_the_screen_position() {
+        let host = TabWindowHost::restore(
+            [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+            Placement::default(),
+        );
+        let window = host.focused_window().unwrap();
+        // A strip too narrow for twelve tabs, scrolled to its end.
+        let strip = Rect::from_min_size(pos2(0.0, 0.0), vec2(400.0, tab_bar::HEIGHT));
+        let inner = Rect::from_min_size(pos2(100.0, 128.0), vec2(400.0, 600.0));
+        let outer = Rect::from_min_size(pos2(100.0, 100.0), vec2(400.0, 628.0));
+        let scroll = tab_bar::max_scroll(12, 400.0);
+        assert!(scroll > 0.0);
+        host.publish_geometry(window, Some(outer), Some(inner), strip, scroll, false);
+        host.apply(
+            window,
+            vec![TabBarEvent::DragStarted {
+                tab: 12,
+                grab: vec2(10.0, 5.0),
+            }],
+        );
+        // The pointer near the strip's left edge is over a later slot than the first.
+        drag_frame(&host, window, 20.0);
+        let width = tab_bar::tab_width(12, 400.0);
+        let (_, left) = host.drag_view(window).dragging.unwrap();
+        assert_eq!(left, tab_bar::dragged_left(20.0 + scroll, 10.0, 12, width));
+        let slot = tab_bar::dragged_slot(left, 12, width);
+        assert!(slot > 0, "scrolled content is not the first slot: {slot}");
+        assert_eq!(host.ordered_tabs()[slot], 12);
     }
 
     #[test]

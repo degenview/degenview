@@ -34,8 +34,12 @@
 - A tab's width is uniform in a strip (reorder math relies on it) and the amount shown is chosen from
   that width alone (`tab_title::Detail`), never from the live text, so a tick cannot move anything;
   the price block also keeps the widest it has been (egui temp memory). At the narrowest
-  (`MIN_TAB_WIDTH`) a tab is its logo. There is **no scrolling**: with more tabs than fit at the
-  narrowest, the extra ones are clipped, not reachable except through Show Next Tab.
+  (`MIN_TAB_WIDTH`) a tab is its logo. With more tabs than fit at the narrowest the row scrolls
+  (`tab_bar::max_scroll`): wheel or trackpad over the strip, the active tab eased into view when it
+  or the tab count changes, and a dragged tab scrolls it near either end; the `+` stays pinned at
+  the strip's end. The scroll offset (egui temp memory) is published each frame with the geometry
+  (`TabBarOutput::scroll`, `publish_geometry`) so the host's reorder and drop math reads slots at
+  `pointer.x - strip.left() + scroll`; the strip draws the dragged tab at `left - scroll`.
 - A tab can have its own title (`PersistedWorkspace::custom_title`, set by Rename Tab… in its context
   menu): it stands in for the symbol and price, and a symbol or layout change never touches it. The
   app-wide style (symbol+price+layout, symbol only, layout name only) is `tab.title_style`

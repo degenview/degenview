@@ -150,6 +150,9 @@ pub struct TabBarOutput {
     /// The part of the strip that holds the tabs, in the window's own coordinates (where the
     /// dragged tab can be dropped): the window buttons' room is left out.
     pub strip: Rect,
+    /// How far the tabs are scrolled (zero while they fit): the host adds it to a pointer's
+    /// place in the strip to find the slot under it.
+    pub scroll: f32,
 }
 
 /// Width of each tab: they share the room left of the `+`, between the min and max.
@@ -160,6 +163,30 @@ pub fn tab_width(count: usize, available: f32) -> f32 {
     let room = (available - NEW_BUTTON_WIDTH - SIDE_PADDING * 2.0).max(0.0);
     let gaps = TAB_GAP * (count - 1) as f32;
     ((room - gaps) / count as f32).clamp(MIN_TAB_WIDTH, MAX_TAB_WIDTH)
+}
+
+/// How far the tabs run past the strip: zero while they all fit, else how far the row can be
+/// scrolled so that its last tab and the `+` end at the strip's right edge.
+pub fn max_scroll(count: usize, strip_width: f32) -> f32 {
+    let width = tab_width(count, strip_width);
+    (tab_left(count, width) + NEW_BUTTON_WIDTH - strip_width).max(0.0)
+}
+
+/// The scroll that shows tab `index` whole (with the strip's padding beside it) when it is not,
+/// else `scroll` as it is.
+pub fn reveal(index: usize, count: usize, strip_width: f32, scroll: f32) -> f32 {
+    let width = tab_width(count, strip_width);
+    let room = strip_width - NEW_BUTTON_WIDTH;
+    let left = tab_left(index, width);
+    let right = left + width;
+    let target = if left - SIDE_PADDING < scroll {
+        left - SIDE_PADDING
+    } else if right + SIDE_PADDING > scroll + room {
+        right + SIDE_PADDING - room
+    } else {
+        scroll
+    };
+    target.clamp(0.0, max_scroll(count, strip_width))
 }
 
 /// Left edge of tab `index`, relative to the strip's left edge.
@@ -264,6 +291,8 @@ impl TabBar<'_> {
         let slots = self.tabs.len() + usize::from(gap.is_some());
         let target_width = tab_width(slots, strip.width());
         let width = ctx.animate_value_with_time(self.id("width"), target_width, SLIDE_SECONDS);
+        let active_index = self.tabs.iter().position(|tab| tab.id == self.active);
+        let scroll = self.scroll_offset(ui, strip, slots, active_index);
         let slide = |name: &str, key: u64, slot: usize| {
             ctx.animate_value_with_time(
                 self.id(name).with(key),
@@ -292,7 +321,7 @@ impl TabBar<'_> {
                 _ => slide("x", tab.id, slot_of(index, gap)),
             };
             let rect = Rect::from_min_size(
-                pos2(strip.left() + left, strip.top() + 4.0),
+                pos2(strip.left() + left - scroll, strip.top() + 4.0),
                 vec2(width, strip.height() - 4.0),
             );
             if self
@@ -318,7 +347,13 @@ impl TabBar<'_> {
             SLIDE_SECONDS,
         );
         // Stays in reach when the tabs fill the strip.
-        let plus_left = plus_left.min(strip.width() - NEW_BUTTON_WIDTH);
+        let plus_left = (plus_left - scroll).min(strip.width() - NEW_BUTTON_WIDTH);
+        if scroll > 0.5 {
+            fade_edge(&painter, tabs_clip, true);
+        }
+        if scroll < max_scroll(slots, strip.width()) - 0.5 {
+            fade_edge(&painter, tabs_clip, false);
+        }
         let new_rect = Rect::from_min_size(
             pos2(strip.left() + plus_left, strip.top() + 5.0),
             vec2(NEW_BUTTON_WIDTH - 4.0, strip.height() - 8.0),
@@ -440,11 +475,79 @@ impl TabBar<'_> {
             None => {}
         }
 
-        TabBarOutput { events, strip }
+        TabBarOutput {
+            events,
+            strip,
+            scroll,
+        }
     }
 
     fn id(&self, name: &str) -> Id {
         Id::new(("window-tab-bar", self.window, name))
+    }
+
+    /// How far this strip's tabs are scrolled. The wheel or a trackpad over the strip moves them;
+    /// the active tab is brought into view when it (or the number of tabs) changes; a tab being
+    /// dragged to either end scrolls them on.
+    fn scroll_offset(
+        &self,
+        ui: &Ui,
+        strip: Rect,
+        count: usize,
+        active_index: Option<usize>,
+    ) -> f32 {
+        let ctx = ui.ctx();
+        let id = self.id("scroll");
+        let mut state: ScrollState = ctx.data(|data| data.get_temp(id)).unwrap_or_default();
+        let max = max_scroll(count, strip.width());
+        if max <= 0.0 {
+            ctx.data_mut(|data| data.insert_temp(id, ScrollState::default()));
+            return 0.0;
+        }
+        let pointer = ctx.input(|input| input.pointer.hover_pos());
+        let delta = ctx.input(|input| input.smooth_scroll_delta);
+        let wheel = if delta.x.abs() > delta.y.abs() {
+            delta.x
+        } else {
+            delta.y
+        };
+        if wheel != 0.0 && pointer.is_some_and(|pointer| strip.contains(pointer)) {
+            state.offset -= wheel;
+            state.target = None;
+        }
+        let seen = (self.active, count);
+        if state.seen != Some(seen) {
+            state.seen = Some(seen);
+            if let Some(index) = active_index {
+                state.target = Some(reveal(index, count, strip.width(), state.offset));
+            }
+        }
+        let dt = ctx.input(|input| input.stable_dt).min(0.1);
+        if self.drag.dragging.is_some()
+            && let Some(pointer) = pointer
+        {
+            let edge = pointer.x - strip.left() < DRAG_EDGE;
+            let far = strip.right() - NEW_BUTTON_WIDTH - pointer.x < DRAG_EDGE;
+            if edge != far {
+                state.offset += if far { 1.0 } else { -1.0 } * DRAG_SCROLL_SPEED * dt;
+                state.target = None;
+                ctx.request_repaint();
+            }
+        }
+        if let Some(target) = state.target {
+            let step = target.clamp(0.0, max) - state.offset;
+            if step.abs() < 0.5 {
+                state.offset = target.clamp(0.0, max);
+                state.target = None;
+            } else {
+                state.offset += step * (1.0 - (-dt * 18.0).exp());
+                ctx.request_repaint();
+            }
+        }
+        state.offset = state.offset.clamp(0.0, max);
+        let offset = state.offset;
+        ctx.data_mut(|data| data.insert_temp(id, state));
+        offset
     }
 
     fn show_tab(
@@ -973,6 +1076,58 @@ impl TabBar<'_> {
     }
 }
 
+/// Where a strip's tabs are scrolled to, and what moved them last.
+#[derive(Clone, Copy, Default)]
+struct ScrollState {
+    offset: f32,
+    /// Where an eased scroll is heading (to show the active tab).
+    target: Option<f32>,
+    /// The active tab and tab count the scroll last made room for.
+    seen: Option<(TabId, usize)>,
+}
+
+/// How close to the strip's ends a dragged tab scrolls it, and how fast (points per second).
+const DRAG_EDGE: f32 = 28.0;
+const DRAG_SCROLL_SPEED: f32 = 520.0;
+
+/// A soft edge on a strip whose tabs run on past it: the strip's colour fading in over them.
+fn fade_edge(painter: &Painter, clip: Rect, left: bool) {
+    const WIDTH: f32 = 18.0;
+    let solid = theme::chrome();
+    let clear = solid.gamma_multiply(0.0);
+    let (x0, x1, c0, c1) = if left {
+        (clip.left(), clip.left() + WIDTH, solid, clear)
+    } else {
+        (clip.right(), clip.right() - WIDTH, solid, clear)
+    };
+    let mut mesh = egui::Mesh::default();
+    let uv = egui::epaint::WHITE_UV;
+    mesh.vertices.extend([
+        egui::epaint::Vertex {
+            pos: pos2(x0, clip.top()),
+            uv,
+            color: c0,
+        },
+        egui::epaint::Vertex {
+            pos: pos2(x1, clip.top()),
+            uv,
+            color: c1,
+        },
+        egui::epaint::Vertex {
+            pos: pos2(x1, clip.bottom()),
+            uv,
+            color: c1,
+        },
+        egui::epaint::Vertex {
+            pos: pos2(x0, clip.bottom()),
+            uv,
+            color: c0,
+        },
+    ]);
+    mesh.indices.extend([0, 1, 2, 0, 2, 3]);
+    painter.add(egui::Shape::mesh(mesh));
+}
+
 /// An open rename: the tab, where its field sits and what has been typed.
 #[derive(Clone)]
 struct Rename {
@@ -1150,6 +1305,89 @@ mod tests {
             .left()
                 >= 9.0 + LOGO_SIZE
         );
+    }
+
+    #[test]
+    fn tabs_scroll_only_when_they_cannot_all_be_shown() {
+        assert_eq!(max_scroll(0, 800.0), 0.0);
+        assert_eq!(max_scroll(3, 800.0), 0.0);
+        // Twenty at the narrowest do not fit 800 wide.
+        let max = max_scroll(20, 800.0);
+        assert!(max > 0.0);
+        // Scrolled to the end, the last tab and the `+` end at the strip's edge.
+        let width = tab_width(20, 800.0);
+        assert_eq!(width, MIN_TAB_WIDTH);
+        let end = tab_left(20, width) - max + NEW_BUTTON_WIDTH;
+        assert!((end - 800.0).abs() < 0.01, "{end}");
+    }
+
+    #[test]
+    fn the_active_tab_is_scrolled_into_view_and_a_visible_one_is_left_alone() {
+        let (count, strip) = (20, 800.0);
+        let max = max_scroll(count, strip);
+        let width = tab_width(count, strip);
+        let room = strip - NEW_BUTTON_WIDTH;
+        // The last tab, from the start.
+        let to_end = reveal(count - 1, count, strip, 0.0);
+        assert_eq!(to_end, max);
+        // The first, from the end.
+        assert_eq!(reveal(0, count, strip, max), 0.0);
+        // One already whole in view does not move the strip.
+        assert_eq!(reveal(2, count, strip, 10.0), 10.0);
+        // Whichever tab is revealed ends up inside the visible part.
+        for index in 0..count {
+            for from in [0.0, max / 2.0, max] {
+                let scroll = reveal(index, count, strip, from);
+                let left = tab_left(index, width) - scroll;
+                assert!(
+                    left >= -0.01 && left + width <= room + 0.01,
+                    "{index} from {from}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_scrolled_strip_still_paints_and_reports_where_it_is() {
+        let ctx = egui::Context::default();
+        let tabs: Vec<TabView> = (0..30)
+            .map(|index| TabView {
+                id: index as u64 + 1,
+                title: format!("Tab {index}"),
+                icon: Icon::Plus,
+                chart: None,
+                timeframe: "1D",
+            })
+            .collect();
+        let quotes = WatchlistQuoteBook::default();
+        let mut scrolls = Vec::new();
+        for _ in 0..3 {
+            let mut output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(Rect::from_min_size(pos2(0.0, 0.0), vec2(700.0, HEIGHT))),
+                    ..Default::default()
+                },
+                |ui| {
+                    let output = TabBar {
+                        window: 1,
+                        tabs: &tabs,
+                        // The last tab is the active one, so the strip scrolls to it.
+                        active: 30,
+                        drag: DragView::default(),
+                        other_windows: &[],
+                        quotes: &quotes,
+                        style: TabTitleStyle::default(),
+                        update: None,
+                    }
+                    .show(ui);
+                    scrolls.push(output.scroll);
+                },
+            );
+            output.textures_delta.clear();
+        }
+        assert!(scrolls[0] <= *scrolls.last().unwrap());
+        assert!(*scrolls.last().unwrap() > 0.0, "{scrolls:?}");
+        assert!(*scrolls.last().unwrap() <= max_scroll(30, 700.0));
     }
 
     #[test]

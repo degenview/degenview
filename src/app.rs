@@ -599,8 +599,14 @@ fn show_window(
             [viewport.minimized, viewport.maximized, viewport.fullscreen].contains(&Some(true));
         (viewport.outer_rect, viewport.inner_rect, transient)
     });
-    env.host
-        .publish_geometry(window_id, outer, inner, output.strip, transient);
+    env.host.publish_geometry(
+        window_id,
+        outer,
+        inner,
+        output.strip,
+        output.scroll,
+        transient,
+    );
 
     let mut events = output.events;
     // Titles belong to the tabs and the style to the app, not to the window host.
