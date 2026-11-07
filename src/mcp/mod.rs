@@ -7,11 +7,13 @@
 //! This is the one place with an async runtime. The server owns a single thread running a
 //! current-thread tokio runtime; the rest of the app stays on threads and channels.
 
+pub mod audit;
 pub mod auth;
 pub mod bridge;
 pub mod cancel;
 pub mod chart_control;
 pub mod chart_data;
+pub mod confirm;
 pub mod drawings;
 pub mod indicator_tools;
 pub mod indicator_values;

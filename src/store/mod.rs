@@ -18,6 +18,7 @@ pub mod drawing_template;
 pub mod editor_theme;
 pub mod identity;
 pub mod mcp;
+pub mod mcp_audit;
 pub mod paper;
 pub mod pine;
 pub mod portfolio;
@@ -268,6 +269,16 @@ impl Store {
                 UNIQUE (source, event_id, endpoint_id)
             );
             CREATE INDEX IF NOT EXISTS webhook_delivery_on_event ON webhook_delivery (event_id);",
+        )?;
+
+        // The MCP activity log: one row per tool call an agent made, local to this Mac (it is not
+        // a document table and never synced). Bounded by `store::mcp_audit`.
+        self.connection.execute_batch(
+            "CREATE TABLE IF NOT EXISTS mcp_audit (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                at_ms INTEGER NOT NULL,
+                payload TEXT NOT NULL
+            );",
         )?;
 
         self.create_sync_schema()

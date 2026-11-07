@@ -458,6 +458,10 @@ pub enum McpAction {
     /// Forgets every credential and setting when the saved state failed its seal check. Only
     /// the Settings page sends it, and only while that error is showing.
     ResetAccess,
+    /// Empties the activity log (the log keeps one row saying that it was cleared).
+    ClearActivity,
+    /// Whether high-impact calls wait for the user's approval in the app.
+    SetRequireConfirmation(bool),
 }
 
 /// Persisted server preferences (`setting` key `mcp.settings`). Disabled on a fresh install.
@@ -466,6 +470,9 @@ pub enum McpAction {
 pub struct McpSettings {
     pub enabled: bool,
     pub port: u16,
+    /// Deletes, saved scripts and paper orders wait for the user's approval in the app. On
+    /// unless the user turns it off, including for settings saved before this existed.
+    pub require_confirmation: bool,
 }
 
 impl Default for McpSettings {
@@ -473,6 +480,7 @@ impl Default for McpSettings {
         Self {
             enabled: false,
             port: DEFAULT_PORT,
+            require_confirmation: true,
         }
     }
 }
@@ -513,6 +521,86 @@ impl McpClient {
     pub fn effective(&self, global: &PermissionSet) -> PermissionSet {
         self.permissions.intersect(global)
     }
+}
+
+/// Rows the activity log keeps; older ones are pruned as new ones arrive.
+pub const AUDIT_LOG_LIMIT: usize = 1000;
+
+/// What an activity-log row stands for.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum McpAuditKind {
+    /// One tool call.
+    #[default]
+    Call,
+    /// A client was refused for going over its rate limit; `count` calls in one minute.
+    RateLimited,
+    /// The user cleared the log.
+    Cleared,
+    /// The server could not keep up and `count` rows were not recorded.
+    Gap,
+    /// The user answered (or let run out) a question about a call the agent made.
+    Confirmation,
+}
+
+/// How a tool call ended.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum McpAuditOutcome {
+    #[default]
+    Succeeded,
+    /// It ran, or tried to, and ended in an error; `code` says which.
+    Failed,
+    /// Refused before it did anything: permission, an unknown tool, a rate limit.
+    Denied,
+    /// The client hung up or cancelled before an answer was sent.
+    Cancelled,
+    /// Waiting for the user's approval: the call was answered `CONFIRMATION_REQUIRED` and
+    /// nothing ran.
+    Held,
+    /// A `Confirmation` row: the user approved it.
+    Approved,
+    /// A `Confirmation` row: the user declined it.
+    Declined,
+    /// A `Confirmation` row: nobody answered in time.
+    Expired,
+}
+
+/// One thing a call named: `kind` is the argument (`chart_id`), `id` its value.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct McpAuditTarget {
+    pub kind: String,
+    pub id: String,
+}
+
+/// One row of the activity log: who asked DegenView to do what, and how it ended.
+///
+/// Deliberately small. It holds ids and codes, never an argument value, a message, a token or a
+/// script: the log is for answering "what did this agent do", not for replaying it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct McpAuditEntry {
+    /// Unique per row; also the correlation id.
+    pub id: u64,
+    pub at_ms: i64,
+    pub kind: McpAuditKind,
+    pub client_id: String,
+    /// The client's name when the call was made (it can be renamed or revoked later).
+    pub client_name: String,
+    /// The tool's name, as called.
+    pub tool: String,
+    pub outcome: McpAuditOutcome,
+    /// The error or refusal code (`NOT_FOUND`, `PERMISSION_DENIED`...); empty on success.
+    pub code: String,
+    /// From the call arriving to its answer, queue wait included.
+    pub duration_ms: u64,
+    /// The client's own JSON-RPC id for the call, to match it with the client's trace.
+    pub request_id: String,
+    /// The ids the call named (a few, from a fixed list of argument names).
+    pub targets: Vec<McpAuditTarget>,
+    /// How many calls a `RateLimited` row stands for, or rows a `Gap` lost; 1 otherwise.
+    pub count: u32,
 }
 
 /// Trims a client name and rejects empty or oversized ones.

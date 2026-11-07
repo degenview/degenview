@@ -103,7 +103,15 @@ pub async fn require_bearer(
                 request.extensions_mut().insert(identity);
                 next.run(request).await
             }
-            Err(wait) => too_many_requests(wait),
+            Err(wait) => {
+                // Counted, not listed: a loop of refused calls becomes one row a minute.
+                shared.audit().rate_limited(
+                    &identity.id,
+                    &identity.name,
+                    crate::model::watchlist::now_ms(),
+                );
+                too_many_requests(wait)
+            }
         },
         None => match shared.note_failed_auth() {
             Ok(()) => unauthorized(),

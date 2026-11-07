@@ -36,6 +36,7 @@ struct SealedClient<'a> {
 struct Sealed<'a> {
     enabled: bool,
     port: u16,
+    require_confirmation: bool,
     global: &'a PermissionSet,
     clients: Vec<SealedClient<'a>>,
 }
@@ -50,6 +51,7 @@ pub fn seal(
     let sealed = Sealed {
         enabled: settings.enabled,
         port: settings.port,
+        require_confirmation: settings.require_confirmation,
         global,
         clients: clients
             .iter()
@@ -137,6 +139,7 @@ mod tests {
             McpSettings {
                 enabled: true,
                 port: 9001,
+                ..McpSettings::default()
             },
             default_global_permissions(),
             vec![client("a", "token-a"), client("b", "token-b")],
@@ -190,6 +193,14 @@ mod tests {
         assert!(changed(
             &McpSettings {
                 port: 9002,
+                ..settings.clone()
+            },
+            &global,
+            &clients
+        ));
+        assert!(changed(
+            &McpSettings {
+                require_confirmation: !settings.require_confirmation,
                 ..settings.clone()
             },
             &global,

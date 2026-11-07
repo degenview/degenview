@@ -1614,8 +1614,13 @@ COMPILATION_FAILED
 RESOURCE_LIMIT
 TIMEOUT
 APP_UNAVAILABLE
+CONFIRMATION_REQUIRED
+CONFIRMATION_DENIED
 INTERNAL_ERROR
 ```
+
+`CONFIRMATION_REQUIRED` and `CONFIRMATION_DENIED` carry extra fields beside `error` and `message`
+(`confirmation_id`, `expires_in_seconds`, `operation`, `next_step`); see `docs/architecture/mcp.md`.
 
 Map them correctly to transport/protocol/application errors.
 
@@ -2203,7 +2208,7 @@ server, and connect after the next launch. The database is an ordinary file in t
 directory, so "can write the file" is a much weaker position than "can read the Keychain".
 
 **What is sealed.** An HMAC-SHA-256 (`mcp::seal`, domain `degenview.mcp.seal.v1`) over the JSON of
-`enabled`, `port`, the global cap and, in stored order, each client's `id`, `name`, `verifier`,
+`enabled`, `port`, `require_confirmation`, the global cap and, in stored order, each client's `id`, `name`, `verifier`,
 `permissions` and `created_at_ms`. Not `last_used_ms`: it changes every half minute and decides
 nothing. The key is 32 random bytes in the Keychain (`es.nico.degenview.mcp`, `seal-key-v1`), created
 on first use. The seal is the local-only setting `mcp.seal`; none of this syncs.

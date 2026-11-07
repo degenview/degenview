@@ -292,6 +292,139 @@ fn what_cannot_be_honoured_is_warned_about() {
 }
 
 #[test]
+fn strategy_settings_the_broker_ignores_are_warned_about() {
+    let diagnostics = |arguments: &str| {
+        let source = format!("//@version=6\nstrategy(\"S\"{arguments})\nplot(close)");
+        let program = compiler::compile(&source, Limits::default(), &NoLibraries);
+        assert!(program.is_valid(), "{:?}", program.diagnostics);
+        program.diagnostics
+    };
+    for (arguments, name) in [
+        (", calc_on_order_fills = true", "calc_on_order_fills"),
+        (", close_entries_rule = \"ANY\"", "close_entries_rule"),
+    ] {
+        let found = diagnostics(arguments);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].code, "PINE7001");
+        assert!(found[0].message.contains(name), "{}", found[0].message);
+    }
+    // The default, written out, changes nothing and is not warned about.
+    assert!(diagnostics(", calc_on_order_fills = false, close_entries_rule = \"FIFO\"").is_empty());
+    // Standard-OHLC fills are a documented no-op on a standard chart (docs/chart-types.md), and the
+    // report says so on a price-based chart, so the argument stays quiet.
+    assert!(diagnostics(", fill_orders_on_standard_ohlc = true").is_empty());
+    // A buffer size cannot be too small here (the whole history is kept), so it stays quiet.
+    assert!(diagnostics(", max_bars_back = 500").is_empty());
+}
+
+#[test]
+fn a_history_of_a_builtin_variable_reads_the_value_it_had() {
+    // `bars()` rises by one a bar. Each of these is a builtin the engine computes rather than stores.
+    let session = run(
+        "prev_hlcc4 = hlcc4[1]\n\
+         now_hlcc4 = hlcc4\n\
+         first_before = barstate.isfirst[1]\n\
+         first_now = barstate.isfirst\n\
+         prev_tr = ta.tr[1]\n\
+         now_tr = ta.tr\n\
+         prev_day = dayofweek[1]\n\
+         two_back = hlcc4[2]\n\
+         period = timeframe.period[3]\n\
+         early = timeframe.period[10]",
+        6,
+    );
+    // The last bar is index 5; bar 4 left these values behind.
+    let source = bars(6);
+    let hlcc4 = |bar: &Kline| (bar.high + bar.low + 2.0 * bar.close) / 4.0;
+    assert_eq!(
+        value(&session, "prev_hlcc4"),
+        RuntimeValue::Float(hlcc4(&source[4]))
+    );
+    assert_eq!(
+        value(&session, "two_back"),
+        RuntimeValue::Float(hlcc4(&source[3]))
+    );
+    assert_eq!(
+        value(&session, "now_hlcc4"),
+        RuntimeValue::Float(hlcc4(&source[5]))
+    );
+    assert_eq!(value(&session, "first_before"), RuntimeValue::Bool(false));
+    assert_eq!(value(&session, "first_now"), RuntimeValue::Bool(false));
+    assert_eq!(
+        value(&session, "prev_tr"),
+        RuntimeValue::Float(super::ta::true_range(&source[4], Some(source[3].close)))
+    );
+    assert_eq!(
+        value(&session, "now_tr"),
+        RuntimeValue::Float(super::ta::true_range(&source[5], Some(source[4].close)))
+    );
+    assert!(matches!(
+        value(&session, "prev_day"),
+        RuntimeValue::Int(_) | RuntimeValue::Float(_)
+    ));
+    // A string series: the current value from the fourth bar on, `na` before it.
+    assert!(matches!(value(&session, "period"), RuntimeValue::String(_)));
+    assert_eq!(value(&session, "early"), RuntimeValue::Na);
+}
+
+#[test]
+fn a_library_function_reads_the_history_of_a_builtin_variable() {
+    struct Library;
+    impl compiler::LibraryResolver for Library {
+        fn source_for_library(&self, path: &str) -> Option<String> {
+            (path == "user/Mine/1").then(|| {
+                "//@version=6\nlibrary(\"Mine\")\n\
+                 export before() =>\n    hlcc4[1]\n"
+                    .to_owned()
+            })
+        }
+    }
+    let source = "//@version=6\nindicator(\"T\")\nimport user/Mine/1 as mine\n\
+                  prev = mine.before()\n";
+    let program = compiler::compile(source, Limits::default(), &Library);
+    assert!(program.is_valid(), "{:?}", program.diagnostics);
+    let mut session = Session::new(
+        program,
+        HashMap::new(),
+        Limits::default(),
+        None,
+        SymbolInfo::default(),
+        None,
+        None,
+    );
+    let candles = bars(4);
+    session.evaluate(&candles).unwrap();
+    // The script never indexes `hlcc4` itself; the library does, and gets the previous bar's value.
+    assert_eq!(
+        value(&session, "prev"),
+        RuntimeValue::Float((candles[2].high + candles[2].low + 2.0 * candles[2].close) / 4.0)
+    );
+}
+
+#[test]
+fn the_first_bar_flag_has_a_history_too() {
+    let session = run(
+        "was_first = barstate.isfirst[1]\nplot(was_first ? 1 : 0)",
+        2,
+    );
+    // Bar 1 looks back at bar 0, which was the first bar.
+    assert_eq!(value(&session, "was_first"), RuntimeValue::Bool(true));
+}
+
+#[test]
+fn strategy_counters_have_a_history() {
+    let session = run_strategy(
+        "was_closed = strategy.closedtrades[1]\nclosed_now = strategy.closedtrades\n\
+         was_capital = strategy.initial_capital[1]",
+        &STRATEGY_PRICES,
+    );
+    // The last run closes a trade on bar 12; bar 14 is flat again, so the count is the same there
+    // and the day before. A trade closed on the last bar would separate them.
+    assert_eq!(value(&session, "was_closed"), value(&session, "closed_now"));
+    assert_eq!(value(&session, "was_capital"), RuntimeValue::Float(1000.0));
+}
+
+#[test]
 fn a_parameter_may_reuse_a_builtin_function_name_with_a_warning() {
     let codes = diagnostic_codes("f(color fill) =>\n    fill\nplot(close)");
     assert_eq!(codes, ["PINE7006"]);
@@ -2101,6 +2234,35 @@ fn an_exit_picks_its_comment_by_the_level_that_filled_it() {
         value(&session, "text"),
         RuntimeValue::String("target".into())
     );
+}
+
+#[test]
+fn an_entry_and_an_exit_called_on_the_same_bar_both_stand() {
+    // No `position_size` guard: the exit is called on the bar that places the entry, and on every
+    // bar after it. Placing the exit used to cancel the pending entry.
+    let source = "//@version=6\n\
+        strategy(\"S\", default_qty_type = strategy.fixed, default_qty_value = 1)\n\
+        if bar_index == 0\n    strategy.entry(\"L\", strategy.long)\n\
+        strategy.exit(\"X\", \"L\", limit = 105, stop = 95)\n\
+        closed = strategy.closedtrades\n\
+        exit_at = strategy.closedtrades.exit_price(0)";
+    let program = compiler::compile(source, Limits::default(), &NoLibraries);
+    assert!(program.is_valid(), "{:?}", program.diagnostics);
+    let mut session = Session::new(
+        program,
+        HashMap::new(),
+        Limits::default(),
+        None,
+        SymbolInfo::default(),
+        None,
+        None,
+    );
+    // The entry fills at the open of bar 1; bar 2 reaches the 105 target.
+    let mut bars = flat_bars(&[100.0, 100.0, 100.0]);
+    bars[2].high = 106.0;
+    session.evaluate(&bars).expect("runs");
+    assert_eq!(value(&session, "closed"), RuntimeValue::Int(1));
+    assert_eq!(value(&session, "exit_at"), RuntimeValue::Float(105.0));
 }
 
 #[test]

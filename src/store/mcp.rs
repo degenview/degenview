@@ -157,6 +157,7 @@ mod tests {
         let settings = McpSettings {
             enabled: true,
             port: 9001,
+            ..McpSettings::default()
         };
         store.set_mcp_settings(&settings).unwrap();
         assert_eq!(store.mcp_settings().unwrap(), settings);
@@ -177,6 +178,7 @@ mod tests {
         let settings = McpSettings {
             enabled: true,
             port: 9001,
+            ..McpSettings::default()
         };
         let global = PermissionSet::of([Permission::ChartsRead]);
         store
@@ -213,6 +215,7 @@ mod tests {
         let enabled = McpSettings {
             enabled: true,
             port: 9001,
+            ..McpSettings::default()
         };
         assert!(
             store

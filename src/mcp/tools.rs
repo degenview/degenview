@@ -5,6 +5,7 @@
 //! Authorization is enforced in `call_tool` on every call — `tools/list` merely hides what the
 //! caller could not use anyway.
 
+use crate::mcp::audit::{AuditGuard, outcome_of};
 use crate::mcp::bridge::{
     AlertCommandOutcome, AlertUpdate, BridgeClient, McpCommand, McpError, McpReply, NewAlert,
     REQUEST_TIMEOUT,
@@ -39,7 +40,7 @@ use crate::mcp::types::{
     PineScriptsResult, PineStylesResult, UpdateAlertResult, WorkspacesResult, indicator_catalog,
 };
 use crate::model::alert::{AlertCurrency, AlertFrequency};
-use crate::model::mcp::Permission;
+use crate::model::mcp::{McpAuditOutcome, Permission};
 use crate::model::watchlist_text::validate_market;
 use crate::model::{BuiltIn, DataSource, EMA_PERIODS};
 use crate::pine_studio::store::ScriptStore;
@@ -650,10 +651,16 @@ pub struct AddChartParams {
 }
 
 pub(super) fn failure(error: &McpError) -> CallToolResult {
-    CallToolResult::structured_error(json!({
+    let mut value = json!({
         "error": error.code(),
         "message": error.message(),
-    }))
+    });
+    if let (Some(fields), Some(object)) = (error.details(), value.as_object_mut())
+        && let Value::Object(fields) = fields
+    {
+        object.extend(fields);
+    }
+    CallToolResult::structured_error(value)
 }
 
 pub(super) fn invalid(message: impl Into<String>) -> CallToolResult {
@@ -1092,7 +1099,7 @@ impl DegenViewMcp {
 
     #[tool(
         name = "degenview_delete_price_alert",
-        description = "Permanently delete a price alert. This cannot be undone.",
+        description = "Permanently delete a price alert. This cannot be undone. Asks the user to approve it in DegenView first: the first call answers CONFIRMATION_REQUIRED with a confirmation_id and changes nothing; once the user has approved, repeat the exact same call (any change to the arguments is a new question). If the user declines you get CONFIRMATION_DENIED: do not retry it.",
         annotations(
             read_only_hint = false,
             destructive_hint = true,
@@ -1247,7 +1254,7 @@ impl DegenViewMcp {
 
     #[tool(
         name = "degenview_save_pine_script",
-        description = "Save a Pine script's current draft over its saved source, as the editor's Save does (records a revision, keeps history). Needs expected_revision to match the draft you reviewed, and the draft must compile without errors (COMPILATION_FAILED otherwise; the draft is kept). Charts keep running the source they were applied with; alert subscriptions to this script will show 'script changed'. Saving cannot be undone from here (revision history stays in the Pine Studio).",
+        description = "Save a Pine script's current draft over its saved source, as the editor's Save does (records a revision, keeps history). Needs expected_revision to match the draft you reviewed, and the draft must compile without errors (COMPILATION_FAILED otherwise; the draft is kept). Charts keep running the source they were applied with; alert subscriptions to this script will show 'script changed'. Saving cannot be undone from here (revision history stays in the Pine Studio). Asks the user to approve it in DegenView first: the first call answers CONFIRMATION_REQUIRED with a confirmation_id and changes nothing; once the user has approved, repeat the exact same call (any change to the arguments is a new question). If the user declines you get CONFIRMATION_DENIED: do not retry it.",
         annotations(
             read_only_hint = false,
             destructive_hint = true,
@@ -1719,7 +1726,7 @@ impl DegenViewMcp {
 
     #[tool(
         name = "degenview_remove_pine_instance",
-        description = "Take a script off a chart. The saved script is left alone, and the user can undo the removal in the app. Refused with CONFLICT while a script alert is armed on the instance, because removing it would silence that alert.",
+        description = "Take a script off a chart. The saved script is left alone, and the user can undo the removal in the app. Refused with CONFLICT while a script alert is armed on the instance, because removing it would silence that alert. Asks the user to approve it in DegenView first: the first call answers CONFIRMATION_REQUIRED with a confirmation_id and changes nothing; once the user has approved, repeat the exact same call (any change to the arguments is a new question). If the user declines you get CONFIRMATION_DENIED: do not retry it.",
         annotations(
             read_only_hint = false,
             destructive_hint = true,
@@ -1972,7 +1979,7 @@ impl DegenViewMcp {
 
     #[tool(
         name = "degenview_delete_drawings",
-        description = "Remove drawings from a chart (up to 50). All or none: if any id is unknown or locked, nothing is removed. The user can undo the removal in the app.",
+        description = "Remove drawings from a chart (up to 50). All or none: if any id is unknown or locked, nothing is removed. The user can undo the removal in the app. Asks the user to approve it in DegenView first: the first call answers CONFIRMATION_REQUIRED with a confirmation_id and changes nothing; once the user has approved, repeat the exact same call (any change to the arguments is a new question). If the user declines you get CONFIRMATION_DENIED: do not retry it.",
         annotations(
             read_only_hint = false,
             destructive_hint = true,
@@ -2026,6 +2033,83 @@ struct AbortOnDrop(tokio::task::AbortHandle);
 impl Drop for AbortOnDrop {
     fn drop(&mut self) {
         self.0.abort();
+    }
+}
+
+/// Why a tool call ended without a result of its own.
+enum Stop {
+    /// A name that is not a tool here (or has no permission mapping).
+    UnknownTool(String),
+    /// The client hung up or cancelled it.
+    Cancelled,
+    /// The router refused the request itself (not a tool's own error, which is a result).
+    Rpc(ErrorData),
+}
+
+impl Stop {
+    fn into_error(self) -> ErrorData {
+        match self {
+            Self::UnknownTool(name) => {
+                ErrorData::invalid_params(format!("Unknown tool: {name}"), None)
+            }
+            Self::Cancelled => ErrorData::internal_error("The request was cancelled", None),
+            Self::Rpc(error) => error,
+        }
+    }
+
+    /// How the activity log records it.
+    fn audit(&self) -> (McpAuditOutcome, &'static str) {
+        match self {
+            Self::UnknownTool(_) => (McpAuditOutcome::Denied, "UNKNOWN_TOOL"),
+            Self::Cancelled => (McpAuditOutcome::Cancelled, ""),
+            Self::Rpc(_) => (McpAuditOutcome::Failed, "RPC_ERROR"),
+        }
+    }
+}
+
+impl DegenViewMcp {
+    /// Checks a call's permission and runs it, stopping it if the client leaves or cancels.
+    async fn run_tool(
+        &self,
+        request: CallToolRequestParams,
+        context: RequestContext<RoleServer>,
+        client: Option<&ClientIdentity>,
+    ) -> Result<CallToolResponse, Stop> {
+        // Fail closed: a tool with no permission mapping is never run, however its name got
+        // routed. (It is also hidden from `tools/list`.) A new tool must be added to
+        // `required_permission`; `every_routed_tool_has_exactly_one_permission` enforces it.
+        let Some(permission) = required_permission(&request.name) else {
+            return Err(Stop::UnknownTool(request.name.to_string()));
+        };
+        let allowed = client.is_some_and(|client| self.shared.allows(&client.id, permission));
+        if !allowed {
+            return Ok(failure(&McpError::PermissionDenied(format!(
+                "This credential lacks the {} permission",
+                permission.id()
+            )))
+            .into());
+        }
+        // The call stops when the client hangs up (rmcp cancels `context.ct`, but leaves the
+        // handler running) or sends `notifications/cancelled` for it. Stateless mode serves that
+        // notification as a separate POST, so `honour_cancellations` reads it and cancels the
+        // token this call registered under its client and request id.
+        // Dropping the tool's future is what stops work that has not started: a queued bridge
+        // request is cancelled by `CancelOnDrop`, a queued script job by `AbortOnDrop`. Work the
+        // app has already started keeps its real outcome.
+        let hung_up = context.ct.clone();
+        let registered =
+            client.map(|client| self.shared.calls().register(&client.id, context.id.clone()));
+        let cancelled = registered
+            .as_ref()
+            .map_or_else(tokio_util::sync::CancellationToken::new, |call| {
+                call.token()
+            });
+        let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
+        tokio::select! {
+            result = self.tool_router.call(tcc) => result.map_err(Stop::Rpc),
+            () = hung_up.cancelled() => Err(Stop::Cancelled),
+            () = cancelled.cancelled() => Err(Stop::Cancelled),
+        }
     }
 }
 
@@ -2223,7 +2307,7 @@ fn with_standard_formats(mut tool: Tool) -> Tool {
 #[tool_handler(
     router = self.tool_router,
     name = "DegenView",
-    instructions = "Inspect and change DegenView, a market dashboard, within what this credential is allowed. Charts: list workspaces first, then list or add charts and built-in indicators by workspace_id; read candles and indicator values (RSI, EMA, Bollinger, trend flips), add or remove built-in indicators, change a workspace's timeframe and a chart's type, control a workspace's replay, take a picture of a chart, remove charts, and add, edit or delete drawings. Pine scripts: list, read, compile and edit scripts (an edit is a draft until saved, and every edit needs the revision you last read), and apply a saved script to a chart. Price alerts: list, create, edit, pause and delete. Markets: search the providers for symbols, read quotes, and read candles of any market. Watchlists: list and read them (optionally with quotes), create, edit and delete. Paper trading (simulated money): read accounts, positions, orders, fills and closed trades; place, change and cancel orders and close positions with their own permissions. Only the tools this credential may use are listed."
+    instructions = "Inspect and change DegenView, a market dashboard, within what this credential is allowed. Charts: list workspaces first, then list or add charts and built-in indicators by workspace_id; read candles and indicator values (RSI, EMA, Bollinger, trend flips), add or remove built-in indicators, change a workspace's timeframe and a chart's type, control a workspace's replay, take a picture of a chart, remove charts, and add, edit or delete drawings. Pine scripts: list, read, compile and edit scripts (an edit is a draft until saved, and every edit needs the revision you last read), and apply a saved script to a chart. Price alerts: list, create, edit, pause and delete. Markets: search the providers for symbols, read quotes, and read candles of any market. Watchlists: list and read them (optionally with quotes), create, edit and delete. Paper trading (simulated money): read accounts, positions, orders, fills and closed trades; place, change and cancel orders and close positions with their own permissions. Some changes wait for the user's approval in DegenView: deleting alerts, charts, drawings, watchlists or script instances, saving over a script, and paper orders, changes and closes. Such a call answers CONFIRMATION_REQUIRED (with a confirmation_id and what it would do) and changes nothing; ask the user to approve it, then repeat the exact same call. CONFIRMATION_DENIED means the user said no: do not repeat it unless they ask. Only the tools this credential may use are listed."
 )]
 impl ServerHandler for DegenViewMcp {
     async fn call_tool(
@@ -2231,57 +2315,39 @@ impl ServerHandler for DegenViewMcp {
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
-        // Fail closed: a tool with no permission mapping is never run, however its name got
-        // routed. (It is also hidden from `tools/list`.) A new tool must be added to
-        // `required_permission`; `every_routed_tool_has_exactly_one_permission` enforces it.
-        let Some(permission) = required_permission(&request.name) else {
-            return Err(ErrorData::invalid_params(
-                format!("Unknown tool: {}", request.name),
-                None,
-            ));
-        };
-        let allowed = context
+        // Every call is recorded in the activity log, however it ends. The guard writes its row
+        // when the call finishes below, or as cancelled if this future is dropped first (the
+        // client hung up, or the server stopped).
+        let client = context
             .extensions
             .get::<http::request::Parts>()
             .and_then(|parts| parts.extensions.get::<ClientIdentity>())
-            .is_some_and(|client| self.shared.allows(&client.id, permission));
-        if !allowed {
-            return Ok(failure(&McpError::PermissionDenied(format!(
-                "This credential lacks the {} permission",
-                permission.id()
-            )))
-            .into());
+            .cloned();
+        let audit = client.as_ref().map(|client| {
+            AuditGuard::begin(
+                &self.shared,
+                client,
+                &request.name,
+                &context.id,
+                request.arguments.as_ref(),
+            )
+        });
+        let result = self.run_tool(request, context, client.as_ref()).await;
+        if let Some(audit) = audit {
+            match &result {
+                Ok(CallToolResponse::Complete(result)) => {
+                    let (outcome, code) = outcome_of(result);
+                    audit.finish(outcome, &code);
+                }
+                // This server never asks a client for more input; if that changes, so must this.
+                Ok(_) => audit.finish(McpAuditOutcome::Failed, "INPUT_REQUIRED"),
+                Err(stop) => {
+                    let (outcome, code) = stop.audit();
+                    audit.finish(outcome, code);
+                }
+            }
         }
-        // The call stops when the client hangs up (rmcp cancels `context.ct`, but leaves the
-        // handler running) or sends `notifications/cancelled` for it. Stateless mode serves that
-        // notification as a separate POST, so `honour_cancellations` reads it and cancels the
-        // token this call registered under its client and request id.
-        // Dropping the tool's future is what stops work that has not started: a queued bridge
-        // request is cancelled by `CancelOnDrop`, a queued script job by `AbortOnDrop`. Work the
-        // app has already started keeps its real outcome.
-        let hung_up = context.ct.clone();
-        let registered = context
-            .extensions
-            .get::<http::request::Parts>()
-            .and_then(|parts| parts.extensions.get::<ClientIdentity>())
-            .map(|client| self.shared.calls().register(&client.id, context.id.clone()));
-        let cancelled = registered
-            .as_ref()
-            .map_or_else(tokio_util::sync::CancellationToken::new, |call| {
-                call.token()
-            });
-        let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
-        tokio::select! {
-            result = self.tool_router.call(tcc) => result,
-            () = hung_up.cancelled() => Err(ErrorData::internal_error(
-                "The request was cancelled",
-                None,
-            )),
-            () = cancelled.cancelled() => Err(ErrorData::internal_error(
-                "The request was cancelled",
-                None,
-            )),
-        }
+        result.map_err(Stop::into_error)
     }
 
     async fn list_tools(

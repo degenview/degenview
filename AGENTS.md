@@ -126,6 +126,7 @@ because cargo never deletes old output. Finished worktrees are where the disk go
 - [Pine profiler](docs/pine-profiler.md) — the timing model (regions, inclusive and exclusive time, what is not attributed), the opt-in recorder, profile sessions and staleness, the editor column and drawer tab, what is measured.
 - [Editor themes](docs/editor-themes.md) — syntax roles and surfaces, how a name gets its role, the built-in and custom themes and their one-level inheritance, typography and fonts, saving, the file format, the Settings page, what is verified and measured.
 - [User-defined methods](docs/pine-user-methods.md) — declaration rules, `Ty` and the callable table, compile-time resolution and direct dispatch, diagnostics, what is verified against TradingView and what is not, benchmarks.
+- [Pine execution-model audit](docs/reviews/pine-execution-model-audit.md) — the engine against TradingView's execution model: findings, what matches, the stacked fixes and what is deferred.
 - [Pine volume footprints](docs/pine-footprint.md) — `request.footprint()`: built from intrabar candles, stateless handles, what is inferred and what is not verified.
 - [Pine Logs](docs/pine-logs.md) — `log.*()` messages: the sink, limits, batches, what is verified against TradingView.
 - [AI assistant](docs/ai-assistant.md) — prompting an LLM to edit the open Pine script: bring-your-own key, providers and streaming, what is verified.

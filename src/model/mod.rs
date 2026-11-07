@@ -34,6 +34,7 @@ mod kline;
 mod layout;
 pub mod link_card;
 pub mod mcp;
+pub mod mcp_activity;
 pub mod measure;
 pub mod object_tree;
 pub mod paper;

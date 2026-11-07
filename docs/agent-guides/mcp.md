@@ -29,6 +29,24 @@
   A `notifications/cancelled` is a separate POST in stateless mode: `call_tool` registers each call
   in `McpShared::calls()` and `cancel::honour_cancellations` cancels it. Keep that layer outside the
   concurrency cap and inside the bearer check.
+- Every `tools/call` is recorded by `AuditGuard` in `call_tool` (`mcp/audit.rs`). A new way for a
+  call to end must end through that guard, and a row may only hold what `audit.rs` lets in: ids that
+  look like ids, a code, never an argument value or `McpError::message()`. The log is written by
+  `McpHost::tick`, not from request threads; the Settings page and the activity sheet read
+  `McpHost::activity()`, never SQLite. The sheet's filtering and paging live in
+  `model::mcp_activity` (pure, tested); a new outcome or row kind needs a `McpActivityStatus`
+  there so it can be filtered. `mcp_audit` is local-only in `sync::policy`.
+- A new mutating `McpCommand` must be classified in `mcp::confirm::gate` (an exhaustive match: it
+  fails to compile until it is). If it asks, also describe it in
+  `App::confirmation_summary` / `host::mcp_confirmation` (from what the app knows of the target,
+  never from agent text; a target that does not exist is refused with its own error, unasked), add
+  its tool to `confirm::GATED_TOOLS` and say so in the tool's description. The gate runs on the app
+  thread before dispatch and must never wait for the user: it answers `CONFIRMATION_REQUIRED` and
+  the agent repeats the call. Approvals are used up by the call that runs them; never widen one
+  beyond the exact command and client. A command that reaches "everything of a kind" (an "all")
+  must put what it resolved to in `Summary::with_scope`, so an approval cannot cover things that
+  appeared after it. Only `Summary::client_line` (the action) may go into a client's response:
+  the target text can name things the credential may not read.
 - Rate limits live in `mcp/limits.rs` and are applied in `require_bearer`. Bad tokens may be
   refused with 429; a valid token must never be refused because of other callers' failures.
   Connections are accepted by `transport::serve` (not `axum::serve`) so header, time and

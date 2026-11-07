@@ -87,6 +87,8 @@ pub mod types;
 #[cfg(test)]
 mod user_method_tests;
 pub mod user_methods;
+#[cfg(test)]
+mod varip_tests;
 pub mod visuals;
 
 pub use ast::*;

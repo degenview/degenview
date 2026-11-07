@@ -44,8 +44,8 @@ use crate::model::alert::{
     AlertCondition, AlertCurrency, AlertFrequency, AlertId, AlertState, PriceAlert,
 };
 use crate::model::mcp::{
-    MAX_CLIENTS, McpAction, McpClient, McpSettings, Permission, PermissionSet, clean_client_name,
-    is_valid_port,
+    AUDIT_LOG_LIMIT, MAX_CLIENTS, McpAction, McpAuditEntry, McpAuditKind, McpClient, McpSettings,
+    Permission, PermissionSet, clean_client_name, is_valid_port,
 };
 use crate::model::pine_alert::PineAlertSubscription;
 use crate::model::watchlist::{Watchlist, WatchlistError, WatchlistInstrument, new_id, now_ms};
@@ -75,6 +75,8 @@ fn sealing_disabled(test: bool, dev_build: bool, env_set: bool) -> bool {
 
 /// Recorded last-use times are written at most this often.
 const USAGE_SAVE_INTERVAL: Duration = Duration::from_secs(30);
+/// Activity rows waiting in memory are written at most this often, in one batch.
+const AUDIT_FLUSH_INTERVAL: Duration = Duration::from_secs(1);
 
 /// A bearer token just issued. Held only until the user dismisses it; never persisted.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -104,6 +106,12 @@ pub struct McpHost {
     fresh_token: Option<FreshToken>,
     notice: Option<String>,
     last_usage_save: Instant,
+    last_audit_flush: Instant,
+    /// The whole activity log, newest first, for the Settings page and its log sheet, which must
+    /// not read the store themselves. Shared, so handing it to a frame copies a pointer.
+    activity: Arc<Vec<McpAuditEntry>>,
+    /// Rows the log holds that this version cannot decode, so the sheet can say it is hiding some.
+    activity_unreadable: usize,
     /// Actions from the Settings page, applied by [`McpHost::tick`]. The page runs while the
     /// store is locked, so it can only queue.
     pending: Vec<McpAction>,
@@ -145,9 +153,13 @@ impl McpHost {
             fresh_token: None,
             notice: None,
             last_usage_save: Instant::now(),
+            last_audit_flush: Instant::now(),
+            activity: Arc::new(Vec::new()),
+            activity_unreadable: 0,
             pending: Vec::new(),
         };
         host.reload();
+        host.refresh_activity();
         if host.load_error.is_none() && host.settings.enabled {
             host.start_server();
         }
@@ -174,6 +186,8 @@ impl McpHost {
             Ok((settings, clients, global, stored)) => {
                 match self.check_seal(&settings, &global, &clients, stored.as_deref()) {
                     Ok(()) => {
+                        self.shared
+                            .set_require_confirmation(settings.require_confirmation);
                         self.settings = settings;
                         self.shared.replace(clients, global);
                         self.load_error = None;
@@ -354,6 +368,17 @@ impl McpHost {
         self.notice.as_deref()
     }
 
+    /// The activity log, newest first: every readable row, at most
+    /// [`AUDIT_LOG_LIMIT`] of them.
+    pub fn activity(&self) -> Arc<Vec<McpAuditEntry>> {
+        Arc::clone(&self.activity)
+    }
+
+    /// How many rows the log holds that could not be read and so are not in [`Self::activity`].
+    pub fn activity_unreadable(&self) -> usize {
+        self.activity_unreadable
+    }
+
     pub fn fresh_token(&self) -> Option<&FreshToken> {
         self.fresh_token.as_ref()
     }
@@ -381,6 +406,9 @@ impl McpHost {
         for action in std::mem::take(&mut self.pending) {
             self.apply(action);
         }
+        if self.last_audit_flush.elapsed() >= AUDIT_FLUSH_INTERVAL {
+            self.flush_activity(false);
+        }
         if self.load_error.is_some() || self.last_usage_save.elapsed() < USAGE_SAVE_INTERVAL {
             return;
         }
@@ -395,6 +423,57 @@ impl McpHost {
                 // tick tries again instead of losing them until the client's next request.
                 self.shared.mark_usage_dirty();
             }
+        }
+    }
+
+    /// Writes the activity rows waiting in memory to the store in one batch. `all` also writes
+    /// the rate-limit counts still being added up (when quitting). A failed write puts the rows
+    /// back, so the next tick tries again.
+    fn flush_activity(&mut self, all: bool) {
+        self.last_audit_flush = Instant::now();
+        let rows = self.shared.audit().take(now_ms(), all);
+        if rows.is_empty() {
+            return;
+        }
+        let written = self
+            .store
+            .lock()
+            .map(|store| store.append_mcp_audit(&rows))
+            .unwrap_or_else(|_| Err(rusqlite::Error::InvalidQuery));
+        match written {
+            Ok(()) => self.refresh_activity(),
+            Err(_) => self.shared.audit().requeue(rows),
+        }
+    }
+
+    /// Reloads the log the Settings page shows from the store.
+    fn refresh_activity(&mut self) {
+        if let Ok(store) = self.store.lock() {
+            let rows = store.recent_mcp_audit(AUDIT_LOG_LIMIT);
+            self.activity_unreadable = store.mcp_audit_count().saturating_sub(rows.len());
+            self.activity = Arc::new(rows);
+        }
+    }
+
+    /// Empties the log. Rows still waiting in memory are written first, so they are cleared
+    /// too and none appears after the marker that says everything before it is gone.
+    fn clear_activity(&mut self) {
+        self.flush_activity(true);
+        let marker = McpAuditEntry {
+            id: new_id(),
+            at_ms: now_ms(),
+            kind: McpAuditKind::Cleared,
+            count: 1,
+            ..McpAuditEntry::default()
+        };
+        let cleared = self
+            .store
+            .lock()
+            .map(|store| store.clear_mcp_audit(&marker))
+            .unwrap_or_else(|_| Err(rusqlite::Error::InvalidQuery));
+        match cleared {
+            Ok(()) => self.refresh_activity(),
+            Err(_) => self.notice = Some("Could not clear the activity log".into()),
         }
     }
 
@@ -441,6 +520,14 @@ impl McpHost {
             McpAction::SetGlobalPermissions(permissions) => self.replace_global(permissions),
             McpAction::DismissToken => self.fresh_token = None,
             McpAction::ResetAccess => {}
+            McpAction::ClearActivity => self.clear_activity(),
+            McpAction::SetRequireConfirmation(required) => {
+                let settings = McpSettings {
+                    require_confirmation: required,
+                    ..self.settings.clone()
+                };
+                self.save_settings(settings);
+            }
         }
     }
 
@@ -448,6 +535,8 @@ impl McpHost {
         let saved = self.persist(&settings, &self.shared.global(), &self.shared.clients());
         match saved {
             Ok(()) => {
+                self.shared
+                    .set_require_confirmation(settings.require_confirmation);
                 self.settings = settings;
                 true
             }
@@ -588,9 +677,19 @@ impl McpHost {
     }
 }
 
+impl McpHost {
+    /// The app is quitting: stop taking calls, then write every activity row still in memory,
+    /// including the rate-limit counts still being added up. The app calls this from its exit
+    /// hook, because a quit does not necessarily drop the host. Safe to call more than once.
+    pub fn shutdown(&mut self) {
+        self.stop_server();
+        self.flush_activity(true);
+    }
+}
+
 impl Drop for McpHost {
     fn drop(&mut self) {
-        self.stop_server();
+        self.shutdown();
     }
 }
 
@@ -896,7 +995,7 @@ pub fn add_pine_instance(
 /// instance's inputs into the alert it arms, and silences the alert when the instance goes, so
 /// changing either from a client that holds only the chart permission would alter alerts that
 /// have their own (deferred) permissions. The person can still do it in the app.
-fn guard_armed_alerts(
+pub(super) fn guard_armed_alerts(
     subscriptions: &[PineAlertSubscription],
     chart_id: u64,
     instance_id: u64,
@@ -973,7 +1072,7 @@ pub fn remove_pine_instance(
 
 // MARK: Candles and drawings (run on the app thread)
 
-fn no_chart(workspace: &ChartWorkspace, chart_id: u64) -> McpError {
+pub(super) fn no_chart(workspace: &ChartWorkspace, chart_id: u64) -> McpError {
     McpError::NotFound(format!(
         "No chart {chart_id} in workspace {}",
         workspace.id()
@@ -1518,7 +1617,7 @@ pub enum CreatePlan {
     },
 }
 
-fn require_loaded(host: &AlertHost) -> Result<(), McpError> {
+pub(super) fn require_loaded(host: &AlertHost) -> Result<(), McpError> {
     match host.load_error() {
         None => Ok(()),
         Some(_) => Err(McpError::AppUnavailable(
@@ -1670,7 +1769,7 @@ pub enum StatePlan {
     },
 }
 
-fn find_alert(host: &AlertHost, id: AlertId) -> Result<&PriceAlert, McpError> {
+pub(super) fn find_alert(host: &AlertHost, id: AlertId) -> Result<&PriceAlert, McpError> {
     host.snapshot()
         .alerts
         .iter()
@@ -2182,6 +2281,15 @@ fn tradable_account(host: &PaperHost, account_id: u64) -> Result<(), McpError> {
     Ok(())
 }
 
+/// The name of a paper account an agent may trade: it exists and this Mac runs it.
+pub(super) fn tradable_paper_account(
+    host: &PaperHost,
+    account_id: u64,
+) -> Result<String, McpError> {
+    tradable_account(host, account_id)?;
+    Ok(paper_account(host, account_id)?.name.clone())
+}
+
 fn account_after(host: &PaperHost, account_id: u64) -> Result<PaperAccountInfo, McpError> {
     paper_account(host, account_id).map(|account| paper_account_info(host, account))
 }
@@ -2564,7 +2672,7 @@ fn readable_watchlists(store: &WatchlistStore) -> Result<&[Watchlist], McpError>
     Ok(store.lists())
 }
 
-fn watchlist_by_id(store: &WatchlistStore, id: u64) -> Result<&Watchlist, McpError> {
+pub(super) fn watchlist_by_id(store: &WatchlistStore, id: u64) -> Result<&Watchlist, McpError> {
     readable_watchlists(store)?
         .iter()
         .find(|list| list.id == id)
@@ -2834,6 +2942,162 @@ mod tests {
         );
     }
 
+    fn audit_row(n: u64) -> McpAuditEntry {
+        McpAuditEntry {
+            id: n,
+            at_ms: 1_000 + n as i64,
+            client_id: "c1".into(),
+            client_name: "Claude".into(),
+            tool: "degenview_list_charts".into(),
+            count: 1,
+            ..McpAuditEntry::default()
+        }
+    }
+
+    fn ids(rows: &[McpAuditEntry]) -> Vec<u64> {
+        rows.iter().map(|row| row.id).collect()
+    }
+
+    fn due_for_flush(host: &mut McpHost) {
+        host.last_audit_flush = Instant::now() - AUDIT_FLUSH_INTERVAL - Duration::from_secs(1);
+    }
+
+    #[test]
+    fn queued_activity_is_written_in_one_batch_and_shown_by_the_page() {
+        let store = store();
+        let mut host = host(&store);
+        assert!(host.activity().is_empty() && host.activity_unreadable() == 0);
+
+        host.shared.audit().push(audit_row(1));
+        host.shared.audit().push(audit_row(2));
+        // Not due yet: the tick leaves the rows in memory and the store alone.
+        host.tick();
+        assert!(host.activity().is_empty());
+        assert!(store.lock().unwrap().recent_mcp_audit(10).is_empty());
+
+        due_for_flush(&mut host);
+        host.tick();
+        assert_eq!(ids(&host.activity()), [2, 1], "newest first");
+        assert_eq!(ids(&store.lock().unwrap().recent_mcp_audit(10)), [2, 1]);
+        assert_eq!(host.shared.audit().len(), 0);
+    }
+
+    #[test]
+    fn the_page_holds_the_whole_log_and_no_more_than_the_log_keeps() {
+        let store = store();
+        let mut host = host(&store);
+        for n in 1..=(AUDIT_LOG_LIMIT as u64 + 20) {
+            host.shared.audit().push(audit_row(n));
+        }
+        due_for_flush(&mut host);
+        host.tick();
+        assert_eq!(host.activity().len(), AUDIT_LOG_LIMIT);
+        assert_eq!(host.activity()[0].id, AUDIT_LOG_LIMIT as u64 + 20);
+        assert_eq!(
+            host.activity()[AUDIT_LOG_LIMIT - 1].id,
+            21,
+            "the oldest 20 were pruned"
+        );
+        assert_eq!(host.activity_unreadable(), 0);
+    }
+
+    #[test]
+    fn activity_that_could_not_be_written_is_kept_for_the_next_try() {
+        let store = store();
+        let mut host = host(&store);
+        host.shared.audit().push(audit_row(1));
+        let poisoner = store.clone();
+        let _ = std::thread::spawn(move || {
+            let _held = poisoner.lock().unwrap();
+            panic!("poison the store lock");
+        })
+        .join();
+        due_for_flush(&mut host);
+        host.tick();
+        assert_eq!(
+            host.shared.audit().len(),
+            1,
+            "the row went back in the queue"
+        );
+    }
+
+    #[test]
+    fn quitting_writes_the_activity_still_waiting() {
+        let store = store();
+        {
+            let host = host(&store);
+            host.shared.audit().push(audit_row(1));
+            host.shared.audit().rate_limited("c1", "Claude", now_ms());
+        }
+        let rows = store.lock().unwrap().recent_mcp_audit(10);
+        assert_eq!(
+            rows.len(),
+            2,
+            "the call, and the rate-limit count still open"
+        );
+        assert!(rows.iter().any(|row| row.kind == McpAuditKind::RateLimited));
+    }
+
+    #[test]
+    fn shutting_down_writes_what_is_left_once_and_dropping_afterwards_adds_nothing() {
+        let store = store();
+        let mut host = host(&store);
+        host.shared.audit().push(audit_row(1));
+        host.shared.audit().rate_limited("c1", "Claude", now_ms());
+        host.shutdown();
+        let rows = store.lock().unwrap().recent_mcp_audit(10);
+        assert_eq!(rows.len(), 2, "the call and the open rate-limit count");
+        assert_eq!(host.activity().len(), 2);
+        // Again, and then the drop that follows in a real quit: nothing is written twice.
+        host.shutdown();
+        drop(host);
+        assert_eq!(store.lock().unwrap().mcp_audit_count(), 2);
+    }
+
+    #[test]
+    fn clearing_deletes_everything_even_what_was_still_in_memory() {
+        let store = store();
+        let mut host = host(&store);
+        host.shared.audit().push(audit_row(1));
+        due_for_flush(&mut host);
+        host.tick();
+        // A row that is only in memory when the user clears.
+        host.shared.audit().push(audit_row(2));
+
+        host.apply(McpAction::ClearActivity);
+        assert_eq!(host.activity().len(), 1);
+        assert_eq!(host.activity()[0].kind, McpAuditKind::Cleared);
+        assert_eq!(host.shared.audit().len(), 0);
+        let rows = store.lock().unwrap().recent_mcp_audit(10);
+        assert_eq!(rows.len(), 1, "nothing before the marker survives");
+
+        // Activity after that follows the marker.
+        host.shared.audit().push(audit_row(3));
+        due_for_flush(&mut host);
+        host.tick();
+        assert_eq!(host.activity()[0].id, 3);
+        assert_eq!(host.activity()[1].kind, McpAuditKind::Cleared);
+    }
+
+    #[test]
+    fn an_unreadable_log_row_does_not_stop_the_host_or_the_page() {
+        let store = store();
+        store.lock().unwrap().insert_raw_mcp_audit("{ not json");
+        store
+            .lock()
+            .unwrap()
+            .append_mcp_audit(&[audit_row(1)])
+            .unwrap();
+        let host = host(&store);
+        assert!(host.load_error().is_none());
+        assert_eq!(ids(&host.activity()), [1]);
+        assert_eq!(
+            host.activity_unreadable(),
+            1,
+            "the sheet can say it hides one"
+        );
+    }
+
     fn enable_on_free_port(host: &mut McpHost, store: &SharedStore) {
         // Tests bind port 0 (any free one), which the Settings page itself never offers.
         store
@@ -2842,6 +3106,7 @@ mod tests {
             .set_mcp_settings(&McpSettings {
                 enabled: false,
                 port: 0,
+                ..McpSettings::default()
             })
             .unwrap();
         host.settings.port = 0;
@@ -2892,6 +3157,7 @@ mod tests {
             .set_mcp_settings(&McpSettings {
                 enabled: true,
                 port: 0,
+                ..McpSettings::default()
             })
             .unwrap();
         let host = host(&store);
@@ -2989,6 +3255,7 @@ mod tests {
                 .set_mcp_settings(&McpSettings {
                     enabled: true,
                     port: 0,
+                    ..McpSettings::default()
                 })
                 .unwrap();
             guard.insert_raw_mcp_client("x", "{broken");
@@ -4540,6 +4807,7 @@ mod tests {
             .set_mcp_settings(&McpSettings {
                 enabled: true,
                 port: 49_999,
+                ..McpSettings::default()
             })
             .unwrap();
     }
@@ -4591,6 +4859,7 @@ mod tests {
                     s.set_mcp_settings(&McpSettings {
                         enabled: true,
                         port: 8765,
+                        ..McpSettings::default()
                     })
                     .unwrap()
                 }),
@@ -4929,5 +5198,68 @@ mod tests {
         let host = sealed_host(&store, &keychain);
         assert!(host.load_error().is_none(), "{:?}", host.load_error());
         assert!(host.clients().is_empty());
+    }
+
+    #[test]
+    fn confirmation_summaries_name_the_alert_the_chart_the_drawings_and_the_script() {
+        use crate::host::mcp_confirmation as describe;
+        const SOURCE: &str = "//@version=6\nindicator(\"My script\")\nplot(close)\n";
+
+        let (_store, host, id) = seeded();
+        let alert = describe::delete_alert(&host, id).unwrap();
+        assert_eq!(alert.action, "Delete a price alert");
+        assert!(
+            alert.target.contains("crosses above") && alert.target.contains("70000"),
+            "{}",
+            alert.target
+        );
+        assert_eq!(alert.note.as_deref(), Some("Its trigger history is kept."));
+        assert!(matches!(
+            describe::delete_alert(&host, id + 1),
+            Err(McpError::NotFound(_))
+        ));
+
+        let ctx = eframe::egui::Context::default();
+        let mut workspace = empty_workspace(3);
+        let chart_id = workspace
+            .add_chart_for(&InstrumentId::new(DataSource::Binance, "BTCUSDT"), &ctx)
+            .chart_id;
+        let chart = describe::remove_chart(&workspace, chart_id).unwrap();
+        assert_eq!(chart.action, "Remove a chart");
+        assert!(
+            chart.target.starts_with("BTC/USDT in “"),
+            "{}",
+            chart.target
+        );
+        assert!(chart.note.unwrap().contains("drawings go with it"));
+        assert!(matches!(
+            describe::remove_chart(&workspace, chart_id + 99),
+            Err(McpError::NotFound(_))
+        ));
+        // A drawing that is not there is refused unasked, as the removal itself would refuse it.
+        assert!(matches!(
+            describe::remove_drawings(&workspace, chart_id, &[42]),
+            Err(McpError::NotFound(_))
+        ));
+
+        let script = ScriptToApply {
+            script_id: "s1".into(),
+            name: "My script".into(),
+            source: SOURCE.into(),
+            inputs: Default::default(),
+        };
+        let added = add_pine_instance(&mut workspace, chart_id, &script, true).unwrap();
+        let instance: u64 = added.instance_id.parse().unwrap();
+        let removed = describe::remove_pine_instance(&workspace, chart_id, instance, &[]).unwrap();
+        assert_eq!(removed.action, "Remove a script from a chart");
+        assert!(
+            removed.target.starts_with("My script on BTC/USDT"),
+            "{}",
+            removed.target
+        );
+        assert!(matches!(
+            describe::remove_pine_instance(&workspace, chart_id, instance + 1, &[]),
+            Err(McpError::NotFound(_))
+        ));
     }
 }

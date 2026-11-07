@@ -96,6 +96,19 @@ pub struct Session {
     working_is_committed: bool,
     pub working: RuntimeState,
     pub intrabar: FastMap<String, RuntimeValue>,
+    /// What a `varip` variable or `varip` field holds beyond a handle, taken at the end of each
+    /// unconfirmed tick and put back at the start of the next, because the objects live in the
+    /// rolled-back state. Cleared with `intrabar`.
+    intrabar_objects: Vec<IntrabarObject>,
+    /// Scratch for the key a `varip` name is kept under, so reading it does not allocate.
+    intrabar_key: String,
+    /// Set when the script fails at run time: it stays stopped, as in TradingView, until `reset`.
+    halted: Option<Halted>,
+    /// True while `load_history` replays bars: a failed bar is then settled once, afterwards, instead
+    /// of keeping a copy of the state before every bar.
+    bulk_replay: bool,
+    /// For each script type with a `varip` field, those fields' names. Empty for most scripts.
+    varip_fields: Vec<(String, Vec<String>)>,
     pub last_open_time: Option<i64>,
     pub security_globals: Option<FastMap<String, RuntimeValue>>,
     /// The chart's foreground and background (`chart.fg_color`, `chart.bg_color`).
@@ -103,6 +116,10 @@ pub struct Session {
     /// Builtin variable names (`low`) the script declares itself: removed at the start of each bar so
     /// a read before the declaration still means the builtin.
     shadowing_builtins: Vec<String>,
+    /// Builtin variables the program reads a history of (`hlcc4[1]`, `ta.tr[1]`,
+    /// `strategy.closedtrades[1]`) that `commit_histories` does not record on its own. Each is read at
+    /// the end of every confirmed bar and kept like a variable. Empty for most scripts.
+    history_builtins: Vec<String>,
     /// Tests only: ignore every call's `route` and `target`, so a run can be compared with the
     /// chain's, which finds functions and methods by name.
     #[cfg(any(test, feature = "corpus"))]
@@ -309,6 +326,22 @@ impl Session {
             }
         }
         let shadowing_builtins = declared_builtin_names(&program.statements);
+        // Over the script's types and the imported ones, which are keyed `"<library>::<Name>"` here
+        // and on the objects built from them.
+        let varip_fields: Vec<(String, Vec<String>)> = types
+            .iter()
+            .chain(linkage.types.iter())
+            .filter_map(|(name, fields)| {
+                let kept: Vec<String> = fields
+                    .iter()
+                    .filter(|field| field.persistent)
+                    .map(|field| field.name.clone())
+                    .collect();
+                (!kept.is_empty()).then(|| (name.clone(), kept))
+            })
+            .collect();
+        let history_builtins =
+            history_builtin_names(&program.statements, &linkage, &shadowing_builtins);
         let mut inputs = inputs;
         for input in &program.input_schema.inputs {
             inputs
@@ -365,11 +398,17 @@ impl Session {
             working_is_committed: false,
             working: RuntimeState::default(),
             intrabar: FastMap::default(),
+            intrabar_objects: Vec::new(),
+            intrabar_key: String::new(),
+            halted: None,
+            bulk_replay: false,
+            varip_fields,
             last_open_time: None,
             security_globals: None,
             theme: super::program::ChartTheme::DARK,
             security_depth: 0,
             shadowing_builtins,
+            history_builtins,
             #[cfg(any(test, feature = "corpus"))]
             ignore_routes: false,
             last_bar_index: -1,
@@ -420,22 +459,30 @@ impl Session {
         if let Some(inputs) = inputs {
             self.inputs = inputs;
         }
-        self.committed = self.fresh_state();
-        self.working = self.committed.clone();
-        self.working_is_committed = false;
-        self.intrabar.clear();
-        self.last_open_time = None;
-        self.last_committed_open_time = None;
-        self.once_per_bar_ledger.clear();
-        self.emitted_alerts.clear();
+        self.restart_state();
         self.logs.restart();
-        self.footprints.clear();
         self.bar_seconds = self.fixed_bar_seconds.unwrap_or(0.0);
         self.last_bar_index = -1;
         self.last_bar_time = None;
         self.first_bar_time = None;
         self.mintick = self.supplied_mintick.unwrap_or(DEFAULT_MINTICK);
         self.deadline_at = None;
+    }
+
+    /// Back to before the first bar: the script's state, and the bookkeeping that belongs to it.
+    /// Leaves the chart's own facts (bar length, mintick, the logs) as they are.
+    fn restart_state(&mut self) {
+        self.committed = self.fresh_state();
+        self.working = self.committed.clone();
+        self.working_is_committed = false;
+        self.intrabar.clear();
+        self.intrabar_objects.clear();
+        self.halted = None;
+        self.last_open_time = None;
+        self.last_committed_open_time = None;
+        self.once_per_bar_ledger.clear();
+        self.emitted_alerts.clear();
+        self.footprints.clear();
     }
 
     /// Installs a cooperative cancellation flag. Long history runs and instruction-heavy bars
@@ -509,25 +556,69 @@ impl Session {
                 })
         });
         self.first_bar_time = bars.first().map(|bar| bar.open_time);
-        let result = (|| {
-            let mut states = Vec::with_capacity(bars.len());
-            for (index, bar) in bars.iter().enumerate() {
-                self.check_interruption()?;
-                let is_last_history = index == bars.len() - 1;
-                let flags = self.execute(
-                    BarEvent {
-                        candle: bar.clone(),
-                        phase: BarPhase::Historical,
-                    },
-                    is_last_history && !precedes_live_bar,
-                    Some(is_last_history),
-                )?;
-                states.push(flags);
-            }
-            Ok(states)
-        })();
+        self.bulk_replay = true;
+        let mut failed_bar = 0;
+        let result = self.replay_history(bars, bars.len(), precedes_live_bar, &mut failed_bar);
+        self.bulk_replay = false;
+        if matches!(result, Err(RunError::Script(_))) && self.halted.is_some() {
+            self.settle_failed_replay(bars, failed_bar, precedes_live_bar);
+        }
         self.deadline_at = None;
         result
+    }
+
+    /// Runs the first `upto` of `bars` as history. `failed_bar` ends up as the index of the bar that
+    /// failed, or of the last one run.
+    fn replay_history(
+        &mut self,
+        bars: &[Kline],
+        upto: usize,
+        precedes_live_bar: bool,
+        failed_bar: &mut usize,
+    ) -> Result<Vec<BarFlags>, RunError> {
+        let mut states = Vec::with_capacity(upto);
+        for (index, bar) in bars[..upto].iter().enumerate() {
+            *failed_bar = index;
+            self.check_interruption()?;
+            let is_last_history = index == bars.len() - 1;
+            let flags = self.execute(
+                BarEvent {
+                    candle: bar.clone(),
+                    phase: BarPhase::Historical,
+                },
+                is_last_history && !precedes_live_bar,
+                Some(is_last_history),
+            )?;
+            states.push(flags);
+        }
+        Ok(states)
+    }
+
+    /// A history replay failed on `failed_bar`, which left `working` half run: its labels, drawings,
+    /// alerts and fills are in it, and the state before the bar was never kept (copying it before
+    /// every bar would slow every run). Run the bars before it again to get that state back. Nothing
+    /// watches this second run: no breakpoint stops in it and the logs, which already hold what the
+    /// failing bar wrote, are left alone.
+    fn settle_failed_replay(&mut self, bars: &[Kline], failed_bar: usize, precedes_live_bar: bool) {
+        let Some(halted) = self.halted.take() else {
+            return;
+        };
+        let hooks = self.hooks.take();
+        let logs = std::mem::take(&mut self.logs);
+        self.restart_state();
+        self.start_deadline();
+        self.bulk_replay = true;
+        let mut ignored = 0;
+        // Should this run fail or be cancelled, the state is what it reached; the error to report
+        // is the first run's either way.
+        let _ = self.replay_history(bars, failed_bar, precedes_live_bar, &mut ignored);
+        self.bulk_replay = false;
+        self.hooks = hooks;
+        self.logs = logs;
+        self.halted = Some(Halted {
+            error: halted.error,
+            completed_bars: failed_bar,
+        });
     }
 
     pub fn inferred_mintick(bars: &[Kline]) -> f64 {
@@ -565,6 +656,10 @@ impl Session {
         is_last: bool,
         is_last_history: Option<bool>,
     ) -> Result<BarFlags, RunError> {
+        // A script that failed stays stopped: later bars do not run it (TradingView halts it too).
+        if let Some(halted) = &self.halted {
+            return Err(RunError::Script(halted.error.clone()));
+        }
         let owns_deadline = self.deadline_at.is_none();
         if owns_deadline {
             self.start_deadline();
@@ -622,6 +717,7 @@ impl Session {
         let is_new = Some(open_time) != self.last_open_time;
         if is_new {
             self.intrabar.clear();
+            self.intrabar_objects.clear();
             self.once_per_bar_ledger.clear();
         }
         self.emitted_alerts.clear();
@@ -636,6 +732,10 @@ impl Session {
         // A historical bar continues from the state the previous one left; anything else starts from
         // the committed state, so an unconfirmed tick can be thrown away.
         let replaying = matches!(event.phase, BarPhase::Historical);
+        // A bar run on its own (not inside `load_history`) that continues from the replayed state would
+        // leave that state half run if it failed; keep it to go back to. A replay settles itself.
+        let before_bar = (replaying && self.working_is_committed && !self.bulk_replay)
+            .then(|| self.working.clone());
         if replaying && self.working_is_committed {
             self.working.bar_index += 1;
         } else {
@@ -661,6 +761,7 @@ impl Session {
             for (key, value) in self.intrabar.clone() {
                 self.working.variables.insert(key, value);
             }
+            self.restore_intrabar_objects();
         }
         let flags = BarFlags {
             is_first: self.working.bar_index == 0,
@@ -684,20 +785,28 @@ impl Session {
         let outcome = self.run(&statements, &mut context);
         self.program.statements = statements;
         if let Err(error) = outcome {
-            if replaying {
-                // The previous bars' state was consumed in place, so a failed historical bar cannot be
-                // skipped: the run starts over from nothing.
-                self.committed = self.fresh_state();
-                self.working = self.committed.clone();
-                self.working_is_committed = false;
+            if error.category == DiagnosticCategory::Cancellation {
+                // A run somebody stopped is not a failure of the script. Its state is a partial bar,
+                // so a replay starts over; anything else just drops it with the next tick.
+                if replaying {
+                    self.committed = self.fresh_state();
+                    self.working = self.committed.clone();
+                    self.working_is_committed = false;
+                }
+            } else {
+                self.halt(&error, before_bar);
             }
             return Err(RunError::Script(error));
         }
         if self.is_strategy() {
             self.finish_strategy_bar(candle.clone());
         }
+        if !confirmed {
+            self.capture_intrabar_objects();
+        }
         if confirmed {
-            self.commit_histories(candle, true);
+            let builtins = self.read_history_builtins(&mut context);
+            self.commit_histories(candle, true, builtins);
             if replaying {
                 self.working_is_committed = true;
             } else {
@@ -705,10 +814,28 @@ impl Session {
                 self.working_is_committed = false;
             }
             self.intrabar.clear();
+            self.intrabar_objects.clear();
             self.last_committed_open_time = Some(open_time);
         }
         self.last_open_time = Some(open_time);
         Ok(flags)
+    }
+
+    /// Stops the script on `error`. The output keeps the bars before the failing one, in every
+    /// category: `before_bar` is the state a bar run on its own continued from, `committed` is the
+    /// state before any other, and a bar of a history replay (which has neither) is settled by
+    /// `settle_failed_replay` once the replay is over.
+    fn halt(&mut self, error: &Diagnostic, before_bar: Option<RuntimeState>) {
+        let completed_bars = self.working.bar_index.max(0) as usize;
+        if let Some(state) = before_bar {
+            self.working = state;
+        } else if !self.working_is_committed {
+            self.working = self.committed.clone();
+        }
+        self.halted = Some(Halted {
+            error: error.clone(),
+            completed_bars,
+        });
     }
 
     /// Makes `committed` current when the last historical bars left their state only in `working`.
@@ -758,12 +885,23 @@ impl Session {
             .filter(|lf| w.lines.contains_key(&lf.line1) && w.lines.contains_key(&lf.line2))
             .cloned()
             .collect();
+        // A halted script shows the bars before the one it failed on.
+        let bar_count = match &self.halted {
+            Some(halted) => halted.completed_bars.min((w.bar_index + 1) as usize),
+            None => (w.bar_index + 1) as usize,
+        };
         VisualOutput {
             overlay: self.program.declaration.overlay,
-            bar_count: (w.bar_index + 1) as usize,
+            bar_count,
             plots: sorted_by_id(&w.plots)
                 .into_iter()
-                .map(super::outputs::PlotOutput::shifted)
+                .map(|mut plot| {
+                    if self.halted.is_some() {
+                        plot.values.truncate(bar_count);
+                        plot.colors.truncate(bar_count);
+                    }
+                    plot.shifted()
+                })
                 .collect(),
             hlines: sorted_by_id(&w.hlines),
             markers: sorted_by_id(&w.markers)
@@ -1604,27 +1742,55 @@ impl Session {
         {
             return Ok(Step::normal(existing.clone()));
         }
-        if mode == DeclarationMode::Intrabar
-            && let Some(value) = self
+        if mode == DeclarationMode::Intrabar {
+            self.fill_intrabar_key(name, context);
+            let kept = self
                 .intrabar
-                .get(name)
+                .get(self.intrabar_key.as_str())
                 .or_else(|| self.working.variables.get(name))
-        {
-            let value = value.clone();
-            self.working
-                .variables
-                .insert(name.to_owned(), value.clone());
-            self.intrabar.insert(name.to_owned(), value.clone());
-            context.record(mode, name);
+                .cloned();
+            let value = match kept {
+                Some(value) => value,
+                None => self.eval(expression, context)?,
+            };
+            // `eval` may run a function that reuses the scratch key.
+            self.fill_intrabar_key(name, context);
+            self.set_variable(name, value.clone());
+            self.keep_intrabar(value.clone());
+            context.record(mode, &self.intrabar_key);
             return Ok(Step::normal(value));
         }
         let value = self.eval(expression, context)?;
         self.set_variable(name, value.clone());
         context.record(mode, name);
-        if mode == DeclarationMode::Intrabar {
-            self.intrabar.insert(name.to_owned(), value.clone());
-        }
         Ok(Step::normal(value))
+    }
+
+    /// Writes into `intrabar_key` where a `varip` name keeps its value between ticks. A global is its
+    /// own name. A local of a user function is one per call site, in the place `invoke_with` keeps a
+    /// persistent local between calls, so two calls (and a global of the same name) never share it.
+    fn fill_intrabar_key(&mut self, name: &str, context: &RuntimeContext) {
+        use std::fmt::Write;
+        self.intrabar_key.clear();
+        if context.depth == 0 {
+            self.intrabar_key.push_str(name);
+        } else {
+            let _ = write!(
+                self.intrabar_key,
+                "{INTERNAL_PREFIX}fn:{}:{name}",
+                context.site_prefix
+            );
+        }
+    }
+
+    /// Stores `value` under `intrabar_key`, allocating the key only the first time.
+    fn keep_intrabar(&mut self, value: RuntimeValue) {
+        match self.intrabar.get_mut(self.intrabar_key.as_str()) {
+            Some(slot) => *slot = value,
+            None => {
+                self.intrabar.insert(self.intrabar_key.clone(), value);
+            }
+        }
     }
 
     /// Sets a variable, allocating its name only the first time it is seen.
@@ -1653,8 +1819,13 @@ impl Session {
             .unwrap_or(RuntimeValue::Na);
         let value = operators::apply_assignment(op, &old, &rhs);
         self.set_variable(name, value.clone());
-        if context.intrabar_names.contains(name) || self.intrabar.contains_key(name) {
-            self.intrabar.insert(name.to_owned(), value.clone());
+        if !context.intrabar_names.is_empty() || !self.intrabar.is_empty() {
+            self.fill_intrabar_key(name, context);
+            if context.intrabar_names.contains(self.intrabar_key.as_str())
+                || self.intrabar.contains_key(self.intrabar_key.as_str())
+            {
+                self.keep_intrabar(value.clone());
+            }
         }
         Ok(Step::normal(value))
     }
@@ -2940,7 +3111,14 @@ impl Session {
                 .get(local)
                 .cloned()
                 .unwrap_or(RuntimeValue::Na);
-            self.working.variables.insert(stash_key(local), value);
+            let key = stash_key(local);
+            // A `varip` local keeps the value the call left for the next tick of this bar as well.
+            if !self.intrabar.is_empty()
+                && let Some(slot) = self.intrabar.get_mut(&key)
+            {
+                *slot = value.clone();
+            }
+            self.working.variables.insert(key, value);
         }
         for (local, previous) in saved {
             if let Some(previous) = previous {
@@ -3021,7 +3199,144 @@ impl Session {
 
     // MARK: Bookkeeping
 
-    pub(crate) fn commit_histories(&mut self, bar: Kline, releasing_committed: bool) {
+    /// Keeps what a `varip` variable points at, the `varip` fields of every object, and everything
+    /// reachable from either through arrays, maps, matrices and objects, so the next tick of this
+    /// bar can have them back after the rollback. Costs nothing for a script with neither.
+    fn capture_intrabar_objects(&mut self) {
+        self.intrabar_objects.clear();
+        // The references still to follow; `seen` keeps a cycle from being followed twice.
+        let mut pending: Vec<(RefKind, usize)> = Vec::new();
+        for value in self.intrabar.values() {
+            if let RuntimeValue::Ref(kind, id) = value {
+                pending.push((*kind, *id));
+            }
+        }
+        if !self.varip_fields.is_empty() {
+            for (id, object) in &self.working.instances {
+                let Some((_, names)) = self
+                    .varip_fields
+                    .iter()
+                    .find(|(type_name, _)| *type_name == object.type_name)
+                else {
+                    continue;
+                };
+                let fields: Vec<(String, RuntimeValue)> = names
+                    .iter()
+                    .filter_map(|name| Some((name.clone(), object.fields.get(name)?.clone())))
+                    .collect();
+                for (_, value) in &fields {
+                    if let RuntimeValue::Ref(kind, target) = value {
+                        pending.push((*kind, *target));
+                    }
+                }
+                self.intrabar_objects.push(IntrabarObject::Fields {
+                    id: *id,
+                    type_name: object.type_name.clone(),
+                    fields,
+                });
+            }
+        }
+        let mut seen: HashSet<(RefKind, usize)> = HashSet::new();
+        while let Some((kind, id)) = pending.pop() {
+            if !seen.insert((kind, id)) {
+                continue;
+            }
+            let captured = match kind {
+                RefKind::Array => self.working.arrays.get(&id).map(|items| {
+                    push_references(items.iter(), &mut pending);
+                    IntrabarObject::Array(id, items.clone())
+                }),
+                RefKind::Map => self.working.maps.get(&id).map(|map| {
+                    push_references(map.values().iter(), &mut pending);
+                    IntrabarObject::Map(id, map.clone())
+                }),
+                RefKind::Matrix => self.working.matrices.get(&id).map(|matrix| {
+                    push_references(matrix.all_elements().iter(), &mut pending);
+                    IntrabarObject::Matrix(id, matrix.clone())
+                }),
+                RefKind::Object => self.working.instances.get(&id).map(|object| {
+                    push_references(object.fields.values(), &mut pending);
+                    IntrabarObject::Object(id, object.clone())
+                }),
+                _ => None,
+            };
+            if let Some(captured) = captured {
+                self.intrabar_objects.push(captured);
+            }
+        }
+    }
+
+    /// Puts back what `capture_intrabar_objects` kept. The fields of an object only go back into an
+    /// object the committed state has: one made on the tick that was rolled back is gone, as it is
+    /// in TradingView, and its handle may by now belong to another object.
+    fn restore_intrabar_objects(&mut self) {
+        for captured in std::mem::take(&mut self.intrabar_objects) {
+            match captured {
+                IntrabarObject::Array(id, items) => {
+                    self.working.arrays.insert(id, items);
+                    self.working.next_reference = self.working.next_reference.max(id + 1);
+                }
+                IntrabarObject::Map(id, map) => {
+                    self.working.maps.insert(id, map);
+                    self.working.next_reference = self.working.next_reference.max(id + 1);
+                }
+                IntrabarObject::Matrix(id, matrix) => {
+                    self.working.matrices.insert(id, matrix);
+                    self.working.next_reference = self.working.next_reference.max(id + 1);
+                }
+                IntrabarObject::Object(id, object) => {
+                    self.working.instances.insert(id, object);
+                    self.working.next_reference = self.working.next_reference.max(id + 1);
+                }
+                IntrabarObject::Fields {
+                    id,
+                    type_name,
+                    fields,
+                } => {
+                    if let Some(object) = self.working.instances.get_mut(&id)
+                        && object.type_name == type_name
+                    {
+                        for (name, value) in fields {
+                            object.fields.insert(name, value);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// The value of each builtin variable the script reads a history of, as this bar left it. A name
+    /// the script declares itself is a variable and is recorded with the others.
+    fn read_history_builtins(
+        &mut self,
+        context: &mut RuntimeContext,
+    ) -> Vec<(String, RuntimeValue)> {
+        if self.history_builtins.is_empty() {
+            return Vec::new();
+        }
+        let names = std::mem::take(&mut self.history_builtins);
+        let mut values = Vec::with_capacity(names.len());
+        for name in &names {
+            if self.working.variables.contains_key(name) {
+                continue;
+            }
+            let value = self
+                .resolve_identifier(name, SourceRange::ZERO, context)
+                .unwrap_or(RuntimeValue::Na);
+            values.push((name.clone(), value));
+        }
+        self.history_builtins = names;
+        values
+    }
+
+    /// Records the bar in every history. `builtins` are values of builtin variables the script
+    /// indexes (see `read_history_builtins`); a plain call from elsewhere passes none.
+    pub(crate) fn commit_histories(
+        &mut self,
+        bar: Kline,
+        releasing_committed: bool,
+        builtins: Vec<(String, RuntimeValue)>,
+    ) {
         let mut series: FastMap<String, RuntimeValue> = FastMap::default();
         series.insert("open".to_owned(), RuntimeValue::Float(bar.open));
         series.insert("high".to_owned(), RuntimeValue::Float(bar.high));
@@ -3070,7 +3385,7 @@ impl Session {
             .iter()
             .filter(|(name, _)| !builtin.contains(*name))
             .map(|(name, value)| (name.clone(), value.clone()));
-        for (name, value) in series.into_iter().chain(own) {
+        for (name, value) in series.into_iter().chain(builtins).chain(own) {
             if !name.starts_with(INTERNAL_PREFIX) {
                 histories.entry(name).or_default().push(value);
             }
@@ -3186,6 +3501,90 @@ fn declared_builtin_names(statements: &[Statement]) -> Vec<String> {
     let mut found = Vec::new();
     visit(statements, &mut found);
     found
+}
+
+/// The builtin variables `statements` read a history of that `commit_histories` does not record
+/// itself: `open`, `close` and the other series it always keeps are left out, and so is a name the
+/// script declares anew (it is then an ordinary variable). The bodies of the functions and methods
+/// the script imports are read too, and the constants of the libraries it links: a library reads the
+/// same builtin trails as the script.
+fn history_builtin_names(
+    statements: &[Statement],
+    linkage: &LibraryLinkage,
+    shadowed: &[String],
+) -> Vec<String> {
+    const ALWAYS_RECORDED: [&str; 11] = [
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "hl2",
+        "hlc3",
+        "ohlc4",
+        "time",
+        "time_close",
+        "bar_index",
+    ];
+    let mut names: Vec<String> = Vec::new();
+    let mut note = |name: &str| {
+        if super::symbol_catalog::is_variable(name)
+            && !ALWAYS_RECORDED.contains(&name)
+            && !STRATEGY_SERIES.contains(&name)
+            && !shadowed.iter().any(|shadow| shadow == name)
+            && !names.iter().any(|known| known == name)
+        {
+            names.push(name.to_owned());
+        }
+    };
+    super::traversal::for_each_history_identifier(statements, &mut note);
+    let functions = linkage
+        .functions
+        .values()
+        .chain(linkage.methods.values().flatten())
+        .chain(linkage.overloads.values().flatten());
+    for function in functions {
+        super::traversal::for_each_history_identifier(&function.body, &mut note);
+    }
+    for constants in linkage.constants.values() {
+        for expression in constants.values() {
+            super::traversal::for_each_history_identifier_in_expression(expression, &mut note);
+        }
+    }
+    names
+}
+
+/// A script that stopped on a runtime error.
+struct Halted {
+    error: Diagnostic,
+    /// How many bars ran before the failing one.
+    completed_bars: usize,
+}
+
+/// What a tick leaves for the next one on a bar that has not closed (see
+/// `Session::capture_intrabar_objects`).
+enum IntrabarObject {
+    Array(usize, Vec<RuntimeValue>),
+    Map(usize, super::containers::Map),
+    Matrix(usize, super::containers::Matrix),
+    Object(usize, super::containers::Object),
+    Fields {
+        id: usize,
+        type_name: String,
+        fields: Vec<(String, RuntimeValue)>,
+    },
+}
+
+/// Adds the references among `values` to `out`.
+fn push_references<'a>(
+    values: impl Iterator<Item = &'a RuntimeValue>,
+    out: &mut Vec<(RefKind, usize)>,
+) {
+    for value in values {
+        if let RuntimeValue::Ref(kind, id) = value {
+            out.push((*kind, *id));
+        }
+    }
 }
 
 fn sorted_by_id<T: Clone>(map: &FastMap<usize, T>) -> Vec<T> {

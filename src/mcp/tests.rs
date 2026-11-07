@@ -17,7 +17,7 @@ use serde_json::{Value, json};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// `(workspace, chart, indicator id, EMA period)` as the stub app received it.
 type IndicatorCall = (u64, u64, String, Option<usize>);
@@ -170,6 +170,7 @@ pub struct Harness {
     server: Option<McpServer>,
     stop_app: Arc<AtomicBool>,
     paused: Arc<AtomicBool>,
+    confirmations: Arc<Mutex<crate::host::mcp_confirmation::ConfirmationHost>>,
     app: Option<JoinHandle<()>>,
 }
 
@@ -212,6 +213,12 @@ impl Harness {
         let indicators = Arc::new(Mutex::new(Vec::new()));
         let stop_app = Arc::new(AtomicBool::new(false));
         let paused = Arc::new(AtomicBool::new(false));
+        // The questions high-impact calls raise. Off unless a test turns it on, so the tests of
+        // the tools themselves are not each interrupted by one.
+        shared.set_require_confirmation(false);
+        let confirmations = Arc::new(Mutex::new(
+            crate::host::mcp_confirmation::ConfirmationHost::new(shared.clone()),
+        ));
         let app = {
             let shared = shared.clone();
             let added = added.clone();
@@ -220,8 +227,12 @@ impl Harness {
             let root = scripts_root.clone();
             let stop = stop_app.clone();
             let paused = paused.clone();
+            let confirmations = confirmations.clone();
             std::thread::spawn(move || {
                 while !stop.load(Ordering::Acquire) {
+                    if let Ok(mut host) = confirmations.lock() {
+                        host.tick(Instant::now());
+                    }
                     let batch = if paused.load(Ordering::Acquire) {
                         Vec::new()
                     } else {
@@ -232,7 +243,31 @@ impl Harness {
                         let indicators = indicators.clone();
                         let stub = stub.clone();
                         let root = root.clone();
+                        let confirmations = confirmations.clone();
+                        let client_id = request.client_id.clone();
+                        let name = shared
+                            .clients()
+                            .into_iter()
+                            .find(|client| client.id == client_id)
+                            .map(|client| client.name)
+                            .unwrap_or_default();
                         request.run(&shared, move |command| {
+                            // The same gate the app runs, with a stand-in description.
+                            crate::host::mcp_confirmation::gate_command(
+                                &confirmations,
+                                Instant::now(),
+                                &client_id,
+                                &name,
+                                &command,
+                                || {
+                                    let tool = crate::mcp::confirm::tool_of(&command)
+                                        .unwrap_or("a request");
+                                    Ok(crate::mcp::confirm::Summary::new(
+                                        format!("Run {tool}"),
+                                        "the stub's target",
+                                    ))
+                                },
+                            )?;
                             stub_app(command, &added, &indicators, &stub, &root)
                         });
                     }
@@ -250,8 +285,21 @@ impl Harness {
             server: Some(server),
             stop_app,
             paused,
+            confirmations,
             app: Some(app),
         }
+    }
+
+    /// The questions the stub app has open; a test answers them as the user would.
+    pub fn confirmations(
+        &self,
+    ) -> std::sync::MutexGuard<'_, crate::host::mcp_confirmation::ConfirmationHost> {
+        self.confirmations.lock().unwrap()
+    }
+
+    /// Turns the approval step on for a test (the harness starts with it off).
+    pub fn require_confirmation(&self, required: bool) {
+        self.shared.set_require_confirmation(required);
     }
 
     /// While paused the stub app takes nothing from the bridge, so calls stay queued.
@@ -1128,7 +1176,39 @@ impl Reply {
     }
 }
 
+/// `EINVAL`, which macOS now and then gives a loopback `connect` or `setsockopt` when many test
+/// servers are being hit at once. Seen about once in a hundred runs of this suite, in a different
+/// test each time, and always as an error from the client's own socket, never as a server
+/// response; the tests retry it rather than fail on it.
+fn is_os_einval(error: &std::io::Error) -> bool {
+    error.raw_os_error() == Some(22)
+}
+
+/// A TCP connection to the local server, retrying the macOS loopback quirk above.
+pub(super) fn connect_local(port: u16) -> std::net::TcpStream {
+    for _ in 0..5 {
+        match std::net::TcpStream::connect(("127.0.0.1", port)) {
+            Ok(stream) => return stream,
+            Err(error) if is_os_einval(&error) => std::thread::sleep(Duration::from_millis(20)),
+            Err(error) => panic!("connect to 127.0.0.1:{port}: {error}"),
+        }
+    }
+    std::net::TcpStream::connect(("127.0.0.1", port)).expect("connect")
+}
+
 pub fn post(url: &str, token: Option<&str>, headers: &[(&str, &str)], body: &str) -> Reply {
+    for _ in 0..4 {
+        let reply = post_once(url, token, headers, body);
+        // Only the client-side loopback quirk is retried; a server answer never is.
+        if !(reply.status == 0 && reply.body.contains("os error 22")) {
+            return reply;
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    post_once(url, token, headers, body)
+}
+
+fn post_once(url: &str, token: Option<&str>, headers: &[(&str, &str)], body: &str) -> Reply {
     let agent: ureq::Agent = ureq::Agent::config_builder()
         .http_status_as_error(false)
         .timeout_global(Some(Duration::from_secs(10)))
@@ -1200,10 +1280,8 @@ fn error_code(result: &Value) -> String {
 
 fn raw_request(port: u16, head: &str, body: &str) -> String {
     use std::io::{Read, Write};
-    let mut stream = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
-    stream
-        .set_read_timeout(Some(Duration::from_secs(5)))
-        .unwrap();
+    let mut stream = connect_local(port);
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
     let request = format!(
         "POST /mcp HTTP/1.1\r\n{head}Content-Type: application/json\r\nAccept: application/json, text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
         body.len()
@@ -1262,13 +1340,13 @@ fn every_request_needs_a_valid_token() {
         Some("good-token2"),
     ] {
         let reply = rpc(&url, token, "initialize", init.clone());
-        assert_eq!(reply.status, 401, "token {token:?}");
+        assert_eq!(reply.status, 401, "token {token:?}: {}", reply.body);
         assert!(!reply.body.contains("good-token"));
     }
     // Wrong scheme, and a token in the URL instead of the header, are not accepted.
     let body = json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":init}).to_string();
     let basic = post(&url, None, &[("Authorization", "Basic good-token")], &body);
-    assert_eq!(basic.status, 401);
+    assert_eq!(basic.status, 401, "{}", basic.body);
     let query = post(
         &format!("{url}?token=good-token&access_token=good-token"),
         None,
@@ -3637,7 +3715,9 @@ fn tool_schemas_use_only_standard_formats() {
     assert!(reply.body.contains("\"minimum\":0"), "{}", reply.body);
 }
 
+mod audit_tests;
 mod chart_control_tests;
+mod confirmation_tests;
 mod drawing_tools_tests;
 mod hardening_tests;
 mod indicator_tests;

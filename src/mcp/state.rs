@@ -4,6 +4,7 @@
 //! Every request reads this fresh, so revoking a credential or changing a permission takes
 //! effect on the very next request. Nothing here knows about HTTP or egui.
 
+use crate::mcp::audit::AuditQueue;
 use crate::mcp::cancel::CallRegistry;
 use crate::mcp::limits::{RateLimiter, RateLimits};
 use crate::model::DataSource;
@@ -107,8 +108,10 @@ pub struct McpShared {
     status: Mutex<McpStatus>,
     generation: AtomicU64,
     usage_dirty: AtomicBool,
+    require_confirmation: AtomicBool,
     limiter: Mutex<RateLimiter>,
     calls: Arc<CallRegistry>,
+    audit: AuditQueue,
     pine_jobs: Arc<tokio::sync::Semaphore>,
     script_locator: RwLock<ScriptLocator>,
     search_jobs: Arc<tokio::sync::Semaphore>,
@@ -133,8 +136,10 @@ impl McpShared {
             status: Mutex::new(McpStatus::Disabled),
             generation: AtomicU64::new(1),
             usage_dirty: AtomicBool::new(false),
+            require_confirmation: AtomicBool::new(true),
             limiter: Mutex::new(RateLimiter::new(RateLimits::default())),
             calls: Arc::new(CallRegistry::default()),
+            audit: AuditQueue::default(),
             pine_jobs: Arc::new(tokio::sync::Semaphore::new(PINE_JOBS)),
             script_locator: RwLock::new(Box::new(ScriptStore::default_location)),
             search_jobs: Arc::new(tokio::sync::Semaphore::new(SEARCH_JOBS)),
@@ -166,6 +171,21 @@ impl McpShared {
         let mut config = self.write();
         config.clients = clients;
         config.global = global;
+    }
+
+    /// Whether high-impact calls wait for the user's approval. Starts on, so a server that has
+    /// not loaded its settings yet asks rather than acts.
+    pub fn require_confirmation(&self) -> bool {
+        self.require_confirmation.load(Ordering::Acquire)
+    }
+
+    pub fn set_require_confirmation(&self, required: bool) {
+        self.require_confirmation.store(required, Ordering::Release);
+    }
+
+    /// Rows for the activity log, waiting for the app thread to write them.
+    pub fn audit(&self) -> &AuditQueue {
+        &self.audit
     }
 
     /// The tool calls in flight, so a `notifications/cancelled` can find the one it names.

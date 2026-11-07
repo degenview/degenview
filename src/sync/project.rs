@@ -369,6 +369,7 @@ mod tests {
     fn local_tables_and_garbage_project_to_nothing() {
         assert!(project_row("tab", "1", "{}").is_empty());
         assert!(project_row("mcp_client", "x", "{}").is_empty());
+        assert!(project_row("mcp_audit", "x", "{}").is_empty());
         assert!(project_row("watchlist", "1", "not json").is_empty());
         assert!(project_row("watchlist", "1", "[1,2]").is_empty());
         assert!(project_row("some_future_table", "1", "{}").is_empty());

@@ -1,7 +1,7 @@
 //! Runtime values, ported from `PineRuntimeValue.swift` + `PineRefKind.swift`. These are the
 //! leaf types every other runtime module builds on.
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum RefKind {
     Array,
     Line,
