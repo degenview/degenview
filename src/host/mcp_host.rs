@@ -291,9 +291,11 @@ impl McpHost {
         if !self.can_reset {
             return;
         }
-        // Replace the key first and confirm it. If the Keychain refuses (the item is unreadable or
-        // locked, the very case that offers this reset), nothing has been cleared, so the saved
-        // credentials are not lost for nothing and the user can try again.
+        // Replace the key first. If the Keychain refuses the write (the item is locked, the very
+        // case that offers this reset), nothing has changed, so the saved credentials are not lost
+        // for nothing and the user can try again. Once the write succeeds the old key is gone, so
+        // from here the reset runs to the end: stopping would leave credentials that no key opens
+        // and a notice that wrongly says nothing happened.
         if let Some(keys) = &self.keys
             && let Err(error) = keys.rotate()
         {
@@ -311,7 +313,10 @@ impl McpHost {
             .map(|store| store.clear_mcp_state())
             .unwrap_or_else(|_| Err(rusqlite::Error::InvalidQuery));
         if cleared.is_err() {
-            self.notice = Some("Could not reset MCP access".into());
+            self.notice = Some(
+                "The Keychain key was replaced but the saved MCP state could not be cleared. Choose Reset MCP Access again."
+                    .into(),
+            );
             return;
         }
         self.fresh_token = None;
@@ -4476,10 +4481,15 @@ mod tests {
     struct SharedKeychain {
         items: MemoryBackend,
         refuse_writes: AtomicBool,
+        /// Reads find nothing while the item still exists: a locked or timed-out keyring.
+        refuse_reads: AtomicBool,
     }
 
     impl KeyBackend for Arc<SharedKeychain> {
         fn read(&self, scope: Scope, account: &str) -> Option<String> {
+            if self.refuse_reads.load(Ordering::Relaxed) {
+                return None;
+            }
             self.items.read(scope, account)
         }
         fn exists(&self, scope: Scope, account: &str) -> bool {
@@ -4880,5 +4890,44 @@ mod tests {
         );
         drop(host);
         assert!(sealed_host(&store, &keychain).load_error().is_none());
+    }
+
+    #[test]
+    fn a_read_that_fails_after_a_good_write_does_not_stop_the_reset() {
+        let (store, keychain) = (store(), Arc::new(SharedKeychain::default()));
+        let mut host = sealed_host(&store, &keychain);
+        create_client(&mut host, "Claude");
+        drop(host);
+        let scope = Scope {
+            service: "es.nico.degenview.mcp",
+            shared_group: false,
+        };
+        let old_key = keychain.items.read(scope, "seal-key-v1");
+
+        // The keyring locks: the item exists but cannot be read, so the saved state is refused.
+        keychain.refuse_reads.store(true, Ordering::Relaxed);
+        let mut host = sealed_host(&store, &keychain);
+        assert!(host.can_reset());
+        host.apply(McpAction::ResetAccess);
+
+        // The write went through, so the key changed and the reset ran to the end. It must not
+        // claim nothing happened, and the old credentials are gone, not stranded.
+        assert_ne!(keychain.items.read(scope, "seal-key-v1"), old_key);
+        assert!(
+            host.notice()
+                .is_none_or(|n| !n.contains("nothing was changed"))
+        );
+        assert!(store.lock().unwrap().mcp_clients().unwrap().is_empty());
+        assert!(
+            host.can_reset(),
+            "still unreadable, so Reset stays available"
+        );
+
+        // Once the keyring answers again, a restart loads the empty state sealed and clean.
+        keychain.refuse_reads.store(false, Ordering::Relaxed);
+        drop(host);
+        let host = sealed_host(&store, &keychain);
+        assert!(host.load_error().is_none(), "{:?}", host.load_error());
+        assert!(host.clients().is_empty());
     }
 }

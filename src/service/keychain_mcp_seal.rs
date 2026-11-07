@@ -79,19 +79,18 @@ impl SealKeyStore {
         Ok(SealKey(key))
     }
 
-    /// Replaces the key with a new random one, reporting failure, and reads it back to confirm.
-    /// Works when the old item is unreadable (a plain delete's error would be discarded by both
-    /// platform backends). Nothing is changed if the write fails.
+    /// Replaces the key with a new random one. Works when the old item is unreadable (a plain
+    /// delete's error would be discarded by both platform backends).
+    ///
+    /// `Err` means the write failed and the old key is untouched. `Ok` means the Keychain now
+    /// holds the new key, so the old one is gone whatever a later read does; callers must not
+    /// report "nothing changed" from then on. There is deliberately no read-back here: a read that
+    /// fails right after a good write would look like a failed rotation when it is not.
     pub fn rotate(&self) -> Result<SealKey, SecretStoreError> {
         let mut key = [0u8; KEY_BYTES];
         getrandom::fill(&mut key).map_err(|error| SecretStoreError(error.to_string()))?;
         self.backend.write(SCOPE, ACCOUNT, &hex(&key))?;
-        match self.load() {
-            KeyState::Ready(read) if read.0 == key => Ok(read),
-            _ => Err(SecretStoreError(
-                "the new key could not be read back".to_owned(),
-            )),
-        }
+        Ok(SealKey(key))
     }
 
     /// Removes the key, to put a test in the "key lost" state.

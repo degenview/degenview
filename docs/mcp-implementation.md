@@ -2221,10 +2221,10 @@ on first use. The seal is the local-only setting `mcp.seal`; none of this syncs.
 
 "Stays off" is the existing fail-closed path: no clients are loaded, nothing authenticates, and the
 Settings page shows why and offers **Reset MCP Access…**. That first replaces the Keychain key
-(`SealKeyStore::rotate`: a write, which reports failure on both platforms, read back to confirm;
-a delete would not report it). If the Keychain refuses, nothing is cleared and a notice says how to
-remove the item by hand. Only then does it clear every MCP setting and credential (including rows
-that cannot be decoded) and start again sealed and off. It is a confirmed, destructive action and only the Settings page can send it
+(`SealKeyStore::rotate`: a write, which reports failure on both platforms; a delete would not).
+If the write fails, nothing is cleared and a notice says how to remove the item by hand. Once it
+succeeds the old key is gone, so the reset always runs to the end: it clears every MCP setting and credential (including rows
+that cannot be decoded) and starts again sealed and off. It is a confirmed, destructive action and only the Settings page can send it
 (`McpAction::ResetAccess`), and only while the seal error is showing.
 
 **On write** every trust change goes through `McpHost::persist`, which rewrites settings, cap and
