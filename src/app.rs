@@ -2624,6 +2624,8 @@ impl DegenViewApp {
                         mcp.fresh_token().cloned(),
                         mcp.load_error().map(str::to_owned),
                         mcp.notice().map(str::to_owned),
+                        mcp.activity().to_vec(),
+                        mcp.activity_total(),
                     )
                 };
                 let mcp_input = McpSettingsInput {
@@ -2637,7 +2639,10 @@ impl DegenViewApp {
                         .map(|fresh| (fresh.client_name.as_str(), fresh.token.as_str())),
                     load_error: mcp.5.as_deref(),
                     notice: mcp.6.as_deref(),
+                    activity: &mcp.7,
+                    activity_total: mcp.8,
                     now_ms: now,
+                    utc_offset_secs: crate::service::timezone::local_utc_offset_secs(now),
                 };
                 let actions = host.show(
                     ui,
@@ -3172,6 +3177,11 @@ impl eframe::App for DegenViewApp {
     /// was not called off. Only here is exit certain; starting it earlier left a second instance
     /// beside this one whenever the quit was cancelled or slow.
     fn on_exit(&mut self) {
+        // Stops the MCP server and writes the activity log's last rows (they are otherwise
+        // written about once a second, so a quit would lose the final moments).
+        if let Ok(mut host) = self.mcp_host.lock() {
+            host.shutdown();
+        }
         if let Err(error) = self.updates.relaunch_if_armed() {
             eprintln!("{error}");
         }

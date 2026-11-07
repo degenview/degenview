@@ -5,6 +5,7 @@
 //! Authorization is enforced in `call_tool` on every call — `tools/list` merely hides what the
 //! caller could not use anyway.
 
+use crate::mcp::audit::{AuditGuard, outcome_of};
 use crate::mcp::bridge::{
     AlertCommandOutcome, AlertUpdate, BridgeClient, McpCommand, McpError, McpReply, NewAlert,
     REQUEST_TIMEOUT,
@@ -39,7 +40,7 @@ use crate::mcp::types::{
     PineScriptsResult, PineStylesResult, UpdateAlertResult, WorkspacesResult, indicator_catalog,
 };
 use crate::model::alert::{AlertCurrency, AlertFrequency};
-use crate::model::mcp::Permission;
+use crate::model::mcp::{McpAuditOutcome, Permission};
 use crate::model::watchlist_text::validate_market;
 use crate::model::{BuiltIn, DataSource, EMA_PERIODS};
 use crate::pine_studio::store::ScriptStore;
@@ -2029,6 +2030,83 @@ impl Drop for AbortOnDrop {
     }
 }
 
+/// Why a tool call ended without a result of its own.
+enum Stop {
+    /// A name that is not a tool here (or has no permission mapping).
+    UnknownTool(String),
+    /// The client hung up or cancelled it.
+    Cancelled,
+    /// The router refused the request itself (not a tool's own error, which is a result).
+    Rpc(ErrorData),
+}
+
+impl Stop {
+    fn into_error(self) -> ErrorData {
+        match self {
+            Self::UnknownTool(name) => {
+                ErrorData::invalid_params(format!("Unknown tool: {name}"), None)
+            }
+            Self::Cancelled => ErrorData::internal_error("The request was cancelled", None),
+            Self::Rpc(error) => error,
+        }
+    }
+
+    /// How the activity log records it.
+    fn audit(&self) -> (McpAuditOutcome, &'static str) {
+        match self {
+            Self::UnknownTool(_) => (McpAuditOutcome::Denied, "UNKNOWN_TOOL"),
+            Self::Cancelled => (McpAuditOutcome::Cancelled, ""),
+            Self::Rpc(_) => (McpAuditOutcome::Failed, "RPC_ERROR"),
+        }
+    }
+}
+
+impl DegenViewMcp {
+    /// Checks a call's permission and runs it, stopping it if the client leaves or cancels.
+    async fn run_tool(
+        &self,
+        request: CallToolRequestParams,
+        context: RequestContext<RoleServer>,
+        client: Option<&ClientIdentity>,
+    ) -> Result<CallToolResponse, Stop> {
+        // Fail closed: a tool with no permission mapping is never run, however its name got
+        // routed. (It is also hidden from `tools/list`.) A new tool must be added to
+        // `required_permission`; `every_routed_tool_has_exactly_one_permission` enforces it.
+        let Some(permission) = required_permission(&request.name) else {
+            return Err(Stop::UnknownTool(request.name.to_string()));
+        };
+        let allowed = client.is_some_and(|client| self.shared.allows(&client.id, permission));
+        if !allowed {
+            return Ok(failure(&McpError::PermissionDenied(format!(
+                "This credential lacks the {} permission",
+                permission.id()
+            )))
+            .into());
+        }
+        // The call stops when the client hangs up (rmcp cancels `context.ct`, but leaves the
+        // handler running) or sends `notifications/cancelled` for it. Stateless mode serves that
+        // notification as a separate POST, so `honour_cancellations` reads it and cancels the
+        // token this call registered under its client and request id.
+        // Dropping the tool's future is what stops work that has not started: a queued bridge
+        // request is cancelled by `CancelOnDrop`, a queued script job by `AbortOnDrop`. Work the
+        // app has already started keeps its real outcome.
+        let hung_up = context.ct.clone();
+        let registered =
+            client.map(|client| self.shared.calls().register(&client.id, context.id.clone()));
+        let cancelled = registered
+            .as_ref()
+            .map_or_else(tokio_util::sync::CancellationToken::new, |call| {
+                call.token()
+            });
+        let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
+        tokio::select! {
+            result = self.tool_router.call(tcc) => result.map_err(Stop::Rpc),
+            () = hung_up.cancelled() => Err(Stop::Cancelled),
+            () = cancelled.cancelled() => Err(Stop::Cancelled),
+        }
+    }
+}
+
 impl DegenViewMcp {
     /// Runs a script-library read or compile off the async workers and off the app thread, at
     /// most `PINE_JOBS` at a time. The permission is checked again once the work is done: a
@@ -2231,57 +2309,39 @@ impl ServerHandler for DegenViewMcp {
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
-        // Fail closed: a tool with no permission mapping is never run, however its name got
-        // routed. (It is also hidden from `tools/list`.) A new tool must be added to
-        // `required_permission`; `every_routed_tool_has_exactly_one_permission` enforces it.
-        let Some(permission) = required_permission(&request.name) else {
-            return Err(ErrorData::invalid_params(
-                format!("Unknown tool: {}", request.name),
-                None,
-            ));
-        };
-        let allowed = context
+        // Every call is recorded in the activity log, however it ends. The guard writes its row
+        // when the call finishes below, or as cancelled if this future is dropped first (the
+        // client hung up, or the server stopped).
+        let client = context
             .extensions
             .get::<http::request::Parts>()
             .and_then(|parts| parts.extensions.get::<ClientIdentity>())
-            .is_some_and(|client| self.shared.allows(&client.id, permission));
-        if !allowed {
-            return Ok(failure(&McpError::PermissionDenied(format!(
-                "This credential lacks the {} permission",
-                permission.id()
-            )))
-            .into());
+            .cloned();
+        let audit = client.as_ref().map(|client| {
+            AuditGuard::begin(
+                &self.shared,
+                client,
+                &request.name,
+                &context.id,
+                request.arguments.as_ref(),
+            )
+        });
+        let result = self.run_tool(request, context, client.as_ref()).await;
+        if let Some(audit) = audit {
+            match &result {
+                Ok(CallToolResponse::Complete(result)) => {
+                    let (outcome, code) = outcome_of(result);
+                    audit.finish(outcome, &code);
+                }
+                // This server never asks a client for more input; if that changes, so must this.
+                Ok(_) => audit.finish(McpAuditOutcome::Failed, "INPUT_REQUIRED"),
+                Err(stop) => {
+                    let (outcome, code) = stop.audit();
+                    audit.finish(outcome, code);
+                }
+            }
         }
-        // The call stops when the client hangs up (rmcp cancels `context.ct`, but leaves the
-        // handler running) or sends `notifications/cancelled` for it. Stateless mode serves that
-        // notification as a separate POST, so `honour_cancellations` reads it and cancels the
-        // token this call registered under its client and request id.
-        // Dropping the tool's future is what stops work that has not started: a queued bridge
-        // request is cancelled by `CancelOnDrop`, a queued script job by `AbortOnDrop`. Work the
-        // app has already started keeps its real outcome.
-        let hung_up = context.ct.clone();
-        let registered = context
-            .extensions
-            .get::<http::request::Parts>()
-            .and_then(|parts| parts.extensions.get::<ClientIdentity>())
-            .map(|client| self.shared.calls().register(&client.id, context.id.clone()));
-        let cancelled = registered
-            .as_ref()
-            .map_or_else(tokio_util::sync::CancellationToken::new, |call| {
-                call.token()
-            });
-        let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
-        tokio::select! {
-            result = self.tool_router.call(tcc) => result,
-            () = hung_up.cancelled() => Err(ErrorData::internal_error(
-                "The request was cancelled",
-                None,
-            )),
-            () = cancelled.cancelled() => Err(ErrorData::internal_error(
-                "The request was cancelled",
-                None,
-            )),
-        }
+        result.map_err(Stop::into_error)
     }
 
     async fn list_tools(

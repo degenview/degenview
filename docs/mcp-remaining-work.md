@@ -26,6 +26,7 @@ next. Items below are not started unless they say otherwise.
 | 16 | Paper trading writes: place (dry run, request id), modify, cancel, close positions; never on an account another Mac runs | `paper.orders.place`, `paper.orders.cancel`, `paper.positions.close` |
 | 17 | More drawing tools: rays, extended lines, arrows, Fibonacci retracement, horizontal / vertical lines, crosslines, text | `drawings.write` |
 | 18 | Chart snapshot: a PNG of a chart as the camera draws it, returned as an image | `charts.snapshot.read` |
+| 19 | Activity log: a row per tool call (who, what, how it ended, how long), listed and cleared in Settings, local to this Mac | none (Settings only) |
 
 ## 0. What a trader still cannot do over MCP
 
@@ -62,17 +63,20 @@ stateless mode.
 - Review tool descriptions with a weaker model driving a longer task; the one short run showed no
   confusion.
 
-## 2. Audit log and recent-activity view
+## 2. Audit log: what is left
 
-Required before wider use; Pine source edits and alert deletion are now possible remotely.
+Done (phase 19): every tool call leaves a row in a bounded SQLite table, shown under Settings ▸ MCP
+Server ▸ Recent activity with a Clear button. See [architecture/mcp.md](architecture/mcp.md).
 
-- Record per call: time, client id and name, tool, allowed or denied, success or error code, duration,
-  request correlation id, and target ids (workspace, chart, alert, script). Never the token, Pine
-  source, webhook data or full arguments.
-- Store in SQLite (a bounded document table, e.g. 1,000 rows, oldest pruned) through `store::mcp`;
-  write from the app thread or a short-lock helper, never from the HTTP path while holding a lock.
-- Settings: a "Recent activity" list on the MCP Server page and a Clear button.
-- Tests: denied and failed calls are recorded, the log is bounded, no secret or source text reaches it.
+- Only tool calls are recorded: `initialize` and `tools/list` are not, and a bad token is never a
+  row (a flood would push real history out). A client over its rate limit is one row a minute with
+  a count.
+- Agents cannot read or clear the log over MCP. If an agent should be able to read its own history,
+  that needs its own permission.
+- No export, and no filter by client or tool on the Settings page. Add them if the list grows
+  long enough to need them (it keeps 1,000 rows and shows 100).
+- The row is written when the call ends, so a call still running when the app is killed (not
+  quit) leaves nothing.
 
 ## 3. Confirmation policy for high-impact actions
 
@@ -216,7 +220,7 @@ permission matrix, tool catalog, limitations, tests run, example client configur
 ## 14. Open items from the production-readiness review
 
 [The review](reviews/mcp-server-code-review.md) has the status of each finding. Still open:
-audit log (item 2) and confirmation (item 3) as release requirements; compile work for Pine saves and input changes
+confirmation (item 3) as a release requirement; compile work for Pine saves and input changes
 still runs on the app thread (a burst of permitted calls can stall a frame: prepare off-thread, then
 recheck the revision and commit); a draft with no open editor can still overwrite a later outside edit
 of the file (`based_on_revision_id` is never recorded); passing the permission to bridge calls from the

@@ -43,8 +43,8 @@ use crate::model::alert::{
     AlertCondition, AlertCurrency, AlertFrequency, AlertId, AlertState, PriceAlert,
 };
 use crate::model::mcp::{
-    MAX_CLIENTS, McpAction, McpClient, McpSettings, Permission, PermissionSet, clean_client_name,
-    is_valid_port,
+    AUDIT_VISIBLE, MAX_CLIENTS, McpAction, McpAuditEntry, McpAuditKind, McpClient, McpSettings,
+    Permission, PermissionSet, clean_client_name, is_valid_port,
 };
 use crate::model::pine_alert::PineAlertSubscription;
 use crate::model::watchlist::{Watchlist, WatchlistError, WatchlistInstrument, new_id, now_ms};
@@ -65,6 +65,8 @@ use std::time::{Duration, Instant};
 
 /// Recorded last-use times are written at most this often.
 const USAGE_SAVE_INTERVAL: Duration = Duration::from_secs(30);
+/// Activity rows waiting in memory are written at most this often, in one batch.
+const AUDIT_FLUSH_INTERVAL: Duration = Duration::from_secs(1);
 
 /// A bearer token just issued. Held only until the user dismisses it; never persisted.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -87,6 +89,11 @@ pub struct McpHost {
     fresh_token: Option<FreshToken>,
     notice: Option<String>,
     last_usage_save: Instant,
+    last_audit_flush: Instant,
+    /// The newest activity rows, for the Settings page, which must not read the store itself.
+    activity: Vec<McpAuditEntry>,
+    /// How many rows the log holds in all.
+    activity_total: usize,
     /// Actions from the Settings page, applied by [`McpHost::tick`]. The page runs while the
     /// store is locked, so it can only queue.
     pending: Vec<McpAction>,
@@ -109,9 +116,13 @@ impl McpHost {
             fresh_token: None,
             notice: None,
             last_usage_save: Instant::now(),
+            last_audit_flush: Instant::now(),
+            activity: Vec::new(),
+            activity_total: 0,
             pending: Vec::new(),
         };
         host.reload();
+        host.refresh_activity();
         if host.load_error.is_none() && host.settings.enabled {
             host.start_server();
         }
@@ -168,6 +179,16 @@ impl McpHost {
         self.notice.as_deref()
     }
 
+    /// The newest activity rows, newest first (at most [`AUDIT_VISIBLE`]).
+    pub fn activity(&self) -> &[McpAuditEntry] {
+        &self.activity
+    }
+
+    /// How many rows the activity log holds, of which [`Self::activity`] shows the newest.
+    pub fn activity_total(&self) -> usize {
+        self.activity_total
+    }
+
     pub fn fresh_token(&self) -> Option<&FreshToken> {
         self.fresh_token.as_ref()
     }
@@ -195,6 +216,9 @@ impl McpHost {
         for action in std::mem::take(&mut self.pending) {
             self.apply(action);
         }
+        if self.last_audit_flush.elapsed() >= AUDIT_FLUSH_INTERVAL {
+            self.flush_activity(false);
+        }
         if self.load_error.is_some() || self.last_usage_save.elapsed() < USAGE_SAVE_INTERVAL {
             return;
         }
@@ -209,6 +233,56 @@ impl McpHost {
                 // tick tries again instead of losing them until the client's next request.
                 self.shared.mark_usage_dirty();
             }
+        }
+    }
+
+    /// Writes the activity rows waiting in memory to the store in one batch. `all` also writes
+    /// the rate-limit counts still being added up (when quitting). A failed write puts the rows
+    /// back, so the next tick tries again.
+    fn flush_activity(&mut self, all: bool) {
+        self.last_audit_flush = Instant::now();
+        let rows = self.shared.audit().take(now_ms(), all);
+        if rows.is_empty() {
+            return;
+        }
+        let written = self
+            .store
+            .lock()
+            .map(|store| store.append_mcp_audit(&rows))
+            .unwrap_or_else(|_| Err(rusqlite::Error::InvalidQuery));
+        match written {
+            Ok(()) => self.refresh_activity(),
+            Err(_) => self.shared.audit().requeue(rows),
+        }
+    }
+
+    /// Reloads the rows the Settings page shows from the store.
+    fn refresh_activity(&mut self) {
+        if let Ok(store) = self.store.lock() {
+            self.activity = store.recent_mcp_audit(AUDIT_VISIBLE);
+            self.activity_total = store.mcp_audit_count();
+        }
+    }
+
+    /// Empties the log. Rows still waiting in memory are written first, so they are cleared
+    /// too and none appears after the marker that says everything before it is gone.
+    fn clear_activity(&mut self) {
+        self.flush_activity(true);
+        let marker = McpAuditEntry {
+            id: new_id(),
+            at_ms: now_ms(),
+            kind: McpAuditKind::Cleared,
+            count: 1,
+            ..McpAuditEntry::default()
+        };
+        let cleared = self
+            .store
+            .lock()
+            .map(|store| store.clear_mcp_audit(&marker))
+            .unwrap_or_else(|_| Err(rusqlite::Error::InvalidQuery));
+        match cleared {
+            Ok(()) => self.refresh_activity(),
+            Err(_) => self.notice = Some("Could not clear the activity log".into()),
         }
     }
 
@@ -250,6 +324,7 @@ impl McpHost {
             }
             McpAction::SetGlobalPermissions(permissions) => self.replace_global(permissions),
             McpAction::DismissToken => self.fresh_token = None,
+            McpAction::ClearActivity => self.clear_activity(),
         }
     }
 
@@ -409,9 +484,19 @@ impl McpHost {
     }
 }
 
+impl McpHost {
+    /// The app is quitting: stop taking calls, then write every activity row still in memory,
+    /// including the rate-limit counts still being added up. The app calls this from its exit
+    /// hook, because a quit does not necessarily drop the host. Safe to call more than once.
+    pub fn shutdown(&mut self) {
+        self.stop_server();
+        self.flush_activity(true);
+    }
+}
+
 impl Drop for McpHost {
     fn drop(&mut self) {
-        self.stop_server();
+        self.shutdown();
     }
 }
 
@@ -2653,6 +2738,155 @@ mod tests {
             host.shared.take_usage_update().is_some(),
             "the failed save must not clear the pending update"
         );
+    }
+
+    fn audit_row(n: u64) -> McpAuditEntry {
+        McpAuditEntry {
+            id: n,
+            at_ms: 1_000 + n as i64,
+            client_id: "c1".into(),
+            client_name: "Claude".into(),
+            tool: "degenview_list_charts".into(),
+            count: 1,
+            ..McpAuditEntry::default()
+        }
+    }
+
+    fn ids(rows: &[McpAuditEntry]) -> Vec<u64> {
+        rows.iter().map(|row| row.id).collect()
+    }
+
+    fn due_for_flush(host: &mut McpHost) {
+        host.last_audit_flush = Instant::now() - AUDIT_FLUSH_INTERVAL - Duration::from_secs(1);
+    }
+
+    #[test]
+    fn queued_activity_is_written_in_one_batch_and_shown_by_the_page() {
+        let store = store();
+        let mut host = host(&store);
+        assert!(host.activity().is_empty() && host.activity_total() == 0);
+
+        host.shared.audit().push(audit_row(1));
+        host.shared.audit().push(audit_row(2));
+        // Not due yet: the tick leaves the rows in memory and the store alone.
+        host.tick();
+        assert!(host.activity().is_empty());
+        assert!(store.lock().unwrap().recent_mcp_audit(10).is_empty());
+
+        due_for_flush(&mut host);
+        host.tick();
+        assert_eq!(ids(host.activity()), [2, 1], "newest first");
+        assert_eq!(host.activity_total(), 2);
+        assert_eq!(ids(&store.lock().unwrap().recent_mcp_audit(10)), [2, 1]);
+        assert_eq!(host.shared.audit().len(), 0);
+    }
+
+    #[test]
+    fn the_page_shows_only_the_newest_rows_but_counts_them_all() {
+        let store = store();
+        let mut host = host(&store);
+        for n in 1..=(AUDIT_VISIBLE as u64 + 20) {
+            host.shared.audit().push(audit_row(n));
+        }
+        due_for_flush(&mut host);
+        host.tick();
+        assert_eq!(host.activity().len(), AUDIT_VISIBLE);
+        assert_eq!(host.activity_total(), AUDIT_VISIBLE + 20);
+        assert_eq!(host.activity()[0].id, AUDIT_VISIBLE as u64 + 20);
+    }
+
+    #[test]
+    fn activity_that_could_not_be_written_is_kept_for_the_next_try() {
+        let store = store();
+        let mut host = host(&store);
+        host.shared.audit().push(audit_row(1));
+        let poisoner = store.clone();
+        let _ = std::thread::spawn(move || {
+            let _held = poisoner.lock().unwrap();
+            panic!("poison the store lock");
+        })
+        .join();
+        due_for_flush(&mut host);
+        host.tick();
+        assert_eq!(
+            host.shared.audit().len(),
+            1,
+            "the row went back in the queue"
+        );
+    }
+
+    #[test]
+    fn quitting_writes_the_activity_still_waiting() {
+        let store = store();
+        {
+            let host = host(&store);
+            host.shared.audit().push(audit_row(1));
+            host.shared.audit().rate_limited("c1", "Claude", now_ms());
+        }
+        let rows = store.lock().unwrap().recent_mcp_audit(10);
+        assert_eq!(
+            rows.len(),
+            2,
+            "the call, and the rate-limit count still open"
+        );
+        assert!(rows.iter().any(|row| row.kind == McpAuditKind::RateLimited));
+    }
+
+    #[test]
+    fn shutting_down_writes_what_is_left_once_and_dropping_afterwards_adds_nothing() {
+        let store = store();
+        let mut host = host(&store);
+        host.shared.audit().push(audit_row(1));
+        host.shared.audit().rate_limited("c1", "Claude", now_ms());
+        host.shutdown();
+        let rows = store.lock().unwrap().recent_mcp_audit(10);
+        assert_eq!(rows.len(), 2, "the call and the open rate-limit count");
+        assert_eq!(host.activity_total(), 2);
+        // Again, and then the drop that follows in a real quit: nothing is written twice.
+        host.shutdown();
+        drop(host);
+        assert_eq!(store.lock().unwrap().mcp_audit_count(), 2);
+    }
+
+    #[test]
+    fn clearing_deletes_everything_even_what_was_still_in_memory() {
+        let store = store();
+        let mut host = host(&store);
+        host.shared.audit().push(audit_row(1));
+        due_for_flush(&mut host);
+        host.tick();
+        // A row that is only in memory when the user clears.
+        host.shared.audit().push(audit_row(2));
+
+        host.apply(McpAction::ClearActivity);
+        assert_eq!(host.activity().len(), 1);
+        assert_eq!(host.activity()[0].kind, McpAuditKind::Cleared);
+        assert_eq!(host.activity_total(), 1);
+        assert_eq!(host.shared.audit().len(), 0);
+        let rows = store.lock().unwrap().recent_mcp_audit(10);
+        assert_eq!(rows.len(), 1, "nothing before the marker survives");
+
+        // Activity after that follows the marker.
+        host.shared.audit().push(audit_row(3));
+        due_for_flush(&mut host);
+        host.tick();
+        assert_eq!(host.activity()[0].id, 3);
+        assert_eq!(host.activity()[1].kind, McpAuditKind::Cleared);
+    }
+
+    #[test]
+    fn an_unreadable_log_row_does_not_stop_the_host_or_the_page() {
+        let store = store();
+        store.lock().unwrap().insert_raw_mcp_audit("{ not json");
+        store
+            .lock()
+            .unwrap()
+            .append_mcp_audit(&[audit_row(1)])
+            .unwrap();
+        let host = host(&store);
+        assert!(host.load_error().is_none());
+        assert_eq!(ids(host.activity()), [1]);
+        assert_eq!(host.activity_total(), 2);
     }
 
     fn enable_on_free_port(host: &mut McpHost, store: &SharedStore) {

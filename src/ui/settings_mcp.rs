@@ -8,9 +8,10 @@
 
 use crate::mcp::state::McpStatus;
 use crate::model::mcp::{
-    MAX_CLIENT_NAME_LEN, McpAction, McpClient, McpSettings, Permission, PermissionSet,
+    MAX_CLIENT_NAME_LEN, McpAction, McpAuditEntry, McpAuditKind, McpAuditOutcome, McpClient,
+    McpSettings, Permission, PermissionSet,
 };
-use crate::ui::alert_center::{Tone, relative_time};
+use crate::ui::alert_center::{Tone, clock_time, relative_time};
 use crate::ui::icons::{self, Icon};
 use crate::ui::settings_window::{card, divider, section, status_badge, status_message};
 use crate::ui::{kit, settings_card, sheet, theme};
@@ -37,7 +38,12 @@ pub struct McpSettingsInput<'a> {
     pub fresh_token: Option<(&'a str, &'a str)>,
     pub load_error: Option<&'a str>,
     pub notice: Option<&'a str>,
+    /// The newest activity rows, newest first.
+    pub activity: &'a [McpAuditEntry],
+    /// How many rows the log holds in all (`activity` shows the newest of them).
+    pub activity_total: usize,
     pub now_ms: i64,
+    pub utc_offset_secs: i64,
 }
 
 #[derive(Default)]
@@ -49,6 +55,8 @@ pub struct McpSettingsState {
     sheet: Option<Editing>,
     /// The sheet's footer is asking "Revoke it?".
     confirm_revoke: bool,
+    /// The "Clear the activity log?" alert is open.
+    confirm_clear: bool,
     copied: Option<(Copied, Instant)>,
 }
 
@@ -380,7 +388,10 @@ pub fn body(
     credentials_section(ui, state, input, actions);
     ui.add_space(22.0);
     clients_section(ui, state, input);
+    ui.add_space(22.0);
+    activity_section(ui, state, input);
     permissions_sheet(ui.ctx(), state, input, actions);
+    clear_activity_alert(ui.ctx(), state, actions);
 }
 
 fn server_section(
@@ -749,6 +760,221 @@ fn client_row(ui: &mut Ui, client: &McpClient, input: &McpSettingsInput) -> bool
             }
         });
     })
+}
+
+// MARK: Recent activity
+
+/// Width of the outcome tag on an activity row, so the tags form one column.
+const OUTCOME_TAG_WIDTH: f32 = 70.0;
+/// Room kept on the right of an activity row for "12 min. ago".
+const ACTIVITY_TIME_WIDTH: f32 = 82.0;
+
+/// "degenview_get_pine_report" as "Get pine report".
+fn tool_title(tool: &str) -> String {
+    let words = tool
+        .strip_prefix("degenview_")
+        .unwrap_or(tool)
+        .replace('_', " ");
+    let mut chars = words.chars();
+    chars.next().map_or_else(String::new, |first| {
+        first.to_uppercase().chain(chars).collect()
+    })
+}
+
+/// "chart_id" `3` as "chart 3".
+fn target_text(kind: &str, id: &str) -> String {
+    format!(
+        "{} {id}",
+        kind.strip_suffix("_id").unwrap_or(kind).replace('_', " ")
+    )
+}
+
+/// An activity row's tag: its text and tint.
+fn outcome_tag(entry: &McpAuditEntry) -> (&'static str, Color32) {
+    match (entry.kind, entry.outcome) {
+        (McpAuditKind::RateLimited, _) => ("Limited", kit::ORANGE),
+        (McpAuditKind::Gap, _) => ("Gap", kit::ORANGE),
+        (McpAuditKind::Cleared, _) => ("Cleared", theme::text_secondary()),
+        (McpAuditKind::Call, McpAuditOutcome::Succeeded) => ("Done", kit::GREEN),
+        (McpAuditKind::Call, McpAuditOutcome::Failed) => ("Failed", kit::RED),
+        (McpAuditKind::Call, McpAuditOutcome::Denied) => ("Denied", kit::ORANGE),
+        (McpAuditKind::Call, McpAuditOutcome::Cancelled) => ("Cancelled", theme::text_secondary()),
+    }
+}
+
+/// An activity row's headline.
+fn activity_title(entry: &McpAuditEntry) -> String {
+    match entry.kind {
+        McpAuditKind::Call => tool_title(&entry.tool),
+        McpAuditKind::RateLimited => "Rate limit reached".to_owned(),
+        McpAuditKind::Cleared => "Activity log cleared".to_owned(),
+        McpAuditKind::Gap => "Some activity was not recorded".to_owned(),
+    }
+}
+
+/// The small print under a headline: who, what it named, how it ended and how long it took.
+fn activity_detail(entry: &McpAuditEntry) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    match entry.kind {
+        McpAuditKind::Call => {
+            if !entry.client_name.is_empty() {
+                parts.push(entry.client_name.clone());
+            }
+            if !entry.targets.is_empty() {
+                parts.push(
+                    entry
+                        .targets
+                        .iter()
+                        .map(|target| target_text(&target.kind, &target.id))
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                );
+            }
+            if !entry.code.is_empty() {
+                parts.push(entry.code.clone());
+            }
+            parts.push(format!("{} ms", entry.duration_ms));
+        }
+        McpAuditKind::RateLimited => {
+            parts.push(entry.client_name.clone());
+            parts.push(format!(
+                "{} call{} refused within a minute",
+                entry.count,
+                if entry.count == 1 { "" } else { "s" }
+            ));
+        }
+        McpAuditKind::Gap => parts.push(format!(
+            "{} row{} dropped while the app was busy",
+            entry.count,
+            if entry.count == 1 { "" } else { "s" }
+        )),
+        McpAuditKind::Cleared => parts.push("Earlier activity was deleted".to_owned()),
+    }
+    parts.join(" · ")
+}
+
+fn activity_row(ui: &mut Ui, entry: &McpAuditEntry, input: &McpSettingsInput) {
+    let (tag, tint) = outcome_tag(entry);
+    let width = ui.available_width();
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 10.0;
+        capsule(ui, tag, tint, Some(OUTCOME_TAG_WIDTH));
+        let text_width =
+            (width - OUTCOME_TAG_WIDTH - ACTIVITY_TIME_WIDTH - 2.0 * ui.spacing().item_spacing.x)
+                .max(40.0);
+        ui.vertical(|ui| {
+            ui.set_width(text_width);
+            ui.spacing_mut().item_spacing.y = 2.0;
+            ui.add(
+                egui::Label::new(kit::text(
+                    activity_title(entry),
+                    kit::size::SUBHEADLINE + 1.0,
+                    kit::REGULAR,
+                    theme::text_primary(),
+                ))
+                .truncate(),
+            );
+            let detail = activity_detail(entry);
+            if !detail.is_empty() {
+                ui.add(
+                    egui::Label::new(kit::text(
+                        detail,
+                        kit::size::CAPTION + 0.5,
+                        kit::REGULAR,
+                        theme::text_secondary(),
+                    ))
+                    .truncate(),
+                );
+            }
+        });
+        ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+            ui.label(kit::text(
+                relative_time(input.now_ms, entry.at_ms),
+                kit::size::CAPTION + 0.5,
+                kit::REGULAR,
+                theme::text_tertiary(),
+            ))
+            .on_hover_text(clock_time(entry.at_ms, input.utc_offset_secs));
+        });
+    });
+}
+
+fn activity_section(ui: &mut Ui, state: &mut McpSettingsState, input: &McpSettingsInput) {
+    section(
+        ui,
+        "Recent activity",
+        Some(
+            "What connected clients asked DegenView to do, newest first. Kept on this Mac only, and holds ids and results, never what a request contained.",
+        ),
+        |ui| {
+            if input.activity.is_empty() {
+                card(ui, |ui| {
+                    ui.add_space(2.0);
+                    secondary(ui, "Nothing yet. Calls from connected clients appear here.");
+                    ui.add_space(2.0);
+                });
+                return;
+            }
+            card(ui, |ui| {
+                ui.spacing_mut().item_spacing.y = 8.0;
+                for (index, entry) in input.activity.iter().enumerate() {
+                    if index > 0 {
+                        divider(ui);
+                    }
+                    activity_row(ui, entry, input);
+                }
+            });
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                ui.set_min_height(CONTROL_HEIGHT);
+                caption(
+                    ui,
+                    if input.activity_total > input.activity.len() {
+                        format!(
+                            "Showing the newest {} of {}",
+                            input.activity.len(),
+                            input.activity_total
+                        )
+                    } else {
+                        format!("{} in all", input.activity_total)
+                    },
+                );
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    if kit::sheet_button(ui, "Clear…", false, true).clicked() {
+                        state.confirm_clear = true;
+                    }
+                });
+            });
+        },
+    );
+}
+
+/// "Clear the activity log?" Nothing is deleted until it is confirmed.
+fn clear_activity_alert(
+    ctx: &egui::Context,
+    state: &mut McpSettingsState,
+    actions: &mut Vec<McpAction>,
+) {
+    if !state.confirm_clear {
+        return;
+    }
+    match kit::confirm(
+        ctx,
+        Id::new("mcp-clear-activity"),
+        &kit::Confirm {
+            icon: Icon::Trash,
+            title: "Clear the activity log?",
+            message: "Every recorded request is deleted from this Mac. The log keeps one line saying that it was cleared, and when.",
+            destructive: "Clear Log",
+        },
+    ) {
+        Some(kit::ConfirmOutcome::Confirmed) => {
+            state.confirm_clear = false;
+            actions.push(McpAction::ClearActivity);
+        }
+        Some(kit::ConfirmOutcome::Cancelled) => state.confirm_clear = false,
+        None => {}
+    }
 }
 
 // MARK: Permissions sheet
@@ -1155,8 +1381,205 @@ mod tests {
             fresh_token: None,
             load_error: None,
             notice: None,
+            activity: &[],
+            activity_total: 0,
             now_ms: 10_000,
+            utc_offset_secs: 0,
         }
+    }
+
+    fn call_row(n: u64, outcome: McpAuditOutcome) -> McpAuditEntry {
+        McpAuditEntry {
+            id: n,
+            at_ms: 1_000 + n as i64,
+            client_id: "a".into(),
+            client_name: "Claude Desktop".into(),
+            tool: "degenview_get_pine_report".into(),
+            outcome,
+            code: if outcome == McpAuditOutcome::Failed {
+                "NOT_FOUND".into()
+            } else {
+                String::new()
+            },
+            duration_ms: 312,
+            targets: vec![
+                crate::model::mcp::McpAuditTarget {
+                    kind: "workspace_id".into(),
+                    id: "46".into(),
+                },
+                crate::model::mcp::McpAuditTarget {
+                    kind: "chart_id".into(),
+                    id: "3".into(),
+                },
+            ],
+            count: 1,
+            ..McpAuditEntry::default()
+        }
+    }
+
+    #[test]
+    fn activity_rows_say_what_who_and_how_it_ended() {
+        assert_eq!(tool_title("degenview_get_pine_report"), "Get pine report");
+        assert_eq!(tool_title("custom_thing"), "Custom thing");
+        assert_eq!(tool_title(""), "");
+        assert_eq!(target_text("chart_id", "3"), "chart 3");
+        assert_eq!(target_text("order_id", "9"), "order 9");
+
+        let done = call_row(1, McpAuditOutcome::Succeeded);
+        assert_eq!(outcome_tag(&done).0, "Done");
+        assert_eq!(activity_title(&done), "Get pine report");
+        assert_eq!(
+            activity_detail(&done),
+            "Claude Desktop · workspace 46, chart 3 · 312 ms"
+        );
+        let failed = call_row(2, McpAuditOutcome::Failed);
+        assert_eq!(outcome_tag(&failed).0, "Failed");
+        assert!(activity_detail(&failed).contains("NOT_FOUND"));
+        assert_eq!(
+            outcome_tag(&call_row(3, McpAuditOutcome::Denied)).0,
+            "Denied"
+        );
+        assert_eq!(
+            outcome_tag(&call_row(4, McpAuditOutcome::Cancelled)).0,
+            "Cancelled"
+        );
+
+        let limited = McpAuditEntry {
+            kind: McpAuditKind::RateLimited,
+            client_name: "Claude Desktop".into(),
+            count: 500,
+            ..McpAuditEntry::default()
+        };
+        assert_eq!(outcome_tag(&limited).0, "Limited");
+        assert_eq!(
+            activity_detail(&limited),
+            "Claude Desktop · 500 calls refused within a minute"
+        );
+        let cleared = McpAuditEntry {
+            kind: McpAuditKind::Cleared,
+            ..McpAuditEntry::default()
+        };
+        assert_eq!(activity_title(&cleared), "Activity log cleared");
+        let gap = McpAuditEntry {
+            kind: McpAuditKind::Gap,
+            count: 1,
+            ..McpAuditEntry::default()
+        };
+        assert_eq!(
+            activity_detail(&gap),
+            "1 row dropped while the app was busy"
+        );
+    }
+
+    #[test]
+    fn the_activity_list_lays_out_empty_short_and_full_at_every_width() {
+        let status = McpStatus::Running { port: 8765 };
+        let settings = McpSettings {
+            enabled: true,
+            port: 8765,
+        };
+        let global = PermissionSet::read_only();
+        let rows: Vec<McpAuditEntry> = (0..100)
+            .map(|n| {
+                let outcome = [
+                    McpAuditOutcome::Succeeded,
+                    McpAuditOutcome::Failed,
+                    McpAuditOutcome::Denied,
+                    McpAuditOutcome::Cancelled,
+                ][n % 4];
+                let mut row = call_row(n as u64, outcome);
+                if n == 7 {
+                    // The longest things a row can hold must truncate, not widen the page.
+                    row.client_name = "A client with a very long name ".repeat(4);
+                    row.tool = "degenview_".to_owned() + &"long_tool_name_".repeat(4);
+                }
+                row
+            })
+            .collect();
+        for width in [320.0, 360.0, 560.0, 900.0] {
+            for shown in [0, 1, 100] {
+                let mut input = sample(&status, &settings, &[], &global);
+                input.activity = &rows[..shown];
+                input.activity_total = if shown == 100 { 1000 } else { shown };
+                let mut state = McpSettingsState::default();
+                assert!(
+                    frame(&mut state, &input, width).is_empty(),
+                    "{shown} rows at {width}"
+                );
+            }
+        }
+    }
+
+    /// Runs frames over a page with a pending "Clear the activity log?" alert, pressing `keys`.
+    fn clear_alert_after(keys: &[egui::Key]) -> (Vec<McpAction>, bool) {
+        let status = McpStatus::Disabled;
+        let settings = McpSettings::default();
+        let global = PermissionSet::read_only();
+        let rows = [call_row(1, McpAuditOutcome::Succeeded)];
+        let mut input = sample(&status, &settings, &[], &global);
+        input.activity = &rows;
+        input.activity_total = 1;
+        let mut state = McpSettingsState {
+            confirm_clear: true,
+            ..Default::default()
+        };
+        let ctx = egui::Context::default();
+        let mut actions = Vec::new();
+        let run = |ctx: &egui::Context,
+                   state: &mut McpSettingsState,
+                   actions: &mut Vec<McpAction>,
+                   events: Vec<egui::Event>,
+                   time: f64| {
+            let raw = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(600.0, 900.0))),
+                time: Some(time),
+                events,
+                ..Default::default()
+            };
+            let mut output = ctx.run_ui(raw, |ui| {
+                egui::ScrollArea::vertical().show(ui, |ui| body(ui, state, &input, actions));
+            });
+            output.textures_delta.clear();
+        };
+        run(&ctx, &mut state, &mut actions, Vec::new(), 0.0);
+        run(&ctx, &mut state, &mut actions, Vec::new(), 0.1);
+        for (index, key) in keys.iter().enumerate() {
+            let press = |pressed| egui::Event::Key {
+                key: *key,
+                physical_key: Some(*key),
+                pressed,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            };
+            let time = 0.2 + index as f64 * 0.2;
+            run(&ctx, &mut state, &mut actions, vec![press(true)], time);
+            run(
+                &ctx,
+                &mut state,
+                &mut actions,
+                vec![press(false)],
+                time + 0.1,
+            );
+        }
+        (actions, state.confirm_clear)
+    }
+
+    #[test]
+    fn clearing_the_log_asks_first_and_does_nothing_until_confirmed() {
+        // Open, untouched: nothing has been asked of the host.
+        let (actions, open) = clear_alert_after(&[]);
+        assert!(actions.is_empty() && open);
+        // Escape cancels and closes it.
+        let (actions, open) = clear_alert_after(&[egui::Key::Escape]);
+        assert!(actions.is_empty() && !open, "{actions:?}");
+    }
+
+    #[test]
+    fn confirming_sends_exactly_one_clear_action() {
+        // Tab moves to the first button of the alert, the destructive one; Enter presses it.
+        let (actions, open) = clear_alert_after(&[egui::Key::Tab, egui::Key::Enter]);
+        assert_eq!(actions, [McpAction::ClearActivity]);
+        assert!(!open);
     }
 
     #[test]

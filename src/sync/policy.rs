@@ -207,6 +207,9 @@ pub fn table_policy(table: &str) -> TablePolicy {
         "mcp_client" => {
             TablePolicy::Local("security state; a verifier must not grant access elsewhere")
         }
+        "mcp_audit" => TablePolicy::Local(
+            "what agents did on this Mac; another device must not inherit or rewrite that",
+        ),
         _ => TablePolicy::Local("unclassified"),
     }
 }
@@ -314,7 +317,7 @@ mod tests {
 
     #[test]
     fn secrets_and_machine_state_never_sync() {
-        for table in ["mcp_client", "webhook_endpoint", "tab"] {
+        for table in ["mcp_client", "mcp_audit", "webhook_endpoint", "tab"] {
             assert!(
                 matches!(table_policy(table), TablePolicy::Local(_)),
                 "{table}"

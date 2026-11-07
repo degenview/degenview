@@ -1,6 +1,6 @@
 //! Rate limits, connection and header limits, and cancellation, over real loopback sockets.
 
-use super::{BOTH, Harness, READ, call, raw_request, rpc, status_line};
+use super::{BOTH, Harness, READ, call, connect_local, raw_request, rpc, status_line};
 use crate::mcp::limits::RateLimits;
 use crate::mcp::transport::{ConnectionLimits, serve};
 use serde_json::json;
@@ -11,7 +11,7 @@ use tokio_util::sync::CancellationToken;
 
 const LIST: &str = r#"{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}"#;
 
-fn limits(failed_burst: u32, client_burst: u32) -> RateLimits {
+pub(super) fn limits(failed_burst: u32, client_burst: u32) -> RateLimits {
     RateLimits {
         failed_burst,
         // Slow enough that nothing refills while a test runs.
@@ -21,17 +21,15 @@ fn limits(failed_burst: u32, client_burst: u32) -> RateLimits {
     }
 }
 
-fn head(port: u16, token: &str) -> String {
+pub(super) fn head(port: u16, token: &str) -> String {
     format!("Authorization: Bearer {token}\r\nHost: 127.0.0.1:{port}\r\n")
 }
 
 /// Sends a request and reads whatever comes back, tolerating a server that answers and closes
 /// before the whole request is written (an oversized head).
 fn lenient_request(port: u16, head: &str, body: &str) -> String {
-    let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
-    stream
-        .set_read_timeout(Some(Duration::from_secs(5)))
-        .unwrap();
+    let mut stream = connect_local(port);
+    stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
     let request = format!(
         "POST /mcp HTTP/1.1\r\n{head}Content-Type: application/json\r\nAccept: application/json, text/event-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
         body.len()
@@ -104,10 +102,13 @@ fn a_client_recovers_as_its_bucket_refills() {
         ..limits(1000, 1)
     });
     let url = harness.url();
-    assert_eq!(rpc(&url, Some("tok"), "tools/list", json!({})).status, 200);
-    assert_eq!(rpc(&url, Some("tok"), "tools/list", json!({})).status, 429);
+    let first = rpc(&url, Some("tok"), "tools/list", json!({}));
+    assert_eq!(first.status, 200, "{}", first.body);
+    let second = rpc(&url, Some("tok"), "tools/list", json!({}));
+    assert_eq!(second.status, 429, "{}", second.body);
     std::thread::sleep(Duration::from_millis(700));
-    assert_eq!(rpc(&url, Some("tok"), "tools/list", json!({})).status, 200);
+    let third = rpc(&url, Some("tok"), "tools/list", json!({}));
+    assert_eq!(third.status, 200, "{}", third.body);
 }
 
 #[test]
@@ -184,10 +185,8 @@ impl Plain {
     }
 
     fn connect(&self) -> TcpStream {
-        let stream = TcpStream::connect(("127.0.0.1", self.port)).unwrap();
-        stream
-            .set_read_timeout(Some(Duration::from_secs(5)))
-            .unwrap();
+        let stream = connect_local(self.port);
+        stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
         stream
     }
 
@@ -214,7 +213,10 @@ impl Drop for Plain {
 /// Whether the server has closed `stream` (a read returns end-of-file or an error other than
 /// the read timeout) within `wait`.
 fn closed_within(stream: &mut TcpStream, wait: Duration) -> bool {
-    stream.set_read_timeout(Some(wait)).unwrap();
+    // A socket the server has already closed can refuse the option (EINVAL on macOS): closed.
+    if stream.set_read_timeout(Some(wait)).is_err() {
+        return true;
+    }
     let mut buffer = [0u8; 256];
     match stream.read(&mut buffer) {
         Ok(0) => true,
@@ -280,7 +282,7 @@ fn stopping_with_connections_held_open_is_prompt() {
     let port = harness.port;
     let _held: Vec<TcpStream> = (0..8)
         .map(|_| {
-            let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+            let mut stream = connect_local(port);
             stream
                 .write_all(b"POST /mcp HTTP/1.1\r\nHost: x\r\n")
                 .unwrap();
@@ -311,7 +313,7 @@ fn a_call_dropped_by_the_client_never_runs() {
     })
     .to_string();
     {
-        let mut stream = TcpStream::connect(("127.0.0.1", port)).unwrap();
+        let mut stream = connect_local(port);
         let request = format!(
             "POST /mcp HTTP/1.1\r\n{}MCP-Protocol-Version: 2025-06-18\r\nContent-Type: application/json\r\nAccept: application/json, text/event-stream\r\nContent-Length: {}\r\n\r\n{body}",
             head(port, "tok"),
@@ -340,7 +342,7 @@ fn a_call_dropped_by_the_client_never_runs() {
     assert_eq!(harness.added.lock().unwrap().len(), 1);
 }
 
-fn add_chart_call(id: serde_json::Value) -> String {
+pub(super) fn add_chart_call(id: serde_json::Value) -> String {
     json!({
         "jsonrpc": "2.0", "id": id, "method": "tools/call",
         "params": {"name": "degenview_add_chart",
@@ -349,20 +351,24 @@ fn add_chart_call(id: serde_json::Value) -> String {
     .to_string()
 }
 
-fn cancel_message(request_id: serde_json::Value) -> String {
+pub(super) fn cancel_message(request_id: serde_json::Value) -> String {
     json!({"jsonrpc": "2.0", "method": "notifications/cancelled",
            "params": {"requestId": request_id, "reason": "test"}})
     .to_string()
 }
 
 /// Starts `body` as a call that waits on a paused app, and returns what it eventually gets.
-fn start_call(url: &str, token: &str, body: String) -> std::thread::JoinHandle<super::Reply> {
+pub(super) fn start_call(
+    url: &str,
+    token: &str,
+    body: String,
+) -> std::thread::JoinHandle<super::Reply> {
     let url = url.to_owned();
     let token = token.to_owned();
     std::thread::spawn(move || super::post(&url, Some(&token), &[super::PROTOCOL], &body))
 }
 
-fn wait_for_calls(harness: &Harness, running: usize) {
+pub(super) fn wait_for_calls(harness: &Harness, running: usize) {
     let deadline = Instant::now() + Duration::from_secs(3);
     while harness.shared.calls().running() != running {
         assert!(
@@ -503,6 +509,9 @@ fn a_cancel_gets_through_while_every_permit_is_held() {
         "the cancel waited for a permit ({:?})",
         started.elapsed()
     );
+    // The 202 only says the cancel was noted. Wait until the server has dropped the call before
+    // letting the app run, or the app could take the request in the gap and run it.
+    wait_for_calls(&harness, 15);
 
     harness.pause_app(false);
     let replies: Vec<_> = calls.into_iter().map(|call| call.join().unwrap()).collect();
