@@ -240,7 +240,11 @@ that expects OAuth discovery will not work with it.
   it lets an on-path attacker pose as the server to a pinning client and take its bearer token. So a
   key file loosened by a restore or a plain `cp` is put back to owner-only when it is loaded, a link or
   non-regular file is refused, and the file is always written through a freshly created temporary file
-  (the mode asked for only applies to a file being created).
+  (the mode asked for only applies to a file being created). The whole read, make and save runs under an
+  exclusive lock on `mcp-tls.lock` in the same directory, so two DegenView processes starting together
+  adopt one certificate (without it, one failed and another could present a certificate that was not the
+  one saved). The lock waits up to five seconds and then says another instance holds it; it is released
+  when its holder exits or crashes.
 - The `Host` check accepts only that address and port on a named interface, and the loopback names on
   loopback. Origin rejection, the bearer check, the permission checks, rate limits and the confirmation
   step apply unchanged, and run after TLS.
