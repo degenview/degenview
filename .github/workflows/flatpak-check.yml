@@ -1,18 +1,24 @@
 name: Flatpak check
 
-# Builds the Flatpak on pull requests that can break it, so a bad manifest or a crate that no
-# longer builds in the sandbox shows up before a release tag does. The bundle is uploaded as an
-# artifact of the run for trying out.
+# Builds the Flatpak on pull requests that change the packaging, so a bad manifest shows up before
+# a release tag does. The bundle is uploaded as an artifact of the run for trying out.
+#
+# Dependency changes (`Cargo.toml`, `Cargo.lock`) are deliberately not a trigger: the build has no
+# cache and takes 10-20 minutes, and almost every dependency change is a crate that builds the
+# same inside the sandbox. A crate that does not is caught by the weekly run on `main` (and by the
+# release, which builds the Flatpak before publishing). Run it by hand (workflow_dispatch) on a
+# pull request that adds a crate with native code.
 on:
   pull_request:
     paths:
       - packaging/flatpak/**
-      - Cargo.lock
-      - Cargo.toml
       - assets/brand/DegenView-512-rounded.png
       - .github/workflows/flatpak.yml
       - .github/workflows/flatpak-check.yml
       - tools/requirements/flatpak-generator.txt
+  schedule:
+    # Mondays 05:17 UTC (an odd minute: runs scheduled at the top of the hour are delayed most).
+    - cron: "17 5 * * 1"
   workflow_dispatch:
 
 permissions:

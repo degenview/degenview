@@ -63,8 +63,9 @@ The Flatpak is built by the reusable `flatpak.yml` (`release.yml` calls it as th
 the `release` job needs it, so the bundle exists before the immutable release is published).
 It builds from source in the Flatpak SDK, for x86_64 and aarch64, and shares no cache with the
 other jobs. The same workflow
-runs on pull requests that touch `packaging/flatpak/**`, `Cargo.lock` or `Cargo.toml`
-(`flatpak-check.yml`, x86_64 only: a release builds arm64 too), which is the only check that the manifest builds before a tag. Details, and
+runs on pull requests that touch `packaging/flatpak/**`, weekly on `main`, and on demand
+(`flatpak-check.yml`, x86_64 only: a release builds arm64 too), which is the only check that the manifest builds before a tag.
+Dependency changes do not trigger it (see [Flatpak](../flatpak.md)). Details, and
 what is unverified: [Flatpak](../flatpak.md). The updater never looks at the Flatpak asset: it only
 picks the macOS and Windows zip suffixes.
 
