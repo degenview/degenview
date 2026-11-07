@@ -67,15 +67,16 @@ stateless mode.
 ## 2. Audit log: what is left
 
 Done (phase 19): every tool call leaves a row in a bounded SQLite table, shown under Settings ▸ MCP
-Server ▸ Recent activity with a Clear button. See [architecture/mcp.md](architecture/mcp.md).
+Server ▸ Recent activity (the newest five rows) and its "View All Activity…" sheet, which searches,
+filters by client, outcome and date, pages the log and clears it. See
+[architecture/mcp.md](architecture/mcp.md).
 
 - Only tool calls are recorded: `initialize` and `tools/list` are not, and a bad token is never a
   row (a flood would push real history out). A client over its rate limit is one row a minute with
   a count.
 - Agents cannot read or clear the log over MCP. If an agent should be able to read its own history,
   that needs its own permission.
-- No export, and no filter by client or tool on the Settings page. Add them if the list grows
-  long enough to need them (it keeps 1,000 rows and shows 100).
+- No export. Add one if people want the log outside the app (it keeps 1,000 rows).
 - The row is written when the call ends, so a call still running when the app is killed (not
   quit) leaves nothing.
 

@@ -2819,8 +2819,8 @@ impl DegenViewApp {
                         mcp.fresh_token().cloned(),
                         mcp.load_error().map(str::to_owned),
                         mcp.notice().map(str::to_owned),
-                        mcp.activity().to_vec(),
-                        mcp.activity_total(),
+                        mcp.activity(),
+                        mcp.activity_unreadable(),
                     )
                 };
                 let mcp_input = McpSettingsInput {
@@ -2835,7 +2835,7 @@ impl DegenViewApp {
                     load_error: mcp.5.as_deref(),
                     notice: mcp.6.as_deref(),
                     activity: &mcp.7,
-                    activity_total: mcp.8,
+                    activity_unreadable: mcp.8,
                     now_ms: now,
                     utc_offset_secs: crate::service::timezone::local_utc_offset_secs(now),
                 };
