@@ -96,6 +96,12 @@ pub struct Session {
     working_is_committed: bool,
     pub working: RuntimeState,
     pub intrabar: FastMap<String, RuntimeValue>,
+    /// What a `varip` variable or `varip` field holds beyond a handle, taken at the end of each
+    /// unconfirmed tick and put back at the start of the next, because the objects live in the
+    /// rolled-back state. Cleared with `intrabar`.
+    intrabar_objects: Vec<IntrabarObject>,
+    /// For each script type with a `varip` field, those fields' names. Empty for most scripts.
+    varip_fields: Vec<(String, Vec<String>)>,
     pub last_open_time: Option<i64>,
     pub security_globals: Option<FastMap<String, RuntimeValue>>,
     /// The chart's foreground and background (`chart.fg_color`, `chart.bg_color`).
@@ -313,6 +319,17 @@ impl Session {
             }
         }
         let shadowing_builtins = declared_builtin_names(&program.statements);
+        let varip_fields: Vec<(String, Vec<String>)> = types
+            .iter()
+            .filter_map(|(name, fields)| {
+                let kept: Vec<String> = fields
+                    .iter()
+                    .filter(|field| field.persistent)
+                    .map(|field| field.name.clone())
+                    .collect();
+                (!kept.is_empty()).then(|| (name.clone(), kept))
+            })
+            .collect();
         let history_builtins =
             history_builtin_names(&program.statements, &linkage, &shadowing_builtins);
         let mut inputs = inputs;
@@ -371,6 +388,8 @@ impl Session {
             working_is_committed: false,
             working: RuntimeState::default(),
             intrabar: FastMap::default(),
+            intrabar_objects: Vec::new(),
+            varip_fields,
             last_open_time: None,
             security_globals: None,
             theme: super::program::ChartTheme::DARK,
@@ -431,6 +450,7 @@ impl Session {
         self.working = self.committed.clone();
         self.working_is_committed = false;
         self.intrabar.clear();
+        self.intrabar_objects.clear();
         self.last_open_time = None;
         self.last_committed_open_time = None;
         self.once_per_bar_ledger.clear();
@@ -629,6 +649,7 @@ impl Session {
         let is_new = Some(open_time) != self.last_open_time;
         if is_new {
             self.intrabar.clear();
+            self.intrabar_objects.clear();
             self.once_per_bar_ledger.clear();
         }
         self.emitted_alerts.clear();
@@ -668,6 +689,7 @@ impl Session {
             for (key, value) in self.intrabar.clone() {
                 self.working.variables.insert(key, value);
             }
+            self.restore_intrabar_objects();
         }
         let flags = BarFlags {
             is_first: self.working.bar_index == 0,
@@ -703,6 +725,9 @@ impl Session {
         if self.is_strategy() {
             self.finish_strategy_bar(candle.clone());
         }
+        if !confirmed {
+            self.capture_intrabar_objects();
+        }
         if confirmed {
             let builtins = self.read_history_builtins(&mut context);
             self.commit_histories(candle, true, builtins);
@@ -713,6 +738,7 @@ impl Session {
                 self.working_is_committed = false;
             }
             self.intrabar.clear();
+            self.intrabar_objects.clear();
             self.last_committed_open_time = Some(open_time);
         }
         self.last_open_time = Some(open_time);
@@ -1612,27 +1638,51 @@ impl Session {
         {
             return Ok(Step::normal(existing.clone()));
         }
-        if mode == DeclarationMode::Intrabar
-            && let Some(value) = self
+        if mode == DeclarationMode::Intrabar {
+            let key = self.intrabar_key(name, context);
+            if let Some(value) = self
                 .intrabar
-                .get(name)
+                .get(key.as_ref())
                 .or_else(|| self.working.variables.get(name))
-        {
-            let value = value.clone();
-            self.working
-                .variables
-                .insert(name.to_owned(), value.clone());
-            self.intrabar.insert(name.to_owned(), value.clone());
-            context.record(mode, name);
+            {
+                let value = value.clone();
+                self.working
+                    .variables
+                    .insert(name.to_owned(), value.clone());
+                self.intrabar
+                    .insert(key.clone().into_owned(), value.clone());
+                context.record(mode, &key);
+                return Ok(Step::normal(value));
+            }
+            let value = self.eval(expression, context)?;
+            self.set_variable(name, value.clone());
+            self.intrabar
+                .insert(key.clone().into_owned(), value.clone());
+            context.record(mode, &key);
             return Ok(Step::normal(value));
         }
         let value = self.eval(expression, context)?;
         self.set_variable(name, value.clone());
         context.record(mode, name);
-        if mode == DeclarationMode::Intrabar {
-            self.intrabar.insert(name.to_owned(), value.clone());
-        }
         Ok(Step::normal(value))
+    }
+
+    /// Where a `varip` name keeps its value between ticks. A global is its own name. A local of a
+    /// user function is one per call site, in the place `invoke_with` keeps a persistent local between
+    /// calls, so two calls (and a global of the same name) never share it.
+    fn intrabar_key<'a>(
+        &self,
+        name: &'a str,
+        context: &RuntimeContext,
+    ) -> std::borrow::Cow<'a, str> {
+        if context.depth == 0 {
+            std::borrow::Cow::Borrowed(name)
+        } else {
+            std::borrow::Cow::Owned(format!(
+                "{INTERNAL_PREFIX}fn:{}:{name}",
+                context.site_prefix
+            ))
+        }
     }
 
     /// Sets a variable, allocating its name only the first time it is seen.
@@ -1661,8 +1711,13 @@ impl Session {
             .unwrap_or(RuntimeValue::Na);
         let value = operators::apply_assignment(op, &old, &rhs);
         self.set_variable(name, value.clone());
-        if context.intrabar_names.contains(name) || self.intrabar.contains_key(name) {
-            self.intrabar.insert(name.to_owned(), value.clone());
+        if !context.intrabar_names.is_empty() || !self.intrabar.is_empty() {
+            let key = self.intrabar_key(name, context);
+            if context.intrabar_names.contains(key.as_ref())
+                || self.intrabar.contains_key(key.as_ref())
+            {
+                self.intrabar.insert(key.into_owned(), value.clone());
+            }
         }
         Ok(Step::normal(value))
     }
@@ -2948,7 +3003,14 @@ impl Session {
                 .get(local)
                 .cloned()
                 .unwrap_or(RuntimeValue::Na);
-            self.working.variables.insert(stash_key(local), value);
+            let key = stash_key(local);
+            // A `varip` local keeps the value the call left for the next tick of this bar as well.
+            if !self.intrabar.is_empty()
+                && let Some(slot) = self.intrabar.get_mut(&key)
+            {
+                *slot = value.clone();
+            }
+            self.working.variables.insert(key, value);
         }
         for (local, previous) in saved {
             if let Some(previous) = previous {
@@ -3028,6 +3090,105 @@ impl Session {
     }
 
     // MARK: Bookkeeping
+
+    /// Keeps what a `varip` variable points at, and the `varip` fields of every object, so the next
+    /// tick of this bar can have them back after the rollback. Costs nothing for a script with
+    /// neither.
+    fn capture_intrabar_objects(&mut self) {
+        self.intrabar_objects.clear();
+        for value in self.intrabar.values() {
+            let RuntimeValue::Ref(kind, id) = value else {
+                continue;
+            };
+            let id = *id;
+            let captured = match kind {
+                RefKind::Array => self
+                    .working
+                    .arrays
+                    .get(&id)
+                    .map(|items| IntrabarObject::Array(id, items.clone())),
+                RefKind::Map => self
+                    .working
+                    .maps
+                    .get(&id)
+                    .map(|map| IntrabarObject::Map(id, map.clone())),
+                RefKind::Matrix => self
+                    .working
+                    .matrices
+                    .get(&id)
+                    .map(|matrix| IntrabarObject::Matrix(id, matrix.clone())),
+                RefKind::Object => self
+                    .working
+                    .instances
+                    .get(&id)
+                    .map(|object| IntrabarObject::Object(id, object.clone())),
+                _ => None,
+            };
+            if let Some(captured) = captured {
+                self.intrabar_objects.push(captured);
+            }
+        }
+        if self.varip_fields.is_empty() {
+            return;
+        }
+        for (id, object) in &self.working.instances {
+            let Some((_, names)) = self
+                .varip_fields
+                .iter()
+                .find(|(type_name, _)| *type_name == object.type_name)
+            else {
+                continue;
+            };
+            let fields: Vec<(String, RuntimeValue)> = names
+                .iter()
+                .filter_map(|name| Some((name.clone(), object.fields.get(name)?.clone())))
+                .collect();
+            self.intrabar_objects.push(IntrabarObject::Fields {
+                id: *id,
+                type_name: object.type_name.clone(),
+                fields,
+            });
+        }
+    }
+
+    /// Puts back what `capture_intrabar_objects` kept. The fields of an object only go back into an
+    /// object the committed state has: one made on the tick that was rolled back is gone, as it is
+    /// in TradingView, and its handle may by now belong to another object.
+    fn restore_intrabar_objects(&mut self) {
+        for captured in std::mem::take(&mut self.intrabar_objects) {
+            match captured {
+                IntrabarObject::Array(id, items) => {
+                    self.working.arrays.insert(id, items);
+                    self.working.next_reference = self.working.next_reference.max(id + 1);
+                }
+                IntrabarObject::Map(id, map) => {
+                    self.working.maps.insert(id, map);
+                    self.working.next_reference = self.working.next_reference.max(id + 1);
+                }
+                IntrabarObject::Matrix(id, matrix) => {
+                    self.working.matrices.insert(id, matrix);
+                    self.working.next_reference = self.working.next_reference.max(id + 1);
+                }
+                IntrabarObject::Object(id, object) => {
+                    self.working.instances.insert(id, object);
+                    self.working.next_reference = self.working.next_reference.max(id + 1);
+                }
+                IntrabarObject::Fields {
+                    id,
+                    type_name,
+                    fields,
+                } => {
+                    if let Some(object) = self.working.instances.get_mut(&id)
+                        && object.type_name == type_name
+                    {
+                        for (name, value) in fields {
+                            object.fields.insert(name, value);
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     /// The value of each builtin variable the script reads a history of, as this bar left it. A name
     /// the script declares itself is a variable and is recorded with the others.
@@ -3276,6 +3437,20 @@ fn history_builtin_names(
         }
     }
     names
+}
+
+/// What a tick leaves for the next one on a bar that has not closed (see
+/// `Session::capture_intrabar_objects`).
+enum IntrabarObject {
+    Array(usize, Vec<RuntimeValue>),
+    Map(usize, super::containers::Map),
+    Matrix(usize, super::containers::Matrix),
+    Object(usize, super::containers::Object),
+    Fields {
+        id: usize,
+        type_name: String,
+        fields: Vec<(String, RuntimeValue)>,
+    },
 }
 
 fn sorted_by_id<T: Clone>(map: &FastMap<usize, T>) -> Vec<T> {

@@ -1462,6 +1462,7 @@ impl Parser {
     }
 
     fn type_field(&mut self) -> Option<TypeField> {
+        let persistent = self.take(TokenKind::Varip);
         self.skip_qualifier();
         let type_ref = self.annotated_type_ref();
         let TokenKind::Identifier(name) = &self.current().kind else {
@@ -1478,6 +1479,7 @@ impl Parser {
             name,
             type_ref,
             default_value,
+            persistent,
         })
     }
 

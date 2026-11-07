@@ -426,6 +426,9 @@ pub struct TypeField {
     pub name: String,
     pub type_ref: Option<TypeRef>,
     pub default_value: Option<Expression>,
+    /// Declared `varip`: the field keeps its value across the ticks of a realtime bar, where the
+    /// object's other fields roll back.
+    pub persistent: bool,
 }
 
 impl TypeField {

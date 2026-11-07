@@ -53,9 +53,9 @@ Severity: **bug** = the engine computes something TradingView does not and a scr
 | # | Sev | Area | Finding | Verified | Fix |
 |---|-----|------|---------|----------|-----|
 | 1 | bug | strategy | `Broker::place` retain predicates are inverted | re-read | PR 2 |
-| 2 | bug | varip | `varip` in a function is shared across call sites | audit | PR 5 |
-| 3 | gap | varip | `varip` UDT fields do not parse | re-read (parser) | PR 5 |
-| 4 | bug | varip | `varip` array/map/UDT/drawing handle dangles after a tick | audit | PR 5 |
+| 2 | bug | varip | `varip` in a function is shared across call sites | audit, run (test) | PR 5 — **done** |
+| 3 | gap | varip | `varip` UDT fields do not parse | re-read (parser), run (test) | PR 5 — **done** |
+| 4 | bug | varip | `varip` array/map/matrix/UDT handle dangles after a tick | audit, run (test) | PR 5 — **done** (drawings not covered) |
 | 5 | bug | history | `[]` on most built-ins is `na` forever | audit, run (test) | PR 4 — **done** |
 | 6 | bug | scopes | Block locals keep stale values; one flat history table | audit | — |
 | 7 | bug | scopes | Function block locals push `na` on skipped bars | audit | — |
@@ -374,7 +374,17 @@ change except on the workload the PR targets, and PRs touching state or rollback
    (`pine::debug::parse_expression` can index any variable) unless gated on the hooks. Limitation: inside a
    `request.security` expression, a builtin's history is still `na` (the site calls `commit_histories`
    without builtins).
-5. `varip` per call site, UDT `varip` fields, reference-typed `varip` (2, 3, 4).
+5. `varip` per call site, UDT `varip` fields, reference-typed `varip` (2, 3, 4). Done. A `varip` local of a
+   function is kept under its call site's key (the one `invoke_with` stashes persistent locals under), so
+   two calls and a same-named global no longer share it, and it survives the ticks of a bar. `varip` is
+   accepted on a UDT field (`TypeField::persistent`). `Session::capture_intrabar_objects` keeps, after each
+   unconfirmed tick, what every `varip` variable points at (array, map, matrix, object) and every `varip`
+   field of every object; `restore_intrabar_objects` puts them back after the next tick's rollback, bumping
+   `next_reference` past them. Fields go back only into an object the committed state has (an object made on
+   the rolled-back tick is gone, as in TradingView, and its handle may belong to another object by now).
+   Inferred, not confirmed against TradingView: a `varip` array keeps its contents, not only its handle.
+   Not covered: a `varip` variable holding a drawing, and objects reached only through a `varip` array or
+   field (one level of reference is kept).
 6. A runtime error halts the script (11, 12, 13, 30).
 
 ## Not verified
