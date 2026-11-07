@@ -2,6 +2,7 @@
 //! window and Settings, written to the `setting` table on every change. The choice is local to
 //! the Mac, like the tabs themselves.
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use crate::model::tab_title::TabTitleStyle;
@@ -11,6 +12,10 @@ use crate::store::{SharedStore, Store};
 pub struct TabTitleHost {
     store: Option<SharedStore>,
     style: Arc<Mutex<TabTitleStyle>>,
+    /// Bumped on every change, so the app can repaint the tab windows: egui repaints each
+    /// window on its own, and a window with nothing animating (a portfolio, say) would keep
+    /// showing the old titles until something else woke it.
+    revision: Arc<AtomicU64>,
 }
 
 impl TabTitleHost {
@@ -30,7 +35,13 @@ impl TabTitleHost {
         Self {
             store: Some(store),
             style: Arc::new(Mutex::new(style)),
+            revision: Arc::default(),
         }
+    }
+
+    /// Changes whenever the style does.
+    pub fn revision(&self) -> u64 {
+        self.revision.load(Ordering::Acquire)
     }
 
     pub fn style(&self) -> TabTitleStyle {
@@ -45,6 +56,7 @@ impl TabTitleHost {
             return Ok(());
         }
         *current = style;
+        self.revision.fetch_add(1, Ordering::AcqRel);
         let write = |store: &Store| {
             store
                 .set_setting(TabTitleStyle::KEY, &style)
@@ -95,6 +107,20 @@ mod tests {
                 .expect("save");
         }
         assert_eq!(TabTitleHost::load(store).style(), TabTitleStyle::SymbolOnly);
+    }
+
+    #[test]
+    fn every_change_bumps_the_revision_and_a_repeat_does_not() {
+        let host = TabTitleHost::load(shared());
+        let seen = host.revision();
+        host.set(None, TabTitleStyle::SymbolOnly).expect("save");
+        assert_eq!(host.revision(), seen + 1);
+        host.set(None, TabTitleStyle::SymbolOnly).expect("save");
+        assert_eq!(host.revision(), seen + 1, "nothing changed");
+        // Clones share it: a change made in Settings is seen by the app's copy.
+        let other = host.clone();
+        other.set(None, TabTitleStyle::LayoutOnly).expect("save");
+        assert_eq!(host.revision(), seen + 2);
     }
 
     #[test]

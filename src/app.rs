@@ -310,6 +310,8 @@ pub struct DegenViewApp {
     tab_quote_keys: Vec<String>,
     /// The quote book's revision the tab windows were last repainted for.
     tab_quote_revision: u64,
+    /// The title style's revision they were last repainted for.
+    tab_title_revision: u64,
     portfolio_quotes: PortfolioQuoteFeed,
     /// How portfolio cards on chart grids reach the portfolios.
     card_env: PortfolioCardEnv,
@@ -1095,6 +1097,7 @@ impl DegenViewApp {
             tab_title_host,
             tab_quote_keys: Vec::new(),
             tab_quote_revision: 0,
+            tab_title_revision: 0,
             snapshots,
             editor_themes,
             mcp_host,
@@ -1447,9 +1450,13 @@ impl DegenViewApp {
         }
         // The coordinator asks the root window for a frame when quotes move; the tab windows are
         // their own viewports and need asking.
+        // The same for a new title style from Settings or another window: each window repaints
+        // on its own schedule, and one with nothing animating would show the old titles.
         let revision = self.quote_book.revision();
-        if revision != self.tab_quote_revision {
+        let style_revision = self.tab_title_host.revision();
+        if revision != self.tab_quote_revision || style_revision != self.tab_title_revision {
             self.tab_quote_revision = revision;
+            self.tab_title_revision = style_revision;
             for (window, _) in self.tab_host.snapshot() {
                 ctx.request_repaint_of(Self::viewport_id(window.id));
             }
