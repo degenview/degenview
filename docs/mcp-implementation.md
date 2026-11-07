@@ -2220,9 +2220,11 @@ on first use. The seal is the local-only setting `mcp.seal`; none of this syncs.
 | unreadable | any | server stays off |
 
 "Stays off" is the existing fail-closed path: no clients are loaded, nothing authenticates, and the
-Settings page shows why and offers **Reset MCP Access…**. That clears every MCP setting and
-credential (including rows that cannot be decoded), deletes the key and starts again sealed and
-off. It is a confirmed, destructive action and only the Settings page can send it
+Settings page shows why and offers **Reset MCP Access…**. That first replaces the Keychain key
+(`SealKeyStore::rotate`: a write, which reports failure on both platforms, read back to confirm;
+a delete would not report it). If the Keychain refuses, nothing is cleared and a notice says how to
+remove the item by hand. Only then does it clear every MCP setting and credential (including rows
+that cannot be decoded) and start again sealed and off. It is a confirmed, destructive action and only the Settings page can send it
 (`McpAction::ResetAccess`), and only while the seal error is showing.
 
 **On write** every trust change goes through `McpHost::persist`, which rewrites settings, cap and
@@ -2243,10 +2245,17 @@ disk behind the running app is overwritten instead of being sealed in.
   failed check.
 - The adopt row trusts credentials made before this existed, and cannot tell them from one planted
   before the first launch of a sealing build. Everything after is protected.
-- Is off under `DEGENVIEW_NO_KEYCHAIN=1` (a key held in memory would be new each launch and lock
-  the user out) and where no keyring can be created: Windows (no secret store at all) and Linux
-  without a Secret Service. The
-  host then runs as before and shows a notice. A build that downgrades past this change reads the
+- Is off in unit tests and in a debug build, or one built with `--features dev-unsealed-mcp`, that
+  was started with `DEGENVIEW_NO_KEYCHAIN=1` (a key held in memory would be new each launch and
+  lock the developer out). A distributed build ignores the variable: otherwise any process that can
+  write the database could launch the app with it set, plant a credential and skip the seal.
+  `SealKeyStore::system` uses the real Keychain backend directly for the same reason, not
+  `default_backend()`, which swaps in memory when the variable is set.
+- Is also off where no keyring can be created: Windows (no secret store at all) and Linux without a
+  Secret Service. The host then runs as before and shows a notice. On Linux that includes a
+  process that breaks the Secret Service connection (a bad `DBUS_SESSION_BUS_ADDRESS`) *and*
+  deletes the `mcp.seal` row: it looks like a machine that never had a keyring. With the seal row
+  present the same sabotage fails closed. A build that downgrades past this change reads the
   rows as before and ignores the seal; the next upgrade finds a seal that no longer matches and
   fails closed until reset.
 - A build that knows more permissions than the one reading drops the unknown ones on load

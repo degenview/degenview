@@ -7,7 +7,7 @@
 //! On Linux without a Secret Service the key cannot be created, and the host runs unsealed.
 
 use crate::mcp::seal::{KEY_BYTES, hex, key_from_hex};
-use crate::service::keychain_api_keys::{KeyBackend, default_backend};
+use crate::service::keychain_api_keys::{KeyBackend, KeychainBackend};
 use crate::service::keychain_webhook_secrets::Scope;
 use crate::service::webhook_delivery::SecretStoreError;
 
@@ -46,9 +46,14 @@ impl SealKeyStore {
         Self { backend }
     }
 
-    /// The store on the platform's real secret storage.
+    /// The Keychain service the key lives under, for messages.
+    pub const SERVICE: &'static str = SCOPE.service;
+
+    /// The store on the platform's real secret storage. Never `default_backend()`: that returns
+    /// an in-memory store when `DEGENVIEW_NO_KEYCHAIN` is set, which would hand a distributed
+    /// build a new key on every launch and a way around the seal.
     pub fn system() -> Self {
-        Self::with_backend(default_backend())
+        Self::with_backend(Box::new(KeychainBackend))
     }
 
     /// Reads the key. The first read after a launch may raise a Keychain prompt.
@@ -74,7 +79,23 @@ impl SealKeyStore {
         Ok(SealKey(key))
     }
 
-    /// Removes the key (the user chose to reset MCP access).
+    /// Replaces the key with a new random one, reporting failure, and reads it back to confirm.
+    /// Works when the old item is unreadable (a plain delete's error would be discarded by both
+    /// platform backends). Nothing is changed if the write fails.
+    pub fn rotate(&self) -> Result<SealKey, SecretStoreError> {
+        let mut key = [0u8; KEY_BYTES];
+        getrandom::fill(&mut key).map_err(|error| SecretStoreError(error.to_string()))?;
+        self.backend.write(SCOPE, ACCOUNT, &hex(&key))?;
+        match self.load() {
+            KeyState::Ready(read) if read.0 == key => Ok(read),
+            _ => Err(SecretStoreError(
+                "the new key could not be read back".to_owned(),
+            )),
+        }
+    }
+
+    /// Removes the key, to put a test in the "key lost" state.
+    #[cfg(test)]
     pub fn delete(&self) {
         self.backend.delete(SCOPE, ACCOUNT);
     }
@@ -110,6 +131,46 @@ mod tests {
         let backend = MemoryBackend::default();
         backend.write(SCOPE, ACCOUNT, "not a key").unwrap();
         let store = SealKeyStore::with_backend(Box::new(backend));
+        assert_eq!(store.load(), KeyState::Unreadable);
+    }
+
+    #[test]
+    fn rotating_replaces_an_existing_or_unreadable_key() {
+        let store = store();
+        let old = store.create().unwrap();
+        let new = store.rotate().unwrap();
+        assert_ne!(old, new);
+        assert_eq!(store.load(), KeyState::Ready(new));
+
+        let backend = MemoryBackend::default();
+        backend.write(SCOPE, ACCOUNT, "garbage").unwrap();
+        let store = SealKeyStore::with_backend(Box::new(backend));
+        assert_eq!(store.load(), KeyState::Unreadable);
+        let key = store.rotate().unwrap();
+        assert_eq!(store.load(), KeyState::Ready(key));
+    }
+
+    #[test]
+    fn a_rotation_the_keychain_refuses_changes_nothing() {
+        struct Refusing(MemoryBackend);
+        impl KeyBackend for Refusing {
+            fn read(&self, scope: Scope, account: &str) -> Option<String> {
+                self.0.read(scope, account)
+            }
+            fn exists(&self, scope: Scope, account: &str) -> bool {
+                self.0.exists(scope, account)
+            }
+            fn write(&self, _: Scope, _: &str, _: &str) -> Result<(), SecretStoreError> {
+                Err(SecretStoreError("denied".into()))
+            }
+            fn delete(&self, scope: Scope, account: &str) {
+                self.0.delete(scope, account)
+            }
+        }
+        let inner = MemoryBackend::default();
+        inner.write(SCOPE, ACCOUNT, "garbage").unwrap();
+        let store = SealKeyStore::with_backend(Box::new(Refusing(inner)));
+        assert_eq!(store.rotate(), Err(SecretStoreError("denied".into())));
         assert_eq!(store.load(), KeyState::Unreadable);
     }
 

@@ -54,7 +54,6 @@ use crate::model::{
     Timeframe,
 };
 use crate::service::keychain_mcp_seal::{KeyState, SealKey, SealKeyStore};
-use crate::service::keychain_webhook_secrets::is_disabled as keychain_disabled;
 use crate::service::watchlist_quotes::WatchlistQuoteBook;
 use crate::store::SharedStore;
 use crate::store::watchlist::{ListChanges, ListEdit, Place, WatchlistStore};
@@ -65,6 +64,14 @@ use crate::workspace::{
 };
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+/// Whether the credential seal is off. Tests, and development builds started with
+/// `DEGENVIEW_NO_KEYCHAIN`, run without it: a key held in memory would be new on every launch.
+/// A distributed build ignores the variable, because any process that can write the database
+/// could otherwise launch the app with it set, plant a credential, and skip the seal.
+fn sealing_disabled(test: bool, dev_build: bool, env_set: bool) -> bool {
+    test || (dev_build && env_set)
+}
 
 /// Recorded last-use times are written at most this often.
 const USAGE_SAVE_INTERVAL: Duration = Duration::from_secs(30);
@@ -106,8 +113,13 @@ impl McpHost {
     /// Loads persisted state and, only if the user previously enabled the server, starts it.
     /// `wake` runs a UI frame when a request is queued.
     pub fn load(store: SharedStore, wake: Arc<dyn Fn() + Send + Sync>) -> Self {
-        // Without a Keychain a key would be new on every launch and lock the user out.
-        let keys = (!keychain_disabled()).then(SealKeyStore::system);
+        let env_set = std::env::var_os("DEGENVIEW_NO_KEYCHAIN").is_some();
+        let keys = (!sealing_disabled(
+            cfg!(test),
+            cfg!(any(debug_assertions, feature = "dev-unsealed-mcp")),
+            env_set,
+        ))
+        .then(SealKeyStore::system);
         Self::load_with_keys(store, wake, keys)
     }
 
@@ -273,10 +285,23 @@ impl McpHost {
             .save_mcp_state(settings, global, clients, sealed.as_deref())
     }
 
-    /// The user's "Reset MCP Access": forgets every credential and setting (the saved state
-    /// cannot be trusted), drops the key, and starts again sealed and off.
+    /// The user's "Reset MCP Access": replaces the key, forgets every credential and setting (the
+    /// saved state cannot be trusted), and starts again sealed and off.
     fn reset_access(&mut self) {
         if !self.can_reset {
+            return;
+        }
+        // Replace the key first and confirm it. If the Keychain refuses (the item is unreadable or
+        // locked, the very case that offers this reset), nothing has been cleared, so the saved
+        // credentials are not lost for nothing and the user can try again.
+        if let Some(keys) = &self.keys
+            && let Err(error) = keys.rotate()
+        {
+            self.notice = Some(format!(
+                "Could not replace the Keychain key, so nothing was changed ({}). Delete the “{}” item in Keychain Access or your keyring, then restart DegenView.",
+                error.0,
+                SealKeyStore::SERVICE
+            ));
             return;
         }
         self.stop_server();
@@ -288,9 +313,6 @@ impl McpHost {
         if cleared.is_err() {
             self.notice = Some("Could not reset MCP access".into());
             return;
-        }
-        if let Some(keys) = &self.keys {
-            keys.delete();
         }
         self.fresh_token = None;
         self.settings = McpSettings::default();
@@ -4764,5 +4786,99 @@ mod tests {
         assert_eq!(store.lock().unwrap().mcp_seal().unwrap(), None);
         let again = sealed_host(&store, &keychain);
         assert!(again.shared().authenticate(&token).is_some());
+    }
+
+    #[test]
+    fn a_distributed_build_ignores_the_variable_that_turns_the_seal_off() {
+        // (test, dev_build, env_set)
+        assert!(
+            sealing_disabled(true, false, false),
+            "unit tests run unsealed"
+        );
+        assert!(
+            sealing_disabled(false, true, true),
+            "debug builds honour it"
+        );
+        assert!(
+            !sealing_disabled(false, true, false),
+            "but only when it is set"
+        );
+        assert!(
+            !sealing_disabled(false, false, true),
+            "a release build seals even with DEGENVIEW_NO_KEYCHAIN set"
+        );
+        assert!(!sealing_disabled(false, false, false));
+    }
+
+    #[test]
+    fn a_reset_the_keychain_refuses_clears_nothing() {
+        let (store, keychain) = (store(), Arc::new(SharedKeychain::default()));
+        let mut host = sealed_host(&store, &keychain);
+        create_client(&mut host, "Claude");
+        drop(host);
+        // The key becomes unreadable: the case that offers the reset.
+        let scope = Scope {
+            service: "es.nico.degenview.mcp",
+            shared_group: false,
+        };
+        keychain
+            .items
+            .write(scope, "seal-key-v1", "garbage")
+            .unwrap();
+        keychain.refuse_writes.store(true, Ordering::Relaxed);
+
+        let mut host = sealed_host(&store, &keychain);
+        assert!(host.can_reset());
+        host.apply(McpAction::ResetAccess);
+
+        assert!(
+            host.notice()
+                .is_some_and(|n| n.contains("nothing was changed"))
+        );
+        assert!(host.can_reset(), "the user can try again");
+        {
+            let store = store.lock().unwrap();
+            assert_eq!(store.mcp_clients().unwrap().len(), 1, "credentials kept");
+            assert!(store.mcp_seal().unwrap().is_some());
+        }
+
+        // Once the Keychain cooperates, the same state recovers by restarting it.
+        keychain.refuse_writes.store(false, Ordering::Relaxed);
+        keychain.items.delete(scope, "seal-key-v1");
+        drop(host);
+        let mut host = sealed_host(&store, &keychain);
+        host.apply(McpAction::ResetAccess);
+        assert!(host.load_error().is_none());
+        assert!(host.clients().is_empty());
+    }
+
+    #[test]
+    fn resetting_from_an_unreadable_key_replaces_it() {
+        let (store, keychain) = (store(), Arc::new(SharedKeychain::default()));
+        let mut host = sealed_host(&store, &keychain);
+        create_client(&mut host, "Claude");
+        drop(host);
+        let scope = Scope {
+            service: "es.nico.degenview.mcp",
+            shared_group: false,
+        };
+        keychain
+            .items
+            .write(scope, "seal-key-v1", "garbage")
+            .unwrap();
+
+        let mut host = sealed_host(&store, &keychain);
+        assert!(host.load_error().is_some_and(|e| e.contains("read")));
+        host.apply(McpAction::ResetAccess);
+
+        assert!(host.load_error().is_none(), "{:?}", host.load_error());
+        assert!(host.clients().is_empty());
+        assert_ne!(
+            keychain.items.read(scope, "seal-key-v1").as_deref(),
+            Some("garbage"),
+            "the old item is gone"
+        );
+        drop(host);
+        assert!(sealed_host(&store, &keychain).load_error().is_none());
     }
 }
