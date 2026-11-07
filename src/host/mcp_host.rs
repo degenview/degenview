@@ -119,6 +119,8 @@ pub struct McpHost {
     pending: Vec<McpAction>,
     /// Where the TLS certificate for a non-loopback bind is kept: the app's data directory.
     tls_dir: Option<std::path::PathBuf>,
+    /// Fingerprint of that certificate, for the Settings page.
+    tls_fingerprint: Option<String>,
 }
 
 impl McpHost {
@@ -167,8 +169,12 @@ impl McpHost {
             } else {
                 crate::store::data_dir()
             },
+            tls_fingerprint: None,
         };
         host.reload();
+        if host.load_error.is_none() {
+            host.refresh_fingerprint();
+        }
         host.refresh_activity();
         if host.load_error.is_none() && host.settings.enabled {
             host.start_server();
@@ -502,6 +508,7 @@ impl McpHost {
         match action {
             McpAction::SetEnabled(enabled) => self.set_enabled(enabled),
             McpAction::SetPort(port) => self.set_port(port),
+            McpAction::SetBind(bind) => self.set_bind(bind),
             McpAction::CreateClient(name) => self.create_client(&name),
             McpAction::RevokeClient(id) => self.revoke_client(&id),
             McpAction::SetClientPermission {
@@ -601,6 +608,45 @@ impl McpHost {
         if enabled {
             self.start_server();
         }
+    }
+
+    /// Moves the listener to this machine only, or to one named interface. The certificate for it
+    /// is made now (not when the server next starts), so the Settings page can show the
+    /// fingerprint to pin before anything connects. A server that is on is restarted on the new
+    /// address; one that is off stays off.
+    fn set_bind(&mut self, bind: BindMode) {
+        if bind == self.settings.bind {
+            return;
+        }
+        let settings = McpSettings {
+            bind,
+            ..self.settings.clone()
+        };
+        if !self.save_settings(settings) {
+            return;
+        }
+        self.refresh_fingerprint();
+        if self.settings.enabled {
+            self.stop_server();
+            self.start_server();
+        }
+    }
+
+    /// Reads (or makes) the certificate for the saved bind, for the fingerprint the page shows.
+    fn refresh_fingerprint(&mut self) {
+        self.tls_fingerprint = match self.tls_identity() {
+            Ok(identity) => identity.map(|identity| identity.fingerprint()),
+            Err(message) => {
+                self.notice = Some(message);
+                None
+            }
+        };
+    }
+
+    /// The fingerprint of the certificate a remote client should pin, when the server listens
+    /// beyond this machine.
+    pub fn tls_fingerprint(&self) -> Option<&str> {
+        self.tls_fingerprint.as_deref()
     }
 
     fn set_port(&mut self, port: u16) {
@@ -3233,6 +3279,82 @@ mod tests {
             bind: BindMode::interface("192.0.2.1".parse().unwrap()).unwrap(),
             ..McpSettings::default()
         }
+    }
+
+    fn lan() -> BindMode {
+        BindMode::interface("192.0.2.1".parse().unwrap()).unwrap()
+    }
+
+    fn scratch_dir(name: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!("degenview-mcp-host-{name}-{}", new_id()))
+    }
+
+    #[test]
+    fn choosing_an_interface_saves_it_and_shows_the_fingerprint_to_pin() {
+        let store = store();
+        let mut host = host(&store);
+        let dir = scratch_dir("bind");
+        host.tls_dir = Some(dir.clone());
+        assert!(host.tls_fingerprint().is_none());
+
+        host.apply(McpAction::SetBind(lan()));
+        assert_eq!(store.lock().unwrap().mcp_settings().unwrap().bind, lan());
+        assert_eq!(host.settings().bind, lan());
+        // The server is off, so nothing listens, but the certificate is there to compare.
+        assert_eq!(host.status(), McpStatus::Disabled);
+        let first = host.tls_fingerprint().expect("a fingerprint").to_owned();
+        assert_eq!(first.len(), 32 * 3 - 1);
+
+        // The same address keeps the same certificate; back on this Mac clears the fingerprint.
+        host.apply(McpAction::SetBind(BindMode::Loopback));
+        assert!(host.tls_fingerprint().is_none());
+        host.apply(McpAction::SetBind(lan()));
+        assert_eq!(host.tls_fingerprint(), Some(first.as_str()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_server_that_is_on_follows_the_bind_and_comes_back_on_this_mac() {
+        let store = store();
+        let mut host = host(&store);
+        let dir = scratch_dir("follow");
+        host.tls_dir = Some(dir.clone());
+        enable_on_free_port(&mut host, &store);
+        assert!(matches!(host.status(), McpStatus::Running { .. }));
+
+        // 192.0.2.1 is a documentation address no machine has, so the listener cannot bind it:
+        // the failure is reported, and nothing is left listening on the old address either.
+        host.apply(McpAction::SetBind(lan()));
+        assert!(
+            matches!(host.status(), McpStatus::Failed(_)),
+            "{:?}",
+            host.status()
+        );
+        assert!(host.notice().is_some());
+
+        host.apply(McpAction::SetBind(BindMode::Loopback));
+        assert!(matches!(host.status(), McpStatus::Running { .. }));
+        assert!(host.tls_fingerprint().is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_unchanged_bind_does_nothing_and_unreadable_settings_are_not_overwritten() {
+        let store = store();
+        let mut host = host(&store);
+        host.apply(McpAction::SetBind(BindMode::Loopback));
+        assert!(host.notice().is_none());
+
+        // With nowhere to keep a certificate the choice is still saved, and the reason shown.
+        host.apply(McpAction::SetBind(lan()));
+        assert_eq!(host.settings().bind, lan());
+        assert!(host.tls_fingerprint().is_none());
+        assert!(host.notice().is_some_and(|n| n.contains("certificate")));
+
+        store.lock().unwrap().insert_raw_mcp_client("x", "{broken");
+        let mut broken = McpHost::load(store.clone(), Arc::new(|| {}));
+        broken.apply(McpAction::SetBind(lan()));
+        assert_eq!(broken.settings().bind, BindMode::Loopback);
     }
 
     #[test]

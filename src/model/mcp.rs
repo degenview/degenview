@@ -437,6 +437,8 @@ pub struct GroupAccess {
 pub enum McpAction {
     SetEnabled(bool),
     SetPort(u16),
+    /// Listens on this machine only, or on one named interface (which makes a certificate).
+    SetBind(BindMode),
     CreateClient(String),
     RevokeClient(String),
     SetClientPermission {
@@ -456,37 +458,16 @@ pub enum McpAction {
     /// Replaces the global cap at once.
     SetGlobalPermissions(PermissionSet),
     /// Lets a client be used from other machines, or takes that away.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the remote-access Settings section sends it (step 4)"
-        )
-    )]
     SetClientRemote {
         client_id: String,
         allowed: bool,
     },
     /// Replaces the ranges a remote client may call from (empty: any).
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the remote-access Settings section sends it (step 4)"
-        )
-    )]
     SetClientCidrs {
         client_id: String,
         cidrs: Vec<Cidr>,
     },
     /// Replaces the most a remote-capable client may do.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "the remote-access Settings section sends it (step 4)"
-        )
-    )]
     SetRemoteCeiling(PermissionSet),
     DismissToken,
     /// Forgets every credential and setting when the saved state failed its seal check. Only

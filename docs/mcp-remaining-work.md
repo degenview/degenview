@@ -180,25 +180,25 @@ bypass.
 
 ## Remote access
 
-Steps 1 to 3 are done: `BindMode`, TLS 1.3 with a self-signed pinned certificate, the `Host` list
-from the bind, no non-loopback bind without TLS; and per-client `remote_allowed`, CIDR ranges and a
-remote ceiling, judged on the socket peer; and the audit log's `peer`, a per-address failed-auth limit,
-and approval of every change for a remote credential (the setting does not apply to it). See "Remote access: what exists" in
-[mcp-implementation.md](mcp-implementation.md). The host handles `SetClientRemote`,
-`SetClientCidrs` and `SetRemoteCeiling`; nothing sends them yet. Not started, in this order:
+All four steps are in: `BindMode`, TLS 1.3 with a self-signed pinned certificate, the `Host` list from
+the bind, no non-loopback bind without TLS; per-client `remote_allowed`, CIDR ranges and a remote
+ceiling, judged on the socket peer; the audit log's `peer`, a per-address failed-auth limit, and approval
+of every change for a remote credential; and the Settings section for all of it. See "Remote access:
+what exists" in [mcp-implementation.md](mcp-implementation.md).
 
-4. Settings: interface picker, certificate fingerprint with a copy button, the per-client switch, the
-   ceiling; user-entered hostnames for the `Host` list (MagicDNS names); docs.
+Still to do, in the order I would do it:
 
-Known gaps to close with the Settings page: the activity sheet shows `peer` as plain text but cannot filter
-by it; the "ask before high-impact requests" switch needs a line saying it does not apply to remote
-credentials; the descriptions of the `AskRemote` tools do not mention the approval step (a model learns
-of it from the `CONFIRMATION_REQUIRED` answer); a notification for a remote question reads like any other.
-
-Until step 4 none of this can be set from the app: a bind, a client's remote switch or the ceiling can only
-come from editing the store, which the seal then rejects (in release builds).
-Check first that a real client accepts a pinned self-signed certificate; if none does, a certificate
-from Tailscale or Let's Encrypt (import) is the fallback, and the generated one is not worth polishing.
+1. Check that a real client accepts a pinned self-signed certificate, from another machine (Claude
+   Code, Claude Desktop through `mcp-remote`, MCP Inspector). Nothing has been tried against a real
+   client or a real LAN address. If none accepts it, importing a certificate (Tailscale, Let's Encrypt)
+   is the fallback and the generated one is not worth polishing.
+2. Hostnames: a user-entered list for the `Host` check and the certificate's names, so a client can use
+   a MagicDNS name instead of an address (the certificate and the `Host` list name the address only).
+3. Smaller gaps: the activity sheet shows `peer` but cannot filter by it; the descriptions of the
+   `AskRemote` tools do not mention the approval step (a model learns of it from
+   `CONFIRMATION_REQUIRED`); a notification for a remote question reads like any other; the page
+   offers no way to copy the certificate itself, only its fingerprint; IPv6 link-local addresses
+   (need a scope id) are refused.
 
 ## 10. Hardening
 

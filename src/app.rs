@@ -2825,6 +2825,7 @@ impl DegenViewApp {
                         mcp.can_reset(),
                         mcp.activity(),
                         mcp.activity_unreadable(),
+                        mcp.tls_fingerprint().map(str::to_owned),
                     )
                 };
                 let mcp_input = McpSettingsInput {
@@ -2841,6 +2842,7 @@ impl DegenViewApp {
                     notice: mcp.6.as_deref(),
                     activity: &mcp.8,
                     activity_unreadable: mcp.9,
+                    tls_fingerprint: mcp.10.as_deref(),
                     now_ms: now,
                     utc_offset_secs: crate::service::timezone::local_utc_offset_secs(now),
                 };

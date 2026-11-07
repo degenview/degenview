@@ -215,9 +215,9 @@ A later remote-access mode would require a separate security design, HTTPS, prop
 
 ## Remote access: what exists
 
-The transport for listening beyond loopback exists, with no way to turn it on from Settings yet
-(`McpSettings.bind`, a client's `remote_allowed` and the ceiling are read from the store). Steps 1 to 3 of four; the others are in
-[remaining work](mcp-remaining-work.md). Until they land, treat a non-loopback bind as unfinished.
+Listening beyond loopback is off by default and is turned on in Settings ▸ MCP Server ▸ Remote Access
+(the last of four steps; what is left is in [remaining work](mcp-remaining-work.md)). It has not been
+tried against a real MCP client or from another machine, so treat it as unverified until it has.
 
 This deliberately takes a smaller step than the paragraph above asks for: TLS and the existing
 bearer tokens, not OAuth. That fits the user's own machines on a LAN or a tailnet, where the client
@@ -249,6 +249,13 @@ that expects OAuth discovery will not work with it.
   that a remote-enabled client is also held to the ceiling when used locally. Create a second,
   local-only credential for that.
 - Both are sealed, and stored only when not default (see `mcp::seal`).
+- Settings. The "Remote Access" section has the switch, the interface (an address typed or filled in by
+  "Detect", which asks the system which address reaches the local network and sends nothing), the
+  certificate fingerprint with a copy button, and the remote ceiling. Switching on only shows the
+  address field: nothing is saved until an address is applied, and `McpAction::SetBind` restarts a
+  server that is on (or reports why it could not listen). A client's sheet has "Use from other
+  machines" and its address ranges; its row in the list carries a "Remote" mark. The security card shows
+  where the server listens and whether remote connections are on.
 - Approval. A credential with `remote_allowed` is asked about every command that changes anything, and
   the "ask before high-impact requests" setting does not apply to it (`confirm::needs_approval`). The
   high-impact commands keep their lookups and summaries; the easy-to-undo ones (`Gate::AskRemote`: add a

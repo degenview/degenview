@@ -8,8 +8,8 @@
 
 use crate::mcp::state::McpStatus;
 use crate::model::mcp::{
-    MAX_CLIENT_NAME_LEN, McpAction, McpAuditEntry, McpClient, McpSettings, Permission,
-    PermissionSet,
+    BindMode, Cidr, MAX_CIDRS, MAX_CLIENT_NAME_LEN, McpAction, McpAuditEntry, McpClient,
+    McpSettings, Permission, PermissionSet,
 };
 use crate::ui::alert_center::{Tone, relative_time};
 use crate::ui::icons::{self, Icon};
@@ -19,6 +19,7 @@ use crate::ui::{kit, settings_card, sheet, theme};
 use eframe::egui::{
     self, Align, Color32, Id, Layout, Margin, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2,
 };
+use std::net::IpAddr;
 use std::time::{Duration, Instant};
 
 /// Height of every button and text field on the page, so a field and the button beside it line up.
@@ -47,6 +48,8 @@ pub struct McpSettingsInput<'a> {
     pub activity_unreadable: usize,
     pub now_ms: i64,
     pub utc_offset_secs: i64,
+    /// SHA-256 of the certificate a remote client pins, when the server listens beyond this Mac.
+    pub tls_fingerprint: Option<&'a str>,
 }
 
 #[derive(Default)]
@@ -54,6 +57,15 @@ pub struct McpSettingsState {
     new_client_name: String,
     port_text: String,
     port_synced: Option<u16>,
+    /// The "other machines" switch is on and waiting for an address; nothing is saved until one
+    /// is applied.
+    remote_editing: bool,
+    bind_text: String,
+    bind_synced: Option<BindMode>,
+    bind_error: Option<String>,
+    /// The address field of the open client sheet's "only from these addresses" list.
+    range_text: String,
+    range_error: Option<String>,
     /// What the permissions sheet is open on, if it is open.
     sheet: Option<Editing>,
     /// The sheet's footer is asking "Revoke it?".
@@ -71,6 +83,8 @@ pub struct McpSettingsState {
 enum Editing {
     /// The global cap every client is limited by.
     Maximum,
+    /// The most a credential with remote access may do, whatever the cap above allows.
+    RemoteCeiling,
     Client(String),
 }
 
@@ -79,6 +93,7 @@ enum Copied {
     Endpoint,
     Credential,
     Details,
+    Fingerprint,
 }
 
 /// The `mcpServers` entry a client's config file takes. The token is shown only while it is
@@ -401,6 +416,8 @@ pub fn body(
     ui.add_space(22.0);
     security_section(ui, state, input);
     ui.add_space(22.0);
+    remote_section(ui, state, input, actions);
+    ui.add_space(22.0);
     credentials_section(ui, state, input, actions);
     ui.add_space(22.0);
     clients_section(ui, state, input);
@@ -469,7 +486,7 @@ fn server_section(
             Icon::CheckCircle,
             "Ask before high-impact requests",
             Some(
-                "Deleting alerts, charts, drawings or watchlists, saving over a script, and every paper order wait for your approval in DegenView. On unless you turn it off.",
+                "Deleting alerts, charts, drawings or watchlists, saving over a script, and every paper order wait for your approval in DegenView. On unless you turn it off. A credential with remote access is asked about every change, whatever this says.",
             ),
             |ui| {
                 let mut required = input.settings.require_confirmation;
@@ -501,7 +518,9 @@ fn server_section(
                 );
             }
             divider(ui);
-            row(ui, "Address", |ui| secondary(ui, "127.0.0.1"));
+            row(ui, "Address", |ui| {
+                secondary(ui, input.settings.bind.address().to_string())
+            });
             divider(ui);
             row(ui, "Port", |ui| {
                 port_control(ui, state, input.settings.port, actions)
@@ -574,7 +593,14 @@ fn security_section(ui: &mut Ui, state: &mut McpSettingsState, input: &McpSettin
             row(ui, "Authentication", |ui| secondary(ui, "Always required"));
             divider(ui);
             row(ui, "Remote connections", |ui| {
-                secondary(ui, "Not supported")
+                secondary(
+                    ui,
+                    if input.settings.bind.is_loopback() {
+                        "Off"
+                    } else {
+                        "On · TLS only"
+                    },
+                )
             });
             divider(ui);
             row(ui, "Browser pages", |ui| secondary(ui, "Always refused"));
@@ -596,6 +622,25 @@ struct MaximumRow {
 /// as they need beneath it. The button therefore stays at the top right however many groups the
 /// maximum holds, instead of drifting to the middle of a growing block of capsules.
 fn maximum_row(ui: &mut Ui, state: &mut McpSettingsState, input: &McpSettingsInput) -> MaximumRow {
+    limit_row(
+        ui,
+        state,
+        "Maximum permissions",
+        "The most any credential can do. Each one can only narrow this.",
+        input.global,
+        Editing::Maximum,
+    )
+}
+
+/// A title with its Edit button and the groups of a permission limit beneath it.
+fn limit_row(
+    ui: &mut Ui,
+    state: &mut McpSettingsState,
+    title_text: &str,
+    hover: &str,
+    set: &PermissionSet,
+    editing: Editing,
+) -> MaximumRow {
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing.y = 8.0;
         let (mut title, mut edit) = (Rect::NOTHING, Rect::NOTHING);
@@ -603,18 +648,16 @@ fn maximum_row(ui: &mut Ui, state: &mut McpSettingsState, input: &McpSettingsInp
             vec2(ui.available_width(), CONTROL_HEIGHT),
             Layout::right_to_left(Align::Center),
             |ui| {
-                let button = kit::sheet_button(ui, "Edit…", false, true).on_hover_text(
-                    "The most any credential can do. Each one can only narrow this.",
-                );
+                let button = kit::sheet_button(ui, "Edit…", false, true).on_hover_text(hover);
                 edit = button.rect;
                 if button.clicked() {
-                    state.sheet = Some(Editing::Maximum);
+                    state.sheet = Some(editing);
                     state.confirm_revoke = false;
                 }
                 ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                     title = ui
                         .label(kit::text(
-                            "Maximum permissions",
+                            title_text,
                             kit::size::SUBHEADLINE + 1.0,
                             kit::REGULAR,
                             theme::text_primary(),
@@ -623,10 +666,190 @@ fn maximum_row(ui: &mut Ui, state: &mut McpSettingsState, input: &McpSettingsInp
                 });
             },
         );
-        let pills = pills(ui, input.global);
+        let pills = pills(ui, set);
         MaximumRow { title, edit, pills }
     })
     .inner
+}
+
+/// What a person may type for an interface: an address of this Mac, `192.168.1.20` or `fd00::20`
+/// (brackets are allowed). Not this Mac's own loopback address, and not "every interface".
+pub fn parse_interface(text: &str) -> Result<BindMode, String> {
+    let text = text.trim().trim_start_matches('[').trim_end_matches(']');
+    if text.is_empty() {
+        return Err("Enter the address of this Mac to listen on".into());
+    }
+    let address: IpAddr = text
+        .parse()
+        .map_err(|_| format!("`{text}` is not an IP address"))?;
+    match BindMode::interface(address) {
+        Ok(BindMode::Loopback) => {
+            Err("That is this Mac's own address. Turn the switch off to listen here only".into())
+        }
+        Ok(bind) => Ok(bind),
+        Err(error) => Err(error.to_string()),
+    }
+}
+
+/// The address this Mac would use to reach the local network, if it has one. Connects a UDP
+/// socket to a documentation address, which sends nothing but makes the system pick the route.
+pub fn detect_local_address() -> Option<IpAddr> {
+    let socket = std::net::UdpSocket::bind(("0.0.0.0", 0)).ok()?;
+    socket.connect(("192.0.2.1", 9)).ok()?;
+    let address = socket.local_addr().ok()?.ip();
+    (!address.is_unspecified() && !address.is_loopback()).then_some(address)
+}
+
+fn remote_section(
+    ui: &mut Ui,
+    state: &mut McpSettingsState,
+    input: &McpSettingsInput,
+    actions: &mut Vec<McpAction>,
+) {
+    section(
+        ui,
+        "Remote Access",
+        Some("Lets MCP clients on other computers connect, over TLS only."),
+        |ui| {
+            let locked = input.load_error.is_some();
+            let bind = input.settings.bind;
+            let on = !bind.is_loopback() || state.remote_editing;
+            settings_card::card(
+                ui,
+                Icon::Link,
+                "Allow connections from other machines",
+                Some(
+                    "Off until you turn it on. A client also needs a credential with remote access, set on that client.",
+                ),
+                |ui| {
+                    let mut value = on;
+                    if settings_card::switch_enabled(ui, &mut value, !locked) {
+                        state.bind_error = None;
+                        if value {
+                            state.remote_editing = true;
+                        } else {
+                            state.remote_editing = false;
+                            if !bind.is_loopback() {
+                                actions.push(McpAction::SetBind(BindMode::Loopback));
+                            }
+                        }
+                    }
+                },
+            );
+            if !on {
+                return;
+            }
+            ui.add_space(10.0);
+            card(ui, |ui| {
+                ui.spacing_mut().item_spacing.y = 10.0;
+                row(ui, "Interface", |ui| bind_control(ui, state, bind, actions));
+                if let Some(error) = &state.bind_error {
+                    ui.add(
+                        egui::Label::new(kit::text(
+                            error,
+                            kit::size::CAPTION + 0.5,
+                            kit::REGULAR,
+                            kit::RED,
+                        ))
+                        .wrap(),
+                    );
+                }
+                divider(ui);
+                row(ui, "Certificate", |ui| match input.tls_fingerprint {
+                    Some(fingerprint) => copy_button(
+                        ui,
+                        &mut state.copied,
+                        Copied::Fingerprint,
+                        "Copy Fingerprint",
+                        fingerprint,
+                        false,
+                    ),
+                    None => secondary(ui, "Made when you apply an address"),
+                });
+                if let Some(fingerprint) = input.tls_fingerprint {
+                    ui.add(
+                        egui::Label::new(
+                            egui::RichText::new(fingerprint)
+                                .monospace()
+                                .size(11.0)
+                                .color(theme::text_primary()),
+                        )
+                        .wrap(),
+                    );
+                    caption(
+                        ui,
+                        "The certificate is self-signed for this address. A client must trust exactly this one: compare the fingerprint, do not click through a warning.",
+                    );
+                }
+                divider(ui);
+                limit_row(
+                    ui,
+                    state,
+                    "Remote ceiling",
+                    "The most a credential with remote access can do, even on this Mac.",
+                    &input.settings.remote_ceiling,
+                    Editing::RemoteCeiling,
+                );
+            });
+            ui.add_space(8.0);
+            caption(
+                ui,
+                "Every change a remote credential makes waits for your approval here. Anyone who can reach this Mac on the network can try tokens; failed attempts are limited and logged by address.",
+            );
+        },
+    );
+}
+
+/// The interface field with Detect and Apply, the same height as the port field.
+fn bind_control(
+    ui: &mut Ui,
+    state: &mut McpSettingsState,
+    bind: BindMode,
+    actions: &mut Vec<McpAction>,
+) {
+    let id = Id::new("mcp-bind");
+    let editing = ui.memory(|memory| memory.has_focus(id));
+    if !editing && state.bind_synced != Some(bind) {
+        state.bind_text = match bind {
+            BindMode::Interface(address) => address.to_string(),
+            BindMode::Loopback => String::new(),
+        };
+        state.bind_synced = Some(bind);
+    }
+    let parsed = parse_interface(&state.bind_text);
+    let changed = parsed.as_ref().is_ok_and(|parsed| *parsed != bind);
+    let mut apply = kit::sheet_button(ui, "Apply", changed, changed).clicked();
+    if kit::sheet_button(ui, "Detect", false, true)
+        .on_hover_text("Fill in this Mac's address on the local network")
+        .clicked()
+    {
+        match detect_local_address() {
+            Some(address) => {
+                state.bind_text = address.to_string();
+                state.bind_error = None;
+            }
+            None => {
+                state.bind_error =
+                    Some("No local network address found. Type the one to listen on".into())
+            }
+        }
+    }
+    let response = field(ui, id, &mut state.bind_text, "192.168.1.20", 160.0);
+    state.bind_text.truncate(45);
+    apply |= response.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter));
+    if apply {
+        match parsed {
+            Ok(parsed) if parsed != bind => {
+                state.bind_error = None;
+                state.remote_editing = false;
+                actions.push(McpAction::SetBind(parsed));
+            }
+            Ok(_) => {}
+            Err(error) => state.bind_error = Some(error),
+        }
+    } else if response.changed() {
+        state.bind_error = None;
+    }
 }
 
 fn credentials_section(
@@ -759,7 +982,7 @@ fn clients_section(ui: &mut Ui, state: &mut McpSettingsState, input: &McpSetting
         ui,
         "Clients",
         Some(
-            "Open a client to choose what it may do, or to revoke it. Revoking cuts it off at once.",
+            "Open a client to choose what it may do, whether it can be used from other machines, or to revoke it. Revoking cuts it off at once.",
         ),
         |ui| {
             if input.clients.is_empty() {
@@ -793,15 +1016,35 @@ fn client_row(ui: &mut Ui, client: &McpClient, input: &McpSettingsInput) -> bool
         .iter()
         .filter(|permission| !input.global.contains(*permission))
         .count();
+    // Granted and within the maximum, but above what remote access allows.
+    let over_ceiling = if client.remote_allowed {
+        client
+            .permissions
+            .iter()
+            .filter(|permission| {
+                input.global.contains(*permission)
+                    && !input.settings.remote_ceiling.contains(*permission)
+            })
+            .count()
+    } else {
+        0
+    };
     clickable_card(ui, Id::new(("mcp-client", &client.id)), |ui| {
         ui.vertical(|ui| {
             ui.spacing_mut().item_spacing.y = 4.0;
-            ui.label(kit::text(
-                &client.name,
-                12.5,
-                kit::SEMIBOLD,
-                theme::text_primary(),
-            ));
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 8.0;
+                ui.label(kit::text(
+                    &client.name,
+                    12.5,
+                    kit::SEMIBOLD,
+                    theme::text_primary(),
+                ));
+                if client.remote_allowed {
+                    capsule(ui, "Remote", kit::ORANGE, None)
+                        .on_hover_text("Can be used from other machines");
+                }
+            });
             let used = client.last_used_ms.map_or_else(
                 || "never used".to_owned(),
                 |used| format!("last used {}", relative_time(input.now_ms, used)),
@@ -819,6 +1062,17 @@ fn client_row(ui: &mut Ui, client: &McpClient, input: &McpSettingsInput) -> bool
                     format!(
                         "{blocked} granted permission{} held back by the maximum",
                         if blocked == 1 { "" } else { "s" }
+                    ),
+                    kit::size::CAPTION,
+                    kit::REGULAR,
+                    kit::ORANGE,
+                ));
+            }
+            if over_ceiling > 0 {
+                ui.label(kit::text(
+                    format!(
+                        "{over_ceiling} granted permission{} held back by the remote ceiling",
+                        if over_ceiling == 1 { "" } else { "s" }
                     ),
                     kit::size::CAPTION,
                     kit::REGULAR,
@@ -878,9 +1132,13 @@ fn permissions_sheet(
                 return;
             }
         },
-        Editing::Maximum => None,
+        Editing::Maximum | Editing::RemoteCeiling => None,
     };
-    let set = client.map_or(input.global, |client| &client.permissions);
+    let set = match (&editing, client) {
+        (Editing::RemoteCeiling, _) => &input.settings.remote_ceiling,
+        (_, Some(client)) => &client.permissions,
+        (_, None) => input.global,
+    };
     let mut close = false;
 
     sheet::show(ctx, Id::new("mcp-permissions"), SHEET_WIDTH, |ui| {
@@ -912,6 +1170,13 @@ fn permissions_sheet(
                     },
                 );
             }
+            None if editing == Editing::RemoteCeiling => sheet::header(
+                ui,
+                Icon::Link,
+                "Remote ceiling",
+                "The most a credential with remote access can do, even on this Mac.",
+                kit::ACCENT,
+            ),
             None => sheet::header(
                 ui,
                 Icon::Sliders,
@@ -920,8 +1185,12 @@ fn permissions_sheet(
                 kit::ACCENT,
             ),
         });
-        ui.add_space(16.0);
-        sheet::inset(ui, |ui| presets(ui, &editing, set, actions));
+        // A client's sheet carries more above the groups than the other two, so its presets
+        // scroll with them rather than leaving the groups a row or two of the window.
+        if client.is_none() {
+            ui.add_space(16.0);
+            sheet::inset(ui, |ui| presets(ui, &editing, set, actions));
+        }
         ui.add_space(14.0);
 
         let list_height = (ctx.content_rect().height() - 330.0).clamp(160.0, 420.0);
@@ -931,6 +1200,14 @@ fn permissions_sheet(
             .show(ui, |ui| {
                 sheet::inset(ui, |ui| {
                     ui.spacing_mut().item_spacing.y = 0.0;
+                    // With the groups, so a short window scrolls them together instead of leaving
+                    // the permissions a row or two to show in.
+                    if let Some(client) = client {
+                        client_remote_block(ui, state, client, actions);
+                        ui.add_space(14.0);
+                        presets(ui, &editing, set, actions);
+                        ui.add_space(16.0);
+                    }
                     for (index, group) in Permission::GROUPS.into_iter().enumerate() {
                         if index > 0 {
                             ui.add_space(16.0);
@@ -965,12 +1242,193 @@ fn permissions_sheet(
     }
 }
 
+/// "Use from other machines" and, once on, the only addresses it may call from.
+fn client_remote_block(
+    ui: &mut Ui,
+    state: &mut McpSettingsState,
+    client: &McpClient,
+    actions: &mut Vec<McpAction>,
+) {
+    kit::card_frame(false)
+        .inner_margin(Margin::symmetric(12, 10))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.spacing_mut().item_spacing.y = 8.0;
+            ui.horizontal(|ui| {
+                ui.set_min_height(CONTROL_HEIGHT);
+                ui.vertical(|ui| {
+                    ui.set_max_width(ui.available_width() - 56.0);
+                    ui.spacing_mut().item_spacing.y = 2.0;
+                    ui.label(kit::text(
+                        "Use from other machines",
+                        12.5,
+                        kit::MEDIUM,
+                        theme::text_primary(),
+                    ));
+                    caption(
+                        ui,
+                        if client.remote_allowed {
+                            "Held to the remote ceiling, and every change waits for your approval."
+                        } else {
+                            "Off: this credential works from this Mac only."
+                        },
+                    );
+                });
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    let mut on = client.remote_allowed;
+                    if settings_card::switch(ui, &mut on) {
+                        state.range_error = None;
+                        actions.push(McpAction::SetClientRemote {
+                            client_id: client.id.clone(),
+                            allowed: on,
+                        });
+                    }
+                });
+            });
+            if !client.remote_allowed {
+                return;
+            }
+            divider(ui);
+            ui.label(kit::text(
+                "Only from these addresses",
+                kit::size::CAPTION + 0.5,
+                kit::SEMIBOLD,
+                theme::text_secondary(),
+            ));
+            if client.allowed_cidrs.is_empty() {
+                caption(ui, "Any address that has the token.");
+            } else {
+                let mut removed = None;
+                ui.horizontal_wrapped(|ui| {
+                    ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
+                    for (index, cidr) in client.allowed_cidrs.iter().enumerate() {
+                        if range_chip(ui, &cidr.to_string()) {
+                            removed = Some(index);
+                        }
+                    }
+                });
+                if let Some(index) = removed {
+                    let mut cidrs = client.allowed_cidrs.clone();
+                    cidrs.remove(index);
+                    actions.push(McpAction::SetClientCidrs {
+                        client_id: client.id.clone(),
+                        cidrs,
+                    });
+                }
+            }
+            let full = client.allowed_cidrs.len() >= MAX_CIDRS;
+            let parsed = Cidr::parse(&state.range_text);
+            let ready = parsed.is_ok() && !full;
+            ui.allocate_ui_with_layout(
+                vec2(ui.available_width(), CONTROL_HEIGHT),
+                Layout::right_to_left(Align::Center),
+                |ui| {
+                    ui.spacing_mut().item_spacing.x = 8.0;
+                    let mut add = kit::sheet_button(ui, "Add", ready, ready).clicked();
+                    let width = ui.available_width();
+                    let response = field(
+                        ui,
+                        Id::new("mcp-range"),
+                        &mut state.range_text,
+                        "192.168.1.0/24",
+                        width,
+                    );
+                    state.range_text.truncate(50);
+                    add |= response.lost_focus()
+                        && ui.input(|input| input.key_pressed(egui::Key::Enter));
+                    if response.changed() {
+                        state.range_error = None;
+                    }
+                    if add {
+                        match &parsed {
+                            _ if full => {
+                                state.range_error =
+                                    Some(format!("At most {MAX_CIDRS} address ranges"));
+                            }
+                            Ok(cidr) => {
+                                let mut cidrs = client.allowed_cidrs.clone();
+                                if !cidrs.contains(cidr) {
+                                    cidrs.push(*cidr);
+                                    actions.push(McpAction::SetClientCidrs {
+                                        client_id: client.id.clone(),
+                                        cidrs,
+                                    });
+                                }
+                                state.range_text.clear();
+                                state.range_error = None;
+                            }
+                            Err(error) => state.range_error = Some(error.clone()),
+                        }
+                    }
+                },
+            );
+            if let Some(error) = &state.range_error {
+                ui.label(kit::text(
+                    error,
+                    kit::size::CAPTION + 0.5,
+                    kit::REGULAR,
+                    kit::RED,
+                ));
+            } else {
+                caption(
+                    ui,
+                    "An address or a range, like 192.168.1.20 or 10.0.0.0/8. A request from anywhere else is refused as if the token were wrong.",
+                );
+            }
+        });
+}
+
+/// An address range as a capsule with a remove mark. Returns whether the mark was clicked.
+fn range_chip(ui: &mut Ui, text: &str) -> bool {
+    let galley = kit::galley(
+        ui,
+        text,
+        kit::size::CAPTION + 0.5,
+        kit::MEDIUM,
+        theme::text_primary(),
+        f32::INFINITY,
+    );
+    let size = vec2(galley.size().x + 14.0 + 20.0, 22.0);
+    let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
+    ui.painter()
+        .rect_filled(rect, 6.0, theme::with_alpha(theme::text_secondary(), 0.14));
+    ui.painter().galley(
+        pos2(rect.left() + 8.0, rect.center().y - galley.size().y / 2.0),
+        galley,
+        theme::text_primary(),
+    );
+    let mark = Rect::from_center_size(
+        pos2(rect.right() - 11.0, rect.center().y),
+        Vec2::splat(18.0),
+    );
+    let response = ui.interact(
+        mark,
+        ui.id().with(("mcp-range-remove", text)),
+        Sense::click(),
+    );
+    icons::paint(
+        ui.painter(),
+        Rect::from_center_size(mark.center(), Vec2::splat(8.0)),
+        Icon::Xmark,
+        if response.hovered() {
+            theme::text_primary()
+        } else {
+            theme::text_tertiary()
+        },
+    );
+    response
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text("Remove this range")
+        .clicked()
+}
+
 /// "Read only" / "Everything" / "None": the whole set in one step.
 fn presets(ui: &mut Ui, editing: &Editing, current: &PermissionSet, actions: &mut Vec<McpAction>) {
     let choose = |set: PermissionSet, actions: &mut Vec<McpAction>| {
         if &set != current {
             actions.push(match editing {
                 Editing::Maximum => McpAction::SetGlobalPermissions(set),
+                Editing::RemoteCeiling => McpAction::SetRemoteCeiling(set),
                 Editing::Client(id) => McpAction::SetClientPermissions {
                     client_id: id.clone(),
                     permissions: set,
@@ -1092,6 +1550,11 @@ fn permission_row(
                         permission,
                         allowed: on,
                     },
+                    Editing::RemoteCeiling => {
+                        let mut ceiling = set.clone();
+                        ceiling.set(permission, on);
+                        McpAction::SetRemoteCeiling(ceiling)
+                    }
                     Editing::Client(id) => McpAction::SetClientPermission {
                         client_id: id.clone(),
                         permission,
@@ -1268,6 +1731,7 @@ mod tests {
             activity_unreadable: 0,
             now_ms: 10_000,
             utc_offset_secs: 0,
+            tls_fingerprint: None,
         }
     }
 
@@ -1382,6 +1846,234 @@ mod tests {
                 "activity sheet at {width}"
             );
         }
+    }
+
+    #[test]
+    fn an_interface_is_one_address_of_this_mac_never_loopback_or_all_of_them() {
+        assert_eq!(
+            parse_interface(" 192.168.1.20 "),
+            Ok(BindMode::Interface("192.168.1.20".parse().unwrap()))
+        );
+        assert_eq!(
+            parse_interface("[fd00::20]"),
+            Ok(BindMode::Interface("fd00::20".parse().unwrap()))
+        );
+        for bad in [
+            "",
+            "   ",
+            "lan",
+            "192.168.1",
+            "0.0.0.0",
+            "::",
+            "224.0.0.1",
+            "fe80::1",
+        ] {
+            assert!(
+                parse_interface(bad).is_err(),
+                "{bad:?} must not be accepted"
+            );
+        }
+        let own = parse_interface("127.0.0.1").unwrap_err();
+        assert!(own.contains("own address"), "{own}");
+        assert!(
+            parse_interface("0.0.0.0")
+                .unwrap_err()
+                .contains("one interface")
+        );
+    }
+
+    #[test]
+    fn a_detected_address_is_never_loopback_or_unspecified() {
+        if let Some(address) = detect_local_address() {
+            assert!(
+                !address.is_loopback() && !address.is_unspecified(),
+                "{address}"
+            );
+        }
+    }
+
+    #[test]
+    fn remote_access_lays_out_in_every_state_without_acting_on_its_own() {
+        let status = McpStatus::Running { port: 8765 };
+        let lan = BindMode::interface("192.168.1.20".parse().unwrap()).unwrap();
+        let on = McpSettings {
+            enabled: true,
+            bind: lan,
+            remote_ceiling: PermissionSet::of([Permission::ChartsRead, Permission::AlertsRead]),
+            ..McpSettings::default()
+        };
+        let off = McpSettings {
+            enabled: true,
+            ..McpSettings::default()
+        };
+        let mut remote = client("r", "Laptop", PermissionSet::read_only());
+        remote.remote_allowed = true;
+        remote.allowed_cidrs = vec![
+            Cidr::parse("192.168.1.0/24").unwrap(),
+            Cidr::parse("100.64.0.0/10").unwrap(),
+            Cidr::parse("fd00::/8").unwrap(),
+        ];
+        let clients = [remote, client("l", "Local", PermissionSet::read_only())];
+        let global = PermissionSet::read_only();
+        let fingerprint = "AB:CD:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89:AB:CD:EF:01:23:45:67:89";
+
+        for width in [360.0, 560.0, 900.0] {
+            // Off, then switched on and waiting for an address, then on with a certificate.
+            let input = sample(&status, &off, &clients, &global);
+            let mut state = McpSettingsState::default();
+            assert!(frame(&mut state, &input, width).is_empty());
+            state.remote_editing = true;
+            assert!(
+                frame(&mut state, &input, width).is_empty(),
+                "editing at {width}"
+            );
+            state.bind_error = Some("`lan` is not an IP address".into());
+            assert!(frame(&mut state, &input, width).is_empty());
+
+            let mut input = sample(&status, &on, &clients, &global);
+            input.tls_fingerprint = Some(fingerprint);
+            let mut state = McpSettingsState::default();
+            assert!(frame(&mut state, &input, width).is_empty(), "on at {width}");
+            assert_eq!(
+                state.bind_text, "192.168.1.20",
+                "the field shows the saved address"
+            );
+            for editing in [Editing::RemoteCeiling, Editing::Client("r".into())] {
+                state.sheet = Some(editing);
+                assert!(
+                    frame(&mut state, &input, width).is_empty(),
+                    "sheet at {width}"
+                );
+            }
+            state.range_error = Some("`x` is not an address range".into());
+            assert!(frame(&mut state, &input, width).is_empty());
+        }
+    }
+
+    /// Every text one frame of the page paints.
+    fn painted(input: &McpSettingsInput) -> Vec<String> {
+        fn walk(shape: &egui::Shape, out: &mut Vec<String>) {
+            match shape {
+                egui::Shape::Text(text) => out.push(text.galley.text().to_owned()),
+                egui::Shape::Vec(shapes) => shapes.iter().for_each(|shape| walk(shape, out)),
+                _ => {}
+            }
+        }
+        let ctx = egui::Context::default();
+        let raw = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(600.0, 6000.0))),
+            ..Default::default()
+        };
+        let mut state = McpSettingsState::default();
+        let mut actions = Vec::new();
+        let mut out = Vec::new();
+        for _ in 0..2 {
+            out.clear();
+            let mut output = ctx.run_ui(raw.clone(), |ui| {
+                egui::ScrollArea::vertical()
+                    .show(ui, |ui| body(ui, &mut state, input, &mut actions));
+            });
+            output.textures_delta.clear();
+            for clipped in &output.shapes {
+                walk(&clipped.shape, &mut out);
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn a_remote_credential_is_marked_on_its_row_and_a_local_one_is_not() {
+        let status = McpStatus::Disabled;
+        let settings = McpSettings::default();
+        let global = PermissionSet::read_only();
+        let local = [client("l", "Local", PermissionSet::read_only())];
+        let input = sample(&status, &settings, &local, &global);
+        assert!(!painted(&input).iter().any(|text| text == "Remote"));
+
+        let mut remote = client("r", "Laptop", PermissionSet::read_only());
+        remote.remote_allowed = true;
+        let clients = [remote, local[0].clone()];
+        let input = sample(&status, &settings, &clients, &global);
+        let marks = painted(&input)
+            .iter()
+            .filter(|text| *text == "Remote")
+            .count();
+        assert_eq!(marks, 1, "only the remote credential carries the mark");
+    }
+
+    #[test]
+    fn a_row_says_which_limit_holds_a_granted_permission_back() {
+        let status = McpStatus::Disabled;
+        let settings = McpSettings::default();
+        // Granted: read and create. The maximum allows both; the remote ceiling reads only.
+        let everything = PermissionSet::everything();
+        let mut remote = client(
+            "r",
+            "Laptop",
+            PermissionSet::of([Permission::ChartsRead, Permission::ChartsCreate]),
+        );
+        remote.remote_allowed = true;
+        let mut local = remote.clone();
+        local.id = "l".into();
+        local.name = "Local".into();
+        local.remote_allowed = false;
+
+        let texts = painted(&sample(&status, &settings, &[remote.clone()], &everything));
+        assert!(
+            texts
+                .iter()
+                .any(|t| t == "1 granted permission held back by the remote ceiling")
+        );
+        assert!(!texts.iter().any(|t| t.contains("held back by the maximum")));
+        let texts = painted(&sample(&status, &settings, &[local], &everything));
+        assert!(
+            !texts.iter().any(|t| t.contains("held back")),
+            "a local credential has no ceiling"
+        );
+
+        // Outside the maximum is the maximum's doing, not the ceiling's.
+        let capped = PermissionSet::of([Permission::ChartsRead]);
+        let texts = painted(&sample(&status, &settings, &[remote], &capped));
+        assert!(
+            texts
+                .iter()
+                .any(|t| t == "1 granted permission held back by the maximum")
+        );
+        assert!(!texts.iter().any(|t| t.contains("remote ceiling")));
+    }
+
+    #[test]
+    fn the_page_tells_the_truth_about_where_it_listens() {
+        let status = McpStatus::Disabled;
+        let global = PermissionSet::read_only();
+        let local = McpSettings::default();
+        let texts = painted(&sample(&status, &local, &[], &global));
+        assert!(texts.iter().any(|t| t == "127.0.0.1"));
+        assert!(
+            texts.iter().any(|t| t == "Off"),
+            "remote connections are off"
+        );
+        assert!(texts.iter().any(|t| t == "http://127.0.0.1:8765/mcp"));
+        assert!(
+            !texts.iter().any(|t| t == "Certificate"),
+            "no certificate on loopback"
+        );
+
+        let remote = McpSettings {
+            bind: BindMode::interface("192.168.1.20".parse().unwrap()).unwrap(),
+            ..McpSettings::default()
+        };
+        let mut input = sample(&status, &remote, &[], &global);
+        input.tls_fingerprint = Some("AB:CD");
+        let texts = painted(&input);
+        assert!(texts.iter().any(|t| t == "192.168.1.20"));
+        assert!(texts.iter().any(|t| t == "On · TLS only"));
+        assert!(texts.iter().any(|t| t == "https://192.168.1.20:8765/mcp"));
+        assert!(texts.iter().any(|t| t == "Certificate"));
+        assert!(
+            texts.iter().any(|t| t == "AB:CD"),
+            "the fingerprint is shown to be pinned"
+        );
     }
 
     #[test]
