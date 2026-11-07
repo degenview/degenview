@@ -457,6 +457,8 @@ pub enum McpAction {
     DismissToken,
     /// Empties the activity log (the log keeps one row saying that it was cleared).
     ClearActivity,
+    /// Whether high-impact calls wait for the user's approval in the app.
+    SetRequireConfirmation(bool),
 }
 
 /// Persisted server preferences (`setting` key `mcp.settings`). Disabled on a fresh install.
@@ -465,6 +467,9 @@ pub enum McpAction {
 pub struct McpSettings {
     pub enabled: bool,
     pub port: u16,
+    /// Deletes, saved scripts and paper orders wait for the user's approval in the app. On
+    /// unless the user turns it off, including for settings saved before this existed.
+    pub require_confirmation: bool,
 }
 
 impl Default for McpSettings {
@@ -472,6 +477,7 @@ impl Default for McpSettings {
         Self {
             enabled: false,
             port: DEFAULT_PORT,
+            require_confirmation: true,
         }
     }
 }
@@ -532,6 +538,8 @@ pub enum McpAuditKind {
     Cleared,
     /// The server could not keep up and `count` rows were not recorded.
     Gap,
+    /// The user answered (or let run out) a question about a call the agent made.
+    Confirmation,
 }
 
 /// How a tool call ended.
@@ -546,6 +554,15 @@ pub enum McpAuditOutcome {
     Denied,
     /// The client hung up or cancelled before an answer was sent.
     Cancelled,
+    /// Waiting for the user's approval: the call was answered `CONFIRMATION_REQUIRED` and
+    /// nothing ran.
+    Held,
+    /// A `Confirmation` row: the user approved it.
+    Approved,
+    /// A `Confirmation` row: the user declined it.
+    Declined,
+    /// A `Confirmation` row: nobody answered in time.
+    Expired,
 }
 
 /// One thing a call named: `kind` is the argument (`chart_id`), `id` its value.

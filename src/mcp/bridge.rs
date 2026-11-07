@@ -355,6 +355,10 @@ pub enum McpError {
     ResourceLimit(String),
     Timeout,
     AppUnavailable(String),
+    /// The user has not approved this yet; nothing ran. Repeat the call once they have.
+    ConfirmationRequired(crate::mcp::confirm::PendingInfo),
+    /// The user declined this exact call; the text says what it was.
+    ConfirmationDenied(String),
 }
 
 impl McpError {
@@ -369,6 +373,25 @@ impl McpError {
             Self::ResourceLimit(_) => "RESOURCE_LIMIT",
             Self::Timeout => "TIMEOUT",
             Self::AppUnavailable(_) => "APP_UNAVAILABLE",
+            Self::ConfirmationRequired(_) => "CONFIRMATION_REQUIRED",
+            Self::ConfirmationDenied(_) => "CONFIRMATION_DENIED",
+        }
+    }
+
+    /// Fields a client can act on beyond the message, merged into the structured result.
+    pub fn details(&self) -> Option<serde_json::Value> {
+        match self {
+            Self::ConfirmationRequired(pending) => Some(serde_json::json!({
+                "confirmation_id": pending.id.to_string(),
+                "expires_in_seconds": pending.expires_in_secs,
+                "operation": pending.operation,
+                "next_step": "Ask the user to approve it in DegenView, then repeat this exact call.",
+            })),
+            Self::ConfirmationDenied(operation) => Some(serde_json::json!({
+                "operation": operation,
+                "next_step": "Do not repeat it unless the user asks you to.",
+            })),
+            _ => None,
         }
     }
 
@@ -385,6 +408,15 @@ impl McpError {
             Self::Timeout => {
                 "DegenView did not respond in time; the request was not applied".into()
             }
+            Self::ConfirmationRequired(pending) => format!(
+                "Needs the user's approval in DegenView first, so nothing was changed: {}. \
+                 It waits {} seconds for an answer. Ask the user to approve it, then repeat this exact call.",
+                pending.operation, pending.expires_in_secs
+            ),
+            Self::ConfirmationDenied(operation) => format!(
+                "The user declined this in DegenView, so nothing was changed: {operation}. \
+                 Do not repeat it unless the user asks you to."
+            ),
         }
     }
 }

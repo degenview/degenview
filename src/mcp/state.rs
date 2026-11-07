@@ -108,6 +108,7 @@ pub struct McpShared {
     status: Mutex<McpStatus>,
     generation: AtomicU64,
     usage_dirty: AtomicBool,
+    require_confirmation: AtomicBool,
     limiter: Mutex<RateLimiter>,
     calls: Arc<CallRegistry>,
     audit: AuditQueue,
@@ -135,6 +136,7 @@ impl McpShared {
             status: Mutex::new(McpStatus::Disabled),
             generation: AtomicU64::new(1),
             usage_dirty: AtomicBool::new(false),
+            require_confirmation: AtomicBool::new(true),
             limiter: Mutex::new(RateLimiter::new(RateLimits::default())),
             calls: Arc::new(CallRegistry::default()),
             audit: AuditQueue::default(),
@@ -169,6 +171,16 @@ impl McpShared {
         let mut config = self.write();
         config.clients = clients;
         config.global = global;
+    }
+
+    /// Whether high-impact calls wait for the user's approval. Starts on, so a server that has
+    /// not loaded its settings yet asks rather than acts.
+    pub fn require_confirmation(&self) -> bool {
+        self.require_confirmation.load(Ordering::Acquire)
+    }
+
+    pub fn set_require_confirmation(&self, required: bool) {
+        self.require_confirmation.store(required, Ordering::Release);
     }
 
     /// Rows for the activity log, waiting for the app thread to write them.

@@ -13,6 +13,7 @@ pub mod bridge;
 pub mod cancel;
 pub mod chart_control;
 pub mod chart_data;
+pub mod confirm;
 pub mod drawings;
 pub mod indicator_tools;
 pub mod indicator_values;

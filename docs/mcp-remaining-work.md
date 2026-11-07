@@ -26,6 +26,7 @@ next. Items below are not started unless they say otherwise.
 | 16 | Paper trading writes: place (dry run, request id), modify, cancel, close positions; never on an account another Mac runs | `paper.orders.place`, `paper.orders.cancel`, `paper.positions.close` |
 | 17 | More drawing tools: rays, extended lines, arrows, Fibonacci retracement, horizontal / vertical lines, crosslines, text | `drawings.write` |
 | 18 | Chart snapshot: a PNG of a chart as the camera draws it, returned as an image | `charts.snapshot.read` |
+| 20 | Approval step: deletes, saving over a script and paper orders wait for the user in the app; `CONFIRMATION_REQUIRED` / `CONFIRMATION_DENIED`, repeat the same call | none (Settings only) |
 | 19 | Activity log: a row per tool call (who, what, how it ended, how long), listed and cleared in Settings, local to this Mac | none (Settings only) |
 
 ## 0. What a trader still cannot do over MCP
@@ -38,8 +39,8 @@ Ranked by how soon someone would ask. Not started unless listed under "Done so f
   `degenview_get_indicator_values` are done); the chart's EMA period is changed through
   `degenview_add_indicator`.
 - Paper trading: reverse a position, close at a limit, edit an account's settings, create or reset
-  accounts. Orders and closes are done, behind three off-by-default permissions; the confirmation
-  policy (item 3) is still to come. No real-broker order tool: Alpaca is data only.
+  accounts. Orders and closes are done, behind three off-by-default permissions and the approval
+  step (item 3). No real-broker order tool: Alpaca is data only.
 - Portfolio: cross-currency totals (needs the FX service the Portfolio tab uses), value history and statistics. Snapshots: hosted sharing (copy link, tweet) is not exposed and will not be.
 - Drawing tools beyond the eleven (item 4b); swing, support/resistance and
   volatility helpers; older history for `get_market_candles` (needs a time-range fetch).
@@ -78,21 +79,24 @@ Server ▸ Recent activity with a Clear button. See [architecture/mcp.md](archit
 - The row is written when the call ends, so a call still running when the app is killed (not
   quit) leaves nothing.
 
-## 3. Confirmation policy for high-impact actions
+## 3. Confirmation: what is left
 
-Today these are gated only by separate, off-by-default permissions.
+Done (phase 20): see [architecture/mcp.md](architecture/mcp.md). Deletes, saving over a script and
+paper orders wait for the user's approval in the app; the setting is on by default.
 
-- Candidates: delete alert, save Pine source, apply a script to a chart (once it exists), enable a
-  script alert.
-- An in-app confirmation tied to the client and the exact operation, with a short expiry. The tool
-  returns promptly with a typed "confirmation required / pending" result (or waits a bounded time) so
-  an MCP worker is never parked on user input; a timeout or dismissal means nothing ran.
-- Setting: "Require confirmation for destructive actions" (default on).
+- Applying a script to a chart, changing its inputs, and the drawing and chart edits are not gated
+  (they are easy to see and undo in the app). Add a command to `confirm::gate` if that changes.
+- Approval is "Allow once" for the exact call. There is no "allow this client for ten minutes" or
+  per-client trust; an agent doing twenty deletes asks twenty times.
+- The question shows in the tab windows and Settings, not in the Alerts window or Pine Studio
+  windows; the notification covers a user who is elsewhere, and a question waits two minutes.
+- Enabling, pausing or deleting script-alert subscriptions has no MCP tool yet; when it does it
+  should be gated (item 5).
 
 ## 4. Applying scripts to charts: what is left
 
 Applying, changing inputs/visibility and removing are done (phase 6). They sit behind the
-permission alone: no confirmation step (item 3 would add one for all high-impact tools at once).
+permission; removing an instance asks the user (item 3), applying and changing inputs do not.
 
 - Not exposed: style overrides, visual order, pane collapse and reordering. Add them if an agent
   needs them; `ChartCard::set_pine_instance_style` and `set_pine_visual_order` exist.
@@ -136,7 +140,8 @@ Reading candles and drawing are done (phase 7, widened by the drawing-tools PR).
 - DegenView stores no history of fired script alerts (`pine_alert_event` keeps only a dedupe key), so
   `degenview_list_pine_alerts` returns subscriptions only. Persisting fired events (script, time,
   message, delivery state) is an app feature first; then expose it read-only.
-- Creating, pausing or deleting subscriptions over MCP waits for the confirmation work (item 3).
+- Creating, pausing or deleting subscriptions over MCP has no tool yet; add them behind the
+  confirmation step (item 3).
 
 ## 6. On-demand backtests
 
@@ -220,7 +225,7 @@ permission matrix, tool catalog, limitations, tests run, example client configur
 ## 14. Open items from the production-readiness review
 
 [The review](reviews/mcp-server-code-review.md) has the status of each finding. Still open:
-confirmation (item 3) as a release requirement; compile work for Pine saves and input changes
+compile work for Pine saves and input changes
 still runs on the app thread (a burst of permitted calls can stall a frame: prepare off-thread, then
 recheck the revision and commit); a draft with no open editor can still overwrite a later outside edit
 of the file (`based_on_revision_id` is never recorded); passing the permission to bridge calls from the
