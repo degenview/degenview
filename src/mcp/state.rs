@@ -9,11 +9,12 @@ use crate::mcp::cancel::CallRegistry;
 use crate::mcp::limits::{RateLimiter, RateLimits};
 use crate::model::DataSource;
 use crate::model::InstrumentId;
-use crate::model::mcp::{McpClient, Permission, PermissionSet};
+use crate::model::mcp::{McpClient, Peer, Permission, PermissionSet};
 use crate::model::watchlist::now_ms;
 use crate::pine_studio::store::ScriptStore;
 use crate::service::SearchResult;
 use crate::service::watchlist_quotes::{WatchlistQuoteBook, WatchlistQuoteCoordinator};
+#[cfg(test)]
 use std::net::IpAddr;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
@@ -59,7 +60,7 @@ pub struct ClientIdentity {
     pub name: String,
     /// The address the request came from (the socket's, never a header's). Always known here:
     /// an unknown peer is refused before an identity exists.
-    pub peer: IpAddr,
+    pub peer: Peer,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -209,7 +210,7 @@ impl McpShared {
     /// Counts one failed authentication against the shared bucket (and, from another machine,
     /// against that address's own first). `Err` is how long the caller should wait. Only bad credentials ever pass through here, so valid ones are never slowed
     /// by a flood of bad ones.
-    pub fn note_failed_auth(&self, peer: Option<IpAddr>) -> Result<(), Duration> {
+    pub fn note_failed_auth(&self, peer: Option<Peer>) -> Result<(), Duration> {
         lock(&self.limiter).failed_auth(peer, Instant::now())
     }
 
@@ -240,7 +241,7 @@ impl McpShared {
     /// `peer` is the address the request came from. A valid token from an address its client may
     /// not be used from is refused exactly like an unknown token, so the answer never says that
     /// the token was right. `None` (unknown) counts as remote.
-    pub fn authenticate_from(&self, token: &str, peer: Option<IpAddr>) -> Option<ClientIdentity> {
+    pub fn authenticate_from(&self, token: &str, peer: Option<Peer>) -> Option<ClientIdentity> {
         self.authenticate_with(token, peer, || {})
     }
 
@@ -248,7 +249,10 @@ impl McpShared {
     /// the peer.
     #[cfg(test)]
     pub fn authenticate(&self, token: &str) -> Option<ClientIdentity> {
-        self.authenticate_from(token, Some(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)))
+        self.authenticate_from(
+            token,
+            Some(Peer::from_ip(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST))),
+        )
     }
 
     /// [`Self::authenticate`] with a hook that runs after the match, while no lock is held.
@@ -261,7 +265,7 @@ impl McpShared {
     fn authenticate_with(
         &self,
         token: &str,
-        peer: Option<IpAddr>,
+        peer: Option<Peer>,
         between: impl FnOnce(),
     ) -> Option<ClientIdentity> {
         let presented = crate::mcp::auth::verifier_hex(token);
@@ -463,8 +467,8 @@ mod tests {
         }
     }
 
-    fn peer(text: &str) -> Option<IpAddr> {
-        Some(text.parse().unwrap())
+    fn peer(text: &str) -> Option<Peer> {
+        Some(Peer::from_ip(text.parse().unwrap()))
     }
 
     fn remote_client(id: &str, token: &str, cidrs: &[&str]) -> McpClient {
@@ -532,6 +536,30 @@ mod tests {
         assert!(!shared.is_remote_client("local"));
         assert!(shared.is_remote_client("remote"));
         assert!(shared.is_remote_client("revoked"));
+    }
+
+    #[test]
+    fn a_credential_that_may_not_leave_this_machine_works_from_this_machines_own_address() {
+        // The server listens on the Mac's LAN address and a client on that Mac connects to it, so
+        // the peer is the LAN address itself (`local`, see `Peer::of_connection`). Another host on
+        // the same network is not.
+        let own: IpAddr = "192.168.1.20".parse().unwrap();
+        let shared = McpShared::new();
+        shared.replace(
+            vec![
+                client("local", "token-local", &[Permission::ChartsRead]),
+                remote_client("lan", "token-lan", &["10.9.9.0/24"]),
+            ],
+            PermissionSet::everything(),
+        );
+        let here = Some(Peer::of_connection(own, own));
+        let there = Some(Peer::of_connection("192.168.1.21".parse().unwrap(), own));
+        let id = |token, peer| shared.authenticate_from(token, peer).map(|i| i.id);
+        assert_eq!(id("token-local", here).as_deref(), Some("local"));
+        assert_eq!(id("token-local", there), None);
+        // A range limits where a remote credential may come from, not this machine.
+        assert_eq!(id("token-lan", here).as_deref(), Some("lan"));
+        assert_eq!(id("token-lan", there), None);
     }
 
     #[test]
@@ -624,7 +652,7 @@ mod tests {
         // is now client C. The old code returned C here.
         let identity = shared.authenticate_with(
             "token-b",
-            Some(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+            Some(Peer::from_ip(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST))),
             || {
                 shared.replace(
                     vec![client("b", "token-b", &[]), client("c", "token-c", &[])],
@@ -661,7 +689,7 @@ mod tests {
         );
         let identity = shared.authenticate_with(
             "token-b",
-            Some(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+            Some(Peer::from_ip(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST))),
             || shared.replace(Vec::new(), PermissionSet::none()),
         );
         assert!(identity.is_none());
@@ -671,7 +699,7 @@ mod tests {
         shared.replace(vec![client("b", "token-b", &[])], PermissionSet::none());
         let identity = shared.authenticate_with(
             "token-b",
-            Some(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+            Some(Peer::from_ip(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST))),
             || {
                 shared.replace(vec![client("b", "token-b2", &[])], PermissionSet::none());
             },

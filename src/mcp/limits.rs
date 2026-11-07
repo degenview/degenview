@@ -13,6 +13,7 @@
 //! The buckets take the current time as an argument, so tests drive them with made-up instants
 //! and never sleep.
 
+use crate::model::mcp::Peer;
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::time::{Duration, Instant};
@@ -137,11 +138,9 @@ impl RateLimiter {
     /// Counts one failed authentication from `peer` (`None`: unknown). `Err` carries how long to
     /// ask the caller to wait. A remote address is judged by its own bucket first, and the shared
     /// bucket is spent only by what that lets through.
-    pub fn failed_auth(&mut self, peer: Option<IpAddr>, now: Instant) -> Result<(), Duration> {
+    pub fn failed_auth(&mut self, peer: Option<Peer>, now: Instant) -> Result<(), Duration> {
         // This machine (and a peer the server could not name) share the one bucket.
-        let remote = peer
-            .map(|ip| ip.to_canonical())
-            .filter(|ip| !ip.is_loopback());
+        let remote = peer.filter(|peer| !peer.local).map(|peer| peer.ip);
         if let Some(ip) = remote
             && let Some(bucket) = self.peer_bucket(ip, now)
         {
@@ -265,8 +264,8 @@ mod tests {
         assert!(limiter.client_call("b", start).is_ok());
     }
 
-    fn remote(text: &str) -> Option<IpAddr> {
-        Some(text.parse().unwrap())
+    fn remote(text: &str) -> Option<Peer> {
+        Some(Peer::from_ip(text.parse().unwrap()))
     }
 
     #[test]
@@ -306,6 +305,19 @@ mod tests {
             .unwrap();
         limiter.failed_auth(remote("203.0.113.9"), start).unwrap();
         assert_eq!(limiter.tracked_peers(), 1);
+    }
+
+    #[test]
+    fn a_peer_on_this_machines_own_address_is_this_machine_here_too() {
+        let start = t0();
+        let mut limiter = RateLimiter::new(RateLimits::default());
+        let own: IpAddr = "192.168.1.20".parse().unwrap();
+        // A client on this Mac using the LAN address the server listens on is not a remote host:
+        // no bucket of its own, whatever it does.
+        for _ in 0..(PEER_FAILED_BURST + 5) {
+            let _ = limiter.failed_auth(Some(Peer::of_connection(own, own)), start);
+        }
+        assert_eq!(limiter.tracked_peers(), 0);
     }
 
     #[test]

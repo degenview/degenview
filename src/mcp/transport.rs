@@ -14,6 +14,7 @@ use crate::mcp::bridge::BridgeClient;
 use crate::mcp::cancel::honour_cancellations;
 use crate::mcp::state::McpShared;
 use crate::mcp::tools::DegenViewMcp;
+use crate::model::mcp::Peer;
 use axum::Router;
 use axum::extract::Request;
 use axum::http::StatusCode;
@@ -27,9 +28,9 @@ use tokio_util::sync::CancellationToken;
 use tower::limit::ConcurrencyLimitLayer;
 
 /// Where a request came from, put in its extensions by [`serve_with`] for the bearer check. The
-/// address of the TCP peer, not anything the request says about itself.
+/// TCP peer (and whether that is this machine), not anything the request says about itself.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct PeerAddr(pub std::net::IpAddr);
+pub struct PeerAddr(pub Peer);
 
 pub const MAX_BODY_BYTES: usize = 256 * 1024;
 const MAX_CONCURRENT_REQUESTS: usize = 16;
@@ -156,7 +157,15 @@ pub async fn serve_with(
         // Reap finished connections so the set does not grow with every request.
         while connections.try_join_next().is_some() {}
         let stream = match accepted {
-            Ok((stream, peer)) => (stream, peer.ip()),
+            Ok((stream, peer)) => {
+                // Local when loopback or the very address the connection arrived on; if that
+                // cannot be read, only loopback is.
+                let peer = match stream.local_addr() {
+                    Ok(own) => Peer::of_connection(peer.ip(), own.ip()),
+                    Err(_) => Peer::from_ip(peer.ip()),
+                };
+                (stream, peer)
+            }
             Err(_) => {
                 // Out of descriptors or a connection reset before accept: not fatal. Back off
                 // briefly so a persistent error does not spin.
@@ -199,7 +208,7 @@ pub async fn serve_with(
 
 async fn serve_connection<S>(
     stream: S,
-    peer: std::net::IpAddr,
+    peer: Peer,
     app: Router,
     limits: ConnectionLimits,
     cancel: CancellationToken,

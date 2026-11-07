@@ -116,7 +116,7 @@ pub async fn require_bearer(
         None => {
             // A refusal from another machine is the signal worth keeping: counted per address
             // into the activity log (not the token, not the request).
-            if let Some(peer) = peer.filter(|peer| !peer.to_canonical().is_loopback()) {
+            if let Some(peer) = peer.filter(|peer| !peer.local) {
                 shared
                     .audit()
                     .auth_refused(peer, crate::model::watchlist::now_ms());

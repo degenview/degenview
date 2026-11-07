@@ -13,11 +13,12 @@
 //! error message, a token or a script.
 
 use crate::mcp::state::{ClientIdentity, McpShared};
-use crate::model::mcp::{McpAuditEntry, McpAuditKind, McpAuditOutcome, McpAuditTarget};
+use crate::model::mcp::{McpAuditEntry, McpAuditKind, McpAuditOutcome, McpAuditTarget, Peer};
 use crate::model::watchlist::{new_id, now_ms};
 use rmcp::model::{CallToolResult, NumberOrString};
 use serde_json::{Map, Value};
 use std::collections::{HashMap, VecDeque};
+#[cfg(test)]
 use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -49,14 +50,14 @@ const REQUEST_ID_LIMIT: usize = 36;
 /// log says rows were lost instead (a `Gap`), so a flood from many addresses cannot grow memory.
 const MAX_AUTH_WINDOWS: usize = 256;
 
-/// The address as a row stores it: empty for this machine, where "127.0.0.1" on every row would
-/// only be noise, and the (IPv4-unmapped) address otherwise.
-pub fn peer_text(peer: IpAddr) -> String {
-    let peer = peer.to_canonical();
-    if peer.is_loopback() {
+/// The address as a row stores it: empty for this machine (loopback, or this machine's own
+/// address), where an address on every row would only be noise, and the (IPv4-unmapped) address
+/// otherwise.
+pub fn peer_text(peer: Peer) -> String {
+    if peer.local {
         String::new()
     } else {
-        peer.to_string()
+        peer.ip.to_string()
     }
 }
 
@@ -293,7 +294,7 @@ impl AuditQueue {
     /// Counts a request from the other machine `peer` refused for a token that did not work
     /// (unknown, revoked, or valid but not for that address). Within a minute they become one row
     /// with a count. Never holds the token or anything the request said.
-    pub fn auth_refused(&self, peer: IpAddr, now_ms: i64) {
+    pub fn auth_refused(&self, peer: Peer, now_ms: i64) {
         let key = peer_text(peer);
         if key.is_empty() {
             return;
@@ -403,7 +404,7 @@ mod tests {
         ClientIdentity {
             id: "c1".into(),
             name: "Claude".into(),
-            peer: IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+            peer: Peer::from_ip(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
         }
     }
 
@@ -693,9 +694,9 @@ mod tests {
         let a: IpAddr = "203.0.113.9".parse().unwrap();
         let b: IpAddr = "198.51.100.4".parse().unwrap();
         for _ in 0..5 {
-            queue.auth_refused(a, 1_000);
+            queue.auth_refused(Peer::from_ip(a), 1_000);
         }
-        queue.auth_refused(b, 2_000);
+        queue.auth_refused(Peer::from_ip(b), 2_000);
         // This machine is not recorded: it was never the signal, and it would only add noise.
         queue.auth_refused("127.0.0.1".parse().unwrap(), 2_000);
         queue.auth_refused("::ffff:127.0.0.1".parse().unwrap(), 2_000);
@@ -715,11 +716,26 @@ mod tests {
     }
 
     #[test]
+    fn this_machines_own_address_is_not_recorded_as_a_remote_peer() {
+        let own: IpAddr = "192.168.1.20".parse().unwrap();
+        let here = Peer::of_connection(own, own);
+        let there = Peer::of_connection("192.168.1.21".parse().unwrap(), own);
+        assert_eq!(peer_text(here), "");
+        assert_eq!(peer_text(there), "192.168.1.21");
+        let queue = AuditQueue::default();
+        queue.auth_refused(here, 1_000);
+        queue.auth_refused(there, 1_000);
+        let rows = queue.take(1_000, true);
+        assert_eq!(rows.len(), 1, "only the other host is a signal: {rows:?}");
+        assert_eq!(rows[0].peer, "192.168.1.21");
+    }
+
+    #[test]
     fn a_flood_from_many_addresses_cannot_grow_the_table_and_is_reported_as_lost_rows() {
         let queue = AuditQueue::default();
         for n in 0..(MAX_AUTH_WINDOWS + 10) {
             let address: IpAddr = format!("10.{}.{}.1", n / 256, n % 256).parse().unwrap();
-            queue.auth_refused(address, 1);
+            queue.auth_refused(Peer::from_ip(address), 1);
         }
         let rows = queue.take(1_000_000, true);
         assert_eq!(

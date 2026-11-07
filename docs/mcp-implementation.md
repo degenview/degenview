@@ -254,6 +254,13 @@ that expects OAuth discovery will not work with it.
   (`PeerAddr`) and the bearer check judges that, never `X-Forwarded-For` or any other header. A valid
   token from an address it may not be used from gets the same 401 as an unknown token, draws on the
   failed-auth limit, and leaves no "last used" mark. A peer the server cannot name counts as remote.
+- "This machine" (`Peer.local`, set in `transport::serve_with`) is loopback **or the very address the
+  connection arrived on**. Once the server is bound to a LAN address and not to loopback, a client on
+  the same Mac uses that address and arrives from it; a credential without `remote_allowed` must still
+  work there, and `remote_allowed` ranges do not apply to it. A host elsewhere cannot present the server's
+  own address as its source (the reply would be delivered to the server itself), so this lets nobody in.
+  Local clients still need their endpoint changed to the https address and the certificate trusted:
+  nothing listens on loopback any more.
 - A remote ceiling (`McpSettings.remote_ceiling`, default: all read-only permissions) caps every
   client with `remote_allowed`. It follows the credential, not the request: a token that may leave the
   machine is no stronger when used on it. That is simpler and safer than judging each call, at the cost
