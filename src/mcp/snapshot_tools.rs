@@ -109,7 +109,7 @@ impl DegenViewMcp {
         let started = match self
             .bridge
             .call(
-                &client.id,
+                &client,
                 Permission::ChartsSnapshotRead,
                 McpCommand::BeginSnapshot {
                     workspace_id,
@@ -130,7 +130,7 @@ impl DegenViewMcp {
             match self
                 .bridge
                 .call(
-                    &client.id,
+                    &client,
                     Permission::ChartsSnapshotRead,
                     McpCommand::PollSnapshot {
                         job_id: started.job_id,

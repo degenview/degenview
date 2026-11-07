@@ -309,7 +309,7 @@ impl DegenViewMcp {
         match self
             .bridge
             .call(
-                &client.id,
+                &client,
                 Permission::PaperRead,
                 McpCommand::ListPaperAccounts,
                 REQUEST_TIMEOUT,
@@ -342,7 +342,7 @@ impl DegenViewMcp {
         match self
             .bridge
             .call(
-                &client.id,
+                &client,
                 Permission::PaperRead,
                 McpCommand::GetPaperAccount { account_id },
                 REQUEST_TIMEOUT,
@@ -376,7 +376,7 @@ impl DegenViewMcp {
         match self
             .bridge
             .call(
-                &client.id,
+                &client,
                 Permission::PaperRead,
                 McpCommand::ListPaperHistory {
                     account_id,
@@ -415,7 +415,7 @@ impl DegenViewMcp {
         match self
             .bridge
             .call(
-                &client.id,
+                &client,
                 Permission::PaperRead,
                 McpCommand::ListPaperHistory {
                     account_id,
@@ -455,7 +455,7 @@ impl DegenViewMcp {
         match self
             .bridge
             .call(
-                &client.id,
+                &client,
                 Permission::PaperOrdersPlace,
                 McpCommand::PlacePaperOrder {
                     request: Box::new(request),
@@ -504,7 +504,7 @@ impl DegenViewMcp {
         match self
             .bridge
             .call(
-                &client.id,
+                &client,
                 Permission::PaperOrdersPlace,
                 McpCommand::ModifyPaperOrder { order_id, changes },
                 REQUEST_TIMEOUT,
@@ -554,7 +554,7 @@ impl DegenViewMcp {
         match self
             .bridge
             .call(
-                &client.id,
+                &client,
                 Permission::PaperOrdersCancel,
                 McpCommand::CancelPaperOrders {
                     account_id,
@@ -614,7 +614,7 @@ impl DegenViewMcp {
         match self
             .bridge
             .call(
-                &client.id,
+                &client,
                 Permission::PaperPositionsClose,
                 McpCommand::ClosePaperPositions {
                     account_id,

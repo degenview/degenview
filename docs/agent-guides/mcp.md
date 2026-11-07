@@ -104,7 +104,9 @@
   [implementation](../mcp-implementation.md).
 - Where a request may come from is decided in `McpShared::authenticate_from(token, peer)`, from the
   socket peer `transport::serve_with` records as `PeerAddr`, never from a header. A credential works
-  from this machine unless `McpClient::remote_allowed`; then from anywhere, or only from
+  from this machine unless `McpClient::remote_allowed`. "This machine" is `Peer.local`: loopback or the
+  address the connection arrived on (a client on this Mac using the LAN address the server is bound to
+  is local; use `Peer::of_connection`, never `is_loopback()`, to decide it). Otherwise from anywhere, or only from
   `allowed_cidrs` if it has any. A refused address looks like an unknown token (401, and it draws on
   the failed-auth bucket) and records no use. No peer means remote. Do not add a second way to
   authenticate. `McpClient::effective(global, remote_ceiling)` also caps a `remote_allowed` client by
@@ -118,6 +120,10 @@
   `McpCommand` is decided in `gate` (exhaustive), and an `AskRemote` one also needs a `tool_of` name and
   a `confirm::remote_summary`, or the app refuses it rather than run it unasked. Turning the setting
   off drains only local credentials' questions (`ConfirmationBook::drain_where`).
+- A queued `Request` carries its `Origin` (peer and `remote`, from `ClientIdentity`): pass the identity
+  to `BridgeClient::call`, never a bare client id; `Request::run` re-checks the address
+  (`accepts_origin`) and hands the origin to the gate (`needs_approval(.., remote_origin, ..)`). Do not
+  decide "remote" from the credential's current state alone at execution.
 - Failed sign-ins from another machine draw on that address's own bucket first
   (`RateLimiter::failed_auth(peer, now)`, bounded table), then the shared one; a refusal from another
   machine is counted into one `AuthRefused` row per address per minute. Audit rows carry `peer` (empty

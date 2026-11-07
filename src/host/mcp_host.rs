@@ -3218,7 +3218,10 @@ mod tests {
         crate::mcp::state::ClientIdentity {
             id: "c1".into(),
             name: "Claude".into(),
-            peer: std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+            remote: false,
+            peer: crate::model::mcp::Peer::from_ip(std::net::IpAddr::V4(
+                std::net::Ipv4Addr::LOCALHOST,
+            )),
         }
     }
 

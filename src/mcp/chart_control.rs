@@ -138,7 +138,7 @@ impl DegenViewMcp {
         match self
             .bridge
             .call(
-                &client.id,
+                &client,
                 Permission::ChartsViewWrite,
                 McpCommand::SetTimeframe {
                     workspace_id,
@@ -182,7 +182,7 @@ impl DegenViewMcp {
         match self
             .bridge
             .call(
-                &client.id,
+                &client,
                 Permission::ChartsViewWrite,
                 McpCommand::SetChartType {
                     workspace_id,
@@ -220,7 +220,7 @@ impl DegenViewMcp {
         match self
             .bridge
             .call(
-                &client.id,
+                &client,
                 Permission::ChartsDelete,
                 McpCommand::RemoveChart {
                     workspace_id,

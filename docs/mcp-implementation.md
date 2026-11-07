@@ -254,6 +254,13 @@ that expects OAuth discovery will not work with it.
   (`PeerAddr`) and the bearer check judges that, never `X-Forwarded-For` or any other header. A valid
   token from an address it may not be used from gets the same 401 as an unknown token, draws on the
   failed-auth limit, and leaves no "last used" mark. A peer the server cannot name counts as remote.
+- "This machine" (`Peer.local`, set in `transport::serve_with`) is loopback **or the very address the
+  connection arrived on**. Once the server is bound to a LAN address and not to loopback, a client on
+  the same Mac uses that address and arrives from it; a credential without `remote_allowed` must still
+  work there, and `remote_allowed` ranges do not apply to it. A host elsewhere cannot present the server's
+  own address as its source (the reply would be delivered to the server itself), so this lets nobody in.
+  Local clients still need their endpoint changed to the https address and the certificate trusted:
+  nothing listens on loopback any more.
 - A remote ceiling (`McpSettings.remote_ceiling`, default: all read-only permissions) caps every
   client with `remote_allowed`. It follows the credential, not the request: a token that may leave the
   machine is no stronger when used on it. That is simpler and safer than judging each call, at the cost
@@ -278,6 +285,11 @@ that expects OAuth discovery will not work with it.
   chart, create or pause an alert, indicators, applied scripts, drawings, timeframe, chart type, replay,
   watchlists, a script draft) are described from the command alone (`confirm::remote_summary`). Turning
   the setting off ends only local credentials' open questions. A revoked client counts as remote.
+  A request carries the origin it arrived with (`ClientIdentity::remote`, fixed at authentication, via
+  `BridgeClient::call(&identity, ..)` and `Request::origin`): a call that came in as remote keeps asking
+  even if remote access is switched off while it waits in the queue, and `Request::run` judges its
+  address against the credential as it is *then* (`McpShared::accepts_origin`), so a request from an
+  address no longer admitted does not run, as with a revoked permission.
 - Failed sign-ins. A remote address has its own bucket (10 at once, then 1 a second; at most 1024
   addresses tracked) that is spent first, so one host guessing tokens is cut off without using the
   shared bucket, and a local client's mistakes are not slowed by it. Past 1024 addresses the surplus is

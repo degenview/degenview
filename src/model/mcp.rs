@@ -707,16 +707,61 @@ impl<'de> Deserialize<'de> for Cidr {
 /// Ranges a client may be given at most.
 pub const MAX_CIDRS: usize = 16;
 
+/// Where a connection came from, and whether that is this machine.
+///
+/// "This machine" is not only loopback. A client on this Mac that uses the address the server
+/// listens on (`https://192.168.1.20:8765`, once the server is bound to that interface and not to
+/// loopback) arrives with that same address as its peer. A host elsewhere cannot do that: a
+/// connection from the server's own address would have its replies delivered to the server itself,
+/// so the handshake could never complete.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Peer {
+    /// The peer's address, with an IPv4 address mapped into IPv6 shown as IPv4.
+    pub ip: IpAddr,
+    /// Loopback, or the same address as the one the connection arrived on.
+    pub local: bool,
+}
+
+impl Peer {
+    /// The peer of a connection that arrived on `own`.
+    pub fn of_connection(peer: IpAddr, own: IpAddr) -> Self {
+        let ip = peer.to_canonical();
+        Self {
+            ip,
+            local: ip.is_loopback() || ip == own.to_canonical(),
+        }
+    }
+
+    /// A peer known only by its address, with nothing to compare it to: local only if loopback.
+    /// For tests, and for a connection whose own address could not be read.
+    pub fn from_ip(ip: IpAddr) -> Self {
+        let ip = ip.to_canonical();
+        Self {
+            ip,
+            local: ip.is_loopback(),
+        }
+    }
+}
+
+impl std::str::FromStr for Peer {
+    type Err = std::net::AddrParseError;
+
+    /// A peer known only by address ([`Peer::from_ip`]); handy where there is no connection.
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        text.parse().map(Self::from_ip)
+    }
+}
+
 /// Whether a request from `peer` may use a credential with this remote scope.
 ///
 /// A peer on this machine always may. Any other needs `remote_allowed`, and then to be inside one
 /// of `cidrs` when there are any. An unknown peer (`None`) is treated as remote: if the server
 /// cannot say where a request came from, it is not let in on the strength of being local.
-pub fn peer_may_use(remote_allowed: bool, cidrs: &[Cidr], peer: Option<IpAddr>) -> bool {
+pub fn peer_may_use(remote_allowed: bool, cidrs: &[Cidr], peer: Option<Peer>) -> bool {
     match peer {
-        Some(peer) if peer.to_canonical().is_loopback() => true,
+        Some(peer) if peer.local => true,
         Some(peer) => {
-            remote_allowed && (cidrs.is_empty() || cidrs.iter().any(|c| c.contains(peer)))
+            remote_allowed && (cidrs.is_empty() || cidrs.iter().any(|c| c.contains(peer.ip)))
         }
         None => false,
     }
@@ -825,7 +870,7 @@ impl McpClient {
     }
 
     /// Whether a request from `peer` may use this credential at all.
-    pub fn accepts_peer(&self, peer: Option<IpAddr>) -> bool {
+    pub fn accepts_peer(&self, peer: Option<Peer>) -> bool {
         peer_may_use(self.remote_allowed, &self.allowed_cidrs, peer)
     }
 }
@@ -1029,11 +1074,11 @@ mod tests {
     #[test]
     fn who_may_use_a_credential_from_where() {
         let lan = [cidr("192.168.1.0/24")];
-        let here = Some(ip("127.0.0.1"));
-        let also_here = Some(ip("::1"));
-        let mapped_here = Some(ip("::ffff:127.0.0.1"));
-        let near = Some(ip("192.168.1.9"));
-        let far = Some(ip("203.0.113.9"));
+        let here = Some(Peer::from_ip(ip("127.0.0.1")));
+        let also_here = Some(Peer::from_ip(ip("::1")));
+        let mapped_here = Some(Peer::from_ip(ip("::ffff:127.0.0.1")));
+        let near = Some(Peer::from_ip(ip("192.168.1.9")));
+        let far = Some(Peer::from_ip(ip("203.0.113.9")));
         // This machine always may, remote access or not.
         for peer in [here, also_here, mapped_here] {
             assert!(peer_may_use(false, &[], peer));
@@ -1048,6 +1093,39 @@ mod tests {
         // Where it came from unknown: not let in on the strength of being local.
         assert!(!peer_may_use(false, &[], None));
         assert!(!peer_may_use(true, &[], None));
+    }
+
+    #[test]
+    fn this_machines_own_address_is_this_machine_and_no_other_address_is() {
+        let own = ip("192.168.1.20");
+        // The server listens on 192.168.1.20 and a client on the same Mac connects to it: the peer
+        // is that same address. Loopback is this machine whatever the server listens on.
+        assert!(Peer::of_connection(own, own).local);
+        assert!(Peer::of_connection(ip("127.0.0.1"), own).local);
+        assert!(Peer::of_connection(ip("::1"), ip("fd00::20")).local);
+        // Another host on the same network is not, nor is a neighbouring address.
+        assert!(!Peer::of_connection(ip("192.168.1.21"), own).local);
+        assert!(!Peer::of_connection(ip("203.0.113.9"), own).local);
+        // A mapped IPv4 address is the IPv4 address, on either side.
+        assert!(Peer::of_connection(ip("::ffff:192.168.1.20"), own).local);
+        assert!(Peer::of_connection(own, ip("::ffff:192.168.1.20")).local);
+        assert_eq!(
+            Peer::of_connection(ip("::ffff:10.0.0.7"), own).ip,
+            ip("10.0.0.7")
+        );
+        // Known only by address, nothing to compare with: loopback only.
+        assert!(Peer::from_ip(ip("127.0.0.1")).local);
+        assert!(!Peer::from_ip(own).local);
+
+        // So a credential that may not leave this machine works from its own address, and a
+        // credential with ranges is not held to them there.
+        let lan = [cidr("10.0.0.0/8")];
+        let here = Some(Peer::of_connection(own, own));
+        assert!(peer_may_use(false, &[], here));
+        assert!(peer_may_use(true, &lan, here));
+        let other = Some(Peer::of_connection(ip("192.168.1.21"), own));
+        assert!(!peer_may_use(false, &[], other));
+        assert!(!peer_may_use(true, &lan, other));
     }
 
     fn remote_client(remote: bool, grants: &[Permission]) -> McpClient {
