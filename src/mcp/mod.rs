@@ -77,11 +77,23 @@ impl Listen {
         }
     }
 
-    /// Whether this configuration may be served at all. Anything reachable from another machine
-    /// is refused without TLS, and with a certificate made for some other address: a bearer token
-    /// must never cross a network in the clear, and a client pinning the certificate must be
-    /// pinning the address it connects to.
+    /// Whether this configuration may be served at all. The address must be one the user could
+    /// have chosen; anything reachable from another machine is refused without TLS, and with a
+    /// certificate made for some other address: a bearer token must never cross a network in the
+    /// clear, and a client pinning the certificate must be pinning the address it connects to.
     fn check(&self) -> Result<(), String> {
+        // `BindMode::Interface` can be written down directly, so the address is judged again here,
+        // at the one place that opens the socket: never every interface, never a multicast,
+        // broadcast or scope-less link-local address, and loopback only as `Loopback`.
+        if let BindMode::Interface(ip) = self.bind {
+            match BindMode::interface(ip) {
+                Ok(BindMode::Interface(_)) => {}
+                Ok(BindMode::Loopback) => {
+                    return Err(format!("{ip} is this machine's own address: use loopback"));
+                }
+                Err(error) => return Err(error.to_string()),
+            }
+        }
         match (&self.bind, &self.tls) {
             (BindMode::Loopback, _) => Ok(()),
             (BindMode::Interface(_), None) => Err(
