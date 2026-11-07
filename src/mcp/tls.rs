@@ -6,10 +6,13 @@
 //! compares (or the client stores) the first time it connects.
 //!
 //! The certificate and its private key live in one PEM file in the app's data directory, written
-//! owner-only on Unix. The key is not part of the credential seal: a process that can replace the
-//! file can present a different certificate, but it learns no bearer token from that, and a client
-//! that pinned the fingerprint refuses the new one. TLS 1.3 only; the provider is `ring`, chosen
-//! explicitly so no process-wide default has to be installed.
+//! owner-only on Unix and put back to owner-only if a restore or a copy loosened it. The key is not
+//! part of the credential seal. A process that can only replace the file can present another
+//! certificate, which a client that pinned the fingerprint refuses. A process that can *read* the key
+//! is worse off: it can pose as the server to such a client and take the bearer token it sends, so
+//! the file is never left readable by others. A loaded file is trusted for nothing it says about
+//! itself: the address it is kept for must be one the certificate names. TLS 1.3 only; the provider is
+//! `ring`, chosen explicitly so no process-wide default has to be installed.
 
 use rcgen::{
     CertificateParams, DistinguishedName, DnType, ExtendedKeyUsagePurpose, IsCa, KeyPair,
@@ -20,7 +23,7 @@ use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio_rustls::rustls::pki_types::pem::PemObject;
-use tokio_rustls::rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use tokio_rustls::rustls::pki_types::{CertificateDer, PrivateKeyDer, ServerName};
 use tokio_rustls::rustls::{self, ServerConfig};
 
 /// The file inside the data directory.
@@ -70,12 +73,14 @@ impl TlsIdentity {
         let cert = params
             .self_signed(&key)
             .map_err(|error| format!("Could not sign the certificate: {error}"))?;
-        Ok(Self {
+        let identity = Self {
             address,
             cert_pem: cert.pem(),
             key_pem: key.serialize_pem(),
             cert_der: cert.der().to_vec(),
-        })
+        };
+        names_address(&identity.cert_der, address)?;
+        Ok(identity)
     }
 
     pub fn address(&self) -> IpAddr {
@@ -140,10 +145,22 @@ impl TlsIdentity {
             key_pem: pem_block(text, "PRIVATE KEY").ok_or("The TLS file has no key")?,
             cert_der: cert.to_vec(),
         };
-        // Reject a certificate and key that were pulled apart before they are ever served.
+        // Reject a certificate and key that were pulled apart before they are ever served, and a
+        // file whose address line says one thing while the certificate names another.
         identity.server_config()?;
+        names_address(&identity.cert_der, address)?;
         Ok(identity)
     }
+}
+
+/// Whether the certificate names `address` (an IP subject alternative name), checked as a client
+/// checks it. The address a file records about itself is only a note: this is what it is held to.
+fn names_address(cert_der: &[u8], address: IpAddr) -> Result<(), String> {
+    let der = CertificateDer::from(cert_der);
+    let cert = webpki::EndEntityCert::try_from(&der)
+        .map_err(|error| format!("The TLS certificate is not usable: {error}"))?;
+    cert.verify_is_valid_for_subject_name(&ServerName::IpAddress(address.into()))
+        .map_err(|_| format!("The TLS certificate does not name {address}"))
 }
 
 /// The PEM block labelled `label`, including its BEGIN and END lines and a final newline.
@@ -167,6 +184,7 @@ pub fn path_in(dir: &Path) -> PathBuf {
 /// otherwise see their pinned fingerprint change for no stated reason.
 pub fn load_or_create(dir: &Path, address: IpAddr) -> Result<TlsIdentity, String> {
     let path = path_in(dir);
+    ensure_private(&path)?;
     match std::fs::read_to_string(&path) {
         Ok(text) => {
             let saved = TlsIdentity::from_file_text(&text)
@@ -183,16 +201,59 @@ pub fn load_or_create(dir: &Path, address: IpAddr) -> Result<TlsIdentity, String
     Ok(fresh)
 }
 
-/// Writes the identity owner-only, through a temporary file renamed over the target, so the key
-/// is never readable by others and a crash never leaves half a file.
+/// Makes sure an existing key file is a plain file only its owner can read. A restore or a copy
+/// often leaves it readable by others (a `cp` without `-p`), so a loose mode is put back to
+/// owner-only rather than used as it is; a link or anything that is not a regular file is refused,
+/// since reading through it would read something else. Nothing to do when there is no file, and on
+/// systems without Unix modes (there the per-user data directory is what protects it).
+fn ensure_private(path: &Path) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let meta = match std::fs::symlink_metadata(path) {
+            Ok(meta) => meta,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(format!("Could not read {}: {error}", path.display())),
+        };
+        if !meta.file_type().is_file() {
+            return Err(format!(
+                "{} is not a regular file, so it was not used",
+                path.display()
+            ));
+        }
+        if meta.permissions().mode() & 0o077 != 0 {
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).map_err(
+                |error| {
+                    format!(
+                        "{} can be read by others and could not be made private: {error}",
+                        path.display()
+                    )
+                },
+            )?;
+        }
+    }
+    #[cfg(not(unix))]
+    let _ = path;
+    Ok(())
+}
+
+/// Writes the identity owner-only, through a new temporary file renamed over the target, so the
+/// key is never readable by others and a crash never leaves half a file. The temporary file is
+/// always created fresh: one left behind (or planted, as a link) is removed, never reused, because
+/// the mode asked for only applies to a file that is being created.
 fn save(path: &Path, identity: &TlsIdentity) -> Result<(), String> {
     use std::io::Write;
     let dir = path.parent().ok_or("The TLS file has no directory")?;
     std::fs::create_dir_all(dir)
         .map_err(|error| format!("Could not create {}: {error}", dir.display()))?;
     let temp = path.with_extension("pem.tmp");
+    match std::fs::remove_file(&temp) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(format!("Could not clear {}: {error}", temp.display())),
+    }
     let mut options = std::fs::OpenOptions::new();
-    options.write(true).create(true).truncate(true);
+    options.write(true).create_new(true);
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
@@ -200,6 +261,12 @@ fn save(path: &Path, identity: &TlsIdentity) -> Result<(), String> {
     }
     let write = || -> std::io::Result<()> {
         let mut file = options.open(&temp)?;
+        // Not left to the umask, and before the key is written.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+        }
         file.write_all(identity.to_file_text().as_bytes())?;
         file.sync_all()?;
         std::fs::rename(&temp, path)
@@ -305,6 +372,134 @@ mod tests {
             .permissions()
             .mode();
         assert_eq!(mode & 0o777, 0o600);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A certificate that names `names` (DNS or IP), with the key for it, as a file text whose
+    /// address line says `recorded`.
+    fn file_text_for(recorded: &str, names: &[&str]) -> String {
+        let key = KeyPair::generate().unwrap();
+        let params =
+            CertificateParams::new(names.iter().map(|n| (*n).to_owned()).collect::<Vec<_>>())
+                .unwrap();
+        let cert = params.self_signed(&key).unwrap();
+        format!(
+            "{ADDRESS_PREFIX}{recorded}\n{}{}",
+            cert.pem(),
+            key.serialize_pem()
+        )
+    }
+
+    #[test]
+    fn an_address_line_the_certificate_does_not_name_is_refused() {
+        // What the file says about itself is only a note: the certificate has to name the address.
+        for (recorded, names) in [
+            ("192.168.1.20", &["10.0.0.7"][..]),
+            ("fd00::21", &["fd00::20"][..]),
+            ("192.168.1.20", &["example.test"][..]),
+            ("192.168.1.20", &["10.0.0.7", "10.0.0.8"][..]),
+        ] {
+            let error = TlsIdentity::from_file_text(&file_text_for(recorded, names)).unwrap_err();
+            assert!(
+                error.contains("does not name"),
+                "{recorded} / {names:?}: {error}"
+            );
+        }
+        // And the honest cases load: one address, or several that include it.
+        for (recorded, names) in [
+            ("192.168.1.20", &["192.168.1.20"][..]),
+            ("fd00::20", &["fd00::20"][..]),
+            ("192.168.1.20", &["10.0.0.7", "192.168.1.20"][..]),
+        ] {
+            let identity = TlsIdentity::from_file_text(&file_text_for(recorded, names)).unwrap();
+            assert_eq!(identity.address(), recorded.parse::<IpAddr>().unwrap());
+        }
+    }
+
+    #[test]
+    fn a_mismatched_file_is_reported_by_load_or_create_and_left_alone() {
+        let dir = scratch("san");
+        let path = path_in(&dir);
+        let text = file_text_for("192.168.1.20", &["10.0.0.7"]);
+        std::fs::write(&path, &text).unwrap();
+        let error = load_or_create(&dir, "192.168.1.20".parse().unwrap()).unwrap_err();
+        assert!(
+            error.contains("does not name") && error.contains("mcp-tls.pem"),
+            "{error}"
+        );
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    fn mode_of(path: &Path) -> u32 {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+    }
+
+    #[cfg(unix)]
+    fn set_mode(path: &Path, mode: u32) {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_key_file_a_restore_made_readable_by_others_is_made_private_and_kept() {
+        let dir = scratch("loose");
+        let first = load_or_create(&dir, address()).unwrap();
+        for loose in [0o644, 0o664, 0o640, 0o666, 0o604] {
+            set_mode(&path_in(&dir), loose);
+            let again = load_or_create(&dir, address()).unwrap();
+            assert_eq!(mode_of(&path_in(&dir)), 0o600, "from {loose:o}");
+            assert_eq!(
+                again.fingerprint(),
+                first.fingerprint(),
+                "the certificate is kept"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_temporary_file_left_loose_is_never_reused_for_the_key() {
+        let dir = scratch("tmp");
+        let temp = path_in(&dir).with_extension("pem.tmp");
+        std::fs::write(&temp, "left behind").unwrap();
+        set_mode(&temp, 0o666);
+        load_or_create(&dir, address()).unwrap();
+        assert_eq!(mode_of(&path_in(&dir)), 0o600);
+        assert!(!temp.exists(), "the temporary file is renamed away");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_link_planted_where_the_key_is_written_is_not_written_through() {
+        let dir = scratch("link");
+        let victim = dir.join("victim");
+        std::fs::write(&victim, "keep me").unwrap();
+        let temp = path_in(&dir).with_extension("pem.tmp");
+        std::os::unix::fs::symlink(&victim, &temp).unwrap();
+        load_or_create(&dir, address()).unwrap();
+        assert_eq!(std::fs::read_to_string(&victim).unwrap(), "keep me");
+        let meta = std::fs::symlink_metadata(path_in(&dir)).unwrap();
+        assert!(meta.file_type().is_file(), "the key is a plain file");
+        assert_eq!(mode_of(&path_in(&dir)), 0o600);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_key_file_that_is_a_link_is_refused() {
+        let dir = scratch("keylink");
+        load_or_create(&dir, address()).unwrap();
+        let real = dir.join("elsewhere.pem");
+        std::fs::rename(path_in(&dir), &real).unwrap();
+        std::os::unix::fs::symlink(&real, path_in(&dir)).unwrap();
+        let error = load_or_create(&dir, address()).unwrap_err();
+        assert!(error.contains("not a regular file"), "{error}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
