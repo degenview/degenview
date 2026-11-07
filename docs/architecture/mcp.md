@@ -31,6 +31,17 @@ client → 127.0.0.1:<port>/mcp → bearer/Host/Origin/size checks
   sits outside the 16-request cap, so a cancel gets through while the calls it cancels hold every
   permit, and inside the bearer check, so a client can only cancel its own calls. Batches are not
   read.
+- Activity log: every `tools/call` leaves one row (`McpAuditEntry`) whichever way it ends. An
+  `AuditGuard` in `call_tool` writes it when the call finishes, or as cancelled if the future is
+  dropped first, into a bounded in-memory queue on `McpShared`; `McpHost::tick` writes the queue to
+  the `mcp_audit` table about once a second in one transaction (and from the app's `on_exit` hook,
+  through `McpHost::shutdown`, so a quit loses nothing; a kill still loses the last second) and keeps the
+  newest 100 for the Settings page, which never reads SQLite itself. The table keeps 1,000 rows,
+  is local to this Mac (`sync::policy`), and Clear writes one "cleared" row. A row holds the tool,
+  client, outcome, an error *code*, duration, the client's request id, and up to four ids from a
+  fixed list of argument names, kept only if they look like ids (digits or a hex hash). Never a
+  token, a script, a note, a message or any other argument value. Rate-limited calls are counted into
+  one row per client per minute; bad tokens and `tools/list` are not rows.
 - Workers never access workspaces or SQLite. `Request::run` skips abandoned, expired, cancelled,
   pre-stop, or newly unauthorized work; started work reports its real result.
 - Settings holds the store lock, so it only queues `McpAction`; `tick_mcp` applies it later.

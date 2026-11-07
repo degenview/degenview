@@ -4,6 +4,7 @@
 //! Every request reads this fresh, so revoking a credential or changing a permission takes
 //! effect on the very next request. Nothing here knows about HTTP or egui.
 
+use crate::mcp::audit::AuditQueue;
 use crate::mcp::cancel::CallRegistry;
 use crate::mcp::limits::{RateLimiter, RateLimits};
 use crate::model::DataSource;
@@ -109,6 +110,7 @@ pub struct McpShared {
     usage_dirty: AtomicBool,
     limiter: Mutex<RateLimiter>,
     calls: Arc<CallRegistry>,
+    audit: AuditQueue,
     pine_jobs: Arc<tokio::sync::Semaphore>,
     script_locator: RwLock<ScriptLocator>,
     search_jobs: Arc<tokio::sync::Semaphore>,
@@ -135,6 +137,7 @@ impl McpShared {
             usage_dirty: AtomicBool::new(false),
             limiter: Mutex::new(RateLimiter::new(RateLimits::default())),
             calls: Arc::new(CallRegistry::default()),
+            audit: AuditQueue::default(),
             pine_jobs: Arc::new(tokio::sync::Semaphore::new(PINE_JOBS)),
             script_locator: RwLock::new(Box::new(ScriptStore::default_location)),
             search_jobs: Arc::new(tokio::sync::Semaphore::new(SEARCH_JOBS)),
@@ -166,6 +169,11 @@ impl McpShared {
         let mut config = self.write();
         config.clients = clients;
         config.global = global;
+    }
+
+    /// Rows for the activity log, waiting for the app thread to write them.
+    pub fn audit(&self) -> &AuditQueue {
+        &self.audit
     }
 
     /// The tool calls in flight, so a `notifications/cancelled` can find the one it names.

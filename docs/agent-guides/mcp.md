@@ -18,6 +18,11 @@
   A `notifications/cancelled` is a separate POST in stateless mode: `call_tool` registers each call
   in `McpShared::calls()` and `cancel::honour_cancellations` cancels it. Keep that layer outside the
   concurrency cap and inside the bearer check.
+- Every `tools/call` is recorded by `AuditGuard` in `call_tool` (`mcp/audit.rs`). A new way for a
+  call to end must end through that guard, and a row may only hold what `audit.rs` lets in: ids that
+  look like ids, a code, never an argument value or `McpError::message()`. The log is written by
+  `McpHost::tick`, not from request threads; the Settings page reads `McpHost::activity()`, never
+  SQLite. `mcp_audit` is local-only in `sync::policy`.
 - Rate limits live in `mcp/limits.rs` and are applied in `require_bearer`. Bad tokens may be
   refused with 429; a valid token must never be refused because of other callers' failures.
   Connections are accepted by `transport::serve` (not `axum::serve`) so header, time and
