@@ -29,6 +29,14 @@ use tokio_rustls::rustls::{self, ServerConfig};
 /// The file inside the data directory.
 pub const FILE_NAME: &str = "mcp-tls.pem";
 
+/// Held, exclusively, for the whole of reading, making and saving the identity, so two DegenView
+/// processes starting together adopt the same certificate instead of each making one.
+pub const LOCK_FILE_NAME: &str = "mcp-tls.lock";
+
+/// How long [`load_or_create`] waits for another process that is making the certificate. Making
+/// one takes milliseconds, so a longer wait means that process is stuck, and the caller is told.
+const LOCK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// First line of the file, ahead of the PEM blocks (a PEM reader skips text outside them). It
 /// records which address the certificate was made for, so a changed address is noticed without
 /// parsing the certificate.
@@ -182,7 +190,63 @@ pub fn path_in(dir: &Path) -> PathBuf {
 ///
 /// A file that exists but cannot be read is an error, not a reason to replace it: the user would
 /// otherwise see their pinned fingerprint change for no stated reason.
+///
+/// The whole operation runs under a lock on [`LOCK_FILE_NAME`], shared with every other process
+/// using the directory. Without it, two instances that find no file both make a certificate: each
+/// replaces the other's temporary file, one fails, and the other can end up presenting a
+/// certificate that is not the one saved. An advisory lock is released when its holder exits or
+/// crashes, so it cannot be left behind.
 pub fn load_or_create(dir: &Path, address: IpAddr) -> Result<TlsIdentity, String> {
+    load_or_create_within(dir, address, LOCK_TIMEOUT)
+}
+
+fn load_or_create_within(
+    dir: &Path,
+    address: IpAddr,
+    wait: std::time::Duration,
+) -> Result<TlsIdentity, String> {
+    std::fs::create_dir_all(dir)
+        .map_err(|error| format!("Could not create {}: {error}", dir.display()))?;
+    let _held = lock_dir(dir, wait)?;
+    load_or_create_locked(dir, address)
+}
+
+/// An exclusive lock on the directory's lock file, held until it is dropped.
+fn lock_dir(dir: &Path, wait: std::time::Duration) -> Result<std::fs::File, String> {
+    let path = dir.join(LOCK_FILE_NAME);
+    let mut options = std::fs::OpenOptions::new();
+    // Read and write, for the systems whose locks need one of them.
+    options.read(true).write(true).create(true).truncate(false);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let file = options
+        .open(&path)
+        .map_err(|error| format!("Could not open {}: {error}", path.display()))?;
+    let started = std::time::Instant::now();
+    loop {
+        match file.try_lock() {
+            Ok(()) => return Ok(file),
+            Err(std::fs::TryLockError::WouldBlock) if started.elapsed() < wait => {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            Err(std::fs::TryLockError::WouldBlock) => {
+                return Err(format!(
+                    "Another DegenView has held {} for {} seconds; try again in a moment",
+                    path.display(),
+                    wait.as_secs().max(1)
+                ));
+            }
+            Err(std::fs::TryLockError::Error(error)) => {
+                return Err(format!("Could not lock {}: {error}", path.display()));
+            }
+        }
+    }
+}
+
+fn load_or_create_locked(dir: &Path, address: IpAddr) -> Result<TlsIdentity, String> {
     let path = path_in(dir);
     ensure_private(&path)?;
     match std::fs::read_to_string(&path) {
@@ -500,6 +564,86 @@ mod tests {
         std::os::unix::fs::symlink(&real, path_in(&dir)).unwrap();
         let error = load_or_create(&dir, address()).unwrap_err();
         assert!(error.contains("not a regular file"), "{error}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn callers_starting_together_all_adopt_the_one_certificate_that_is_saved() {
+        use std::sync::{Arc, Barrier};
+        // As several DegenView processes finding no file at once would: every caller must succeed
+        // and hold exactly the certificate that ended up on disk. (Before the lock, two callers
+        // never got through a round: one failed, and others held a certificate that was not saved.)
+        for callers in [2, 3, 4] {
+            for round in 0..60 {
+                let dir = scratch(&format!("race{callers}-{round}"));
+                let barrier = Arc::new(Barrier::new(callers));
+                let handles: Vec<_> = (0..callers)
+                    .map(|_| {
+                        let (dir, barrier) = (dir.clone(), barrier.clone());
+                        std::thread::spawn(move || {
+                            barrier.wait();
+                            load_or_create(&dir, address()).map(|identity| identity.fingerprint())
+                        })
+                    })
+                    .collect();
+                let held: Vec<String> = handles
+                    .into_iter()
+                    .map(|handle| handle.join().unwrap().expect("every caller succeeds"))
+                    .collect();
+                let saved = load_or_create(&dir, address()).unwrap().fingerprint();
+                assert!(
+                    held.iter().all(|fingerprint| *fingerprint == saved),
+                    "{callers} callers, round {round}: {held:?} vs saved {saved}"
+                );
+                let _ = std::fs::remove_dir_all(&dir);
+            }
+        }
+    }
+
+    #[test]
+    fn a_lock_another_process_holds_is_reported_after_a_wait_not_waited_on_forever() {
+        let dir = scratch("held");
+        std::fs::create_dir_all(&dir).unwrap();
+        // Another holder: its own handle on the lock file, as another process would have.
+        let holder = lock_dir(&dir, std::time::Duration::from_millis(100)).unwrap();
+        let started = std::time::Instant::now();
+        let error = load_or_create_within(&dir, address(), std::time::Duration::from_millis(200))
+            .unwrap_err();
+        assert!(
+            error.contains("Another DegenView") && error.contains(LOCK_FILE_NAME),
+            "{error}"
+        );
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(3),
+            "it must not hang"
+        );
+        assert!(
+            !path_in(&dir).exists(),
+            "nothing is made while someone else holds the lock"
+        );
+
+        // Released, the same call goes through.
+        drop(holder);
+        assert!(load_or_create(&dir, address()).is_ok());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_lock_is_let_go_after_every_call_and_the_lock_file_is_private() {
+        let dir = scratch("release");
+        load_or_create(&dir, address()).unwrap();
+        // Not held now: a try_lock from here succeeds at once, and again after an error path.
+        let probe = lock_dir(&dir, std::time::Duration::from_millis(100));
+        assert!(probe.is_ok(), "the lock was left held");
+        drop(probe);
+        std::fs::write(path_in(&dir), "damaged").unwrap();
+        assert!(load_or_create(&dir, address()).is_err());
+        assert!(
+            lock_dir(&dir, std::time::Duration::from_millis(100)).is_ok(),
+            "an error left the lock held"
+        );
+        #[cfg(unix)]
+        assert_eq!(mode_of(&dir.join(LOCK_FILE_NAME)), 0o600);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
