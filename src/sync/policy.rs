@@ -326,6 +326,7 @@ mod tests {
         for key in [
             "mcp.settings",
             "mcp.permissions",
+            "mcp.seal",
             "alert.health",
             "alert.revision",
             "alert.processedCommandIDs",

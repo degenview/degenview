@@ -1002,6 +1002,7 @@ dependencies = [
  "egui_extras",
  "flate2",
  "getrandom 0.4.3",
+ "hmac",
  "http",
  "hyper",
  "hyper-util",

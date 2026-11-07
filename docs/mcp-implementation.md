@@ -2198,3 +2198,76 @@ After implementation, provide:
 12. Explicit confirmation that all architectural invariants above hold.
 
 Do not mark the implementation complete if security controls, authorization tests, or server shutdown behavior remain unfinished.
+
+## Sealed credentials
+
+A client's `verifier` is an unsalted SHA-256 of its bearer token. That is fine against a leaked
+database (the token is 256 random bits), but it proves nothing about who wrote the row: anyone who
+can write `degenview.sqlite` can pick a token, store its hash with every permission, enable the
+server, and connect after the next launch. The database is an ordinary file in the user's data
+directory, so "can write the file" is a much weaker position than "can read the Keychain".
+
+**What is sealed.** An HMAC-SHA-256 (`mcp::seal`, domain `degenview.mcp.seal.v1`) over the JSON of
+`enabled`, `port`, `require_confirmation`, the global cap and, in stored order, each client's `id`, `name`, `verifier`,
+`permissions` and `created_at_ms`. Not `last_used_ms`: it changes every half minute and decides
+nothing. The key is 32 random bytes in the Keychain (`es.nico.degenview.mcp`, `seal-key-v1`), created
+on first use. The seal is the local-only setting `mcp.seal`; none of this syncs.
+
+**On load** (`McpHost::check_seal`):
+
+| Key in Keychain | Seal in database | Result |
+| --- | --- | --- |
+| present | matches | trusted |
+| present | differs | server stays off |
+| present | missing | trusted only if nothing was ever configured, else server stays off |
+| missing | missing | adopt what is saved and seal it, once |
+| missing | present | server stays off (the key was deleted) |
+| unreadable | any | server stays off |
+
+"Stays off" is the existing fail-closed path: no clients are loaded, nothing authenticates, and the
+Settings page shows why and offers **Reset MCP Access…**. That first replaces the Keychain key
+(`SealKeyStore::rotate`: a write, which reports failure on both platforms; a delete would not).
+If the write fails, nothing is cleared and a notice says how to remove the item by hand. Once it
+succeeds the old key is gone, so the reset always runs to the end: it clears every MCP setting and credential (including rows
+that cannot be decoded) and starts again sealed and off. It is a confirmed, destructive action and only the Settings page can send it
+(`McpAction::ResetAccess`), and only while the seal error is showing.
+
+**On write** every trust change goes through `McpHost::persist`, which rewrites settings, cap and
+clients and their new seal in one savepoint (`Store::save_mcp_state`) and only then publishes to the
+server. Writing the whole state from memory, not patching one row, means a change someone made on
+disk behind the running app is overwritten instead of being sealed in.
+
+**What this does and does not stop**
+- Stops: adding or editing a credential, widening a client or the cap, enabling the server or
+  moving its port, by editing the database. Also stops deleting the seal to force re-adoption once
+  the key exists.
+- Does not stop an attacker who can read the Keychain item as this app (the item is not
+  prompt-protected for the signed app), or who can run code inside the app.
+- Does not stop replaying an older copy of the whole database together with its own seal (it
+  restores a state the user once approved).
+- Is not live: the check runs when the app starts. A row planted while the app runs is not loaded
+  (the host never re-reads the database) and is overwritten by the next change or restarts into the
+  failed check.
+- The adopt row trusts credentials made before this existed, and cannot tell them from one planted
+  before the first launch of a sealing build. Everything after is protected.
+- Is off in unit tests and in a debug build, or one built with `--features dev-unsealed-mcp`, that
+  was started with `DEGENVIEW_NO_KEYCHAIN=1` (a key held in memory would be new each launch and
+  lock the developer out). A distributed build ignores the variable: otherwise any process that can
+  write the database could launch the app with it set, plant a credential and skip the seal.
+  `SealKeyStore::system` uses the real Keychain backend directly for the same reason, not
+  `default_backend()`, which swaps in memory when the variable is set.
+- Is also off where no keyring can be created: Windows (no secret store at all) and Linux without a
+  Secret Service. The host then runs as before and shows a notice. On Linux that includes a
+  process that breaks the Secret Service connection (a bad `DBUS_SESSION_BUS_ADDRESS`) *and*
+  deletes the `mcp.seal` row: it looks like a machine that never had a keyring. With the seal row
+  present the same sabotage fails closed. A build that downgrades past this change reads the
+  rows as before and ignores the seal; the next upgrade finds a seal that no longer matches and
+  fails closed until reset.
+- A build that knows more permissions than the one reading drops the unknown ones on load
+  (`PermissionSet`), so the seal it computes differs: moving between versions with different
+  permission lists fails closed until reset.
+
+**Not verified:** the Keychain read/write on a real signed macOS build, the Linux Secret Service
+and Flatpak keyring, and the Settings banner in a real window. Tests use an in-memory keychain and
+check the logic and layout headlessly.
+

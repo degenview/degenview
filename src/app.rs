@@ -2819,6 +2819,7 @@ impl DegenViewApp {
                         mcp.fresh_token().cloned(),
                         mcp.load_error().map(str::to_owned),
                         mcp.notice().map(str::to_owned),
+                        mcp.can_reset(),
                         mcp.activity(),
                         mcp.activity_unreadable(),
                     )
@@ -2833,9 +2834,10 @@ impl DegenViewApp {
                         .as_ref()
                         .map(|fresh| (fresh.client_name.as_str(), fresh.token.as_str())),
                     load_error: mcp.5.as_deref(),
+                    can_reset: mcp.7,
                     notice: mcp.6.as_deref(),
-                    activity: &mcp.7,
-                    activity_unreadable: mcp.8,
+                    activity: &mcp.8,
+                    activity_unreadable: mcp.9,
                     now_ms: now,
                     utc_offset_secs: crate::service::timezone::local_utc_offset_secs(now),
                 };

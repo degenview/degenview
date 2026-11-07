@@ -25,6 +25,7 @@ pub mod image_loader;
 mod kalshi;
 pub mod keychain_ai_keys;
 pub mod keychain_api_keys;
+pub mod keychain_mcp_seal;
 pub mod keychain_snapshot_token;
 pub mod keychain_webhook_secrets;
 pub mod link_fetch;

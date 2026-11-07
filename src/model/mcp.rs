@@ -455,6 +455,9 @@ pub enum McpAction {
     /// Replaces the global cap at once.
     SetGlobalPermissions(PermissionSet),
     DismissToken,
+    /// Forgets every credential and setting when the saved state failed its seal check. Only
+    /// the Settings page sends it, and only while that error is showing.
+    ResetAccess,
     /// Empties the activity log (the log keeps one row saying that it was cleared).
     ClearActivity,
     /// Whether high-impact calls wait for the user's approval in the app.

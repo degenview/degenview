@@ -11,6 +11,17 @@
   fails the build). Persist before publishing shared state. Store/log only SHA-256 token verifiers,
   never tokens. `McpShared::authenticate` carries a match across its lock gap as the client id and
   re-checks the verifier; never carry a list index.
+- The trust state (`mcp.settings`, `mcp.permissions`, every `mcp_client` row) is sealed with an
+  HMAC under a Keychain key (`mcp::seal`, `keychain_mcp_seal`), because a SHA-256 verifier alone
+  lets anyone who can write the SQLite file add a credential. Write all of it with
+  `McpHost::persist` (`Store::save_mcp_state`: the three values and `mcp.seal` in one savepoint,
+  rewritten from memory, never patched); never call `set_mcp_settings`, `set_mcp_global_permissions`
+  or `replace_mcp_clients` for a trust change. `last_used_ms` is outside the seal on purpose, so
+  the usage save may use `replace_mcp_clients`. A new field that decides access goes into
+  `mcp::seal::Sealed`, with a case in `every_trust_field_is_covered`. Sealing is off in tests and
+  in debug (or `--features dev-unsealed-mcp`) builds started with `DEGENVIEW_NO_KEYCHAIN`; a
+  release build ignores that variable, so never rely on it there; use `McpHost::load_with_keys` with a shared
+  `MemoryBackend` to test it. See [Sealed credentials](../mcp-implementation.md#sealed-credentials).
 - A bridge call that is dropped (client closed the stream, request cancelled) cancels its queued
   `Request` (`CancelOnDrop`); keep it that way when changing `BridgeClient::call`. rmcp does not
   drop a handler when the client leaves, so `call_tool` races the tool against `context.ct`: keep
@@ -82,6 +93,7 @@
 - Settings holds the store lock, so its MCP UI returns `McpAction`s for `McpHost::queue`; never call
   `McpHost::apply` inside the Settings closure.
 - Verify against `127.0.0.1:<port>/mcp` with seeded `mcp.settings`/`mcp_client` rows, a throwaway
-  `HOME`, `DEGENVIEW_NO_KEYCHAIN=1`, and `Authorization: Bearer ...`.
+  `HOME`, `DEGENVIEW_NO_KEYCHAIN=1` (seeded rows are only accepted unsealed, which needs a debug
+  build or `cargo build --release --features dev-unsealed-mcp`), and `Authorization: Bearer ...`.
 
 See [implementation](../mcp-implementation.md) and [remaining work](../mcp-remaining-work.md).

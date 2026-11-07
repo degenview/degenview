@@ -10,6 +10,8 @@ use crate::store::{Document, Store};
 
 pub const SETTINGS_KEY: &str = "mcp.settings";
 pub const GLOBAL_PERMISSIONS_KEY: &str = "mcp.permissions";
+/// The keyed seal over the three values above and the client rows (see `mcp::seal`).
+pub const SEAL_KEY: &str = "mcp.seal";
 
 impl Document for McpClient {
     fn document_id(&self) -> String {
@@ -43,6 +45,59 @@ impl Store {
 
     pub fn replace_mcp_clients(&self, clients: &[McpClient]) -> rusqlite::Result<()> {
         self.replace_documents("mcp_client", clients)
+    }
+
+    /// The stored seal, if any.
+    pub fn mcp_seal(&self) -> rusqlite::Result<Option<String>> {
+        self.setting_strict(SEAL_KEY)
+    }
+
+    /// Writes settings, cap, clients and (when sealing) the seal together or not at all, so the
+    /// seal on disk always matches the values beside it. All three values are rewritten from the
+    /// caller's state, never patched, so a row someone else changed on disk is not sealed in.
+    pub fn save_mcp_state(
+        &self,
+        settings: &McpSettings,
+        global: &PermissionSet,
+        clients: &[McpClient],
+        seal: Option<&str>,
+    ) -> rusqlite::Result<()> {
+        self.connection.execute_batch("SAVEPOINT save_mcp_state")?;
+        let result = (|| {
+            self.set_mcp_settings(settings)?;
+            self.set_mcp_global_permissions(global)?;
+            self.replace_mcp_clients(clients)?;
+            match seal {
+                Some(seal) => self.set_setting(SEAL_KEY, &seal),
+                None => self.remove_setting(SEAL_KEY),
+            }
+        })();
+        if result.is_err() {
+            self.connection
+                .execute_batch("ROLLBACK TO save_mcp_state")?;
+        }
+        self.connection.execute_batch("RELEASE save_mcp_state")?;
+        result
+    }
+
+    /// Forgets every MCP setting, credential and the seal, undecodable rows included. For the
+    /// user's explicit "reset MCP access" when the saved state cannot be trusted. These tables
+    /// are device-local (`sync::policy`), so nothing needs queuing for upload.
+    pub fn clear_mcp_state(&self) -> rusqlite::Result<()> {
+        self.connection.execute_batch("SAVEPOINT clear_mcp_state")?;
+        let result = (|| {
+            self.connection.execute("DELETE FROM mcp_client", [])?;
+            for key in [SETTINGS_KEY, GLOBAL_PERMISSIONS_KEY, SEAL_KEY] {
+                self.remove_setting(key)?;
+            }
+            Ok(())
+        })();
+        if result.is_err() {
+            self.connection
+                .execute_batch("ROLLBACK TO clear_mcp_state")?;
+        }
+        self.connection.execute_batch("RELEASE clear_mcp_state")?;
+        result
     }
 
     /// Writes a row bypassing decoding, to simulate data this version cannot read.
@@ -115,6 +170,64 @@ mod tests {
                 .unwrap()
                 .contains(Permission::ChartsCreate)
         );
+    }
+
+    #[test]
+    fn state_and_seal_are_written_together_and_cleared_together() {
+        let store = Store::open_in_memory().unwrap();
+        let settings = McpSettings {
+            enabled: true,
+            port: 9001,
+            ..McpSettings::default()
+        };
+        let global = PermissionSet::of([Permission::ChartsRead]);
+        store
+            .save_mcp_state(&settings, &global, &[client("a")], Some("abc"))
+            .unwrap();
+        assert_eq!(store.mcp_seal().unwrap().as_deref(), Some("abc"));
+        assert_eq!(store.mcp_settings().unwrap(), settings);
+        assert_eq!(store.mcp_clients().unwrap().len(), 1);
+
+        store
+            .save_mcp_state(&settings, &global, &[client("a")], None)
+            .unwrap();
+        assert_eq!(store.mcp_seal().unwrap(), None);
+
+        store.clear_mcp_state().unwrap();
+        assert_eq!(store.mcp_settings().unwrap(), McpSettings::default());
+        assert!(store.mcp_clients().unwrap().is_empty());
+        assert_eq!(store.mcp_seal().unwrap(), None);
+    }
+
+    #[test]
+    fn a_failed_state_save_changes_nothing() {
+        let store = Store::open_in_memory().unwrap();
+        let global = PermissionSet::of([Permission::ChartsRead]);
+        store
+            .save_mcp_state(
+                &McpSettings::default(),
+                &global,
+                &[client("a")],
+                Some("old"),
+            )
+            .unwrap();
+        store.insert_raw_mcp_client("bad", "{nope");
+        let enabled = McpSettings {
+            enabled: true,
+            port: 9001,
+            ..McpSettings::default()
+        };
+        assert!(
+            store
+                .save_mcp_state(&enabled, &global, &[client("b")], Some("new"))
+                .is_err()
+        );
+        assert_eq!(store.mcp_settings().unwrap(), McpSettings::default());
+        assert_eq!(store.mcp_seal().unwrap().as_deref(), Some("old"));
+
+        // A reset still clears a table holding a row nothing can decode.
+        store.clear_mcp_state().unwrap();
+        assert!(store.mcp_clients().unwrap().is_empty());
     }
 
     #[test]

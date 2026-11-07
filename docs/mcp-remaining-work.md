@@ -232,3 +232,13 @@ recheck the revision and commit); a draft with no open editor can still overwrit
 of the file (`based_on_revision_id` is never recorded); passing the permission to bridge calls from the
 command instead of each handler; resources or an explicit tools-only statement (item 8); and a
 real-client acceptance run.
+
+## Sealed credentials: left over
+
+- Re-verify the seal while the server runs (today only at launch), for example when the file's
+  modification time moves, and drop to "off" with the same banner.
+- A monotonic counter in the seal, kept in the Keychain, so replaying an older database with its
+  own seal is detected.
+- Windows has no secret store behind `KeyBackend` (every call answers "none"), so the key cannot be
+  created and the server runs unsealed there, with a notice on the MCP Settings page. Sealing
+  needs a Windows credential store first.

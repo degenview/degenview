@@ -17,6 +17,11 @@ alloc-count = []
 # `icloud` compiles the Swift CloudKit bridge (macOS only; see build.rs) and enables iCloud Sync UI.
 # Off by default so developers without the entitlements or a Swift toolchain are unaffected.
 icloud = []
+# `dev-unsealed-mcp` lets a developer's `--release` binary honour DEGENVIEW_NO_KEYCHAIN for the MCP
+# credential seal (src/mcp/seal.rs), so MCP rows can be seeded into a scratch HOME. Debug builds
+# honour it without the feature. Never enable it for a build that is distributed: the variable
+# would then let any process that can write the database launch the app with the seal off.
+dev-unsealed-mcp = []
 
 [dependencies]
 eframe = { version = "0.36.2", features = ["persistence"] }
@@ -33,6 +38,7 @@ flate2 = "1"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
 sha2 = "0.10.9"
+hmac = "0.12.1"
 rusqlite = { version = "0.41", features = ["bundled"] }
 tungstenite = { version = "0.30", features = ["rustls-tls-native-roots"] }
 ureq = "3.4.2"
