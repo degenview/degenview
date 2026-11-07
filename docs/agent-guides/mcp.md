@@ -104,7 +104,9 @@
   [implementation](../mcp-implementation.md).
 - Where a request may come from is decided in `McpShared::authenticate_from(token, peer)`, from the
   socket peer `transport::serve_with` records as `PeerAddr`, never from a header. A credential works
-  from this machine unless `McpClient::remote_allowed`; then from anywhere, or only from
+  from this machine unless `McpClient::remote_allowed`. "This machine" is `Peer.local`: loopback or the
+  address the connection arrived on (a client on this Mac using the LAN address the server is bound to
+  is local; use `Peer::of_connection`, never `is_loopback()`, to decide it). Otherwise from anywhere, or only from
   `allowed_cidrs` if it has any. A refused address looks like an unknown token (401, and it draws on
   the failed-auth bucket) and records no use. No peer means remote. Do not add a second way to
   authenticate. `McpClient::effective(global, remote_ceiling)` also caps a `remote_allowed` client by

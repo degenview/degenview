@@ -248,7 +248,7 @@ fn every_request_carries_the_address_of_the_socket_it_arrived_on() {
                 "/",
                 axum::routing::get(|request: axum::extract::Request| async move {
                     match request.extensions().get::<PeerAddr>() {
-                        Some(peer) => peer.0.to_string(),
+                        Some(peer) => format!("{} {}", peer.0.ip, peer.0.local),
                         None => "none".into(),
                     }
                 }),
@@ -265,7 +265,7 @@ fn every_request_carries_the_address_of_the_socket_it_arrived_on() {
     let _ = stream.read_to_string(&mut response);
     cancel.cancel();
     let _ = thread.join();
-    assert!(response.ends_with("127.0.0.1"), "{response}");
+    assert!(response.ends_with("127.0.0.1 true"), "{response}");
 }
 
 #[test]
@@ -316,6 +316,99 @@ fn the_bearer_guard_judges_the_recorded_peer_not_anything_in_the_request() {
     );
     // No recorded peer: refused, not assumed local.
     assert_eq!(status("tok-local", None, "127.0.0.1"), 401);
+}
+
+#[test]
+fn a_peer_the_server_recorded_as_this_machine_is_this_machine_whatever_its_address() {
+    use crate::mcp::auth::require_bearer;
+    use crate::mcp::state::McpShared;
+    use crate::mcp::transport::PeerAddr;
+    use crate::model::mcp::Peer;
+    use tower::Service;
+
+    let shared = McpShared::new();
+    shared.replace(
+        vec![super::client("local", "tok-local", READ)],
+        crate::model::mcp::PermissionSet::everything(),
+    );
+    let app = axum::Router::new()
+        .route("/", axum::routing::get(|| async { "in" }))
+        .layer(axum::middleware::from_fn_with_state(shared, require_bearer));
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap();
+    let status = |peer: Peer| {
+        let mut request = axum::http::Request::builder()
+            .uri("/")
+            .header("authorization", "Bearer tok-local")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        request.extensions_mut().insert(PeerAddr(peer));
+        let mut app = app.clone();
+        runtime.block_on(async move { app.call(request).await.unwrap().status().as_u16() })
+    };
+    let own: std::net::IpAddr = "192.168.1.20".parse().unwrap();
+    // A client on this Mac using the address the server listens on arrives from that address.
+    assert_eq!(status(Peer::of_connection(own, own)), 200);
+    assert_eq!(
+        status(Peer::of_connection("192.168.1.21".parse().unwrap(), own)),
+        401
+    );
+}
+
+/// This machine's address on the local network, when it has one (the system's answer to "which
+/// address would reach 192.0.2.1"; nothing is sent).
+fn lan_address() -> Option<std::net::IpAddr> {
+    let socket = std::net::UdpSocket::bind(("0.0.0.0", 0)).ok()?;
+    socket.connect(("192.0.2.1", 9)).ok()?;
+    let address = socket.local_addr().ok()?.ip();
+    (!address.is_unspecified() && !address.is_loopback()).then_some(address)
+}
+
+#[test]
+fn a_connection_to_this_machines_own_address_is_recorded_as_this_machine() {
+    use crate::mcp::transport::PeerAddr;
+    // Needs an address of its own on a network; a machine without one has nothing to check.
+    let Some(own) = lan_address() else {
+        return;
+    };
+    let std_listener = std::net::TcpListener::bind((own, 0)).unwrap();
+    std_listener.set_nonblocking(true).unwrap();
+    let port = std_listener.local_addr().unwrap().port();
+    let cancel = CancellationToken::new();
+    let token = cancel.clone();
+    let thread = std::thread::spawn(move || {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let listener = tokio::net::TcpListener::from_std(std_listener).unwrap();
+            let app = axum::Router::new().route(
+                "/",
+                axum::routing::get(|request: axum::extract::Request| async move {
+                    match request.extensions().get::<PeerAddr>() {
+                        Some(peer) => format!("{} {}", peer.0.ip, peer.0.local),
+                        None => "none".into(),
+                    }
+                }),
+            );
+            serve(listener, app, ConnectionLimits::default(), token).await;
+        });
+    });
+    let mut stream = TcpStream::connect((own, port)).unwrap();
+    stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
+    stream
+        .write_all(b"GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
+        .unwrap();
+    let mut response = String::new();
+    let _ = stream.read_to_string(&mut response);
+    cancel.cancel();
+    let _ = thread.join();
+    assert!(
+        response.ends_with(&format!("{own} true")),
+        "a client on this machine, using the machine's own address, is local: {response}"
+    );
 }
 
 #[test]
