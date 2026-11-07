@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 
 use super::bench_tests::{bars, limits, symbol};
-use super::compiler::NoLibraries;
+use super::compiler::{LibraryResolver, NoLibraries};
 use super::execution::ExecutionController;
 use crate::model::Kline;
 
@@ -14,6 +14,11 @@ const HISTORY: usize = 3;
 /// The last value of every plot after the history and after each of the live bar's three
 /// executions: its first tick, a changed tick and its close.
 fn live_bar(source: &str) -> Vec<Vec<f64>> {
+    live_bar_with(source, &NoLibraries)
+}
+
+/// `live_bar` for a script that imports libraries.
+fn live_bar_with(source: &str, libraries: &dyn LibraryResolver) -> Vec<Vec<f64>> {
     let source = format!("//@version=6\nindicator(\"T\")\n{source}");
     let mut candles: Vec<Kline> = bars(HISTORY + 1, 60_000);
     let live = candles.pop().expect("a live bar");
@@ -23,7 +28,7 @@ fn live_bar(source: &str) -> Vec<Vec<f64>> {
         symbol(),
         None,
         limits(),
-        &NoLibraries,
+        libraries,
         None,
         None,
     )
@@ -165,4 +170,90 @@ fn an_array_made_on_a_tick_that_rolls_back_does_not_alias_a_later_one() {
             vec![6.0, 2.0]
         ]
     );
+}
+
+#[test]
+fn a_varip_field_of_an_imported_type_keeps_its_value_through_the_ticks() {
+    struct Library;
+    impl LibraryResolver for Library {
+        fn source_for_library(&self, path: &str) -> Option<String> {
+            (path == "user/Mine/1").then(|| {
+                "//@version=6\nlibrary(\"Mine\")\n\
+                 export type Counter\n    varip int hits = 0\n    int per_bar = 0\n"
+                    .to_owned()
+            })
+        }
+    }
+    let seen = live_bar_with(
+        "import user/Mine/1 as mine\n\
+         var c = mine.Counter.new()\n\
+         c.hits += 1\n\
+         c.per_bar += 1\n\
+         plot(c.hits)\n\
+         plot(c.per_bar)",
+        &Library,
+    );
+    assert_eq!(
+        seen,
+        [
+            vec![3.0, 3.0],
+            vec![4.0, 4.0],
+            vec![5.0, 4.0],
+            vec![6.0, 4.0]
+        ]
+    );
+}
+
+#[test]
+fn an_array_inside_a_varip_array_keeps_what_was_pushed_on_earlier_ticks() {
+    let seen = live_bar(
+        "varip array<array<int>> outer = array.new<array<int>>()\n\
+         if array.size(outer) == 0\n    array.push(outer, array.new<int>())\n\
+         array.push(array.get(outer, 0), bar_index)\n\
+         plot(array.size(array.get(outer, 0)))",
+    );
+    assert_eq!(seen, [vec![3.0], vec![4.0], vec![5.0], vec![6.0]]);
+}
+
+#[test]
+fn an_array_made_on_a_tick_and_held_by_a_varip_array_survives_the_rollback() {
+    let seen = live_bar(
+        "varip array<array<int>> outer = array.new<array<int>>()\n\
+         if barstate.isrealtime and array.size(outer) == 0\n    array.push(outer, array.new<int>())\n\
+         if array.size(outer) > 0\n    array.push(array.get(outer, 0), 1)\n\
+         plot(array.size(outer))\n\
+         plot(array.size(outer) > 0 ? array.size(array.get(outer, 0)) : 0)",
+    );
+    assert_eq!(
+        seen,
+        [
+            vec![0.0, 0.0],
+            vec![1.0, 1.0],
+            vec![1.0, 2.0],
+            vec![1.0, 3.0]
+        ]
+    );
+}
+
+#[test]
+fn an_array_held_by_a_varip_field_keeps_what_was_pushed_on_earlier_ticks() {
+    let seen = live_bar(
+        "type Box\n    varip array<int> items\n\
+         var Box b = Box.new(array.new<int>())\n\
+         array.push(b.items, bar_index)\n\
+         plot(array.size(b.items))",
+    );
+    assert_eq!(seen, [vec![3.0], vec![4.0], vec![5.0], vec![6.0]]);
+}
+
+#[test]
+fn varip_references_that_point_at_each_other_do_not_loop() {
+    let seen = live_bar(
+        "type Node\n    varip Node other = na\n    varip int hits = 0\n\
+         var Node a = Node.new()\n\
+         a.other := a\n\
+         a.hits += 1\n\
+         plot(a.other.hits)",
+    );
+    assert_eq!(seen, [vec![3.0], vec![4.0], vec![5.0], vec![6.0]]);
 }

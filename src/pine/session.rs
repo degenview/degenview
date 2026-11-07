@@ -321,8 +321,11 @@ impl Session {
             }
         }
         let shadowing_builtins = declared_builtin_names(&program.statements);
+        // Over the script's types and the imported ones, which are keyed `"<library>::<Name>"` here
+        // and on the objects built from them.
         let varip_fields: Vec<(String, Vec<String>)> = types
             .iter()
+            .chain(linkage.types.iter())
             .filter_map(|(name, fields)| {
                 let kept: Vec<String> = fields
                     .iter()
@@ -3098,63 +3101,70 @@ impl Session {
 
     // MARK: Bookkeeping
 
-    /// Keeps what a `varip` variable points at, and the `varip` fields of every object, so the next
-    /// tick of this bar can have them back after the rollback. Costs nothing for a script with
-    /// neither.
+    /// Keeps what a `varip` variable points at, the `varip` fields of every object, and everything
+    /// reachable from either through arrays, maps, matrices and objects, so the next tick of this
+    /// bar can have them back after the rollback. Costs nothing for a script with neither.
     fn capture_intrabar_objects(&mut self) {
         self.intrabar_objects.clear();
+        // The references still to follow; `seen` keeps a cycle from being followed twice.
+        let mut pending: Vec<(RefKind, usize)> = Vec::new();
         for value in self.intrabar.values() {
-            let RuntimeValue::Ref(kind, id) = value else {
+            if let RuntimeValue::Ref(kind, id) = value {
+                pending.push((*kind, *id));
+            }
+        }
+        if !self.varip_fields.is_empty() {
+            for (id, object) in &self.working.instances {
+                let Some((_, names)) = self
+                    .varip_fields
+                    .iter()
+                    .find(|(type_name, _)| *type_name == object.type_name)
+                else {
+                    continue;
+                };
+                let fields: Vec<(String, RuntimeValue)> = names
+                    .iter()
+                    .filter_map(|name| Some((name.clone(), object.fields.get(name)?.clone())))
+                    .collect();
+                for (_, value) in &fields {
+                    if let RuntimeValue::Ref(kind, target) = value {
+                        pending.push((*kind, *target));
+                    }
+                }
+                self.intrabar_objects.push(IntrabarObject::Fields {
+                    id: *id,
+                    type_name: object.type_name.clone(),
+                    fields,
+                });
+            }
+        }
+        let mut seen: HashSet<(RefKind, usize)> = HashSet::new();
+        while let Some((kind, id)) = pending.pop() {
+            if !seen.insert((kind, id)) {
                 continue;
-            };
-            let id = *id;
+            }
             let captured = match kind {
-                RefKind::Array => self
-                    .working
-                    .arrays
-                    .get(&id)
-                    .map(|items| IntrabarObject::Array(id, items.clone())),
-                RefKind::Map => self
-                    .working
-                    .maps
-                    .get(&id)
-                    .map(|map| IntrabarObject::Map(id, map.clone())),
-                RefKind::Matrix => self
-                    .working
-                    .matrices
-                    .get(&id)
-                    .map(|matrix| IntrabarObject::Matrix(id, matrix.clone())),
-                RefKind::Object => self
-                    .working
-                    .instances
-                    .get(&id)
-                    .map(|object| IntrabarObject::Object(id, object.clone())),
+                RefKind::Array => self.working.arrays.get(&id).map(|items| {
+                    push_references(items.iter(), &mut pending);
+                    IntrabarObject::Array(id, items.clone())
+                }),
+                RefKind::Map => self.working.maps.get(&id).map(|map| {
+                    push_references(map.values().iter(), &mut pending);
+                    IntrabarObject::Map(id, map.clone())
+                }),
+                RefKind::Matrix => self.working.matrices.get(&id).map(|matrix| {
+                    push_references(matrix.all_elements().iter(), &mut pending);
+                    IntrabarObject::Matrix(id, matrix.clone())
+                }),
+                RefKind::Object => self.working.instances.get(&id).map(|object| {
+                    push_references(object.fields.values(), &mut pending);
+                    IntrabarObject::Object(id, object.clone())
+                }),
                 _ => None,
             };
             if let Some(captured) = captured {
                 self.intrabar_objects.push(captured);
             }
-        }
-        if self.varip_fields.is_empty() {
-            return;
-        }
-        for (id, object) in &self.working.instances {
-            let Some((_, names)) = self
-                .varip_fields
-                .iter()
-                .find(|(type_name, _)| *type_name == object.type_name)
-            else {
-                continue;
-            };
-            let fields: Vec<(String, RuntimeValue)> = names
-                .iter()
-                .filter_map(|name| Some((name.clone(), object.fields.get(name)?.clone())))
-                .collect();
-            self.intrabar_objects.push(IntrabarObject::Fields {
-                id: *id,
-                type_name: object.type_name.clone(),
-                fields,
-            });
         }
     }
 
@@ -3458,6 +3468,18 @@ enum IntrabarObject {
         type_name: String,
         fields: Vec<(String, RuntimeValue)>,
     },
+}
+
+/// Adds the references among `values` to `out`.
+fn push_references<'a>(
+    values: impl Iterator<Item = &'a RuntimeValue>,
+    out: &mut Vec<(RefKind, usize)>,
+) {
+    for value in values {
+        if let RuntimeValue::Ref(kind, id) = value {
+            out.push((*kind, *id));
+        }
+    }
 }
 
 fn sorted_by_id<T: Clone>(map: &FastMap<usize, T>) -> Vec<T> {

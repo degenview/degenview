@@ -41,8 +41,9 @@
   Still open: a broker order does not survive a rolled-back tick; a runtime error does not halt the script.
 - `varip` (`Session::intrabar`): a global is kept under its name, a local of a user function under the call
   site's stash key (`invoke_with`'s `stash_key`, via `intrabar_key`). After an unconfirmed tick
-  `capture_intrabar_objects` keeps what every `varip` variable points at and every `varip` UDT field (the
-  objects live in the rolled-back `RuntimeState`); the next tick of the bar gets them back. Cleared with
+  `capture_intrabar_objects` keeps what every `varip` variable points at and every `varip` UDT field, plus every array, map, matrix
+  and object reachable from them (the objects live in the rolled-back `RuntimeState`; the `varip` fields of
+  imported types are indexed too); the next tick of the bar gets them back. Cleared with
   `intrabar` at a new bar and at the close. Do not add fields to `RuntimeState` for this: it is cloned per
   tick and four sessions at once measured 11% slower with one extra set.
 - A builtin variable read with `[]` (`hlcc4[1]`, `ta.tr[1]`) is recorded by `read_history_builtins` at the end

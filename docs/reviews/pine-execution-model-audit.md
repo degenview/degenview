@@ -380,11 +380,14 @@ change except on the workload the PR targets, and PRs touching state or rollback
    accepted on a UDT field (`TypeField::persistent`). `Session::capture_intrabar_objects` keeps, after each
    unconfirmed tick, what every `varip` variable points at (array, map, matrix, object) and every `varip`
    field of every object; `restore_intrabar_objects` puts them back after the next tick's rollback, bumping
-   `next_reference` past them. Fields go back only into an object the committed state has (an object made on
+   `next_reference` past them. What the container holds is followed too, through arrays, maps, matrices and
+   objects (a visited set stops a cycle), so an array in a `varip` array, behind a `varip` field, or made on
+   a rolled-back tick comes back with its contents and a live handle. The `varip` fields of types an imported
+   library exports are found through the linked type table. Fields go back only into an object the committed state has (an object made on
    the rolled-back tick is gone, as in TradingView, and its handle may belong to another object by now).
    Inferred, not confirmed against TradingView: a `varip` array keeps its contents, not only its handle.
-   Not covered: a `varip` variable holding a drawing, and objects reached only through a `varip` array or
-   field (one level of reference is kept).
+   Not covered: a `varip` variable holding a drawing (lines, labels, boxes, tables and the like are not
+   followed and roll back with the tick).
 6. A runtime error halts the script (11, 12, 13, 30).
 
 ## Not verified
