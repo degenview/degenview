@@ -21,8 +21,10 @@
 - Every `tools/call` is recorded by `AuditGuard` in `call_tool` (`mcp/audit.rs`). A new way for a
   call to end must end through that guard, and a row may only hold what `audit.rs` lets in: ids that
   look like ids, a code, never an argument value or `McpError::message()`. The log is written by
-  `McpHost::tick`, not from request threads; the Settings page reads `McpHost::activity()`, never
-  SQLite. `mcp_audit` is local-only in `sync::policy`.
+  `McpHost::tick`, not from request threads; the Settings page and the activity sheet read
+  `McpHost::activity()`, never SQLite. The sheet's filtering and paging live in
+  `model::mcp_activity` (pure, tested); a new outcome or row kind needs a `McpActivityStatus`
+  there so it can be filtered. `mcp_audit` is local-only in `sync::policy`.
 - A new mutating `McpCommand` must be classified in `mcp::confirm::gate` (an exhaustive match: it
   fails to compile until it is). If it asks, also describe it in
   `App::confirmation_summary` / `host::mcp_confirmation` (from what the app knows of the target,

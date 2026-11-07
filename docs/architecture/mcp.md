@@ -35,8 +35,14 @@ client → 127.0.0.1:<port>/mcp → bearer/Host/Origin/size checks
   `AuditGuard` in `call_tool` writes it when the call finishes, or as cancelled if the future is
   dropped first, into a bounded in-memory queue on `McpShared`; `McpHost::tick` writes the queue to
   the `mcp_audit` table about once a second in one transaction (and from the app's `on_exit` hook,
-  through `McpHost::shutdown`, so a quit loses nothing; a kill still loses the last second) and keeps the
-  newest 100 for the Settings page, which never reads SQLite itself. The table keeps 1,000 rows,
+  through `McpHost::shutdown`, so a quit loses nothing; a kill still loses the last second) and keeps
+  the whole log (at most 1,000 rows, behind an `Arc`) for the Settings page, which never reads
+  SQLite itself. The page previews the newest five rows; "View All Activity…" opens a sheet
+  (`ui::mcp_activity`) that searches the log by tool, id or error code, filters it by client,
+  outcome (`McpActivityStatus`) and date (`McpActivityRange`: presets or a custom range with
+  either end open), and pages it 25 rows at a time (`model::mcp_activity`, pure: the filter runs
+  over the in-memory rows every frame, so there is no query and no cache to invalidate). The
+  table keeps 1,000 rows,
   is local to this Mac (`sync::policy`), and Clear writes one "cleared" row. A row holds the tool,
   client, outcome, an error *code*, duration, the client's request id, and up to four ids from a
   fixed list of argument names, kept only if they look like ids (digits or a hex hash). Never a

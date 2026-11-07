@@ -522,8 +522,6 @@ impl McpClient {
 
 /// Rows the activity log keeps; older ones are pruned as new ones arrive.
 pub const AUDIT_LOG_LIMIT: usize = 1000;
-/// Rows the Settings page shows.
-pub const AUDIT_VISIBLE: usize = 100;
 
 /// What an activity-log row stands for.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]

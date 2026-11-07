@@ -43,7 +43,7 @@ use crate::model::alert::{
     AlertCondition, AlertCurrency, AlertFrequency, AlertId, AlertState, PriceAlert,
 };
 use crate::model::mcp::{
-    AUDIT_VISIBLE, MAX_CLIENTS, McpAction, McpAuditEntry, McpAuditKind, McpClient, McpSettings,
+    AUDIT_LOG_LIMIT, MAX_CLIENTS, McpAction, McpAuditEntry, McpAuditKind, McpClient, McpSettings,
     Permission, PermissionSet, clean_client_name, is_valid_port,
 };
 use crate::model::pine_alert::PineAlertSubscription;
@@ -90,10 +90,11 @@ pub struct McpHost {
     notice: Option<String>,
     last_usage_save: Instant,
     last_audit_flush: Instant,
-    /// The newest activity rows, for the Settings page, which must not read the store itself.
-    activity: Vec<McpAuditEntry>,
-    /// How many rows the log holds in all.
-    activity_total: usize,
+    /// The whole activity log, newest first, for the Settings page and its log sheet, which must
+    /// not read the store themselves. Shared, so handing it to a frame copies a pointer.
+    activity: Arc<Vec<McpAuditEntry>>,
+    /// Rows the log holds that this version cannot decode, so the sheet can say it is hiding some.
+    activity_unreadable: usize,
     /// Actions from the Settings page, applied by [`McpHost::tick`]. The page runs while the
     /// store is locked, so it can only queue.
     pending: Vec<McpAction>,
@@ -117,8 +118,8 @@ impl McpHost {
             notice: None,
             last_usage_save: Instant::now(),
             last_audit_flush: Instant::now(),
-            activity: Vec::new(),
-            activity_total: 0,
+            activity: Arc::new(Vec::new()),
+            activity_unreadable: 0,
             pending: Vec::new(),
         };
         host.reload();
@@ -181,14 +182,15 @@ impl McpHost {
         self.notice.as_deref()
     }
 
-    /// The newest activity rows, newest first (at most [`AUDIT_VISIBLE`]).
-    pub fn activity(&self) -> &[McpAuditEntry] {
-        &self.activity
+    /// The activity log, newest first: every readable row, at most
+    /// [`AUDIT_LOG_LIMIT`] of them.
+    pub fn activity(&self) -> Arc<Vec<McpAuditEntry>> {
+        Arc::clone(&self.activity)
     }
 
-    /// How many rows the activity log holds, of which [`Self::activity`] shows the newest.
-    pub fn activity_total(&self) -> usize {
-        self.activity_total
+    /// How many rows the log holds that could not be read and so are not in [`Self::activity`].
+    pub fn activity_unreadable(&self) -> usize {
+        self.activity_unreadable
     }
 
     pub fn fresh_token(&self) -> Option<&FreshToken> {
@@ -258,11 +260,12 @@ impl McpHost {
         }
     }
 
-    /// Reloads the rows the Settings page shows from the store.
+    /// Reloads the log the Settings page shows from the store.
     fn refresh_activity(&mut self) {
         if let Ok(store) = self.store.lock() {
-            self.activity = store.recent_mcp_audit(AUDIT_VISIBLE);
-            self.activity_total = store.mcp_audit_count();
+            let rows = store.recent_mcp_audit(AUDIT_LOG_LIMIT);
+            self.activity_unreadable = store.mcp_audit_count().saturating_sub(rows.len());
+            self.activity = Arc::new(rows);
         }
     }
 
@@ -2784,7 +2787,7 @@ mod tests {
     fn queued_activity_is_written_in_one_batch_and_shown_by_the_page() {
         let store = store();
         let mut host = host(&store);
-        assert!(host.activity().is_empty() && host.activity_total() == 0);
+        assert!(host.activity().is_empty() && host.activity_unreadable() == 0);
 
         host.shared.audit().push(audit_row(1));
         host.shared.audit().push(audit_row(2));
@@ -2795,24 +2798,28 @@ mod tests {
 
         due_for_flush(&mut host);
         host.tick();
-        assert_eq!(ids(host.activity()), [2, 1], "newest first");
-        assert_eq!(host.activity_total(), 2);
+        assert_eq!(ids(&host.activity()), [2, 1], "newest first");
         assert_eq!(ids(&store.lock().unwrap().recent_mcp_audit(10)), [2, 1]);
         assert_eq!(host.shared.audit().len(), 0);
     }
 
     #[test]
-    fn the_page_shows_only_the_newest_rows_but_counts_them_all() {
+    fn the_page_holds_the_whole_log_and_no_more_than_the_log_keeps() {
         let store = store();
         let mut host = host(&store);
-        for n in 1..=(AUDIT_VISIBLE as u64 + 20) {
+        for n in 1..=(AUDIT_LOG_LIMIT as u64 + 20) {
             host.shared.audit().push(audit_row(n));
         }
         due_for_flush(&mut host);
         host.tick();
-        assert_eq!(host.activity().len(), AUDIT_VISIBLE);
-        assert_eq!(host.activity_total(), AUDIT_VISIBLE + 20);
-        assert_eq!(host.activity()[0].id, AUDIT_VISIBLE as u64 + 20);
+        assert_eq!(host.activity().len(), AUDIT_LOG_LIMIT);
+        assert_eq!(host.activity()[0].id, AUDIT_LOG_LIMIT as u64 + 20);
+        assert_eq!(
+            host.activity()[AUDIT_LOG_LIMIT - 1].id,
+            21,
+            "the oldest 20 were pruned"
+        );
+        assert_eq!(host.activity_unreadable(), 0);
     }
 
     #[test]
@@ -2861,7 +2868,7 @@ mod tests {
         host.shutdown();
         let rows = store.lock().unwrap().recent_mcp_audit(10);
         assert_eq!(rows.len(), 2, "the call and the open rate-limit count");
-        assert_eq!(host.activity_total(), 2);
+        assert_eq!(host.activity().len(), 2);
         // Again, and then the drop that follows in a real quit: nothing is written twice.
         host.shutdown();
         drop(host);
@@ -2881,7 +2888,6 @@ mod tests {
         host.apply(McpAction::ClearActivity);
         assert_eq!(host.activity().len(), 1);
         assert_eq!(host.activity()[0].kind, McpAuditKind::Cleared);
-        assert_eq!(host.activity_total(), 1);
         assert_eq!(host.shared.audit().len(), 0);
         let rows = store.lock().unwrap().recent_mcp_audit(10);
         assert_eq!(rows.len(), 1, "nothing before the marker survives");
@@ -2905,8 +2911,12 @@ mod tests {
             .unwrap();
         let host = host(&store);
         assert!(host.load_error().is_none());
-        assert_eq!(ids(host.activity()), [1]);
-        assert_eq!(host.activity_total(), 2);
+        assert_eq!(ids(&host.activity()), [1]);
+        assert_eq!(
+            host.activity_unreadable(),
+            1,
+            "the sheet can say it hides one"
+        );
     }
 
     fn enable_on_free_port(host: &mut McpHost, store: &SharedStore) {
