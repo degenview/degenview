@@ -100,6 +100,8 @@ pub struct Session {
     /// unconfirmed tick and put back at the start of the next, because the objects live in the
     /// rolled-back state. Cleared with `intrabar`.
     intrabar_objects: Vec<IntrabarObject>,
+    /// Scratch for the key a `varip` name is kept under, so reading it does not allocate.
+    intrabar_key: String,
     /// For each script type with a `varip` field, those fields' names. Empty for most scripts.
     varip_fields: Vec<(String, Vec<String>)>,
     pub last_open_time: Option<i64>,
@@ -389,6 +391,7 @@ impl Session {
             working: RuntimeState::default(),
             intrabar: FastMap::default(),
             intrabar_objects: Vec::new(),
+            intrabar_key: String::new(),
             varip_fields,
             last_open_time: None,
             security_globals: None,
@@ -1639,26 +1642,21 @@ impl Session {
             return Ok(Step::normal(existing.clone()));
         }
         if mode == DeclarationMode::Intrabar {
-            let key = self.intrabar_key(name, context);
-            if let Some(value) = self
+            self.fill_intrabar_key(name, context);
+            let kept = self
                 .intrabar
-                .get(key.as_ref())
+                .get(self.intrabar_key.as_str())
                 .or_else(|| self.working.variables.get(name))
-            {
-                let value = value.clone();
-                self.working
-                    .variables
-                    .insert(name.to_owned(), value.clone());
-                self.intrabar
-                    .insert(key.clone().into_owned(), value.clone());
-                context.record(mode, &key);
-                return Ok(Step::normal(value));
-            }
-            let value = self.eval(expression, context)?;
+                .cloned();
+            let value = match kept {
+                Some(value) => value,
+                None => self.eval(expression, context)?,
+            };
+            // `eval` may run a function that reuses the scratch key.
+            self.fill_intrabar_key(name, context);
             self.set_variable(name, value.clone());
-            self.intrabar
-                .insert(key.clone().into_owned(), value.clone());
-            context.record(mode, &key);
+            self.keep_intrabar(value.clone());
+            context.record(mode, &self.intrabar_key);
             return Ok(Step::normal(value));
         }
         let value = self.eval(expression, context)?;
@@ -1667,21 +1665,30 @@ impl Session {
         Ok(Step::normal(value))
     }
 
-    /// Where a `varip` name keeps its value between ticks. A global is its own name. A local of a
-    /// user function is one per call site, in the place `invoke_with` keeps a persistent local between
-    /// calls, so two calls (and a global of the same name) never share it.
-    fn intrabar_key<'a>(
-        &self,
-        name: &'a str,
-        context: &RuntimeContext,
-    ) -> std::borrow::Cow<'a, str> {
+    /// Writes into `intrabar_key` where a `varip` name keeps its value between ticks. A global is its
+    /// own name. A local of a user function is one per call site, in the place `invoke_with` keeps a
+    /// persistent local between calls, so two calls (and a global of the same name) never share it.
+    fn fill_intrabar_key(&mut self, name: &str, context: &RuntimeContext) {
+        use std::fmt::Write;
+        self.intrabar_key.clear();
         if context.depth == 0 {
-            std::borrow::Cow::Borrowed(name)
+            self.intrabar_key.push_str(name);
         } else {
-            std::borrow::Cow::Owned(format!(
+            let _ = write!(
+                self.intrabar_key,
                 "{INTERNAL_PREFIX}fn:{}:{name}",
                 context.site_prefix
-            ))
+            );
+        }
+    }
+
+    /// Stores `value` under `intrabar_key`, allocating the key only the first time.
+    fn keep_intrabar(&mut self, value: RuntimeValue) {
+        match self.intrabar.get_mut(self.intrabar_key.as_str()) {
+            Some(slot) => *slot = value,
+            None => {
+                self.intrabar.insert(self.intrabar_key.clone(), value);
+            }
         }
     }
 
@@ -1712,11 +1719,11 @@ impl Session {
         let value = operators::apply_assignment(op, &old, &rhs);
         self.set_variable(name, value.clone());
         if !context.intrabar_names.is_empty() || !self.intrabar.is_empty() {
-            let key = self.intrabar_key(name, context);
-            if context.intrabar_names.contains(key.as_ref())
-                || self.intrabar.contains_key(key.as_ref())
+            self.fill_intrabar_key(name, context);
+            if context.intrabar_names.contains(self.intrabar_key.as_str())
+                || self.intrabar.contains_key(self.intrabar_key.as_str())
             {
-                self.intrabar.insert(key.into_owned(), value.clone());
+                self.keep_intrabar(value.clone());
             }
         }
         Ok(Step::normal(value))
