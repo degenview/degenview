@@ -10,11 +10,13 @@ use crate::host::pine_subscription_host::PineSubscriptionHost;
 use crate::host::portfolio_card_host::PortfolioCardEnv;
 use crate::host::portfolio_host::{PortfolioHost, PortfolioTab};
 use crate::host::snapshot_host::SnapshotHost;
+use crate::host::tab_title_host::TabTitleHost;
 use crate::host::tab_window_host::{Placement, TabRequest, TabWindowHost};
 use crate::host::update_host::{Phase, UpdateHost, UpdateView};
 use crate::host::webhook_host::{WebhookHost, WebhookHostAction};
 use crate::mcp::bridge::{McpCommand, McpError, McpReply};
 use crate::mcp::types::{AlertChangeResult, CreateAlertResult, UpdateAlertResult};
+use crate::model::InstrumentId;
 use crate::model::Timeframe;
 use crate::model::alert::{
     AlertCurrency, AlertPrecondition, AlertRuntimeCommand, AlertRuntimeCommandPayload,
@@ -301,6 +303,15 @@ pub struct DegenViewApp {
     watchlist: Arc<Mutex<WatchlistStore>>,
     quote_book: WatchlistQuoteBook,
     quote_coordinator: WatchlistQuoteCoordinator,
+    /// How chart tabs name themselves, shared by every window and Settings.
+    tab_title_host: TabTitleHost,
+    /// The markets the tab strips asked quotes for last time (their keys), so the demand is only
+    /// re-issued when a tab's focused chart changes.
+    tab_quote_keys: Vec<String>,
+    /// The quote book's revision the tab windows were last repainted for.
+    tab_quote_revision: u64,
+    /// The title style's revision they were last repainted for.
+    tab_title_revision: u64,
     portfolio_quotes: PortfolioQuoteFeed,
     /// How portfolio cards on chart grids reach the portfolios.
     card_env: PortfolioCardEnv,
@@ -438,6 +449,10 @@ fn watchlists_unavailable() -> McpError {
     McpError::AppUnavailable("Watchlists are unavailable right now".into())
 }
 
+/// The quote-demand owner for the markets the tab strips show: clear of the tab ids the sidebars
+/// use, the portfolio cards (`1 << 61`), the alert sheet (`1 << 62`) and the alert runtime.
+const TAB_QUOTE_OWNER: u64 = 1 << 60;
+
 /// What every window callback needs; cloned into each deferred viewport.
 #[derive(Clone)]
 struct WindowEnv {
@@ -454,6 +469,9 @@ struct WindowEnv {
     updates: UpdateHost,
     snapshots: SnapshotHost,
     mcp_confirmations: Arc<Mutex<ConfirmationHost>>,
+    /// The shared quotes the tab strip reads its prices from.
+    quote_book: WatchlistQuoteBook,
+    tab_title: TabTitleHost,
 }
 
 impl WindowEnv {
@@ -464,11 +482,29 @@ impl WindowEnv {
     fn view(&self, tab: u64) -> Option<TabView> {
         let content = self.content(tab)?;
         let content = content.lock().ok()?;
+        let (chart, timeframe) = match &*content {
+            TabContent::Chart(workspace) => (workspace.tab_chart(), workspace.timeframe().label()),
+            _ => (None, ""),
+        };
         Some(TabView {
             id: tab,
             title: content.title(),
             icon: content.icon(),
+            chart,
+            timeframe,
         })
+    }
+
+    /// Gives a chart tab its own title (or takes it away). Other tabs have none.
+    fn set_custom_title(&self, tab: u64, title: Option<String>) {
+        let Some(content) = self.content(tab) else {
+            return;
+        };
+        if let Ok(mut content) = content.lock()
+            && let TabContent::Chart(workspace) = &mut *content
+        {
+            workspace.set_custom_title(title);
+        }
     }
 }
 
@@ -552,6 +588,8 @@ fn show_window(
                 active: window.active,
                 drag,
                 other_windows: &others,
+                quotes: &env.quote_book,
+                style: env.tab_title.style(),
                 update: Some(&update),
             }
             .show(ui)
@@ -563,10 +601,29 @@ fn show_window(
             [viewport.minimized, viewport.maximized, viewport.fullscreen].contains(&Some(true));
         (viewport.outer_rect, viewport.inner_rect, transient)
     });
-    env.host
-        .publish_geometry(window_id, outer, inner, output.strip, transient);
+    env.host.publish_geometry(
+        window_id,
+        outer,
+        inner,
+        output.strip,
+        output.scroll,
+        transient,
+    );
 
     let mut events = output.events;
+    // Titles belong to the tabs and the style to the app, not to the window host.
+    events.retain(|event| match event {
+        tab_bar::TabBarEvent::SetCustomTitle { tab, title } => {
+            env.set_custom_title(*tab, title.clone());
+            false
+        }
+        tab_bar::TabBarEvent::SetTitleStyle(style) => {
+            // A failed write leaves the choice in force until the app quits.
+            let _ = env.tab_title.set(None, *style);
+            false
+        }
+        _ => true,
+    });
     if events.contains(&tab_bar::TabBarEvent::UpdateClicked) {
         env.updates.activate(&ctx);
     }
@@ -854,6 +911,7 @@ impl DegenViewApp {
         let portfolio = Arc::new(Mutex::new(PortfolioHost::load(store.clone())));
         let paper = Arc::new(Mutex::new(PaperHost::load(store.clone())));
         let snapshots = SnapshotHost::load(store.clone());
+        let tab_title_host = TabTitleHost::load(store.clone());
         let editor_themes = {
             let loaded = store
                 .lock()
@@ -872,6 +930,7 @@ impl DegenViewApp {
         let webhook_host = Arc::new(Mutex::new(WebhookHost::new(
             snapshots.clone(),
             editor_themes.clone(),
+            tab_title_host.clone(),
         )));
         let mcp_host = {
             let ctx = creation.egui_ctx.clone();
@@ -1035,6 +1094,10 @@ impl DegenViewApp {
             mcp_orders: Mutex::new(mcp_host::OrderMemory::default()),
             mcp_snapshots: Mutex::new(mcp_host::SnapshotJobs::default()),
             webhook_host,
+            tab_title_host,
+            tab_quote_keys: Vec::new(),
+            tab_quote_revision: 0,
+            tab_title_revision: 0,
             snapshots,
             editor_themes,
             mcp_host,
@@ -1353,6 +1416,51 @@ impl DegenViewApp {
             }
         }
         self.drop_closed_tabs(ctx);
+    }
+
+    /// Keeps quotes coming for the market each chart tab shows, and repaints the tab windows
+    /// when any quote moved. One owner asks for all of them, however many tabs and windows
+    /// there are: the coordinator merges demand by market, so a market a sidebar, an alert or a
+    /// portfolio card already follows costs nothing more. Unlike a sidebar's lease it does not
+    /// lapse, so a tab in the background keeps its price.
+    fn tick_tab_quotes(&mut self, ctx: &egui::Context) {
+        let mut wanted: Vec<InstrumentId> = Vec::new();
+        for slot in &self.tabs {
+            let Ok(content) = slot.content.lock() else {
+                continue;
+            };
+            if let TabContent::Chart(workspace) = &*content
+                && let Some(instrument) = workspace.focused_instrument()
+                && crate::model::tab_title::wants_quote(instrument.source)
+            {
+                wanted.push(instrument);
+            }
+        }
+        wanted.sort_by_key(InstrumentId::key);
+        wanted.dedup_by_key(|instrument| instrument.key());
+        let keys: Vec<String> = wanted.iter().map(InstrumentId::key).collect();
+        if keys != self.tab_quote_keys {
+            if wanted.is_empty() {
+                self.quote_coordinator.release(TAB_QUOTE_OWNER);
+            } else {
+                self.quote_coordinator
+                    .set_demand(TAB_QUOTE_OWNER, wanted, true);
+            }
+            self.tab_quote_keys = keys;
+        }
+        // The coordinator asks the root window for a frame when quotes move; the tab windows are
+        // their own viewports and need asking.
+        // The same for a new title style from Settings or another window: each window repaints
+        // on its own schedule, and one with nothing animating would show the old titles.
+        let revision = self.quote_book.revision();
+        let style_revision = self.tab_title_host.revision();
+        if revision != self.tab_quote_revision || style_revision != self.tab_title_revision {
+            self.tab_quote_revision = revision;
+            self.tab_title_revision = style_revision;
+            for (window, _) in self.tab_host.snapshot() {
+                ctx.request_repaint_of(Self::viewport_id(window.id));
+            }
+        }
     }
 
     /// Shows the Settings window: from the macOS menu, or the strip's button and Ctrl+, elsewhere.
@@ -2707,6 +2815,8 @@ impl DegenViewApp {
             updates: self.updates.clone(),
             snapshots: self.snapshots.clone(),
             mcp_confirmations: Arc::clone(&self.mcp_confirmations),
+            quote_book: self.quote_book.clone(),
+            tab_title: self.tab_title_host.clone(),
         };
         for (window, placement) in self.tab_host.snapshot() {
             let active = self
@@ -3348,6 +3458,7 @@ impl eframe::App for DegenViewApp {
         self.updates.tick(ctx);
         self.tick_sync(ctx);
         self.tick_editor_themes();
+        self.tick_tab_quotes(ctx);
         self.tab_host
             .restore_frames(ctx, native_bridge::screen_layout(), now_ms().max(0) as u64);
         if self.session_last_saved_at.elapsed() >= Duration::from_secs(10) {
@@ -3552,6 +3663,7 @@ mod tests {
                 focused: Some(1),
                 sync: Default::default(),
                 active_view: Some(9),
+                custom_title: None,
             })],
         };
         let encoded = serde_json::to_string(&session).expect("serialize session");

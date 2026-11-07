@@ -2,6 +2,7 @@ use crate::host::paper_host::{PaperHost, PaperPanel, PaperPanelAction};
 use crate::host::portfolio_card_host::PortfolioCardEnv;
 use crate::model::alert::{AlertCurrency, PriceAlert};
 use crate::model::chart_sync::SyncHub;
+use crate::model::tab_title::TabChart;
 use crate::model::watchlist::{EntryId, WatchlistInstrument, now_ms};
 use crate::model::watchlist_text::ImportReport;
 use crate::model::{
@@ -37,6 +38,9 @@ use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use undo::{Snapshot, UndoEntry};
+
+/// How long a tab title the user typed may be.
+pub const MAX_CUSTOM_TITLE_CHARS: usize = 60;
 
 mod alerts;
 mod autosave;
@@ -130,6 +134,10 @@ pub struct PersistedWorkspace {
     /// "Unnamed". Rows from before this field, and tabs on no layout, have none.
     #[serde(default)]
     pub active_view: Option<u64>,
+    /// A title the user gave this tab, shown in place of the symbol and price. Device-local:
+    /// the `tab` table never syncs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub custom_title: Option<String>,
 }
 
 impl crate::store::Document for PersistedWorkspace {
@@ -242,6 +250,8 @@ pub struct ChartWorkspace {
     store: SharedStore,
     active_view_id: Option<u64>,
     active_view_name: Option<String>,
+    /// What the user typed as this tab's title; `None` shows the symbol, price and layout.
+    custom_title: Option<String>,
     /// The name prompt that is open, if any, and the text in it.
     layout_prompt: Option<NamePrompt>,
     prompt_name: String,
@@ -396,6 +406,7 @@ impl ChartWorkspace {
             store,
             active_view_id: None,
             active_view_name: None,
+            custom_title: None,
             layout_prompt: None,
             prompt_name: String::new(),
             prompt_focus: false,
@@ -458,6 +469,7 @@ impl ChartWorkspace {
             focused,
             sync,
             active_view,
+            custom_title,
         } = saved;
 
         // The layout may have been deleted (here or on another Mac) since the tab was saved.
@@ -481,6 +493,7 @@ impl ChartWorkspace {
         workspace.watchlist_visible = watchlist_visible;
         workspace.sync = sync;
         workspace.focused = focused;
+        workspace.custom_title = custom_title.filter(|title| !title.trim().is_empty());
         if let Some(view) = active_view {
             workspace.active_view_id = Some(view.id);
             workspace.active_view_name = Some(view.name);
@@ -542,6 +555,48 @@ impl ChartWorkspace {
             return chart.display_title();
         }
         format!("{} · {}", chart.display_title(), self.timeframe.label())
+    }
+
+    /// The focused chart's market, when it is one (a portfolio card has none). The strip's
+    /// logo, price and change follow it, so a layout with several charts is represented by the
+    /// one the user last clicked, or the first.
+    pub fn focused_instrument(&self) -> Option<InstrumentId> {
+        let chart = self.focused_market_chart()?;
+        Some(InstrumentId::new(chart.source, &chart.symbol))
+    }
+
+    fn focused_market_chart(&self) -> Option<&Chart> {
+        let id = self.resolved_focused_id()?;
+        self.charts
+            .iter()
+            .find(|chart| chart.id == id && chart.is_market())
+    }
+
+    #[cfg(test)]
+    pub fn custom_title(&self) -> Option<&str> {
+        self.custom_title.as_deref()
+    }
+
+    /// Sets or clears the tab's own title (blank clears). Not part of the layout: it belongs
+    /// to the tab and is saved with the session.
+    pub fn set_custom_title(&mut self, title: Option<String>) {
+        self.custom_title = title
+            .map(|title| title.split_whitespace().collect::<Vec<_>>().join(" "))
+            .filter(|title| !title.is_empty())
+            .map(|title| title.chars().take(MAX_CUSTOM_TITLE_CHARS).collect());
+    }
+
+    /// What the strip needs to describe this tab: the focused chart's market and the layout.
+    /// `None` for a blank tab or when a card has the focus.
+    pub fn tab_chart(&self) -> Option<TabChart> {
+        let chart = self.focused_market_chart()?;
+        Some(TabChart {
+            source: chart.source,
+            symbol: chart.symbol.clone(),
+            title: chart.display_title(),
+            layout: self.active_view_name.clone(),
+            custom_title: self.custom_title.clone(),
+        })
     }
 
     // MARK: Saved layouts
@@ -950,11 +1005,93 @@ mod tests {
                 horizontal_zoom: false,
             },
             active_view: Some(42),
+            custom_title: Some("Earnings".into()),
         };
         let encoded = serde_json::to_string(&saved).expect("serialize workspace");
         let decoded: PersistedWorkspace =
             serde_json::from_str(&encoded).expect("deserialize workspace");
         assert_eq!(decoded, saved);
+
+        // A row from before custom titles has none and decodes; no title writes no key.
+        let mut json: serde_json::Value = serde_json::from_str(&encoded).unwrap();
+        json.as_object_mut().unwrap().remove("custom_title");
+        let old: PersistedWorkspace = serde_json::from_value(json).expect("old row decodes");
+        assert_eq!(old.custom_title, None);
+        assert!(
+            !serde_json::to_string(&old)
+                .unwrap()
+                .contains("custom_title")
+        );
+    }
+
+    #[test]
+    fn the_tab_describes_its_focused_market_and_layout() {
+        let ctx = egui::Context::default();
+        let mut workspace = empty_workspace(6);
+        assert_eq!(workspace.tab_chart(), None, "a blank tab has no market");
+        assert_eq!(workspace.focused_instrument(), None);
+
+        let btc = InstrumentId::new(DataSource::Binance, "BTCUSDT");
+        let eth = InstrumentId::new(DataSource::Binance, "ETHUSDT");
+        workspace.add_chart_for(&btc, &ctx);
+        workspace.add_chart_for(&eth, &ctx);
+        let eth_id = workspace.charts[1].id;
+        workspace.focused = Some(eth_id);
+        assert_eq!(workspace.focused_instrument(), Some(eth.clone()));
+
+        workspace.active_view_name = Some("Layout 1".into());
+        let chart = workspace.tab_chart().expect("market tab");
+        assert_eq!(chart.layout.as_deref(), Some("Layout 1"));
+        assert_eq!(chart.symbol, "ETHUSDT");
+        assert_eq!(chart.source, DataSource::Binance);
+
+        // A renamed layout shows at once; the symbol is not part of the layout's identity.
+        workspace.active_view_name = Some("Swing".into());
+        workspace.focused = Some(workspace.charts[0].id);
+        let chart = workspace.tab_chart().expect("market tab");
+        assert_eq!(chart.layout.as_deref(), Some("Swing"));
+        assert_eq!(chart.symbol, "BTCUSDT");
+
+        // A focus that points nowhere falls back to the first chart.
+        workspace.focused = Some(9999);
+        assert_eq!(workspace.focused_instrument(), Some(btc));
+    }
+
+    #[test]
+    fn a_custom_title_is_tidied_saved_and_independent_of_the_symbol() {
+        let ctx = egui::Context::default();
+        let mut workspace = empty_workspace(8);
+        workspace.add_chart_for(&InstrumentId::new(DataSource::Binance, "BTCUSDT"), &ctx);
+        workspace.set_custom_title(Some("  Swing   setups \n".into()));
+        assert_eq!(workspace.custom_title(), Some("Swing setups"));
+        assert_eq!(
+            workspace.tab_chart().unwrap().custom_title.as_deref(),
+            Some("Swing setups")
+        );
+
+        let restored = ChartWorkspace::restored(
+            workspace.persisted(),
+            workspace.watchlist.clone(),
+            workspace.quote_book.clone(),
+            workspace.quote_coordinator.clone(),
+            workspace.store.clone(),
+            &ctx,
+        );
+        assert_eq!(restored.custom_title(), Some("Swing setups"));
+
+        // Another symbol in the same tab keeps the title.
+        workspace.charts[0].symbol = "ETHUSDT".into();
+        assert_eq!(workspace.custom_title(), Some("Swing setups"));
+
+        workspace.set_custom_title(Some("   ".into()));
+        assert_eq!(workspace.custom_title(), None);
+        workspace.set_custom_title(Some("x".repeat(500)));
+        assert_eq!(
+            workspace.custom_title().map(|title| title.chars().count()),
+            Some(MAX_CUSTOM_TITLE_CHARS)
+        );
+        workspace.set_custom_title(None);
+        assert_eq!(workspace.custom_title(), None);
     }
 
     #[test]

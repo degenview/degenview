@@ -59,6 +59,8 @@ pub struct WebhookHost {
     snapshots: crate::host::snapshot_host::SnapshotHost,
     /// The editor's themes and typography, which the Pine Studio page edits.
     editor_themes: crate::host::editor_theme_host::EditorThemeHost,
+    /// How chart tabs name themselves, which the Appearance page edits.
+    tab_titles: crate::host::tab_title_host::TabTitleHost,
     /// The saved assistant settings, read from the store when Settings first needs them.
     ai_prefs: Option<AiPrefs>,
     ai_prefs_read_at: Option<std::time::Instant>,
@@ -76,10 +78,12 @@ impl WebhookHost {
     pub fn new(
         snapshots: crate::host::snapshot_host::SnapshotHost,
         editor_themes: crate::host::editor_theme_host::EditorThemeHost,
+        tab_titles: crate::host::tab_title_host::TabTitleHost,
     ) -> Self {
         Self {
             snapshots,
             editor_themes,
+            tab_titles,
             ..Self::default()
         }
     }
@@ -172,6 +176,7 @@ impl WebhookHost {
             updates,
             sync,
             editor_themes: &self.editor_themes,
+            tab_title_style: self.tab_titles.style(),
             now_ms,
         };
         for action in settings_window::show(ui, &mut self.state, &input) {
@@ -204,6 +209,10 @@ impl WebhookHost {
                 SettingsAction::SetTheme(theme) => {
                     let _ = store.set_setting(crate::ui::theme::THEME_KEY, &theme);
                     crate::ui::theme::apply(ui.ctx(), theme);
+                }
+                SettingsAction::SetTabTitleStyle(style) => {
+                    // The page draws under the store's lock, so it is written through it.
+                    let _ = self.tab_titles.set(Some(store), style);
                 }
                 SettingsAction::UpdateNotifications(settings) => {
                     out.push(WebhookHostAction::UpdateNotifications(settings));
@@ -550,7 +559,7 @@ mod tests {
             FontCatalog::with_entries(Vec::new()),
         );
         assert!(Arc::ptr_eq(&current(), &of_built_in(BuiltInTheme::Dracula)));
-        let _host = WebhookHost::new(Default::default(), themes);
+        let _host = WebhookHost::new(Default::default(), themes, Default::default());
         assert!(
             Arc::ptr_eq(&current(), &of_built_in(BuiltInTheme::Dracula)),
             "WebhookHost::new replaced the saved editor theme"
@@ -565,7 +574,7 @@ mod tests {
             Store::open_in_memory().expect("a store"),
         ));
         let snapshots = crate::host::snapshot_host::SnapshotHost::load(shared.clone());
-        let mut host = WebhookHost::new(snapshots.clone(), Default::default());
+        let mut host = WebhookHost::new(snapshots.clone(), Default::default(), Default::default());
         let (done, finished) = mpsc::channel();
         let worker_store = shared.clone();
         std::thread::spawn(move || {
