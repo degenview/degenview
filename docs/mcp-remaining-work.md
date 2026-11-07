@@ -180,16 +180,20 @@ bypass.
 
 ## Remote access
 
-Steps 1 and 2 are done: `BindMode`, TLS 1.3 with a self-signed pinned certificate, the `Host` list
+Steps 1 to 3 are done: `BindMode`, TLS 1.3 with a self-signed pinned certificate, the `Host` list
 from the bind, no non-loopback bind without TLS; and per-client `remote_allowed`, CIDR ranges and a
-remote ceiling, judged on the socket peer. See "Remote access: what exists" in
+remote ceiling, judged on the socket peer; and the audit log's `peer`, a per-address failed-auth limit,
+and approval of every change for a remote credential (the setting does not apply to it). See "Remote access: what exists" in
 [mcp-implementation.md](mcp-implementation.md). The host handles `SetClientRemote`,
 `SetClientCidrs` and `SetRemoteCeiling`; nothing sends them yet. Not started, in this order:
 
-3. Audit log fields for the peer address and a `remote` flag; the approval step always on for a remote
-   client's write tools; failed-auth limits keyed by peer address (today keyed globally).
 4. Settings: interface picker, certificate fingerprint with a copy button, the per-client switch, the
    ceiling; user-entered hostnames for the `Host` list (MagicDNS names); docs.
+
+Known gaps to close with the Settings page: the activity sheet shows `peer` as plain text but cannot filter
+by it; the "ask before high-impact requests" switch needs a line saying it does not apply to remote
+credentials; the descriptions of the `AskRemote` tools do not mention the approval step (a model learns
+of it from the `CONFIRMATION_REQUIRED` answer); a notification for a remote question reads like any other.
 
 Until step 4 none of this can be set from the app: a bind, a client's remote switch or the ceiling can only
 come from editing the store, which the seal then rejects (in release builds).

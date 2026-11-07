@@ -78,6 +78,7 @@ impl McpAuditEntry {
     pub fn status(&self) -> Option<McpActivityStatus> {
         match self.kind {
             McpAuditKind::RateLimited => Some(McpActivityStatus::RateLimited),
+            McpAuditKind::AuthRefused => Some(McpActivityStatus::Denied),
             McpAuditKind::Cleared | McpAuditKind::Gap => None,
             McpAuditKind::Call | McpAuditKind::Confirmation => Some(match self.outcome {
                 McpAuditOutcome::Succeeded => McpActivityStatus::Done,

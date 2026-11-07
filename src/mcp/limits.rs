@@ -1,20 +1,33 @@
 //! Rate limits for the MCP server: one bucket for failed authentications and one per client.
 //!
-//! Every connection arrives from 127.0.0.1, so there is no address to key a limit on. Failures
-//! share one bucket instead, and the bucket only ever slows *bad* tokens down: a valid token is
+//! Failures share one bucket, and the bucket only ever slows *bad* tokens down: a valid token is
 //! never refused because of failures. Calls from a valid client draw from that client's own
 //! bucket, so one runaway agent cannot starve another.
+//!
+//! A request from another machine has an address, and its failures also draw from a bucket of that
+//! address, taken first: one host guessing tokens is cut off by its own bucket without spending the
+//! shared one, so it cannot slow down a local client's mistakes. Requests from this machine have no
+//! bucket of their own (they were all "127.0.0.1" and still share the one bucket). The table of
+//! addresses is bounded; an address that does not fit is judged by the shared bucket alone.
 //!
 //! The buckets take the current time as an argument, so tests drive them with made-up instants
 //! and never sleep.
 
 use std::collections::HashMap;
+use std::net::IpAddr;
 use std::time::{Duration, Instant};
 
 /// Failed authentications let through at once before the rest are answered 429.
 pub const FAILED_AUTH_BURST: u32 = 20;
 /// Failed authentications let through per second once the burst is spent.
 pub const FAILED_AUTH_PER_SEC: f64 = 2.0;
+/// Failed authentications one remote address may make at once before it is answered 429.
+pub const PEER_FAILED_BURST: u32 = 10;
+/// Failed authentications per second one remote address keeps getting once its burst is spent.
+pub const PEER_FAILED_PER_SEC: f64 = 1.0;
+/// Remote addresses tracked at once. A flood from more addresses than this falls back to the
+/// shared bucket for the surplus.
+pub const MAX_TRACKED_PEERS: usize = 1024;
 /// Calls one client may make at once before it is slowed down. Agents batch calls, so this is
 /// generous: it exists to stop a runaway loop, not to meter ordinary use.
 pub const CLIENT_BURST: u32 = 60;
@@ -76,6 +89,14 @@ impl TokenBucket {
             Err(Duration::from_secs_f64(wait.min(3600.0)))
         }
     }
+
+    /// Whether the bucket has refilled completely, so forgetting it changes nothing.
+    fn is_full(&self, now: Instant) -> bool {
+        let elapsed = self.last.map_or(f64::INFINITY, |last| {
+            now.saturating_duration_since(last).as_secs_f64()
+        });
+        self.tokens + elapsed * self.per_sec >= self.capacity
+    }
 }
 
 /// `Retry-After` for a refusal: whole seconds, rounded up, at least one.
@@ -87,6 +108,8 @@ pub fn retry_after_secs(wait: Duration) -> u64 {
 pub struct RateLimiter {
     limits: RateLimits,
     failed: TokenBucket,
+    /// Failures per remote address.
+    peers: HashMap<IpAddr, TokenBucket>,
     clients: HashMap<String, TokenBucket>,
 }
 
@@ -95,6 +118,7 @@ impl RateLimiter {
         Self {
             limits,
             failed: TokenBucket::new(limits.failed_burst, limits.failed_per_sec),
+            peers: HashMap::new(),
             clients: HashMap::new(),
         }
     }
@@ -110,9 +134,40 @@ impl RateLimiter {
         *self = Self::new(limits);
     }
 
-    /// Counts one failed authentication. `Err` carries how long to ask the caller to wait.
-    pub fn failed_auth(&mut self, now: Instant) -> Result<(), Duration> {
+    /// Counts one failed authentication from `peer` (`None`: unknown). `Err` carries how long to
+    /// ask the caller to wait. A remote address is judged by its own bucket first, and the shared
+    /// bucket is spent only by what that lets through.
+    pub fn failed_auth(&mut self, peer: Option<IpAddr>, now: Instant) -> Result<(), Duration> {
+        // This machine (and a peer the server could not name) share the one bucket.
+        let remote = peer
+            .map(|ip| ip.to_canonical())
+            .filter(|ip| !ip.is_loopback());
+        if let Some(ip) = remote
+            && let Some(bucket) = self.peer_bucket(ip, now)
+        {
+            bucket.take(now)?;
+        }
         self.failed.take(now)
+    }
+
+    fn peer_bucket(&mut self, ip: IpAddr, now: Instant) -> Option<&mut TokenBucket> {
+        if !self.peers.contains_key(&ip) && self.peers.len() >= MAX_TRACKED_PEERS {
+            // Forget the addresses that have been quiet long enough to be back at full strength.
+            self.peers.retain(|_, bucket| !bucket.is_full(now));
+            if self.peers.len() >= MAX_TRACKED_PEERS {
+                return None;
+            }
+        }
+        Some(
+            self.peers
+                .entry(ip)
+                .or_insert_with(|| TokenBucket::new(PEER_FAILED_BURST, PEER_FAILED_PER_SEC)),
+        )
+    }
+
+    #[cfg(test)]
+    pub fn tracked_peers(&self) -> usize {
+        self.peers.len()
     }
 
     /// Counts one call from `client_id`.
@@ -204,10 +259,79 @@ mod tests {
         assert!(limiter.client_call("a", start).is_err());
         // Another client, and the failure bucket, are untouched.
         assert!(limiter.client_call("b", start).is_ok());
-        assert!(limiter.failed_auth(start).is_ok());
-        assert!(limiter.failed_auth(start).is_ok());
-        assert!(limiter.failed_auth(start).is_err());
+        assert!(limiter.failed_auth(None, start).is_ok());
+        assert!(limiter.failed_auth(None, start).is_ok());
+        assert!(limiter.failed_auth(None, start).is_err());
         assert!(limiter.client_call("b", start).is_ok());
+    }
+
+    fn remote(text: &str) -> Option<IpAddr> {
+        Some(text.parse().unwrap())
+    }
+
+    #[test]
+    fn a_remote_address_is_cut_off_by_its_own_bucket_before_the_shared_one() {
+        let start = t0();
+        let mut limiter = RateLimiter::new(RateLimits::default());
+        let guesser = remote("203.0.113.9");
+        for _ in 0..PEER_FAILED_BURST {
+            assert!(limiter.failed_auth(guesser, start).is_ok());
+        }
+        // Its own bucket is spent, so it is refused here...
+        assert!(limiter.failed_auth(guesser, start).is_err());
+        assert!(limiter.failed_auth(guesser, start).is_err());
+        // ...and those refusals took nothing from the shared bucket: only the first
+        // PEER_FAILED_BURST failures did, so this machine still has the rest of its own burst.
+        for _ in 0..(FAILED_AUTH_BURST - PEER_FAILED_BURST) {
+            assert!(limiter.failed_auth(None, start).is_ok());
+        }
+        assert!(limiter.failed_auth(None, start).is_err());
+        // Another address starts with a full bucket of its own.
+        assert!(
+            limiter.failed_auth(remote("198.51.100.4"), start).is_err(),
+            "shared is spent"
+        );
+    }
+
+    #[test]
+    fn this_machine_has_no_bucket_of_its_own_and_a_mapped_address_is_the_same_address() {
+        let start = t0();
+        let mut limiter = RateLimiter::new(RateLimits::default());
+        for peer in ["127.0.0.1", "::1", "::ffff:127.0.0.1"] {
+            limiter.failed_auth(remote(peer), start).unwrap();
+        }
+        assert_eq!(limiter.tracked_peers(), 0);
+        limiter
+            .failed_auth(remote("::ffff:203.0.113.9"), start)
+            .unwrap();
+        limiter.failed_auth(remote("203.0.113.9"), start).unwrap();
+        assert_eq!(limiter.tracked_peers(), 1);
+    }
+
+    #[test]
+    fn the_table_of_addresses_is_bounded_and_forgets_quiet_ones() {
+        let start = t0();
+        let mut limiter = RateLimiter::new(RateLimits {
+            failed_burst: u32::MAX,
+            failed_per_sec: 1e9,
+            ..RateLimits::default()
+        });
+        let address = |n: usize| remote(&format!("10.{}.{}.1", n / 256, n % 256));
+        for n in 0..MAX_TRACKED_PEERS {
+            limiter.failed_auth(address(n), start).unwrap();
+        }
+        assert_eq!(limiter.tracked_peers(), MAX_TRACKED_PEERS);
+        // Everyone just failed once, so none is back to full: a new address is not tracked...
+        limiter
+            .failed_auth(address(MAX_TRACKED_PEERS), start)
+            .unwrap();
+        assert_eq!(limiter.tracked_peers(), MAX_TRACKED_PEERS);
+        // ...until time has passed and the quiet ones are forgotten to make room.
+        let later = start + Duration::from_secs(3600);
+        limiter
+            .failed_auth(address(MAX_TRACKED_PEERS), later)
+            .unwrap();
+        assert_eq!(limiter.tracked_peers(), 1);
     }
 
     #[test]
@@ -232,13 +356,13 @@ mod tests {
             client_burst: 1,
             client_per_sec: 0.001,
         });
-        assert!(limiter.failed_auth(start).is_ok());
-        assert!(limiter.failed_auth(start).is_err());
+        assert!(limiter.failed_auth(None, start).is_ok());
+        assert!(limiter.failed_auth(None, start).is_err());
         limiter.set_limits(RateLimits {
             failed_burst: 5,
             ..RateLimits::default()
         });
         assert_eq!(limiter.limits().failed_burst, 5);
-        assert!(limiter.failed_auth(start).is_ok());
+        assert!(limiter.failed_auth(None, start).is_ok());
     }
 }

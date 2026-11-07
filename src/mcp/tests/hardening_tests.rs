@@ -319,6 +319,65 @@ fn the_bearer_guard_judges_the_recorded_peer_not_anything_in_the_request() {
 }
 
 #[test]
+fn one_remote_address_guessing_tokens_is_cut_off_without_slowing_this_machine() {
+    use crate::mcp::auth::require_bearer;
+    use crate::mcp::limits::PEER_FAILED_BURST;
+    use crate::mcp::state::McpShared;
+    use crate::mcp::transport::PeerAddr;
+    use tower::Service;
+
+    let shared = McpShared::new();
+    shared.replace(
+        vec![super::client("local", "tok-local", READ)],
+        crate::model::mcp::PermissionSet::everything(),
+    );
+    let app = axum::Router::new()
+        .route("/", axum::routing::get(|| async { "in" }))
+        .layer(axum::middleware::from_fn_with_state(
+            shared.clone(),
+            require_bearer,
+        ));
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap();
+    let status = |token: &str, peer: &str| {
+        let mut request = axum::http::Request::builder()
+            .uri("/")
+            .header("authorization", format!("Bearer {token}"))
+            .body(axum::body::Body::empty())
+            .unwrap();
+        request
+            .extensions_mut()
+            .insert(PeerAddr(peer.parse().unwrap()));
+        let mut app = app.clone();
+        runtime.block_on(async move { app.call(request).await.unwrap().status().as_u16() })
+    };
+    for _ in 0..PEER_FAILED_BURST {
+        assert_eq!(status("guess", "203.0.113.9"), 401);
+    }
+    assert_eq!(
+        status("guess", "203.0.113.9"),
+        429,
+        "its own bucket is spent"
+    );
+    // Another address, and this machine, are not slowed by it...
+    assert_eq!(status("guess", "198.51.100.4"), 401);
+    assert_eq!(status("guess", "127.0.0.1"), 401);
+    // ...and a valid token from this machine is never refused for anyone's failures.
+    assert_eq!(status("tok-local", "127.0.0.1"), 200);
+
+    // Only the first PEER_FAILED_BURST (plus the two above) reached the log, as one row.
+    let rows = shared.audit().take(0, true);
+    let refused: Vec<_> = rows
+        .iter()
+        .filter(|r| r.kind == crate::model::mcp::McpAuditKind::AuthRefused)
+        .collect();
+    assert_eq!(refused.len(), 2, "one row per remote address: {refused:?}");
+    let first = refused.iter().find(|r| r.peer == "203.0.113.9").unwrap();
+    assert_eq!(first.count, PEER_FAILED_BURST + 1);
+}
+
+#[test]
 fn a_client_that_never_finishes_its_headers_is_dropped() {
     let server = Plain::start(ConnectionLimits {
         header_read_timeout: Duration::from_millis(300),

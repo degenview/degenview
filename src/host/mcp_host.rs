@@ -3097,7 +3097,7 @@ mod tests {
         {
             let host = host(&store);
             host.shared.audit().push(audit_row(1));
-            host.shared.audit().rate_limited("c1", "Claude", now_ms());
+            host.shared.audit().rate_limited(&claude(), now_ms());
         }
         let rows = store.lock().unwrap().recent_mcp_audit(10);
         assert_eq!(
@@ -3113,7 +3113,7 @@ mod tests {
         let store = store();
         let mut host = host(&store);
         host.shared.audit().push(audit_row(1));
-        host.shared.audit().rate_limited("c1", "Claude", now_ms());
+        host.shared.audit().rate_limited(&claude(), now_ms());
         host.shutdown();
         let rows = store.lock().unwrap().recent_mcp_audit(10);
         assert_eq!(rows.len(), 2, "the call and the open rate-limit count");
@@ -3166,6 +3166,14 @@ mod tests {
             1,
             "the sheet can say it hides one"
         );
+    }
+
+    fn claude() -> crate::mcp::state::ClientIdentity {
+        crate::mcp::state::ClientIdentity {
+            id: "c1".into(),
+            name: "Claude".into(),
+            peer: std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
+        }
     }
 
     fn enable_on_free_port(host: &mut McpHost, store: &SharedStore) {

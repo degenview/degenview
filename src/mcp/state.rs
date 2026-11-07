@@ -57,6 +57,9 @@ pub struct QuoteAccess {
 pub struct ClientIdentity {
     pub id: String,
     pub name: String,
+    /// The address the request came from (the socket's, never a header's). Always known here:
+    /// an unknown peer is refused before an identity exists.
+    pub peer: IpAddr,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -203,11 +206,11 @@ impl McpShared {
         &self.calls
     }
 
-    /// Counts one failed authentication against the shared bucket. `Err` is how long the caller
-    /// should wait. Only bad credentials ever pass through here, so valid ones are never slowed
+    /// Counts one failed authentication against the shared bucket (and, from another machine,
+    /// against that address's own first). `Err` is how long the caller should wait. Only bad credentials ever pass through here, so valid ones are never slowed
     /// by a flood of bad ones.
-    pub fn note_failed_auth(&self) -> Result<(), Duration> {
-        lock(&self.limiter).failed_auth(Instant::now())
+    pub fn note_failed_auth(&self, peer: Option<IpAddr>) -> Result<(), Duration> {
+        lock(&self.limiter).failed_auth(peer, Instant::now())
     }
 
     /// Counts one call from `client_id` against its own bucket.
@@ -281,7 +284,8 @@ impl McpShared {
         })?;
         // After the verifier, so the order of checks is not an oracle for which tokens exist;
         // before any use is recorded, so a refused address leaves no trace on the client.
-        if !client.accepts_peer(peer) {
+        let peer = peer?;
+        if !client.accepts_peer(Some(peer)) {
             return None;
         }
         client.last_used_ms = Some(now_ms());
@@ -289,6 +293,7 @@ impl McpShared {
         Some(ClientIdentity {
             id: client.id.clone(),
             name: client.name.clone(),
+            peer,
         })
     }
 
@@ -302,6 +307,16 @@ impl McpShared {
             .find(|client| client.id == client_id)
             .map(|client| client.effective(&config.global, &config.remote_ceiling))
             .unwrap_or_default()
+    }
+
+    /// Whether `client_id` may be used from other machines. A revoked (unknown) client counts as
+    /// remote: a question about it is never skipped on the strength of a client that is gone.
+    pub fn is_remote_client(&self, client_id: &str) -> bool {
+        self.read()
+            .clients
+            .iter()
+            .find(|client| client.id == client_id)
+            .is_none_or(|client| client.remote_allowed)
     }
 
     pub fn allows(&self, client_id: &str, permission: Permission) -> bool {
@@ -502,6 +517,21 @@ mod tests {
         assert_eq!(from("token-local", None), None);
         // A wrong token from an allowed address is no better off.
         assert_eq!(from("nope", peer("192.168.1.9")), None);
+    }
+
+    #[test]
+    fn a_client_is_remote_when_it_may_be_used_remotely_or_is_gone() {
+        let shared = McpShared::new();
+        shared.replace(
+            vec![
+                client("local", "t1", &[]),
+                remote_client("remote", "t2", &[]),
+            ],
+            PermissionSet::none(),
+        );
+        assert!(!shared.is_remote_client("local"));
+        assert!(shared.is_remote_client("remote"));
+        assert!(shared.is_remote_client("revoked"));
     }
 
     #[test]

@@ -16,8 +16,7 @@ use crate::host::paper_host::PaperHost;
 use crate::mcp::bridge::{McpCommand, McpError};
 use crate::mcp::chart_data;
 use crate::mcp::confirm::{
-    ConfirmationBook, Gate, OpenError, PendingInfo, PendingView, Settled, Settlement, Summary,
-    Verdict, gate,
+    ConfirmationBook, OpenError, PendingInfo, PendingView, Settled, Settlement, Summary, Verdict,
 };
 use crate::mcp::state::McpShared;
 use crate::model::alert::AlertId;
@@ -86,15 +85,28 @@ impl ConfirmationHost {
         // Turning the server off is a stop signal: a yes given before it must not fire after it
         // comes back, even within the time it would have lasted.
         let generation = self.shared.generation();
-        if generation != self.generation || !self.shared.require_confirmation() {
+        if generation != self.generation {
             self.generation = generation;
             for settled in self.book.drain() {
                 self.record(&settled);
             }
             self.fresh.clear();
-            if !self.shared.require_confirmation() {
-                return;
+        } else if !self.shared.require_confirmation() {
+            // Switching the setting off ends the questions of local credentials. A credential
+            // with remote access is not covered by it (`confirm::needs_approval`), so what it
+            // asked stays open.
+            let remote: Vec<String> = self
+                .shared
+                .clients()
+                .into_iter()
+                .filter(|client| client.remote_allowed)
+                .map(|client| client.id)
+                .collect();
+            for settled in self.book.drain_where(|id| !remote.iter().any(|r| r == id)) {
+                self.record(&settled);
             }
+            let alive: Vec<u64> = self.book.pending(now).iter().map(|view| view.id).collect();
+            self.fresh.retain(|view| alive.contains(&view.id));
         }
         // A question and its answer are tied to the client that asked.
         let known: Vec<String> = self.shared.clients().into_iter().map(|c| c.id).collect();
@@ -137,9 +149,9 @@ pub fn gate_command(
     let unavailable = || McpError::AppUnavailable("Confirmations are unavailable".into());
     let required = {
         let host = host.lock().map_err(|_| unavailable())?;
-        host.shared.require_confirmation()
+        crate::mcp::confirm::needs_approval(&host.shared, client_id, command)
     };
-    if !required || gate(command) == Gate::Free {
+    if !required {
         return Ok(());
     }
     let verdict = host
@@ -789,6 +801,54 @@ mod tests {
         shared.set_require_confirmation(false);
         host.lock().unwrap().tick(now);
         assert!(host.lock().unwrap().pending(now).is_empty());
+    }
+
+    #[test]
+    fn a_remote_credential_keeps_asking_when_the_setting_is_off_and_its_questions_stay_open() {
+        let (host, shared) = host_with(&["local", "remote"], true);
+        shared.replace(
+            shared
+                .clients()
+                .into_iter()
+                .map(|mut c| {
+                    c.remote_allowed = c.id == "remote";
+                    c
+                })
+                .collect(),
+            shared.global(),
+        );
+        let now = Instant::now();
+        let change = || McpCommand::SetTimeframe {
+            workspace_id: 1,
+            timeframe: crate::model::Timeframe::Day,
+        };
+        let described = || Ok(Summary::new("Change the timeframe", "Day"));
+
+        // A change that is easy to undo: free for the local credential, asked of the remote one.
+        assert!(gate_command(&host, now, "local", "Local", &change(), described).is_ok());
+        assert!(matches!(
+            gate_command(&host, now, "remote", "Remote", &change(), described),
+            Err(McpError::ConfirmationRequired(_))
+        ));
+        let _ = gate_command(&host, now, "local", "Local", &alert_command(), say);
+        assert_eq!(host.lock().unwrap().pending(now).len(), 2);
+
+        // The setting off ends the local question and not the remote one, and the notification
+        // for it is still to be sent.
+        shared.set_require_confirmation(false);
+        host.lock().unwrap().tick(now);
+        let left = host.lock().unwrap().pending(now);
+        assert_eq!(left.len(), 1);
+        assert_eq!(left[0].client_name, "Remote");
+        assert_eq!(host.lock().unwrap().take_fresh().len(), 1);
+
+        // And with the setting off, a destructive call from the remote credential still asks,
+        // while the local one runs.
+        assert!(gate_command(&host, now, "local", "Local", &alert_command(), say).is_ok());
+        assert!(matches!(
+            gate_command(&host, now, "remote", "Remote", &alert_command(), say),
+            Err(McpError::ConfirmationRequired(_))
+        ));
     }
 
     #[test]

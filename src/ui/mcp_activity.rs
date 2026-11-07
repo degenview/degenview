@@ -204,6 +204,7 @@ fn row_title(entry: &McpAuditEntry) -> String {
     match entry.kind {
         McpAuditKind::Call | McpAuditKind::Confirmation => tool_title(&entry.tool),
         McpAuditKind::RateLimited => "Rate limit reached".to_owned(),
+        McpAuditKind::AuthRefused => "Sign-in refused".to_owned(),
         McpAuditKind::Cleared => "Activity log cleared".to_owned(),
         McpAuditKind::Gap => "Some activity was not recorded".to_owned(),
     }
@@ -234,8 +235,16 @@ fn row_detail(entry: &McpAuditEntry) -> String {
             if !entry.code.is_empty() {
                 parts.push(entry.code.clone());
             }
+            if !entry.peer.is_empty() {
+                parts.push(format!("from {}", entry.peer));
+            }
             parts.push(format!("{} ms", entry.duration_ms));
         }
+        McpAuditKind::AuthRefused => parts.push(format!(
+            "{} from {} refused within a minute",
+            plural(entry.count, "request", "requests"),
+            entry.peer
+        )),
         McpAuditKind::Confirmation => {
             if !entry.client_name.is_empty() {
                 parts.push(entry.client_name.clone());
@@ -252,6 +261,9 @@ fn row_detail(entry: &McpAuditEntry) -> String {
         }
         McpAuditKind::RateLimited => {
             parts.push(entry.client_name.clone());
+            if !entry.peer.is_empty() {
+                parts.push(format!("from {}", entry.peer));
+            }
             parts.push(format!(
                 "{} refused within a minute",
                 plural(entry.count, "call", "calls")
@@ -291,6 +303,9 @@ fn row_tooltip(entry: &McpAuditEntry, utc_offset_secs: i64) -> String {
             },
             entry.client_id
         ));
+    }
+    if !entry.peer.is_empty() {
+        lines.push(format!("From: {}", entry.peer));
     }
     if !entry.tool.is_empty() {
         lines.push(format!("Tool: {}", entry.tool));

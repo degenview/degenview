@@ -1582,7 +1582,7 @@ impl DegenViewApp {
         client_id: &str,
         command: McpCommand,
     ) -> Result<McpReply, McpError> {
-        if crate::mcp::confirm::gate(&command) == crate::mcp::confirm::Gate::Ask {
+        if crate::mcp::confirm::needs_approval(shared, client_id, &command) {
             let name = shared
                 .clients()
                 .into_iter()
@@ -1687,10 +1687,13 @@ impl DegenViewApp {
                 let host = self.paper.lock().map_err(|_| paper_unavailable())?;
                 mcp_confirmation::close_positions(&host, *account_id, instrument_key.as_deref())
             }
-            // `mcp::confirm::gate` asks only for the commands above.
-            _ => Err(McpError::AppUnavailable(
-                "This request cannot be described, so it was not run".into(),
-            )),
+            // The rest are asked about only of a credential with remote access, and described from
+            // the command alone. A command with no description is refused rather than run unasked.
+            _ => crate::mcp::confirm::remote_summary(command).ok_or_else(|| {
+                McpError::AppUnavailable(
+                    "This request cannot be described, so it was not run".into(),
+                )
+            }),
         }
     }
 

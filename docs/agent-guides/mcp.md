@@ -107,6 +107,17 @@
   `McpSettings::remote_ceiling` (default: every read-only permission), wherever it calls from. The new
   client, settings and ceiling fields are sealed, and left out of the stored form while they are the
   default, so old rows and seals read back unchanged.
+- Approval is decided by `confirm::needs_approval(shared, client_id, command)`, never by `gate`
+  alone: a credential with `remote_allowed` is asked about every command that changes anything
+  (`Gate::Ask` and `Gate::AskRemote`) and the "ask before high-impact requests" setting does not apply
+  to it; a local one is asked about `Gate::Ask` only, and not at all when the setting is off. A new
+  `McpCommand` is decided in `gate` (exhaustive), and an `AskRemote` one also needs a `tool_of` name and
+  a `confirm::remote_summary`, or the app refuses it rather than run it unasked. Turning the setting
+  off drains only local credentials' questions (`ConfirmationBook::drain_where`).
+- Failed sign-ins from another machine draw on that address's own bucket first
+  (`RateLimiter::failed_auth(peer, now)`, bounded table), then the shared one; a refusal from another
+  machine is counted into one `AuthRefused` row per address per minute. Audit rows carry `peer` (empty
+  for this machine); a row never holds a token or anything the request said.
 - Settings holds the store lock, so its MCP UI returns `McpAction`s for `McpHost::queue`; never call
   `McpHost::apply` inside the Settings closure.
 - Verify against `127.0.0.1:<port>/mcp` with seeded `mcp.settings`/`mcp_client` rows, a throwaway

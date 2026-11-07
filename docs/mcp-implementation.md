@@ -216,7 +216,7 @@ A later remote-access mode would require a separate security design, HTTPS, prop
 ## Remote access: what exists
 
 The transport for listening beyond loopback exists, with no way to turn it on from Settings yet
-(`McpSettings.bind`, a client's `remote_allowed` and the ceiling are read from the store). Steps 1 and 2 of four; the others are in
+(`McpSettings.bind`, a client's `remote_allowed` and the ceiling are read from the store). Steps 1 to 3 of four; the others are in
 [remaining work](mcp-remaining-work.md). Until they land, treat a non-loopback bind as unfinished.
 
 This deliberately takes a smaller step than the paragraph above asks for: TLS and the existing
@@ -249,6 +249,20 @@ that expects OAuth discovery will not work with it.
   that a remote-enabled client is also held to the ceiling when used locally. Create a second,
   local-only credential for that.
 - Both are sealed, and stored only when not default (see `mcp::seal`).
+- Approval. A credential with `remote_allowed` is asked about every command that changes anything, and
+  the "ask before high-impact requests" setting does not apply to it (`confirm::needs_approval`). The
+  high-impact commands keep their lookups and summaries; the easy-to-undo ones (`Gate::AskRemote`: add a
+  chart, create or pause an alert, indicators, applied scripts, drawings, timeframe, chart type, replay,
+  watchlists, a script draft) are described from the command alone (`confirm::remote_summary`). Turning
+  the setting off ends only local credentials' open questions. A revoked client counts as remote.
+- Failed sign-ins. A remote address has its own bucket (10 at once, then 1 a second; at most 1024
+  addresses tracked) that is spent first, so one host guessing tokens is cut off without using the
+  shared bucket, and a local client's mistakes are not slowed by it. Past 1024 addresses the surplus is
+  judged by the shared bucket alone.
+- Activity log. A call made from another machine carries `peer`. Refused sign-ins from another machine
+  are one `AuthRefused` row per address per minute (at most 256 addresses counted at once; the rest
+  show as a `Gap`). Requests from this machine are not recorded as refused sign-ins, as before, and
+  carry no peer.
 - `bind` is part of the seal, and is written only when it is not loopback, so a seal made before this
   existed still verifies.
 

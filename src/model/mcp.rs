@@ -867,6 +867,9 @@ pub enum McpAuditKind {
     Gap,
     /// The user answered (or let run out) a question about a call the agent made.
     Confirmation,
+    /// `count` requests from another machine were refused for a bad or unusable token within a
+    /// minute. Written for remote addresses only; `peer` says which.
+    AuthRefused,
 }
 
 /// How a tool call ended.
@@ -925,8 +928,13 @@ pub struct McpAuditEntry {
     pub request_id: String,
     /// The ids the call named (a few, from a fixed list of argument names).
     pub targets: Vec<McpAuditTarget>,
-    /// How many calls a `RateLimited` row stands for, or rows a `Gap` lost; 1 otherwise.
+    /// How many calls a `RateLimited` row stands for, requests an `AuthRefused` row stands for, or
+    /// rows a `Gap` lost; 1 otherwise.
     pub count: u32,
+    /// The address the request came from, when it was not this machine; empty otherwise (and on
+    /// rows that are not about one request, such as an answer to a question). Rows from before
+    /// remote access read back empty.
+    pub peer: String,
 }
 
 /// Trims a client name and rejects empty or oversized ones.
