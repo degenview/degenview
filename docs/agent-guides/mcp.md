@@ -97,7 +97,9 @@
   refused before a socket opens. Do not add a path that binds without it. `bind` is
   sealed, but only written when it is not loopback, so existing seals keep verifying. The
   certificate is `mcp::tls` (`mcp-tls.pem` in the data directory, owner-only: repaired on load, written
-  through a fresh temporary file, and held to naming the address it records); the `Host` list comes
+  through a fresh temporary file, held to naming the address it records, and made under the
+  `mcp-tls.lock` lock so concurrent processes share one identity; keep any new step of that flow inside
+  `load_or_create_locked`); the `Host` list comes
   from `BindMode::allowed_hosts`, not the port. See "Remote access" in
   [implementation](../mcp-implementation.md).
 - Settings holds the store lock, so its MCP UI returns `McpAction`s for `McpHost::queue`; never call
