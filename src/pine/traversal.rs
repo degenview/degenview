@@ -216,6 +216,36 @@ pub fn for_each_identifier(statements: &[Statement], visit: &mut impl FnMut(&str
     }
 }
 
+/// Visits the name of every plain identifier that a history operator reads (`name` in `name[n]`),
+/// at any depth. A dotted name is one identifier (`barstate.isfirst[1]`).
+pub fn for_each_history_identifier(statements: &[Statement], visit: &mut impl FnMut(&str)) {
+    for statement in statements {
+        for expression in expressions(statement) {
+            for_each_history_identifier_in_expression(expression, visit);
+        }
+        for block in nested_blocks(statement) {
+            for_each_history_identifier(block, visit);
+        }
+    }
+}
+
+pub fn for_each_history_identifier_in_expression(
+    expression: &Expression,
+    visit: &mut impl FnMut(&str),
+) {
+    if let Expression::History { base, .. } = expression
+        && let Expression::Identifier(name, _) = base.as_ref()
+    {
+        visit(name);
+    }
+    if let Expression::Statement(statement, _) = expression {
+        for_each_history_identifier(std::slice::from_ref(statement.as_ref()), visit);
+    }
+    for child in children(expression) {
+        for_each_history_identifier_in_expression(child, visit);
+    }
+}
+
 fn for_each_identifier_in_expression(
     expression: &Expression,
     visit: &mut impl FnMut(&str, SourceRange),

@@ -53,18 +53,18 @@ Severity: **bug** = the engine computes something TradingView does not and a scr
 | # | Sev | Area | Finding | Verified | Fix |
 |---|-----|------|---------|----------|-----|
 | 1 | bug | strategy | `Broker::place` retain predicates are inverted | re-read | PR 2 |
-| 2 | bug | varip | `varip` in a function is shared across call sites | audit | PR 5 |
-| 3 | gap | varip | `varip` UDT fields do not parse | re-read (parser) | PR 5 |
-| 4 | bug | varip | `varip` array/map/UDT/drawing handle dangles after a tick | audit | PR 5 |
-| 5 | bug | history | `[]` on most built-ins is `na` forever | audit | PR 4 |
+| 2 | bug | varip | `varip` in a function is shared across call sites | audit, run (test) | PR 5 — **done** |
+| 3 | gap | varip | `varip` UDT fields do not parse | re-read (parser), run (test) | PR 5 — **done** |
+| 4 | bug | varip | `varip` array/map/matrix/UDT handle dangles after a tick | audit, run (test) | PR 5 — **done** (drawings not covered) |
+| 5 | bug | history | `[]` on most built-ins is `na` forever | audit, run (test) | PR 4 — **done** |
 | 6 | bug | scopes | Block locals keep stale values; one flat history table | audit | — |
 | 7 | bug | scopes | Function block locals push `na` on skipped bars | audit | — |
 | 8 | bug | scopes | `f()[n]` / `ta.x()[n]` use global offsets; chained `[]` collide; offset 0 skips the trail | audit | — |
 | 9 | bug | ta | `ta.atr` takes the previous close from its own call history | audit | — |
 | 10 | diff | ta | `ta.rsi` is a simple average, not Wilder's RMA | re-read, needs TV | — |
-| 11 | bug | errors | A failed historical run resets state; the script resumes at `bar_index` 0 | audit | PR 6 |
-| 12 | bug | errors | A failed closing run does not commit but clears `live_open_time` | audit | PR 6 |
-| 13 | diff | errors | A realtime runtime error does not halt the script | audit | PR 6 |
+| 11 | bug | errors | A failed historical run resets state; the script resumes at `bar_index` 0 | audit, run (test) | PR 6 — **done** |
+| 12 | bug | errors | A failed closing run does not commit but clears `live_open_time` | audit | PR 6 — **done** (the script no longer runs again) |
+| 13 | diff | errors | A realtime runtime error does not halt the script | audit, run (test) | PR 6 — **done** |
 | 14 | diff | strategy | The broker is rolled back on unconfirmed ticks | audit | — |
 | 15 | gap | strategy | `calc_on_order_fills` and `close_entries_rule = "ANY"` accepted and silently dropped | audit | PR 3 (warning) — **done** |
 | 16 | diff | strategy | `process_orders_on_close` fills market orders only | audit | — |
@@ -79,10 +79,10 @@ Severity: **bug** = the engine computes something TradingView does not and a scr
 | 25 | diff | controller | A new bar first seen already closed runs as `Historical` | audit | — |
 | 26 | diff | alerts | `alertcondition` is fixed to `All`; alerts emitted before an error are dropped | audit | — |
 | 27 | gap | strategy | `strategy.exit` trailing arguments raise `PINE9005` | audit | — (`trail_offset` alone is meaningless in TradingView too) |
-| 28 | gap | type check | A history offset's type is not checked at compile time | audit | PR 4 |
+| 28 | gap | type check | A history offset's type is not checked at compile time | audit | — (needs the corpus, see PR 4 note) |
 | 29 | gap | strategy | No margin model; `max_*_count` not capped at TradingView's limits | audit | — |
-| 30 | diff | controller | Stale `last_valid` output shows after a failed or new run | audit | PR 6 |
-| 31 | gap | perf | Every tick deep-clones `RuntimeState`; every variable's history is pushed every bar | audit | PR 4 (second half) |
+| 30 | diff | controller | Stale `last_valid` output shows after a failed or new run | audit | — (deliberate, see PR 6 note) |
+| 31 | gap | perf | Every tick deep-clones `RuntimeState`; every variable's history is pushed every bar | audit | — (see PR 4 note) |
 
 ### Strategy
 
@@ -364,9 +364,46 @@ change except on the workload the PR targets, and PRs touching state or rollback
 3. Warnings for silently ignored settings that change results (15). Done: `calc_on_order_fills = true` and
    `close_entries_rule` other than `"FIFO"`. Not warned, on purpose: `max_bars_back` (18), lone `trail_offset` (27),
    `fill_orders_on_standard_ohlc` (documented no-op).
-4. History of built-in variables, offset type check, history pushed only for what is indexed (5, 28, 31).
-5. `varip` per call site, UDT `varip` fields, reference-typed `varip` (2, 3, 4).
-6. A runtime error halts the script (11, 12, 13, 30).
+4. History of built-in variables (5). Done: the program is scanned once for `name[n]` where `name` is a builtin
+   variable (`symbol_catalog::is_variable`) that `commit_histories` does not record itself; those names are
+   read at the end of every confirmed bar (`Session::read_history_builtins`) and kept like variables. A script
+   that indexes none pays one `is_empty()` test per bar. Not done, on purpose: the compile-time int check on
+   the offset (28) could reject a script TradingView accepts if the type checker infers `float` where
+   TradingView has `int` (e.g. `math.round`), and the corpus that would show it is not cached here; and
+   recording history only for indexed variables (31) would break debugger watch expressions
+   (`pine::debug::parse_expression` can index any variable) unless gated on the hooks. Limitation: inside a
+   `request.security` expression, a builtin's history is still `na` (the site calls `commit_histories`
+   without builtins).
+5. `varip` per call site, UDT `varip` fields, reference-typed `varip` (2, 3, 4). Done. A `varip` local of a
+   function is kept under its call site's key (the one `invoke_with` stashes persistent locals under), so
+   two calls and a same-named global no longer share it, and it survives the ticks of a bar. `varip` is
+   accepted on a UDT field (`TypeField::persistent`). `Session::capture_intrabar_objects` keeps, after each
+   unconfirmed tick, what every `varip` variable points at (array, map, matrix, object) and every `varip`
+   field of every object; `restore_intrabar_objects` puts them back after the next tick's rollback, bumping
+   `next_reference` past them. What the container holds is followed too, through arrays, maps, matrices and
+   objects (a visited set stops a cycle), so an array in a `varip` array, behind a `varip` field, or made on
+   a rolled-back tick comes back with its contents and a live handle. The `varip` fields of types an imported
+   library exports are found through the linked type table. Fields go back only into an object the committed state has (an object made on
+   the rolled-back tick is gone, as in TradingView, and its handle may belong to another object by now).
+   Inferred, not confirmed against TradingView: a `varip` array keeps its contents, not only its handle.
+   Not covered: a `varip` variable holding a drawing (lines, labels, boxes, tables and the like are not
+   followed and roll back with the tick).
+6. A runtime error halts the script (11, 12, 13). Done: `Session::halted` is set when a run fails (not when it is
+   cancelled); `execute` then returns the stored error without running, `reset` (every rebuild, input change,
+   symbol or timeframe change, empty snapshot) clears it. `output()` shows the bars before the failing one
+   (`bar_count`, plots truncated), where a failed replay used to leave an empty chart. A failure on a live tick
+   keeps `committed` as the state, so nothing half-run is shown. The same holds for a closed bar that fails
+   when it arrives on its own: `execute` keeps a copy of the state it continued from and `halt` puts it back.
+   A failed history replay has no such copy (one per bar would slow every run), so `load_history` runs the bars
+   before the failing one again (`settle_failed_replay`) with the debugger, profiler and logs set aside: every
+   category of output (labels, lines, boxes, tables, markers, backgrounds, alerts, the strategy report) is then
+   what the last good bar left. This costs a failing script a second pass over its history up to the failure,
+   and nothing on the way to success. Behaviour change worth knowing: a run that
+   failed on a transient condition (for example `request.security` to a finer timeframe before its candles
+   have loaded, `PINE4021`) used to be retried by the next appended bar; it now stays stopped until the chart
+   rebuilds, as in TradingView. Not changed: `ChartCard` still shows the last valid output of the same chart
+   while a failed run is current (`chart_card.rs`, finding 30): it is what keeps a chart from blanking while
+   a script is being edited, and it cannot be checked without the app.
 
 ## Not verified
 

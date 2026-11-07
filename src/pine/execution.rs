@@ -465,16 +465,62 @@ mod tests {
     }
 
     #[test]
-    fn a_failure_clears_once_the_script_runs_clean() {
+    fn a_failed_script_stays_stopped_and_keeps_the_bars_before_it() {
         let mut controller = controller(
             "//@version=6\nindicator(\"T\")\nif bar_index == 1\n    runtime.error(\"boom\")\nplot(close)",
         );
-        assert!(controller.update(&history(2), None, AFTER).error.is_some());
-        // Another closed bar arrives and runs without failing.
+        let failed = controller.update(&history(2), None, AFTER);
+        assert_eq!(
+            failed.error.as_ref().map(|e| e.message.as_str()),
+            Some("boom")
+        );
+        // The bar it failed on is not shown; the one before it is.
+        assert_eq!(failed.output.bar_count, 1);
+        assert_eq!(failed.output.plots[0].values, [Some(10.0)]);
+        // Another closed bar arrives: the script does not run again, and it still says why.
         let next = controller.update(&history(3), None, AFTER);
-        assert!(next.error.is_none(), "{:?}", next.error);
-        // And it stays clear for an update that changes nothing.
-        assert!(controller.update(&history(3), None, AFTER).error.is_none());
+        assert_eq!(
+            next.error.as_ref().map(|e| e.message.as_str()),
+            Some("boom")
+        );
+        assert_eq!(next.output.bar_count, 1);
+        assert_eq!(next.output.plots[0].values, [Some(10.0)]);
+        assert!(!next.rebuilt);
+    }
+
+    #[test]
+    fn a_script_that_fails_on_a_live_tick_does_not_start_again() {
+        let mut controller = controller(
+            "//@version=6\nindicator(\"T\")\nif barstate.isrealtime and close > 12\n    runtime.error(\"late\")\nplot(close)",
+        );
+        let with_live = |close: f64| {
+            let mut bars = history(3);
+            bars.push(bar(3 * 60_000, close));
+            bars
+        };
+        // Three closed bars, then a live one that is fine.
+        let first = controller.update(&with_live(11.0), None, 200_000);
+        assert!(first.error.is_none(), "{:?}", first.error);
+        // A tick that makes it fail.
+        let failed = controller.update(&with_live(13.0), None, 210_000);
+        assert_eq!(
+            failed.error.as_ref().map(|e| e.message.as_str()),
+            Some("late")
+        );
+        assert_eq!(failed.output.bar_count, 3);
+        // The price comes back, so the condition is false again, and then the bar closes: the
+        // script stays stopped.
+        let back = controller.update(&with_live(11.0), None, 220_000);
+        assert_eq!(
+            back.error.as_ref().map(|e| e.message.as_str()),
+            Some("late")
+        );
+        let closed = controller.update(&with_live(11.0), None, 240_000);
+        assert_eq!(
+            closed.error.as_ref().map(|e| e.message.as_str()),
+            Some("late")
+        );
+        assert_eq!(closed.output.bar_count, 3);
     }
 
     #[test]
@@ -496,5 +542,59 @@ mod tests {
         assert!(controller.update(&history(5), None, AFTER).error.is_some());
         // Back to three bars: rebuilt, and fine again.
         assert!(controller.update(&history(3), None, AFTER).error.is_none());
+    }
+
+    /// Drawings, markers, alerts and (for a strategy) a fill that bar 2 produced; bar 3 does the same and
+    /// then fails.
+    const EFFECTS_BEFORE_THE_ERROR: &str = "//@version=6\nindicator(\"T\")\n\
+        if bar_index >= 2\n    label.new(bar_index, close, \"x\")\n    line.new(bar_index, close, bar_index + 1, close)\n    alert(\"hi\", alert.freq_all)\n\
+        plotshape(bar_index >= 2, style = shape.circle)\n\
+        bgcolor(bar_index >= 2 ? color.red : na)\n\
+        if bar_index == 3\n    runtime.error(\"boom\")\n\
+        plot(close)";
+
+    fn assert_only_bars_before_the_failure_are_left(update: &ExecutionUpdate) {
+        let output = &update.output;
+        assert_eq!(output.bar_count, 3);
+        assert_eq!(output.labels.len(), 1, "labels");
+        assert_eq!(output.lines.len(), 1, "lines");
+        assert_eq!(output.alerts.len(), 1, "alerts");
+        assert_eq!(output.markers[0].values, [false, false, true], "markers");
+        assert_eq!(output.backgrounds[0].colors.len(), 3, "backgrounds");
+        assert_eq!(output.plots[0].values.len(), 3, "plots");
+    }
+
+    #[test]
+    fn a_failed_history_bar_leaves_none_of_its_effects_in_the_output() {
+        let mut controller = controller(EFFECTS_BEFORE_THE_ERROR);
+        let failed = controller.update(&history(5), None, AFTER);
+        assert!(failed.error.is_some());
+        assert_only_bars_before_the_failure_are_left(&failed);
+    }
+
+    #[test]
+    fn a_closed_bar_that_fails_when_it_arrives_leaves_none_of_its_effects_in_the_output() {
+        // The history is fine; the bar that arrives afterwards runs on its own, not in a replay.
+        let mut controller = controller(EFFECTS_BEFORE_THE_ERROR);
+        assert!(controller.update(&history(3), None, AFTER).error.is_none());
+        let failed = controller.update(&history(4), None, AFTER);
+        assert!(!failed.rebuilt);
+        assert!(failed.error.is_some());
+        assert_only_bars_before_the_failure_are_left(&failed);
+    }
+
+    #[test]
+    fn a_fill_on_the_failing_bar_is_not_in_the_strategy_report() {
+        // The order bar 2 places fills at the open of bar 3, before the script runs there and fails.
+        let source = "//@version=6\nstrategy(\"S\")\n\
+            if bar_index == 2\n    strategy.entry(\"L\", strategy.long)\n\
+            if bar_index == 3\n    runtime.error(\"boom\")\n\
+            plot(close)";
+        let mut controller = controller(source);
+        let failed = controller.update(&history(5), None, AFTER);
+        assert!(failed.error.is_some());
+        let report = failed.output.strategy.expect("a strategy report");
+        assert!(report.open_trades.is_empty(), "{:?}", report.open_trades);
+        assert_eq!(report.equity.len(), 3);
     }
 }
