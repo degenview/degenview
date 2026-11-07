@@ -226,14 +226,21 @@ that expects OAuth discovery will not work with it.
 
 - `BindMode`: `Loopback` (default) or `Interface(ip)`, one address of this machine. `0.0.0.0`, `::`,
   multicast, broadcast and IPv6 link-local are not accepted, from the API or from a stored value.
-  A loopback address is `Loopback`.
+  A loopback address is `Loopback`. The variant can be written down directly, so
+  `McpServer::start_listening` judges the address again before it opens a socket (a test builds each
+  refused address with a matching certificate and checks nothing listens).
 - Anything but loopback is served over TLS 1.3 only. `McpServer::start_listening` refuses it without
   a certificate, and with one made for a different address, before binding.
 - The certificate is self-signed for that address, made on first use and kept in `mcp-tls.pem` in the
   data directory (owner-only on Unix; Windows relies on the per-user data directory). A new address
   means a new certificate, so a new fingerprint to pin. A file that cannot be read is an error, not a
-  reason to replace it. The key is not in the credential seal: replacing the file lets someone present
-  another certificate, but yields no token, and a pinning client refuses it.
+  reason to replace it. The address a file records about itself is checked against the certificate's
+  own names (a mismatch is an error). The key is not in the credential seal. Replacing the file lets
+  someone present another certificate, which a pinning client refuses; *reading* the key is worse, since
+  it lets an on-path attacker pose as the server to a pinning client and take its bearer token. So a
+  key file loosened by a restore or a plain `cp` is put back to owner-only when it is loaded, a link or
+  non-regular file is refused, and the file is always written through a freshly created temporary file
+  (the mode asked for only applies to a file being created).
 - The `Host` check accepts only that address and port on a named interface, and the loopback names on
   loopback. Origin rejection, the bearer check, the permission checks, rate limits and the confirmation
   step apply unchanged, and run after TLS.
