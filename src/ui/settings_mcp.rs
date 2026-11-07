@@ -633,8 +633,6 @@ fn security_section(
             divider(ui);
             remote_rows(ui, state, input, actions);
             divider(ui);
-            row(ui, "Browser pages", |ui| secondary(ui, "Always refused"));
-            divider(ui);
             maximum_row(ui, state, input);
         });
     });
