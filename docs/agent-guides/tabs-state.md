@@ -16,8 +16,32 @@
 - A tab's open layout is saved with it (`PersistedWorkspace::active_view`, an id) and its name is
   looked up in the library on restore; a deleted layout restores as Unnamed. The restored tab's dirty
   baseline is the restored state, so changes left unsaved at quit show as clean after a restart.
-- Tab title is focused-chart title, then active-layout name, then “New tab”. Session persistence is
+- `ChartWorkspace::title()` (focused-chart title, then active-layout name, then “New tab”) names the
+  OS window, the accessibility label and the Move Tab to Window rows. The strip itself paints a chart
+  tab from `ChartWorkspace::tab_chart()` through `model::tab_title`: logo, symbol, `▲`/`▼`, price and
+  change, then `/ <layout name>`. The market is the **focused chart's** (first chart when none is
+  focused; a portfolio card gives none) and the layout is `active_view_name`, so the layout name
+  follows the layout, not the symbol; an unnamed layout has no `/` segment. Session persistence is
   debounced ten seconds and also runs on save/quit.
+- Tab prices come from the shared `WatchlistQuoteBook` (the provider's own reference: rolling 24h or
+  previous close), never from the chart's candles, and a missing price or reference is left out, not
+  shown as zero. `DegenViewApp::tick_tab_quotes` asks for them with one non-lapsing demand owner
+  (`TAB_QUOTE_OWNER`, `1 << 60`) covering every open chart tab in every window, only when the set
+  changed; the coordinator merges demand by market, so a market a sidebar or alert follows costs
+  nothing extra. Prediction markets and CoinMarketCap are not asked for (`tab_title::wants_quote`).
+  The coordinator repaints only the root viewport, so the same tick repaints every tab window when
+  `quote_book.revision()` moves.
+- A tab's width is uniform in a strip (reorder math relies on it) and the amount shown is chosen from
+  that width alone (`tab_title::Detail`), never from the live text, so a tick cannot move anything;
+  the price block also keeps the widest it has been (egui temp memory). At the narrowest
+  (`MIN_TAB_WIDTH`) a tab is its logo. There is **no scrolling**: with more tabs than fit at the
+  narrowest, the extra ones are clipped, not reachable except through Show Next Tab.
+- A tab can have its own title (`PersistedWorkspace::custom_title`, set by Rename Tab… in its context
+  menu): it stands in for the symbol and price, and a symbol or layout change never touches it. The
+  app-wide style (symbol+price+layout, symbol only, layout name only) is `tab.title_style`
+  (`host::tab_title_host`, Settings ▸ Appearance ▸ Tabs). Both are device-local: the `tab` table and
+  that key never sync. The active tab's blue underline is the one coloured thing in the strip; it
+  marks selection and is an intentional exception to "never blue".
 
 ## Windows and tabs
 

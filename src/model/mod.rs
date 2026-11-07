@@ -67,6 +67,7 @@ mod saved_view;
 pub mod snapshot;
 mod source;
 pub mod synthetic;
+pub mod tab_title;
 pub mod tab_windows;
 pub mod table;
 mod timeframe;

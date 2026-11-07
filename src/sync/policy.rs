@@ -347,6 +347,8 @@ mod tests {
             "portfolio.privacyMode",
             // A channel is chosen per Mac: syncing it would move every other Mac onto it.
             "update.channel",
+            // Open tabs are device-local, and so is how they name themselves.
+            "tab.title_style",
         ] {
             assert_eq!(setting_policy(key), SettingPolicy::Local, "{key}");
         }

@@ -1,5 +1,6 @@
 //! Settings ▸ Appearance: the app theme, picked from small previews of a window in each theme.
 
+use crate::model::tab_title::TabTitleStyle;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit;
 use crate::ui::theme::{self, AppTheme};
@@ -43,6 +44,51 @@ pub fn body(ui: &mut egui::Ui, current: AppTheme) -> Option<AppTheme> {
         },
     );
     picked.filter(|theme| *theme != current)
+}
+
+/// How chart tabs name themselves. Returns the choice made this frame. TradingView's own
+/// setting is a layout name in place of the symbol; the price shown with the symbol is this
+/// app's addition.
+pub fn tabs(ui: &mut egui::Ui, current: TabTitleStyle) -> Option<TabTitleStyle> {
+    let mut picked = None;
+    super::settings_window::section(
+        ui,
+        "Tabs",
+        Some(
+            "What a chart tab shows. The layout name and the price follow the tab's focused chart.",
+        ),
+        |ui| {
+            let mut style = current;
+            let options = [
+                (TabTitleStyle::Full, "Symbol, price and layout"),
+                (TabTitleStyle::SymbolOnly, "Symbol only"),
+                (TabTitleStyle::LayoutOnly, "Layout name only"),
+            ];
+            kit::segmented(ui, egui::Id::new("tab-title-style"), &options, &mut style);
+            if style != current {
+                picked = Some(style);
+            }
+            if current != TabTitleStyle::default() {
+                ui.add_space(8.0);
+                let restore = ui.add(
+                    egui::Label::new(
+                        egui::RichText::new("Restore default")
+                            .size(kit::size::SUBHEADLINE + 1.0)
+                            .underline()
+                            .color(theme::text_secondary()),
+                    )
+                    .sense(Sense::click()),
+                );
+                if restore
+                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                    .clicked()
+                {
+                    picked = Some(TabTitleStyle::default());
+                }
+            }
+        },
+    );
+    picked
 }
 
 fn icon(theme: AppTheme) -> Icon {

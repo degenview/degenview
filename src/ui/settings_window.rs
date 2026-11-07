@@ -133,6 +133,8 @@ pub enum SettingsAction {
     Storage(StorageAction),
     /// A theme tile on the Appearance page was picked.
     SetTheme(crate::ui::theme::AppTheme),
+    /// A tab title style on the Appearance page was picked (or restored to the default).
+    SetTabTitleStyle(crate::model::tab_title::TabTitleStyle),
     /// A switch on the Notifications page changed: the whole new settings value.
     UpdateNotifications(AlertNotificationSettings),
     RetryRegistration,
@@ -160,6 +162,7 @@ pub struct SettingsInput<'a> {
     pub updates: &'a crate::host::update_host::UpdateHost,
     pub sync: &'a crate::host::sync_host::SyncHost,
     pub editor_themes: &'a crate::host::editor_theme_host::EditorThemeHost,
+    pub tab_title_style: crate::model::tab_title::TabTitleStyle,
     pub now_ms: i64,
 }
 
@@ -491,6 +494,12 @@ pub fn show(
                         crate::ui::settings_appearance::body(ui, crate::ui::theme::choice())
                     {
                         actions.push(SettingsAction::SetTheme(theme));
+                    }
+                    ui.add_space(22.0);
+                    if let Some(style) =
+                        crate::ui::settings_appearance::tabs(ui, input.tab_title_style)
+                    {
+                        actions.push(SettingsAction::SetTabTitleStyle(style));
                     }
                 },
             );

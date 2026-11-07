@@ -3,21 +3,32 @@
 //! drives the rest from raw pointer state because a dragged tab leaves this strip.
 
 use super::icons::{self, Icon};
+use super::kit;
 use super::shortcut;
 use super::theme;
 use super::update_indicator;
 use super::window_chrome::{self, Control};
 use crate::host::update_host::UpdateView;
+use crate::model::InstrumentId;
+use crate::model::tab_title::{self, Detail, Segments, TabChart, TabTitleStyle};
 use crate::model::tab_windows::{TabId, WindowId};
+use crate::model::watchlist_quote::Direction;
+use crate::service::watchlist_quotes::WatchlistQuoteBook;
 use eframe::egui::{
-    self, Align2, Color32, CornerRadius, FontId, Id, Painter, Pos2, Rect, Sense, Shadow, Stroke,
-    StrokeKind, Ui, Vec2, pos2, vec2,
+    self, Color32, CornerRadius, Id, Painter, Pos2, Rect, Sense, Shadow, Stroke, StrokeKind, Ui,
+    Vec2, pos2, vec2,
 };
+use std::hash::{Hash, Hasher};
+use std::sync::Arc;
 
 /// Strip height. The strip is the window's title bar (`window_chrome`).
 pub const HEIGHT: f32 = 40.0;
-const MIN_TAB_WIDTH: f32 = 96.0;
-const MAX_TAB_WIDTH: f32 = 220.0;
+/// Narrow enough to crowd a window with tabs (each shows just its logo), wide enough for the
+/// logo and the close button side by side.
+const MIN_TAB_WIDTH: f32 = 52.0;
+/// Wide enough for the whole title (symbol, price, change and a layout name) when there are few
+/// tabs; the strip narrows them all together when there are many.
+const MAX_TAB_WIDTH: f32 = 360.0;
 const NEW_BUTTON_WIDTH: f32 = 34.0;
 const SETTINGS_BUTTON_WIDTH: f32 = 34.0;
 const LINK_BUTTON_WIDTH: f32 = 30.0;
@@ -29,6 +40,11 @@ const TAB_GAP: f32 = 2.0;
 const SIDE_PADDING: f32 = 6.0;
 const CLOSE_SIZE: f32 = 18.0;
 const ICON_SIZE: f32 = 13.0;
+/// An instrument's logo, in a circle.
+const LOGO_SIZE: f32 = 18.0;
+/// The accent line under the active tab.
+const UNDERLINE: f32 = 2.5;
+const TEXT_SIZE: f32 = 12.5;
 /// How long tabs take to slide to a new slot.
 const SLIDE_SECONDS: f32 = 0.1;
 
@@ -38,6 +54,11 @@ pub struct TabView {
     pub id: TabId,
     pub title: String,
     pub icon: Icon,
+    /// The focused chart's market and the layout, for a chart tab that has one. Everything else
+    /// (the portfolio, Pine Studio, a blank tab) shows its glyph and `title`.
+    pub chart: Option<TabChart>,
+    /// The timeframe shown in the hover text.
+    pub timeframe: &'static str,
 }
 
 /// A window a tab can be sent to from the context menu.
@@ -72,6 +93,9 @@ pub struct TabBar<'a> {
     pub active: TabId,
     pub drag: DragView,
     pub other_windows: &'a [WindowChoice],
+    /// The shared quotes the price and change are read from. The strip never asks a provider.
+    pub quotes: &'a WatchlistQuoteBook,
+    pub style: TabTitleStyle,
     /// The app's update state; a mark shows at the strip's right end while there is news.
     pub update: Option<&'a UpdateView>,
 }
@@ -90,6 +114,16 @@ pub enum TabBarEvent {
         tab: TabId,
         grab: Vec2,
     },
+    /// Close every tab of the window but this one / the ones after it. Each goes through the
+    /// ordinary close, so a Pine script with edits still asks.
+    CloseOthers(TabId),
+    CloseToRight(TabId),
+    /// The user typed a title for a chart tab; `None` clears it.
+    SetCustomTitle {
+        tab: TabId,
+        title: Option<String>,
+    },
+    SetTitleStyle(TabTitleStyle),
     MoveToNewWindow(TabId),
     MoveToWindow {
         tab: TabId,
@@ -239,6 +273,14 @@ impl TabBar<'_> {
         };
 
         let mut lifted = None;
+        // Tabs past the strip's end (more than fit at the narrowest) are cut off, not drawn over
+        // the buttons beside it.
+        let tabs_clip = Rect::from_min_max(
+            strip.min,
+            pos2(strip.right() - NEW_BUTTON_WIDTH, strip.bottom()),
+        );
+        let outer_clip = ui.clip_rect();
+        ui.set_clip_rect(outer_clip.intersect(tabs_clip));
         for (index, tab) in self.tabs.iter().enumerate() {
             let left = match self.drag.dragging {
                 Some((dragged, left)) if dragged == tab.id => {
@@ -258,21 +300,25 @@ impl TabBar<'_> {
                 .dragging
                 .is_some_and(|(dragged, _)| dragged == tab.id)
             {
-                lifted = Some((rect, tab));
+                lifted = Some((rect, index, tab));
             } else {
-                self.show_tab(ui, rect, tab, false, &mut events);
+                self.show_tab(ui, rect, (index, tab), false, &mut events);
             }
         }
         // Drawn last so it passes over its neighbours.
-        if let Some((rect, tab)) = lifted {
-            self.show_tab(ui, rect, tab, true, &mut events);
+        if let Some((rect, index, tab)) = lifted {
+            self.show_tab(ui, rect, (index, tab), true, &mut events);
         }
+        ui.set_clip_rect(outer_clip);
+        self.show_rename(ui, &mut events);
 
         let plus_left = ctx.animate_value_with_time(
             self.id("plus"),
             tab_left(slots, target_width),
             SLIDE_SECONDS,
         );
+        // Stays in reach when the tabs fill the strip.
+        let plus_left = plus_left.min(strip.width() - NEW_BUTTON_WIDTH);
         let new_rect = Rect::from_min_size(
             pos2(strip.left() + plus_left, strip.top() + 5.0),
             vec2(NEW_BUTTON_WIDTH - 4.0, strip.height() - 8.0),
@@ -303,7 +349,13 @@ impl TabBar<'_> {
                 opacity: 0.88,
                 ..Look::default()
             };
-            self.paint_tab(&painter.with_clip_rect(strip), rect, &incoming.tab, look);
+            self.paint_tab(
+                ui,
+                &painter.with_clip_rect(strip),
+                rect,
+                &incoming.tab,
+                look,
+            );
         }
 
         if settings_button_width() > 0.0 {
@@ -399,7 +451,7 @@ impl TabBar<'_> {
         &self,
         ui: &mut Ui,
         rect: Rect,
-        tab: &TabView,
+        (index, tab): (usize, &TabView),
         lifted: bool,
         events: &mut Vec<TabBarEvent>,
     ) {
@@ -420,7 +472,22 @@ impl TabBar<'_> {
             close_hovered: close.hovered(),
             opacity: 1.0,
         };
-        self.paint_tab(ui.painter(), rect, tab, look);
+        self.paint_tab(ui, ui.painter(), rect, tab, look);
+
+        // Everything the strip had no room for, and what the price is measured against.
+        let response = match &tab.chart {
+            Some(chart) if !lifted && !close.hovered() => response.on_hover_ui(|ui| {
+                let quote = self
+                    .quotes
+                    .get(&InstrumentId::new(chart.source, &chart.symbol));
+                ui.label(tab_title::tooltip(chart, quote.as_ref(), tab.timeframe));
+            }),
+            // A tab squeezed to its glyph is named on hover.
+            None if !lifted && rect.width() < Detail::SYMBOL_WIDTH => {
+                response.on_hover_text(&tab.title)
+            }
+            _ => response,
+        };
 
         if close.clicked() || response.middle_clicked() {
             events.push(TabBarEvent::Close(tab.id));
@@ -437,32 +504,234 @@ impl TabBar<'_> {
             });
         }
 
-        response.context_menu(|ui| {
-            if ui.button("Close Tab").clicked() {
-                events.push(TabBarEvent::Close(tab.id));
-                ui.close();
-            }
-            if self.tabs.len() > 1 && ui.button("Move Tab to New Window").clicked() {
-                events.push(TabBarEvent::MoveToNewWindow(tab.id));
-                ui.close();
-            }
-            if !self.other_windows.is_empty() {
-                ui.menu_button("Move Tab to Window", |ui| {
-                    for window in self.other_windows {
-                        if ui.button(&window.title).clicked() {
-                            events.push(TabBarEvent::MoveToWindow {
-                                tab: tab.id,
-                                window: window.id,
-                            });
-                            ui.close();
-                        }
-                    }
-                });
-            }
+        let rows = MENU_ROWS.map(|label| (label, None));
+        kit::fitted_context_menu(ui, &response, &rows, |ui| {
+            self.tab_menu(ui, rect, (index, tab), events);
         });
     }
 
-    fn paint_tab(&self, painter: &Painter, rect: Rect, tab: &TabView, look: Look) {
+    fn tab_menu(
+        &self,
+        ui: &mut Ui,
+        rect: Rect,
+        (index, tab): (usize, &TabView),
+        events: &mut Vec<TabBarEvent>,
+    ) {
+        if kit::menu_item(ui, Icon::Plus, "New Tab", true, false) {
+            events.push(TabBarEvent::New);
+            ui.close();
+        }
+        kit::menu_separator(ui);
+        if kit::menu_item(ui, Icon::Xmark, "Close Tab", true, false) {
+            events.push(TabBarEvent::Close(tab.id));
+            ui.close();
+        }
+        if kit::menu_item(
+            ui,
+            Icon::Xmark,
+            "Close Other Tabs",
+            self.tabs.len() > 1,
+            false,
+        ) {
+            events.push(TabBarEvent::CloseOthers(tab.id));
+            ui.close();
+        }
+        if kit::menu_item(
+            ui,
+            Icon::Xmark,
+            "Close Tabs to the Right",
+            index + 1 < self.tabs.len(),
+            false,
+        ) {
+            events.push(TabBarEvent::CloseToRight(tab.id));
+            ui.close();
+        }
+        if let Some(chart) = &tab.chart {
+            kit::menu_separator(ui);
+            if kit::menu_item(ui, Icon::Pencil, "Rename Tab\u{2026}", true, false) {
+                self.begin_rename(ui.ctx(), rect, tab.id, chart);
+                ui.close();
+            }
+            if kit::menu_item(
+                ui,
+                Icon::Pencil,
+                "Reset Tab Title",
+                chart.custom_title.is_some(),
+                false,
+            ) {
+                events.push(TabBarEvent::SetCustomTitle {
+                    tab: tab.id,
+                    title: None,
+                });
+                ui.close();
+            }
+            kit::menu_submenu(ui, kit::MenuRow::new("Tab Title"), 0.0, |ui| {
+                let rows = TabTitleStyle::ALL.map(|style| (style.label(), None));
+                kit::menu_fit_rows(ui, &rows);
+                for style in TabTitleStyle::ALL {
+                    let row = kit::menu_row(
+                        ui,
+                        kit::MenuRow {
+                            checked: style == self.style,
+                            ..kit::MenuRow::new(style.label())
+                        },
+                    );
+                    if row.clicked() {
+                        events.push(TabBarEvent::SetTitleStyle(style));
+                        ui.close();
+                    }
+                }
+            });
+        }
+        if self.tabs.len() > 1 || !self.other_windows.is_empty() {
+            kit::menu_separator(ui);
+        }
+        if self.tabs.len() > 1 && kit::menu_item(ui, Icon::Plus, MOVE_NEW, true, false) {
+            events.push(TabBarEvent::MoveToNewWindow(tab.id));
+            ui.close();
+        }
+        if !self.other_windows.is_empty() {
+            kit::menu_submenu(ui, kit::MenuRow::new(MOVE_TO), 0.0, |ui| {
+                let titles: Vec<(&str, Option<&str>)> = self
+                    .other_windows
+                    .iter()
+                    .map(|window| (window.title.as_str(), None))
+                    .collect();
+                kit::menu_fit_rows(ui, &titles);
+                for window in self.other_windows {
+                    if kit::menu_row(ui, kit::MenuRow::new(&window.title)).clicked() {
+                        events.push(TabBarEvent::MoveToWindow {
+                            tab: tab.id,
+                            window: window.id,
+                        });
+                        ui.close();
+                    }
+                }
+            });
+        }
+    }
+
+    // MARK: Rename
+
+    fn rename_id(&self) -> Id {
+        self.id("rename")
+    }
+
+    fn begin_rename(&self, ctx: &egui::Context, rect: Rect, tab: TabId, chart: &TabChart) {
+        let text = chart
+            .custom_title
+            .clone()
+            .unwrap_or_else(|| chart.title.clone());
+        let state = Rename {
+            tab,
+            pos: rect.left_bottom() + vec2(0.0, 4.0),
+            text,
+            focused: false,
+        };
+        ctx.data_mut(|data| data.insert_temp(self.rename_id(), state));
+    }
+
+    /// The small field under a tab that takes a title for it: Enter keeps it (empty clears it),
+    /// Escape or a click elsewhere leaves the tab as it was.
+    fn show_rename(&self, ui: &mut Ui, events: &mut Vec<TabBarEvent>) {
+        let ctx = ui.ctx().clone();
+        let Some(mut state) = ctx.data(|data| data.get_temp::<Rename>(self.rename_id())) else {
+            return;
+        };
+        if !self.tabs.iter().any(|tab| tab.id == state.tab) {
+            ctx.data_mut(|data| data.remove::<Rename>(self.rename_id()));
+            return;
+        }
+        let mut done = None;
+        egui::Area::new(self.id("rename-area"))
+            .order(egui::Order::Foreground)
+            .fixed_pos(state.pos)
+            .show(&ctx, |ui| {
+                kit::menu_frame().show(ui, |ui| {
+                    ui.set_width(240.0);
+                    let edit = ui.add(
+                        egui::TextEdit::singleline(&mut state.text)
+                            .hint_text("Tab title")
+                            .char_limit(crate::workspace::MAX_CUSTOM_TITLE_CHARS)
+                            .desired_width(f32::INFINITY),
+                    );
+                    if !state.focused {
+                        edit.request_focus();
+                        state.focused = true;
+                    }
+                    ui.add_space(4.0);
+                    ui.label(kit::text(
+                        "Return to save, Esc to cancel. Empty restores the default.",
+                        kit::size::CAPTION,
+                        kit::REGULAR,
+                        theme::text_secondary(),
+                    ));
+                    if edit.lost_focus() {
+                        let enter = ui.input(|input| input.key_pressed(egui::Key::Enter));
+                        done = Some(enter);
+                    }
+                });
+            });
+        match done {
+            Some(true) => {
+                events.push(TabBarEvent::SetCustomTitle {
+                    tab: state.tab,
+                    title: Some(state.text.clone()),
+                });
+                ctx.data_mut(|data| data.remove::<Rename>(self.rename_id()));
+            }
+            Some(false) => ctx.data_mut(|data| data.remove::<Rename>(self.rename_id())),
+            None => ctx.data_mut(|data| {
+                data.insert_temp(self.rename_id(), state);
+            }),
+        }
+    }
+
+    // MARK: Painting
+
+    /// The tab's text for the room it has, cached until the quote, the layout, the style or the
+    /// width class changes so an idle frame builds no strings.
+    fn segments(
+        &self,
+        ctx: &egui::Context,
+        tab: &TabView,
+        chart: &TabChart,
+        detail: Detail,
+    ) -> Arc<Segments> {
+        let key = {
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            chart.source.hash(&mut hasher);
+            chart.symbol.hash(&mut hasher);
+            chart.title.hash(&mut hasher);
+            chart.layout.hash(&mut hasher);
+            chart.custom_title.hash(&mut hasher);
+            (self.style as u8, detail as u8, self.quotes.revision()).hash(&mut hasher);
+            hasher.finish()
+        };
+        let id = self.id("segments").with(tab.id);
+        if let Some((cached, segments)) = ctx.data(|data| data.get_temp::<(u64, Arc<Segments>)>(id))
+            && cached == key
+        {
+            return segments;
+        }
+        let quote = chart
+            .wants_quote()
+            .then(|| {
+                self.quotes
+                    .get(&InstrumentId::new(chart.source, &chart.symbol))
+            })
+            .flatten();
+        let segments = Arc::new(tab_title::compose(
+            self.style,
+            chart,
+            quote.as_ref(),
+            detail,
+        ));
+        ctx.data_mut(|data| data.insert_temp(id, (key, Arc::clone(&segments))));
+        segments
+    }
+
+    fn paint_tab(&self, ui: &Ui, painter: &Painter, rect: Rect, tab: &TabView, look: Look) {
         let fade = |color: Color32| color.gamma_multiply(look.opacity);
         let raised = look.active || look.lifted;
         let corners = CornerRadius {
@@ -490,47 +759,124 @@ impl TabBar<'_> {
             Color32::TRANSPARENT
         };
         painter.rect_filled(rect, corners, fade(fill));
-        if raised {
+        if look.lifted {
             painter.rect_stroke(
                 rect,
                 corners,
                 Stroke::new(1.0, fade(theme::separator())),
                 StrokeKind::Inside,
             );
-            if !look.lifted {
-                // Joins the tab to the content below by hiding the strip's bottom rule under it.
-                painter.hline(
-                    rect.x_range().shrink(1.0),
-                    rect.bottom() - 0.5,
-                    Stroke::new(1.5, theme::background()),
-                );
-            }
+        } else if look.active {
+            // Joins the tab to the content below by hiding the strip's bottom rule under it.
+            painter.hline(
+                rect.x_range(),
+                rect.bottom() - 0.5,
+                Stroke::new(1.5, theme::background()),
+            );
+        }
+        if raised {
+            // The one coloured thing in the strip: which tab is showing.
+            let line = Rect::from_min_max(
+                pos2(rect.left() + 10.0, rect.bottom() - UNDERLINE),
+                pos2(rect.right() - 10.0, rect.bottom()),
+            );
+            painter.rect_filled(line, UNDERLINE / 2.0, fade(theme::SYSTEM_ACCENT));
         }
 
-        let color = fade(if look.active || look.lifted {
+        let primary = fade(if raised || look.hovered {
             theme::text_primary()
         } else {
             theme::text_secondary()
         });
-        let icon_rect = Rect::from_center_size(
-            pos2(rect.left() + 12.0 + ICON_SIZE / 2.0, rect.center().y + 1.0),
-            Vec2::splat(ICON_SIZE),
-        );
-        icons::paint(painter, icon_rect, tab.icon, color);
-
+        let secondary = fade(theme::text_secondary());
+        let weight = if raised { kit::SEMIBOLD } else { kit::MEDIUM };
         let close_rect = close_rect(rect);
-        let text_left = icon_rect.right() + 7.0;
-        let text_clip = Rect::from_min_max(
-            pos2(text_left, rect.top()),
-            pos2(close_rect.left() - 2.0, rect.bottom()),
-        );
-        painter.with_clip_rect(text_clip).text(
-            pos2(text_left, rect.center().y + 1.0),
-            Align2::LEFT_CENTER,
-            &tab.title,
-            FontId::proportional(12.0),
-            color,
-        );
+        let right = close_rect.left() - 6.0;
+        let cy = rect.center().y - 1.0;
+        let narrow = rect.width() < Detail::SYMBOL_WIDTH;
+        let mut x = rect.left() + if narrow { 9.0 } else { 12.0 };
+
+        match &tab.chart {
+            Some(chart) => {
+                let detail = Detail::for_width(rect.width());
+                let segments = self.segments(ui.ctx(), tab, chart, detail);
+                let logo =
+                    Rect::from_center_size(pos2(x + LOGO_SIZE / 2.0, cy), Vec2::splat(LOGO_SIZE));
+                kit::chart_icon(ui, logo, &chart.symbol, chart.source, false);
+                x = logo.right() + 8.0;
+                if detail > Detail::Logo {
+                    let text = kit::galley(
+                        ui,
+                        &segments.text,
+                        TEXT_SIZE,
+                        weight,
+                        primary,
+                        (right - x).max(0.0),
+                    );
+                    painter.galley(pos2(x, cy - text.size().y / 2.0), text.clone(), primary);
+                    x += text.size().x;
+
+                    if let Some(block) = &segments.price {
+                        x += 9.0;
+                        x = self.paint_price(
+                            ui,
+                            painter,
+                            (x, cy, right),
+                            (tab.id, chart, detail),
+                            block,
+                            (primary, weight, look.opacity),
+                        );
+                    }
+                    if let Some(layout) = &segments.layout
+                        && right - x > 48.0
+                    {
+                        x += 9.0;
+                        let slash = kit::galley(
+                            ui,
+                            "/",
+                            TEXT_SIZE,
+                            kit::REGULAR,
+                            secondary.gamma_multiply(0.7),
+                            12.0,
+                        );
+                        painter.galley(
+                            pos2(x, cy - slash.size().y / 2.0),
+                            slash.clone(),
+                            secondary,
+                        );
+                        x += slash.size().x + 9.0;
+                        let name = kit::galley(
+                            ui,
+                            layout,
+                            TEXT_SIZE,
+                            kit::REGULAR,
+                            secondary,
+                            (right - x).max(0.0),
+                        );
+                        painter.galley(pos2(x, cy - name.size().y / 2.0), name, secondary);
+                    }
+                }
+            }
+            None => {
+                let icon_rect =
+                    Rect::from_center_size(pos2(x + ICON_SIZE / 2.0, cy), Vec2::splat(ICON_SIZE));
+                icons::paint(painter, icon_rect, tab.icon, primary);
+                x = icon_rect.right() + 7.0;
+                if narrow {
+                    // Just the glyph: the tooltip names the tab.
+                } else {
+                    let text = kit::galley(
+                        ui,
+                        &tab.title,
+                        TEXT_SIZE,
+                        weight,
+                        primary,
+                        (right - x).max(0.0),
+                    );
+                    painter.galley(pos2(x, cy - text.size().y / 2.0), text, primary);
+                }
+            }
+        }
 
         if look.hovered || look.close_hovered || look.active {
             if look.close_hovered {
@@ -540,11 +886,117 @@ impl TabBar<'_> {
                 painter,
                 Rect::from_center_size(close_rect.center(), Vec2::splat(9.0)),
                 Icon::Xmark,
-                color,
+                primary,
             );
         }
     }
+
+    /// `▲ 142.92 +0.96%` from `x`; returns where the next part starts. The block keeps the
+    /// widest it has been for this market and width class, so the layout name after it does
+    /// not shuffle as the digits change.
+    fn paint_price(
+        &self,
+        ui: &Ui,
+        painter: &Painter,
+        (x, cy, right): (f32, f32, f32),
+        (tab, chart, detail): (TabId, &TabChart, Detail),
+        block: &tab_title::PriceBlock,
+        (ink, weight, opacity): (Color32, f32, f32),
+    ) -> f32 {
+        let dim = if block.stale { 0.55 } else { 1.0 };
+        let tone = match block.direction {
+            Direction::Up => theme::UP,
+            Direction::Down => theme::DOWN,
+            Direction::Flat => theme::text_secondary(),
+        }
+        .gamma_multiply(opacity * dim);
+        let ink = ink.gamma_multiply(dim);
+        let clip = painter.with_clip_rect(Rect::from_min_max(
+            pos2(x, cy - 12.0),
+            pos2(right, cy + 12.0),
+        ));
+        let mut at = x;
+        // The arrow's room is kept when the price is unchanged, so a tick across zero is not a jump.
+        const ARROW: f32 = 7.0;
+        let mid = pos2(at + ARROW / 2.0, cy);
+        match block.direction {
+            Direction::Up => {
+                clip.add(egui::Shape::convex_polygon(
+                    vec![
+                        pos2(mid.x, mid.y - 3.0),
+                        pos2(mid.x + 3.5, mid.y + 3.0),
+                        pos2(mid.x - 3.5, mid.y + 3.0),
+                    ],
+                    tone,
+                    Stroke::NONE,
+                ));
+            }
+            Direction::Down => {
+                clip.add(egui::Shape::convex_polygon(
+                    vec![
+                        pos2(mid.x, mid.y + 3.0),
+                        pos2(mid.x + 3.5, mid.y - 3.0),
+                        pos2(mid.x - 3.5, mid.y - 3.0),
+                    ],
+                    tone,
+                    Stroke::NONE,
+                ));
+            }
+            Direction::Flat => {}
+        }
+        at += ARROW + 4.0;
+        let price = kit::digits(
+            ui,
+            &block.price,
+            TEXT_SIZE,
+            weight.min(kit::MEDIUM),
+            ink,
+            f32::INFINITY,
+        );
+        clip.galley(pos2(at, cy - price.size().y / 2.0), price.clone(), ink);
+        at += price.size().x;
+        if let Some(change) = &block.change {
+            at += 6.0;
+            let change = kit::digits(ui, change, TEXT_SIZE, kit::MEDIUM, tone, f32::INFINITY);
+            clip.galley(pos2(at, cy - change.size().y / 2.0), change.clone(), tone);
+            at += change.size().x;
+        }
+        let key = self
+            .id("price-width")
+            .with((tab, chart.source, &chart.symbol, detail as u8));
+        let widest = ui.ctx().data_mut(|data| {
+            let widest = data.get_temp_mut_or_insert_with(key, || 0.0f32);
+            *widest = widest.max(at - x);
+            *widest
+        });
+        x + widest
+    }
 }
+
+/// An open rename: the tab, where its field sits and what has been typed.
+#[derive(Clone)]
+struct Rename {
+    tab: TabId,
+    pos: Pos2,
+    text: String,
+    focused: bool,
+}
+
+const MOVE_NEW: &str = "Move Tab to New Window";
+const MOVE_TO: &str = "Move Tab to Window";
+
+/// Every row the tab menu can show, for sizing it.
+const MENU_ROWS: [&str; 9] = [
+    "New Tab",
+    "Close Tab",
+    "Close Other Tabs",
+    "Close Tabs to the Right",
+    "Rename Tab\u{2026}",
+    "Reset Tab Title",
+    "Tab Title",
+    MOVE_NEW,
+    MOVE_TO,
+];
 
 fn close_rect(tab: Rect) -> Rect {
     Rect::from_center_size(
@@ -585,13 +1037,18 @@ mod tests {
                 id: 1,
                 title: "BTC".to_owned(),
                 icon: Icon::Plus,
+                chart: None,
+                timeframe: "1D",
             }];
+            let quotes = WatchlistQuoteBook::default();
             strip = TabBar {
                 window: 1,
                 tabs: &tabs,
                 active: 1,
                 drag: DragView::default(),
                 other_windows: &[],
+                quotes: &quotes,
+                style: TabTitleStyle::default(),
                 update,
             }
             .show(ui)
@@ -599,6 +1056,100 @@ mod tests {
         });
         output.textures_delta.clear();
         strip
+    }
+
+    /// One frame of a strip `width` wide holding `count` tabs (every other one a chart tab whose
+    /// logo needs no network), with the tab at `active` showing. Returns the shapes painted.
+    fn paint_strip(
+        count: usize,
+        active: usize,
+        width: f32,
+        style: TabTitleStyle,
+    ) -> Vec<egui::epaint::ClippedShape> {
+        let ctx = egui::Context::default();
+        let tabs: Vec<TabView> = (0..count)
+            .map(|index| TabView {
+                id: index as u64 + 1,
+                title: format!("Tab {index}"),
+                icon: Icon::Plus,
+                chart: (index % 2 == 0).then(|| TabChart {
+                    source: crate::model::DataSource::CoinMarketCap,
+                    symbol: "A-VERY-LONG-SYMBOL-NAME/USDT".to_owned(),
+                    title: "A-VERY-LONG-SYMBOL-NAME/USDT".to_owned(),
+                    layout: Some("A layout with a rather long name".to_owned()),
+                    custom_title: None,
+                }),
+                timeframe: "1D",
+            })
+            .collect();
+        let quotes = WatchlistQuoteBook::default();
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(pos2(0.0, 0.0), vec2(width, HEIGHT))),
+            ..Default::default()
+        };
+        let mut output = ctx.run_ui(input, |ui| {
+            TabBar {
+                window: 1,
+                tabs: &tabs,
+                active: active as u64 + 1,
+                drag: DragView::default(),
+                other_windows: &[],
+                quotes: &quotes,
+                style,
+                update: None,
+            }
+            .show(ui);
+        });
+        output.textures_delta.clear();
+        output.shapes
+    }
+
+    fn accent_lines(shapes: &[egui::epaint::ClippedShape]) -> usize {
+        shapes
+            .iter()
+            .filter(|clipped| {
+                matches!(&clipped.shape, egui::Shape::Rect(rect) if rect.fill == theme::SYSTEM_ACCENT)
+            })
+            .count()
+    }
+
+    #[test]
+    fn only_the_active_tab_has_the_accent_line() {
+        for style in TabTitleStyle::ALL {
+            for width in [1400.0, 700.0, 300.0] {
+                let shapes = paint_strip(4, 1, width, style);
+                assert_eq!(accent_lines(&shapes), 1, "{style:?} at {width}");
+            }
+        }
+    }
+
+    #[test]
+    fn crowded_and_long_titles_paint_at_every_width() {
+        // Nothing panics from a roomy strip down to one that holds only a sliver, with a
+        // symbol and a layout name far longer than any tab.
+        for count in [1, 2, 12, 60] {
+            for width in [2000.0, 900.0, 400.0, 120.0] {
+                let shapes = paint_strip(count, count - 1, width, TabTitleStyle::Full);
+                assert!(!shapes.is_empty());
+            }
+        }
+    }
+
+    #[test]
+    fn tabs_squeeze_to_their_logo_before_they_run_out_of_strip() {
+        // Eleven tabs used to overflow a 1000-wide strip at the old 96-wide minimum.
+        let width = tab_width(11, 1000.0);
+        assert!((MIN_TAB_WIDTH..96.0).contains(&width), "{width}");
+        assert_eq!(Detail::for_width(width), Detail::Logo);
+        // The logo and the close button fit side by side at the narrowest.
+        assert!(
+            close_rect(Rect::from_min_size(
+                pos2(0.0, 0.0),
+                vec2(MIN_TAB_WIDTH, 36.0)
+            ))
+            .left()
+                >= 9.0 + LOGO_SIZE
+        );
     }
 
     #[test]

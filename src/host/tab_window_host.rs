@@ -322,6 +322,24 @@ impl TabWindowHost {
                     state.windows.select(tab);
                 }
                 TabBarEvent::Close(tab) => state.requests.push(TabRequest::Close(tab)),
+                TabBarEvent::CloseOthers(tab) => {
+                    let others = Self::tabs_where(&state, window, |other, _| other != tab);
+                    state
+                        .requests
+                        .extend(others.into_iter().map(TabRequest::Close));
+                }
+                TabBarEvent::CloseToRight(tab) => {
+                    let after = state
+                        .windows
+                        .window(window)
+                        .and_then(|window| window.tabs.iter().position(|other| *other == tab));
+                    let right = Self::tabs_where(&state, window, |_, index| {
+                        after.is_some_and(|after| index > after)
+                    });
+                    state
+                        .requests
+                        .extend(right.into_iter().map(TabRequest::Close));
+                }
                 TabBarEvent::New => state.requests.push(TabRequest::New(window)),
                 TabBarEvent::OpenSettings => state.requests.push(TabRequest::OpenSettings),
                 TabBarEvent::MoveToNewWindow(tab) => {
@@ -344,10 +362,34 @@ impl TabWindowHost {
                         hidden: false,
                     });
                 }
-                // Not about tabs: the window answers it with the update host.
-                TabBarEvent::UpdateClicked => {}
+                // Not about the window host: the window answers these itself (the update host,
+                // and the titles, which belong to the tab and the app).
+                TabBarEvent::UpdateClicked
+                | TabBarEvent::SetCustomTitle { .. }
+                | TabBarEvent::SetTitleStyle(_) => {}
             }
         }
+    }
+
+    /// The tabs of `window` for which `keep(tab, index)` holds, in strip order.
+    fn tabs_where(
+        state: &State,
+        window: WindowId,
+        keep: impl Fn(TabId, usize) -> bool,
+    ) -> Vec<TabId> {
+        state
+            .windows
+            .window(window)
+            .map(|window| {
+                window
+                    .tabs
+                    .iter()
+                    .enumerate()
+                    .filter(|(index, tab)| keep(**tab, *index))
+                    .map(|(_, tab)| *tab)
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     fn detach(state: &mut State, tab: TabId, position: Option<Pos2>) -> Option<WindowId> {
