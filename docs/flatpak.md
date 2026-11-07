@@ -13,7 +13,7 @@ published, so do not rename it.
 | `packaging/flatpak/es.nico.degenview.metainfo.xml` | AppStream metadata; the `0.0.0` release is a placeholder |
 | `.github/workflows/flatpak.yml` | Reusable workflow that produces the bundle |
 | `.github/workflows/release.yml` | Calls it for a tag; the `release` job waits for it, so the bundle is attached before the release is published (releases are immutable) |
-| `.github/workflows/flatpak-check.yml` | Calls it on pull requests that touch the packaging, `Cargo.lock` or `Cargo.toml` |
+| `.github/workflows/flatpak-check.yml` | Calls it on pull requests that touch the packaging, weekly on `main`, and on demand; not on `Cargo.toml`/`Cargo.lock` changes (see below) |
 
 The workflow runs in two jobs. `prepare` runs on the plain runner: it generates
 `cargo-sources.json` from `Cargo.lock` with a pinned `flatpak-cargo-generator.py` (a Flatpak build
@@ -23,6 +23,11 @@ into copies of the manifest and metainfo, and lints them with `desktop-file-vali
 `freedesktop-26.08` container and bundles the result, once per CPU in a matrix (pull requests build x86_64 only, `arm64: false`; a release builds both): x86_64 on
 `ubuntu-latest` and aarch64 natively on GitHub's free `ubuntu-24.04-arm` runner (the container
 image is multi-arch; no emulation). `cargo-sources.json` is the same for both and is never committed.
+
+The check is not triggered by dependency changes: the build has no cache and takes 10-20 minutes,
+and a crate that builds on the host nearly always builds in the sandbox. The weekly run on `main`
+(Mondays) and the release build catch the rare one that does not. Dispatch `Flatpak check` by hand
+on a pull request that adds a crate with native code (a `-sys` crate, `bindgen`, a C library).
 
 Two values must move together when the runtime changes: `runtime-version` in the manifest and the
 container tag in `flatpak.yml`. The `rust-stable` extension must ship rustc at least as new as
