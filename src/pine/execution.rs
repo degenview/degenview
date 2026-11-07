@@ -465,16 +465,62 @@ mod tests {
     }
 
     #[test]
-    fn a_failure_clears_once_the_script_runs_clean() {
+    fn a_failed_script_stays_stopped_and_keeps_the_bars_before_it() {
         let mut controller = controller(
             "//@version=6\nindicator(\"T\")\nif bar_index == 1\n    runtime.error(\"boom\")\nplot(close)",
         );
-        assert!(controller.update(&history(2), None, AFTER).error.is_some());
-        // Another closed bar arrives and runs without failing.
+        let failed = controller.update(&history(2), None, AFTER);
+        assert_eq!(
+            failed.error.as_ref().map(|e| e.message.as_str()),
+            Some("boom")
+        );
+        // The bar it failed on is not shown; the one before it is.
+        assert_eq!(failed.output.bar_count, 1);
+        assert_eq!(failed.output.plots[0].values, [Some(10.0)]);
+        // Another closed bar arrives: the script does not run again, and it still says why.
         let next = controller.update(&history(3), None, AFTER);
-        assert!(next.error.is_none(), "{:?}", next.error);
-        // And it stays clear for an update that changes nothing.
-        assert!(controller.update(&history(3), None, AFTER).error.is_none());
+        assert_eq!(
+            next.error.as_ref().map(|e| e.message.as_str()),
+            Some("boom")
+        );
+        assert_eq!(next.output.bar_count, 1);
+        assert_eq!(next.output.plots[0].values, [Some(10.0)]);
+        assert!(!next.rebuilt);
+    }
+
+    #[test]
+    fn a_script_that_fails_on_a_live_tick_does_not_start_again() {
+        let mut controller = controller(
+            "//@version=6\nindicator(\"T\")\nif barstate.isrealtime and close > 12\n    runtime.error(\"late\")\nplot(close)",
+        );
+        let with_live = |close: f64| {
+            let mut bars = history(3);
+            bars.push(bar(3 * 60_000, close));
+            bars
+        };
+        // Three closed bars, then a live one that is fine.
+        let first = controller.update(&with_live(11.0), None, 200_000);
+        assert!(first.error.is_none(), "{:?}", first.error);
+        // A tick that makes it fail.
+        let failed = controller.update(&with_live(13.0), None, 210_000);
+        assert_eq!(
+            failed.error.as_ref().map(|e| e.message.as_str()),
+            Some("late")
+        );
+        assert_eq!(failed.output.bar_count, 3);
+        // The price comes back, so the condition is false again, and then the bar closes: the
+        // script stays stopped.
+        let back = controller.update(&with_live(11.0), None, 220_000);
+        assert_eq!(
+            back.error.as_ref().map(|e| e.message.as_str()),
+            Some("late")
+        );
+        let closed = controller.update(&with_live(11.0), None, 240_000);
+        assert_eq!(
+            closed.error.as_ref().map(|e| e.message.as_str()),
+            Some("late")
+        );
+        assert_eq!(closed.output.bar_count, 3);
     }
 
     #[test]

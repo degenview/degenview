@@ -102,6 +102,8 @@ pub struct Session {
     intrabar_objects: Vec<IntrabarObject>,
     /// Scratch for the key a `varip` name is kept under, so reading it does not allocate.
     intrabar_key: String,
+    /// Set when the script fails at run time: it stays stopped, as in TradingView, until `reset`.
+    halted: Option<Halted>,
     /// For each script type with a `varip` field, those fields' names. Empty for most scripts.
     varip_fields: Vec<(String, Vec<String>)>,
     pub last_open_time: Option<i64>,
@@ -395,6 +397,7 @@ impl Session {
             intrabar: FastMap::default(),
             intrabar_objects: Vec::new(),
             intrabar_key: String::new(),
+            halted: None,
             varip_fields,
             last_open_time: None,
             security_globals: None,
@@ -457,6 +460,7 @@ impl Session {
         self.working_is_committed = false;
         self.intrabar.clear();
         self.intrabar_objects.clear();
+        self.halted = None;
         self.last_open_time = None;
         self.last_committed_open_time = None;
         self.once_per_bar_ledger.clear();
@@ -598,6 +602,10 @@ impl Session {
         is_last: bool,
         is_last_history: Option<bool>,
     ) -> Result<BarFlags, RunError> {
+        // A script that failed stays stopped: later bars do not run it (TradingView halts it too).
+        if let Some(halted) = &self.halted {
+            return Err(RunError::Script(halted.error.clone()));
+        }
         let owns_deadline = self.deadline_at.is_none();
         if owns_deadline {
             self.start_deadline();
@@ -719,12 +727,16 @@ impl Session {
         let outcome = self.run(&statements, &mut context);
         self.program.statements = statements;
         if let Err(error) = outcome {
-            if replaying {
-                // The previous bars' state was consumed in place, so a failed historical bar cannot be
-                // skipped: the run starts over from nothing.
-                self.committed = self.fresh_state();
-                self.working = self.committed.clone();
-                self.working_is_committed = false;
+            if error.category == DiagnosticCategory::Cancellation {
+                // A run somebody stopped is not a failure of the script. Its state is a partial bar,
+                // so a replay starts over; anything else just drops it with the next tick.
+                if replaying {
+                    self.committed = self.fresh_state();
+                    self.working = self.committed.clone();
+                    self.working_is_committed = false;
+                }
+            } else {
+                self.halt(&error);
             }
             return Err(RunError::Script(error));
         }
@@ -749,6 +761,20 @@ impl Session {
         }
         self.last_open_time = Some(open_time);
         Ok(flags)
+    }
+
+    /// Stops the script on `error`. The output keeps the bars before the failing one: when a
+    /// history replay failed, `working` holds that bar half-run and `committed` is behind, so
+    /// `output` leaves the bar out; otherwise `committed` is the state before it.
+    fn halt(&mut self, error: &Diagnostic) {
+        let completed_bars = self.working.bar_index.max(0) as usize;
+        if !self.working_is_committed {
+            self.working = self.committed.clone();
+        }
+        self.halted = Some(Halted {
+            error: error.clone(),
+            completed_bars,
+        });
     }
 
     /// Makes `committed` current when the last historical bars left their state only in `working`.
@@ -798,12 +824,23 @@ impl Session {
             .filter(|lf| w.lines.contains_key(&lf.line1) && w.lines.contains_key(&lf.line2))
             .cloned()
             .collect();
+        // A halted script shows the bars before the one it failed on.
+        let bar_count = match &self.halted {
+            Some(halted) => halted.completed_bars.min((w.bar_index + 1) as usize),
+            None => (w.bar_index + 1) as usize,
+        };
         VisualOutput {
             overlay: self.program.declaration.overlay,
-            bar_count: (w.bar_index + 1) as usize,
+            bar_count,
             plots: sorted_by_id(&w.plots)
                 .into_iter()
-                .map(super::outputs::PlotOutput::shifted)
+                .map(|mut plot| {
+                    if self.halted.is_some() {
+                        plot.values.truncate(bar_count);
+                        plot.colors.truncate(bar_count);
+                    }
+                    plot.shifted()
+                })
                 .collect(),
             hlines: sorted_by_id(&w.hlines),
             markers: sorted_by_id(&w.markers)
@@ -3454,6 +3491,13 @@ fn history_builtin_names(
         }
     }
     names
+}
+
+/// A script that stopped on a runtime error.
+struct Halted {
+    error: Diagnostic,
+    /// How many bars ran before the failing one.
+    completed_bars: usize,
 }
 
 /// What a tick leaves for the next one on a bar that has not closed (see

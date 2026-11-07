@@ -62,9 +62,9 @@ Severity: **bug** = the engine computes something TradingView does not and a scr
 | 8 | bug | scopes | `f()[n]` / `ta.x()[n]` use global offsets; chained `[]` collide; offset 0 skips the trail | audit | — |
 | 9 | bug | ta | `ta.atr` takes the previous close from its own call history | audit | — |
 | 10 | diff | ta | `ta.rsi` is a simple average, not Wilder's RMA | re-read, needs TV | — |
-| 11 | bug | errors | A failed historical run resets state; the script resumes at `bar_index` 0 | audit | PR 6 |
-| 12 | bug | errors | A failed closing run does not commit but clears `live_open_time` | audit | PR 6 |
-| 13 | diff | errors | A realtime runtime error does not halt the script | audit | PR 6 |
+| 11 | bug | errors | A failed historical run resets state; the script resumes at `bar_index` 0 | audit, run (test) | PR 6 — **done** |
+| 12 | bug | errors | A failed closing run does not commit but clears `live_open_time` | audit | PR 6 — **done** (the script no longer runs again) |
+| 13 | diff | errors | A realtime runtime error does not halt the script | audit, run (test) | PR 6 — **done** |
 | 14 | diff | strategy | The broker is rolled back on unconfirmed ticks | audit | — |
 | 15 | gap | strategy | `calc_on_order_fills` and `close_entries_rule = "ANY"` accepted and silently dropped | audit | PR 3 (warning) — **done** |
 | 16 | diff | strategy | `process_orders_on_close` fills market orders only | audit | — |
@@ -81,7 +81,7 @@ Severity: **bug** = the engine computes something TradingView does not and a scr
 | 27 | gap | strategy | `strategy.exit` trailing arguments raise `PINE9005` | audit | — (`trail_offset` alone is meaningless in TradingView too) |
 | 28 | gap | type check | A history offset's type is not checked at compile time | audit | — (needs the corpus, see PR 4 note) |
 | 29 | gap | strategy | No margin model; `max_*_count` not capped at TradingView's limits | audit | — |
-| 30 | diff | controller | Stale `last_valid` output shows after a failed or new run | audit | PR 6 |
+| 30 | diff | controller | Stale `last_valid` output shows after a failed or new run | audit | — (deliberate, see PR 6 note) |
 | 31 | gap | perf | Every tick deep-clones `RuntimeState`; every variable's history is pushed every bar | audit | — (see PR 4 note) |
 
 ### Strategy
@@ -388,7 +388,16 @@ change except on the workload the PR targets, and PRs touching state or rollback
    Inferred, not confirmed against TradingView: a `varip` array keeps its contents, not only its handle.
    Not covered: a `varip` variable holding a drawing (lines, labels, boxes, tables and the like are not
    followed and roll back with the tick).
-6. A runtime error halts the script (11, 12, 13, 30).
+6. A runtime error halts the script (11, 12, 13). Done: `Session::halted` is set when a run fails (not when it is
+   cancelled); `execute` then returns the stored error without running, `reset` (every rebuild, input change,
+   symbol or timeframe change, empty snapshot) clears it. `output()` shows the bars before the failing one
+   (`bar_count`, plots truncated), where a failed replay used to leave an empty chart. A failure on a live tick
+   keeps `committed` as the state, so nothing half-run is shown. Behaviour change worth knowing: a run that
+   failed on a transient condition (for example `request.security` to a finer timeframe before its candles
+   have loaded, `PINE4021`) used to be retried by the next appended bar; it now stays stopped until the chart
+   rebuilds, as in TradingView. Not changed: `ChartCard` still shows the last valid output of the same chart
+   while a failed run is current (`chart_card.rs`, finding 30): it is what keeps a chart from blanking while
+   a script is being edited, and it cannot be checked without the app.
 
 ## Not verified
 
