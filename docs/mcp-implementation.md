@@ -216,7 +216,7 @@ A later remote-access mode would require a separate security design, HTTPS, prop
 ## Remote access: what exists
 
 The transport for listening beyond loopback exists, with no way to turn it on from Settings yet
-(`McpSettings.bind` is read from the store). It is the first of four steps; the others are in
+(`McpSettings.bind`, a client's `remote_allowed` and the ceiling are read from the store). Steps 1 and 2 of four; the others are in
 [remaining work](mcp-remaining-work.md). Until they land, treat a non-loopback bind as unfinished.
 
 This deliberately takes a smaller step than the paragraph above asks for: TLS and the existing
@@ -238,6 +238,17 @@ that expects OAuth discovery will not work with it.
   loopback. Origin rejection, the bearer check, the permission checks, rate limits and the confirmation
   step apply unchanged, and run after TLS.
 - A client that does not finish the handshake is dropped after 10 s and its connection slot freed.
+- Per client: `remote_allowed` (off, so every existing credential stays loopback-only) and optional
+  `allowed_cidrs` (empty: any address). The server records the TCP peer of each connection
+  (`PeerAddr`) and the bearer check judges that, never `X-Forwarded-For` or any other header. A valid
+  token from an address it may not be used from gets the same 401 as an unknown token, draws on the
+  failed-auth limit, and leaves no "last used" mark. A peer the server cannot name counts as remote.
+- A remote ceiling (`McpSettings.remote_ceiling`, default: all read-only permissions) caps every
+  client with `remote_allowed`. It follows the credential, not the request: a token that may leave the
+  machine is no stronger when used on it. That is simpler and safer than judging each call, at the cost
+  that a remote-enabled client is also held to the ceiling when used locally. Create a second,
+  local-only credential for that.
+- Both are sealed, and stored only when not default (see `mcp::seal`).
 - `bind` is part of the seal, and is written only when it is not loopback, so a seal made before this
   existed still verifies.
 

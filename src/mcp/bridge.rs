@@ -608,6 +608,8 @@ mod tests {
                 permissions: PermissionSet::of(permissions.iter().copied()),
                 created_at_ms: 0,
                 last_used_ms: None,
+                remote_allowed: false,
+                allowed_cidrs: Vec::new(),
             }],
             PermissionSet::of(Permission::ALL),
         );

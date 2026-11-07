@@ -6,6 +6,7 @@
 
 use crate::mcp::limits::retry_after_secs;
 use crate::mcp::state::McpShared;
+use crate::mcp::transport::PeerAddr;
 use axum::extract::{Request, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::middleware::Next;
@@ -96,7 +97,8 @@ pub async fn require_bearer(
     mut request: Request,
     next: Next,
 ) -> Response {
-    let identity = bearer_token(&request).and_then(|token| shared.authenticate(token));
+    let peer = request.extensions().get::<PeerAddr>().map(|peer| peer.0);
+    let identity = bearer_token(&request).and_then(|token| shared.authenticate_from(token, peer));
     match identity {
         Some(identity) => match shared.note_client_call(&identity.id) {
             Ok(()) => {

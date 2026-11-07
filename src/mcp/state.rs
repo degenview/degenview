@@ -14,6 +14,7 @@ use crate::model::watchlist::now_ms;
 use crate::pine_studio::store::ScriptStore;
 use crate::service::SearchResult;
 use crate::service::watchlist_quotes::{WatchlistQuoteBook, WatchlistQuoteCoordinator};
+use std::net::IpAddr;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
 use std::time::{Duration, Instant};
@@ -83,6 +84,8 @@ impl McpStatus {
 struct Config {
     clients: Vec<McpClient>,
     global: PermissionSet,
+    /// The most a client with remote access may do (`McpSettings::remote_ceiling`).
+    remote_ceiling: PermissionSet,
 }
 
 /// A request's demand on the quote feed; released when dropped, even if the request is cancelled.
@@ -132,7 +135,10 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 impl McpShared {
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
-            config: RwLock::new(Config::default()),
+            config: RwLock::new(Config {
+                remote_ceiling: crate::model::mcp::default_remote_ceiling(),
+                ..Config::default()
+            }),
             status: Mutex::new(McpStatus::Disabled),
             generation: AtomicU64::new(1),
             usage_dirty: AtomicBool::new(false),
@@ -164,6 +170,10 @@ impl McpShared {
         self.config
             .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    pub fn set_remote_ceiling(&self, ceiling: PermissionSet) {
+        self.write().remote_ceiling = ceiling;
     }
 
     pub fn replace(&self, clients: Vec<McpClient>, global: PermissionSet) {
@@ -223,8 +233,19 @@ impl McpShared {
     /// Resolves a bearer token to its client. Compares against every stored verifier in
     /// constant time, so the response time does not reveal how much of a token matched.
     /// Records the use for the "last used" column.
+    ///
+    /// `peer` is the address the request came from. A valid token from an address its client may
+    /// not be used from is refused exactly like an unknown token, so the answer never says that
+    /// the token was right. `None` (unknown) counts as remote.
+    pub fn authenticate_from(&self, token: &str, peer: Option<IpAddr>) -> Option<ClientIdentity> {
+        self.authenticate_with(token, peer, || {})
+    }
+
+    /// [`Self::authenticate_from`] a client on this machine. Tests only: the server always knows
+    /// the peer.
+    #[cfg(test)]
     pub fn authenticate(&self, token: &str) -> Option<ClientIdentity> {
-        self.authenticate_with(token, || {})
+        self.authenticate_from(token, Some(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)))
     }
 
     /// [`Self::authenticate`] with a hook that runs after the match, while no lock is held.
@@ -234,7 +255,12 @@ impl McpShared {
     /// the list (a revocation shifts positions), and the verifier is checked again against
     /// whichever client now has that id. So a token only ever yields the client whose verifier
     /// matched it, or nothing once that client is gone or its credential was replaced.
-    fn authenticate_with(&self, token: &str, between: impl FnOnce()) -> Option<ClientIdentity> {
+    fn authenticate_with(
+        &self,
+        token: &str,
+        peer: Option<IpAddr>,
+        between: impl FnOnce(),
+    ) -> Option<ClientIdentity> {
         let presented = crate::mcp::auth::verifier_hex(token);
         let mut matched: Option<String> = None;
         {
@@ -253,6 +279,11 @@ impl McpShared {
         let client = config.clients.iter_mut().find(|client| {
             client.id == id && crate::mcp::auth::verifiers_match(&client.verifier, &presented)
         })?;
+        // After the verifier, so the order of checks is not an oracle for which tokens exist;
+        // before any use is recorded, so a refused address leaves no trace on the client.
+        if !client.accepts_peer(peer) {
+            return None;
+        }
         client.last_used_ms = Some(now_ms());
         self.usage_dirty.store(true, Ordering::Release);
         Some(ClientIdentity {
@@ -269,7 +300,7 @@ impl McpShared {
             .clients
             .iter()
             .find(|client| client.id == client_id)
-            .map(|client| client.effective(&config.global))
+            .map(|client| client.effective(&config.global, &config.remote_ceiling))
             .unwrap_or_default()
     }
 
@@ -412,7 +443,110 @@ mod tests {
             permissions: PermissionSet::of(permissions.iter().copied()),
             created_at_ms: 0,
             last_used_ms: None,
+            remote_allowed: false,
+            allowed_cidrs: Vec::new(),
         }
+    }
+
+    fn peer(text: &str) -> Option<IpAddr> {
+        Some(text.parse().unwrap())
+    }
+
+    fn remote_client(id: &str, token: &str, cidrs: &[&str]) -> McpClient {
+        McpClient {
+            remote_allowed: true,
+            allowed_cidrs: cidrs
+                .iter()
+                .map(|c| crate::model::mcp::Cidr::parse(c).unwrap())
+                .collect(),
+            ..client(
+                id,
+                token,
+                &[Permission::ChartsRead, Permission::ChartsCreate],
+            )
+        }
+    }
+
+    #[test]
+    fn a_valid_token_from_an_address_it_may_not_use_is_refused_like_an_unknown_one() {
+        let shared = McpShared::new();
+        shared.replace(
+            vec![
+                client("local", "token-local", &[Permission::ChartsRead]),
+                remote_client("lan", "token-lan", &["192.168.1.0/24"]),
+                remote_client("open", "token-open", &[]),
+            ],
+            PermissionSet::everything(),
+        );
+        let from = |token, at| shared.authenticate_from(token, at).map(|i| i.id);
+        // A credential without remote access works from this machine only.
+        assert_eq!(
+            from("token-local", peer("127.0.0.1")).as_deref(),
+            Some("local")
+        );
+        assert_eq!(from("token-local", peer("::1")).as_deref(), Some("local"));
+        assert_eq!(from("token-local", peer("192.168.1.9")), None);
+        // With remote access: inside its ranges, from anywhere when it has none.
+        assert_eq!(
+            from("token-lan", peer("192.168.1.9")).as_deref(),
+            Some("lan")
+        );
+        assert_eq!(from("token-lan", peer("203.0.113.9")), None);
+        assert_eq!(from("token-lan", peer("127.0.0.1")).as_deref(), Some("lan"));
+        assert_eq!(
+            from("token-open", peer("203.0.113.9")).as_deref(),
+            Some("open")
+        );
+        // An unknown peer is a remote one.
+        assert_eq!(from("token-open", None), None);
+        assert_eq!(from("token-local", None), None);
+        // A wrong token from an allowed address is no better off.
+        assert_eq!(from("nope", peer("192.168.1.9")), None);
+    }
+
+    #[test]
+    fn a_refused_address_leaves_no_trace_on_the_client() {
+        let shared = McpShared::new();
+        shared.replace(
+            vec![client("a", "token-a", &[Permission::ChartsRead])],
+            PermissionSet::everything(),
+        );
+        assert!(
+            shared
+                .authenticate_from("token-a", peer("192.168.1.9"))
+                .is_none()
+        );
+        assert!(
+            shared.take_usage_update().is_none(),
+            "no use may be recorded"
+        );
+        assert!(shared.clients()[0].last_used_ms.is_none());
+    }
+
+    #[test]
+    fn the_ceiling_caps_a_remote_client_and_follows_the_setting() {
+        let shared = McpShared::new();
+        shared.replace(
+            vec![
+                remote_client("remote", "token-r", &[]),
+                client(
+                    "local",
+                    "token-l",
+                    &[Permission::ChartsRead, Permission::ChartsCreate],
+                ),
+            ],
+            PermissionSet::everything(),
+        );
+        // The default ceiling is reads only.
+        assert!(shared.allows("remote", Permission::ChartsRead));
+        assert!(!shared.allows("remote", Permission::ChartsCreate));
+        assert!(shared.allows("local", Permission::ChartsCreate));
+
+        shared.set_remote_ceiling(PermissionSet::everything());
+        assert!(shared.allows("remote", Permission::ChartsCreate));
+        shared.set_remote_ceiling(PermissionSet::none());
+        assert!(shared.effective("remote").is_empty());
+        assert!(shared.allows("local", Permission::ChartsCreate));
     }
 
     #[test]
@@ -458,12 +592,16 @@ mod tests {
         );
         // Token B matches client B at position 1; then client A is revoked, so position 1
         // is now client C. The old code returned C here.
-        let identity = shared.authenticate_with("token-b", || {
-            shared.replace(
-                vec![client("b", "token-b", &[]), client("c", "token-c", &[])],
-                PermissionSet::none(),
-            );
-        });
+        let identity = shared.authenticate_with(
+            "token-b",
+            Some(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+            || {
+                shared.replace(
+                    vec![client("b", "token-b", &[]), client("c", "token-c", &[])],
+                    PermissionSet::none(),
+                );
+            },
+        );
         assert_eq!(identity.unwrap().id, "b");
         let clients = shared.clients();
         assert!(
@@ -491,17 +629,23 @@ mod tests {
             vec![client("a", "token-a", &[]), client("b", "token-b", &[])],
             PermissionSet::none(),
         );
-        let identity = shared.authenticate_with("token-b", || {
-            shared.replace(Vec::new(), PermissionSet::none())
-        });
+        let identity = shared.authenticate_with(
+            "token-b",
+            Some(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+            || shared.replace(Vec::new(), PermissionSet::none()),
+        );
         assert!(identity.is_none());
         assert!(shared.take_usage_update().is_none());
 
         // A credential replaced under the same id no longer matches the old token.
         shared.replace(vec![client("b", "token-b", &[])], PermissionSet::none());
-        let identity = shared.authenticate_with("token-b", || {
-            shared.replace(vec![client("b", "token-b2", &[])], PermissionSet::none());
-        });
+        let identity = shared.authenticate_with(
+            "token-b",
+            Some(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+            || {
+                shared.replace(vec![client("b", "token-b2", &[])], PermissionSet::none());
+            },
+        );
         assert!(identity.is_none());
     }
 

@@ -787,7 +787,7 @@ fn clients_section(ui: &mut Ui, state: &mut McpSettingsState, input: &McpSetting
 }
 
 fn client_row(ui: &mut Ui, client: &McpClient, input: &McpSettingsInput) -> bool {
-    let effective = client.effective(input.global);
+    let effective = client.effective(input.global, &input.settings.remote_ceiling);
     let blocked = client
         .permissions
         .iter()
@@ -1224,6 +1224,8 @@ mod tests {
             permissions,
             created_at_ms: 1_000,
             last_used_ms: Some(5_000),
+            remote_allowed: false,
+            allowed_cidrs: Vec::new(),
         }
     }
 

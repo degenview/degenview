@@ -12,7 +12,8 @@
 
 use crate::mcp::auth::verifiers_match;
 use crate::model::mcp::{
-    BindMode, McpClient, McpSettings, PermissionSet, default_global_permissions,
+    BindMode, Cidr, McpClient, McpSettings, PermissionSet, default_global_permissions,
+    default_remote_ceiling,
 };
 use hmac::{Hmac, Mac};
 use serde::Serialize;
@@ -32,6 +33,11 @@ struct SealedClient<'a> {
     verifier: &'a str,
     permissions: &'a PermissionSet,
     created_at_ms: i64,
+    /// Absent while false/empty, so a seal made before remote access existed still verifies.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    remote_allowed: bool,
+    #[serde(skip_serializing_if = "<[Cidr]>::is_empty")]
+    allowed_cidrs: &'a [Cidr],
 }
 
 #[derive(Serialize)]
@@ -41,9 +47,16 @@ struct Sealed<'a> {
     /// Absent while loopback, so a seal made before remote access existed still verifies.
     #[serde(skip_serializing_if = "BindMode::is_loopback")]
     bind: BindMode,
+    /// Absent while it is the default, for the same reason.
+    #[serde(skip_serializing_if = "is_default_ceiling")]
+    remote_ceiling: &'a PermissionSet,
     require_confirmation: bool,
     global: &'a PermissionSet,
     clients: Vec<SealedClient<'a>>,
+}
+
+fn is_default_ceiling(ceiling: &&PermissionSet) -> bool {
+    **ceiling == default_remote_ceiling()
 }
 
 /// Lowercase hex HMAC-SHA-256 of the trust state, in the order it is stored.
@@ -57,6 +70,7 @@ pub fn seal(
         enabled: settings.enabled,
         port: settings.port,
         bind: settings.bind,
+        remote_ceiling: &settings.remote_ceiling,
         require_confirmation: settings.require_confirmation,
         global,
         clients: clients
@@ -67,6 +81,8 @@ pub fn seal(
                 verifier: &client.verifier,
                 permissions: &client.permissions,
                 created_at_ms: client.created_at_ms,
+                remote_allowed: client.remote_allowed,
+                allowed_cidrs: &client.allowed_cidrs,
             })
             .collect(),
     };
@@ -137,6 +153,8 @@ mod tests {
             permissions: PermissionSet::of([Permission::ChartsRead]),
             created_at_ms: 5,
             last_used_ms: None,
+            remote_allowed: false,
+            allowed_cidrs: Vec::new(),
         }
     }
 
@@ -177,6 +195,7 @@ mod tests {
                 enabled: true,
                 port: 9001,
                 bind,
+                remote_ceiling: &default_remote_ceiling(),
                 require_confirmation: true,
                 global: &default_global_permissions(),
                 clients: Vec::new(),
@@ -184,6 +203,22 @@ mod tests {
             .unwrap()
         };
         assert!(!sealed(BindMode::Loopback).contains("bind"));
+        assert!(!sealed(BindMode::Loopback).contains("ceiling"));
+        // Nor does a client that has no remote access.
+        let plain = serde_json::to_string(&SealedClient {
+            id: "a",
+            name: "a",
+            verifier: "v",
+            permissions: &PermissionSet::none(),
+            created_at_ms: 1,
+            remote_allowed: false,
+            allowed_cidrs: &[],
+        })
+        .unwrap();
+        assert!(
+            !plain.contains("remote") && !plain.contains("llowed"),
+            "{plain}"
+        );
         let lan = BindMode::interface("10.0.0.7".parse().unwrap()).unwrap();
         assert!(sealed(lan).contains(r#""bind":"10.0.0.7""#));
     }
@@ -240,6 +275,14 @@ mod tests {
             &global,
             &clients
         ));
+        assert!(changed(
+            &McpSettings {
+                remote_ceiling: PermissionSet::everything(),
+                ..settings.clone()
+            },
+            &global,
+            &clients
+        ));
         assert!(changed(&settings, &PermissionSet::everything(), &clients));
 
         let edit = |edit: &dyn Fn(&mut McpClient)| {
@@ -260,6 +303,16 @@ mod tests {
             &edit(&|c| c.permissions = PermissionSet::everything())
         ));
         assert!(changed(&settings, &global, &edit(&|c| c.created_at_ms = 6)));
+        assert!(changed(
+            &settings,
+            &global,
+            &edit(&|c| c.remote_allowed = true)
+        ));
+        assert!(changed(
+            &settings,
+            &global,
+            &edit(&|c| c.allowed_cidrs = vec![Cidr::parse("10.0.0.0/8").unwrap()])
+        ));
 
         // Order and removal count too.
         let mut reversed = clients.clone();

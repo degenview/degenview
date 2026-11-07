@@ -125,6 +125,8 @@ mod tests {
             permissions: PermissionSet::of([Permission::ChartsRead]),
             created_at_ms: 10,
             last_used_ms: None,
+            remote_allowed: false,
+            allowed_cidrs: Vec::new(),
         }
     }
 

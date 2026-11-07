@@ -26,6 +26,11 @@ use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 use tower::limit::ConcurrencyLimitLayer;
 
+/// Where a request came from, put in its extensions by [`serve_with`] for the bearer check. The
+/// address of the TCP peer, not anything the request says about itself.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PeerAddr(pub std::net::IpAddr);
+
 pub const MAX_BODY_BYTES: usize = 256 * 1024;
 const MAX_CONCURRENT_REQUESTS: usize = 16;
 /// Requests in flight before any token is looked at. Bounds what a flood of bad credentials can
@@ -151,7 +156,7 @@ pub async fn serve_with(
         // Reap finished connections so the set does not grow with every request.
         while connections.try_join_next().is_some() {}
         let stream = match accepted {
-            Ok((stream, _)) => stream,
+            Ok((stream, peer)) => (stream, peer.ip()),
             Err(_) => {
                 // Out of descriptors or a connection reset before accept: not fatal. Back off
                 // briefly so a persistent error does not spin.
@@ -159,6 +164,7 @@ pub async fn serve_with(
                 continue;
             }
         };
+        let (stream, peer) = stream;
         let Ok(permit) = permits.clone().try_acquire_owned() else {
             drop(stream);
             continue;
@@ -170,7 +176,7 @@ pub async fn serve_with(
         connections.spawn(async move {
             let _permit = permit;
             match tls {
-                None => serve_connection(stream, app, limits, cancel).await,
+                None => serve_connection(stream, peer, app, limits, cancel).await,
                 Some(acceptor) => {
                     let handshake =
                         tokio::time::timeout(limits.tls_handshake_timeout, acceptor.accept(stream));
@@ -183,7 +189,7 @@ pub async fn serve_with(
                             _ => return,
                         },
                     };
-                    serve_connection(stream, app, limits, cancel).await;
+                    serve_connection(stream, peer, app, limits, cancel).await;
                 }
             }
         });
@@ -193,6 +199,7 @@ pub async fn serve_with(
 
 async fn serve_connection<S>(
     stream: S,
+    peer: std::net::IpAddr,
     app: Router,
     limits: ConnectionLimits,
     cancel: CancellationToken,
@@ -203,7 +210,10 @@ async fn serve_connection<S>(
     use tower::Service;
 
     let service = hyper::service::service_fn(move |request: axum::http::Request<_>| {
-        let request = request.map(axum::body::Body::new);
+        let mut request = request.map(axum::body::Body::new);
+        // Set here, over anything a client could have put in the request's extensions (it cannot:
+        // they are not part of HTTP), so the bearer check reads the real socket peer.
+        request.extensions_mut().insert(PeerAddr(peer));
         app.clone().call(request)
     });
     let mut builder = hyper::server::conn::http1::Builder::new();

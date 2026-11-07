@@ -455,6 +455,39 @@ pub enum McpAction {
     },
     /// Replaces the global cap at once.
     SetGlobalPermissions(PermissionSet),
+    /// Lets a client be used from other machines, or takes that away.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "the remote-access Settings section sends it (step 4)"
+        )
+    )]
+    SetClientRemote {
+        client_id: String,
+        allowed: bool,
+    },
+    /// Replaces the ranges a remote client may call from (empty: any).
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "the remote-access Settings section sends it (step 4)"
+        )
+    )]
+    SetClientCidrs {
+        client_id: String,
+        cidrs: Vec<Cidr>,
+    },
+    /// Replaces the most a remote-capable client may do.
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "the remote-access Settings section sends it (step 4)"
+        )
+    )]
+    SetRemoteCeiling(PermissionSet),
     DismissToken,
     /// Forgets every credential and setting when the saved state failed its seal check. Only
     /// the Settings page sends it, and only while that error is showing.
@@ -586,6 +619,134 @@ impl<'de> Deserialize<'de> for BindMode {
     }
 }
 
+/// An address range, `10.0.0.0/8` or `fd00::/8`. The host bits of the stored address are cleared,
+/// so `10.1.2.3/8` and `10.0.0.0/8` are the same range.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Cidr {
+    network: IpAddr,
+    prefix: u8,
+}
+
+impl Cidr {
+    pub fn new(address: IpAddr, prefix: u8) -> Result<Self, String> {
+        let bits = match address {
+            IpAddr::V4(_) => 32,
+            IpAddr::V6(_) => 128,
+        };
+        if prefix > bits {
+            return Err(format!("/{prefix} is too long for {address}"));
+        }
+        Ok(Self {
+            network: mask(address, prefix),
+            prefix,
+        })
+    }
+
+    /// `10.0.0.0/8`; a bare address is that one host.
+    pub fn parse(text: &str) -> Result<Self, String> {
+        let text = text.trim();
+        let (address, prefix) = match text.split_once('/') {
+            Some((address, prefix)) => (address, Some(prefix)),
+            None => (text, None),
+        };
+        let address: IpAddr = address
+            .parse()
+            .map_err(|_| format!("`{text}` is not an address range"))?;
+        let prefix = match prefix {
+            Some(prefix) => prefix
+                .parse::<u8>()
+                .map_err(|_| format!("`{text}` is not an address range"))?,
+            None => match address {
+                IpAddr::V4(_) => 32,
+                IpAddr::V6(_) => 128,
+            },
+        };
+        Self::new(address, prefix)
+    }
+
+    /// Whether `address` is in the range. An IPv4 address mapped into IPv6 counts as IPv4; a
+    /// range of one family never contains an address of the other.
+    pub fn contains(&self, address: IpAddr) -> bool {
+        let address = address.to_canonical();
+        match (self.network, address) {
+            (IpAddr::V4(_), IpAddr::V4(_)) | (IpAddr::V6(_), IpAddr::V6(_)) => {
+                mask(address, self.prefix) == self.network
+            }
+            _ => false,
+        }
+    }
+}
+
+fn mask(address: IpAddr, prefix: u8) -> IpAddr {
+    match address {
+        IpAddr::V4(ip) => {
+            let bits = u32::from(ip);
+            let keep = if prefix == 0 {
+                0
+            } else {
+                u32::MAX << (32 - u32::from(prefix))
+            };
+            IpAddr::V4(Ipv4Addr::from(bits & keep))
+        }
+        IpAddr::V6(ip) => {
+            let bits = u128::from(ip);
+            let keep = if prefix == 0 {
+                0
+            } else {
+                u128::MAX << (128 - u32::from(prefix))
+            };
+            IpAddr::V6(bits_to_v6(bits & keep))
+        }
+    }
+}
+
+fn bits_to_v6(bits: u128) -> std::net::Ipv6Addr {
+    std::net::Ipv6Addr::from(bits)
+}
+
+impl std::fmt::Display for Cidr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}/{}", self.network, self.prefix)
+    }
+}
+
+impl Serialize for Cidr {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> Deserialize<'de> for Cidr {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        Self::parse(&text).map_err(serde::de::Error::custom)
+    }
+}
+
+/// Ranges a client may be given at most.
+pub const MAX_CIDRS: usize = 16;
+
+/// Whether a request from `peer` may use a credential with this remote scope.
+///
+/// A peer on this machine always may. Any other needs `remote_allowed`, and then to be inside one
+/// of `cidrs` when there are any. An unknown peer (`None`) is treated as remote: if the server
+/// cannot say where a request came from, it is not let in on the strength of being local.
+pub fn peer_may_use(remote_allowed: bool, cidrs: &[Cidr], peer: Option<IpAddr>) -> bool {
+    match peer {
+        Some(peer) if peer.to_canonical().is_loopback() => true,
+        Some(peer) => {
+            remote_allowed && (cidrs.is_empty() || cidrs.iter().any(|c| c.contains(peer)))
+        }
+        None => false,
+    }
+}
+
+/// What a client that may be used remotely can do at most, whichever address it calls from.
+/// Reads only until the user says more.
+pub fn default_remote_ceiling() -> PermissionSet {
+    PermissionSet::read_only()
+}
+
 /// Persisted server preferences (`setting` key `mcp.settings`). Disabled on a fresh install.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -597,6 +758,11 @@ pub struct McpSettings {
     /// loopback: the server stays off and nothing is overwritten.
     #[serde(skip_serializing_if = "BindMode::is_loopback")]
     pub bind: BindMode,
+    /// The most any client with remote access may do, even when it calls from this machine. A
+    /// client's own grants are capped by this as well as by the global cap. Left out of the stored
+    /// form while it is the default, so settings saved before this existed read back unchanged.
+    #[serde(skip_serializing_if = "is_default_remote_ceiling")]
+    pub remote_ceiling: PermissionSet,
     /// Deletes, saved scripts and paper orders wait for the user's approval in the app. On
     /// unless the user turns it off, including for settings saved before this existed.
     pub require_confirmation: bool,
@@ -608,9 +774,14 @@ impl Default for McpSettings {
             enabled: false,
             port: DEFAULT_PORT,
             bind: BindMode::Loopback,
+            remote_ceiling: default_remote_ceiling(),
             require_confirmation: true,
         }
     }
+}
+
+fn is_default_remote_ceiling(ceiling: &PermissionSet) -> bool {
+    *ceiling == default_remote_ceiling()
 }
 
 impl McpSettings {
@@ -646,12 +817,35 @@ pub struct McpClient {
     pub created_at_ms: i64,
     #[serde(default)]
     pub last_used_ms: Option<i64>,
+    /// May be used from another machine. Off for every client that existed before this did, so
+    /// each stays loopback-only until the user says otherwise.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub remote_allowed: bool,
+    /// With `remote_allowed`, the only ranges a remote request may come from. Empty means any.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub allowed_cidrs: Vec<Cidr>,
 }
 
 impl McpClient {
-    /// The client's access right now: its grants capped by the global permissions.
-    pub fn effective(&self, global: &PermissionSet) -> PermissionSet {
-        self.permissions.intersect(global)
+    /// The client's access right now: its grants capped by the global permissions, and for a
+    /// client with remote access by the remote ceiling too. The ceiling follows the credential,
+    /// not the request: a token that may leave the machine is no stronger when used on it.
+    pub fn effective(
+        &self,
+        global: &PermissionSet,
+        remote_ceiling: &PermissionSet,
+    ) -> PermissionSet {
+        let capped = self.permissions.intersect(global);
+        if self.remote_allowed {
+            capped.intersect(remote_ceiling)
+        } else {
+            capped
+        }
+    }
+
+    /// Whether a request from `peer` may use this credential at all.
+    pub fn accepts_peer(&self, peer: Option<IpAddr>) -> bool {
+        peer_may_use(self.remote_allowed, &self.allowed_cidrs, peer)
     }
 }
 
@@ -774,11 +968,18 @@ mod tests {
             permissions: PermissionSet::of([Permission::ChartsRead, Permission::ChartsCreate]),
             created_at_ms: 0,
             last_used_ms: None,
+            remote_allowed: false,
+            allowed_cidrs: Vec::new(),
         };
-        let effective = client.effective(&global);
+        let ceiling = default_remote_ceiling();
+        let effective = client.effective(&global, &ceiling);
         assert!(effective.contains(Permission::ChartsRead));
         assert!(!effective.contains(Permission::ChartsCreate));
-        assert!(client.effective(&PermissionSet::none()).is_empty());
+        assert!(
+            client
+                .effective(&PermissionSet::none(), &ceiling)
+                .is_empty()
+        );
     }
 
     #[test]
@@ -791,6 +992,146 @@ mod tests {
 
     fn ip(text: &str) -> IpAddr {
         text.parse().unwrap()
+    }
+
+    fn cidr(text: &str) -> Cidr {
+        Cidr::parse(text).unwrap()
+    }
+
+    #[test]
+    fn a_range_is_normalised_and_contains_its_own_addresses_only() {
+        assert_eq!(cidr("10.1.2.3/8").to_string(), "10.0.0.0/8");
+        assert_eq!(cidr("10.9.9.9/8"), cidr("10.0.0.0/8"));
+        assert!(cidr("10.0.0.0/8").contains(ip("10.200.1.1")));
+        assert!(!cidr("10.0.0.0/8").contains(ip("11.0.0.1")));
+        assert!(cidr("192.168.1.20").contains(ip("192.168.1.20")));
+        assert!(!cidr("192.168.1.20").contains(ip("192.168.1.21")));
+        assert!(cidr("fd00::/8").contains(ip("fd12::1")));
+        assert!(!cidr("fd00::/8").contains(ip("fe80::1")));
+        assert!(cidr("0.0.0.0/0").contains(ip("203.0.113.9")));
+        // A range of one family never contains the other, but a mapped IPv4 address is IPv4.
+        assert!(!cidr("10.0.0.0/8").contains(ip("fd00::1")));
+        assert!(!cidr("::/0").contains(ip("10.0.0.1")));
+        assert!(cidr("10.0.0.0/8").contains(ip("::ffff:10.1.1.1")));
+    }
+
+    #[test]
+    fn unreadable_ranges_are_refused() {
+        for bad in [
+            "",
+            "10.0.0.0/33",
+            "fd00::/129",
+            "10.0.0.0/-1",
+            "10.0.0.0/x",
+            "lan",
+            "10.0.0/8",
+        ] {
+            assert!(Cidr::parse(bad).is_err(), "{bad:?} must not parse");
+        }
+        let stored = serde_json::to_string(&cidr("10.0.0.5/24")).unwrap();
+        assert_eq!(stored, r#""10.0.0.0/24""#);
+        assert_eq!(
+            serde_json::from_str::<Cidr>(&stored).unwrap(),
+            cidr("10.0.0.0/24")
+        );
+        assert!(serde_json::from_str::<Cidr>(r#""nope""#).is_err());
+    }
+
+    #[test]
+    fn who_may_use_a_credential_from_where() {
+        let lan = [cidr("192.168.1.0/24")];
+        let here = Some(ip("127.0.0.1"));
+        let also_here = Some(ip("::1"));
+        let mapped_here = Some(ip("::ffff:127.0.0.1"));
+        let near = Some(ip("192.168.1.9"));
+        let far = Some(ip("203.0.113.9"));
+        // This machine always may, remote access or not.
+        for peer in [here, also_here, mapped_here] {
+            assert!(peer_may_use(false, &[], peer));
+            assert!(peer_may_use(true, &lan, peer));
+        }
+        // Another machine needs remote access, and then a matching range if there are any.
+        assert!(!peer_may_use(false, &[], near));
+        assert!(!peer_may_use(false, &lan, near));
+        assert!(peer_may_use(true, &[], far));
+        assert!(peer_may_use(true, &lan, near));
+        assert!(!peer_may_use(true, &lan, far));
+        // Where it came from unknown: not let in on the strength of being local.
+        assert!(!peer_may_use(false, &[], None));
+        assert!(!peer_may_use(true, &[], None));
+    }
+
+    fn remote_client(remote: bool, grants: &[Permission]) -> McpClient {
+        McpClient {
+            id: "c".into(),
+            name: "c".into(),
+            verifier: "v".into(),
+            permissions: PermissionSet::of(grants.iter().copied()),
+            created_at_ms: 1,
+            last_used_ms: None,
+            remote_allowed: remote,
+            allowed_cidrs: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn the_remote_ceiling_caps_a_remote_client_whichever_address_it_calls_from() {
+        let grants = [Permission::ChartsRead, Permission::ChartsCreate];
+        let global = PermissionSet::everything();
+        let ceiling = PermissionSet::of([Permission::ChartsRead]);
+        let local = remote_client(false, &grants).effective(&global, &ceiling);
+        assert!(local.contains(Permission::ChartsCreate));
+        let remote = remote_client(true, &grants).effective(&global, &ceiling);
+        assert!(remote.contains(Permission::ChartsRead));
+        assert!(!remote.contains(Permission::ChartsCreate));
+        // The global cap still applies on top.
+        let none = remote_client(true, &grants).effective(&PermissionSet::none(), &ceiling);
+        assert!(none.is_empty());
+    }
+
+    #[test]
+    fn the_default_ceiling_is_reads_only() {
+        let ceiling = default_remote_ceiling();
+        assert!(ceiling.iter().all(|p| !p.is_mutating()));
+        assert!(ceiling.contains(Permission::ChartsRead));
+        assert!(!ceiling.contains(Permission::ChartsCreate));
+    }
+
+    #[test]
+    fn remote_fields_are_stored_only_when_set_so_old_rows_read_back_unchanged() {
+        let plain = serde_json::to_string(&remote_client(false, &[])).unwrap();
+        assert!(
+            !plain.contains("remote") && !plain.contains("allowed"),
+            "{plain}"
+        );
+        let old: McpClient = serde_json::from_str(&plain).unwrap();
+        assert!(!old.remote_allowed && old.allowed_cidrs.is_empty());
+
+        let mut set = remote_client(true, &[]);
+        set.allowed_cidrs = vec![cidr("10.0.0.0/8")];
+        let stored = serde_json::to_string(&set).unwrap();
+        assert!(stored.contains(r#""remoteAllowed":true"#), "{stored}");
+        assert!(
+            stored.contains(r#""allowedCidrs":["10.0.0.0/8"]"#),
+            "{stored}"
+        );
+        assert_eq!(serde_json::from_str::<McpClient>(&stored).unwrap(), set);
+
+        // The ceiling too: absent while default, round-trips when changed.
+        assert!(
+            !serde_json::to_string(&McpSettings::default())
+                .unwrap()
+                .contains("ceiling")
+        );
+        let changed = McpSettings {
+            remote_ceiling: PermissionSet::of([Permission::ChartsRead, Permission::AlertsRead]),
+            ..McpSettings::default()
+        };
+        let stored = serde_json::to_string(&changed).unwrap();
+        assert_eq!(
+            serde_json::from_str::<McpSettings>(&stored).unwrap(),
+            changed
+        );
     }
 
     #[test]

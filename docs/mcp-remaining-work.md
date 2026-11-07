@@ -180,19 +180,19 @@ bypass.
 
 ## Remote access
 
-Step 1 (transport) is done: `BindMode`, TLS 1.3 with a self-signed pinned certificate, the `Host` list
-from the bind, no non-loopback bind without TLS. See "Remote access: what exists" in
-[mcp-implementation.md](mcp-implementation.md). Not started, in this order:
+Steps 1 and 2 are done: `BindMode`, TLS 1.3 with a self-signed pinned certificate, the `Host` list
+from the bind, no non-loopback bind without TLS; and per-client `remote_allowed`, CIDR ranges and a
+remote ceiling, judged on the socket peer. See "Remote access: what exists" in
+[mcp-implementation.md](mcp-implementation.md). The host handles `SetClientRemote`,
+`SetClientCidrs` and `SetRemoteCeiling`; nothing sends them yet. Not started, in this order:
 
-2. Per-client scope: `remote_allowed` (default off, so every existing client stays loopback-only), an
-   optional CIDR allowlist checked from the peer address before the bearer check, and a remote
-   permission ceiling (default read-only) intersected with the client's grants.
 3. Audit log fields for the peer address and a `remote` flag; the approval step always on for a remote
    client's write tools; failed-auth limits keyed by peer address (today keyed globally).
 4. Settings: interface picker, certificate fingerprint with a copy button, the per-client switch, the
    ceiling; user-entered hostnames for the `Host` list (MagicDNS names); docs.
 
-Until step 4 a non-loopback bind can only be set by editing the store, which the seal then rejects.
+Until step 4 none of this can be set from the app: a bind, a client's remote switch or the ceiling can only
+come from editing the store, which the seal then rejects (in release builds).
 Check first that a real client accepts a pinned self-signed certificate; if none does, a certificate
 from Tailscale or Let's Encrypt (import) is the fallback, and the generated one is not worth polishing.
 

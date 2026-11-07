@@ -98,6 +98,15 @@
   certificate is `mcp::tls` (`mcp-tls.pem` in the data directory, owner-only); the `Host` list comes
   from `BindMode::allowed_hosts`, not the port. See "Remote access" in
   [implementation](../mcp-implementation.md).
+- Where a request may come from is decided in `McpShared::authenticate_from(token, peer)`, from the
+  socket peer `transport::serve_with` records as `PeerAddr`, never from a header. A credential works
+  from this machine unless `McpClient::remote_allowed`; then from anywhere, or only from
+  `allowed_cidrs` if it has any. A refused address looks like an unknown token (401, and it draws on
+  the failed-auth bucket) and records no use. No peer means remote. Do not add a second way to
+  authenticate. `McpClient::effective(global, remote_ceiling)` also caps a `remote_allowed` client by
+  `McpSettings::remote_ceiling` (default: every read-only permission), wherever it calls from. The new
+  client, settings and ceiling fields are sealed, and left out of the stored form while they are the
+  default, so old rows and seals read back unchanged.
 - Settings holds the store lock, so its MCP UI returns `McpAction`s for `McpHost::queue`; never call
   `McpHost::apply` inside the Settings closure.
 - Verify against `127.0.0.1:<port>/mcp` with seeded `mcp.settings`/`mcp_client` rows, a throwaway

@@ -45,8 +45,9 @@ use crate::model::alert::{
     AlertCondition, AlertCurrency, AlertFrequency, AlertId, AlertState, PriceAlert,
 };
 use crate::model::mcp::{
-    AUDIT_LOG_LIMIT, BindMode, MAX_CLIENTS, McpAction, McpAuditEntry, McpAuditKind, McpClient,
-    McpSettings, Permission, PermissionSet, clean_client_name, is_valid_port,
+    AUDIT_LOG_LIMIT, BindMode, Cidr, MAX_CIDRS, MAX_CLIENTS, McpAction, McpAuditEntry,
+    McpAuditKind, McpClient, McpSettings, Permission, PermissionSet, clean_client_name,
+    is_valid_port,
 };
 use crate::model::pine_alert::PineAlertSubscription;
 use crate::model::watchlist::{Watchlist, WatchlistError, WatchlistInstrument, new_id, now_ms};
@@ -197,6 +198,8 @@ impl McpHost {
                     Ok(()) => {
                         self.shared
                             .set_require_confirmation(settings.require_confirmation);
+                        self.shared
+                            .set_remote_ceiling(settings.remote_ceiling.clone());
                         self.settings = settings;
                         self.shared.replace(clients, global);
                         self.load_error = None;
@@ -527,6 +530,34 @@ impl McpHost {
                 });
             }
             McpAction::SetGlobalPermissions(permissions) => self.replace_global(permissions),
+            McpAction::SetClientRemote { client_id, allowed } => {
+                self.edit_clients(|clients| {
+                    if let Some(client) = clients.iter_mut().find(|client| client.id == client_id) {
+                        client.remote_allowed = allowed;
+                    }
+                });
+            }
+            McpAction::SetClientCidrs { client_id, cidrs } => {
+                // No duplicates, and no more than a Settings list can sensibly show.
+                let mut kept: Vec<Cidr> = Vec::new();
+                for cidr in cidrs {
+                    if !kept.contains(&cidr) && kept.len() < MAX_CIDRS {
+                        kept.push(cidr);
+                    }
+                }
+                self.edit_clients(|clients| {
+                    if let Some(client) = clients.iter_mut().find(|client| client.id == client_id) {
+                        client.allowed_cidrs = kept;
+                    }
+                });
+            }
+            McpAction::SetRemoteCeiling(ceiling) => {
+                let settings = McpSettings {
+                    remote_ceiling: ceiling,
+                    ..self.settings.clone()
+                };
+                self.save_settings(settings);
+            }
             McpAction::DismissToken => self.fresh_token = None,
             McpAction::ResetAccess => {}
             McpAction::ClearActivity => self.clear_activity(),
@@ -546,6 +577,8 @@ impl McpHost {
             Ok(()) => {
                 self.shared
                     .set_require_confirmation(settings.require_confirmation);
+                self.shared
+                    .set_remote_ceiling(settings.remote_ceiling.clone());
                 self.settings = settings;
                 true
             }
@@ -676,6 +709,8 @@ impl McpHost {
             permissions: PermissionSet::of([Permission::ChartsRead]),
             created_at_ms: now_ms(),
             last_used_ms: None,
+            remote_allowed: false,
+            allowed_cidrs: Vec::new(),
         };
         if self.edit_clients(|clients| clients.push(client)) {
             self.fresh_token = Some(FreshToken {
@@ -3329,6 +3364,130 @@ mod tests {
     }
 
     #[test]
+    fn a_new_credential_is_loopback_only_until_remote_access_is_given() {
+        let store = store();
+        let mut host = host(&store);
+        host.apply(McpAction::CreateClient("a".into()));
+        let token = host.fresh_token().unwrap().token.clone();
+        let id = host.clients()[0].id.clone();
+        assert!(!host.clients()[0].remote_allowed);
+        let lan = Some("192.168.1.9".parse().unwrap());
+        assert!(host.shared().authenticate_from(&token, lan).is_none());
+
+        host.apply(McpAction::SetClientRemote {
+            client_id: id.clone(),
+            allowed: true,
+        });
+        assert!(store.lock().unwrap().mcp_clients().unwrap()[0].remote_allowed);
+        assert!(host.shared().authenticate_from(&token, lan).is_some());
+
+        host.apply(McpAction::SetClientRemote {
+            client_id: id,
+            allowed: false,
+        });
+        assert!(host.shared().authenticate_from(&token, lan).is_none());
+    }
+
+    #[test]
+    fn ranges_are_saved_without_duplicates_and_limit_where_a_client_may_call_from() {
+        let store = store();
+        let mut host = host(&store);
+        host.apply(McpAction::CreateClient("a".into()));
+        let token = host.fresh_token().unwrap().token.clone();
+        let id = host.clients()[0].id.clone();
+        host.apply(McpAction::SetClientRemote {
+            client_id: id.clone(),
+            allowed: true,
+        });
+        let range = |text: &str| Cidr::parse(text).unwrap();
+        host.apply(McpAction::SetClientCidrs {
+            client_id: id.clone(),
+            cidrs: vec![
+                range("192.168.1.0/24"),
+                range("192.168.1.77/24"),
+                range("fd00::/8"),
+            ],
+        });
+        let saved = store.lock().unwrap().mcp_clients().unwrap();
+        assert_eq!(
+            saved[0].allowed_cidrs,
+            [range("192.168.1.0/24"), range("fd00::/8")]
+        );
+        let from = |text: &str| Some(text.parse().unwrap());
+        assert!(
+            host.shared()
+                .authenticate_from(&token, from("192.168.1.9"))
+                .is_some()
+        );
+        assert!(
+            host.shared()
+                .authenticate_from(&token, from("203.0.113.9"))
+                .is_none()
+        );
+
+        // More than a Settings list can show are cut, not saved.
+        let many: Vec<Cidr> = (0..40).map(|n| range(&format!("10.{n}.0.0/16"))).collect();
+        host.apply(McpAction::SetClientCidrs {
+            client_id: id,
+            cidrs: many,
+        });
+        assert_eq!(host.clients()[0].allowed_cidrs.len(), MAX_CIDRS);
+    }
+
+    #[test]
+    fn the_remote_ceiling_is_saved_published_and_caps_remote_clients() {
+        let store = store();
+        let mut host = host(&store);
+        host.apply(McpAction::CreateClient("a".into()));
+        let id = host.clients()[0].id.clone();
+        host.apply(McpAction::SetClientPermission {
+            client_id: id.clone(),
+            permission: Permission::ChartsCreate,
+            allowed: true,
+        });
+        host.apply(McpAction::SetGlobalPermission {
+            permission: Permission::ChartsCreate,
+            allowed: true,
+        });
+        assert!(host.shared().allows(&id, Permission::ChartsCreate));
+
+        // Remote access turns the default ceiling (reads only) on for this client.
+        host.apply(McpAction::SetClientRemote {
+            client_id: id.clone(),
+            allowed: true,
+        });
+        assert!(!host.shared().allows(&id, Permission::ChartsCreate));
+
+        let wider = PermissionSet::everything();
+        host.apply(McpAction::SetRemoteCeiling(wider.clone()));
+        assert_eq!(
+            store.lock().unwrap().mcp_settings().unwrap().remote_ceiling,
+            wider
+        );
+        assert_eq!(host.settings().remote_ceiling, wider);
+        assert!(host.shared().allows(&id, Permission::ChartsCreate));
+    }
+
+    #[test]
+    fn a_saved_ceiling_and_remote_client_are_back_after_a_restart() {
+        let store = store();
+        {
+            let mut host = host(&store);
+            host.apply(McpAction::CreateClient("a".into()));
+            let id = host.clients()[0].id.clone();
+            host.apply(McpAction::SetClientRemote {
+                client_id: id,
+                allowed: true,
+            });
+            host.apply(McpAction::SetRemoteCeiling(PermissionSet::none()));
+        }
+        let host = host(&store);
+        assert!(host.load_error().is_none(), "{:?}", host.load_error());
+        assert!(host.clients()[0].remote_allowed);
+        assert!(host.shared().effective(&host.clients()[0].id).is_empty());
+    }
+
+    #[test]
     fn unreadable_saved_state_fails_closed_and_is_never_overwritten() {
         let store = store();
         {
@@ -4883,6 +5042,8 @@ mod tests {
             permissions: PermissionSet::of(Permission::ALL),
             created_at_ms: 1,
             last_used_ms: None,
+            remote_allowed: false,
+            allowed_cidrs: Vec::new(),
         });
         store.replace_mcp_clients(&clients).unwrap();
         store

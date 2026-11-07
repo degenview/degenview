@@ -229,6 +229,96 @@ fn closed_within(stream: &mut TcpStream, wait: Duration) -> bool {
 }
 
 #[test]
+fn every_request_carries_the_address_of_the_socket_it_arrived_on() {
+    use crate::mcp::transport::PeerAddr;
+    // A handler that answers with the peer the server recorded.
+    let std_listener = std::net::TcpListener::bind(("127.0.0.1", 0)).unwrap();
+    std_listener.set_nonblocking(true).unwrap();
+    let port = std_listener.local_addr().unwrap().port();
+    let cancel = CancellationToken::new();
+    let token = cancel.clone();
+    let thread = std::thread::spawn(move || {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let listener = tokio::net::TcpListener::from_std(std_listener).unwrap();
+            let app = axum::Router::new().route(
+                "/",
+                axum::routing::get(|request: axum::extract::Request| async move {
+                    match request.extensions().get::<PeerAddr>() {
+                        Some(peer) => peer.0.to_string(),
+                        None => "none".into(),
+                    }
+                }),
+            );
+            serve(listener, app, ConnectionLimits::default(), token).await;
+        });
+    });
+    let mut stream = connect_local(port);
+    stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
+    stream
+        .write_all(b"GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n")
+        .unwrap();
+    let mut response = String::new();
+    let _ = stream.read_to_string(&mut response);
+    cancel.cancel();
+    let _ = thread.join();
+    assert!(response.ends_with("127.0.0.1"), "{response}");
+}
+
+#[test]
+fn the_bearer_guard_judges_the_recorded_peer_not_anything_in_the_request() {
+    use crate::mcp::auth::require_bearer;
+    use crate::mcp::state::McpShared;
+    use crate::mcp::transport::PeerAddr;
+    use tower::Service;
+
+    let shared = McpShared::new();
+    let mut remote = super::client("remote", "tok-remote", READ);
+    remote.remote_allowed = true;
+    remote.allowed_cidrs = vec![crate::model::mcp::Cidr::parse("192.168.1.0/24").unwrap()];
+    shared.replace(
+        vec![super::client("local", "tok-local", READ), remote],
+        crate::model::mcp::PermissionSet::everything(),
+    );
+    let app = axum::Router::new()
+        .route("/", axum::routing::get(|| async { "in" }))
+        .layer(axum::middleware::from_fn_with_state(shared, require_bearer));
+
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .build()
+        .unwrap();
+    let status = |token: &str, peer: Option<&str>, spoof: &str| {
+        let mut request = axum::http::Request::builder()
+            .uri("/")
+            .header("authorization", format!("Bearer {token}"))
+            // What a client might send to look like it is local; nothing reads it.
+            .header("x-forwarded-for", spoof)
+            .header("host", "127.0.0.1")
+            .body(axum::body::Body::empty())
+            .unwrap();
+        if let Some(peer) = peer {
+            request
+                .extensions_mut()
+                .insert(PeerAddr(peer.parse().unwrap()));
+        }
+        let mut app = app.clone();
+        runtime.block_on(async move { app.call(request).await.unwrap().status().as_u16() })
+    };
+    assert_eq!(status("tok-local", Some("127.0.0.1"), ""), 200);
+    assert_eq!(status("tok-local", Some("192.168.1.9"), "127.0.0.1"), 401);
+    assert_eq!(status("tok-remote", Some("192.168.1.9"), ""), 200);
+    assert_eq!(
+        status("tok-remote", Some("203.0.113.9"), "192.168.1.9"),
+        401
+    );
+    // No recorded peer: refused, not assumed local.
+    assert_eq!(status("tok-local", None, "127.0.0.1"), 401);
+}
+
+#[test]
 fn a_client_that_never_finishes_its_headers_is_dropped() {
     let server = Plain::start(ConnectionLimits {
         header_read_timeout: Duration::from_millis(300),
