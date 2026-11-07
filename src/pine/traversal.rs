@@ -229,7 +229,7 @@ pub fn for_each_history_identifier(statements: &[Statement], visit: &mut impl Fn
     }
 }
 
-fn for_each_history_identifier_in_expression(
+pub fn for_each_history_identifier_in_expression(
     expression: &Expression,
     visit: &mut impl FnMut(&str),
 ) {

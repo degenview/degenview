@@ -368,6 +368,40 @@ fn a_history_of_a_builtin_variable_reads_the_value_it_had() {
 }
 
 #[test]
+fn a_library_function_reads_the_history_of_a_builtin_variable() {
+    struct Library;
+    impl compiler::LibraryResolver for Library {
+        fn source_for_library(&self, path: &str) -> Option<String> {
+            (path == "user/Mine/1").then(|| {
+                "//@version=6\nlibrary(\"Mine\")\n\
+                 export before() =>\n    hlcc4[1]\n"
+                    .to_owned()
+            })
+        }
+    }
+    let source = "//@version=6\nindicator(\"T\")\nimport user/Mine/1 as mine\n\
+                  prev = mine.before()\n";
+    let program = compiler::compile(source, Limits::default(), &Library);
+    assert!(program.is_valid(), "{:?}", program.diagnostics);
+    let mut session = Session::new(
+        program,
+        HashMap::new(),
+        Limits::default(),
+        None,
+        SymbolInfo::default(),
+        None,
+        None,
+    );
+    let candles = bars(4);
+    session.evaluate(&candles).unwrap();
+    // The script never indexes `hlcc4` itself; the library does, and gets the previous bar's value.
+    assert_eq!(
+        value(&session, "prev"),
+        RuntimeValue::Float((candles[2].high + candles[2].low + 2.0 * candles[2].close) / 4.0)
+    );
+}
+
+#[test]
 fn the_first_bar_flag_has_a_history_too() {
     let session = run(
         "was_first = barstate.isfirst[1]\nplot(was_first ? 1 : 0)",

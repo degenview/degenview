@@ -313,7 +313,8 @@ impl Session {
             }
         }
         let shadowing_builtins = declared_builtin_names(&program.statements);
-        let history_builtins = history_builtin_names(&program.statements, &shadowing_builtins);
+        let history_builtins =
+            history_builtin_names(&program.statements, &linkage, &shadowing_builtins);
         let mut inputs = inputs;
         for input in &program.input_schema.inputs {
             inputs
@@ -3228,8 +3229,14 @@ fn declared_builtin_names(statements: &[Statement]) -> Vec<String> {
 
 /// The builtin variables `statements` read a history of that `commit_histories` does not record
 /// itself: `open`, `close` and the other series it always keeps are left out, and so is a name the
-/// script declares anew (it is then an ordinary variable).
-fn history_builtin_names(statements: &[Statement], shadowed: &[String]) -> Vec<String> {
+/// script declares anew (it is then an ordinary variable). The bodies of the functions and methods
+/// the script imports are read too, and the constants of the libraries it links: a library reads the
+/// same builtin trails as the script.
+fn history_builtin_names(
+    statements: &[Statement],
+    linkage: &LibraryLinkage,
+    shadowed: &[String],
+) -> Vec<String> {
     const ALWAYS_RECORDED: [&str; 11] = [
         "open",
         "high",
@@ -3244,7 +3251,7 @@ fn history_builtin_names(statements: &[Statement], shadowed: &[String]) -> Vec<S
         "bar_index",
     ];
     let mut names: Vec<String> = Vec::new();
-    super::traversal::for_each_history_identifier(statements, &mut |name| {
+    let mut note = |name: &str| {
         if super::symbol_catalog::is_variable(name)
             && !ALWAYS_RECORDED.contains(&name)
             && !STRATEGY_SERIES.contains(&name)
@@ -3253,7 +3260,21 @@ fn history_builtin_names(statements: &[Statement], shadowed: &[String]) -> Vec<S
         {
             names.push(name.to_owned());
         }
-    });
+    };
+    super::traversal::for_each_history_identifier(statements, &mut note);
+    let functions = linkage
+        .functions
+        .values()
+        .chain(linkage.methods.values().flatten())
+        .chain(linkage.overloads.values().flatten());
+    for function in functions {
+        super::traversal::for_each_history_identifier(&function.body, &mut note);
+    }
+    for constants in linkage.constants.values() {
+        for expression in constants.values() {
+            super::traversal::for_each_history_identifier_in_expression(expression, &mut note);
+        }
+    }
     names
 }
 
