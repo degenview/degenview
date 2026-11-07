@@ -104,6 +104,9 @@ pub struct Session {
     intrabar_key: String,
     /// Set when the script fails at run time: it stays stopped, as in TradingView, until `reset`.
     halted: Option<Halted>,
+    /// True while `load_history` replays bars: a failed bar is then settled once, afterwards, instead
+    /// of keeping a copy of the state before every bar.
+    bulk_replay: bool,
     /// For each script type with a `varip` field, those fields' names. Empty for most scripts.
     varip_fields: Vec<(String, Vec<String>)>,
     pub last_open_time: Option<i64>,
@@ -398,6 +401,7 @@ impl Session {
             intrabar_objects: Vec::new(),
             intrabar_key: String::new(),
             halted: None,
+            bulk_replay: false,
             varip_fields,
             last_open_time: None,
             security_globals: None,
@@ -455,6 +459,19 @@ impl Session {
         if let Some(inputs) = inputs {
             self.inputs = inputs;
         }
+        self.restart_state();
+        self.logs.restart();
+        self.bar_seconds = self.fixed_bar_seconds.unwrap_or(0.0);
+        self.last_bar_index = -1;
+        self.last_bar_time = None;
+        self.first_bar_time = None;
+        self.mintick = self.supplied_mintick.unwrap_or(DEFAULT_MINTICK);
+        self.deadline_at = None;
+    }
+
+    /// Back to before the first bar: the script's state, and the bookkeeping that belongs to it.
+    /// Leaves the chart's own facts (bar length, mintick, the logs) as they are.
+    fn restart_state(&mut self) {
         self.committed = self.fresh_state();
         self.working = self.committed.clone();
         self.working_is_committed = false;
@@ -465,14 +482,7 @@ impl Session {
         self.last_committed_open_time = None;
         self.once_per_bar_ledger.clear();
         self.emitted_alerts.clear();
-        self.logs.restart();
         self.footprints.clear();
-        self.bar_seconds = self.fixed_bar_seconds.unwrap_or(0.0);
-        self.last_bar_index = -1;
-        self.last_bar_time = None;
-        self.first_bar_time = None;
-        self.mintick = self.supplied_mintick.unwrap_or(DEFAULT_MINTICK);
-        self.deadline_at = None;
     }
 
     /// Installs a cooperative cancellation flag. Long history runs and instruction-heavy bars
@@ -546,25 +556,69 @@ impl Session {
                 })
         });
         self.first_bar_time = bars.first().map(|bar| bar.open_time);
-        let result = (|| {
-            let mut states = Vec::with_capacity(bars.len());
-            for (index, bar) in bars.iter().enumerate() {
-                self.check_interruption()?;
-                let is_last_history = index == bars.len() - 1;
-                let flags = self.execute(
-                    BarEvent {
-                        candle: bar.clone(),
-                        phase: BarPhase::Historical,
-                    },
-                    is_last_history && !precedes_live_bar,
-                    Some(is_last_history),
-                )?;
-                states.push(flags);
-            }
-            Ok(states)
-        })();
+        self.bulk_replay = true;
+        let mut failed_bar = 0;
+        let result = self.replay_history(bars, bars.len(), precedes_live_bar, &mut failed_bar);
+        self.bulk_replay = false;
+        if matches!(result, Err(RunError::Script(_))) && self.halted.is_some() {
+            self.settle_failed_replay(bars, failed_bar, precedes_live_bar);
+        }
         self.deadline_at = None;
         result
+    }
+
+    /// Runs the first `upto` of `bars` as history. `failed_bar` ends up as the index of the bar that
+    /// failed, or of the last one run.
+    fn replay_history(
+        &mut self,
+        bars: &[Kline],
+        upto: usize,
+        precedes_live_bar: bool,
+        failed_bar: &mut usize,
+    ) -> Result<Vec<BarFlags>, RunError> {
+        let mut states = Vec::with_capacity(upto);
+        for (index, bar) in bars[..upto].iter().enumerate() {
+            *failed_bar = index;
+            self.check_interruption()?;
+            let is_last_history = index == bars.len() - 1;
+            let flags = self.execute(
+                BarEvent {
+                    candle: bar.clone(),
+                    phase: BarPhase::Historical,
+                },
+                is_last_history && !precedes_live_bar,
+                Some(is_last_history),
+            )?;
+            states.push(flags);
+        }
+        Ok(states)
+    }
+
+    /// A history replay failed on `failed_bar`, which left `working` half run: its labels, drawings,
+    /// alerts and fills are in it, and the state before the bar was never kept (copying it before
+    /// every bar would slow every run). Run the bars before it again to get that state back. Nothing
+    /// watches this second run: no breakpoint stops in it and the logs, which already hold what the
+    /// failing bar wrote, are left alone.
+    fn settle_failed_replay(&mut self, bars: &[Kline], failed_bar: usize, precedes_live_bar: bool) {
+        let Some(halted) = self.halted.take() else {
+            return;
+        };
+        let hooks = self.hooks.take();
+        let logs = std::mem::take(&mut self.logs);
+        self.restart_state();
+        self.start_deadline();
+        self.bulk_replay = true;
+        let mut ignored = 0;
+        // Should this run fail or be cancelled, the state is what it reached; the error to report
+        // is the first run's either way.
+        let _ = self.replay_history(bars, failed_bar, precedes_live_bar, &mut ignored);
+        self.bulk_replay = false;
+        self.hooks = hooks;
+        self.logs = logs;
+        self.halted = Some(Halted {
+            error: halted.error,
+            completed_bars: failed_bar,
+        });
     }
 
     pub fn inferred_mintick(bars: &[Kline]) -> f64 {
@@ -678,6 +732,10 @@ impl Session {
         // A historical bar continues from the state the previous one left; anything else starts from
         // the committed state, so an unconfirmed tick can be thrown away.
         let replaying = matches!(event.phase, BarPhase::Historical);
+        // A bar run on its own (not inside `load_history`) that continues from the replayed state would
+        // leave that state half run if it failed; keep it to go back to. A replay settles itself.
+        let before_bar = (replaying && self.working_is_committed && !self.bulk_replay)
+            .then(|| self.working.clone());
         if replaying && self.working_is_committed {
             self.working.bar_index += 1;
         } else {
@@ -736,7 +794,7 @@ impl Session {
                     self.working_is_committed = false;
                 }
             } else {
-                self.halt(&error);
+                self.halt(&error, before_bar);
             }
             return Err(RunError::Script(error));
         }
@@ -763,12 +821,15 @@ impl Session {
         Ok(flags)
     }
 
-    /// Stops the script on `error`. The output keeps the bars before the failing one: when a
-    /// history replay failed, `working` holds that bar half-run and `committed` is behind, so
-    /// `output` leaves the bar out; otherwise `committed` is the state before it.
-    fn halt(&mut self, error: &Diagnostic) {
+    /// Stops the script on `error`. The output keeps the bars before the failing one, in every
+    /// category: `before_bar` is the state a bar run on its own continued from, `committed` is the
+    /// state before any other, and a bar of a history replay (which has neither) is settled by
+    /// `settle_failed_replay` once the replay is over.
+    fn halt(&mut self, error: &Diagnostic, before_bar: Option<RuntimeState>) {
         let completed_bars = self.working.bar_index.max(0) as usize;
-        if !self.working_is_committed {
+        if let Some(state) = before_bar {
+            self.working = state;
+        } else if !self.working_is_committed {
             self.working = self.committed.clone();
         }
         self.halted = Some(Halted {

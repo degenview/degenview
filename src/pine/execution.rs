@@ -543,4 +543,58 @@ mod tests {
         // Back to three bars: rebuilt, and fine again.
         assert!(controller.update(&history(3), None, AFTER).error.is_none());
     }
+
+    /// Drawings, markers, alerts and (for a strategy) a fill that bar 2 produced; bar 3 does the same and
+    /// then fails.
+    const EFFECTS_BEFORE_THE_ERROR: &str = "//@version=6\nindicator(\"T\")\n\
+        if bar_index >= 2\n    label.new(bar_index, close, \"x\")\n    line.new(bar_index, close, bar_index + 1, close)\n    alert(\"hi\", alert.freq_all)\n\
+        plotshape(bar_index >= 2, style = shape.circle)\n\
+        bgcolor(bar_index >= 2 ? color.red : na)\n\
+        if bar_index == 3\n    runtime.error(\"boom\")\n\
+        plot(close)";
+
+    fn assert_only_bars_before_the_failure_are_left(update: &ExecutionUpdate) {
+        let output = &update.output;
+        assert_eq!(output.bar_count, 3);
+        assert_eq!(output.labels.len(), 1, "labels");
+        assert_eq!(output.lines.len(), 1, "lines");
+        assert_eq!(output.alerts.len(), 1, "alerts");
+        assert_eq!(output.markers[0].values, [false, false, true], "markers");
+        assert_eq!(output.backgrounds[0].colors.len(), 3, "backgrounds");
+        assert_eq!(output.plots[0].values.len(), 3, "plots");
+    }
+
+    #[test]
+    fn a_failed_history_bar_leaves_none_of_its_effects_in_the_output() {
+        let mut controller = controller(EFFECTS_BEFORE_THE_ERROR);
+        let failed = controller.update(&history(5), None, AFTER);
+        assert!(failed.error.is_some());
+        assert_only_bars_before_the_failure_are_left(&failed);
+    }
+
+    #[test]
+    fn a_closed_bar_that_fails_when_it_arrives_leaves_none_of_its_effects_in_the_output() {
+        // The history is fine; the bar that arrives afterwards runs on its own, not in a replay.
+        let mut controller = controller(EFFECTS_BEFORE_THE_ERROR);
+        assert!(controller.update(&history(3), None, AFTER).error.is_none());
+        let failed = controller.update(&history(4), None, AFTER);
+        assert!(!failed.rebuilt);
+        assert!(failed.error.is_some());
+        assert_only_bars_before_the_failure_are_left(&failed);
+    }
+
+    #[test]
+    fn a_fill_on_the_failing_bar_is_not_in_the_strategy_report() {
+        // The order bar 2 places fills at the open of bar 3, before the script runs there and fails.
+        let source = "//@version=6\nstrategy(\"S\")\n\
+            if bar_index == 2\n    strategy.entry(\"L\", strategy.long)\n\
+            if bar_index == 3\n    runtime.error(\"boom\")\n\
+            plot(close)";
+        let mut controller = controller(source);
+        let failed = controller.update(&history(5), None, AFTER);
+        assert!(failed.error.is_some());
+        let report = failed.output.strategy.expect("a strategy report");
+        assert!(report.open_trades.is_empty(), "{:?}", report.open_trades);
+        assert_eq!(report.equity.len(), 3);
+    }
 }

@@ -392,7 +392,13 @@ change except on the workload the PR targets, and PRs touching state or rollback
    cancelled); `execute` then returns the stored error without running, `reset` (every rebuild, input change,
    symbol or timeframe change, empty snapshot) clears it. `output()` shows the bars before the failing one
    (`bar_count`, plots truncated), where a failed replay used to leave an empty chart. A failure on a live tick
-   keeps `committed` as the state, so nothing half-run is shown. Behaviour change worth knowing: a run that
+   keeps `committed` as the state, so nothing half-run is shown. The same holds for a closed bar that fails
+   when it arrives on its own: `execute` keeps a copy of the state it continued from and `halt` puts it back.
+   A failed history replay has no such copy (one per bar would slow every run), so `load_history` runs the bars
+   before the failing one again (`settle_failed_replay`) with the debugger, profiler and logs set aside: every
+   category of output (labels, lines, boxes, tables, markers, backgrounds, alerts, the strategy report) is then
+   what the last good bar left. This costs a failing script a second pass over its history up to the failure,
+   and nothing on the way to success. Behaviour change worth knowing: a run that
    failed on a transient condition (for example `request.security` to a finer timeframe before its candles
    have loaded, `PINE4021`) used to be retried by the next appended bar; it now stays stopped until the chart
    rebuilds, as in TradingView. Not changed: `ChartCard` still shows the last valid output of the same chart

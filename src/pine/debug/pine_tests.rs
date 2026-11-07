@@ -99,6 +99,43 @@ fn a_bar_break_on_a_statement_with_a_breakpoint_stops_once_for_the_breakpoint() 
     assert_eq!(seen[2].why, Why::Breakpoint);
 }
 
+// MARK: A failing bar
+
+#[test]
+fn a_failed_bar_does_not_stop_at_the_breakpoints_of_the_bars_before_it_a_second_time() {
+    // The engine runs the bars before a failing one again to get their state back; nothing the
+    // debugger does may happen in that run.
+    let source = with_header(
+        "x = close
+if bar_index == 3
+    runtime.error(\"boom\")
+plot(x)
+",
+    );
+    let (runtime, seen) = runtime_with(
+        &source,
+        vec![BreakpointSpec::line(1, 3)],
+        false,
+        &[],
+        DebugControl::default(),
+        None,
+    );
+    let mut session = Session::new(
+        compiler::compile(&source, Limits::default(), &NoLibraries),
+        std::collections::HashMap::new(),
+        bench_tests::limits(),
+        Some(0.01),
+        bench_tests::symbol(),
+        None,
+        None,
+    );
+    session.attach_debugger(runtime);
+    assert!(session.evaluate(&bars(6)).is_err());
+    let stops = places(&seen.lock().unwrap());
+    // One stop at the breakpoint on each of the four bars that ran, and the stop where it failed.
+    assert_eq!(stops, vec![(3, 0), (3, 1), (3, 2), (3, 3), (5, 3)]);
+}
+
 // MARK: request.security
 
 const REQUEST: &str = "base = 2.0
