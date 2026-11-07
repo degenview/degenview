@@ -253,7 +253,7 @@ impl DegenViewMcp {
         match self
             .bridge
             .call(
-                &client.id,
+                &client,
                 Permission::ChartsRead,
                 McpCommand::GetReplay { workspace_id },
                 REQUEST_TIMEOUT,
@@ -287,7 +287,7 @@ impl DegenViewMcp {
         match self
             .bridge
             .call(
-                &client.id,
+                &client,
                 Permission::ChartsReplayWrite,
                 McpCommand::ControlReplay {
                     workspace_id,

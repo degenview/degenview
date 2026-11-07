@@ -273,6 +273,11 @@ that expects OAuth discovery will not work with it.
   chart, create or pause an alert, indicators, applied scripts, drawings, timeframe, chart type, replay,
   watchlists, a script draft) are described from the command alone (`confirm::remote_summary`). Turning
   the setting off ends only local credentials' open questions. A revoked client counts as remote.
+  A request carries the origin it arrived with (`ClientIdentity::remote`, fixed at authentication, via
+  `BridgeClient::call(&identity, ..)` and `Request::origin`): a call that came in as remote keeps asking
+  even if remote access is switched off while it waits in the queue, and `Request::run` judges its
+  address against the credential as it is *then* (`McpShared::accepts_origin`), so a request from an
+  address no longer admitted does not run, as with a revoked permission.
 - Failed sign-ins. A remote address has its own bucket (10 at once, then 1 a second; at most 1024
   addresses tracked) that is spent first, so one host guessing tokens is cut off without using the
   shared bucket, and a local client's mistakes are not slowed by it. Past 1024 addresses the surplus is

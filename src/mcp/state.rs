@@ -61,6 +61,27 @@ pub struct ClientIdentity {
     /// The address the request came from (the socket's, never a header's). Always known here:
     /// an unknown peer is refused before an identity exists.
     pub peer: Peer,
+    /// Asked about as a remote credential: the request came from another machine, or the
+    /// credential may be used from one, as of the moment it was authenticated. Fixed then, so a
+    /// request already queued keeps its origin when remote access is switched off before it runs.
+    pub remote: bool,
+}
+
+impl ClientIdentity {
+    /// Where the request came from, for the bridge to carry to the moment it runs.
+    pub fn origin(&self) -> Origin {
+        Origin {
+            peer: self.peer,
+            remote: self.remote,
+        }
+    }
+}
+
+/// What a queued request remembers of how it arrived (see [`ClientIdentity::remote`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Origin {
+    pub peer: Peer,
+    pub remote: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -298,6 +319,7 @@ impl McpShared {
             id: client.id.clone(),
             name: client.name.clone(),
             peer,
+            remote: !peer.local || client.remote_allowed,
         })
     }
 
@@ -321,6 +343,18 @@ impl McpShared {
             .iter()
             .find(|client| client.id == client_id)
             .is_none_or(|client| client.remote_allowed)
+    }
+
+    /// Whether the credential, as it is now, still admits a request that arrived as `origin`. A
+    /// request that waited in the queue is judged again just before it runs, as its permission is:
+    /// remote access switched off, or its address taken out of the allowed ranges, in between
+    /// stops it.
+    pub fn accepts_origin(&self, client_id: &str, origin: &Origin) -> bool {
+        self.read()
+            .clients
+            .iter()
+            .find(|client| client.id == client_id)
+            .is_some_and(|client| client.accepts_peer(Some(origin.peer)))
     }
 
     pub fn allows(&self, client_id: &str, permission: Permission) -> bool {

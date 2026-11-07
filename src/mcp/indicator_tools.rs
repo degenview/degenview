@@ -144,7 +144,7 @@ impl DegenViewMcp {
         match self
             .bridge
             .call(
-                &client.id,
+                &client,
                 Permission::ChartsCandlesRead,
                 McpCommand::GetIndicatorValues {
                     workspace_id,
@@ -182,7 +182,7 @@ impl DegenViewMcp {
         match self
             .bridge
             .call(
-                &client.id,
+                &client,
                 Permission::ChartsIndicatorsWrite,
                 McpCommand::RemoveIndicator {
                     workspace_id,

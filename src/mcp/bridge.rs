@@ -6,7 +6,7 @@
 //! client lost the permission in the meantime is answered with an error and never executed — a
 //! timed-out call cannot surprise-mutate later.
 
-use crate::mcp::state::McpShared;
+use crate::mcp::state::{ClientIdentity, McpShared, Origin};
 use crate::mcp::types::{
     AddChartResult, AddIndicatorResult, AlertChangeResult, AlertsResult, AppliedPineDetail,
     AppliedPineList, ChartsResult, CreateAlertResult, PineAlertsResult, PineInstanceChangeResult,
@@ -444,6 +444,8 @@ impl Drop for CancelOnDrop {
 
 pub struct Request {
     pub client_id: String,
+    /// How the call arrived, judged again when it runs.
+    pub origin: Origin,
     pub permission: Permission,
     pub command: McpCommand,
     deadline: Instant,
@@ -453,10 +455,12 @@ pub struct Request {
 }
 
 impl Request {
-    /// Runs `execute` unless the request is no longer wanted, and answers the caller.
-    pub fn run(self, shared: &McpShared, execute: impl FnOnce(McpCommand) -> Reply) {
+    /// Runs `execute` unless the request is no longer wanted, and answers the caller. `execute` is
+    /// given the command and the origin the request arrived with.
+    pub fn run(self, shared: &McpShared, execute: impl FnOnce(McpCommand, Origin) -> Reply) {
         let Request {
             client_id,
+            origin,
             permission,
             command,
             deadline,
@@ -474,6 +478,10 @@ impl Request {
         } else if !shared.allows(&client_id, permission) {
             Some(McpError::PermissionDenied(
                 "This credential no longer has the required permission".into(),
+            ))
+        } else if !shared.accepts_origin(&client_id, &origin) {
+            Some(McpError::PermissionDenied(
+                "This credential can no longer be used from where this request came from".into(),
             ))
         } else {
             None
@@ -494,7 +502,7 @@ impl Request {
             let _ = reply.send(Err(McpError::Timeout));
             return;
         }
-        let _ = reply.send(execute(command));
+        let _ = reply.send(execute(command, origin));
     }
 }
 
@@ -509,7 +517,7 @@ pub struct BridgeClient {
 impl BridgeClient {
     pub async fn call(
         &self,
-        client_id: &str,
+        client: &ClientIdentity,
         permission: Permission,
         command: McpCommand,
         timeout: Duration,
@@ -518,7 +526,8 @@ impl BridgeClient {
         let state = Arc::new(AtomicU8::new(PENDING));
         let _cancel_if_dropped = CancelOnDrop(state.clone());
         let request = Request {
-            client_id: client_id.to_owned(),
+            client_id: client.id.clone(),
+            origin: client.origin(),
             permission,
             command,
             deadline: Instant::now() + timeout,
@@ -631,6 +640,18 @@ mod tests {
         (shared, client, inbox, wakes)
     }
 
+    /// A client on this machine, as the bearer check would have identified it.
+    fn identity(id: &str) -> ClientIdentity {
+        ClientIdentity {
+            id: id.into(),
+            name: "c".into(),
+            peer: crate::model::mcp::Peer::from_ip(std::net::IpAddr::V4(
+                std::net::Ipv4Addr::LOCALHOST,
+            )),
+            remote: false,
+        }
+    }
+
     fn ok_reply(_: McpCommand) -> Reply {
         Ok(McpReply::Workspaces(Vec::new()))
     }
@@ -643,7 +664,7 @@ mod tests {
             async move {
                 client
                     .call(
-                        "c1",
+                        &identity("c1"),
                         Permission::ChartsRead,
                         McpCommand::ListWorkspaces,
                         Duration::from_secs(5),
@@ -659,7 +680,7 @@ mod tests {
         };
         let runs = Arc::new(AtomicUsize::new(0));
         let seen = runs.clone();
-        request.run(&shared, move |command| {
+        request.run(&shared, move |command, _origin| {
             seen.fetch_add(1, Ordering::SeqCst);
             assert_eq!(command, McpCommand::ListWorkspaces);
             ok_reply(command)
@@ -669,12 +690,145 @@ mod tests {
         assert_eq!(wakes.load(Ordering::SeqCst), 1);
     }
 
+    /// A request from the host at `peer` (not this machine) with a credential that may be used
+    /// remotely, queued and not yet run; hands back what is needed to run it.
+    async fn queued_from_afar(
+        permissions: &[Permission],
+    ) -> (
+        Arc<McpShared>,
+        tokio::task::JoinHandle<Reply>,
+        Request,
+        ClientIdentity,
+    ) {
+        let (shared, client, inbox, _) = setup(permissions);
+        let mut clients = shared.clients();
+        clients[0].remote_allowed = true;
+        clients[0].allowed_cidrs = vec![crate::model::mcp::Cidr::parse("192.168.1.0/24").unwrap()];
+        shared.replace(clients, PermissionSet::of(Permission::ALL));
+        let identity = shared
+            .authenticate_from("t", "192.168.1.9".parse().ok())
+            .expect("the remote credential is let in from its range");
+        assert!(identity.remote && !identity.peer.local);
+        let call = tokio::spawn({
+            let (client, identity) = (client.clone(), identity.clone());
+            async move {
+                client
+                    .call(
+                        &identity,
+                        Permission::ChartsRead,
+                        McpCommand::ListWorkspaces,
+                        Duration::from_secs(5),
+                    )
+                    .await
+            }
+        });
+        let request = loop {
+            if let Some(request) = inbox.take(1).pop() {
+                break request;
+            }
+            tokio::task::yield_now().await;
+        };
+        (shared, call, request, identity)
+    }
+
+    #[tokio::test]
+    async fn a_queued_request_keeps_the_origin_it_arrived_with_when_remote_access_is_switched_off()
+    {
+        // Remote access is taken away from the credential between the call and the moment it runs.
+        // The request still arrived as remote, so the gate must be told so; but its address is no
+        // longer admitted, so it does not run at all (see the next test).
+        let (shared, _call, request, _identity) = queued_from_afar(&[Permission::ChartsRead]).await;
+        assert!(request.origin.remote);
+        let mut clients = shared.clients();
+        clients[0].remote_allowed = false;
+        shared.replace(clients, PermissionSet::of(Permission::ALL));
+        assert!(
+            !shared.is_remote_client("c1"),
+            "as the credential is now: not remote"
+        );
+        assert!(request.origin.remote, "as the request came in: remote");
+    }
+
+    #[tokio::test]
+    async fn a_request_from_an_address_the_credential_no_longer_admits_does_not_run() {
+        let (shared, call, request, _identity) = queued_from_afar(&[Permission::ChartsRead]).await;
+        // Remote access switched off while it waited.
+        let mut clients = shared.clients();
+        clients[0].remote_allowed = false;
+        shared.replace(clients, PermissionSet::of(Permission::ALL));
+        request.run(&shared, |_, _| {
+            panic!("it must not run from an address no longer admitted")
+        });
+        match call.await.unwrap() {
+            Err(McpError::PermissionDenied(message)) => {
+                assert!(message.contains("can no longer be used"), "{message}")
+            }
+            other => panic!("expected a refusal, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn a_request_whose_range_was_narrowed_away_while_it_waited_does_not_run() {
+        let (shared, call, request, _identity) = queued_from_afar(&[Permission::ChartsRead]).await;
+        let mut clients = shared.clients();
+        clients[0].allowed_cidrs = vec![crate::model::mcp::Cidr::parse("10.0.0.0/8").unwrap()];
+        shared.replace(clients, PermissionSet::of(Permission::ALL));
+        request.run(&shared, |_, _| panic!("outside the allowed range now"));
+        assert!(matches!(
+            call.await.unwrap(),
+            Err(McpError::PermissionDenied(_))
+        ));
+    }
+
+    #[tokio::test]
+    async fn a_request_still_admitted_runs_and_is_given_its_origin() {
+        let (shared, call, request, _identity) = queued_from_afar(&[Permission::ChartsRead]).await;
+        let seen = Arc::new(AtomicUsize::new(0));
+        let counter = seen.clone();
+        request.run(&shared, move |command, origin| {
+            counter.fetch_add(1, Ordering::SeqCst);
+            assert!(origin.remote && !origin.peer.local);
+            ok_reply(command)
+        });
+        assert!(call.await.unwrap().is_ok());
+        assert_eq!(seen.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn a_local_request_is_unaffected_by_the_origin_check() {
+        let (shared, client, inbox, _) = setup(&[Permission::ChartsRead]);
+        let local = identity("c1");
+        let call = tokio::spawn({
+            let client = client.clone();
+            let local = local.clone();
+            async move {
+                client
+                    .call(
+                        &local,
+                        Permission::ChartsRead,
+                        McpCommand::ListWorkspaces,
+                        Duration::from_secs(5),
+                    )
+                    .await
+            }
+        });
+        let request = loop {
+            if let Some(request) = inbox.take(1).pop() {
+                break request;
+            }
+            tokio::task::yield_now().await;
+        };
+        assert!(!request.origin.remote);
+        request.run(&shared, |command, _| ok_reply(command));
+        assert!(call.await.unwrap().is_ok());
+    }
+
     #[tokio::test]
     async fn a_timed_out_request_is_never_executed_later() {
         let (shared, client, inbox, _) = setup(&[Permission::ChartsRead]);
         let result = client
             .call(
-                "c1",
+                &identity("c1"),
                 Permission::ChartsRead,
                 McpCommand::ListWorkspaces,
                 Duration::from_millis(30),
@@ -683,7 +837,9 @@ mod tests {
         assert_eq!(result, Err(McpError::Timeout));
         // The app only gets to it afterwards: it must not run.
         let request = inbox.take(1).pop().expect("still queued");
-        request.run(&shared, |_| panic!("an abandoned request must not execute"));
+        request.run(&shared, |_, _| {
+            panic!("an abandoned request must not execute")
+        });
     }
 
     fn spawn_call(client: &BridgeClient) -> tokio::task::JoinHandle<Reply> {
@@ -691,7 +847,7 @@ mod tests {
         tokio::spawn(async move {
             client
                 .call(
-                    "c1",
+                    &identity("c1"),
                     Permission::ChartsRead,
                     McpCommand::ListWorkspaces,
                     Duration::from_secs(30),
@@ -713,7 +869,7 @@ mod tests {
         // The caller goes away long before its own timeout: stream closed, call cancelled.
         call.abort();
         assert!(call.await.unwrap_err().is_cancelled());
-        request.run(&shared, |_| {
+        request.run(&shared, |_, _| {
             panic!("a request whose caller was dropped must not execute")
         });
     }
@@ -735,7 +891,7 @@ mod tests {
         let runs = Arc::new(AtomicUsize::new(0));
         for request in requests {
             let runs = runs.clone();
-            request.run(&shared, move |command| {
+            request.run(&shared, move |command, _origin| {
                 runs.fetch_add(1, Ordering::SeqCst);
                 ok_reply(command)
             });
@@ -757,7 +913,7 @@ mod tests {
         };
         let ran = Arc::new(AtomicUsize::new(0));
         let seen = ran.clone();
-        request.run(&shared, move |command| {
+        request.run(&shared, move |command, _origin| {
             seen.fetch_add(1, Ordering::SeqCst);
             ok_reply(command)
         });
@@ -774,7 +930,7 @@ mod tests {
             async move {
                 client
                     .call(
-                        "c1",
+                        &identity("c1"),
                         Permission::ChartsRead,
                         McpCommand::ListWorkspaces,
                         Duration::from_secs(5),
@@ -789,7 +945,7 @@ mod tests {
             tokio::task::yield_now().await;
         };
         shared.bump_generation();
-        request.run(&shared, |_| {
+        request.run(&shared, |_, _| {
             panic!("must not execute after the server stopped")
         });
         assert!(matches!(
@@ -806,7 +962,7 @@ mod tests {
             async move {
                 client
                     .call(
-                        "c1",
+                        &identity("c1"),
                         Permission::ChartsCreate,
                         McpCommand::ListWorkspaces,
                         Duration::from_secs(5),
@@ -821,7 +977,7 @@ mod tests {
             tokio::task::yield_now().await;
         };
         shared.replace(Vec::new(), PermissionSet::of(Permission::ALL)); // credential revoked
-        request.run(&shared, |_| panic!("revoked client must not execute"));
+        request.run(&shared, |_, _| panic!("revoked client must not execute"));
         assert!(matches!(
             call.await.unwrap(),
             Err(McpError::PermissionDenied(_))
@@ -837,7 +993,7 @@ mod tests {
             pending.push(tokio::spawn(async move {
                 client
                     .call(
-                        "c1",
+                        &identity("c1"),
                         Permission::ChartsRead,
                         McpCommand::ListWorkspaces,
                         Duration::from_millis(200),
@@ -848,7 +1004,7 @@ mod tests {
         tokio::time::sleep(Duration::from_millis(50)).await;
         let overflow = client
             .call(
-                "c1",
+                &identity("c1"),
                 Permission::ChartsRead,
                 McpCommand::ListWorkspaces,
                 Duration::from_millis(200),

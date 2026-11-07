@@ -120,6 +120,10 @@
   `McpCommand` is decided in `gate` (exhaustive), and an `AskRemote` one also needs a `tool_of` name and
   a `confirm::remote_summary`, or the app refuses it rather than run it unasked. Turning the setting
   off drains only local credentials' questions (`ConfirmationBook::drain_where`).
+- A queued `Request` carries its `Origin` (peer and `remote`, from `ClientIdentity`): pass the identity
+  to `BridgeClient::call`, never a bare client id; `Request::run` re-checks the address
+  (`accepts_origin`) and hands the origin to the gate (`needs_approval(.., remote_origin, ..)`). Do not
+  decide "remote" from the credential's current state alone at execution.
 - Failed sign-ins from another machine draw on that address's own bucket first
   (`RateLimiter::failed_auth(peer, now)`, bounded table), then the shared one; a refusal from another
   machine is counted into one `AuthRefused` row per address per minute. Audit rows carry `peer` (empty

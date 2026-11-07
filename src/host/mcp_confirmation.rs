@@ -143,13 +143,14 @@ pub fn gate_command(
     now: Instant,
     client_id: &str,
     client_name: &str,
+    remote_origin: bool,
     command: &McpCommand,
     describe: impl FnOnce() -> Result<Summary, McpError>,
 ) -> Result<(), McpError> {
     let unavailable = || McpError::AppUnavailable("Confirmations are unavailable".into());
     let required = {
         let host = host.lock().map_err(|_| unavailable())?;
-        crate::mcp::confirm::needs_approval(&host.shared, client_id, command)
+        crate::mcp::confirm::needs_approval(&host.shared, client_id, remote_origin, command)
     };
     if !required {
         return Ok(());
@@ -550,13 +551,13 @@ mod tests {
     fn an_all_approval_holds_only_for_what_the_user_was_shown() {
         let (host, _) = host_with(&["c1"], true);
         let now = Instant::now();
-        let first = gate_command(&host, now, "c1", "Claude", &cancel_all(), || {
+        let first = gate_command(&host, now, "c1", "Claude", false, &cancel_all(), || {
             orders(&[7, 8])
         });
         assert!(matches!(first, Err(McpError::ConfirmationRequired(_))));
         approve_the_one_open(&host, now);
         // Another order appeared before the agent repeated the call: not what was approved.
-        let repeat = gate_command(&host, now, "c1", "Claude", &cancel_all(), || {
+        let repeat = gate_command(&host, now, "c1", "Claude", false, &cancel_all(), || {
             orders(&[7, 8, 9])
         });
         let Err(McpError::ConfirmationRequired(info)) = repeat else {
@@ -568,9 +569,9 @@ mod tests {
         assert!(view.summary.line().contains("all 3 working orders"));
         approve_the_one_open(&host, now);
         assert!(
-            gate_command(&host, now, "c1", "Claude", &cancel_all(), || orders(&[
-                7, 8, 9
-            ]))
+            gate_command(&host, now, "c1", "Claude", false, &cancel_all(), || orders(
+                &[7, 8, 9]
+            ))
             .is_ok()
         );
     }
@@ -579,11 +580,11 @@ mod tests {
     fn swapping_one_order_for_another_is_also_a_change() {
         let (host, _) = host_with(&["c1"], true);
         let now = Instant::now();
-        let _ = gate_command(&host, now, "c1", "Claude", &cancel_all(), || {
+        let _ = gate_command(&host, now, "c1", "Claude", false, &cancel_all(), || {
             orders(&[7, 8])
         });
         approve_the_one_open(&host, now);
-        let repeat = gate_command(&host, now, "c1", "Claude", &cancel_all(), || {
+        let repeat = gate_command(&host, now, "c1", "Claude", false, &cancel_all(), || {
             orders(&[7, 9])
         });
         assert!(
@@ -596,15 +597,15 @@ mod tests {
     fn an_unchanged_target_runs_on_the_approval() {
         let (host, _) = host_with(&["c1"], true);
         let now = Instant::now();
-        let _ = gate_command(&host, now, "c1", "Claude", &cancel_all(), || {
+        let _ = gate_command(&host, now, "c1", "Claude", false, &cancel_all(), || {
             orders(&[8, 7])
         });
         approve_the_one_open(&host, now);
         // The order of the ids is not a change.
         assert!(
-            gate_command(&host, now, "c1", "Claude", &cancel_all(), || orders(&[
-                7, 8
-            ]))
+            gate_command(&host, now, "c1", "Claude", false, &cancel_all(), || orders(
+                &[7, 8]
+            ))
             .is_ok()
         );
     }
@@ -613,9 +614,11 @@ mod tests {
     fn a_target_that_vanished_after_approval_is_refused_not_run() {
         let (host, _) = host_with(&["c1"], true);
         let now = Instant::now();
-        let _ = gate_command(&host, now, "c1", "Claude", &cancel_all(), || orders(&[7]));
+        let _ = gate_command(&host, now, "c1", "Claude", false, &cancel_all(), || {
+            orders(&[7])
+        });
         approve_the_one_open(&host, now);
-        let gone = gate_command(&host, now, "c1", "Claude", &cancel_all(), || {
+        let gone = gate_command(&host, now, "c1", "Claude", false, &cancel_all(), || {
             Err(McpError::NotFound("No such account".into()))
         });
         assert!(matches!(gone, Err(McpError::NotFound(_))), "{gone:?}");
@@ -625,13 +628,14 @@ mod tests {
     fn stopping_and_starting_the_server_clears_every_question_and_approval() {
         let (host, shared) = host_with(&["c1"], true);
         let now = Instant::now();
-        let _ = gate_command(&host, now, "c1", "Claude", &alert_command(), say);
+        let _ = gate_command(&host, now, "c1", "Claude", false, &alert_command(), say);
         approve_the_one_open(&host, now);
         let _ = gate_command(
             &host,
             now,
             "c1",
             "Claude",
+            false,
             &McpCommand::DeleteAlert { alert_id: 2 },
             say,
         );
@@ -645,7 +649,7 @@ mod tests {
         shared.bump_generation();
         host.lock().unwrap().tick(now);
         assert!(host.lock().unwrap().pending(now).is_empty());
-        let again = gate_command(&host, now, "c1", "Claude", &alert_command(), say);
+        let again = gate_command(&host, now, "c1", "Claude", false, &alert_command(), say);
         assert!(
             matches!(again, Err(McpError::ConfirmationRequired(_))),
             "the approval did not survive: {again:?}"
@@ -662,7 +666,8 @@ mod tests {
     fn a_gated_call_is_held_then_runs_once_after_the_user_approves() {
         let (host, shared) = host_with(&["c1"], true);
         let now = Instant::now();
-        let held = gate_command(&host, now, "c1", "Claude", &alert_command(), say).unwrap_err();
+        let held =
+            gate_command(&host, now, "c1", "Claude", false, &alert_command(), say).unwrap_err();
         let McpError::ConfirmationRequired(info) = held else {
             panic!("{held:?}");
         };
@@ -674,16 +679,16 @@ mod tests {
         );
 
         // Repeating it meanwhile gets the same question and does not describe it again.
-        let again = gate_command(&host, now, "c1", "Claude", &alert_command(), || {
+        let again = gate_command(&host, now, "c1", "Claude", false, &alert_command(), || {
             panic!("describes a question that is already open")
         })
         .unwrap_err();
         assert!(matches!(again, McpError::ConfirmationRequired(ref a) if a.id == info.id));
 
         host.lock().unwrap().approve(now, info.id);
-        assert!(gate_command(&host, now, "c1", "Claude", &alert_command(), say).is_ok());
+        assert!(gate_command(&host, now, "c1", "Claude", false, &alert_command(), say).is_ok());
         // Used up.
-        assert!(gate_command(&host, now, "c1", "Claude", &alert_command(), say).is_err());
+        assert!(gate_command(&host, now, "c1", "Claude", false, &alert_command(), say).is_err());
 
         // The user's answer is in the activity log.
         let rows = shared.audit().take(0, false);
@@ -699,12 +704,12 @@ mod tests {
         let (host, shared) = host_with(&["c1"], true);
         let now = Instant::now();
         let McpError::ConfirmationRequired(info) =
-            gate_command(&host, now, "c1", "Claude", &alert_command(), say).unwrap_err()
+            gate_command(&host, now, "c1", "Claude", false, &alert_command(), say).unwrap_err()
         else {
             panic!("not held");
         };
         host.lock().unwrap().deny(now, info.id);
-        match gate_command(&host, now, "c1", "Claude", &alert_command(), say) {
+        match gate_command(&host, now, "c1", "Claude", false, &alert_command(), say) {
             Err(McpError::ConfirmationDenied(operation)) => {
                 assert!(operation.contains("Delete a price alert"));
             }
@@ -719,13 +724,24 @@ mod tests {
         let (host, _) = host_with(&["c1"], true);
         let now = Instant::now();
         let free = McpCommand::ListWorkspaces;
-        assert!(gate_command(&host, now, "c1", "Claude", &free, || panic!("described")).is_ok());
+        assert!(
+            gate_command(&host, now, "c1", "Claude", false, &free, || panic!(
+                "described"
+            ))
+            .is_ok()
+        );
 
         let (off, _) = host_with(&["c1"], false);
         assert!(
-            gate_command(&off, now, "c1", "Claude", &alert_command(), || panic!(
-                "described"
-            ))
+            gate_command(
+                &off,
+                now,
+                "c1",
+                "Claude",
+                false,
+                &alert_command(),
+                || panic!("described")
+            )
             .is_ok()
         );
     }
@@ -736,7 +752,7 @@ mod tests {
         let now = Instant::now();
         let missing = || Err(McpError::NotFound("No such alert".into()));
         let error =
-            gate_command(&host, now, "c1", "Claude", &alert_command(), missing).unwrap_err();
+            gate_command(&host, now, "c1", "Claude", false, &alert_command(), missing).unwrap_err();
         assert!(matches!(error, McpError::NotFound(_)));
         assert!(
             host.lock().unwrap().pending(now).is_empty(),
@@ -750,10 +766,10 @@ mod tests {
         let now = Instant::now();
         for n in 0..crate::mcp::confirm::MAX_PENDING_PER_CLIENT as u64 {
             let command = McpCommand::DeleteAlert { alert_id: n };
-            assert!(gate_command(&host, now, "c1", "Claude", &command, say).is_err());
+            assert!(gate_command(&host, now, "c1", "Claude", false, &command, say).is_err());
         }
         let command = McpCommand::DeleteAlert { alert_id: 999 };
-        let error = gate_command(&host, now, "c1", "Claude", &command, say).unwrap_err();
+        let error = gate_command(&host, now, "c1", "Claude", false, &command, say).unwrap_err();
         assert!(matches!(error, McpError::ResourceLimit(_)), "{error:?}");
     }
 
@@ -761,7 +777,7 @@ mod tests {
     fn unanswered_questions_expire_into_the_log_and_new_ones_are_announced_once() {
         let (host, shared) = host_with(&["c1"], true);
         let now = Instant::now();
-        let _ = gate_command(&host, now, "c1", "Claude", &alert_command(), say);
+        let _ = gate_command(&host, now, "c1", "Claude", false, &alert_command(), say);
         assert_eq!(host.lock().unwrap().take_fresh().len(), 1);
         assert!(
             host.lock().unwrap().take_fresh().is_empty(),
@@ -780,8 +796,8 @@ mod tests {
     fn a_revoked_client_loses_its_questions_and_turning_the_setting_off_clears_them() {
         let (host, shared) = host_with(&["c1", "c2"], true);
         let now = Instant::now();
-        let _ = gate_command(&host, now, "c1", "Claude", &alert_command(), say);
-        let _ = gate_command(&host, now, "c2", "Other", &alert_command(), say);
+        let _ = gate_command(&host, now, "c1", "Claude", false, &alert_command(), say);
+        let _ = gate_command(&host, now, "c2", "Other", false, &alert_command(), say);
         assert_eq!(host.lock().unwrap().pending(now).len(), 2);
 
         // c1 is revoked.
@@ -825,12 +841,12 @@ mod tests {
         let described = || Ok(Summary::new("Change the timeframe", "Day"));
 
         // A change that is easy to undo: free for the local credential, asked of the remote one.
-        assert!(gate_command(&host, now, "local", "Local", &change(), described).is_ok());
+        assert!(gate_command(&host, now, "local", "Local", false, &change(), described).is_ok());
         assert!(matches!(
-            gate_command(&host, now, "remote", "Remote", &change(), described),
+            gate_command(&host, now, "remote", "Remote", false, &change(), described),
             Err(McpError::ConfirmationRequired(_))
         ));
-        let _ = gate_command(&host, now, "local", "Local", &alert_command(), say);
+        let _ = gate_command(&host, now, "local", "Local", false, &alert_command(), say);
         assert_eq!(host.lock().unwrap().pending(now).len(), 2);
 
         // The setting off ends the local question and not the remote one, and the notification
@@ -844,11 +860,30 @@ mod tests {
 
         // And with the setting off, a destructive call from the remote credential still asks,
         // while the local one runs.
-        assert!(gate_command(&host, now, "local", "Local", &alert_command(), say).is_ok());
+        assert!(gate_command(&host, now, "local", "Local", false, &alert_command(), say).is_ok());
         assert!(matches!(
-            gate_command(&host, now, "remote", "Remote", &alert_command(), say),
+            gate_command(&host, now, "remote", "Remote", false, &alert_command(), say),
             Err(McpError::ConfirmationRequired(_))
         ));
+    }
+
+    #[test]
+    fn a_change_that_arrived_as_remote_is_still_asked_about_after_remote_access_is_switched_off() {
+        // The credential is local now (host_with makes it so), but the request was authenticated
+        // as remote and has been waiting in the queue.
+        let (host, _shared) = host_with(&["c1"], true);
+        let now = Instant::now();
+        let change = McpCommand::SetTimeframe {
+            workspace_id: 1,
+            timeframe: crate::model::Timeframe::Day,
+        };
+        let described = || Ok(Summary::new("Change the timeframe", "Day"));
+        assert!(matches!(
+            gate_command(&host, now, "c1", "Claude", true, &change, described),
+            Err(McpError::ConfirmationRequired(_))
+        ));
+        // As a local request from a local credential it would have run.
+        assert!(gate_command(&host, now, "c1", "Claude", false, &change, described).is_ok());
     }
 
     #[test]

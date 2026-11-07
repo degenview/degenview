@@ -55,8 +55,17 @@ pub enum Gate {
 /// high-impact requests" setting does not apply to it: someone who can reach the server from
 /// another machine is not given a way to switch the question off from here. A local credential
 /// asks for the high-impact commands only, and not at all when the setting is off.
-pub fn needs_approval(shared: &McpShared, client_id: &str, command: &McpCommand) -> bool {
-    let remote = shared.is_remote_client(client_id);
+///
+/// `remote_origin` is how the request arrived (`ClientIdentity::remote`), fixed when it was
+/// authenticated: a call that came in as remote keeps asking even if remote access is switched off
+/// while it waits to run. The credential's present state counts too, so neither can lower it.
+pub fn needs_approval(
+    shared: &McpShared,
+    client_id: &str,
+    remote_origin: bool,
+    command: &McpCommand,
+) -> bool {
+    let remote = remote_origin || shared.is_remote_client(client_id);
     match gate(command) {
         Gate::Free => false,
         Gate::Ask => remote || shared.require_confirmation(),
@@ -1036,13 +1045,46 @@ mod tests {
     }
 
     #[test]
+    fn a_request_that_arrived_as_remote_keeps_asking_when_remote_access_is_switched_off() {
+        let destructive = McpCommand::DeleteAlert { alert_id: 1 };
+        let change = remote_asks().remove(0);
+        for require in [true, false] {
+            // The credential has just stopped being remote (shared_with(false, ..)), but the
+            // request was authenticated as remote.
+            let shared = shared_with(false, require);
+            assert!(
+                needs_approval(&shared, "c", true, &change),
+                "require={require}"
+            );
+            assert!(
+                needs_approval(&shared, "c", true, &destructive),
+                "require={require}"
+            );
+            // And one that arrived as local, from a local credential, is as it was.
+            assert!(
+                !needs_approval(&shared, "c", false, &change),
+                "require={require}"
+            );
+            assert_eq!(
+                needs_approval(&shared, "c", false, &destructive),
+                require,
+                "require={require}"
+            );
+            // A credential that is remote now asks whatever the request came in as.
+            let remote_now = shared_with(true, require);
+            assert!(needs_approval(&remote_now, "c", false, &change));
+            assert!(needs_approval(&remote_now, "c", false, &destructive));
+        }
+    }
+
+    #[test]
     fn who_is_asked_about_what() {
         let destructive = McpCommand::DeleteAlert { alert_id: 1 };
         let change = remote_asks().remove(0);
         let read = McpCommand::ListWorkspaces;
         for (remote, require) in [(false, true), (false, false), (true, true), (true, false)] {
             let shared = shared_with(remote, require);
-            let asks = |command: &McpCommand| needs_approval(&shared, "c", command);
+            let asks = |command: &McpCommand| needs_approval(&shared, "c", false, command);
             assert!(!asks(&read), "a read is never asked about");
             // High-impact: asked unless it is a local credential and the setting is off. A
             // credential with remote access cannot switch the question off.
@@ -1056,7 +1098,7 @@ mod tests {
         }
         // A client that is gone counts as remote, so its question is not skipped.
         let shared = shared_with(false, false);
-        assert!(needs_approval(&shared, "revoked", &destructive));
-        assert!(needs_approval(&shared, "revoked", &change));
+        assert!(needs_approval(&shared, "revoked", false, &destructive));
+        assert!(needs_approval(&shared, "revoked", false, &change));
     }
 }

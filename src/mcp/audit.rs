@@ -405,6 +405,7 @@ mod tests {
             id: "c1".into(),
             name: "Claude".into(),
             peer: Peer::from_ip(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+            remote: false,
         }
     }
 
