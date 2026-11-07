@@ -1193,7 +1193,7 @@ fn permissions_sheet(
                 Icon::Link,
                 "Remote ceiling",
                 "The most a credential with remote access can do, even on this Mac.",
-                kit::ACCENT,
+                theme::text_secondary(),
             ),
             None => sheet::header(
                 ui,

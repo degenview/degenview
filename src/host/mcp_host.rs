@@ -634,13 +634,9 @@ impl McpHost {
 
     /// Reads (or makes) the certificate for the saved bind, for the fingerprint the page shows.
     fn refresh_fingerprint(&mut self) {
-        self.tls_fingerprint = match self.tls_identity() {
-            Ok(identity) => identity.map(|identity| identity.fingerprint()),
-            Err(message) => {
-                self.notice = Some(message);
-                None
-            }
-        };
+        if let Err(message) = self.tls_identity() {
+            self.notice = Some(message);
+        }
     }
 
     /// The fingerprint of the certificate a remote client should pin, when the server listens
@@ -693,7 +689,21 @@ impl McpHost {
 
     /// The certificate for the interface the server listens on: none on loopback, otherwise the
     /// one saved for that address, made on first use.
-    fn tls_identity(&self) -> Result<Option<TlsIdentity>, String> {
+    ///
+    /// The only way the host loads one, and it records the fingerprint of what it returns (nothing
+    /// when there is none or it could not be loaded), so the page can never show a fingerprint
+    /// other than that of the identity last handed to the listener: a file deleted or replaced
+    /// while the app runs is picked up here, at the next start, with its new fingerprint.
+    fn tls_identity(&mut self) -> Result<Option<TlsIdentity>, String> {
+        let identity = self.load_tls_identity();
+        self.tls_fingerprint = match &identity {
+            Ok(Some(identity)) => Some(identity.fingerprint()),
+            _ => None,
+        };
+        identity
+    }
+
+    fn load_tls_identity(&self) -> Result<Option<TlsIdentity>, String> {
         let BindMode::Interface(address) = self.settings.bind else {
             return Ok(None);
         };
@@ -3358,6 +3368,47 @@ mod tests {
         let mut broken = McpHost::load(store.clone(), Arc::new(|| {}));
         broken.apply(McpAction::SetBind(lan()));
         assert_eq!(broken.settings().bind, BindMode::Loopback);
+    }
+
+    #[test]
+    fn the_fingerprint_shown_is_that_of_the_identity_the_listener_was_given() {
+        // The certificate is deleted while the app runs. The next start makes a new one, and the
+        // page must show that one, not the one it showed before.
+        let store = store();
+        let mut host = host(&store);
+        let dir = scratch_dir("fingerprint");
+        host.tls_dir = Some(dir.clone());
+        host.apply(McpAction::SetBind(lan()));
+        let before = host.tls_fingerprint().expect("a fingerprint").to_owned();
+
+        std::fs::remove_file(dir.join(crate::mcp::tls::FILE_NAME)).unwrap();
+        // The stale value is still what the page has until something loads an identity.
+        assert_eq!(host.tls_fingerprint(), Some(before.as_str()));
+        // `start_server` is what loads it for the listener (the address cannot be bound here, so
+        // it fails after loading, which is exactly the part under test).
+        host.settings.enabled = true;
+        host.start_server();
+        let shown = host.tls_fingerprint().expect("a fingerprint").to_owned();
+        let served = crate::mcp::tls::load_or_create(&dir, "192.0.2.1".parse().unwrap())
+            .unwrap()
+            .fingerprint();
+        assert_ne!(shown, before, "a new certificate was made");
+        assert_eq!(shown, served, "and the page shows the one that was served");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_certificate_that_cannot_be_loaded_leaves_no_fingerprint_behind() {
+        let store = store();
+        let mut host = host(&store);
+        let dir = scratch_dir("unloadable");
+        host.tls_dir = Some(dir.clone());
+        host.apply(McpAction::SetBind(lan()));
+        assert!(host.tls_fingerprint().is_some());
+        std::fs::write(dir.join(crate::mcp::tls::FILE_NAME), "damaged").unwrap();
+        assert!(host.tls_identity().is_err());
+        assert_eq!(host.tls_fingerprint(), None, "nothing stale is shown");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
