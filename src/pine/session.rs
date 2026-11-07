@@ -103,6 +103,10 @@ pub struct Session {
     /// Builtin variable names (`low`) the script declares itself: removed at the start of each bar so
     /// a read before the declaration still means the builtin.
     shadowing_builtins: Vec<String>,
+    /// Builtin variables the program reads a history of (`hlcc4[1]`, `ta.tr[1]`,
+    /// `strategy.closedtrades[1]`) that `commit_histories` does not record on its own. Each is read at
+    /// the end of every confirmed bar and kept like a variable. Empty for most scripts.
+    history_builtins: Vec<String>,
     /// Tests only: ignore every call's `route` and `target`, so a run can be compared with the
     /// chain's, which finds functions and methods by name.
     #[cfg(any(test, feature = "corpus"))]
@@ -309,6 +313,7 @@ impl Session {
             }
         }
         let shadowing_builtins = declared_builtin_names(&program.statements);
+        let history_builtins = history_builtin_names(&program.statements, &shadowing_builtins);
         let mut inputs = inputs;
         for input in &program.input_schema.inputs {
             inputs
@@ -370,6 +375,7 @@ impl Session {
             theme: super::program::ChartTheme::DARK,
             security_depth: 0,
             shadowing_builtins,
+            history_builtins,
             #[cfg(any(test, feature = "corpus"))]
             ignore_routes: false,
             last_bar_index: -1,
@@ -697,7 +703,8 @@ impl Session {
             self.finish_strategy_bar(candle.clone());
         }
         if confirmed {
-            self.commit_histories(candle, true);
+            let builtins = self.read_history_builtins(&mut context);
+            self.commit_histories(candle, true, builtins);
             if replaying {
                 self.working_is_committed = true;
             } else {
@@ -3021,7 +3028,38 @@ impl Session {
 
     // MARK: Bookkeeping
 
-    pub(crate) fn commit_histories(&mut self, bar: Kline, releasing_committed: bool) {
+    /// The value of each builtin variable the script reads a history of, as this bar left it. A name
+    /// the script declares itself is a variable and is recorded with the others.
+    fn read_history_builtins(
+        &mut self,
+        context: &mut RuntimeContext,
+    ) -> Vec<(String, RuntimeValue)> {
+        if self.history_builtins.is_empty() {
+            return Vec::new();
+        }
+        let names = std::mem::take(&mut self.history_builtins);
+        let mut values = Vec::with_capacity(names.len());
+        for name in &names {
+            if self.working.variables.contains_key(name) {
+                continue;
+            }
+            let value = self
+                .resolve_identifier(name, SourceRange::ZERO, context)
+                .unwrap_or(RuntimeValue::Na);
+            values.push((name.clone(), value));
+        }
+        self.history_builtins = names;
+        values
+    }
+
+    /// Records the bar in every history. `builtins` are values of builtin variables the script
+    /// indexes (see `read_history_builtins`); a plain call from elsewhere passes none.
+    pub(crate) fn commit_histories(
+        &mut self,
+        bar: Kline,
+        releasing_committed: bool,
+        builtins: Vec<(String, RuntimeValue)>,
+    ) {
         let mut series: FastMap<String, RuntimeValue> = FastMap::default();
         series.insert("open".to_owned(), RuntimeValue::Float(bar.open));
         series.insert("high".to_owned(), RuntimeValue::Float(bar.high));
@@ -3070,7 +3108,7 @@ impl Session {
             .iter()
             .filter(|(name, _)| !builtin.contains(*name))
             .map(|(name, value)| (name.clone(), value.clone()));
-        for (name, value) in series.into_iter().chain(own) {
+        for (name, value) in series.into_iter().chain(builtins).chain(own) {
             if !name.starts_with(INTERNAL_PREFIX) {
                 histories.entry(name).or_default().push(value);
             }
@@ -3186,6 +3224,37 @@ fn declared_builtin_names(statements: &[Statement]) -> Vec<String> {
     let mut found = Vec::new();
     visit(statements, &mut found);
     found
+}
+
+/// The builtin variables `statements` read a history of that `commit_histories` does not record
+/// itself: `open`, `close` and the other series it always keeps are left out, and so is a name the
+/// script declares anew (it is then an ordinary variable).
+fn history_builtin_names(statements: &[Statement], shadowed: &[String]) -> Vec<String> {
+    const ALWAYS_RECORDED: [&str; 11] = [
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "hl2",
+        "hlc3",
+        "ohlc4",
+        "time",
+        "time_close",
+        "bar_index",
+    ];
+    let mut names: Vec<String> = Vec::new();
+    super::traversal::for_each_history_identifier(statements, &mut |name| {
+        if super::symbol_catalog::is_variable(name)
+            && !ALWAYS_RECORDED.contains(&name)
+            && !STRATEGY_SERIES.contains(&name)
+            && !shadowed.iter().any(|shadow| shadow == name)
+            && !names.iter().any(|known| known == name)
+        {
+            names.push(name.to_owned());
+        }
+    });
+    names
 }
 
 fn sorted_by_id<T: Clone>(map: &FastMap<usize, T>) -> Vec<T> {

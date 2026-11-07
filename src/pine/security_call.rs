@@ -761,7 +761,7 @@ impl Session {
             .map(|evaluated| ReferenceExport::new(&self.working).export(evaluated, &mut chart));
         if commit {
             if value.is_ok() {
-                self.commit_histories(candle.clone(), false);
+                self.commit_histories(candle.clone(), false, Vec::new());
             }
             *site.state = std::mem::take(&mut self.working);
         }

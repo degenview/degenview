@@ -56,7 +56,7 @@ Severity: **bug** = the engine computes something TradingView does not and a scr
 | 2 | bug | varip | `varip` in a function is shared across call sites | audit | PR 5 |
 | 3 | gap | varip | `varip` UDT fields do not parse | re-read (parser) | PR 5 |
 | 4 | bug | varip | `varip` array/map/UDT/drawing handle dangles after a tick | audit | PR 5 |
-| 5 | bug | history | `[]` on most built-ins is `na` forever | audit | PR 4 |
+| 5 | bug | history | `[]` on most built-ins is `na` forever | audit, run (test) | PR 4 — **done** |
 | 6 | bug | scopes | Block locals keep stale values; one flat history table | audit | — |
 | 7 | bug | scopes | Function block locals push `na` on skipped bars | audit | — |
 | 8 | bug | scopes | `f()[n]` / `ta.x()[n]` use global offsets; chained `[]` collide; offset 0 skips the trail | audit | — |
@@ -79,10 +79,10 @@ Severity: **bug** = the engine computes something TradingView does not and a scr
 | 25 | diff | controller | A new bar first seen already closed runs as `Historical` | audit | — |
 | 26 | diff | alerts | `alertcondition` is fixed to `All`; alerts emitted before an error are dropped | audit | — |
 | 27 | gap | strategy | `strategy.exit` trailing arguments raise `PINE9005` | audit | — (`trail_offset` alone is meaningless in TradingView too) |
-| 28 | gap | type check | A history offset's type is not checked at compile time | audit | PR 4 |
+| 28 | gap | type check | A history offset's type is not checked at compile time | audit | — (needs the corpus, see PR 4 note) |
 | 29 | gap | strategy | No margin model; `max_*_count` not capped at TradingView's limits | audit | — |
 | 30 | diff | controller | Stale `last_valid` output shows after a failed or new run | audit | PR 6 |
-| 31 | gap | perf | Every tick deep-clones `RuntimeState`; every variable's history is pushed every bar | audit | PR 4 (second half) |
+| 31 | gap | perf | Every tick deep-clones `RuntimeState`; every variable's history is pushed every bar | audit | — (see PR 4 note) |
 
 ### Strategy
 
@@ -364,7 +364,16 @@ change except on the workload the PR targets, and PRs touching state or rollback
 3. Warnings for silently ignored settings that change results (15). Done: `calc_on_order_fills = true` and
    `close_entries_rule` other than `"FIFO"`. Not warned, on purpose: `max_bars_back` (18), lone `trail_offset` (27),
    `fill_orders_on_standard_ohlc` (documented no-op).
-4. History of built-in variables, offset type check, history pushed only for what is indexed (5, 28, 31).
+4. History of built-in variables (5). Done: the program is scanned once for `name[n]` where `name` is a builtin
+   variable (`symbol_catalog::is_variable`) that `commit_histories` does not record itself; those names are
+   read at the end of every confirmed bar (`Session::read_history_builtins`) and kept like variables. A script
+   that indexes none pays one `is_empty()` test per bar. Not done, on purpose: the compile-time int check on
+   the offset (28) could reject a script TradingView accepts if the type checker infers `float` where
+   TradingView has `int` (e.g. `math.round`), and the corpus that would show it is not cached here; and
+   recording history only for indexed variables (31) would break debugger watch expressions
+   (`pine::debug::parse_expression` can index any variable) unless gated on the hooks. Limitation: inside a
+   `request.security` expression, a builtin's history is still `na` (the site calls `commit_histories`
+   without builtins).
 5. `varip` per call site, UDT `varip` fields, reference-typed `varip` (2, 3, 4).
 6. A runtime error halts the script (11, 12, 13, 30).
 
