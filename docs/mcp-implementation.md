@@ -213,6 +213,40 @@ If standard OAuth discovery is necessary for target clients, implement a complia
 
 A later remote-access mode would require a separate security design, HTTPS, proper OAuth authorization, audience-bound tokens, and additional protections. Do not expose the local-token implementation remotely.
 
+## Remote access: what exists
+
+The transport for listening beyond loopback exists, with no way to turn it on from Settings yet
+(`McpSettings.bind` is read from the store). It is the first of four steps; the others are in
+[remaining work](mcp-remaining-work.md). Until they land, treat a non-loopback bind as unfinished.
+
+This deliberately takes a smaller step than the paragraph above asks for: TLS and the existing
+bearer tokens, not OAuth. That fits the user's own machines on a LAN or a tailnet, where the client
+pins the certificate. It does not make the server fit for the public internet, and a hosted client
+that expects OAuth discovery will not work with it.
+
+- `BindMode`: `Loopback` (default) or `Interface(ip)`, one address of this machine. `0.0.0.0`, `::`,
+  multicast, broadcast and IPv6 link-local are not accepted, from the API or from a stored value.
+  A loopback address is `Loopback`.
+- Anything but loopback is served over TLS 1.3 only. `McpServer::start_listening` refuses it without
+  a certificate, and with one made for a different address, before binding.
+- The certificate is self-signed for that address, made on first use and kept in `mcp-tls.pem` in the
+  data directory (owner-only on Unix; Windows relies on the per-user data directory). A new address
+  means a new certificate, so a new fingerprint to pin. A file that cannot be read is an error, not a
+  reason to replace it. The key is not in the credential seal: replacing the file lets someone present
+  another certificate, but yields no token, and a pinning client refuses it.
+- The `Host` check accepts only that address and port on a named interface, and the loopback names on
+  loopback. Origin rejection, the bearer check, the permission checks, rate limits and the confirmation
+  step apply unchanged, and run after TLS.
+- A client that does not finish the handshake is dropped after 10 s and its connection slot freed.
+- `bind` is part of the seal, and is written only when it is not loopback, so a seal made before this
+  existed still verifies.
+
+Verified by tests on loopback with a certificate for 127.0.0.1 (no test can assume a LAN address):
+pinned client round trip through the real router, a client pinning another certificate, plain HTTP to a
+TLS port, a stalled handshake, and the refusals. Not verified: a bind to a real LAN or Tailscale
+address, or any real client (Claude Desktop, `mcp-remote`, Claude Code) accepting a self-signed
+certificate by pin. That decides whether this tier is usable and should be checked first.
+
 ---
 
 # 5. Token management

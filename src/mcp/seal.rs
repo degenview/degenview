@@ -11,7 +11,9 @@
 //! and a replay of an older database copy together with its own seal. Pure values only.
 
 use crate::mcp::auth::verifiers_match;
-use crate::model::mcp::{McpClient, McpSettings, PermissionSet, default_global_permissions};
+use crate::model::mcp::{
+    BindMode, McpClient, McpSettings, PermissionSet, default_global_permissions,
+};
 use hmac::{Hmac, Mac};
 use serde::Serialize;
 use sha2::Sha256;
@@ -36,6 +38,9 @@ struct SealedClient<'a> {
 struct Sealed<'a> {
     enabled: bool,
     port: u16,
+    /// Absent while loopback, so a seal made before remote access existed still verifies.
+    #[serde(skip_serializing_if = "BindMode::is_loopback")]
+    bind: BindMode,
     require_confirmation: bool,
     global: &'a PermissionSet,
     clients: Vec<SealedClient<'a>>,
@@ -51,6 +56,7 @@ pub fn seal(
     let sealed = Sealed {
         enabled: settings.enabled,
         port: settings.port,
+        bind: settings.bind,
         require_confirmation: settings.require_confirmation,
         global,
         clients: clients
@@ -163,6 +169,26 @@ mod tests {
     }
 
     #[test]
+    fn loopback_leaves_no_trace_in_the_sealed_bytes() {
+        // A seal written before `bind` existed must keep verifying: the loopback encoding has to
+        // be byte-for-byte the old one, so a field is added only when it is not the default.
+        let sealed = |bind: BindMode| {
+            serde_json::to_string(&Sealed {
+                enabled: true,
+                port: 9001,
+                bind,
+                require_confirmation: true,
+                global: &default_global_permissions(),
+                clients: Vec::new(),
+            })
+            .unwrap()
+        };
+        assert!(!sealed(BindMode::Loopback).contains("bind"));
+        let lan = BindMode::interface("10.0.0.7".parse().unwrap()).unwrap();
+        assert!(sealed(lan).contains(r#""bind":"10.0.0.7""#));
+    }
+
+    #[test]
     fn a_forged_client_row_does_not_verify() {
         // What an attacker who can write the file but has no key can do: pick a token, store
         // its SHA-256 as a verifier with every permission.
@@ -201,6 +227,14 @@ mod tests {
         assert!(changed(
             &McpSettings {
                 require_confirmation: !settings.require_confirmation,
+                ..settings.clone()
+            },
+            &global,
+            &clients
+        ));
+        assert!(changed(
+            &McpSettings {
+                bind: BindMode::interface("192.168.1.20".parse().unwrap()).unwrap(),
                 ..settings.clone()
             },
             &global,

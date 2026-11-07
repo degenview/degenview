@@ -3726,3 +3726,4 @@ mod paper_tests;
 mod portfolio_tests;
 mod replay_tests;
 mod snapshot_tests;
+mod tls_tests;

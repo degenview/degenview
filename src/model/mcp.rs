@@ -1,8 +1,9 @@
 //! MCP server settings, client credentials and the permission model. Pure values: no
 //! HTTP, no egui, no Keychain. The server, the store and the Settings page all share these.
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::BTreeSet;
+use std::net::{IpAddr, Ipv4Addr};
 
 pub const DEFAULT_PORT: u16 = 8765;
 /// Ports below this need elevated rights on most systems and are never a sensible choice.
@@ -464,12 +465,138 @@ pub enum McpAction {
     SetRequireConfirmation(bool),
 }
 
+/// Which network interface the server listens on.
+///
+/// Loopback is the default and the only mode that needs no certificate. A named interface is
+/// reachable from other machines, so it is served over TLS only: see `mcp::tls`. There is no
+/// "all interfaces" mode: the user names the one address to listen on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BindMode {
+    #[default]
+    Loopback,
+    /// A specific non-loopback address of this machine. Built with [`BindMode::interface`].
+    Interface(IpAddr),
+}
+
+/// Why an address cannot be offered as an interface to listen on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BindError {
+    /// `0.0.0.0` / `::`: every interface at once, which this server never does.
+    Unspecified,
+    Multicast,
+    /// `255.255.255.255`.
+    Broadcast,
+    /// An IPv6 link-local address needs a scope id, which a bare address cannot carry.
+    LinkLocalV6,
+}
+
+impl std::fmt::Display for BindError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Unspecified => "Pick one interface address, not 0.0.0.0 or ::",
+            Self::Multicast => "A multicast address cannot be listened on",
+            Self::Broadcast => "A broadcast address cannot be listened on",
+            Self::LinkLocalV6 => "IPv6 link-local addresses are not supported",
+        })
+    }
+}
+
+impl BindMode {
+    /// The mode for listening on `ip`. A loopback address is [`BindMode::Loopback`], so there is
+    /// one way to say it.
+    pub fn interface(ip: IpAddr) -> Result<Self, BindError> {
+        if ip.is_loopback() {
+            return Ok(Self::Loopback);
+        }
+        if ip.is_unspecified() {
+            return Err(BindError::Unspecified);
+        }
+        if ip.is_multicast() {
+            return Err(BindError::Multicast);
+        }
+        match ip {
+            IpAddr::V4(v4) if v4 == Ipv4Addr::BROADCAST => Err(BindError::Broadcast),
+            IpAddr::V6(v6) if v6.segments()[0] & 0xffc0 == 0xfe80 => Err(BindError::LinkLocalV6),
+            _ => Ok(Self::Interface(ip)),
+        }
+    }
+
+    pub fn is_loopback(&self) -> bool {
+        matches!(self, Self::Loopback)
+    }
+
+    /// Whether the server may only be reached over TLS in this mode.
+    pub fn requires_tls(&self) -> bool {
+        !self.is_loopback()
+    }
+
+    /// The address the listener binds.
+    pub fn address(&self) -> IpAddr {
+        match self {
+            Self::Loopback => IpAddr::V4(Ipv4Addr::LOCALHOST),
+            Self::Interface(ip) => *ip,
+        }
+    }
+
+    pub fn scheme(&self) -> &'static str {
+        if self.requires_tls() { "https" } else { "http" }
+    }
+
+    /// `host:port` as a client writes it, with an IPv6 address bracketed.
+    pub fn authority(&self, port: u16) -> String {
+        match self.address() {
+            IpAddr::V4(ip) => format!("{ip}:{port}"),
+            IpAddr::V6(ip) => format!("[{ip}]:{port}"),
+        }
+    }
+
+    /// Every `Host` header value a request may carry. A server on a named interface answers to
+    /// that address only: loopback is not listening, and no name is trusted without being asked.
+    pub fn allowed_hosts(&self, port: u16) -> Vec<String> {
+        match self {
+            Self::Loopback => vec![format!("127.0.0.1:{port}"), format!("localhost:{port}")],
+            Self::Interface(_) => vec![self.authority(port)],
+        }
+    }
+
+    fn parse(text: &str) -> Result<Self, String> {
+        if text == "loopback" {
+            return Ok(Self::Loopback);
+        }
+        let ip: IpAddr = text
+            .parse()
+            .map_err(|_| format!("`{text}` is not an IP address"))?;
+        Self::interface(ip).map_err(|error| error.to_string())
+    }
+}
+
+impl Serialize for BindMode {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Loopback => serializer.serialize_str("loopback"),
+            Self::Interface(ip) => serializer.collect_str(ip),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for BindMode {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        Self::parse(&text).map_err(serde::de::Error::custom)
+    }
+}
+
 /// Persisted server preferences (`setting` key `mcp.settings`). Disabled on a fresh install.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct McpSettings {
     pub enabled: bool,
     pub port: u16,
+    /// Left out of the stored form while it is loopback, so settings saved before this existed
+    /// read back unchanged. An unreadable value fails the whole load rather than becoming
+    /// loopback: the server stays off and nothing is overwritten.
+    #[serde(skip_serializing_if = "BindMode::is_loopback")]
+    pub bind: BindMode,
     /// Deletes, saved scripts and paper orders wait for the user's approval in the app. On
     /// unless the user turns it off, including for settings saved before this existed.
     pub require_confirmation: bool,
@@ -480,6 +607,7 @@ impl Default for McpSettings {
         Self {
             enabled: false,
             port: DEFAULT_PORT,
+            bind: BindMode::Loopback,
             require_confirmation: true,
         }
     }
@@ -487,7 +615,11 @@ impl Default for McpSettings {
 
 impl McpSettings {
     pub fn endpoint(&self) -> String {
-        format!("http://127.0.0.1:{}/mcp", self.port)
+        format!(
+            "{}://{}/mcp",
+            self.bind.scheme(),
+            self.bind.authority(self.port)
+        )
     }
 }
 
@@ -655,6 +787,97 @@ mod tests {
             serde_json::from_str(r#"["charts.read","pine.scripts.delete"]"#).unwrap();
         assert_eq!(set, PermissionSet::of([Permission::ChartsRead]));
         assert_eq!(serde_json::to_string(&set).unwrap(), r#"["charts.read"]"#);
+    }
+
+    fn ip(text: &str) -> IpAddr {
+        text.parse().unwrap()
+    }
+
+    #[test]
+    fn loopback_addresses_are_the_loopback_mode() {
+        assert_eq!(BindMode::interface(ip("127.0.0.1")), Ok(BindMode::Loopback));
+        assert_eq!(BindMode::interface(ip("127.5.5.5")), Ok(BindMode::Loopback));
+        assert_eq!(BindMode::interface(ip("::1")), Ok(BindMode::Loopback));
+    }
+
+    #[test]
+    fn an_interface_is_one_named_address_never_all_of_them() {
+        assert_eq!(
+            BindMode::interface(ip("0.0.0.0")),
+            Err(BindError::Unspecified)
+        );
+        assert_eq!(BindMode::interface(ip("::")), Err(BindError::Unspecified));
+        assert_eq!(
+            BindMode::interface(ip("224.0.0.1")),
+            Err(BindError::Multicast)
+        );
+        assert_eq!(
+            BindMode::interface(ip("255.255.255.255")),
+            Err(BindError::Broadcast)
+        );
+        assert_eq!(
+            BindMode::interface(ip("fe80::1")),
+            Err(BindError::LinkLocalV6)
+        );
+        assert_eq!(
+            BindMode::interface(ip("192.168.1.20")),
+            Ok(BindMode::Interface(ip("192.168.1.20")))
+        );
+        assert_eq!(
+            BindMode::interface(ip("fd00::20")),
+            Ok(BindMode::Interface(ip("fd00::20")))
+        );
+    }
+
+    #[test]
+    fn bind_mode_decides_scheme_endpoint_and_hosts() {
+        let loopback = BindMode::Loopback;
+        assert!(!loopback.requires_tls());
+        assert_eq!(loopback.scheme(), "http");
+        assert_eq!(
+            loopback.allowed_hosts(9000),
+            ["127.0.0.1:9000", "localhost:9000"]
+        );
+
+        let lan = BindMode::interface(ip("192.168.1.20")).unwrap();
+        assert!(lan.requires_tls());
+        assert_eq!(lan.allowed_hosts(9000), ["192.168.1.20:9000"]);
+        let settings = McpSettings {
+            bind: lan,
+            port: 9000,
+            ..McpSettings::default()
+        };
+        assert_eq!(settings.endpoint(), "https://192.168.1.20:9000/mcp");
+
+        let v6 = BindMode::interface(ip("fd00::20")).unwrap();
+        assert_eq!(v6.allowed_hosts(9000), ["[fd00::20]:9000"]);
+    }
+
+    #[test]
+    fn bind_mode_is_stored_only_when_it_is_not_loopback() {
+        let stored = serde_json::to_string(&McpSettings::default()).unwrap();
+        assert!(!stored.contains("bind"), "{stored}");
+
+        let lan = McpSettings {
+            bind: BindMode::interface(ip("10.0.0.7")).unwrap(),
+            ..McpSettings::default()
+        };
+        let stored = serde_json::to_string(&lan).unwrap();
+        assert!(stored.contains(r#""bind":"10.0.0.7""#), "{stored}");
+        assert_eq!(serde_json::from_str::<McpSettings>(&stored).unwrap(), lan);
+    }
+
+    #[test]
+    fn an_unreadable_or_all_interfaces_bind_fails_the_load() {
+        for bad in ["0.0.0.0", "::", "lan", "", "fe80::1"] {
+            let json = format!(r#"{{"bind":"{bad}"}}"#);
+            assert!(
+                serde_json::from_str::<McpSettings>(&json).is_err(),
+                "{bad} must not load"
+            );
+        }
+        let explicit: McpSettings = serde_json::from_str(r#"{"bind":"loopback"}"#).unwrap();
+        assert_eq!(explicit, McpSettings::default());
     }
 
     #[test]

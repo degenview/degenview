@@ -90,6 +90,14 @@
 - Indicator readings use the bars the chart draws (`ChartWorkspace::constructed_bars` for Heikin
   Ashi, Renko and the other built types), never the raw candles; `degenview_get_candles` stays the
   market's own. A paper `request_id` is bound to its order (another order under it is `CONFLICT`).
+- Listening beyond loopback is `BindMode::Interface(ip)`: one named address (never `0.0.0.0` or
+  `::`, which `BindMode::interface` rejects and a stored one fails the load), TLS only. The only
+  gate is `Listen::check` in `McpServer::start_listening`: no certificate, or one made for another
+  address, is refused before a socket opens. Do not add a path that binds without it. `bind` is
+  sealed, but only written when it is not loopback, so existing seals keep verifying. The
+  certificate is `mcp::tls` (`mcp-tls.pem` in the data directory, owner-only); the `Host` list comes
+  from `BindMode::allowed_hosts`, not the port. See "Remote access" in
+  [implementation](../mcp-implementation.md).
 - Settings holds the store lock, so its MCP UI returns `McpAction`s for `McpHost::queue`; never call
   `McpHost::apply` inside the Settings closure.
 - Verify against `127.0.0.1:<port>/mcp` with seeded `mcp.settings`/`mcp_client` rows, a throwaway

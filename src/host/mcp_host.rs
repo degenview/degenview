@@ -8,7 +8,6 @@
 use crate::host::alert_host::AlertHost;
 use crate::host::paper_host::{PaperHost, PaperHostError, owner_text};
 use crate::host::portfolio_host::PortfolioHost;
-use crate::mcp::McpServer;
 use crate::mcp::auth::{generate_token, verifier_hex};
 use crate::mcp::bridge::{
     self, AlertCommandOutcome, AlertUpdate, BridgeClient, BridgeInbox, McpError, NewAlert, Request,
@@ -32,6 +31,7 @@ use crate::mcp::replay_tools::{self, ReplayResult};
 use crate::mcp::seal;
 use crate::mcp::snapshot_tools::{SnapshotProgress, SnapshotStarted};
 use crate::mcp::state::{McpShared, McpStatus};
+use crate::mcp::tls::{self, TlsIdentity};
 use crate::mcp::types::{
     AddChartResult, AddIndicatorResult, AlertInfo, AlertsResult, AppliedPineDetail,
     AppliedPineInfo, AppliedPineList, CandlesResult, ChartInfo, ChartsResult, DrawingsChangeResult,
@@ -40,12 +40,13 @@ use crate::mcp::types::{
     PineStrategySettingsInfo, PineStyleOverridesInfo, PineStyleRowInfo, PineStylesResult,
     PineTradeInfo, WorkspaceInfo,
 };
+use crate::mcp::{Listen, McpServer};
 use crate::model::alert::{
     AlertCondition, AlertCurrency, AlertFrequency, AlertId, AlertState, PriceAlert,
 };
 use crate::model::mcp::{
-    AUDIT_LOG_LIMIT, MAX_CLIENTS, McpAction, McpAuditEntry, McpAuditKind, McpClient, McpSettings,
-    Permission, PermissionSet, clean_client_name, is_valid_port,
+    AUDIT_LOG_LIMIT, BindMode, MAX_CLIENTS, McpAction, McpAuditEntry, McpAuditKind, McpClient,
+    McpSettings, Permission, PermissionSet, clean_client_name, is_valid_port,
 };
 use crate::model::pine_alert::PineAlertSubscription;
 use crate::model::watchlist::{Watchlist, WatchlistError, WatchlistInstrument, new_id, now_ms};
@@ -115,6 +116,8 @@ pub struct McpHost {
     /// Actions from the Settings page, applied by [`McpHost::tick`]. The page runs while the
     /// store is locked, so it can only queue.
     pending: Vec<McpAction>,
+    /// Where the TLS certificate for a non-loopback bind is kept: the app's data directory.
+    tls_dir: Option<std::path::PathBuf>,
 }
 
 impl McpHost {
@@ -157,6 +160,12 @@ impl McpHost {
             activity: Arc::new(Vec::new()),
             activity_unreadable: 0,
             pending: Vec::new(),
+            // Tests never write into the real data directory; one that needs a folder sets it.
+            tls_dir: if cfg!(test) {
+                None
+            } else {
+                crate::store::data_dir()
+            },
         };
         host.reload();
         host.refresh_activity();
@@ -583,11 +592,37 @@ impl McpHost {
     }
 
     fn start_server(&mut self) {
-        match McpServer::start(self.shared.clone(), self.bridge.clone(), self.settings.port) {
+        let tls = match self.tls_identity() {
+            Ok(tls) => tls,
+            Err(message) => {
+                self.shared.set_status(McpStatus::Failed(message.clone()));
+                self.notice = Some(message);
+                return;
+            }
+        };
+        let listen = Listen {
+            bind: self.settings.bind,
+            port: self.settings.port,
+            tls,
+        };
+        match McpServer::start_listening(self.shared.clone(), self.bridge.clone(), listen) {
             Ok(server) => self.server = Some(server),
             // The status already says Failed with the reason.
             Err(message) => self.notice = Some(message),
         }
+    }
+
+    /// The certificate for the interface the server listens on: none on loopback, otherwise the
+    /// one saved for that address, made on first use.
+    fn tls_identity(&self) -> Result<Option<TlsIdentity>, String> {
+        let BindMode::Interface(address) = self.settings.bind else {
+            return Ok(None);
+        };
+        let dir = self
+            .tls_dir
+            .as_deref()
+            .ok_or("There is no folder to keep the TLS certificate in")?;
+        tls::load_or_create(dir, address).map(Some)
     }
 
     fn stop_server(&mut self) {
@@ -3146,6 +3181,53 @@ mod tests {
         assert_eq!(host.status(), McpStatus::Disabled);
         assert!(std::net::TcpStream::connect(("127.0.0.1", port)).is_err());
         assert!(!store.lock().unwrap().mcp_settings().unwrap().enabled);
+    }
+
+    fn remote_settings() -> McpSettings {
+        McpSettings {
+            enabled: true,
+            port: 0,
+            bind: BindMode::interface("192.0.2.1".parse().unwrap()).unwrap(),
+            ..McpSettings::default()
+        }
+    }
+
+    #[test]
+    fn a_saved_remote_bind_with_nowhere_to_keep_a_certificate_stays_off() {
+        let store = store();
+        store
+            .lock()
+            .unwrap()
+            .set_mcp_settings(&remote_settings())
+            .unwrap();
+        // `host` has no certificate folder (see `tls_dir`), so it cannot serve TLS.
+        let host = host(&store);
+        assert!(
+            matches!(host.status(), McpStatus::Failed(message) if message.contains("certificate")),
+            "{:?}",
+            host.status()
+        );
+        assert!(host.notice().is_some());
+    }
+
+    #[test]
+    fn a_remote_bind_gets_a_saved_certificate_for_its_address_and_loopback_gets_none() {
+        let store = store();
+        let mut host = host(&store);
+        assert!(host.tls_identity().unwrap().is_none());
+
+        let dir = std::env::temp_dir().join(format!("degenview-mcp-host-tls-{}", new_id()));
+        host.tls_dir = Some(dir.clone());
+        host.settings = remote_settings();
+        let first = host.tls_identity().unwrap().expect("a certificate");
+        assert_eq!(
+            first.address(),
+            "192.0.2.1".parse::<std::net::IpAddr>().unwrap()
+        );
+        let again = host.tls_identity().unwrap().expect("the same certificate");
+        assert_eq!(first.fingerprint(), again.fingerprint());
+        assert!(dir.join(crate::mcp::tls::FILE_NAME).exists());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

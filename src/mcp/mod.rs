@@ -1,7 +1,8 @@
-//! A local Model Context Protocol server.
+//! A Model Context Protocol server.
 //!
-//! Disabled by default; when enabled it listens on `127.0.0.1` only and every request must carry
-//! a bearer token issued in Settings. Tools never touch app state directly: they queue commands
+//! Disabled by default; when enabled it listens on `127.0.0.1` unless the user names a network
+//! interface (`BindMode`), which is served over TLS only. Every request must carry a bearer token
+//! issued in Settings. Tools never touch app state directly: they queue commands
 //! through [`bridge`] and the app thread executes them.
 //!
 //! This is the one place with an async runtime. The server owns a single thread running a
@@ -29,6 +30,7 @@ pub mod replay_tools;
 pub mod seal;
 pub mod snapshot_tools;
 pub mod state;
+pub mod tls;
 pub mod tools;
 pub mod transport;
 pub mod types;
@@ -38,7 +40,9 @@ mod tests;
 
 use crate::mcp::bridge::BridgeClient;
 use crate::mcp::state::{McpShared, McpStatus};
-use std::net::{Ipv4Addr, TcpListener};
+use crate::mcp::tls::TlsIdentity;
+use crate::model::mcp::BindMode;
+use std::net::{SocketAddr, TcpListener};
 use std::sync::Arc;
 use std::thread::JoinHandle;
 use tokio_util::sync::CancellationToken;
@@ -53,20 +57,89 @@ pub struct McpServer {
     thread: Option<JoinHandle<()>>,
 }
 
+/// Where the server listens and how it is reached.
+#[derive(Debug, Clone)]
+pub struct Listen {
+    pub bind: BindMode,
+    /// 0 picks a free port.
+    pub port: u16,
+    /// The certificate to present. Required for any bind other than loopback.
+    pub tls: Option<TlsIdentity>,
+}
+
+impl Listen {
+    #[cfg(test)]
+    pub fn loopback(port: u16) -> Self {
+        Self {
+            bind: BindMode::Loopback,
+            port,
+            tls: None,
+        }
+    }
+
+    /// Whether this configuration may be served at all. Anything reachable from another machine
+    /// is refused without TLS, and with a certificate made for some other address: a bearer token
+    /// must never cross a network in the clear, and a client pinning the certificate must be
+    /// pinning the address it connects to.
+    fn check(&self) -> Result<(), String> {
+        match (&self.bind, &self.tls) {
+            (BindMode::Loopback, _) => Ok(()),
+            (BindMode::Interface(_), None) => Err(
+                "Listening on a network interface needs a TLS certificate; refusing to serve \
+                 bearer tokens over plain HTTP"
+                    .into(),
+            ),
+            (BindMode::Interface(ip), Some(tls)) if tls.address() != *ip => Err(format!(
+                "The TLS certificate was made for {}, not {ip}",
+                tls.address()
+            )),
+            (BindMode::Interface(_), Some(_)) => Ok(()),
+        }
+    }
+}
+
 impl McpServer {
-    /// Binds `127.0.0.1:port` (0 picks a free port) and serves until stopped. Binding happens
-    /// here so a port conflict is reported to the caller instead of lost on the thread.
+    /// Binds `127.0.0.1:port` (0 picks a free port) and serves until stopped. Tests only: the app
+    /// goes through [`McpServer::start_listening`].
+    #[cfg(test)]
     pub fn start(shared: Arc<McpShared>, bridge: BridgeClient, port: u16) -> Result<Self, String> {
+        Self::start_listening(shared, bridge, Listen::loopback(port))
+    }
+
+    /// Binds as `listen` says and serves until stopped. Binding happens here so a port conflict
+    /// is reported to the caller instead of lost on the thread. A configuration that
+    /// [`Listen::check`] refuses never opens a socket.
+    pub fn start_listening(
+        shared: Arc<McpShared>,
+        bridge: BridgeClient,
+        listen: Listen,
+    ) -> Result<Self, String> {
         shared.set_status(McpStatus::Starting);
-        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, port)).map_err(|error| {
-            let message = if error.kind() == std::io::ErrorKind::AddrInUse {
-                format!("Port {port} is already in use")
-            } else {
-                format!("Could not listen on port {port}: {error}")
-            };
+        if let Err(message) = listen.check() {
             shared.set_status(McpStatus::Failed(message.clone()));
-            message
-        })?;
+            return Err(message);
+        }
+        let acceptor = match &listen.tls {
+            Some(identity) => match identity.server_config() {
+                Ok(config) => Some(tokio_rustls::TlsAcceptor::from(config)),
+                Err(message) => {
+                    shared.set_status(McpStatus::Failed(message.clone()));
+                    return Err(message);
+                }
+            },
+            None => None,
+        };
+        let port = listen.port;
+        let listener =
+            TcpListener::bind(SocketAddr::new(listen.bind.address(), port)).map_err(|error| {
+                let message = if error.kind() == std::io::ErrorKind::AddrInUse {
+                    format!("Port {port} is already in use")
+                } else {
+                    format!("Could not listen on port {port}: {error}")
+                };
+                shared.set_status(McpStatus::Failed(message.clone()));
+                message
+            })?;
         let fail = |message: String| {
             shared.set_status(McpStatus::Failed(message.clone()));
             message
@@ -75,6 +148,11 @@ impl McpServer {
             .local_addr()
             .map_err(|error| fail(format!("Could not read the listening address: {error}")))?
             .port();
+        // After the bind: with port 0 the system has just chosen it.
+        let serving = Serving {
+            allowed_hosts: listen.bind.allowed_hosts(port),
+            tls: acceptor,
+        };
         listener
             .set_nonblocking(true)
             .map_err(|error| fail(format!("Could not configure the listener: {error}")))?;
@@ -95,6 +173,7 @@ impl McpServer {
                             shared.clone(),
                             bridge,
                             port,
+                            serving,
                             cancel.clone(),
                             ready,
                         );
@@ -149,11 +228,19 @@ impl Drop for McpServer {
     }
 }
 
+/// What the server thread needs beyond the socket.
+struct Serving {
+    /// The `Host` values a request may carry.
+    allowed_hosts: Vec<String>,
+    tls: Option<tokio_rustls::TlsAcceptor>,
+}
+
 fn run(
     listener: TcpListener,
     shared: Arc<McpShared>,
     bridge: BridgeClient,
     port: u16,
+    serving: Serving,
     cancel: CancellationToken,
     ready: std::sync::mpsc::SyncSender<Result<(), String>>,
 ) {
@@ -175,15 +262,21 @@ fn run(
                 return;
             }
         };
-        let app = transport::router(shared.clone(), bridge, port, cancel.clone());
+        let app = transport::router(
+            shared.clone(),
+            bridge,
+            serving.allowed_hosts,
+            cancel.clone(),
+        );
         // The runtime owns the listener and the app is built: this is the moment the server is
         // running. Set before answering, so a later failure cannot be overwritten by the caller.
         shared.set_status(McpStatus::Running { port });
         let _ = ready.send(Ok(()));
-        transport::serve(
+        transport::serve_with(
             listener,
             app,
             transport::ConnectionLimits::default(),
+            serving.tls,
             cancel.clone(),
         )
         .await;
