@@ -118,7 +118,7 @@
   (`RateLimiter::failed_auth(peer, now)`, bounded table), then the shared one; a refusal from another
   machine is counted into one `AuthRefused` row per address per minute. Audit rows carry `peer` (empty
   for this machine); a row never holds a token or anything the request said.
-- The Remote Access section (`ui/settings_mcp.rs`) saves nothing until `SetBind` is sent with an
+- The "Remote connections" rows of the Security card (`ui/settings_mcp.rs`) save nothing until `SetBind` is sent with an
   address `parse_interface` accepted; keep the fingerprint it shows coming from the host
   (`McpHost::tls_fingerprint`), never computed in the page. `detect_local_address` makes a system call,
   so it runs on a click only, never per frame.

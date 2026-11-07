@@ -167,6 +167,61 @@ impl Tone {
             Self::Neutral => theme::text_secondary(),
         }
     }
+
+    /// The tone as words on its own plate (a pill): a softened, lighter shade on dark windows and
+    /// a deep one on light, so the label reads on the tint instead of glowing or washing out. The
+    /// bare system colours are for dots and icons; text in them looks cheap.
+    pub fn text(self) -> Color32 {
+        match self {
+            Self::Good => theme::pick(
+                Color32::from_rgb(126, 214, 154),
+                Color32::from_rgb(20, 108, 48),
+            ),
+            Self::Warning => theme::pick(
+                Color32::from_rgb(244, 190, 112),
+                Color32::from_rgb(140, 84, 0),
+            ),
+            Self::Bad => theme::pick(
+                Color32::from_rgb(255, 142, 132),
+                Color32::from_rgb(168, 30, 24),
+            ),
+            Self::Neutral => theme::text_secondary(),
+        }
+    }
+
+    /// The tone as a small mark (a dot): a little calmer than the bare system colour, which is
+    /// too hot for something that sits beside text all down a list.
+    pub fn dot(self) -> Color32 {
+        match self {
+            Self::Good => theme::pick(
+                Color32::from_rgb(98, 204, 132),
+                Color32::from_rgb(40, 150, 76),
+            ),
+            Self::Warning => theme::pick(
+                Color32::from_rgb(240, 172, 64),
+                Color32::from_rgb(204, 132, 14),
+            ),
+            Self::Bad => theme::pick(
+                Color32::from_rgb(255, 110, 100),
+                Color32::from_rgb(210, 56, 48),
+            ),
+            Self::Neutral => theme::text_tertiary(),
+        }
+    }
+
+    /// The plate behind a pill: a faint wash of the tone.
+    pub fn fill(self) -> Color32 {
+        let wash = theme::pick_value(0.13, 0.11);
+        match self {
+            Self::Neutral => theme::with_alpha(theme::text_secondary(), wash),
+            tone => theme::with_alpha(tone.color(), wash),
+        }
+    }
+
+    /// The hairline round a pill, so it keeps its shape on any card.
+    pub fn edge(self) -> Color32 {
+        theme::with_alpha(self.text(), theme::pick_value(0.26, 0.24))
+    }
 }
 
 // MARK: Pills
@@ -189,24 +244,31 @@ pub fn status_badge_size(ui: &Ui, label: &str) -> Vec2 {
 
 /// A tinted capsule with a dot and a semibold caption, its right edge at `right`.
 pub fn paint_status_badge(ui: &Ui, right: f32, center_y: f32, label: &str, tone: Tone) -> Rect {
-    let color = tone.color();
+    let text = tone.text();
     let galley = galley(
         ui,
         label,
         size::CAPTION + 0.5,
         SEMIBOLD,
-        color,
+        text,
         f32::INFINITY,
     );
     let size = status_badge_size(ui, label);
     let rect = Rect::from_min_size(pos2(right - size.x, center_y - size.y / 2.0), size);
     let painter = ui.painter();
-    painter.rect_filled(rect, size.y / 2.0, theme::with_alpha(color, 0.12));
-    painter.circle_filled(pos2(rect.left() + 12.5, center_y), 3.5, color);
+    painter.rect_filled(rect, size.y / 2.0, tone.fill());
+    painter.rect_stroke(
+        rect,
+        size.y / 2.0,
+        Stroke::new(1.0, tone.edge()),
+        StrokeKind::Inside,
+    );
+    // The dot is where a status reads from, so it keeps more colour than the words.
+    painter.circle_filled(pos2(rect.left() + 12.5, center_y), 3.5, tone.dot());
     painter.galley(
         pos2(rect.left() + 22.0, center_y - galley.size().y / 2.0),
         galley,
-        color,
+        text,
     );
     rect
 }

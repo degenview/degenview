@@ -11,7 +11,7 @@ use crate::model::mcp_activity::{
     Paging, clients_in,
 };
 use crate::model::portfolio_editor::{date_text, parse_date_text};
-use crate::ui::alert_center::relative_time;
+use crate::ui::alert_center::{Tone, relative_time};
 use crate::ui::icons::{self, Icon};
 use crate::ui::settings_mcp::capsule;
 use crate::ui::settings_window::{card, divider, section};
@@ -177,25 +177,25 @@ fn target_text(kind: &str, id: &str) -> String {
     )
 }
 
-fn status_tint(status: McpActivityStatus) -> Color32 {
+fn status_tone(status: McpActivityStatus) -> Tone {
     match status {
-        McpActivityStatus::Done | McpActivityStatus::Approved => kit::GREEN,
-        McpActivityStatus::Failed => kit::RED,
+        McpActivityStatus::Done | McpActivityStatus::Approved => Tone::Good,
+        McpActivityStatus::Failed => Tone::Bad,
         McpActivityStatus::Denied
         | McpActivityStatus::Held
         | McpActivityStatus::Declined
-        | McpActivityStatus::RateLimited => kit::ORANGE,
+        | McpActivityStatus::RateLimited => Tone::Warning,
         // Over without anything having gone wrong or been refused.
-        McpActivityStatus::Cancelled | McpActivityStatus::Expired => theme::text_secondary(),
+        McpActivityStatus::Cancelled | McpActivityStatus::Expired => Tone::Neutral,
     }
 }
 
 /// A row's tag: its text and tint.
-fn outcome_tag(entry: &McpAuditEntry) -> (&'static str, Color32) {
+fn outcome_tag(entry: &McpAuditEntry) -> (&'static str, Tone) {
     match (entry.status(), entry.kind) {
-        (Some(status), _) => (status.label(), status_tint(status)),
-        (None, McpAuditKind::Gap) => ("Gap", kit::ORANGE),
-        (None, _) => ("Cleared", theme::text_secondary()),
+        (Some(status), _) => (status.label(), status_tone(status)),
+        (None, McpAuditKind::Gap) => ("Gap", Tone::Warning),
+        (None, _) => ("Cleared", Tone::Neutral),
     }
 }
 
@@ -340,13 +340,13 @@ fn row_tooltip(entry: &McpAuditEntry, utc_offset_secs: i64) -> String {
 
 /// One row: tag, headline and small print, and when it happened.
 fn row(ui: &mut Ui, entry: &McpAuditEntry, input: &ActivityInput, full_stamp: bool) {
-    let (tag, tint) = outcome_tag(entry);
+    let (tag, tone) = outcome_tag(entry);
     let width = ui.available_width();
     let time_width = if full_stamp { STAMP_WIDTH } else { AGO_WIDTH };
     let response = ui
         .horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 10.0;
-            capsule(ui, tag, tint, Some(TAG_WIDTH));
+            capsule(ui, tag, tone, Some(TAG_WIDTH));
             let text_width =
                 (width - TAG_WIDTH - time_width - 2.0 * ui.spacing().item_spacing.x).max(40.0);
             ui.vertical(|ui| {

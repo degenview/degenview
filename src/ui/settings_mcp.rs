@@ -17,7 +17,7 @@ use crate::ui::mcp_activity::{self, ActivityInput, ActivityState};
 use crate::ui::settings_window::{card, divider, section, status_badge, status_message};
 use crate::ui::{kit, settings_card, sheet, theme};
 use eframe::egui::{
-    self, Align, Color32, Id, Layout, Margin, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2,
+    self, Align, Id, Layout, Margin, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2,
 };
 use std::net::IpAddr;
 use std::time::{Duration, Instant};
@@ -28,8 +28,6 @@ const CONTROL_RADIUS: f32 = 7.0;
 /// How long a copy button says "Copied".
 const COPIED_FOR: Duration = Duration::from_millis(1600);
 const SHEET_WIDTH: f32 = 480.0;
-/// Width of the Read / Write tag on a permission row.
-const ACCESS_TAG_WIDTH: f32 = 46.0;
 
 pub struct McpSettingsInput<'a> {
     pub status: &'a McpStatus,
@@ -122,21 +120,76 @@ fn status_tone(status: &McpStatus) -> Tone {
     }
 }
 
-/// The groups a set reaches, as `(label, changes DegenView)`: "Charts · read", "Price Alerts ·
-/// read & write". Groups with nothing are left out.
-fn access_summary(set: &PermissionSet) -> Vec<(String, bool)> {
-    Permission::GROUPS
-        .into_iter()
-        .filter_map(|group| {
-            let access = set.group_access(group);
-            match (access.read, access.write) {
-                (0, 0) => None,
-                (_, 0) => Some((format!("{group} · read"), false)),
-                (0, _) => Some((format!("{group} · write"), true)),
-                _ => Some((format!("{group} · read & write"), true)),
-            }
-        })
-        .collect()
+/// What a set of permissions amounts to, in two short pieces: how much it can do ("Read only",
+/// "Read & write") and where. Replaces a capsule per area, which made a long set read as noise.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AccessOverview {
+    headline: &'static str,
+    /// The areas, a few by name and then a count; empty when there is nothing to name.
+    detail: String,
+    /// It can change DegenView, not only look.
+    writes: bool,
+}
+
+/// At most this many areas are named before "+ N more".
+const NAMED_AREAS: usize = 3;
+
+fn named(areas: &[&str]) -> String {
+    let shown = areas
+        .iter()
+        .take(NAMED_AREAS)
+        .copied()
+        .collect::<Vec<_>>()
+        .join(", ");
+    match areas.len().saturating_sub(NAMED_AREAS) {
+        0 => shown,
+        more => format!("{shown} +{more} more"),
+    }
+}
+
+fn access_overview(set: &PermissionSet) -> AccessOverview {
+    let total = Permission::GROUPS.len();
+    let (mut reads, mut writes) = (Vec::new(), Vec::new());
+    for group in Permission::GROUPS {
+        let access = set.group_access(group);
+        if access.write > 0 {
+            writes.push(group);
+        } else if access.read > 0 {
+            reads.push(group);
+        }
+    }
+    if reads.is_empty() && writes.is_empty() {
+        return AccessOverview {
+            headline: "No access",
+            detail: String::new(),
+            writes: false,
+        };
+    }
+    if writes.is_empty() {
+        let detail = if reads.len() == total {
+            format!("All {total} areas")
+        } else {
+            named(&reads)
+        };
+        return AccessOverview {
+            headline: "Read only",
+            detail,
+            writes: false,
+        };
+    }
+    let mut detail = format!("Changes {}", named(&writes));
+    if !reads.is_empty() {
+        detail.push_str(&format!(
+            " · reads {} more area{}",
+            reads.len(),
+            if reads.len() == 1 { "" } else { "s" }
+        ));
+    }
+    AccessOverview {
+        headline: "Read & write",
+        detail,
+        writes: true,
+    }
 }
 
 fn initial(name: &str) -> String {
@@ -250,30 +303,17 @@ fn copy_button(
     }
 }
 
-/// A small label capsule; `write` tints it orange: it can change DegenView.
-fn pill(ui: &mut Ui, text: &str, write: bool) {
-    let tint = if write {
-        kit::ORANGE
-    } else {
-        theme::text_secondary()
-    };
-    capsule(ui, text, tint, None);
-}
-
-/// A tinted capsule label, painted at its exact size. With a `width` the text is centred in a
-/// capsule that wide, so a column of them lines up whatever the text.
-pub(super) fn capsule(
-    ui: &mut Ui,
-    text: &str,
-    tint: Color32,
-    width: Option<f32>,
-) -> egui::Response {
+/// A label capsule in a tone's soft colours (a faint plate, a legible shade, a hairline edge),
+/// painted at its exact size. With a `width` the text is centred in a capsule that wide, so a
+/// column of them lines up whatever the text.
+pub(super) fn capsule(ui: &mut Ui, text: &str, tone: Tone, width: Option<f32>) -> egui::Response {
+    let ink = tone.text();
     let galley = kit::galley(
         ui,
         text,
         kit::size::CAPTION,
         kit::MEDIUM,
-        tint,
+        ink,
         f32::INFINITY,
     );
     let size = vec2(
@@ -281,33 +321,20 @@ pub(super) fn capsule(
         galley.size().y + 4.0,
     );
     let (rect, response) = ui.allocate_exact_size(size, Sense::hover());
+    ui.painter().rect_filled(rect, 6.0, tone.fill());
     ui.painter()
-        .rect_filled(rect, 5.0, theme::with_alpha(tint, 0.14));
+        .rect_stroke(rect, 6.0, Stroke::new(1.0, tone.edge()), StrokeKind::Inside);
     ui.painter()
-        .galley(rect.center() - galley.size() / 2.0, galley, tint);
+        .galley(rect.center() - galley.size() / 2.0, galley, ink);
     response
 }
 
-/// The "Read" / "Write" tag every permission row carries. Write is orange (it changes
-/// DegenView); Read is neutral. Fixed width so the tags form one column beside the switches.
-fn access_tag(ui: &mut Ui, permission: Permission) {
-    let (text, tint, meaning) = if permission.is_mutating() {
-        ("Write", kit::ORANGE, "Write: can change DegenView")
-    } else {
-        (
-            "Read",
-            theme::text_secondary(),
-            "Read: only looks, changes nothing",
-        )
-    };
-    capsule(ui, text, tint, Some(ACCESS_TAG_WIDTH)).on_hover_text(meaning);
-}
-
-/// The groups a set reaches as wrapping capsules, as many lines as they need. Returns the area
-/// they fill, which never reaches past the width the caller leaves.
-fn pills(ui: &mut Ui, set: &PermissionSet) -> Rect {
-    let summary = access_summary(set);
-    if summary.is_empty() {
+/// What a set of permissions can do: one capsule ("Read only" is quiet, "Read & write" amber) and
+/// the areas beside it, wrapping under it on a narrow line. Returns the area it fills, which never
+/// reaches past the width the caller leaves.
+fn overview(ui: &mut Ui, set: &PermissionSet) -> Rect {
+    let overview = access_overview(set);
+    if overview.headline == "No access" {
         return ui
             .label(kit::text(
                 "No access",
@@ -318,10 +345,19 @@ fn pills(ui: &mut Ui, set: &PermissionSet) -> Rect {
             .rect;
     }
     ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing = vec2(5.0, 5.0);
-        for (label, write) in summary {
-            pill(ui, &label, write);
-        }
+        ui.spacing_mut().item_spacing = vec2(8.0, 4.0);
+        let tone = if overview.writes {
+            Tone::Warning
+        } else {
+            Tone::Neutral
+        };
+        capsule(ui, overview.headline, tone, None);
+        ui.label(kit::text(
+            overview.detail,
+            kit::size::CAPTION + 0.5,
+            kit::REGULAR,
+            theme::text_secondary(),
+        ));
     })
     .response
     .rect
@@ -414,9 +450,7 @@ pub fn body(
     }
     server_section(ui, state, input, actions);
     ui.add_space(22.0);
-    security_section(ui, state, input);
-    ui.add_space(22.0);
-    remote_section(ui, state, input, actions);
+    security_section(ui, state, input, actions);
     ui.add_space(22.0);
     credentials_section(ui, state, input, actions);
     ui.add_space(22.0);
@@ -512,7 +546,7 @@ fn server_section(
                         reason,
                         kit::size::CAPTION + 0.5,
                         kit::REGULAR,
-                        kit::RED,
+                        Tone::Bad.text(),
                     ))
                     .wrap(),
                 );
@@ -586,22 +620,18 @@ fn port_control(
     }
 }
 
-fn security_section(ui: &mut Ui, state: &mut McpSettingsState, input: &McpSettingsInput) {
+fn security_section(
+    ui: &mut Ui,
+    state: &mut McpSettingsState,
+    input: &McpSettingsInput,
+    actions: &mut Vec<McpAction>,
+) {
     section(ui, "Security", None, |ui| {
         card(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 10.0;
             row(ui, "Authentication", |ui| secondary(ui, "Always required"));
             divider(ui);
-            row(ui, "Remote connections", |ui| {
-                secondary(
-                    ui,
-                    if input.settings.bind.is_loopback() {
-                        "Off"
-                    } else {
-                        "On · TLS only"
-                    },
-                )
-            });
+            remote_rows(ui, state, input, actions);
             divider(ui);
             row(ui, "Browser pages", |ui| secondary(ui, "Always refused"));
             divider(ui);
@@ -615,12 +645,11 @@ fn security_section(ui: &mut Ui, state: &mut McpSettingsState, input: &McpSettin
 struct MaximumRow {
     title: Rect,
     edit: Rect,
-    pills: Rect,
+    summary: Rect,
 }
 
-/// The title and its Edit button share one line of fixed height, and the pills take as many lines
-/// as they need beneath it. The button therefore stays at the top right however many groups the
-/// maximum holds, instead of drifting to the middle of a growing block of capsules.
+/// The title and its Edit button share one line of fixed height, and the summary takes as many
+/// lines as it needs beneath it, so the button stays at the top right however much the maximum holds.
 fn maximum_row(ui: &mut Ui, state: &mut McpSettingsState, input: &McpSettingsInput) -> MaximumRow {
     limit_row(
         ui,
@@ -666,8 +695,12 @@ fn limit_row(
                 });
             },
         );
-        let pills = pills(ui, set);
-        MaximumRow { title, edit, pills }
+        let summary = overview(ui, set);
+        MaximumRow {
+            title,
+            edit,
+            summary,
+        }
     })
     .inner
 }
@@ -700,103 +733,90 @@ pub fn detect_local_address() -> Option<IpAddr> {
     (!address.is_unspecified() && !address.is_loopback()).then_some(address)
 }
 
-fn remote_section(
+/// The "Remote connections" row of the Security card: the switch, and once it is on the interface,
+/// the certificate to pin and the ceiling, in rows of the same card.
+fn remote_rows(
     ui: &mut Ui,
     state: &mut McpSettingsState,
     input: &McpSettingsInput,
     actions: &mut Vec<McpAction>,
 ) {
-    section(
-        ui,
-        "Remote Access",
-        Some("Lets MCP clients on other computers connect, over TLS only."),
-        |ui| {
-            let locked = input.load_error.is_some();
-            let bind = input.settings.bind;
-            let on = !bind.is_loopback() || state.remote_editing;
-            settings_card::card(
-                ui,
-                Icon::Link,
-                "Allow connections from other machines",
-                Some(
-                    "Off until you turn it on. A client also needs a credential with remote access, set on that client.",
-                ),
-                |ui| {
-                    let mut value = on;
-                    if settings_card::switch_enabled(ui, &mut value, !locked) {
-                        state.bind_error = None;
-                        if value {
-                            state.remote_editing = true;
-                        } else {
-                            state.remote_editing = false;
-                            if !bind.is_loopback() {
-                                actions.push(McpAction::SetBind(BindMode::Loopback));
-                            }
-                        }
-                    }
-                },
-            );
-            if !on {
-                return;
+    let locked = input.load_error.is_some();
+    let bind = input.settings.bind;
+    let on = !bind.is_loopback() || state.remote_editing;
+    row(ui, "Remote connections", |ui| {
+        let mut value = on;
+        if settings_card::switch_enabled(ui, &mut value, !locked) {
+            state.bind_error = None;
+            if value {
+                state.remote_editing = true;
+            } else {
+                state.remote_editing = false;
+                if !bind.is_loopback() {
+                    actions.push(McpAction::SetBind(BindMode::Loopback));
+                }
             }
-            ui.add_space(10.0);
-            card(ui, |ui| {
-                ui.spacing_mut().item_spacing.y = 10.0;
-                row(ui, "Interface", |ui| bind_control(ui, state, bind, actions));
-                if let Some(error) = &state.bind_error {
-                    ui.add(
-                        egui::Label::new(kit::text(
-                            error,
-                            kit::size::CAPTION + 0.5,
-                            kit::REGULAR,
-                            kit::RED,
-                        ))
-                        .wrap(),
-                    );
-                }
-                divider(ui);
-                row(ui, "Certificate", |ui| match input.tls_fingerprint {
-                    Some(fingerprint) => copy_button(
-                        ui,
-                        &mut state.copied,
-                        Copied::Fingerprint,
-                        "Copy Fingerprint",
-                        fingerprint,
-                        false,
-                    ),
-                    None => secondary(ui, "Made when you apply an address"),
-                });
-                if let Some(fingerprint) = input.tls_fingerprint {
-                    ui.add(
-                        egui::Label::new(
-                            egui::RichText::new(fingerprint)
-                                .monospace()
-                                .size(11.0)
-                                .color(theme::text_primary()),
-                        )
-                        .wrap(),
-                    );
-                    caption(
-                        ui,
-                        "The certificate is self-signed for this address. A client must trust exactly this one: compare the fingerprint, do not click through a warning.",
-                    );
-                }
-                divider(ui);
-                limit_row(
-                    ui,
-                    state,
-                    "Remote ceiling",
-                    "The most a credential with remote access can do, even on this Mac.",
-                    &input.settings.remote_ceiling,
-                    Editing::RemoteCeiling,
-                );
-            });
-            ui.add_space(8.0);
-            caption(
-                ui,
-                "Every change a remote credential makes waits for your approval here. Anyone who can reach this Mac on the network can try tokens; failed attempts are limited and logged by address.",
-            );
-        },
+        }
+    });
+    if !on {
+        return;
+    }
+    caption(
+        ui,
+        "Other computers connect over TLS, with a credential that has remote access (set on that client).",
+    );
+    divider(ui);
+    row(ui, "Interface", |ui| bind_control(ui, state, bind, actions));
+    if let Some(error) = &state.bind_error {
+        ui.add(
+            egui::Label::new(kit::text(
+                error,
+                kit::size::CAPTION + 0.5,
+                kit::REGULAR,
+                Tone::Bad.text(),
+            ))
+            .wrap(),
+        );
+    }
+    divider(ui);
+    row(ui, "Certificate", |ui| match input.tls_fingerprint {
+        Some(fingerprint) => copy_button(
+            ui,
+            &mut state.copied,
+            Copied::Fingerprint,
+            "Copy Fingerprint",
+            fingerprint,
+            false,
+        ),
+        None => secondary(ui, "Made when you apply an address"),
+    });
+    if let Some(fingerprint) = input.tls_fingerprint {
+        ui.add(
+            egui::Label::new(
+                egui::RichText::new(fingerprint)
+                    .monospace()
+                    .size(11.0)
+                    .color(theme::text_primary()),
+            )
+            .wrap(),
+        );
+        caption(
+            ui,
+            "Self-signed for this address. A client must trust exactly this certificate: compare the fingerprint, never click through a warning.",
+        );
+    }
+    divider(ui);
+    limit_row(
+        ui,
+        state,
+        "Remote ceiling",
+        "The most a credential with remote access can do, even on this Mac.",
+        &input.settings.remote_ceiling,
+        Editing::RemoteCeiling,
+    );
+    caption(
+        ui,
+        "Every change a remote credential makes waits for your approval here. Failed sign-ins are limited and logged by address.",
     );
 }
 
@@ -909,8 +929,8 @@ fn token_card(
     actions: &mut Vec<McpAction>,
 ) {
     egui::Frame::new()
-        .fill(theme::with_alpha(kit::GREEN, 0.09))
-        .stroke(Stroke::new(1.0, theme::with_alpha(kit::GREEN, 0.35)))
+        .fill(Tone::Good.fill())
+        .stroke(Stroke::new(1.0, Tone::Good.edge()))
         .corner_radius(12.0)
         .inner_margin(Margin::symmetric(14, 12))
         .show(ui, |ui| {
@@ -918,7 +938,7 @@ fn token_card(
             ui.spacing_mut().item_spacing.y = 10.0;
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 10.0;
-                icons::inline(ui, Icon::CheckCircleFill, 16.0, kit::GREEN);
+                icons::inline(ui, Icon::CheckCircleFill, 16.0, Tone::Good.text());
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.y = 2.0;
                     ui.label(kit::text(
@@ -1041,7 +1061,7 @@ fn client_row(ui: &mut Ui, client: &McpClient, input: &McpSettingsInput) -> bool
                     theme::text_primary(),
                 ));
                 if client.remote_allowed {
-                    capsule(ui, "Remote", kit::ORANGE, None)
+                    capsule(ui, "Remote", Tone::Warning, None)
                         .on_hover_text("Can be used from other machines");
                 }
             });
@@ -1056,7 +1076,7 @@ fn client_row(ui: &mut Ui, client: &McpClient, input: &McpSettingsInput) -> bool
                     relative_time(input.now_ms, client.created_at_ms)
                 ),
             );
-            pills(ui, &effective);
+            overview(ui, &effective);
             if blocked > 0 {
                 ui.label(kit::text(
                     format!(
@@ -1065,7 +1085,7 @@ fn client_row(ui: &mut Ui, client: &McpClient, input: &McpSettingsInput) -> bool
                     ),
                     kit::size::CAPTION,
                     kit::REGULAR,
-                    kit::ORANGE,
+                    Tone::Warning.text(),
                 ));
             }
             if over_ceiling > 0 {
@@ -1076,7 +1096,7 @@ fn client_row(ui: &mut Ui, client: &McpClient, input: &McpSettingsInput) -> bool
                     ),
                     kit::size::CAPTION,
                     kit::REGULAR,
-                    kit::ORANGE,
+                    Tone::Warning.text(),
                 ));
             }
         });
@@ -1367,7 +1387,7 @@ fn client_remote_block(
                     error,
                     kit::size::CAPTION + 0.5,
                     kit::REGULAR,
-                    kit::RED,
+                    Tone::Bad.text(),
                 ));
             } else {
                 caption(
@@ -1516,11 +1536,19 @@ fn permission_row(
         ui.set_min_height(44.0);
         ui.spacing_mut().item_spacing.x = 12.0;
         ui.vertical(|ui| {
-            ui.set_max_width((ui.available_width() - 56.0 - ACCESS_TAG_WIDTH - 12.0).max(120.0));
+            ui.set_max_width((ui.available_width() - 56.0 - 12.0).max(120.0));
             ui.spacing_mut().item_spacing.y = 2.0;
             ui.add_space(6.0);
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 7.0;
+                // Only a permission that can change DegenView is marked, with a small amber dot:
+                // the many that only look carry nothing, so the marked ones stand out.
+                if permission.is_mutating() {
+                    let (dot, response) = ui.allocate_exact_size(Vec2::splat(7.0), Sense::hover());
+                    ui.painter()
+                        .circle_filled(dot.center(), 3.0, Tone::Warning.dot());
+                    response.on_hover_text("Can change DegenView");
+                }
                 ui.label(kit::text(
                     permission.title(),
                     12.5,
@@ -1535,7 +1563,7 @@ fn permission_row(
                     "Held back: the maximum does not allow this",
                     kit::size::CAPTION,
                     kit::REGULAR,
-                    kit::ORANGE,
+                    Tone::Warning.text(),
                 ));
             }
             ui.add_space(6.0);
@@ -1543,7 +1571,6 @@ fn permission_row(
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             let mut on = set.contains(permission);
             let toggled = settings_card::switch(ui, &mut on);
-            access_tag(ui, permission);
             if toggled {
                 actions.push(match editing {
                     Editing::Maximum => McpAction::SetGlobalPermission {
@@ -1641,33 +1668,62 @@ mod tests {
         assert_eq!(status_tone(&McpStatus::Disabled), Tone::Neutral);
     }
 
+    fn overview_of(set: &PermissionSet) -> (&'static str, String, bool) {
+        let o = access_overview(set);
+        (o.headline, o.detail, o.writes)
+    }
+
     #[test]
-    fn access_summaries_say_read_or_write_per_group() {
-        assert!(access_summary(&PermissionSet::none()).is_empty());
+    fn a_set_of_permissions_reads_as_how_much_and_where_not_as_a_capsule_per_area() {
         assert_eq!(
-            access_summary(&PermissionSet::read_only()),
-            [
-                ("Charts · read".to_owned(), false),
-                ("Drawings · read".to_owned(), false),
-                ("Price Alerts · read".to_owned(), false),
-                ("Pine Scripts · read".to_owned(), false),
-                ("Markets · read".to_owned(), false),
-                ("Watchlists · read".to_owned(), false),
-                ("Paper Trading · read".to_owned(), false),
-                ("Portfolio · read".to_owned(), false),
-            ]
+            overview_of(&PermissionSet::none()),
+            ("No access", String::new(), false)
         );
+        let total = Permission::GROUPS.len();
+        assert_eq!(
+            overview_of(&PermissionSet::read_only()),
+            ("Read only", format!("All {total} areas"), false)
+        );
+        // A few areas are named; a longer list is counted.
+        let some = PermissionSet::of([Permission::ChartsRead, Permission::AlertsRead]);
+        assert_eq!(
+            overview_of(&some),
+            ("Read only", "Charts, Price Alerts".to_owned(), false)
+        );
+        let many = PermissionSet::of([
+            Permission::ChartsRead,
+            Permission::DrawingsRead,
+            Permission::AlertsRead,
+            Permission::MarketsRead,
+            Permission::PortfolioRead,
+        ]);
+        assert_eq!(
+            overview_of(&many),
+            (
+                "Read only",
+                "Charts, Drawings, Price Alerts +2 more".to_owned(),
+                false
+            )
+        );
+        // Anything that changes DegenView says so, names what it changes, and counts the rest.
         let mixed = PermissionSet::of([
             Permission::ChartsRead,
             Permission::ChartsCreate,
             Permission::AlertsDelete,
+            Permission::MarketsRead,
         ]);
         assert_eq!(
-            access_summary(&mixed),
-            [
-                ("Charts · read & write".to_owned(), true),
-                ("Price Alerts · write".to_owned(), true),
-            ]
+            overview_of(&mixed),
+            (
+                "Read & write",
+                "Changes Charts, Price Alerts · reads 1 more area".to_owned(),
+                true
+            )
+        );
+        let only_writes = PermissionSet::of([Permission::AlertsDelete]);
+        assert_eq!(
+            overview_of(&only_writes),
+            ("Read & write", "Changes Price Alerts".to_owned(), true)
         );
     }
 
@@ -2049,9 +2105,10 @@ mod tests {
         let local = McpSettings::default();
         let texts = painted(&sample(&status, &local, &[], &global));
         assert!(texts.iter().any(|t| t == "127.0.0.1"));
+        assert!(texts.iter().any(|t| t == "Remote connections"));
         assert!(
-            texts.iter().any(|t| t == "Off"),
-            "remote connections are off"
+            !texts.iter().any(|t| t == "Interface"),
+            "nothing to set while it is off"
         );
         assert!(texts.iter().any(|t| t == "http://127.0.0.1:8765/mcp"));
         assert!(
@@ -2067,7 +2124,7 @@ mod tests {
         input.tls_fingerprint = Some("AB:CD");
         let texts = painted(&input);
         assert!(texts.iter().any(|t| t == "192.168.1.20"));
-        assert!(texts.iter().any(|t| t == "On · TLS only"));
+        assert!(texts.iter().any(|t| t == "Interface"));
         assert!(texts.iter().any(|t| t == "https://192.168.1.20:8765/mcp"));
         assert!(texts.iter().any(|t| t == "Certificate"));
         assert!(
@@ -2140,7 +2197,7 @@ mod tests {
     }
 
     #[test]
-    fn the_edit_button_stays_on_the_title_line_however_many_groups_the_maximum_holds() {
+    fn the_edit_button_stays_on_the_title_line_however_much_the_maximum_holds() {
         let status = McpStatus::Running { port: 8765 };
         let settings = McpSettings::default();
         let sets = [
@@ -2155,7 +2212,7 @@ mod tests {
                 let input = sample(&status, &settings, &[], set);
                 let mut state = McpSettingsState::default();
                 let (row, right) = laid_out(width, |ui| maximum_row(ui, &mut state, &input));
-                let what = format!("{} groups at {width}pt", access_summary(set).len());
+                let what = format!("{} at {width}pt", access_overview(set).headline);
                 assert!(
                     (row.edit.center().y - row.title.center().y).abs() < 1.0,
                     "Edit is not level with the title, {what}: {:?} vs {:?}",
@@ -2163,8 +2220,8 @@ mod tests {
                     row.title
                 );
                 assert!(
-                    row.pills.top() >= row.edit.bottom() - 0.5,
-                    "the capsules start above the button's line, {what}"
+                    row.summary.top() >= row.edit.bottom() - 0.5,
+                    "the summary starts above the button's line, {what}"
                 );
                 assert!(
                     row.edit.right() > right - 2.0 && row.edit.right() <= right + 0.5,
@@ -2176,13 +2233,13 @@ mod tests {
                     "title runs under Edit, {what}"
                 );
                 assert!(
-                    row.pills.right() <= right + 0.5,
-                    "the capsules overflow the row, {what}: {} of {right}",
-                    row.pills.right()
+                    row.summary.right() <= right + 0.5,
+                    "the summary overflows the row, {what}: {} of {right}",
+                    row.summary.right()
                 );
                 assert!(
-                    !row.pills.intersects(row.edit),
-                    "capsules cover Edit, {what}"
+                    !row.summary.intersects(row.edit),
+                    "the summary covers Edit, {what}"
                 );
                 button_tops.push(row.edit.top());
             }
@@ -2190,26 +2247,37 @@ mod tests {
                 button_tops
                     .windows(2)
                     .all(|pair| (pair[0] - pair[1]).abs() < 0.5),
-                "the button moves with the number of groups at {width}pt: {button_tops:?}"
+                "the button moves with the size of the maximum at {width}pt: {button_tops:?}"
             );
         }
     }
 
     #[test]
-    fn a_wrapped_list_of_groups_is_taller_but_never_wider_than_its_line() {
+    fn a_long_summary_wraps_under_its_capsule_and_never_runs_past_its_line() {
         let status = McpStatus::Disabled;
         let settings = McpSettings::default();
-        let narrow = |set: &PermissionSet| {
+        let summary = |set: &PermissionSet, width: f32| {
             let input = sample(&status, &settings, &[], set);
             let mut state = McpSettingsState::default();
-            laid_out(300.0, |ui| maximum_row(ui, &mut state, &input))
+            laid_out(width, |ui| maximum_row(ui, &mut state, &input))
                 .0
-                .pills
+                .summary
         };
-        let few = narrow(&PermissionSet::of([Permission::ChartsRead]));
-        let many = narrow(&PermissionSet::everything());
-        assert!(many.height() > few.height(), "{few:?} vs {many:?}");
-        assert!(many.width() <= 300.0);
+        let mixed = PermissionSet::of([
+            Permission::ChartsRead,
+            Permission::ChartsCreate,
+            Permission::AlertsDelete,
+            Permission::MarketsRead,
+        ]);
+        for width in [240.0, 300.0, 560.0] {
+            let rect = summary(&mixed, width);
+            assert!(rect.width() <= width + 1.0, "{rect:?} at {width}pt");
+            assert!(rect.height() < 80.0, "a summary is a line or two: {rect:?}");
+        }
+        assert!(
+            summary(&mixed, 240.0).height() >= summary(&mixed, 560.0).height(),
+            "a narrow line wraps, a wide one does not need to"
+        );
     }
 
     #[test]

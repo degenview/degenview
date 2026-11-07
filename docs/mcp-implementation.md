@@ -249,13 +249,18 @@ that expects OAuth discovery will not work with it.
   that a remote-enabled client is also held to the ceiling when used locally. Create a second,
   local-only credential for that.
 - Both are sealed, and stored only when not default (see `mcp::seal`).
-- Settings. The "Remote Access" section has the switch, the interface (an address typed or filled in by
-  "Detect", which asks the system which address reaches the local network and sends nothing), the
-  certificate fingerprint with a copy button, and the remote ceiling. Switching on only shows the
-  address field: nothing is saved until an address is applied, and `McpAction::SetBind` restarts a
-  server that is on (or reports why it could not listen). A client's sheet has "Use from other
-  machines" and its address ranges; its row in the list carries a "Remote" mark. The security card shows
-  where the server listens and whether remote connections are on.
+- Settings. The "Remote connections" row of the Security card is the switch; once it is on, rows of the
+  same card hold the interface (an address typed or filled in by "Detect", which asks the system
+  which address reaches the local network and sends nothing), the certificate fingerprint with a copy
+  button, and the remote ceiling. Switching on only shows the address field: nothing is saved until an
+  address is applied, and `McpAction::SetBind` restarts a server that is on (or reports why it could
+  not listen). A client's sheet has "Use from other machines" and its address ranges; its row in the
+  list carries a "Remote" mark. The Address and Endpoint rows show where the server listens.
+- Reading permissions. A set is shown as one capsule and a line ("Read only · All 8 areas", "Read &
+  write · Changes Charts, Price Alerts · reads 1 more area"), not a capsule per area, and a permission
+  row has no Read/Write tag: only one that can change DegenView carries a small amber dot. Pills and
+  badges take their colours from `Tone::text/fill/edge` (a faint plate, a legible shade, a hairline),
+  never the bare system colour as text.
 - Approval. A credential with `remote_allowed` is asked about every command that changes anything, and
   the "ask before high-impact requests" setting does not apply to it (`confirm::needs_approval`). The
   high-impact commands keep their lookups and summaries; the easy-to-undo ones (`Gate::AskRemote`: add a
