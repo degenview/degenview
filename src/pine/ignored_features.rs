@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use super::ast::{Argument, Expression, Statement};
+use super::ast::{Argument, Expression, Literal, Statement};
 use super::traversal::{for_each_call_with_args, for_each_identifier, for_each_string_literal};
 use crate::pine::{Diagnostic, DiagnosticCategory, DiagnosticSeverity, SourceRange};
 
@@ -32,6 +32,14 @@ fn ignored_arguments() -> HashMap<&'static str, HashMap<&'static str, &'static s
     strategy.insert(
         "risk_free_rate",
         "The report's risk-adjusted ratios do not use a risk-free rate.",
+    );
+    strategy.insert(
+        "calc_on_order_fills",
+        "The script runs once per bar, so an order placed after a fill cannot fill again within that bar.",
+    );
+    strategy.insert(
+        "close_entries_rule",
+        "Trades are always closed in the order they were opened (FIFO).",
     );
     table.insert("strategy", strategy);
     table.insert("strategy.entry", entry());
@@ -301,6 +309,19 @@ fn ignored_values()
     HashMap::new()
 }
 
+/// An ignored argument that is written out with the value it has anyway changes nothing, so it is
+/// not warned about (`calc_on_order_fills = false` is how many scripts spell the default).
+fn states_the_default(function: &str, argument: &str, value: &Expression) -> bool {
+    let Expression::Literal(literal, _) = value else {
+        return false;
+    };
+    match (function, argument, literal) {
+        ("strategy", "calc_on_order_fills", Literal::Bool(false)) => true,
+        ("strategy", "close_entries_rule", Literal::String(rule)) => rule == "FIFO",
+        _ => false,
+    }
+}
+
 pub fn validate(statements: &[Statement]) -> Vec<Diagnostic> {
     let own: std::collections::HashSet<&str> = statements
         .iter()
@@ -348,6 +369,7 @@ pub fn validate(statements: &[Statement]) -> Vec<Diagnostic> {
             if let Some(explanation) = arguments
                 .get(name)
                 .and_then(|table| table.get(argument_name))
+                .filter(|_| !states_the_default(name, argument_name, &argument.value))
             {
                 // An explanation that starts "Partly." belongs to an argument that works with a limit.
                 let message = match explanation.strip_prefix("Partly. ") {

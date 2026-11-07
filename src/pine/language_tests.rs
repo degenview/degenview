@@ -292,6 +292,32 @@ fn what_cannot_be_honoured_is_warned_about() {
 }
 
 #[test]
+fn strategy_settings_the_broker_ignores_are_warned_about() {
+    let diagnostics = |arguments: &str| {
+        let source = format!("//@version=6\nstrategy(\"S\"{arguments})\nplot(close)");
+        let program = compiler::compile(&source, Limits::default(), &NoLibraries);
+        assert!(program.is_valid(), "{:?}", program.diagnostics);
+        program.diagnostics
+    };
+    for (arguments, name) in [
+        (", calc_on_order_fills = true", "calc_on_order_fills"),
+        (", close_entries_rule = \"ANY\"", "close_entries_rule"),
+    ] {
+        let found = diagnostics(arguments);
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0].code, "PINE7001");
+        assert!(found[0].message.contains(name), "{}", found[0].message);
+    }
+    // The default, written out, changes nothing and is not warned about.
+    assert!(diagnostics(", calc_on_order_fills = false, close_entries_rule = \"FIFO\"").is_empty());
+    // Standard-OHLC fills are a documented no-op on a standard chart (docs/chart-types.md), and the
+    // report says so on a price-based chart, so the argument stays quiet.
+    assert!(diagnostics(", fill_orders_on_standard_ohlc = true").is_empty());
+    // A buffer size cannot be too small here (the whole history is kept), so it stays quiet.
+    assert!(diagnostics(", max_bars_back = 500").is_empty());
+}
+
+#[test]
 fn a_parameter_may_reuse_a_builtin_function_name_with_a_warning() {
     let codes = diagnostic_codes("f(color fill) =>\n    fill\nplot(close)");
     assert_eq!(codes, ["PINE7006"]);
@@ -2101,6 +2127,35 @@ fn an_exit_picks_its_comment_by_the_level_that_filled_it() {
         value(&session, "text"),
         RuntimeValue::String("target".into())
     );
+}
+
+#[test]
+fn an_entry_and_an_exit_called_on_the_same_bar_both_stand() {
+    // No `position_size` guard: the exit is called on the bar that places the entry, and on every
+    // bar after it. Placing the exit used to cancel the pending entry.
+    let source = "//@version=6\n\
+        strategy(\"S\", default_qty_type = strategy.fixed, default_qty_value = 1)\n\
+        if bar_index == 0\n    strategy.entry(\"L\", strategy.long)\n\
+        strategy.exit(\"X\", \"L\", limit = 105, stop = 95)\n\
+        closed = strategy.closedtrades\n\
+        exit_at = strategy.closedtrades.exit_price(0)";
+    let program = compiler::compile(source, Limits::default(), &NoLibraries);
+    assert!(program.is_valid(), "{:?}", program.diagnostics);
+    let mut session = Session::new(
+        program,
+        HashMap::new(),
+        Limits::default(),
+        None,
+        SymbolInfo::default(),
+        None,
+        None,
+    );
+    // The entry fills at the open of bar 1; bar 2 reaches the 105 target.
+    let mut bars = flat_bars(&[100.0, 100.0, 100.0]);
+    bars[2].high = 106.0;
+    session.evaluate(&bars).expect("runs");
+    assert_eq!(value(&session, "closed"), RuntimeValue::Int(1));
+    assert_eq!(value(&session, "exit_at"), RuntimeValue::Float(105.0));
 }
 
 #[test]

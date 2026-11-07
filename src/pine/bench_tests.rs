@@ -395,6 +395,79 @@ if ta.crossunder(fast, slow)
 plot(fast)
 ";
 
+/// An entry and an exit placed on the same bar with no position guard, as many scripts do.
+pub(crate) const STRATEGY_ENTRY_EXIT: &str = "//@version=6
+strategy(\"EntryExit\", overlay = true)
+fast = ta.sma(close, 10)
+slow = ta.sma(close, 30)
+if ta.crossover(fast, slow) or ta.crossunder(fast, slow)
+    strategy.entry(\"L\", strategy.long)
+strategy.exit(\"X\", \"L\", stop = close * 0.98, limit = close * 1.03)
+plot(fast)
+";
+
+/// `STRATEGY` re-run on every realtime tick, so each tick rolls back and replays the broker.
+pub(crate) const STRATEGY_TICKS: &str = "//@version=6
+strategy(\"Ticks\", overlay = true, calc_on_every_tick = true)
+fast = ta.sma(close, 10)
+slow = ta.sma(close, 30)
+if ta.crossover(fast, slow)
+    strategy.entry(\"L\", strategy.long)
+if ta.crossunder(fast, slow)
+    strategy.close(\"L\")
+plot(fast)
+";
+
+/// A `varip` local in a function called from three sites.
+pub(crate) const VARIP_SITES: &str = "//@version=6
+indicator(\"VaripSites\")
+count() =>
+    varip int n = 0
+    n += 1
+    n
+a = count()
+b = count()
+c = count()
+plot(a)
+plot(b)
+plot(c)
+";
+
+/// History reads of built-in variables, which are not plain series.
+pub(crate) const BUILTIN_HISTORY: &str = "//@version=6
+indicator(\"BuiltinHistory\")
+a = hlcc4[1]
+b = ta.tr[1]
+c = barstate.isfirst[1] ? 1.0 : 0.0
+d = dayofweek[1]
+e = na(timeframe.period[10]) ? 0.0 : 1.0
+f = hlcc4 - hlcc4[2]
+plot(a)
+plot(b)
+plot(c)
+plot(d)
+plot(e)
+plot(f)
+";
+
+/// A script that stops itself part-way through the history.
+pub(crate) const HALTING: &str = "//@version=6
+indicator(\"Halting\")
+if bar_index == 1500
+    runtime.error(\"stop\")
+plot(close)
+";
+
+/// Many globals of which only one is ever read back with `[]`.
+pub(crate) fn index_only_vars(count: usize) -> String {
+    let mut source = String::from("//@version=6\nindicator(\"IndexOnly\")\n");
+    for index in 0..count {
+        source.push_str(&format!("v{index} = close * 1.00{index} + {index}\n"));
+    }
+    source.push_str("plot(v1[1] + v2)\n");
+    source
+}
+
 /// Several indicators executing at once, as a chart with scripts and an alert subscription does.
 fn simultaneous(data: &[Kline]) -> u64 {
     std::thread::scope(|scope| {
@@ -409,10 +482,15 @@ fn simultaneous(data: &[Kline]) -> u64 {
 
 /// A rebuild over history, then live ticks and closes through the controller's incremental path.
 fn realtime(history: usize, steps: usize) -> u64 {
+    realtime_script(SIMPLE, history, steps)
+}
+
+/// `realtime` for any script (a strategy's ticks roll the broker back and replay it).
+fn realtime_script(script: &str, history: usize, steps: usize) -> u64 {
     let mut candles = bars(history + steps + 1, MINUTE_MS);
     let future = candles.split_off(history);
     let mut controller = ExecutionController::new(
-        SIMPLE,
+        script,
         HashMap::new(),
         symbol(),
         None,
@@ -436,6 +514,28 @@ fn realtime(history: usize, steps: usize) -> u64 {
         candles.push(bar);
     }
     checksum(&last.output)
+}
+
+/// A script that fails part-way through the history while the controller keeps being fed closed
+/// bars: what a chart does after a runtime error.
+fn halted(history: usize, steps: usize) -> u64 {
+    let candles = bars(history + steps, MINUTE_MS);
+    let mut controller = ExecutionController::new(
+        HALTING,
+        HashMap::new(),
+        symbol(),
+        None,
+        limits(),
+        &NoLibraries,
+        None,
+        None,
+    )
+    .expect("valid script");
+    let mut last = controller.update(&candles[..history], None, candles[history - 1].close_time);
+    for count in history + 1..=history + steps {
+        last = controller.update(&candles[..count], None, candles[count - 1].close_time);
+    }
+    checksum(&last.output) ^ u64::from(last.error.is_some())
 }
 
 // MARK: Debug mode
@@ -650,6 +750,40 @@ fn workloads() -> Vec<Workload> {
         add("simultaneous_x4", Box::new(move || simultaneous(&data)));
     }
     add("realtime_ticks", Box::new(|| realtime(2_000, 300)));
+    add(
+        "realtime_strategy_ticks",
+        Box::new(|| realtime_script(STRATEGY_TICKS, 2_000, 300)),
+    );
+    add("error_halt", Box::new(|| halted(2_000, 300)));
+    {
+        let data = minute.clone();
+        add(
+            "strategy_entry_exit_same_bar",
+            Box::new(move || evaluate(STRATEGY_ENTRY_EXIT, &data, false)),
+        );
+    }
+    {
+        let data = minute.clone();
+        add(
+            "varip_sites",
+            Box::new(move || evaluate(VARIP_SITES, &data, false)),
+        );
+    }
+    {
+        let data = minute.clone();
+        add(
+            "builtin_history_reads",
+            Box::new(move || evaluate(BUILTIN_HISTORY, &data, false)),
+        );
+    }
+    {
+        let data = minute.clone();
+        let source = index_only_vars(150);
+        add(
+            "index_only_vars",
+            Box::new(move || evaluate(&source, &data, false)),
+        );
+    }
     {
         let data = minute.clone();
         add(

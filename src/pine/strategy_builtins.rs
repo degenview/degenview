@@ -1,7 +1,7 @@
 //! `strategy.entry`/`.order`/`.exit`/`.close`/`.close_all`/`.cancel`/`.cancel_all`, ported from
 //! `PineRuntimeSession+Strategy.swift`. Each call places (or cancels) an order on the per-bar broker
 //! held in `RuntimeState`; the broker emulator fills them as the bars advance. `strategy.risk.*`
-//! limits are accepted and ignored, matching Pine. The `strategy.*` *identifiers*
+//! limits are stated on the broker, which enforces them (`Broker::check_risk`). The `strategy.*` *identifiers*
 //! (`strategy.position_size`, …) are read through [`strategy_value`], which the session's
 //! identifier resolver calls — they are not function calls.
 
