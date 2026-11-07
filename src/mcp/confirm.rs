@@ -10,7 +10,13 @@
 //! new command cannot be added without deciding), and the [`ConfirmationBook`] of what is waiting
 //! for an answer. An approval is tied to the client and to the exact command, not to a tool name:
 //! a repeat with any argument changed is a different operation and asks again. An approval is
-//! used up by the call that runs it.
+//! used up by the call that runs it, and only if what it would do is still what the user was
+//! shown: a summary carries the resolved target (the orders an "all" reaches), and a repeat whose
+//! summary has changed asks again.
+//!
+//! The user reads the whole summary. The client is told only what it asked for ("Delete a price
+//! alert"), never what the app found out about the target, because a credential that may delete
+//! alerts may not be allowed to read them (see [`Summary::client_line`]).
 //!
 //! All times are passed in, so tests never sleep.
 
@@ -154,6 +160,10 @@ pub struct Summary {
     pub target: String,
     /// A consequence worth knowing: "Its drawings go with it."
     pub note: Option<String>,
+    /// What the command would reach, resolved when the question was asked: the working orders
+    /// an "all" cancels, the positions it closes. Never shown. An approval holds only while this
+    /// is unchanged when the call is repeated.
+    pub scope: String,
 }
 
 impl Summary {
@@ -162,7 +172,13 @@ impl Summary {
             action: shorten(&action.into()),
             target: shorten(&target.into()),
             note: None,
+            scope: String::new(),
         }
+    }
+
+    pub fn with_scope(mut self, scope: impl Into<String>) -> Self {
+        self.scope = scope.into();
+        self
     }
 
     pub fn with_note(mut self, note: impl Into<String>) -> Self {
@@ -170,7 +186,19 @@ impl Summary {
         self
     }
 
-    /// One line, for a notification and the tool result: "Delete a price alert: BTC/USDT ...".
+    /// What the client is told: the action it asked for, without the target. The target was
+    /// looked up by the app and can name things the client may not read (an alert's symbol, a
+    /// watchlist, an account, how many orders are working).
+    pub fn client_line(&self) -> String {
+        self.action.clone()
+    }
+
+    /// Whether `other` would do the same thing to the same things.
+    pub fn same_effect(&self, other: &Self) -> bool {
+        self.action == other.action && self.target == other.target && self.scope == other.scope
+    }
+
+    /// One line for the user, for a notification: "Delete a price alert: BTC/USDT ...".
     pub fn line(&self) -> String {
         if self.target.is_empty() {
             self.action.clone()
@@ -199,7 +227,7 @@ pub fn shorten(text: &str) -> String {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PendingInfo {
     pub id: u64,
-    /// The summary line.
+    /// [`Summary::client_line`]: the action, not what it applies to.
     pub operation: String,
     /// Seconds left to answer, rounded up.
     pub expires_in_secs: u64,
@@ -254,11 +282,12 @@ pub struct PendingView {
 /// What to do with a gated call.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Verdict {
-    /// It was approved: run it. The approval is used up.
-    Run,
+    /// It was approved: run it if `Summary` (what the user saw) is still what the command would
+    /// do. The approval is used up either way.
+    Run(Summary),
     /// The same call is already waiting for an answer.
     Waiting(PendingInfo),
-    /// The user said no to this exact call a moment ago; the text says what it was.
+    /// The user said no to this exact call a moment ago; the text is the action, for the client.
     Declined(String),
     /// Nothing is known about it: describe it and [`ConfirmationBook::open`] a question.
     Ask,
@@ -313,15 +342,14 @@ impl ConfirmationBook {
         match entry.state {
             State::Approved => {
                 // Used up by the call that runs it.
-                self.entries.remove(index);
-                Verdict::Run
+                Verdict::Run(self.entries.remove(index).summary)
             }
             State::Pending => Verdict::Waiting(PendingInfo {
                 id: entry.id,
-                operation: entry.summary.line(),
+                operation: entry.summary.client_line(),
                 expires_in_secs: secs_up(remaining(entry.expires, now)),
             }),
-            State::Denied => Verdict::Declined(entry.summary.line()),
+            State::Denied => Verdict::Declined(entry.summary.client_line()),
         }
     }
 
@@ -352,7 +380,7 @@ impl ConfirmationBook {
         self.next_id += 1;
         let info = PendingInfo {
             id,
-            operation: summary.line(),
+            operation: summary.client_line(),
             expires_in_secs: PENDING_TTL.as_secs(),
         };
         self.entries.push(Entry {
@@ -440,9 +468,21 @@ impl ConfirmationBook {
             .retain(|entry| known.contains(&entry.client_id));
     }
 
-    /// Forgets everything (the server stopped, or confirmation was turned off).
-    pub fn clear(&mut self) {
-        self.entries.clear();
+    /// Forgets everything (the server stopped or restarted, or confirmation was turned off) and
+    /// returns the questions nobody had answered, as expired, so the log can say so.
+    pub fn drain(&mut self) -> Vec<Settled> {
+        std::mem::take(&mut self.entries)
+            .into_iter()
+            .filter(|entry| entry.state == State::Pending)
+            .map(|entry| Settled {
+                id: entry.id,
+                client_id: entry.client_id,
+                client_name: entry.client_name,
+                tool: tool_of(&entry.command).unwrap_or(""),
+                summary: entry.summary,
+                how: Settlement::Expired,
+            })
+            .collect()
     }
 
     #[cfg(test)]
@@ -481,7 +521,10 @@ mod tests {
         let info = open(&mut book, t0, "c1", delete(1));
         assert_eq!(info.id, 10);
         assert_eq!(info.expires_in_secs, PENDING_TTL.as_secs());
-        assert_eq!(info.operation, "Delete a price alert: BTC/USDT");
+        assert_eq!(
+            info.operation, "Delete a price alert",
+            "the client is told the action, never the target"
+        );
 
         // The agent asks again before the user has answered: the same question, fewer seconds.
         let later = t0 + Duration::from_secs(30);
@@ -504,7 +547,10 @@ mod tests {
         assert_eq!(settled.client_id, "c1");
         assert!(book.pending(later).is_empty());
 
-        assert_eq!(book.verdict(later, "c1", &delete(1)), Verdict::Run);
+        assert_eq!(
+            book.verdict(later, "c1", &delete(1)),
+            Verdict::Run(summary("BTC/USDT"))
+        );
         // Used up: the same call again is a new operation and asks again.
         assert_eq!(book.verdict(later, "c1", &delete(1)), Verdict::Ask);
         assert_eq!(book.len(), 0);
@@ -520,7 +566,10 @@ mod tests {
         assert_eq!(book.verdict(t0, "c2", &delete(1)), Verdict::Ask);
         assert_eq!(book.verdict(t0, "c1", &delete(2)), Verdict::Ask);
         // The approved one is still there for its owner.
-        assert_eq!(book.verdict(t0, "c1", &delete(1)), Verdict::Run);
+        assert_eq!(
+            book.verdict(t0, "c1", &delete(1)),
+            Verdict::Run(summary("BTC/USDT"))
+        );
     }
 
     #[test]
@@ -531,7 +580,7 @@ mod tests {
         let settled = book.deny(t0, info.id).unwrap();
         assert_eq!(settled.how, Settlement::Declined);
         let soon = t0 + Duration::from_secs(60);
-        let declined = Verdict::Declined("Delete a price alert: BTC/USDT".into());
+        let declined = Verdict::Declined("Delete a price alert".into());
         assert_eq!(book.verdict(soon, "c1", &delete(1)), declined);
         assert_eq!(
             book.verdict(soon, "c1", &delete(1)),
@@ -623,8 +672,69 @@ mod tests {
         assert_eq!(book.verdict(t0, "c1", &delete(1)), Verdict::Ask);
         assert_eq!(book.pending(t0).len(), 1);
         assert_eq!(book.pending(t0)[0].client_name, "Claude");
-        book.clear();
+        assert!(book.drain().len() == 1, "the open question is reported");
         assert_eq!(book.len(), 0);
+    }
+
+    #[test]
+    fn the_client_is_told_what_it_asked_for_never_what_the_app_found_out() {
+        let t0 = Instant::now();
+        let mut book = ConfirmationBook::new(1);
+        let secret = Summary::new("Cancel paper orders", "all 3 working orders on “Savings”")
+            .with_scope("1,2,3");
+        let info = book
+            .open(t0, "c1", "Claude", delete(1), secret.clone())
+            .unwrap();
+        assert_eq!(info.operation, "Cancel paper orders");
+        let Verdict::Waiting(again) = book.verdict(t0, "c1", &delete(1)) else {
+            panic!("it is waiting");
+        };
+        assert_eq!(again.operation, "Cancel paper orders");
+        // The user still reads all of it.
+        assert_eq!(book.pending(t0)[0].summary, secret);
+        assert!(book.pending(t0)[0].summary.line().contains("Savings"));
+        // A no is reported the same way.
+        book.deny(t0, info.id).unwrap();
+        assert_eq!(
+            book.verdict(t0, "c1", &delete(1)),
+            Verdict::Declined("Cancel paper orders".into())
+        );
+    }
+
+    #[test]
+    fn what_would_run_must_match_what_was_shown() {
+        let shown = Summary::new("Cancel paper orders", "all 2 working orders on “Paper”")
+            .with_scope("7,8");
+        let same = shown.clone();
+        assert!(shown.same_effect(&same));
+        // One more order, or one swapped for another with the same count, is a different effect.
+        let more = Summary::new("Cancel paper orders", "all 3 working orders on “Paper”")
+            .with_scope("7,8,9");
+        let swapped = shown.clone().with_scope("7,9");
+        assert!(!shown.same_effect(&more));
+        assert!(!shown.same_effect(&swapped));
+        // The note is the user's to read; it does not change what runs.
+        assert!(shown.same_effect(&shown.clone().with_note("Simulated money.")));
+    }
+
+    #[test]
+    fn draining_reports_only_the_questions_nobody_answered() {
+        let t0 = Instant::now();
+        let mut book = ConfirmationBook::new(1);
+        let a = open(&mut book, t0, "c1", delete(1));
+        let b = open(&mut book, t0, "c1", delete(2));
+        let c = open(&mut book, t0, "c1", delete(3));
+        book.approve(t0, b.id).unwrap();
+        book.deny(t0, c.id).unwrap();
+        let drained = book.drain();
+        assert_eq!(drained.len(), 1);
+        assert_eq!((drained[0].id, drained[0].how), (a.id, Settlement::Expired));
+        assert_eq!(book.len(), 0);
+        assert_eq!(
+            book.verdict(t0, "c1", &delete(2)),
+            Verdict::Ask,
+            "the approval went with it"
+        );
     }
 
     #[test]

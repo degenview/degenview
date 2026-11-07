@@ -491,3 +491,51 @@ mod summaries {
         assert!(summary.note.unwrap().contains("overwritten"));
     }
 }
+
+#[test]
+fn a_credential_is_told_the_action_it_asked_for_never_what_the_app_found_out() {
+    // It may delete alerts but not read them: the question names the tool, not the alert.
+    let harness = Harness::start(&[("w", "tok", &[crate::model::mcp::Permission::AlertsDelete])]);
+    harness.require_confirmation(true);
+    let result = call(
+        &harness.url(),
+        "tok",
+        "degenview_delete_price_alert",
+        json!({"alert_id": "1"}),
+    );
+    assert_eq!(error_code(&result), "CONFIRMATION_REQUIRED");
+    let text = result.to_string();
+    assert_eq!(
+        result["structuredContent"]["operation"],
+        json!("Run degenview_delete_price_alert")
+    );
+    // The stand-in app describes the target as "the stub's target"; that is the user's to read.
+    assert!(!text.contains("stub's target"), "{text}");
+    let open = harness.confirmations().pending(Instant::now());
+    assert!(open[0].summary.line().contains("the stub's target"));
+    // A no is reported the same way.
+    harness.confirmations().deny(Instant::now(), open[0].id);
+    let refused = call(
+        &harness.url(),
+        "tok",
+        "degenview_delete_price_alert",
+        json!({"alert_id": "1"}),
+    );
+    assert_eq!(error_code(&refused), "CONFIRMATION_DENIED");
+    assert!(!refused.to_string().contains("stub's target"));
+}
+
+#[test]
+fn a_yes_does_not_survive_the_server_being_stopped_and_started() {
+    let harness = harness_asking();
+    let url = harness.url();
+    let id = question_id(&remove(&url, "tok"));
+    harness.confirmations().approve(Instant::now(), id);
+    // What stopping and starting the server does to the shared state, and the app's next frame.
+    harness.shared.bump_generation();
+    harness.confirmations().tick(Instant::now());
+    let after = remove(&url, "tok");
+    assert_eq!(error_code(&after), "CONFIRMATION_REQUIRED", "{after}");
+    assert_eq!(removed(&harness), 0, "the old yes did not run it");
+    assert_ne!(question_id(&after), id);
+}

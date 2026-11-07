@@ -30,7 +30,10 @@
   its tool to `confirm::GATED_TOOLS` and say so in the tool's description. The gate runs on the app
   thread before dispatch and must never wait for the user: it answers `CONFIRMATION_REQUIRED` and
   the agent repeats the call. Approvals are used up by the call that runs them; never widen one
-  beyond the exact command and client.
+  beyond the exact command and client. A command that reaches "everything of a kind" (an "all")
+  must put what it resolved to in `Summary::with_scope`, so an approval cannot cover things that
+  appeared after it. Only `Summary::client_line` (the action) may go into a client's response:
+  the target text can name things the credential may not read.
 - Rate limits live in `mcp/limits.rs` and are applied in `require_bearer`. Bad tokens may be
   refused with 429; a valid token must never be refused because of other callers' failures.
   Connections are accepted by `transport::serve` (not `axum::serve`) so header, time and

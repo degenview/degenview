@@ -37,12 +37,16 @@ pub struct ConfirmationHost {
     shared: Arc<McpShared>,
     /// Questions opened since the last [`Self::take_fresh`], for a notification.
     fresh: Vec<PendingView>,
+    /// The server generation the book was filled under. Stopping the server (to turn it off or to
+    /// change its port) moves it on, and nothing asked or approved under an older one survives.
+    generation: u64,
 }
 
 impl ConfirmationHost {
     pub fn new(shared: Arc<McpShared>) -> Self {
         Self {
             book: ConfirmationBook::new(new_id()),
+            generation: shared.generation(),
             shared,
             fresh: Vec::new(),
         }
@@ -74,15 +78,23 @@ impl ConfirmationHost {
 
     /// Housekeeping, once a frame: questions nobody answered are dropped (and logged), what was
     /// asked by a client that no longer exists is forgotten, and with confirmation switched off
-    /// nothing is left waiting.
+    /// or the server stopped and started again nothing is left waiting or approved.
     pub fn tick(&mut self, now: Instant) {
         for settled in self.book.sweep(now) {
             self.record(&settled);
         }
-        if !self.shared.require_confirmation() {
-            self.book.clear();
+        // Turning the server off is a stop signal: a yes given before it must not fire after it
+        // comes back, even within the time it would have lasted.
+        let generation = self.shared.generation();
+        if generation != self.generation || !self.shared.require_confirmation() {
+            self.generation = generation;
+            for settled in self.book.drain() {
+                self.record(&settled);
+            }
             self.fresh.clear();
-            return;
+            if !self.shared.require_confirmation() {
+                return;
+            }
         }
         // A question and its answer are tied to the client that asked.
         let known: Vec<String> = self.shared.clients().into_iter().map(|c| c.id).collect();
@@ -135,29 +147,39 @@ pub fn gate_command(
         .map_err(|_| unavailable())?
         .book
         .verdict(now, client_id, command);
+    let ask = |summary: Summary| {
+        let mut host = host.lock().map_err(|_| unavailable())?;
+        match host
+            .book
+            .open(now, client_id, client_name, command.clone(), summary)
+        {
+            Ok(info) => {
+                host.remember_fresh(now, &info);
+                Err(McpError::ConfirmationRequired(info))
+            }
+            Err(OpenError::ClientFull) => Err(McpError::ResourceLimit(
+                "Too many approvals from this client are waiting. Ask the user to answer them in DegenView first".into(),
+            )),
+            Err(OpenError::Full) => Err(McpError::ResourceLimit(
+                "Too many approvals are waiting in DegenView. Ask the user to answer them first".into(),
+            )),
+        }
+    };
     match verdict {
-        Verdict::Run => Ok(()),
-        Verdict::Waiting(info) => Err(McpError::ConfirmationRequired(info)),
-        Verdict::Declined(operation) => Err(McpError::ConfirmationDenied(operation)),
-        Verdict::Ask => {
-            let summary = describe()?;
-            let mut host = host.lock().map_err(|_| unavailable())?;
-            match host
-                .book
-                .open(now, client_id, client_name, command.clone(), summary)
-            {
-                Ok(info) => {
-                    host.remember_fresh(now, &info);
-                    Err(McpError::ConfirmationRequired(info))
-                }
-                Err(OpenError::ClientFull) => Err(McpError::ResourceLimit(
-                    "Too many approvals from this client are waiting. Ask the user to answer them in DegenView first".into(),
-                )),
-                Err(OpenError::Full) => Err(McpError::ResourceLimit(
-                    "Too many approvals are waiting in DegenView. Ask the user to answer them first".into(),
-                )),
+        Verdict::Run(approved) => {
+            // What the user said yes to must still be what would happen: an "all" is whatever is
+            // working now, not what was working when it was asked. The approval is spent either
+            // way; if the target moved, the user is asked about what it is now.
+            let current = describe()?;
+            if current.same_effect(&approved) {
+                Ok(())
+            } else {
+                ask(current)
             }
         }
+        Verdict::Waiting(info) => Err(McpError::ConfirmationRequired(info)),
+        Verdict::Declined(operation) => Err(McpError::ConfirmationDenied(operation)),
+        Verdict::Ask => ask(describe()?),
     }
 }
 
@@ -379,22 +401,37 @@ pub fn cancel_orders(
     order_ids: Option<&[u64]>,
 ) -> Result<Summary, McpError> {
     let account = mcp_host::tradable_paper_account(host, account_id)?;
+    // The orders an "all" reaches, by id: the approval holds only for these.
+    let mut scope = String::new();
     let target = match order_ids {
         Some(ids) => plural(ids.len(), "named order", "named orders"),
         None => {
-            let working = host
+            let working: Vec<u64> = host
                 .snapshot()
                 .orders
                 .iter()
                 .filter(|order| order.account_id == account_id && order.status.is_working())
-                .count();
-            format!("all {}", plural(working, "working order", "working orders"))
+                .map(|order| order.id)
+                .collect();
+            scope = scope_of(working.iter().map(u64::to_string));
+            format!(
+                "all {}",
+                plural(working.len(), "working order", "working orders")
+            )
         }
     };
     Ok(
         Summary::new("Cancel paper orders", format!("{target} on “{account}”"))
+            .with_scope(scope)
             .with_note("Simulated money."),
     )
+}
+
+/// The things a command reaches as one comparable string: sorted, so only the set matters.
+fn scope_of(items: impl Iterator<Item = String>) -> String {
+    let mut items: Vec<String> = items.collect();
+    items.sort();
+    items.join(",")
 }
 
 pub fn close_positions(
@@ -424,8 +461,11 @@ pub fn close_positions(
             plural(open.len(), "open position", "open positions")
         ),
     };
+    // The positions an "all" reaches: the approval holds only for these.
+    let scope = scope_of(open.iter().map(|position| position.instrument.key.clone()));
     Ok(
         Summary::new("Close paper positions", format!("{target} on “{account}”"))
+            .with_scope(scope)
             .with_note("Simulated money."),
     )
 }
@@ -472,6 +512,138 @@ mod tests {
         ))
     }
 
+    fn cancel_all() -> McpCommand {
+        McpCommand::CancelPaperOrders {
+            account_id: 1,
+            order_ids: None,
+        }
+    }
+
+    fn orders(ids: &[u64]) -> Result<Summary, McpError> {
+        Ok(Summary::new(
+            "Cancel paper orders",
+            format!("all {} working orders on “Paper”", ids.len()),
+        )
+        .with_scope(scope_of(ids.iter().map(u64::to_string))))
+    }
+
+    fn approve_the_one_open(host: &Arc<Mutex<ConfirmationHost>>, now: Instant) {
+        let id = host.lock().unwrap().pending(now)[0].id;
+        host.lock().unwrap().approve(now, id);
+    }
+
+    #[test]
+    fn an_all_approval_holds_only_for_what_the_user_was_shown() {
+        let (host, _) = host_with(&["c1"], true);
+        let now = Instant::now();
+        let first = gate_command(&host, now, "c1", "Claude", &cancel_all(), || {
+            orders(&[7, 8])
+        });
+        assert!(matches!(first, Err(McpError::ConfirmationRequired(_))));
+        approve_the_one_open(&host, now);
+        // Another order appeared before the agent repeated the call: not what was approved.
+        let repeat = gate_command(&host, now, "c1", "Claude", &cancel_all(), || {
+            orders(&[7, 8, 9])
+        });
+        let Err(McpError::ConfirmationRequired(info)) = repeat else {
+            panic!("it must ask again: {repeat:?}");
+        };
+        assert_eq!(info.operation, "Cancel paper orders");
+        // The user is asked about what it is now, and the old yes is spent.
+        let view = &host.lock().unwrap().pending(now)[0];
+        assert!(view.summary.line().contains("all 3 working orders"));
+        approve_the_one_open(&host, now);
+        assert!(
+            gate_command(&host, now, "c1", "Claude", &cancel_all(), || orders(&[
+                7, 8, 9
+            ]))
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn swapping_one_order_for_another_is_also_a_change() {
+        let (host, _) = host_with(&["c1"], true);
+        let now = Instant::now();
+        let _ = gate_command(&host, now, "c1", "Claude", &cancel_all(), || {
+            orders(&[7, 8])
+        });
+        approve_the_one_open(&host, now);
+        let repeat = gate_command(&host, now, "c1", "Claude", &cancel_all(), || {
+            orders(&[7, 9])
+        });
+        assert!(
+            matches!(repeat, Err(McpError::ConfirmationRequired(_))),
+            "same count, different orders"
+        );
+    }
+
+    #[test]
+    fn an_unchanged_target_runs_on_the_approval() {
+        let (host, _) = host_with(&["c1"], true);
+        let now = Instant::now();
+        let _ = gate_command(&host, now, "c1", "Claude", &cancel_all(), || {
+            orders(&[8, 7])
+        });
+        approve_the_one_open(&host, now);
+        // The order of the ids is not a change.
+        assert!(
+            gate_command(&host, now, "c1", "Claude", &cancel_all(), || orders(&[
+                7, 8
+            ]))
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn a_target_that_vanished_after_approval_is_refused_not_run() {
+        let (host, _) = host_with(&["c1"], true);
+        let now = Instant::now();
+        let _ = gate_command(&host, now, "c1", "Claude", &cancel_all(), || orders(&[7]));
+        approve_the_one_open(&host, now);
+        let gone = gate_command(&host, now, "c1", "Claude", &cancel_all(), || {
+            Err(McpError::NotFound("No such account".into()))
+        });
+        assert!(matches!(gone, Err(McpError::NotFound(_))), "{gone:?}");
+    }
+
+    #[test]
+    fn stopping_and_starting_the_server_clears_every_question_and_approval() {
+        let (host, shared) = host_with(&["c1"], true);
+        let now = Instant::now();
+        let _ = gate_command(&host, now, "c1", "Claude", &alert_command(), say);
+        approve_the_one_open(&host, now);
+        let _ = gate_command(
+            &host,
+            now,
+            "c1",
+            "Claude",
+            &McpCommand::DeleteAlert { alert_id: 2 },
+            say,
+        );
+        assert_eq!(host.lock().unwrap().pending(now).len(), 1);
+
+        // Nothing moved: the frame changes nothing.
+        host.lock().unwrap().tick(now);
+        assert_eq!(host.lock().unwrap().pending(now).len(), 1);
+
+        // The server stopped (off, or a new port) and came back.
+        shared.bump_generation();
+        host.lock().unwrap().tick(now);
+        assert!(host.lock().unwrap().pending(now).is_empty());
+        let again = gate_command(&host, now, "c1", "Claude", &alert_command(), say);
+        assert!(
+            matches!(again, Err(McpError::ConfirmationRequired(_))),
+            "the approval did not survive: {again:?}"
+        );
+        // The question nobody answered is in the log as expired.
+        let rows = shared.audit().take(now_ms(), true);
+        assert!(
+            rows.iter()
+                .any(|row| row.outcome == McpAuditOutcome::Expired)
+        );
+    }
+
     #[test]
     fn a_gated_call_is_held_then_runs_once_after_the_user_approves() {
         let (host, shared) = host_with(&["c1"], true);
@@ -480,8 +652,10 @@ mod tests {
         let McpError::ConfirmationRequired(info) = held else {
             panic!("{held:?}");
         };
+        // The client is told the action; the user reads the target.
+        assert_eq!(info.operation, "Delete a price alert");
         assert_eq!(
-            info.operation,
+            host.lock().unwrap().pending(now)[0].summary.line(),
             "Delete a price alert: BTC/USDT crosses above 70,000"
         );
 

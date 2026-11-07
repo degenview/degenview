@@ -55,13 +55,20 @@ client → 127.0.0.1:<port>/mcp → bearer/Host/Origin/size checks
   focused window (tab windows and Settings), with an OS notification if notifications are on; the
   agent repeats the exact same call, which then runs once. An approval is tied to the client and to
   the exact `McpCommand` (`PartialEq`, so any changed argument asks again, and another client's call
-  never matches) and is used up by the call that runs it. A question lives 120 s, an approval 120 s
+  never matches) and is used up by the call that runs it, and only if what it would do is still what the user saw:
+  the summary carries a hidden `scope` (the working orders an "all" cancels, the positions it
+  closes), the repeat is described again, and a changed effect spends the yes and asks again about
+  what it is now. The client is told only the action (`Summary::client_line`: "Cancel paper
+  orders"), never the target the app looked up, because a credential that may cancel orders may not
+  be allowed to read them (a write grant is not a read grant, as in `hide_unread_account`); the
+  user reads the whole summary. A question lives 120 s, an approval 120 s
   after it is given, a "no" 300 s (the agent gets `CONFIRMATION_DENIED`, not another question); a
   client may have 8 open and the app 32 (`RESOURCE_LIMIT` beyond). The summary the user reads is
   built by the app from what it knows of the target (`host::mcp_confirmation::delete_alert` and
   the others; a target that does not exist is refused with its own error, unasked), never from
-  agent text, and is cut to one clean line. Revoking a client or turning the setting off drops what
-  was open. Answers and expiries are rows in the activity log (`Confirmation` kind: Approved,
+  agent text, and is cut to one clean line. Revoking a client drops what it had open; turning the setting off, or stopping and starting
+  the server (off and on, a new port: `McpShared::generation` moved), drops everything, and the
+  questions nobody answered are logged as expired. Answers and expiries are rows in the activity log (`Confirmation` kind: Approved,
   Declined, Expired); the held call itself is a `Held` row. Return alone never approves: a button
   must be chosen, and Escape or a click outside is a No. Turning the setting off is asked about.
 - Workers never access workspaces or SQLite. `Request::run` skips abandoned, expired, cancelled,
