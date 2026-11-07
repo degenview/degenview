@@ -90,6 +90,48 @@
 - Indicator readings use the bars the chart draws (`ChartWorkspace::constructed_bars` for Heikin
   Ashi, Renko and the other built types), never the raw candles; `degenview_get_candles` stays the
   market's own. A paper `request_id` is bound to its order (another order under it is `CONFLICT`).
+- Listening beyond loopback is `BindMode::Interface(ip)`: one named address (never `0.0.0.0` or
+  `::`, which `BindMode::interface` rejects and a stored one fails the load), TLS only. The only
+  gate is `Listen::check` in `McpServer::start_listening`: an address `BindMode::interface` would
+  refuse (the variant can be built directly), no certificate, or one made for another address, is
+  refused before a socket opens. Do not add a path that binds without it. `bind` is
+  sealed, but only written when it is not loopback, so existing seals keep verifying. The
+  certificate is `mcp::tls` (`mcp-tls.pem` in the data directory, owner-only: repaired on load, written
+  through a fresh temporary file, held to naming the address it records, and made under the
+  `mcp-tls.lock` lock so concurrent processes share one identity; keep any new step of that flow inside
+  `load_or_create_locked`); the `Host` list comes
+  from `BindMode::allowed_hosts`, not the port. See "Remote access" in
+  [implementation](../mcp-implementation.md).
+- Where a request may come from is decided in `McpShared::authenticate_from(token, peer)`, from the
+  socket peer `transport::serve_with` records as `PeerAddr`, never from a header. A credential works
+  from this machine unless `McpClient::remote_allowed`. "This machine" is `Peer.local`: loopback or the
+  address the connection arrived on (a client on this Mac using the LAN address the server is bound to
+  is local; use `Peer::of_connection`, never `is_loopback()`, to decide it). Otherwise from anywhere, or only from
+  `allowed_cidrs` if it has any. A refused address looks like an unknown token (401, and it draws on
+  the failed-auth bucket) and records no use. No peer means remote. Do not add a second way to
+  authenticate. `McpClient::effective(global, remote_ceiling)` also caps a `remote_allowed` client by
+  `McpSettings::remote_ceiling` (default: every read-only permission), wherever it calls from. The new
+  client, settings and ceiling fields are sealed, and left out of the stored form while they are the
+  default, so old rows and seals read back unchanged.
+- Approval is decided by `confirm::needs_approval(shared, client_id, command)`, never by `gate`
+  alone: a credential with `remote_allowed` is asked about every command that changes anything
+  (`Gate::Ask` and `Gate::AskRemote`) and the "ask before high-impact requests" setting does not apply
+  to it; a local one is asked about `Gate::Ask` only, and not at all when the setting is off. A new
+  `McpCommand` is decided in `gate` (exhaustive), and an `AskRemote` one also needs a `tool_of` name and
+  a `confirm::remote_summary`, or the app refuses it rather than run it unasked. Turning the setting
+  off drains only local credentials' questions (`ConfirmationBook::drain_where`).
+- A queued `Request` carries its `Origin` (peer and `remote`, from `ClientIdentity`): pass the identity
+  to `BridgeClient::call`, never a bare client id; `Request::run` re-checks the address
+  (`accepts_origin`) and hands the origin to the gate (`needs_approval(.., remote_origin, ..)`). Do not
+  decide "remote" from the credential's current state alone at execution.
+- Failed sign-ins from another machine draw on that address's own bucket first
+  (`RateLimiter::failed_auth(peer, now)`, bounded table), then the shared one; a refusal from another
+  machine is counted into one `AuthRefused` row per address per minute. Audit rows carry `peer` (empty
+  for this machine); a row never holds a token or anything the request said.
+- The "Remote connections" rows of the Security card (`ui/settings_mcp.rs`) save nothing until `SetBind` is sent with an
+  address `parse_interface` accepted; keep the fingerprint it shows coming from the host
+  (`McpHost::tls_fingerprint`), never computed in the page. `detect_local_address` makes a system call,
+  so it runs on a click only, never per frame.
 - Settings holds the store lock, so its MCP UI returns `McpAction`s for `McpHost::queue`; never call
   `McpHost::apply` inside the Settings closure.
 - Verify against `127.0.0.1:<port>/mcp` with seeded `mcp.settings`/`mcp_client` rows, a throwaway

@@ -178,6 +178,28 @@ bypass.
 - Consider whether to keep the verifier in SQLite or move it to Keychain; the current design stores
   only a SHA-256 verifier, which is not a reusable secret.
 
+## Remote access
+
+All four steps are in: `BindMode`, TLS 1.3 with a self-signed pinned certificate, the `Host` list from
+the bind, no non-loopback bind without TLS; per-client `remote_allowed`, CIDR ranges and a remote
+ceiling, judged on the socket peer; the audit log's `peer`, a per-address failed-auth limit, and approval
+of every change for a remote credential; and the Settings section for all of it. See "Remote access:
+what exists" in [mcp-implementation.md](mcp-implementation.md).
+
+Still to do, in the order I would do it:
+
+1. Check that a real client accepts a pinned self-signed certificate, from another machine (Claude
+   Code, Claude Desktop through `mcp-remote`, MCP Inspector). Nothing has been tried against a real
+   client or a real LAN address. If none accepts it, importing a certificate (Tailscale, Let's Encrypt)
+   is the fallback and the generated one is not worth polishing.
+2. Hostnames: a user-entered list for the `Host` check and the certificate's names, so a client can use
+   a MagicDNS name instead of an address (the certificate and the `Host` list name the address only).
+3. Smaller gaps: the activity sheet shows `peer` but cannot filter by it; the descriptions of the
+   `AskRemote` tools do not mention the approval step (a model learns of it from
+   `CONFIRMATION_REQUIRED`); a notification for a remote question reads like any other; the page
+   offers no way to copy the certificate itself, only its fingerprint; IPv6 link-local addresses
+   (need a scope id) are refused.
+
 ## 10. Hardening
 
 Done: failed-authentication and per-client rate limits, header and connection limits, and

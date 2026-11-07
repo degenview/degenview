@@ -703,7 +703,7 @@ impl DegenViewMcp {
         match self
             .bridge
             .call(
-                &client.id,
+                &client,
                 Permission::WatchlistsRead,
                 McpCommand::ListWatchlists,
                 REQUEST_TIMEOUT,
@@ -752,7 +752,7 @@ impl DegenViewMcp {
         let page = match self
             .bridge
             .call(
-                &client.id,
+                &client,
                 Permission::WatchlistsRead,
                 McpCommand::GetWatchlist {
                     watchlist_id,
@@ -879,7 +879,7 @@ impl DegenViewMcp {
     ) -> Result<Json<WatchlistChangeResult>, CallToolResult> {
         match self
             .bridge
-            .call(&client.id, permission, command, REQUEST_TIMEOUT)
+            .call(client, permission, command, REQUEST_TIMEOUT)
             .await
         {
             Ok(McpReply::WatchlistChanged(changed)) => Ok(Json(*changed)),

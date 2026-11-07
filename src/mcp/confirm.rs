@@ -21,6 +21,7 @@
 //! All times are passed in, so tests never sleep.
 
 use crate::mcp::bridge::McpCommand;
+use crate::mcp::state::McpShared;
 use std::time::{Duration, Instant};
 
 /// How long a question waits for an answer.
@@ -43,6 +44,33 @@ pub enum Gate {
     Free,
     /// Asks the user first (unless the user turned confirmation off).
     Ask,
+    /// Changes something, but is easy to see and to undo in the app: runs unasked for a local
+    /// credential, and asks for one with remote access (see [`needs_approval`]).
+    AskRemote,
+}
+
+/// Whether `client_id`'s `command` has to be approved by the user first.
+///
+/// A credential with remote access asks for everything that changes anything, and the "ask before
+/// high-impact requests" setting does not apply to it: someone who can reach the server from
+/// another machine is not given a way to switch the question off from here. A local credential
+/// asks for the high-impact commands only, and not at all when the setting is off.
+///
+/// `remote_origin` is how the request arrived (`ClientIdentity::remote`), fixed when it was
+/// authenticated: a call that came in as remote keeps asking even if remote access is switched off
+/// while it waits to run. The credential's present state counts too, so neither can lower it.
+pub fn needs_approval(
+    shared: &McpShared,
+    client_id: &str,
+    remote_origin: bool,
+    command: &McpCommand,
+) -> bool {
+    let remote = remote_origin || shared.is_remote_client(client_id);
+    match gate(command) {
+        Gate::Free => false,
+        Gate::Ask => remote || shared.require_confirmation(),
+        Gate::AskRemote => remote,
+    }
 }
 
 /// The decision for every command. An exhaustive match on purpose: adding a command to
@@ -56,7 +84,7 @@ pub fn gate(command: &McpCommand) -> Gate {
         | C::RemoveDrawings { .. }
         | C::RemoveChart { .. }
         | C::RemovePineInstance { .. }
-        // Overwrites the saved source. Writing a draft is free; saving is the step that counts.
+        // Overwrites the saved source. Saving is the step that counts for a local credential.
         | C::EditPineScript { source: None, .. }
         // Simulated money, but the orders are real to the paper account. A dry run only checks.
         | C::PlacePaperOrder { dry_run: false, .. }
@@ -64,8 +92,10 @@ pub fn gate(command: &McpCommand) -> Gate {
         | C::CancelPaperOrders { .. }
         | C::ClosePaperPositions { .. } => Gate::Ask,
 
-        C::EditPineScript { source: Some(_), .. }
-        | C::PlacePaperOrder { dry_run: true, .. } => Gate::Free,
+        // Writing a draft changes what is in the editor, and is free for a local credential.
+        C::EditPineScript { source: Some(_), .. } => Gate::AskRemote,
+        // Only checks; nothing is placed.
+        C::PlacePaperOrder { dry_run: true, .. } => Gate::Free,
 
         // Reads.
         C::ListWorkspaces
@@ -107,7 +137,7 @@ pub fn gate(command: &McpCommand) -> Gate {
         | C::SetChartType { .. }
         | C::ControlReplay { .. }
         | C::CreateWatchlist { .. }
-        | C::UpdateWatchlist { .. } => Gate::Free,
+        | C::UpdateWatchlist { .. } => Gate::AskRemote,
     }
 }
 
@@ -140,14 +170,116 @@ pub fn tool_of(command: &McpCommand) -> Option<&'static str> {
         C::RemoveDrawings { .. } => "degenview_delete_drawings",
         C::RemoveChart { .. } => "degenview_remove_chart",
         C::RemovePineInstance { .. } => "degenview_remove_pine_instance",
-        C::EditPineScript { .. } => "degenview_save_pine_script",
+        C::EditPineScript { source: None, .. } => "degenview_save_pine_script",
         C::PlacePaperOrder { .. } => "degenview_place_paper_order",
         C::ModifyPaperOrder { .. } => "degenview_modify_paper_order",
         C::CancelPaperOrders { .. } => "degenview_cancel_paper_orders",
         C::ClosePaperPositions { .. } => "degenview_close_paper_positions",
-        // `gate` says Ask only for the commands above.
+        // Asked only of a credential with remote access (`needs_approval`).
+        C::EditPineScript {
+            source: Some(_), ..
+        } => "degenview_update_pine_script",
+        C::AddChart { .. } => "degenview_add_chart",
+        C::CreateAlert(_) => "degenview_create_price_alert",
+        C::UpdateAlert(_) => "degenview_update_price_alert",
+        C::SetAlertPaused { paused: true, .. } => "degenview_pause_price_alert",
+        C::SetAlertPaused { paused: false, .. } => "degenview_resume_price_alert",
+        C::ApplyIndicator { .. } => "degenview_add_indicator",
+        C::RemoveIndicator { .. } => "degenview_remove_indicator",
+        C::AddPineInstance { .. } => "degenview_add_pine_script_to_chart",
+        C::UpdatePineInstance { .. } => "degenview_update_pine_instance",
+        C::AddDrawings { .. } => "degenview_add_drawings",
+        C::EditDrawing { .. } => "degenview_update_drawing",
+        C::SetTimeframe { .. } => "degenview_set_timeframe",
+        C::SetChartType { .. } => "degenview_set_chart_type",
+        C::ControlReplay { .. } => "degenview_control_replay",
+        C::CreateWatchlist { .. } => "degenview_create_watchlist",
+        C::UpdateWatchlist { .. } => "degenview_update_watchlist",
+        // `gate` says Ask or AskRemote only for the commands above.
         _ => return None,
     })
+}
+
+/// What a command that is asked about only for a credential with remote access would do, from
+/// the command alone. These changes are easy to see and to undo, so the question is a plain
+/// description without the lookups the high-impact ones do; what it names comes from the command
+/// and the script library, not from free text the agent chose, except where the agent's own value
+/// is the point (an alert's price, a list's name). `None` for any other command.
+pub fn remote_summary(command: &McpCommand) -> Option<Summary> {
+    use McpCommand as C;
+    let (action, target) = match command {
+        C::AddChart { instrument, .. } => ("Add a chart".to_owned(), instrument.symbol.clone()),
+        C::CreateAlert(alert) => (
+            "Create a price alert".to_owned(),
+            format!(
+                "{} crosses {} {}",
+                alert.instrument.symbol,
+                if alert.crosses_above {
+                    "above"
+                } else {
+                    "below"
+                },
+                alert.target_text
+            ),
+        ),
+        C::UpdateAlert(update) => (
+            "Change a price alert".to_owned(),
+            format!("alert {}", update.alert_id),
+        ),
+        C::SetAlertPaused { alert_id, paused } => (
+            if *paused {
+                "Pause a price alert"
+            } else {
+                "Resume a price alert"
+            }
+            .to_owned(),
+            format!("alert {alert_id}"),
+        ),
+        C::ApplyIndicator { indicator, .. } => (
+            "Add an indicator to a chart".to_owned(),
+            format!("{indicator:?}"),
+        ),
+        C::RemoveIndicator { indicator, .. } => (
+            "Remove an indicator from a chart".to_owned(),
+            format!("{indicator:?}"),
+        ),
+        C::AddPineInstance { script, .. } => {
+            ("Apply a script to a chart".to_owned(), script.name.clone())
+        }
+        C::UpdatePineInstance { .. } => ("Change a script on a chart".to_owned(), String::new()),
+        C::AddDrawings { drawings, .. } => (
+            "Draw on a chart".to_owned(),
+            if drawings.len() == 1 {
+                "1 drawing".to_owned()
+            } else {
+                format!("{} drawings", drawings.len())
+            },
+        ),
+        C::EditDrawing { .. } => ("Change a drawing".to_owned(), String::new()),
+        C::SetTimeframe { timeframe, .. } => {
+            ("Change the timeframe".to_owned(), format!("{timeframe:?}"))
+        }
+        C::SetChartType { chart_type, .. } => (
+            "Change the chart type".to_owned(),
+            format!("{chart_type:?}"),
+        ),
+        C::ControlReplay { .. } => ("Control the replay".to_owned(), String::new()),
+        C::CreateWatchlist { name, .. } => ("Create a watchlist".to_owned(), name.clone()),
+        C::UpdateWatchlist { watchlist_id, .. } => (
+            "Change a watchlist".to_owned(),
+            format!("watchlist {watchlist_id}"),
+        ),
+        C::EditPineScript {
+            script_id,
+            source: Some(_),
+            ..
+        } => ("Write a script draft".to_owned(), script_id.clone()),
+        _ => return None,
+    };
+    Some(
+        Summary::new(action, target)
+            .with_note("This credential can be used from another machine, so it asks first."),
+    )
 }
 
 /// What a command would do, in words the user reads before answering. Built by the app from what
@@ -471,8 +603,16 @@ impl ConfirmationBook {
     /// Forgets everything (the server stopped or restarted, or confirmation was turned off) and
     /// returns the questions nobody had answered, as expired, so the log can say so.
     pub fn drain(&mut self) -> Vec<Settled> {
-        std::mem::take(&mut self.entries)
+        self.drain_where(|_| true)
+    }
+
+    /// [`Self::drain`] for the clients `matching` accepts; the others keep what they have.
+    pub fn drain_where(&mut self, matching: impl Fn(&str) -> bool) -> Vec<Settled> {
+        let (gone, kept): (Vec<_>, Vec<_>) = std::mem::take(&mut self.entries)
             .into_iter()
+            .partition(|entry| matching(&entry.client_id));
+        self.entries = kept;
+        gone.into_iter()
             .filter(|entry| entry.state == State::Pending)
             .map(|entry| Settled {
                 id: entry.id,
@@ -799,8 +939,19 @@ mod tests {
             assert_eq!(gate(command), Gate::Ask, "{command:?}");
             assert!(tool_of(command).is_some_and(|tool| GATED_TOOLS.contains(&tool)));
         }
-        let free = [
-            McpCommand::ListWorkspaces,
+        let free = [McpCommand::ListWorkspaces, McpCommand::ListWatchlists];
+        for command in &free {
+            assert_eq!(gate(command), Gate::Free, "{command:?}");
+            assert_eq!(tool_of(command), None);
+            assert!(remote_summary(command).is_none());
+        }
+        for command in &ask {
+            assert!(remote_summary(command).is_none(), "{command:?}");
+        }
+    }
+
+    fn remote_asks() -> Vec<McpCommand> {
+        vec![
             McpCommand::SetTimeframe {
                 workspace_id: 1,
                 timeframe: crate::model::Timeframe::Day,
@@ -810,10 +961,144 @@ mod tests {
                 expected_revision: "r".into(),
                 source: Some("x".into()),
             },
-        ];
-        for command in &free {
-            assert_eq!(gate(command), Gate::Free, "{command:?}");
-            assert_eq!(tool_of(command), None);
+            McpCommand::SetAlertPaused {
+                alert_id: 3,
+                paused: true,
+            },
+            McpCommand::SetAlertPaused {
+                alert_id: 3,
+                paused: false,
+            },
+            McpCommand::CreateWatchlist {
+                name: "Majors".into(),
+                markets: Vec::new(),
+            },
+            McpCommand::ControlReplay {
+                workspace_id: 1,
+                command: crate::workspace::ReplayCommand::Stop,
+            },
+            McpCommand::RemoveIndicator {
+                workspace_id: 1,
+                chart_id: 1,
+                indicator: crate::model::BuiltIn::Rsi,
+            },
+        ]
+    }
+
+    #[test]
+    fn changes_that_are_easy_to_undo_are_asked_about_only_of_a_remote_credential() {
+        for command in &remote_asks() {
+            assert_eq!(gate(command), Gate::AskRemote, "{command:?}");
+            // Each one can be described and named in the log, or it could not be asked about.
+            let summary = remote_summary(command).unwrap_or_else(|| panic!("{command:?}"));
+            assert!(!summary.action.is_empty());
+            assert!(summary.note.is_some());
+            assert!(
+                tool_of(command).is_some_and(|t| t.starts_with("degenview_")),
+                "{command:?}"
+            );
         }
+        assert_eq!(
+            remote_summary(&McpCommand::SetAlertPaused {
+                alert_id: 3,
+                paused: false
+            })
+            .unwrap()
+            .line(),
+            "Resume a price alert: alert 3"
+        );
+        assert_eq!(
+            tool_of(&McpCommand::SetAlertPaused {
+                alert_id: 3,
+                paused: true
+            }),
+            Some("degenview_pause_price_alert")
+        );
+        // A draft and a save are different tools.
+        assert_eq!(
+            tool_of(&McpCommand::EditPineScript {
+                script_id: "s".into(),
+                expected_revision: "r".into(),
+                source: None,
+            }),
+            Some("degenview_save_pine_script")
+        );
+    }
+
+    fn shared_with(remote: bool, require: bool) -> std::sync::Arc<McpShared> {
+        let shared = McpShared::new();
+        shared.set_require_confirmation(require);
+        shared.replace(
+            vec![crate::model::mcp::McpClient {
+                id: "c".into(),
+                name: "c".into(),
+                verifier: String::new(),
+                permissions: crate::model::mcp::PermissionSet::everything(),
+                created_at_ms: 0,
+                last_used_ms: None,
+                remote_allowed: remote,
+                allowed_cidrs: Vec::new(),
+            }],
+            crate::model::mcp::PermissionSet::everything(),
+        );
+        shared
+    }
+
+    #[test]
+    fn a_request_that_arrived_as_remote_keeps_asking_when_remote_access_is_switched_off() {
+        let destructive = McpCommand::DeleteAlert { alert_id: 1 };
+        let change = remote_asks().remove(0);
+        for require in [true, false] {
+            // The credential has just stopped being remote (shared_with(false, ..)), but the
+            // request was authenticated as remote.
+            let shared = shared_with(false, require);
+            assert!(
+                needs_approval(&shared, "c", true, &change),
+                "require={require}"
+            );
+            assert!(
+                needs_approval(&shared, "c", true, &destructive),
+                "require={require}"
+            );
+            // And one that arrived as local, from a local credential, is as it was.
+            assert!(
+                !needs_approval(&shared, "c", false, &change),
+                "require={require}"
+            );
+            assert_eq!(
+                needs_approval(&shared, "c", false, &destructive),
+                require,
+                "require={require}"
+            );
+            // A credential that is remote now asks whatever the request came in as.
+            let remote_now = shared_with(true, require);
+            assert!(needs_approval(&remote_now, "c", false, &change));
+            assert!(needs_approval(&remote_now, "c", false, &destructive));
+        }
+    }
+
+    #[test]
+    fn who_is_asked_about_what() {
+        let destructive = McpCommand::DeleteAlert { alert_id: 1 };
+        let change = remote_asks().remove(0);
+        let read = McpCommand::ListWorkspaces;
+        for (remote, require) in [(false, true), (false, false), (true, true), (true, false)] {
+            let shared = shared_with(remote, require);
+            let asks = |command: &McpCommand| needs_approval(&shared, "c", false, command);
+            assert!(!asks(&read), "a read is never asked about");
+            // High-impact: asked unless it is a local credential and the setting is off. A
+            // credential with remote access cannot switch the question off.
+            assert_eq!(
+                asks(&destructive),
+                remote || require,
+                "remote={remote} require={require}"
+            );
+            // Easy to undo: asked of a remote credential only, whatever the setting says.
+            assert_eq!(asks(&change), remote, "remote={remote} require={require}");
+        }
+        // A client that is gone counts as remote, so its question is not skipped.
+        let shared = shared_with(false, false);
+        assert!(needs_approval(&shared, "revoked", false, &destructive));
+        assert!(needs_approval(&shared, "revoked", false, &change));
     }
 }

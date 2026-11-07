@@ -1664,8 +1664,8 @@ impl DegenViewApp {
         }
         for request in requests {
             let client_id = request.client_id.clone();
-            request.run(&shared, |command| {
-                self.run_gated(ctx, &shared, &client_id, command)
+            request.run(&shared, |command, origin| {
+                self.run_gated(ctx, &shared, &client_id, origin.remote, command)
             });
         }
         // Questions nobody answered run out, and a new one is announced where the user can see it.
@@ -1688,9 +1688,10 @@ impl DegenViewApp {
         ctx: &egui::Context,
         shared: &crate::mcp::state::McpShared,
         client_id: &str,
+        remote_origin: bool,
         command: McpCommand,
     ) -> Result<McpReply, McpError> {
-        if crate::mcp::confirm::gate(&command) == crate::mcp::confirm::Gate::Ask {
+        if crate::mcp::confirm::needs_approval(shared, client_id, remote_origin, &command) {
             let name = shared
                 .clients()
                 .into_iter()
@@ -1702,6 +1703,7 @@ impl DegenViewApp {
                 Instant::now(),
                 client_id,
                 &name,
+                remote_origin,
                 &command,
                 || self.confirmation_summary(&command),
             )?;
@@ -1795,10 +1797,13 @@ impl DegenViewApp {
                 let host = self.paper.lock().map_err(|_| paper_unavailable())?;
                 mcp_confirmation::close_positions(&host, *account_id, instrument_key.as_deref())
             }
-            // `mcp::confirm::gate` asks only for the commands above.
-            _ => Err(McpError::AppUnavailable(
-                "This request cannot be described, so it was not run".into(),
-            )),
+            // The rest are asked about only of a credential with remote access, and described from
+            // the command alone. A command with no description is refused rather than run unasked.
+            _ => crate::mcp::confirm::remote_summary(command).ok_or_else(|| {
+                McpError::AppUnavailable(
+                    "This request cannot be described, so it was not run".into(),
+                )
+            }),
         }
     }
 
@@ -2932,6 +2937,7 @@ impl DegenViewApp {
                         mcp.can_reset(),
                         mcp.activity(),
                         mcp.activity_unreadable(),
+                        mcp.tls_fingerprint().map(str::to_owned),
                     )
                 };
                 let mcp_input = McpSettingsInput {
@@ -2948,6 +2954,7 @@ impl DegenViewApp {
                     notice: mcp.6.as_deref(),
                     activity: &mcp.8,
                     activity_unreadable: mcp.9,
+                    tls_fingerprint: mcp.10.as_deref(),
                     now_ms: now,
                     utc_offset_secs: crate::service::timezone::local_utc_offset_secs(now),
                 };

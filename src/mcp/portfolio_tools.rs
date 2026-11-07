@@ -84,7 +84,7 @@ impl DegenViewMcp {
         match self
             .bridge
             .call(
-                &client.id,
+                &client,
                 Permission::PortfolioRead,
                 McpCommand::ListPortfolios,
                 REQUEST_TIMEOUT,
@@ -119,7 +119,7 @@ impl DegenViewMcp {
         let base = match self
             .bridge
             .call(
-                &client.id,
+                &client,
                 Permission::PortfolioRead,
                 McpCommand::GetPortfolioHoldings { portfolio_id },
                 REQUEST_TIMEOUT,
@@ -197,7 +197,7 @@ impl DegenViewMcp {
         match self
             .bridge
             .call(
-                &client.id,
+                &client,
                 Permission::PortfolioRead,
                 McpCommand::ListPortfolioTransactions {
                     portfolio_id,

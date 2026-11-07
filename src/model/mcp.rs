@@ -1,8 +1,9 @@
 //! MCP server settings, client credentials and the permission model. Pure values: no
 //! HTTP, no egui, no Keychain. The server, the store and the Settings page all share these.
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::BTreeSet;
+use std::net::{IpAddr, Ipv4Addr};
 
 pub const DEFAULT_PORT: u16 = 8765;
 /// Ports below this need elevated rights on most systems and are never a sensible choice.
@@ -436,6 +437,8 @@ pub struct GroupAccess {
 pub enum McpAction {
     SetEnabled(bool),
     SetPort(u16),
+    /// Listens on this machine only, or on one named interface (which makes a certificate).
+    SetBind(BindMode),
     CreateClient(String),
     RevokeClient(String),
     SetClientPermission {
@@ -454,6 +457,18 @@ pub enum McpAction {
     },
     /// Replaces the global cap at once.
     SetGlobalPermissions(PermissionSet),
+    /// Lets a client be used from other machines, or takes that away.
+    SetClientRemote {
+        client_id: String,
+        allowed: bool,
+    },
+    /// Replaces the ranges a remote client may call from (empty: any).
+    SetClientCidrs {
+        client_id: String,
+        cidrs: Vec<Cidr>,
+    },
+    /// Replaces the most a remote-capable client may do.
+    SetRemoteCeiling(PermissionSet),
     DismissToken,
     /// Forgets every credential and setting when the saved state failed its seal check. Only
     /// the Settings page sends it, and only while that error is showing.
@@ -464,12 +479,316 @@ pub enum McpAction {
     SetRequireConfirmation(bool),
 }
 
+/// Which network interface the server listens on.
+///
+/// Loopback is the default and the only mode that needs no certificate. A named interface is
+/// reachable from other machines, so it is served over TLS only: see `mcp::tls`. There is no
+/// "all interfaces" mode: the user names the one address to listen on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BindMode {
+    #[default]
+    Loopback,
+    /// A specific non-loopback address of this machine. Built with [`BindMode::interface`].
+    Interface(IpAddr),
+}
+
+/// Why an address cannot be offered as an interface to listen on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BindError {
+    /// `0.0.0.0` / `::`: every interface at once, which this server never does.
+    Unspecified,
+    Multicast,
+    /// `255.255.255.255`.
+    Broadcast,
+    /// An IPv6 link-local address needs a scope id, which a bare address cannot carry.
+    LinkLocalV6,
+}
+
+impl std::fmt::Display for BindError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Unspecified => "Pick one interface address, not 0.0.0.0 or ::",
+            Self::Multicast => "A multicast address cannot be listened on",
+            Self::Broadcast => "A broadcast address cannot be listened on",
+            Self::LinkLocalV6 => "IPv6 link-local addresses are not supported",
+        })
+    }
+}
+
+impl BindMode {
+    /// The mode for listening on `ip`. A loopback address is [`BindMode::Loopback`], so there is
+    /// one way to say it.
+    pub fn interface(ip: IpAddr) -> Result<Self, BindError> {
+        if ip.is_loopback() {
+            return Ok(Self::Loopback);
+        }
+        if ip.is_unspecified() {
+            return Err(BindError::Unspecified);
+        }
+        if ip.is_multicast() {
+            return Err(BindError::Multicast);
+        }
+        match ip {
+            IpAddr::V4(v4) if v4 == Ipv4Addr::BROADCAST => Err(BindError::Broadcast),
+            IpAddr::V6(v6) if v6.segments()[0] & 0xffc0 == 0xfe80 => Err(BindError::LinkLocalV6),
+            _ => Ok(Self::Interface(ip)),
+        }
+    }
+
+    pub fn is_loopback(&self) -> bool {
+        matches!(self, Self::Loopback)
+    }
+
+    /// Whether the server may only be reached over TLS in this mode.
+    pub fn requires_tls(&self) -> bool {
+        !self.is_loopback()
+    }
+
+    /// The address the listener binds.
+    pub fn address(&self) -> IpAddr {
+        match self {
+            Self::Loopback => IpAddr::V4(Ipv4Addr::LOCALHOST),
+            Self::Interface(ip) => *ip,
+        }
+    }
+
+    pub fn scheme(&self) -> &'static str {
+        if self.requires_tls() { "https" } else { "http" }
+    }
+
+    /// `host:port` as a client writes it, with an IPv6 address bracketed.
+    pub fn authority(&self, port: u16) -> String {
+        match self.address() {
+            IpAddr::V4(ip) => format!("{ip}:{port}"),
+            IpAddr::V6(ip) => format!("[{ip}]:{port}"),
+        }
+    }
+
+    /// Every `Host` header value a request may carry. A server on a named interface answers to
+    /// that address only: loopback is not listening, and no name is trusted without being asked.
+    pub fn allowed_hosts(&self, port: u16) -> Vec<String> {
+        match self {
+            Self::Loopback => vec![format!("127.0.0.1:{port}"), format!("localhost:{port}")],
+            Self::Interface(_) => vec![self.authority(port)],
+        }
+    }
+
+    fn parse(text: &str) -> Result<Self, String> {
+        if text == "loopback" {
+            return Ok(Self::Loopback);
+        }
+        let ip: IpAddr = text
+            .parse()
+            .map_err(|_| format!("`{text}` is not an IP address"))?;
+        Self::interface(ip).map_err(|error| error.to_string())
+    }
+}
+
+impl Serialize for BindMode {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Loopback => serializer.serialize_str("loopback"),
+            Self::Interface(ip) => serializer.collect_str(ip),
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for BindMode {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        Self::parse(&text).map_err(serde::de::Error::custom)
+    }
+}
+
+/// An address range, `10.0.0.0/8` or `fd00::/8`. The host bits of the stored address are cleared,
+/// so `10.1.2.3/8` and `10.0.0.0/8` are the same range.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Cidr {
+    network: IpAddr,
+    prefix: u8,
+}
+
+impl Cidr {
+    pub fn new(address: IpAddr, prefix: u8) -> Result<Self, String> {
+        let bits = match address {
+            IpAddr::V4(_) => 32,
+            IpAddr::V6(_) => 128,
+        };
+        if prefix > bits {
+            return Err(format!("/{prefix} is too long for {address}"));
+        }
+        Ok(Self {
+            network: mask(address, prefix),
+            prefix,
+        })
+    }
+
+    /// `10.0.0.0/8`; a bare address is that one host.
+    pub fn parse(text: &str) -> Result<Self, String> {
+        let text = text.trim();
+        let (address, prefix) = match text.split_once('/') {
+            Some((address, prefix)) => (address, Some(prefix)),
+            None => (text, None),
+        };
+        let address: IpAddr = address
+            .parse()
+            .map_err(|_| format!("`{text}` is not an address range"))?;
+        let prefix = match prefix {
+            Some(prefix) => prefix
+                .parse::<u8>()
+                .map_err(|_| format!("`{text}` is not an address range"))?,
+            None => match address {
+                IpAddr::V4(_) => 32,
+                IpAddr::V6(_) => 128,
+            },
+        };
+        Self::new(address, prefix)
+    }
+
+    /// Whether `address` is in the range. An IPv4 address mapped into IPv6 counts as IPv4; a
+    /// range of one family never contains an address of the other.
+    pub fn contains(&self, address: IpAddr) -> bool {
+        let address = address.to_canonical();
+        match (self.network, address) {
+            (IpAddr::V4(_), IpAddr::V4(_)) | (IpAddr::V6(_), IpAddr::V6(_)) => {
+                mask(address, self.prefix) == self.network
+            }
+            _ => false,
+        }
+    }
+}
+
+fn mask(address: IpAddr, prefix: u8) -> IpAddr {
+    match address {
+        IpAddr::V4(ip) => {
+            let bits = u32::from(ip);
+            let keep = if prefix == 0 {
+                0
+            } else {
+                u32::MAX << (32 - u32::from(prefix))
+            };
+            IpAddr::V4(Ipv4Addr::from(bits & keep))
+        }
+        IpAddr::V6(ip) => {
+            let bits = u128::from(ip);
+            let keep = if prefix == 0 {
+                0
+            } else {
+                u128::MAX << (128 - u32::from(prefix))
+            };
+            IpAddr::V6(bits_to_v6(bits & keep))
+        }
+    }
+}
+
+fn bits_to_v6(bits: u128) -> std::net::Ipv6Addr {
+    std::net::Ipv6Addr::from(bits)
+}
+
+impl std::fmt::Display for Cidr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}/{}", self.network, self.prefix)
+    }
+}
+
+impl Serialize for Cidr {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> Deserialize<'de> for Cidr {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let text = String::deserialize(deserializer)?;
+        Self::parse(&text).map_err(serde::de::Error::custom)
+    }
+}
+
+/// Ranges a client may be given at most.
+pub const MAX_CIDRS: usize = 16;
+
+/// Where a connection came from, and whether that is this machine.
+///
+/// "This machine" is not only loopback. A client on this Mac that uses the address the server
+/// listens on (`https://192.168.1.20:8765`, once the server is bound to that interface and not to
+/// loopback) arrives with that same address as its peer. A host elsewhere cannot do that: a
+/// connection from the server's own address would have its replies delivered to the server itself,
+/// so the handshake could never complete.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Peer {
+    /// The peer's address, with an IPv4 address mapped into IPv6 shown as IPv4.
+    pub ip: IpAddr,
+    /// Loopback, or the same address as the one the connection arrived on.
+    pub local: bool,
+}
+
+impl Peer {
+    /// The peer of a connection that arrived on `own`.
+    pub fn of_connection(peer: IpAddr, own: IpAddr) -> Self {
+        let ip = peer.to_canonical();
+        Self {
+            ip,
+            local: ip.is_loopback() || ip == own.to_canonical(),
+        }
+    }
+
+    /// A peer known only by its address, with nothing to compare it to: local only if loopback.
+    /// For tests, and for a connection whose own address could not be read.
+    pub fn from_ip(ip: IpAddr) -> Self {
+        let ip = ip.to_canonical();
+        Self {
+            ip,
+            local: ip.is_loopback(),
+        }
+    }
+}
+
+impl std::str::FromStr for Peer {
+    type Err = std::net::AddrParseError;
+
+    /// A peer known only by address ([`Peer::from_ip`]); handy where there is no connection.
+    fn from_str(text: &str) -> Result<Self, Self::Err> {
+        text.parse().map(Self::from_ip)
+    }
+}
+
+/// Whether a request from `peer` may use a credential with this remote scope.
+///
+/// A peer on this machine always may. Any other needs `remote_allowed`, and then to be inside one
+/// of `cidrs` when there are any. An unknown peer (`None`) is treated as remote: if the server
+/// cannot say where a request came from, it is not let in on the strength of being local.
+pub fn peer_may_use(remote_allowed: bool, cidrs: &[Cidr], peer: Option<Peer>) -> bool {
+    match peer {
+        Some(peer) if peer.local => true,
+        Some(peer) => {
+            remote_allowed && (cidrs.is_empty() || cidrs.iter().any(|c| c.contains(peer.ip)))
+        }
+        None => false,
+    }
+}
+
+/// What a client that may be used remotely can do at most, whichever address it calls from.
+/// Reads only until the user says more.
+pub fn default_remote_ceiling() -> PermissionSet {
+    PermissionSet::read_only()
+}
+
 /// Persisted server preferences (`setting` key `mcp.settings`). Disabled on a fresh install.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct McpSettings {
     pub enabled: bool,
     pub port: u16,
+    /// Left out of the stored form while it is loopback, so settings saved before this existed
+    /// read back unchanged. An unreadable value fails the whole load rather than becoming
+    /// loopback: the server stays off and nothing is overwritten.
+    #[serde(skip_serializing_if = "BindMode::is_loopback")]
+    pub bind: BindMode,
+    /// The most any client with remote access may do, even when it calls from this machine. A
+    /// client's own grants are capped by this as well as by the global cap. Left out of the stored
+    /// form while it is the default, so settings saved before this existed read back unchanged.
+    #[serde(skip_serializing_if = "is_default_remote_ceiling")]
+    pub remote_ceiling: PermissionSet,
     /// Deletes, saved scripts and paper orders wait for the user's approval in the app. On
     /// unless the user turns it off, including for settings saved before this existed.
     pub require_confirmation: bool,
@@ -480,14 +799,24 @@ impl Default for McpSettings {
         Self {
             enabled: false,
             port: DEFAULT_PORT,
+            bind: BindMode::Loopback,
+            remote_ceiling: default_remote_ceiling(),
             require_confirmation: true,
         }
     }
 }
 
+fn is_default_remote_ceiling(ceiling: &PermissionSet) -> bool {
+    *ceiling == default_remote_ceiling()
+}
+
 impl McpSettings {
     pub fn endpoint(&self) -> String {
-        format!("http://127.0.0.1:{}/mcp", self.port)
+        format!(
+            "{}://{}/mcp",
+            self.bind.scheme(),
+            self.bind.authority(self.port)
+        )
     }
 }
 
@@ -514,12 +843,35 @@ pub struct McpClient {
     pub created_at_ms: i64,
     #[serde(default)]
     pub last_used_ms: Option<i64>,
+    /// May be used from another machine. Off for every client that existed before this did, so
+    /// each stays loopback-only until the user says otherwise.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub remote_allowed: bool,
+    /// With `remote_allowed`, the only ranges a remote request may come from. Empty means any.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub allowed_cidrs: Vec<Cidr>,
 }
 
 impl McpClient {
-    /// The client's access right now: its grants capped by the global permissions.
-    pub fn effective(&self, global: &PermissionSet) -> PermissionSet {
-        self.permissions.intersect(global)
+    /// The client's access right now: its grants capped by the global permissions, and for a
+    /// client with remote access by the remote ceiling too. The ceiling follows the credential,
+    /// not the request: a token that may leave the machine is no stronger when used on it.
+    pub fn effective(
+        &self,
+        global: &PermissionSet,
+        remote_ceiling: &PermissionSet,
+    ) -> PermissionSet {
+        let capped = self.permissions.intersect(global);
+        if self.remote_allowed {
+            capped.intersect(remote_ceiling)
+        } else {
+            capped
+        }
+    }
+
+    /// Whether a request from `peer` may use this credential at all.
+    pub fn accepts_peer(&self, peer: Option<Peer>) -> bool {
+        peer_may_use(self.remote_allowed, &self.allowed_cidrs, peer)
     }
 }
 
@@ -541,6 +893,9 @@ pub enum McpAuditKind {
     Gap,
     /// The user answered (or let run out) a question about a call the agent made.
     Confirmation,
+    /// `count` requests from another machine were refused for a bad or unusable token within a
+    /// minute. Written for remote addresses only; `peer` says which.
+    AuthRefused,
 }
 
 /// How a tool call ended.
@@ -599,8 +954,13 @@ pub struct McpAuditEntry {
     pub request_id: String,
     /// The ids the call named (a few, from a fixed list of argument names).
     pub targets: Vec<McpAuditTarget>,
-    /// How many calls a `RateLimited` row stands for, or rows a `Gap` lost; 1 otherwise.
+    /// How many calls a `RateLimited` row stands for, requests an `AuthRefused` row stands for, or
+    /// rows a `Gap` lost; 1 otherwise.
     pub count: u32,
+    /// The address the request came from, when it was not this machine; empty otherwise (and on
+    /// rows that are not about one request, such as an answer to a question). Rows from before
+    /// remote access read back empty.
+    pub peer: String,
 }
 
 /// Trims a client name and rejects empty or oversized ones.
@@ -642,11 +1002,18 @@ mod tests {
             permissions: PermissionSet::of([Permission::ChartsRead, Permission::ChartsCreate]),
             created_at_ms: 0,
             last_used_ms: None,
+            remote_allowed: false,
+            allowed_cidrs: Vec::new(),
         };
-        let effective = client.effective(&global);
+        let ceiling = default_remote_ceiling();
+        let effective = client.effective(&global, &ceiling);
         assert!(effective.contains(Permission::ChartsRead));
         assert!(!effective.contains(Permission::ChartsCreate));
-        assert!(client.effective(&PermissionSet::none()).is_empty());
+        assert!(
+            client
+                .effective(&PermissionSet::none(), &ceiling)
+                .is_empty()
+        );
     }
 
     #[test]
@@ -655,6 +1022,270 @@ mod tests {
             serde_json::from_str(r#"["charts.read","pine.scripts.delete"]"#).unwrap();
         assert_eq!(set, PermissionSet::of([Permission::ChartsRead]));
         assert_eq!(serde_json::to_string(&set).unwrap(), r#"["charts.read"]"#);
+    }
+
+    fn ip(text: &str) -> IpAddr {
+        text.parse().unwrap()
+    }
+
+    fn cidr(text: &str) -> Cidr {
+        Cidr::parse(text).unwrap()
+    }
+
+    #[test]
+    fn a_range_is_normalised_and_contains_its_own_addresses_only() {
+        assert_eq!(cidr("10.1.2.3/8").to_string(), "10.0.0.0/8");
+        assert_eq!(cidr("10.9.9.9/8"), cidr("10.0.0.0/8"));
+        assert!(cidr("10.0.0.0/8").contains(ip("10.200.1.1")));
+        assert!(!cidr("10.0.0.0/8").contains(ip("11.0.0.1")));
+        assert!(cidr("192.168.1.20").contains(ip("192.168.1.20")));
+        assert!(!cidr("192.168.1.20").contains(ip("192.168.1.21")));
+        assert!(cidr("fd00::/8").contains(ip("fd12::1")));
+        assert!(!cidr("fd00::/8").contains(ip("fe80::1")));
+        assert!(cidr("0.0.0.0/0").contains(ip("203.0.113.9")));
+        // A range of one family never contains the other, but a mapped IPv4 address is IPv4.
+        assert!(!cidr("10.0.0.0/8").contains(ip("fd00::1")));
+        assert!(!cidr("::/0").contains(ip("10.0.0.1")));
+        assert!(cidr("10.0.0.0/8").contains(ip("::ffff:10.1.1.1")));
+    }
+
+    #[test]
+    fn unreadable_ranges_are_refused() {
+        for bad in [
+            "",
+            "10.0.0.0/33",
+            "fd00::/129",
+            "10.0.0.0/-1",
+            "10.0.0.0/x",
+            "lan",
+            "10.0.0/8",
+        ] {
+            assert!(Cidr::parse(bad).is_err(), "{bad:?} must not parse");
+        }
+        let stored = serde_json::to_string(&cidr("10.0.0.5/24")).unwrap();
+        assert_eq!(stored, r#""10.0.0.0/24""#);
+        assert_eq!(
+            serde_json::from_str::<Cidr>(&stored).unwrap(),
+            cidr("10.0.0.0/24")
+        );
+        assert!(serde_json::from_str::<Cidr>(r#""nope""#).is_err());
+    }
+
+    #[test]
+    fn who_may_use_a_credential_from_where() {
+        let lan = [cidr("192.168.1.0/24")];
+        let here = Some(Peer::from_ip(ip("127.0.0.1")));
+        let also_here = Some(Peer::from_ip(ip("::1")));
+        let mapped_here = Some(Peer::from_ip(ip("::ffff:127.0.0.1")));
+        let near = Some(Peer::from_ip(ip("192.168.1.9")));
+        let far = Some(Peer::from_ip(ip("203.0.113.9")));
+        // This machine always may, remote access or not.
+        for peer in [here, also_here, mapped_here] {
+            assert!(peer_may_use(false, &[], peer));
+            assert!(peer_may_use(true, &lan, peer));
+        }
+        // Another machine needs remote access, and then a matching range if there are any.
+        assert!(!peer_may_use(false, &[], near));
+        assert!(!peer_may_use(false, &lan, near));
+        assert!(peer_may_use(true, &[], far));
+        assert!(peer_may_use(true, &lan, near));
+        assert!(!peer_may_use(true, &lan, far));
+        // Where it came from unknown: not let in on the strength of being local.
+        assert!(!peer_may_use(false, &[], None));
+        assert!(!peer_may_use(true, &[], None));
+    }
+
+    #[test]
+    fn this_machines_own_address_is_this_machine_and_no_other_address_is() {
+        let own = ip("192.168.1.20");
+        // The server listens on 192.168.1.20 and a client on the same Mac connects to it: the peer
+        // is that same address. Loopback is this machine whatever the server listens on.
+        assert!(Peer::of_connection(own, own).local);
+        assert!(Peer::of_connection(ip("127.0.0.1"), own).local);
+        assert!(Peer::of_connection(ip("::1"), ip("fd00::20")).local);
+        // Another host on the same network is not, nor is a neighbouring address.
+        assert!(!Peer::of_connection(ip("192.168.1.21"), own).local);
+        assert!(!Peer::of_connection(ip("203.0.113.9"), own).local);
+        // A mapped IPv4 address is the IPv4 address, on either side.
+        assert!(Peer::of_connection(ip("::ffff:192.168.1.20"), own).local);
+        assert!(Peer::of_connection(own, ip("::ffff:192.168.1.20")).local);
+        assert_eq!(
+            Peer::of_connection(ip("::ffff:10.0.0.7"), own).ip,
+            ip("10.0.0.7")
+        );
+        // Known only by address, nothing to compare with: loopback only.
+        assert!(Peer::from_ip(ip("127.0.0.1")).local);
+        assert!(!Peer::from_ip(own).local);
+
+        // So a credential that may not leave this machine works from its own address, and a
+        // credential with ranges is not held to them there.
+        let lan = [cidr("10.0.0.0/8")];
+        let here = Some(Peer::of_connection(own, own));
+        assert!(peer_may_use(false, &[], here));
+        assert!(peer_may_use(true, &lan, here));
+        let other = Some(Peer::of_connection(ip("192.168.1.21"), own));
+        assert!(!peer_may_use(false, &[], other));
+        assert!(!peer_may_use(true, &lan, other));
+    }
+
+    fn remote_client(remote: bool, grants: &[Permission]) -> McpClient {
+        McpClient {
+            id: "c".into(),
+            name: "c".into(),
+            verifier: "v".into(),
+            permissions: PermissionSet::of(grants.iter().copied()),
+            created_at_ms: 1,
+            last_used_ms: None,
+            remote_allowed: remote,
+            allowed_cidrs: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn the_remote_ceiling_caps_a_remote_client_whichever_address_it_calls_from() {
+        let grants = [Permission::ChartsRead, Permission::ChartsCreate];
+        let global = PermissionSet::everything();
+        let ceiling = PermissionSet::of([Permission::ChartsRead]);
+        let local = remote_client(false, &grants).effective(&global, &ceiling);
+        assert!(local.contains(Permission::ChartsCreate));
+        let remote = remote_client(true, &grants).effective(&global, &ceiling);
+        assert!(remote.contains(Permission::ChartsRead));
+        assert!(!remote.contains(Permission::ChartsCreate));
+        // The global cap still applies on top.
+        let none = remote_client(true, &grants).effective(&PermissionSet::none(), &ceiling);
+        assert!(none.is_empty());
+    }
+
+    #[test]
+    fn the_default_ceiling_is_reads_only() {
+        let ceiling = default_remote_ceiling();
+        assert!(ceiling.iter().all(|p| !p.is_mutating()));
+        assert!(ceiling.contains(Permission::ChartsRead));
+        assert!(!ceiling.contains(Permission::ChartsCreate));
+    }
+
+    #[test]
+    fn remote_fields_are_stored_only_when_set_so_old_rows_read_back_unchanged() {
+        let plain = serde_json::to_string(&remote_client(false, &[])).unwrap();
+        assert!(
+            !plain.contains("remote") && !plain.contains("allowed"),
+            "{plain}"
+        );
+        let old: McpClient = serde_json::from_str(&plain).unwrap();
+        assert!(!old.remote_allowed && old.allowed_cidrs.is_empty());
+
+        let mut set = remote_client(true, &[]);
+        set.allowed_cidrs = vec![cidr("10.0.0.0/8")];
+        let stored = serde_json::to_string(&set).unwrap();
+        assert!(stored.contains(r#""remoteAllowed":true"#), "{stored}");
+        assert!(
+            stored.contains(r#""allowedCidrs":["10.0.0.0/8"]"#),
+            "{stored}"
+        );
+        assert_eq!(serde_json::from_str::<McpClient>(&stored).unwrap(), set);
+
+        // The ceiling too: absent while default, round-trips when changed.
+        assert!(
+            !serde_json::to_string(&McpSettings::default())
+                .unwrap()
+                .contains("ceiling")
+        );
+        let changed = McpSettings {
+            remote_ceiling: PermissionSet::of([Permission::ChartsRead, Permission::AlertsRead]),
+            ..McpSettings::default()
+        };
+        let stored = serde_json::to_string(&changed).unwrap();
+        assert_eq!(
+            serde_json::from_str::<McpSettings>(&stored).unwrap(),
+            changed
+        );
+    }
+
+    #[test]
+    fn loopback_addresses_are_the_loopback_mode() {
+        assert_eq!(BindMode::interface(ip("127.0.0.1")), Ok(BindMode::Loopback));
+        assert_eq!(BindMode::interface(ip("127.5.5.5")), Ok(BindMode::Loopback));
+        assert_eq!(BindMode::interface(ip("::1")), Ok(BindMode::Loopback));
+    }
+
+    #[test]
+    fn an_interface_is_one_named_address_never_all_of_them() {
+        assert_eq!(
+            BindMode::interface(ip("0.0.0.0")),
+            Err(BindError::Unspecified)
+        );
+        assert_eq!(BindMode::interface(ip("::")), Err(BindError::Unspecified));
+        assert_eq!(
+            BindMode::interface(ip("224.0.0.1")),
+            Err(BindError::Multicast)
+        );
+        assert_eq!(
+            BindMode::interface(ip("255.255.255.255")),
+            Err(BindError::Broadcast)
+        );
+        assert_eq!(
+            BindMode::interface(ip("fe80::1")),
+            Err(BindError::LinkLocalV6)
+        );
+        assert_eq!(
+            BindMode::interface(ip("192.168.1.20")),
+            Ok(BindMode::Interface(ip("192.168.1.20")))
+        );
+        assert_eq!(
+            BindMode::interface(ip("fd00::20")),
+            Ok(BindMode::Interface(ip("fd00::20")))
+        );
+    }
+
+    #[test]
+    fn bind_mode_decides_scheme_endpoint_and_hosts() {
+        let loopback = BindMode::Loopback;
+        assert!(!loopback.requires_tls());
+        assert_eq!(loopback.scheme(), "http");
+        assert_eq!(
+            loopback.allowed_hosts(9000),
+            ["127.0.0.1:9000", "localhost:9000"]
+        );
+
+        let lan = BindMode::interface(ip("192.168.1.20")).unwrap();
+        assert!(lan.requires_tls());
+        assert_eq!(lan.allowed_hosts(9000), ["192.168.1.20:9000"]);
+        let settings = McpSettings {
+            bind: lan,
+            port: 9000,
+            ..McpSettings::default()
+        };
+        assert_eq!(settings.endpoint(), "https://192.168.1.20:9000/mcp");
+
+        let v6 = BindMode::interface(ip("fd00::20")).unwrap();
+        assert_eq!(v6.allowed_hosts(9000), ["[fd00::20]:9000"]);
+    }
+
+    #[test]
+    fn bind_mode_is_stored_only_when_it_is_not_loopback() {
+        let stored = serde_json::to_string(&McpSettings::default()).unwrap();
+        assert!(!stored.contains("bind"), "{stored}");
+
+        let lan = McpSettings {
+            bind: BindMode::interface(ip("10.0.0.7")).unwrap(),
+            ..McpSettings::default()
+        };
+        let stored = serde_json::to_string(&lan).unwrap();
+        assert!(stored.contains(r#""bind":"10.0.0.7""#), "{stored}");
+        assert_eq!(serde_json::from_str::<McpSettings>(&stored).unwrap(), lan);
+    }
+
+    #[test]
+    fn an_unreadable_or_all_interfaces_bind_fails_the_load() {
+        for bad in ["0.0.0.0", "::", "lan", "", "fe80::1"] {
+            let json = format!(r#"{{"bind":"{bad}"}}"#);
+            assert!(
+                serde_json::from_str::<McpSettings>(&json).is_err(),
+                "{bad} must not load"
+            );
+        }
+        let explicit: McpSettings = serde_json::from_str(r#"{"bind":"loopback"}"#).unwrap();
+        assert_eq!(explicit, McpSettings::default());
     }
 
     #[test]

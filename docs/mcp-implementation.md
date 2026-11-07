@@ -213,6 +213,100 @@ If standard OAuth discovery is necessary for target clients, implement a complia
 
 A later remote-access mode would require a separate security design, HTTPS, proper OAuth authorization, audience-bound tokens, and additional protections. Do not expose the local-token implementation remotely.
 
+## Remote access: what exists
+
+Listening beyond loopback is off by default and is turned on in Settings ▸ MCP Server ▸ Remote Access
+(the last of four steps; what is left is in [remaining work](mcp-remaining-work.md)). It has not been
+tried against a real MCP client or from another machine, so treat it as unverified until it has.
+
+This deliberately takes a smaller step than the paragraph above asks for: TLS and the existing
+bearer tokens, not OAuth. That fits the user's own machines on a LAN or a tailnet, where the client
+pins the certificate. It does not make the server fit for the public internet, and a hosted client
+that expects OAuth discovery will not work with it.
+
+- `BindMode`: `Loopback` (default) or `Interface(ip)`, one address of this machine. `0.0.0.0`, `::`,
+  multicast, broadcast and IPv6 link-local are not accepted, from the API or from a stored value.
+  A loopback address is `Loopback`. The variant can be written down directly, so
+  `McpServer::start_listening` judges the address again before it opens a socket (a test builds each
+  refused address with a matching certificate and checks nothing listens).
+- Anything but loopback is served over TLS 1.3 only. `McpServer::start_listening` refuses it without
+  a certificate, and with one made for a different address, before binding.
+- The certificate is self-signed for that address, made on first use and kept in `mcp-tls.pem` in the
+  data directory (owner-only on Unix; Windows relies on the per-user data directory). A new address
+  means a new certificate, so a new fingerprint to pin. A file that cannot be read is an error, not a
+  reason to replace it. The address a file records about itself is checked against the certificate's
+  own names (a mismatch is an error). The key is not in the credential seal. Replacing the file lets
+  someone present another certificate, which a pinning client refuses; *reading* the key is worse, since
+  it lets an on-path attacker pose as the server to a pinning client and take its bearer token. So a
+  key file loosened by a restore or a plain `cp` is put back to owner-only when it is loaded, a link or
+  non-regular file is refused, and the file is always written through a freshly created temporary file
+  (the mode asked for only applies to a file being created). The whole read, make and save runs under an
+  exclusive lock on `mcp-tls.lock` in the same directory, so two DegenView processes starting together
+  adopt one certificate (without it, one failed and another could present a certificate that was not the
+  one saved). The lock waits up to five seconds and then says another instance holds it; it is released
+  when its holder exits or crashes.
+- The `Host` check accepts only that address and port on a named interface, and the loopback names on
+  loopback. Origin rejection, the bearer check, the permission checks, rate limits and the confirmation
+  step apply unchanged, and run after TLS.
+- A client that does not finish the handshake is dropped after 10 s and its connection slot freed.
+- Per client: `remote_allowed` (off, so every existing credential stays loopback-only) and optional
+  `allowed_cidrs` (empty: any address). The server records the TCP peer of each connection
+  (`PeerAddr`) and the bearer check judges that, never `X-Forwarded-For` or any other header. A valid
+  token from an address it may not be used from gets the same 401 as an unknown token, draws on the
+  failed-auth limit, and leaves no "last used" mark. A peer the server cannot name counts as remote.
+- "This machine" (`Peer.local`, set in `transport::serve_with`) is loopback **or the very address the
+  connection arrived on**. Once the server is bound to a LAN address and not to loopback, a client on
+  the same Mac uses that address and arrives from it; a credential without `remote_allowed` must still
+  work there, and `remote_allowed` ranges do not apply to it. A host elsewhere cannot present the server's
+  own address as its source (the reply would be delivered to the server itself), so this lets nobody in.
+  Local clients still need their endpoint changed to the https address and the certificate trusted:
+  nothing listens on loopback any more.
+- A remote ceiling (`McpSettings.remote_ceiling`, default: all read-only permissions) caps every
+  client with `remote_allowed`. It follows the credential, not the request: a token that may leave the
+  machine is no stronger when used on it. That is simpler and safer than judging each call, at the cost
+  that a remote-enabled client is also held to the ceiling when used locally. Create a second,
+  local-only credential for that.
+- Both are sealed, and stored only when not default (see `mcp::seal`).
+- Settings. The "Remote connections" row of the Security card is the switch; once it is on, rows of the
+  same card hold the interface (an address typed or filled in by "Detect", which asks the system
+  which address reaches the local network and sends nothing), the certificate fingerprint with a copy
+  button, and the remote ceiling. Switching on only shows the address field: nothing is saved until an
+  address is applied, and `McpAction::SetBind` restarts a server that is on (or reports why it could
+  not listen). A client's sheet has "Use from other machines" and its address ranges; its row in the
+  list carries a "Remote" mark. The Address and Endpoint rows show where the server listens.
+- Reading permissions. A set is shown as one capsule and a line ("Read only · All 8 areas", "Read &
+  write · Changes Charts, Price Alerts · reads 1 more area"), not a capsule per area, and a permission
+  row has no Read/Write tag: only one that can change DegenView carries a small amber dot. Pills and
+  badges take their colours from `Tone::text/fill/edge` (a faint plate, a legible shade, a hairline),
+  never the bare system colour as text.
+- Approval. A credential with `remote_allowed` is asked about every command that changes anything, and
+  the "ask before high-impact requests" setting does not apply to it (`confirm::needs_approval`). The
+  high-impact commands keep their lookups and summaries; the easy-to-undo ones (`Gate::AskRemote`: add a
+  chart, create or pause an alert, indicators, applied scripts, drawings, timeframe, chart type, replay,
+  watchlists, a script draft) are described from the command alone (`confirm::remote_summary`). Turning
+  the setting off ends only local credentials' open questions. A revoked client counts as remote.
+  A request carries the origin it arrived with (`ClientIdentity::remote`, fixed at authentication, via
+  `BridgeClient::call(&identity, ..)` and `Request::origin`): a call that came in as remote keeps asking
+  even if remote access is switched off while it waits in the queue, and `Request::run` judges its
+  address against the credential as it is *then* (`McpShared::accepts_origin`), so a request from an
+  address no longer admitted does not run, as with a revoked permission.
+- Failed sign-ins. A remote address has its own bucket (10 at once, then 1 a second; at most 1024
+  addresses tracked) that is spent first, so one host guessing tokens is cut off without using the
+  shared bucket, and a local client's mistakes are not slowed by it. Past 1024 addresses the surplus is
+  judged by the shared bucket alone.
+- Activity log. A call made from another machine carries `peer`. Refused sign-ins from another machine
+  are one `AuthRefused` row per address per minute (at most 256 addresses counted at once; the rest
+  show as a `Gap`). Requests from this machine are not recorded as refused sign-ins, as before, and
+  carry no peer.
+- `bind` is part of the seal, and is written only when it is not loopback, so a seal made before this
+  existed still verifies.
+
+Verified by tests on loopback with a certificate for 127.0.0.1 (no test can assume a LAN address):
+pinned client round trip through the real router, a client pinning another certificate, plain HTTP to a
+TLS port, a stalled handshake, and the refusals. Not verified: a bind to a real LAN or Tailscale
+address, or any real client (Claude Desktop, `mcp-remote`, Claude Code) accepting a self-signed
+certificate by pin. That decides whether this tier is usable and should be checked first.
+
 ---
 
 # 5. Token management

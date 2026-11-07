@@ -182,6 +182,8 @@ fn client(id: &str, token: &str, permissions: &[Permission]) -> McpClient {
         permissions: PermissionSet::of(permissions.iter().copied()),
         created_at_ms: 0,
         last_used_ms: None,
+        remote_allowed: false,
+        allowed_cidrs: Vec::new(),
     }
 }
 
@@ -251,13 +253,14 @@ impl Harness {
                             .find(|client| client.id == client_id)
                             .map(|client| client.name)
                             .unwrap_or_default();
-                        request.run(&shared, move |command| {
+                        request.run(&shared, move |command, origin| {
                             // The same gate the app runs, with a stand-in description.
                             crate::host::mcp_confirmation::gate_command(
                                 &confirmations,
                                 Instant::now(),
                                 &client_id,
                                 &name,
+                                origin.remote,
                                 &command,
                                 || {
                                     let tool = crate::mcp::confirm::tool_of(&command)
@@ -3726,3 +3729,4 @@ mod paper_tests;
 mod portfolio_tests;
 mod replay_tests;
 mod snapshot_tests;
+mod tls_tests;

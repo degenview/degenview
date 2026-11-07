@@ -6,6 +6,7 @@
 
 use crate::mcp::limits::retry_after_secs;
 use crate::mcp::state::McpShared;
+use crate::mcp::transport::PeerAddr;
 use axum::extract::{Request, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::middleware::Next;
@@ -96,7 +97,8 @@ pub async fn require_bearer(
     mut request: Request,
     next: Next,
 ) -> Response {
-    let identity = bearer_token(&request).and_then(|token| shared.authenticate(token));
+    let peer = request.extensions().get::<PeerAddr>().map(|peer| peer.0);
+    let identity = bearer_token(&request).and_then(|token| shared.authenticate_from(token, peer));
     match identity {
         Some(identity) => match shared.note_client_call(&identity.id) {
             Ok(()) => {
@@ -105,18 +107,25 @@ pub async fn require_bearer(
             }
             Err(wait) => {
                 // Counted, not listed: a loop of refused calls becomes one row a minute.
-                shared.audit().rate_limited(
-                    &identity.id,
-                    &identity.name,
-                    crate::model::watchlist::now_ms(),
-                );
+                shared
+                    .audit()
+                    .rate_limited(&identity, crate::model::watchlist::now_ms());
                 too_many_requests(wait)
             }
         },
-        None => match shared.note_failed_auth() {
-            Ok(()) => unauthorized(),
-            Err(wait) => too_many_requests(wait),
-        },
+        None => {
+            // A refusal from another machine is the signal worth keeping: counted per address
+            // into the activity log (not the token, not the request).
+            if let Some(peer) = peer.filter(|peer| !peer.local) {
+                shared
+                    .audit()
+                    .auth_refused(peer, crate::model::watchlist::now_ms());
+            }
+            match shared.note_failed_auth(peer) {
+                Ok(()) => unauthorized(),
+                Err(wait) => too_many_requests(wait),
+            }
+        }
     }
 }
 

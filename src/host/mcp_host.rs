@@ -8,7 +8,6 @@
 use crate::host::alert_host::AlertHost;
 use crate::host::paper_host::{PaperHost, PaperHostError, owner_text};
 use crate::host::portfolio_host::PortfolioHost;
-use crate::mcp::McpServer;
 use crate::mcp::auth::{generate_token, verifier_hex};
 use crate::mcp::bridge::{
     self, AlertCommandOutcome, AlertUpdate, BridgeClient, BridgeInbox, McpError, NewAlert, Request,
@@ -32,6 +31,7 @@ use crate::mcp::replay_tools::{self, ReplayResult};
 use crate::mcp::seal;
 use crate::mcp::snapshot_tools::{SnapshotProgress, SnapshotStarted};
 use crate::mcp::state::{McpShared, McpStatus};
+use crate::mcp::tls::{self, TlsIdentity};
 use crate::mcp::types::{
     AddChartResult, AddIndicatorResult, AlertInfo, AlertsResult, AppliedPineDetail,
     AppliedPineInfo, AppliedPineList, CandlesResult, ChartInfo, ChartsResult, DrawingsChangeResult,
@@ -40,12 +40,14 @@ use crate::mcp::types::{
     PineStrategySettingsInfo, PineStyleOverridesInfo, PineStyleRowInfo, PineStylesResult,
     PineTradeInfo, WorkspaceInfo,
 };
+use crate::mcp::{Listen, McpServer};
 use crate::model::alert::{
     AlertCondition, AlertCurrency, AlertFrequency, AlertId, AlertState, PriceAlert,
 };
 use crate::model::mcp::{
-    AUDIT_LOG_LIMIT, MAX_CLIENTS, McpAction, McpAuditEntry, McpAuditKind, McpClient, McpSettings,
-    Permission, PermissionSet, clean_client_name, is_valid_port,
+    AUDIT_LOG_LIMIT, BindMode, Cidr, MAX_CIDRS, MAX_CLIENTS, McpAction, McpAuditEntry,
+    McpAuditKind, McpClient, McpSettings, Permission, PermissionSet, clean_client_name,
+    is_valid_port,
 };
 use crate::model::pine_alert::PineAlertSubscription;
 use crate::model::watchlist::{Watchlist, WatchlistError, WatchlistInstrument, new_id, now_ms};
@@ -115,6 +117,10 @@ pub struct McpHost {
     /// Actions from the Settings page, applied by [`McpHost::tick`]. The page runs while the
     /// store is locked, so it can only queue.
     pending: Vec<McpAction>,
+    /// Where the TLS certificate for a non-loopback bind is kept: the app's data directory.
+    tls_dir: Option<std::path::PathBuf>,
+    /// Fingerprint of that certificate, for the Settings page.
+    tls_fingerprint: Option<String>,
 }
 
 impl McpHost {
@@ -157,8 +163,18 @@ impl McpHost {
             activity: Arc::new(Vec::new()),
             activity_unreadable: 0,
             pending: Vec::new(),
+            // Tests never write into the real data directory; one that needs a folder sets it.
+            tls_dir: if cfg!(test) {
+                None
+            } else {
+                crate::store::data_dir()
+            },
+            tls_fingerprint: None,
         };
         host.reload();
+        if host.load_error.is_none() {
+            host.refresh_fingerprint();
+        }
         host.refresh_activity();
         if host.load_error.is_none() && host.settings.enabled {
             host.start_server();
@@ -188,6 +204,8 @@ impl McpHost {
                     Ok(()) => {
                         self.shared
                             .set_require_confirmation(settings.require_confirmation);
+                        self.shared
+                            .set_remote_ceiling(settings.remote_ceiling.clone());
                         self.settings = settings;
                         self.shared.replace(clients, global);
                         self.load_error = None;
@@ -490,6 +508,7 @@ impl McpHost {
         match action {
             McpAction::SetEnabled(enabled) => self.set_enabled(enabled),
             McpAction::SetPort(port) => self.set_port(port),
+            McpAction::SetBind(bind) => self.set_bind(bind),
             McpAction::CreateClient(name) => self.create_client(&name),
             McpAction::RevokeClient(id) => self.revoke_client(&id),
             McpAction::SetClientPermission {
@@ -518,6 +537,34 @@ impl McpHost {
                 });
             }
             McpAction::SetGlobalPermissions(permissions) => self.replace_global(permissions),
+            McpAction::SetClientRemote { client_id, allowed } => {
+                self.edit_clients(|clients| {
+                    if let Some(client) = clients.iter_mut().find(|client| client.id == client_id) {
+                        client.remote_allowed = allowed;
+                    }
+                });
+            }
+            McpAction::SetClientCidrs { client_id, cidrs } => {
+                // No duplicates, and no more than a Settings list can sensibly show.
+                let mut kept: Vec<Cidr> = Vec::new();
+                for cidr in cidrs {
+                    if !kept.contains(&cidr) && kept.len() < MAX_CIDRS {
+                        kept.push(cidr);
+                    }
+                }
+                self.edit_clients(|clients| {
+                    if let Some(client) = clients.iter_mut().find(|client| client.id == client_id) {
+                        client.allowed_cidrs = kept;
+                    }
+                });
+            }
+            McpAction::SetRemoteCeiling(ceiling) => {
+                let settings = McpSettings {
+                    remote_ceiling: ceiling,
+                    ..self.settings.clone()
+                };
+                self.save_settings(settings);
+            }
             McpAction::DismissToken => self.fresh_token = None,
             McpAction::ResetAccess => {}
             McpAction::ClearActivity => self.clear_activity(),
@@ -537,6 +584,8 @@ impl McpHost {
             Ok(()) => {
                 self.shared
                     .set_require_confirmation(settings.require_confirmation);
+                self.shared
+                    .set_remote_ceiling(settings.remote_ceiling.clone());
                 self.settings = settings;
                 true
             }
@@ -561,6 +610,41 @@ impl McpHost {
         }
     }
 
+    /// Moves the listener to this machine only, or to one named interface. The certificate for it
+    /// is made now (not when the server next starts), so the Settings page can show the
+    /// fingerprint to pin before anything connects. A server that is on is restarted on the new
+    /// address; one that is off stays off.
+    fn set_bind(&mut self, bind: BindMode) {
+        if bind == self.settings.bind {
+            return;
+        }
+        let settings = McpSettings {
+            bind,
+            ..self.settings.clone()
+        };
+        if !self.save_settings(settings) {
+            return;
+        }
+        self.refresh_fingerprint();
+        if self.settings.enabled {
+            self.stop_server();
+            self.start_server();
+        }
+    }
+
+    /// Reads (or makes) the certificate for the saved bind, for the fingerprint the page shows.
+    fn refresh_fingerprint(&mut self) {
+        if let Err(message) = self.tls_identity() {
+            self.notice = Some(message);
+        }
+    }
+
+    /// The fingerprint of the certificate a remote client should pin, when the server listens
+    /// beyond this machine.
+    pub fn tls_fingerprint(&self) -> Option<&str> {
+        self.tls_fingerprint.as_deref()
+    }
+
     fn set_port(&mut self, port: u16) {
         if !is_valid_port(port) {
             self.notice = Some("Choose a port between 1024 and 65535".into());
@@ -583,11 +667,51 @@ impl McpHost {
     }
 
     fn start_server(&mut self) {
-        match McpServer::start(self.shared.clone(), self.bridge.clone(), self.settings.port) {
+        let tls = match self.tls_identity() {
+            Ok(tls) => tls,
+            Err(message) => {
+                self.shared.set_status(McpStatus::Failed(message.clone()));
+                self.notice = Some(message);
+                return;
+            }
+        };
+        let listen = Listen {
+            bind: self.settings.bind,
+            port: self.settings.port,
+            tls,
+        };
+        match McpServer::start_listening(self.shared.clone(), self.bridge.clone(), listen) {
             Ok(server) => self.server = Some(server),
             // The status already says Failed with the reason.
             Err(message) => self.notice = Some(message),
         }
+    }
+
+    /// The certificate for the interface the server listens on: none on loopback, otherwise the
+    /// one saved for that address, made on first use.
+    ///
+    /// The only way the host loads one, and it records the fingerprint of what it returns (nothing
+    /// when there is none or it could not be loaded), so the page can never show a fingerprint
+    /// other than that of the identity last handed to the listener: a file deleted or replaced
+    /// while the app runs is picked up here, at the next start, with its new fingerprint.
+    fn tls_identity(&mut self) -> Result<Option<TlsIdentity>, String> {
+        let identity = self.load_tls_identity();
+        self.tls_fingerprint = match &identity {
+            Ok(Some(identity)) => Some(identity.fingerprint()),
+            _ => None,
+        };
+        identity
+    }
+
+    fn load_tls_identity(&self) -> Result<Option<TlsIdentity>, String> {
+        let BindMode::Interface(address) = self.settings.bind else {
+            return Ok(None);
+        };
+        let dir = self
+            .tls_dir
+            .as_deref()
+            .ok_or("There is no folder to keep the TLS certificate in")?;
+        tls::load_or_create(dir, address).map(Some)
     }
 
     fn stop_server(&mut self) {
@@ -641,6 +765,8 @@ impl McpHost {
             permissions: PermissionSet::of([Permission::ChartsRead]),
             created_at_ms: now_ms(),
             last_used_ms: None,
+            remote_allowed: false,
+            allowed_cidrs: Vec::new(),
         };
         if self.edit_clients(|clients| clients.push(client)) {
             self.fresh_token = Some(FreshToken {
@@ -3027,7 +3153,7 @@ mod tests {
         {
             let host = host(&store);
             host.shared.audit().push(audit_row(1));
-            host.shared.audit().rate_limited("c1", "Claude", now_ms());
+            host.shared.audit().rate_limited(&claude(), now_ms());
         }
         let rows = store.lock().unwrap().recent_mcp_audit(10);
         assert_eq!(
@@ -3043,7 +3169,7 @@ mod tests {
         let store = store();
         let mut host = host(&store);
         host.shared.audit().push(audit_row(1));
-        host.shared.audit().rate_limited("c1", "Claude", now_ms());
+        host.shared.audit().rate_limited(&claude(), now_ms());
         host.shutdown();
         let rows = store.lock().unwrap().recent_mcp_audit(10);
         assert_eq!(rows.len(), 2, "the call and the open rate-limit count");
@@ -3098,6 +3224,17 @@ mod tests {
         );
     }
 
+    fn claude() -> crate::mcp::state::ClientIdentity {
+        crate::mcp::state::ClientIdentity {
+            id: "c1".into(),
+            name: "Claude".into(),
+            remote: false,
+            peer: crate::model::mcp::Peer::from_ip(std::net::IpAddr::V4(
+                std::net::Ipv4Addr::LOCALHOST,
+            )),
+        }
+    }
+
     fn enable_on_free_port(host: &mut McpHost, store: &SharedStore) {
         // Tests bind port 0 (any free one), which the Settings page itself never offers.
         store
@@ -3146,6 +3283,170 @@ mod tests {
         assert_eq!(host.status(), McpStatus::Disabled);
         assert!(std::net::TcpStream::connect(("127.0.0.1", port)).is_err());
         assert!(!store.lock().unwrap().mcp_settings().unwrap().enabled);
+    }
+
+    fn remote_settings() -> McpSettings {
+        McpSettings {
+            enabled: true,
+            port: 0,
+            bind: BindMode::interface("192.0.2.1".parse().unwrap()).unwrap(),
+            ..McpSettings::default()
+        }
+    }
+
+    fn lan() -> BindMode {
+        BindMode::interface("192.0.2.1".parse().unwrap()).unwrap()
+    }
+
+    fn scratch_dir(name: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!("degenview-mcp-host-{name}-{}", new_id()))
+    }
+
+    #[test]
+    fn choosing_an_interface_saves_it_and_shows_the_fingerprint_to_pin() {
+        let store = store();
+        let mut host = host(&store);
+        let dir = scratch_dir("bind");
+        host.tls_dir = Some(dir.clone());
+        assert!(host.tls_fingerprint().is_none());
+
+        host.apply(McpAction::SetBind(lan()));
+        assert_eq!(store.lock().unwrap().mcp_settings().unwrap().bind, lan());
+        assert_eq!(host.settings().bind, lan());
+        // The server is off, so nothing listens, but the certificate is there to compare.
+        assert_eq!(host.status(), McpStatus::Disabled);
+        let first = host.tls_fingerprint().expect("a fingerprint").to_owned();
+        assert_eq!(first.len(), 32 * 3 - 1);
+
+        // The same address keeps the same certificate; back on this Mac clears the fingerprint.
+        host.apply(McpAction::SetBind(BindMode::Loopback));
+        assert!(host.tls_fingerprint().is_none());
+        host.apply(McpAction::SetBind(lan()));
+        assert_eq!(host.tls_fingerprint(), Some(first.as_str()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_server_that_is_on_follows_the_bind_and_comes_back_on_this_mac() {
+        let store = store();
+        let mut host = host(&store);
+        let dir = scratch_dir("follow");
+        host.tls_dir = Some(dir.clone());
+        enable_on_free_port(&mut host, &store);
+        assert!(matches!(host.status(), McpStatus::Running { .. }));
+
+        // 192.0.2.1 is a documentation address no machine has, so the listener cannot bind it:
+        // the failure is reported, and nothing is left listening on the old address either.
+        host.apply(McpAction::SetBind(lan()));
+        assert!(
+            matches!(host.status(), McpStatus::Failed(_)),
+            "{:?}",
+            host.status()
+        );
+        assert!(host.notice().is_some());
+
+        host.apply(McpAction::SetBind(BindMode::Loopback));
+        assert!(matches!(host.status(), McpStatus::Running { .. }));
+        assert!(host.tls_fingerprint().is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn an_unchanged_bind_does_nothing_and_unreadable_settings_are_not_overwritten() {
+        let store = store();
+        let mut host = host(&store);
+        host.apply(McpAction::SetBind(BindMode::Loopback));
+        assert!(host.notice().is_none());
+
+        // With nowhere to keep a certificate the choice is still saved, and the reason shown.
+        host.apply(McpAction::SetBind(lan()));
+        assert_eq!(host.settings().bind, lan());
+        assert!(host.tls_fingerprint().is_none());
+        assert!(host.notice().is_some_and(|n| n.contains("certificate")));
+
+        store.lock().unwrap().insert_raw_mcp_client("x", "{broken");
+        let mut broken = McpHost::load(store.clone(), Arc::new(|| {}));
+        broken.apply(McpAction::SetBind(lan()));
+        assert_eq!(broken.settings().bind, BindMode::Loopback);
+    }
+
+    #[test]
+    fn the_fingerprint_shown_is_that_of_the_identity_the_listener_was_given() {
+        // The certificate is deleted while the app runs. The next start makes a new one, and the
+        // page must show that one, not the one it showed before.
+        let store = store();
+        let mut host = host(&store);
+        let dir = scratch_dir("fingerprint");
+        host.tls_dir = Some(dir.clone());
+        host.apply(McpAction::SetBind(lan()));
+        let before = host.tls_fingerprint().expect("a fingerprint").to_owned();
+
+        std::fs::remove_file(dir.join(crate::mcp::tls::FILE_NAME)).unwrap();
+        // The stale value is still what the page has until something loads an identity.
+        assert_eq!(host.tls_fingerprint(), Some(before.as_str()));
+        // `start_server` is what loads it for the listener (the address cannot be bound here, so
+        // it fails after loading, which is exactly the part under test).
+        host.settings.enabled = true;
+        host.start_server();
+        let shown = host.tls_fingerprint().expect("a fingerprint").to_owned();
+        let served = crate::mcp::tls::load_or_create(&dir, "192.0.2.1".parse().unwrap())
+            .unwrap()
+            .fingerprint();
+        assert_ne!(shown, before, "a new certificate was made");
+        assert_eq!(shown, served, "and the page shows the one that was served");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_certificate_that_cannot_be_loaded_leaves_no_fingerprint_behind() {
+        let store = store();
+        let mut host = host(&store);
+        let dir = scratch_dir("unloadable");
+        host.tls_dir = Some(dir.clone());
+        host.apply(McpAction::SetBind(lan()));
+        assert!(host.tls_fingerprint().is_some());
+        std::fs::write(dir.join(crate::mcp::tls::FILE_NAME), "damaged").unwrap();
+        assert!(host.tls_identity().is_err());
+        assert_eq!(host.tls_fingerprint(), None, "nothing stale is shown");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_saved_remote_bind_with_nowhere_to_keep_a_certificate_stays_off() {
+        let store = store();
+        store
+            .lock()
+            .unwrap()
+            .set_mcp_settings(&remote_settings())
+            .unwrap();
+        // `host` has no certificate folder (see `tls_dir`), so it cannot serve TLS.
+        let host = host(&store);
+        assert!(
+            matches!(host.status(), McpStatus::Failed(message) if message.contains("certificate")),
+            "{:?}",
+            host.status()
+        );
+        assert!(host.notice().is_some());
+    }
+
+    #[test]
+    fn a_remote_bind_gets_a_saved_certificate_for_its_address_and_loopback_gets_none() {
+        let store = store();
+        let mut host = host(&store);
+        assert!(host.tls_identity().unwrap().is_none());
+
+        let dir = std::env::temp_dir().join(format!("degenview-mcp-host-tls-{}", new_id()));
+        host.tls_dir = Some(dir.clone());
+        host.settings = remote_settings();
+        let first = host.tls_identity().unwrap().expect("a certificate");
+        assert_eq!(
+            first.address(),
+            "192.0.2.1".parse::<std::net::IpAddr>().unwrap()
+        );
+        let again = host.tls_identity().unwrap().expect("the same certificate");
+        assert_eq!(first.fingerprint(), again.fingerprint());
+        assert!(dir.join(crate::mcp::tls::FILE_NAME).exists());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -3244,6 +3545,130 @@ mod tests {
             allowed: false,
         });
         assert!(!host.shared().allows(&id, Permission::ChartsCreate));
+    }
+
+    #[test]
+    fn a_new_credential_is_loopback_only_until_remote_access_is_given() {
+        let store = store();
+        let mut host = host(&store);
+        host.apply(McpAction::CreateClient("a".into()));
+        let token = host.fresh_token().unwrap().token.clone();
+        let id = host.clients()[0].id.clone();
+        assert!(!host.clients()[0].remote_allowed);
+        let lan = Some("192.168.1.9".parse().unwrap());
+        assert!(host.shared().authenticate_from(&token, lan).is_none());
+
+        host.apply(McpAction::SetClientRemote {
+            client_id: id.clone(),
+            allowed: true,
+        });
+        assert!(store.lock().unwrap().mcp_clients().unwrap()[0].remote_allowed);
+        assert!(host.shared().authenticate_from(&token, lan).is_some());
+
+        host.apply(McpAction::SetClientRemote {
+            client_id: id,
+            allowed: false,
+        });
+        assert!(host.shared().authenticate_from(&token, lan).is_none());
+    }
+
+    #[test]
+    fn ranges_are_saved_without_duplicates_and_limit_where_a_client_may_call_from() {
+        let store = store();
+        let mut host = host(&store);
+        host.apply(McpAction::CreateClient("a".into()));
+        let token = host.fresh_token().unwrap().token.clone();
+        let id = host.clients()[0].id.clone();
+        host.apply(McpAction::SetClientRemote {
+            client_id: id.clone(),
+            allowed: true,
+        });
+        let range = |text: &str| Cidr::parse(text).unwrap();
+        host.apply(McpAction::SetClientCidrs {
+            client_id: id.clone(),
+            cidrs: vec![
+                range("192.168.1.0/24"),
+                range("192.168.1.77/24"),
+                range("fd00::/8"),
+            ],
+        });
+        let saved = store.lock().unwrap().mcp_clients().unwrap();
+        assert_eq!(
+            saved[0].allowed_cidrs,
+            [range("192.168.1.0/24"), range("fd00::/8")]
+        );
+        let from = |text: &str| Some(text.parse().unwrap());
+        assert!(
+            host.shared()
+                .authenticate_from(&token, from("192.168.1.9"))
+                .is_some()
+        );
+        assert!(
+            host.shared()
+                .authenticate_from(&token, from("203.0.113.9"))
+                .is_none()
+        );
+
+        // More than a Settings list can show are cut, not saved.
+        let many: Vec<Cidr> = (0..40).map(|n| range(&format!("10.{n}.0.0/16"))).collect();
+        host.apply(McpAction::SetClientCidrs {
+            client_id: id,
+            cidrs: many,
+        });
+        assert_eq!(host.clients()[0].allowed_cidrs.len(), MAX_CIDRS);
+    }
+
+    #[test]
+    fn the_remote_ceiling_is_saved_published_and_caps_remote_clients() {
+        let store = store();
+        let mut host = host(&store);
+        host.apply(McpAction::CreateClient("a".into()));
+        let id = host.clients()[0].id.clone();
+        host.apply(McpAction::SetClientPermission {
+            client_id: id.clone(),
+            permission: Permission::ChartsCreate,
+            allowed: true,
+        });
+        host.apply(McpAction::SetGlobalPermission {
+            permission: Permission::ChartsCreate,
+            allowed: true,
+        });
+        assert!(host.shared().allows(&id, Permission::ChartsCreate));
+
+        // Remote access turns the default ceiling (reads only) on for this client.
+        host.apply(McpAction::SetClientRemote {
+            client_id: id.clone(),
+            allowed: true,
+        });
+        assert!(!host.shared().allows(&id, Permission::ChartsCreate));
+
+        let wider = PermissionSet::everything();
+        host.apply(McpAction::SetRemoteCeiling(wider.clone()));
+        assert_eq!(
+            store.lock().unwrap().mcp_settings().unwrap().remote_ceiling,
+            wider
+        );
+        assert_eq!(host.settings().remote_ceiling, wider);
+        assert!(host.shared().allows(&id, Permission::ChartsCreate));
+    }
+
+    #[test]
+    fn a_saved_ceiling_and_remote_client_are_back_after_a_restart() {
+        let store = store();
+        {
+            let mut host = host(&store);
+            host.apply(McpAction::CreateClient("a".into()));
+            let id = host.clients()[0].id.clone();
+            host.apply(McpAction::SetClientRemote {
+                client_id: id,
+                allowed: true,
+            });
+            host.apply(McpAction::SetRemoteCeiling(PermissionSet::none()));
+        }
+        let host = host(&store);
+        assert!(host.load_error().is_none(), "{:?}", host.load_error());
+        assert!(host.clients()[0].remote_allowed);
+        assert!(host.shared().effective(&host.clients()[0].id).is_empty());
     }
 
     #[test]
@@ -4801,6 +5226,8 @@ mod tests {
             permissions: PermissionSet::of(Permission::ALL),
             created_at_ms: 1,
             last_used_ms: None,
+            remote_allowed: false,
+            allowed_cidrs: Vec::new(),
         });
         store.replace_mcp_clients(&clients).unwrap();
         store

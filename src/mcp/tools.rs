@@ -742,7 +742,7 @@ impl DegenViewMcp {
         match self
             .bridge
             .call(
-                &client.id,
+                &client,
                 Permission::ChartsRead,
                 McpCommand::ListWorkspaces,
                 REQUEST_TIMEOUT,
@@ -775,7 +775,7 @@ impl DegenViewMcp {
         match self
             .bridge
             .call(
-                &client.id,
+                &client,
                 Permission::ChartsRead,
                 McpCommand::ListCharts { workspace_id },
                 REQUEST_TIMEOUT,
@@ -847,7 +847,7 @@ impl DegenViewMcp {
         match self
             .bridge
             .call(
-                &client.id,
+                &client,
                 Permission::ChartsIndicatorsWrite,
                 McpCommand::ApplyIndicator {
                     workspace_id,
@@ -883,7 +883,7 @@ impl DegenViewMcp {
         match self
             .bridge
             .call(
-                &client.id,
+                &client,
                 Permission::AlertsRead,
                 McpCommand::ListAlerts { only: None },
                 REQUEST_TIMEOUT,
@@ -934,7 +934,7 @@ impl DegenViewMcp {
         let mut created = match self
             .bridge
             .call(
-                &client.id,
+                &client,
                 Permission::AlertsCreate,
                 McpCommand::CreateAlert(Box::new(request)),
                 REQUEST_TIMEOUT,
@@ -1022,7 +1022,7 @@ impl DegenViewMcp {
         let mut updated = match self
             .bridge
             .call(
-                &client.id,
+                &client,
                 Permission::AlertsEdit,
                 McpCommand::UpdateAlert(Box::new(request)),
                 REQUEST_TIMEOUT,
@@ -1117,7 +1117,7 @@ impl DegenViewMcp {
         let mut changed = match self
             .bridge
             .call(
-                &client.id,
+                &client,
                 Permission::AlertsDelete,
                 McpCommand::DeleteAlert { alert_id },
                 REQUEST_TIMEOUT,
@@ -1223,7 +1223,7 @@ impl DegenViewMcp {
         let mut result = match self
             .bridge
             .call(
-                &client.id,
+                &client,
                 Permission::PineScriptsWrite,
                 McpCommand::EditPineScript {
                     script_id: id.clone(),
@@ -1277,7 +1277,7 @@ impl DegenViewMcp {
         let mut result = match self
             .bridge
             .call(
-                &client.id,
+                &client,
                 Permission::PineScriptsSave,
                 McpCommand::EditPineScript {
                     script_id: id.clone(),
@@ -1393,7 +1393,7 @@ impl DegenViewMcp {
         match self
             .bridge
             .call(
-                &client.id,
+                &client,
                 Permission::PineScriptsList,
                 McpCommand::ListChartPine {
                     workspace_id,
@@ -1431,7 +1431,7 @@ impl DegenViewMcp {
         let mut detail = match self
             .bridge
             .call(
-                &client.id,
+                &client,
                 Permission::PineInputsRead,
                 McpCommand::GetChartPine {
                     workspace_id,
@@ -1479,7 +1479,7 @@ impl DegenViewMcp {
         match self
             .bridge
             .call(
-                &client.id,
+                &client,
                 Permission::PineStylesRead,
                 McpCommand::GetPineStyles {
                     workspace_id,
@@ -1526,7 +1526,7 @@ impl DegenViewMcp {
         let mut report = match self
             .bridge
             .call(
-                &client.id,
+                &client,
                 Permission::PineReportsRead,
                 McpCommand::GetPineReport {
                     workspace_id,
@@ -1575,7 +1575,7 @@ impl DegenViewMcp {
         match self
             .bridge
             .call(
-                &client.id,
+                &client,
                 Permission::PineAlertsRead,
                 McpCommand::ListPineAlerts,
                 REQUEST_TIMEOUT,
@@ -1615,7 +1615,7 @@ impl DegenViewMcp {
         match self
             .bridge
             .call(
-                &client.id,
+                &client,
                 Permission::ChartsCreate,
                 McpCommand::AddChart {
                     workspace_id,
@@ -1661,7 +1661,7 @@ impl DegenViewMcp {
         match self
             .bridge
             .call(
-                &client.id,
+                &client,
                 Permission::ChartsPineInstancesWrite,
                 McpCommand::AddPineInstance {
                     workspace_id,
@@ -1705,7 +1705,7 @@ impl DegenViewMcp {
         match self
             .bridge
             .call(
-                &client.id,
+                &client,
                 Permission::ChartsPineInstancesWrite,
                 McpCommand::UpdatePineInstance {
                     workspace_id,
@@ -1746,7 +1746,7 @@ impl DegenViewMcp {
         match self
             .bridge
             .call(
-                &client.id,
+                &client,
                 Permission::ChartsPineInstancesWrite,
                 McpCommand::RemovePineInstance {
                     workspace_id,
@@ -1796,7 +1796,7 @@ impl DegenViewMcp {
         match self
             .bridge
             .call(
-                &client.id,
+                &client,
                 Permission::ChartsCandlesRead,
                 McpCommand::GetCandles {
                     workspace_id,
@@ -1835,7 +1835,7 @@ impl DegenViewMcp {
         match self
             .bridge
             .call(
-                &client.id,
+                &client,
                 Permission::DrawingsRead,
                 McpCommand::ListDrawings {
                     workspace_id,
@@ -1891,7 +1891,7 @@ impl DegenViewMcp {
         match self
             .bridge
             .call(
-                &client.id,
+                &client,
                 Permission::DrawingsWrite,
                 McpCommand::AddDrawings {
                     workspace_id,
@@ -1954,7 +1954,7 @@ impl DegenViewMcp {
         match self
             .bridge
             .call(
-                &client.id,
+                &client,
                 Permission::DrawingsWrite,
                 McpCommand::EditDrawing {
                     workspace_id,
@@ -2009,7 +2009,7 @@ impl DegenViewMcp {
         match self
             .bridge
             .call(
-                &client.id,
+                &client,
                 Permission::DrawingsDelete,
                 McpCommand::RemoveDrawings {
                     workspace_id,
@@ -2187,7 +2187,7 @@ impl DegenViewMcp {
                 let outcome = self
                     .bridge
                     .call(
-                        &client.id,
+                        client,
                         permission,
                         McpCommand::AlertCommandOutcome { command_id },
                         Duration::from_secs(2),
@@ -2204,7 +2204,7 @@ impl DegenViewMcp {
             let reply = self
                 .bridge
                 .call(
-                    &client.id,
+                    client,
                     permission,
                     McpCommand::ListAlerts {
                         only: Some(alert_id),
@@ -2235,7 +2235,7 @@ impl DegenViewMcp {
         let mut changed = match self
             .bridge
             .call(
-                &client.id,
+                &client,
                 Permission::AlertsPause,
                 McpCommand::SetAlertPaused { alert_id, paused },
                 REQUEST_TIMEOUT,

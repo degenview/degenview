@@ -13,11 +13,13 @@
 //! error message, a token or a script.
 
 use crate::mcp::state::{ClientIdentity, McpShared};
-use crate::model::mcp::{McpAuditEntry, McpAuditKind, McpAuditOutcome, McpAuditTarget};
+use crate::model::mcp::{McpAuditEntry, McpAuditKind, McpAuditOutcome, McpAuditTarget, Peer};
 use crate::model::watchlist::{new_id, now_ms};
 use rmcp::model::{CallToolResult, NumberOrString};
 use serde_json::{Map, Value};
 use std::collections::{HashMap, VecDeque};
+#[cfg(test)]
+use std::net::IpAddr;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -44,6 +46,20 @@ const TARGET_KEYS: [&str; 9] = [
 const MAX_TARGETS: usize = 4;
 /// Longest request id kept (a UUID is 36).
 const REQUEST_ID_LIMIT: usize = 36;
+/// Remote addresses whose refused sign-ins are being counted at once. More are not tracked; the
+/// log says rows were lost instead (a `Gap`), so a flood from many addresses cannot grow memory.
+const MAX_AUTH_WINDOWS: usize = 256;
+
+/// The address as a row stores it: empty for this machine (loopback, or this machine's own
+/// address), where an address on every row would only be noise, and the (IPv4-unmapped) address
+/// otherwise.
+pub fn peer_text(peer: Peer) -> String {
+    if peer.local {
+        String::new()
+    } else {
+        peer.ip.to_string()
+    }
+}
 
 /// Keeps only characters that cannot carry anything but an id or a code, and at most `limit`.
 fn clean(raw: &str, limit: usize, extra: &[char]) -> String {
@@ -172,6 +188,7 @@ impl AuditGuard {
                 request_id: request_id_text(request_id),
                 targets: targets_of(arguments),
                 count: 1,
+                peer: peer_text(client.peer),
                 ..McpAuditEntry::default()
             },
             started: Instant::now(),
@@ -211,6 +228,13 @@ struct RateWindow {
     started_ms: i64,
     count: u32,
     client_name: String,
+    /// Where the latest refused call came from (see [`peer_text`]).
+    peer: String,
+}
+
+struct AuthWindow {
+    started_ms: i64,
+    count: u32,
 }
 
 #[derive(Default)]
@@ -219,6 +243,8 @@ struct Inner {
     /// Rows dropped because the queue was full, reported as one `Gap` row.
     lost: u32,
     windows: HashMap<String, RateWindow>,
+    /// Refused sign-ins from other machines, counted per address.
+    auth_windows: HashMap<String, AuthWindow>,
 }
 
 impl Inner {
@@ -250,16 +276,38 @@ impl AuditQueue {
 
     /// Counts a call from `client_id` refused for going over its rate limit. Refusals within a
     /// minute become one row with a count, so a client in a tight loop cannot fill the log.
-    pub fn rate_limited(&self, client_id: &str, client_name: &str, now_ms: i64) {
+    pub fn rate_limited(&self, client: &ClientIdentity, now_ms: i64) {
         let mut inner = self.inner();
         let window = inner
             .windows
-            .entry(client_id.to_owned())
+            .entry(client.id.clone())
             .or_insert_with(|| RateWindow {
                 started_ms: now_ms,
                 count: 0,
-                client_name: client_name.to_owned(),
+                client_name: client.name.clone(),
+                peer: String::new(),
             });
+        window.count = window.count.saturating_add(1);
+        window.peer = peer_text(client.peer);
+    }
+
+    /// Counts a request from the other machine `peer` refused for a token that did not work
+    /// (unknown, revoked, or valid but not for that address). Within a minute they become one row
+    /// with a count. Never holds the token or anything the request said.
+    pub fn auth_refused(&self, peer: Peer, now_ms: i64) {
+        let key = peer_text(peer);
+        if key.is_empty() {
+            return;
+        }
+        let mut inner = self.inner();
+        if !inner.auth_windows.contains_key(&key) && inner.auth_windows.len() >= MAX_AUTH_WINDOWS {
+            inner.lost = inner.lost.saturating_add(1);
+            return;
+        }
+        let window = inner.auth_windows.entry(key).or_insert(AuthWindow {
+            started_ms: now_ms,
+            count: 0,
+        });
         window.count = window.count.saturating_add(1);
     }
 
@@ -285,6 +333,27 @@ impl AuditQueue {
                     outcome: McpAuditOutcome::Denied,
                     code: "RATE_LIMITED".into(),
                     count: window.count,
+                    peer: window.peer,
+                    ..McpAuditEntry::default()
+                });
+            }
+        }
+        let due_peers: Vec<String> = inner
+            .auth_windows
+            .iter()
+            .filter(|(_, window)| all || now_ms - window.started_ms >= RATE_WINDOW_MS)
+            .map(|(peer, _)| peer.clone())
+            .collect();
+        for peer in due_peers {
+            if let Some(window) = inner.auth_windows.remove(&peer) {
+                inner.push(McpAuditEntry {
+                    id: new_id(),
+                    at_ms: window.started_ms,
+                    kind: McpAuditKind::AuthRefused,
+                    outcome: McpAuditOutcome::Denied,
+                    code: "UNAUTHORIZED".into(),
+                    count: window.count,
+                    peer,
                     ..McpAuditEntry::default()
                 });
             }
@@ -335,6 +404,8 @@ mod tests {
         ClientIdentity {
             id: "c1".into(),
             name: "Claude".into(),
+            peer: Peer::from_ip(IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)),
+            remote: false,
         }
     }
 
@@ -529,9 +600,16 @@ mod tests {
     fn refusals_within_a_minute_are_one_row_per_client() {
         let queue = AuditQueue::default();
         for _ in 0..500 {
-            queue.rate_limited("c1", "Claude", 1_000);
+            queue.rate_limited(&client(), 1_000);
         }
-        queue.rate_limited("c2", "Other", 2_000);
+        queue.rate_limited(
+            &ClientIdentity {
+                id: "c2".into(),
+                name: "Other".into(),
+                ..client()
+            },
+            2_000,
+        );
         // Still inside the minute: nothing is written yet.
         assert!(queue.take(30_000, false).is_empty());
         let mut rows = queue.take(1_000 + RATE_WINDOW_MS, false);
@@ -570,5 +648,116 @@ mod tests {
             rows[1].id, 100,
             "the requeued rows were the oldest, so they went"
         );
+    }
+
+    fn remote_client() -> ClientIdentity {
+        ClientIdentity {
+            peer: "203.0.113.9".parse().unwrap(),
+            ..client()
+        }
+    }
+
+    #[test]
+    fn a_call_records_where_it_came_from_only_when_that_was_another_machine() {
+        let shared = McpShared::new();
+        let id = NumberOrString::Number(1);
+        AuditGuard::begin(&shared, &client(), "degenview_list_charts", &id, None)
+            .finish(McpAuditOutcome::Succeeded, "");
+        AuditGuard::begin(
+            &shared,
+            &remote_client(),
+            "degenview_list_charts",
+            &id,
+            None,
+        )
+        .finish(McpAuditOutcome::Succeeded, "");
+        let mapped = ClientIdentity {
+            peer: "::ffff:198.51.100.7".parse().unwrap(),
+            ..client()
+        };
+        AuditGuard::begin(&shared, &mapped, "degenview_list_charts", &id, None)
+            .finish(McpAuditOutcome::Succeeded, "");
+        let rows = shared.audit().take(0, false);
+        assert_eq!(
+            rows[0].peer, "",
+            "this machine is not worth a column of 127.0.0.1"
+        );
+        assert_eq!(rows[1].peer, "203.0.113.9");
+        assert_eq!(
+            rows[2].peer, "198.51.100.7",
+            "a mapped address is shown as IPv4"
+        );
+    }
+
+    #[test]
+    fn refused_sign_ins_from_other_machines_become_one_row_per_address_per_minute() {
+        let queue = AuditQueue::default();
+        let a: IpAddr = "203.0.113.9".parse().unwrap();
+        let b: IpAddr = "198.51.100.4".parse().unwrap();
+        for _ in 0..5 {
+            queue.auth_refused(Peer::from_ip(a), 1_000);
+        }
+        queue.auth_refused(Peer::from_ip(b), 2_000);
+        // This machine is not recorded: it was never the signal, and it would only add noise.
+        queue.auth_refused("127.0.0.1".parse().unwrap(), 2_000);
+        queue.auth_refused("::ffff:127.0.0.1".parse().unwrap(), 2_000);
+        assert!(
+            queue.take(10_000, false).is_empty(),
+            "the minute is not over"
+        );
+        let rows = queue.take(1_000 + RATE_WINDOW_MS, false);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].kind, McpAuditKind::AuthRefused);
+        assert_eq!((rows[0].peer.as_str(), rows[0].count), ("203.0.113.9", 5));
+        assert_eq!(rows[0].outcome, McpAuditOutcome::Denied);
+        assert!(rows[0].client_id.is_empty() && rows[0].tool.is_empty());
+        // Quitting writes what is left.
+        let rest = queue.take(2_000, true);
+        assert_eq!((rest[0].peer.as_str(), rest[0].count), ("198.51.100.4", 1));
+    }
+
+    #[test]
+    fn this_machines_own_address_is_not_recorded_as_a_remote_peer() {
+        let own: IpAddr = "192.168.1.20".parse().unwrap();
+        let here = Peer::of_connection(own, own);
+        let there = Peer::of_connection("192.168.1.21".parse().unwrap(), own);
+        assert_eq!(peer_text(here), "");
+        assert_eq!(peer_text(there), "192.168.1.21");
+        let queue = AuditQueue::default();
+        queue.auth_refused(here, 1_000);
+        queue.auth_refused(there, 1_000);
+        let rows = queue.take(1_000, true);
+        assert_eq!(rows.len(), 1, "only the other host is a signal: {rows:?}");
+        assert_eq!(rows[0].peer, "192.168.1.21");
+    }
+
+    #[test]
+    fn a_flood_from_many_addresses_cannot_grow_the_table_and_is_reported_as_lost_rows() {
+        let queue = AuditQueue::default();
+        for n in 0..(MAX_AUTH_WINDOWS + 10) {
+            let address: IpAddr = format!("10.{}.{}.1", n / 256, n % 256).parse().unwrap();
+            queue.auth_refused(Peer::from_ip(address), 1);
+        }
+        let rows = queue.take(1_000_000, true);
+        assert_eq!(
+            rows.iter()
+                .filter(|r| r.kind == McpAuditKind::AuthRefused)
+                .count(),
+            MAX_AUTH_WINDOWS
+        );
+        let gap = rows
+            .iter()
+            .find(|r| r.kind == McpAuditKind::Gap)
+            .expect("a gap row");
+        assert_eq!(gap.count, 10);
+    }
+
+    #[test]
+    fn a_rate_limit_row_says_where_the_last_refused_call_came_from() {
+        let queue = AuditQueue::default();
+        queue.rate_limited(&remote_client(), 1_000);
+        queue.rate_limited(&remote_client(), 1_500);
+        let rows = queue.take(0, true);
+        assert_eq!((rows[0].peer.as_str(), rows[0].count), ("203.0.113.9", 2));
     }
 }

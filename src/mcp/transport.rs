@@ -1,7 +1,8 @@
-//! The loopback HTTP surface: one `/mcp` endpoint (MCP Streamable HTTP, served statelessly by
+//! The HTTP surface: one `/mcp` endpoint (MCP Streamable HTTP, served statelessly by
 //! `rmcp`) behind a bearer-token guard, a request timeout and a concurrency cap.
 //!
-//! `rmcp` itself validates the `Host` header against an explicit loopback list, rejects every
+//! `rmcp` itself validates the `Host` header against an explicit list (the loopback names, or the
+//! one interface address the server was told to listen on), rejects every
 //! request carrying an `Origin` (a browser page has no business here), and caps the body size.
 //!
 //! Connections are accepted here rather than by `axum::serve`, which offers no way to bound what
@@ -13,6 +14,7 @@ use crate::mcp::bridge::BridgeClient;
 use crate::mcp::cancel::honour_cancellations;
 use crate::mcp::state::McpShared;
 use crate::mcp::tools::DegenViewMcp;
+use crate::model::mcp::Peer;
 use axum::Router;
 use axum::extract::Request;
 use axum::http::StatusCode;
@@ -24,6 +26,11 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio_util::sync::CancellationToken;
 use tower::limit::ConcurrencyLimitLayer;
+
+/// Where a request came from, put in its extensions by [`serve_with`] for the bearer check. The
+/// TCP peer (and whether that is this machine), not anything the request says about itself.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PeerAddr(pub Peer);
 
 pub const MAX_BODY_BYTES: usize = 256 * 1024;
 const MAX_CONCURRENT_REQUESTS: usize = 16;
@@ -39,15 +46,16 @@ async fn deadline(request: Request, next: Next) -> Response {
     }
 }
 
-/// The full application for a server listening on 127.0.0.1:`port`.
+/// The full application for a server that answers requests whose `Host` is one of
+/// `allowed_hosts` (`BindMode::allowed_hosts`) and no other.
 pub fn router(
     shared: Arc<McpShared>,
     bridge: BridgeClient,
-    port: u16,
+    allowed_hosts: Vec<String>,
     cancel: CancellationToken,
 ) -> Router {
     let config = StreamableHttpServerConfig::default()
-        .with_allowed_hosts([format!("127.0.0.1:{port}"), format!("localhost:{port}")])
+        .with_allowed_hosts(allowed_hosts)
         .enforce_origin_validation()
         // Every request stands alone: the bearer token authorizes each one, no session to hijack.
         .with_legacy_session_mode(false)
@@ -89,6 +97,9 @@ const MAX_READ_BUFFER: usize = 32 * 1024;
 pub const HEADER_READ_TIMEOUT: Duration = Duration::from_secs(10);
 /// Connections open at once. More are closed as they arrive. A client needs one or two.
 pub const MAX_CONNECTIONS: usize = 128;
+/// How long a client may take to finish the TLS handshake. It holds a connection slot meanwhile,
+/// so without a bound a client that connects and says nothing would occupy one for good.
+pub const TLS_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Limits [`serve`] puts on a connection. A struct so tests can shorten the timeout.
 #[derive(Clone, Copy, Debug)]
@@ -97,6 +108,7 @@ pub struct ConnectionLimits {
     pub max_header_bytes: usize,
     pub header_read_timeout: Duration,
     pub max_connections: usize,
+    pub tls_handshake_timeout: Duration,
 }
 
 impl Default for ConnectionLimits {
@@ -106,6 +118,7 @@ impl Default for ConnectionLimits {
             max_header_bytes: MAX_HEADER_BYTES,
             header_read_timeout: HEADER_READ_TIMEOUT,
             max_connections: MAX_CONNECTIONS,
+            tls_handshake_timeout: TLS_HANDSHAKE_TIMEOUT,
         }
     }
 }
@@ -115,15 +128,25 @@ impl Default for ConnectionLimits {
 /// HTTP/1 only. Each connection is its own task holding one of `max_connections` permits; a
 /// connection that arrives with none free is closed at once. Dropping this future (or cancelling)
 /// stops accepting and ends every connection task.
+#[cfg(test)]
 pub async fn serve(
     listener: tokio::net::TcpListener,
     app: Router,
     limits: ConnectionLimits,
     cancel: CancellationToken,
 ) {
-    use hyper_util::rt::{TokioIo, TokioTimer};
-    use tower::Service;
+    serve_with(listener, app, limits, None, cancel).await;
+}
 
+/// [`serve`], with every connection wrapped in TLS first when `tls` is given. A client that does
+/// not finish the handshake within `limits.tls_handshake_timeout` is dropped, and its slot freed.
+pub async fn serve_with(
+    listener: tokio::net::TcpListener,
+    app: Router,
+    limits: ConnectionLimits,
+    tls: Option<tokio_rustls::TlsAcceptor>,
+    cancel: CancellationToken,
+) {
     let permits = Arc::new(tokio::sync::Semaphore::new(limits.max_connections));
     let mut connections = tokio::task::JoinSet::new();
     loop {
@@ -134,7 +157,15 @@ pub async fn serve(
         // Reap finished connections so the set does not grow with every request.
         while connections.try_join_next().is_some() {}
         let stream = match accepted {
-            Ok((stream, _)) => stream,
+            Ok((stream, peer)) => {
+                // Local when loopback or the very address the connection arrived on; if that
+                // cannot be read, only loopback is.
+                let peer = match stream.local_addr() {
+                    Ok(own) => Peer::of_connection(peer.ip(), own.ip()),
+                    Err(_) => Peer::from_ip(peer.ip()),
+                };
+                (stream, peer)
+            }
             Err(_) => {
                 // Out of descriptors or a connection reset before accept: not fatal. Back off
                 // briefly so a persistent error does not spin.
@@ -142,6 +173,7 @@ pub async fn serve(
                 continue;
             }
         };
+        let (stream, peer) = stream;
         let Ok(permit) = permits.clone().try_acquire_owned() else {
             drop(stream);
             continue;
@@ -149,25 +181,60 @@ pub async fn serve(
         let _ = stream.set_nodelay(true);
         let app = app.clone();
         let cancel = cancel.clone();
+        let tls = tls.clone();
         connections.spawn(async move {
             let _permit = permit;
-            let service = hyper::service::service_fn(move |request: axum::http::Request<_>| {
-                let request = request.map(axum::body::Body::new);
-                app.clone().call(request)
-            });
-            let mut builder = hyper::server::conn::http1::Builder::new();
-            builder
-                .timer(TokioTimer::new())
-                .header_read_timeout(limits.header_read_timeout)
-                .max_headers(limits.max_headers)
-                .max_header_size(limits.max_header_bytes)
-                .max_buf_size(MAX_READ_BUFFER);
-            let connection = builder.serve_connection(TokioIo::new(stream), service);
-            tokio::select! {
-                _ = connection => {}
-                () = cancel.cancelled() => {}
+            match tls {
+                None => serve_connection(stream, peer, app, limits, cancel).await,
+                Some(acceptor) => {
+                    let handshake =
+                        tokio::time::timeout(limits.tls_handshake_timeout, acceptor.accept(stream));
+                    let stream = tokio::select! {
+                        () = cancel.cancelled() => return,
+                        handshake = handshake => match handshake {
+                            Ok(Ok(stream)) => stream,
+                            // A failed or stalled handshake sends nothing back: not even an
+                            // HTTP error, which a plain-text client would otherwise get to read.
+                            _ => return,
+                        },
+                    };
+                    serve_connection(stream, peer, app, limits, cancel).await;
+                }
             }
         });
     }
     connections.shutdown().await;
+}
+
+async fn serve_connection<S>(
+    stream: S,
+    peer: Peer,
+    app: Router,
+    limits: ConnectionLimits,
+    cancel: CancellationToken,
+) where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+{
+    use hyper_util::rt::{TokioIo, TokioTimer};
+    use tower::Service;
+
+    let service = hyper::service::service_fn(move |request: axum::http::Request<_>| {
+        let mut request = request.map(axum::body::Body::new);
+        // Set here, over anything a client could have put in the request's extensions (it cannot:
+        // they are not part of HTTP), so the bearer check reads the real socket peer.
+        request.extensions_mut().insert(PeerAddr(peer));
+        app.clone().call(request)
+    });
+    let mut builder = hyper::server::conn::http1::Builder::new();
+    builder
+        .timer(TokioTimer::new())
+        .header_read_timeout(limits.header_read_timeout)
+        .max_headers(limits.max_headers)
+        .max_header_size(limits.max_header_bytes)
+        .max_buf_size(MAX_READ_BUFFER);
+    let connection = builder.serve_connection(TokioIo::new(stream), service);
+    tokio::select! {
+        _ = connection => {}
+        () = cancel.cancelled() => {}
+    }
 }
