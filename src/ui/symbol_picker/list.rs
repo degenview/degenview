@@ -38,6 +38,8 @@ pub struct RowOutput {
     /// The plus was clicked: add the market as a chart of its own.
     pub add: bool,
     pub hovered: bool,
+    /// The row was right-clicked: its menu is opening, and the row becomes the highlighted one.
+    pub opened_menu: bool,
 }
 
 /// What the second line of a row says: the pair (`BTC / USDT`), the company, or the coin.
@@ -66,11 +68,19 @@ fn title_case(id: &str) -> String {
         .join(" ")
 }
 
-/// Draws one row, `width` wide.
+/// What the row's right-click menu offers: `Replace <chart's market>` while a chart is focused, and
+/// always `Add as new chart`. The shortcuts are the keys that do the same.
+const REPLACE_KEY: &str = "↵";
+const ADD_KEY: &str = "⇧↵";
+const ADD_LABEL: &str = "Add as new chart";
+
+/// Draws one row, `width` wide. `replacing` is the market on the focused chart, which a pick would
+/// replace; `None` when there is no chart to replace.
 pub fn row(
     ui: &mut Ui,
     result: &SearchResult,
     state: RowState,
+    replacing: Option<&str>,
     width: f32,
 ) -> (Response, RowOutput) {
     let (rect, response) = ui.allocate_exact_size(vec2(width, ROW_HEIGHT), Sense::click());
@@ -85,6 +95,8 @@ pub fn row(
         market_kind(result.source)
     );
     let response = crate::ui::accessibility::label(response, label);
+    out.opened_menu = response.secondary_clicked();
+    context_menu(ui, &response, replacing, &mut out);
     if !ui.is_rect_visible(rect) {
         return (response, out);
     }
@@ -119,7 +131,7 @@ pub fn row(
                 theme::text_secondary()
             },
         );
-        out.add = plus.clicked();
+        out.add |= plus.clicked();
     } else if state.on_chart {
         icons::paint(
             ui.painter(),
@@ -128,7 +140,7 @@ pub fn row(
             theme::UP,
         );
     }
-    out.pick = response.clicked() && !out.add;
+    out.pick |= response.clicked() && !out.add;
 
     let painter = ui.painter();
     let icon = Rect::from_center_size(
@@ -199,6 +211,35 @@ pub fn row(
             .galley(pos2(text_left, sub_top), sub, theme::text_secondary());
     }
     (response, out)
+}
+
+/// The menu a right-click on a row opens: use the market here, or add it as a chart of its own.
+fn context_menu(ui: &mut Ui, response: &Response, replacing: Option<&str>, out: &mut RowOutput) {
+    let replace = replacing.map(|current| format!("Replace {current}"));
+    let mut rows: Vec<(&str, Option<&str>)> = Vec::new();
+    if let Some(replace) = &replace {
+        rows.push((replace, Some(REPLACE_KEY)));
+    }
+    rows.push((ADD_LABEL, Some(ADD_KEY)));
+    kit::fitted_context_menu(ui, response, &rows, |ui| {
+        if let Some(replace) = &replace
+            && kit::menu_item_with_shortcut(
+                ui,
+                Icon::Exchange,
+                replace,
+                Some(REPLACE_KEY),
+                true,
+                false,
+            )
+        {
+            out.pick = true;
+            ui.close();
+        }
+        if kit::menu_item_with_shortcut(ui, Icon::Plus, ADD_LABEL, Some(ADD_KEY), true, false) {
+            out.add = true;
+            ui.close();
+        }
+    });
 }
 
 fn row_id(ui: &Ui, result: &SearchResult, part: &str) -> Id {
