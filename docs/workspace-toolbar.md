@@ -19,7 +19,9 @@ chart settings | layout menu.
   narrowest window is 760 wide and keeps everything but possibly the layout name.
 - The colours are neutral (`kit::primary` tints, `text_primary` / `text_secondary` /
   `text_tertiary`); the only colour is Replay's orange while a replay is open (state, not a control).
-- `replay_bar.rs` still draws its controls in `paint_bubble` capsules; it has not been restyled.
+- `replay_bar.rs` (the strip under the toolbar while a replay is open) uses the same flat style: its
+  `flat_tint` is the toolbar's hover/pressed tint at the same radius. Its one solid control, the
+  start row's main action, is still inked like the label colour.
 
 ## What acts on what
 

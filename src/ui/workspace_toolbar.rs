@@ -2,7 +2,8 @@
 //! tint on hover, hairline separators between groups and labels that fall back to icons when the
 //! window is too narrow for them. Left to right: the timeframe, the chart type, Indicators,
 //! Replay, Undo and Redo. On the right: the layout menu, chart settings, Portfolio, Pine Studio,
-//! the watchlist toggle and Add Chart. The chart type, Indicators and chart settings act on the
+//! the watchlist toggle and Add Chart. The replay bar under it (`replay_bar.rs`) uses the same
+//! flat style. The chart type, Indicators and chart settings act on the
 //! focused chart.
 
 use crate::model::{ChartType, DataSource, Timeframe};
@@ -11,9 +12,7 @@ use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, MEDIUM, REGULAR, SEMIBOLD, size};
 use crate::ui::shortcut;
 use crate::ui::theme;
-use eframe::egui::{
-    self, Color32, Galley, Id, Rect, Response, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2,
-};
+use eframe::egui::{self, Color32, Galley, Id, Rect, Response, Sense, Ui, Vec2, pos2, vec2};
 use std::sync::Arc;
 
 pub const HEIGHT: f32 = 44.0;
@@ -622,28 +621,6 @@ fn paint_button(ui: &mut Ui, measured: &Measured, x: f32, y: f32) -> Response {
         );
     }
     response
-}
-
-/// The faint capsule the replay bar still draws its controls in.
-pub(crate) fn paint_bubble(ui: &Ui, rect: Rect, hovered: bool, pressed: bool) {
-    let painter = ui.painter();
-    painter.rect_filled(
-        rect,
-        rect.height() / 2.0,
-        kit::primary(if pressed {
-            0.16
-        } else if hovered {
-            0.12
-        } else {
-            0.07
-        }),
-    );
-    painter.rect_stroke(
-        rect,
-        rect.height() / 2.0,
-        Stroke::new(1.0, kit::primary(0.06)),
-        StrokeKind::Inside,
-    );
 }
 
 /// The menu under the layout button: what can be done with the layout.
