@@ -628,7 +628,7 @@ impl IndicatorPicker {
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(inner));
         let ui = &mut child;
         // The buttons stay at the bottom; the text above them scrolls when it is long.
-        let buttons_height = 32.0 + 8.0 + 28.0 + 20.0;
+        let buttons_height = 32.0 + 20.0;
         let text_rect = Rect::from_min_max(
             inner.min,
             pos2(inner.right(), inner.bottom() - buttons_height),
@@ -699,22 +699,21 @@ impl IndicatorPicker {
                 }
             });
 
-        let buttons = Rect::from_min_max(
-            pos2(inner.left(), inner.bottom() - buttons_height + 12.0),
-            inner.max,
-        );
+        let buttons = Rect::from_min_max(pos2(inner.left(), inner.bottom() - 32.0), inner.max);
         let mut button_ui = ui.new_child(
             egui::UiBuilder::new()
                 .max_rect(buttons)
-                .layout(egui::Layout::top_down(egui::Align::Min)),
+                .layout(egui::Layout::left_to_right(egui::Align::Center)),
         );
+        button_ui.spacing_mut().item_spacing.x = 8.0;
         let blocked = matches!(status, Availability::Blocked(_));
         let label = match status {
             Availability::Remove => "Remove from chart",
             Availability::AddAnother => "Add another copy",
             _ => "Add to chart",
         };
-        if kit::large_prominent_button(&mut button_ui, label, !blocked, buttons.width()).clicked()
+        if kit::large_prominent_button(&mut button_ui, label, !blocked, buttons.width() - 40.0)
+            .clicked()
             && let Some(action) = action_for(entry, status)
         {
             *output = Some(Output::Apply {
@@ -722,13 +721,7 @@ impl IndicatorPicker {
                 keep_open: false,
             });
         }
-        button_ui.add_space(8.0);
-        let favorite_label = if favorite {
-            "Remove favorite"
-        } else {
-            "Favorite"
-        };
-        if kit::sheet_button(&mut button_ui, favorite_label, false, true).clicked() {
+        if star_button(&mut button_ui, favorite).clicked() {
             self.toggle_favorite(&entry.key);
         }
     }
@@ -965,6 +958,30 @@ fn card_ui(
         double: response.double_clicked(),
         star: star.clicked(),
     }
+}
+
+/// A square star button beside the add button: filled while the indicator is a favorite.
+fn star_button(ui: &mut Ui, favorite: bool) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(vec2(32.0, 32.0), Sense::click());
+    let painter = ui.painter();
+    painter.rect_filled(rect, 8.0, theme::card_fill(response.hovered()));
+    painter.rect_stroke(
+        rect,
+        8.0,
+        Stroke::new(1.0, theme::card_border(response.hovered())),
+        StrokeKind::Inside,
+    );
+    icons::paint(
+        painter,
+        Rect::from_center_size(rect.center(), vec2(15.0, 15.0)),
+        if favorite { Icon::StarFill } else { Icon::Star },
+        theme::text_primary(),
+    );
+    response.on_hover_text(if favorite {
+        "Remove from favorites"
+    } else {
+        "Add to favorites"
+    })
 }
 
 fn sidebar_heading(ui: &mut Ui, text: &str) {
