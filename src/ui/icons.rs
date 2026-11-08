@@ -92,6 +92,8 @@ pub enum Icon {
     ArrowDownRight,
     ArrowUp,
     ArrowDown,
+    /// The return key's bent arrow: down, then left.
+    Return,
     Pencil,
     PauseFill,
     PlayFill,
@@ -973,6 +975,10 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
         Icon::ArrowDown => {
             line(&[p(8.0, 2.5), p(8.0, 13.2)]);
             line(&[p(3.8, 9.0), p(8.0, 13.2), p(12.2, 9.0)]);
+        }
+        Icon::Return => {
+            line(&[p(12.5, 3.0), p(12.5, 9.0), p(3.5, 9.0)]);
+            line(&[p(6.5, 6.0), p(3.5, 9.0), p(6.5, 12.0)]);
         }
         Icon::Pencil => {
             closed(&[
@@ -2370,6 +2376,7 @@ mod tests {
             ArrowDownRight,
             ArrowUp,
             ArrowDown,
+            Return,
             Pencil,
             PauseFill,
             PlayFill,

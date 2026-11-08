@@ -496,7 +496,53 @@ fn divider(ui: &mut egui::Ui) {
 }
 
 /// A key as it is named in a hint.
+/// The arrows a keycap draws as shapes. Their font glyphs (↑ ↓ ↵) are in no font the app is
+/// sure to have: macOS has them in its system fonts, a Linux machine shows tofu squares.
+fn keycap_icon(key: &str) -> Option<Icon> {
+    match key {
+        "\u{2191}" => Some(Icon::ArrowUp),
+        "\u{2193}" => Some(Icon::ArrowDown),
+        "\u{21b5}" => Some(Icon::Return),
+        _ => None,
+    }
+}
+
+/// How wide [`keycap`] draws `key`.
+pub(crate) fn keycap_width(ui: &egui::Ui, key: &str) -> f32 {
+    if keycap_icon(key).is_some() {
+        return 24.0;
+    }
+    kit::galley(
+        ui,
+        key,
+        kit::size::CAPTION + 0.5,
+        MEDIUM,
+        theme::text_secondary(),
+        f32::INFINITY,
+    )
+    .size()
+    .x + 12.0
+}
+
 pub(crate) fn keycap(ui: &mut egui::Ui, key: &str) {
+    let width = keycap_width(ui, key);
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(width, 18.0), Sense::hover());
+    ui.painter().rect_filled(rect, 5.0, kit::primary(0.07));
+    ui.painter().rect_stroke(
+        rect,
+        5.0,
+        Stroke::new(1.0, kit::primary(0.12)),
+        egui::StrokeKind::Inside,
+    );
+    if let Some(icon) = keycap_icon(key) {
+        icons::paint(
+            ui.painter(),
+            Rect::from_center_size(rect.center(), Vec2::splat(11.0)),
+            icon,
+            theme::text_secondary(),
+        );
+        return;
+    }
     let text = kit::galley(
         ui,
         key,
@@ -504,14 +550,6 @@ pub(crate) fn keycap(ui: &mut egui::Ui, key: &str) {
         MEDIUM,
         theme::text_secondary(),
         f32::INFINITY,
-    );
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(text.size().x + 12.0, 18.0), Sense::hover());
-    ui.painter().rect_filled(rect, 5.0, kit::primary(0.07));
-    ui.painter().rect_stroke(
-        rect,
-        5.0,
-        Stroke::new(1.0, kit::primary(0.12)),
-        egui::StrokeKind::Inside,
     );
     ui.painter().galley(
         rect.center() - text.size() / 2.0,

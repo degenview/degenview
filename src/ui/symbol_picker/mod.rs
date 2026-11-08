@@ -774,19 +774,7 @@ impl SymbolPicker {
             let keys: f32 = hint
                 .0
                 .iter()
-                .map(|key| {
-                    kit::galley(
-                        ui,
-                        key,
-                        kit::size::CAPTION + 0.5,
-                        MEDIUM,
-                        theme::text_secondary(),
-                        f32::INFINITY,
-                    )
-                    .size()
-                    .x + 12.0
-                        + 6.0
-                })
+                .map(|key| crate::ui::replay_bar::keycap_width(ui, key) + 6.0)
                 .sum();
             keys + label.size().x + 6.0 + 10.0
         };
