@@ -19,8 +19,9 @@
   or `replace_mcp_clients` for a trust change. `last_used_ms` is outside the seal on purpose, so
   the usage save may use `replace_mcp_clients`. A new field that decides access goes into
   `mcp::seal::Sealed`, with a case in `every_trust_field_is_covered`. Sealing is off in tests and
-  in debug (or `--features dev-unsealed-mcp`) builds started with `DEGENVIEW_NO_KEYCHAIN`; a
-  release build ignores that variable, so never rely on it there; use `McpHost::load_with_keys` with a shared
+  in every debug build (each rebuild has a new code identity, so the Keychain would prompt every
+  launch), and in `--release --features dev-unsealed-mcp` builds started with
+  `DEGENVIEW_NO_KEYCHAIN`; any other release build ignores that variable, so never rely on it there; use `McpHost::load_with_keys` with a shared
   `MemoryBackend` to test it. See [Sealed credentials](../mcp-implementation.md#sealed-credentials).
 - A bridge call that is dropped (client closed the stream, request cancelled) cancels its queued
   `Request` (`CancelOnDrop`); keep it that way when changing `BridgeClient::call`. rmcp does not

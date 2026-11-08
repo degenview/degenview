@@ -2344,9 +2344,11 @@ disk behind the running app is overwritten instead of being sealed in.
   failed check.
 - The adopt row trusts credentials made before this existed, and cannot tell them from one planted
   before the first launch of a sealing build. Everything after is protected.
-- Is off in unit tests and in a debug build, or one built with `--features dev-unsealed-mcp`, that
-  was started with `DEGENVIEW_NO_KEYCHAIN=1` (a key held in memory would be new each launch and
-  lock the developer out). A distributed build ignores the variable: otherwise any process that can
+- Is off in unit tests and in every debug build (each rebuild has a new code identity, so the
+  Keychain would prompt for the key on every launch), and in a `--release --features
+  dev-unsealed-mcp` build started with `DEGENVIEW_NO_KEYCHAIN=1`. A debug build run against the
+  real data directory drops the seal on its next MCP write, so a later sealed build refuses those
+  credentials until "Reset MCP Access". A distributed build ignores the variable: otherwise any process that can
   write the database could launch the app with it set, plant a credential and skip the seal.
   `SealKeyStore::system` uses the real Keychain backend directly for the same reason, not
   `default_backend()`, which swaps in memory when the variable is set.

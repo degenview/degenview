@@ -67,12 +67,14 @@ use crate::workspace::{
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-/// Whether the credential seal is off. Tests, and development builds started with
-/// `DEGENVIEW_NO_KEYCHAIN`, run without it: a key held in memory would be new on every launch.
-/// A distributed build ignores the variable, because any process that can write the database
-/// could otherwise launch the app with it set, plant a credential, and skip the seal.
-fn sealing_disabled(test: bool, dev_build: bool, env_set: bool) -> bool {
-    test || (dev_build && env_set)
+/// Whether the credential seal is off. Tests and debug builds run without it: every rebuild
+/// has a new code identity, so the Keychain would ask for the seal key's password on each launch.
+/// A `--release` build with `dev-unsealed-mcp` (a developer's scratch HOME) also needs
+/// `DEGENVIEW_NO_KEYCHAIN`. A distributed build ignores the variable, because any process that
+/// can write the database could otherwise launch the app with it set, plant a credential, and
+/// skip the seal.
+fn sealing_disabled(test: bool, debug_build: bool, dev_feature: bool, env_set: bool) -> bool {
+    test || debug_build || (dev_feature && env_set)
 }
 
 /// Recorded last-use times are written at most this often.
@@ -101,7 +103,7 @@ pub struct McpHost {
     /// The saved state failed the seal check (or its key is gone), so the Settings page offers
     /// "Reset MCP Access". Never set for a plain read failure.
     can_reset: bool,
-    /// Where the seal key lives; `None` when sealing is off (`DEGENVIEW_NO_KEYCHAIN`, tests).
+    /// Where the seal key lives; `None` when sealing is off (debug builds, tests).
     keys: Option<SealKeyStore>,
     /// The key every write is sealed with, once the saved state has been checked against it.
     sealed_by: Option<SealKey>,
@@ -130,7 +132,8 @@ impl McpHost {
         let env_set = std::env::var_os("DEGENVIEW_NO_KEYCHAIN").is_some();
         let keys = (!sealing_disabled(
             cfg!(test),
-            cfg!(any(debug_assertions, feature = "dev-unsealed-mcp")),
+            cfg!(debug_assertions),
+            cfg!(feature = "dev-unsealed-mcp"),
             env_set,
         ))
         .then(SealKeyStore::system);
@@ -5496,24 +5499,28 @@ mod tests {
 
     #[test]
     fn a_distributed_build_ignores_the_variable_that_turns_the_seal_off() {
-        // (test, dev_build, env_set)
+        // (test, debug_build, dev_feature, env_set)
         assert!(
-            sealing_disabled(true, false, false),
+            sealing_disabled(true, false, false, false),
             "unit tests run unsealed"
         );
         assert!(
-            sealing_disabled(false, true, true),
-            "debug builds honour it"
+            sealing_disabled(false, true, false, false),
+            "debug builds never prompt for the seal key"
         );
         assert!(
-            !sealing_disabled(false, true, false),
+            sealing_disabled(false, false, true, true),
+            "a dev-unsealed-mcp release build honours the variable"
+        );
+        assert!(
+            !sealing_disabled(false, false, true, false),
             "but only when it is set"
         );
         assert!(
-            !sealing_disabled(false, false, true),
+            !sealing_disabled(false, false, false, true),
             "a release build seals even with DEGENVIEW_NO_KEYCHAIN set"
         );
-        assert!(!sealing_disabled(false, false, false));
+        assert!(!sealing_disabled(false, false, false, false));
     }
 
     #[test]

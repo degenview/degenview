@@ -93,7 +93,7 @@ Unit tests cover pure engines, parsing, layout, storage, and policy. Manually ve
 outside the Pine Studio, the app has not had a complete manual GUI pass.
 
 Tests disable Keychain. For development launches set `DEGENVIEW_NO_KEYCHAIN=1` to avoid signing-based
-Keychain prompts (the MCP credential seal ignores it in release builds), and optionally `DEGENVIEW_CACHE_DIR=<scratch-dir>`. Live provider checks require
+Keychain prompts (the MCP credential seal is always off in debug builds, and ignores the variable in release builds), and optionally `DEGENVIEW_CACHE_DIR=<scratch-dir>`. Live provider checks require
 their `DEGENVIEW_ALPACA_KEY_ID`, `DEGENVIEW_ALPACA_SECRET_KEY`, or `DEGENVIEW_CMC_API_KEY` variables.
 
 ## Naming
