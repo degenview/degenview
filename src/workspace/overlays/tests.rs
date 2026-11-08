@@ -328,7 +328,6 @@ fn a_live_candle_updates_every_holder_of_the_symbol_and_nothing_else() {
     let eth = hub.feed(&market("ETHUSDT")).unwrap();
     assert_eq!(eth.candles.last().unwrap().close, 5.0);
     assert_eq!(eth.candles.len(), 2);
-    assert_eq!(eth.structure, 1, "the tail changed, not the history");
     hub.apply_live("ethusdt", &candle(12 * HOUR, 6.0));
     assert_eq!(hub.feed(&market("ETHUSDT")).unwrap().candles.len(), 3);
     assert!(hub.version() > before);
@@ -386,12 +385,12 @@ fn history_is_paged_back_toward_the_charts_own_oldest_candle_and_stops() {
     );
     hub.poll(Timeframe::Hour, &egui::Context::default(), now);
     assert_eq!(fake.pending(), 1);
-    let structure = hub.feed(&market("ETHUSDT")).unwrap().structure;
+    let revision = hub.feed(&market("ETHUSDT")).unwrap().revision;
     fake.run_jobs();
     hub.poll(Timeframe::Hour, &egui::Context::default(), now);
     let feed = hub.feed(&market("ETHUSDT")).unwrap();
     assert_eq!(feed.candles.first().unwrap().open_time, 2 * HOUR);
-    assert!(feed.structure > structure);
+    assert!(feed.revision > revision);
     assert!(
         fake.calls()
             .contains(&format!("page ETHUSDT {}", 10 * HOUR))

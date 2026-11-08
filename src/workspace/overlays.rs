@@ -18,7 +18,7 @@
 use super::chart::{CANDLE_LIMIT, merge_fetched_candles};
 use crate::model::history::{self, OlderHistory};
 use crate::model::overlay::{OverlayId, OverlayList};
-use crate::model::overlay_feed::{Change, OverlayFeed, OverlayStatus, classify};
+use crate::model::overlay_feed::{OverlayFeed, OverlayStatus};
 use crate::model::{DataSource, InstrumentId, Kline, Timeframe};
 use crate::service;
 use eframe::egui;
@@ -109,7 +109,6 @@ struct Series {
     holders: HashMap<u64, Holder>,
     candles: Arc<Vec<Kline>>,
     revision: u64,
-    structure: u64,
     status: OverlayStatus,
     /// Bumped by every request and reload; a queued job whose number is stale does nothing.
     generation: Arc<AtomicU64>,
@@ -128,7 +127,6 @@ impl Series {
             holders: HashMap::new(),
             candles: Arc::new(Vec::new()),
             revision: 0,
-            structure: 0,
             status: OverlayStatus::Queued,
             generation: Arc::new(AtomicU64::new(0)),
             inbox: None,
@@ -161,26 +159,18 @@ impl Series {
         OverlayFeed {
             candles: self.candles.clone(),
             revision: self.revision,
-            structure: self.structure,
             status: self.status.clone(),
         }
     }
 
+    /// Takes `new` as the candles; `false` (and no revision) when they are what is held.
     fn set_candles(&mut self, new: Vec<Kline>) -> bool {
-        match classify(&self.candles, &new) {
-            Change::None => false,
-            Change::Tail => {
-                self.candles = Arc::new(new);
-                self.revision += 1;
-                true
-            }
-            Change::Structure => {
-                self.candles = Arc::new(new);
-                self.revision += 1;
-                self.structure += 1;
-                true
-            }
+        if *self.candles == new {
+            return false;
         }
+        self.candles = Arc::new(new);
+        self.revision += 1;
+        true
     }
 
     /// Forgets the candles and everything learnt about the history behind them: they were
@@ -197,7 +187,6 @@ impl Series {
         if !self.candles.is_empty() {
             self.candles = Arc::new(Vec::new());
             self.revision += 1;
-            self.structure += 1;
         }
     }
 }
@@ -466,6 +455,44 @@ impl super::ChartWorkspace {
             }
         }
         self.overlay_hub.poll(self.timeframe, ctx, Instant::now());
+        // Hand each card what changed. Charts without overlays are skipped, and a chart whose
+        // overlays and hub entries are as the card last saw them costs a comparison.
+        let version = self.overlay_hub.version();
+        for chart in &mut self.charts {
+            if !chart.is_market()
+                || (chart.overlays.is_empty() && chart.chart.overlay_list().is_empty())
+            {
+                continue;
+            }
+            if !chart
+                .chart
+                .overlays_stale(version, chart.source, &chart.symbol, &chart.overlays)
+            {
+                continue;
+            }
+            let main = InstrumentId::new(chart.source, chart.symbol.clone()).key();
+            let feeds = chart
+                .overlays
+                .iter()
+                .map(|overlay| {
+                    let mut feed = self
+                        .overlay_hub
+                        .feed(&overlay.instrument)
+                        .unwrap_or_else(|| OverlayFeed::empty(OverlayStatus::Queued));
+                    if overlay.instrument.key() == main {
+                        feed.status = OverlayStatus::Blocked("Same market as the chart");
+                    }
+                    feed
+                })
+                .collect();
+            chart.chart.set_overlays(
+                chart.overlays.clone(),
+                feeds,
+                version,
+                chart.source,
+                &chart.symbol,
+            );
+        }
     }
 }
 
@@ -592,7 +619,6 @@ fn receive_older(series: &mut Series, now: Instant) -> bool {
             if added > 0 {
                 series.candles = Arc::new(candles);
                 series.revision += 1;
-                series.structure += 1;
             }
         }
         Err(_) => series.older.failed(now),

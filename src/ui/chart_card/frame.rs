@@ -387,6 +387,16 @@ impl ChartCard {
                 pine_layer.draw_behind(&clipped);
             }
         }
+        // Comparison lines: over the grid and the script visuals behind the chart, under the main
+        // series, so the chart being looked at stays on top.
+        let overlay_frame = self.overlay_frame(
+            bars,
+            view.start,
+            view.end,
+            chart_type,
+            price_scale::reference_from(shown[0].close),
+        );
+        self.paint_overlay_lines(&clipped, &overlay_frame, view, &x_for);
         if line && self.series.is_empty() {
             self.draw_line(&clipped, shown, &x_for, scale);
         } else if line {
@@ -467,6 +477,15 @@ impl ChartCard {
             scale,
             candles,
             shown_synthetic.and_then(|_| bars.last()),
+            style,
+        );
+        self.paint_overlay_tags(
+            &main_painter,
+            &clipped,
+            plot,
+            rect,
+            &overlay_frame,
+            view,
             style,
         );
         self.draw_time_axis(painter, rect, shown, &ticks, &x_for, plot.right(), style);
@@ -598,6 +617,7 @@ impl ChartCard {
                         .collect(),
                     shown_len: shown.len(),
                     tail,
+                    overlays: (&overlay_frame, view),
                 },
             );
         }

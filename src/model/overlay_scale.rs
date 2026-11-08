@@ -14,7 +14,9 @@
 //! overlay has no value at the first visible bar, its own first visible value is the baseline
 //! (a DegenView decision; TradingView's behaviour there was not verified).
 
+use super::overlay::{OverlayId, OverlayScale};
 use super::price_scale::{PriceScaleMode, display};
+use std::collections::HashMap;
 
 /// The first value in `visible` that a ratio can use. `None` when there is none: the overlay has
 /// no baseline and is not drawn on the main scale.
@@ -84,6 +86,65 @@ impl OwnFit {
         let t = (value - self.low) / (self.high - self.low);
         OWN_MARGIN + t * (1.0 - 2.0 * OWN_MARGIN)
     }
+}
+
+/// How one overlay's values become heights this frame.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Mapping {
+    /// It has nothing to draw (no usable value in view, or no reference price on the chart).
+    Unmapped,
+    /// Rebased onto the main series: see [`rebase`].
+    Main { baseline: f64, reference: f64 },
+    /// Fitted to the plot with the rest of its group.
+    Own(OwnFit),
+}
+
+impl Mapping {
+    /// The price on the chart's axis a main-scale value is drawn at.
+    pub fn rebased(self, value: f64) -> Option<f64> {
+        match self {
+            Self::Main {
+                baseline,
+                reference,
+            } => Some(rebase(value, baseline, reference)),
+            _ => None,
+        }
+    }
+}
+
+/// The mappings of a frame's overlays, in order. Each item is an overlay's scale and its values on
+/// the bars in view. `reference` is the main series' reference price (the close of the first bar
+/// shown); without one a main-scale overlay is unmapped.
+pub fn mappings(items: &[(OverlayScale, &[Option<f64>])], reference: Option<f64>) -> Vec<Mapping> {
+    let mut groups: HashMap<OverlayId, Vec<&[Option<f64>]>> = HashMap::new();
+    for (scale, values) in items {
+        if let OverlayScale::Own(group) = scale {
+            groups.entry(*group).or_default().push(values);
+        }
+    }
+    let fits: HashMap<OverlayId, Option<OwnFit>> = groups
+        .into_iter()
+        .map(|(group, slices)| (group, OwnFit::of(&slices)))
+        .collect();
+    items
+        .iter()
+        .map(|(scale, values)| match scale {
+            OverlayScale::Main => match (reference, baseline(values)) {
+                (Some(reference), Some(baseline)) if reference.is_finite() && reference != 0.0 => {
+                    Mapping::Main {
+                        baseline,
+                        reference,
+                    }
+                }
+                _ => Mapping::Unmapped,
+            },
+            OverlayScale::Own(group) => fits
+                .get(group)
+                .copied()
+                .flatten()
+                .map_or(Mapping::Unmapped, Mapping::Own),
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -176,5 +237,42 @@ mod tests {
         let doge = [Some(0.18), Some(0.22)];
         let (a, b) = (OwnFit::of(&[&btc]).unwrap(), OwnFit::of(&[&doge]).unwrap());
         assert!((a.fraction(110_000.0) - b.fraction(0.22)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn main_overlays_get_their_own_baseline_and_own_groups_share_a_fit() {
+        let a = [None, Some(10.0), Some(20.0)];
+        let b = [Some(4.0), Some(8.0), None];
+        let c = [Some(1000.0), Some(2000.0), None];
+        let items: Vec<(OverlayScale, &[Option<f64>])> = vec![
+            (OverlayScale::Main, &a),
+            (OverlayScale::Own(OverlayId(7)), &b),
+            (OverlayScale::Own(OverlayId(7)), &c),
+            (OverlayScale::Main, &[None, None, None]),
+        ];
+        let mapped = mappings(&items, Some(100.0));
+        assert_eq!(
+            mapped[0],
+            Mapping::Main {
+                baseline: 10.0,
+                reference: 100.0
+            }
+        );
+        let (Mapping::Own(first), Mapping::Own(second)) = (mapped[1], mapped[2]) else {
+            panic!("{mapped:?}")
+        };
+        assert_eq!(first, second);
+        assert_eq!((first.low, first.high), (4.0, 2000.0));
+        assert_eq!(mapped[3], Mapping::Unmapped);
+        assert_eq!(mapped[0].rebased(20.0), Some(200.0));
+    }
+
+    #[test]
+    fn without_a_reference_price_a_main_overlay_is_not_drawn() {
+        let a = [Some(1.0)];
+        let items: Vec<(OverlayScale, &[Option<f64>])> = vec![(OverlayScale::Main, &a)];
+        assert_eq!(mappings(&items, None), [Mapping::Unmapped]);
+        assert_eq!(mappings(&items, Some(0.0)), [Mapping::Unmapped]);
+        assert_eq!(mappings(&items, Some(f64::NAN)), [Mapping::Unmapped]);
     }
 }

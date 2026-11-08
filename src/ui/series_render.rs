@@ -340,7 +340,7 @@ fn value_points(frame: &SeriesFrame, source: PriceSource) -> Vec<Option<Pos2>> {
 }
 
 /// Runs of consecutive points: a missing value ends the run so a gap is never bridged.
-fn runs(points: &[Option<Pos2>]) -> Vec<Vec<Pos2>> {
+pub(crate) fn runs(points: &[Option<Pos2>]) -> Vec<Vec<Pos2>> {
     let mut runs: Vec<Vec<Pos2>> = Vec::new();
     let mut open = false;
     for point in points {
@@ -356,7 +356,7 @@ fn runs(points: &[Option<Pos2>]) -> Vec<Vec<Pos2>> {
     runs
 }
 
-fn stroke_line(painter: &Painter, points: &[Pos2], stroke: Stroke, dash: LineDash) {
+pub(crate) fn stroke_line(painter: &Painter, points: &[Pos2], stroke: Stroke, dash: LineDash) {
     if points.len() < 2 {
         return;
     }

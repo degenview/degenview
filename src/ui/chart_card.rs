@@ -154,6 +154,7 @@ pub struct CrosshairInfo {
 use body::{BodyArgs, OverlayResults};
 pub use context::ContextRequest;
 use live_overlays::LiveOverlays;
+pub use overlays::LineState;
 #[cfg(test)]
 use snapshot::SnapshotError;
 pub use snapshot::SnapshotInput;
@@ -299,6 +300,9 @@ pub struct ChartCard {
     series: Vec<SeriesLine>,
     /// During replay, the last time the lines may reach.
     series_cutoff: Option<i64>,
+    /// The markets compared on this chart: their configuration and candles, handed in by the
+    /// workspace. Drawn under the main series on the chart's own time axis.
+    overlay: overlays::OverlayState,
     /// What part of the chart is on screen: the one place every pan, zoom and scale gesture
     /// writes and every painter reads.
     viewport: ChartViewport,
@@ -658,6 +662,7 @@ impl Default for ChartCard {
             title: None,
             series: Vec::new(),
             series_cutoff: None,
+            overlay: overlays::OverlayState::default(),
             viewport: ChartViewport::default(),
             gesture: None,
             newest_bar: None,
@@ -1630,6 +1635,15 @@ impl ChartCard {
                 high = high.max(candle.high);
             }
         }
+        // So does every comparison line drawn on the chart's own scale, rebased as it will be drawn.
+        let reference = price_scale::reference_from(shown[0].close);
+        if let Some((from, to)) = self
+            .overlay_frame(candles, start, end, chart_type, reference)
+            .extent()
+        {
+            low = low.min(from);
+            high = high.max(to);
+        }
         // Whatever an overlay script draws has to fit too.
         for value in &self.script_extent.values {
             low = low.min(*value);
@@ -1656,7 +1670,7 @@ impl ChartCard {
                 mode,
                 // Percent and Indexed measure from the first bar shown, so a pan moves the
                 // reference and the axis follows; the map itself does not change.
-                reference: price_scale::reference_from(shown[0].close),
+                reference,
             },
             slot_width: self.slot_width(plot),
             lead: window.lead,
@@ -2868,9 +2882,21 @@ impl ChartCard {
             Color32::WHITE,
         );
 
-        if style.ohlc_readout {
-            self.draw_readout(painter, plot, info, index, candle, show_volume);
-        }
+        let readout_bottom = if style.ohlc_readout {
+            self.draw_readout(painter, plot, info, index, candle, show_volume)
+        } else {
+            plot.top() - 4.0
+        };
+        let (overlay_frame, overlay_view) = info.overlays;
+        self.paint_overlay_readout(
+            painter,
+            plot,
+            readout_bottom,
+            overlay_frame,
+            overlay_view,
+            index,
+            x,
+        );
 
         // Line, area and baseline charts follow one value: ring it on the bar under the pointer.
         if info.chart_type.data_class() == DataClass::StandardLine
@@ -2905,7 +2931,7 @@ impl ChartCard {
         index: usize,
         candle: &Kline,
         show_volume: bool,
-    ) {
+    ) -> f32 {
         let color = if candle.is_up() {
             self.bullish_color()
         } else {
@@ -2961,7 +2987,7 @@ impl ChartCard {
                 ));
             }
         }
-        paint_ohlc_readout(painter, plot, &items, color);
+        paint_ohlc_readout(painter, plot, &items, color)
     }
 }
 
@@ -2977,6 +3003,8 @@ struct CrosshairBars<'a> {
     /// Bars in view, and how many lie after them.
     shown_len: usize,
     tail: usize,
+    /// The comparison lines, and the view they were resolved for.
+    overlays: (&'a overlays::OverlayFrame<'a>, &'a View),
 }
 
 /// The smallest distance between two neighbouring grid ticks, `0.0` when there are fewer than
@@ -3103,7 +3131,7 @@ fn paint_ohlc_readout(
     plot: Rect,
     items: &[(String, String)],
     color: Color32,
-) {
+) -> f32 {
     let font = FontId::monospace(10.0);
     let label_color = theme::pick(Color32::WHITE, Color32::BLACK);
     let galleys: Vec<_> = items
@@ -3136,8 +3164,9 @@ fn paint_ohlc_readout(
     );
 
     let origin = plot.min + Vec2::splat(READOUT_MARGIN) - Vec2::new(0.0, 1.0);
+    let boxed = Rect::from_min_size(origin, content + READOUT_PAD * 2.0);
     painter.rect(
-        Rect::from_min_size(origin, content + READOUT_PAD * 2.0),
+        boxed,
         4.0,
         theme::chrome().gamma_multiply(0.94),
         Stroke::new(1.0, theme::border()),
@@ -3147,6 +3176,7 @@ fn paint_ohlc_readout(
         let at = origin + READOUT_PAD + Vec2::new(x, row as f32 * (row_height + READOUT_ROW_GAP));
         painter.galley(at, galley, color);
     }
+    boxed.bottom()
 }
 
 /// A color at the given alpha, premultiplied for egui's blending.
@@ -3160,6 +3190,7 @@ mod context;
 mod frame;
 mod live_overlays;
 mod navigation;
+mod overlays;
 mod snapshot;
 mod sync;
 mod table;
@@ -3171,6 +3202,8 @@ mod time_lock;
 
 #[cfg(test)]
 mod canvas_tests;
+#[cfg(test)]
+mod overlay_tests;
 
 #[cfg(test)]
 mod snapshot_tests;
