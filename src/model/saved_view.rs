@@ -62,6 +62,7 @@ mod tests {
                 pm_series: Vec::new(),
                 image_url: None,
                 card: None,
+                overlays: Default::default(),
             }],
             columns: Some(vec![ChartColumn::new(1, vec![1])]),
             candle_count: 200,

@@ -119,6 +119,7 @@ mod tests {
                 scale_mode: PriceScaleMode::from_log_flag(logarithmic),
                 appearance: crate::model::ChartAppearance::default(),
                 card: None,
+                overlays: Default::default(),
             }],
             columns: vec![vec![1]],
             sync: Default::default(),

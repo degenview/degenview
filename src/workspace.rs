@@ -990,6 +990,7 @@ mod tests {
                     pm_series: Vec::new(),
                     image_url: None,
                     card: None,
+                    overlays: Default::default(),
                 },
                 PersistedChart {
                     id: 2,
@@ -1033,6 +1034,7 @@ mod tests {
                     pm_series: Vec::new(),
                     image_url: None,
                     card: None,
+                    overlays: Default::default(),
                 },
             ],
             columns: vec![ChartColumn::new(10, vec![1]), ChartColumn::new(11, vec![2])],

@@ -92,6 +92,9 @@ pub struct ChartConfig {
     /// Set for a portfolio card; its kind, scope and range are part of the layout.
     #[serde(default)]
     pub card: Option<super::portfolio_card::PortfolioCard>,
+    /// The compared markets and how they look: a change is a change to the layout.
+    #[serde(default, skip_serializing_if = "super::overlay::OverlayList::is_empty")]
+    pub overlays: super::overlay::OverlayList,
 }
 
 /// The part of a workspace a saved layout owns, reduced to what decides
@@ -193,6 +196,7 @@ mod tests {
                     scale_mode: Default::default(),
                     appearance: crate::model::ChartAppearance::default(),
                     card: None,
+                    overlays: Default::default(),
                 },
                 ChartConfig {
                     id: 2,
@@ -201,6 +205,7 @@ mod tests {
                     scale_mode: crate::model::price_scale::PriceScaleMode::Logarithmic,
                     appearance: crate::model::ChartAppearance::default(),
                     card: None,
+                    overlays: Default::default(),
                 },
             ],
             columns: vec![vec![1], vec![2]],
@@ -225,6 +230,7 @@ mod tests {
                 scale_mode: Default::default(),
                 appearance: crate::model::ChartAppearance::default(),
                 card: None,
+                overlays: Default::default(),
             }],
             columns: vec![vec![1]],
             sync: Default::default(),

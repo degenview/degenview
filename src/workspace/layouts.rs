@@ -41,6 +41,7 @@ impl ChartWorkspace {
                     pm_series: chart.pm_series.clone(),
                     image_url: chart.image_url.clone(),
                     card: chart.card,
+                    overlays: chart.overlays.clone(),
                 })
                 .collect(),
             columns: self.columns.clone(),
@@ -64,6 +65,7 @@ impl ChartWorkspace {
                     scale_mode: chart.scale_mode,
                     appearance: chart.chart.appearance(),
                     card: chart.card,
+                    overlays: chart.overlays.clone(),
                 })
                 .collect(),
             columns: self

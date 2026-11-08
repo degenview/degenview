@@ -1,6 +1,7 @@
 //! The per-chart state a saved layout restores. Lives in `model/` (not `workspace.rs`) so the
 //! `SavedView` model can reference it without depending on the workspace.
 
+use crate::model::overlay::OverlayList;
 use crate::model::pine_instance::PineInstance;
 use crate::model::portfolio_card::PortfolioCard;
 use crate::model::price_scale::PriceScaleMode;
@@ -50,6 +51,10 @@ pub struct PersistedChart {
     /// A portfolio card (`symbol` is its key and `source` a placeholder); `None` for a market.
     #[serde(default)]
     pub card: Option<PortfolioCard>,
+    /// Markets compared on this chart, in visual order. Left out of the row while empty, so a
+    /// layout that uses none is byte-for-byte what an older build writes and syncs.
+    #[serde(default, skip_serializing_if = "OverlayList::is_empty")]
+    pub overlays: OverlayList,
 }
 
 impl PersistedChart {
@@ -87,6 +92,7 @@ mod tests {
             pm_series: Vec::new(),
             image_url: None,
             card: None,
+            overlays: Default::default(),
         }
     }
 
@@ -374,5 +380,30 @@ mod tests {
         assert!(json.contains(r#""axis_small_prices":"decimals""#), "{json}");
         let back: ChartAppearance = serde_json::from_str(&json).unwrap();
         assert_eq!(back, appearance);
+    }
+
+    #[test]
+    fn overlays_round_trip_and_an_old_row_has_none() {
+        use crate::model::overlay::OverlayList;
+        use crate::model::InstrumentId;
+        let mut saved = chart();
+        let main = InstrumentId::new(DataSource::Binance, "BTCUSDT");
+        saved.overlays.add(&main, InstrumentId::new(DataSource::Binance, "ETHUSDT"), None);
+        let decoded: PersistedChart =
+            serde_json::from_str(&serde_json::to_string(&saved).unwrap()).unwrap();
+        assert_eq!(decoded, saved);
+
+        let mut row = serde_json::to_value(chart()).unwrap();
+        row.as_object_mut().unwrap().remove("overlays");
+        let restored: PersistedChart = serde_json::from_value(row).unwrap();
+        assert_eq!(restored.overlays, OverlayList::new());
+    }
+
+    #[test]
+    fn a_chart_without_overlays_writes_exactly_what_an_older_build_wrote() {
+        // No `overlays` key at all, so an older build re-saving the layout changes nothing and
+        // sync sees no difference.
+        let row = serde_json::to_value(chart()).unwrap();
+        assert!(!row.as_object().unwrap().contains_key("overlays"));
     }
 }
