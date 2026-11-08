@@ -73,7 +73,8 @@ const fn dark_syntax(role: SyntaxRole) -> Rgba {
     Rgba::hex(match role {
         R::Default | R::UserVariable | R::Parameter | R::UserFunction | R::Punctuation => 0xEBEBF0,
         R::Comment => 0x98989D,
-        R::String | R::Escape => 0xFF453A,
+        // Green, as in most dark editors; the Light theme keeps its red.
+        R::String | R::Escape => 0x6AAB73,
         R::Number => 0xFF9F0A,
         R::Literal | R::BuiltinConstant => 0x63E6E2,
         R::BuiltinVariable => 0x30D158,
