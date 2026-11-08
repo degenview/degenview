@@ -219,6 +219,9 @@ impl IndicatorPicker {
             SIZE.x.min(screen.x - 32.0).max(620.0),
             SIZE.y.min(screen.y - 32.0).max(440.0),
         );
+        // A click changes the selection, the section or the favorites after the panels were drawn
+        // for this frame; without another frame they would show the old state until the next input.
+        let state_before = (self.selected.clone(), self.section, self.favorites.clone());
         let mut output = None;
         let mut section_to = None;
         let mut query_changed = false;
@@ -308,7 +311,7 @@ impl IndicatorPicker {
             self.selected = None;
         }
         if let Some(entry) = &picked {
-            self.selected = Some(entry.key.clone());
+            // `resolve_selection` already kept the selection; a click this frame may have moved it.
             let status = availability(entry, target);
             if keys.favorite {
                 self.toggle_favorite(&entry.key);
@@ -337,6 +340,9 @@ impl IndicatorPicker {
                 self.open = false;
             }
             _ => {}
+        }
+        if state_before != (self.selected.clone(), self.section, self.favorites.clone()) {
+            ctx.request_repaint();
         }
         output
     }

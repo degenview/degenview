@@ -65,6 +65,21 @@ impl Rig {
         output
     }
 
+    fn frame_with_output(
+        &mut self,
+        events: Vec<egui::Event>,
+    ) -> (Option<Output>, egui::FullOutput) {
+        let mut found = None;
+        let picker = &mut self.picker;
+        let target = self.target.as_ref();
+        let output = self.screen.run(events, |ui| {
+            if let Some(output) = picker.show(ui.ctx(), target) {
+                found = Some(output);
+            }
+        });
+        (found, output)
+    }
+
     fn key(&mut self, key: Key, modifiers: Modifiers) -> Option<Output> {
         self.frame(vec![press(key, modifiers)])
     }
@@ -278,6 +293,43 @@ fn a_narrow_window_drops_the_detail_panel_and_still_draws() {
     assert_eq!(
         rig.key(Key::Enter, Modifiers::NONE),
         apply(Action::Add(BuiltIn::Rsi), false)
+    );
+}
+
+#[test]
+fn a_click_on_a_card_selects_it_and_asks_for_another_frame() {
+    let mut rig = Rig::new(1100.0);
+    let catalog = indicator_catalog::all(&[]);
+    let blocks = sections::blocks(Section::Discover, &catalog, &HashSet::new(), 1);
+    let second = blocks[0].entries[1].key.clone();
+    assert_ne!(rig.picker.selected.as_ref(), Some(&second));
+
+    // The second card of the first row, found from the layout: the modal is centred.
+    let modal_left = (1100.0 - 1040.0) / 2.0;
+    let modal_top = (760.0 - 680.0) / 2.0;
+    let grid_left = modal_left + SIDEBAR + 16.0;
+    let card_width = ((1040.0 - SIDEBAR - DETAIL - 32.0) - GAP) / 2.0;
+    let at = pos2(
+        grid_left + card_width + GAP + card_width / 2.0,
+        modal_top + HEADER + 12.0 + 24.0 + GAP + CARD_HEIGHT / 2.0,
+    );
+    let button = |pressed| egui::Event::PointerButton {
+        pos: at,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: Modifiers::NONE,
+    };
+    rig.frame(vec![egui::Event::PointerMoved(at)]);
+    rig.frame(vec![button(true)]);
+    let (_, output) = rig.frame_with_output(vec![button(false)]);
+    assert_eq!(rig.picker.selected, Some(second));
+    // The detail panel was drawn before the click was seen, so it needs one more frame.
+    assert!(
+        output
+            .viewport_output
+            .values()
+            .any(|viewport| viewport.repaint_delay.is_zero()),
+        "no repaint was requested after the click"
     );
 }
 
