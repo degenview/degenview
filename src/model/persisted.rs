@@ -384,11 +384,15 @@ mod tests {
 
     #[test]
     fn overlays_round_trip_and_an_old_row_has_none() {
-        use crate::model::overlay::OverlayList;
         use crate::model::InstrumentId;
+        use crate::model::overlay::OverlayList;
         let mut saved = chart();
         let main = InstrumentId::new(DataSource::Binance, "BTCUSDT");
-        saved.overlays.add(&main, InstrumentId::new(DataSource::Binance, "ETHUSDT"), None);
+        saved.overlays.add(
+            &main,
+            InstrumentId::new(DataSource::Binance, "ETHUSDT"),
+            None,
+        );
         let decoded: PersistedChart =
             serde_json::from_str(&serde_json::to_string(&saved).unwrap()).unwrap();
         assert_eq!(decoded, saved);

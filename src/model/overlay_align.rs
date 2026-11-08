@@ -134,14 +134,19 @@ mod tests {
         let chart = bars(5, 0, DAY);
         let crypto: Vec<_> = (0..7).map(|n| candle(n * DAY, 1.0 + n as f64)).collect();
         let aligned = align(&chart, DAY, &crypto, DAY, PriceSource::Close);
-        assert_eq!(aligned, [Some(1.0), Some(2.0), Some(3.0), Some(4.0), Some(5.0)]);
+        assert_eq!(
+            aligned,
+            [Some(1.0), Some(2.0), Some(3.0), Some(4.0), Some(5.0)]
+        );
     }
 
     #[test]
     fn another_providers_day_stamp_still_lands_on_the_same_day() {
         // Chart: crypto days at 00:00 UTC. Overlay: US stock days opening 05:00 UTC.
         let chart = bars(4, 0, DAY);
-        let stock: Vec<_> = (0..4).map(|n| candle(n * DAY + 5 * HOUR, 50.0 + n as f64)).collect();
+        let stock: Vec<_> = (0..4)
+            .map(|n| candle(n * DAY + 5 * HOUR, 50.0 + n as f64))
+            .collect();
         let aligned = align(&chart, DAY, &stock, DAY, PriceSource::Close);
         assert_eq!(aligned, [Some(50.0), Some(51.0), Some(52.0), Some(53.0)]);
         // And the other way round: a stock chart, crypto overlay.
@@ -209,7 +214,10 @@ mod tests {
         let starts = [0, 31 * DAY, 59 * DAY, 90 * DAY];
         let chart: Vec<i64> = starts.to_vec();
         let month = 30 * DAY;
-        let overlay: Vec<_> = starts.iter().map(|s| candle(*s, 1.0 + (*s / DAY) as f64)).collect();
+        let overlay: Vec<_> = starts
+            .iter()
+            .map(|s| candle(*s, 1.0 + (*s / DAY) as f64))
+            .collect();
         let aligned = align(&chart, month, &overlay, month, PriceSource::Close);
         assert!(aligned.iter().all(Option::is_some), "{aligned:?}");
     }
@@ -217,20 +225,45 @@ mod tests {
     #[test]
     fn patching_the_tail_equals_aligning_everything_again() {
         let chart = bars(50, 0, HOUR);
-        let mut overlay: Vec<_> = (0..50).map(|n| candle(n * HOUR, 100.0 + n as f64)).collect();
+        let mut overlay: Vec<_> = (0..50)
+            .map(|n| candle(n * HOUR, 100.0 + n as f64))
+            .collect();
         let mut aligned = align(&chart, HOUR, &overlay, HOUR, PriceSource::Close);
         overlay[49] = candle(49 * HOUR, 777.0);
-        patch_tail(&mut aligned, &chart, HOUR, &overlay[48..], HOUR, PriceSource::Close);
-        assert_eq!(aligned, align(&chart, HOUR, &overlay, HOUR, PriceSource::Close));
+        patch_tail(
+            &mut aligned,
+            &chart,
+            HOUR,
+            &overlay[48..],
+            HOUR,
+            PriceSource::Close,
+        );
+        assert_eq!(
+            aligned,
+            align(&chart, HOUR, &overlay, HOUR, PriceSource::Close)
+        );
         // A new live bar the chart has not got yet is ignored until the chart has it.
         overlay.push(candle(50 * HOUR, 5.0));
-        patch_tail(&mut aligned, &chart, HOUR, &overlay[49..], HOUR, PriceSource::Close);
-        assert_eq!(aligned, align(&chart, HOUR, &overlay, HOUR, PriceSource::Close));
+        patch_tail(
+            &mut aligned,
+            &chart,
+            HOUR,
+            &overlay[49..],
+            HOUR,
+            PriceSource::Close,
+        );
+        assert_eq!(
+            aligned,
+            align(&chart, HOUR, &overlay, HOUR, PriceSource::Close)
+        );
     }
 
     #[test]
     fn an_empty_chart_or_overlay_aligns_to_nothing() {
         assert!(align(&[], DAY, &[candle(0, 1.0)], DAY, PriceSource::Close).is_empty());
-        assert_eq!(align(&bars(3, 0, DAY), DAY, &[], DAY, PriceSource::Close), [None, None, None]);
+        assert_eq!(
+            align(&bars(3, 0, DAY), DAY, &[], DAY, PriceSource::Close),
+            [None, None, None]
+        );
     }
 }

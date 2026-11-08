@@ -40,6 +40,7 @@ pub mod measure;
 pub mod object_tree;
 pub mod overlay;
 pub mod overlay_align;
+pub mod overlay_feed;
 pub mod overlay_scale;
 pub mod paper;
 pub mod paper_engine;

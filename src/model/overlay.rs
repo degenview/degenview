@@ -5,9 +5,9 @@
 //! Pure: no egui. An overlay is not a chart, an indicator or a script: it is owned by one chart,
 //! has a stable id, and never changes what a script, an alert, a drawing or a paper order reads.
 
+use super::InstrumentId;
 use super::chart_type::{LineDash, PriceSource};
 use super::editor_theme::Rgba;
-use super::InstrumentId;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// Identity of one overlay inside its chart. Assigned once and never changed; it is not an index.
@@ -76,7 +76,11 @@ fn default_width() -> f32 {
 /// A stored width is clamped and never NaN, which is what lets `ChartOverlay` be `Eq`.
 fn clean_width<'de, D: Deserializer<'de>>(deserializer: D) -> Result<f32, D::Error> {
     let width = f32::deserialize(deserializer)?;
-    Ok(if width.is_finite() { width.clamp(MIN_WIDTH, MAX_WIDTH) } else { DEFAULT_WIDTH })
+    Ok(if width.is_finite() {
+        width.clamp(MIN_WIDTH, MAX_WIDTH)
+    } else {
+        DEFAULT_WIDTH
+    })
 }
 
 mod hex_color {
@@ -100,9 +104,11 @@ impl Eq for ChartOverlay {}
 impl ChartOverlay {
     /// The name the legend shows.
     pub fn name(&self) -> String {
-        self.title
-            .clone()
-            .unwrap_or_else(|| self.instrument.source.display_symbol(&self.instrument.symbol))
+        self.title.clone().unwrap_or_else(|| {
+            self.instrument
+                .source
+                .display_symbol(&self.instrument.symbol)
+        })
     }
 
     /// The group id of an overlay on its own scale.
@@ -183,7 +189,13 @@ impl OverlayList {
 
     /// An id no overlay of this chart has.
     fn next_id(&self) -> OverlayId {
-        OverlayId(self.0.iter().map(|overlay| overlay.id.0).max().map_or(1, |top| top + 1))
+        OverlayId(
+            self.0
+                .iter()
+                .map(|overlay| overlay.id.0)
+                .max()
+                .map_or(1, |top| top + 1),
+        )
     }
 
     /// The first palette colour no overlay uses; every colour taken, the palette cycles.
@@ -208,7 +220,11 @@ impl OverlayList {
         if main.key() == instrument.key() {
             return AddOutcome::MainMarket;
         }
-        if let Some(existing) = self.0.iter().find(|o| o.instrument.key() == instrument.key()) {
+        if let Some(existing) = self
+            .0
+            .iter()
+            .find(|o| o.instrument.key() == instrument.key())
+        {
             return AddOutcome::Duplicate(existing.id);
         }
         let id = self.next_id();
@@ -246,7 +262,11 @@ impl OverlayList {
     }
 
     pub fn set_width(&mut self, id: OverlayId, width: f32) -> bool {
-        let width = if width.is_finite() { width.clamp(MIN_WIDTH, MAX_WIDTH) } else { DEFAULT_WIDTH };
+        let width = if width.is_finite() {
+            width.clamp(MIN_WIDTH, MAX_WIDTH)
+        } else {
+            DEFAULT_WIDTH
+        };
         self.get_mut(id).is_some_and(|overlay| {
             let changed = overlay.width != width;
             overlay.width = width;
@@ -273,7 +293,9 @@ impl OverlayList {
 
     /// Moves an overlay in the visual order; `false` when it is already there or unknown.
     pub fn reorder(&mut self, id: OverlayId, to: Move) -> bool {
-        let Some(from) = self.position(id) else { return false };
+        let Some(from) = self.position(id) else {
+            return false;
+        };
         let last = self.0.len() - 1;
         let target = match to {
             Move::Forward => (from + 1).min(last),
@@ -317,7 +339,10 @@ mod tests {
         let main = market("BTCUSDT");
         let mut list = OverlayList::new();
         for symbol in symbols {
-            assert!(matches!(list.add(&main, market(symbol), None), AddOutcome::Added(_)));
+            assert!(matches!(
+                list.add(&main, market(symbol), None),
+                AddOutcome::Added(_)
+            ));
         }
         list
     }
@@ -338,8 +363,13 @@ mod tests {
         let main = market("BTCUSDT");
         let mut list = OverlayList::new();
         assert_eq!(list.add(&main, market("btc"), None), AddOutcome::MainMarket);
-        let AddOutcome::Added(id) = list.add(&main, market("ETHUSDT"), None) else { panic!() };
-        assert_eq!(list.add(&main, market("eth/usdt"), None), AddOutcome::Duplicate(id));
+        let AddOutcome::Added(id) = list.add(&main, market("ETHUSDT"), None) else {
+            panic!()
+        };
+        assert_eq!(
+            list.add(&main, market("eth/usdt"), None),
+            AddOutcome::Duplicate(id)
+        );
         assert_eq!(list.len(), 1);
         // The same ticker on another provider is another market.
         let other = InstrumentId::new(DataSource::Coinbase, "ETH-USD");
@@ -351,7 +381,11 @@ mod tests {
         let main = market("BTCUSDT");
         let mut list = OverlayList::new();
         for n in 0..1_000 {
-            let added = list.add(&main, InstrumentId::new(DataSource::Alpaca, format!("S{n}")), None);
+            let added = list.add(
+                &main,
+                InstrumentId::new(DataSource::Alpaca, format!("S{n}")),
+                None,
+            );
             assert!(matches!(added, AddOutcome::Added(_)));
         }
         assert_eq!(list.len(), 1_000);
@@ -359,7 +393,9 @@ mod tests {
 
     #[test]
     fn colours_are_distinct_until_the_palette_is_used_up_then_cycle() {
-        let symbols: Vec<String> = (0..PALETTE.len() + 2).map(|n| format!("S{n}USDT")).collect();
+        let symbols: Vec<String> = (0..PALETTE.len() + 2)
+            .map(|n| format!("S{n}USDT"))
+            .collect();
         let refs: Vec<&str> = symbols.iter().map(String::as_str).collect();
         let list = list_of(&refs);
         let colors: Vec<_> = list.iter().map(|o| o.color).collect();
@@ -458,7 +494,8 @@ mod tests {
         let mut list = OverlayList::new();
         let ghost = InstrumentId::new(DataSource::Alpaca, "DELISTED");
         list.add(&main, ghost.clone(), None);
-        let again: OverlayList = serde_json::from_str(&serde_json::to_string(&list).unwrap()).unwrap();
+        let again: OverlayList =
+            serde_json::from_str(&serde_json::to_string(&list).unwrap()).unwrap();
         assert_eq!(again.as_slice()[0].instrument, ghost);
     }
 }

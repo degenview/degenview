@@ -57,6 +57,7 @@ mod input;
 mod layouts;
 mod links;
 mod live;
+mod overlays;
 mod paper;
 mod pine;
 mod pine_logs;
@@ -176,6 +177,8 @@ pub struct ChartWorkspace {
     /// How portfolio cards reach the app's portfolios; set by the window that draws this tab.
     card_env: Option<PortfolioCardEnv>,
     live_feed: Option<BinanceLiveFeed>,
+    /// The candles of every overlay market on this workspace's charts, fetched once per market.
+    overlay_hub: overlays::OverlayHub,
     settings_chart: Option<u64>,
     /// The Inputs and Style popover of an applied script, up beside its chip or settings row.
     script_popover: Option<PineSettingsPopover>,
@@ -364,6 +367,7 @@ impl ChartWorkspace {
             unseen_alerts: 0,
             card_env: None,
             live_feed: None,
+            overlay_hub: overlays::OverlayHub::new(),
             settings_chart: None,
             script_popover: None,
             drawing_props: None,
@@ -641,6 +645,7 @@ impl ChartWorkspace {
             }
         }
 
+        self.tick_overlays(&ctx);
         self.update_live_feed(&ctx);
         self.sync_paper_quotes(paper_host);
         self.configure_paper_cards(paper_host);

@@ -16,7 +16,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver};
 use std::time::{Duration, Instant};
 
-const CANDLE_LIMIT: u32 = 500;
+pub(super) const CANDLE_LIMIT: u32 = 500;
 pub(super) const REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 /// How often a rate-limited provider (one request every few seconds) is asked again, and how long
 /// it is left alone after an error rather than spending the limiter on retries.
@@ -397,7 +397,7 @@ pub(super) struct OlderRequest {
 }
 
 /// A websocket update for the current or a later bar wins over an older REST snapshot.
-fn merge_fetched_candles(
+pub(super) fn merge_fetched_candles(
     mut fetched: Vec<Kline>,
     current: &[Kline],
     last_live_open_time: Option<i64>,

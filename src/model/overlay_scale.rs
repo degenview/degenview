@@ -70,7 +70,10 @@ impl OwnFit {
         }
         if high - low <= f64::EPSILON * high.abs().max(1.0) {
             let pad = (high.abs() * 0.01).max(f64::MIN_POSITIVE);
-            return Some(Self { low: low - pad, high: high + pad });
+            return Some(Self {
+                low: low - pad,
+                high: high + pad,
+            });
         }
         Some(Self { low, high })
     }
@@ -90,7 +93,10 @@ mod tests {
     #[test]
     fn the_baseline_is_the_first_usable_visible_value() {
         assert_eq!(baseline(&[None, Some(4.0), Some(5.0)]), Some(4.0));
-        assert_eq!(baseline(&[None, Some(f64::NAN), Some(0.0), Some(-1.0)]), None);
+        assert_eq!(
+            baseline(&[None, Some(f64::NAN), Some(0.0), Some(-1.0)]),
+            None
+        );
         assert_eq!(baseline(&[]), None);
     }
 
@@ -127,9 +133,17 @@ mod tests {
     fn the_legend_reads_the_overlays_own_change_in_relative_modes() {
         let value = legend_value(PriceScaleMode::Percent, Some(50.0), 60.0);
         assert!((value - 20.0).abs() < 1e-9);
-        assert!((legend_value(PriceScaleMode::IndexedTo100, Some(50.0), 60.0) - 120.0).abs() < 1e-9);
-        assert_eq!(legend_value(PriceScaleMode::Regular, Some(50.0), 60.0), 60.0);
-        assert_eq!(legend_value(PriceScaleMode::Logarithmic, Some(50.0), 60.0), 60.0);
+        assert!(
+            (legend_value(PriceScaleMode::IndexedTo100, Some(50.0), 60.0) - 120.0).abs() < 1e-9
+        );
+        assert_eq!(
+            legend_value(PriceScaleMode::Regular, Some(50.0), 60.0),
+            60.0
+        );
+        assert_eq!(
+            legend_value(PriceScaleMode::Logarithmic, Some(50.0), 60.0),
+            60.0
+        );
         // No baseline: the real price rather than nothing.
         assert_eq!(legend_value(PriceScaleMode::Percent, None, 60.0), 60.0);
     }
