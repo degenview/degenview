@@ -35,6 +35,17 @@ pub const fn credential_stored_hint() -> &'static str {
     }
 }
 
+/// Where a saved key stays, as a sentence: "The key stays in this Mac's Keychain."
+pub const fn key_stays_stored() -> &'static str {
+    if cfg!(target_os = "macos") {
+        "The key stays in this Mac's Keychain."
+    } else if cfg!(windows) {
+        "The key stays in Windows Credential Manager on this computer."
+    } else {
+        "The key stays in this computer's secure storage."
+    }
+}
+
 /// The hint under a credential field that already holds a key.
 pub const fn credential_saved_hint() -> &'static str {
     if cfg!(target_os = "macos") {
@@ -110,6 +121,7 @@ mod tests {
     fn mac_words_stay_mac_only() {
         if cfg!(target_os = "macos") {
             assert_eq!(in_secret_store(), "in your Keychain");
+            assert_eq!(key_stays_stored(), "The key stays in this Mac's Keychain.");
             assert_eq!(file_manager(), "Finder");
             assert!(has_system_notifications());
         } else if cfg!(windows) {

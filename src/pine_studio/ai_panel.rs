@@ -440,7 +440,10 @@ fn setup_card(ui: &mut Ui, problem: &str) -> bool {
             });
             ui.add(
                 egui::Label::new(kit::text(
-                    "The key stays in this Mac's Keychain. The script is sent to the provider you pick.",
+                    format!(
+                        "{} The script is sent to the provider you pick.",
+                        crate::platform::key_stays_stored()
+                    ),
                     kit::size::CAPTION + 0.5,
                     kit::REGULAR,
                     theme::text_secondary(),
