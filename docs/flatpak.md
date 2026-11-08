@@ -73,13 +73,14 @@ not published.
 
 `flatpak update` follows an installed app's own branch and never moves it to another, and the app's
 Release Candidate channel accepts final releases. So the repo serves `beta` from the **newest release
-of any kind, by version**: a final release is copied onto `beta` as well as `stable`, and an installed
-`//beta` follows it from release candidates to finals and back to the next candidate. `stable` is the
-newest final.
+that channel offers, by version**: a final or an `-rc.N`, never an `-alpha.N` or `-beta.N` (those are
+on `dev` and not published). A final release is copied onto `beta` as well as `stable`, and an
+installed `//beta` follows it from release candidates to finals and on to the next candidate. `stable`
+is the newest final.
 
 The repo itself lives in `degenview/flatpak` and is served at `https://flatpak.degenview.app`.
 It pulls: a scheduled and manual workflow lists this repo's releases, picks the newest final (for
-`stable`) and the newest release overall (for `beta`), verifies every bundle (`gh release verify-asset`, `gh attestation verify --repo
+`stable`) and the newest final or `-rc.N` (for `beta`), verifies every bundle (`gh release verify-asset`, `gh attestation verify --repo
 degenview/degenview`), imports them into an OSTree repo, signs it with a GPG key that only that
 repo's `publish` environment holds, and deploys it to Pages. Nothing in this repo holds a token for
 it. Users add it with:
