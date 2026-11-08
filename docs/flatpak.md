@@ -61,10 +61,13 @@ remote to a sandboxed app. **Not built, not verified.**
 
 ## Hosted repo
 
-Releases build one Flatpak **branch per channel**: `stable` for a final release, `beta` for a
-release candidate (the same hyphen-in-the-tag rule as `--prerelease`). `release.yml` passes it to
+Releases build one Flatpak **branch per update channel**: `stable` for a final release and `beta`
+for a release candidate, a tag with `-rc.` (the form the Release Candidate channel offers). An
+`-alpha.N` or `-beta.N` tag is offered to no channel by the updater (`update_check::Version::kind`,
+`tools/release.sh` says the same), so its bundle is built on `dev`, which the repo never publishes.
+Note this is narrower than `--prerelease`, which is any hyphen. `release.yml` passes the branch to
 `flatpak.yml`'s `branch` input, which the pinned `flatpak-builder` action uses for both
-`--default-branch` and the bundle's ref, so a bundle is `app/es.nico.degenview/<arch>/<stable|beta>`.
+`--default-branch` and the bundle's ref, so a bundle is `app/es.nico.degenview/<arch>/<stable|beta|dev>`.
 The pull request check keeps `master`. Bundles from before this change are on `master` and are
 not published.
 

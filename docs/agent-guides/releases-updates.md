@@ -330,7 +330,8 @@ so there is no signature check beyond those.
 - **Flatpak**: the app cannot replace itself and cannot tell where it was installed from (Flatpak
   records no remote in `/.flatpak-info`), so the update note is `sandbox::FLATPAK_UPDATE_NOTE`: run
   `flatpak update` (hosted repo `degenview/flatpak`, served at `flatpak.degenview.app`) or download
-  the bundle. Each release builds one Flatpak branch, `stable` or `beta`, from the tag; the repo also
+  the bundle. Each release builds one Flatpak branch from the tag (`stable` for a final, `beta` for `-rc.N`, `dev` for
+  alpha/beta tags, which nothing publishes); the repo also
   copies a final release onto `beta`. See [Flatpak](../flatpak.md#hosted-repo).
 - **Checked against real artifacts**: the rc.11 tarballs for both CPUs unpack through
   `extract_tar_gz_binary` and carry the expected ELF machine (`0x3E`, `0xB7`): ignored test
