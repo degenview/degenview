@@ -132,6 +132,7 @@ impl WebhookHost {
         health: &AlertRuntimeHealth,
         mcp: crate::ui::settings_mcp::McpSettingsInput,
         updates: &crate::host::update_host::UpdateHost,
+        analytics: &crate::host::analytics_host::AnalyticsHost,
         sync: &crate::host::sync_host::SyncHost,
         now_ms: i64,
         reference_count: &dyn Fn(EndpointId) -> usize,
@@ -174,6 +175,7 @@ impl WebhookHost {
             },
             ai: crate::ui::settings_ai::AiSettingsInput { prefs: &ai_prefs },
             updates,
+            analytics,
             sync,
             editor_themes: &self.editor_themes,
             tab_title_style: self.tab_titles.style(),
@@ -231,6 +233,7 @@ impl WebhookHost {
                 SettingsAction::SetUpdateChannel(channel) => {
                     updates.set_channel(store, ui.ctx(), channel);
                 }
+                SettingsAction::SetUsageStatistics(on) => analytics.set_enabled(store, on),
             }
         }
         out

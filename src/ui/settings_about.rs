@@ -2,6 +2,7 @@
 //! update channel and a copyable build summary, the project links, and the copyright line.
 
 use crate::format::civil_from_days;
+use crate::host::analytics_host::{ABOUT_TEXT as ANALYTICS_TEXT, AnalyticsHost};
 use crate::host::update_host::{BUILD_ID, Phase, UpdateHost, UpdateView};
 use crate::service::update_check::Channel;
 use crate::ui::icons::{self, Icon};
@@ -95,9 +96,11 @@ pub struct Outcome {
     pub quit: bool,
     /// The user picked another update channel.
     pub channel: Option<Channel>,
+    /// The user flipped the usage-statistics switch: the new value.
+    pub analytics: Option<bool>,
 }
 
-pub fn show(ui: &mut Ui, updates: &UpdateHost) -> Outcome {
+pub fn show(ui: &mut Ui, updates: &UpdateHost, analytics: &AnalyticsHost) -> Outcome {
     let build = build_time_ms();
     let area = ui.max_rect();
     let mut outcome = Outcome::default();
@@ -158,6 +161,10 @@ pub fn show(ui: &mut Ui, updates: &UpdateHost) -> Outcome {
                                 },
                             );
                         });
+                        if analytics.available() {
+                            ui.add_space(24.0);
+                            outcome.analytics = analytics_group(ui, analytics.enabled(), width);
+                        }
                         ui.add_space(24.0);
                         group(ui, |ui| {
                             link_row(
@@ -772,6 +779,38 @@ fn row(ui: &mut Ui, icon: Icon, tint: Color32, title: &str, trailing: impl FnOnc
     trailing(&mut right);
 }
 
+/// The "Usage Statistics" switch and the sentence saying exactly what it sends. Returns the new
+/// value when the switch was flipped.
+fn analytics_group(ui: &mut Ui, enabled: bool, width: f32) -> Option<bool> {
+    let mut on = enabled;
+    let mut flipped = false;
+    group(ui, |ui| {
+        row(
+            ui,
+            Icon::ChartLine,
+            Color32::from_rgb(255, 159, 10),
+            "Usage Statistics",
+            |ui| flipped = crate::ui::settings_card::switch(ui, &mut on),
+        );
+    });
+    ui.add_space(8.0);
+    let text = kit::galley(
+        ui,
+        ANALYTICS_TEXT,
+        kit::size::CAPTION + 0.5,
+        kit::REGULAR,
+        theme::text_tertiary(),
+        width - 2.0 * ROW_PADDING,
+    );
+    let (rect, _) = ui.allocate_exact_size(vec2(width, text.size().y), Sense::hover());
+    ui.painter().galley(
+        pos2(rect.left() + ROW_PADDING, rect.top()),
+        text,
+        theme::text_tertiary(),
+    );
+    flipped.then_some(on)
+}
+
 /// "Copy" the build summary for a bug report; it reads "Copied" for a moment after.
 fn copy_button(ui: &mut Ui, build: Option<i64>) {
     let copied_at = egui::Id::new("about-copied-at");
@@ -945,10 +984,20 @@ mod tests {
     fn the_page_draws_headlessly() {
         let ctx = egui::Context::default();
         egui_extras::install_image_loaders(&ctx);
-        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
-            assert_eq!(show(ui, &UpdateHost::default()), Outcome::default());
-        });
-        output.textures_delta.clear();
+        let store = std::sync::Arc::new(std::sync::Mutex::new(
+            crate::store::Store::open_in_memory().unwrap(),
+        ));
+        // Both with the row (a build that counts) and without (one that sends nothing).
+        for available in [false, true] {
+            let analytics = AnalyticsHost::for_test(&store, available);
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                assert_eq!(
+                    show(ui, &UpdateHost::default(), &analytics),
+                    Outcome::default()
+                );
+            });
+            output.textures_delta.clear();
+        }
     }
 
     fn view(phase: Phase) -> UpdateView {

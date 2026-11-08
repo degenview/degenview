@@ -210,6 +210,9 @@ jobs:
         env:
           DEGENVIEW_ICLOUD: ${{ vars.DEGENVIEW_ICLOUD }}
           DEGENVIEW_ICLOUD_ENVIRONMENT: Production
+          # Identifiers compiled into the binary (docs/analytics.md), so variables, not secrets.
+          DEGENVIEW_GA_MEASUREMENT_ID: ${{ vars.DEGENVIEW_GA_MEASUREMENT_ID }}
+          DEGENVIEW_GA_API_SECRET: ${{ vars.DEGENVIEW_GA_API_SECRET }}
         run: |
           features=""
           [ -n "$DEGENVIEW_ICLOUD" ] && features="--features icloud"
@@ -378,6 +381,9 @@ jobs:
       - name: Build Windows executable
         if: runner.os == 'Windows'
         shell: bash
+        env:
+          DEGENVIEW_GA_MEASUREMENT_ID: ${{ vars.DEGENVIEW_GA_MEASUREMENT_ID }}
+          DEGENVIEW_GA_API_SECRET: ${{ vars.DEGENVIEW_GA_API_SECRET }}
         run: |
           cargo build --release --locked
           mkdir -p dist
@@ -401,6 +407,9 @@ jobs:
       # `./degenview` from its root (`update_archive::extract_tar_gz_binary`); keep both.
       - name: Build Linux binary
         if: runner.os == 'Linux'
+        env:
+          DEGENVIEW_GA_MEASUREMENT_ID: ${{ vars.DEGENVIEW_GA_MEASUREMENT_ID }}
+          DEGENVIEW_GA_API_SECRET: ${{ vars.DEGENVIEW_GA_API_SECRET }}
         run: |
           cargo build --release --locked
           # Fail the release rather than ship a binary that will not start on the oldest distro we

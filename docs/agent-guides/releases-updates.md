@@ -144,6 +144,11 @@ each rule is in `release.yml`; this is the list.
   runs third-party code to the macOS job, put it before the import.
 - **`--locked` everywhere** a release or the Flatpak is built, so `Cargo.lock` as committed is
   what ships.
+- **Analytics ids are variables.** The macOS, Windows and Linux compile steps pass the repository
+  variables `DEGENVIEW_GA_MEASUREMENT_ID` and `DEGENVIEW_GA_API_SECRET` to `cargo build`
+  ([Anonymous usage statistics](../analytics.md)). They end up in the binary, so they are not
+  secrets and do not belong in the `release` environment. Keep them off any step that runs
+  third-party code. The build id, by contrast, is still never sent anywhere.
 - **No build cache** in release jobs (see above), and the compiler is `RUST_TOOLCHAIN` in the
   workflows (an exact version, bumped by its own pull request), not whatever `stable` is that day.
 - **pip installs are hash-locked**: `tools/requirements/dmgbuild.txt` and

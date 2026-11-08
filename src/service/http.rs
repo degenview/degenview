@@ -15,6 +15,19 @@ static AGENT: LazyLock<ureq::Agent> = LazyLock::new(|| {
     ureq::Agent::new_with_config(config)
 });
 
+/// Fire-and-forget posts (usage counts) give up quickly and never follow a redirect.
+const POST_TIMEOUT: Duration = Duration::from_secs(5);
+
+static POST_AGENT: LazyLock<ureq::Agent> = LazyLock::new(|| {
+    let config = ureq::Agent::config_builder()
+        .timeout_global(Some(POST_TIMEOUT))
+        .max_redirects(0)
+        .max_redirects_will_error(false)
+        .http_status_as_error(false)
+        .build();
+    ureq::Agent::new_with_config(config)
+});
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Retry {
     /// The caller owns backoff, or another request would exceed a provider's limit.
@@ -42,6 +55,29 @@ impl std::fmt::Display for Error {
 
 pub fn get_text(url: &str, headers: &[(&str, &str)], retry: Retry) -> Result<String, Error> {
     get_text_with_limit(url, headers, retry, MAX_BODY_BYTES)
+}
+
+/// One JSON POST with no retry; the response body is ignored. A status of 300 or more is an
+/// error. For callers that can lose a request without anyone noticing (usage counts).
+pub fn post_json(url: &str, body: &str) -> Result<u16, Error> {
+    post_json_with(&POST_AGENT, url, body)
+}
+
+fn post_json_with(agent: &ureq::Agent, url: &str, body: &str) -> Result<u16, Error> {
+    let response = agent
+        .post(url)
+        .header("Content-Type", "application/json")
+        .header(
+            "User-Agent",
+            concat!("DegenView/", env!("CARGO_PKG_VERSION")),
+        )
+        .send(body)
+        .map_err(|error| Error::Network(error.to_string()))?;
+    let status = response.status().as_u16();
+    if status >= 300 {
+        return Err(Error::Status(status));
+    }
+    Ok(status)
 }
 
 pub fn head_status(url: &str) -> Result<u16, Error> {
@@ -291,6 +327,55 @@ mod tests {
             Err(Error::Network(_))
         ));
         server.join().unwrap();
+    }
+
+    #[test]
+    fn post_json_sends_the_body_once_and_reads_only_the_status() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}/mp/collect?x=1", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0_u8; 2048];
+            let read = stream.read(&mut request).unwrap();
+            stream
+                .write_all(b"HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n")
+                .unwrap();
+            String::from_utf8_lossy(&request[..read]).into_owned()
+        });
+        let agent = ureq::Agent::new_with_config(
+            ureq::Agent::config_builder()
+                .http_status_as_error(false)
+                .build(),
+        );
+        assert_eq!(post_json_with(&agent, &url, r#"{"a":1}"#).unwrap(), 204);
+        let request = server.join().unwrap();
+        assert!(
+            request.starts_with("POST /mp/collect?x=1 HTTP/1.1"),
+            "{request}"
+        );
+        assert!(
+            request
+                .to_lowercase()
+                .contains("content-type: application/json"),
+            "{request}"
+        );
+        assert!(request.ends_with(r#"{"a":1}"#), "{request}");
+    }
+
+    #[test]
+    fn post_json_does_not_retry_a_server_error() {
+        let (url, count, thread) = serve(&[(503, "")]);
+        let agent = ureq::Agent::new_with_config(
+            ureq::Agent::config_builder()
+                .http_status_as_error(false)
+                .build(),
+        );
+        assert!(matches!(
+            post_json_with(&agent, &url, "{}"),
+            Err(Error::Status(503))
+        ));
+        thread.join().unwrap();
+        assert_eq!(count.load(Ordering::SeqCst), 1);
     }
 
     #[test]
