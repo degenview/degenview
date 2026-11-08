@@ -33,6 +33,7 @@ scenario matches the work:
 | Releases, signing, packaging, self-update, or update UI | [Releases and updates](docs/agent-guides/releases-updates.md) |
 | The Flatpak, Linux packaging, or the sandbox | [Flatpak](docs/flatpak.md) |
 | iCloud Sync, the sync outbox, CloudKit, or anything that persists user data | [iCloud Sync](docs/icloud-sync.md) |
+| Usage statistics, Google Analytics, the first-run notice, or anything the app sends about its users | [Anonymous usage statistics](docs/analytics.md) |
 
 For cross-cutting work, load all matching guides. These files contain implementation constraints,
 not general background; do not skip a guide because the code looks self-explanatory.
@@ -112,6 +113,7 @@ because cargo never deletes old output. Finished worktrees are where the disk go
 
 - [Architecture](docs/architecture.md) — module map and data flow.
 - [iCloud Sync](docs/icloud-sync.md) — what syncs, merge rules, account safety, Apple setup, what is unverified.
+- [Anonymous usage statistics](docs/analytics.md) — the one launch count (GA4 Measurement Protocol): what is and is never sent, when nothing is, the build ids, GA setup, why not Apple's analytics, what is unverified.
 - [Flatpak](docs/flatpak.md) — the manifest and reusable workflow, sandbox permissions, why the update check stays on, what is unverified.
 - [Chart types](docs/chart-types.md) — construction rules and Pine semantics.
 - [Chart navigation](docs/chart-navigation.md) — viewport, pan/axis gestures, older history, what is unverified.

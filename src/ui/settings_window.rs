@@ -150,6 +150,8 @@ pub enum SettingsAction {
     QuitForUpdate,
     /// The About page chose which releases updates offer.
     SetUpdateChannel(crate::service::update_check::Channel),
+    /// The About page's Usage Statistics switch: the new value.
+    SetUsageStatistics(bool),
 }
 
 pub struct SettingsInput<'a> {
@@ -160,6 +162,7 @@ pub struct SettingsInput<'a> {
     pub snapshots: crate::ui::settings_snapshots::SnapshotsInput<'a>,
     pub ai: crate::ui::settings_ai::AiSettingsInput<'a>,
     pub updates: &'a crate::host::update_host::UpdateHost,
+    pub analytics: &'a crate::host::analytics_host::AnalyticsHost,
     pub sync: &'a crate::host::sync_host::SyncHost,
     pub editor_themes: &'a crate::host::editor_theme_host::EditorThemeHost,
     pub tab_title_style: crate::model::tab_title::TabTitleStyle,
@@ -610,9 +613,12 @@ pub fn show(
             actions.extend(snapshot_actions.into_iter().map(SettingsAction::Snapshots));
         }
         SettingsSection::About => {
-            let about = crate::ui::settings_about::show(&mut page, input.updates);
+            let about = crate::ui::settings_about::show(&mut page, input.updates, input.analytics);
             if about.quit {
                 actions.push(SettingsAction::QuitForUpdate);
+            }
+            if let Some(on) = about.analytics {
+                actions.push(SettingsAction::SetUsageStatistics(on));
             }
             if let Some(channel) = about.channel {
                 actions.push(SettingsAction::SetUpdateChannel(channel));

@@ -2,6 +2,7 @@ use crate::host::alert_host::AlertHost;
 use crate::host::alert_runtime::{
     AlertRuntimeLease, AlertRuntimeRunner, GuiRuntimeDecision, gui_runtime_decision,
 };
+use crate::host::analytics_host::AnalyticsHost;
 use crate::host::editor_theme_host::EditorThemeHost;
 use crate::host::mcp_confirmation::{self, ConfirmationHost};
 use crate::host::mcp_host::{self, McpHost};
@@ -344,6 +345,8 @@ pub struct DegenViewApp {
     alerts_open: Arc<AtomicBool>,
     /// Looks for a newer release on a schedule; the tab bar and Settings ▸ About draw it.
     updates: UpdateHost,
+    /// Anonymous usage counts: one request per launch once the user has seen the notice.
+    analytics: AnalyticsHost,
     /// iCloud Sync: applies other Macs' changes and carries out the Settings page's requests.
     sync: crate::host::sync_host::SyncHost,
     /// The Pine Studio's library as last seen by sync, to notice a save.
@@ -467,6 +470,9 @@ struct WindowEnv {
     app_actions: Arc<Mutex<Vec<AppAction>>>,
     session_save_error: Arc<Mutex<Option<String>>>,
     updates: UpdateHost,
+    /// Anonymous usage counting; the focused window shows its first-run notice.
+    analytics: AnalyticsHost,
+    store: SharedStore,
     snapshots: SnapshotHost,
     mcp_confirmations: Arc<Mutex<ConfirmationHost>>,
     /// The shared quotes the tab strip reads its prices from.
@@ -629,6 +635,7 @@ fn show_window(
     }
     if focused {
         show_restart_prompt(&ctx, env, &update);
+        show_analytics_notice(&ctx, env);
         show_mcp_confirmation(&ctx, &env.mcp_confirmations);
         let cycle = ui.input_mut(|input| {
             // macOS reaches these two through File ▸ New Tab / Close Tab.
@@ -740,6 +747,34 @@ fn show_restart_prompt(ctx: &egui::Context, env: &WindowEnv, update: &UpdateView
         Some(kit::ConfirmOutcome::Confirmed) => {}
         Some(kit::ConfirmOutcome::Cancelled) => env.updates.dismiss_restart_prompt(),
         None => {}
+    }
+}
+
+/// Tells the user, once, that DegenView counts launches anonymously, before the first count is
+/// sent. Only the focused window asks. "Turn Off" and "OK" both answer it, and Settings ▸ About
+/// changes the choice later.
+fn show_analytics_notice(ctx: &egui::Context, env: &WindowEnv) {
+    if !env.analytics.notice_pending() {
+        return;
+    }
+    let outcome = kit::alert(
+        ctx,
+        egui::Id::new("analytics-notice"),
+        &kit::Alert {
+            icon: Icon::InfoCircle,
+            tint: crate::ui::theme::text_secondary(),
+            title: "Anonymous usage statistics",
+            message: crate::host::analytics_host::NOTICE_TEXT,
+            accept: "OK",
+            dismiss: "Turn Off",
+        },
+    );
+    let Some(outcome) = outcome else { return };
+    // A failed lock leaves the notice up; it asks again next frame.
+    let Ok(store) = env.store.lock() else { return };
+    match outcome {
+        kit::ConfirmOutcome::Confirmed => env.analytics.acknowledge(&store),
+        kit::ConfirmOutcome::Cancelled => env.analytics.set_enabled(&store, false),
     }
 }
 
@@ -927,6 +962,7 @@ impl DegenViewApp {
             host
         };
         let updates = UpdateHost::load(&store);
+        let analytics = AnalyticsHost::load(&store);
         let webhook_host = Arc::new(Mutex::new(WebhookHost::new(
             snapshots.clone(),
             editor_themes.clone(),
@@ -1112,6 +1148,7 @@ impl DegenViewApp {
             script_webhooks: Arc::new(Mutex::new(None)),
             alerts_open,
             updates,
+            analytics,
             sync,
             script_signature: 0,
             alert_editor,
@@ -2829,6 +2866,8 @@ impl DegenViewApp {
             app_actions: Arc::clone(&self.actions),
             session_save_error: Arc::clone(&self.session_save_error),
             updates: self.updates.clone(),
+            analytics: self.analytics.clone(),
+            store: Arc::clone(&self.store),
             snapshots: self.snapshots.clone(),
             mcp_confirmations: Arc::clone(&self.mcp_confirmations),
             quote_book: self.quote_book.clone(),
@@ -2894,6 +2933,7 @@ impl DegenViewApp {
         let runtime_control = Arc::clone(&self.alert_runtime_control);
         let app_actions = Arc::clone(&self.actions);
         let updates = self.updates.clone();
+        let analytics = self.analytics.clone();
         let sync = self.sync.clone();
         let mcp_confirmations = Arc::clone(&self.mcp_confirmations);
         let builder = crate::ui::window_chrome::branded(
@@ -2976,6 +3016,7 @@ impl DegenViewApp {
                     &health,
                     mcp_input,
                     &updates,
+                    &analytics,
                     &sync,
                     now,
                     &reference_count,
@@ -3474,6 +3515,7 @@ impl eframe::App for DegenViewApp {
         self.tick_pine();
         self.tick_mcp(ctx);
         self.updates.tick(ctx);
+        self.analytics.tick(&self.store, self.updates.channel());
         self.tick_sync(ctx);
         self.tick_editor_themes();
         self.tick_tab_quotes(ctx);

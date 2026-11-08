@@ -244,6 +244,18 @@ launch.
 - [Architecture](docs/architecture.md): project structure and data flow, including the
   [MCP server](docs/architecture/mcp.md)
 - [MCP remaining work](docs/mcp-remaining-work.md): what is still planned for the MCP server
+- [Anonymous usage statistics](docs/analytics.md): the launch count, exactly what it sends, and how
+  to turn it off
+
+## Privacy
+
+Release builds count launches so the project knows roughly how many people use DegenView and from
+which countries. Once per launch, after you have seen a notice about it, a build sends a random
+install ID, the app version, your operating system and CPU type, and your update channel to Google
+Analytics; Google works out your country from the request. Nothing about your charts, watchlists,
+portfolios, scripts or keys is ever sent. Turn it off in Settings ▸ About ▸ Usage Statistics, or set
+`DO_NOT_TRACK=1` (or `DEGENVIEW_NO_ANALYTICS=1`). Builds you compile yourself send nothing unless you
+give them Google Analytics ids. Details: [Anonymous usage statistics](docs/analytics.md).
 
 ## License
 

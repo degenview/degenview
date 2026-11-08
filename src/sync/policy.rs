@@ -350,6 +350,12 @@ mod tests {
             "portfolio.privacyMode",
             // A channel is chosen per Mac: syncing it would move every other Mac onto it.
             "update.channel",
+            // Counting is chosen per Mac, and the install id must never leave it: synced, every
+            // Mac of one person would be one user, and the id would sit in iCloud.
+            "analytics.enabled",
+            "analytics.noticeShown",
+            "analytics.clientId",
+            "analytics.installCounted",
             // Open tabs are device-local, and so is how they name themselves.
             "tab.title_style",
         ] {

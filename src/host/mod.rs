@@ -1,5 +1,6 @@
 pub mod alert_host;
 pub mod alert_runtime;
+pub mod analytics_host;
 pub mod editor_theme_host;
 pub mod mcp_confirmation;
 pub mod mcp_host;

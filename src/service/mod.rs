@@ -1,4 +1,5 @@
 mod alpaca;
+pub mod analytics;
 pub mod asset_auto_mapper;
 pub mod asset_host;
 pub mod background_service;

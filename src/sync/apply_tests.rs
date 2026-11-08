@@ -395,11 +395,12 @@ fn a_portable_setting_travels_and_local_ones_do_not() {
 }
 
 /// Keys this version keeps on the Mac, from security and consent state to a key it has never heard of.
-const LOCAL_ONLY_KEYS: [&str; 6] = [
+const LOCAL_ONLY_KEYS: [&str; 7] = [
     "mcp.settings",
     "mcp.permissions",
     "ai.prefs",
     "update.channel",
+    "analytics.clientId",
     "content.prefs",
     "from.a.newer.version",
 ];

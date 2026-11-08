@@ -56,6 +56,10 @@ pub static LINKS: WorkQueue = WorkQueue::new(1);
 /// minutes and must never hold one of the general workers that fetch candles and alert quotes.
 pub static UPDATES: WorkQueue = WorkQueue::new(1);
 
+/// The anonymous usage count is one small POST per launch. It has a worker of its own so it never
+/// waits behind an update download, and never holds up a general worker if the network is slow.
+pub static ANALYTICS: WorkQueue = WorkQueue::new(1);
+
 /// Chart snapshots wait on things that take as long as the user or the network does (a save panel,
 /// an upload), so they never borrow a general worker.
 pub static SNAPSHOTS: WorkQueue = WorkQueue::new(2);
