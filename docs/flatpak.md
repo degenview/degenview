@@ -46,9 +46,42 @@ listens on `127.0.0.1`; `--share=network` uses the host network, so clients on t
 
 A downloaded bundle has no remote, so `flatpak update` finds nothing. The in-app update check
 therefore stays on and stays non-installable: `self_update::install_target` returns a message
-that names the release page when `sandbox::is_flatpak()` (`FLATPAK_ID` or `/.flatpak-info`). If
-the app is ever hosted on Flathub, hide the check there instead. The Linux tarball is the form
-that updates itself (`docs/agent-guides/releases-updates.md`, "Linux").
+that names the release page when `sandbox::is_flatpak()` (`FLATPAK_ID` or `/.flatpak-info`). The
+Linux tarball is the form that updates itself (`docs/agent-guides/releases-updates.md`, "Linux").
+
+A Flatpak installed from a **remote** (the hosted repo below, or Flathub) is updated by
+`flatpak update`, so there the app does not check at all: `sandbox::updated_by_flatpak()` reads
+`origin=` from the `[Instance]` section of `/.flatpak-info`, and a name that does not end in
+`-origin` (the remote Flatpak makes for a bundle installed from a file) means a repo.
+`UpdateHost::managed_by_flatpak` then stops `tick` and `check_now` (no request to GitHub), and
+Settings > About shows one row, "Installed with Flatpak. Update with flatpak update.", instead of the
+update card, channel picker and release-candidate warning. A missing or unreadable `origin` keeps the
+check, so a wrong guess about the file only costs the old behaviour.
+
+## Hosted repo
+
+Releases build one Flatpak **branch per channel**: `stable` for a final release, `beta` for a
+release candidate (the same hyphen-in-the-tag rule as `--prerelease`). `release.yml` passes it to
+`flatpak.yml`'s `branch` input, which the pinned `flatpak-builder` action uses for both
+`--default-branch` and the bundle's ref, so a bundle is `app/es.nico.degenview/<arch>/<stable|beta>`.
+The pull request check keeps `master`. Bundles from before this change are on `master` and are
+not published.
+
+The repo itself lives in `degenview/flatpak` and is served at `https://flatpak.degenview.app`.
+It pulls: a scheduled and manual workflow lists this repo's releases, keeps the last three of each
+channel, verifies every bundle (`gh release verify-asset`, `gh attestation verify --repo
+degenview/degenview`), imports them into an OSTree repo, signs it with a GPG key that only that
+repo's `publish` environment holds, and deploys it to Pages. Nothing in this repo holds a token for
+it. Users add it with:
+
+```bash
+flatpak remote-add --if-not-exists degenview https://flatpak.degenview.app/degenview.flatpakrepo
+flatpak install degenview es.nico.degenview//stable   # or //beta
+```
+
+The runtime still comes from Flathub, so it must be a configured remote (or the `.flatpakref`, which
+names it, is used). **Not verified:** none of this has run on Linux: the `origin=` key and its value,
+the published repo, an install and a `flatpak update` from it.
 
 ## Secret storage
 

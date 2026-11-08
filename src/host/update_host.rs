@@ -5,6 +5,7 @@
 //! stateful bridge that runs them on `work_queue::UPDATES`, remembers the outcome, and exposes it
 //! as a plain `UpdateView` both UIs draw. Nothing here is persisted: a launch starts unchecked.
 
+use crate::service::sandbox;
 use crate::service::self_update::{self, Prepared, Progress, Stage};
 use crate::service::update_check::{self, Channel, Release, UpdateOutcome};
 use crate::service::work_queue;
@@ -69,6 +70,8 @@ struct State {
     target: Result<PathBuf, String>,
     /// The lookup has not been started yet.
     target_pending: bool,
+    /// `flatpak update` owns updates (installed from a remote): nothing here checks or draws them.
+    managed: bool,
     /// Set when an installed update should ask for the restart (cleared by "Later").
     restart_prompt: bool,
     /// The user chose "Restart Now" and the quit that follows has not been called off: when the app
@@ -132,7 +135,12 @@ impl UpdateHost {
     /// candidates until the user picks one).
     pub fn new() -> Self {
         let host = Self::with_target(Err(PENDING_TARGET.to_owned()), Channel::of_version(VERSION));
-        host.lock().target_pending = true;
+        {
+            // One small file read at start-up, and only in a Flatpak.
+            let mut state = host.lock();
+            state.target_pending = true;
+            state.managed = !cfg!(test) && sandbox::updated_by_flatpak();
+        }
         host
     }
 
@@ -162,12 +170,21 @@ impl UpdateHost {
                 install: Install::Idle,
                 target,
                 target_pending: false,
+                managed: false,
                 restart_prompt: false,
                 relaunch_on_exit: false,
                 born: Instant::now(),
                 viewers: HashSet::new(),
             })),
         }
+    }
+
+    /// A host for a Flatpak installed from a remote, for tests of the UIs that read it.
+    #[cfg(test)]
+    pub(crate) fn managed_for_test() -> Self {
+        let host = Self::with_target(Err(PENDING_TARGET.to_owned()), Channel::Stable);
+        host.lock().managed = true;
+        host
     }
 
     /// A host standing at `phase`, for drawing tests of the UIs that read it.
@@ -280,8 +297,16 @@ impl UpdateHost {
         self.check_now(ctx);
     }
 
+    /// Installed from a Flatpak remote, which updates it: the app neither checks nor offers updates.
+    pub fn managed_by_flatpak(&self) -> bool {
+        self.lock().managed
+    }
+
     /// Called every frame: starts the launch check and the periodic ones.
     pub fn tick(&self, ctx: &egui::Context) {
+        if self.managed_by_flatpak() {
+            return;
+        }
         self.resolve_target(ctx);
         let due = {
             let state = self.lock();
@@ -318,7 +343,7 @@ impl UpdateHost {
     fn start_check(&self, ctx: &egui::Context, manual: bool) {
         let channel = {
             let mut state = self.lock();
-            if state.checking || matches!(state.install, Install::Working(_)) {
+            if state.managed || state.checking || matches!(state.install, Install::Working(_)) {
                 return;
             }
             state.checking = true;
@@ -861,6 +886,24 @@ mod tests {
             message: "x".to_owned(),
         };
         assert!(check_due(&state, born + CHECK_INTERVAL * 2));
+    }
+
+    #[test]
+    fn a_flatpak_installed_from_a_remote_never_checks() {
+        let host = UpdateHost::managed_for_test();
+        assert!(host.managed_by_flatpak());
+        // Neither the schedule nor a person asking starts a check, and the target is not looked up.
+        host.tick(&ctx());
+        host.check_now(&ctx());
+        let view = host.view();
+        assert!(!view.checking);
+        assert_eq!(view.phase, Phase::Unchecked);
+        assert!(host.lock().last_started.is_none());
+        // Any other host is unaffected.
+        assert!(!UpdateHost::new().managed_by_flatpak());
+        let other = UpdateHost::new();
+        other.check_now(&ctx());
+        assert!(other.view().checking);
     }
 
     #[test]

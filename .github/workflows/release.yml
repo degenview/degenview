@@ -117,6 +117,9 @@ jobs:
     with:
       ref: ${{ needs.verify.outputs.sha }}
       bundle-prefix: DegenView-${{ github.event.inputs.tag || github.ref_name }}-linux
+      # The hosted Flatpak repo (docs/flatpak.md) publishes one branch per channel, chosen by the
+      # same rule as `--prerelease`: a hyphen in the verified tag.
+      branch: ${{ contains(github.event.inputs.tag || github.ref_name, '-') && 'beta' || 'stable' }}
 
   build:
     name: Build ${{ matrix.name }}

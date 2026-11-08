@@ -314,7 +314,7 @@ so there is no signature check beyond those.
   64-bit little-endian ELF executable or PIE whose machine matches the running CPU.
 - **Installable**: the canonicalised binary's folder must be writable (a distro-packaged `/usr/bin`
   install or a read-only mount is not: **View Release**, with a hint to use `~/.local/bin`), never a
-  development build, and never a Flatpak (`sandbox::is_flatpak()` is checked first, so the Flatpak keeps
+  development build, and never a Flatpak (`sandbox::is_flatpak()` is checked first, so a bundle-installed Flatpak keeps
   its "download the new .flatpak" message even though it is also Linux x86-64 and the tarball asset
   exists).
 - **Swap**: the running binary is renamed into `.DegenView-update/old/`, the new one renamed in, with
@@ -327,8 +327,10 @@ so there is no signature check beyond those.
   on the command line. A test observes both behaviours with a script.
 - **Wait**: `wait_for_predecessor` polls `/proc/<pid>/stat` every 100 ms for up to 60 s and treats a
   zombie (`Z`) as exited. No `libc` is needed; with no `/proc` it does not wait.
-- **Flatpak**: unchanged, notify-only. Hosting a Flatpak repo (OSTree, signing key, Pages) or Flathub
-  would make `flatpak update` work and is a separate project.
+- **Flatpak**: a bundle installed from a file is notify-only. One installed from a remote (the repo
+  `degenview/flatpak`, served at `flatpak.degenview.app`, or Flathub) is updated by `flatpak update`,
+  and the app neither checks nor draws the update card there (`UpdateHost::managed_by_flatpak`). Each
+  release builds one Flatpak branch, `stable` or `beta`, from the tag; see [Flatpak](../flatpak.md#hosted-repo).
 - **Checked against real artifacts**: the rc.11 tarballs for both CPUs unpack through
   `extract_tar_gz_binary` and carry the expected ELF machine (`0x3E`, `0xB7`): ignored test
   `a_real_linux_release_tarball_unpacks` with `DEGENVIEW_TEST_LINUX_TARBALL=<path>`.

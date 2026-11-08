@@ -18,6 +18,10 @@ on:
         description: "Start of each bundle's file name; the CPU label and .flatpak follow, e.g. DegenView-v0.1.0-linux"
         type: string
         required: true
+      branch:
+        description: "Flatpak branch the bundle's ref carries (app/es.nico.degenview/<arch>/<branch>): stable or beta for a release, master for the pull request check"
+        type: string
+        default: master
 
 permissions:
   contents: read
@@ -114,6 +118,7 @@ jobs:
           bundle: ${{ inputs.bundle-prefix }}-${{ matrix.label }}.flatpak
           arch: ${{ matrix.arch }}
           manifest-path: ${{ env.MANIFEST_DIR }}/es.nico.degenview.yml
+          branch: ${{ inputs.branch }}
           repository-url: https://dl.flathub.org/repo/flathub.flatpakrepo
           cache: false
           restore-cache: false
