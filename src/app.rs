@@ -1236,6 +1236,9 @@ impl DegenViewApp {
                     self.tab_host.cycle(false);
                 }
                 NativeCommand::OpenSettings => self.open_settings(ctx),
+                NativeCommand::OpenDocs => {
+                    ctx.open_url(egui::OpenUrl::new_tab(tab_bar::DOCS_URL));
+                }
                 NativeCommand::OpenGitHub => {
                     ctx.open_url(egui::OpenUrl::new_tab(tab_bar::GITHUB_URL));
                 }

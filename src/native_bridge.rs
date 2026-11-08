@@ -7,6 +7,8 @@ pub enum NativeCommand {
     /// File ▸ New Script, for the focused Pine Studio.
     NewScript,
     OpenSettings,
+    /// Help ▸ DegenView Documentation.
+    OpenDocs,
     /// Help ▸ DegenView on GitHub.
     OpenGitHub,
     /// Help ▸ Buy Me a Coffee.
@@ -165,6 +167,10 @@ mod platform {
         if let Some(ctx) = CONTEXT.get() {
             ctx.request_repaint();
         }
+    }
+
+    extern "C-unwind" fn open_docs(_d: &AnyObject, _s: Sel, _sender: Option<&AnyObject>) {
+        push(NativeCommand::OpenDocs);
     }
 
     extern "C-unwind" fn open_github(_d: &AnyObject, _s: Sel, _sender: Option<&AnyObject>) {
@@ -417,6 +423,7 @@ mod platform {
         install_action(delegate_class, sel!(newWindowForTab:), new_window_for_tab);
         install_action(delegate_class, sel!(newScript:), new_script);
         install_action(delegate_class, sel!(openSettings:), open_settings);
+        install_action(delegate_class, sel!(openDocs:), open_docs);
         install_action(delegate_class, sel!(openGitHub:), open_github);
         install_action(delegate_class, sel!(openCoffee:), open_coffee);
         install_action(
@@ -649,10 +656,12 @@ mod platform {
         menubar.addItem(&window_item);
         app.setWindowsMenu(Some(&window_menu));
 
-        // Help: the project's GitHub organisation and the maintainer's Buy Me a Coffee page.
+        // Help: the user guide, the project's GitHub organisation and the maintainer's Buy Me a
+        // Coffee page.
         let help_item = NSMenuItem::new(mtm);
         let help_menu = NSMenu::initWithTitle(mtm.alloc(), ns_string!("Help"));
         for (title, selector) in [
+            (ns_string!("DegenView Documentation"), sel!(openDocs:)),
             (ns_string!("DegenView on GitHub"), sel!(openGitHub:)),
             (
                 ns_string!("Help supporting this project"),

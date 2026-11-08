@@ -32,6 +32,9 @@ const MAX_TAB_WIDTH: f32 = 360.0;
 const NEW_BUTTON_WIDTH: f32 = 34.0;
 const SETTINGS_BUTTON_WIDTH: f32 = 34.0;
 const LINK_BUTTON_WIDTH: f32 = 30.0;
+/// The user guide. Linked from Settings ▸ About on every platform and, on macOS, from the Help
+/// menu.
+pub const DOCS_URL: &str = "https://docs.degenview.app";
 /// The project's GitHub organisation and the maintainer's Buy Me a Coffee page, linked from the
 /// strip's right end on every platform and, on macOS, from the Help menu too.
 pub const GITHUB_URL: &str = "https://github.com/degenview";
