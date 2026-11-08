@@ -88,7 +88,6 @@ impl Tab {
 #[derive(Default)]
 pub struct ChartSettingsState {
     pub tab: Tab,
-    confirming_removal: bool,
     /// What the Scripts page's search field holds.
     script_query: String,
     templates: TemplateState,
@@ -136,85 +135,70 @@ pub fn show(
     mut c: ChartSettingsContext,
 ) -> Option<ChartSettingsAction> {
     let mut action = None;
-    let was_confirming = state.confirming_removal;
     let was_templating = state.templates.has_dialog();
     let page_height = page_height(ctx.content_rect().height());
     let tabs = Tab::for_source(c.source);
     if !tabs.contains(&state.tab) {
         state.tab = tabs[0];
     }
-    sheet::show(ctx, Id::new("chart-settings"), WIDTH, |ui| {
-        ui.add_space(24.0);
-        sheet::inset(ui, |ui| header(ui, &c));
-        ui.add_space(16.0);
-        if tabs.len() > 1 {
-            tab_bar(ui, state, tabs);
+    let ((), clicked_outside) =
+        sheet::show_dismissable(ctx, Id::new("chart-settings"), WIDTH, |ui| {
+            ui.add_space(24.0);
+            sheet::inset(ui, |ui| header(ui, &c));
             ui.add_space(16.0);
-        }
-        rule(ui);
-        egui::ScrollArea::vertical()
-            .id_salt(("chart-settings-page", state.tab as u8))
-            .max_height(page_height)
-            .min_scrolled_height(page_height)
-            .auto_shrink([false, false])
-            .show(ui, |ui| {
-                egui::Frame::new()
-                    .inner_margin(Margin::same(sheet::INSET))
-                    .show(ui, |ui| {
-                        ui.set_width(WIDTH - 2.0 * f32::from(sheet::INSET));
-                        match state.tab {
-                            Tab::Indicators => indicators_page(ui, &mut c),
-                            Tab::Scripts => {
-                                if let Some(next) = scripts_page(ui, state, &mut c) {
-                                    action = Some(next);
+            if tabs.len() > 1 {
+                tab_bar(ui, state, tabs);
+                ui.add_space(16.0);
+            }
+            rule(ui);
+            egui::ScrollArea::vertical()
+                .id_salt(("chart-settings-page", state.tab as u8))
+                .max_height(page_height)
+                .min_scrolled_height(page_height)
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    egui::Frame::new()
+                        .inner_margin(Margin::same(sheet::INSET))
+                        .show(ui, |ui| {
+                            ui.set_width(WIDTH - 2.0 * f32::from(sheet::INSET));
+                            match state.tab {
+                                Tab::Indicators => indicators_page(ui, &mut c),
+                                Tab::Scripts => {
+                                    if let Some(next) = scripts_page(ui, state, &mut c) {
+                                        action = Some(next);
+                                    }
+                                }
+                                Tab::Appearance => {
+                                    if let Some(next) =
+                                        appearance_page(ui, &mut c, &mut state.templates)
+                                    {
+                                        action = Some(next);
+                                    }
+                                }
+                                Tab::Canvas => {
+                                    let (store, templates) = (c.store, &mut state.templates);
+                                    super::chart_canvas_settings::show(
+                                        ui,
+                                        c.card,
+                                        Id::new(("chart-canvas", c.symbol)),
+                                        |ui, card| {
+                                            chart_templates::menu(ui, templates, store, card)
+                                        },
+                                    );
                                 }
                             }
-                            Tab::Appearance => {
-                                if let Some(next) =
-                                    appearance_page(ui, &mut c, &mut state.templates)
-                                {
-                                    action = Some(next);
-                                }
-                            }
-                            Tab::Canvas => {
-                                let (store, templates) = (c.store, &mut state.templates);
-                                super::chart_canvas_settings::show(
-                                    ui,
-                                    c.card,
-                                    Id::new(("chart-canvas", c.symbol)),
-                                    |ui, card| chart_templates::menu(ui, templates, store, card),
-                                );
-                            }
-                        }
-                    });
+                        });
+                });
+            rule(ui);
+            sheet::inset(ui, |ui| {
+                if let Some(next) = footer(ui, state) {
+                    action = Some(next);
+                }
             });
-        rule(ui);
-        sheet::inset(ui, |ui| {
-            if footer(ui, state) {
-                action = Some(ChartSettingsAction::Done);
-            }
         });
-    });
-    if state.confirming_removal {
-        let title = format!("Remove {}?", c.title);
-        let outcome = kit::confirm(
-            ctx,
-            Id::new("chart-settings-remove"),
-            &kit::Confirm {
-                icon: Icon::Trash,
-                title: &title,
-                message: "The chart leaves this tab; its drawings are kept. To change a chart's market, remove it and add a new one.",
-                destructive: "Remove Chart",
-            },
-        );
-        match outcome {
-            Some(kit::ConfirmOutcome::Confirmed) => {
-                state.confirming_removal = false;
-                action = Some(ChartSettingsAction::RemoveChart);
-            }
-            Some(kit::ConfirmOutcome::Cancelled) => state.confirming_removal = false,
-            None => {}
-        }
+    // A click on the dimmed area around the sheet puts it away, like Done.
+    if action.is_none() && clicked_outside {
+        action = Some(ChartSettingsAction::Done);
     }
     // A template dialog takes Escape first; a second press closes the sheet.
     if let Some(TemplateAction::ApplyToAll(scope)) =
@@ -223,7 +207,6 @@ pub fn show(
         action = Some(ChartSettingsAction::ApplyToAll(scope));
     }
     if action.is_none()
-        && !was_confirming
         && !state.templates.has_dialog()
         && !was_templating
         && ctx.input(|i| i.key_pressed(egui::Key::Escape))
@@ -267,17 +250,19 @@ fn tab_bar(ui: &mut Ui, state: &mut ChartSettingsState, tabs: &[Tab]) {
 }
 
 /// The footer row: "Remove Chart" on the left, the last template action's notice, "Done" on the
-/// right. (The Templates menu sits beside each page's Reset button.) Returns whether Done was
-/// clicked.
-fn footer(ui: &mut Ui, state: &mut ChartSettingsState) -> bool {
-    let mut done = false;
+/// right. (The Templates menu sits beside each page's Reset button.) Returns what a button asked
+/// for. Removing is not confirmed: the chart's drawings are kept, so it can be added back.
+fn footer(ui: &mut Ui, state: &mut ChartSettingsState) -> Option<ChartSettingsAction> {
+    let mut action = None;
     ui.add_space(14.0);
     ui.horizontal(|ui| {
         if kit::destructive_sheet_button(ui, Icon::Trash, "Remove Chart").clicked() {
-            state.confirming_removal = true;
+            action = Some(ChartSettingsAction::RemoveChart);
         }
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-            done = kit::sheet_button(ui, "Done", true, true).clicked();
+            if kit::sheet_button(ui, "Done", true, true).clicked() {
+                action = Some(ChartSettingsAction::Done);
+            }
             // What the last template action did, between the buttons.
             ui.with_layout(Layout::left_to_right(Align::Center), |ui| {
                 chart_templates::notice(ui, &mut state.templates);
@@ -285,7 +270,7 @@ fn footer(ui: &mut Ui, state: &mut ChartSettingsState) -> bool {
         });
     });
     ui.add_space(14.0);
-    done
+    action
 }
 
 // MARK: Appearance
@@ -1604,17 +1589,11 @@ mod tests {
     }
 
     #[test]
-    fn the_sheet_draws_the_removal_alert_and_each_line_source() {
+    fn the_sheet_draws_each_line_source() {
         let mut state = ChartSettingsState::default();
         let mut card = ChartCard::default();
         let mut indicators = IndicatorConfig::default();
-        state.confirming_removal = true;
         draw(&mut state, &mut card, &mut indicators);
-        assert!(
-            state.confirming_removal,
-            "nothing dismisses the alert unasked"
-        );
-        state.confirming_removal = false;
         state.tab = Tab::Appearance;
         draw(&mut state, &mut card, &mut indicators);
     }

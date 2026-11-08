@@ -2761,9 +2761,15 @@ impl ChartCard {
         } else {
             self.bearish_color()
         };
-        painter.line_segment(
-            [Pos2::new(plot.left(), y), Pos2::new(plot.right(), y)],
-            Stroke::new(1.0, color.gamma_multiply(0.65)),
+        // Dotted, so the line that follows the price reads apart from the grid and the drawings.
+        canvas_render::horizontal(
+            painter,
+            (plot.left(), plot.right()),
+            y,
+            canvas_render::LineStyle {
+                stroke: Stroke::new(1.0, color.gamma_multiply(0.65)),
+                dash: crate::model::chart_type::LineDash::Dotted,
+            },
         );
         let tag = Rect::from_min_max(
             Pos2::new(plot.right() + 3.0, y - half),
