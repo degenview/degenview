@@ -88,10 +88,16 @@ Credential Manager > Windows Credentials, where the user can remove them.
   (the webhook list asks once per row per frame) and kept current by the app's own writes.
 - `Scope::shared_group` means nothing here, `DEGENVIEW_NO_KEYCHAIN` keeps secrets in memory, and
   temporary buffers that held a secret are overwritten before they are freed (best effort).
-- **Not covered:** the MCP remote-access TLS key (`mcp-tls.pem`) is still a plaintext file.
+- The MCP remote-access TLS key (`mcp-tls.pem`) is not an item here: it is a certificate and key in
+  one file, so on Windows the whole file is encrypted with DPAPI for the signed-in user
+  (`mcp::tls_protect`, `CryptProtectData`, current-user scope, no UI). A copy of the file, a backup
+  or a disk image is useless to anyone else; any process of the same user can still decrypt it (the
+  fixed entropy string is not a secret). There is no plaintext form to migrate from, so a file that
+  is not DPAPI-wrapped is refused and left alone. Unix keeps a `0600` file.
 - **Not verified:** the real Credential Manager round trip (`credential_manager_round_trip`) runs on
-  the `test-windows` CI job only. Nobody has saved a key in a running Windows build, restarted, and
-  looked at the entry in Credential Manager. The Win32 calls were type-checked for
+  the `test-windows` CI job only (as do the `tls_protect` DPAPI tests). Nobody has saved a key in a
+  running Windows build, restarted, and looked at the entry in Credential Manager, or turned on MCP
+  remote access there and kept the same fingerprint across a restart. The Win32 calls were type-checked for
   `x86_64-pc-windows-gnu`, not built for MSVC here.
 
 ## File dialogs

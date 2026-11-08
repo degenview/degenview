@@ -68,12 +68,12 @@ fn target_name(service: &str, account: &str) -> Option<String> {
 }
 
 /// `text` as a NUL-terminated UTF-16 string for the `...W` calls.
-fn wide(text: &str) -> Vec<u16> {
+pub(crate) fn wide(text: &str) -> Vec<u16> {
     text.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
 /// Bytes that are overwritten with zeros when dropped.
-struct Wiped(Vec<u8>);
+pub(crate) struct Wiped(pub(crate) Vec<u8>);
 
 impl std::fmt::Debug for Wiped {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -88,7 +88,7 @@ impl Drop for Wiped {
 }
 
 /// Zeroes `bytes` in a way the optimizer may not remove as a dead store.
-fn wipe(bytes: &mut [u8]) {
+pub(crate) fn wipe(bytes: &mut [u8]) {
     for byte in bytes.iter_mut() {
         // SAFETY: `byte` is a valid, aligned, exclusive reference.
         unsafe { std::ptr::write_volatile(byte, 0) };

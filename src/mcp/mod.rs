@@ -31,6 +31,7 @@ pub mod seal;
 pub mod snapshot_tools;
 pub mod state;
 pub mod tls;
+mod tls_protect;
 pub mod tools;
 pub mod transport;
 pub mod types;

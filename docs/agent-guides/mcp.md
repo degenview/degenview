@@ -96,7 +96,8 @@
   refuse (the variant can be built directly), no certificate, or one made for another address, is
   refused before a socket opens. Do not add a path that binds without it. `bind` is
   sealed, but only written when it is not loopback, so existing seals keep verifying. The
-  certificate is `mcp::tls` (`mcp-tls.pem` in the data directory, owner-only: repaired on load, written
+  certificate is `mcp::tls` (`mcp-tls.pem` in the data directory, owner-only on Unix and DPAPI-encrypted on Windows through
+  `mcp::tls_protect`, so write and read the file only through `AtRest`: repaired on load, written
   through a fresh temporary file, held to naming the address it records, and made under the
   `mcp-tls.lock` lock so concurrent processes share one identity; keep any new step of that flow inside
   `load_or_create_locked`); the `Host` list comes

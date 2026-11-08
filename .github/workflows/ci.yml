@@ -115,4 +115,4 @@ jobs:
         shell: bash
         env:
           DEGENVIEW_NO_KEYCHAIN: "1"
-        run: cargo test --locked --lib -- self_update update_archive update_check update_host windows_credentials
+        run: cargo test --locked --lib -- self_update update_archive update_check update_host windows_credentials tls_protect

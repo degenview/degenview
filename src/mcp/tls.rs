@@ -6,7 +6,9 @@
 //! compares (or the client stores) the first time it connects.
 //!
 //! The certificate and its private key live in one PEM file in the app's data directory, written
-//! owner-only on Unix and put back to owner-only if a restore or a copy loosened it. The key is not
+//! owner-only on Unix and put back to owner-only if a restore or a copy loosened it. On Windows,
+//! which has no such mode, the file is encrypted with DPAPI for the signed-in user instead
+//! (`tls_protect`). The key is not
 //! part of the credential seal. A process that can only replace the file can present another
 //! certificate, which a client that pinned the fingerprint refuses. A process that can *read* the key
 //! is worse off: it can pose as the server to such a client and take the bearer token it sends, so
@@ -25,6 +27,8 @@ use std::sync::Arc;
 use tokio_rustls::rustls::pki_types::pem::PemObject;
 use tokio_rustls::rustls::pki_types::{CertificateDer, PrivateKeyDer, ServerName};
 use tokio_rustls::rustls::{self, ServerConfig};
+
+use super::tls_protect::{self, AtRest};
 
 /// The file inside the data directory.
 pub const FILE_NAME: &str = "mcp-tls.pem";
@@ -205,10 +209,20 @@ fn load_or_create_within(
     address: IpAddr,
     wait: std::time::Duration,
 ) -> Result<TlsIdentity, String> {
+    load_or_create_with(dir, address, wait, tls_protect::platform())
+}
+
+/// [`load_or_create`] with the form the file takes on disk given, for the tests.
+fn load_or_create_with(
+    dir: &Path,
+    address: IpAddr,
+    wait: std::time::Duration,
+    at_rest: &dyn AtRest,
+) -> Result<TlsIdentity, String> {
     std::fs::create_dir_all(dir)
         .map_err(|error| format!("Could not create {}: {error}", dir.display()))?;
     let _held = lock_dir(dir, wait)?;
-    load_or_create_locked(dir, address)
+    load_or_create_locked(dir, address, at_rest)
 }
 
 /// An exclusive lock on the directory's lock file, held until it is dropped.
@@ -246,11 +260,18 @@ fn lock_dir(dir: &Path, wait: std::time::Duration) -> Result<std::fs::File, Stri
     }
 }
 
-fn load_or_create_locked(dir: &Path, address: IpAddr) -> Result<TlsIdentity, String> {
+fn load_or_create_locked(
+    dir: &Path,
+    address: IpAddr,
+    at_rest: &dyn AtRest,
+) -> Result<TlsIdentity, String> {
     let path = path_in(dir);
     ensure_private(&path)?;
-    match std::fs::read_to_string(&path) {
-        Ok(text) => {
+    match std::fs::read(&path) {
+        Ok(bytes) => {
+            let text = at_rest
+                .unwrap(&bytes)
+                .map_err(|error| format!("{error} ({})", path.display()))?;
             let saved = TlsIdentity::from_file_text(&text)
                 .map_err(|error| format!("{error} ({})", path.display()))?;
             if saved.address == address {
@@ -261,7 +282,7 @@ fn load_or_create_locked(dir: &Path, address: IpAddr) -> Result<TlsIdentity, Str
         Err(error) => return Err(format!("Could not read {}: {error}", path.display())),
     }
     let fresh = TlsIdentity::generate(address)?;
-    save(&path, &fresh)?;
+    save(&path, &fresh, at_rest)?;
     Ok(fresh)
 }
 
@@ -269,7 +290,7 @@ fn load_or_create_locked(dir: &Path, address: IpAddr) -> Result<TlsIdentity, Str
 /// often leaves it readable by others (a `cp` without `-p`), so a loose mode is put back to
 /// owner-only rather than used as it is; a link or anything that is not a regular file is refused,
 /// since reading through it would read something else. Nothing to do when there is no file, and on
-/// systems without Unix modes (there the per-user data directory is what protects it).
+/// systems without Unix modes (on Windows the file is encrypted instead, see `tls_protect`).
 fn ensure_private(path: &Path) -> Result<(), String> {
     #[cfg(unix)]
     {
@@ -305,8 +326,10 @@ fn ensure_private(path: &Path) -> Result<(), String> {
 /// key is never readable by others and a crash never leaves half a file. The temporary file is
 /// always created fresh: one left behind (or planted, as a link) is removed, never reused, because
 /// the mode asked for only applies to a file that is being created.
-fn save(path: &Path, identity: &TlsIdentity) -> Result<(), String> {
+fn save(path: &Path, identity: &TlsIdentity, at_rest: &dyn AtRest) -> Result<(), String> {
     use std::io::Write;
+    // Wrapped before any file is touched, so a protector that fails leaves nothing behind.
+    let bytes = at_rest.wrap(&identity.to_file_text())?;
     let dir = path.parent().ok_or("The TLS file has no directory")?;
     std::fs::create_dir_all(dir)
         .map_err(|error| format!("Could not create {}: {error}", dir.display()))?;
@@ -331,7 +354,7 @@ fn save(path: &Path, identity: &TlsIdentity) -> Result<(), String> {
             use std::os::unix::fs::PermissionsExt;
             file.set_permissions(std::fs::Permissions::from_mode(0o600))?;
         }
-        file.write_all(identity.to_file_text().as_bytes())?;
+        file.write_all(&bytes)?;
         file.sync_all()?;
         std::fs::rename(&temp, path)
     };
@@ -644,6 +667,101 @@ mod tests {
         );
         #[cfg(unix)]
         assert_eq!(mode_of(&dir.join(LOCK_FILE_NAME)), 0o600);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // MARK: At rest
+
+    use super::tls_protect::Fake;
+
+    fn load_fake(dir: &Path, address: IpAddr) -> Result<TlsIdentity, String> {
+        load_or_create_with(dir, address, LOCK_TIMEOUT, &Fake)
+    }
+
+    #[test]
+    fn a_protected_file_holds_no_pem_text_and_loads_back_the_same_identity() {
+        let dir = scratch("wrapped");
+        let first = load_fake(&dir, address()).unwrap();
+        let bytes = std::fs::read(path_in(&dir)).unwrap();
+        let shown = String::from_utf8_lossy(&bytes);
+        assert!(bytes.starts_with(b"FAKE:"));
+        assert!(!shown.contains("BEGIN"), "the PEM text is on disk");
+        assert!(!shown.contains(ADDRESS_PREFIX));
+        let second = load_fake(&dir, address()).unwrap();
+        assert_eq!(first.fingerprint(), second.fingerprint());
+        assert_eq!(first.cert_der, second.cert_der);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_new_address_replaces_a_protected_file_with_a_protected_file() {
+        let dir = scratch("wrapped-moved");
+        let first = load_fake(&dir, address()).unwrap();
+        let moved = load_fake(&dir, "10.0.0.7".parse().unwrap()).unwrap();
+        assert_ne!(first.fingerprint(), moved.fingerprint());
+        let bytes = std::fs::read(path_in(&dir)).unwrap();
+        assert!(bytes.starts_with(b"FAKE:"));
+        assert!(!String::from_utf8_lossy(&bytes).contains("BEGIN"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_file_the_protector_refuses_is_reported_and_left_alone() {
+        // Plain PEM text where a protected file is expected (a file from another machine, or one
+        // that was never protected): it is not read as it is and not replaced.
+        let dir = scratch("unprotected");
+        let path = path_in(&dir);
+        let text = file_text_for("192.168.1.20", &["192.168.1.20"]);
+        std::fs::write(&path, &text).unwrap();
+        let error = load_fake(&dir, address()).unwrap_err();
+        assert!(
+            error.contains("not protected") && error.contains("mcp-tls.pem"),
+            "{error}"
+        );
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_stale_plain_temporary_file_is_cleared_when_the_key_is_saved() {
+        let dir = scratch("stale-tmp");
+        let temp = path_in(&dir).with_extension("pem.tmp");
+        std::fs::write(&temp, "-----BEGIN PRIVATE KEY-----").unwrap();
+        load_fake(&dir, address()).unwrap();
+        assert!(!temp.exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A protector that fails writes nothing, and `load_or_create` says why.
+    #[test]
+    fn a_protector_that_fails_leaves_no_file() {
+        struct Failing;
+        impl AtRest for Failing {
+            fn wrap(&self, _: &str) -> Result<Vec<u8>, String> {
+                Err("Windows could not protect the TLS key".to_owned())
+            }
+            fn unwrap(&self, _: &[u8]) -> Result<String, String> {
+                Err("unreachable".to_owned())
+            }
+        }
+        let dir = scratch("failing");
+        let error = load_or_create_with(&dir, address(), LOCK_TIMEOUT, &Failing).unwrap_err();
+        assert!(error.contains("could not protect"), "{error}");
+        assert!(!path_in(&dir).exists());
+        assert!(!path_in(&dir).with_extension("pem.tmp").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn the_windows_protector_keeps_the_identity_across_loads() {
+        let dir = scratch("dpapi");
+        let dpapi = &tls_protect::Dpapi;
+        let first = load_or_create_with(&dir, address(), LOCK_TIMEOUT, dpapi).unwrap();
+        let bytes = std::fs::read(path_in(&dir)).unwrap();
+        assert!(!String::from_utf8_lossy(&bytes).contains("BEGIN"));
+        let second = load_or_create_with(&dir, address(), LOCK_TIMEOUT, dpapi).unwrap();
+        assert_eq!(first.fingerprint(), second.fingerprint());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -232,7 +232,7 @@ that expects OAuth discovery will not work with it.
 - Anything but loopback is served over TLS 1.3 only. `McpServer::start_listening` refuses it without
   a certificate, and with one made for a different address, before binding.
 - The certificate is self-signed for that address, made on first use and kept in `mcp-tls.pem` in the
-  data directory (owner-only on Unix; Windows relies on the per-user data directory). A new address
+  data directory (owner-only on Unix; on Windows encrypted with DPAPI for the signed-in user, `mcp::tls_protect`, and a file that is not in that form is refused, never read as plain text). A new address
   means a new certificate, so a new fingerprint to pin. A file that cannot be read is an error, not a
   reason to replace it. The address a file records about itself is checked against the certificate's
   own names (a mismatch is an error). The key is not in the credential seal. Replacing the file lets
