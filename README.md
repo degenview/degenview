@@ -56,7 +56,9 @@ leaving your device.
 
 - Hand-drawn OHLC candlesticks, line series, grid, time axis, adaptive price precision,
   current-price overlay, and price-change readout — no third-party chart library.
-- **Indicators** — Volume, RSI, configurable EMA, Bollinger Bands, and Supertrend flip markers.
+- **Indicators** — 25 built in: Volume, RSI, configurable EMA, Bollinger Bands and Supertrend flip markers,
+  plus 20 bundled Pine indicators (Ichimoku Cloud, MACD, VWAP, Stochastic and more), added from the
+  toolbar's searchable picker with a preview of each.
 - **Trend lines, Fibonacci retracements, and brush strokes** — anchored to time and price, with
   per-window undo/redo (⌘Z / ⇧⌘Z).
 - **Ruler** — Temporary move measurement (percent, price, duration, bar count).
