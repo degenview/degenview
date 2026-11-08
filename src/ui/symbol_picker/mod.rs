@@ -184,7 +184,7 @@ impl SymbolPicker {
             .clone()
             .and_then(|result| self.search.related(ctx, &result));
         let mut picked: Option<(SearchResult, bool)> = None;
-        egui::Modal::new(Id::new("symbol_picker"))
+        let modal = egui::Modal::new(Id::new("symbol_picker"))
             .backdrop_color(Color32::from_black_alpha(110))
             .frame(
                 egui::Frame::new()
@@ -212,6 +212,8 @@ impl SymbolPicker {
                     env,
                 );
             });
+        // A click on the dimmed window outside the sheet closes it.
+        let clicked_outside = modal.backdrop_response.clicked();
 
         if let Some((result, add)) = picked {
             output = output.or_else(|| self.commit(result, add));
@@ -223,7 +225,7 @@ impl SymbolPicker {
         if std::mem::take(&mut self.settings_requested) {
             output = Some(Output::OpenAlpacaSettings);
         }
-        if keys.close {
+        if keys.close || clicked_outside {
             self.close();
         }
         if matches!(output, Some(Output::Replace(_) | Output::Add(_))) {

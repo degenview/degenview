@@ -297,6 +297,31 @@ fn escape_closes() {
     assert!(rig.picker.highlighted().is_none());
 }
 
+fn click_at(pos: egui::Pos2) -> Vec<egui::Event> {
+    [true, false]
+        .map(|pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Modifiers::NONE,
+        })
+        .into()
+}
+
+#[test]
+fn a_click_outside_the_sheet_closes_it_and_a_click_inside_does_not() {
+    let mut rig = Rig::new(1100.0, "btc");
+    // The sheet is centred: its empty footer is inside it and the window's corner is not.
+    rig.frame(vec![egui::Event::PointerMoved(pos2(950.0, 690.0))]);
+    rig.frame(click_at(pos2(950.0, 690.0)));
+    rig.frame(Vec::new());
+    assert!(rig.picker.is_open(), "a click in the sheet leaves it open");
+    rig.frame(vec![egui::Event::PointerMoved(pos2(6.0, 6.0))]);
+    rig.frame(click_at(pos2(6.0, 6.0)));
+    rig.frame(Vec::new());
+    assert!(!rig.picker.is_open(), "a click outside closes it");
+}
+
 #[test]
 fn an_empty_box_lists_the_recent_picks_in_scope() {
     let mut rig = Rig::new(1100.0, "btc");
