@@ -13,35 +13,11 @@ pub fn is_flatpak() -> bool {
         )
 }
 
-/// True when this Flatpak was installed from a remote (the hosted repo, or Flathub), so
-/// `flatpak update` can replace it and the in-app check has nothing to add. A bundle installed from
-/// the release page has no remote of its own and keeps the check, which names the release page.
-pub fn updated_by_flatpak() -> bool {
-    is_flatpak()
-        && std::fs::read_to_string("/.flatpak-info").is_ok_and(|info| installed_from_remote(&info))
-}
-
-/// The remote a Flatpak was installed from, as `/.flatpak-info` records it (`[Instance]`, `origin`).
-fn origin(info: &str) -> Option<&str> {
-    let mut in_instance = false;
-    for line in info.lines().map(str::trim) {
-        if let Some(section) = line
-            .strip_prefix('[')
-            .and_then(|rest| rest.strip_suffix(']'))
-        {
-            in_instance = section == "Instance";
-        } else if let Some(value) = line.strip_prefix("origin=").filter(|_| in_instance) {
-            return Some(value.trim()).filter(|value| !value.is_empty());
-        }
-    }
-    None
-}
-
-/// A bundle installed from a file gets a remote named `<app id>-origin` (a place to find its
-/// runtime, not somewhere to update from); any other name is a repo the user added.
-fn installed_from_remote(info: &str) -> bool {
-    origin(info).is_some_and(|name| !name.ends_with("-origin"))
-}
+/// What an update notice says in a Flatpak. Flatpak records nothing about the remote an app was
+/// installed from (`/.flatpak-info` has no such key), so the app cannot tell a copy installed from
+/// the hosted repo, which `flatpak update` replaces, from one installed from a downloaded bundle,
+/// which it cannot. The notice is true for both. The repo can trail GitHub by hours.
+pub const FLATPAK_UPDATE_NOTE: &str = "Run flatpak update if you installed from the DegenView repository, or download the new .flatpak from the release page.";
 
 fn from_signals(flatpak_id: Option<&std::ffi::OsStr>, info_file: &Path) -> bool {
     flatpak_id.is_some_and(|id| !id.is_empty()) || info_file.exists()
@@ -65,30 +41,10 @@ mod tests {
         assert!(!from_signals(Some(OsStr::new("")), missing));
     }
 
-    const FROM_REPO: &str = "[Application]\nname=es.nico.degenview\n\n[Instance]\ninstance-id=1\nbranch=stable\norigin=degenview\nflatpak-version=1.16.1\n";
-    const FROM_BUNDLE: &str = "[Application]\nname=es.nico.degenview\n\n[Instance]\nbranch=beta\norigin=es.nico.degenview-origin\n";
-
     #[test]
-    fn a_repo_the_user_added_updates_the_app() {
-        assert_eq!(origin(FROM_REPO), Some("degenview"));
-        assert!(installed_from_remote(FROM_REPO));
-        assert!(installed_from_remote("[Instance]\norigin=flathub\n"));
-    }
-
-    #[test]
-    fn a_bundle_from_a_file_does_not() {
-        assert_eq!(origin(FROM_BUNDLE), Some("es.nico.degenview-origin"));
-        assert!(!installed_from_remote(FROM_BUNDLE));
-    }
-
-    #[test]
-    fn a_missing_empty_or_misplaced_origin_keeps_the_check() {
-        assert!(!installed_from_remote(""));
-        assert!(!installed_from_remote("[Instance]\nbranch=stable\n"));
-        assert!(!installed_from_remote("[Instance]\norigin=\n"));
-        // `origin` in another section says nothing about the install.
-        assert!(!installed_from_remote("[Application]\norigin=degenview\n"));
-        assert!(!installed_from_remote("origin=degenview\n"));
+    fn the_flatpak_note_names_both_ways_to_update() {
+        assert!(FLATPAK_UPDATE_NOTE.contains("flatpak update"));
+        assert!(FLATPAK_UPDATE_NOTE.contains("release page"));
     }
 
     #[test]

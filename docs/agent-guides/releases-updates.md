@@ -327,10 +327,11 @@ so there is no signature check beyond those.
   on the command line. A test observes both behaviours with a script.
 - **Wait**: `wait_for_predecessor` polls `/proc/<pid>/stat` every 100 ms for up to 60 s and treats a
   zombie (`Z`) as exited. No `libc` is needed; with no `/proc` it does not wait.
-- **Flatpak**: a bundle installed from a file is notify-only. One installed from a remote (the repo
-  `degenview/flatpak`, served at `flatpak.degenview.app`, or Flathub) is updated by `flatpak update`,
-  and the app neither checks nor draws the update card there (`UpdateHost::managed_by_flatpak`). Each
-  release builds one Flatpak branch, `stable` or `beta`, from the tag; see [Flatpak](../flatpak.md#hosted-repo).
+- **Flatpak**: the app cannot replace itself and cannot tell where it was installed from (Flatpak
+  records no remote in `/.flatpak-info`), so the update note is `sandbox::FLATPAK_UPDATE_NOTE`: run
+  `flatpak update` (hosted repo `degenview/flatpak`, served at `flatpak.degenview.app`) or download
+  the bundle. Each release builds one Flatpak branch, `stable` or `beta`, from the tag; the repo also
+  copies a final release onto `beta`. See [Flatpak](../flatpak.md#hosted-repo).
 - **Checked against real artifacts**: the rc.11 tarballs for both CPUs unpack through
   `extract_tar_gz_binary` and carry the expected ELF machine (`0x3E`, `0xB7`): ignored test
   `a_real_linux_release_tarball_unpacks` with `DEGENVIEW_TEST_LINUX_TARBALL=<path>`.

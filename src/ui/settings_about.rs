@@ -116,14 +116,10 @@ pub fn show(ui: &mut Ui, updates: &UpdateHost) -> Outcome {
                         ui.spacing_mut().item_spacing = Vec2::ZERO;
                         header(ui, build);
                         ui.add_space(20.0);
-                        if updates.managed_by_flatpak() {
-                            flatpak_update_row(ui);
-                        } else {
-                            outcome.quit = update_status_card(ui, updates, &mut outcome.channel);
-                            if updates.channel() == Channel::ReleaseCandidate {
-                                ui.add_space(10.0);
-                                channel_warning(ui);
-                            }
+                        outcome.quit = update_status_card(ui, updates, &mut outcome.channel);
+                        if updates.channel() == Channel::ReleaseCandidate {
+                            ui.add_space(10.0);
+                            channel_warning(ui);
                         }
                         ui.add_space(24.0);
                         group(ui, |ui| {
@@ -350,27 +346,6 @@ fn footer_status(view: &UpdateView) -> Option<String> {
         Some(elapsed) => format!("Checked {}", ago(elapsed)),
         None => String::new(),
     })
-}
-
-/// Instead of the update card in a Flatpak installed from a remote: `flatpak update` does it, so
-/// there is no check, no channel picker and no button.
-fn flatpak_update_row(ui: &mut Ui) {
-    group(ui, |ui| {
-        row(
-            ui,
-            Icon::ArrowUp,
-            Color32::from_rgb(142, 142, 147),
-            "Updates",
-            |ui| {
-                ui.label(kit::text(
-                    "Installed with Flatpak. Update with flatpak update.",
-                    kit::size::SUBHEADLINE + 1.0,
-                    kit::REGULAR,
-                    theme::text_secondary(),
-                ));
-            },
-        );
-    });
 }
 
 /// The update card: one tinted block with the state, at most one button, and a quiet footer for
@@ -974,20 +949,6 @@ mod tests {
             assert_eq!(show(ui, &UpdateHost::default()), Outcome::default());
         });
         output.textures_delta.clear();
-    }
-
-    #[test]
-    fn a_flatpak_installed_from_a_remote_draws_a_row_and_asks_nothing() {
-        let host = UpdateHost::managed_for_test();
-        let ctx = egui::Context::default();
-        egui_extras::install_image_loaders(&ctx);
-        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
-            assert_eq!(show(ui, &host), Outcome::default());
-        });
-        output.textures_delta.clear();
-        // The card would have started the first check; the row must not.
-        assert_eq!(host.view().phase, Phase::Unchecked);
-        assert!(!host.view().checking);
     }
 
     fn view(phase: Phase) -> UpdateView {
