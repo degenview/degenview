@@ -382,6 +382,8 @@ mod tests {
             source,
             price: Some(f64::NAN),
             event: None,
+            base: None,
+            quote: None,
         }
     }
 

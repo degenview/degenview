@@ -114,6 +114,7 @@ fn key_name(key: Key) -> &'static str {
         Key::G => "G",
         Key::H => "H",
         Key::J => "J",
+        Key::K => "K",
         Key::L => "L",
         Key::N => "N",
         Key::P => "P",
@@ -468,6 +469,12 @@ pub fn tool(tool: crate::model::Tool) -> Option<Shortcut> {
     }
 }
 
+/// Opens the symbol picker to change the focused chart's market.
+pub const SYMBOL_SEARCH: Shortcut = Shortcut::new(
+    &[Chord::new(Key::K).primary()],
+    &[Chord::new(Key::K).primary()],
+);
+
 /// Hides or shows every drawing on the chart.
 pub const HIDE_DRAWINGS: Shortcut = Shortcut::new(
     &[Chord::new(Key::H).control().alt()],
@@ -539,7 +546,7 @@ pub const REDO: Shortcut = Shortcut::new(
 mod tests {
     use super::*;
 
-    const ALL: [(&str, Shortcut); 52] = [
+    const ALL: [(&str, Shortcut); 53] = [
         ("debug continue", DEBUG_CONTINUE),
         ("debug pause", DEBUG_PAUSE),
         ("debug step over", DEBUG_STEP_OVER),
@@ -578,6 +585,7 @@ mod tests {
         ("cut", CUT),
         ("copy", COPY),
         ("paste", PASTE),
+        ("symbol search", SYMBOL_SEARCH),
         ("hide drawings", HIDE_DRAWINGS),
         ("snapshot download", SNAPSHOT_DOWNLOAD),
         ("snapshot copy image", SNAPSHOT_COPY_IMAGE),

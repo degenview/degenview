@@ -328,6 +328,8 @@ impl MarketSource for CoinMarketCap {
                 source: DataSource::CoinMarketCap,
                 price: None,
                 event: None,
+                base: None,
+                quote: None,
             })
             .collect())
     }

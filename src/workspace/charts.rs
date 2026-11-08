@@ -474,7 +474,7 @@ mod tests {
         let focused: Vec<_> = summaries.iter().filter(|chart| chart.focused).collect();
         assert_eq!(focused.len(), 1);
         assert_eq!(focused[0].id, eth.chart_id);
-        assert_eq!(focused[0].display_symbol, "ETH/USD");
+        assert_eq!(focused[0].display_symbol, "ETH-USD");
         assert!(!focused[0].is_line_chart);
     }
 
@@ -567,6 +567,8 @@ mod tests {
             source: DataSource::DexScreener,
             price: Some(0.01),
             event: None,
+            base: None,
+            quote: None,
         };
 
         workspace.add_from_search(&result, &ctx);

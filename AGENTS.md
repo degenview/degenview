@@ -10,6 +10,7 @@ scenario matches the work:
 | Scenario | Read |
 | --- | --- |
 | Providers, symbols, timeframes, prediction markets, caches, icons, live data, or watchlists | [Market data](docs/agent-guides/market-data.md) |
+| The symbol picker (changing a chart's market), symbol search ranking, or how markets are named | [Symbol picker](docs/symbol-picker.md) |
 | Chart rendering, price labels, chart types, canvas, templates, drawings, portfolio cards, or snapshots | [Charts](docs/agent-guides/charts.md) |
 | The Portfolio tab: Overview, Holdings, Transactions, Statistics, their empty states, or portfolio revaluation | [Portfolio page](docs/portfolio-page.md) |
 | Text, note, table, image or post drawings | [Annotation tools](docs/annotation-tools.md) |
@@ -125,6 +126,7 @@ because cargo never deletes old output. Finished worktrees are where the disk go
 - [Forecasting, volume and measurement tools](docs/forecast-tools.md) — the Forecast tile: hypothetical positions, ghost feed, VWAP and volume profiles from the chart's own bars, measurers, provenance.
 - [Session statistics](docs/session-stats.md) — `P(outcome | conditions)` over the chart's own days with N and a 95% interval: sessions, outcomes, filters, the panel and the MCP tool, what the missing sub-hourly bars cost, provenance.
 - [Fibonacci and Gann tools](docs/fibonacci-gann-tools.md) — the Fibonacci and Gann tile: editable level lists, bar-counted time lines, curves sampled where they show, Gann angles as ratios of price to time, provenance.
+- [Symbol picker](docs/symbol-picker.md) — the modal that changes the focused chart's market: scopes, ranking of search hits, exchange names, detail panel, what is verified.
 - [Workspace toolbar](docs/workspace-toolbar.md) — the flat top bar: groups, the focused chart, label collapse, what is verified.
 - [Indicator catalog](docs/indicator-picker.md) — the one list the add-indicator surfaces draw from, the 20 bundled Pine indicators and their rules, why LuxAlgo's scripts are not included.
 - [Pine colour picker](docs/pine-color-picker.md) — inline swatches and picker: token-based detection, the rewrite table, room opened in the layout, one undo step per gesture, what is verified.

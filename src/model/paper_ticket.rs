@@ -184,14 +184,15 @@ pub fn rounded_to_increment(value: f64, tick: f64) -> f64 {
     (ticks * tick * scale).round() / scale
 }
 
-/// The asset being traded: `BTC` for `BTC/USDT`; a name without a pair falls back to the symbol.
+/// The asset being traded: `BTC` for `BTCUSDT`, `BTC-USD` or a DEX pair named `BTC/USDT`. A
+/// symbol that names no pair is the asset itself.
 pub fn base_symbol(instrument: &PaperInstrument) -> String {
     if let Some((base, _)) = instrument.display_name.split_once('/')
         && !base.is_empty()
     {
         return base.to_uppercase();
     }
-    instrument.symbol.to_uppercase()
+    instrument.source.base_asset(&instrument.symbol)
 }
 
 /// Whole-unit instruments (stocks) start at one share; fractional ones start empty, where a

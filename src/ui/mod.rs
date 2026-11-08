@@ -114,6 +114,7 @@ pub mod shortcut;
 pub mod snapshot_menu;
 pub mod source_logo;
 pub mod split;
+pub mod symbol_picker;
 pub mod tab_bar;
 pub mod theme;
 pub mod tool_sidebar;

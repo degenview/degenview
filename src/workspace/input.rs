@@ -13,6 +13,15 @@ impl ChartWorkspace {
         if self.add_chart.is_open() {
             return;
         }
+        // Not under another picker, and not while typing: the field keeps Ctrl+K where it means
+        // something else.
+        if !self.symbol_picker.is_open()
+            && !self.indicator_picker.is_open()
+            && ui.input_mut(|input| shortcut::SYMBOL_SEARCH.consume(input))
+        {
+            self.open_symbol_picker();
+            return;
+        }
         // A text field (the properties dialog's) keeps its own undo.
         let typing = ui.ctx().egui_wants_keyboard_input();
         let (undo, redo) =

@@ -10,9 +10,11 @@ pub struct Alpaca;
 
 pub const ALPACA: Alpaca = Alpaca;
 
+/// What a search or a fetch says when no Alpaca keys are saved.
+pub const MISSING_KEY: &str = "Set up your Alpaca API key before using stock charts.";
+
 fn credentials() -> Result<(String, String), String> {
-    crate::service::keychain_api_keys::alpaca_credentials()
-        .ok_or_else(|| "Set up your Alpaca API key before using stock charts.".to_owned())
+    crate::service::keychain_api_keys::alpaca_credentials().ok_or_else(|| MISSING_KEY.to_owned())
 }
 
 /// Quarterly and yearly bars don't exist on Alpaca; they fold monthly ones.
@@ -124,12 +126,12 @@ impl MarketSource for Alpaca {
                 asset.symbol.to_uppercase().contains(&needle)
                     || asset.name.to_uppercase().contains(&needle)
             })
-            .map(|asset| SearchResult {
-                symbol: format!("{} — {}", asset.symbol, asset.name),
-                full_symbol: asset.symbol.clone(),
-                source: crate::model::DataSource::Alpaca,
-                price: None,
-                event: None,
+            .map(|asset| {
+                SearchResult::new(
+                    crate::model::DataSource::Alpaca,
+                    format!("{}{}{}", asset.symbol, super::NAME_SEPARATOR, asset.name),
+                    asset.symbol.clone(),
+                )
             })
             .collect();
         Ok(rank_results(results, query).into_iter().take(30).collect())

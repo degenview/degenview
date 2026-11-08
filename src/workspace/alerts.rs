@@ -107,8 +107,7 @@ impl ChartWorkspace {
     }
 
     pub fn alert_asset_for(symbol: &str, source: DataSource) -> AlertAsset {
-        let display = source.display_symbol(symbol);
-        let ticker = display.split('/').next().unwrap_or(&display).to_uppercase();
+        let ticker = source.base_asset(symbol);
         AlertAsset::new(
             crate::model::InstrumentId::new(source, symbol),
             ticker.clone(),

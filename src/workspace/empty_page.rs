@@ -99,6 +99,8 @@ impl ChartWorkspace {
                             source,
                             price: None,
                             event: None,
+                            base: None,
+                            quote: None,
                         },
                         &ctx,
                     );

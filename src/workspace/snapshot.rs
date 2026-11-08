@@ -718,7 +718,7 @@ mod tests {
             })
             .expect("the composer");
         assert!(url.starts_with("https://x.com/intent/post?text="), "{url}");
-        assert!(url.contains("BTC%2FUSDT%201H%20chart"), "{url}");
+        assert!(url.contains("BTCUSDT%201H%20chart"), "{url}");
         assert!(
             url.ends_with("&url=https%3A%2F%2Fcdn.example.com%2Fs%2Fabc.png"),
             "{url}"

@@ -192,6 +192,8 @@ fn event_results(event: &Value) -> Vec<SearchResult> {
                 image_url: artwork(market).or_else(|| event_artwork.clone()),
                 series: Vec::new(),
             }),
+            base: None,
+            quote: None,
         });
     }
     results

@@ -20,6 +20,13 @@ become one chart: `EventInfo::series` holds the choices, the first choice suppli
 candles, and `ChartCard::set_series` draws choices by position with end labels.
 `PersistedChart::pm_series`/`title` persist them; watchlists do not yet.
 
+## Names and search
+
+- A market is named as its exchange names it (`BTCUSDT`, `BTC-USD`): `DataSource::display_symbol` only
+  upper-cases. Do not rebuild `BTC/USDT` labels. Read the asset with `DataSource::base_asset` or
+  `SearchResult::base_asset`, the pair from `SearchResult::base`/`quote`.
+- Search hits are ordered by `service::search_rank`; see [Symbol picker](../symbol-picker.md).
+
 ## Timeframes
 
 - Add the `Timeframe` case, its `Timeframe::interval` token (`1h`, `1d`, `1w`, `1M`, `3M`, `1Y`), and

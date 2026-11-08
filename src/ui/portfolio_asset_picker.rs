@@ -626,6 +626,8 @@ mod tests {
             source,
             price: None,
             event: None,
+            base: None,
+            quote: None,
         }
     }
 

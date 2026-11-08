@@ -92,6 +92,8 @@ fn hit(source: DataSource, display: &str, full: &str) -> SearchResult {
         source,
         price: None,
         event: None,
+        base: None,
+        quote: None,
     }
 }
 
