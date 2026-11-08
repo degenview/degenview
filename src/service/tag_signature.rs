@@ -106,8 +106,7 @@ fn verify_release_tag_at(api: &str, tag: &str) -> Result<(), TagError> {
         return Err(TagError::WrongTag);
     }
     let fetch = |url: String| {
-        http::get_text(&url, &github_headers(), Retry::Transient)
-            .map_err(|error| TagError::Network(error.to_string()))
+        http::get_text(&url, &github_headers(), Retry::Transient).map_err(network_error)
     };
     let unreadable = |_| TagError::Network("unreadable reply from GitHub".to_owned());
     let reference: RefDto =
@@ -120,6 +119,18 @@ fn verify_release_tag_at(api: &str, tag: &str) -> Result<(), TagError> {
         serde_json::from_str(&fetch(format!("{api}/tags/{}", reference.object.sha))?)
             .map_err(unreadable)?;
     evaluate(tag, &object)
+}
+
+/// GitHub answers 403 (or 429) to an unauthenticated client that used its hourly quota, which is
+/// shared by everything on the same address. Say so, as the update check does, instead of showing
+/// "HTTP 403".
+fn network_error(error: http::Error) -> TagError {
+    match error {
+        http::Error::Status(403 | 429) => {
+            TagError::Network("GitHub is rate limiting requests. Try again later.".to_owned())
+        }
+        other => TagError::Network(other.to_string()),
+    }
 }
 
 fn evaluate(tag: &str, object: &TagDto) -> Result<(), TagError> {
@@ -238,6 +249,20 @@ mod tests {
         assert_eq!(evaluate("v0.1.3", &tag(|_| {})), Err(TagError::WrongTag));
         let tree = tag(|json| json["object"]["type"] = "tree".into());
         assert_eq!(evaluate("v0.1.2", &tree), Err(TagError::WrongTag));
+    }
+
+    #[test]
+    fn a_rate_limited_check_says_so_instead_of_showing_the_status_code() {
+        for status in [403, 429] {
+            assert_eq!(
+                network_error(http::Error::Status(status)).to_string(),
+                "Could not check the release signature: GitHub is rate limiting requests. Try again later."
+            );
+        }
+        assert_eq!(
+            network_error(http::Error::Status(500)).to_string(),
+            "Could not check the release signature: HTTP 500"
+        );
     }
 
     #[test]
