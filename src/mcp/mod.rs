@@ -28,6 +28,8 @@ pub mod portfolio;
 pub mod portfolio_tools;
 pub mod replay_tools;
 pub mod seal;
+pub mod session_stats;
+pub mod session_stats_tools;
 pub mod snapshot_tools;
 pub mod state;
 pub mod tls;

@@ -94,6 +94,7 @@ pub mod scale_menu;
 pub mod script_alert_list;
 pub mod script_catalog;
 mod series_render;
+pub mod session_stats_view;
 pub mod settings_about;
 pub mod settings_ai;
 pub mod settings_api_keys;

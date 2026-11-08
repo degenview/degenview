@@ -169,6 +169,7 @@ behavior.
   an instance, and after that the switch is only `PineInstance::visible`, so inputs, style and order
   survive turning a script off. Removing an instance is the separate x on its row. The sheet has no
   workspace handle, so its edits are not undoable.
+- Session statistics (`model::session_stats`, `ui::session_stats_view`) read the market's own candles the chart holds, cut at the replay position, never a constructed chart type's bars, and answer once per change of bars or question (cached, never per frame). The panel state is card state: not saved, in no template. Every answer carries its sample size and a 95% interval and is a historical frequency, never a forecast. See [Session statistics](../session-stats.md).
 - Undo is one typed stack (`Snapshot`): drawings, or indicators and scripts. Bulk changes are one
   `apply_drawing_commands` batch or one `remember_indicators` entry. See
   [chart context menus](../chart-context-menu.md).

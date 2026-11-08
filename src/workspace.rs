@@ -725,6 +725,19 @@ impl ChartWorkspace {
                 )
                 .show(ui, |ui| self.show_tree_panel(ui));
         }
+        if self.context.stats_chart.is_some() {
+            egui::Panel::right(egui::Id::new(("session_stats", self.id)))
+                .resizable(true)
+                .default_size(340.0)
+                .min_size(280.0)
+                .max_size(560.0)
+                .frame(
+                    egui::Frame::new()
+                        .fill(ui::theme::chrome())
+                        .inner_margin(egui::Margin::ZERO),
+                )
+                .show(ui, |ui| self.show_stats_panel(ui));
+        }
         if self.context.logs.chart.is_some() {
             egui::Panel::right(egui::Id::new(("pine_logs", self.id)))
                 .resizable(true)

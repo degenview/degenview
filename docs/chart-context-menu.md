@@ -35,6 +35,7 @@ before).
 | Lock / Unlock vertical cursor line by time | Pins a vertical line to the clicked time. | `ChartCard::time_lock` |
 | Table view | Docks the bars and indicator values as a table under the charts. | `model::chart_table`, `ui::chart_table_view` |
 | Object tree | Docks the symbol, indicators, scripts and drawings as a list on the right. | `model::object_tree`, `ui::object_tree` |
+| Session statistics | Docks a panel on the right that counts how often something happened on the chart's days, with N and a 95% interval. See [Session statistics](session-stats.md). | `model::session_stats`, `ui::session_stats_view` |
 | Chart template ▸ | Applies a preset or saved appearance template, saves the current look, manages templates, resets. | `ChartTemplateStore`, `ChartCard::apply_template`, the settings sheet's dialogs |
 | Remove *N* drawings | Asks, then removes the chart's drawings as one undo step. | `confirm_drawings_removal`, `apply_drawing_commands` |
 | Remove *N* indicators | Asks, then removes built-in indicators and scripts; undoable. | `Snapshot::Indicators` |

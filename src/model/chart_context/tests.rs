@@ -260,6 +260,10 @@ fn panels_show_whether_they_are_open() {
     let menu = menu(&context(Some(1.0)), &facts);
     assert!(find(&menu, &Command::ToggleTable).unwrap().checked);
     assert!(!find(&menu, &Command::ToggleObjectTree).unwrap().checked);
+    assert!(!find(&menu, &Command::ToggleSessionStats).unwrap().checked);
+    facts.stats_open = true;
+    let menu = super::menu(&context(Some(1.0)), &facts);
+    assert!(find(&menu, &Command::ToggleSessionStats).unwrap().checked);
 }
 
 fn template(id: u64, name: &str, built_in: bool, current: bool) -> TemplateRow {

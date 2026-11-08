@@ -121,6 +121,7 @@ pub struct Facts {
     pub time_locked: bool,
     pub table_open: bool,
     pub tree_open: bool,
+    pub stats_open: bool,
     /// The chart's price-scale mode, which the price-axis menu marks.
     pub scale_mode: PriceScaleMode,
     pub templates: Vec<TemplateRow>,
@@ -145,6 +146,7 @@ impl Default for Facts {
             time_locked: false,
             table_open: false,
             tree_open: false,
+            stats_open: false,
             scale_mode: PriceScaleMode::Regular,
             templates: Vec::new(),
             pane: None,
@@ -172,6 +174,7 @@ pub enum Command {
     ToggleTimeLock,
     ToggleTable,
     ToggleObjectTree,
+    ToggleSessionStats,
     ApplyTemplate(u64),
     SaveTemplate,
     ManageTemplates,
@@ -544,6 +547,7 @@ fn background(context: &ChartContext, facts: &Facts) -> Vec<Entry> {
     let utilities = vec![
         Item::new(Command::ToggleTable, "Table view").checked(facts.table_open),
         Item::new(Command::ToggleObjectTree, "Object tree").checked(facts.tree_open),
+        Item::new(Command::ToggleSessionStats, "Session statistics").checked(facts.stats_open),
         template_submenu(facts),
     ];
 

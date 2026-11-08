@@ -110,6 +110,7 @@ pub fn gate(command: &McpCommand) -> Gate {
         | C::GetCandles { .. }
         | C::ListDrawings { .. }
         | C::GetIndicatorValues { .. }
+        | C::GetSessionStats { .. }
         | C::ListPaperAccounts
         | C::GetPaperAccount { .. }
         | C::ListPaperHistory { .. }

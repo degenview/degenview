@@ -19,11 +19,13 @@ use crate::model::chart_template::ApplyScope;
 use crate::model::object_tree::{self, IndicatorKey, Key as TreeKey};
 use crate::model::paper::{PaperOrderSide, PaperOrderType};
 use crate::model::price_scale::PriceScaleMode;
+use crate::model::session_stats;
 use crate::ui::ContextRequest;
 use crate::ui::chart_context_menu::{self, MenuState, Outcome};
 use crate::ui::chart_table_view::{self, TableAction, TableViewState};
 use crate::ui::chart_templates::{self, TemplateState};
 use crate::ui::object_tree::{self as tree_view, TreeAction, TreeState};
+use crate::ui::session_stats_view::{self, StatsViewState};
 use eframe::egui::{Context, Id, Pos2};
 
 /// How long a message stays up.
@@ -53,6 +55,8 @@ pub(super) struct ContextState {
     /// The chart a Table view or Object Tree shows, when open.
     pub(super) table_chart: Option<u64>,
     pub(super) tree_chart: Option<u64>,
+    /// The chart the Session statistics panel reads, when open.
+    pub(super) stats_chart: Option<u64>,
     /// The Pine logs pane: the chart it shows and what it keeps between frames.
     pub(super) logs: super::pine_logs::PineLogsPane,
     /// A bulk indicator removal waiting for its confirmation.
@@ -66,6 +70,7 @@ pub(super) struct ContextState {
     hover: Option<(u64, crate::model::Anchor)>,
     table: TableViewState,
     tree: TreeState,
+    stats: StatsViewState,
 }
 
 /// Where the copied drawings wait: shared by every tab and window of the app.
@@ -241,6 +246,7 @@ impl ChartWorkspace {
             time_locked: chart.chart.time_lock().is_some(),
             table_open: self.context.table_chart == Some(chart.id),
             tree_open: self.context.tree_chart == Some(chart.id),
+            stats_open: self.context.stats_chart == Some(chart.id),
             scale_mode: chart.scale_mode,
             ..Facts::default()
         };
@@ -437,6 +443,9 @@ impl ChartWorkspace {
             }
             Command::ToggleObjectTree => {
                 self.context.tree_chart = toggled(self.context.tree_chart, chart_id);
+            }
+            Command::ToggleSessionStats => {
+                self.context.stats_chart = toggled(self.context.stats_chart, chart_id);
             }
             Command::ApplyTemplate(id) => {
                 let store = self.store.clone();
@@ -772,7 +781,11 @@ impl ChartWorkspace {
 
     /// Keeps the open panels honest: each follows its chart, and only that chart builds a feed.
     pub(super) fn sync_context_panels(&mut self) {
-        for panel in [&mut self.context.table_chart, &mut self.context.tree_chart] {
+        for panel in [
+            &mut self.context.table_chart,
+            &mut self.context.tree_chart,
+            &mut self.context.stats_chart,
+        ] {
             if panel.is_some_and(|id| !self.charts.iter().any(|chart| chart.id == id)) {
                 *panel = None;
             }
@@ -929,6 +942,37 @@ impl ChartWorkspace {
             chart_table_view::show(ui, &mut self.context.table, &title, feed.as_deref(), price);
         if action == Some(TableAction::Close) {
             self.context.table_chart = None;
+        }
+    }
+
+    /// The Session statistics panel: the bars the chart draws (its market's own candles, cut at the
+    /// replay position, never a constructed type's bars) put to the panel's question.
+    pub(super) fn show_stats_panel(&mut self, ui: &mut egui::Ui) {
+        let Some(chart_id) = self.context.stats_chart else {
+            return;
+        };
+        let Some(index) = self.chart_index(chart_id) else {
+            return;
+        };
+        let title = format!("{} {}", self.charts[index].symbol, self.timeframe.label());
+        let hours = session_stats::MarketHours::for_source(self.charts[index].source);
+        let bar_ms = session_stats::bar_ms(self.timeframe);
+        // The chart data borrows the workspace, so the panel's state is lent out for the frame.
+        let mut state = std::mem::take(&mut self.context.stats);
+        let action = {
+            let data = self.chart_data(chart_id);
+            let input = data.as_ref().map(|data| session_stats_view::Input {
+                chart_id,
+                bars: data.candles,
+                bar_ms,
+                hours,
+                replay: data.replay_ms.is_some(),
+            });
+            session_stats_view::show(ui, &mut state, &title, input)
+        };
+        self.context.stats = state;
+        if action == Some(session_stats_view::Action::Close) {
+            self.context.stats_chart = None;
         }
     }
 

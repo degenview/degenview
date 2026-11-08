@@ -2004,6 +2004,27 @@ pub fn indicator_readings(
     Ok(indicator_values(&meta, bars, request))
 }
 
+/// Session statistics over a market chart's own candles, cut at the replay position. Never the
+/// bars of a constructed chart type: a Renko brick or a Heikin Ashi bar is not a trading day.
+pub fn session_statistics(
+    workspace: &ChartWorkspace,
+    chart_id: u64,
+    query: &crate::mcp::session_stats::Query,
+) -> Result<crate::mcp::session_stats::SessionStatsResult, McpError> {
+    let data = workspace
+        .chart_data(chart_id)
+        .ok_or_else(|| no_chart(workspace, chart_id))?;
+    let meta = crate::mcp::session_stats::Meta {
+        workspace_id: workspace.id(),
+        chart_id,
+        instrument: data.instrument.key(),
+        timeframe: workspace.timeframe().label().to_owned(),
+        bar_ms: crate::model::session_stats::bar_ms(workspace.timeframe()),
+        hours: crate::model::session_stats::MarketHours::for_source(data.instrument.source),
+    };
+    crate::mcp::session_stats::session_stats(&meta, data.candles, query)
+}
+
 /// Moves the workspace to another timeframe through the toolbar's own path.
 pub fn set_timeframe(
     workspace: &mut ChartWorkspace,

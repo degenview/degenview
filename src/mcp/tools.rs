@@ -30,6 +30,7 @@ use crate::mcp::portfolio_tools::{
     GET_PORTFOLIO_HOLDINGS, LIST_PORTFOLIO_TRANSACTIONS, LIST_PORTFOLIOS,
 };
 use crate::mcp::replay_tools::{CONTROL_REPLAY, GET_REPLAY};
+use crate::mcp::session_stats_tools::GET_SESSION_STATS;
 use crate::mcp::snapshot_tools::GET_CHART_SNAPSHOT;
 use crate::mcp::state::{ClientIdentity, McpShared};
 use crate::mcp::types::{
@@ -104,7 +105,9 @@ pub fn required_permission(tool: &str) -> Option<Permission> {
         CONTROL_REPLAY => Some(Permission::ChartsReplayWrite),
         SET_TIMEFRAME | SET_CHART_TYPE => Some(Permission::ChartsViewWrite),
         REMOVE_CHART => Some(Permission::ChartsDelete),
-        GET_CANDLES | GET_INDICATOR_VALUES => Some(Permission::ChartsCandlesRead),
+        GET_CANDLES | GET_INDICATOR_VALUES | GET_SESSION_STATS => {
+            Some(Permission::ChartsCandlesRead)
+        }
         LIST_DRAWINGS => Some(Permission::DrawingsRead),
         ADD_DRAWINGS | UPDATE_DRAWING => Some(Permission::DrawingsWrite),
         DELETE_DRAWINGS => Some(Permission::DrawingsDelete),
@@ -706,6 +709,7 @@ impl DegenViewMcp {
             tool_router: Self::tool_router()
                 + Self::market_router()
                 + Self::indicator_router()
+                + Self::session_stats_router()
                 + Self::chart_control_router()
                 + Self::paper_router()
                 + Self::portfolio_router()

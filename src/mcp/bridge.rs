@@ -150,6 +150,12 @@ pub enum McpCommand {
         chart_id: u64,
         request: crate::mcp::indicator_values::ReadingRequest,
     },
+    /// Session statistics over a chart's candles.
+    GetSessionStats {
+        workspace_id: u64,
+        chart_id: u64,
+        query: crate::mcp::session_stats::Query,
+    },
     /// Moves the whole workspace to another timeframe.
     SetTimeframe {
         workspace_id: u64,
@@ -294,6 +300,7 @@ pub enum McpReply {
     DrawingsChanged(Box<DrawingsChangeResult>),
     PineEdit(Box<crate::mcp::types::PineEditResult>),
     IndicatorValues(Box<crate::mcp::indicator_values::IndicatorValuesResult>),
+    SessionStats(Box<crate::mcp::session_stats::SessionStatsResult>),
     Timeframe(crate::mcp::chart_control::TimeframeResult),
     ChartChanged(Box<crate::mcp::chart_control::ChartChangeResult>),
     PaperAccounts(crate::mcp::paper::PaperAccountsResult),

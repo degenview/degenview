@@ -431,6 +431,27 @@ fn table_and_tree_follow_their_chart_and_close_with_it() {
 }
 
 #[test]
+fn session_statistics_follow_their_chart_and_close_with_it() {
+    let mut rig = Rig::new();
+    let first = rig.chart("BTCUSDT", 100.0);
+    let second = rig.chart("ETHUSDT", 50.0);
+    let context = rig.open(second, 1.0);
+    rig.run(context.clone(), Command::ToggleSessionStats);
+    assert_eq!(rig.workspace.context.stats_chart, Some(second));
+    rig.workspace.sync_context_panels();
+    assert!(rig.workspace.charts.iter().any(|chart| chart.id == first));
+    assert_eq!(rig.workspace.context.stats_chart, Some(second));
+    // Choosing it again closes it.
+    rig.run(context.clone(), Command::ToggleSessionStats);
+    assert_eq!(rig.workspace.context.stats_chart, None);
+    // Removing the chart closes it.
+    rig.run(context, Command::ToggleSessionStats);
+    rig.workspace.charts.retain(|chart| chart.id != second);
+    rig.workspace.sync_context_panels();
+    assert_eq!(rig.workspace.context.stats_chart, None);
+}
+
+#[test]
 fn removing_drawings_asks_first_then_is_one_undo_step() {
     let mut rig = Rig::new();
     let chart = rig.chart("BTCUSDT", 100.0);
