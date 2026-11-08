@@ -36,10 +36,9 @@ impl Prepared {
 /// The `.app` bundle this process runs from, when it can be replaced in place.
 pub fn install_target() -> Result<PathBuf, String> {
     if !cfg!(target_os = "macos") {
-        // A Flatpak installed from a downloaded bundle has no remote, so `flatpak update` finds
-        // nothing: the release page is where the next one comes from.
+        // See `sandbox::FLATPAK_UPDATE_NOTE`.
         return Err(if crate::service::sandbox::is_flatpak() {
-            "This Flatpak cannot update itself. Download the new .flatpak from the release page."
+            crate::service::sandbox::FLATPAK_UPDATE_NOTE
         } else {
             "Automatic updates are not available on this platform."
         }

@@ -314,7 +314,7 @@ so there is no signature check beyond those.
   64-bit little-endian ELF executable or PIE whose machine matches the running CPU.
 - **Installable**: the canonicalised binary's folder must be writable (a distro-packaged `/usr/bin`
   install or a read-only mount is not: **View Release**, with a hint to use `~/.local/bin`), never a
-  development build, and never a Flatpak (`sandbox::is_flatpak()` is checked first, so the Flatpak keeps
+  development build, and never a Flatpak (`sandbox::is_flatpak()` is checked first, so a bundle-installed Flatpak keeps
   its "download the new .flatpak" message even though it is also Linux x86-64 and the tarball asset
   exists).
 - **Swap**: the running binary is renamed into `.DegenView-update/old/`, the new one renamed in, with
@@ -327,8 +327,12 @@ so there is no signature check beyond those.
   on the command line. A test observes both behaviours with a script.
 - **Wait**: `wait_for_predecessor` polls `/proc/<pid>/stat` every 100 ms for up to 60 s and treats a
   zombie (`Z`) as exited. No `libc` is needed; with no `/proc` it does not wait.
-- **Flatpak**: unchanged, notify-only. Hosting a Flatpak repo (OSTree, signing key, Pages) or Flathub
-  would make `flatpak update` work and is a separate project.
+- **Flatpak**: the app cannot replace itself and cannot tell where it was installed from (Flatpak
+  records no remote in `/.flatpak-info`), so the update note is `sandbox::FLATPAK_UPDATE_NOTE`: run
+  `flatpak update` (hosted repo `degenview/flatpak`, served at `flatpak.degenview.app`) or download
+  the bundle. Each release builds one Flatpak branch from the tag (`stable` for a final, `beta` for `-rc.N`, `dev` for
+  alpha/beta tags, which nothing publishes); the repo also
+  copies a final release onto `beta`. See [Flatpak](../flatpak.md#hosted-repo).
 - **Checked against real artifacts**: the rc.11 tarballs for both CPUs unpack through
   `extract_tar_gz_binary` and carry the expected ELF machine (`0x3E`, `0xB7`): ignored test
   `a_real_linux_release_tarball_unpacks` with `DEGENVIEW_TEST_LINUX_TARBALL=<path>`.

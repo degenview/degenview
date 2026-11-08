@@ -13,6 +13,12 @@ pub fn is_flatpak() -> bool {
         )
 }
 
+/// What an update notice says in a Flatpak. Flatpak records nothing about the remote an app was
+/// installed from (`/.flatpak-info` has no such key), so the app cannot tell a copy installed from
+/// the hosted repo, which `flatpak update` replaces, from one installed from a downloaded bundle,
+/// which it cannot. The notice is true for both. The repo can trail GitHub by hours.
+pub const FLATPAK_UPDATE_NOTE: &str = "Run flatpak update if you installed from the DegenView repository, or download the new .flatpak from the release page.";
+
 fn from_signals(flatpak_id: Option<&std::ffi::OsStr>, info_file: &Path) -> bool {
     flatpak_id.is_some_and(|id| !id.is_empty()) || info_file.exists()
 }
@@ -33,6 +39,12 @@ mod tests {
         let missing = Path::new("/definitely/not/here");
         assert!(!from_signals(None, missing));
         assert!(!from_signals(Some(OsStr::new("")), missing));
+    }
+
+    #[test]
+    fn the_flatpak_note_names_both_ways_to_update() {
+        assert!(FLATPAK_UPDATE_NOTE.contains("flatpak update"));
+        assert!(FLATPAK_UPDATE_NOTE.contains("release page"));
     }
 
     #[test]

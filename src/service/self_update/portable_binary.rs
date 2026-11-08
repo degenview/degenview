@@ -54,13 +54,9 @@ impl Prepared {
 
 /// The running executable, when it can be replaced in place.
 pub fn install_target() -> Result<PathBuf, String> {
-    // A Flatpak installed from a downloaded bundle has no remote, so `flatpak update` finds
-    // nothing: the release page is where the next one comes from.
+    // The app cannot replace itself in the sandbox, and does not know where it was installed from.
     if crate::service::sandbox::is_flatpak() {
-        return Err(
-            "This Flatpak cannot update itself. Download the new .flatpak from the release page."
-                .to_owned(),
-        );
+        return Err(crate::service::sandbox::FLATPAK_UPDATE_NOTE.to_owned());
     }
     let exe = std::env::current_exe()
         .and_then(|exe| exe.canonicalize())

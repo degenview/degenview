@@ -117,6 +117,11 @@ jobs:
     with:
       ref: ${{ needs.verify.outputs.sha }}
       bundle-prefix: DegenView-${{ github.event.inputs.tag || github.ref_name }}-linux
+      # The hosted Flatpak repo (docs/flatpak.md) publishes the branches `stable` (a final) and `beta`
+      # (an `-rc.N`), matching the app's update channels: the updater offers an alpha or beta tag to no
+      # channel (`update_check::Version::kind`), so those build on `dev`, which nothing publishes. The tag
+      # is the verified one, and tools/release.sh only writes X.Y.Z or X.Y.Z-(alpha|beta|rc).N.
+      branch: ${{ contains(github.event.inputs.tag || github.ref_name, '-rc.') && 'beta' || (contains(github.event.inputs.tag || github.ref_name, '-') && 'dev' || 'stable') }}
 
   build:
     name: Build ${{ matrix.name }}

@@ -44,11 +44,55 @@ listens on `127.0.0.1`; `--share=network` uses the host network, so clients on t
 
 ## Updates
 
-A downloaded bundle has no remote, so `flatpak update` finds nothing. The in-app update check
-therefore stays on and stays non-installable: `self_update::install_target` returns a message
-that names the release page when `sandbox::is_flatpak()` (`FLATPAK_ID` or `/.flatpak-info`). If
-the app is ever hosted on Flathub, hide the check there instead. The Linux tarball is the form
-that updates itself (`docs/agent-guides/releases-updates.md`, "Linux").
+A copy installed from a downloaded bundle has no remote, so `flatpak update` finds nothing for it;
+one installed from the hosted repo below does. The app cannot tell which it is: Flatpak records
+nothing about the remote in `/.flatpak-info` (upstream `flatpak-run.c` writes the instance and app
+paths, the commits, `branch`, `arch` and the version, and no origin), and an earlier version of this
+code that read an `origin` key never matched a real install. So the in-app check stays on and stays
+non-installable: `self_update::install_target` returns `sandbox::FLATPAK_UPDATE_NOTE` when
+`sandbox::is_flatpak()` (`FLATPAK_ID` or `/.flatpak-info`), which names both ways to update: run
+`flatpak update`, or download the new bundle from the release page. The repo trails GitHub by up to a
+few hours, which is why the note says "if". The Linux tarball is the form that updates itself
+(`docs/agent-guides/releases-updates.md`, "Linux").
+
+A check that knows the origin would use the Update Monitor portal
+(`org.freedesktop.portal.Flatpak.CreateUpdateMonitor`), which reports updates from the app's own
+remote to a sandboxed app. **Not built, not verified.**
+
+## Hosted repo
+
+Releases build one Flatpak **branch per update channel**: `stable` for a final release and `beta`
+for a release candidate, a tag with `-rc.` (the form the Release Candidate channel offers). An
+`-alpha.N` or `-beta.N` tag is offered to no channel by the updater (`update_check::Version::kind`,
+`tools/release.sh` says the same), so its bundle is built on `dev`, which the repo never publishes.
+Note this is narrower than `--prerelease`, which is any hyphen. `release.yml` passes the branch to
+`flatpak.yml`'s `branch` input, which the pinned `flatpak-builder` action uses for both
+`--default-branch` and the bundle's ref, so a bundle is `app/es.nico.degenview/<arch>/<stable|beta|dev>`.
+The pull request check keeps `master`. Bundles from before this change are on `master` and are
+not published.
+
+`flatpak update` follows an installed app's own branch and never moves it to another, and the app's
+Release Candidate channel accepts final releases. So the repo serves `beta` from the **newest release
+that channel offers, by version**: a final or an `-rc.N`, never an `-alpha.N` or `-beta.N` (those are
+on `dev` and not published). A final release is copied onto `beta` as well as `stable`, and an
+installed `//beta` follows it from release candidates to finals and on to the next candidate. `stable`
+is the newest final.
+
+The repo itself lives in `degenview/flatpak` and is served at `https://flatpak.degenview.app`.
+It pulls: a scheduled and manual workflow lists this repo's releases, picks the newest final (for
+`stable`) and the newest final or `-rc.N` (for `beta`), verifies every bundle (`gh release verify-asset`, `gh attestation verify --repo
+degenview/degenview`), imports them into an OSTree repo, signs it with a GPG key that only that
+repo's `publish` environment holds, and deploys it to Pages. Nothing in this repo holds a token for
+it. Users add it with:
+
+```bash
+flatpak remote-add --if-not-exists degenview https://flatpak.degenview.app/degenview.flatpakrepo
+flatpak install degenview es.nico.degenview//stable   # or //beta
+```
+
+The runtime still comes from Flathub, so it must be a configured remote (or the `.flatpakref`, which
+names it, is used). **Not verified:** none of this has run on Linux: the published repo, copying a final
+onto `beta` with `flatpak build-commit-from`, an install and a `flatpak update` from it.
 
 ## Secret storage
 
