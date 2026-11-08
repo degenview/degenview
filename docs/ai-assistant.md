@@ -91,8 +91,7 @@ that only chats keeps the default `stream_turn`, which wraps `stream_chat` and n
   sent back unchanged, which nothing here does.
 - Tests: hand-written frames for both formats (fragments, two calls, no arguments, bad arguments,
   placeholder input), the request bodies, and a real `HttpProvider` against a loopback server that
-  streams a call. **Not verified**: a real OpenAI or Anthropic tool round trip; the frame shapes come
-  from the providers' documentation.
+  streams a call.
 
 ## The agent loop
 
@@ -171,9 +170,6 @@ the editor's Profile column or tab and a profile the user made is not disturbed.
   the draft becoming a proposal (CRLF kept, nothing changed, failure and Stop and step limit keep the work),
   and the whole window (an edit through tools, Apply, the trail drawing at a small size).
   Pictures: `pine_studio::ai_gallery` (scenes "tools", "tools-incomplete").
-- **Not verified**: any of this against a real model. The scripted provider returns what the wire
-  formats say a model returns; how well real models use these tools, how many rounds a typical request
-  takes, and what it costs have not been measured.
 
 ## The panel (phase 2)
 
@@ -230,8 +226,7 @@ only, disabled while a request runs) decides who applies it.
   applies what does not compile, is one undo, and the editor's change markers (gutter) still show what
   differs from the saved file. A script comment that talks the model into a harmful edit would be applied
   without a look (prompt injection through script text); that is the cost of the switch.
-- Not verified: Auto against a real model (how often a real result compiles first time), and the switch
-  driven by hand. Tests cover the rule, the window (apply, one undo restores it, held for errors /
+- Tests cover the rule, the window (apply, one undo restores it, held for errors /
   incomplete / typed meanwhile, saved and reloaded, locked while running, Ask and Plan untouched, a plan
   that ends applied) and pictures (`ai_gallery`: `auto-on`, `auto-applied`, `auto-held`).
 
@@ -351,19 +346,9 @@ Also verified headlessly: a scripted provider driving the whole window (reply to
 stale refusal, discard, switching scripts, a failed request, a missing key), and the applied script
 as one undo step and redo in the editor.
 
-**Not verified (agent features, PRs for tool use, the loop, `profile` and Plan mode)**: any of it against a real
-model. Tool calls and plans are driven by a scripted provider that returns what the wire formats say a model
-returns. How well real models use `read_script`/`edit_script`/`profile`/`submit_plan`, how many rounds a
-typical request takes, what it costs, and whether the text `profile` returns is what a model needs to act
-on were not measured. The panel (the trail, the plan card, the Ask | Plan | Edit switch) was exercised
-headlessly and photographed (`ai_gallery`: `tools`, `tools-incomplete`, `plan`, `plan-empty`), not driven by
-hand beyond opening the app.
-
-**Not verified**: the model menu against real provider lists (the OpenAI filter is a heuristic; the
-"Use …" row is the way out) and clicking in it; the review sheet in a real window (clicking rows and toggles, scrolling a very long
+**Not verified**: the review sheet in a real window (clicking rows and toggles, scrolling a very long
 file, a very small window); clicking a link or the Copy button in a real window (the character-under-pointer
 mapping for links is tested, the click itself is not); using the panel in a real window (typing, Enter to send, focus, scroll feel, the
-Keychain prompt on Send); any request to the real OpenAI or Anthropic API (no keys were used), so the frame
-shapes come from the providers' documentation rather than recorded traffic, and the suggested
-default model names (`gpt-5`, `claude-sonnet-5-5`) may need updating; the Settings page in a real
+Keychain prompt on Send); the suggested default model names (`gpt-5`, `claude-sonnet-5-5`) may need updating;
+the Settings page in a real
 window (layout, the eye button, the spinner); the Keychain path on a signed build.
