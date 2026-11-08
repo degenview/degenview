@@ -1,4 +1,5 @@
 use super::catalog::Catalog;
+use super::search_rank::normalize;
 use super::{MarketSource, SearchResult, fold_calendar, rank_results};
 use crate::model::Kline;
 use serde::{Deserialize, Serialize};
@@ -161,25 +162,32 @@ impl MarketSource for Coinbase {
     }
 
     fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, String> {
-        let q = query.trim().to_uppercase();
-        if q.is_empty() {
+        // `BTC-USD`, `btc/usd` and `BTCUSD` are one query.
+        let needle = normalize(query);
+        if needle.is_empty() {
             return Ok(Vec::new());
         }
         let products = CATALOG.get(download_products)?;
-        let results: Vec<SearchResult> = products
-            .iter()
-            .filter(|product| product.id.replace('-', "").contains(&q))
-            .map(|product| {
-                SearchResult::new(
-                    crate::model::DataSource::Coinbase,
-                    product.id.clone(),
-                    product.id.clone(),
-                )
-                .pair(product.base.clone(), product.quote.clone())
-            })
-            .collect();
+        let results = matching_products(&products, &needle);
         Ok(rank_results(results, query).into_iter().take(20).collect())
     }
+}
+
+/// The listed products whose id, without its dash, contains `needle` (letters and digits, upper
+/// case).
+fn matching_products(products: &[Product], needle: &str) -> Vec<SearchResult> {
+    products
+        .iter()
+        .filter(|product| product.id.replace('-', "").contains(needle))
+        .map(|product| {
+            SearchResult::new(
+                crate::model::DataSource::Coinbase,
+                product.id.clone(),
+                product.id.clone(),
+            )
+            .pair(product.base.clone(), product.quote.clone())
+        })
+        .collect()
 }
 
 /// One tradable product from `/products`: all the search needs of it.
@@ -374,6 +382,28 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn a_product_is_found_however_it_is_separated() {
+        let products = vec![
+            Product {
+                id: "BTC-USDT".into(),
+                base: "BTC".into(),
+                quote: "USDT".into(),
+            },
+            Product {
+                id: "ETH-BTC".into(),
+                base: "ETH".into(),
+                quote: "BTC".into(),
+            },
+        ];
+        for query in ["btc-usdt", "BTCUSDT", "btc/usdt", "BTC USDT"] {
+            let found = matching_products(&products, &normalize(query));
+            assert_eq!(found.len(), 1, "{query}");
+            assert_eq!(found[0].symbol, "BTC-USDT");
+        }
+        assert_eq!(matching_products(&products, "BTC").len(), 2);
+    }
 
     #[test]
     fn product_id_maps_bare_and_slashed_symbols() {

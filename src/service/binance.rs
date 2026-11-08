@@ -1,4 +1,5 @@
 use super::catalog::Catalog;
+use super::search_rank::normalize;
 use super::{MarketSource, SearchResult, fold_calendar, rank_results};
 use crate::model::Kline;
 use serde::{Deserialize, Serialize};
@@ -115,25 +116,31 @@ impl MarketSource for Binance {
     }
 
     fn search_tickers(&self, query: &str) -> Result<Vec<SearchResult>, String> {
-        let needle = query.trim().to_uppercase();
+        // `BTC-USDT` and `btc/usdt` find `BTCUSDT`: Binance writes no separator.
+        let needle = normalize(query);
         if needle.is_empty() {
             return Ok(Vec::new());
         }
         let pairs = CATALOG.get(download_pairs)?;
-        let results: Vec<SearchResult> = pairs
-            .iter()
-            .filter(|pair| pair.symbol.contains(&needle))
-            .map(|pair| {
-                SearchResult::new(
-                    crate::model::DataSource::Binance,
-                    pair.symbol.clone(),
-                    pair.symbol.clone(),
-                )
-                .pair(pair.base.clone(), pair.quote.clone())
-            })
-            .collect();
+        let results = matching_pairs(&pairs, &needle);
         Ok(rank_results(results, query).into_iter().take(20).collect())
     }
+}
+
+/// The listed markets whose name contains `needle` (letters and digits, upper case).
+fn matching_pairs(pairs: &[Pair], needle: &str) -> Vec<SearchResult> {
+    pairs
+        .iter()
+        .filter(|pair| pair.symbol.contains(needle))
+        .map(|pair| {
+            SearchResult::new(
+                crate::model::DataSource::Binance,
+                pair.symbol.clone(),
+                pair.symbol.clone(),
+            )
+            .pair(pair.base.clone(), pair.quote.clone())
+        })
+        .collect()
 }
 
 /// One tradable market from `exchangeInfo`: all the search needs of it.
@@ -218,6 +225,28 @@ fn parse_row(row: &Value) -> Result<Kline, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_pair_is_found_however_it_is_separated() {
+        let pairs = vec![
+            Pair {
+                symbol: "BTCUSDT".into(),
+                base: "BTC".into(),
+                quote: "USDT".into(),
+            },
+            Pair {
+                symbol: "ETHBTC".into(),
+                base: "ETH".into(),
+                quote: "BTC".into(),
+            },
+        ];
+        for query in ["btcusdt", "BTC-USDT", "btc/usdt", "BTC USDT"] {
+            let found = matching_pairs(&pairs, &normalize(query));
+            assert_eq!(found.len(), 1, "{query}");
+            assert_eq!(found[0].symbol, "BTCUSDT");
+        }
+        assert_eq!(matching_pairs(&pairs, "BTC").len(), 2);
+    }
 
     #[test]
     fn parses_binance_rows() {
