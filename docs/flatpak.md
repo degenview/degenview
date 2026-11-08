@@ -69,6 +69,31 @@ one worker thread with a private current-thread runtime.
   plus its account.
 - `DEGENVIEW_NO_KEYCHAIN` keeps secrets in memory, as on macOS.
 
+## Windows secret storage
+
+On Windows the same `platform::{read, exists, write, delete}` is `service::windows_credentials`: one
+Credential Manager generic credential per item (`CredWriteW`, `CredReadW`, `CredDeleteW`, through
+`windows-sys`, which was already in the tree), target name `<service>/<account>`, persisted with
+`CRED_PERSIST_LOCAL_MACHINE`. Credential Manager encrypts the blob with the signed-in user's DPAPI
+master key; it does not roam and never leaves the machine. Items appear in Control Panel >
+Credential Manager > Windows Credentials, where the user can remove them.
+
+- The blob is the secret's UTF-8 bytes. A credential holds at most 2560 bytes, so a secret above
+  that is refused with an error, never truncated. Every key and token fits; a webhook secret of
+  2048 non-ASCII characters can exceed it.
+- There is no unlock prompt and no per-application ACL: any process running as the same user can
+  read the items, as on the macOS Keychain without an access group. What it keeps is secrets out of
+  the SQLite file, its backups and iCloud Sync.
+- Credential Manager never prompts, so there is no worker thread. `exists` is cached for 30 seconds
+  (the webhook list asks once per row per frame) and kept current by the app's own writes.
+- `Scope::shared_group` means nothing here, `DEGENVIEW_NO_KEYCHAIN` keeps secrets in memory, and
+  temporary buffers that held a secret are overwritten before they are freed (best effort).
+- **Not covered:** the MCP remote-access TLS key (`mcp-tls.pem`) is still a plaintext file.
+- **Not verified:** the real Credential Manager round trip (`credential_manager_round_trip`) runs on
+  the `test-windows` CI job only. Nobody has saved a key in a running Windows build, restarted, and
+  looked at the entry in Credential Manager. The Win32 calls were type-checked for
+  `x86_64-pc-windows-gnu`, not built for MSVC here.
+
 ## File dialogs
 
 `service::file_dialog` (CSV and image import, portfolio export, the watchlist export, snapshot "save

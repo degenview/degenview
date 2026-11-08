@@ -6,6 +6,8 @@
 pub const fn in_secret_store() -> &'static str {
     if cfg!(target_os = "macos") {
         "in your Keychain"
+    } else if cfg!(windows) {
+        "in Windows Credential Manager"
     } else {
         "in secure storage"
     }
@@ -15,6 +17,8 @@ pub const fn in_secret_store() -> &'static str {
 pub const fn saved_securely() -> &'static str {
     if cfg!(target_os = "macos") {
         "Saved securely in Keychain."
+    } else if cfg!(windows) {
+        "Saved securely in Windows Credential Manager."
     } else {
         "Saved securely in secure storage."
     }
@@ -24,6 +28,8 @@ pub const fn saved_securely() -> &'static str {
 pub const fn credential_stored_hint() -> &'static str {
     if cfg!(target_os = "macos") {
         "Stored in your Mac's Keychain, never in a file."
+    } else if cfg!(windows) {
+        "Stored in Windows Credential Manager, never in a file."
     } else {
         "Stored in this computer's secure storage, never in a file."
     }
@@ -33,6 +39,8 @@ pub const fn credential_stored_hint() -> &'static str {
 pub const fn credential_saved_hint() -> &'static str {
     if cfg!(target_os = "macos") {
         "A key is saved in your Keychain. Enter a new one to replace it."
+    } else if cfg!(windows) {
+        "A key is saved in Windows Credential Manager. Enter a new one to replace it."
     } else {
         "A key is saved in secure storage. Enter a new one to replace it."
     }
@@ -104,6 +112,10 @@ mod tests {
             assert_eq!(in_secret_store(), "in your Keychain");
             assert_eq!(file_manager(), "Finder");
             assert!(has_system_notifications());
+        } else if cfg!(windows) {
+            assert_eq!(in_secret_store(), "in Windows Credential Manager");
+            assert_ne!(file_manager(), "Finder");
+            assert!(!has_system_notifications());
         } else {
             assert_eq!(in_secret_store(), "in secure storage");
             assert_ne!(file_manager(), "Finder");

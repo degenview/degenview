@@ -53,6 +53,7 @@ pub mod update_check;
 pub mod update_download;
 pub mod watchlist_quotes;
 pub mod webhook_delivery;
+pub mod windows_credentials;
 pub mod work_queue;
 mod ws;
 

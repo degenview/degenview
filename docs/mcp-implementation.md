@@ -2350,8 +2350,9 @@ disk behind the running app is overwritten instead of being sealed in.
   write the database could launch the app with it set, plant a credential and skip the seal.
   `SealKeyStore::system` uses the real Keychain backend directly for the same reason, not
   `default_backend()`, which swaps in memory when the variable is set.
-- Is also off where no keyring can be created: Windows (no secret store at all) and Linux without a
-  Secret Service. The host then runs as before and shows a notice. On Linux that includes a
+- Is also off where no keyring can be created: Linux without a Secret Service. (Windows seals since
+  Credential Manager backs the key; a Windows install that ran unsealed adopts what is saved on its
+  first load, like any first run.) The host then runs as before and shows a notice. On Linux that includes a
   process that breaks the Secret Service connection (a bad `DBUS_SESSION_BUS_ADDRESS`) *and*
   deletes the `mcp.seal` row: it looks like a machine that never had a keyring. With the seal row
   present the same sabotage fails closed. A build that downgrades past this change reads the
@@ -2362,6 +2363,6 @@ disk behind the running app is overwritten instead of being sealed in.
   permission lists fails closed until reset.
 
 **Not verified:** the Keychain read/write on a real signed macOS build, the Linux Secret Service
-and Flatpak keyring, and the Settings banner in a real window. Tests use an in-memory keychain and
+and Flatpak keyring, Windows Credential Manager outside CI, and the Settings banner in a real window. Tests use an in-memory keychain and
 check the logic and layout headlessly.
 

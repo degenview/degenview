@@ -469,8 +469,12 @@ pub(crate) mod platform {
 #[cfg(target_os = "linux")]
 pub(crate) use crate::service::secret_service as platform;
 
+/// Windows keeps secrets in Credential Manager (`windows_credentials`).
+#[cfg(windows)]
+pub(crate) use crate::service::windows_credentials as platform;
+
 /// Other platforms have no secret store: nothing is stored or read.
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+#[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
 pub(crate) mod platform {
     use super::{Scope, SecretStoreError};
 

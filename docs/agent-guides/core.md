@@ -7,6 +7,8 @@ Read this file for every task. Load the matching topic guides listed in the root
 DegenView is a GPL-3.0-only market dashboard written in Rust with `eframe`/`egui`. A small `objc2`
 AppKit boundary handles native macOS windows, menus, Keychain, and accessibility. Non-macOS builds
 keep the coordinator/workspace model and gate AppKit code with `#[cfg(target_os = "macos")]`.
+Secrets go through `keychain_webhook_secrets::platform`: the Keychain on macOS, the Secret Service
+on Linux, Credential Manager on Windows. Never store a secret in SQLite, a file or a log.
 
 See [the architecture map](../architecture.md) before changing module boundaries or data flow.
 

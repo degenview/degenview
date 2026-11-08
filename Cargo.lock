@@ -1075,6 +1075,7 @@ dependencies = [
  "ttf-parser",
  "tungstenite",
  "ureq",
+ "windows-sys 0.61.2",
  "winresource",
  "x11rb 0.14.0",
  "zip",

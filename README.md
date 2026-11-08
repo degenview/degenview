@@ -27,7 +27,8 @@ ranked list of the hottest lines and blocks. See [Pine debugger](docs/pine-debug
 - **Crypto** — Search Binance, Coinbase, CoinGecko, and DEXScreener side by side; DEX pairs
   use GeckoTerminal for historical OHLCV.
 - **Stocks** — US equities through Alpaca's IEX feed (credentials stored securely in Keychain on
-  macOS and in the Secret Service on Linux, or in environment variables).
+  macOS, in the Secret Service on Linux and in Credential Manager on Windows, or in environment
+  variables).
 - **Prediction markets** — Polymarket and Kalshi events, charted as probabilities. No key needed.
 - **CoinMarketCap indices** — Altcoin Season and Crypto Fear and Greed, historical or latest.
 - **Live updates** — Binance and Coinbase crypto receive WebSocket updates; other sources
@@ -130,7 +131,7 @@ timeline scrubber, speed and interval controls, and shared clock across every ch
   Flatpak
 - [Rust](https://rustup.rs) 1.95 or newer (`cargo` on your `PATH`)
 - A free Alpaca account and API keys only if you want stock data — set `DEGENVIEW_ALPACA_KEY_ID`
-  and `DEGENVIEW_ALPACA_SECRET_KEY`, or store them in Keychain on macOS (the Secret Service on Linux)
+  and `DEGENVIEW_ALPACA_SECRET_KEY`, or store them in Keychain on macOS (the Secret Service on Linux, Credential Manager on Windows)
 - No CoinMarketCap API key is required; adding one in Settings is optional
   (`DEGENVIEW_CMC_API_KEY`)
 
