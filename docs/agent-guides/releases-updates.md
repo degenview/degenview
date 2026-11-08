@@ -205,6 +205,34 @@ the same app and is what the in-app updater downloads; the updater never reads t
   download of it, the Intel leg (`macos-15-intel`), until a release candidate has gone through the
   workflow. Dark appearance not looked at.
 
+## Homebrew
+
+`brew install --cask degenview/degenview/degenview` (final) and `.../degenview@rc` (Homebrew 7 trusts a fully named cask as it installs; a short name after `brew tap` needs `brew trust`), (final or `-rc.N`,
+the Release Candidate channel's set) come from the separate tap `degenview/homebrew-degenview`
+(local checkout `~/Developer/homebrew-degenview`), built like the Flatpak repo: it **pulls** on a
+six-hourly workflow and nothing here holds a token for it. Do not add a "bump the tap" step to
+`release.yml`.
+
+- The casks install the `-macos-<arm64|x64>.zip` (not the `.dmg`), so the zip name is a contract with
+  the tap as well as the updater. `DegenView.app` at the zip root is too.
+- The tap's `scripts/bump.sh` verifies each zip (`gh release verify`, `verify-asset`,
+  `gh attestation verify --signer-workflow .../release.yml`) and writes the sha256 of the bytes it
+  downloaded. Releases the workflow bot did not author, and tags other than a final or `-rc.N`, are
+  ignored.
+- `auto_updates true`: the in-app updater replaces the app, so `brew upgrade` skips it. A brew install
+  must stay updatable in place: `/Applications` is user-writable for an admin user, so the updater's
+  `install_target` check passes.
+- The cask's `depends_on macos: :sonoma` mirrors `LSMinimumSystemVersion` (14.0) in `tools/bundle.sh`;
+  change both together. `zap` lists `es.nico.degenview` under Application Support, Caches, Preferences
+  and Saved Application State (`APP_DIR` in `store/mod.rs`); update it if those move.
+- **Verified**: `scripts/bump.sh` against v0.6.0-rc.15 (all verification steps pass, hashes equal the
+  API digests); `brew style`, `brew audit --cask --strict --online` (only "is a GitHub pre-release"
+  for the rc cask) and `brew fetch --cask` (hash checked) on a local copy of the tap with Homebrew
+  7.0.12 on macOS.
+- **Not verified**: `brew install` itself, `brew uninstall --zap`, an in-app update of a brew-installed
+  copy, the Intel cask, the tap's GitHub workflows (not run on GitHub yet), and the stable cask against
+  a real final release (none exists; its text was audited with the rc file's contents).
+
 ## Linux glibc baseline
 
 The Linux release binaries must start on **glibc 2.35** (Ubuntu 22.04, Debian 12, Fedora 36 and
@@ -297,7 +325,7 @@ installs the ARM64 installer over it (same `AppId`) or unzips the ARM64 zip. The
   runs on it too, so `ring` (rustls), the bundled SQLite (`cc`), `winresource` and the windowing stack
   are built for `aarch64-pc-windows-msvc` on every PR. If `ring` ever needs a tool the image lacks, fix
   it in the workflow (install LLVM, set `CC`), not in the code.
-- **Not done**: Authenticode signing, winget/Scoop manifests.
+- **Not done**: Authenticode signing, winget/Scoop manifests (Homebrew for macOS is done: see Homebrew above).
 
 ### Linux
 
