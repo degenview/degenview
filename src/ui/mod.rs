@@ -1,7 +1,6 @@
 pub mod accessibility;
 pub mod add_chart_art;
 pub mod add_chart_sheet;
-pub mod add_indicator_menu;
 pub mod alert_art;
 pub mod alert_banner;
 pub mod alert_center;

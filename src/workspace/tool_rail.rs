@@ -31,7 +31,6 @@ impl ChartWorkspace {
             all_locked,
             has_drawings,
             paper_open: self.paper_panel_visible,
-            replay_open: self.replay.is_bar_visible(),
             has_market: self
                 .charts
                 .iter()
@@ -69,7 +68,6 @@ impl ChartWorkspace {
                 ToolSidebarAction::TogglePaper => {
                     self.paper_panel_visible = !self.paper_panel_visible;
                 }
-                ToolSidebarAction::ToggleReplay => self.toggle_replay(),
                 ToolSidebarAction::OpenAlerts => actions.push(WorkspaceAction::OpenAlerts),
                 ToolSidebarAction::SetSync(sync) => self.set_sync(sync),
             }

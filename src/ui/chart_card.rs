@@ -137,8 +137,6 @@ pub struct ChartCardAction {
     pub new_alert: bool,
     pub toggle_favorite: bool,
     pub watchlist_change: Option<(u64, bool)>,
-    /// A chart type was picked from the header's selector.
-    pub chart_type: Option<ChartType>,
     /// A row of the header's camera menu was picked: take that snapshot of this chart.
     pub snapshot: Option<crate::model::snapshot::SnapshotAction>,
     /// "Configure Snapshots…" was picked in the camera menu: open that page of Settings.
@@ -1835,30 +1833,22 @@ impl ChartCard {
     ) {
         let header_width = ui.available_width();
         let price_change = self.visible_change(candles);
-        let has_chart_types = !source.is_line_chart();
         let reserved = 164.0
             + if self.paper.trading_enabled {
                 125.0
             } else {
                 0.0
             }
-            + if has_chart_types { 31.0 } else { 0.0 }
             // The camera and the gap after it.
             + 31.0;
         let title_block_width = (header_width - reserved).max(96.0);
         let title_content_width = title_block_width - 18.0;
         let indicator_space = if chart_indicator_strip::has_items(indicators, self, source) {
-            60.0
+            35.0
         } else {
-            25.0
+            0.0
         };
         let show_replay_badge = replaying && header_width >= 430.0;
-        let header_rect =
-            Rect::from_min_size(ui.cursor().min, Vec2::new(header_width, HEADER_HEIGHT));
-        let header_hovered = ui
-            .ctx()
-            .pointer_hover_pos()
-            .is_some_and(|pos| header_rect.contains(pos));
         ui.allocate_ui_with_layout(
             Vec2::new(ui.available_width(), HEADER_HEIGHT),
             egui::Layout::left_to_right(egui::Align::Center),
@@ -1959,12 +1949,7 @@ impl ChartCard {
                             action.indicator_action = ui
                                 .push_id(("indicator-strip", drag_id), |ui| {
                                     chart_indicator_strip::show(
-                                        ui,
-                                        self,
-                                        indicators,
-                                        source,
-                                        drag_id,
-                                        header_hovered,
+                                        ui, self, indicators, source, drag_id,
                                     )
                                 })
                                 .inner;
@@ -2087,14 +2072,6 @@ impl ChartCard {
                     });
                     if favorite.clicked() {
                         action.toggle_favorite = true;
-                    }
-                    if has_chart_types {
-                        action.chart_type = crate::ui::chart_type_menu::button(
-                            ui,
-                            self.effective_chart_type(source),
-                            source,
-                            drag_id,
-                        );
                     }
                 });
             },

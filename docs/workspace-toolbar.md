@@ -1,0 +1,42 @@
+# Workspace toolbar
+
+`src/ui/workspace_toolbar.rs` draws the bar above a tab's charts; `src/workspace/toolbar.rs` builds its
+input and applies what it asks for. It is flat like TradingView's and LuxAlgo's: no capsules, a
+faint tint on hover, hairline separators between groups, small corner radius.
+
+## Layout
+
+Left to right: timeframe row (`1H … 1Y`, current one lit) | chart type | Indicators, Replay |
+Undo, Redo. Right end, from the edge inwards: Add Chart | watchlist toggle, Pine Studio, Portfolio |
+chart settings | layout menu.
+
+- Every button is a `Button` (id, glyph, label, tooltip, enabled, lit, action). `measure` lays the
+  labels out, `arrange` places the two runs, `paint_button` draws one. Tests use `arrange`, so the
+  geometry they check is the one drawn.
+- Width: when both runs with labels do not fit, labels (Indicators, Replay, Add Chart) drop and the
+  icons stay; a button without an icon (a timeframe, the layout name) keeps its text. If the runs still
+  collide, the right run drops buttons from its left end (the layout menu first). Never overlap. The
+  narrowest window is 760 wide and keeps everything but possibly the layout name.
+- The colours are neutral (`kit::primary` tints, `text_primary` / `text_secondary` /
+  `text_tertiary`); the only colour is Replay's orange while a replay is open (state, not a control).
+- `replay_bar.rs` still draws its controls in `paint_bubble` capsules; it has not been restyled.
+
+## What acts on what
+
+- **Chart type, Indicators, chart settings** act on the focused market chart
+  (`ChartWorkspace::focused_market_chart`). They are disabled with none (empty tab, a portfolio card
+  focused), the chart type for a line-only source, settings for a CoinMarketCap gauge. A card header has
+  no chart-type button and no "+" any more; a card's title still opens its settings.
+- **Replay** moved here from the tool rail (`ChartWorkspace::toggle_replay`); enabled with a market
+  chart (CoinMarketCap excepted) or while a replay is open.
+- **Undo / Redo** are the workspace's undo stacks (`undo.rs`), the same as the keyboard shortcut;
+  disabled when the stack is empty.
+- The chart-type pick goes through `set_chart_type_for_mcp`, so the toolbar, the MCP tool and the
+  menu share one rule.
+
+## Verified and not
+
+Unit tests cover layout at several widths, that every new button asks for its action and that a
+disabled one never does, and the workspace methods. `gallery_of_the_toolbar` (ignored, set
+`DEGENVIEW_GALLERY_DIR`) writes pictures of the bar in each state. Not checked in a real window on
+Linux or Windows.

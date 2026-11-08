@@ -10,7 +10,7 @@ use crate::model::{
     Tool,
 };
 use crate::ui::ViewMove;
-use crate::ui::chart_settings::{self, ChartSettingsState};
+use crate::ui::chart_settings::ChartSettingsState;
 use crate::ui::{
     self, ChartCardAction, CrosshairInfo, DrawingFrame, PickKind, ReplayChartFrame, shortcut,
 };
@@ -30,8 +30,6 @@ enum ChartCommand {
         before: Option<u64>,
     },
     NewColumn(u64),
-    /// The chart-type selector of one chart card was used.
-    SetChartType(u64, crate::model::ChartType),
     /// A row of one chart card's camera menu was picked.
     Snapshot(u64, crate::model::snapshot::SnapshotAction),
     /// The camera menu's "Configure Snapshots…" row was picked.
@@ -654,9 +652,6 @@ impl ChartWorkspace {
                                 if drawn.inner.inner.remove_requested {
                                     commands.push(ChartCommand::Remove(chart_id));
                                 }
-                                if let Some(chart_type) = drawn.inner.inner.chart_type {
-                                    commands.push(ChartCommand::SetChartType(chart_id, chart_type));
-                                }
                                 if let Some(action) = drawn.inner.inner.snapshot {
                                     commands.push(ChartCommand::Snapshot(chart_id, action));
                                 }
@@ -763,11 +758,6 @@ impl ChartWorkspace {
                             self.toggle_script_popover(chart_id, id, anchor);
                         }
                         Action::OpenPineLogs(id) => self.open_pine_logs(chart_id, Some(id)),
-                        Action::OpenScriptSettings => {
-                            self.settings_state = ChartSettingsState::default();
-                            self.settings_state.tab = chart_settings::Tab::Scripts;
-                            self.settings_chart = Some(chart_id);
-                        }
                         Action::Add(_)
                         | Action::Remove(_)
                         | Action::AddScript(_)
@@ -803,13 +793,6 @@ impl ChartWorkspace {
                     before,
                 } => self.move_chart(chart_id, to_column, before),
                 ChartCommand::NewColumn(chart_id) => self.move_to_new_trailing_column(chart_id),
-                ChartCommand::SetChartType(chart_id, chart_type) => {
-                    if let Some(chart) = self.charts.iter_mut().find(|chart| chart.id == chart_id)
-                        && chart_type.supported_by(chart.source)
-                    {
-                        chart.chart.set_chart_type(chart_type);
-                    }
-                }
             }
         }
 

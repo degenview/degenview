@@ -1,5 +1,5 @@
 //! The vertical tool strip down the left edge of a chart window (Swift `ToolSidebar`): the
-//! drawing tools at the top; Paper Trading, Replay and the alerts bell at the bottom.
+//! drawing tools at the top; Paper Trading and the alerts bell at the bottom.
 
 use crate::model::{ChartSyncSettings, MagnetMode, Tool, ToolGroup};
 use crate::ui::icons::{self, Icon};
@@ -45,8 +45,7 @@ pub struct ToolSidebarInput {
     /// There is at least one drawing to lock or hide.
     pub has_drawings: bool,
     pub paper_open: bool,
-    pub replay_open: bool,
-    /// Replay needs a market chart to step through.
+    /// Zoom In needs a market chart to zoom.
     pub has_market: bool,
     /// Alerts fired since the Alerts window was last looked at.
     pub unseen_alerts: usize,
@@ -73,7 +72,6 @@ pub enum ToolSidebarAction {
     ToggleLockAll,
     ToggleHideAll,
     TogglePaper,
-    ToggleReplay,
     OpenAlerts,
     SetSync(ChartSyncSettings),
 }
@@ -306,17 +304,6 @@ pub fn tool_icon(tool: Tool) -> Icon {
         Tool::PriceRange => Icon::RangePrice,
         Tool::DateRange => Icon::RangeDate,
         Tool::DateAndPriceRange => Icon::RangeDatePrice,
-    }
-}
-
-/// The tooltip a tile shows, separate from its accessibility label where Swift's differs.
-pub fn replay_tooltip(replay_open: bool, has_market: bool) -> &'static str {
-    if replay_open {
-        "Close Replay"
-    } else if has_market {
-        "Historical Replay"
-    } else {
-        "Historical Replay — add a market chart first"
     }
 }
 
@@ -562,38 +549,6 @@ pub fn show(ui: &mut Ui, input: &ToolSidebarInput) -> Vec<ToolSidebarAction> {
         theme::separator(),
     );
     y -= 2.0 + SPACING + BUTTON;
-
-    let replay = Rect::from_min_size(pos2(x, y), Vec2::splat(BUTTON));
-    if tile_button(
-        ui,
-        replay,
-        &Tile {
-            icon: Icon::ClockArrow,
-            label: if input.replay_open {
-                "Close historical bar replay"
-            } else {
-                "Historical bar replay"
-            },
-            tooltip: replay_tooltip(input.replay_open, input.has_market),
-            active: if input.replay_open {
-                Active::Tinted
-            } else {
-                Active::Off
-            },
-            tint: Some(theme::REPLAY),
-            enabled: input.has_market || input.replay_open,
-            badge: 0,
-            key: "",
-            notch: false,
-            mark: None,
-        },
-        strip.right(),
-    )
-    .clicked()
-    {
-        actions.push(ToolSidebarAction::ToggleReplay);
-    }
-    y -= SPACING + BUTTON;
 
     let paper = Rect::from_min_size(pos2(x, y), Vec2::splat(BUTTON));
     if tile_button(
@@ -1098,16 +1053,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn replay_tooltips_say_what_a_click_does() {
-        assert_eq!(replay_tooltip(true, true), "Close Replay");
-        assert_eq!(replay_tooltip(false, true), "Historical Replay");
-        assert_eq!(
-            replay_tooltip(false, false),
-            "Historical Replay — add a market chart first"
-        );
-    }
-
-    #[test]
     fn the_strip_draws_headlessly_in_every_state() {
         let ctx = egui::Context::default();
         for (tool, paper, replay, market, unseen) in [
@@ -1131,7 +1076,6 @@ mod tests {
                 all_locked: false,
                 has_drawings: true,
                 paper_open: paper,
-                replay_open: replay,
                 has_market: market,
                 unseen_alerts: unseen,
                 sync: ChartSyncSettings {
@@ -1165,7 +1109,6 @@ mod tests {
             all_locked: false,
             has_drawings: true,
             paper_open: false,
-            replay_open: false,
             has_market: true,
             unseen_alerts: 0,
             sync: ChartSyncSettings::default(),

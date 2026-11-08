@@ -1,6 +1,8 @@
 //! The workspace toolbar and what its buttons ask for.
 
 use super::{ChartWorkspace, WorkspaceAction};
+use crate::model::{ChartType, DataSource};
+use crate::ui::chart_settings::ChartSettingsState;
 use crate::ui::layout_prompts::NamePrompt;
 use crate::ui::workspace_toolbar::{self, ToolbarAction};
 use eframe::egui;
@@ -44,6 +46,22 @@ impl ChartWorkspace {
             layouts,
             active_layout: active_view_id,
             watchlist_visible: self.watchlist_visible,
+            chart: self
+                .focused_market_chart()
+                .map(|chart| workspace_toolbar::ToolbarChart {
+                    id: chart.id,
+                    chart_type: chart.chart.effective_chart_type(chart.source),
+                    source: chart.source,
+                    chart_types: !chart.source.is_line_chart(),
+                    settings: chart.source != DataSource::CoinMarketCap,
+                }),
+            can_undo: !self.undo.is_empty(),
+            can_redo: !self.redo.is_empty(),
+            replay_open: self.replay.is_bar_visible(),
+            can_replay: self
+                .charts
+                .iter()
+                .any(|chart| chart.is_market() && chart.source != DataSource::CoinMarketCap),
         };
         for action in workspace_toolbar::show(ui, &input) {
             match action {
@@ -64,6 +82,13 @@ impl ChartWorkspace {
                     actions.push(WorkspaceAction::OpenPineScripts);
                 }
                 ToolbarAction::AddChart => self.add_chart.open(),
+                ToolbarAction::SetChartType(chart_type) => {
+                    self.set_focused_chart_type(chart_type);
+                }
+                ToolbarAction::OpenChartSettings => self.open_focused_chart_settings(),
+                ToolbarAction::ToggleReplay => self.toggle_replay(),
+                ToolbarAction::Undo => self.undo(),
+                ToolbarAction::Redo => self.redo(),
                 ToolbarAction::OpenIndicators => self.indicator_picker.open(),
             }
         }
@@ -88,5 +113,70 @@ impl ChartWorkspace {
         }
         self.show_layout_sheets(ctx);
         actions
+    }
+
+    /// Gives the focused market chart `chart_type`, and no other chart. A type its market cannot
+    /// draw is refused (the menu greys those rows), as is a tab with no focused market chart.
+    pub(super) fn set_focused_chart_type(&mut self, chart_type: ChartType) -> bool {
+        let Some(chart_id) = self.focused_market_chart().map(|chart| chart.id) else {
+            return false;
+        };
+        matches!(self.set_chart_type_for_mcp(chart_id, chart_type), Ok(true))
+    }
+
+    /// Opens the settings sheet of the focused market chart, as the header's title does.
+    pub(super) fn open_focused_chart_settings(&mut self) {
+        if let Some(chart_id) = self.focused_market_chart().map(|chart| chart.id) {
+            self.settings_state = ChartSettingsState::default();
+            self.settings_chart = Some(chart_id);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::test_support::{chart_with_drawings, empty_workspace};
+    use crate::model::ChartType;
+
+    #[test]
+    fn the_toolbar_chart_type_changes_the_focused_chart_alone() {
+        let mut workspace = empty_workspace(1);
+        let first = chart_with_drawings(&mut workspace, "BTCUSDT", &[]);
+        let second = chart_with_drawings(&mut workspace, "ETHUSDT", &[]);
+        let type_of = |workspace: &super::ChartWorkspace, id: u64| {
+            let chart = workspace
+                .charts
+                .iter()
+                .find(|chart| chart.id == id)
+                .unwrap();
+            chart.chart.effective_chart_type(chart.source)
+        };
+        workspace.focused = Some(second);
+        assert!(workspace.set_focused_chart_type(ChartType::HeikinAshi));
+        assert_eq!(type_of(&workspace, second), ChartType::HeikinAshi);
+        assert_eq!(type_of(&workspace, first), ChartType::Candles);
+        // The same type again changes nothing.
+        assert!(!workspace.set_focused_chart_type(ChartType::HeikinAshi));
+    }
+
+    #[test]
+    fn the_toolbar_acts_on_nothing_without_a_focused_market_chart() {
+        let mut workspace = empty_workspace(1);
+        assert!(!workspace.set_focused_chart_type(ChartType::Line));
+        workspace.open_focused_chart_settings();
+        assert_eq!(workspace.settings_chart, None);
+    }
+
+    #[test]
+    fn the_toolbar_settings_button_opens_the_focused_charts_sheet() {
+        let mut workspace = empty_workspace(1);
+        let first = chart_with_drawings(&mut workspace, "BTCUSDT", &[]);
+        let second = chart_with_drawings(&mut workspace, "ETHUSDT", &[]);
+        workspace.focused = Some(first);
+        workspace.open_focused_chart_settings();
+        assert_eq!(workspace.settings_chart, Some(first));
+        workspace.focused = Some(second);
+        workspace.open_focused_chart_settings();
+        assert_eq!(workspace.settings_chart, Some(second));
     }
 }
