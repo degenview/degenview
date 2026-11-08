@@ -1,0 +1,18 @@
+//@version=6
+// Built-in indicator bundled with DegenView. Original work, GPL-3.0-only.
+// Keltner Channels: an EMA with bands a multiple of the Average True Range away. The bands
+// follow volatility, so they widen in fast markets and narrow in quiet ones.
+indicator("Keltner Channels", overlay = true)
+
+length = input.int(20, "EMA length", minval = 1, group = "Channel")
+source = input.source(close, "Source", group = "Channel")
+atrLength = input.int(10, "ATR length", minval = 1, group = "Channel")
+mult = input.float(2.0, "Multiplier", minval = 0.1, step = 0.1, group = "Channel")
+
+basis = ta.ema(source, length)
+band = mult * ta.atr(atrLength)
+
+top = plot(basis + band, "Upper", color = color.teal)
+plot(basis, "Basis", color = color.orange)
+bottom = plot(basis - band, "Lower", color = color.teal)
+fill(top, bottom, color = color.new(color.teal, 92), title = "Channel")

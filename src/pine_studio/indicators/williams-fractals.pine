@@ -1,0 +1,13 @@
+//@version=6
+// Built-in indicator bundled with DegenView. Original work, GPL-3.0-only.
+// Williams Fractals: a bar whose high (or low) is the highest (lowest) of the bars on each side.
+// A fractal is confirmed N bars after it forms, so the mark is placed back on the bar itself.
+indicator("Williams Fractals", overlay = true)
+
+periods = input.int(2, "Bars on each side", minval = 1)
+
+swingHigh = ta.pivothigh(high, periods, periods)
+swingLow = ta.pivotlow(low, periods, periods)
+
+plotshape(not na(swingHigh), "Up fractal", style = shape.triangledown, location = location.abovebar, color = color.red, offset = -periods, size = size.tiny)
+plotshape(not na(swingLow), "Down fractal", style = shape.triangleup, location = location.belowbar, color = color.green, offset = -periods, size = size.tiny)

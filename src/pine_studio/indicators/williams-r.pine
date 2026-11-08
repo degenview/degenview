@@ -1,0 +1,15 @@
+//@version=6
+// Built-in indicator bundled with DegenView. Original work, GPL-3.0-only.
+// Williams %R: the close's distance below the recent high, from 0 (at the high) to -100 (at the
+// low). Above -20 is overbought, below -80 is oversold.
+indicator("Williams %R", overlay = false)
+
+length = input.int(14, "Length", minval = 1)
+
+value = ta.wpr(length)
+
+plot(value, "%R", color = color.purple)
+top = hline(-20, "Overbought", color = color.gray)
+hline(-50, "Midline", color = color.new(color.gray, 60))
+bottom = hline(-80, "Oversold", color = color.gray)
+fill(top, bottom, color = color.new(color.purple, 94), title = "Range")

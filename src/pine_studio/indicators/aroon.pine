@@ -1,0 +1,15 @@
+//@version=6
+// Built-in indicator bundled with DegenView. Original work, GPL-3.0-only.
+// Aroon: how recently the highest high and the lowest low happened, from 0 to 100. Aroon Up
+// near 100 means a new high is recent (an uptrend); Aroon Down near 100 is the opposite.
+indicator("Aroon", overlay = false)
+
+length = input.int(25, "Length", minval = 1)
+
+up = 100.0 * (ta.highestbars(high, length + 1) + length) / length
+down = 100.0 * (ta.lowestbars(low, length + 1) + length) / length
+
+plot(up, "Aroon Up", color = color.teal)
+plot(down, "Aroon Down", color = color.red)
+hline(70, "Upper", color = color.new(color.gray, 40))
+hline(30, "Lower", color = color.new(color.gray, 40))

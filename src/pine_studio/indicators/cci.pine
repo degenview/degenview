@@ -1,0 +1,16 @@
+//@version=6
+// Built-in indicator bundled with DegenView. Original work, GPL-3.0-only.
+// Commodity Channel Index: how far the typical price is from its average, in units of the
+// average deviation. Readings beyond +100 or -100 mark an unusually strong move.
+indicator("CCI", overlay = false)
+
+length = input.int(20, "Length", minval = 1)
+source = input.source(hlc3, "Source")
+
+value = ta.cci(source, length)
+
+plot(value, "CCI", color = color.teal)
+top = hline(100, "Upper", color = color.gray)
+hline(0, "Zero", color = color.new(color.gray, 60))
+bottom = hline(-100, "Lower", color = color.gray)
+fill(top, bottom, color = color.new(color.teal, 94), title = "Range")

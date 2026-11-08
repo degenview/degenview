@@ -1,0 +1,25 @@
+//@version=6
+// Built-in indicator bundled with DegenView. Original work, GPL-3.0-only.
+// Ichimoku Kinko Hyo: two midpoint lines and the cloud between two leading spans. Each bar shows
+// the spans as they were `displacement` bars earlier, which is how the cloud is shifted forward.
+// The part that would run past the last bar is not drawn, and the lagging span is left out,
+// because this engine cannot draw outside the bars it has.
+indicator("Ichimoku Cloud", overlay = true)
+
+conversionLength = input.int(9, "Conversion line length", minval = 1, group = "Lengths")
+baseLength = input.int(26, "Base line length", minval = 1, group = "Lengths")
+spanBLength = input.int(52, "Leading span B length", minval = 1, group = "Lengths")
+displacement = input.int(26, "Displacement", minval = 1, group = "Lengths")
+
+midpoint(length) => math.avg(ta.lowest(low, length), ta.highest(high, length))
+
+conversion = midpoint(conversionLength)
+base = midpoint(baseLength)
+spanA = math.avg(conversion, base)
+spanB = midpoint(spanBLength)
+
+plot(conversion, "Conversion line", color = color.blue)
+plot(base, "Base line", color = color.red)
+leadA = plot(spanA[displacement - 1], "Leading span A", color = color.new(color.green, 50))
+leadB = plot(spanB[displacement - 1], "Leading span B", color = color.new(color.red, 50))
+fill(leadA, leadB, color = spanA[displacement - 1] >= spanB[displacement - 1] ? color.new(color.green, 85) : color.new(color.red, 85), title = "Cloud")

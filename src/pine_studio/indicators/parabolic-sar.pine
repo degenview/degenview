@@ -1,0 +1,13 @@
+//@version=6
+// Built-in indicator bundled with DegenView. Original work, GPL-3.0-only.
+// Parabolic SAR: a trailing stop that accelerates toward price. Dots below the bars mean the
+// trend is up, dots above mean it is down; a flip is a reversal signal.
+indicator("Parabolic SAR", overlay = true)
+
+start = input.float(0.02, "Start", minval = 0.001, step = 0.001)
+increment = input.float(0.02, "Increment", minval = 0.001, step = 0.001)
+maximum = input.float(0.2, "Maximum", minval = 0.01, step = 0.01)
+
+sar = ta.sar(start, increment, maximum)
+
+plot(sar, "SAR", style = plot.style_circles, color = sar < close ? color.teal : color.red, linewidth = 2)

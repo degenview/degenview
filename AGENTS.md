@@ -18,6 +18,7 @@ scenario matches the work:
 | Fibonacci or Gann drawings, level lists, fans, circles, arcs, spirals or Gann angles | [Fibonacci and Gann tools](docs/fibonacci-gann-tools.md) |
 | Session statistics: gap fills, prior-day breaks, weekday effects, `degenview_get_session_stats` | [Session statistics](docs/session-stats.md) |
 | Pine language/runtime, Pine Studio, editor behavior, or example scripts | [Pine and scripts](docs/agent-guides/pine.md) |
+| Adding an indicator to a chart: the "+" menu, the indicator catalog, or the Pine indicators bundled with the app | [Indicator catalog](docs/indicator-picker.md) |
 | User-defined functions or methods, overloads, call resolution, or the Pine type checker | [User-defined methods](docs/pine-user-methods.md) |
 | Editor colours, syntax roles, editor themes or fonts | [Editor themes](docs/editor-themes.md) |
 | Colour swatches in the Pine editor, the inline colour picker, or `color.*` rewriting | [Pine colour picker](docs/pine-color-picker.md) |
@@ -123,6 +124,7 @@ because cargo never deletes old output. Finished worktrees are where the disk go
 - [Forecasting, volume and measurement tools](docs/forecast-tools.md) — the Forecast tile: hypothetical positions, ghost feed, VWAP and volume profiles from the chart's own bars, measurers, provenance.
 - [Session statistics](docs/session-stats.md) — `P(outcome | conditions)` over the chart's own days with N and a 95% interval: sessions, outcomes, filters, the panel and the MCP tool, what the missing sub-hourly bars cost, provenance.
 - [Fibonacci and Gann tools](docs/fibonacci-gann-tools.md) — the Fibonacci and Gann tile: editable level lists, bar-counted time lines, curves sampled where they show, Gann angles as ratios of price to time, provenance.
+- [Indicator catalog](docs/indicator-picker.md) — the one list the add-indicator surfaces draw from, the 20 bundled Pine indicators and their rules, why LuxAlgo's scripts are not included.
 - [Pine colour picker](docs/pine-color-picker.md) — inline swatches and picker: token-based detection, the rewrite table, room opened in the layout, one undo step per gesture, what is verified.
 - [Pine debugger](docs/pine-debugger.md) — the opt-in interpreter hooks, sessions on their own thread, source map and stepping, breakpoints, the read-only expression service, what is measured.
 - [Pine profiler](docs/pine-profiler.md) — the timing model (regions, inclusive and exclusive time, what is not attributed), the opt-in recorder, profile sessions and staleness, the editor column and drawer tab, what is measured.

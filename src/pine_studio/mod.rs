@@ -52,6 +52,7 @@ mod external_gallery;
 #[cfg(test)]
 mod external_tests;
 mod find;
+pub mod indicators;
 pub mod inputs;
 mod logs;
 pub mod model;

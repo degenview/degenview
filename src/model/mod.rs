@@ -28,6 +28,7 @@ pub mod gann;
 pub mod ghost;
 pub mod history;
 pub mod image_content;
+pub mod indicator_catalog;
 mod indicators;
 mod instrument;
 mod kline;

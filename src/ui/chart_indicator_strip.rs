@@ -8,6 +8,7 @@ use super::popover;
 use super::theme;
 pub use crate::model::BuiltIn;
 use crate::model::{DataSource, EMA_PERIODS, IndicatorConfig};
+use crate::pine_studio::indicators::BundledIndicator;
 use crate::pine_studio::model::LocalScript;
 use eframe::egui::{self, Color32, FontId, Galley, Rect, Sense, Ui, Vec2, pos2, vec2};
 use std::sync::Arc;
@@ -23,6 +24,8 @@ pub enum Action {
     Add(BuiltIn),
     /// Apply a saved script to the chart, after the ones already there.
     AddScript(Arc<LocalScript>),
+    /// Apply an indicator bundled with the app to the chart, after the ones already there.
+    AddBundled(&'static BundledIndicator),
     ToggleVisible(Kind),
     Remove(BuiltIn),
     /// Take a script off the chart (undoable; the saved script stays).

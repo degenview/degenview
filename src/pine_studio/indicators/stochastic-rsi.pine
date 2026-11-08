@@ -1,0 +1,22 @@
+//@version=6
+// Built-in indicator bundled with DegenView. Original work, GPL-3.0-only.
+// Stochastic RSI: the Stochastic formula applied to RSI instead of price. It reaches the ends of
+// its range far more often than RSI does, so it times turns earlier and gives more false ones.
+indicator("Stochastic RSI", overlay = false)
+
+rsiLength = input.int(14, "RSI length", minval = 1, group = "Lengths")
+stochLength = input.int(14, "Stochastic length", minval = 1, group = "Lengths")
+kSmoothing = input.int(3, "%K smoothing", minval = 1, group = "Lengths")
+dLength = input.int(3, "%D length", minval = 1, group = "Lengths")
+source = input.source(close, "Source", group = "Lengths")
+
+rsiValue = ta.rsi(source, rsiLength)
+k = ta.sma(ta.stoch(rsiValue, rsiValue, rsiValue, stochLength), kSmoothing)
+d = ta.sma(k, dLength)
+
+plot(k, "%K", color = color.blue)
+plot(d, "%D", color = color.orange)
+top = hline(80, "Overbought", color = color.gray)
+hline(50, "Midline", color = color.new(color.gray, 60))
+bottom = hline(20, "Oversold", color = color.gray)
+fill(top, bottom, color = color.new(color.blue, 94), title = "Range")

@@ -1,0 +1,21 @@
+//@version=6
+// Built-in indicator bundled with DegenView. Original work, GPL-3.0-only.
+// Stochastic Oscillator: where the close sits inside the recent high-low range, from 0 to 100.
+// Above the upper level is overbought, below the lower level is oversold.
+indicator("Stochastic", overlay = false)
+
+kLength = input.int(14, "%K length", minval = 1, group = "Lengths")
+kSmoothing = input.int(3, "%K smoothing", minval = 1, group = "Lengths")
+dLength = input.int(3, "%D length", minval = 1, group = "Lengths")
+upperLevel = input.int(80, "Overbought", minval = 50, maxval = 100, group = "Levels")
+lowerLevel = input.int(20, "Oversold", minval = 0, maxval = 50, group = "Levels")
+
+k = ta.sma(ta.stoch(close, high, low, kLength), kSmoothing)
+d = ta.sma(k, dLength)
+
+plot(k, "%K", color = color.blue)
+plot(d, "%D", color = color.orange)
+top = hline(upperLevel, "Overbought", color = color.gray)
+hline(50, "Midline", color = color.new(color.gray, 60))
+bottom = hline(lowerLevel, "Oversold", color = color.gray)
+fill(top, bottom, color = color.new(color.blue, 94), title = "Range")

@@ -1,0 +1,16 @@
+//@version=6
+// Built-in indicator bundled with DegenView. Original work, GPL-3.0-only.
+// ADX with the +DI and -DI lines (Directional Movement Index). ADX says how strong a trend is,
+// not which way: above about 25 there is a trend, and +DI over -DI means it is up.
+indicator("ADX / DMI", overlay = false)
+
+diLength = input.int(14, "DI length", minval = 1)
+adxSmoothing = input.int(14, "ADX smoothing", minval = 1)
+threshold = input.int(25, "Trend threshold", minval = 1)
+
+[plusDI, minusDI, adx] = ta.dmi(diLength, adxSmoothing)
+
+plot(adx, "ADX", color = color.orange, linewidth = 2)
+plot(plusDI, "+DI", color = color.teal)
+plot(minusDI, "-DI", color = color.red)
+hline(threshold, "Threshold", color = color.gray)

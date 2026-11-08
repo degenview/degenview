@@ -1,0 +1,20 @@
+//@version=6
+// Built-in indicator bundled with DegenView. Original work, GPL-3.0-only.
+// MACD: the gap between a fast and a slow moving average, a smoothed signal line of that gap, and
+// a histogram of the difference. The histogram is darker while momentum is growing.
+indicator("MACD", overlay = false)
+
+fastLength = input.int(12, "Fast length", minval = 1, group = "Lengths")
+slowLength = input.int(26, "Slow length", minval = 2, group = "Lengths")
+signalLength = input.int(9, "Signal length", minval = 1, group = "Lengths")
+source = input.source(close, "Source", group = "Lengths")
+
+[macdLine, signalLine, histogram] = ta.macd(source, fastLength, slowLength, signalLength)
+
+growing = histogram > histogram[1]
+histogramColor = histogram >= 0 ? (growing ? color.new(color.teal, 0) : color.new(color.teal, 60)) : (growing ? color.new(color.red, 60) : color.new(color.red, 0))
+
+plot(histogram, "Histogram", style = plot.style_columns, color = histogramColor)
+plot(macdLine, "MACD", color = color.blue)
+plot(signalLine, "Signal", color = color.orange)
+hline(0, "Zero", color = color.gray)

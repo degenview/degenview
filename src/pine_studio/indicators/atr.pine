@@ -1,0 +1,12 @@
+//@version=6
+// Built-in indicator bundled with DegenView. Original work, GPL-3.0-only.
+// Average True Range: the typical size of a bar including gaps, in price units (or, optionally,
+// as a percent of the close). It measures volatility, not direction.
+indicator("ATR", overlay = false)
+
+length = input.int(14, "Length", minval = 1)
+asPercent = input.bool(false, "Show as percent of close")
+
+value = asPercent ? 100.0 * ta.atr(length) / close : ta.atr(length)
+
+plot(value, "ATR", color = color.orange, linewidth = 2)
