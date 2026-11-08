@@ -18,6 +18,7 @@ use crate::ui::add_chart_sheet::{AddChartAction, AddChartSheet};
 use crate::ui::alert_editor::{self, PriceAlertEditorState};
 use crate::ui::chart_settings::{self, ChartSettingsState};
 use crate::ui::drawing_properties::DrawingProperties;
+use crate::ui::indicator_picker::{self, IndicatorPicker};
 use crate::ui::layout_prompts::NamePrompt;
 use crate::ui::paper_chart_trading::PaperOverlayAction;
 use crate::ui::pine_settings_popover::PineSettingsPopover;
@@ -166,6 +167,7 @@ pub struct ChartWorkspace {
     /// edit to the open layout arrives (`adopt_remote_layout`).
     saved_drawings: HashMap<u64, Vec<Drawing>>,
     add_chart: AddChartSheet,
+    indicator_picker: IndicatorPicker,
     add_to_watchlist: Option<EntryId>,
     unseen_alerts: usize,
     /// How portfolio cards reach the app's portfolios; set by the window that draws this tab.
@@ -353,6 +355,7 @@ impl ChartWorkspace {
             watchlist_visible: false,
             baseline: None,
             add_chart: AddChartSheet::new(store.clone()),
+            indicator_picker: IndicatorPicker::new(Some(store.clone())),
             add_to_watchlist: None,
             unseen_alerts: 0,
             card_env: None,
@@ -831,6 +834,20 @@ impl ChartWorkspace {
         }
         if !self.add_chart.is_open() {
             self.add_to_watchlist = None;
+        }
+        if self.indicator_picker.is_open() {
+            let target = self.indicator_target();
+            match self.indicator_picker.show(&ctx, target.as_ref()) {
+                Some(indicator_picker::Output::Apply { action, .. }) => {
+                    if let Some(chart_id) = self.resolved_focused_id() {
+                        self.apply_indicator_action(chart_id, &action);
+                    }
+                }
+                Some(indicator_picker::Output::OpenPineStudio) => {
+                    actions.push(WorkspaceAction::OpenPineScripts);
+                }
+                None => {}
+            }
         }
         // Before the sheet, so the popover takes an Esc the sheet would otherwise act on.
         self.show_script_popover(&ctx);

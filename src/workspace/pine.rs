@@ -217,6 +217,26 @@ impl ChartWorkspace {
         Some(id)
     }
 
+    /// The chart the indicator picker adds to: the focused market chart, with what is already on
+    /// it. `None` when the focused chart is a portfolio card.
+    pub fn indicator_target(&self) -> Option<ui::indicator_picker::Target> {
+        let id = self.resolved_focused_id()?;
+        let chart = self
+            .charts
+            .iter()
+            .find(|chart| chart.id == id && chart.is_market())?;
+        Some(ui::indicator_picker::Target {
+            config: chart.indicators,
+            source: chart.source,
+            on_chart: chart
+                .chart
+                .pine_instances()
+                .iter()
+                .filter_map(|instance| instance.script_id.clone())
+                .collect(),
+        })
+    }
+
     /// Applies an "add or take off an indicator" action from a chart's menus or the indicator
     /// picker to `chart_id`, as one undo step. Returns whether the action was one of those and
     /// changed the chart; every other `Action` is the caller's to handle.

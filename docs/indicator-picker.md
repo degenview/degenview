@@ -1,13 +1,46 @@
-# Indicator catalog and bundled indicators
+# Indicator picker, catalog and bundled indicators
 
-How a chart gets an indicator: the one catalog every add-indicator surface draws from, the Pine
-indicators that ship inside the app, and the rules for adding one.
+How a chart gets an indicator: the picker modal, the one catalog every add-indicator surface draws
+from, the Pine indicators that ship inside the app, and the rules for adding one.
+
+## The picker
+
+The toolbar's **Indicators** pill (right of the timeframe selector, `ToolbarAction::OpenIndicators`)
+opens `ui::indicator_picker`, a modal owned by `ChartWorkspace::indicator_picker` and shown beside
+the Add Chart sheet. It adds to the **focused** chart (`ChartWorkspace::indicator_target` names it;
+a portfolio card is not a target) through `apply_indicator_action`, so undo is one step.
+
+- **Sidebar**: Yours (Favorites, My scripts, Bring a script, which opens Pine Studio), Built-in
+  (Overlays, Separate pane), Library (Discover, All indicators), Families. Counts sit on the right.
+  Searching lists matches across every section (`sections::search_blocks`) and ignores the sidebar.
+  Discover is a fixed "Popular" row and the rest in a seeded order (the Shuffle button bumps the
+  seed, so a shuffle is repeatable and needs no random source). `sections` is pure and tested.
+- **Cards** show a generated chart (`preview.rs`): fixed synthetic bars, natives computed on the spot,
+  each bundled script run once by a worker thread on first open and cached; a saved script, or one
+  whose run failed, gets a glyph. Never run a script on the UI thread.
+- **Detail panel** (dropped below 900pt of window): preview, description, author and license, a
+  neutral "Add to chart" (never the accent colour), Favorite. A native indicator already on the
+  chart offers "Remove from chart"; a script or bundled one "Add another copy".
+- **Keys**: ↑/↓ move a row, ←/→ a card (left to the search field while it holds text), Return adds
+  and closes, Shift-Return adds and stays open, F stars the selected one (only when the search
+  field is not focused), Esc closes. Return never removes. The keys are taken before the search
+  field is drawn (`read_keys`), like the "+" menu's.
+- **Availability** (`availability`): no focused market chart, or a line chart for anything but a
+  native other than Volume, is blocked with the reason shown; blocked entries are dimmed and Return
+  does nothing.
+- **Favorites** are `native:rsi` / `bundled:macd` / `script:<id>` strings in the
+  `indicatorPicker.favorites` setting (portable, last writer wins, see `sync::policy`); a key this
+  build no longer knows is dropped on load. Not verified against real CloudKit.
+
+Pictures: `DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib indicator_picker::tests::gallery -- --ignored`
+(a minute or two: it gives the preview worker time to finish).
 
 ## The catalog
 
 `model::indicator_catalog` is pure data and search. A `CatalogEntry` is one row: a native built-in
 (`BuiltIn`), a bundled Pine indicator (`pine_studio::indicators`) or a saved script. Its `EntryKey`
-(`Native`, `Bundled`, `Script`) is the stable identity that tells one row from another.
+(`Native`, `Bundled`, `Script`) is the stable identity that tells one row from another;
+`EntryKey::stored`/`parse` is the text the favorites keep.
 
 `search` is case-insensitive and ignores surrounding spaces. A title that starts with the query comes
 first, then a title or alias that contains it, each group in catalog order. Surfaces that group rows

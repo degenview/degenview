@@ -64,6 +64,7 @@ impl ChartWorkspace {
                     actions.push(WorkspaceAction::OpenPineScripts);
                 }
                 ToolbarAction::AddChart => self.add_chart.open(),
+                ToolbarAction::OpenIndicators => self.indicator_picker.open(),
             }
         }
 

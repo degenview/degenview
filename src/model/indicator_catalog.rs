@@ -18,7 +18,6 @@ pub enum Family {
 }
 
 impl Family {
-    #[cfg(test)]
     pub const ALL: [Self; 5] = [
         Self::Trend,
         Self::Momentum,
@@ -49,12 +48,37 @@ pub enum Origin {
     Script,
 }
 
-/// A stable identity for an indicator: tells one row from another.
+/// A stable identity for an indicator: tells one row from another, and is what favorites keep.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum EntryKey {
     Native(BuiltIn),
     Bundled(&'static str),
     Script(String),
+}
+
+impl EntryKey {
+    /// The text stored in the favorites list: `native:rsi`, `bundled:macd`, `script:<id>`.
+    pub fn stored(&self) -> String {
+        match self {
+            Self::Native(kind) => format!("native:{}", kind.id()),
+            Self::Bundled(id) => format!("bundled:{id}"),
+            Self::Script(id) => format!("script:{id}"),
+        }
+    }
+
+    /// The key a stored string names, if it still names one that exists.
+    pub fn parse(stored: &str) -> Option<Self> {
+        let (kind, id) = stored.split_once(':')?;
+        match kind {
+            "native" => BuiltIn::ALL
+                .into_iter()
+                .find(|built_in| built_in.id() == id)
+                .map(Self::Native),
+            "bundled" => indicators::find(id).map(|indicator| Self::Bundled(indicator.id)),
+            "script" => Some(Self::Script(id.to_owned())),
+            _ => None,
+        }
+    }
 }
 
 /// One row the add-indicator UIs can show and add.
@@ -274,6 +298,16 @@ mod tests {
         assert_eq!(rsi[0], "RSI", "{rsi:?}");
         assert!(rsi.contains(&"Stochastic RSI".to_owned()), "{rsi:?}");
         assert_eq!(search(&found, "   ").len(), found.len());
+    }
+
+    #[test]
+    fn stored_keys_round_trip_and_unknown_ones_are_dropped() {
+        for entry in all(&scripts()) {
+            assert_eq!(EntryKey::parse(&entry.key.stored()), Some(entry.key));
+        }
+        assert_eq!(EntryKey::parse("bundled:gone"), None);
+        assert_eq!(EntryKey::parse("native:gone"), None);
+        assert_eq!(EntryKey::parse("nonsense"), None);
     }
 
     #[test]
