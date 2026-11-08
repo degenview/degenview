@@ -535,7 +535,7 @@ fn overflow_list(
             false,
             |ui| {
                 ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
-                list_header(ui, items.len());
+                list_header(ui, list_title(items), items.len());
                 let mut picked = None;
                 let rows = |ui: &mut Ui, picked: &mut Option<Action>| {
                     let group_of = |item: &Item| match item.kind {
@@ -586,12 +586,25 @@ fn overflow_list(
     ctx.data_mut(|data| data.insert_temp(open_id, open));
 }
 
-/// "Indicators" and how many there are.
-fn list_header(ui: &mut Ui, count: usize) {
+/// What the list is called: by what is in it, so a list of compared markets is not "Indicators".
+fn list_title(items: &[Item]) -> &'static str {
+    let overlays = items
+        .iter()
+        .filter(|item| matches!(item.kind, Kind::Overlay(_)))
+        .count();
+    match overlays {
+        0 => "Indicators",
+        n if n == items.len() => "Compared markets",
+        _ => "On this chart",
+    }
+}
+
+/// The list's title and how many rows it has.
+fn list_header(ui: &mut Ui, title: &str, count: usize) {
     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 28.0), Sense::hover());
     let title = kit::galley(
         ui,
-        "Indicators",
+        title,
         size::CAPTION + 2.0,
         kit::SEMIBOLD,
         theme::text_primary(),
@@ -1565,5 +1578,23 @@ mod tests {
         );
         // Hide or Show follows the market's state.
         assert!(overlay_menu_labels(&short[1]).contains(&"Hide".to_owned()));
+    }
+
+    #[test]
+    fn a_list_is_named_by_what_it_holds() {
+        let mut card = card_comparing(&["ETHUSDT", "SOLUSDT"]);
+        let config = IndicatorConfig {
+            show_ema: true,
+            ..IndicatorConfig::default()
+        };
+        let compared = overlay_items(&card, DataSource::Binance);
+        assert_eq!(list_title(&compared), "Compared markets");
+        let indicators = items(&config, &ChartCard::default(), DataSource::Binance);
+        assert_eq!(list_title(&indicators), "Indicators");
+        let _ = card.add_pine_instance(None, "x", "plot(close)");
+        assert_eq!(
+            list_title(&items(&config, &card, DataSource::Binance)),
+            "On this chart"
+        );
     }
 }
