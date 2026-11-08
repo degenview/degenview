@@ -261,6 +261,7 @@ real-client acceptance run.
   modification time moves, and drop to "off" with the same banner.
 - A monotonic counter in the seal, kept in the Keychain, so replaying an older database with its
   own seal is detected.
-- Windows has no secret store behind `KeyBackend` (every call answers "none"), so the key cannot be
-  created and the server runs unsealed there, with a notice on the MCP Settings page. Sealing
-  needs a Windows credential store first.
+- ~~Windows has no secret store behind `KeyBackend`~~ Done: Windows Credential Manager holds the
+  key (see [Windows secret storage](flatpak.md#windows-secret-storage)). Still open on Windows: the
+  remote-access TLS key `mcp-tls.pem` is a plaintext file in the per-user data directory (mode 0600
+  on Unix; Windows has no equivalent set).

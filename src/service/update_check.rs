@@ -600,7 +600,10 @@ mod tests {
             assert!(by_maintainer.manual_only.is_some(), "{login}");
         }
         // The bot's login is matched case-insensitively, like GitHub logins.
-        let by_bot = available(one(&reply_by("v0.2.0", true, "GitHub-Actions[bot]"), "0.1.0"));
+        let by_bot = available(one(
+            &reply_by("v0.2.0", true, "GitHub-Actions[bot]"),
+            "0.1.0",
+        ));
         assert_eq!(by_bot.manual_only, None);
         let mutable = available(one(
             &reply_by("v0.2.0", false, "github-actions[bot]"),
