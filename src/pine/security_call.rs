@@ -390,7 +390,7 @@ impl Session {
                 "request.security only supports the chart's own symbol (syminfo.tickerid) here."
                     .to_owned()
             } else {
-                format!("No data is available for symbol '{name}'.")
+                unserved_symbol_message(name)
             },
             range,
         )
@@ -793,6 +793,24 @@ fn empty_shaped(columns: Option<usize>, session: &mut Session) -> RuntimeValue {
     }
 }
 
+/// Why a symbol the provider could not serve got no data, with the way to fix the usual cause: a
+/// bare `ETH` is read from Binance as written, where only the full pair (`ETHUSDT`) exists.
+fn unserved_symbol_message(name: &str) -> String {
+    if name.contains(':') {
+        format!(
+            "No data is available for symbol '{name}'. Check that the source before the colon is \
+             one DegenView reads (such as BINANCE, COINBASE or ALPACA) and that the pair is \
+             spelled the way that source names it."
+        )
+    } else {
+        format!(
+            "No data is available for symbol '{name}'. A symbol without a source is read from \
+             Binance exactly as written, so give the full pair, such as \"BINANCE:ETHUSDT\" or \
+             \"COINBASE:ETH-USD\"."
+        )
+    }
+}
+
 /// The start of the calendar bucket that contains `open_time`, for a bar length in seconds.
 pub(super) fn bucket_start(open_time: i64, interval_seconds: f64) -> i64 {
     if interval_seconds < 604_800.0 {
@@ -963,6 +981,17 @@ mod tests {
             close,
             volume: 1.0,
         }
+    }
+
+    #[test]
+    fn an_unserved_symbol_says_how_to_name_it() {
+        let bare = unserved_symbol_message("ETH");
+        assert!(bare.starts_with("No data is available for symbol 'ETH'."));
+        assert!(bare.contains("Binance"));
+        assert!(bare.contains("\"BINANCE:ETHUSDT\""));
+        let prefixed = unserved_symbol_message("KRAKEN:ETHUSD");
+        assert!(prefixed.contains("source before the colon"));
+        assert!(!prefixed.contains("without a source"));
     }
 
     #[test]
