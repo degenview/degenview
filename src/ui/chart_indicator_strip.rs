@@ -1,6 +1,5 @@
 //! Compact, Swift-style controls for the indicators applied to a chart.
 
-use super::add_indicator_menu;
 use super::chart_card::ChartCard;
 use super::icons::{self, Icon};
 use super::kit::{self, size};
@@ -34,7 +33,6 @@ pub enum Action {
     /// Open (or put away) a script's settings popover, pointing at the chip `Rect`.
     ConfigureScript(u64, Rect),
     OpenIndicatorSettings,
-    OpenScriptSettings,
     /// Open the Pine logs pane on a script.
     OpenPineLogs(u64),
 }
@@ -105,7 +103,6 @@ const CHIP_NAME_MAX_WIDTH: f32 = 110.0;
 /// A hover control is a 16pt square with a 10pt glyph, 1pt apart.
 const CONTROL_SIZE: f32 = 16.0;
 const CONTROL_GLYPH: f32 = 10.0;
-const ADD_BUTTON: f32 = 20.0;
 /// What a hovered chip grows by (its eye, settings and remove controls), held back when
 /// deciding how many chips fit so hovering never makes the strip refold.
 const CONTROLS_RESERVE: f32 = 4.0 + 2.0 * CONTROL_SIZE + 1.0;
@@ -179,18 +176,14 @@ pub fn show(
     config: &IndicatorConfig,
     source: DataSource,
     chart_id: u64,
-    header_hovered: bool,
 ) -> Option<Action> {
     let items = items(config, card, source);
     let mut action = None;
     ui.spacing_mut().item_spacing.x = SPACING;
-    let show_add = items.is_empty() || ui.available_width() >= 48.0;
 
     if !items.is_empty() {
-        // Keep room for the add button and one chip's hover controls.
-        let budget = ui.available_width()
-            - if show_add { ADD_BUTTON + SPACING } else { 0.0 }
-            - CONTROLS_RESERVE;
+        // Keep room for one chip's hover controls.
+        let budget = ui.available_width() - CONTROLS_RESERVE;
         let inline = items.len().min(VISIBLE_CHIP_LIMIT);
         let pill_width = |label: &str| {
             ui.painter()
@@ -240,17 +233,6 @@ pub fn show(
         }
     }
 
-    if show_add {
-        add_button(
-            ui,
-            card,
-            config,
-            source,
-            items.is_empty(),
-            header_hovered,
-            &mut action,
-        );
-    }
     action
 }
 
@@ -830,59 +812,6 @@ fn control_buttons(item: &Item) -> Vec<Control> {
     buttons
 }
 
-/// The header's "+": faint on an empty chart, shown only while the header is hovered once
-/// there are indicators, so it never competes with the chart's own controls.
-fn add_button(
-    ui: &mut Ui,
-    card: &ChartCard,
-    config: &IndicatorConfig,
-    source: DataSource,
-    is_empty: bool,
-    header_hovered: bool,
-    action: &mut Option<Action>,
-) {
-    let (rect, response) = ui.allocate_exact_size(Vec2::splat(ADD_BUTTON), Sense::click());
-    let response = crate::ui::accessibility::label(response, "Add Indicator")
-        .on_hover_text("Add Indicator")
-        .on_hover_cursor(egui::CursorIcon::PointingHand);
-    let hovered = response.hovered() || egui::Popup::is_id_open(ui.ctx(), response.id.with("add"));
-    let opacity = if hovered {
-        0.85
-    } else if is_empty {
-        if header_hovered { 0.6 } else { 0.35 }
-    } else if header_hovered {
-        0.5
-    } else {
-        0.0
-    };
-    if hovered {
-        ui.painter()
-            .circle_filled(rect.center(), ADD_BUTTON / 2.0, kit::primary(0.10));
-    }
-    if opacity > 0.0 {
-        icons::paint(
-            ui.painter(),
-            Rect::from_center_size(rect.center(), Vec2::splat(10.0)),
-            Icon::Plus,
-            theme::with_alpha(theme::text_primary(), opacity),
-        );
-    }
-    let on_chart: Vec<String> = card
-        .pine_instances()
-        .iter()
-        .filter_map(|instance| instance.script_id.clone())
-        .collect();
-    add_indicator_menu::show(
-        &response,
-        &add_indicator_menu::Env {
-            config,
-            source,
-            on_chart: &on_chart,
-        },
-        action,
-    );
-}
-
 /// A small section label in a menu.
 fn menu_heading(ui: &mut Ui, title: &str) {
     ui.horizontal(|ui| {
@@ -1008,7 +937,7 @@ mod tests {
                     egui::Layout::left_to_right(egui::Align::Center),
                     |ui| {
                         let start = ui.cursor().left();
-                        show(ui, card, config, DataSource::Binance, 0, true);
+                        show(ui, card, config, DataSource::Binance, 0);
                         used = ui.min_rect().right() - start;
                     },
                 );
@@ -1095,7 +1024,7 @@ mod tests {
                 ui.add_space(24.0);
                 ui.horizontal(|ui| {
                     ui.add_space(20.0);
-                    if let Some(action) = show(ui, &card, &config, DataSource::Binance, 1, true) {
+                    if let Some(action) = show(ui, &card, &config, DataSource::Binance, 1) {
                         picked = Some(action);
                     }
                 });
@@ -1190,7 +1119,7 @@ mod tests {
                 ui.add_space(24.0);
                 ui.horizontal(|ui| {
                     ui.add_space(20.0);
-                    show(ui, &card, &config, DataSource::Binance, 1, true);
+                    show(ui, &card, &config, DataSource::Binance, 1);
                 });
             })
         };

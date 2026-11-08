@@ -162,9 +162,7 @@ behavior.
   options persist, as the local `pineLogs.prefs` setting.
 - Saved scripts reach a chart from two places, both reading `ui::script_catalog` (saved indicators and
   strategies by name, re-read at most every 2 s, only while a menu or the Scripts page is open: never
-  call `ScriptStore::all_scripts` per frame). The header "+" (`ui::add_indicator_menu`: search field
-  focused on open, built-ins, a separator, scripts, then Pine Studio and All Indicator Settings)
-  reports `Action::AddScript`, which the workspace applies with `add_pine_instance_to` so it is one undo
+  call `ScriptStore::all_scripts` per frame). The toolbar's Indicators picker (the card header has no "+") reports `Action::AddScript`, which the workspace applies with `add_pine_instance_to` so it is one undo
   step. The chart settings Scripts page lists every saved script with a switch: the first switch-on adds
   an instance, and after that the switch is only `PineInstance::visible`, so inputs, style and order
   survive turning a script off. Removing an instance is the separate x on its row. The sheet has no

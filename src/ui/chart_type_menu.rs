@@ -1,6 +1,6 @@
-//! The chart-type selector in a chart's header: a button showing the current type's glyph and a
-//! menu of every type, grouped, with a filter box. The menu is for one chart card: it reports the
-//! pick and the workspace applies it to that chart alone.
+//! The chart-type menu behind the toolbar's chart-type button: every type, grouped, with a filter
+//! box. It acts on the focused chart: it reports the pick and the workspace applies it to that
+//! chart alone.
 
 use super::icons::{self, Icon};
 use super::kit;
@@ -15,42 +15,23 @@ const ROW_HEIGHT: f32 = 26.0;
 const MENU_WIDTH: f32 = 214.0;
 const GLYPH: f32 = 15.0;
 
-/// The header button. Returns the type picked this frame.
-pub fn button(
+/// The menu under the toolbar's chart-type button, anchored on that button's `response`. Returns
+/// the type picked this frame.
+pub fn menu(
     ui: &mut egui::Ui,
-    current: ChartType,
+    response: &egui::Response,
     source: DataSource,
+    current: ChartType,
     chart_id: u64,
 ) -> Option<ChartType> {
-    let size = 27.0;
-    let (rect, response) = ui.allocate_exact_size(Vec2::splat(size), Sense::click());
-    let tooltip = format!("Chart type: {}", current.label());
-    let response = super::accessibility::label(response, &tooltip).on_hover_text(&tooltip);
-    let popup_id = egui::Popup::default_response_id(&response);
+    let popup_id = egui::Popup::default_response_id(response);
     let open = egui::Popup::is_id_open(ui.ctx(), popup_id);
-    if ui.is_rect_visible(rect) {
-        let fill = if open || response.is_pointer_button_down_on() {
-            theme::ink(26)
-        } else if response.hovered() {
-            theme::ink(14)
-        } else {
-            Color32::TRANSPARENT
-        };
-        ui.painter().rect_filled(rect, 5.0, fill);
-        glyph(
-            ui.painter(),
-            Rect::from_center_size(rect.center(), Vec2::splat(size * 0.6)),
-            current,
-            theme::text_secondary(),
-        );
-    }
-
     let query_id = Id::new(("chart-type-filter", chart_id));
     if !open {
         ui.data_mut(|data| data.remove::<String>(query_id));
     }
     let mut picked = None;
-    egui::Popup::menu(&response)
+    egui::Popup::menu(response)
         .frame(kit::menu_frame())
         // The default closes on any click, which would shut the menu on the search field.
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
@@ -451,7 +432,8 @@ mod tests {
                 ..Default::default()
             };
             let mut output = ctx.run_ui(input, |ui| {
-                if let Some(kind) = button(ui, ChartType::Candles, source, 7) {
+                let (_, anchor) = ui.allocate_exact_size(Vec2::splat(27.0), Sense::click());
+                if let Some(kind) = menu(ui, &anchor, source, ChartType::Candles, 7) {
                     picked.push(kind);
                 }
             });

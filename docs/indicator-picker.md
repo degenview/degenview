@@ -24,7 +24,7 @@ a portfolio card is not a target) through `apply_indicator_action`, so undo is o
 - **Keys**: ↑/↓ move a row, ←/→ a card (left to the search field while it holds text), Return adds
   and closes, Shift-Return adds and stays open, F stars the selected one (only when the search
   field is not focused), Esc or the Done button (bottom right) closes. Return never removes. The keys are taken before the search
-  field is drawn (`read_keys`), like the "+" menu's.
+  field is drawn (`read_keys`), like the chart-type menu's.
 - **Availability** (`availability`): no focused market chart, or a line chart for anything but a
   native other than Volume, is blocked with the reason shown; blocked entries are dimmed and Return
   does nothing.
@@ -44,12 +44,13 @@ Pictures: `DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib indicator_picker::tests:
 
 `search` is case-insensitive and ignores surrounding spaces. A title that starts with the query comes
 first, then a title or alias that contains it, each group in catalog order. Surfaces that group rows
-into sections (the chart's "+" menu) partition stably afterwards, so the rank survives inside a
+into sections (the picker's sections) partition stably afterwards, so the rank survives inside a
 section.
 
-The chart's "+" menu (`ui::add_indicator_menu`) lists the native built-ins not yet applied, then the
-bundled indicators, under "Built-in", and the saved scripts under "Scripts"; on a line chart only the
-natives that run there. A bundled row's tooltip is its family and summary, and it shows "On chart"
+The chart header's "+" menu (`ui::add_indicator_menu`) is gone: the toolbar's Indicators button opens
+the picker for the focused chart, and nothing else adds an indicator from a card. The picker lists the
+native built-ins not yet applied, the bundled indicators and the saved scripts; on a line chart only
+the natives that run there. A bundled row's tooltip is its family and summary, and it shows "On chart"
 when the chart already has an instance (a bundled indicator can be added again). A pick is an
 `Action` (`Add`, `AddScript`, `AddBundled`) that `ChartWorkspace::apply_indicator_action` applies as
 one undo step; it refuses scripts and Volume on a line chart, so any surface can call it.

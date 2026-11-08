@@ -1,19 +1,40 @@
-//! The chart window's toolbar, laid out like the Swift one: the timeframe as a segmented
-//! control on the left; the layout menu, Portfolio and Pine Studio, the watchlist toggle and
-//! Add Chart as separate bubbles on the right. Replay and Alerts live on the tool strip.
+//! The chart window's toolbar, flat like TradingView's and LuxAlgo's: borderless buttons that
+//! tint on hover, hairline separators between groups and labels that fall back to icons when the
+//! window is too narrow for them. Left to right: the timeframe, the chart type, Indicators,
+//! Replay, Undo and Redo. On the right: the layout menu, chart settings, Portfolio, Pine Studio,
+//! the watchlist toggle and Add Chart. The replay bar under it (`replay_bar.rs`) uses the same
+//! flat style. The chart type, Indicators and chart settings act on the
+//! focused chart.
 
-use crate::model::Timeframe;
+use crate::model::{ChartType, DataSource, Timeframe};
+use crate::ui::chart_type_menu;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, MEDIUM, REGULAR, SEMIBOLD, size};
 use crate::ui::shortcut;
 use crate::ui::theme;
-use eframe::egui::{self, Color32, Id, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2};
+use eframe::egui::{self, Color32, Galley, Id, Rect, Response, Sense, Ui, Vec2, pos2, vec2};
+use std::sync::Arc;
 
-pub const HEIGHT: f32 = 48.0;
-const BUBBLE: f32 = 30.0;
-const GAP: f32 = 10.0;
+pub const HEIGHT: f32 = 44.0;
+/// A button's height.
+const BUTTON: f32 = 30.0;
+const RADIUS: f32 = 6.0;
+const ICON: f32 = 16.0;
+/// Space inside a button, either side of its content.
+const PAD: f32 = 8.0;
+/// Between a button's icon and its label.
+const ICON_GAP: f32 = 6.0;
+/// Between two buttons of one group.
+const GAP: f32 = 2.0;
+/// Either side of a separator's hairline.
+const SEPARATOR_MARGIN: f32 = 7.0;
+const SEPARATOR_HEIGHT: f32 = 18.0;
+const EDGE: f32 = 10.0;
+/// The most the two clusters may crowd each other before the right one starts to drop buttons.
+const CLUSTER_GAP: f32 = 16.0;
 /// Long layout names are cut so the toolbar keeps its shape.
 const NAME_MAX_WIDTH: f32 = 180.0;
+const LABEL_SIZE: f32 = size::BODY;
 
 pub struct ToolbarInput<'a> {
     pub timeframe: Timeframe,
@@ -24,6 +45,26 @@ pub struct ToolbarInput<'a> {
     pub layouts: &'a [(u64, String)],
     pub active_layout: Option<u64>,
     pub watchlist_visible: bool,
+    /// The focused market chart the chart type, Indicators and settings buttons act on; `None`
+    /// on an empty tab or with a portfolio card focused.
+    pub chart: Option<ToolbarChart>,
+    pub can_undo: bool,
+    pub can_redo: bool,
+    pub replay_open: bool,
+    /// There is a market to replay (or a replay to close).
+    pub can_replay: bool,
+}
+
+/// What the toolbar needs of the focused chart.
+#[derive(Clone, Copy, Debug)]
+pub struct ToolbarChart {
+    pub id: u64,
+    pub chart_type: ChartType,
+    pub source: DataSource,
+    /// The market draws types other than its own line (a line-only source does not).
+    pub chart_types: bool,
+    /// The market has a settings sheet (a CoinMarketCap gauge has none).
+    pub settings: bool,
 }
 
 /// What the layout menu's Autosave row shows.
@@ -39,6 +80,8 @@ pub struct AutosaveState {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ToolbarAction {
     SetTimeframe(Timeframe),
+    /// A type picked from the chart-type menu, for the focused chart.
+    SetChartType(ChartType),
     SaveLayout,
     ToggleAutosave,
     CopyLayout,
@@ -51,322 +94,330 @@ pub enum ToolbarAction {
     AddChart,
     /// Open the indicator picker for the focused chart.
     OpenIndicators,
+    /// Open the focused chart's settings sheet.
+    OpenChartSettings,
+    ToggleReplay,
+    Undo,
+    Redo,
+}
+
+/// The tooltip of the Replay button.
+pub fn replay_tooltip(replay_open: bool, has_market: bool) -> &'static str {
+    if replay_open {
+        "Close Replay"
+    } else if has_market {
+        "Historical Replay"
+    } else {
+        "Historical Replay — add a market chart first"
+    }
+}
+
+/// What a button draws before its label.
+#[derive(Clone, Copy)]
+enum Glyph {
+    Icon(Icon),
+    ChartType(ChartType),
+}
+
+/// The popup a button owns, drawn once the button is.
+#[derive(Clone, Copy, PartialEq)]
+enum Menu {
+    ChartType,
+    Layout,
+}
+
+struct Button {
+    id: Id,
+    glyph: Option<Glyph>,
+    label: Option<String>,
+    /// Quieter text after the label.
+    suffix: Option<String>,
+    chevron: bool,
+    tip: String,
+    /// What assistive tech reads, when it differs from the tooltip.
+    access: Option<String>,
+    enabled: bool,
+    /// Lit: the thing it toggles is on.
+    active: bool,
+    /// The colour of its content while lit.
+    tint: Option<Color32>,
+    /// Quiet text until hovered or lit (a timeframe that is not the current one).
+    quiet: bool,
+    weight: f32,
+    min_width: f32,
+    menu: Option<Menu>,
+    action: Option<ToolbarAction>,
+}
+
+impl Button {
+    fn new(id: impl std::hash::Hash + std::fmt::Debug, tip: impl Into<String>) -> Self {
+        Self {
+            id: Id::new(("toolbar", id)),
+            glyph: None,
+            label: None,
+            suffix: None,
+            chevron: false,
+            tip: tip.into(),
+            access: None,
+            enabled: true,
+            active: false,
+            tint: None,
+            quiet: false,
+            weight: MEDIUM,
+            min_width: 0.0,
+            menu: None,
+            action: None,
+        }
+    }
+
+    fn icon(mut self, icon: Icon) -> Self {
+        self.glyph = Some(Glyph::Icon(icon));
+        self
+    }
+
+    /// Text beside the glyph; it is dropped before the glyph when space runs out. A button with
+    /// no glyph always keeps its text.
+    fn label(mut self, label: impl Into<String>) -> Self {
+        self.label = Some(label.into());
+        self
+    }
+
+    fn on_click(mut self, action: ToolbarAction) -> Self {
+        self.action = Some(action);
+        self
+    }
+
+    fn enabled(mut self, enabled: bool) -> Self {
+        self.enabled = enabled;
+        self
+    }
+
+    fn active(mut self, active: bool) -> Self {
+        self.active = active;
+        self
+    }
+}
+
+enum Item {
+    Button(Button),
+    Separator,
+}
+
+/// A button measured for one frame: its label is laid out and its width known.
+struct Measured<'a> {
+    button: &'a Button,
+    label: Option<Arc<Galley>>,
+    suffix: Option<Arc<Galley>>,
+    width: f32,
+}
+
+enum Slot<'a> {
+    Button(Measured<'a>),
+    Separator,
+}
+
+impl Slot<'_> {
+    /// The room the slot takes, without the gap after it.
+    fn span(&self) -> f32 {
+        match self {
+            Slot::Button(measured) => measured.width,
+            Slot::Separator => 1.0 + 2.0 * SEPARATOR_MARGIN,
+        }
+    }
+
+    fn gap_after(&self) -> f32 {
+        match self {
+            Slot::Button(_) => GAP,
+            Slot::Separator => 0.0,
+        }
+    }
+}
+
+fn measure<'a>(ui: &Ui, items: &'a [Item], labels: bool) -> Vec<Slot<'a>> {
+    items
+        .iter()
+        .map(|item| match item {
+            Item::Separator => Slot::Separator,
+            Item::Button(button) => {
+                let shown = button.glyph.is_none() || labels;
+                let text = |value: &Option<String>, weight: f32| {
+                    value.as_ref().filter(|_| shown).map(|value| {
+                        // The colour is chosen when the button is painted.
+                        kit::galley(
+                            ui,
+                            value,
+                            LABEL_SIZE,
+                            weight,
+                            Color32::PLACEHOLDER,
+                            NAME_MAX_WIDTH,
+                        )
+                    })
+                };
+                let label = text(&button.label, button.weight);
+                let suffix = text(&button.suffix, REGULAR);
+                let content = content_width(button, label.as_deref(), suffix.as_deref());
+                Slot::Button(Measured {
+                    button,
+                    label,
+                    suffix,
+                    width: (content + 2.0 * PAD).max(button.min_width),
+                })
+            }
+        })
+        .collect()
+}
+
+fn content_width(button: &Button, label: Option<&Galley>, suffix: Option<&Galley>) -> f32 {
+    let mut width = 0.0;
+    if button.glyph.is_some() {
+        width += ICON;
+    }
+    if let Some(label) = label {
+        width += label.size().x
+            + if button.glyph.is_some() {
+                ICON_GAP
+            } else {
+                0.0
+            };
+        if let Some(suffix) = suffix {
+            width += 4.0 + suffix.size().x;
+        }
+        if button.chevron {
+            width += 4.0 + 9.0;
+        }
+    } else if button.chevron {
+        width += 9.0;
+    }
+    width
+}
+
+fn run_width(slots: &[Slot]) -> f32 {
+    slots
+        .iter()
+        .map(|slot| slot.span() + slot.gap_after())
+        .sum()
 }
 
 pub fn show(ui: &mut Ui, input: &ToolbarInput) -> Vec<ToolbarAction> {
     let mut actions = Vec::new();
     let bar = ui.max_rect();
     ui.painter().rect_filled(bar, 0.0, theme::chrome());
-    let y = bar.center().y - BUBBLE / 2.0;
+    let y = bar.center().y - BUTTON / 2.0;
 
-    // Left: the timeframe.
-    let mut x = bar.left() + 12.0;
-    if let Some(timeframe) = timeframes(ui, pos2(x, y), input.timeframe, &mut x) {
-        actions.push(ToolbarAction::SetTimeframe(timeframe));
-    }
-    // Beside the timeframe: the indicator picker, as a labelled pill like Add Chart.
-    x += GAP;
-    let indicators_label = kit::galley(
-        ui,
-        "Indicators",
-        size::BODY,
-        MEDIUM,
-        theme::text_primary(),
-        120.0,
+    let left_items = left_items(input);
+    let right_items = right_items(input);
+    // Labels go first when the two ends meet; then the right end drops what does not fit.
+    let wide = (
+        measure(ui, &left_items, true),
+        measure(ui, &right_items, true),
     );
-    let indicators = Rect::from_min_size(
-        pos2(x, y),
-        vec2(12.0 + 14.0 + 6.0 + indicators_label.size().x + 12.0, BUBBLE),
-    );
-    if crate::ui::accessibility::label(
-        bubble_button(ui, indicators, Id::new("toolbar-indicators"), false),
-        "Indicators",
-    )
-    .on_hover_text("Indicators: add one to the focused chart")
-    .clicked()
-    {
-        actions.push(ToolbarAction::OpenIndicators);
-    }
-    icons::paint(
-        ui.painter(),
-        Rect::from_min_size(
-            pos2(indicators.left() + 12.0, indicators.center().y - 7.0),
-            Vec2::splat(14.0),
-        ),
-        Icon::Waveform,
-        theme::text_primary(),
-    );
-    ui.painter().galley(
-        pos2(
-            indicators.left() + 32.0,
-            indicators.center().y - indicators_label.size().y / 2.0,
-        ),
-        indicators_label,
-        theme::text_primary(),
-    );
-    // Right, from the edge inwards: Add Chart, the watchlist, the app buttons, the layout.
-    let mut right = bar.right() - 12.0;
-    let add_label = kit::galley(
-        ui,
-        "Add Chart",
-        size::BODY,
-        MEDIUM,
-        theme::text_primary(),
-        120.0,
-    );
-    let add = Rect::from_min_max(
-        pos2(right - (12.0 + 12.0 + 6.0 + add_label.size().x + 12.0), y),
-        pos2(right, y + BUBBLE),
-    );
-    if crate::ui::accessibility::label(
-        bubble_button(ui, add, Id::new("toolbar-add"), false),
-        "Add Chart",
-    )
-    .on_hover_text("Add Chart")
-    .clicked()
-    {
-        actions.push(ToolbarAction::AddChart);
-    }
-    icons::paint(
-        ui.painter(),
-        Rect::from_min_size(
-            pos2(add.left() + 12.0, add.center().y - 6.0),
-            Vec2::splat(12.0),
-        ),
-        Icon::Plus,
-        theme::text_primary(),
-    );
-    ui.painter().galley(
-        pos2(add.left() + 30.0, add.center().y - add_label.size().y / 2.0),
-        add_label,
-        theme::text_primary(),
-    );
-    right = add.left() - GAP;
-
-    let sidebar = Rect::from_min_max(pos2(right - 38.0, y), pos2(right, y + BUBBLE));
-    let tip = if input.watchlist_visible {
-        "Hide Watchlists"
+    let (left, right) = if fits(&wide.0, &wide.1, bar.width()) {
+        wide
     } else {
-        "Show Watchlists"
+        (
+            measure(ui, &left_items, false),
+            measure(ui, &right_items, false),
+        )
     };
-    if icon_bubble(
-        ui,
-        sidebar,
-        Id::new("toolbar-watchlist"),
-        Icon::SidebarRight,
-        tip,
-    )
-    .clicked()
-    {
-        actions.push(ToolbarAction::ToggleWatchlist);
+    for (x, slot) in arrange(bar.width(), &left, &right) {
+        paint_slot(ui, slot, bar.left() + x, y, input, &mut actions);
     }
-    right = sidebar.left() - GAP;
-
-    // Portfolio and Pine Studio share one bubble, as the Swift title-bar group does.
-    let group = Rect::from_min_max(pos2(right - 76.0, y), pos2(right, y + BUBBLE));
-    paint_bubble(ui, group, false, false);
-    let halves = [
-        (
-            Icon::Briefcase,
-            "Portfolio Tracker",
-            ToolbarAction::OpenPortfolio,
-        ),
-        (
-            Icon::Curlybraces,
-            "Pine Studio",
-            ToolbarAction::OpenPineStudio,
-        ),
-    ];
-    for (index, (icon, tip, action)) in halves.into_iter().enumerate() {
-        let half = Rect::from_min_size(
-            pos2(group.left() + 2.0 + index as f32 * 36.0, group.top() + 2.0),
-            vec2(36.0, BUBBLE - 4.0),
-        );
-        let response = ui
-            .interact(half, Id::new(("toolbar-app", index)), Sense::click())
-            .on_hover_text(tip);
-        let response = crate::ui::accessibility::label(response, tip);
-        if response.hovered() {
-            ui.painter().rect_filled(
-                half,
-                (BUBBLE - 4.0) / 2.0,
-                kit::primary(if response.is_pointer_button_down_on() {
-                    0.14
-                } else {
-                    0.08
-                }),
-            );
-        }
-        icons::paint(
-            ui.painter(),
-            Rect::from_center_size(half.center(), Vec2::splat(15.0)),
-            icon,
-            theme::text_primary(),
-        );
-        if response.clicked() {
-            actions.push(action);
-        }
-    }
-    right = group.left() - GAP;
-
-    layout_menu(ui, right, y, input, &mut actions);
     actions
 }
 
-/// The bubble every toolbar control sits in: a faint capsule that lifts on hover.
-pub(crate) fn paint_bubble(ui: &Ui, rect: Rect, hovered: bool, pressed: bool) {
-    let painter = ui.painter();
-    painter.rect_filled(
-        rect,
-        rect.height() / 2.0,
-        kit::primary(if pressed {
-            0.16
-        } else if hovered {
-            0.12
-        } else {
-            0.07
-        }),
-    );
-    painter.rect_stroke(
-        rect,
-        rect.height() / 2.0,
-        Stroke::new(1.0, kit::primary(0.06)),
-        StrokeKind::Inside,
-    );
+/// Whether both runs fit side by side in a bar `width` wide.
+fn fits(left: &[Slot], right: &[Slot], width: f32) -> bool {
+    run_width(left) + run_width(right) <= width - 2.0 * EDGE - CLUSTER_GAP
 }
 
-fn bubble_button(ui: &mut Ui, rect: Rect, id: Id, active: bool) -> egui::Response {
-    let response = ui.interact(rect, id, Sense::click());
-    paint_bubble(
-        ui,
-        rect,
-        response.hovered(),
-        response.is_pointer_button_down_on(),
-    );
-    if active {
-        ui.painter().rect_filled(
-            rect,
-            rect.height() / 2.0,
-            theme::with_alpha(kit::ACCENT, 0.16),
-        );
+/// Where each slot starts, from the bar's left edge: the left run from the edge, the right run
+/// from the other edge inwards, so what is dropped for lack of room is the right run's first slot.
+fn arrange<'a, 'b>(
+    width: f32,
+    left: &'b [Slot<'a>],
+    right: &'b [Slot<'a>],
+) -> Vec<(f32, &'b Slot<'a>)> {
+    let mut placed = Vec::new();
+    let mut x = EDGE;
+    for slot in left {
+        placed.push((x, slot));
+        x += slot.span() + slot.gap_after();
     }
-    response
-}
-
-fn icon_bubble(ui: &mut Ui, rect: Rect, id: Id, icon: Icon, tip: &str) -> egui::Response {
-    let response = bubble_button(ui, rect, id, false).on_hover_text(tip);
-    let response = crate::ui::accessibility::label(response, tip);
-    icons::paint(
-        ui.painter(),
-        Rect::from_center_size(rect.center(), Vec2::splat(15.0)),
-        icon,
-        theme::text_primary(),
-    );
-    response
-}
-
-/// The timeframe picker: one capsule, the chosen segment raised. Advances `x` past it.
-fn timeframes(ui: &mut Ui, at: egui::Pos2, current: Timeframe, x: &mut f32) -> Option<Timeframe> {
-    let labels: Vec<_> = Timeframe::ALL
-        .iter()
-        .map(|timeframe| {
-            kit::galley(
-                ui,
-                timeframe.label(),
-                12.5,
-                if *timeframe == current {
-                    SEMIBOLD
-                } else {
-                    MEDIUM
-                },
-                theme::text_primary(),
-                60.0,
-            )
-        })
-        .collect();
-    let widths: Vec<f32> = labels
-        .iter()
-        .map(|label| (label.size().x + 22.0).max(40.0))
-        .collect();
-    let track = Rect::from_min_size(at, vec2(widths.iter().sum::<f32>() + 4.0, BUBBLE));
-    paint_bubble(ui, track, false, false);
-    let mut picked = None;
-    let mut left = track.left() + 2.0;
-    for ((timeframe, label), width) in Timeframe::ALL.into_iter().zip(labels).zip(widths) {
-        let segment = Rect::from_min_size(pos2(left, track.top() + 2.0), vec2(width, BUBBLE - 4.0));
-        let response = ui
-            .interact(
-                segment,
-                Id::new(("toolbar-timeframe", timeframe.label())),
-                Sense::click(),
-            )
-            .on_hover_text(timeframe.description());
-        let response = crate::ui::accessibility::label(response, timeframe.description());
-        let selected = timeframe == current;
-        let painter = ui.painter();
-        if selected {
-            painter.add(
-                egui::Shadow {
-                    offset: [0, 1],
-                    blur: 3,
-                    spread: 0,
-                    color: Color32::from_black_alpha(45),
-                }
-                .as_shape(segment, segment.height() / 2.0),
-            );
-            painter.rect_filled(
-                segment,
-                segment.height() / 2.0,
-                theme::pick(kit::primary(0.2), Color32::WHITE),
-            );
-        } else if response.hovered() {
-            painter.rect_filled(segment, segment.height() / 2.0, kit::primary(0.06));
+    let mut edge = width - EDGE;
+    for slot in right.iter().rev() {
+        let at = edge - slot.span();
+        if at < x + CLUSTER_GAP {
+            break;
         }
-        let color = if selected {
-            theme::text_primary()
-        } else {
-            theme::text_secondary()
-        };
-        painter.galley(segment.center() - label.size() / 2.0, label, color);
-        if response.clicked() && !selected {
-            picked = Some(timeframe);
-        }
-        left += width;
+        placed.push((at, slot));
+        edge = at - slot.gap_after();
     }
-    *x = track.right();
-    picked
+    placed
 }
 
-/// The layout bubble, its right edge at `right`: the layout's name, "(unsaved)" while it has
-/// changes, and a menu of what can be done with it.
-fn layout_menu(
-    ui: &mut Ui,
-    right: f32,
-    y: f32,
-    input: &ToolbarInput,
-    actions: &mut Vec<ToolbarAction>,
-) -> f32 {
-    let name = kit::galley(
-        ui,
-        input.layout_name,
-        size::BODY,
-        MEDIUM,
-        theme::text_primary(),
-        NAME_MAX_WIDTH,
-    );
-    let unsaved = input.unsaved.then(|| {
-        kit::galley(
-            ui,
-            "(unsaved)",
-            size::BODY,
-            REGULAR,
-            theme::text_secondary(),
-            90.0,
-        )
-    });
-    let content =
-        name.size().x + unsaved.as_ref().map_or(0.0, |label| 4.0 + label.size().x) + 4.0 + 9.0;
-    let rect = Rect::from_min_max(pos2(right - content - 24.0, y), pos2(right, y + BUBBLE));
+fn left_items(input: &ToolbarInput) -> Vec<Item> {
+    let mut items = Vec::new();
+    for timeframe in Timeframe::ALL {
+        let selected = timeframe == input.timeframe;
+        let mut button = Button::new(("timeframe", timeframe.label()), timeframe.description());
+        button.label = Some(timeframe.label().to_owned());
+        button.quiet = !selected;
+        button.active = selected;
+        button.weight = if selected { SEMIBOLD } else { MEDIUM };
+        button.min_width = 34.0;
+        if !selected {
+            button.action = Some(ToolbarAction::SetTimeframe(timeframe));
+        }
+        items.push(Item::Button(button));
+    }
+    items.push(Item::Separator);
+
+    let has_chart = input.chart.is_some();
+    let chart_type = input
+        .chart
+        .map_or(ChartType::Candles, |chart| chart.chart_type);
+    let mut type_button = Button::new("chart-type", format!("Chart type: {}", chart_type.label()))
+        .enabled(input.chart.is_some_and(|chart| chart.chart_types));
+    type_button.glyph = Some(Glyph::ChartType(chart_type));
+    type_button.menu = Some(Menu::ChartType);
+    items.push(Item::Button(type_button));
+    items.push(Item::Button(
+        Button::new("indicators", "Indicators: add one to the focused chart")
+            .icon(Icon::Waveform)
+            .label("Indicators")
+            .enabled(has_chart)
+            .on_click(ToolbarAction::OpenIndicators),
+    ));
+    let mut replay = Button::new(
+        "replay",
+        replay_tooltip(input.replay_open, input.can_replay),
+    )
+    .icon(Icon::Rewind)
+    .label("Replay")
+    .enabled(input.can_replay || input.replay_open)
+    .active(input.replay_open)
+    .on_click(ToolbarAction::ToggleReplay);
+    replay.tint = Some(theme::REPLAY);
+    items.push(Item::Button(replay));
+    items.push(Item::Separator);
+
+    items.push(Item::Button(
+        Button::new("undo", format!("Undo ({})", shortcut::UNDO.label()))
+            .icon(Icon::Undo)
+            .enabled(input.can_undo)
+            .on_click(ToolbarAction::Undo),
+    ));
+    items.push(Item::Button(
+        Button::new("redo", format!("Redo ({})", shortcut::REDO.label()))
+            .icon(Icon::Redo)
+            .enabled(input.can_redo)
+            .on_click(ToolbarAction::Redo),
+    ));
+    items
+}
+
+/// In display order, left to right.
+fn right_items(input: &ToolbarInput) -> Vec<Item> {
     let help = if input.autosave.failed {
         format!(
             "{} — Autosave could not save; choose Save layout",
@@ -377,32 +428,208 @@ fn layout_menu(
     } else {
         input.layout_name.to_owned()
     };
-    let response = bubble_button(ui, rect, Id::new("toolbar-layout"), false).on_hover_text(&help);
-    let response = crate::ui::accessibility::label(response, format!("Layout: {help}"));
-    let mut x = rect.left() + 12.0;
-    let name_width = name.size().x;
-    ui.painter().galley(
-        pos2(x, rect.center().y - name.size().y / 2.0),
-        name,
-        theme::text_primary(),
+    let mut layout = Button::new("layout", help.clone());
+    layout.label = Some(input.layout_name.to_owned());
+    layout.suffix = input.unsaved.then(|| "(unsaved)".to_owned());
+    layout.chevron = true;
+    layout.menu = Some(Menu::Layout);
+    layout.access = Some(format!("Layout: {help}"));
+
+    let watchlist_tip = if input.watchlist_visible {
+        "Hide Watchlists"
+    } else {
+        "Show Watchlists"
+    };
+    vec![
+        Item::Button(layout),
+        Item::Button(
+            Button::new("chart-settings", "Chart settings")
+                .icon(Icon::Gear)
+                .enabled(input.chart.is_some_and(|chart| chart.settings))
+                .on_click(ToolbarAction::OpenChartSettings),
+        ),
+        Item::Separator,
+        Item::Button(
+            Button::new("portfolio", "Portfolio Tracker")
+                .icon(Icon::Briefcase)
+                .on_click(ToolbarAction::OpenPortfolio),
+        ),
+        Item::Button(
+            Button::new("pine-studio", "Pine Studio")
+                .icon(Icon::Curlybraces)
+                .on_click(ToolbarAction::OpenPineStudio),
+        ),
+        Item::Button(
+            Button::new("watchlist", watchlist_tip)
+                .icon(Icon::SidebarRight)
+                .active(input.watchlist_visible)
+                .on_click(ToolbarAction::ToggleWatchlist),
+        ),
+        Item::Separator,
+        Item::Button(
+            Button::new("add-chart", "Add Chart")
+                .icon(Icon::Plus)
+                .label("Add Chart")
+                .on_click(ToolbarAction::AddChart),
+        ),
+    ]
+}
+
+fn paint_slot(
+    ui: &mut Ui,
+    slot: &Slot,
+    x: f32,
+    y: f32,
+    input: &ToolbarInput,
+    actions: &mut Vec<ToolbarAction>,
+) {
+    let measured = match slot {
+        Slot::Separator => {
+            ui.painter().rect_filled(
+                Rect::from_center_size(
+                    pos2(x + SEPARATOR_MARGIN + 0.5, y + BUTTON / 2.0),
+                    vec2(1.0, SEPARATOR_HEIGHT),
+                ),
+                0.0,
+                theme::separator(),
+            );
+            return;
+        }
+        Slot::Button(measured) => measured,
+    };
+    let response = paint_button(ui, measured, x, y);
+    let button = measured.button;
+    if response.clicked()
+        && button.enabled
+        && let Some(action) = button.action
+    {
+        actions.push(action);
+    }
+    match button.menu {
+        Some(Menu::ChartType) => {
+            if let Some(chart) = input.chart
+                && let Some(picked) =
+                    chart_type_menu::menu(ui, &response, chart.source, chart.chart_type, chart.id)
+            {
+                actions.push(ToolbarAction::SetChartType(picked));
+            }
+        }
+        Some(Menu::Layout) => layout_popup(ui, &response, input, actions),
+        None => {}
+    }
+}
+
+/// One flat button: nothing at rest, a faint tint on hover, a stronger one while pressed or lit.
+fn paint_button(ui: &mut Ui, measured: &Measured, x: f32, y: f32) -> Response {
+    let button = measured.button;
+    let rect = Rect::from_min_size(pos2(x, y), vec2(measured.width, BUTTON));
+    let sense = if button.enabled {
+        Sense::click()
+    } else {
+        Sense::hover()
+    };
+    let response = ui.interact(rect, button.id, sense);
+    let tip = if button.tip.is_empty() {
+        button.label.clone().unwrap_or_default()
+    } else {
+        button.tip.clone()
+    };
+    let response = crate::ui::accessibility::label(
+        response.on_hover_text(&tip),
+        button.access.clone().unwrap_or(tip),
     );
-    x += name_width + 4.0;
-    if let Some(label) = unsaved {
+    let menu_open = button.menu.is_some()
+        && egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&response));
+    let lit = button.active || menu_open;
+    let hovered = button.enabled && response.hovered();
+    let pressed = button.enabled && response.is_pointer_button_down_on();
+    let tint = if pressed {
+        0.16
+    } else if lit && hovered {
+        0.15
+    } else if hovered {
+        0.09
+    } else if lit {
+        0.11
+    } else {
+        0.0
+    };
+    let painter = ui.painter();
+    if tint > 0.0 {
+        painter.rect_filled(rect, RADIUS, kit::primary(tint));
+    }
+    let color = if !button.enabled {
+        theme::text_tertiary()
+    } else if let (Some(tint), true) = (button.tint, lit) {
+        tint
+    } else if button.quiet && !hovered && !lit {
+        theme::text_secondary()
+    } else {
+        theme::text_primary()
+    };
+    let content = content_width(
+        button,
+        measured.label.as_deref(),
+        measured.suffix.as_deref(),
+    );
+    let mut at = rect.center().x - content / 2.0;
+    let middle = rect.center().y;
+    if let Some(glyph) = button.glyph {
+        let glyph_rect = Rect::from_min_size(pos2(at, middle - ICON / 2.0), Vec2::splat(ICON));
+        match glyph {
+            Glyph::Icon(icon) => icons::paint(painter, glyph_rect, icon, color),
+            Glyph::ChartType(kind) => chart_type_menu::glyph(painter, glyph_rect, kind, color),
+        }
+        at += ICON
+            + if measured.label.is_some() {
+                ICON_GAP
+            } else {
+                0.0
+            };
+    }
+    if let Some(label) = &measured.label {
         let width = label.size().x;
-        ui.painter().galley(
-            pos2(x, rect.center().y - label.size().y / 2.0),
-            label,
+        painter.galley(
+            pos2(at, middle - label.size().y / 2.0),
+            label.clone(),
+            color,
+        );
+        at += width;
+        if let Some(suffix) = &measured.suffix {
+            at += 4.0;
+            painter.galley(
+                pos2(at, middle - suffix.size().y / 2.0),
+                suffix.clone(),
+                if button.enabled {
+                    theme::text_secondary()
+                } else {
+                    theme::text_tertiary()
+                },
+            );
+            at += suffix.size().x;
+        }
+        if button.chevron {
+            at += 4.0;
+        }
+    }
+    if button.chevron {
+        icons::paint(
+            painter,
+            Rect::from_min_size(pos2(at, middle - 4.5), Vec2::splat(9.0)),
+            Icon::ChevronDown,
             theme::text_secondary(),
         );
-        x += width + 4.0;
     }
-    icons::paint(
-        ui.painter(),
-        Rect::from_min_size(pos2(x, rect.center().y - 4.5), Vec2::splat(9.0)),
-        Icon::ChevronDown,
-        theme::text_secondary(),
-    );
+    response
+}
 
+/// The menu under the layout button: what can be done with the layout.
+fn layout_popup(
+    ui: &mut Ui,
+    response: &Response,
+    input: &ToolbarInput,
+    actions: &mut Vec<ToolbarAction>,
+) {
     // As wide as the fixed rows and the layout names need. A layout row also holds a trash button
     // at its end, which the two em spaces stand in for when measuring.
     let save_hint = shortcut::SAVE.label();
@@ -418,7 +645,7 @@ fn layout_menu(
             .iter()
             .map(|(_, name)| (name.as_str(), Some("\u{2003}\u{2003}"))),
     );
-    kit::fitted_menu_rows(ui, &response, egui::RectAlign::BOTTOM_END, &rows, |ui| {
+    kit::fitted_menu_rows(ui, response, egui::RectAlign::BOTTOM_END, &rows, |ui| {
         if kit::menu_item_with_shortcut(
             ui,
             Icon::Download,
@@ -483,7 +710,6 @@ fn layout_menu(
             }
         }
     });
-    rect.left()
 }
 
 /// The Autosave toggle: a check while it is on, dimmed for a tab with no saved layout, and a
@@ -621,28 +847,324 @@ fn layout_row(ui: &mut Ui, id: u64, name: &str, current: bool) -> Option<LayoutR
 mod tests {
     use super::*;
 
+    fn run(ctx: &egui::Context, raw: egui::RawInput, body: impl FnMut(&mut Ui)) {
+        let mut output = ctx.run_ui(raw, body);
+        output.textures_delta.clear();
+    }
+
+    fn input<'a>(layouts: &'a [(u64, String)], focused: bool) -> ToolbarInput<'a> {
+        ToolbarInput {
+            timeframe: Timeframe::Day,
+            layout_name: "Morning",
+            unsaved: false,
+            autosave: AutosaveState::default(),
+            layouts,
+            active_layout: None,
+            watchlist_visible: true,
+            chart: focused.then_some(ToolbarChart {
+                id: 1,
+                chart_type: ChartType::Candles,
+                source: DataSource::Binance,
+                chart_types: true,
+                settings: true,
+            }),
+            can_undo: true,
+            can_redo: false,
+            replay_open: false,
+            can_replay: focused,
+        }
+    }
+
     #[test]
     fn the_toolbar_draws_headlessly_with_and_without_a_focused_chart() {
         let layouts = vec![(1, "Morning".to_owned()), (2, "Swing trades".to_owned())];
         let ctx = egui::Context::default();
-        for (unsaved, active) in [(false, None), (true, Some(2))] {
-            let input = ToolbarInput {
-                timeframe: Timeframe::Day,
-                layout_name: "Morning",
-                unsaved,
-                autosave: AutosaveState {
-                    available: active.is_some(),
-                    on: unsaved,
-                    failed: false,
-                },
-                layouts: &layouts,
-                active_layout: active,
-                watchlist_visible: true,
+        for (unsaved, active, focused) in [
+            (false, None, false),
+            (true, Some(2), true),
+            (false, None, true),
+        ] {
+            let mut input = input(&layouts, focused);
+            input.unsaved = unsaved;
+            input.active_layout = active;
+            input.autosave = AutosaveState {
+                available: active.is_some(),
+                on: unsaved,
+                failed: false,
             };
             let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
                 assert!(show(ui, &input).is_empty(), "nothing was clicked");
             });
             output.textures_delta.clear();
         }
+    }
+
+    fn screen(width: f32) -> egui::RawInput {
+        egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(pos2(0.0, 0.0), vec2(width, HEIGHT))),
+            ..Default::default()
+        }
+    }
+
+    /// Every button's x-range, as the toolbar lays them out at `width`, and whether labels showed.
+    fn layout_at(
+        input: &ToolbarInput,
+        width: f32,
+    ) -> (bool, Vec<(f32, f32, Option<ToolbarAction>)>) {
+        let ctx = egui::Context::default();
+        let mut out = (false, Vec::new());
+        run(&ctx, screen(width), |ui| {
+            let (left, right) = (left_items(input), right_items(input));
+            let wide = (measure(ui, &left, true), measure(ui, &right, true));
+            let labels = fits(&wide.0, &wide.1, width);
+            let (left, right) = if labels {
+                wide
+            } else {
+                (measure(ui, &left, false), measure(ui, &right, false))
+            };
+            out = (
+                labels,
+                arrange(width, &left, &right)
+                    .into_iter()
+                    .filter_map(|(x, slot)| match slot {
+                        Slot::Button(measured) => {
+                            Some((x, x + measured.width, measured.button.action))
+                        }
+                        Slot::Separator => None,
+                    })
+                    .collect(),
+            );
+        });
+        out
+    }
+
+    #[test]
+    fn labels_fall_back_to_icons_and_no_two_buttons_overlap() {
+        let layouts = Vec::new();
+        let input = input(&layouts, true);
+        let mut previous_labels = true;
+        for width in [1600.0_f32, 1100.0, 900.0, 760.0] {
+            let (labels, mut buttons) = layout_at(&input, width);
+            buttons.sort_by(|a, b| a.0.total_cmp(&b.0));
+            for pair in buttons.windows(2) {
+                assert!(pair[0].1 <= pair[1].0, "overlap at {width}: {pair:?}");
+            }
+            let last = buttons.last().expect("buttons");
+            assert!(last.1 <= width - EDGE + 0.5, "past the edge at {width}");
+            assert!(
+                previous_labels || !labels,
+                "labels only go away as the bar narrows (at {width})"
+            );
+            previous_labels = labels;
+            if width >= 1600.0 {
+                assert!(labels, "a wide bar has room for the labels");
+            }
+            // The minimum window keeps the layout menu and Add Chart.
+            if width >= 760.0 {
+                assert!(
+                    buttons.iter().any(|b| b.2 == Some(ToolbarAction::AddChart)),
+                    "Add Chart is kept at {width}"
+                );
+            }
+        }
+        assert!(!previous_labels, "760 wide has no room for labels");
+    }
+
+    /// Clicks the centre of the button that asks for `target` and returns what the bar asked for.
+    fn click_on(input: &ToolbarInput, width: f32, target: ToolbarAction) -> Vec<ToolbarAction> {
+        let (_, buttons) = layout_at(input, width);
+        let (from, to, _) = *buttons
+            .iter()
+            .find(|button| button.2 == Some(target))
+            .expect("the button is on the bar");
+        let at = pos2((from + to) / 2.0, HEIGHT / 2.0);
+        let ctx = egui::Context::default();
+        let button = |pressed| egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Default::default(),
+        };
+        let mut asked = Vec::new();
+        let mut time = 0.0;
+        for events in [
+            vec![],
+            vec![],
+            vec![egui::Event::PointerMoved(at)],
+            vec![button(true)],
+            vec![button(false)],
+            vec![],
+        ] {
+            time += 0.1;
+            let mut raw = screen(width);
+            raw.time = Some(time);
+            raw.events = events;
+            run(&ctx, raw, |ui| asked.extend(show(ui, input)));
+        }
+        asked
+    }
+
+    #[test]
+    fn each_new_button_asks_for_its_action() {
+        let layouts = Vec::new();
+        let mut input = input(&layouts, true);
+        input.can_undo = true;
+        input.can_redo = true;
+        for target in [
+            ToolbarAction::Undo,
+            ToolbarAction::Redo,
+            ToolbarAction::ToggleReplay,
+            ToolbarAction::OpenIndicators,
+            ToolbarAction::OpenChartSettings,
+            ToolbarAction::SetTimeframe(Timeframe::Week),
+            ToolbarAction::AddChart,
+        ] {
+            for width in [1400.0, 800.0] {
+                assert_eq!(click_on(&input, width, target), vec![target], "{target:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_disabled_button_never_asks_for_anything() {
+        let layouts = Vec::new();
+        // No focused chart, nothing to undo or redo, nothing to replay.
+        let mut input = input(&layouts, false);
+        input.can_undo = false;
+        let ctx = egui::Context::default();
+        let mut buttons = Vec::new();
+        run(&ctx, screen(1400.0), |ui| {
+            let (left, right) = (left_items(&input), right_items(&input));
+            for item in left.iter().chain(&right) {
+                if let Item::Button(button) = item
+                    && !button.enabled
+                {
+                    buttons.push(button.action);
+                }
+            }
+            let _ = ui;
+        });
+        let disabled: Vec<ToolbarAction> = buttons.into_iter().flatten().collect();
+        for expected in [
+            ToolbarAction::Undo,
+            ToolbarAction::Redo,
+            ToolbarAction::ToggleReplay,
+            ToolbarAction::OpenIndicators,
+            ToolbarAction::OpenChartSettings,
+        ] {
+            assert!(disabled.contains(&expected), "{expected:?} is not disabled");
+        }
+        // The chart-type button is disabled too, and has no action of its own.
+        for target in disabled {
+            assert!(click_on(&input, 1400.0, target).is_empty(), "{target:?}");
+        }
+    }
+
+    /// Pictures of the bar in the states worth a look: wide, hovered, replaying, narrow, nothing
+    /// focused, and with the chart-type menu open.
+    #[test]
+    #[ignore = "writes images for a person to look at"]
+    fn gallery_of_the_toolbar() {
+        use crate::ui::render_tests::{Screen, gallery_dir};
+        if gallery_dir().is_none() {
+            return;
+        }
+        let layouts = vec![(1, "Morning".to_owned()), (2, "Swing trades".to_owned())];
+        let centre_of = |input: &ToolbarInput, width: f32, target: ToolbarAction| {
+            let (_, buttons) = layout_at(input, width);
+            let (from, to, _) = *buttons
+                .iter()
+                .find(|button| button.2 == Some(target))
+                .expect("on the bar");
+            pos2((from + to) / 2.0, HEIGHT / 2.0)
+        };
+        type Tweak = fn(&mut ToolbarInput);
+        let cases: [(&str, f32, Tweak, Option<ToolbarAction>); 6] = [
+            ("toolbar-wide", 1400.0, |_| {}, None),
+            (
+                "toolbar-hover",
+                1400.0,
+                |_| {},
+                Some(ToolbarAction::OpenIndicators),
+            ),
+            (
+                "toolbar-replay",
+                1400.0,
+                |input| {
+                    input.replay_open = true;
+                    input.unsaved = true;
+                    input.can_redo = true;
+                },
+                None,
+            ),
+            ("toolbar-narrow", 760.0, |_| {}, None),
+            (
+                "toolbar-empty",
+                1400.0,
+                |input| {
+                    input.chart = None;
+                    input.can_undo = false;
+                    input.can_replay = false;
+                },
+                None,
+            ),
+            ("toolbar-tiny", 900.0, |input| input.unsaved = true, None),
+        ];
+        for (name, width, tweak, hover) in cases {
+            let mut input = input(&layouts, true);
+            tweak(&mut input);
+            let mut screen = Screen::new(vec2(width, HEIGHT));
+            let events = hover
+                .map(|target| vec![egui::Event::PointerMoved(centre_of(&input, width, target))])
+                .unwrap_or_default();
+            let mut last = None;
+            for frame in 0..3 {
+                let events = if frame == 0 {
+                    events.clone()
+                } else {
+                    Vec::new()
+                };
+                last = Some(screen.run(events, |ui| {
+                    show(ui, &input);
+                }));
+            }
+            screen.save(name, last.expect("a frame"));
+        }
+
+        // The chart-type menu, opened with a click on its button.
+        let input = input(&layouts, true);
+        let width = 1400.0;
+        let at = centre_of(&input, width, ToolbarAction::OpenIndicators);
+        let _ = at;
+        let (_, buttons) = layout_at(&input, width);
+        let type_button = buttons
+            .iter()
+            .find(|button| button.2.is_none() && button.0 < 300.0 && button.0 > 200.0)
+            .copied()
+            .expect("the chart-type button sits after the timeframes");
+        let at = pos2((type_button.0 + type_button.1) / 2.0, HEIGHT / 2.0);
+        let click = |pressed| egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Default::default(),
+        };
+        let mut screen = Screen::new(vec2(width, 540.0));
+        let mut last = None;
+        for events in [
+            vec![egui::Event::PointerMoved(at)],
+            vec![click(true)],
+            vec![click(false)],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        ] {
+            last = Some(screen.run(events, |ui| {
+                let bar = Rect::from_min_size(pos2(0.0, 0.0), vec2(width, HEIGHT));
+                let mut bar_ui = ui.new_child(egui::UiBuilder::new().max_rect(bar));
+                show(&mut bar_ui, &input);
+            }));
+        }
+        screen.save("toolbar-chart-type-menu", last.expect("a frame"));
     }
 }

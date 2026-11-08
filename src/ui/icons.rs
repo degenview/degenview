@@ -4,7 +4,7 @@
 
 use eframe::egui::{
     Color32, CornerRadius, Mesh, Painter, Pos2, Rect, Response, Sense, Shape, Stroke, StrokeKind,
-    Ui, Vec2, epaint::PathShape, vec2,
+    Ui, Vec2, epaint::PathShape, pos2, vec2,
 };
 
 /// The glyph set the Pine Studio uses; a few (eye, braces, bell) wait for its phase-2 panels.
@@ -153,6 +153,12 @@ pub enum Icon {
     RectFill,
     RectDashed,
     Undo,
+    /// Undo's mirror image.
+    Redo,
+    /// Two triangles pointing back: the toolbar's Replay.
+    Rewind,
+    /// A hexagon with a hub: the toolbar's chart settings.
+    Gear,
     Highlighter,
     ArrowMarkerTool,
     ArrowTool,
@@ -479,6 +485,29 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             let mut bow = vec![p(2.8, 5.8)];
             bow.extend(arc(8.4, 9.4, 4.6, -125.0, 70.0));
             line(&bow);
+        }
+        Icon::Redo => {
+            let flip = |q: Pos2| pos2(2.0 * (origin.x + 8.0 * scale) - q.x, q.y);
+            let head = [p(5.6, 2.8), p(2.6, 5.8), p(5.6, 8.8)].map(flip);
+            line(&head);
+            let mut bow = vec![p(2.8, 5.8)];
+            bow.extend(arc(8.4, 9.4, 4.6, -125.0, 70.0));
+            let bow: Vec<Pos2> = bow.into_iter().map(flip).collect();
+            line(&bow);
+        }
+        Icon::Rewind => {
+            closed(&[p(8.0, 3.4), p(8.0, 12.6), p(1.8, 8.0)]);
+            closed(&[p(14.2, 3.4), p(14.2, 12.6), p(8.0, 8.0)]);
+        }
+        Icon::Gear => {
+            let hexagon: Vec<Pos2> = (0..6)
+                .map(|k| {
+                    let a = (-90.0 + k as f32 * 60.0_f32).to_radians();
+                    p(8.0 + 6.6 * a.cos(), 8.0 + 6.6 * a.sin())
+                })
+                .collect();
+            closed(&hexagon);
+            circle(p(8.0, 8.0), 2.3, false);
         }
         Icon::Plus => {
             line(&[p(8.0, 3.0), p(8.0, 13.0)]);
@@ -2398,6 +2427,9 @@ mod tests {
             RectFill,
             RectDashed,
             Undo,
+            Redo,
+            Rewind,
+            Gear,
             Highlighter,
             ArrowMarkerTool,
             ArrowTool,

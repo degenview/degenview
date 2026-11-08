@@ -9,7 +9,6 @@ use crate::ui::accessibility;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, MEDIUM, REGULAR, SEMIBOLD};
 use crate::ui::theme;
-use crate::ui::workspace_toolbar::paint_bubble;
 use eframe::egui::{
     self, Align2, Color32, FontId, Key, Modifiers, Pos2, Rect, Response, Sense, Shape, Stroke, Vec2,
 };
@@ -21,6 +20,22 @@ const START_OPTIONS_MIN_WIDTH: f32 = 330.0;
 const MONTHS: [&str; 12] = [
     "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
+
+/// Corner radius of every control: the toolbar's, so the two bars read as one.
+const RADIUS: f32 = 6.0;
+
+/// A flat control's background: nothing at rest, a faint tint on hover, a stronger one pressed
+/// or open. No fill and no stroke at rest, like the toolbar above.
+fn flat_tint(ui: &egui::Ui, rect: Rect, hovered: bool, pressed: bool) {
+    let tint = if pressed {
+        0.16
+    } else if hovered {
+        0.09
+    } else {
+        return;
+    };
+    ui.painter().rect_filled(rect, RADIUS, kit::primary(tint));
+}
 
 pub struct ReplayBarInput<'a> {
     pub engine: &'a ReplayEngine,
@@ -444,7 +459,6 @@ fn state_pill(ui: &mut egui::Ui, status: ReplayStatus, preparing: bool) {
         Sense::hover(),
     );
     let painter = ui.painter();
-    painter.rect_filled(rect, 11.0, kit::primary(0.07));
     let dot = Pos2::new(rect.left() + 14.5, rect.center().y);
     if preparing {
         let turn = ui.input(|input| input.time) as f32 * 4.5;
@@ -546,13 +560,12 @@ fn glyph_button(ui: &mut egui::Ui, glyph: Glyph, enabled: bool, tip: &str) -> Re
         let response = response
             .clone()
             .on_hover_cursor(egui::CursorIcon::PointingHand);
-        if response.is_pointer_button_down_on() {
-            ui.painter()
-                .circle_filled(rect.center(), CONTROL / 2.0, kit::primary(0.16));
-        } else if response.hovered() {
-            ui.painter()
-                .circle_filled(rect.center(), CONTROL / 2.0, kit::primary(0.09));
-        }
+        flat_tint(
+            ui,
+            rect,
+            response.hovered(),
+            response.is_pointer_button_down_on(),
+        );
     }
     let base = if !enabled {
         theme::text_tertiary().gamma_multiply(0.7)
@@ -707,28 +720,20 @@ fn play_button(ui: &mut egui::Ui, input: &ReplayBarInput, actions: &mut Vec<Repl
         },
     );
     let response = accessibility::label(response, verb);
-    let (fill, glyph) = if !enabled {
-        (kit::primary(0.12), theme::text_tertiary())
-    } else if response.is_pointer_button_down_on() {
-        (theme::text_primary().gamma_multiply(0.78), theme::chrome())
-    } else if response.hovered() {
-        (theme::text_primary(), theme::chrome())
+    let glyph = if enabled {
+        theme::text_primary()
     } else {
-        (theme::text_primary().gamma_multiply(0.92), theme::chrome())
+        theme::text_tertiary()
     };
-    let painter = ui.painter();
     if enabled {
-        painter.add(
-            egui::Shadow {
-                offset: [0, 1],
-                blur: 4,
-                spread: 0,
-                color: Color32::from_black_alpha(55),
-            }
-            .as_shape(rect.shrink(1.0), 14.0),
+        flat_tint(
+            ui,
+            rect,
+            response.hovered(),
+            response.is_pointer_button_down_on(),
         );
     }
-    painter.circle_filled(rect.center(), 14.0, fill);
+    let painter = ui.painter();
     if ended {
         // A counter-clockwise arc, open at the top right, ending in an arrow head.
         let radius = 5.2;
@@ -857,7 +862,7 @@ fn picker_chip(ui: &mut egui::Ui, chip: PickerChip) -> Option<usize> {
     let response = accessibility::label(response, format!("{}: {}", chip.caption, chip.value))
         .on_hover_text(chip.tip);
     let open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&response));
-    paint_bubble(
+    flat_tint(
         ui,
         rect,
         chip.enabled && response.hovered(),
@@ -1122,7 +1127,7 @@ fn live_button(ui: &mut egui::Ui, actions: &mut Vec<ReplayBarAction>) {
         Vec2::new(11.0 + 6.0 + 6.0 + label.size().x + 12.0, CONTROL),
         Sense::click(),
     );
-    paint_bubble(
+    flat_tint(
         ui,
         rect,
         response.hovered(),
@@ -1158,7 +1163,7 @@ fn pill_button(ui: &mut egui::Ui, label: &str, tip: &str) -> Response {
     );
     let (rect, response) =
         ui.allocate_exact_size(Vec2::new(text.size().x + 24.0, CONTROL), Sense::click());
-    paint_bubble(
+    flat_tint(
         ui,
         rect,
         response.hovered(),
@@ -1212,22 +1217,13 @@ fn primary_button(
         theme::text_primary().gamma_multiply(0.92)
     };
     let painter = ui.painter();
-    painter.add(
-        egui::Shadow {
-            offset: [0, 1],
-            blur: 4,
-            spread: 0,
-            color: Color32::from_black_alpha(50),
-        }
-        .as_shape(rect.shrink(1.0), ACTION / 2.0),
-    );
-    painter.rect_filled(rect, ACTION / 2.0, fill);
+    painter.rect_filled(rect, RADIUS, fill);
     if armed {
         // Waiting for a click on the chart: a ring that breathes.
         let breath = ((ui.input(|input| input.time) * 2.4).sin() as f32 + 1.0) / 2.0;
         painter.rect_stroke(
             rect.expand(2.5),
-            ACTION / 2.0 + 2.5,
+            RADIUS + 2.5,
             Stroke::new(1.5, theme::REPLAY.gamma_multiply(0.35 + 0.5 * breath)),
             egui::StrokeKind::Inside,
         );
@@ -1395,7 +1391,6 @@ fn start_group(ui: &mut egui::Ui, labels: bool, actions: &mut Vec<ReplayBarActio
         Vec2::new(widths.iter().sum::<f32>() + 4.0, ACTION),
         Sense::hover(),
     );
-    paint_bubble(ui, track, false, false);
     let mut x = track.left() + 2.0;
     for ((choice, galley), width) in START_CHOICES.iter().zip(galleys).zip(widths) {
         let segment = Rect::from_min_size(
@@ -1409,13 +1404,7 @@ fn start_group(ui: &mut egui::Ui, labels: bool, actions: &mut Vec<ReplayBarActio
             Sense::click(),
         );
         let hovered = response.hovered();
-        if response.is_pointer_button_down_on() {
-            ui.painter()
-                .rect_filled(segment, segment.height() / 2.0, kit::primary(0.16));
-        } else if hovered {
-            ui.painter()
-                .rect_filled(segment, segment.height() / 2.0, kit::primary(0.10));
-        }
+        flat_tint(ui, segment, hovered, response.is_pointer_button_down_on());
         let color = if hovered {
             theme::text_primary()
         } else {
@@ -1477,8 +1466,7 @@ fn notice_chip(ui: &mut egui::Ui, message: &str, actions: &mut Vec<ReplayBarActi
     ui.add_space((NOTICE - 26.0) / 2.0);
     egui::Frame::new()
         .fill(kit::primary(0.07))
-        .stroke(Stroke::new(1.0, kit::primary(0.06)))
-        .corner_radius(8.0)
+        .corner_radius(RADIUS)
         .inner_margin(egui::Margin::symmetric(10, 4))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
