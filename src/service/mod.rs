@@ -1,4 +1,5 @@
 mod alpaca;
+pub use alpaca::MISSING_KEY as ALPACA_MISSING_KEY;
 pub mod asset_auto_mapper;
 pub mod asset_host;
 pub mod background_service;
@@ -64,7 +65,7 @@ pub(crate) use search_rank::rank_results;
 
 /// A search hit on one provider: a display label, the provider's own id, and the
 /// source it came from.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SearchResult {
     /// The market as its exchange names it (`BTCUSDT`, `BTC-USD`, `PEPE/WETH`), or an equity's
     /// ticker and company (`AAPL — Apple Inc.`), or a prediction market's question.

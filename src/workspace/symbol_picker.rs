@@ -24,6 +24,12 @@ impl ChartWorkspace {
         if !self.symbol_picker.is_open() {
             return Vec::new();
         }
+        if self.symbol_picker.wants_watchlists()
+            && let Ok(store) = self.watchlist.lock()
+        {
+            self.symbol_picker
+                .set_watchlists(symbol_picker::watchlists::groups(store.lists()));
+        }
         // Only the market under the highlight is priced.
         let highlighted = self.symbol_picker.highlighted();
         self.quote_coordinator

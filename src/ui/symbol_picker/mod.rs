@@ -10,6 +10,7 @@
 mod detail;
 mod list;
 pub mod search;
+pub mod watchlists;
 
 use super::add_chart_sheet::{self, RecentMarket};
 use super::icons::{self, Icon};
@@ -22,6 +23,7 @@ use crate::store::SharedStore;
 use eframe::egui::{self, Color32, Id, Key, Modifiers, Rect, Sense, Stroke, Ui, Vec2, pos2, vec2};
 use list::RowState;
 use search::{Backend, Listing, Scope, SymbolSearch};
+use watchlists::WatchlistGroup;
 
 const SIZE: Vec2 = vec2(1000.0, 660.0);
 const PADDING: f32 = 16.0;
@@ -78,6 +80,8 @@ pub struct SymbolPicker {
     reveal: bool,
     focus_frames: u8,
     select_all: bool,
+    /// The user's watchlists, fed by the workspace while the Watchlists tab shows.
+    watchlists: Vec<WatchlistGroup>,
     needs_alpaca: bool,
     /// The Alpaca notice's button was pressed.
     settings_requested: bool,
@@ -103,6 +107,7 @@ impl SymbolPicker {
             reveal: false,
             focus_frames: 0,
             select_all: false,
+            watchlists: Vec::new(),
             needs_alpaca: false,
             settings_requested: false,
         }
@@ -128,6 +133,17 @@ impl SymbolPicker {
         self.select_all = !current.is_empty();
         self.focus_frames = FOCUS_FRAMES;
         self.open = true;
+    }
+
+    /// The workspace should hand over the user's watchlists (see [`Self::set_watchlists`]).
+    pub fn wants_watchlists(&self) -> bool {
+        self.open && self.scope == Scope::Watchlists
+    }
+
+    pub fn set_watchlists(&mut self, groups: Vec<WatchlistGroup>) {
+        if self.watchlists != groups {
+            self.watchlists = groups;
+        }
     }
 
     /// What the search box holds.
@@ -164,10 +180,10 @@ impl SymbolPicker {
             self.set_scope(self.scope.next());
         }
         if keys.down || keys.up {
-            self.step(rows.len(), keys.down);
+            self.step(rows.results.len(), keys.down);
         }
-        self.highlight = self.highlight.min(rows.len().saturating_sub(1));
-        self.highlighted = rows.get(self.highlight).cloned();
+        self.highlight = self.highlight.min(rows.results.len().saturating_sub(1));
+        self.highlighted = rows.results.get(self.highlight).cloned();
         if keys.pick
             && let Some(result) = self.highlighted.clone()
         {
@@ -250,39 +266,60 @@ impl SymbolPicker {
     }
 
     fn listing(&mut self, ctx: &egui::Context) -> Listing {
+        if !self.scope.searches() {
+            return Listing {
+                results: Vec::new(),
+                searching: false,
+                errors: Vec::new(),
+            };
+        }
         self.search
             .listing(ctx, &self.query, self.scope, self.venue)
     }
 
-    /// The markets in the list: the answers to the query, or the recent picks while it is empty.
-    fn rows(&self, listing: &Listing) -> Vec<SearchResult> {
-        if self.query.trim().is_empty() {
-            let in_scope = |result: &SearchResult| {
-                self.scope.includes(result.source)
-                    && self.venue.is_none_or(|venue| venue == result.source)
-            };
-            let recent: Vec<SearchResult> = self
-                .recents
-                .iter()
-                .map(RecentMarket::result)
-                .filter(in_scope)
-                .collect();
-            return if recent.is_empty() {
-                search::popular().into_iter().filter(in_scope).collect()
-            } else {
-                recent
-            };
+    /// The markets in the list with the captions above groups of them: the answers to the query,
+    /// the watchlists' markets, or the recent (else popular) picks while the box is empty.
+    fn rows(&self, listing: &Listing) -> Rows {
+        let in_scope = |result: &SearchResult| {
+            self.scope.includes(result.source)
+                && self.venue.is_none_or(|venue| venue == result.source)
+        };
+        if self.scope == Scope::Watchlists {
+            let mut rows = Rows::default();
+            for group in &self.watchlists {
+                let before = rows.results.len();
+                rows.results.extend(
+                    group
+                        .markets
+                        .iter()
+                        .filter(|market| {
+                            in_scope(market) && watchlists::matches(market, &self.query)
+                        })
+                        .cloned(),
+                );
+                if rows.results.len() > before {
+                    rows.heads.push((before, group.name.clone()));
+                }
+            }
+            return rows;
         }
-        listing.results.clone()
-    }
-
-    /// What the list's caption says while the box is empty.
-    fn idle_heading(&self) -> &'static str {
-        let recent = self.recents.iter().any(|recent| {
-            self.scope.includes(recent.source)
-                && self.venue.is_none_or(|venue| venue == recent.source)
-        });
-        if recent { "Recent" } else { "Popular" }
+        if !self.query.trim().is_empty() {
+            return Rows::of(listing.results.clone(), None);
+        }
+        let recent: Vec<SearchResult> = self
+            .recents
+            .iter()
+            .map(RecentMarket::result)
+            .filter(in_scope)
+            .collect();
+        if recent.is_empty() {
+            Rows::of(
+                search::popular().into_iter().filter(in_scope).collect(),
+                Some("Popular"),
+            )
+        } else {
+            Rows::of(recent, Some("Recent"))
+        }
     }
 
     fn step(&mut self, rows: usize, down: bool) {
@@ -347,7 +384,7 @@ impl SymbolPicker {
         full: Rect,
         search_id: Id,
         listing: &Listing,
-        rows: &[SearchResult],
+        rows: &Rows,
         related: Option<&[SearchResult]>,
         env: &Env,
     ) -> Option<(SearchResult, bool)> {
@@ -572,17 +609,29 @@ impl SymbolPicker {
         ui: &mut Ui,
         area: Rect,
         listing: &Listing,
-        rows: &[SearchResult],
+        rows: &Rows,
         env: &Env,
     ) -> Option<(SearchResult, bool)> {
         let mut picked = None;
-        let mut body =
-            ui.new_child(egui::UiBuilder::new().max_rect(area.shrink2(vec2(PADDING - 6.0, 6.0))));
-        body.set_clip_rect(area);
+        // The Alpaca notice sits at the bottom of the list's own area, under the rows.
+        let notice = self.notice(listing);
+        let reserved = notice.as_ref().map_or(0.0, |_| NOTICE_HEIGHT + 20.0);
+        let content = Rect::from_min_max(area.min, pos2(area.max.x, area.max.y - reserved));
+        if let Some(notice) = &notice {
+            let card = Rect::from_min_max(
+                pos2(area.left() + PADDING - 6.0, content.bottom() + 6.0),
+                pos2(area.right() - (PADDING - 6.0) - 8.0, area.bottom() - 14.0),
+            );
+            if show_notice(ui, card, notice) {
+                self.settings_requested = true;
+            }
+        }
+        let mut body = ui
+            .new_child(egui::UiBuilder::new().max_rect(content.shrink2(vec2(PADDING - 6.0, 6.0))));
+        body.set_clip_rect(content);
         let empty_query = self.query.trim().is_empty();
-        if rows.is_empty() {
+        if rows.results.is_empty() {
             self.empty_state(&mut body, listing, empty_query);
-            self.alpaca_notice(&mut body, listing);
             return None;
         }
         let pointer_moved = ui.input(|input| input.pointer.delta() != Vec2::ZERO);
@@ -593,10 +642,10 @@ impl SymbolPicker {
             .show(&mut body, |ui| {
                 ui.spacing_mut().item_spacing = Vec2::ZERO;
                 ui.set_width(width - 8.0);
-                if empty_query {
-                    section_heading(ui, self.idle_heading());
-                }
-                for (index, result) in rows.iter().enumerate() {
+                for (index, result) in rows.results.iter().enumerate() {
+                    if let Some(head) = rows.head_before(index) {
+                        section_heading(ui, head);
+                    }
                     let state = RowState {
                         highlighted: index == self.highlight,
                         on_chart: env.on_tab.iter().any(|id| {
@@ -619,14 +668,28 @@ impl SymbolPicker {
                         picked = Some((result.clone(), false));
                     }
                 }
-                ui.add_space(8.0);
-                self.alpaca_notice(ui, listing);
             });
         picked
     }
 
     fn empty_state(&self, ui: &mut Ui, listing: &Listing, empty_query: bool) {
-        if empty_query {
+        if self.scope == Scope::Watchlists {
+            let (title, detail) = if self.watchlists.is_empty() {
+                (
+                    "No watchlist markets yet",
+                    "Crypto and stocks you add to a watchlist show up here.".to_owned(),
+                )
+            } else {
+                (
+                    "No results",
+                    format!(
+                        "Nothing in your watchlists matches “{}”.",
+                        self.query.trim()
+                    ),
+                )
+            };
+            add_chart_sheet::no_results(ui, title, &detail);
+        } else if empty_query {
             add_chart_sheet::no_results(
                 ui,
                 "Search stocks and crypto",
@@ -662,39 +725,24 @@ impl SymbolPicker {
         }
     }
 
-    /// Stocks need an Alpaca key: say so under the list when that search failed, or when a stock
-    /// was picked without one.
-    fn alpaca_notice(&mut self, ui: &mut Ui, listing: &Listing) {
-        let message = listing
+    /// What the card under the list says, when stocks cannot be searched or opened: Alpaca keys
+    /// are missing (the search said so, or a stock was picked without them) or its search failed.
+    fn notice(&self, listing: &Listing) -> Option<Notice> {
+        let failure = listing
             .errors
             .iter()
             .find(|(source, _)| *source == DataSource::Alpaca)
-            .map(|(_, message)| message.clone())
-            .or_else(|| {
-                self.needs_alpaca
-                    .then(|| "Set up Alpaca before opening a stock chart.".to_owned())
-            });
-        let Some(message) = message else {
-            return;
-        };
-        let galley = kit::galley(
-            ui,
-            &message,
-            13.0,
-            REGULAR,
-            theme::text_secondary(),
-            ui.available_width() - 150.0,
-        );
-        ui.horizontal(|ui| {
-            ui.add_space(10.0);
-            let (rect, _) = ui.allocate_exact_size(galley.size(), Sense::hover());
-            ui.painter()
-                .galley(rect.min, galley, theme::text_secondary());
-            ui.add_space(8.0);
-            if add_chart_sheet::sheet_button(ui, "Open Settings", false, true).clicked() {
-                self.settings_requested = true;
-            }
-        });
+            .map(|(_, message)| message.as_str());
+        match failure {
+            Some(message) if message != service::ALPACA_MISSING_KEY => Some(Notice {
+                title: "Stocks could not be searched",
+                detail: message.to_owned(),
+                settings: false,
+            }),
+            Some(_) => Some(Notice::missing_key("Stocks need an Alpaca key")),
+            None if self.needs_alpaca => Some(Notice::missing_key("Set up Alpaca to open a stock")),
+            None => None,
+        }
     }
 
     /// The keys that work here. A narrow picker drops the least needed hints rather than run past
@@ -762,6 +810,102 @@ impl SymbolPicker {
             row.add_space(10.0);
         }
     }
+}
+
+/// The markets the list holds and the captions above groups of them: `(first row, caption)`.
+#[derive(Default)]
+struct Rows {
+    results: Vec<SearchResult>,
+    heads: Vec<(usize, String)>,
+}
+
+impl Rows {
+    fn of(results: Vec<SearchResult>, head: Option<&str>) -> Self {
+        let heads = head
+            .filter(|_| !results.is_empty())
+            .map(|head| vec![(0, head.to_owned())])
+            .unwrap_or_default();
+        Self { results, heads }
+    }
+
+    fn head_before(&self, row: usize) -> Option<&str> {
+        self.heads
+            .iter()
+            .find(|(first, _)| *first == row)
+            .map(|(_, head)| head.as_str())
+    }
+}
+
+const NOTICE_HEIGHT: f32 = 60.0;
+
+/// A card under the list: a title, one line of detail and, when Settings can fix it, a button.
+struct Notice {
+    title: &'static str,
+    detail: String,
+    settings: bool,
+}
+
+impl Notice {
+    fn missing_key(title: &'static str) -> Self {
+        Self {
+            title,
+            detail: "Add your free Alpaca API keys in Settings to search and chart US stocks."
+                .to_owned(),
+            settings: true,
+        }
+    }
+}
+
+/// Draws `notice` in `card`; returns whether its button was pressed.
+fn show_notice(ui: &mut Ui, card: Rect, notice: &Notice) -> bool {
+    ui.painter()
+        .rect_filled(card, kit::CARD_RADIUS, theme::card_fill(false));
+    ui.painter().rect_stroke(
+        card,
+        kit::CARD_RADIUS,
+        Stroke::new(1.0, theme::card_border(false)),
+        egui::StrokeKind::Inside,
+    );
+    let badge = Rect::from_center_size(
+        pos2(card.left() + 14.0 + 17.0, card.center().y),
+        Vec2::splat(34.0),
+    );
+    kit::paint_card_badge(ui, badge, Icon::Key);
+
+    let mut pressed = false;
+    let mut right = card.right() - 14.0;
+    if notice.settings {
+        let button = Rect::from_center_size(pos2(right - 52.0, card.center().y), vec2(104.0, 30.0));
+        let mut cell = ui.new_child(egui::UiBuilder::new().max_rect(button));
+        pressed = add_chart_sheet::sheet_button(&mut cell, "Open Settings", false, true).clicked();
+        right = button.left() - 12.0;
+    }
+    let text_left = badge.right() + 12.0;
+    let width = (right - text_left).max(40.0);
+    let title = kit::galley(
+        ui,
+        notice.title,
+        14.0,
+        SEMIBOLD,
+        theme::text_primary(),
+        width,
+    );
+    let detail = kit::galley(
+        ui,
+        &notice.detail,
+        12.5,
+        REGULAR,
+        theme::text_secondary(),
+        width,
+    );
+    let block = title.size().y + 2.0 + detail.size().y;
+    let top = card.center().y - block / 2.0;
+    let detail_top = top + title.size().y + 2.0;
+    ui.painter()
+        .galley(pos2(text_left, top), title, theme::text_primary());
+    ui.painter()
+        .galley(pos2(text_left, detail_top), detail, theme::text_secondary());
+    pressed
 }
 
 /// A small capitalised caption above a group of rows.

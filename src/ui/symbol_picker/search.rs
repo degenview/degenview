@@ -37,25 +37,33 @@ pub enum Scope {
     All,
     Stocks,
     Crypto,
+    /// The markets of the user's watchlists. Nothing is searched.
+    Watchlists,
 }
 
 impl Scope {
-    pub const TABS: [Self; 3] = [Self::All, Self::Stocks, Self::Crypto];
+    pub const TABS: [Self; 4] = [Self::All, Self::Stocks, Self::Crypto, Self::Watchlists];
 
     pub fn title(self) -> &'static str {
         match self {
             Self::All => "All",
             Self::Stocks => "Stocks",
             Self::Crypto => "Crypto",
+            Self::Watchlists => "Watchlists",
         }
     }
 
     pub fn includes(self, source: DataSource) -> bool {
         match self {
-            Self::All => PROVIDERS.contains(&source),
+            Self::All | Self::Watchlists => PROVIDERS.contains(&source),
             Self::Stocks => source == DataSource::Alpaca,
             Self::Crypto => PROVIDERS.contains(&source) && source != DataSource::Alpaca,
         }
+    }
+
+    /// Whether the tab asks the providers; the Watchlists tab reads the user's lists instead.
+    pub fn searches(self) -> bool {
+        self != Self::Watchlists
     }
 
     /// The next tab, for Tab.
@@ -342,6 +350,8 @@ mod tests {
         assert!(Scope::Stocks.includes(DataSource::Alpaca));
         assert!(!Scope::Stocks.includes(DataSource::Coinbase));
         // Prediction markets and CoinMarketCap gauges are added from Add Chart, not searched here.
+        assert!(Scope::Watchlists.includes(DataSource::Coinbase));
+        assert!(!Scope::Watchlists.searches());
         for scope in Scope::TABS {
             assert!(!scope.includes(DataSource::Polymarket));
             assert!(!scope.includes(DataSource::CoinMarketCap));
@@ -365,6 +375,7 @@ mod tests {
         assert_eq!(Scope::Stocks.venues(), [DataSource::Alpaca]);
         assert!(!Scope::Crypto.venues().contains(&DataSource::Alpaca));
         assert_eq!(Scope::All.venues().len(), PROVIDERS.len());
+        assert_eq!(Scope::Watchlists.venues().len(), PROVIDERS.len());
     }
 
     #[test]

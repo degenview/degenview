@@ -36,7 +36,12 @@ fn stub_search(source: DataSource, query: &str) -> Result<Vec<SearchResult>, Str
         )]),
         (Binance, "btcusdt") => Ok(vec![pair(Binance, "BTCUSDT", "BTC", "USDT")]),
         (Alpaca, "aapl") => Ok(vec![SearchResult::new(Alpaca, "AAPL — Apple Inc.", "AAPL")]),
-        (Alpaca, _) => Err("Add your Alpaca API key in Settings".to_owned()),
+        (Binance, "eth") => Ok(vec![
+            pair(Binance, "ETHUSDT", "ETH", "USDT"),
+            pair(Binance, "ETHBTC", "ETH", "BTC"),
+        ]),
+        (Coinbase, "eth") => Ok(vec![pair(Coinbase, "ETH-USD", "ETH", "USD")]),
+        (Alpaca, _) => Err(service::ALPACA_MISSING_KEY.to_owned()),
         _ => Ok(Vec::new()),
     }
 }
@@ -159,12 +164,25 @@ impl Rig {
         self.settle();
     }
 
+    /// The captions in the list.
+    fn heads(&mut self) -> Vec<String> {
+        let ctx = self.screen.ctx.clone();
+        let listing = self.picker.listing(&ctx);
+        self.picker
+            .rows(&listing)
+            .heads
+            .into_iter()
+            .map(|(_, head)| head)
+            .collect()
+    }
+
     /// What the list holds now, as the exchanges name the markets.
     fn names(&mut self) -> Vec<String> {
         let ctx = self.screen.ctx.clone();
         let listing = self.picker.listing(&ctx);
         self.picker
             .rows(&listing)
+            .results
             .into_iter()
             .map(|result| result.symbol)
             .collect()
@@ -264,6 +282,8 @@ fn tab_walks_the_market_tabs_and_each_narrows_the_list() {
     assert_eq!(rig.picker.scope, Scope::Crypto);
     assert!(!rig.names().iter().any(|name| name.contains("Grayscale")));
     rig.key(Key::Tab, Modifiers::NONE);
+    assert_eq!(rig.picker.scope, Scope::Watchlists);
+    rig.key(Key::Tab, Modifiers::NONE);
     assert_eq!(rig.picker.scope, Scope::All);
 }
 
@@ -287,6 +307,83 @@ fn a_stock_needs_an_alpaca_key_before_it_opens() {
     assert!(output.is_none());
     assert!(rig.picker.is_open());
     assert!(rig.picker.needs_alpaca);
+}
+
+#[test]
+fn a_missing_alpaca_key_is_a_card_with_a_settings_button_not_a_hint() {
+    let mut rig = Rig::new(1100.0, "eth");
+    let ctx = rig.screen.ctx.clone();
+    let listing = rig.picker.listing(&ctx);
+    let notice = rig
+        .picker
+        .notice(&listing)
+        .expect("stocks cannot be searched");
+    assert_eq!(notice.title, "Stocks need an Alpaca key");
+    assert!(notice.settings);
+    // Another failure of the stock search has nothing to set up.
+    let mut listing = rig.picker.listing(&ctx);
+    listing.errors = vec![(DataSource::Alpaca, "Network error: timed out".to_owned())];
+    let notice = rig.picker.notice(&listing).expect("a failure");
+    assert_eq!(notice.title, "Stocks could not be searched");
+    assert!(!notice.settings);
+    // Nothing to say while stocks are not in the scope.
+    rig.picker.set_scope(Scope::Crypto);
+    rig.settle();
+    let listing = rig.picker.listing(&ctx);
+    assert!(rig.picker.notice(&listing).is_none());
+}
+
+fn lists() -> Vec<WatchlistGroup> {
+    vec![
+        WatchlistGroup {
+            name: "Favorites".into(),
+            markets: vec![
+                pair(DataSource::Binance, "BTCUSDT", "BTC", "USDT"),
+                pair(DataSource::Coinbase, "ETH-USD", "ETH", "USD"),
+            ],
+        },
+        WatchlistGroup {
+            name: "Stocks".into(),
+            markets: vec![SearchResult::new(
+                DataSource::Alpaca,
+                "AAPL — Apple Inc.",
+                "AAPL",
+            )],
+        },
+    ]
+}
+
+#[test]
+fn the_watchlists_tab_lists_each_list_in_order_and_filters_without_searching() {
+    let mut rig = Rig::new(1100.0, "");
+    rig.picker.set_scope(Scope::Watchlists);
+    assert!(rig.picker.wants_watchlists());
+    assert!(rig.names().is_empty(), "nothing before the lists arrive");
+    rig.picker.set_watchlists(lists());
+    assert_eq!(rig.names(), ["BTCUSDT", "ETH-USD", "AAPL — Apple Inc."]);
+    assert_eq!(rig.heads(), ["Favorites", "Stocks"]);
+    // The box filters what the lists hold; a list with no match loses its caption.
+    rig.type_text("eth");
+    assert_eq!(rig.names(), ["ETH-USD"]);
+    assert_eq!(rig.heads(), ["Favorites"]);
+    // A venue narrows it too.
+    rig.picker.query.clear();
+    rig.picker.set_venue(Some(DataSource::Alpaca));
+    assert_eq!(rig.names(), ["AAPL — Apple Inc."]);
+    // Return opens the highlighted market.
+    rig.picker.set_venue(None);
+    rig.key(Key::ArrowDown, Modifiers::NONE);
+    let output = rig.frame(vec![press(Key::Enter, Modifiers::NONE)]);
+    assert!(matches!(output, Some(Output::Replace(result)) if result.symbol == "ETH-USD"));
+}
+
+#[test]
+fn the_watchlists_tab_is_the_last_tab_and_tab_wraps_to_all() {
+    let mut rig = Rig::new(1100.0, "btc");
+    for expected in [Scope::Stocks, Scope::Crypto, Scope::Watchlists, Scope::All] {
+        rig.key(Key::Tab, Modifiers::NONE);
+        assert_eq!(rig.picker.scope, expected);
+    }
 }
 
 #[test]
@@ -329,17 +426,17 @@ fn an_empty_box_lists_the_recent_picks_in_scope() {
     rig.picker.open("");
     rig.settle();
     assert_eq!(rig.names(), ["BTCUSDT"]);
-    assert_eq!(rig.picker.idle_heading(), "Recent");
+    assert_eq!(rig.heads(), ["Recent"]);
     // Nothing recent in this scope: the popular stocks stand in.
     rig.picker.set_scope(Scope::Stocks);
-    assert_eq!(rig.picker.idle_heading(), "Popular");
+    assert_eq!(rig.heads(), ["Popular"]);
     assert_eq!(rig.names()[0], "AAPL");
 }
 
 #[test]
 fn before_anything_is_picked_the_popular_markets_are_listed() {
     let mut rig = Rig::new(1100.0, "");
-    assert_eq!(rig.picker.idle_heading(), "Popular");
+    assert_eq!(rig.heads(), ["Popular"]);
     let names = rig.names();
     assert_eq!(names[0], "BTCUSDT");
     assert!(names.contains(&"AAPL".to_owned()));
@@ -394,6 +491,14 @@ fn gallery_of_the_symbol_picker() {
             &apple,
         ),
         ("symbol-picker-narrow", 640.0, "btc", Scope::All, &bitcoin),
+        ("symbol-picker-notice", 1100.0, "eth", Scope::All, &bitcoin),
+        (
+            "symbol-picker-watchlists",
+            1100.0,
+            "",
+            Scope::Watchlists,
+            &bitcoin,
+        ),
         ("symbol-picker-short", 1100.0, "btc", Scope::All, &bitcoin),
         ("symbol-picker-none", 1100.0, "zzzz", Scope::All, &bitcoin),
         ("symbol-picker-empty", 1100.0, "", Scope::All, &bitcoin),
@@ -406,6 +511,7 @@ fn gallery_of_the_symbol_picker() {
         let mut rig = Rig::sized(width, height, query);
         rig.quote = Some(price.clone());
         rig.on_tab = vec![InstrumentId::new(DataSource::Binance, "BTCUSDT")];
+        rig.picker.set_watchlists(lists());
         rig.picker.set_scope(scope);
         rig.settle();
         let (_, output) = rig.frame_with_output(Vec::new());

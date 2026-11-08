@@ -14,8 +14,12 @@ or with ⌘K / Ctrl+K (`shortcut::SYMBOL_SEARCH`, handled in `workspace/input.rs
   `switch_chart`: the chart keeps its settings, indicators, drawings and place in the grid, and its
   candles reload). **⇧Return or the row's plus adds** a chart instead. With no market chart focused
   Return adds one. The footer names what Return will do ("Replace ETHUSDT").
-- **Tabs** All, Stocks, Crypto (Tab cycles them) and an exchange filter ("All venues"). All is crypto
-  and stocks together. Futures, forex, commodities and ETF tabs are not offered because no provider
+- **Tabs** All, Stocks, Crypto, Watchlists (Tab cycles them) and an exchange filter ("All venues").
+  All is crypto and stocks together. **Watchlists** lists the markets of the user's watchlists, one
+  captioned group per list in the list's own order (`watchlists.rs`); nothing is searched, the box
+  filters by ticker, asset or company, and the venue filter applies. Lists holding only prediction
+  markets, indices or portfolio cards are left out. The workspace hands the lists over each frame
+  while the tab shows (`wants_watchlists`). Futures, forex, commodities and ETF tabs are not offered because no provider
   here lists them; prediction markets and CoinMarketCap gauges stay in Add Chart.
 - **Rows** show the market as its exchange names it (`BTCUSDT`, `BTC-USD`, `AAPL`), what it trades
   under it (`BTC / USDT`, the company), the exchange and its kind, a check when the market is already
@@ -62,9 +66,10 @@ odd quotes.
 
 `SymbolSearch` asks each provider of the scope on its own thread after a 220 ms pause, keeps every
 answer under `(query, provider)` so switching tabs or venues re-reads instead of re-asking, and
-reports a failing provider without hiding the others. Stocks need an Alpaca key: a failed Alpaca
-search shows the provider's message and an Open Settings button (`Output::OpenAlpacaSettings`); the
-key is checked only when a stock is picked, never per frame. `Backend` lets tests replace the
+reports a failing provider without hiding the others. Stocks need an Alpaca key: a missing key
+(`service::ALPACA_MISSING_KEY`) shows a card pinned to the bottom of the list with an Open Settings
+button (`Output::OpenAlpacaSettings`); any other Alpaca failure shows its message without the button.
+The key is checked only when a stock is picked, never per frame. `Backend` lets tests replace the
 providers.
 
 ## Verified and not

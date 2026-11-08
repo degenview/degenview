@@ -10,9 +10,11 @@ pub struct Alpaca;
 
 pub const ALPACA: Alpaca = Alpaca;
 
+/// What a search or a fetch says when no Alpaca keys are saved.
+pub const MISSING_KEY: &str = "Set up your Alpaca API key before using stock charts.";
+
 fn credentials() -> Result<(String, String), String> {
-    crate::service::keychain_api_keys::alpaca_credentials()
-        .ok_or_else(|| "Set up your Alpaca API key before using stock charts.".to_owned())
+    crate::service::keychain_api_keys::alpaca_credentials().ok_or_else(|| MISSING_KEY.to_owned())
 }
 
 /// Quarterly and yearly bars don't exist on Alpaca; they fold monthly ones.
