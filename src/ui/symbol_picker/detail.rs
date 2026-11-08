@@ -10,7 +10,9 @@ use crate::service::SearchResult;
 use crate::ui::add_chart_sheet::result_icon;
 use crate::ui::kit::{self, BOLD, MEDIUM, REGULAR, SEMIBOLD};
 use crate::ui::{source_logo, theme};
-use eframe::egui::{Align, Color32, Layout, Pos2, Rect, Stroke, Ui, UiBuilder, Vec2, pos2, vec2};
+use eframe::egui::{
+    self, Align, Color32, Layout, Pos2, Rect, Stroke, Ui, UiBuilder, Vec2, pos2, vec2,
+};
 
 const PAD: f32 = 24.0;
 const ICON: f32 = 64.0;
@@ -87,17 +89,25 @@ pub fn show(ui: &mut Ui, area: Rect, detail: &Detail) -> Option<SearchResult> {
                 theme::text_tertiary(),
             );
             y += heading.size().y + 8.0;
+            // The rows scroll inside what is left of the panel instead of running over its edge.
+            let room = Rect::from_min_max(pos2(inner.left() - 8.0, y), area.max);
             let mut list = ui.new_child(
                 UiBuilder::new()
-                    .max_rect(Rect::from_min_max(pos2(inner.left() - 8.0, y), area.max))
+                    .max_rect(room)
                     .layout(Layout::top_down(Align::Min)),
             );
-            list.spacing_mut().item_spacing = Vec2::ZERO;
-            for hit in related {
-                if related_row(&mut list, hit, inner.width() + 16.0) {
-                    clicked = Some(hit.clone());
-                }
-            }
+            list.set_clip_rect(room.intersect(ui.clip_rect()));
+            egui::ScrollArea::vertical()
+                .id_salt("symbol_picker_related")
+                .auto_shrink([false, false])
+                .show(&mut list, |list| {
+                    list.spacing_mut().item_spacing = Vec2::ZERO;
+                    for hit in related {
+                        if related_row(list, hit, inner.width() + 16.0) {
+                            clicked = Some(hit.clone());
+                        }
+                    }
+                });
         }
     }
     clicked

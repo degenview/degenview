@@ -46,7 +46,11 @@ fn stub_related(asset: &str) -> Vec<SearchResult> {
         vec![
             pair(DataSource::Binance, "BTCUSDT", "BTC", "USDT"),
             pair(DataSource::Binance, "BTCUSDC", "BTC", "USDC"),
+            pair(DataSource::Binance, "BTCUSDS", "BTC", "USDS"),
+            pair(DataSource::Binance, "BTCFDUSD", "BTC", "FDUSD"),
             pair(DataSource::Coinbase, "BTC-USD", "BTC", "USD"),
+            pair(DataSource::Coinbase, "BTC-USDT", "BTC", "USDT"),
+            pair(DataSource::Coinbase, "BTC-USDC", "BTC", "USDC"),
         ]
     } else {
         Vec::new()
@@ -90,12 +94,16 @@ struct Rig {
 impl Rig {
     /// A picker opened on `query`, with the answers in.
     fn new(width: f32, query: &str) -> Self {
+        Self::sized(width, 760.0, query)
+    }
+
+    fn sized(width: f32, height: f32, query: &str) -> Self {
         let store: SharedStore = Arc::new(Mutex::new(
             crate::store::Store::open_in_memory().expect("in-memory store"),
         ));
         let mut picker = SymbolPicker::with_backend(store.clone(), STUB);
         picker.open(query);
-        let screen = Screen::new(vec2(width, 760.0));
+        let screen = Screen::new(vec2(width, height));
         egui_extras::install_image_loaders(&screen.ctx);
         let mut rig = Self {
             screen,
@@ -361,10 +369,16 @@ fn gallery_of_the_symbol_picker() {
             &apple,
         ),
         ("symbol-picker-narrow", 640.0, "btc", Scope::All, &bitcoin),
+        ("symbol-picker-short", 1100.0, "btc", Scope::All, &bitcoin),
         ("symbol-picker-none", 1100.0, "zzzz", Scope::All, &bitcoin),
         ("symbol-picker-empty", 1100.0, "", Scope::All, &bitcoin),
     ] {
-        let mut rig = Rig::new(width, query);
+        let height = if name.ends_with("short") {
+            560.0
+        } else {
+            760.0
+        };
+        let mut rig = Rig::sized(width, height, query);
         rig.quote = Some(price.clone());
         rig.on_tab = vec![InstrumentId::new(DataSource::Binance, "BTCUSDT")];
         rig.picker.set_scope(scope);
