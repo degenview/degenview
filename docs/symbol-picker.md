@@ -12,8 +12,10 @@ or with ⌘K / Ctrl+K (`shortcut::SYMBOL_SEARCH`, handled in `workspace/input.rs
   prediction market or a CoinMarketCap gauge. The text is selected, so typing replaces it.
 - **Return replaces** the focused chart's market (`replace_focused_market`, which is
   `switch_chart`: the chart keeps its settings, indicators, drawings and place in the grid, and its
-  candles reload). **⇧Return or the row's plus adds** a chart instead. With no market chart focused
-  Return adds one. The footer names what Return will do ("Replace ETHUSDT").
+  candles reload). **⇧Return or the row's plus adds** a chart instead. **Right-clicking a row** opens
+  a menu with `Replace <the chart's market>` (only while a chart is focused) and `Add as new chart`,
+  with the keys that do the same (`list.rs`, `context_menu`); the row becomes the highlighted one.
+  With no market chart focused Return adds one. The footer names what Return will do ("Replace ETHUSDT").
 - **Tabs** All, Stocks, Crypto, Watchlists (Tab cycles them) and an exchange filter ("All venues").
   All is crypto and stocks together. **Watchlists** lists the markets of the user's watchlists, one
   captioned group per list in the list's own order (`watchlists.rs`); nothing is searched, the box

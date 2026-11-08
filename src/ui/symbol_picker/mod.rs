@@ -655,11 +655,12 @@ impl SymbolPicker {
                             ))
                         }),
                     };
-                    let (response, out) = list::row(ui, result, state, ui.available_width());
+                    let (response, out) =
+                        list::row(ui, result, state, env.replacing, ui.available_width());
                     if reveal && state.highlighted {
                         response.scroll_to_me(None);
                     }
-                    if out.hovered && pointer_moved {
+                    if (out.hovered && pointer_moved) || out.opened_menu {
                         self.highlight = index;
                     }
                     if out.add {

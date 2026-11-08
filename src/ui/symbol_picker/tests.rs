@@ -405,6 +405,57 @@ fn click_at(pos: egui::Pos2) -> Vec<egui::Event> {
         .into()
 }
 
+fn right_click_at(pos: egui::Pos2) -> Vec<egui::Event> {
+    [true, false]
+        .map(|pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Secondary,
+            pressed,
+            modifiers: Modifiers::NONE,
+        })
+        .into()
+}
+
+/// Right-clicks the second row, then clicks `offset` below the pointer, where the menu's rows are.
+fn pick_from_the_row_menu(rig: &mut Rig, offset: f32) -> Option<Output> {
+    // The list starts at y = 167 in a 1100 x 760 window; a row is 56 tall.
+    let row = pos2(300.0, 167.0 + 56.0 + 28.0);
+    rig.frame(vec![egui::Event::PointerMoved(row)]);
+    rig.frame(right_click_at(row));
+    rig.settle();
+    let item = row + vec2(24.0, offset);
+    rig.frame(vec![egui::Event::PointerMoved(item)]);
+    let output = rig.frame(click_at(item));
+    rig.frame(Vec::new());
+    output
+}
+
+#[test]
+fn right_clicking_a_row_offers_replace_and_add_as_new_chart() {
+    let mut rig = Rig::new(1100.0, "btc");
+    let output = pick_from_the_row_menu(&mut rig, 18.0);
+    let Some(Output::Replace(result)) = output else {
+        panic!("the first item replaces, got {output:?}");
+    };
+    assert_eq!(result.symbol, "BTCUSDC", "the row that was right-clicked");
+    assert!(!rig.picker.is_open());
+
+    let mut rig = Rig::new(1100.0, "btc");
+    let output = pick_from_the_row_menu(&mut rig, 18.0 + 24.0);
+    assert!(
+        matches!(&output, Some(Output::Add(result)) if result.symbol == "BTCUSDC"),
+        "the second item adds, got {output:?}"
+    );
+}
+
+#[test]
+fn with_no_chart_to_replace_the_menu_only_adds() {
+    let mut rig = Rig::new(1100.0, "btc");
+    rig.replacing = None;
+    let output = pick_from_the_row_menu(&mut rig, 18.0);
+    assert!(matches!(&output, Some(Output::Add(result)) if result.symbol == "BTCUSDC"));
+}
+
 #[test]
 fn a_click_outside_the_sheet_closes_it_and_a_click_inside_does_not() {
     let mut rig = Rig::new(1100.0, "btc");
@@ -517,4 +568,14 @@ fn gallery_of_the_symbol_picker() {
         let (_, output) = rig.frame_with_output(Vec::new());
         rig.screen.save(name, output);
     }
+
+    // A row's right-click menu.
+    let mut rig = Rig::new(1100.0, "btc");
+    rig.quote = Some(bitcoin.clone());
+    let row = pos2(300.0, 167.0 + 56.0 + 28.0);
+    rig.frame(vec![egui::Event::PointerMoved(row)]);
+    rig.frame(right_click_at(row));
+    rig.settle();
+    let (_, output) = rig.frame_with_output(Vec::new());
+    rig.screen.save("symbol-picker-row-menu", output);
 }
