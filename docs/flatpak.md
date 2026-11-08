@@ -75,7 +75,9 @@ On Windows the same `platform::{read, exists, write, delete}` is `service::windo
 Credential Manager generic credential per item (`CredWriteW`, `CredReadW`, `CredDeleteW`, through
 `windows-sys`, which was already in the tree), target name `<service>/<account>`, persisted with
 `CRED_PERSIST_LOCAL_MACHINE`. Credential Manager encrypts the blob with the signed-in user's DPAPI
-master key; it does not roam and never leaves the machine. Items appear in Control Panel >
+master key. It is stored local-machine, so Credential Manager does not roam it; the DPAPI key
+behind it normally decrypts only for that user on that computer, with Microsoft's documented
+exception that a roaming profile lets the same user decrypt on another computer. Items appear in Control Panel >
 Credential Manager > Windows Credentials, where the user can remove them.
 
 - The blob is the secret's UTF-8 bytes. A credential holds at most 2560 bytes, so a secret above
@@ -90,8 +92,10 @@ Credential Manager > Windows Credentials, where the user can remove them.
   temporary buffers that held a secret are overwritten before they are freed (best effort).
 - The MCP remote-access TLS key (`mcp-tls.pem`) is not an item here: it is a certificate and key in
   one file, so on Windows the whole file is encrypted with DPAPI for the signed-in user
-  (`mcp::tls_protect`, `CryptProtectData`, current-user scope, no UI). A copy of the file, a backup
-  or a disk image is useless to anyone else; any process of the same user can still decrypt it (the
+  (`mcp::tls_protect`, `CryptProtectData`, current-user scope, no UI). Windows normally lets only
+  that user, on that computer, decrypt it, so a copy, a backup or a disk image is not readable
+  without the user's Windows credentials. That is the usual case, not a guarantee: a roaming profile
+  lets the same user decrypt on another computer. Any process of the same user can decrypt it (the
   fixed entropy string is not a secret). There is no plaintext form to migrate from, so a file that
   is not DPAPI-wrapped is refused and left alone. Unix keeps a `0600` file.
 - **Not verified:** the real Credential Manager round trip (`credential_manager_round_trip`) runs on

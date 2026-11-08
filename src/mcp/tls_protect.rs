@@ -2,8 +2,10 @@
 //!
 //! On macOS and Linux the file is the PEM text, readable only by its owner (`0600`, as an SSH key
 //! is; see `tls`). Windows has no such mode, so there the whole file is encrypted with DPAPI
-//! (`CryptProtectData`) under the signed-in user's key: a copy of the file, a backup or a disk
-//! image is useless to anyone who is not that user on that machine.
+//! (`CryptProtectData`) under the signed-in user's key. Windows normally lets only that user, on
+//! that computer, decrypt it, so a copy, a backup or a disk image is not readable without the
+//! user's Windows credentials. That is the usual case, not a guarantee: Microsoft documents that a
+//! user with a roaming profile can decrypt DPAPI data on another computer.
 //!
 //! What it does not give: any process running as the same user can decrypt the file. The entropy
 //! passed to DPAPI is a fixed string that ties the blob to this use, not a secret. The identity is
@@ -21,7 +23,7 @@ pub trait AtRest {
 }
 
 /// The text as it is, for platforms where the file's mode is the protection.
-#[cfg_attr(all(windows, not(test)), allow(dead_code))]
+#[cfg_attr(windows, allow(dead_code))]
 pub struct Plain;
 
 impl AtRest for Plain {
@@ -34,16 +36,23 @@ impl AtRest for Plain {
     }
 }
 
-/// What this build writes. Tests use [`Plain`] everywhere, so the file-handling tests can write and
-/// read PEM text directly; the Windows protector has tests of its own.
-#[cfg(all(windows, not(test)))]
-pub fn platform() -> &'static dyn AtRest {
-    &Dpapi
+/// What a release build writes: DPAPI on Windows, the PEM text elsewhere. A test pins this choice
+/// (`dpapi_is_what_a_windows_build_writes`), because [`platform`] hides it under `cfg(test)`.
+pub fn production() -> &'static dyn AtRest {
+    #[cfg(windows)]
+    {
+        &Dpapi
+    }
+    #[cfg(not(windows))]
+    {
+        &Plain
+    }
 }
 
-#[cfg(not(all(windows, not(test))))]
+/// What `tls::load_or_create` uses. Tests get [`Plain`] everywhere, so the file-handling tests can
+/// write and read PEM text directly; the Windows protector has tests of its own.
 pub fn platform() -> &'static dyn AtRest {
-    &Plain
+    if cfg!(test) { &Plain } else { production() }
 }
 
 /// Begins every protected file, so a file that is not one is told apart from a damaged blob.
@@ -225,6 +234,21 @@ mod tests {
         assert!(strip_magic(b"-----BEGIN CERTIFICATE-----").is_none());
         assert!(strip_magic(b"# degenview-mcp-tls address=10.0.0.7").is_none());
         assert_eq!(strip_magic(b"DVTLS-DPAPI1\nabc"), Some(&b"abc"[..]));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn dpapi_is_what_a_windows_build_writes() {
+        let bytes = production().wrap("-----BEGIN PRIVATE KEY-----").unwrap();
+        assert!(bytes.starts_with(MAGIC));
+        assert!(!String::from_utf8_lossy(&bytes).contains("BEGIN"));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn the_pem_text_is_what_other_builds_write() {
+        let text = "-----BEGIN PRIVATE KEY-----";
+        assert_eq!(production().wrap(text).unwrap(), text.as_bytes());
     }
 
     #[cfg(windows)]

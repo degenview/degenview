@@ -752,9 +752,10 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    // The name contains `tls_protect` because the `test-windows` job selects tests by that substring.
     #[cfg(windows)]
     #[test]
-    fn the_windows_protector_keeps_the_identity_across_loads() {
+    fn tls_protect_dpapi_keeps_the_identity_across_loads() {
         let dir = scratch("dpapi");
         let dpapi = &tls_protect::Dpapi;
         let first = load_or_create_with(&dir, address(), LOCK_TIMEOUT, dpapi).unwrap();
