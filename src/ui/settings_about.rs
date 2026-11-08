@@ -162,8 +162,8 @@ pub fn show(ui: &mut Ui, updates: &UpdateHost) -> Outcome {
                         group(ui, |ui| {
                             link_row(
                                 ui,
-                                egui::include_image!("../../assets/brand/app_icon.png"),
-                                Color32::TRANSPARENT,
+                                egui::include_image!("../../assets/brand/docs.svg"),
+                                Color32::from_rgb(24, 23, 23),
                                 "Documentation",
                                 "User guide for every feature",
                                 DOCS_URL,
