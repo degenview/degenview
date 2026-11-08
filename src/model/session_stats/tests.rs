@@ -479,6 +479,11 @@ fn names_slugs_and_descriptions_round_trip() {
     };
     assert_eq!(filter.describe(), "Tue · gap up 0.1%–0.6% · prior day down");
     assert!(filter.is_narrowed() && !Filter::default().is_narrowed());
+    assert_eq!(filter.active_count(), 4);
+    assert_eq!(Filter::default().active_count(), 0);
+    for outcome in Outcome::ALL {
+        assert!(!outcome.hit_when().is_empty());
+    }
 }
 
 #[test]

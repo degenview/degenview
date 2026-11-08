@@ -20,9 +20,31 @@ finds, and a small sample says little; below 30 qualifying days the panel says t
 | Piece | File |
 | --- | --- |
 | The engine: sessions, outcomes, filters, Wilson interval, halves, per-year, timing | `model/session_stats.rs` (pure, tests in `model/session_stats/tests.rs`) |
-| The panel | `ui/session_stats_view.rs` |
+| The panel | `ui/session_stats_view.rs` (state, header, question, conditions), `session_stats_view/result.rs` (the answer cards), `parts.rs` (painted rows and bars), `text.rs` (numbers, times, the copied text) |
 | Opening it | `Command::ToggleSessionStats` (`model/chart_context.rs`), `workspace/context.rs` (`show_stats_panel`), docked in `workspace.rs` |
 | The MCP tool | `mcp/session_stats_tools.rs` (arguments), `mcp/session_stats.rs` (result), `host/mcp_host.rs::session_statistics` |
+
+## The panel
+
+A header (what it is of, a copy button, close), the question with a line on when a day counts, the
+conditions, then the answer as cards: the estimate (a big number, the interval on a fixed 0–100%
+axis, days counted, hits, the 95% interval), older against newer half, when in the day it
+happened (1H only), a row per year, and callouts for what to know about the bars. Below 30
+qualifying days the estimate carries a "Small sample" badge. Nothing qualifying is its own state
+with a way to clear the conditions; a question the timeframe cannot answer says which timeframe.
+
+- The conditions are seven weekday toggles, gap side, gap size in percent (a number field with a
+  red outline and a hint while the text is not a number) and the previous day's direction. "Clear"
+  appears once any is set.
+- **Copy** puts the answer on the clipboard as plain text (`text::summary`): the question, the
+  number with its sample and interval, the halves, the span and the reminder. It is the only thing
+  the panel writes anywhere.
+- Bars of a group (the halves, the years) share one text column, so equal shares draw equal bars.
+- The weekday toggles, the number fields and every row carry accessibility labels; the toggles
+  report their on/off state.
+- The panel lays out from 280 to 560 points wide; it was looked at at 280, 340 and 520 offscreen.
+- Neutral colour only: the bars and the interval are the label colour dimmed, the two badges use
+  the app's status tones (agreement, small sample), and nothing is blue.
 
 ## Questions
 
@@ -76,6 +98,7 @@ worked once per change of bars or question, never per frame), the panel laying o
 the menu entry and the panel following its chart, and the MCP tool end to end over a loopback
 socket with its permission.
 
-Not verified: a real window (the panel was only rendered offscreen, in both themes), real Alpaca
+Not verified: a real window (the panel was only rendered offscreen, in both themes, at three
+widths and in the empty, small-sample, hourly and unavailable states), real Alpaca
 hourly bars (how the first bar of a real day starts), and numbers against edge-stats on the same
 data.

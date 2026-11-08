@@ -1,25 +1,50 @@
 //! Session statistics: "how often did this happen on the days this chart covers?", answered with
 //! its sample size and a 95% interval.
 //!
-//! A docked panel over `model::session_stats`: a question, the conditions that narrow the days,
-//! and the answer. It owns the question and the conditions (card state, never saved, in no
-//! template) and a cached answer, recomputed only when the bars or the question change, never
-//! per frame. It reads the bars the chart draws and writes nothing back.
+//! A docked panel over `model::session_stats`: a header (what it is of, copy, close), the question
+//! with a line on when a day counts, the conditions that narrow the days, and the answer as cards.
+//! It owns the question and the conditions (card state, never saved, in no template) and a cached
+//! answer, recomputed only when the bars, the question or a condition change, never per frame. It
+//! reads the bars the chart draws and writes nothing back; the only thing it puts anywhere is the
+//! text of the answer on the clipboard when asked.
+//!
+//! The words and numbers are `text`, the painted parts `parts`, the answer cards `result`.
 
-use crate::format::group_thousands;
+mod parts;
+mod result;
+mod text;
+
 use crate::model::Kline;
 use crate::model::session_stats::{
-    self, Estimate, Filter, MarketHours, Outcome, Side, Stats, Unavailable, WeekdaySet,
+    self, Filter, MarketHours, Outcome, Side, Stats, Unavailable, WeekdaySet,
 };
 use crate::ui::icons::{self, Icon};
-use crate::ui::{kit, theme};
-use eframe::egui::{self, Align, Layout, Sense, Ui, vec2};
+use crate::ui::{accessibility, kit, theme};
+use eframe::egui::{
+    self, Align, Layout, Rect, Sense, Stroke, Ui, WidgetInfo, WidgetType, pos2, vec2,
+};
+use parts::{centered_row, link, paragraph, section_header, section_label};
+use std::sync::Arc;
+use std::time::Duration;
 
 const TOOLBAR_HEIGHT: f32 = 44.0;
 const MARGIN: f32 = 16.0;
-const ROW_HEIGHT: f32 = 36.0;
-/// Fewer qualifying days than this and the panel says the interval is wide.
-const SMALL_SAMPLE: usize = 30;
+const CONTROL_HEIGHT: f32 = 32.0;
+/// The column the control rows keep their labels in.
+const LABEL_WIDTH: f32 = 72.0;
+const DAY_HEIGHT: f32 = 28.0;
+/// How long the copy button says "copied".
+const COPIED_FOR: f64 = 1.6;
+
+const WEEKDAYS: [&str; 7] = [
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
+];
 
 /// What the panel asks for.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -34,6 +59,8 @@ pub struct Input<'a> {
     pub bars: &'a [Kline],
     pub bar_ms: i64,
     pub hours: MarketHours,
+    /// Whether the chart is in a replay, so its bars end at the replay position.
+    pub replay: bool,
 }
 
 /// What identifies an answer: when none of it changed, the cached answer stands.
@@ -52,7 +79,7 @@ struct Fingerprint {
 
 struct Cached {
     fingerprint: Fingerprint,
-    answer: Result<Stats, Unavailable>,
+    answer: Arc<Result<Stats, Unavailable>>,
 }
 
 pub struct StatsViewState {
@@ -61,6 +88,8 @@ pub struct StatsViewState {
     gap_min: String,
     gap_max: String,
     cached: Option<Cached>,
+    /// When the answer was last copied, for the button's "copied" mark.
+    copied_at: Option<f64>,
 }
 
 impl Default for StatsViewState {
@@ -71,15 +100,17 @@ impl Default for StatsViewState {
             gap_min: String::new(),
             gap_max: String::new(),
             cached: None,
+            copied_at: None,
         }
     }
 }
 
-/// A percent typed into a field; empty or not a number is "no limit".
+/// A percent typed into a field; empty or not a number is "no limit". A comma is a decimal point.
 fn parse_percent(text: &str) -> Option<f64> {
     text.trim()
         .trim_end_matches('%')
         .trim()
+        .replace(',', ".")
         .parse::<f64>()
         .ok()
         .filter(|value| value.is_finite() && *value >= 0.0)
@@ -87,7 +118,7 @@ fn parse_percent(text: &str) -> Option<f64> {
 
 impl StatsViewState {
     /// The answer for `input` and the current question, worked again only when something changed.
-    fn answer(&mut self, input: &Input) -> &Result<Stats, Unavailable> {
+    fn answer(&mut self, input: &Input) -> Arc<Result<Stats, Unavailable>> {
         let fingerprint = Fingerprint {
             chart_id: input.chart_id,
             len: input.bars.len(),
@@ -113,46 +144,22 @@ impl StatsViewState {
             );
             self.cached = Some(Cached {
                 fingerprint,
-                answer,
+                answer: Arc::new(answer),
             });
         }
-        &self.cached.as_ref().expect("just filled").answer
+        Arc::clone(&self.cached.as_ref().expect("just filled").answer)
     }
-}
 
-// MARK: Text
-
-fn percent(value: f64) -> String {
-    format!("{:.1}%", value * 100.0)
-}
-
-fn count(value: usize) -> String {
-    group_thousands(&value.to_string())
-}
-
-fn estimate_line(estimate: &Estimate) -> String {
-    match estimate.proportion() {
-        Some(p) => format!(
-            "{} ({} of {})",
-            percent(p),
-            count(estimate.hits),
-            count(estimate.n)
-        ),
-        None => "no days".to_owned(),
+    fn clear_conditions(&mut self) {
+        self.filter = Filter::default();
+        self.gap_min.clear();
+        self.gap_max.clear();
     }
-}
 
-/// How long after the day's first bar opened a bar began, for an hourly chart.
-fn after_open(index: usize, bar_ms: i64) -> String {
-    if index == 0 {
-        return "in the first bar".to_owned();
+    /// Whether a typed gap limit is not a number, so the field says so.
+    fn gap_text_invalid(text: &str) -> bool {
+        !text.trim().is_empty() && parse_percent(text).is_none()
     }
-    let hours = |bars: usize| bars as f64 * bar_ms as f64 / 3_600_000.0;
-    format!("bar {index} ({}–{} h in)", hours(index), hours(index + 1))
-}
-
-fn date(date: (i64, i64, i64)) -> String {
-    format!("{:04}-{:02}-{:02}", date.0, date.1, date.2)
 }
 
 // MARK: Panel
@@ -166,27 +173,40 @@ pub fn show(
     let mut action = None;
     // The content fills the panel however short it is.
     ui.set_min_height(ui.available_height());
-    toolbar(ui, title, &mut action);
+    let answer = input.as_ref().map(|input| state.answer(input));
+    let bar_ms = input.as_ref().map_or(0, |input| input.bar_ms);
+    let copyable = match answer.as_deref() {
+        Some(Ok(stats)) => Some(stats),
+        _ => None,
+    };
+    toolbar(ui, state, title, copyable, bar_ms, &mut action);
     divider(ui);
     egui::ScrollArea::vertical()
         .id_salt("session-stats")
         .auto_shrink([false, false])
         .show(ui, |ui| {
             egui::Frame::new()
-                .inner_margin(egui::Margin::symmetric(MARGIN as i8, 12))
+                .inner_margin(egui::Margin {
+                    left: MARGIN as i8,
+                    right: MARGIN as i8,
+                    top: 14,
+                    bottom: 22,
+                })
                 .show(ui, |ui| {
                     ui.spacing_mut().item_spacing = vec2(8.0, 8.0);
                     question(ui, state);
-                    conditions(ui, state);
                     ui.add_space(4.0);
-                    let Some(input) = input else {
-                        quiet(ui, "There are no bars to count yet.");
-                        return;
+                    conditions(ui, state);
+                    ui.add_space(6.0);
+                    let setting = result::Setting {
+                        bar_ms,
+                        replay: input.as_ref().is_some_and(|input| input.replay),
+                        narrowed: state.filter.is_narrowed(),
                     };
-                    let bar_ms = input.bar_ms;
-                    match state.answer(&input).clone() {
-                        Ok(stats) => result(ui, &stats, bar_ms),
-                        Err(reason) => quiet(ui, reason.text()),
+                    if result::show(ui, answer.as_deref(), &setting)
+                        == Some(result::Request::ClearConditions)
+                    {
+                        state.clear_conditions();
                     }
                 });
         });
@@ -198,7 +218,14 @@ fn divider(ui: &mut Ui) {
     ui.painter().rect_filled(rect, 0.0, kit::hairline());
 }
 
-fn toolbar(ui: &mut Ui, title: &str, action: &mut Option<Action>) {
+fn toolbar(
+    ui: &mut Ui,
+    state: &mut StatsViewState,
+    title: &str,
+    copyable: Option<&Stats>,
+    bar_ms: i64,
+    action: &mut Option<Action>,
+) {
     let width = ui.available_width();
     ui.allocate_ui_with_layout(
         vec2(width, TOOLBAR_HEIGHT),
@@ -224,7 +251,11 @@ fn toolbar(ui: &mut Ui, title: &str, action: &mut Option<Action>) {
                 if close.clicked() {
                     *action = Some(Action::Close);
                 }
+                if let Some(stats) = copyable {
+                    copy_button(ui, state, title, stats, bar_ms);
+                }
                 ui.add_space(2.0);
+                // What it is of, quietly, in the space between.
                 let room = (ui.available_width() - 8.0).max(0.0);
                 let galley = kit::galley(
                     ui,
@@ -242,33 +273,33 @@ fn toolbar(ui: &mut Ui, title: &str, action: &mut Option<Action>) {
     );
 }
 
-fn caption(ui: &mut Ui, label: &str) {
-    ui.label(kit::text(
-        label,
-        kit::size::SUBHEADLINE,
-        kit::MEDIUM,
-        theme::text_secondary(),
-    ));
+/// Copies the answer as text, and says so with a tick for a moment.
+fn copy_button(ui: &mut Ui, state: &mut StatsViewState, title: &str, stats: &Stats, bar_ms: i64) {
+    let now = ui.input(|input| input.time);
+    let copied = state
+        .copied_at
+        .is_some_and(|at| now >= at && now - at < COPIED_FOR);
+    if copied {
+        ui.ctx()
+            .request_repaint_after(Duration::from_secs_f64(COPIED_FOR));
+    } else {
+        state.copied_at = None;
+    }
+    let (icon, tip) = if copied {
+        (Icon::Check, "Copied")
+    } else {
+        (Icon::CopyDoc, "Copy the answer")
+    };
+    if icons::button(ui, icon, 26.0, theme::text_secondary(), tip).clicked() {
+        ui.ctx().copy_text(text::summary(title, stats, bar_ms));
+        state.copied_at = Some(now);
+    }
 }
 
-fn quiet(ui: &mut Ui, message: &str) {
-    let galley = kit::paragraph(
-        ui,
-        message,
-        kit::size::SUBHEADLINE,
-        kit::REGULAR,
-        theme::text_tertiary(),
-        ui.available_width(),
-    );
-    let (rect, _) = ui.allocate_exact_size(galley.size(), Sense::hover());
-    ui.painter()
-        .galley(rect.min, galley, theme::text_tertiary());
-}
-
-// MARK: Question and conditions
+// MARK: Question
 
 fn question(ui: &mut Ui, state: &mut StatsViewState) {
-    caption(ui, "Question");
+    section_label(ui, "Question");
     let labels: Vec<String> = Outcome::ALL
         .iter()
         .map(|outcome| outcome.label().to_owned())
@@ -281,258 +312,218 @@ fn question(ui: &mut Ui, state: &mut StatsViewState) {
     if let Some(chosen) = kit::menu_picker(ui, width, &labels, selected, true) {
         state.outcome = Outcome::ALL[chosen];
     }
-}
-
-fn side_picker(ui: &mut Ui, id: &str, side: &mut Side) {
-    kit::segmented(
+    paragraph(
         ui,
-        egui::Id::new(id),
-        &[(Side::Any, "Any"), (Side::Up, "Up"), (Side::Down, "Down")],
-        side,
+        state.outcome.hit_when(),
+        kit::size::SUBHEADLINE,
+        kit::REGULAR,
+        theme::text_tertiary(),
     );
 }
 
-/// A row whose label and control share a centre line, however tall the control is.
-fn centered_row(ui: &mut Ui, contents: impl FnOnce(&mut Ui)) {
-    let width = ui.available_width();
-    ui.allocate_ui_with_layout(
-        vec2(width, ROW_HEIGHT),
-        Layout::left_to_right(Align::Center),
-        contents,
-    );
-}
-
-fn percent_field(ui: &mut Ui, id: &str, text: &mut String, hint: &str) {
-    let focused = ui.memory(|memory| memory.has_focus(egui::Id::new(id)));
-    kit::field_frame(focused).show(ui, |ui| {
-        kit::plain_field(
-            ui,
-            egui::Id::new(id),
-            text,
-            hint,
-            kit::size::BODY,
-            kit::REGULAR,
-            64.0,
-        );
-    });
-}
+// MARK: Conditions
 
 fn conditions(ui: &mut Ui, state: &mut StatsViewState) {
-    caption(ui, "On days that");
-    // Weekdays: a chip each, all on meaning no condition.
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
-        for (day, name) in WeekdaySet::NAMES.iter().enumerate() {
-            let on = state.filter.weekdays.contains(day);
-            if kit::value_chip(ui, name, on).clicked() {
-                state.filter.weekdays = state.filter.weekdays.with(day, !on);
-            }
+    let active = state.filter.active_count();
+    section_header(ui, "Only count days that…", |ui| {
+        if active > 0 && link(ui, "Clear").clicked() {
+            state.clear_conditions();
         }
     });
+    weekday_strip(ui, &mut state.filter.weekdays);
     if state.filter.weekdays.is_empty() {
-        quiet(ui, "No weekday is on, so no day qualifies.");
-    }
-
-    centered_row(ui, |ui| {
-        ui.label(kit::text(
-            "Gap",
-            kit::size::BODY,
-            kit::REGULAR,
-            theme::text_primary(),
-        ));
-        side_picker(ui, "session-stats-gap", &mut state.filter.gap);
-    });
-    centered_row(ui, |ui| {
-        ui.label(kit::text(
-            "Gap size",
-            kit::size::BODY,
-            kit::REGULAR,
-            theme::text_primary(),
-        ));
-        percent_field(ui, "session-stats-gap-min", &mut state.gap_min, "min %");
-        ui.label(kit::text(
-            "to",
+        paragraph(
+            ui,
+            "No weekday is on, so no day qualifies.",
             kit::size::SUBHEADLINE,
             kit::REGULAR,
             theme::text_tertiary(),
+        );
+    }
+
+    control_row(ui, "Gap", |ui, width| {
+        kit::segmented_filling(
+            ui,
+            egui::Id::new("session-stats-gap"),
+            &[(Side::Any, "Any"), (Side::Up, "Up"), (Side::Down, "Down")],
+            &mut state.filter.gap,
+            width,
+        );
+    });
+    control_row(ui, "Gap size", |ui, width| {
+        // The dash and the spacing round it come out of the width before it is shared.
+        let dash = kit::galley(
+            ui,
+            "–",
+            kit::size::BODY,
+            kit::REGULAR,
+            theme::text_tertiary(),
+            f32::INFINITY,
+        );
+        let join = dash.size().x + ui.spacing().item_spacing.x * 2.0;
+        let field = ((width - join) / 2.0 - 0.5).max(40.0);
+        percent_field(
+            ui,
+            "session-stats-gap-min",
+            &mut state.gap_min,
+            "min",
+            field,
+        );
+        ui.label(kit::text(
+            "–",
+            kit::size::BODY,
+            kit::REGULAR,
+            theme::text_tertiary(),
         ));
-        percent_field(ui, "session-stats-gap-max", &mut state.gap_max, "max %");
+        percent_field(
+            ui,
+            "session-stats-gap-max",
+            &mut state.gap_max,
+            "max",
+            field,
+        );
     });
     state.filter.gap_min_pct = parse_percent(&state.gap_min);
     state.filter.gap_max_pct = parse_percent(&state.gap_max);
-    centered_row(ui, |ui| {
-        ui.label(kit::text(
-            "Prior day",
+    if let (Some(least), Some(most)) = (state.filter.gap_min_pct, state.filter.gap_max_pct)
+        && least > most
+    {
+        paragraph(
+            ui,
+            "The smallest gap is above the largest, so no gap qualifies.",
+            kit::size::SUBHEADLINE,
+            kit::REGULAR,
+            kit::Tone::Warning.text(),
+        );
+    }
+    control_row(ui, "Prior day", |ui, width| {
+        kit::segmented_filling(
+            ui,
+            egui::Id::new("session-stats-prior"),
+            &[(Side::Any, "Any"), (Side::Up, "Up"), (Side::Down, "Down")],
+            &mut state.filter.prior_day,
+            width,
+        );
+    });
+}
+
+/// A label in a fixed column and a control filling the rest of the line.
+fn control_row(ui: &mut Ui, label: &str, contents: impl FnOnce(&mut Ui, f32)) {
+    centered_row(ui, CONTROL_HEIGHT, |ui| {
+        ui.spacing_mut().item_spacing.x = 8.0;
+        let (rect, _) = ui.allocate_exact_size(vec2(LABEL_WIDTH, CONTROL_HEIGHT), Sense::hover());
+        let galley = kit::galley(
+            ui,
+            label,
             kit::size::BODY,
             kit::REGULAR,
             theme::text_primary(),
-        ));
-        side_picker(ui, "session-stats-prior", &mut state.filter.prior_day);
-    });
-    if state.filter.is_narrowed() && ui.link_like("Clear conditions").clicked() {
-        state.filter = Filter::default();
-        state.gap_min.clear();
-        state.gap_max.clear();
-    }
-}
-
-/// A gray underlined text button: a link in this app is never blue.
-trait LinkLike {
-    fn link_like(&mut self, label: &str) -> egui::Response;
-}
-
-impl LinkLike for Ui {
-    fn link_like(&mut self, label: &str) -> egui::Response {
-        let galley = kit::galley(
-            self,
-            label,
-            kit::size::SUBHEADLINE,
-            kit::REGULAR,
-            theme::text_secondary(),
-            f32::INFINITY,
+            LABEL_WIDTH,
         );
-        let (rect, response) = self.allocate_exact_size(galley.size(), Sense::click());
-        let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
-        let color = theme::text_secondary();
-        self.painter().galley(rect.min, galley, color);
-        let y = rect.bottom() - 1.0;
-        self.painter()
-            .hline(rect.left()..=rect.right(), y, egui::Stroke::new(1.0, color));
-        response
-    }
-}
-
-// MARK: Result
-
-fn result(ui: &mut Ui, stats: &Stats, bar_ms: i64) {
-    kit::card_frame(false).show(ui, |ui| {
-        ui.set_width(ui.available_width());
-        ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
-        let question = format!(
-            "{} on {}",
-            stats.outcome.question(),
-            stats.filter.describe()
-        );
-        let galley = kit::paragraph(
-            ui,
-            &question,
-            kit::size::SUBHEADLINE,
-            kit::REGULAR,
-            theme::text_secondary(),
-            ui.available_width(),
-        );
-        let (rect, _) = ui.allocate_exact_size(galley.size(), Sense::hover());
-        ui.painter()
-            .galley(rect.min, galley, theme::text_secondary());
-
-        let Some(proportion) = stats.estimate.proportion() else {
-            ui.label(kit::text(
-                "No days qualify",
-                kit::size::TITLE2,
-                kit::SEMIBOLD,
-                theme::text_primary(),
-            ));
-            for note in &stats.notes {
-                quiet(ui, note.text());
-            }
-            return;
-        };
-        ui.label(kit::text(
-            percent(proportion),
-            28.0,
-            kit::SEMIBOLD,
+        ui.painter().galley(
+            pos2(rect.left(), rect.center().y - galley.size().y / 2.0),
+            galley,
             theme::text_primary(),
-        ));
-        let (low, high) = stats.estimate.interval().unwrap_or((0.0, 1.0));
-        line(
-            ui,
-            &format!(
-                "N = {} days · {} hits · 95% CI {} – {}",
-                count(stats.estimate.n),
-                count(stats.estimate.hits),
-                percent(low),
-                percent(high),
-            ),
         );
-        if stats.estimate.n < SMALL_SAMPLE {
-            quiet(
-                ui,
-                "A small sample: the interval is wide, and one more day would move the number.",
-            );
-        }
-        if let Some(halves) = &stats.stability {
-            line(
-                ui,
-                &format!(
-                    "Older half {} · newer half {} · {}",
-                    estimate_line(&halves.older),
-                    estimate_line(&halves.newer),
-                    if halves.agree {
-                        "the halves agree"
-                    } else {
-                        "the halves differ"
-                    },
-                ),
-            );
-        }
-        if let Some(timing) = &stats.timing {
-            line(
-                ui,
-                &format!(
-                    "When it happened (n = {}): median {} · 25% {} · 75% {} · 90% {}",
-                    count(timing.n),
-                    after_open(timing.median, bar_ms),
-                    after_open(timing.p25, bar_ms),
-                    after_open(timing.p75, bar_ms),
-                    after_open(timing.p90, bar_ms),
-                ),
-            );
-        }
-        if !stats.per_year.is_empty() {
-            ui.add_space(4.0);
-            caption(ui, "Per year");
-            for row in &stats.per_year {
-                line(
-                    ui,
-                    &format!("{}   {}", row.year, estimate_line(&row.estimate)),
-                );
-            }
-        }
-        for note in &stats.notes {
-            quiet(ui, note.text());
-        }
-        if let Some((first, last)) = stats.span {
-            ui.add_space(4.0);
-            quiet(
-                ui,
-                &format!(
-                    "{} sessions, {} to {} · {}",
-                    count(stats.sessions),
-                    date(first),
-                    date(last),
-                    stats.hours.label(),
-                ),
-            );
-        }
+        let width = ui.available_width();
+        contents(ui, width);
     });
-    ui.add_space(4.0);
-    quiet(
-        ui,
-        "Historical frequencies of this chart's bars, with sample sizes. Not predictions, not advice.",
-    );
 }
 
-fn line(ui: &mut Ui, text: &str) {
-    let galley = kit::paragraph(
-        ui,
-        text,
-        kit::size::SUBHEADLINE,
-        kit::REGULAR,
-        theme::text_primary(),
-        ui.available_width(),
-    );
-    let (rect, _) = ui.allocate_exact_size(galley.size(), Sense::hover());
-    ui.painter().galley(rect.min, galley, theme::text_primary());
+/// Seven equal toggles, Monday to Sunday, across the panel however wide it is.
+fn weekday_strip(ui: &mut Ui, set: &mut WeekdaySet) {
+    const GAP: f32 = 4.0;
+    let width = ui.available_width();
+    let cell = (width - GAP * 6.0) / 7.0;
+    let (strip, _) = ui.allocate_exact_size(vec2(width, DAY_HEIGHT), Sense::hover());
+    for (day, name) in WEEKDAYS.iter().enumerate() {
+        let rect = Rect::from_min_size(
+            pos2(strip.left() + day as f32 * (cell + GAP), strip.top()),
+            vec2(cell, DAY_HEIGHT),
+        );
+        let on = set.contains(day);
+        let response = ui
+            .interact(
+                rect,
+                ui.id().with(("session-stats-day", day)),
+                Sense::click(),
+            )
+            .on_hover_cursor(egui::CursorIcon::PointingHand)
+            .on_hover_text(*name);
+        response.widget_info(|| WidgetInfo::selected(WidgetType::Checkbox, true, on, name));
+        let painter = ui.painter();
+        let fill = if on {
+            theme::selected_tint(response.hovered())
+        } else if response.hovered() {
+            kit::primary(0.1)
+        } else {
+            kit::primary(0.06)
+        };
+        painter.rect_filled(rect, 7.0, fill);
+        if on {
+            painter.rect_stroke(
+                rect,
+                7.0,
+                theme::selected_stroke(),
+                egui::StrokeKind::Inside,
+            );
+        }
+        let (weight, color) = if on {
+            (kit::MEDIUM, theme::text_primary())
+        } else {
+            (kit::REGULAR, theme::text_tertiary())
+        };
+        let galley = kit::galley(
+            ui,
+            WeekdaySet::NAMES[day],
+            kit::size::SUBHEADLINE,
+            weight,
+            color,
+            cell,
+        );
+        ui.painter()
+            .galley(rect.center() - galley.size() / 2.0, galley, color);
+        if response.clicked() {
+            *set = set.with(day, !on);
+        }
+    }
+}
+
+/// A percent field with its unit; a red outline and a tooltip when the text is not a number.
+fn percent_field(ui: &mut Ui, id: &str, value: &mut String, hint: &str, width: f32) {
+    let field_id = egui::Id::new(id);
+    let focused = ui.memory(|memory| memory.has_focus(field_id));
+    let invalid = StatsViewState::gap_text_invalid(value);
+    let mut frame = kit::field_frame(focused).inner_margin(egui::Margin::symmetric(9, 5));
+    if invalid {
+        frame = frame.stroke(Stroke::new(1.0, kit::Tone::Bad.dot()));
+    }
+    frame.show(ui, |ui| {
+        let inner = (width - 20.0).max(20.0);
+        ui.set_width(inner);
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 4.0;
+            let response = kit::plain_field(
+                ui,
+                field_id,
+                value,
+                hint,
+                kit::size::BODY,
+                kit::REGULAR,
+                (inner - 16.0).max(10.0),
+            );
+            accessibility::label(response.clone(), format!("Gap {hint} percent"));
+            if invalid {
+                response.on_hover_text("Enter a percent, for example 0.5");
+            }
+            ui.label(kit::text(
+                "%",
+                kit::size::BODY,
+                kit::REGULAR,
+                theme::text_tertiary(),
+            ));
+        });
+    });
 }
 
 #[cfg(test)]

@@ -966,6 +966,7 @@ impl ChartWorkspace {
                 bars: data.candles,
                 bar_ms,
                 hours,
+                replay: data.replay_ms.is_some(),
             });
             session_stats_view::show(ui, &mut state, &title, input)
         };

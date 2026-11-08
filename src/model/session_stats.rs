@@ -112,6 +112,24 @@ impl Outcome {
         }
     }
 
+    /// When a day counts as a hit, in a sentence for the panel to show under the question.
+    pub const fn hit_when(self) -> &'static str {
+        match self {
+            Self::GapFill => {
+                "A later bar's range touches the previous close. Only days that gapped count."
+            }
+            Self::DayUp => "The day closes above its open. A flat day is not up.",
+            Self::PriorHighBreak => "The day's high goes above the previous day's high.",
+            Self::PriorLowBreak => "The day's low goes below the previous day's low.",
+            Self::FirstBarHighBreak => {
+                "A later bar trades above the day's first bar high. Needs the 1H timeframe."
+            }
+            Self::FirstBarLowBreak => {
+                "A later bar trades below the day's first bar low. Needs the 1H timeframe."
+            }
+        }
+    }
+
     /// A stable name for tools and tests.
     pub const fn slug(self) -> &'static str {
         match self {
@@ -235,11 +253,16 @@ impl Default for Filter {
 impl Filter {
     /// Whether any condition is set.
     pub fn is_narrowed(&self) -> bool {
-        !self.weekdays.is_all()
-            || self.gap != Side::Any
-            || self.gap_min_pct.is_some()
-            || self.gap_max_pct.is_some()
-            || self.prior_day != Side::Any
+        self.active_count() > 0
+    }
+
+    /// How many of the conditions are set: the weekdays, the gap's side, its size and the previous
+    /// day each count once.
+    pub fn active_count(&self) -> usize {
+        usize::from(!self.weekdays.is_all())
+            + usize::from(self.gap != Side::Any)
+            + usize::from(self.gap_min_pct.is_some() || self.gap_max_pct.is_some())
+            + usize::from(self.prior_day != Side::Any)
     }
 
     fn needs_gap(&self) -> bool {
@@ -369,6 +392,14 @@ pub enum Note {
 }
 
 impl Note {
+    /// A few words for the callout's heading.
+    pub const fn title(self) -> &'static str {
+        match self {
+            Self::BoundaryOpen => "Hourly bars blur the open",
+            Self::NoGaps => "No gaps on this market",
+        }
+    }
+
     pub const fn text(self) -> &'static str {
         match self {
             Self::BoundaryOpen => {
