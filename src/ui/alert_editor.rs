@@ -496,7 +496,7 @@ pub fn show(
     now_ms: i64,
 ) -> Option<PriceAlertEditorOutcome> {
     let mut outcome = None;
-    egui::Modal::new(Id::new("price-alert-editor"))
+    let shown = egui::Modal::new(Id::new("price-alert-editor"))
         .backdrop_color(Color32::from_black_alpha(110))
         .frame(
             egui::Frame::new()
@@ -542,6 +542,11 @@ pub fn show(
                     }
                 });
         });
+    // A click on the dimmed area around the sheet cancels it, like Escape. A click that only
+    // closed a pop-up (a menu, the date picker) does not.
+    if shown.backdrop_response.clicked() && !shown.any_popup_open {
+        outcome = Some(PriceAlertEditorOutcome::Cancel);
+    }
     let (escape, enter) = ctx.input(|input| {
         (
             input.key_pressed(egui::Key::Escape),
