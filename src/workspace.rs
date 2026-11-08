@@ -57,6 +57,7 @@ mod input;
 mod layouts;
 mod links;
 mod live;
+mod overlay_actions;
 mod overlays;
 mod paper;
 mod pine;

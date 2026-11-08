@@ -154,7 +154,6 @@ pub struct CrosshairInfo {
 use body::{BodyArgs, OverlayResults};
 pub use context::ContextRequest;
 use live_overlays::LiveOverlays;
-pub use overlays::LineState;
 #[cfg(test)]
 use snapshot::SnapshotError;
 pub use snapshot::SnapshotInput;

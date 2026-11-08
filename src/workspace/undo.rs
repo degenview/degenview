@@ -23,6 +23,8 @@ pub(super) enum Snapshot {
         config: IndicatorConfig,
         scripts: Vec<crate::model::pine_instance::PineInstance>,
     },
+    /// The markets compared on the chart, with their looks: configuration only, never candles.
+    Overlays(crate::model::overlay::OverlayList),
     /// What part of the chart was on screen before a Zoom In or Zoom out, and which way applying it
     /// takes Zoom out's history (a zoom is undone by going back; its inverse goes forward).
     View { step: ViewStep, direction: ViewMove },
@@ -51,6 +53,9 @@ impl Snapshot {
                 chart.indicators = config;
                 chart.chart.set_pine_instances(scripts);
                 current
+            }
+            Self::Overlays(overlays) => {
+                Self::Overlays(std::mem::replace(&mut chart.overlays, overlays))
             }
             Self::View { step, direction } => Self::View {
                 step: chart.chart.apply_view(step, direction)?,

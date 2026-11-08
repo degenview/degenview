@@ -149,6 +149,22 @@ pub enum ScaleChoice {
     SharedWith(OverlayId),
 }
 
+/// One edit of a chart's overlays, by the id of the overlay it names. Every surface that changes
+/// overlays (the legend, its menu, the settings page) sends one of these.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum OverlayCommand {
+    Remove(OverlayId),
+    RemoveAll,
+    SetVisible(OverlayId, bool),
+    SetColor(OverlayId, Rgba),
+    SetWidth(OverlayId, f32),
+    SetDash(OverlayId, LineDash),
+    SetSource(OverlayId, PriceSource),
+    SetScale(OverlayId, ScaleChoice),
+    SetLabel(OverlayId, bool),
+    Move(OverlayId, Move),
+}
+
 /// The overlays of one chart, in visual order. No upper bound: it is a plain vector.
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(transparent)]
@@ -309,6 +325,41 @@ impl OverlayList {
         let overlay = self.0.remove(from);
         self.0.insert(target, overlay);
         true
+    }
+
+    /// Applies `command`; whether it changed anything (a name that is not here, or a value the
+    /// overlay already has, changes nothing).
+    pub fn apply(&mut self, command: OverlayCommand) -> bool {
+        match command {
+            OverlayCommand::Remove(id) => self.remove(id).is_some(),
+            OverlayCommand::RemoveAll => {
+                let any = !self.0.is_empty();
+                self.clear();
+                any
+            }
+            OverlayCommand::SetVisible(id, visible) => self.set_visible(id, visible),
+            OverlayCommand::SetWidth(id, width) => self.set_width(id, width),
+            OverlayCommand::SetScale(id, choice) => self.set_scale(id, choice),
+            OverlayCommand::Move(id, to) => self.reorder(id, to),
+            OverlayCommand::SetColor(id, color) => self.edit(id, |o| &mut o.color, color),
+            OverlayCommand::SetDash(id, dash) => self.edit(id, |o| &mut o.dash, dash),
+            OverlayCommand::SetSource(id, source) => self.edit(id, |o| &mut o.source, source),
+            OverlayCommand::SetLabel(id, shown) => self.edit(id, |o| &mut o.show_label, shown),
+        }
+    }
+
+    fn edit<T: PartialEq>(
+        &mut self,
+        id: OverlayId,
+        field: impl FnOnce(&mut ChartOverlay) -> &mut T,
+        value: T,
+    ) -> bool {
+        self.get_mut(id).is_some_and(|overlay| {
+            let slot = field(overlay);
+            let changed = *slot != value;
+            *slot = value;
+            changed
+        })
     }
 
     /// The markets that need candles: every overlay, hidden ones included, so showing one is
@@ -497,5 +548,35 @@ mod tests {
         let again: OverlayList =
             serde_json::from_str(&serde_json::to_string(&list).unwrap()).unwrap();
         assert_eq!(again.as_slice()[0].instrument, ghost);
+    }
+
+    #[test]
+    fn commands_edit_one_overlay_and_report_whether_anything_changed() {
+        let mut list = list_of(&["A1USDT", "B1USDT"]);
+        let id = OverlayId(1);
+        let red = Rgba::hex(0xFF0000);
+        assert!(list.apply(OverlayCommand::SetColor(id, red)));
+        assert!(!list.apply(OverlayCommand::SetColor(id, red)));
+        assert!(list.apply(OverlayCommand::SetDash(id, LineDash::Dotted)));
+        assert!(list.apply(OverlayCommand::SetSource(id, PriceSource::High)));
+        assert!(list.apply(OverlayCommand::SetLabel(id, false)));
+        assert!(list.apply(OverlayCommand::SetVisible(id, false)));
+        let overlay = list.get(id).unwrap();
+        assert_eq!(
+            (
+                overlay.color,
+                overlay.dash,
+                overlay.source,
+                overlay.show_label,
+                overlay.visible
+            ),
+            (red, LineDash::Dotted, PriceSource::High, false, false)
+        );
+        assert!(!list.apply(OverlayCommand::SetColor(OverlayId(9), red)));
+        assert!(list.apply(OverlayCommand::Remove(id)));
+        assert!(!list.apply(OverlayCommand::Remove(id)));
+        assert!(list.apply(OverlayCommand::RemoveAll));
+        assert!(!list.apply(OverlayCommand::RemoveAll));
+        assert!(list.is_empty());
     }
 }

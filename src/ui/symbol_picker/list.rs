@@ -28,6 +28,28 @@ pub struct RowState {
     pub highlighted: bool,
     /// The market is already on a chart of the tab.
     pub on_chart: bool,
+    /// The market is the focused chart's own or already compared on it.
+    pub overlaid: bool,
+    /// The focused chart can have a market drawn over it.
+    pub can_overlay: bool,
+    /// The picker is comparing: the check means "already compared", not "already a chart".
+    pub comparing: bool,
+}
+
+impl RowState {
+    /// What the check at the right edge says.
+    fn checked(self) -> bool {
+        if self.comparing {
+            self.overlaid
+        } else {
+            self.on_chart
+        }
+    }
+
+    /// Whether the compare button shows: the chart takes overlays and this is not one already.
+    fn offers_overlay(self) -> bool {
+        self.can_overlay && !self.overlaid
+    }
 }
 
 /// What a row asks for.
@@ -37,6 +59,8 @@ pub struct RowOutput {
     pub pick: bool,
     /// The plus was clicked: add the market as a chart of its own.
     pub add: bool,
+    /// The compare button was clicked: draw the market over the focused chart.
+    pub overlay: bool,
     pub hovered: bool,
     /// The row was right-clicked: its menu is opening, and the row becomes the highlighted one.
     pub opened_menu: bool,
@@ -73,6 +97,8 @@ fn title_case(id: &str) -> String {
 const REPLACE_KEY: &str = "↵";
 const ADD_KEY: &str = "⇧↵";
 const ADD_LABEL: &str = "Add as new chart";
+const COMPARE_KEY: &str = "⌥↵";
+const COMPARE_LABEL: &str = "Compare";
 
 /// Draws one row, `width` wide. `replacing` is the market on the focused chart, which a pick would
 /// replace; `None` when there is no chart to replace.
@@ -96,7 +122,7 @@ pub fn row(
     );
     let response = crate::ui::accessibility::label(response, label);
     out.opened_menu = response.secondary_clicked();
-    context_menu(ui, &response, replacing, &mut out);
+    context_menu(ui, &response, replacing, state, &mut out);
     if !ui.is_rect_visible(rect) {
         return (response, out);
     }
@@ -111,8 +137,31 @@ pub fn row(
         pos2(rect.right() - PAD - MARK / 2.0, rect.center().y),
         Vec2::splat(MARK),
     );
+    // The compare button sits left of the plus, a target of its own over the row's.
+    let compare_mark = mark.translate(vec2(-MARK - 2.0, 0.0));
+    if state.highlighted && state.offers_overlay() {
+        let compare = ui.interact(compare_mark, row_id(ui, result, "compare"), Sense::click());
+        let compare = compare
+            .on_hover_text("Compare on this chart")
+            .on_hover_cursor(egui::CursorIcon::PointingHand);
+        let hot = compare.hovered();
+        if hot {
+            ui.painter().rect_filled(compare_mark, 7.0, theme::ink(18));
+        }
+        icons::paint(
+            ui.painter(),
+            Rect::from_center_size(compare_mark.center(), Vec2::splat(15.0)),
+            Icon::Compare,
+            if hot {
+                theme::text_primary()
+            } else {
+                theme::text_secondary()
+            },
+        );
+        out.overlay |= compare.clicked();
+    }
     // The plus is its own target, over the row's.
-    if state.highlighted && !state.on_chart {
+    if state.highlighted && !state.checked() {
         let plus = ui.interact(mark, row_id(ui, result, "add"), Sense::click());
         let plus = plus
             .on_hover_text("Add as a new chart")
@@ -132,7 +181,7 @@ pub fn row(
             },
         );
         out.add |= plus.clicked();
-    } else if state.on_chart {
+    } else if state.checked() {
         icons::paint(
             ui.painter(),
             Rect::from_center_size(mark.center(), Vec2::splat(15.0)),
@@ -140,7 +189,7 @@ pub fn row(
             theme::UP,
         );
     }
-    out.pick |= response.clicked() && !out.add;
+    out.pick |= response.clicked() && !out.add && !out.overlay;
 
     let painter = ui.painter();
     let icon = Rect::from_center_size(
@@ -150,7 +199,11 @@ pub fn row(
     result_icon(ui, icon, result);
 
     // The exchange: logo and name, with what it lists under the name, right-aligned.
-    let venue_right = mark.left() - 10.0;
+    let venue_right = if state.can_overlay {
+        compare_mark.left() - 10.0
+    } else {
+        mark.left() - 10.0
+    };
     let venue = kit::galley(
         ui,
         result.source.display_name(),
@@ -213,12 +266,33 @@ pub fn row(
     (response, out)
 }
 
-/// The menu a right-click on a row opens: use the market here, or add it as a chart of its own.
-fn context_menu(ui: &mut Ui, response: &Response, replacing: Option<&str>, out: &mut RowOutput) {
-    let replace = replacing.map(|current| format!("Replace {current}"));
+/// The menu a right-click on a row opens: use the market here, compare it on the chart, or add it
+/// as a chart of its own. While comparing, Return compares, so Replace is not offered.
+fn context_menu(
+    ui: &mut Ui,
+    response: &Response,
+    replacing: Option<&str>,
+    state: RowState,
+    out: &mut RowOutput,
+) {
+    let replace = replacing
+        .filter(|_| !state.comparing)
+        .map(|current| format!("Replace {current}"));
+    let compare = state.offers_overlay().then(|| match replacing {
+        Some(current) => format!("Compare with {current}"),
+        None => COMPARE_LABEL.to_owned(),
+    });
+    let compare_key = if state.comparing {
+        REPLACE_KEY
+    } else {
+        COMPARE_KEY
+    };
     let mut rows: Vec<(&str, Option<&str>)> = Vec::new();
     if let Some(replace) = &replace {
         rows.push((replace, Some(REPLACE_KEY)));
+    }
+    if let Some(compare) = &compare {
+        rows.push((compare, Some(compare_key)));
     }
     rows.push((ADD_LABEL, Some(ADD_KEY)));
     kit::fitted_context_menu(ui, response, &rows, |ui| {
@@ -233,6 +307,19 @@ fn context_menu(ui: &mut Ui, response: &Response, replacing: Option<&str>, out: 
             )
         {
             out.pick = true;
+            ui.close();
+        }
+        if let Some(compare) = &compare
+            && kit::menu_item_with_shortcut(
+                ui,
+                Icon::Compare,
+                compare,
+                Some(compare_key),
+                true,
+                false,
+            )
+        {
+            out.overlay = true;
             ui.close();
         }
         if kit::menu_item_with_shortcut(ui, Icon::Plus, ADD_LABEL, Some(ADD_KEY), true, false) {

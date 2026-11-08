@@ -43,8 +43,29 @@ pub enum Output {
     Replace(SearchResult),
     /// Add this market as a chart of its own. The picker has closed itself.
     Add(SearchResult),
+    /// Draw this market on the focused chart, on top of its own. The picker has closed itself,
+    /// unless it was opened to compare (then it stays, so several can be added in a row).
+    Overlay(SearchResult),
     /// Open Settings on the Alpaca page; the picker stays open.
     OpenAlpacaSettings,
+}
+
+/// What the picker was opened for.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum PickMode {
+    /// Change the focused chart's market (⌘K, the symbol button).
+    #[default]
+    Chart,
+    /// Compare markets on the focused chart (the Compare button): a pick draws it over the chart.
+    Compare,
+}
+
+/// What a pick does with the market.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PickKind {
+    Replace,
+    Add,
+    Overlay,
 }
 
 /// What the workspace tells the picker each frame.
@@ -55,6 +76,11 @@ pub struct Env<'a> {
     pub quote: Option<&'a WatchlistQuote>,
     /// The focused chart's market, which a pick replaces; `None` when a pick adds a chart.
     pub replacing: Option<&'a str>,
+    /// The focused chart's own market and the markets already compared on it: a pick of one of
+    /// these cannot be drawn again, and the list marks them in compare mode.
+    pub overlaid: &'a [InstrumentId],
+    /// Whether the focused chart can have a market drawn over it.
+    pub can_overlay: bool,
 }
 
 /// The quote-demand owner of the picker in tab `tab`: clear of the sidebar's (the tab id), the
@@ -67,6 +93,7 @@ pub struct SymbolPicker {
     store: SharedStore,
     backend: Backend,
     open: bool,
+    mode: PickMode,
     query: String,
     scope: Scope,
     venue: Option<DataSource>,
@@ -97,6 +124,7 @@ impl SymbolPicker {
             store,
             backend,
             open: false,
+            mode: PickMode::Chart,
             query: String::new(),
             scope: Scope::All,
             venue: None,
@@ -120,6 +148,21 @@ impl SymbolPicker {
     /// Opens a fresh picker searching for `current`, the market the focused chart shows, with the
     /// text selected so typing replaces it.
     pub fn open(&mut self, current: &str) {
+        self.open_for(current, PickMode::Chart);
+    }
+
+    /// Opens the picker to compare markets on the focused chart: nothing is searched for at first
+    /// (recent and popular markets show), and a pick keeps the picker open.
+    pub fn open_compare(&mut self) {
+        self.open_for("", PickMode::Compare);
+    }
+
+    #[cfg(test)]
+    pub fn mode(&self) -> PickMode {
+        self.mode
+    }
+
+    fn open_for(&mut self, current: &str, mode: PickMode) {
         let store = self.store.clone();
         *self = Self::with_backend(store, self.backend);
         self.recents = self
@@ -132,6 +175,7 @@ impl SymbolPicker {
         self.search.ask_now();
         self.select_all = !current.is_empty();
         self.focus_frames = FOCUS_FRAMES;
+        self.mode = mode;
         self.open = true;
     }
 
@@ -187,7 +231,17 @@ impl SymbolPicker {
         if keys.pick
             && let Some(result) = self.highlighted.clone()
         {
-            output = self.commit(result, keys.add);
+            let kind = if keys.add {
+                PickKind::Add
+            } else if keys.overlay && env.can_overlay {
+                PickKind::Overlay
+            } else {
+                self.default_kind()
+            };
+            // A market that is already drawn on the chart is not drawn twice.
+            if kind != PickKind::Overlay || !Self::overlaid(env, &result) {
+                output = self.commit(result, kind);
+            }
         }
 
         let screen = ctx.content_rect().size();
@@ -199,7 +253,7 @@ impl SymbolPicker {
             .highlighted
             .clone()
             .and_then(|result| self.search.related(ctx, &result));
-        let mut picked: Option<(SearchResult, bool)> = None;
+        let mut picked: Option<(SearchResult, PickKind)> = None;
         let modal = egui::Modal::new(Id::new("symbol_picker"))
             .backdrop_color(Color32::from_black_alpha(110))
             .frame(
@@ -231,8 +285,8 @@ impl SymbolPicker {
         // A click on the dimmed window outside the sheet closes it.
         let clicked_outside = modal.backdrop_response.clicked();
 
-        if let Some((result, add)) = picked {
-            output = output.or_else(|| self.commit(result, add));
+        if let Some((result, kind)) = picked {
+            output = output.or_else(|| self.commit(result, kind));
         }
         if self.select_all && ctx.memory(|memory| memory.has_focus(search_id)) {
             select_all(ctx, search_id, &self.query);
@@ -244,7 +298,13 @@ impl SymbolPicker {
         if keys.close || clicked_outside {
             self.close();
         }
-        if matches!(output, Some(Output::Replace(_) | Output::Add(_))) {
+        let stays_open =
+            self.mode == PickMode::Compare && matches!(output, Some(Output::Overlay(_)));
+        if matches!(
+            output,
+            Some(Output::Replace(_) | Output::Add(_) | Output::Overlay(_))
+        ) && !stays_open
+        {
             self.close();
         }
         output
@@ -356,7 +416,7 @@ impl SymbolPicker {
     }
 
     /// Validates a pick, records it as recent and hands it to the host.
-    fn commit(&mut self, result: SearchResult, add: bool) -> Option<Output> {
+    fn commit(&mut self, result: SearchResult, kind: PickKind) -> Option<Output> {
         if result.source == DataSource::Alpaca
             && service::keychain_api_keys::alpaca_credentials().is_none()
         {
@@ -368,11 +428,25 @@ impl SymbolPicker {
         {
             add_chart_sheet::store_recents(&store, &self.recents);
         }
-        Some(if add {
-            Output::Add(result)
-        } else {
-            Output::Replace(result)
+        Some(match kind {
+            PickKind::Add => Output::Add(result),
+            PickKind::Overlay => Output::Overlay(result),
+            PickKind::Replace => Output::Replace(result),
         })
+    }
+
+    /// What a click or Return on a row does in this mode.
+    fn default_kind(&self) -> PickKind {
+        match self.mode {
+            PickMode::Chart => PickKind::Replace,
+            PickMode::Compare => PickKind::Overlay,
+        }
+    }
+
+    /// Whether `result` is the focused chart's own market or one already compared on it.
+    fn overlaid(env: &Env, result: &SearchResult) -> bool {
+        let market = InstrumentId::new(result.source, &result.full_symbol);
+        env.overlaid.iter().any(|id| id.is_same_market(&market))
     }
 
     // MARK: Layout
@@ -387,7 +461,7 @@ impl SymbolPicker {
         rows: &Rows,
         related: Option<&[SearchResult]>,
         env: &Env,
-    ) -> Option<(SearchResult, bool)> {
+    ) -> Option<(SearchResult, PickKind)> {
         let mut picked = None;
         let search_area = Rect::from_min_size(
             full.min + vec2(PADDING, PADDING),
@@ -466,7 +540,7 @@ impl SymbolPicker {
                     related,
                 };
                 if let Some(other) = detail::show(ui, panel, &shown) {
-                    picked = Some((other, false));
+                    picked = Some((other, self.default_kind()));
                 }
             }
         }
@@ -611,7 +685,7 @@ impl SymbolPicker {
         listing: &Listing,
         rows: &Rows,
         env: &Env,
-    ) -> Option<(SearchResult, bool)> {
+    ) -> Option<(SearchResult, PickKind)> {
         let mut picked = None;
         // The Alpaca notice sits at the bottom of the list's own area, under the rows.
         let notice = self.notice(listing);
@@ -646,14 +720,13 @@ impl SymbolPicker {
                     if let Some(head) = rows.head_before(index) {
                         section_heading(ui, head);
                     }
+                    let market = InstrumentId::new(result.source, &result.full_symbol);
                     let state = RowState {
                         highlighted: index == self.highlight,
-                        on_chart: env.on_tab.iter().any(|id| {
-                            id.is_same_market(&InstrumentId::new(
-                                result.source,
-                                &result.full_symbol,
-                            ))
-                        }),
+                        on_chart: env.on_tab.iter().any(|id| id.is_same_market(&market)),
+                        overlaid: Self::overlaid(env, result),
+                        can_overlay: env.can_overlay,
+                        comparing: self.mode == PickMode::Compare,
                     };
                     let (response, out) =
                         list::row(ui, result, state, env.replacing, ui.available_width());
@@ -663,10 +736,16 @@ impl SymbolPicker {
                     if (out.hovered && pointer_moved) || out.opened_menu {
                         self.highlight = index;
                     }
-                    if out.add {
-                        picked = Some((result.clone(), true));
+                    if out.overlay {
+                        picked = Some((result.clone(), PickKind::Overlay));
+                    } else if out.add {
+                        picked = Some((result.clone(), PickKind::Add));
                     } else if out.pick {
-                        picked = Some((result.clone(), false));
+                        // A click on a market already drawn here, while comparing, does nothing.
+                        if self.mode == PickMode::Compare && state.overlaid {
+                            continue;
+                        }
+                        picked = Some((result.clone(), self.default_kind()));
                     }
                 }
             });
@@ -749,14 +828,19 @@ impl SymbolPicker {
     /// The keys that work here. A narrow picker drops the least needed hints rather than run past
     /// its edge.
     fn footer(&self, ui: &mut Ui, area: Rect, env: &Env) {
-        let open = match env.replacing {
-            Some(current) => format!("Replace {current}"),
-            None => "Add chart".to_owned(),
+        let open = match (self.mode, env.replacing) {
+            (PickMode::Compare, Some(current)) => format!("Compare with {current}"),
+            (PickMode::Compare, None) => "Compare".to_owned(),
+            (PickMode::Chart, Some(current)) => format!("Replace {current}"),
+            (PickMode::Chart, None) => "Add chart".to_owned(),
         };
         let mut hints: Vec<(&[&str], String)> =
             vec![(&["↑", "↓"], "Navigate".to_owned()), (&["↵"], open)];
         if env.replacing.is_some() {
             hints.push((&["⇧", "↵"], "Add as new chart".to_owned()));
+        }
+        if self.mode == PickMode::Chart && env.can_overlay {
+            hints.push((&["⌥", "↵"], "Compare".to_owned()));
         }
         hints.push((&["Tab"], "Switch market".to_owned()));
         hints.push((&["Esc"], "Close".to_owned()));
@@ -790,7 +874,7 @@ impl SymbolPicker {
                 .sum();
             keys + label.size().x + 6.0 + 10.0
         };
-        for least_needed in ["Add as new chart", "Switch market", "Navigate"] {
+        for least_needed in ["Compare", "Add as new chart", "Switch market", "Navigate"] {
             if hints.iter().map(width).sum::<f32>() <= room {
                 break;
             }
@@ -950,6 +1034,8 @@ struct Keys {
     pick: bool,
     /// ⇧Return: add it as a new chart rather than replacing.
     add: bool,
+    /// ⌥Return: draw it over the focused chart.
+    overlay: bool,
     scope: bool,
     close: bool,
 }
@@ -958,11 +1044,13 @@ impl Keys {
     fn read(ctx: &egui::Context) -> Self {
         ctx.input_mut(|input| {
             let add = input.consume_key(Modifiers::SHIFT, Key::Enter);
+            let overlay = input.consume_key(Modifiers::ALT, Key::Enter);
             Self {
                 up: input.consume_key(Modifiers::NONE, Key::ArrowUp),
                 down: input.consume_key(Modifiers::NONE, Key::ArrowDown),
-                pick: add || input.consume_key(Modifiers::NONE, Key::Enter),
+                pick: add || overlay || input.consume_key(Modifiers::NONE, Key::Enter),
                 add,
+                overlay,
                 scope: input.consume_key(Modifiers::NONE, Key::Tab),
                 close: input.consume_key(Modifiers::NONE, Key::Escape),
             }

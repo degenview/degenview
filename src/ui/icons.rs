@@ -65,6 +65,8 @@ pub enum Icon {
     Palette,
     BarChart,
     Waveform,
+    /// Two lines on one chart: comparing markets.
+    Compare,
     Cycle,
     Bands,
     Circle,
@@ -805,6 +807,10 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             p(11.5, 8.0),
             p(15.0, 8.0),
         ]),
+        Icon::Compare => {
+            line(&[p(1.5, 11.5), p(5.0, 6.5), p(8.5, 9.0), p(14.5, 3.5)]);
+            line(&[p(1.5, 4.5), p(5.0, 9.5), p(8.5, 5.5), p(14.5, 12.5)]);
+        }
         Icon::Cycle => {
             let arc = |from: f32, to: f32| -> Vec<Pos2> {
                 (0..=10)
@@ -2348,6 +2354,7 @@ mod tests {
             Palette,
             BarChart,
             Waveform,
+            Compare,
             Cycle,
             Bands,
             Circle,

@@ -12,7 +12,7 @@
 //! can only land on one of them.
 
 use super::{ChartCard, View, truncated};
-use crate::model::chart_type::{ChartType, LineDash, PriceSource};
+use crate::model::chart_type::{ChartType, PriceSource};
 use crate::model::editor_theme::Rgba;
 use crate::model::overlay::{ChartOverlay, OverlayId, OverlayList};
 use crate::model::overlay_align::{Aligned, align};
@@ -58,7 +58,7 @@ struct MemoKey {
 
 /// Why an overlay is or is not on the chart right now.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum LineState {
+pub(super) enum LineState {
     Drawn,
     Hidden,
     /// No candles yet.
@@ -73,24 +73,8 @@ pub enum LineState {
     Unsupported,
 }
 
-impl LineState {
-    /// A sentence for a tooltip; `None` while it is simply drawn.
-    pub fn note(self) -> Option<&'static str> {
-        match self {
-            Self::Drawn => None,
-            Self::Hidden => Some("Hidden"),
-            Self::Waiting => Some("Loading"),
-            Self::NoOverlap => Some("No data in view"),
-            Self::NoBaseline => Some("No reference price to compare against"),
-            Self::Blocked(reason) => Some(reason),
-            Self::Unsupported => Some("Not available on price-based chart types"),
-        }
-    }
-}
-
 pub(super) struct OverlayLine<'a> {
     pub overlay: &'a ChartOverlay,
-    pub feed: &'a OverlayFeed,
     /// The overlay's value on each bar in view (`None` where it has no candle).
     pub values: Arc<Aligned>,
     pub mapping: Mapping,
@@ -166,10 +150,6 @@ impl OverlayFrame<'_> {
             }
         }
         range
-    }
-
-    pub(super) fn any_drawn(&self) -> bool {
-        self.lines.iter().any(OverlayLine::drawn)
     }
 }
 
@@ -250,7 +230,7 @@ impl ChartCard {
     }
 
     fn bar_ms(&self) -> i64 {
-        self.timeframe.map_or(Timeframe::Hour, |tf| tf).nominal_ms()
+        self.timeframe.unwrap_or(Timeframe::Hour).nominal_ms()
     }
 
     /// Resolves the overlays against `bars[start..end]`. `reference` is the main series'
@@ -344,7 +324,6 @@ impl ChartCard {
                 };
                 OverlayLine {
                     overlay,
-                    feed,
                     values,
                     mapping,
                     state,
@@ -579,11 +558,6 @@ impl ChartCard {
                 theme::text_secondary(),
             );
         }
-    }
-
-    /// Dashes are drawn by the series painter; this names the option for the settings page.
-    pub fn overlay_dash_choices() -> [LineDash; 3] {
-        LineDash::ALL
     }
 }
 

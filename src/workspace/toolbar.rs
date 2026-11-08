@@ -116,6 +116,7 @@ impl ChartWorkspace {
                 ToolbarAction::Undo => self.undo(),
                 ToolbarAction::Redo => self.redo(),
                 ToolbarAction::OpenIndicators => self.indicator_picker.open(),
+                ToolbarAction::OpenCompare => self.open_compare_picker(),
             }
         }
 

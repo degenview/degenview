@@ -236,6 +236,7 @@ impl OverlayHub {
         self.version
     }
 
+    #[cfg(test)]
     pub(super) fn series_count(&self) -> usize {
         self.series.len()
     }
@@ -327,10 +328,9 @@ impl OverlayHub {
                 .series
                 .get(&key)
                 .is_some_and(|series| series.holders.is_empty())
+                && let Some(series) = self.series.remove(&key)
             {
-                if let Some(series) = self.series.remove(&key) {
-                    series.generation.fetch_add(1, Ordering::AcqRel);
-                }
+                series.generation.fetch_add(1, Ordering::AcqRel);
             }
         }
     }

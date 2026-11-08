@@ -721,6 +721,14 @@ impl ChartWorkspace {
                             self.toggle_script_popover(chart_id, id, anchor);
                         }
                         Action::OpenPineLogs(id) => self.open_pine_logs(chart_id, Some(id)),
+                        Action::OpenOverlaySettings => {
+                            self.settings_state = ChartSettingsState::default();
+                            self.settings_state.tab = crate::ui::chart_settings::Tab::Overlays;
+                            self.settings_chart = Some(chart_id);
+                        }
+                        Action::Overlay(command) => {
+                            self.apply_overlay_command(chart_id, command);
+                        }
                         Action::Add(_)
                         | Action::Remove(_)
                         | Action::AddScript(_)
