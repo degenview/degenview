@@ -749,12 +749,12 @@ fn autosave_row(ui: &mut Ui, state: AutosaveState) -> bool {
     let hovered = state.available && response.hovered();
     let painter = ui.painter();
     if hovered {
-        painter.rect_filled(rect, 5.0, kit::ACCENT);
+        painter.rect_filled(rect, 5.0, theme::selected_tint(true));
     }
-    let color = match (state.available, hovered) {
-        (false, _) => theme::text_tertiary(),
-        (true, true) => Color32::WHITE,
-        (true, false) => theme::text_primary(),
+    let color = if state.available {
+        theme::text_primary()
+    } else {
+        theme::text_tertiary()
     };
     if state.on {
         icons::paint(
@@ -826,13 +826,9 @@ fn layout_row(ui: &mut Ui, id: u64, name: &str, current: bool) -> Option<LayoutR
     let hovered = row.hovered() || delete.hovered();
     let painter = ui.painter();
     if hovered {
-        painter.rect_filled(rect, 5.0, kit::ACCENT);
+        painter.rect_filled(rect, 5.0, theme::selected_tint(true));
     }
-    let color = if hovered {
-        Color32::WHITE
-    } else {
-        theme::text_primary()
-    };
+    let color = theme::text_primary();
     if current {
         icons::paint(
             painter,
@@ -855,7 +851,7 @@ fn layout_row(ui: &mut Ui, id: u64, name: &str, current: bool) -> Option<LayoutR
             painter,
             Rect::from_center_size(trash.center(), Vec2::splat(11.0)),
             Icon::Trash,
-            Color32::WHITE,
+            theme::text_primary(),
         );
     }
     if delete.clicked() {

@@ -779,7 +779,7 @@ impl AddChartSheet {
         let mut action = None;
         let mut request: Option<Request> = None;
 
-        egui::Modal::new(Id::new("add_chart_sheet"))
+        let shown = egui::Modal::new(Id::new("add_chart_sheet"))
             .backdrop_color(Color32::from_black_alpha(110))
             .frame(
                 egui::Frame::new()
@@ -822,6 +822,11 @@ impl AddChartSheet {
                 );
                 self.show_footer(&mut footer_ui, &mut request);
             });
+        // A click on the dimmed area around the sheet cancels it, like Escape. A click that only
+        // closed a pop-up menu does not.
+        if shown.backdrop_response.clicked() && !shown.any_popup_open {
+            request = Some(Request::Cancel);
+        }
 
         let enter = ctx.input(|input| input.key_pressed(egui::Key::Enter));
         let escape = ctx.input(|input| input.key_pressed(egui::Key::Escape));

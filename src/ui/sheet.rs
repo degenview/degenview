@@ -8,7 +8,18 @@ use eframe::egui::{self, Color32, Id, Rect, Sense, Stroke, Ui, Vec2};
 pub const INSET: i8 = 24;
 
 pub fn show<R>(ctx: &egui::Context, id: Id, width: f32, body: impl FnOnce(&mut Ui) -> R) -> R {
-    egui::Modal::new(id)
+    show_dismissable(ctx, id, width, body).0
+}
+
+/// `show`, also saying whether the dimmed area around the sheet was clicked. A click that only
+/// closed a pop-up menu does not count.
+pub fn show_dismissable<R>(
+    ctx: &egui::Context,
+    id: Id,
+    width: f32,
+    body: impl FnOnce(&mut Ui) -> R,
+) -> (R, bool) {
+    let shown = egui::Modal::new(id)
         .backdrop_color(Color32::from_black_alpha(110))
         .frame(
             egui::Frame::new()
@@ -27,8 +38,9 @@ pub fn show<R>(ctx: &egui::Context, id: Id, width: f32, body: impl FnOnce(&mut U
             ui.set_width(width);
             ui.spacing_mut().item_spacing.y = 0.0;
             body(ui)
-        })
-        .inner
+        });
+    let outside = shown.backdrop_response.clicked() && !shown.any_popup_open;
+    (shown.inner, outside)
 }
 
 pub fn header(ui: &mut Ui, icon: Icon, title: &str, subtitle: &str, tint: Color32) {
