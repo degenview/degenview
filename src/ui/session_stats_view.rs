@@ -33,6 +33,9 @@ const CONTROL_HEIGHT: f32 = 32.0;
 /// The column the control rows keep their labels in.
 const LABEL_WIDTH: f32 = 72.0;
 const DAY_HEIGHT: f32 = 28.0;
+/// The outer width of a gap size field.
+const FIELD_WIDTH: f32 = 76.0;
+const FIELD_TEXT: f32 = kit::size::SUBHEADLINE + 1.0;
 /// How long the copy button says "copied".
 const COPIED_FOR: f64 = 1.6;
 
@@ -361,7 +364,9 @@ fn conditions(ui: &mut Ui, state: &mut StatsViewState) {
             f32::INFINITY,
         );
         let join = dash.size().x + ui.spacing().item_spacing.x * 2.0;
-        let field = ((width - join) / 2.0 - 0.5).max(40.0);
+        // Compact: a percent is a few characters, so the fields keep a fixed size and only shrink
+        // when the panel is too narrow for both.
+        let field = FIELD_WIDTH.min(((width - join) / 2.0 - 0.5).max(40.0));
         percent_field(
             ui,
             "session-stats-gap-min",
@@ -494,12 +499,12 @@ fn percent_field(ui: &mut Ui, id: &str, value: &mut String, hint: &str, width: f
     let field_id = egui::Id::new(id);
     let focused = ui.memory(|memory| memory.has_focus(field_id));
     let invalid = StatsViewState::gap_text_invalid(value);
-    let mut frame = kit::field_frame(focused).inner_margin(egui::Margin::symmetric(9, 5));
+    let mut frame = kit::field_frame(focused).inner_margin(egui::Margin::symmetric(8, 3));
     if invalid {
         frame = frame.stroke(Stroke::new(1.0, kit::Tone::Bad.dot()));
     }
     frame.show(ui, |ui| {
-        let inner = (width - 20.0).max(20.0);
+        let inner = (width - 18.0).max(20.0);
         ui.set_width(inner);
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 4.0;
@@ -508,7 +513,7 @@ fn percent_field(ui: &mut Ui, id: &str, value: &mut String, hint: &str, width: f
                 field_id,
                 value,
                 hint,
-                kit::size::BODY,
+                FIELD_TEXT,
                 kit::REGULAR,
                 (inner - 16.0).max(10.0),
             );
@@ -518,7 +523,7 @@ fn percent_field(ui: &mut Ui, id: &str, value: &mut String, hint: &str, width: f
             }
             ui.label(kit::text(
                 "%",
-                kit::size::BODY,
+                FIELD_TEXT,
                 kit::REGULAR,
                 theme::text_tertiary(),
             ));
