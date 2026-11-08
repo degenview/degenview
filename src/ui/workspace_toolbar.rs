@@ -49,6 +49,8 @@ pub enum ToolbarAction {
     OpenPortfolio,
     OpenPineStudio,
     AddChart,
+    /// Open the indicator picker for the focused chart.
+    OpenIndicators,
 }
 
 pub fn show(ui: &mut Ui, input: &ToolbarInput) -> Vec<ToolbarAction> {
@@ -62,6 +64,46 @@ pub fn show(ui: &mut Ui, input: &ToolbarInput) -> Vec<ToolbarAction> {
     if let Some(timeframe) = timeframes(ui, pos2(x, y), input.timeframe, &mut x) {
         actions.push(ToolbarAction::SetTimeframe(timeframe));
     }
+    // Beside the timeframe: the indicator picker, as a labelled pill like Add Chart.
+    x += GAP;
+    let indicators_label = kit::galley(
+        ui,
+        "Indicators",
+        size::BODY,
+        MEDIUM,
+        theme::text_primary(),
+        120.0,
+    );
+    let indicators = Rect::from_min_size(
+        pos2(x, y),
+        vec2(12.0 + 14.0 + 6.0 + indicators_label.size().x + 12.0, BUBBLE),
+    );
+    if crate::ui::accessibility::label(
+        bubble_button(ui, indicators, Id::new("toolbar-indicators"), false),
+        "Indicators",
+    )
+    .on_hover_text("Indicators: add one to the focused chart")
+    .clicked()
+    {
+        actions.push(ToolbarAction::OpenIndicators);
+    }
+    icons::paint(
+        ui.painter(),
+        Rect::from_min_size(
+            pos2(indicators.left() + 12.0, indicators.center().y - 7.0),
+            Vec2::splat(14.0),
+        ),
+        Icon::Waveform,
+        theme::text_primary(),
+    );
+    ui.painter().galley(
+        pos2(
+            indicators.left() + 32.0,
+            indicators.center().y - indicators_label.size().y / 2.0,
+        ),
+        indicators_label,
+        theme::text_primary(),
+    );
     // Right, from the edge inwards: Add Chart, the watchlist, the app buttons, the layout.
     let mut right = bar.right() - 12.0;
     let add_label = kit::galley(

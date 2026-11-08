@@ -255,9 +255,12 @@ pub fn setting_is_portable(key: &str) -> bool {
 /// Classifies a `setting` key. Unknown keys are local.
 pub fn setting_policy(key: &str) -> SettingPolicy {
     match key {
-        "appTheme" | "drawing.defaults" | "drawing.prefs" | "snapshot.prefs" | "editor.prefs" => {
-            SettingPolicy::Portable(Merge::LastWriterWins)
-        }
+        "appTheme"
+        | "drawing.defaults"
+        | "drawing.prefs"
+        | "snapshot.prefs"
+        | "editor.prefs"
+        | "indicatorPicker.favorites" => SettingPolicy::Portable(Merge::LastWriterWins),
         "watchlist.flags" => SettingPolicy::Portable(Merge::ThreeWay),
         _ => SettingPolicy::Local,
     }
@@ -375,6 +378,10 @@ mod tests {
         );
         assert_eq!(
             setting_policy("editor.prefs"),
+            SettingPolicy::Portable(Merge::LastWriterWins)
+        );
+        assert_eq!(
+            setting_policy("indicatorPicker.favorites"),
             SettingPolicy::Portable(Merge::LastWriterWins)
         );
     }

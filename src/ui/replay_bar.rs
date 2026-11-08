@@ -482,7 +482,7 @@ fn divider(ui: &mut egui::Ui) {
 }
 
 /// A key as it is named in a hint.
-fn keycap(ui: &mut egui::Ui, key: &str) {
+pub(crate) fn keycap(ui: &mut egui::Ui, key: &str) {
     let text = kit::galley(
         ui,
         key,
