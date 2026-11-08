@@ -1,0 +1,14 @@
+//@version=6
+// Built-in indicator bundled with DegenView. Original work, GPL-3.0-only.
+// Awesome Oscillator: the difference between a fast and a slow simple average of the bar's
+// midpoint. The histogram is green when it rises and red when it falls; crossing zero is a
+// momentum shift.
+indicator("Awesome Oscillator", overlay = false)
+
+fastLength = input.int(5, "Fast length", minval = 1)
+slowLength = input.int(34, "Slow length", minval = 2)
+
+value = ta.sma(hl2, fastLength) - ta.sma(hl2, slowLength)
+
+plot(value, "AO", style = plot.style_columns, color = value >= value[1] ? color.new(color.teal, 10) : color.new(color.red, 10))
+hline(0, "Zero", color = color.gray)

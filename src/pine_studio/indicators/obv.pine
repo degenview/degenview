@@ -1,0 +1,13 @@
+//@version=6
+// Built-in indicator bundled with DegenView. Original work, GPL-3.0-only.
+// On-Balance Volume: a running total that adds the bar's volume on an up close and subtracts it on
+// a down close. Rising OBV with flat price means buyers are accumulating. A moving average of it
+// is drawn as the signal.
+indicator("OBV", overlay = false)
+
+signalLength = input.int(21, "Signal length", minval = 1)
+
+value = ta.obv
+
+plot(value, "OBV", color = color.blue, linewidth = 2)
+plot(ta.sma(value, signalLength), "Signal", color = color.orange)

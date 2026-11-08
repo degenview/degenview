@@ -1,0 +1,17 @@
+//@version=6
+// Built-in indicator bundled with DegenView. Original work, GPL-3.0-only.
+// Linear Regression Bands: the least-squares line through the last N closes, with bands a
+// multiple of the standard deviation of price around it. Price tends to return to the line.
+indicator("Linear Regression Bands", overlay = true)
+
+length = input.int(100, "Length", minval = 2)
+source = input.source(close, "Source")
+mult = input.float(2.0, "Deviation multiplier", minval = 0.1, step = 0.1)
+
+regression = ta.linreg(source, length, 0)
+deviation = mult * ta.stdev(source, length)
+
+top = plot(regression + deviation, "Upper", color = color.new(color.blue, 30))
+plot(regression, "Regression", color = color.orange, linewidth = 2)
+bottom = plot(regression - deviation, "Lower", color = color.new(color.blue, 30))
+fill(top, bottom, color = color.new(color.blue, 93), title = "Bands")

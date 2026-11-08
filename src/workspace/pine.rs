@@ -217,6 +217,62 @@ impl ChartWorkspace {
         Some(id)
     }
 
+    /// Applies an "add or take off an indicator" action from a chart's menus or the indicator
+    /// picker to `chart_id`, as one undo step. Returns whether the action was one of those and
+    /// changed the chart; every other `Action` is the caller's to handle.
+    pub fn apply_indicator_action(
+        &mut self,
+        chart_id: u64,
+        action: &ui::chart_indicator_strip::Action,
+    ) -> bool {
+        use ui::chart_indicator_strip::Action;
+        // The chart's menus offer nothing a line chart (prediction markets, CoinMarketCap) cannot
+        // draw: no scripts, no volume. The picker can name them, so they are refused here too.
+        let on_line_chart = self
+            .charts
+            .iter()
+            .find(|chart| chart.id == chart_id)
+            .is_some_and(|chart| chart.source.is_line_chart());
+        match action {
+            Action::Add(kind) | Action::Remove(kind) => {
+                let refused = on_line_chart
+                    && matches!(action, Action::Add(_))
+                    && !kind.supports_line_charts();
+                if refused || !self.charts.iter().any(|chart| chart.id == chart_id) {
+                    return false;
+                }
+                self.remember_indicators(chart_id);
+                if let Some(chart) = self.charts.iter_mut().find(|chart| chart.id == chart_id) {
+                    kind.set_applied(&mut chart.indicators, matches!(action, Action::Add(_)));
+                }
+                true
+            }
+            Action::AddScript(_) | Action::AddBundled(_) if on_line_chart => false,
+            Action::AddScript(script) => self
+                .add_pine_instance_to(
+                    chart_id,
+                    script.id.clone(),
+                    &script.name,
+                    &script.source,
+                    &HashMap::new(),
+                    true,
+                )
+                .is_some(),
+            Action::AddBundled(indicator) => self
+                .add_pine_instance_to(
+                    chart_id,
+                    crate::pine_studio::indicators::script_id(indicator),
+                    indicator.name,
+                    indicator.source,
+                    &HashMap::new(),
+                    true,
+                )
+                .is_some(),
+            Action::RemoveScript(id) => self.remove_pine_instance_from(chart_id, *id),
+            _ => false,
+        }
+    }
+
     /// Changes an applied script's inputs and/or visibility. Returns whether anything differed;
     /// only then does it take an undo step.
     pub fn change_pine_instance(
@@ -652,5 +708,55 @@ mod tests {
         };
         assert!(of(a).show_bollinger);
         assert!(!of(b).show_bollinger);
+    }
+
+    #[test]
+    fn indicator_actions_apply_to_the_chart_they_name_only() {
+        use crate::ui::chart_indicator_strip::Action;
+        let ctx = egui::Context::default();
+        let mut workspace = empty_workspace(9);
+        let a = workspace
+            .add_chart_for(&InstrumentId::new(DataSource::Binance, "BTCUSDT"), &ctx)
+            .chart_id;
+        let b = workspace
+            .add_chart_for(&InstrumentId::new(DataSource::Binance, "ETHUSDT"), &ctx)
+            .chart_id;
+        let macd = crate::pine_studio::indicators::find("macd").unwrap();
+
+        assert!(workspace.apply_indicator_action(b, &Action::AddBundled(macd)));
+        let scripts = |workspace: &ChartWorkspace, id: u64| -> Vec<Option<String>> {
+            workspace
+                .charts
+                .iter()
+                .find(|chart| chart.id == id)
+                .unwrap()
+                .chart
+                .pine_instances()
+                .iter()
+                .map(|instance| instance.script_id.clone())
+                .collect()
+        };
+        assert_eq!(scripts(&workspace, b), [Some("builtin:macd".to_owned())]);
+        assert!(scripts(&workspace, a).is_empty());
+
+        // A native one flips its flag, and takes it off again.
+        assert!(workspace.apply_indicator_action(a, &Action::Add(BuiltIn::Rsi)));
+        assert!(workspace.charts[0].indicators.show_rsi);
+        assert!(workspace.apply_indicator_action(a, &Action::Remove(BuiltIn::Rsi)));
+        assert!(!workspace.charts[0].indicators.show_rsi);
+
+        // Actions that are not add/remove are left to the caller; a missing chart changes nothing.
+        assert!(!workspace.apply_indicator_action(a, &Action::OpenIndicatorSettings));
+        assert!(!workspace.apply_indicator_action(999, &Action::Add(BuiltIn::Rsi)));
+        assert!(!workspace.apply_indicator_action(999, &Action::AddBundled(macd)));
+
+        // Scripts do not run on a line chart.
+        let line = workspace
+            .add_chart_for(
+                &InstrumentId::new(DataSource::Polymarket, "some-market"),
+                &ctx,
+            )
+            .chart_id;
+        assert!(!workspace.apply_indicator_action(line, &Action::AddBundled(macd)));
     }
 }

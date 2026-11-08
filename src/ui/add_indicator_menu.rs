@@ -1,5 +1,6 @@
 //! The menu behind a chart header's "+": a search field that has the keyboard on open, the
-//! built-in indicators not yet applied, then the saved scripts under a separator. A pick is
+//! built-in indicators (the native ones not yet applied, then the ones bundled with the app), then
+//! the saved scripts under a separator. A pick is
 //! reported as an [`Action`] and the workspace applies it to that chart alone.
 
 use super::chart_indicator_strip::Action;
@@ -7,7 +8,9 @@ use super::icons::Icon;
 use super::kit::{self, MenuRow};
 use super::script_catalog;
 use super::theme;
+use crate::model::indicator_catalog::{self, EntryKey};
 use crate::model::{BuiltIn, DataSource, IndicatorConfig};
+use crate::pine_studio::indicators::{self, BundledIndicator};
 use crate::pine_studio::model::{LocalScript, ScriptType};
 use eframe::egui::{self, Key, Modifiers, RectAlign, Response, Ui};
 use std::sync::Arc;
@@ -23,6 +26,8 @@ const FOCUS_FRAMES: u8 = 3;
 #[derive(Clone, Debug, PartialEq)]
 pub enum Entry {
     BuiltIn(BuiltIn),
+    /// A Pine indicator bundled with the app: listed under "Built-in", applied as a script.
+    Bundled(&'static BundledIndicator),
     Script(Arc<LocalScript>),
 }
 
@@ -30,6 +35,7 @@ impl Entry {
     fn label(&self) -> &str {
         match self {
             Self::BuiltIn(kind) => kind.menu_title(),
+            Self::Bundled(indicator) => indicator.name,
             Self::Script(script) => &script.name,
         }
     }
@@ -37,25 +43,44 @@ impl Entry {
     fn action(&self) -> Action {
         match self {
             Self::BuiltIn(kind) => Action::Add(*kind),
+            Self::Bundled(indicator) => Action::AddBundled(indicator),
             Self::Script(script) => Action::AddScript(script.clone()),
         }
     }
+
+    /// Native and bundled indicators share the "Built-in" section.
+    fn is_built_in(&self) -> bool {
+        !matches!(self, Self::Script(_))
+    }
 }
 
-/// What the menu offers for `query`: the built-ins whose title contains it, then the scripts that
-/// match (see [`script_catalog::matching`]). Both lists keep their own order.
-pub fn entries(query: &str, built_ins: &[BuiltIn], scripts: &[Arc<LocalScript>]) -> Vec<Entry> {
-    let needle = query.trim().to_lowercase();
-    let mut found: Vec<Entry> = built_ins
-        .iter()
-        .filter(|kind| needle.is_empty() || kind.menu_title().to_lowercase().contains(&needle))
-        .map(|kind| Entry::BuiltIn(*kind))
+/// What the menu offers for `query` (see [`indicator_catalog::search`]): the native built-ins in
+/// `built_ins`, the bundled indicators, then the saved scripts; on a line chart only the natives.
+/// Each section keeps the search order, with the built-in section first.
+pub fn entries(
+    query: &str,
+    built_ins: &[BuiltIn],
+    line_chart: bool,
+    scripts: &[Arc<LocalScript>],
+) -> Vec<Entry> {
+    let catalog: Vec<_> = indicator_catalog::all(scripts)
+        .into_iter()
+        .filter(|entry| match &entry.key {
+            EntryKey::Native(kind) => built_ins.contains(kind),
+            _ => true,
+        })
+        .filter(|entry| !line_chart || entry.runs_on_line_charts())
         .collect();
-    found.extend(
-        script_catalog::matching(scripts, query)
-            .into_iter()
-            .map(|script| Entry::Script(script.clone())),
-    );
+    let mut found: Vec<Entry> = indicator_catalog::search(&catalog, query)
+        .into_iter()
+        .filter_map(|entry| match entry.key {
+            EntryKey::Native(kind) => Some(Entry::BuiltIn(kind)),
+            EntryKey::Bundled(id) => indicators::find(id).map(Entry::Bundled),
+            EntryKey::Script(_) => entry.script.map(Entry::Script),
+        })
+        .collect();
+    // The list draws the built-in section, then the scripts; the highlight index follows it.
+    found.sort_by_key(|entry| !entry.is_built_in());
     found
 }
 
@@ -148,7 +173,7 @@ fn body(ui: &mut Ui, env: &Env, state: &mut State, action: &mut Option<Action>) 
     }
     ui.add_space(4.0);
 
-    let shown = entries(&state.query, &built_ins, &scripts);
+    let shown = entries(&state.query, &built_ins, !has_scripts_section, &scripts);
     if down || up {
         state.highlighted = step(state.highlighted, if down { 1 } else { -1 }, shown.len());
     }
@@ -221,11 +246,27 @@ fn list(
     mut on_row: impl FnMut(&Entry, bool, bool),
 ) {
     let searching = !query.trim().is_empty();
-    let has_built_ins = shown.iter().any(|e| matches!(e, Entry::BuiltIn(_)));
+    let has_built_ins = shown.iter().any(Entry::is_built_in);
     let has_scripts = shown.iter().any(|e| matches!(e, Entry::Script(_)));
     let mut row = |ui: &mut Ui, index: usize, entry: &Entry| {
         let (icon, hint, tip) = match entry {
             Entry::BuiltIn(kind) => (kind.icon(), None, None),
+            Entry::Bundled(indicator) => {
+                let on_chart = env.on_chart.contains(&indicators::script_id(indicator));
+                (
+                    if indicator.overlay {
+                        Icon::ChartUptrend
+                    } else {
+                        Icon::Waveform
+                    },
+                    on_chart.then_some("On chart"),
+                    Some(format!(
+                        "{} \u{b7} {}",
+                        indicator.family.title(),
+                        indicator.summary
+                    )),
+                )
+            }
             Entry::Script(script) => {
                 let on_chart = env.on_chart.contains(&script.id);
                 (
@@ -234,11 +275,14 @@ fn list(
                         _ => Icon::ChartLine,
                     },
                     on_chart.then_some("On chart"),
-                    Some(if on_chart {
-                        "Add another copy to this chart"
-                    } else {
-                        "Add to this chart"
-                    }),
+                    Some(
+                        if on_chart {
+                            "Add another copy to this chart"
+                        } else {
+                            "Add to this chart"
+                        }
+                        .to_owned(),
+                    ),
                 )
             }
         };
@@ -266,7 +310,7 @@ fn list(
     let mut index = 0;
     if has_built_ins {
         kit::menu_heading(ui, "Built-in");
-        for entry in shown.iter().filter(|e| matches!(e, Entry::BuiltIn(_))) {
+        for entry in shown.iter().filter(|e| e.is_built_in()) {
             row(ui, index, entry);
             index += 1;
         }
@@ -329,21 +373,55 @@ mod tests {
 
     #[test]
     fn built_ins_come_first_then_scripts() {
-        let found = entries("", &[BuiltIn::Rsi, BuiltIn::Ema], &scripts());
-        let kinds: Vec<bool> = found
-            .iter()
-            .map(|e| matches!(e, Entry::BuiltIn(_)))
-            .collect();
-        assert_eq!(kinds, [true, true, false, false, false]);
+        let found = entries("", &[BuiltIn::Rsi, BuiltIn::Ema], false, &scripts());
+        let kinds: Vec<bool> = found.iter().map(Entry::is_built_in).collect();
+        let built_ins = 2 + indicators::ALL.len();
+        assert_eq!(kinds.len(), built_ins + 3);
+        assert!(kinds[..built_ins].iter().all(|built_in| *built_in));
+        assert!(kinds[built_ins..].iter().all(|built_in| !*built_in));
     }
 
     #[test]
     fn a_query_filters_both_lists() {
-        let found = entries("su", &[BuiltIn::Rsi, BuiltIn::Bollinger], &scripts());
+        let found = entries("su", &[BuiltIn::Rsi, BuiltIn::Bollinger], false, &scripts());
         assert_eq!(labels(&found), ["Supertrend"]);
-        let found = entries("RSI", &[BuiltIn::Rsi, BuiltIn::Ema], &scripts());
-        assert_eq!(found, [Entry::BuiltIn(BuiltIn::Rsi)]);
-        assert!(entries("zzz", &[BuiltIn::Rsi], &scripts()).is_empty());
+        let found = entries("RSI", &[BuiltIn::Rsi, BuiltIn::Ema], false, &scripts());
+        assert_eq!(
+            labels(&found),
+            ["RSI", "Stochastic RSI", "Money Flow Index"],
+            "titles that start with it come first, an alias match (\"volume rsi\") last"
+        );
+        assert!(entries("zzz", &[BuiltIn::Rsi], false, &scripts()).is_empty());
+    }
+
+    #[test]
+    fn bundled_indicators_join_the_built_in_section_on_a_market_chart() {
+        let found = entries("", &[BuiltIn::Rsi], false, &scripts());
+        assert_eq!(found[0], Entry::BuiltIn(BuiltIn::Rsi));
+        let bundled = found
+            .iter()
+            .filter(|entry| matches!(entry, Entry::Bundled(_)))
+            .count();
+        assert_eq!(bundled, indicators::ALL.len());
+        let first_script = found
+            .iter()
+            .position(|entry| matches!(entry, Entry::Script(_)))
+            .unwrap();
+        assert!(found[..first_script].iter().all(Entry::is_built_in));
+        // A line chart has no bundled section: they are Pine scripts.
+        let line = entries("", &[BuiltIn::Rsi], true, &scripts());
+        assert_eq!(line, [Entry::BuiltIn(BuiltIn::Rsi)]);
+    }
+
+    #[test]
+    fn a_bundled_pick_is_found_by_title_or_alias_and_adds_it() {
+        let found = entries("stoch", &[], false, &[]);
+        assert_eq!(labels(&found)[..2], ["Stochastic", "Stochastic RSI"]);
+        assert_eq!(
+            found[0].action(),
+            Action::AddBundled(indicators::find("stochastic").unwrap())
+        );
+        assert!(labels(&entries("kumo", &[], false, &[])).contains(&"Ichimoku Cloud"));
     }
 
     #[test]

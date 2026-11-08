@@ -768,33 +768,12 @@ impl ChartWorkspace {
                             self.settings_state.tab = chart_settings::Tab::Scripts;
                             self.settings_chart = Some(chart_id);
                         }
-                        Action::RemoveScript(id) => {
-                            self.remove_pine_instance_from(chart_id, id);
-                        }
-                        Action::Add(_) | Action::Remove(_) => {
-                            // One undo step, like every other change to the chart's indicators.
-                            self.remember_indicators(chart_id);
-                            if let Some(chart) = self.charts.iter_mut().find(|c| c.id == chart_id) {
-                                match action {
-                                    Action::Add(kind) => {
-                                        kind.set_applied(&mut chart.indicators, true)
-                                    }
-                                    Action::Remove(kind) => {
-                                        kind.set_applied(&mut chart.indicators, false)
-                                    }
-                                    _ => {}
-                                }
-                            }
-                        }
-                        Action::AddScript(script) => {
-                            self.add_pine_instance_to(
-                                chart_id,
-                                script.id.clone(),
-                                &script.name,
-                                &script.source,
-                                &Default::default(),
-                                true,
-                            );
+                        Action::Add(_)
+                        | Action::Remove(_)
+                        | Action::AddScript(_)
+                        | Action::AddBundled(_)
+                        | Action::RemoveScript(_) => {
+                            self.apply_indicator_action(chart_id, &action);
                         }
                         _ => {
                             if let Some(chart) = self.charts.iter_mut().find(|c| c.id == chart_id) {

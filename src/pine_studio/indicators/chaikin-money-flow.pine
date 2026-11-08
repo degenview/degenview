@@ -1,0 +1,14 @@
+//@version=6
+// Built-in indicator bundled with DegenView. Original work, GPL-3.0-only.
+// Chaikin Money Flow: volume weighted by where each bar closed inside its range, summed over N
+// bars, from -1 to +1. Above zero means closes lean toward the highs (buying pressure).
+indicator("Chaikin Money Flow", overlay = false)
+
+length = input.int(20, "Length", minval = 1)
+
+range_ = high - low
+multiplier = range_ == 0 ? 0.0 : ((close - low) - (high - close)) / range_
+value = math.sum(multiplier * volume, length) / math.sum(volume, length)
+
+plot(value, "CMF", style = plot.style_columns, color = value >= 0 ? color.new(color.teal, 20) : color.new(color.red, 20))
+hline(0, "Zero", color = color.gray)

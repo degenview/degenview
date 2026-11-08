@@ -1,0 +1,19 @@
+//@version=6
+// Built-in indicator bundled with DegenView. Original work, GPL-3.0-only.
+// Six moving averages of increasing length. A fanned-out ribbon is a strong trend, a tangled one
+// is a range, and the order of the lines flips when the trend does.
+indicator("Moving Average Ribbon", overlay = true)
+
+kind = input.string("EMA", "Type", options = ["SMA", "EMA", "WMA", "HMA"])
+source = input.source(close, "Source")
+first = input.int(20, "First length", minval = 2)
+step = input.int(10, "Step", minval = 1)
+
+average(len) => kind == "SMA" ? ta.sma(source, len) : kind == "WMA" ? ta.wma(source, len) : kind == "HMA" ? ta.hma(source, len) : ta.ema(source, len)
+
+plot(average(first), "Average 1", color = color.new(color.blue, 0))
+plot(average(first + step), "Average 2", color = color.new(color.teal, 0))
+plot(average(first + 2 * step), "Average 3", color = color.new(color.green, 0))
+plot(average(first + 3 * step), "Average 4", color = color.new(color.yellow, 0))
+plot(average(first + 4 * step), "Average 5", color = color.new(color.orange, 0))
+plot(average(first + 5 * step), "Average 6", color = color.new(color.red, 0))
