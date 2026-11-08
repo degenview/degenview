@@ -46,8 +46,10 @@ base set to 100 and later values are 100 plus their percentage change; the light
 percentage and indexed modes are the same linear transforms of the first visible value.
 **Inferred, not compared against a live TradingView chart:** that a first bar the plot's edge cuts
 still counts as the first, and what the reference does through replay and older-history paging
-(here it follows the first bar shown). A comparison-symbol series does not exist in the app, so the
-prediction markets' outcome lines (`ChartCard::series`) simply share the main series' reference.
+(here it follows the first bar shown). A compared market ([chart overlays](chart-overlays.md)) is
+rebased onto that same reference, so its line reads as its own percent change from its first visible
+value on this axis; the prediction markets' outcome lines (`ChartCard::series`) simply share the main
+series' reference.
 
 ## Axis ticks and labels
 

@@ -16,6 +16,13 @@ or with ⌘K / Ctrl+K (`shortcut::SYMBOL_SEARCH`, handled in `workspace/input.rs
   a menu with `Replace <the chart's market>` (only while a chart is focused) and `Add as new chart`,
   with the keys that do the same (`list.rs`, `context_menu`); the row becomes the highlighted one.
   With no market chart focused Return adds one. The footer names what Return will do ("Replace ETHUSDT").
+- **Compare** ([chart overlays](chart-overlays.md)): **⌥Return**, the compare button left of a highlighted
+  row's plus, or the row menu's `Compare with <the chart's market>` draws the market over the focused
+  chart (`Output::Overlay`) and closes. The toolbar's Compare button opens the picker in `PickMode::Compare`
+  (`open_compare`): nothing is searched for at first, Return compares and the picker **stays open** so
+  several markets can be added in a row, ⇧Return still adds a chart and closes, and the check mark means
+  "already on the chart or compared" (`Env::overlaid`); picking one of those does nothing. The footer reads
+  "Compare with ETHUSDT". A chart that takes no overlay (`Env::can_overlay` false) is never offered it.
 - **Tabs** All, Stocks, Crypto, Watchlists (Tab cycles them) and an exchange filter ("All venues").
   All is crypto and stocks together. **Watchlists** lists the markets of the user's watchlists, one
   captioned group per list in the list's own order (`watchlists.rs`); nothing is searched, the box

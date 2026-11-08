@@ -390,4 +390,24 @@ mod tests {
         );
         assert_eq!(overlays_of(&workspace, b), ["ETHUSDT", "SOLUSDT"]);
     }
+
+    /// Prints a saved session tab holding a chart that compares several markets, for loading into a
+    /// throwaway data directory when looking at the real window:
+    /// `cargo test --lib print_a_session_that_compares -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "writes a seed for looking at the app"]
+    fn print_a_session_that_compares() {
+        let mut workspace = empty_workspace(2);
+        let a = chart_with_drawings(&mut workspace, "BTCUSDT", &[]);
+        for symbol in ["ETHUSDT", "SOLUSDT", "BNBUSDT", "DOGEUSDT", "XRPUSDT"] {
+            workspace.add_overlay(a, market(symbol), None);
+        }
+        let ids: Vec<_> = chart(&workspace, a).overlays.iter().map(|o| o.id).collect();
+        workspace.apply_overlay_command(a, OverlayCommand::SetScale(ids[3], ScaleChoice::Own));
+        workspace.apply_overlay_command(a, OverlayCommand::SetScale(ids[4], ScaleChoice::Own));
+        println!(
+            "SEED {}",
+            serde_json::to_string(&workspace.persisted()).unwrap()
+        );
+    }
 }

@@ -7,13 +7,13 @@ faint tint on hover, hairline separators between groups, small corner radius.
 ## Layout
 
 Left to right: symbol (the focused chart's market, opens the [symbol picker](symbol-picker.md)) |
-timeframe row (`1H … 1Y`, current one lit) | chart type | Indicators, Replay, Alert | Undo, Redo. Right end, from the edge inwards: Add Chart | watchlist toggle, Pine Studio, Portfolio |
+timeframe row (`1H … 1Y`, current one lit) | chart type | Indicators, Compare, Replay, Alert | Undo, Redo. Right end, from the edge inwards: Add Chart | watchlist toggle, Pine Studio, Portfolio |
 snapshot menu, chart settings | layout menu.
 
 - Every button is a `Button` (id, glyph, label, tooltip, enabled, lit, action). `measure` lays the
   labels out, `arrange` places the two runs, `paint_button` draws one. Tests use `arrange`, so the
   geometry they check is the one drawn.
-- Width: when both runs with labels do not fit, labels (Indicators, Replay, Add Chart) drop and the
+- Width: when both runs with labels do not fit, labels (Indicators, Compare, Replay, Add Chart) drop and the
   icons stay; a button without an icon (a timeframe, the layout name) keeps its text. If the runs still
   collide, the right run drops buttons from its left end (the layout menu first). Never overlap. The
   narrowest window is 960 wide and keeps everything but possibly the layout name (the icon-only
@@ -33,6 +33,10 @@ snapshot menu, chart settings | layout menu.
   (`ChartWorkspace::focused_market_chart`). They are disabled with none (empty tab, a portfolio card
   focused), the chart type for a line-only source, settings for a CoinMarketCap gauge. A card header has
   no chart-type button and no "+" any more; a card's title still opens its settings.
+- **Compare** opens the symbol picker in compare mode for the focused chart
+  (`ToolbarAction::OpenCompare`, `ChartWorkspace::open_compare_picker`; see
+  [chart overlays](chart-overlays.md)). It is disabled with no market chart, for a line-only source and for
+  a price-based chart type, which have no shared time axis (`ToolbarChart::can_compare`).
 - **Replay** moved here from the tool rail (`ChartWorkspace::toggle_replay`); enabled with a market
   chart (CoinMarketCap excepted) or while a replay is open.
 - **Undo / Redo** are the workspace's undo stacks (`undo.rs`), the same as the keyboard shortcut;

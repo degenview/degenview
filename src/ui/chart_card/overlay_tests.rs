@@ -320,3 +320,82 @@ fn the_source_and_scale_are_per_overlay() {
     let shapes = settle(&mut chart);
     assert_eq!(lines(&shapes, FIRST).len(), 1);
 }
+
+/// What a frame costs as the number of compared markets grows. A measurement, not a check: run it
+/// in release mode, `cargo test --release overlay_cost -- --ignored --nocapture`.
+#[test]
+#[ignore = "a measurement, not a check"]
+fn overlay_cost() {
+    use std::time::Instant;
+    const BARS: usize = 2_000;
+    let main = series(BARS);
+    println!(
+        "\n{BARS} bars on the chart, {BARS} candles per market, 760x520 headless frame (no GPU)"
+    );
+    println!(
+        "{:>8} {:>14} {:>16} {:>14} {:>12}",
+        "markets", "idle frame ms", "every-tick ms", "candles MB", "line runs"
+    );
+    for count in [0_usize, 1, 5, 10, 25, 50, 100, 300] {
+        let candles: Vec<Kline> = (0..BARS)
+            .map(|n| candle(n as i64 * HOUR, 100.0 + (n as f64 * 0.01).sin() * 10.0))
+            .collect();
+        let markets: Vec<(String, Vec<Kline>)> = (0..count)
+            .map(|n| (format!("S{n}USDT"), candles.clone()))
+            .collect();
+        let refs: Vec<(&str, Vec<Kline>)> = markets
+            .iter()
+            .map(|(s, c)| (s.as_str(), c.clone()))
+            .collect();
+        let mut chart = harness(&refs);
+        chart.candles = main.clone();
+        for _ in 0..4 {
+            chart.frame();
+        }
+        let frames = 30;
+        let start = Instant::now();
+        for _ in 0..frames {
+            chart.frame();
+        }
+        let idle = start.elapsed().as_secs_f64() * 1000.0 / frames as f64;
+
+        // Worst case: every market's candles change before every frame (a live tick on each).
+        let list = chart.card.overlay_list().clone();
+        let mut revision = 10;
+        let start = Instant::now();
+        for _ in 0..frames {
+            revision += 1;
+            let feeds = (0..list.len())
+                .map(|n| OverlayFeed {
+                    candles: Arc::new(markets[n].1.clone()),
+                    revision,
+                    status: OverlayStatus::Ready,
+                })
+                .collect();
+            chart.card.set_overlays(
+                list.clone(),
+                feeds,
+                revision,
+                DataSource::Binance,
+                "BTCUSDT",
+            );
+            chart.frame();
+        }
+        let ticking = start.elapsed().as_secs_f64() * 1000.0 / frames as f64;
+        let shapes = chart.frame().0;
+        let runs: usize = shapes
+            .iter()
+            .map(|clipped| {
+                let mut found = Vec::new();
+                for colour in crate::model::overlay::PALETTE {
+                    let rgb =
+                        Color32::from_rgb((colour >> 16) as u8, (colour >> 8) as u8, colour as u8);
+                    paths_of(&clipped.shape, rgb, &mut found);
+                }
+                found.len()
+            })
+            .sum();
+        let megabytes = (count * BARS * std::mem::size_of::<Kline>()) as f64 / 1e6;
+        println!("{count:>8} {idle:>14.2} {ticking:>16.2} {megabytes:>14.1} {runs:>12}");
+    }
+}

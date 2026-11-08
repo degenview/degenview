@@ -479,6 +479,7 @@ impl ChartCard {
             shown_synthetic.and_then(|_| bars.last()),
             style,
         );
+        let main_tag_y = candles.last().map(|last| scale.y(last.close));
         self.paint_overlay_tags(
             &main_painter,
             &clipped,
@@ -487,6 +488,7 @@ impl ChartCard {
             &overlay_frame,
             view,
             style,
+            main_tag_y,
         );
         self.draw_time_axis(painter, rect, shown, &ticks, &x_for, plot.right(), style);
         // The tags of the lines at a price or a time sit on the axes, which the drawings'

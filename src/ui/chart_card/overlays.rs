@@ -11,7 +11,7 @@
 //! own: the bars the card is given are already cut at the replay cursor, and an overlay candle
 //! can only land on one of them.
 
-use super::{ChartCard, View, truncated};
+use super::{ChartCard, READOUT_MARGIN, READOUT_PAD, View, truncated};
 use crate::model::chart_type::{ChartType, PriceSource};
 use crate::model::editor_theme::Rgba;
 use crate::model::overlay::{ChartOverlay, OverlayId, OverlayList};
@@ -380,6 +380,7 @@ impl ChartCard {
         frame: &OverlayFrame,
         view: &View,
         style: &CanvasStyle,
+        main_tag_y: Option<f32>,
     ) {
         let half = style.tag_half_height();
         let format = self.appearance.price_format();
@@ -406,7 +407,7 @@ impl ChartCard {
                 _ => inside.push(tag),
             }
         }
-        for (y, fill, text) in spread(axis, half, plot) {
+        for (y, fill, text) in spread(axis, half, plot, main_tag_y) {
             let tag = Rect::from_min_max(
                 Pos2::new(plot.right() + 3.0, y - half),
                 Pos2::new(rect.right() - 3.0, y + half),
@@ -421,7 +422,7 @@ impl ChartCard {
                 on_color(fill),
             );
         }
-        for (y, fill, text) in spread(inside, half, plot) {
+        for (y, fill, text) in spread(inside, half, plot, None) {
             let galley =
                 plot_painter.layout_no_wrap(text.clone(), style.price_font(), Color32::WHITE);
             let width = galley.size().x + 10.0;
@@ -487,7 +488,8 @@ impl ChartCard {
             .size()
             .y
             + 2.0;
-        let pad = Vec2::new(6.0, 4.0);
+        // Aligned with the OHLC box above: the same left edge and inner padding.
+        let pad = READOUT_PAD;
         let room = (plot.bottom() - top - 8.0 - 2.0 * pad.y) / row_height;
         let fit = (room.floor().max(1.0)) as usize;
         let hidden = rows.len().saturating_sub(fit);
@@ -521,7 +523,7 @@ impl ChartCard {
             12.0 + name_width + 8.0 + value_width,
             (shown + usize::from(hidden > 0)) as f32 * row_height,
         );
-        let origin = Pos2::new(plot.left() + 6.0, top + 4.0);
+        let origin = Pos2::new(plot.left() + READOUT_MARGIN, top + 4.0);
         painter.rect(
             Rect::from_min_size(origin, content + pad * 2.0),
             4.0,
@@ -566,7 +568,22 @@ fn spread(
     mut tags: Vec<(f32, Color32, String)>,
     half: f32,
     plot: Rect,
+    fixed: Option<f32>,
 ) -> Vec<(f32, Color32, String)> {
+    // A tag that sits on one the chart itself draws (its last price) steps off it, to the side it
+    // was already on, instead of hiding it.
+    if let Some(fixed) = fixed {
+        let gap = 2.0 * half + 1.0;
+        for tag in &mut tags {
+            if (tag.0 - fixed).abs() < gap {
+                tag.0 = if tag.0 >= fixed {
+                    fixed + gap
+                } else {
+                    fixed - gap
+                };
+            }
+        }
+    }
     tags.sort_by(|a, b| a.0.total_cmp(&b.0));
     let mut floor = f32::MIN;
     for tag in &mut tags {
