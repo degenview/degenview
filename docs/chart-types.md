@@ -66,7 +66,7 @@ sample prices (a price-based type's box/reversal/range size is replaced by one t
 
 Switching Candles ⇄ Line ⇄ Bars never changes what scripts and indicators receive. Switching to or
 from a price-based type rebuilds them against the other series. A source that draws a line
-(prediction markets, CoinMarketCap indices) keeps its line and offers no selector; Volume Candles
+(prediction markets, CoinMarketCap indices) keeps its line and the toolbar's chart-type button is disabled; Volume Candles
 is unavailable on a source that reports no volume, with the reason in the menu. A saved type the
 source cannot show falls back to candles on screen and is kept for when it can.
 

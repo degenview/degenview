@@ -155,7 +155,7 @@ market, not the look.
   against `Construction::of` for every type, so its data does not move.
 - **Applying** goes through `ChartCard::apply_template`; a different chart type goes through
   `set_chart_type`, which resets the scroll and rebuilds the constructed bars exactly as the
-  header selector does. Nothing is replaced wholesale, so scripts, indicators, drawings and alerts
+  toolbar's chart-type menu does. Nothing is replaced wholesale, so scripts, indicators, drawings and alerts
   stay.
 - **Presets** (Default Dark, Default Light, Minimal, High Contrast, Presentation) are built from
   code, never stored, cannot be changed and can be duplicated into editable templates.
