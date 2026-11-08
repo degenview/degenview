@@ -51,6 +51,16 @@ impl ChartWorkspace {
                 self.toggle_script_popover(chart_id, id, anchor);
             }
             Some(ChartSettingsAction::SetScaleMode(mode)) => self.set_scale_mode(chart_id, mode),
+            Some(ChartSettingsAction::Overlay(command)) => {
+                self.apply_overlay_command(chart_id, command);
+            }
+            Some(ChartSettingsAction::AddOverlay) => {
+                // The picker is a modal of its own: the sheet gives way to it.
+                self.settings_chart = None;
+                self.script_popover = None;
+                self.focus_chart(chart_id);
+                self.open_compare_picker();
+            }
             Some(ChartSettingsAction::ApplyToAll(scope)) => {
                 let appearance = self
                     .charts

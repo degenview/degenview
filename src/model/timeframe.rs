@@ -54,6 +54,21 @@ impl Timeframe {
             Self::Year => "1Y",
         }
     }
+
+    /// A bar's nominal length in milliseconds. Calendar timeframes are approximate (a month is 30
+    /// days, a quarter 91, a year 365): it is only used where a bar's span is capped by the next
+    /// bar's open anyway, such as aligning one market's candles to another's.
+    pub const fn nominal_ms(self) -> i64 {
+        const DAY: i64 = 86_400_000;
+        match self {
+            Self::Hour => 3_600_000,
+            Self::Day => DAY,
+            Self::Week => 7 * DAY,
+            Self::Month => 30 * DAY,
+            Self::Quarter => 91 * DAY,
+            Self::Year => 365 * DAY,
+        }
+    }
 }
 
 #[cfg(test)]

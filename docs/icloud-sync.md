@@ -192,6 +192,11 @@ out of the row while it holds its default (as the style fields are) and needs no
 set. Nothing tells a person on the older build that a drawing is hidden except the Object tree row;
 a count elsewhere would be easy to add.
 
+A chart's compared markets (`overlays` in the layout's chart rows, [chart overlays](chart-overlays.md))
+are the same: no marker, dropped by an older build that re-saves the layout, which makes a "conflict
+from" copy. The field is left out of a row while it is empty, so a layout that compares nothing is
+unchanged for older builds.
+
 A chart's price-scale mode (`scale_mode` in the layout's chart rows) is not a drawing field and has no
 such marker. A layout field an older build does not know is dropped when that build re-saves the
 layout, which changes `layout_structure_hash` and can make a "conflict from" copy. The mode is written

@@ -143,6 +143,35 @@ fn same_as_live(harness: &mut Harness, include_trading: bool) {
     assert!(only_live.is_empty(), "{:#?}", gists(&only_live));
 }
 
+#[test]
+fn comparison_overlays_snapshot_as_they_draw() {
+    use super::overlay_tests::{harness as overlaid, market};
+    // One on the chart's scale, one on its own (its tag sits in the plot), one with a gap.
+    let mut gappy = market(300, |n| 40.0 + n as f64 * 0.1);
+    gappy.retain(|c| c.open_time / HOUR % 7 != 0);
+    let mut harness = overlaid(&[
+        ("ETHUSDT", market(300, |n| 4_000.0 + n as f64)),
+        ("SOLUSDT", market(300, |n| 150.0 + n as f64 * 0.3)),
+        ("XRPUSDT", gappy),
+    ]);
+    let mut list = harness.card.overlay_list().clone();
+    let own = list.as_slice()[1].id;
+    list.set_scale(own, crate::model::overlay::ScaleChoice::Own);
+    let feeds = vec![
+        super::overlay_tests::feed(market(300, |n| 4_000.0 + n as f64)),
+        super::overlay_tests::feed(market(300, |n| 150.0 + n as f64 * 0.3)),
+        super::overlay_tests::feed({
+            let mut gappy = market(300, |n| 40.0 + n as f64 * 0.1);
+            gappy.retain(|c| c.open_time / HOUR % 7 != 0);
+            gappy
+        }),
+    ];
+    harness
+        .card
+        .set_overlays(list, feeds, 2, DataSource::Binance, "BTCUSDT");
+    same_as_live(&mut harness, false);
+}
+
 fn everything_on() -> IndicatorConfig {
     IndicatorConfig {
         show_volume: true,

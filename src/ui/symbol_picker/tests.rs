@@ -94,6 +94,8 @@ struct Rig {
     on_tab: Vec<InstrumentId>,
     quote: Option<WatchlistQuote>,
     replacing: Option<String>,
+    overlaid: Vec<InstrumentId>,
+    can_overlay: bool,
 }
 
 impl Rig {
@@ -117,6 +119,8 @@ impl Rig {
             on_tab: Vec::new(),
             quote: None,
             replacing: Some("ETHUSDT".to_owned()),
+            overlaid: Vec::new(),
+            can_overlay: false,
         };
         rig.settle();
         rig
@@ -136,6 +140,8 @@ impl Rig {
             on_tab: &self.on_tab,
             quote: self.quote.as_ref(),
             replacing: self.replacing.as_deref(),
+            overlaid: &self.overlaid,
+            can_overlay: self.can_overlay,
         };
         let output = self.screen.run(events, |ui| {
             if let Some(output) = picker.show(ui.ctx(), &env) {
@@ -267,6 +273,87 @@ fn shift_return_adds_instead_of_replacing() {
     let output = rig.frame(vec![press(Key::Enter, Modifiers::SHIFT)]);
     assert!(matches!(output, Some(Output::Add(result)) if result.symbol == "BTCUSDT"));
     assert!(!rig.picker.is_open());
+}
+
+#[test]
+fn option_return_draws_the_market_over_the_chart_and_closes() {
+    let mut rig = Rig::new(1100.0, "btc");
+    rig.can_overlay = true;
+    let output = rig.frame(vec![press(Key::Enter, Modifiers::ALT)]);
+    assert!(matches!(output, Some(Output::Overlay(result)) if result.symbol == "BTCUSDT"));
+    assert!(!rig.picker.is_open(), "a one-off compare closes the picker");
+}
+
+#[test]
+fn a_chart_that_takes_no_overlay_ignores_option_return() {
+    let mut rig = Rig::new(1100.0, "btc");
+    // The key still replaces: the chart is not asked for something it cannot do.
+    let output = rig.frame(vec![press(Key::Enter, Modifiers::ALT)]);
+    assert!(matches!(output, Some(Output::Replace(_))), "{output:?}");
+}
+
+#[test]
+fn comparing_keeps_the_picker_open_so_several_markets_can_be_added() {
+    let mut rig = Rig::new(1100.0, "btc");
+    rig.picker.open_compare();
+    assert_eq!(rig.picker.mode(), PickMode::Compare);
+    rig.type_text("btc");
+    let first = rig.frame(vec![press(Key::Enter, Modifiers::NONE)]);
+    assert!(matches!(first, Some(Output::Overlay(result)) if result.symbol == "BTCUSDT"));
+    assert!(rig.picker.is_open());
+    rig.key(Key::ArrowDown, Modifiers::NONE);
+    let second = rig.frame(vec![press(Key::Enter, Modifiers::NONE)]);
+    assert!(matches!(second, Some(Output::Overlay(result)) if result.symbol == "BTCUSDC"));
+    assert!(rig.picker.is_open());
+}
+
+#[test]
+fn comparing_still_adds_a_chart_on_shift_return_and_then_closes() {
+    let mut rig = Rig::new(1100.0, "btc");
+    rig.picker.open_compare();
+    rig.type_text("btc");
+    let output = rig.frame(vec![press(Key::Enter, Modifiers::SHIFT)]);
+    assert!(matches!(output, Some(Output::Add(_))));
+    assert!(!rig.picker.is_open());
+}
+
+#[test]
+fn a_market_already_on_the_chart_is_not_picked_again_while_comparing() {
+    let mut rig = Rig::new(1100.0, "btc");
+    rig.picker.open_compare();
+    rig.type_text("btc");
+    rig.overlaid = vec![InstrumentId::new(DataSource::Binance, "BTCUSDT")];
+    let output = rig.frame(vec![press(Key::Enter, Modifiers::NONE)]);
+    assert!(output.is_none(), "{output:?}");
+    assert!(rig.picker.is_open());
+}
+
+#[test]
+fn the_footer_names_what_return_will_do_in_each_mode() {
+    let mut rig = Rig::new(1100.0, "btc");
+    rig.can_overlay = true;
+    let footer = |rig: &mut Rig| {
+        let (_, output) = rig.frame_with_output(Vec::new());
+        output
+            .shapes
+            .iter()
+            .filter_map(|clipped| match &clipped.shape {
+                egui::Shape::Text(text) => Some(text.galley.text().to_owned()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    };
+    let texts = footer(&mut rig);
+    assert!(texts.iter().any(|t| t == "Replace ETHUSDT"), "{texts:?}");
+    assert!(texts.iter().any(|t| t == "Compare"), "{texts:?}");
+    rig.picker.open_compare();
+    rig.frame(Vec::new());
+    let texts = footer(&mut rig);
+    assert!(
+        texts.iter().any(|t| t == "Compare with ETHUSDT"),
+        "{texts:?}"
+    );
+    assert!(texts.iter().all(|t| t != "Replace ETHUSDT"));
 }
 
 #[test]
@@ -445,6 +532,25 @@ fn right_clicking_a_row_offers_replace_and_add_as_new_chart() {
     assert!(
         matches!(&output, Some(Output::Add(result)) if result.symbol == "BTCUSDC"),
         "the second item adds, got {output:?}"
+    );
+}
+
+#[test]
+fn a_chart_that_takes_overlays_adds_compare_to_the_row_menu() {
+    let mut rig = Rig::new(1100.0, "btc");
+    rig.can_overlay = true;
+    // Replace, Compare with ETHUSDT, Add as new chart.
+    let output = pick_from_the_row_menu(&mut rig, 18.0 + 24.0);
+    assert!(
+        matches!(&output, Some(Output::Overlay(result)) if result.symbol == "BTCUSDC"),
+        "the second item compares, got {output:?}"
+    );
+    let mut rig = Rig::new(1100.0, "btc");
+    rig.can_overlay = true;
+    let output = pick_from_the_row_menu(&mut rig, 18.0 + 48.0);
+    assert!(
+        matches!(&output, Some(Output::Add(_))),
+        "the third adds, got {output:?}"
     );
 }
 

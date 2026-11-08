@@ -252,6 +252,11 @@ impl ChartCard {
                 for price in tagged {
                     widest = widest.max(measure(&scale.tag_label(format, price)));
                 }
+                // And the last values of the lines compared on this scale, which read as a price
+                // of their own (Regular, Logarithmic) or as their own change (Percent, Indexed).
+                for text in self.overlay_tag_texts(bars, &view, chart_type) {
+                    widest = widest.max(measure(&text));
+                }
                 let shown = view.end - view.start;
                 for (pane_rect, (_, pine)) in pane_rects.iter().zip(&pane_outputs) {
                     let height = (pane_rect.height() - 16.0).max(0.0);
@@ -387,6 +392,16 @@ impl ChartCard {
                 pine_layer.draw_behind(&clipped);
             }
         }
+        // Comparison lines: over the grid and the script visuals behind the chart, under the main
+        // series, so the chart being looked at stays on top.
+        let overlay_frame = self.overlay_frame(
+            bars,
+            view.start,
+            view.end,
+            chart_type,
+            price_scale::reference_from(shown[0].close),
+        );
+        self.paint_overlay_lines(&clipped, &overlay_frame, view, &x_for);
         if line && self.series.is_empty() {
             self.draw_line(&clipped, shown, &x_for, scale);
         } else if line {
@@ -468,6 +483,17 @@ impl ChartCard {
             candles,
             shown_synthetic.and_then(|_| bars.last()),
             style,
+        );
+        let main_tag_y = candles.last().map(|last| scale.y(last.close));
+        self.paint_overlay_tags(
+            &main_painter,
+            &clipped,
+            plot,
+            rect,
+            &overlay_frame,
+            view,
+            style,
+            main_tag_y,
         );
         self.draw_time_axis(painter, rect, shown, &ticks, &x_for, plot.right(), style);
         // The tags of the lines at a price or a time sit on the axes, which the drawings'
@@ -598,6 +624,7 @@ impl ChartCard {
                         .collect(),
                     shown_len: shown.len(),
                     tail,
+                    overlays: (&overlay_frame, view),
                 },
             );
         }

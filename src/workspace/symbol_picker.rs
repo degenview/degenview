@@ -18,6 +18,16 @@ impl ChartWorkspace {
         self.symbol_picker.open(&current);
     }
 
+    /// Opens the picker to compare markets on the focused chart. Does nothing for a chart that
+    /// cannot take another market (a line-only source, a price-based chart type).
+    pub(super) fn open_compare_picker(&mut self) {
+        if let Some(chart) = self.focused_market_chart()
+            && self.can_compare(chart.id)
+        {
+            self.symbol_picker.open_compare();
+        }
+    }
+
     /// Draws the picker while it is open and applies what it picked.
     pub(super) fn show_symbol_picker(&mut self, ctx: &egui::Context) -> Vec<WorkspaceAction> {
         let owner = symbol_picker::quote_owner(self.id);
@@ -46,18 +56,33 @@ impl ChartWorkspace {
         let replacing = self
             .focused_market_chart()
             .map(super::chart::Chart::display_title);
+        // The focused chart's own market and what is compared on it, which cannot be drawn again.
+        let overlaid: Vec<InstrumentId> = self
+            .focused_market_chart()
+            .map(|chart| {
+                std::iter::once(Self::chart_instrument(chart))
+                    .chain(chart.overlays.instruments().cloned())
+                    .collect()
+            })
+            .unwrap_or_default();
+        let can_overlay = self
+            .focused_market_chart()
+            .is_some_and(|chart| self.can_compare(chart.id));
         let output = self.symbol_picker.show(
             ctx,
             &Env {
                 on_tab: &on_tab,
                 quote: quote.as_ref(),
                 replacing: replacing.as_deref(),
+                overlaid: &overlaid,
+                can_overlay,
             },
         );
         let mut actions = Vec::new();
         match output {
             Some(Output::Replace(result)) => self.replace_focused_market(&result, ctx),
             Some(Output::Add(result)) => self.add_from_search(&result, ctx),
+            Some(Output::Overlay(result)) => self.overlay_from_search(&result),
             Some(Output::OpenAlpacaSettings) => actions.push(WorkspaceAction::OpenAlpacaSettings),
             None => {}
         }
@@ -65,6 +90,18 @@ impl ChartWorkspace {
             self.quote_coordinator.release(owner);
         }
         actions
+    }
+
+    /// Draws `result` over the focused chart.
+    pub(super) fn overlay_from_search(&mut self, result: &SearchResult) {
+        let Some(chart_id) = self.focused_market_chart().map(|chart| chart.id) else {
+            return;
+        };
+        let instrument = InstrumentId::new(result.source, &result.full_symbol);
+        // A DEX pair is named by its pair, not the address it is fetched by.
+        let title =
+            (result.source == crate::model::DataSource::DexScreener).then(|| result.symbol.clone());
+        self.add_overlay(chart_id, instrument, title);
     }
 
     /// Shows `result` on the focused market chart, keeping the chart's settings, indicators and

@@ -2,6 +2,7 @@
 //! the Templates menu and "Done". Every control writes through to the chart as it changes.
 
 use super::chart_card::ChartCard;
+use super::chart_settings_compare::{self, CompareInput};
 use super::chart_templates::{self, TemplateAction, TemplateState};
 use super::icons::{self, Icon};
 use super::kit::{self, TabItem};
@@ -46,12 +47,15 @@ pub enum Tab {
     Scripts,
     Appearance,
     Canvas,
+    /// The markets compared on the chart.
+    Overlays,
 }
 
 impl Tab {
-    const ALL: [Self; 4] = [
+    const ALL: [Self; 5] = [
         Self::Indicators,
         Self::Scripts,
+        Self::Overlays,
         Self::Appearance,
         Self::Canvas,
     ];
@@ -72,6 +76,7 @@ impl Tab {
             Self::Scripts => "Scripts",
             Self::Appearance => "Appearance",
             Self::Canvas => "Canvas",
+            Self::Overlays => "Compare",
         }
     }
 
@@ -81,6 +86,7 @@ impl Tab {
             Self::Scripts => Icon::Curlybraces,
             Self::Appearance => Icon::Palette,
             Self::Canvas => Icon::MacWindow,
+            Self::Overlays => Icon::Compare,
         }
     }
 }
@@ -91,6 +97,8 @@ pub struct ChartSettingsState {
     /// What the Scripts page's search field holds.
     script_query: String,
     templates: TemplateState,
+    /// The Compare page's open cards, search and pending confirmation.
+    compare: chart_settings_compare::CompareState,
 }
 
 impl ChartSettingsState {
@@ -127,6 +135,10 @@ pub enum ChartSettingsAction {
     ApplyToAll(crate::model::chart_template::ApplyScope),
     /// Read the price axis in this mode.
     SetScaleMode(PriceScaleMode),
+    /// Change a compared market.
+    Overlay(crate::model::overlay::OverlayCommand),
+    /// Pick another market to compare, in the symbol picker.
+    AddOverlay,
 }
 
 pub fn show(
@@ -171,6 +183,22 @@ pub fn show(
                                 Tab::Appearance => {
                                     if let Some(next) =
                                         appearance_page(ui, &mut c, &mut state.templates)
+                                    {
+                                        action = Some(next);
+                                    }
+                                }
+                                Tab::Overlays => {
+                                    let input = CompareInput {
+                                        card: &*c.card,
+                                        chart_name: c.title,
+                                        scale_mode: c.scale_mode,
+                                        price_based: c
+                                            .card
+                                            .effective_chart_type(c.source)
+                                            .is_synthetic(),
+                                    };
+                                    if let Some(next) =
+                                        chart_settings_compare::page(ui, &mut state.compare, &input)
                                     {
                                         action = Some(next);
                                     }
@@ -1502,6 +1530,73 @@ mod tests {
         draw(&mut state, &mut card, &mut indicators);
     }
 
+    #[test]
+    fn the_compare_page_lists_every_market_however_many_and_says_what_is_wrong_with_one() {
+        use crate::model::overlay::OverlayList;
+        use crate::model::overlay_feed::{OverlayFeed, OverlayStatus};
+        let main = crate::model::InstrumentId::new(DataSource::Binance, "BTCUSDT");
+        let mut list = OverlayList::new();
+        let mut feeds = Vec::new();
+        for n in 0..40 {
+            list.add(
+                &main,
+                crate::model::InstrumentId::new(DataSource::Binance, format!("S{n}USDT")),
+                None,
+            );
+            feeds.push(OverlayFeed::empty(match n {
+                3 => OverlayStatus::Error("no such market".into()),
+                4 => OverlayStatus::Blocked("Same market as the chart"),
+                _ => OverlayStatus::Ready,
+            }));
+        }
+        let mut card = ChartCard::default();
+        card.set_overlays(list, feeds, 1, DataSource::Binance, "BTCUSDT");
+        let mut state = ChartSettingsState {
+            tab: Tab::Overlays,
+            ..ChartSettingsState::default()
+        };
+        let mut indicators = IndicatorConfig::default();
+        let ctx = egui::Context::default();
+        let store = test_store();
+        let mut texts = Vec::new();
+        for _ in 0..2 {
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                let _ = show(
+                    ui.ctx(),
+                    &mut state,
+                    ChartSettingsContext {
+                        title: "BTC/USDT",
+                        symbol: "BTCUSDT",
+                        source: DataSource::Binance,
+                        loaded_candles: 0,
+                        indicators: &mut indicators,
+                        card: &mut card,
+                        scale_mode: PriceScaleMode::Percent,
+                        store: &store,
+                    },
+                );
+            });
+            texts.clear();
+            fn walk(shape: &egui::Shape, texts: &mut Vec<String>) {
+                match shape {
+                    egui::Shape::Text(text) => texts.push(text.galley.text().to_owned()),
+                    egui::Shape::Vec(shapes) => shapes.iter().for_each(|s| walk(s, texts)),
+                    _ => {}
+                }
+            }
+            for clipped in &output.shapes {
+                walk(&clipped.shape, &mut texts);
+            }
+            output.textures_delta.clear();
+        }
+        let has = |needle: &str| texts.iter().any(|text| text.contains(needle));
+        assert!(has("40 markets"), "{texts:?}");
+        assert!(has("Add symbol"));
+        assert!(has("S0USDT"));
+        assert!(has("Couldn't load: no such market"));
+        assert!(has("Same market as the chart"));
+    }
+
     fn library() -> Vec<LocalScript> {
         use crate::ui::script_catalog::sample;
         (0..9)
@@ -1637,7 +1732,7 @@ mod tests {
     fn tabs_have_titles() {
         assert_eq!(
             Tab::ALL.map(Tab::title),
-            ["Indicators", "Scripts", "Appearance", "Canvas"]
+            ["Indicators", "Scripts", "Compare", "Appearance", "Canvas"]
         );
     }
 
@@ -1796,6 +1891,122 @@ mod tests {
                             indicators: &mut indicators,
                             card: &mut card,
                             scale_mode: PriceScaleMode::Regular,
+                            store: &store,
+                        },
+                    );
+                }));
+            }
+            screen.save(name, last.expect("a frame"));
+        }
+    }
+
+    /// A card comparing `count` markets, a few of them in trouble, for the Compare page's pictures.
+    fn card_with_overlays(count: usize) -> ChartCard {
+        use crate::model::overlay::{OverlayCommand, OverlayList, ScaleChoice};
+        use crate::model::overlay_feed::{OverlayFeed, OverlayStatus};
+        let main = crate::model::InstrumentId::new(DataSource::Binance, "BTCUSDT");
+        let names = [
+            "ETHUSDT",
+            "SOLUSDT",
+            "BNBUSDT",
+            "DOGEUSDT",
+            "XRPUSDT",
+            "ADAUSDT",
+            "AVAXUSDT",
+            "LINKUSDT",
+            "DOTUSDT",
+            "MATICUSDT",
+            "LTCUSDT",
+            "ATOMUSDT",
+        ];
+        let mut list = OverlayList::new();
+        for n in 0..count {
+            let name = names
+                .get(n)
+                .map_or_else(|| format!("COIN{n}USDT"), |name| (*name).to_owned());
+            list.add(
+                &main,
+                crate::model::InstrumentId::new(DataSource::Binance, name),
+                None,
+            );
+        }
+        let ids: Vec<_> = list.iter().map(|overlay| overlay.id).collect();
+        if let Some(id) = ids.get(3) {
+            list.apply(OverlayCommand::SetScale(*id, ScaleChoice::Own));
+        }
+        if let Some(id) = ids.get(4) {
+            list.apply(OverlayCommand::SetScale(
+                *id,
+                ScaleChoice::SharedWith(ids[3]),
+            ));
+        }
+        if let Some(id) = ids.get(1) {
+            list.apply(OverlayCommand::SetVisible(*id, false));
+        }
+        let feeds = list
+            .iter()
+            .enumerate()
+            .map(|(n, _)| {
+                let mut feed = OverlayFeed::empty(match n {
+                    2 => OverlayStatus::Error("HTTP 429: rate limited".into()),
+                    5 => OverlayStatus::Loading,
+                    6 => OverlayStatus::Queued,
+                    7 => OverlayStatus::Blocked("Same market as the chart"),
+                    _ => OverlayStatus::Ready,
+                });
+                feed.candles = std::sync::Arc::new(vec![crate::model::Kline {
+                    open_time: 0,
+                    close_time: 1,
+                    open: 1.0,
+                    high: 1.0,
+                    low: 1.0,
+                    close: 100.0 / (n as f64 + 1.0),
+                    volume: 1.0,
+                }]);
+                feed
+            })
+            .collect();
+        let mut card = ChartCard::default();
+        card.set_overlays(list, feeds, 1, DataSource::Binance, "BTCUSDT");
+        card
+    }
+
+    /// The Compare page as a picture. Run by hand with `DEGENVIEW_GALLERY_DIR` set.
+    #[test]
+    #[ignore = "writes images for a person to look at"]
+    fn gallery_of_the_compare_page() {
+        use crate::ui::render_tests::{Screen, gallery_dir};
+        if gallery_dir().is_none() {
+            return;
+        }
+        for (name, count, mode) in [
+            ("compare-empty", 0, PriceScaleMode::Percent),
+            ("compare-few", 3, PriceScaleMode::Percent),
+            ("compare-regular", 2, PriceScaleMode::Regular),
+            ("compare-many", 12, PriceScaleMode::Percent),
+        ] {
+            let mut screen = Screen::new(egui::vec2(820.0, 860.0));
+            let mut state = ChartSettingsState {
+                tab: Tab::Overlays,
+                ..ChartSettingsState::default()
+            };
+            let mut card = card_with_overlays(count);
+            let mut indicators = IndicatorConfig::default();
+            let store = test_store();
+            let mut last = None;
+            for _ in 0..4 {
+                last = Some(screen.run(Vec::new(), |ui| {
+                    let _ = show(
+                        ui.ctx(),
+                        &mut state,
+                        ChartSettingsContext {
+                            title: "BTC/USDT",
+                            symbol: "BTCUSDT",
+                            source: DataSource::Binance,
+                            loaded_candles: 0,
+                            indicators: &mut indicators,
+                            card: &mut card,
+                            scale_mode: mode,
                             store: &store,
                         },
                     );

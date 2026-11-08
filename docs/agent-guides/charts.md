@@ -45,6 +45,20 @@ behavior.
   a follower's change or a live bar. The `SyncHub` belongs to one `ChartWorkspace`; do not make it
   global. Price-based chart types do not take part.
 
+## Compared markets (overlays)
+
+Read [chart overlays](../chart-overlays.md) first. The short rules:
+
+- Overlays are configuration on `Chart::overlays` (`OverlayList`) and data in the workspace's
+  `OverlayHub`; the card gets both through `ChartCard::set_overlays` and fetches nothing. A script, alert,
+  drawing, order or MCP tool must keep reading `Chart::symbol`/`source`/`candles` only; a test pins it.
+- Candles go onto the chart's bars by `model::overlay_align::align` (span midpoint, only the bars in view),
+  never by index or open time, and a missing bar is `None`: no forward fill.
+- Rebasing and fitting are `model::overlay_scale`; a painter must not repeat that arithmetic. The lines are
+  painted in `paint_frame` so snapshots get them; do not add them to `Overlays`.
+- Edits are `OverlayCommand`s applied by `apply_overlay_command` (one undo step, none when nothing changed).
+- Nothing caps the count; bound the *work* (in-flight requests, refresh rate, bars in view), never the list.
+
 ## Types, canvas, and templates
 
 - Never modify canonical candles. `model::synthetic` builds price-based types; the cached

@@ -12,6 +12,7 @@ scenario matches the work:
 | Providers, symbols, timeframes, prediction markets, caches, icons, live data, or watchlists | [Market data](docs/agent-guides/market-data.md) |
 | The symbol picker (changing a chart's market), symbol search ranking, or how markets are named | [Symbol picker](docs/symbol-picker.md) |
 | Chart rendering, price labels, chart types, canvas, templates, drawings, portfolio cards, or snapshots | [Charts](docs/agent-guides/charts.md) |
+| Markets compared on a chart (Compare, overlays), their data, scales, legend or the picker's compare mode | [Chart overlays](docs/chart-overlays.md) |
 | The Portfolio tab: Overview, Holdings, Transactions, Statistics, their empty states, or portfolio revaluation | [Portfolio page](docs/portfolio-page.md) |
 | Text, note, table, image or post drawings | [Annotation tools](docs/annotation-tools.md) |
 | Chart patterns, Elliott waves or cycle drawings | [Chart patterns, Elliott waves and cycles](docs/pattern-tools.md) |
@@ -117,6 +118,7 @@ because cargo never deletes old output. Finished worktrees are where the disk go
 - [Chart types](docs/chart-types.md) — construction rules and Pine semantics.
 - [Chart navigation](docs/chart-navigation.md) — viewport, pan/axis gestures, older history, what is unverified.
 - [Price scale modes](docs/price-scale.md) — Regular, Percent, Indexed to 100, Logarithmic; reference price, ticks, corner menu, persistence.
+- [Chart overlays](docs/chart-overlays.md) — markets compared on one chart: the midpoint alignment, rebased and own scales, the hub that fetches each market once, what is bounded instead of the count, verified versus decided, differences from TradingView.
 - [Linked charts](docs/chart-sync.md) — position/zoom sync between a workspace's charts.
 - [Chart canvas](docs/chart-canvas.md) — settings, geometry, layering, and templates.
 - [Chart context menus](docs/chart-context-menu.md) — right-click menus, Table view, Object tree, what is verified.

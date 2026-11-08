@@ -3,6 +3,7 @@
 use super::PersistedChart;
 use crate::host::portfolio_card_host::CardRuntime;
 use crate::model::history::{self, OlderHistory};
+use crate::model::overlay::OverlayList;
 use crate::model::portfolio_card::PortfolioCard;
 use crate::model::price_scale::PriceScaleMode;
 use crate::model::watchlist::WatchlistInstrument;
@@ -15,7 +16,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver};
 use std::time::{Duration, Instant};
 
-const CANDLE_LIMIT: u32 = 500;
+pub(super) const CANDLE_LIMIT: u32 = 500;
 pub(super) const REFRESH_INTERVAL: Duration = Duration::from_secs(5);
 /// How often a rate-limited provider (one request every few seconds) is asked again, and how long
 /// it is left alone after an error rather than spending the limiter on retries.
@@ -48,6 +49,9 @@ pub(super) struct Chart {
     pub(super) last_live_open_time: Option<i64>,
     /// Prediction markets: the choices charted together as lines, when there are several.
     pub(super) pm_series: Vec<PmSeries>,
+    /// Markets compared on this chart, in visual order. Configuration only: their candles live in
+    /// the workspace's `OverlayHub`. Nothing a script, alert, drawing or order reads looks here.
+    pub(super) overlays: OverlayList,
     /// Provider artwork carried into watchlists without another metadata search.
     pub(super) image_url: Option<String>,
     /// A portfolio card instead of a market: `symbol` is the card's key and `source` a
@@ -116,6 +120,7 @@ impl Chart {
             last_data_ms: None,
             last_live_open_time: None,
             pm_series: Vec::new(),
+            overlays: OverlayList::new(),
             image_url: None,
             card: None,
             card_runtime: None,
@@ -205,6 +210,7 @@ impl Chart {
         chart.card = saved.card;
         chart.chart.set_title(saved.title);
         chart.pm_series = saved.pm_series;
+        chart.overlays = saved.overlays;
         chart.image_url = saved.image_url;
         chart.fetch(timeframe, ctx);
         chart.scale_mode = scale_mode;
@@ -391,7 +397,7 @@ pub(super) struct OlderRequest {
 }
 
 /// A websocket update for the current or a later bar wins over an older REST snapshot.
-fn merge_fetched_candles(
+pub(super) fn merge_fetched_candles(
     mut fetched: Vec<Kline>,
     current: &[Kline],
     last_live_open_time: Option<i64>,
@@ -619,6 +625,7 @@ mod tests {
                 },
             ],
             image_url: Some("https://img/fed.png".into()),
+            overlays: Default::default(),
         };
         let encoded = serde_json::to_value(&saved).expect("serialize");
         assert_eq!(encoded["pm_series"][0]["tokenID"], "111");

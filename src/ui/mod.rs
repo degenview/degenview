@@ -18,6 +18,7 @@ pub mod chart_context_menu;
 pub mod chart_indicator_strip;
 pub mod chart_notice;
 pub mod chart_settings;
+mod chart_settings_compare;
 mod chart_style_preview;
 mod chart_style_settings;
 pub mod chart_table_view;

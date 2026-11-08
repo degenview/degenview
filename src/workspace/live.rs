@@ -7,12 +7,18 @@ use eframe::egui;
 
 impl ChartWorkspace {
     pub(super) fn update_live_feed(&mut self, ctx: &egui::Context) {
-        let symbols: Vec<String> = self
+        let mut symbols: Vec<String> = self
             .charts
             .iter()
             .filter(|chart| chart.is_market() && chart.source == DataSource::Binance)
             .map(|chart| chart.symbol.to_uppercase())
             .collect();
+        // The markets compared on a chart stream too, once however many overlays name them.
+        for symbol in self.overlay_hub.binance_symbols() {
+            if !symbols.contains(&symbol) {
+                symbols.push(symbol);
+            }
+        }
         let interval = self.timeframe.interval().to_owned();
         // Binance streams no quarterly or yearly klines; those fold monthly candles.
         let monthly_fold = matches!(self.timeframe, Timeframe::Quarter | Timeframe::Year);
@@ -40,6 +46,7 @@ impl ChartWorkspace {
             .map(|feed| feed.inbox.drain())
             .unwrap_or_default();
         for (symbol, kline) in updates {
+            self.overlay_hub.apply_live(&symbol, &kline);
             self.apply_live_kline(&symbol, kline);
         }
     }

@@ -57,6 +57,8 @@ mod input;
 mod layouts;
 mod links;
 mod live;
+mod overlay_actions;
+mod overlays;
 mod paper;
 mod pine;
 mod pine_logs;
@@ -176,6 +178,8 @@ pub struct ChartWorkspace {
     /// How portfolio cards reach the app's portfolios; set by the window that draws this tab.
     card_env: Option<PortfolioCardEnv>,
     live_feed: Option<BinanceLiveFeed>,
+    /// The candles of every overlay market on this workspace's charts, fetched once per market.
+    overlay_hub: overlays::OverlayHub,
     settings_chart: Option<u64>,
     /// The Inputs and Style popover of an applied script, up beside its chip or settings row.
     script_popover: Option<PineSettingsPopover>,
@@ -192,6 +196,9 @@ pub struct ChartWorkspace {
     confirm_remove_drawings: Option<u64>,
     /// The last restyle, so a burst of them (dragging a colour picker) is one undo step.
     last_restyle: Option<(u64, u64, Instant)>,
+    /// The overlay colour edit the undo stack last took: chart, overlay, the stack's length right
+    /// after, and when. A drag of the colour picker continues it instead of stacking steps.
+    last_overlay_style: Option<(u64, crate::model::overlay::OverlayId, usize, Instant)>,
     /// The chart a header ✕ asked to remove, awaiting confirmation.
     removing_chart: Option<u64>,
     settings_state: ChartSettingsState,
@@ -364,6 +371,7 @@ impl ChartWorkspace {
             unseen_alerts: 0,
             card_env: None,
             live_feed: None,
+            overlay_hub: overlays::OverlayHub::new(),
             settings_chart: None,
             script_popover: None,
             drawing_props: None,
@@ -372,6 +380,7 @@ impl ChartWorkspace {
             style_clipboard: None,
             confirm_remove_drawings: None,
             last_restyle: None,
+            last_overlay_style: None,
             removing_chart: None,
             settings_state: ChartSettingsState::default(),
             crosshair: None,
@@ -641,6 +650,7 @@ impl ChartWorkspace {
             }
         }
 
+        self.tick_overlays(&ctx);
         self.update_live_feed(&ctx);
         self.sync_paper_quotes(paper_host);
         self.configure_paper_cards(paper_host);
@@ -990,6 +1000,7 @@ mod tests {
                     pm_series: Vec::new(),
                     image_url: None,
                     card: None,
+                    overlays: Default::default(),
                 },
                 PersistedChart {
                     id: 2,
@@ -1033,6 +1044,7 @@ mod tests {
                     pm_series: Vec::new(),
                     image_url: None,
                     card: None,
+                    overlays: Default::default(),
                 },
             ],
             columns: vec![ChartColumn::new(10, vec![1]), ChartColumn::new(11, vec![2])],
