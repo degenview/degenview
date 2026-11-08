@@ -104,7 +104,7 @@ pub fn action_for(entry: &CatalogEntry, availability: Availability) -> Option<Ac
 pub enum Output {
     /// Apply to the focused chart; `keep_open` leaves the picker up for the next one.
     Apply { action: Action, keep_open: bool },
-    /// "Bring a script": open Pine Studio.
+    /// "Open Pine Studio" in the sidebar.
     OpenPineStudio,
 }
 
@@ -408,7 +408,7 @@ impl IndicatorPicker {
         );
         let field = Rect::from_min_max(
             pos2(bar.left() + SIDEBAR, bar.top() + 12.0),
-            pos2(bar.right() - 64.0, bar.bottom() - 12.0),
+            pos2(bar.right() - 24.0, bar.bottom() - 12.0),
         );
         let mut field_ui = ui.new_child(egui::UiBuilder::new().max_rect(field));
         let before = self.query.clone();
@@ -425,20 +425,6 @@ impl IndicatorPicker {
             response.request_focus();
         }
         *query_changed = before != self.query;
-        let close =
-            Rect::from_center_size(pos2(bar.right() - 32.0, bar.center().y), vec2(28.0, 28.0));
-        let mut close_ui = ui.new_child(egui::UiBuilder::new().max_rect(close));
-        if icons::button(
-            &mut close_ui,
-            Icon::Xmark,
-            14.0,
-            theme::text_secondary(),
-            "Close",
-        )
-        .clicked()
-        {
-            self.open = false;
-        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -475,7 +461,16 @@ impl IndicatorPicker {
                     }
                 };
                 group(ui, "Yours", &sections::YOURS);
-                if sidebar_row(ui, width, Icon::Download, "Bring a script", None, false).clicked() {
+                if sidebar_row(
+                    ui,
+                    width,
+                    Icon::Curlybraces,
+                    "Open Pine Studio",
+                    None,
+                    false,
+                )
+                .clicked()
+                {
                     *output = Some(Output::OpenPineStudio);
                 }
                 group(ui, "Built-in", &sections::BUILT_IN);
@@ -738,7 +733,7 @@ impl IndicatorPicker {
         }
     }
 
-    fn footer(&self, ui: &mut Ui, full: Rect, shown: usize) {
+    fn footer(&mut self, ui: &mut Ui, full: Rect, shown: usize) {
         let bar = Rect::from_min_max(pos2(full.left(), full.bottom() - FOOTER), full.max);
         let mut footer = ui.new_child(
             egui::UiBuilder::new()
@@ -763,7 +758,10 @@ impl IndicatorPicker {
         hint(&mut footer, &["\u{21e7}", "\u{21b5}"], "Add, keep open");
         hint(&mut footer, &["F"], "Favorite");
         hint(&mut footer, &["Esc"], "Close");
+        let mut done = false;
         footer.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            done = kit::sheet_button(ui, "Done", true, true).clicked();
+            ui.add_space(8.0);
             ui.label(kit::text(
                 format!("{shown} shown"),
                 size::SUBHEADLINE,
@@ -771,6 +769,9 @@ impl IndicatorPicker {
                 theme::text_tertiary(),
             ));
         });
+        if done {
+            self.open = false;
+        }
     }
 }
 

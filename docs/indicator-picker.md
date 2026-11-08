@@ -10,7 +10,7 @@ opens `ui::indicator_picker`, a modal owned by `ChartWorkspace::indicator_picker
 the Add Chart sheet. It adds to the **focused** chart (`ChartWorkspace::indicator_target` names it;
 a portfolio card is not a target) through `apply_indicator_action`, so undo is one step.
 
-- **Sidebar**: Yours (Favorites, My scripts, Bring a script, which opens Pine Studio), Built-in
+- **Sidebar**: Yours (Favorites, My scripts, Open Pine Studio), Built-in
   (Overlays, Separate pane), Library (Discover, All indicators), Families. Counts sit on the right.
   Searching lists matches across every section (`sections::search_blocks`) and ignores the sidebar.
   Discover is a fixed "Popular" row and the rest in a seeded order (the Shuffle button bumps the
@@ -23,7 +23,7 @@ a portfolio card is not a target) through `apply_indicator_action`, so undo is o
   chart offers "Remove from chart"; a script or bundled one "Add another copy".
 - **Keys**: ↑/↓ move a row, ←/→ a card (left to the search field while it holds text), Return adds
   and closes, Shift-Return adds and stays open, F stars the selected one (only when the search
-  field is not focused), Esc closes. Return never removes. The keys are taken before the search
+  field is not focused), Esc or the Done button (bottom right) closes. Return never removes. The keys are taken before the search
   field is drawn (`read_keys`), like the "+" menu's.
 - **Availability** (`availability`): no focused market chart, or a line chart for anything but a
   native other than Volume, is blocked with the reason shown; blocked entries are dimmed and Return

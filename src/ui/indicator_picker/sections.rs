@@ -18,7 +18,7 @@ pub enum Section {
     Family(Family),
 }
 
-/// The sidebar's groups, in order. "Bring a script" is an action row after Yours' sections.
+/// The sidebar's groups, in order. "Open Pine Studio" is an action row after Yours' sections.
 pub const YOURS: [Section; 2] = [Section::Favorites, Section::MyScripts];
 pub const BUILT_IN: [Section; 2] = [Section::Overlays, Section::Panes];
 pub const LIBRARY: [Section; 2] = [Section::Discover, Section::All];
@@ -56,7 +56,7 @@ impl Section {
     pub fn empty_message(self) -> &'static str {
         match self {
             Self::Favorites => "No favorites yet. Star an indicator to keep it here.",
-            Self::MyScripts => "No saved scripts yet. Use Bring a script to add one.",
+            Self::MyScripts => "No saved scripts yet. Open Pine Studio to write one.",
             _ => "Nothing here.",
         }
     }

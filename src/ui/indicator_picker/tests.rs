@@ -334,6 +334,25 @@ fn a_click_on_a_card_selects_it_and_asks_for_another_frame() {
 }
 
 #[test]
+fn the_done_button_in_the_bottom_right_corner_closes_the_picker() {
+    let mut rig = Rig::new(1100.0);
+    let at = pos2(
+        (1100.0 + 1040.0) / 2.0 - 24.0 - 25.0,
+        (760.0 + 680.0) / 2.0 - FOOTER / 2.0,
+    );
+    let button = |pressed| egui::Event::PointerButton {
+        pos: at,
+        button: egui::PointerButton::Primary,
+        pressed,
+        modifiers: Modifiers::NONE,
+    };
+    rig.frame(vec![egui::Event::PointerMoved(at)]);
+    rig.frame(vec![button(true)]);
+    rig.frame(vec![button(false)]);
+    assert!(!rig.picker.is_open());
+}
+
+#[test]
 fn the_grid_has_fewer_columns_as_it_narrows() {
     assert_eq!(columns_for(700.0), 3);
     assert_eq!(columns_for(512.0), 2);
