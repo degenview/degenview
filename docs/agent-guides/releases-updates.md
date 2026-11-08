@@ -207,7 +207,7 @@ the same app and is what the in-app updater downloads; the updater never reads t
 
 ## Homebrew
 
-`brew install --cask degenview` (final) and `degenview@rc`, after `brew tap` and `brew trust degenview/degenview` (Homebrew 7 refuses an untrusted tap), (final or `-rc.N`,
+`brew install --cask degenview/degenview/degenview` (final) and `.../degenview@rc` (Homebrew 7 trusts a fully named cask as it installs; a short name after `brew tap` needs `brew trust`), (final or `-rc.N`,
 the Release Candidate channel's set) come from the separate tap `degenview/homebrew-degenview`
 (local checkout `~/Developer/homebrew-degenview`), built like the Flatpak repo: it **pulls** on a
 six-hourly workflow and nothing here holds a token for it. Do not add a "bump the tap" step to
