@@ -2,10 +2,11 @@
 //! macOS Keychain and the Linux Secret Service answer: one Credential Manager "generic" credential
 //! per item (`CredWriteW` / `CredReadW` / `CredDeleteW`).
 //!
-//! Credential Manager encrypts the blob with the signed-in user's DPAPI master key, so it is
-//! readable only when that user is logged on, on this machine. It is stored with
-//! `CRED_PERSIST_LOCAL_MACHINE`: it survives a restart and a log-off, and it does not roam with a
-//! domain profile. The user can see and remove the entries in Control Panel > Credential Manager >
+//! Credential Manager encrypts the blob with the signed-in user's DPAPI master key. Windows
+//! normally lets only that user, on this computer, decrypt it (Microsoft documents an exception: a
+//! roaming profile lets the same user decrypt on another computer). It is stored with
+//! `CRED_PERSIST_LOCAL_MACHINE`: it survives a restart and a log-off, and Credential Manager does
+//! not roam it with a domain profile. The user can see and remove the entries in Control Panel > Credential Manager >
 //! Windows Credentials, under the target name `<service>/<account>`.
 //!
 //! What this does not give: a separate unlock step or a per-application ACL. Any process running
@@ -68,12 +69,12 @@ fn target_name(service: &str, account: &str) -> Option<String> {
 }
 
 /// `text` as a NUL-terminated UTF-16 string for the `...W` calls.
-fn wide(text: &str) -> Vec<u16> {
+pub(crate) fn wide(text: &str) -> Vec<u16> {
     text.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
 /// Bytes that are overwritten with zeros when dropped.
-struct Wiped(Vec<u8>);
+pub(crate) struct Wiped(pub(crate) Vec<u8>);
 
 impl std::fmt::Debug for Wiped {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -88,7 +89,7 @@ impl Drop for Wiped {
 }
 
 /// Zeroes `bytes` in a way the optimizer may not remove as a dead store.
-fn wipe(bytes: &mut [u8]) {
+pub(crate) fn wipe(bytes: &mut [u8]) {
     for byte in bytes.iter_mut() {
         // SAFETY: `byte` is a valid, aligned, exclusive reference.
         unsafe { std::ptr::write_volatile(byte, 0) };
