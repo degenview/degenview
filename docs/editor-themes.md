@@ -109,13 +109,15 @@ indents with four spaces, so a control for any of them would do nothing.
 
 ## Dark, Light and Dracula
 
-Dark and Light are the colours the editor had before themes, exactly (the font is the one thing that
-changed: the default is now JetBrains Mono, where it was the system's monospace font):
+Dark and Light are the colours the editor had before themes, with two changes: the default font is now
+JetBrains Mono (it was the system's monospace font), and Dark's strings and escapes are green
+`#6AAB73` (they were `systemRed`; Light keeps its red, and so do the error underline and
+`theme::syntax::string`, which other screens use):
 `dark_and_light_match_the_editor_before_themes` rebuilds the old values from the functions the editor used to call (and from the old `theme::syntax`
 table, written out in the test) and compares every role and surface in both appearances. Roles that did
 not exist before take the colour of what they were part of: user variables, parameters, user functions
 and punctuation the default text colour, escapes the string colour, control keywords the keyword colour.
-So, apart from the font, an upgrade changes nothing a person can see.
+So, apart from the font and Dark's string colour, an upgrade changes nothing a person can see.
 
 Dracula follows the [Dracula specification](https://spec.draculatheme.com): keywords, operators and
 escapes pink `#FF79C6`; user functions green `#50FA7B`; parameters orange `#FFB86C`; strings yellow

@@ -25,11 +25,13 @@ fn before_themes(ctx: &egui::Context) -> Appearance {
     let syntax = theme::syntax::string();
     let constant = system((0x63, 0xE6, 0xE2), (0x00, 0xA8, 0xA0));
     let keyword = theme::syntax::keyword();
+    // Strings are green in Dark since the themes shipped; Light kept the old red.
+    let string = system((0x6A, 0xAB, 0x73), (0xFF, 0x3B, 0x30));
     let mut roles = [theme::text_primary(); SyntaxRole::COUNT];
     for (role, color) in [
         (R::Comment, system((152, 152, 157), (110, 110, 115))),
-        (R::String, syntax),
-        (R::Escape, syntax),
+        (R::String, string),
+        (R::Escape, string),
         (R::Number, theme::syntax::number()),
         (R::Literal, constant),
         (R::BuiltinVariable, theme::syntax::variable()),
