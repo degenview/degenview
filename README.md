@@ -226,8 +226,10 @@ shortcut. The app is signed and notarized, and updates itself from inside the ap
 Or with Homebrew, from the [DegenView tap](https://github.com/degenview/homebrew-degenview):
 
 ```bash
-brew install --cask degenview/degenview/degenview      # latest final release
-brew install --cask degenview/degenview/degenview@rc   # latest release candidate
+brew tap degenview/degenview
+brew trust degenview/degenview   # Homebrew 7 refuses casks from a tap you have not trusted
+brew install --cask degenview      # latest final release
+brew install --cask degenview@rc   # latest release candidate
 ```
 
 On Windows, `DegenView-<tag>-windows-x64-setup.exe` (or `-windows-arm64-setup.exe` on a Windows on ARM
