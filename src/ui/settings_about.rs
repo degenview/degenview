@@ -14,6 +14,7 @@ pub use crate::host::update_host::VERSION;
 pub const LICENSE: &str = "GPL-3.0-only";
 pub const REPOSITORY_URL: &str = "https://github.com/degenview/degenview";
 pub const DONATION_URL: &str = crate::ui::tab_bar::COFFEE_URL;
+pub const DOCS_URL: &str = crate::ui::tab_bar::DOCS_URL;
 const COPYRIGHT: &str = "Copyright © 2026 Nico Oelgart. Licensed under GPL-3.0-only.";
 
 const MAX_WIDTH: f32 = 480.0;
@@ -159,6 +160,15 @@ pub fn show(ui: &mut Ui, updates: &UpdateHost) -> Outcome {
                         });
                         ui.add_space(24.0);
                         group(ui, |ui| {
+                            link_row(
+                                ui,
+                                egui::include_image!("../../assets/brand/docs.svg"),
+                                Color32::from_rgb(24, 23, 23),
+                                "Documentation",
+                                "User guide for every feature",
+                                DOCS_URL,
+                            );
+                            divider(ui);
                             link_row(
                                 ui,
                                 egui::include_image!("../../assets/brand/github.svg"),
