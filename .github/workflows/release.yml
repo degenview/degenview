@@ -474,6 +474,7 @@ jobs:
             range="${RELEASE_TAG}"
             heading="Changes"
           fi
+          base="https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}"
           {
             echo "## ${heading}"
             echo
@@ -486,16 +487,20 @@ jobs:
             echo
             echo "## Downloads"
             echo
-            echo "- **macOS (Apple Silicon):** \`DegenView-${RELEASE_TAG}-macos-arm64.dmg\`, open it and drag DegenView to Applications"
-            echo "- **macOS (Intel):** \`DegenView-${RELEASE_TAG}-macos-x64.dmg\`, open it and drag DegenView to Applications"
-            echo "- **macOS archives:** \`DegenView-${RELEASE_TAG}-macos-arm64.zip\` and \`DegenView-${RELEASE_TAG}-macos-x64.zip\` hold the same app; the in-app updater downloads these"
-            echo "- **Windows (x64) installer:** \`DegenView-${RELEASE_TAG}-windows-x64-setup.exe\`, installs for the current user without admin rights"
-            echo "- **Windows (x64) portable:** \`DegenView-${RELEASE_TAG}-windows-x64.zip\`, unzip into a folder you own"
-            echo "- **Windows (ARM64) installer:** \`DegenView-${RELEASE_TAG}-windows-arm64-setup.exe\`, the native build for Windows on ARM (Snapdragon X, Surface, Parallels on Apple Silicon); the x64 build only runs there emulated"
-            echo "- **Windows (ARM64) portable:** \`DegenView-${RELEASE_TAG}-windows-arm64.zip\`"
-            echo "- **Linux (x64):** \`DegenView-${RELEASE_TAG}-linux-x64.tar.gz\`, updates itself when installed in a folder you can write to"
-            echo "- **Linux (arm64):** \`DegenView-${RELEASE_TAG}-linux-arm64.tar.gz\`, updates itself when installed in a folder you can write to"
-            echo "- **Linux Flatpak (x64, arm64):** \`DegenView-${RELEASE_TAG}-linux-x64.flatpak\` and \`DegenView-${RELEASE_TAG}-linux-arm64.flatpak\`, installed with \`flatpak install --user <file>\`; it cannot update itself, so download the next one"
+            echo "| Platform | Arch | Link |"
+            echo "| --- | --- | --- |"
+            echo "| macOS (dmg) | arm64 | [DegenView-${RELEASE_TAG}-macos-arm64.dmg](${base}/DegenView-${RELEASE_TAG}-macos-arm64.dmg) |"
+            echo "| macOS (dmg) | x64 | [DegenView-${RELEASE_TAG}-macos-x64.dmg](${base}/DegenView-${RELEASE_TAG}-macos-x64.dmg) |"
+            echo "| macOS (zip) | arm64 | [DegenView-${RELEASE_TAG}-macos-arm64.zip](${base}/DegenView-${RELEASE_TAG}-macos-arm64.zip) |"
+            echo "| macOS (zip) | x64 | [DegenView-${RELEASE_TAG}-macos-x64.zip](${base}/DegenView-${RELEASE_TAG}-macos-x64.zip) |"
+            echo "| Windows (installer) | x64 | [DegenView-${RELEASE_TAG}-windows-x64-setup.exe](${base}/DegenView-${RELEASE_TAG}-windows-x64-setup.exe) |"
+            echo "| Windows (installer) | arm64 | [DegenView-${RELEASE_TAG}-windows-arm64-setup.exe](${base}/DegenView-${RELEASE_TAG}-windows-arm64-setup.exe) |"
+            echo "| Windows (portable) | x64 | [DegenView-${RELEASE_TAG}-windows-x64.zip](${base}/DegenView-${RELEASE_TAG}-windows-x64.zip) |"
+            echo "| Windows (portable) | arm64 | [DegenView-${RELEASE_TAG}-windows-arm64.zip](${base}/DegenView-${RELEASE_TAG}-windows-arm64.zip) |"
+            echo "| Linux (tar.gz) | x64 | [DegenView-${RELEASE_TAG}-linux-x64.tar.gz](${base}/DegenView-${RELEASE_TAG}-linux-x64.tar.gz) |"
+            echo "| Linux (tar.gz) | arm64 | [DegenView-${RELEASE_TAG}-linux-arm64.tar.gz](${base}/DegenView-${RELEASE_TAG}-linux-arm64.tar.gz) |"
+            echo "| Linux (Flatpak) | x64 | [DegenView-${RELEASE_TAG}-linux-x64.flatpak](${base}/DegenView-${RELEASE_TAG}-linux-x64.flatpak) |"
+            echo "| Linux (Flatpak) | arm64 | [DegenView-${RELEASE_TAG}-linux-arm64.flatpak](${base}/DegenView-${RELEASE_TAG}-linux-arm64.flatpak) |"
             echo
             echo "The macOS builds are signed with a Developer ID and notarized by Apple. The Windows installer and executable are unsigned; Windows SmartScreen may ask you to approve them on first launch."
           } > notes.md
