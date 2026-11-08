@@ -73,14 +73,6 @@ pub struct ToolbarChart {
     pub settings: bool,
 }
 
-impl ToolbarChart {
-    /// Whether another market can be drawn on this chart: a market that draws candles (not a
-    /// line-only source) on a type that has a time axis (not a price-based one).
-    pub fn can_compare(&self) -> bool {
-        self.chart_types && !self.chart_type.is_synthetic()
-    }
-}
-
 /// What the layout menu's Autosave row shows.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct AutosaveState {
@@ -110,8 +102,6 @@ pub enum ToolbarAction {
     AddChart,
     /// Open the indicator picker for the focused chart.
     OpenIndicators,
-    /// Open the symbol picker to compare another market on the focused chart.
-    OpenCompare,
     /// Open the focused chart's settings sheet.
     OpenChartSettings,
     ToggleReplay,
@@ -431,21 +421,6 @@ fn left_items(input: &ToolbarInput) -> Vec<Item> {
             .label("Indicators")
             .enabled(has_chart)
             .on_click(ToolbarAction::OpenIndicators),
-    ));
-    let can_compare = input.chart.is_some_and(|chart| chart.can_compare());
-    items.push(Item::Button(
-        Button::new(
-            "compare",
-            if can_compare || !has_chart {
-                "Compare: show another market on this chart"
-            } else {
-                "Compare: not available for this chart"
-            },
-        )
-        .icon(Icon::Compare)
-        .label("Compare")
-        .enabled(can_compare)
-        .on_click(ToolbarAction::OpenCompare),
     ));
     let mut replay = Button::new(
         "replay",

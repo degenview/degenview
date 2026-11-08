@@ -26,11 +26,12 @@ id, and nothing a script, alert, drawing or paper order reads looks at them: tho
 
 ## Behaviour
 
-**Adding.** The toolbar's Compare button opens the symbol picker in compare mode: Return draws the
-highlighted market over the focused chart and the picker stays open, so several can be added in a row
-(Esc closes). In the normal picker ⌥Return does it once and closes, the highlighted row has a Compare
-button next to its plus, and the row's right-click menu has "Compare with …". ⌘K, Return (replace) and
-⇧Return (add a chart) are unchanged. The chart settings' Compare page has "Add symbol…".
+**Adding.** There is no toolbar button. In the symbol picker (⌘K) ⌥Return draws the highlighted
+market over the focused chart once and closes, the highlighted row has a Compare button next to its
+plus, and the row's right-click menu has "Compare with …". The chart settings' Compare page has "Add
+symbol…", which opens the picker in compare mode (`PickMode::Compare`): Return draws the highlighted
+market and the picker stays open, so several can be added in a row (Esc closes). ⌘K, Return (replace)
+and ⇧Return (add a chart) are unchanged.
 
 Nothing is added for the chart's own market or a market already compared (compared by
 `InstrumentId::key()`, so `BTC` and `btcusdt` are one). A chart that is a line-only source
