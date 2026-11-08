@@ -64,6 +64,7 @@ pub mod price_scale;
 pub mod regression;
 mod replay;
 mod saved_view;
+pub mod session_stats;
 pub mod snapshot;
 mod source;
 pub mod synthetic;

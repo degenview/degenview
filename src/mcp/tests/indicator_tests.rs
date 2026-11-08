@@ -37,7 +37,11 @@ fn the_indicator_tools_are_listed_only_for_their_permissions() {
     let url = harness.url();
     assert_eq!(
         tool_names(&url, "r-tok"),
-        ["degenview_get_candles", "degenview_get_indicator_values"]
+        [
+            "degenview_get_candles",
+            "degenview_get_indicator_values",
+            "degenview_get_session_stats"
+        ]
     );
     let write = tool_names(&url, "w-tok");
     assert!(

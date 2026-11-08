@@ -2359,6 +2359,14 @@ impl DegenViewApp {
                 mcp_host::indicator_readings(workspace, chart_id, &request)
                     .map(|result| McpReply::IndicatorValues(Box::new(result)))
             }),
+            McpCommand::GetSessionStats {
+                workspace_id,
+                chart_id,
+                query,
+            } => self.with_mcp_workspace(workspace_id, |workspace| {
+                mcp_host::session_statistics(workspace, chart_id, &query)
+                    .map(|result| McpReply::SessionStats(Box::new(result)))
+            }),
             McpCommand::AddChart {
                 workspace_id,
                 instrument,

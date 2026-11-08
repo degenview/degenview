@@ -170,6 +170,7 @@ fn icon_for(item: &Item) -> Option<Icon> {
         Command::ToggleTimeLock => Icon::LockFill,
         Command::ToggleTable => Icon::List,
         Command::ToggleObjectTree => Icon::Layers,
+        Command::ToggleSessionStats => Icon::ChartUptrend,
         Command::ApplyTemplate(_) => Icon::Palette,
         Command::SaveTemplate => Icon::Plus,
         Command::ManageTemplates => Icon::Sliders,

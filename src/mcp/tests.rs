@@ -1136,6 +1136,24 @@ fn stub_app(
                 crate::mcp::indicator_values::indicator_values(&meta, &chart.candles, &request),
             )))
         }
+        McpCommand::GetSessionStats {
+            workspace_id,
+            chart_id,
+            query,
+        } => {
+            stub_chart_known(workspace_id, chart_id)?;
+            let chart = stub.chart.lock().unwrap();
+            let meta = crate::mcp::session_stats::Meta {
+                workspace_id,
+                chart_id,
+                instrument: "BINANCE:BTCUSDT".into(),
+                timeframe: "1D".into(),
+                bar_ms: 86_400_000,
+                hours: crate::model::session_stats::MarketHours::Continuous,
+            };
+            crate::mcp::session_stats::session_stats(&meta, &chart.candles, &query)
+                .map(|result| McpReply::SessionStats(Box::new(result)))
+        }
         McpCommand::AddChart {
             workspace_id,
             instrument,
@@ -3293,7 +3311,11 @@ fn candles_and_drawings_have_their_own_permissions() {
     }
     assert_eq!(
         tool_names(&url, "candles-tok"),
-        ["degenview_get_candles", "degenview_get_indicator_values"]
+        [
+            "degenview_get_candles",
+            "degenview_get_indicator_values",
+            "degenview_get_session_stats"
+        ]
     );
     assert_eq!(tool_names(&url, "read-tok"), ["degenview_list_drawings"]);
     assert_eq!(
@@ -3728,5 +3750,6 @@ mod market_tests;
 mod paper_tests;
 mod portfolio_tests;
 mod replay_tests;
+mod session_stats_tests;
 mod snapshot_tests;
 mod tls_tests;
