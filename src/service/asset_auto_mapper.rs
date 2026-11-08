@@ -14,17 +14,19 @@ use std::collections::HashMap;
 /// A portfolio asset for a search hit: `"<source>:<full symbol>"`, priced in the pair's quote
 /// currency (stablecoins count as dollars).
 pub fn asset_from_search_result(result: &SearchResult) -> PortfolioAsset {
+    // A portfolio keeps a pair as BASE/QUOTE whatever the exchange calls it, so what it stored
+    // before the picker showed exchange names still matches.
+    let label = result.pair_label();
     let quote = result
-        .symbol
-        .rsplit('/')
-        .next()
-        .filter(|_| result.symbol.contains('/'));
+        .quote
+        .clone()
+        .or_else(|| label.rsplit_once('/').map(|(_, quote)| quote.to_owned()));
     PortfolioAsset {
         key: format!("{}:{}", result.source.display_name(), result.full_symbol),
-        symbol: result.symbol.clone(),
-        name: result.symbol.clone(),
+        symbol: label.clone(),
+        name: label,
         source: result.source,
-        quote_currency: PortfolioCurrency::from_quote_symbol(quote),
+        quote_currency: PortfolioCurrency::from_quote_symbol(quote.as_deref()),
         metadata: HashMap::new(),
     }
 }
@@ -133,6 +135,8 @@ mod tests {
             source,
             price: None,
             event: None,
+            base: None,
+            quote: None,
         }
     }
 
@@ -279,5 +283,14 @@ mod tests {
         );
         assert_eq!(base_symbol("btc/usdt"), "BTC");
         assert_eq!(quote_symbol("btc"), None);
+    }
+
+    #[test]
+    fn an_exchange_named_pair_is_kept_as_base_over_quote() {
+        let hit = hit(DataSource::Binance, "BTCUSDT", "BTCUSDT").pair("BTC", "USDT");
+        let asset = asset_from_search_result(&hit);
+        assert_eq!(asset.symbol, "BTC/USDT");
+        assert_eq!(asset.display_ticker(), "BTC");
+        assert_eq!(asset.quote_currency, PortfolioCurrency::Usd);
     }
 }

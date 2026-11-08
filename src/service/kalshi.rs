@@ -286,6 +286,8 @@ impl MarketSource for Kalshi {
                             image_url: None,
                             series: Vec::new(),
                         }),
+                        base: None,
+                        quote: None,
                     });
                 }
             }

@@ -1,15 +1,16 @@
 //! The chart window's toolbar, flat like TradingView's and LuxAlgo's: borderless buttons that
 //! tint on hover, hairline separators between groups and labels that fall back to icons when the
-//! window is too narrow for them. Left to right: the timeframe, the chart type, Indicators,
+//! window is too narrow for them. Left to right: the symbol of the focused chart, the timeframe,
+//! the chart type, Indicators,
 //! Replay, Undo and Redo. On the right: the layout menu, chart settings, Portfolio, Pine Studio,
 //! the watchlist toggle and Add Chart. The replay bar under it (`replay_bar.rs`) uses the same
-//! flat style. The chart type, Indicators and chart settings act on the
+//! flat style. The symbol, chart type, Indicators and chart settings act on the
 //! focused chart.
 
 use crate::model::{ChartType, DataSource, Timeframe};
 use crate::ui::chart_type_menu;
 use crate::ui::icons::{self, Icon};
-use crate::ui::kit::{self, MEDIUM, REGULAR, SEMIBOLD, size};
+use crate::ui::kit::{self, BOLD, MEDIUM, REGULAR, SEMIBOLD, size};
 use crate::ui::shortcut;
 use crate::ui::theme;
 use eframe::egui::{self, Color32, Galley, Id, Rect, Response, Sense, Ui, Vec2, pos2, vec2};
@@ -45,6 +46,8 @@ pub struct ToolbarInput<'a> {
     pub layouts: &'a [(u64, String)],
     pub active_layout: Option<u64>,
     pub watchlist_visible: bool,
+    /// The market the focused chart shows, as its exchange names it; `None` with no chart.
+    pub symbol: Option<&'a str>,
     /// The focused market chart the chart type, Indicators and settings buttons act on; `None`
     /// on an empty tab or with a portfolio card focused.
     pub chart: Option<ToolbarChart>,
@@ -80,6 +83,8 @@ pub struct AutosaveState {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ToolbarAction {
     SetTimeframe(Timeframe),
+    /// Open the symbol picker, to change the focused chart's market.
+    OpenSymbolSearch,
     /// A type picked from the chart-type menu, for the focused chart.
     SetChartType(ChartType),
     SaveLayout,
@@ -141,6 +146,8 @@ struct Button {
     active: bool,
     /// The colour of its content while lit.
     tint: Option<Color32>,
+    /// The label stays when the bar is too narrow for labels: it is what the button says.
+    keep_label: bool,
     /// Quiet text until hovered or lit (a timeframe that is not the current one).
     quiet: bool,
     weight: f32,
@@ -162,6 +169,7 @@ impl Button {
             enabled: true,
             active: false,
             tint: None,
+            keep_label: false,
             quiet: false,
             weight: MEDIUM,
             min_width: 0.0,
@@ -239,7 +247,7 @@ fn measure<'a>(ui: &Ui, items: &'a [Item], labels: bool) -> Vec<Slot<'a>> {
         .map(|item| match item {
             Item::Separator => Slot::Separator,
             Item::Button(button) => {
-                let shown = button.glyph.is_none() || labels;
+                let shown = button.glyph.is_none() || labels || button.keep_label;
                 let text = |value: &Option<String>, weight: f32| {
                     value.as_ref().filter(|_| shown).map(|value| {
                         // The colour is chosen when the button is painted.
@@ -357,6 +365,22 @@ fn arrange<'a, 'b>(
 
 fn left_items(input: &ToolbarInput) -> Vec<Item> {
     let mut items = Vec::new();
+    // The market on the chart, as its exchange names it; a click searches for another.
+    let mut symbol = Button::new(
+        "symbol",
+        format!("Search symbol ({})", shortcut::SYMBOL_SEARCH.label()),
+    )
+    .icon(Icon::Magnifier)
+    .label(input.symbol.unwrap_or("Search"))
+    .on_click(ToolbarAction::OpenSymbolSearch);
+    symbol.weight = BOLD;
+    symbol.keep_label = true;
+    symbol.access = Some(match input.symbol {
+        Some(symbol) => format!("Symbol: {symbol}. Search for another"),
+        None => "Search symbol".to_owned(),
+    });
+    items.push(Item::Button(symbol));
+    items.push(Item::Separator);
     for timeframe in Timeframe::ALL {
         let selected = timeframe == input.timeframe;
         let mut button = Button::new(("timeframe", timeframe.label()), timeframe.description());
@@ -861,6 +885,7 @@ mod tests {
             layouts,
             active_layout: None,
             watchlist_visible: true,
+            symbol: focused.then_some("BTCUSDT"),
             chart: focused.then_some(ToolbarChart {
                 id: 1,
                 chart_type: ChartType::Candles,
@@ -1137,11 +1162,23 @@ mod tests {
         let at = centre_of(&input, width, ToolbarAction::OpenIndicators);
         let _ = at;
         let (_, buttons) = layout_at(&input, width);
-        let type_button = buttons
-            .iter()
-            .find(|button| button.2.is_none() && button.0 < 300.0 && button.0 > 200.0)
-            .copied()
-            .expect("the chart-type button sits after the timeframes");
+        // The left run is symbol | timeframes | chart type, Indicators, Replay | undo, redo; a
+        // separator is the only gap wider than a button gap.
+        let left_run: Vec<_> = buttons.iter().filter(|button| button.0 < 700.0).collect();
+        let starts: Vec<usize> = std::iter::once(0)
+            .chain(
+                left_run
+                    .windows(2)
+                    .enumerate()
+                    .filter(|(_, pair)| pair[1].0 - pair[0].1 > 8.0)
+                    .map(|(at, _)| at + 1),
+            )
+            .collect();
+        let type_button = *left_run[starts[2]];
+        assert!(
+            type_button.2.is_none(),
+            "the chart-type button opens a menu"
+        );
         let at = pos2((type_button.0 + type_button.1) / 2.0, HEIGHT / 2.0);
         let click = |pressed| egui::Event::PointerButton {
             pos: at,

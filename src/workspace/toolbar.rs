@@ -32,6 +32,9 @@ impl ChartWorkspace {
             dirty || (autosave_on && self.drawings_dirty()),
             autosave_on,
         );
+        let symbol = self
+            .focused_market_chart()
+            .map(super::chart::Chart::display_title);
         let input = workspace_toolbar::ToolbarInput {
             timeframe: self.timeframe,
             layout_name: self.active_view_name.as_deref().unwrap_or("Unnamed"),
@@ -46,6 +49,7 @@ impl ChartWorkspace {
             layouts,
             active_layout: active_view_id,
             watchlist_visible: self.watchlist_visible,
+            symbol: symbol.as_deref(),
             chart: self
                 .focused_market_chart()
                 .map(|chart| workspace_toolbar::ToolbarChart {
@@ -68,6 +72,7 @@ impl ChartWorkspace {
                 ToolbarAction::SetTimeframe(timeframe) => {
                     self.reload_for_timeframe(timeframe, ctx);
                 }
+                ToolbarAction::OpenSymbolSearch => self.open_symbol_picker(),
                 ToolbarAction::SaveLayout => save_clicked = true,
                 ToolbarAction::CopyLayout => copy_clicked = true,
                 ToolbarAction::RenameLayout => rename_clicked = true,

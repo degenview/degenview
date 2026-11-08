@@ -5681,11 +5681,7 @@ mod tests {
             .chart_id;
         let chart = describe::remove_chart(&workspace, chart_id).unwrap();
         assert_eq!(chart.action, "Remove a chart");
-        assert!(
-            chart.target.starts_with("BTC/USDT in “"),
-            "{}",
-            chart.target
-        );
+        assert!(chart.target.starts_with("BTCUSDT in “"), "{}", chart.target);
         assert!(chart.note.unwrap().contains("drawings go with it"));
         assert!(matches!(
             describe::remove_chart(&workspace, chart_id + 99),
@@ -5708,7 +5704,7 @@ mod tests {
         let removed = describe::remove_pine_instance(&workspace, chart_id, instance, &[]).unwrap();
         assert_eq!(removed.action, "Remove a script from a chart");
         assert!(
-            removed.target.starts_with("My script on BTC/USDT"),
+            removed.target.starts_with("My script on BTCUSDT"),
             "{}",
             removed.target
         );

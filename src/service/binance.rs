@@ -123,12 +123,13 @@ impl MarketSource for Binance {
         let results: Vec<SearchResult> = pairs
             .iter()
             .filter(|pair| pair.symbol.contains(&needle))
-            .map(|pair| SearchResult {
-                symbol: format!("{}/{}", pair.base, pair.quote),
-                full_symbol: pair.symbol.clone(),
-                source: crate::model::DataSource::Binance,
-                price: None,
-                event: None,
+            .map(|pair| {
+                SearchResult::new(
+                    crate::model::DataSource::Binance,
+                    pair.symbol.clone(),
+                    pair.symbol.clone(),
+                )
+                .pair(pair.base.clone(), pair.quote.clone())
             })
             .collect();
         Ok(rank_results(results, query).into_iter().take(20).collect())

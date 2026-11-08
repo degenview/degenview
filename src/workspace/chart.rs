@@ -145,6 +145,22 @@ impl Chart {
             .map_or_else(|| self.source.display_symbol(&self.symbol), str::to_owned)
     }
 
+    /// What the symbol picker searches for when it opens on this chart: the market's own ticker,
+    /// or for a DEX pair (whose id is an address) its base token. Nothing for a market the picker
+    /// does not list.
+    pub(super) fn picker_query(&self) -> String {
+        match self.source {
+            DataSource::Binance
+            | DataSource::Coinbase
+            | DataSource::CoinGecko
+            | DataSource::Alpaca => self.source.display_symbol(&self.symbol),
+            DataSource::DexScreener => self.source.base_asset(&self.display_title()),
+            DataSource::Polymarket | DataSource::Kalshi | DataSource::CoinMarketCap => {
+                String::new()
+            }
+        }
+    }
+
     /// Titles a prediction market and sets the choices it draws as lines (none for a single one).
     pub(super) fn set_prediction(&mut self, title: String, series: Vec<PmSeries>) {
         self.chart.set_title(Some(title));
@@ -547,7 +563,7 @@ mod tests {
         let bitcoin = WatchlistInstrument::from_market(DataSource::Binance, "BTCUSDT", "BTCUSDT");
         chart.replace_market(&bitcoin);
         assert_eq!(chart.symbol, "BTCUSDT");
-        assert_eq!(chart.display_title(), "BTC/USDT");
+        assert_eq!(chart.display_title(), "BTCUSDT");
         assert_eq!(chart.chart.title(), None);
         assert_eq!(chart.image_url, None);
     }

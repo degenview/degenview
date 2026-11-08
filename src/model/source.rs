@@ -89,20 +89,33 @@ impl DataSource {
         self.is_prediction_market() || matches!(self, Self::CoinMarketCap)
     }
 
-    /// A human-readable pair label: `BTCUSDT` → `BTC/USDT`, `BTC-USD` → `BTC/USD`.
+    /// The market's name as its exchange writes it: `BTCUSDT` on Binance, `BTC-USD` on Coinbase,
+    /// `AAPL` on Alpaca. Nothing is reformatted, only upper-cased where the exchange's own ids are
+    /// (CoinGecko ids and Alpaca tickers). A chart, a search hit and a watchlist row all use it.
     pub fn display_symbol(self, symbol: &str) -> String {
         let raw = symbol.trim();
-        let symbol = raw.to_uppercase();
         match self {
-            Self::Binance => match split_binance_pair(&symbol) {
-                Some((base, quote)) => format!("{base}/{quote}"),
-                None => symbol,
-            },
-            Self::Coinbase => symbol.replace('-', "/"),
-            Self::CoinGecko | Self::Alpaca => symbol,
+            Self::Binance | Self::Coinbase | Self::CoinGecko | Self::Alpaca => raw.to_uppercase(),
             Self::CoinMarketCap => crate::service::cmc::title(raw).to_owned(),
             _ => raw.to_owned(),
         }
+    }
+
+    /// The asset a market trades, for artwork and tickers: `BTC` for `BTCUSDT`, `BTC-USD`,
+    /// `BTC/USDT` and `BTC — Grayscale Bitcoin Mini Trust`. A symbol that names no pair is returned
+    /// as it is. Never shown as a market's name: use [`Self::display_symbol`] for that.
+    pub fn base_asset(self, symbol: &str) -> String {
+        let upper = symbol.trim().to_uppercase();
+        let head = upper.split(['/', '-', ' ']).next().unwrap_or(&upper);
+        match self {
+            // A one-letter "base" is a bare wrapped asset (WBTC, WETH), not a pair.
+            Self::Binance => split_binance_pair(head)
+                .map(|(base, _)| base)
+                .filter(|base| base.len() > 1)
+                .unwrap_or(head),
+            _ => head,
+        }
+        .to_owned()
     }
 }
 
@@ -129,13 +142,27 @@ mod tests {
     use super::*;
 
     #[test]
-    fn exchange_pairs_use_swift_display_labels_without_changing_their_ids() {
-        assert_eq!(DataSource::Binance.display_symbol("BTCUSDT"), "BTC/USDT");
-        assert_eq!(DataSource::Binance.display_symbol("BTCFDUSD"), "BTC/FDUSD");
-        assert_eq!(DataSource::Binance.display_symbol("ETHBTC"), "ETH/BTC");
-        assert_eq!(DataSource::Binance.display_symbol("BTCEUR"), "BTC/EUR");
+    fn markets_are_named_as_their_exchange_names_them() {
+        assert_eq!(DataSource::Binance.display_symbol("btcusdt"), "BTCUSDT");
         assert_eq!(DataSource::Binance.display_symbol("BTC"), "BTC");
-        assert_eq!(DataSource::Coinbase.display_symbol("btc-usd"), "BTC/USD");
+        assert_eq!(DataSource::Coinbase.display_symbol("btc-usd"), "BTC-USD");
+        assert_eq!(DataSource::Alpaca.display_symbol(" aapl "), "AAPL");
+        // A DEX pair address is an id, not a name: it is left alone.
+        assert_eq!(DataSource::DexScreener.display_symbol("0xAbC"), "0xAbC");
+    }
+
+    #[test]
+    fn the_base_asset_comes_out_of_any_spelling_of_a_market() {
+        let base = |source: DataSource, symbol| source.base_asset(symbol);
+        assert_eq!(base(DataSource::Binance, "BTCUSDT"), "BTC");
+        assert_eq!(base(DataSource::Binance, "BTCFDUSD"), "BTC");
+        assert_eq!(base(DataSource::Binance, "ETHBTC"), "ETH");
+        assert_eq!(base(DataSource::Binance, "BTC"), "BTC");
+        assert_eq!(base(DataSource::Binance, "WBTC"), "WBTC");
+        assert_eq!(base(DataSource::Binance, "BTC/USDT"), "BTC");
+        assert_eq!(base(DataSource::Coinbase, "btc-usd"), "BTC");
+        assert_eq!(base(DataSource::Alpaca, "AAPL — Apple Inc."), "AAPL");
+        assert_eq!(base(DataSource::DexScreener, "PEPE/WETH"), "PEPE");
     }
 
     #[test]

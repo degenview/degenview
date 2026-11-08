@@ -556,6 +556,8 @@ fn portfolio_gallery_asset_picker() {
                         source,
                         price: None,
                         event: None,
+                        base: None,
+                        quote: None,
                     },
                 );
             }

@@ -169,12 +169,13 @@ impl MarketSource for Coinbase {
         let results: Vec<SearchResult> = products
             .iter()
             .filter(|product| product.id.replace('-', "").contains(&q))
-            .map(|product| SearchResult {
-                symbol: format!("{}/{}", product.base, product.quote),
-                full_symbol: product.id.clone(),
-                source: crate::model::DataSource::Coinbase,
-                price: None,
-                event: None,
+            .map(|product| {
+                SearchResult::new(
+                    crate::model::DataSource::Coinbase,
+                    product.id.clone(),
+                    product.id.clone(),
+                )
+                .pair(product.base.clone(), product.quote.clone())
             })
             .collect();
         Ok(rank_results(results, query).into_iter().take(20).collect())

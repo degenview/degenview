@@ -23,6 +23,7 @@ use crate::ui::layout_prompts::NamePrompt;
 use crate::ui::paper_chart_trading::PaperOverlayAction;
 use crate::ui::pine_settings_popover::PineSettingsPopover;
 use crate::ui::replay_date_sheet::{self, ReplayDateSheetState};
+use crate::ui::symbol_picker::SymbolPicker;
 use crate::ui::watchlist_sidebar::WatchlistSidebarState;
 use crate::ui::{self, CrosshairInfo, replay_bar, tool_sidebar, workspace_toolbar};
 use alerts::AlertRequest;
@@ -62,6 +63,7 @@ mod pine_logs;
 mod replay;
 mod settings;
 mod snapshot;
+mod symbol_picker;
 #[cfg(test)]
 mod test_support;
 mod tool_rail;
@@ -168,6 +170,7 @@ pub struct ChartWorkspace {
     saved_drawings: HashMap<u64, Vec<Drawing>>,
     add_chart: AddChartSheet,
     indicator_picker: IndicatorPicker,
+    symbol_picker: SymbolPicker,
     add_to_watchlist: Option<EntryId>,
     unseen_alerts: usize,
     /// How portfolio cards reach the app's portfolios; set by the window that draws this tab.
@@ -356,6 +359,7 @@ impl ChartWorkspace {
             baseline: None,
             add_chart: AddChartSheet::new(store.clone()),
             indicator_picker: IndicatorPicker::new(Some(store.clone())),
+            symbol_picker: SymbolPicker::new(store.clone()),
             add_to_watchlist: None,
             unseen_alerts: 0,
             card_env: None,
@@ -835,6 +839,7 @@ impl ChartWorkspace {
         if !self.add_chart.is_open() {
             self.add_to_watchlist = None;
         }
+        actions.extend(self.show_symbol_picker(&ctx));
         if self.indicator_picker.is_open() {
             let target = self.indicator_target();
             match self.indicator_picker.show(&ctx, target.as_ref()) {
@@ -880,6 +885,8 @@ impl Drop for ChartWorkspace {
         self.quote_coordinator.release(self.id);
         self.quote_coordinator
             .release(alert_editor::quote_owner(self.id));
+        self.quote_coordinator
+            .release(crate::ui::symbol_picker::quote_owner(self.id));
     }
 }
 

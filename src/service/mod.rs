@@ -39,6 +39,7 @@ pub mod portfolio_performers;
 pub mod portfolio_quotes;
 mod rate_limit;
 pub mod sandbox;
+pub mod search_rank;
 pub mod secret_service;
 pub mod self_update;
 pub mod snapshot_export;
@@ -59,17 +60,84 @@ mod ws;
 
 use crate::model::{DataSource, Kline, PmSeries};
 pub(crate) use candles::{fill_gaps, fold_calendar, next_bucket_start_ms, normalize};
+pub(crate) use search_rank::rank_results;
 
 /// A search hit on one provider: a display label, the provider's own id, and the
 /// source it came from.
 #[derive(Clone, Debug)]
 pub struct SearchResult {
+    /// The market as its exchange names it (`BTCUSDT`, `BTC-USD`, `PEPE/WETH`), or an equity's
+    /// ticker and company (`AAPL — Apple Inc.`), or a prediction market's question.
     pub symbol: String,
     pub full_symbol: String,
     pub source: DataSource,
     pub price: Option<f64>,
     /// Prediction markets only: the event this choice belongs to and its artwork.
     pub event: Option<EventInfo>,
+    /// The asset a pair trades, as the provider lists it, when the provider says. Binance's
+    /// `BTCUSDT` and Coinbase's `BTC-USD` carry no separator, so a pair is never split by guessing.
+    pub base: Option<String>,
+    /// What the pair is priced in (`USDT`, `USD`).
+    pub quote: Option<String>,
+}
+
+/// What separates an equity's ticker from its company name in [`SearchResult::symbol`].
+pub const NAME_SEPARATOR: &str = " — ";
+
+impl SearchResult {
+    /// A hit with only its names; chain [`Self::pair`] for a market with a base and a quote.
+    pub fn new(
+        source: DataSource,
+        symbol: impl Into<String>,
+        full_symbol: impl Into<String>,
+    ) -> Self {
+        Self {
+            symbol: symbol.into(),
+            full_symbol: full_symbol.into(),
+            source,
+            price: None,
+            event: None,
+            base: None,
+            quote: None,
+        }
+    }
+
+    pub fn pair(mut self, base: impl Into<String>, quote: impl Into<String>) -> Self {
+        self.base = Some(base.into());
+        self.quote = Some(quote.into());
+        self
+    }
+
+    /// The market's own name, without a company: `AAPL` for `AAPL — Apple Inc.`.
+    pub fn ticker(&self) -> &str {
+        self.symbol
+            .split(NAME_SEPARATOR)
+            .next()
+            .unwrap_or(&self.symbol)
+            .trim()
+    }
+
+    /// The company an equity belongs to, when the label carries one.
+    pub fn company(&self) -> Option<&str> {
+        let name = self.symbol.split_once(NAME_SEPARATOR)?.1.trim();
+        (!name.is_empty()).then_some(name)
+    }
+
+    /// The asset the market trades: the provider's own base, else read out of the symbol.
+    pub fn base_asset(&self) -> String {
+        self.base.as_ref().map_or_else(
+            || self.source.base_asset(&self.symbol),
+            |base| base.to_uppercase(),
+        )
+    }
+
+    /// `BASE/QUOTE` for a pair, else the symbol: the label portfolios keep for a market.
+    pub fn pair_label(&self) -> String {
+        match (&self.base, &self.quote) {
+            (Some(base), Some(quote)) => format!("{base}/{quote}"),
+            _ => self.symbol.clone(),
+        }
+    }
 }
 
 /// The parent event of a prediction-market choice.
@@ -197,35 +265,6 @@ pub fn trending(source: DataSource, limit: usize) -> Result<Vec<SearchResult>, S
     match source {
         DataSource::Polymarket => polymarket::trending(limit),
         _ => Ok(Vec::new()),
-    }
-}
-
-/// Stable, provider-local ordering that favors the asset a query most likely
-/// refers to. Equal-ranked results retain the source's original order.
-pub(crate) fn rank_results(results: Vec<SearchResult>, query: &str) -> Vec<SearchResult> {
-    let needle = query.trim().to_uppercase();
-    if needle.is_empty() {
-        return results;
-    }
-    let mut indexed: Vec<(usize, SearchResult)> = results.into_iter().enumerate().collect();
-    indexed.sort_by_key(|(offset, result)| (rank(result, &needle), *offset));
-    indexed.into_iter().map(|(_, result)| result).collect()
-}
-
-fn rank(result: &SearchResult, needle: &str) -> u8 {
-    let display = result.symbol.to_uppercase();
-    let full = result.full_symbol.to_uppercase();
-    let base = display.split('/').next().unwrap_or(&display).to_owned();
-    if display == needle || full == needle {
-        0
-    } else if base == needle {
-        1
-    } else if display.starts_with(needle) || full.starts_with(needle) || base.starts_with(needle) {
-        3
-    } else if display.contains(needle) || full.contains(needle) {
-        4
-    } else {
-        5
     }
 }
 

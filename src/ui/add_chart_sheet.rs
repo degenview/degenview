@@ -507,6 +507,8 @@ impl RecentMarket {
             source: self.source,
             price: None,
             event: None,
+            base: None,
+            quote: None,
         }
     }
 }
@@ -699,6 +701,8 @@ impl AddChartSheet {
                     source: DataSource::CoinMarketCap,
                     price: None,
                     event: None,
+                    base: None,
+                    quote: None,
                 })
             }
         }
@@ -1009,6 +1013,8 @@ impl AddChartSheet {
                                 source: DataSource::Alpaca,
                                 price: None,
                                 event: None,
+                                base: None,
+                                quote: None,
                             });
                             // Only search when there is a feed to ask: the text would hide the
                             // chips, leaving an empty pane.
@@ -1898,7 +1904,7 @@ fn prediction_icon(ui: &Ui, rect: Rect, symbol: &str, url: Option<&str>) {
 
 /// A result's artwork. Crypto pairs share one lookup per base asset, keyed as its Binance USDT
 /// market, so ETH/BTC and ETH/EUR draw the same logo as ETH/USDT without a request each.
-fn result_icon(ui: &Ui, rect: Rect, result: &SearchResult) {
+pub(crate) fn result_icon(ui: &Ui, rect: Rect, result: &SearchResult) {
     let base = base_symbol(result);
     match result.source {
         DataSource::Binance | DataSource::Coinbase | DataSource::CoinGecko => {
@@ -1910,8 +1916,7 @@ fn result_icon(ui: &Ui, rect: Rect, result: &SearchResult) {
 
 /// The ticker without a trading pair or company name: "BTC/USDT" → "BTC".
 fn base_symbol(result: &SearchResult) -> String {
-    let label = result.symbol.split(" — ").next().unwrap_or(&result.symbol);
-    label.split('/').next().unwrap_or(label).to_uppercase()
+    result.base_asset()
 }
 
 /// One search hit: logo (with the data source badged on its corner when `shows_source`), symbol
@@ -2893,6 +2898,8 @@ mod tests {
             source,
             price: None,
             event: None,
+            base: None,
+            quote: None,
         }
     }
 

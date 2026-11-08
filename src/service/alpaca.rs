@@ -124,12 +124,12 @@ impl MarketSource for Alpaca {
                 asset.symbol.to_uppercase().contains(&needle)
                     || asset.name.to_uppercase().contains(&needle)
             })
-            .map(|asset| SearchResult {
-                symbol: format!("{} — {}", asset.symbol, asset.name),
-                full_symbol: asset.symbol.clone(),
-                source: crate::model::DataSource::Alpaca,
-                price: None,
-                event: None,
+            .map(|asset| {
+                SearchResult::new(
+                    crate::model::DataSource::Alpaca,
+                    format!("{}{}{}", asset.symbol, super::NAME_SEPARATOR, asset.name),
+                    asset.symbol.clone(),
+                )
             })
             .collect();
         Ok(rank_results(results, query).into_iter().take(30).collect())

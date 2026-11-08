@@ -6,8 +6,8 @@ faint tint on hover, hairline separators between groups, small corner radius.
 
 ## Layout
 
-Left to right: timeframe row (`1H … 1Y`, current one lit) | chart type | Indicators, Replay |
-Undo, Redo. Right end, from the edge inwards: Add Chart | watchlist toggle, Pine Studio, Portfolio |
+Left to right: symbol (the focused chart's market, opens the [symbol picker](symbol-picker.md)) |
+timeframe row (`1H … 1Y`, current one lit) | chart type | Indicators, Replay | Undo, Redo. Right end, from the edge inwards: Add Chart | watchlist toggle, Pine Studio, Portfolio |
 chart settings | layout menu.
 
 - Every button is a `Button` (id, glyph, label, tooltip, enabled, lit, action). `measure` lays the
@@ -25,6 +25,9 @@ chart settings | layout menu.
 
 ## What acts on what
 
+- **Symbol** shows the focused market chart's name as its exchange writes it and never drops its label
+  (`keep_label`) when the bar narrows; it is enabled with no chart (a pick then adds one). ⌘K / Ctrl+K
+  does the same.
 - **Chart type, Indicators, chart settings** act on the focused market chart
   (`ChartWorkspace::focused_market_chart`). They are disabled with none (empty tab, a portfolio card
   focused), the chart type for a line-only source, settings for a CoinMarketCap gauge. A card header has

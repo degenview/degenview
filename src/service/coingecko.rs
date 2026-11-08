@@ -46,13 +46,11 @@ impl MarketSource for CoinGecko {
             ) else {
                 continue;
             };
-            results.push(SearchResult {
-                symbol: symbol.to_uppercase(),
-                full_symbol: id.to_owned(),
-                source: crate::model::DataSource::CoinGecko,
-                price: None,
-                event: None,
-            });
+            results.push(SearchResult::new(
+                crate::model::DataSource::CoinGecko,
+                symbol.to_uppercase(),
+                id,
+            ));
         }
         Ok(results.into_iter().take(20).collect())
     }

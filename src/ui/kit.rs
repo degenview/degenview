@@ -364,11 +364,7 @@ pub fn ticker_icon(ui: &Ui, rect: Rect, symbol: &str, source: DataSource) {
         source_logo::paint(ui, source, rect);
         return;
     }
-    let base: String = symbol
-        .split(['/', '-', ' '])
-        .next()
-        .unwrap_or(symbol)
-        .to_uppercase();
+    let base = source.base_asset(symbol);
     let lookup = match source {
         DataSource::Binance | DataSource::Coinbase | DataSource::CoinGecko => {
             Some((DataSource::Binance, format!("{base}USDT")))
@@ -419,10 +415,9 @@ pub fn chart_icon_with_label(
                 .paint_at(ui, rect);
         }
         None => {
-            let display = source.display_symbol(label);
-            let base = display.split(['/', '-', ' ']).next().unwrap_or(&display);
-            crate::service::icon::request_with_base(source, symbol, base);
-            monogram(ui, rect, base);
+            let base = source.base_asset(label);
+            crate::service::icon::request_with_base(source, symbol, &base);
+            monogram(ui, rect, &base);
         }
     }
     if shows_source {
