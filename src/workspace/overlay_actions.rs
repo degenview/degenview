@@ -1,20 +1,25 @@
 //! Adding, editing and removing the markets compared on a chart, as undoable steps.
 
 use super::ChartWorkspace;
-use super::undo::{Snapshot, UndoEntry};
+use super::undo::{RESTYLE_WINDOW, Snapshot, UndoEntry};
 use crate::model::InstrumentId;
-use crate::model::overlay::{AddOutcome, OverlayCommand};
+use crate::model::overlay::{AddOutcome, OverlayCommand, OverlayScale};
 use crate::model::price_scale::PriceScaleMode;
+use std::time::Instant;
 
 impl ChartWorkspace {
-    /// Pushes the chart's overlays as they stand, to undo the edit that follows.
-    fn remember_overlays(&mut self, chart_id: u64) {
+    /// Pushes the chart's overlays as they stand, to undo the edit that follows. `scale_mode` is the
+    /// axis mode to put back with them, when the edit changes it.
+    fn remember_overlays(&mut self, chart_id: u64, scale_mode: Option<PriceScaleMode>) {
         let Some(chart) = self.charts.iter().find(|chart| chart.id == chart_id) else {
             return;
         };
         self.undo.push(UndoEntry {
             chart_id,
-            before: Snapshot::Overlays(chart.overlays.clone()),
+            before: Snapshot::Overlays {
+                list: chart.overlays.clone(),
+                scale_mode,
+            },
         });
         self.redo.clear();
         self.last_restyle = None;
@@ -38,7 +43,9 @@ impl ChartWorkspace {
     /// Draws `instrument` on `chart_id`, on top of the others. Nothing is added for the chart's
     /// own market or one already compared; the outcome says which. The first line on the chart's
     /// own scale switches a Regular axis to Percent, because that is the only axis on which a
-    /// rebased line reads as a comparison (TradingView's "Same % scale" does the same).
+    /// rebased line reads as a comparison (TradingView's "Same % scale" does the same). Only the
+    /// first: once the chart compares something, the axis the user picked is theirs. The switch is
+    /// part of the add's undo step.
     pub(super) fn add_overlay(
         &mut self,
         chart_id: u64,
@@ -56,10 +63,15 @@ impl ChartWorkspace {
         if !matches!(outcome, AddOutcome::Added(_)) {
             return Some(outcome);
         }
-        self.remember_overlays(chart_id);
+        let first_on_main_scale = !chart
+            .overlays
+            .iter()
+            .any(|overlay| overlay.scale == OverlayScale::Main);
+        let switches = first_on_main_scale && chart.scale_mode == PriceScaleMode::Regular;
+        self.remember_overlays(chart_id, switches.then_some(PriceScaleMode::Regular));
         let chart = self.charts.iter_mut().find(|chart| chart.id == chart_id)?;
         chart.overlays = probe;
-        if chart.scale_mode == PriceScaleMode::Regular {
+        if switches {
             chart.scale_mode = PriceScaleMode::Percent;
         }
         Some(outcome)
@@ -75,10 +87,29 @@ impl ChartWorkspace {
         if !probe.apply(command) {
             return false;
         }
-        self.remember_overlays(chart_id);
+        let style_run = match command {
+            OverlayCommand::SetColor(id, _) => Some(id),
+            _ => None,
+        };
+        // A colour dragged in the picker reports every frame: the run is one step, as a drawing's
+        // restyle is. The run breaks on another overlay, another command, or any other undo step.
+        let now = Instant::now();
+        let merges = style_run.is_some_and(|id| {
+            self.last_overlay_style
+                .is_some_and(|(chart, overlay, len, at)| {
+                    chart == chart_id
+                        && overlay == id
+                        && len == self.undo.len()
+                        && now.saturating_duration_since(at) <= RESTYLE_WINDOW
+                })
+        });
+        if !merges {
+            self.remember_overlays(chart_id, None);
+        }
         if let Some(chart) = self.charts.iter_mut().find(|chart| chart.id == chart_id) {
             chart.overlays = probe;
         }
+        self.last_overlay_style = style_run.map(|id| (chart_id, id, self.undo.len(), now));
         true
     }
 }
@@ -310,9 +341,9 @@ mod tests {
     }
 
     /// A provider that answers at once from a table.
-    struct Instant;
+    struct Immediate;
 
-    impl OverlayBackend for Instant {
+    impl OverlayBackend for Immediate {
         fn submit(&self, _: DataSource, job: Box<dyn FnOnce() + Send>) {
             job();
         }
@@ -337,7 +368,7 @@ mod tests {
     fn the_card_is_handed_each_overlays_candles_and_a_failing_market_is_only_its_own_problem() {
         let ctx = egui::Context::default();
         let mut workspace = empty_workspace(1);
-        workspace.overlay_hub = OverlayHub::with_backend(Arc::new(Instant));
+        workspace.overlay_hub = OverlayHub::with_backend(Arc::new(Immediate));
         let a = chart_with_drawings(&mut workspace, "BTCUSDT", &[]);
         workspace.add_overlay(a, market("ETHUSDT"), None);
         workspace.add_overlay(a, market("BADUSDT"), None);
@@ -373,7 +404,7 @@ mod tests {
     fn two_charts_comparing_one_market_share_one_fetch_and_each_keeps_its_own_list() {
         let ctx = egui::Context::default();
         let mut workspace = empty_workspace(1);
-        workspace.overlay_hub = OverlayHub::with_backend(Arc::new(Instant));
+        workspace.overlay_hub = OverlayHub::with_backend(Arc::new(Immediate));
         let a = chart_with_drawings(&mut workspace, "BTCUSDT", &[]);
         let b = chart_with_drawings(&mut workspace, "XRPUSDT", &[]);
         workspace.add_overlay(a, market("ETHUSDT"), None);
@@ -389,6 +420,135 @@ mod tests {
             "chart b still holds both"
         );
         assert_eq!(overlays_of(&workspace, b), ["ETHUSDT", "SOLUSDT"]);
+    }
+
+    fn mode(workspace: &ChartWorkspace, chart_id: u64) -> PriceScaleMode {
+        chart(workspace, chart_id).scale_mode
+    }
+
+    #[test]
+    fn undoing_the_first_add_puts_the_axis_back_and_redo_switches_it_again() {
+        let mut workspace = empty_workspace(1);
+        let a = chart_with_drawings(&mut workspace, "BTCUSDT", &[]);
+        workspace.add_overlay(a, market("ETHUSDT"), None);
+        assert_eq!(mode(&workspace, a), PriceScaleMode::Percent);
+        workspace.undo();
+        assert!(overlays_of(&workspace, a).is_empty());
+        assert_eq!(
+            mode(&workspace, a),
+            PriceScaleMode::Regular,
+            "the axis came back with it"
+        );
+        workspace.redo();
+        assert_eq!(overlays_of(&workspace, a), ["ETHUSDT"]);
+        assert_eq!(mode(&workspace, a), PriceScaleMode::Percent);
+        workspace.undo();
+        assert_eq!(mode(&workspace, a), PriceScaleMode::Regular);
+    }
+
+    #[test]
+    fn undoing_a_later_edit_never_reverts_an_axis_the_user_picked_afterwards() {
+        let mut workspace = empty_workspace(1);
+        let a = chart_with_drawings(&mut workspace, "BTCUSDT", &[]);
+        workspace.add_overlay(a, market("ETHUSDT"), None);
+        let id = chart(&workspace, a).overlays.as_slice()[0].id;
+        workspace.set_scale_mode(a, PriceScaleMode::IndexedTo100);
+        workspace.apply_overlay_command(a, OverlayCommand::SetVisible(id, false));
+        workspace.undo();
+        assert!(chart(&workspace, a).overlays.get(id).unwrap().visible);
+        assert_eq!(mode(&workspace, a), PriceScaleMode::IndexedTo100);
+        workspace.redo();
+        assert_eq!(mode(&workspace, a), PriceScaleMode::IndexedTo100);
+    }
+
+    #[test]
+    fn only_the_first_line_on_the_charts_scale_switches_the_axis() {
+        let mut workspace = empty_workspace(1);
+        let a = chart_with_drawings(&mut workspace, "BTCUSDT", &[]);
+        workspace.add_overlay(a, market("ETHUSDT"), None);
+        // The user goes back to Regular on purpose: another market must not undo that.
+        workspace.set_scale_mode(a, PriceScaleMode::Regular);
+        workspace.add_overlay(a, market("SOLUSDT"), None);
+        assert_eq!(mode(&workspace, a), PriceScaleMode::Regular);
+        workspace.undo();
+        assert_eq!(mode(&workspace, a), PriceScaleMode::Regular);
+    }
+
+    #[test]
+    fn a_chart_whose_overlays_all_have_their_own_scale_switches_on_its_first_main_one() {
+        let mut workspace = empty_workspace(1);
+        let a = chart_with_drawings(&mut workspace, "BTCUSDT", &[]);
+        workspace.add_overlay(a, market("ETHUSDT"), None);
+        let id = chart(&workspace, a).overlays.as_slice()[0].id;
+        workspace.apply_overlay_command(a, OverlayCommand::SetScale(id, ScaleChoice::Own));
+        workspace.set_scale_mode(a, PriceScaleMode::Regular);
+        workspace.add_overlay(a, market("SOLUSDT"), None);
+        assert_eq!(mode(&workspace, a), PriceScaleMode::Percent);
+    }
+
+    #[test]
+    fn dragging_a_colour_is_one_undo_step() {
+        use crate::model::editor_theme::Rgba;
+        let mut workspace = empty_workspace(1);
+        let a = chart_with_drawings(&mut workspace, "BTCUSDT", &[]);
+        workspace.add_overlay(a, market("ETHUSDT"), None);
+        workspace.add_overlay(a, market("SOLUSDT"), None);
+        let (eth, sol) = {
+            let list = &chart(&workspace, a).overlays;
+            (list.as_slice()[0].id, list.as_slice()[1].id)
+        };
+        let original = chart(&workspace, a).overlays.get(eth).unwrap().color;
+        let before = workspace.undo.len();
+        // A drag reports a new colour on every frame.
+        for n in 0..40u8 {
+            let changed = workspace
+                .apply_overlay_command(a, OverlayCommand::SetColor(eth, Rgba::new(n, 20, 30, 255)));
+            assert!(changed);
+        }
+        assert_eq!(
+            workspace.undo.len(),
+            before + 1,
+            "one step for the whole drag"
+        );
+        assert_eq!(
+            chart(&workspace, a).overlays.get(eth).unwrap().color,
+            Rgba::new(39, 20, 30, 255)
+        );
+        workspace.undo();
+        assert_eq!(
+            chart(&workspace, a).overlays.get(eth).unwrap().color,
+            original
+        );
+
+        // Another overlay's colour, or another command in between, is a step of its own.
+        let start = workspace.undo.len();
+        workspace.apply_overlay_command(a, OverlayCommand::SetColor(eth, Rgba::new(1, 1, 1, 255)));
+        workspace.apply_overlay_command(a, OverlayCommand::SetColor(sol, Rgba::new(2, 2, 2, 255)));
+        workspace.apply_overlay_command(a, OverlayCommand::SetColor(sol, Rgba::new(3, 3, 3, 255)));
+        workspace.apply_overlay_command(a, OverlayCommand::SetWidth(sol, 3.0));
+        workspace.apply_overlay_command(a, OverlayCommand::SetColor(sol, Rgba::new(4, 4, 4, 255)));
+        assert_eq!(workspace.undo.len(), start + 4);
+    }
+
+    #[test]
+    fn a_colour_edit_after_the_window_or_another_undo_step_starts_a_new_step() {
+        use crate::model::editor_theme::Rgba;
+        let mut workspace = empty_workspace(1);
+        let a = chart_with_drawings(&mut workspace, "BTCUSDT", &[1]);
+        workspace.add_overlay(a, market("ETHUSDT"), None);
+        let id = chart(&workspace, a).overlays.as_slice()[0].id;
+        workspace.apply_overlay_command(a, OverlayCommand::SetColor(id, Rgba::new(9, 9, 9, 255)));
+        let steps = workspace.undo.len();
+        // A drawing step in between ends the run.
+        workspace.apply_drawing_commands(a, vec![crate::model::DrawingCommand::Remove(1)]);
+        workspace.apply_overlay_command(a, OverlayCommand::SetColor(id, Rgba::new(8, 8, 8, 255)));
+        assert_eq!(workspace.undo.len(), steps + 2);
+        // The window lapsing ends it too.
+        let (chart_id, overlay, len, _) = workspace.last_overlay_style.unwrap();
+        workspace.last_overlay_style =
+            Some((chart_id, overlay, len, Instant::now() - RESTYLE_WINDOW * 2));
+        workspace.apply_overlay_command(a, OverlayCommand::SetColor(id, Rgba::new(7, 7, 7, 255)));
+        assert_eq!(workspace.undo.len(), steps + 3);
     }
 
     /// Prints a saved session tab holding a chart that compares several markets, for loading into a

@@ -86,6 +86,15 @@ impl OverlayLine<'_> {
         self.state == LineState::Drawn
     }
 
+    /// Whether the market is meant to be on this chart, drawn or not for now (loading, nothing in
+    /// view): hidden, blocked and unsupported ones are not.
+    fn listed(&self) -> bool {
+        !matches!(
+            self.state,
+            LineState::Hidden | LineState::Blocked(_) | LineState::Unsupported
+        )
+    }
+
     pub(super) fn color(&self) -> Color32 {
         color32(self.overlay.color)
     }
@@ -333,6 +342,33 @@ impl ChartCard {
         OverlayFrame { lines }
     }
 
+    /// What the axis column has to hold for the main-scale lines' last-value tags: their texts, so
+    /// the axis is as wide as the widest. Every labelled line counts, in the plot or not, so the
+    /// axis does not change width as one leaves it.
+    pub(super) fn overlay_tag_texts(
+        &self,
+        bars: &[Kline],
+        view: &View,
+        chart_type: ChartType,
+    ) -> Vec<String> {
+        let frame =
+            self.overlay_frame(bars, view.start, view.end, chart_type, view.scale.reference);
+        let format = self.appearance.price_format();
+        frame
+            .lines
+            .iter()
+            .filter(|line| {
+                line.drawn()
+                    && line.overlay.show_label
+                    && matches!(line.mapping, Mapping::Main { .. })
+            })
+            .filter_map(|line| {
+                let (_, value) = line.last()?;
+                Some(line.text(value, view.scale.mode, format))
+            })
+            .collect()
+    }
+
     /// The overlays' lines. Drawn under the main series, over the grid, clipped to the plot.
     pub(super) fn paint_overlay_lines(
         &self,
@@ -459,7 +495,9 @@ impl ChartCard {
         let format = self.appearance.price_format();
         let mode = view.scale.mode;
         let mut rows: Vec<(Color32, String, String)> = Vec::new();
-        for line in frame.lines.iter().filter(|line| line.drawn()) {
+        // Every market that is on the chart gets a row, one with nothing in view included: panning
+        // past a market's history still names it, with a dash.
+        for line in frame.lines.iter().filter(|line| line.listed()) {
             let value = line.values.get(index).copied().flatten();
             if let Some(value) = value
                 && let Some(y) = line.y(value, &view.scale)

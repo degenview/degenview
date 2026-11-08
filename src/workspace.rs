@@ -196,6 +196,9 @@ pub struct ChartWorkspace {
     confirm_remove_drawings: Option<u64>,
     /// The last restyle, so a burst of them (dragging a colour picker) is one undo step.
     last_restyle: Option<(u64, u64, Instant)>,
+    /// The overlay colour edit the undo stack last took: chart, overlay, the stack's length right
+    /// after, and when. A drag of the colour picker continues it instead of stacking steps.
+    last_overlay_style: Option<(u64, crate::model::overlay::OverlayId, usize, Instant)>,
     /// The chart a header ✕ asked to remove, awaiting confirmation.
     removing_chart: Option<u64>,
     settings_state: ChartSettingsState,
@@ -377,6 +380,7 @@ impl ChartWorkspace {
             style_clipboard: None,
             confirm_remove_drawings: None,
             last_restyle: None,
+            last_overlay_style: None,
             removing_chart: None,
             settings_state: ChartSettingsState::default(),
             crosshair: None,

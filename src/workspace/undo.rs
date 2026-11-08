@@ -24,7 +24,12 @@ pub(super) enum Snapshot {
         scripts: Vec<crate::model::pine_instance::PineInstance>,
     },
     /// The markets compared on the chart, with their looks: configuration only, never candles.
-    Overlays(crate::model::overlay::OverlayList),
+    /// `scale_mode` is set only by the add that switched the axis to Percent, so undoing it puts the
+    /// axis back too (and redo switches it again); any other step leaves the mode alone.
+    Overlays {
+        list: crate::model::overlay::OverlayList,
+        scale_mode: Option<crate::model::price_scale::PriceScaleMode>,
+    },
     /// What part of the chart was on screen before a Zoom In or Zoom out, and which way applying it
     /// takes Zoom out's history (a zoom is undone by going back; its inverse goes forward).
     View { step: ViewStep, direction: ViewMove },
@@ -54,9 +59,10 @@ impl Snapshot {
                 chart.chart.set_pine_instances(scripts);
                 current
             }
-            Self::Overlays(overlays) => {
-                Self::Overlays(std::mem::replace(&mut chart.overlays, overlays))
-            }
+            Self::Overlays { list, scale_mode } => Self::Overlays {
+                list: std::mem::replace(&mut chart.overlays, list),
+                scale_mode: scale_mode.map(|mode| std::mem::replace(&mut chart.scale_mode, mode)),
+            },
             Self::View { step, direction } => Self::View {
                 step: chart.chart.apply_view(step, direction)?,
                 direction: direction.inverse(),
@@ -66,7 +72,7 @@ impl Snapshot {
 }
 
 /// How long after a restyle another of the same drawing still counts as the same edit.
-const RESTYLE_WINDOW: Duration = Duration::from_millis(800);
+pub(super) const RESTYLE_WINDOW: Duration = Duration::from_millis(800);
 
 /// The drawing a batch restyles, when that is all the batch does.
 fn restyled_drawing(commands: &[DrawingCommand]) -> Option<u64> {

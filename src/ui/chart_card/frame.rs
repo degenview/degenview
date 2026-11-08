@@ -252,6 +252,11 @@ impl ChartCard {
                 for price in tagged {
                     widest = widest.max(measure(&scale.tag_label(format, price)));
                 }
+                // And the last values of the lines compared on this scale, which read as a price
+                // of their own (Regular, Logarithmic) or as their own change (Percent, Indexed).
+                for text in self.overlay_tag_texts(bars, &view, chart_type) {
+                    widest = widest.max(measure(&text));
+                }
                 let shown = view.end - view.start;
                 for (pane_rect, (_, pine)) in pane_rects.iter().zip(&pane_outputs) {
                     let height = (pane_rect.height() - 16.0).max(0.0);

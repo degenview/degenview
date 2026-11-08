@@ -66,7 +66,8 @@ plot, one line per run of bars (lines break at gaps); a single isolated bar is a
 order. Last value: a tag on the axis for a chart-scale line (it reads as the axis does), a pill in the
 plot's right edge for an own-scale line; neighbours are pushed apart. The price range grows to fit
 rebased lines. The crosshair adds a ring on each line and a box under the OHLC box with one row per
-overlay (colour, name, value); rows that do not fit are counted ("+N more") and stay in the legend and
+overlay on the chart (colour, name, value, a dash where it has no candle or nothing in view; hidden and
+blocked ones are not listed); rows that do not fit are counted ("+N more") and stay in the legend and
 settings. Lines are painted by `paint_frame`, the frame snapshots share, so snapshots include them
 (`snapshot_tests` compares the two shape for shape).
 
@@ -85,7 +86,9 @@ close, HL2, HLC3, OHLC4), scale, last-value tag, order and remove, and "Remove a
 exchange and the state: waiting, loading, "could not load: …", "same market as the chart".
 
 Every edit is an `OverlayCommand` and one undo step (`Snapshot::Overlays`); an edit that changes
-nothing leaves none. The Regular → Percent switch is not part of the undo step.
+nothing leaves none. The add that switches Regular to Percent carries the old mode in its step, so undo
+puts the axis back and redo switches it again; no other step touches the mode. A colour dragged in the
+picker reports every frame and is one step (`last_overlay_style`, the 800 ms window drawings use).
 
 ## Data
 
@@ -151,14 +154,14 @@ the first visible bar and so changes with a pan; that Indexed to 100 sets the fi
 DegenView's own decisions, not verified against TradingView: lines under the main series; the picker
 staying open after a compare pick; ⌥↵; the baseline when an overlay starts after the first visible
 bar (its own first visible value); the colour palette; hide and order controls; the 8% margin of an
-own scale; switching Regular to Percent only on the first overlay.
+own scale; switching Regular to Percent only for the first line on the chart's scale.
 
 Not done, and different from TradingView: no "new pane" placement; no second price axis column (an
 own scale has a tag and a legend value, no ticks); overlays are lines only (no candles, bars or areas
 for a compared market) with solid, dashed or dotted strokes; no drag-and-drop reordering (menu and
 buttons); no MCP tool (a snapshot taken over MCP includes the lines, `list_charts` does not name them);
 no entry in the chart's right-click menu; a Regular axis shows rebased prices, so the first overlay
-switches it. Checked headlessly (tests, snapshot parity) and by looking at a macOS release build with five markets
+switches it. The axis column is as wide as the widest last-value tag of a line on the chart's scale. Checked headlessly (tests, snapshot parity) and by looking at a macOS release build with five markets
 on one chart; the compare picker, the settings page and the light theme were not looked at in a window,
 and neither were Linux and Windows. Stocks need an Alpaca key and were not tried. No performance figure
 has been measured.

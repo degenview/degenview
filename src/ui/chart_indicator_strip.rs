@@ -779,7 +779,7 @@ fn list_row(
             .gap(6.0)
             .show(|ui| ema_menu(ui, config, action));
     }
-    body.context_menu(|ui| item_menu(ui, item, rect, config, action));
+    item_context_menu(ui, &body, item, rect, config, action);
 }
 
 /// One applied indicator: a quiet name capsule with a small x at its right end that removes it,
@@ -956,7 +956,7 @@ fn chip(
         .is_some_and(|pos| rect.contains(pos));
     ui.ctx()
         .data_mut(|data| data.insert_temp(id, under_pointer));
-    body.context_menu(|ui| item_menu(ui, item, rect, config, action));
+    item_context_menu(ui, &body, item, rect, config, action);
 }
 
 struct Control {
@@ -1075,6 +1075,59 @@ fn overlay_menu(ui: &mut Ui, id: OverlayId, info: &OverlayInfo, action: &mut Opt
     }
 }
 
+/// The right-click menu of a chip or list row. A compared market's has rows that vary with its
+/// name (`Scale of <market>`), so it is as wide as its longest row (`kit::fitted_context_menu`);
+/// the indicators' and scripts' keep their one fixed width.
+fn item_context_menu(
+    ui: &Ui,
+    body: &egui::Response,
+    item: &Item,
+    chip: Rect,
+    config: &IndicatorConfig,
+    action: &mut Option<Action>,
+) {
+    if !matches!(item.kind, Kind::Overlay(_)) {
+        body.context_menu(|ui| item_menu(ui, item, chip, config, action));
+        return;
+    }
+    // Rows are drawn by the hundred: the labels are only worked out for a menu that is wanted.
+    let wanted = body.secondary_clicked()
+        || egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(body));
+    if !wanted {
+        return;
+    }
+    let labels = overlay_menu_labels(item);
+    let rows: Vec<(&str, Option<&str>)> = labels.iter().map(|l| (l.as_str(), None)).collect();
+    kit::fitted_context_menu(ui, body, &rows, |ui| {
+        item_menu(ui, item, chip, config, action)
+    });
+}
+
+/// Every label a compared market's menu can show, for measuring it.
+fn overlay_menu_labels(item: &Item) -> Vec<String> {
+    let mut labels: Vec<String> = [
+        if item.visible { "Hide" } else { "Show" },
+        "Settings…",
+        "Chart's scale",
+        "Its own scale",
+        "Bring to front",
+        "Bring forward",
+        "Send backward",
+        "Send to back",
+        "Remove",
+    ]
+    .map(str::to_owned)
+    .to_vec();
+    if let Some(info) = &item.overlay {
+        labels.extend(
+            info.own_scales
+                .iter()
+                .map(|(_, name)| format!("Scale of {name}")),
+        );
+    }
+    labels
+}
+
 fn item_menu(
     ui: &mut Ui,
     item: &Item,
@@ -1082,7 +1135,9 @@ fn item_menu(
     config: &IndicatorConfig,
     action: &mut Option<Action>,
 ) {
-    ui.set_width(180.0);
+    if !matches!(item.kind, Kind::Overlay(_)) {
+        ui.set_width(180.0);
+    }
     ui.spacing_mut().item_spacing.y = 0.0;
     let (icon, label) = if item.visible {
         (Icon::EyeSlash, "Hide")
@@ -1467,5 +1522,48 @@ mod tests {
             let used = drawn_width(&config, &card, width);
             assert!(used <= width + 0.5, "{used} overflows a {width} row");
         }
+    }
+
+    #[test]
+    fn the_compared_markets_menu_is_as_wide_as_its_longest_row() {
+        let ctx = egui::Context::default();
+        crate::ui::theme::install_offscreen(&ctx);
+        let card = card_comparing(&["ETHUSDT", "SOLUSDT"]);
+        let short = overlay_items(&card, DataSource::Binance);
+        let mut long = overlay_items(&card, DataSource::Binance);
+        // Another market with a scale of its own, named by a long DEX pair.
+        long[1].overlay.as_mut().unwrap().own_scales = vec![(
+            OverlayId(9),
+            "A very long decentralised pair name / WETH".to_owned(),
+        )];
+        let width = |item: &Item| {
+            let labels = overlay_menu_labels(item);
+            let rows: Vec<(&str, Option<&str>)> =
+                labels.iter().map(|l| (l.as_str(), None)).collect();
+            let mut width = 0.0;
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                width = kit::menu_width_for_rows(ui, &rows, 0.0);
+            });
+            output.textures_delta.clear();
+            width
+        };
+        assert!(
+            overlay_menu_labels(&long[1])
+                .iter()
+                .any(|l| l.starts_with("Scale of A very long")),
+            "the dynamic row is among the labels measured"
+        );
+        assert!(
+            width(&long[1]) > width(&short[1]) + 40.0,
+            "a long row widens the menu: {} vs {}",
+            width(&long[1]),
+            width(&short[1])
+        );
+        assert!(
+            width(&short[1]) < 180.0 + 24.0,
+            "and a short menu is not padded to a guess"
+        );
+        // Hide or Show follows the market's state.
+        assert!(overlay_menu_labels(&short[1]).contains(&"Hide".to_owned()));
     }
 }

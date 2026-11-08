@@ -321,6 +321,81 @@ fn the_source_and_scale_are_per_overlay() {
     assert_eq!(lines(&shapes, FIRST).len(), 1);
 }
 
+#[test]
+fn the_crosshair_names_a_market_with_nothing_in_view_and_gives_it_a_dash() {
+    // OLDUSDT stopped trading long before the bars in view: it has candles but none here.
+    let mut chart = harness(&[
+        ("ETHUSDT", market(300, |n| 4_000.0 + n as f64)),
+        ("OLDUSDT", market(30, |n| 5.0 + n as f64)),
+    ]);
+    chart.crosshair = Some(crosshair_at(&chart, 0.5));
+    let shapes = settle(&mut chart);
+    let orange = Color32::from_rgb(0xFF, 0x98, 0x00);
+    assert!(lines(&shapes, orange).is_empty(), "nothing of it is drawn");
+    let (drawn, _) = chart.draw();
+    let texts: Vec<_> = drawn
+        .texts
+        .iter()
+        .map(|(_, text, _)| text.as_str())
+        .collect();
+    assert!(texts.contains(&"OLDUSDT"), "it still has a row: {texts:?}");
+    assert!(texts.contains(&"—"), "with a dash: {texts:?}");
+    // A hidden market is not listed.
+    let mut list = chart.card.overlay_list().clone();
+    let old = list.as_slice()[1].id;
+    list.set_visible(old, false);
+    let feeds = vec![
+        feed(market(300, |n| 4_000.0 + n as f64)),
+        feed(market(30, |n| 5.0 + n as f64)),
+    ];
+    chart
+        .card
+        .set_overlays(list, feeds, 2, DataSource::Binance, "BTCUSDT");
+    let (drawn, _) = chart.draw();
+    assert!(drawn.texts.iter().all(|(_, text, _)| text != "OLDUSDT"));
+}
+
+/// The right edge of the plot: where the grid lines stop (the lines that run on to the card's
+/// edge, such as the time axis, are longer).
+fn plot_right(drawn: &super::canvas_tests::Drawn) -> f32 {
+    drawn
+        .segments
+        .iter()
+        .filter(|(points, _)| {
+            points[0].y == points[1].y && (points[1].x - points[0].x).abs() > 100.0
+        })
+        .map(|(points, _)| points[0].x.max(points[1].x))
+        .fold(f32::MAX, f32::min)
+}
+
+#[test]
+fn the_axis_is_wide_enough_for_an_overlays_last_value_tag() {
+    // On the Regular axis a compared market's tag reads its own price, which can be far wider than
+    // the chart's: the axis has to make room, or the text runs into the plot.
+    let plain = {
+        let mut chart = Harness::new(ChartCanvas::default());
+        chart.draw().0
+    };
+    let wide = {
+        let mut chart = harness(&[("BIGUSDT", market(300, |n| 1_234_567.891 + n as f64))]);
+        assert_eq!(chart.scale_mode, PriceScaleMode::Regular);
+        chart.draw().0
+    };
+    assert!(
+        plot_right(&wide) < plot_right(&plain) - 8.0,
+        "the plot narrowed to fit the tag: {} vs {}",
+        plot_right(&wide),
+        plot_right(&plain)
+    );
+    // And the tag itself sits inside the card.
+    let tag = wide
+        .texts
+        .iter()
+        .find(|(_, text, _)| text.starts_with("1,23"))
+        .expect("the overlay's tag");
+    assert!(tag.0.x < SIZE.x - 20.0, "{:?}", tag.0);
+}
+
 /// What a frame costs as the number of compared markets grows. A measurement, not a check: run it
 /// in release mode, `cargo test --release overlay_cost -- --ignored --nocapture`.
 #[test]
