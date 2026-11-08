@@ -223,6 +223,13 @@ On macOS, open `DegenView-<tag>-macos-<arm64|x64>.dmg` and drag DegenView onto t
 shortcut. The app is signed and notarized, and updates itself from inside the app (it downloads the
 `.zip` with the same app in it, so keep it in Applications, not on the disk image).
 
+Or with Homebrew, from the [DegenView tap](https://github.com/degenview/homebrew-degenview):
+
+```bash
+brew install --cask degenview/degenview/degenview      # latest final release
+brew install --cask degenview/degenview/degenview@rc   # latest release candidate
+```
+
 On Windows, `DegenView-<tag>-windows-x64-setup.exe` (or `-windows-arm64-setup.exe` on a Windows on ARM
 PC such as a Snapdragon X laptop; the x64 build only runs there emulated) installs for the current
 user (no admin rights) into `%LOCALAPPDATA%\Programs\DegenView`, adds a Start menu entry and an uninstaller, and keeps your
