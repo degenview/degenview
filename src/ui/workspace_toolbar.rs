@@ -2,7 +2,8 @@
 //! tint on hover, hairline separators between groups and labels that fall back to icons when the
 //! window is too narrow for them. Left to right: the symbol of the focused chart, the timeframe,
 //! the chart type, Indicators,
-//! Replay, Undo and Redo. On the right: the layout menu, chart settings, Portfolio, Pine Studio,
+//! Replay, Alert, Undo and Redo. On the right: the layout menu, chart settings, the snapshot menu,
+//! Portfolio, Pine Studio,
 //! the watchlist toggle and Add Chart. The replay bar under it (`replay_bar.rs`) uses the same
 //! flat style. The symbol, chart type, Indicators and chart settings act on the
 //! focused chart.
@@ -56,6 +57,8 @@ pub struct ToolbarInput<'a> {
     pub replay_open: bool,
     /// There is a market to replay (or a replay to close).
     pub can_replay: bool,
+    /// What the camera menu needs: whether a snapshot is under way, and what the hosted rows lack.
+    pub snapshot: crate::ui::snapshot_menu::SnapshotMenu<'a>,
 }
 
 /// What the toolbar needs of the focused chart.
@@ -102,6 +105,12 @@ pub enum ToolbarAction {
     /// Open the focused chart's settings sheet.
     OpenChartSettings,
     ToggleReplay,
+    /// Start a price alert on the focused chart's market.
+    CreateAlert,
+    /// Take this snapshot of the focused chart.
+    Snapshot(crate::model::snapshot::SnapshotAction),
+    /// Open the Snapshots page of Settings.
+    SnapshotSettings,
     Undo,
     Redo,
 }
@@ -129,6 +138,7 @@ enum Glyph {
 enum Menu {
     ChartType,
     Layout,
+    Snapshot,
 }
 
 struct Button {
@@ -423,6 +433,17 @@ fn left_items(input: &ToolbarInput) -> Vec<Item> {
     .on_click(ToolbarAction::ToggleReplay);
     replay.tint = Some(theme::REPLAY);
     items.push(Item::Button(replay));
+    items.push(Item::Button(
+        Button::new("alert", "Create price alert")
+            .icon(Icon::BellBadge)
+            .label("Alert")
+            .enabled(
+                input
+                    .chart
+                    .is_some_and(|chart| crate::ui::supports_alerts(chart.source)),
+            )
+            .on_click(ToolbarAction::CreateAlert),
+    ));
     items.push(Item::Separator);
 
     items.push(Item::Button(
@@ -459,6 +480,11 @@ fn right_items(input: &ToolbarInput) -> Vec<Item> {
     layout.menu = Some(Menu::Layout);
     layout.access = Some(format!("Layout: {help}"));
 
+    let mut snapshot = Button::new("snapshot", "Take a snapshot")
+        .icon(Icon::Camera)
+        .enabled(input.chart.is_some());
+    snapshot.menu = Some(Menu::Snapshot);
+
     let watchlist_tip = if input.watchlist_visible {
         "Hide Watchlists"
     } else {
@@ -472,6 +498,7 @@ fn right_items(input: &ToolbarInput) -> Vec<Item> {
                 .enabled(input.chart.is_some_and(|chart| chart.settings))
                 .on_click(ToolbarAction::OpenChartSettings),
         ),
+        Item::Button(snapshot),
         Item::Separator,
         Item::Button(
             Button::new("portfolio", "Portfolio Tracker")
@@ -539,7 +566,18 @@ fn paint_slot(
             }
         }
         Some(Menu::Layout) => layout_popup(ui, &response, input, actions),
-        None => {}
+        Some(Menu::Snapshot) if button.enabled => {
+            match crate::ui::snapshot_menu::menu(ui, &response, &input.snapshot) {
+                Some(crate::ui::snapshot_menu::Pick::Take(picked)) => {
+                    actions.push(ToolbarAction::Snapshot(picked));
+                }
+                Some(crate::ui::snapshot_menu::Pick::Configure) => {
+                    actions.push(ToolbarAction::SnapshotSettings);
+                }
+                None => {}
+            }
+        }
+        Some(Menu::Snapshot) | None => {}
     }
 }
 
@@ -897,6 +935,11 @@ mod tests {
             can_redo: false,
             replay_open: false,
             can_replay: focused,
+            snapshot: crate::ui::snapshot_menu::SnapshotMenu {
+                busy: false,
+                hosting_unavailable: None,
+                shortcut: &|_| None,
+            },
         }
     }
 
@@ -1001,7 +1044,7 @@ mod tests {
         let (from, to, _) = *buttons
             .iter()
             .find(|button| button.2 == Some(target))
-            .expect("the button is on the bar");
+            .unwrap_or_else(|| panic!("{target:?} is not on the bar at {width}"));
         let at = pos2((from + to) / 2.0, HEIGHT / 2.0);
         let ctx = egui::Context::default();
         let button = |pressed| egui::Event::PointerButton {
@@ -1039,12 +1082,13 @@ mod tests {
             ToolbarAction::Undo,
             ToolbarAction::Redo,
             ToolbarAction::ToggleReplay,
+            ToolbarAction::CreateAlert,
             ToolbarAction::OpenIndicators,
             ToolbarAction::OpenChartSettings,
             ToolbarAction::SetTimeframe(Timeframe::Week),
             ToolbarAction::AddChart,
         ] {
-            for width in [1400.0, 800.0] {
+            for width in [1400.0, 960.0] {
                 assert_eq!(click_on(&input, width, target), vec![target], "{target:?}");
             }
         }
@@ -1074,6 +1118,7 @@ mod tests {
             ToolbarAction::Undo,
             ToolbarAction::Redo,
             ToolbarAction::ToggleReplay,
+            ToolbarAction::CreateAlert,
             ToolbarAction::OpenIndicators,
             ToolbarAction::OpenChartSettings,
         ] {

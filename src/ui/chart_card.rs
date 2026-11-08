@@ -33,7 +33,6 @@ use crate::ui::price_text;
 use crate::ui::replay_overlay::{self, ReplayChartFrame};
 use crate::ui::scale_menu;
 use crate::ui::series_render::{self, SeriesFrame};
-use crate::ui::snapshot_menu::SnapshotMenu;
 use crate::ui::theme;
 use eframe::egui::{
     self, Align2, Color32, FontId, Pos2, Rect, Response, Sense, Shape, Stroke, StrokeKind, Vec2,
@@ -133,14 +132,8 @@ pub struct ChartCardAction {
     pub indicator_action: Option<chart_indicator_strip::Action>,
     /// A header SELL / BUY pill was clicked: open the order ticket on that side.
     pub quick_trade: Option<PaperOrderSide>,
-    /// The header bell was clicked: start a new price alert for this chart's market.
-    pub new_alert: bool,
     pub toggle_favorite: bool,
     pub watchlist_change: Option<(u64, bool)>,
-    /// A row of the header's camera menu was picked: take that snapshot of this chart.
-    pub snapshot: Option<crate::model::snapshot::SnapshotAction>,
-    /// "Configure Snapshots…" was picked in the camera menu: open that page of Settings.
-    pub snapshot_settings: bool,
 }
 
 pub struct WatchlistMembership {
@@ -1828,7 +1821,6 @@ impl ChartCard {
         is_favorite: bool,
         watchlists: &[WatchlistMembership],
         action: &mut ChartCardAction,
-        snapshot: &SnapshotMenu,
         drag_id: u64,
     ) {
         let header_width = ui.available_width();
@@ -2019,28 +2011,6 @@ impl ChartCard {
                     {
                         action.remove_requested = true;
                     }
-                    if supports_alerts(source)
-                        && icons::button(
-                            ui,
-                            Icon::BellBadge,
-                            27.0,
-                            theme::text_secondary(),
-                            "Create Price Alert",
-                        )
-                        .clicked()
-                    {
-                        action.new_alert = true;
-                    }
-                    ui.spacing_mut().item_spacing.x = 4.0;
-                    match crate::ui::snapshot_menu::button(ui, snapshot) {
-                        Some(crate::ui::snapshot_menu::Pick::Take(picked)) => {
-                            action.snapshot = Some(picked);
-                        }
-                        Some(crate::ui::snapshot_menu::Pick::Configure) => {
-                            action.snapshot_settings = true;
-                        }
-                        None => {}
-                    }
                     let favorite_icon = if is_favorite {
                         Icon::StarFill
                     } else {
@@ -2056,7 +2026,6 @@ impl ChartCard {
                     } else {
                         "Add to Favorites"
                     };
-                    // Tighten the gap so the favorite sits close to the alert bell.
                     ui.spacing_mut().item_spacing.x = 4.0;
                     let favorite =
                         icons::button(ui, favorite_icon, 27.0, favorite_color, favorite_tip);

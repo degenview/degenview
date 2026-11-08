@@ -1,6 +1,6 @@
 # Chart snapshots
 
-A camera in each chart's header takes a picture of that chart and does one of five things with it,
+A camera in the toolbar, right of the chart settings button, takes a picture of the focused chart and does one of five things with it,
 as TradingView's does: **Download image**, **Copy image**, **Copy link**, **Open in new tab**,
 **Tweet image**. The first two work offline. The other three upload the image to a host the user
 sets in Settings ▸ Snapshots; DegenView hosts nothing.

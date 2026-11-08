@@ -1,7 +1,6 @@
 //! The chart grid: drawing the columns of chart cards, dragging cards between them, and applying what the pass collected.
 
 use super::ChartWorkspace;
-use super::alerts::AlertRequest;
 use super::chart::displayed_candles;
 use crate::host::paper_host::PaperHost;
 use crate::model::watchlist::WatchlistError;
@@ -11,9 +10,7 @@ use crate::model::{
 };
 use crate::ui::ViewMove;
 use crate::ui::chart_settings::ChartSettingsState;
-use crate::ui::{
-    self, ChartCardAction, CrosshairInfo, DrawingFrame, PickKind, ReplayChartFrame, shortcut,
-};
+use crate::ui::{self, ChartCardAction, CrosshairInfo, DrawingFrame, PickKind, ReplayChartFrame};
 use eframe::egui;
 use std::collections::{HashMap, HashSet};
 use std::time::Instant;
@@ -30,10 +27,6 @@ enum ChartCommand {
         before: Option<u64>,
     },
     NewColumn(u64),
-    /// A row of one chart card's camera menu was picked.
-    Snapshot(u64, crate::model::snapshot::SnapshotAction),
-    /// The camera menu's "Configure Snapshots…" row was picked.
-    SnapshotSettings,
 }
 
 /// A star or membership toggle that finds the market already in (or already out of) the list
@@ -280,19 +273,6 @@ impl ChartWorkspace {
             .map(|range| (range.from_ms, range.to_ms));
         let mut logs_picked: Option<(i64, i64)> = None;
         let timeframe = self.timeframe;
-        let hosting_note = match self.snapshot_hosting() {
-            crate::host::snapshot_host::Hosting::Ready(_) => None,
-            crate::host::snapshot_host::Hosting::NotConfigured => {
-                Some("Set a snapshot host in Settings ▸ Snapshots to share.")
-            }
-        };
-        let snapshot_shortcut =
-            |action| shortcut::snapshot(action).map(|shortcut| shortcut.label());
-        let snapshot_menu = ui::snapshot_menu::SnapshotMenu {
-            busy: self.snapshot_busy(),
-            hosting_unavailable: hosting_note,
-            shortcut: &snapshot_shortcut,
-        };
         let replay_active = self.replay.is_active();
         let mut replay_picked: Option<(u64, i64)> = None;
         // Linked navigation needs another chart to follow.
@@ -326,7 +306,6 @@ impl ChartWorkspace {
         let mut drawing_escape = false;
         let mut paper_actions = Vec::new();
         let mut quick_trade = None;
-        let mut new_alert: Option<AlertRequest> = None;
         let mut context_request: Option<(u64, ui::ContextRequest)> = None;
         let (favorites, watchlist_memberships): (HashSet<String>, Vec<_>) = {
             let store = self.watchlist.lock().expect("watchlist lock poisoned");
@@ -508,7 +487,6 @@ impl ChartWorkspace {
                                                 favorites.contains(&instrument.key()),
                                                 &memberships,
                                                 &mut action,
-                                                &snapshot_menu,
                                                 chart_id,
                                             );
                                             let selected = selected_drawing
@@ -652,22 +630,11 @@ impl ChartWorkspace {
                                 if drawn.inner.inner.remove_requested {
                                     commands.push(ChartCommand::Remove(chart_id));
                                 }
-                                if let Some(action) = drawn.inner.inner.snapshot {
-                                    commands.push(ChartCommand::Snapshot(chart_id, action));
-                                }
-                                if drawn.inner.inner.snapshot_settings {
-                                    commands.push(ChartCommand::SnapshotSettings);
-                                }
                                 if drawn.inner.inner.settings_requested {
                                     commands.push(ChartCommand::Settings(chart_id));
                                 }
                                 if let Some(action) = drawn.inner.inner.indicator_action {
                                     commands.push(ChartCommand::Indicator(chart_id, action));
-                                }
-                                if drawn.inner.inner.new_alert {
-                                    new_alert = Some(AlertRequest::market(Self::alert_asset(
-                                        &self.charts[index],
-                                    )));
                                 }
                                 if drawn.inner.inner.toggle_favorite {
                                     favorite_toggles.push(chart_id);
@@ -738,10 +705,6 @@ impl ChartWorkspace {
         for command in commands {
             match command {
                 ChartCommand::Focus(chart_id) => self.focus_chart(chart_id),
-                ChartCommand::Snapshot(chart_id, action) => {
-                    self.begin_snapshot(&ctx, chart_id, action);
-                }
-                ChartCommand::SnapshotSettings => self.snapshot.settings_requested = true,
                 ChartCommand::Remove(chart_id) => self.removing_chart = Some(chart_id),
                 ChartCommand::Settings(chart_id) => {
                     self.settings_state = ChartSettingsState::default();
@@ -829,9 +792,6 @@ impl ChartWorkspace {
         }
         let paper_failures = Self::apply_paper_overlay_actions(paper_host, paper_actions);
         self.paper_panel.report_messages(&paper_failures);
-        if new_alert.is_some() {
-            self.new_alert_request = new_alert;
-        }
         if let Some((chart_id, side, reference_price)) = quick_trade
             && let Some(chart) = self.charts.iter().find(|chart| chart.id == chart_id)
         {

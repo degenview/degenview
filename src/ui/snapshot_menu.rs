@@ -1,14 +1,13 @@
-//! The camera in a chart's header and the menu it opens: what to do with a picture of this chart.
+//! The menu under the toolbar's camera button: what to do with a picture of the focused chart.
 //!
-//! The button belongs to one chart card and reports the row picked; the workspace takes the
-//! snapshot of that chart. A row that cannot work says why instead of doing nothing: the hosted
+//! The button is the toolbar's and reports the row picked; the workspace takes the snapshot of
+//! the focused chart. A row that cannot work says why instead of doing nothing: the hosted
 //! ones need a host in Settings, and every row waits while a snapshot is being made.
 
-use super::icons::{self, Icon};
+use super::icons::Icon;
 use super::kit;
-use super::theme;
 use crate::model::snapshot::SnapshotAction;
-use eframe::egui::{self, Color32, Rect, Sense, Vec2};
+use eframe::egui::{self, Vec2};
 
 /// What the menu needs to know besides the chart.
 pub struct SnapshotMenu<'a> {
@@ -53,29 +52,10 @@ fn unavailable(action: SnapshotAction, menu: &SnapshotMenu) -> Option<String> {
         .flatten()
 }
 
-/// The header button. Returns the row picked this frame.
-pub fn button(ui: &mut egui::Ui, menu: &SnapshotMenu) -> Option<Pick> {
-    let size = 27.0;
-    let (rect, response) = ui.allocate_exact_size(Vec2::splat(size), Sense::click());
-    let response =
-        super::accessibility::label(response, "Take a snapshot").on_hover_text("Take a snapshot");
-    let open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&response));
-    if ui.is_rect_visible(rect) {
-        let fill = if open || response.is_pointer_button_down_on() {
-            theme::ink(26)
-        } else if response.hovered() {
-            theme::ink(14)
-        } else {
-            Color32::TRANSPARENT
-        };
-        ui.painter().rect_filled(rect, 5.0, fill);
-        icons::paint(
-            ui.painter(),
-            Rect::from_center_size(rect.center(), Vec2::splat(size * 0.62)),
-            Icon::Camera,
-            theme::text_secondary(),
-        );
-    }
+/// The menu under the toolbar's camera button `response`, opened by a click on it. Returns the
+/// row picked this frame.
+pub fn menu(ui: &mut egui::Ui, response: &egui::Response, menu: &SnapshotMenu) -> Option<Pick> {
+    let open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(response));
     let mut picked = None;
     if !(open || response.clicked()) {
         return picked;
@@ -97,7 +77,7 @@ pub fn button(ui: &mut egui::Ui, menu: &SnapshotMenu) -> Option<Pick> {
         .chain([(CONFIGURE_LABEL, None)])
         .collect();
     let width = kit::menu_width_for_rows(ui, &rows, 0.0);
-    egui::Popup::menu(&response)
+    egui::Popup::menu(response)
         .frame(kit::menu_frame())
         .width(width)
         .show(|ui| {
@@ -147,6 +127,7 @@ pub fn button(ui: &mut egui::Ui, menu: &SnapshotMenu) -> Option<Pick> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use eframe::egui::Rect;
 
     fn none(_: SnapshotAction) -> Option<String> {
         None
@@ -206,6 +187,12 @@ mod tests {
                 .into_iter()
                 .all(|action| unavailable(action, &menu).is_some())
         );
+    }
+
+    /// A 27-point camera button, as the toolbar draws one, with the menu under it.
+    fn button(ui: &mut egui::Ui, snapshot: &SnapshotMenu) -> Option<Pick> {
+        let (_, response) = ui.allocate_exact_size(Vec2::splat(27.0), egui::Sense::click());
+        menu(ui, &response, snapshot)
     }
 
     /// One frame of a button in a row, with the pointer events given: where the button is and

@@ -7,8 +7,8 @@ faint tint on hover, hairline separators between groups, small corner radius.
 ## Layout
 
 Left to right: symbol (the focused chart's market, opens the [symbol picker](symbol-picker.md)) |
-timeframe row (`1H … 1Y`, current one lit) | chart type | Indicators, Replay | Undo, Redo. Right end, from the edge inwards: Add Chart | watchlist toggle, Pine Studio, Portfolio |
-chart settings | layout menu.
+timeframe row (`1H … 1Y`, current one lit) | chart type | Indicators, Replay, Alert | Undo, Redo. Right end, from the edge inwards: Add Chart | watchlist toggle, Pine Studio, Portfolio |
+snapshot menu, chart settings | layout menu.
 
 - Every button is a `Button` (id, glyph, label, tooltip, enabled, lit, action). `measure` lays the
   labels out, `arrange` places the two runs, `paint_button` draws one. Tests use `arrange`, so the
@@ -16,7 +16,8 @@ chart settings | layout menu.
 - Width: when both runs with labels do not fit, labels (Indicators, Replay, Add Chart) drop and the
   icons stay; a button without an icon (a timeframe, the layout name) keeps its text. If the runs still
   collide, the right run drops buttons from its left end (the layout menu first). Never overlap. The
-  narrowest window is 760 wide and keeps everything but possibly the layout name.
+  narrowest window is 960 wide and keeps everything but possibly the layout name (the icon-only
+  bar needs about 910 points; it is tested at 960).
 - The colours are neutral (`kit::primary` tints, `text_primary` / `text_secondary` /
   `text_tertiary`); the only colour is Replay's orange while a replay is open (state, not a control).
 - `replay_bar.rs` (the strip under the toolbar while a replay is open) uses the same flat style: its
@@ -36,6 +37,10 @@ chart settings | layout menu.
   chart (CoinMarketCap excepted) or while a replay is open.
 - **Undo / Redo** are the workspace's undo stacks (`undo.rs`), the same as the keyboard shortcut;
   disabled when the stack is empty.
+- **Alert** starts a price alert on the focused chart's market (`create_alert_for_focused_chart`); it
+  opens the alert editor, never saves one, and is disabled for a market with no price feed.
+- **Snapshot** (camera, right of chart settings) opens the snapshot menu for the focused chart
+  (`snapshot_menu::menu`). Both were buttons in each card's header, which now has neither.
 - The chart-type pick goes through `set_chart_type_for_mcp`, so the toolbar, the MCP tool and the
   menu share one rule.
 
