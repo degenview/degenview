@@ -487,6 +487,23 @@ mod tests {
     }
 
     #[test]
+    fn showing_or_hiding_every_market_is_one_undo_step() {
+        let mut workspace = empty_workspace(1);
+        let a = chart_with_drawings(&mut workspace, "BTCUSDT", &[]);
+        for symbol in ["ETHUSDT", "SOLUSDT", "BNBUSDT"] {
+            workspace.add_overlay(a, market(symbol), None);
+        }
+        let steps = workspace.undo.len();
+        assert!(workspace.apply_overlay_command(a, OverlayCommand::SetAllVisible(false)));
+        assert!(chart(&workspace, a).overlays.iter().all(|o| !o.visible));
+        assert_eq!(workspace.undo.len(), steps + 1);
+        assert!(!workspace.apply_overlay_command(a, OverlayCommand::SetAllVisible(false)));
+        assert_eq!(workspace.undo.len(), steps + 1, "nothing changed, no step");
+        workspace.undo();
+        assert!(chart(&workspace, a).overlays.iter().all(|o| o.visible));
+    }
+
+    #[test]
     fn dragging_a_colour_is_one_undo_step() {
         use crate::model::editor_theme::Rgba;
         let mut workspace = empty_workspace(1);

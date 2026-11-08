@@ -2,6 +2,7 @@
 //! the Templates menu and "Done". Every control writes through to the chart as it changes.
 
 use super::chart_card::ChartCard;
+use super::chart_settings_compare::{self, CompareInput};
 use super::chart_templates::{self, TemplateAction, TemplateState};
 use super::icons::{self, Icon};
 use super::kit::{self, TabItem};
@@ -96,6 +97,8 @@ pub struct ChartSettingsState {
     /// What the Scripts page's search field holds.
     script_query: String,
     templates: TemplateState,
+    /// The Compare page's open cards, search and pending confirmation.
+    compare: chart_settings_compare::CompareState,
 }
 
 impl ChartSettingsState {
@@ -185,7 +188,18 @@ pub fn show(
                                     }
                                 }
                                 Tab::Overlays => {
-                                    if let Some(next) = overlays_page(ui, &mut c) {
+                                    let input = CompareInput {
+                                        card: &*c.card,
+                                        chart_name: c.title,
+                                        scale_mode: c.scale_mode,
+                                        price_based: c
+                                            .card
+                                            .effective_chart_type(c.source)
+                                            .is_synthetic(),
+                                    };
+                                    if let Some(next) =
+                                        chart_settings_compare::page(ui, &mut state.compare, &input)
+                                    {
                                         action = Some(next);
                                     }
                                 }
@@ -630,254 +644,6 @@ fn paint_preview(ui: &Ui, rect: Rect, up: Color32, down: Color32) {
 }
 
 // MARK: Indicators
-
-/// The Compare page: every market drawn over the chart, each with its look, scale and place in the
-/// drawing order. The list scrolls with the page, so any number of markets stays reachable.
-fn overlays_page(ui: &mut Ui, c: &mut ChartSettingsContext) -> Option<ChartSettingsAction> {
-    use crate::model::chart_type::{LineDash, PriceSource};
-    use crate::model::overlay::{Move, OverlayCommand, OverlayScale, ScaleChoice};
-    let mut action = None;
-    settings_card::section_title(
-        ui,
-        "Compare",
-        Some("Draw other markets on this chart, on its own time axis."),
-    );
-    ui.spacing_mut().item_spacing.y = 8.0;
-    let overlays: Vec<_> = c.card.overlay_list().iter().cloned().collect();
-    let status_of = |id| c.card.overlay_feed(id).map(|feed| feed.status.clone());
-    let statuses: Vec<_> = overlays.iter().map(|o| status_of(o.id)).collect();
-    let last_prices: Vec<_> = overlays
-        .iter()
-        .map(|o| c.card.overlay_last_price(o.id))
-        .collect();
-    let format = c.card.appearance().price_format();
-    ui.horizontal(|ui| {
-        if kit::sheet_button(ui, "Add symbol…", true, true).clicked() {
-            action = Some(ChartSettingsAction::AddOverlay);
-        }
-        if !overlays.is_empty() {
-            ui.label(kit::text(
-                format!("{} compared", overlays.len()),
-                11.5,
-                kit::REGULAR,
-                theme::text_secondary(),
-            ));
-            if kit::sheet_button(ui, "Remove all", false, true).clicked() {
-                action = Some(ChartSettingsAction::Overlay(OverlayCommand::RemoveAll));
-            }
-        }
-    });
-    if overlays.is_empty() {
-        ui.add_space(6.0);
-        ui.label(kit::text(
-            "Nothing is compared yet. Add a market to see how it moves against this one.",
-            12.0,
-            kit::REGULAR,
-            theme::text_secondary(),
-        ));
-        return action;
-    }
-    let widths: Vec<String> = ["0.5", "1", "1.5", "2", "3", "4"]
-        .map(String::from)
-        .to_vec();
-    let width_values = [0.5_f32, 1.0, 1.5, 2.0, 3.0, 4.0];
-    let dashes: Vec<String> = LineDash::ALL.iter().map(|d| d.label().to_owned()).collect();
-    let sources: Vec<String> = PriceSource::ALL
-        .iter()
-        .map(|s| s.label().to_owned())
-        .collect();
-    let own_scales: Vec<_> = overlays
-        .iter()
-        .filter(|o| o.scale == OverlayScale::Own(o.id))
-        .map(|o| (o.id, o.name()))
-        .collect();
-    let count = overlays.len();
-    for (index, overlay) in overlays.iter().enumerate() {
-        let id = overlay.id;
-        let mut send =
-            |command: OverlayCommand| action = Some(ChartSettingsAction::Overlay(command));
-        egui::Frame::new()
-            .fill(theme::card_fill(false))
-            .stroke(Stroke::new(1.0, theme::card_border(false)))
-            .corner_radius(10.0)
-            .inner_margin(Margin::same(12))
-            .show(ui, |ui| {
-                ui.set_width(ui.available_width());
-                ui.spacing_mut().item_spacing = vec2(8.0, 8.0);
-                ui.horizontal(|ui| {
-                    let current =
-                        Color32::from_rgb(overlay.color.r, overlay.color.g, overlay.color.b);
-                    if let Some(picked) = kit::color_well(
-                        ui,
-                        vec2(28.0, 24.0),
-                        &format!("{} colour", overlay.name()),
-                        current,
-                        egui::color_picker::Alpha::Opaque,
-                    ) {
-                        send(OverlayCommand::SetColor(
-                            id,
-                            crate::model::editor_theme::Rgba::new(
-                                picked.r(),
-                                picked.g(),
-                                picked.b(),
-                                255,
-                            ),
-                        ));
-                    }
-                    ui.vertical(|ui| {
-                        ui.spacing_mut().item_spacing.y = 1.0;
-                        ui.label(kit::text(
-                            overlay.name(),
-                            13.0,
-                            kit::SEMIBOLD,
-                            if overlay.visible {
-                                theme::text_primary()
-                            } else {
-                                theme::text_tertiary()
-                            },
-                        ));
-                        let mut detail = overlay.instrument.source.display_name().to_owned();
-                        match &statuses[index] {
-                            Some(crate::model::overlay_feed::OverlayStatus::Error(message)) => {
-                                detail = format!("{detail} · could not load: {message}");
-                            }
-                            Some(crate::model::overlay_feed::OverlayStatus::Blocked(reason)) => {
-                                detail = format!("{detail} · {reason}");
-                            }
-                            Some(
-                                crate::model::overlay_feed::OverlayStatus::Queued
-                                | crate::model::overlay_feed::OverlayStatus::Loading,
-                            ) => {
-                                detail = format!("{detail} · loading");
-                            }
-                            _ => {}
-                        }
-                        if let Some(price) = last_prices[index] {
-                            detail = format!("{detail} · last {}", format.format(price));
-                        }
-                        ui.label(kit::text(
-                            &detail,
-                            11.0,
-                            kit::REGULAR,
-                            theme::text_secondary(),
-                        ));
-                    });
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if tool_button(ui, Icon::Xmark, "Remove", true) {
-                            send(OverlayCommand::Remove(id));
-                        }
-                        if tool_button(ui, Icon::ArrowDown, "Send backward", index > 0) {
-                            send(OverlayCommand::Move(id, Move::Backward));
-                        }
-                        if tool_button(ui, Icon::ArrowUp, "Bring forward", index + 1 < count) {
-                            send(OverlayCommand::Move(id, Move::Forward));
-                        }
-                        let (eye, label) = if overlay.visible {
-                            (Icon::Eye, "Hide")
-                        } else {
-                            (Icon::EyeSlash, "Show")
-                        };
-                        if tool_button(ui, eye, label, true) {
-                            send(OverlayCommand::SetVisible(id, !overlay.visible));
-                        }
-                    });
-                });
-                ui.horizontal_wrapped(|ui| {
-                    caption(ui, "Width");
-                    let at = width_values
-                        .iter()
-                        .position(|w| (*w - overlay.width).abs() < 0.01)
-                        .unwrap_or(2);
-                    if let Some(pick) = kit::menu_picker(ui, 64.0, &widths, at, true) {
-                        send(OverlayCommand::SetWidth(id, width_values[pick]));
-                    }
-                    caption(ui, "Style");
-                    let at = LineDash::ALL
-                        .iter()
-                        .position(|d| *d == overlay.dash)
-                        .unwrap_or(0);
-                    if let Some(pick) = kit::menu_picker(ui, 88.0, &dashes, at, true) {
-                        send(OverlayCommand::SetDash(id, LineDash::ALL[pick]));
-                    }
-                    caption(ui, "Source");
-                    let at = PriceSource::ALL
-                        .iter()
-                        .position(|s| *s == overlay.source)
-                        .unwrap_or(3);
-                    if let Some(pick) = kit::menu_picker(ui, 80.0, &sources, at, true) {
-                        send(OverlayCommand::SetSource(id, PriceSource::ALL[pick]));
-                    }
-                    caption(ui, "Scale");
-                    let mut scales = vec!["Chart's scale".to_owned(), "Its own".to_owned()];
-                    let mut choices = vec![ScaleChoice::Main, ScaleChoice::Own];
-                    for (other, name) in own_scales.iter().filter(|(other, _)| *other != id) {
-                        scales.push(format!("Scale of {name}"));
-                        choices.push(ScaleChoice::SharedWith(*other));
-                    }
-                    let at = match overlay.scale {
-                        OverlayScale::Main => 0,
-                        OverlayScale::Own(group) if group == id => 1,
-                        OverlayScale::Own(group) => own_scales
-                            .iter()
-                            .filter(|(other, _)| *other != id)
-                            .position(|(other, _)| *other == group)
-                            .map_or(1, |n| n + 2),
-                    };
-                    if let Some(pick) = kit::menu_picker(ui, 140.0, &scales, at, true) {
-                        send(OverlayCommand::SetScale(id, choices[pick]));
-                    }
-                    caption(ui, "Last value tag");
-                    let mut shown = overlay.show_label;
-                    if settings_card::switch(ui, &mut shown) {
-                        send(OverlayCommand::SetLabel(id, shown));
-                    }
-                });
-            });
-    }
-    action
-}
-
-fn caption(ui: &mut Ui, text: &str) {
-    ui.label(kit::text(text, 11.0, kit::REGULAR, theme::text_secondary()));
-}
-
-/// A small icon button for a row of a card; returns whether it was clicked.
-fn tool_button(ui: &mut Ui, icon: Icon, tip: &str, enabled: bool) -> bool {
-    let (rect, response) = ui.allocate_exact_size(
-        Vec2::splat(24.0),
-        if enabled {
-            Sense::click()
-        } else {
-            Sense::hover()
-        },
-    );
-    let response = crate::ui::accessibility::label(response, tip);
-    if enabled {
-        response
-            .clone()
-            .on_hover_text(tip)
-            .on_hover_cursor(egui::CursorIcon::PointingHand);
-    }
-    if enabled && response.hovered() {
-        ui.painter()
-            .circle_filled(rect.center(), 12.0, kit::primary(0.12));
-    }
-    icons::paint(
-        ui.painter(),
-        Rect::from_center_size(rect.center(), Vec2::splat(13.0)),
-        icon,
-        if enabled {
-            if response.hovered() {
-                kit::primary(0.95)
-            } else {
-                theme::text_secondary()
-            }
-        } else {
-            theme::text_tertiary().gamma_multiply(0.5)
-        },
-    );
-    enabled && response.clicked()
-}
 
 fn indicators_page(ui: &mut Ui, c: &mut ChartSettingsContext) {
     settings_card::section_title(
@@ -1824,10 +1590,10 @@ mod tests {
             output.textures_delta.clear();
         }
         let has = |needle: &str| texts.iter().any(|text| text.contains(needle));
-        assert!(has("40 compared"), "{texts:?}");
+        assert!(has("40 markets"), "{texts:?}");
         assert!(has("Add symbol"));
         assert!(has("S0USDT"));
-        assert!(has("could not load: no such market"));
+        assert!(has("Couldn't load: no such market"));
         assert!(has("Same market as the chart"));
     }
 
@@ -2125,6 +1891,122 @@ mod tests {
                             indicators: &mut indicators,
                             card: &mut card,
                             scale_mode: PriceScaleMode::Regular,
+                            store: &store,
+                        },
+                    );
+                }));
+            }
+            screen.save(name, last.expect("a frame"));
+        }
+    }
+
+    /// A card comparing `count` markets, a few of them in trouble, for the Compare page's pictures.
+    fn card_with_overlays(count: usize) -> ChartCard {
+        use crate::model::overlay::{OverlayCommand, OverlayList, ScaleChoice};
+        use crate::model::overlay_feed::{OverlayFeed, OverlayStatus};
+        let main = crate::model::InstrumentId::new(DataSource::Binance, "BTCUSDT");
+        let names = [
+            "ETHUSDT",
+            "SOLUSDT",
+            "BNBUSDT",
+            "DOGEUSDT",
+            "XRPUSDT",
+            "ADAUSDT",
+            "AVAXUSDT",
+            "LINKUSDT",
+            "DOTUSDT",
+            "MATICUSDT",
+            "LTCUSDT",
+            "ATOMUSDT",
+        ];
+        let mut list = OverlayList::new();
+        for n in 0..count {
+            let name = names
+                .get(n)
+                .map_or_else(|| format!("COIN{n}USDT"), |name| (*name).to_owned());
+            list.add(
+                &main,
+                crate::model::InstrumentId::new(DataSource::Binance, name),
+                None,
+            );
+        }
+        let ids: Vec<_> = list.iter().map(|overlay| overlay.id).collect();
+        if let Some(id) = ids.get(3) {
+            list.apply(OverlayCommand::SetScale(*id, ScaleChoice::Own));
+        }
+        if let Some(id) = ids.get(4) {
+            list.apply(OverlayCommand::SetScale(
+                *id,
+                ScaleChoice::SharedWith(ids[3]),
+            ));
+        }
+        if let Some(id) = ids.get(1) {
+            list.apply(OverlayCommand::SetVisible(*id, false));
+        }
+        let feeds = list
+            .iter()
+            .enumerate()
+            .map(|(n, _)| {
+                let mut feed = OverlayFeed::empty(match n {
+                    2 => OverlayStatus::Error("HTTP 429: rate limited".into()),
+                    5 => OverlayStatus::Loading,
+                    6 => OverlayStatus::Queued,
+                    7 => OverlayStatus::Blocked("Same market as the chart"),
+                    _ => OverlayStatus::Ready,
+                });
+                feed.candles = std::sync::Arc::new(vec![crate::model::Kline {
+                    open_time: 0,
+                    close_time: 1,
+                    open: 1.0,
+                    high: 1.0,
+                    low: 1.0,
+                    close: 100.0 / (n as f64 + 1.0),
+                    volume: 1.0,
+                }]);
+                feed
+            })
+            .collect();
+        let mut card = ChartCard::default();
+        card.set_overlays(list, feeds, 1, DataSource::Binance, "BTCUSDT");
+        card
+    }
+
+    /// The Compare page as a picture. Run by hand with `DEGENVIEW_GALLERY_DIR` set.
+    #[test]
+    #[ignore = "writes images for a person to look at"]
+    fn gallery_of_the_compare_page() {
+        use crate::ui::render_tests::{Screen, gallery_dir};
+        if gallery_dir().is_none() {
+            return;
+        }
+        for (name, count, mode) in [
+            ("compare-empty", 0, PriceScaleMode::Percent),
+            ("compare-few", 3, PriceScaleMode::Percent),
+            ("compare-regular", 2, PriceScaleMode::Regular),
+            ("compare-many", 12, PriceScaleMode::Percent),
+        ] {
+            let mut screen = Screen::new(egui::vec2(820.0, 860.0));
+            let mut state = ChartSettingsState {
+                tab: Tab::Overlays,
+                ..ChartSettingsState::default()
+            };
+            let mut card = card_with_overlays(count);
+            let mut indicators = IndicatorConfig::default();
+            let store = test_store();
+            let mut last = None;
+            for _ in 0..4 {
+                last = Some(screen.run(Vec::new(), |ui| {
+                    let _ = show(
+                        ui.ctx(),
+                        &mut state,
+                        ChartSettingsContext {
+                            title: "BTC/USDT",
+                            symbol: "BTCUSDT",
+                            source: DataSource::Binance,
+                            loaded_candles: 0,
+                            indicators: &mut indicators,
+                            card: &mut card,
+                            scale_mode: mode,
                             store: &store,
                         },
                     );

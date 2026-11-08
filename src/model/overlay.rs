@@ -163,6 +163,8 @@ pub enum OverlayCommand {
     SetScale(OverlayId, ScaleChoice),
     SetLabel(OverlayId, bool),
     Move(OverlayId, Move),
+    /// Show or hide every overlay at once: one edit, one undo step.
+    SetAllVisible(bool),
 }
 
 /// The overlays of one chart, in visual order. No upper bound: it is a plain vector.
@@ -345,6 +347,14 @@ impl OverlayList {
             OverlayCommand::SetDash(id, dash) => self.edit(id, |o| &mut o.dash, dash),
             OverlayCommand::SetSource(id, source) => self.edit(id, |o| &mut o.source, source),
             OverlayCommand::SetLabel(id, shown) => self.edit(id, |o| &mut o.show_label, shown),
+            OverlayCommand::SetAllVisible(visible) => {
+                let mut changed = false;
+                for overlay in &mut self.0 {
+                    changed |= overlay.visible != visible;
+                    overlay.visible = visible;
+                }
+                changed
+            }
         }
     }
 
@@ -578,5 +588,21 @@ mod tests {
         assert!(list.apply(OverlayCommand::RemoveAll));
         assert!(!list.apply(OverlayCommand::RemoveAll));
         assert!(list.is_empty());
+    }
+
+    #[test]
+    fn showing_or_hiding_all_is_one_edit_that_reports_whether_anything_moved() {
+        let mut list = list_of(&["A1USDT", "B1USDT", "C1USDT"]);
+        assert!(
+            !list.apply(OverlayCommand::SetAllVisible(true)),
+            "already all shown"
+        );
+        list.set_visible(OverlayId(2), false);
+        assert!(list.apply(OverlayCommand::SetAllVisible(true)));
+        assert!(list.iter().all(|o| o.visible));
+        assert!(list.apply(OverlayCommand::SetAllVisible(false)));
+        assert!(list.iter().all(|o| !o.visible));
+        assert!(!list.apply(OverlayCommand::SetAllVisible(false)));
+        assert!(!OverlayList::new().apply(OverlayCommand::SetAllVisible(false)));
     }
 }

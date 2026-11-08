@@ -82,11 +82,19 @@ Compared markets are chips in the indicator strip after the indicators and scrip
 eye / settings on hover, an x, and a right-click menu (Settings, Hide/Show, Scale ▸ Chart's / Its own /
 Scale of …, Visual order ▸ Bring to front / forward / Send backward / to back, Remove). More than three
 fold into the strip's "+N" list, which scrolls and shows each market's newest price. The Compare page
-of the chart settings lists every market with colour, width, style, price source (open, high, low,
-close, HL2, HLC3, OHLC4), scale, last-value tag, order and remove, and "Remove all". Tooltips carry the
-exchange and the state: waiting, loading, "could not load: …", "same market as the chart".
-
-Every edit is an `OverlayCommand` and one undo step (`Snapshot::Overlays`); an edit that changes
+of the chart settings (`ui/chart_settings_compare.rs`) has one card per market. The header always shows
+the line as drawn (colour, width, dash), the name, the exchange and how the data is doing (last price,
+"Loading…", "Waiting to load", or an orange "Couldn't load: …" / "Same market as the chart" / "Not
+shown on price-based chart types"), with the eye, a menu (Bring to front / forward, Send backward / to
+back, Remove) and a chevron; clicking the header opens the settings: colour (the palette, or any), line
+width and style, the price of each candle the line follows (open, high, low, close, HL2, HLC3, OHLC4),
+scale with a sentence on what it does, and the last-value tag. Cards start open while there are three
+or fewer and closed after that, and what the user opened or closed is kept while the sheet is open. Past
+six markets a search field appears (name, symbol, exchange); reordering is off while it filters. The
+row above the cards has "Add symbol…", a count ("12 markets · 1 hidden") and a menu: Show all, Hide
+all, and Remove all…, which asks first. While any visible market is on the chart's scale and the axis
+is Regular or Logarithmic, a notice says the axis cannot compare them and offers Percent and Indexed to
+100. With nothing compared, the page invites the first one. Every edit is an `OverlayCommand` and one undo step (`Snapshot::Overlays`); an edit that changes
 nothing leaves none. The add that switches Regular to Percent carries the old mode in its step, so undo
 puts the axis back and redo switches it again; no other step touches the mode. A colour dragged in the
 picker reports every frame and is one step (`last_overlay_style`, the 800 ms window drawings use).
