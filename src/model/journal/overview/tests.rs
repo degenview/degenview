@@ -3,6 +3,7 @@ use crate::model::journal::calendar::utc;
 use crate::model::journal::model::{CostBasis, Execution, Side, SourceId, TradingSourceKind};
 use crate::model::journal::reconstruct::reconstruct;
 use crate::model::journal::testing::{d, exec};
+use std::collections::HashMap;
 
 const DAY: i64 = 86_400_000;
 
@@ -58,6 +59,7 @@ fn run(
         from_ms: window.0,
         to_ms: window.1,
         currency: None,
+        reviews: &HashMap::new(),
         breakeven_tolerance: Decimal::ZERO,
         offset: &utc,
     })
@@ -232,6 +234,7 @@ fn a_mixed_selection_shows_one_currency_and_offers_the_rest() {
             from_ms: None,
             to_ms: None,
             currency,
+            reviews: &HashMap::new(),
             breakeven_tolerance: Decimal::ZERO,
             offset: &utc,
         })
@@ -310,4 +313,41 @@ fn accounts_in_scope_follow_the_choice_or_the_trades() {
     // The fixture trades are in "acct": neither named account has trades.
     assert!(accounts_in_scope(&accounts, None, &refs).is_empty());
     assert_eq!(accounts_in_scope(&accounts, Some("b"), &refs)[0].uid, "b");
+}
+
+#[test]
+fn a_stop_in_a_review_gives_the_overview_its_r() {
+    let trades = trades_on(&[("20", 1), ("-10", 2)]);
+    let refs: Vec<&Trade> = trades.iter().collect();
+    let make = |reviews: &HashMap<String, crate::model::journal::reviews::Review>| {
+        compute(&Input {
+            trades: &refs,
+            previous: None,
+            before: &[],
+            accounts: &[],
+            from_ms: None,
+            to_ms: None,
+            currency: None,
+            reviews,
+            breakeven_tolerance: Decimal::ZERO,
+            offset: &utc,
+        })
+    };
+    let none = make(&HashMap::new());
+    assert_eq!(none.summary.r.count, 0);
+    assert!(none.r_histogram.bins.is_empty());
+    let mut reviews = HashMap::new();
+    for trade in &trades {
+        let mut review = crate::model::journal::reviews::Review::new(&trade.key, "acct");
+        review.stop = Some(d("990"));
+        reviews.insert(trade.key.clone(), review);
+    }
+    let with = make(&reviews);
+    // Entry 1000, stop 990: +20 is 2R, -10 is -1R.
+    assert_eq!(with.summary.r.count, 2);
+    assert_eq!(with.summary.r.total, Metric::Value(1.0));
+    assert_eq!(
+        with.r_histogram.bins.iter().map(|b| b.count).sum::<usize>(),
+        2
+    );
 }

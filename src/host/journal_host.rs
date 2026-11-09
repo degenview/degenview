@@ -100,6 +100,8 @@ pub enum Section {
     Overview,
     Calendar,
     Trades,
+    Analytics,
+    Compare,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]

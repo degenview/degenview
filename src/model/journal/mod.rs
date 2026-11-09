@@ -8,8 +8,10 @@
 
 pub mod accounting;
 pub mod analytics;
+pub mod breakdown;
 pub mod calendar;
 pub mod cells;
+pub mod compare;
 pub mod edge;
 pub mod equity;
 pub mod filters;

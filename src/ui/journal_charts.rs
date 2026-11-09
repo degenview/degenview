@@ -63,10 +63,23 @@ pub fn radar_points(center: Pos2, radius: f32, values: &[f64]) -> Vec<Pos2> {
         .collect()
 }
 
+/// A cell of exactly `size`, its content on the left and centred vertically. `allocate_ui_with_layout`
+/// alone advances a row by what the content used, not by the size asked for.
+pub fn fixed_cell(ui: &mut Ui, size: egui::Vec2, content: impl FnOnce(&mut Ui)) {
+    ui.allocate_ui_with_layout(
+        size,
+        egui::Layout::left_to_right(egui::Align::Center),
+        |ui| {
+            ui.set_min_size(size);
+            content(ui);
+        },
+    );
+}
+
 // MARK: Line chart
 
 pub struct Line {
-    pub name: &'static str,
+    pub name: String,
     pub points: Vec<(f64, f64)>,
     pub color: Color32,
     pub fill: bool,
@@ -555,7 +568,7 @@ mod tests {
             |ui| {
                 let fmt = |v: f64| format!("{v:.0}");
                 let line = Line {
-                    name: "Equity",
+                    name: "Equity".into(),
                     points: vec![(0.0, 1.0), (1.0, 3.0), (2.0, 2.0)],
                     color: theme::WIN,
                     fill: true,
@@ -586,7 +599,7 @@ mod tests {
                     140.0,
                 );
                 let one = Line {
-                    name: "x",
+                    name: "x".into(),
                     points: vec![(5.0, 5.0)],
                     color: theme::LOSS,
                     fill: true,

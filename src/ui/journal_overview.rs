@@ -617,7 +617,7 @@ fn equity_card(
         _ => theme::WIN,
     };
     let mut lines = vec![Line {
-        name: "Now",
+        name: "Now".into(),
         points: series(&overview.equity),
         color,
         fill: true,
@@ -625,7 +625,7 @@ fn equity_card(
     }];
     if state.show_previous && has_previous {
         lines.push(Line {
-            name: "Previous",
+            name: "Previous".into(),
             points: series(&overview.previous_equity),
             color: theme::text_tertiary(),
             fill: false,
@@ -759,7 +759,7 @@ fn drawdown_card(
             .collect()
     };
     let mut lines = vec![Line {
-        name: "Drawdown",
+        name: "Drawdown".into(),
         points: series(&overview.drawdown),
         color: theme::LOSS,
         fill: true,
@@ -767,7 +767,7 @@ fn drawdown_card(
     }];
     if state.show_previous && has_previous {
         lines.push(Line {
-            name: "Previous",
+            name: "Previous".into(),
             points: series(&overview.previous_drawdown),
             color: theme::text_tertiary(),
             fill: false,
@@ -957,6 +957,7 @@ mod tests {
     use crate::model::journal::overview::{Input, compute};
     use crate::model::journal::reconstruct::reconstruct;
     use crate::model::journal::testing::exec;
+    use std::collections::HashMap;
 
     fn trades() -> Vec<Trade> {
         let mut e = Vec::new();
@@ -1017,6 +1018,7 @@ mod tests {
             from_ms: Some(0),
             to_ms: Some(100 * 86_400_000),
             currency: None,
+            reviews: &HashMap::new(),
             breakeven_tolerance: Decimal::ZERO,
             offset: &utc,
         });
@@ -1030,6 +1032,7 @@ mod tests {
             from_ms: None,
             to_ms: None,
             currency: None,
+            reviews: &HashMap::new(),
             breakeven_tolerance: Decimal::ZERO,
             offset: &utc,
         });

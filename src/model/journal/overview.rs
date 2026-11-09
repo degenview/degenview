@@ -13,7 +13,7 @@
 //! **Previous period.** The window of the same length just before the range, shifted forward so
 //! the two curves line up on elapsed time, for the "vs previous" overlay and the card deltas.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
@@ -25,6 +25,8 @@ use super::equity::{DrawdownPoint, EquityPoint, drawdown_series, equity_curve};
 use super::filters::OutcomeFilter;
 use super::metric::Metric;
 use super::model::{Direction, JournalAccount, Trade, TradeStatus};
+use super::reviews::Review;
+use super::risk;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Bin {
@@ -62,6 +64,8 @@ pub struct Overview {
     /// Trading days in order.
     pub days: Vec<DayCell>,
     pub histogram: Histogram,
+    /// Realised R of closed trades that have one, in bins of a round width.
+    pub r_histogram: Histogram,
     pub long: SideStats,
     pub short: SideStats,
     pub edge: EdgeScore,
@@ -81,6 +85,8 @@ pub struct Input<'a> {
     pub from_ms: Option<i64>,
     pub to_ms: Option<i64>,
     pub currency: Option<Option<String>>,
+    /// The user's reviews: a stop entered there overrides the one the source attached.
+    pub reviews: &'a HashMap<String, Review>,
     pub breakeven_tolerance: Decimal,
     pub offset: Offset<'a>,
 }
@@ -146,11 +152,13 @@ pub fn compute(input: &Input<'_>) -> Overview {
         .filter(|trade| currency_of(trade) == currency.as_deref())
         .collect();
     let initial = starting_balance(input.accounts, &currency, &before);
+    let r_of =
+        |trade: &Trade| risk::r_multiple(trade, input.reviews.get(&trade.key).and_then(|r| r.stop));
     let options = Options {
         initial_balance: initial,
         breakeven_tolerance: input.breakeven_tolerance,
         offset: input.offset,
-        ..Options::default()
+        r_of: &r_of,
     };
     let summary = summarize_by_currency(&mine, &options)
         .into_iter()
@@ -177,7 +185,7 @@ pub fn compute(input: &Input<'_>) -> Overview {
                 initial_balance: initial,
                 breakeven_tolerance: input.breakeven_tolerance,
                 offset: input.offset,
-                ..Options::default()
+                r_of: &r_of,
             };
             let summary = summarize_by_currency(&prev_mine, &prev_options)
                 .into_iter()
@@ -215,6 +223,12 @@ pub fn compute(input: &Input<'_>) -> Overview {
         .filter_map(|trade| trade.net_pnl().to_f64())
         .collect();
     let histogram = histogram(&closed_nets);
+    let r_values: Vec<f64> = mine
+        .iter()
+        .filter(|trade| trade.status == TradeStatus::Closed)
+        .filter_map(|trade| r_of(trade).into_value().and_then(|r| r.to_f64()))
+        .collect();
+    let r_histogram = histogram_of_r(&r_values);
 
     let side = |direction: Direction| {
         let side_trades: Vec<&&Trade> = mine
@@ -268,11 +282,16 @@ pub fn compute(input: &Input<'_>) -> Overview {
         previous_drawdown,
         days,
         histogram,
+        r_histogram,
         long: side(Direction::Long),
         short: side(Direction::Short),
         edge,
         recent,
     }
+}
+
+fn histogram_of_r(values: &[f64]) -> Histogram {
+    histogram(values)
 }
 
 /// A step of `1, 2, 2.5 or 5` times a power of ten that is at least `raw`.

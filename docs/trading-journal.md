@@ -6,9 +6,9 @@ and the comparison with other journals: [trading-journal-research.md](reviews/tr
 
 **Status.** Built: the canonical execution model, trade reconstruction, the paper source, storage
 and capture, the pure analytics (statistics, equity and drawdown, calendar, filters, R-multiple,
-Edge Score), and the Journal tab with the Overview, Calendar and Trades pages, the trade panel and
-reviews. Breakdowns, playbooks, the daily journal, charts, import/export and iCloud follow as
-separate changes; their sections are added as they land.
+Edge Score), and the Journal tab with the Overview, Calendar, Trades, Analytics and Compare pages,
+the trade panel and reviews. Playbooks, the daily journal, charts, import/export and iCloud follow
+as separate changes; their sections are added as they land.
 
 ## Layers
 
@@ -239,6 +239,34 @@ arrow, the trade count and win rate; a week total at the end of each row (Sunday
 best and worst day and activity underneath; hover for the day's tally; click opens that day on the
 Trades page. Sign is always in the text and an arrow, so colour is never the only cue.
 
-Not built yet: breakdowns by hour, weekday, instrument and strategy, account Compare, playbooks and
-the daily journal, chart markers and "view on chart", CSV import and export, iCloud sync of
-reviews. There is no drag-to-zoom on the charts: the range presets are the zoom.
+## Analytics and Compare pages
+
+**Analytics** (`model/journal/breakdown.rs`, `ui/journal_analytics.rs`). A risk and consistency
+block (max, average and current drawdown, episodes, Sharpe, Sortino, Calmar, SQN, average, best and
+worst R, streaks, how long winners and losers are held), the distribution of R, and a breakdown of
+results by one dimension at a time with a bar chart and a table (trades, win rate, profit factor,
+average R, net, sample flag).
+
+Dimensions: weekday (by the day the trade *closed*), hour (the hour it *opened*), instrument, side,
+hold time (under 1 min up to over 7 days), size (the entry notional in quartiles of the current
+selection, so the buckets are relative to it), and from the review: strategy, tag, mistake,
+emotion, rating. Tags, mistakes and emotions **overlap**: a trade with two tags is in both slices,
+so counts add up to more than the number of trades; the page says so. Slices from reviews put
+trades with no value in "(none)", always last.
+
+**Sample size.** A slice with fewer than 5 trades is marked THIN and fewer than 30 SMALL, with the
+reason in a tooltip. Nothing on the page claims a difference is significant, and associations with
+tags, mistakes and emotions are descriptive, not causal.
+
+**R** uses the stop on the trade or, when the review has one, the stop the user entered.
+
+**Compare** (`model/journal/compare.rs`, `ui/journal_compare.rs`): accounts side by side over the
+same range and filters, in one currency (others are left out, never converted). A cumulative net
+P&L overlay that starts every account at zero, so it compares what each earned and how it moved
+rather than how large it is, and a table of closed trades, net, win rate, profit factor,
+expectancy, max drawdown, average R, day win rate and Edge Score per account. It needs two
+accounts with trades in the selection and says so otherwise. Percentages need each account's own
+initial balance.
+
+Not built yet: playbooks and the daily journal, an Edge Score inspector and process score, chart
+markers and "view on chart", CSV import and export, iCloud sync of reviews.
