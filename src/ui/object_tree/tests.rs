@@ -316,6 +316,31 @@ fn only_a_symbol_and_nothing_else_asks_for_objects() {
 // MARK: Glyphs
 
 #[test]
+fn a_compared_market_row_can_be_hidden_and_removed_but_not_locked() {
+    use crate::model::overlay::OverlayId;
+    let key = Key::Overlay(OverlayId(5));
+    let rows = vec![
+        heading_row(Section::Overlays, 1),
+        row(key, "ETHUSDT", Some(true), None),
+    ];
+    assert_eq!(row_buttons(&rows[1]), [Btn::Delete, Btn::Show]);
+    assert_eq!(row_icon(&rows[1]), Icon::Compare);
+    let mut rig = Rig::with(rows);
+    let drawn = rig.row(key);
+    rig.click(button_slot(drawn, 1).center());
+    assert_eq!(rig.actions, [TreeAction::ToggleShown(key)]);
+    rig.actions.clear();
+    rig.click(button_slot(drawn, 0).center());
+    assert_eq!(rig.actions, [TreeAction::Delete(key)]);
+    // Double-clicking it opens its settings, like any row but the symbol.
+    rig.actions.clear();
+    let centre = drawn.center() - vec2(40.0, 0.0);
+    rig.click(centre);
+    rig.click(centre);
+    assert!(rig.actions.contains(&TreeAction::Select(key)));
+}
+
+#[test]
 fn every_row_leads_with_the_glyph_of_what_it_is() {
     let drawing = Row {
         tool: Some(Tool::Rectangle),

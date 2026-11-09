@@ -410,6 +410,7 @@ fn row_icon(row: &Row) -> Icon {
             BuiltIn::Ema | BuiltIn::Bollinger | BuiltIn::TrendFlips => Icon::ChartUptrend,
         },
         Key::Indicator(IndicatorKey::Script(_)) => Icon::Curlybraces,
+        Key::Overlay(_) => Icon::Compare,
         Key::Drawing(_) => row.tool.map_or(Icon::Pencil, tool_icon),
     }
 }
@@ -598,6 +599,7 @@ fn readable(row: &Row) -> bool {
 fn heading_text(section: Section) -> &'static str {
     match section {
         Section::Symbol => "SYMBOL",
+        Section::Overlays => "COMPARED SYMBOLS",
         Section::Indicators => "INDICATORS",
         Section::Drawings => "DRAWINGS",
     }
@@ -606,6 +608,7 @@ fn heading_text(section: Section) -> &'static str {
 fn accessible_name(row: &Row) -> String {
     let kind = match row.key {
         Key::Symbol => "Symbol",
+        Key::Overlay(_) => "Compared symbol",
         Key::Indicator(IndicatorKey::BuiltIn(_)) => "Indicator",
         Key::Indicator(IndicatorKey::Script(_)) => "Script",
         Key::Drawing(_) => "Drawing",

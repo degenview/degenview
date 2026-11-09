@@ -1069,6 +1069,63 @@ fn the_tree_deletes_a_drawing_undoably_and_never_a_locked_one() {
     assert_eq!(rig.drawing_ids(chart), [1, 2], "a locked drawing stays");
 }
 
+/// A chart with ETHUSDT compared on it: the overlay's id.
+fn compared(rig: &mut Rig, chart: u64) -> crate::model::overlay::OverlayId {
+    use crate::model::{DataSource, InstrumentId};
+    match rig.workspace.add_overlay(
+        chart,
+        InstrumentId::new(DataSource::Binance, "ETHUSDT"),
+        None,
+    ) {
+        Some(crate::model::overlay::AddOutcome::Added(id)) => id,
+        other => panic!("the overlay was not added: {other:?}"),
+    }
+}
+
+#[test]
+fn the_tree_hides_and_removes_a_compared_market_and_undo_restores_it() {
+    use crate::model::object_tree::Key as TreeKey;
+    use crate::ui::object_tree::TreeAction;
+    let (mut rig, chart) = tree_rig();
+    let id = compared(&mut rig, chart);
+    let visible = |rig: &mut Rig| {
+        rig.chart_mut(chart)
+            .overlays
+            .get(id)
+            .map(|overlay| overlay.visible)
+    };
+    let before = rig.workspace.undo.len();
+    rig.workspace
+        .apply_tree_action(chart, TreeAction::ToggleShown(TreeKey::Overlay(id)));
+    assert_eq!(visible(&mut rig), Some(false));
+    assert_eq!(rig.workspace.undo.len(), before + 1, "one undo step");
+    rig.workspace.undo();
+    assert_eq!(visible(&mut rig), Some(true));
+
+    rig.workspace
+        .apply_tree_action(chart, TreeAction::Delete(TreeKey::Overlay(id)));
+    assert_eq!(visible(&mut rig), None, "removed");
+    rig.workspace.undo();
+    assert_eq!(visible(&mut rig), Some(true), "and back");
+}
+
+#[test]
+fn the_tree_opens_the_compare_page_for_a_compared_market_and_leaves_the_drawing_selection() {
+    use crate::model::object_tree::Key as TreeKey;
+    use crate::ui::chart_settings::Tab;
+    use crate::ui::object_tree::TreeAction;
+    let (mut rig, chart) = tree_rig();
+    let id = compared(&mut rig, chart);
+    rig.workspace.selected_drawing = Some((chart, vec![2]));
+    rig.workspace
+        .apply_tree_action(chart, TreeAction::Select(TreeKey::Overlay(id)));
+    assert_eq!(rig.workspace.selected_drawing, Some((chart, vec![2])));
+    rig.workspace
+        .apply_tree_action(chart, TreeAction::Settings(TreeKey::Overlay(id)));
+    assert_eq!(rig.workspace.settings_chart, Some(chart));
+    assert_eq!(rig.workspace.settings_state.tab, Tab::Overlays);
+}
+
 #[test]
 fn the_tree_selects_a_drawing_as_the_charts_one_selection() {
     use crate::model::object_tree::Key as TreeKey;

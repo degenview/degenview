@@ -17,6 +17,7 @@ use crate::model::chart_context::{
 };
 use crate::model::chart_template::ApplyScope;
 use crate::model::object_tree::{self, IndicatorKey, Key as TreeKey};
+use crate::model::overlay::OverlayCommand;
 use crate::model::paper::{PaperOrderSide, PaperOrderType};
 use crate::model::price_scale::PriceScaleMode;
 use crate::model::session_stats;
@@ -995,6 +996,7 @@ impl ChartWorkspace {
                 source: chart.source.display_name(),
                 indicators: &chart.indicators,
                 scripts: chart.chart.pine_instances(),
+                overlays: &chart.overlays,
                 drawings: &chart.drawings,
             },
             &self.context.tree.filter,
@@ -1041,6 +1043,12 @@ impl ChartWorkspace {
                 };
                 self.settings_chart = Some(chart_id);
             }
+            TreeAction::Settings(TreeKey::Overlay(_)) => {
+                // The Compare page, as from the legend's pill.
+                self.settings_state = ChartSettingsState::default();
+                self.settings_state.tab = chart_settings::Tab::Overlays;
+                self.settings_chart = Some(chart_id);
+            }
             TreeAction::Settings(_) => {}
             TreeAction::ToggleShown(TreeKey::Drawing(id)) => {
                 if let Some(mut changed) = drawing(self, id) {
@@ -1065,6 +1073,12 @@ impl ChartWorkspace {
                     .find(|candidate| candidate.id == id)
                     .is_some_and(|candidate| candidate.visible);
                 card.set_pine_visible(id, !visible);
+            }
+            TreeAction::ToggleShown(TreeKey::Overlay(id)) => {
+                // One undo step, from `apply_overlay_command` itself.
+                if let Some(visible) = self.charts[index].overlays.get(id).map(|o| o.visible) {
+                    self.apply_overlay_command(chart_id, OverlayCommand::SetVisible(id, !visible));
+                }
             }
             TreeAction::ToggleShown(_) => {}
             TreeAction::ToggleLocked(id) => {
@@ -1094,6 +1108,9 @@ impl ChartWorkspace {
             TreeAction::Delete(TreeKey::Indicator(IndicatorKey::Script(id))) => {
                 self.remember_indicators(chart_id);
                 self.charts[index].chart.remove_pine_instance(id);
+            }
+            TreeAction::Delete(TreeKey::Overlay(id)) => {
+                self.apply_overlay_command(chart_id, OverlayCommand::Remove(id));
             }
             TreeAction::Delete(_) => {}
             TreeAction::Reorder(id, step) => {
