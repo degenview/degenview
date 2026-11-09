@@ -436,7 +436,7 @@ fn left_items(input: &ToolbarInput) -> Vec<Item> {
     items.push(Item::Button(replay));
     items.push(Item::Button(
         Button::new("alert", "Create price alert")
-            .icon(Icon::BellBadge)
+            .icon(Icon::BellPlus)
             .enabled(
                 input
                     .chart

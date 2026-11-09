@@ -56,6 +56,8 @@ pub enum Icon {
     Scissors,
     Bell,
     BellBadge,
+    /// A bell with a plus at its shoulder: create an alert.
+    BellPlus,
     BellFill,
     Clock,
     Download,
@@ -767,6 +769,24 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
                 painter.circle_filled(p(12.5, 4.0), 2.8 * scale, super::theme::surface());
                 painter.circle_filled(p(12.5, 4.0), 1.7 * scale, color);
             }
+        }
+        Icon::BellPlus => {
+            // The bell shifted left to leave the top right corner to the plus.
+            let outline = [
+                p(2.0, 11.8),
+                p(3.0, 10.3),
+                p(3.0, 7.3),
+                p(4.0, 4.8),
+                p(6.5, 3.8),
+                p(9.0, 4.8),
+                p(10.0, 7.3),
+                p(10.0, 10.3),
+                p(11.0, 11.8),
+            ];
+            closed(&outline);
+            line(&[p(5.0, 13.6), p(8.0, 13.6)]);
+            line(&[p(10.4, 3.6), p(14.8, 3.6)]);
+            line(&[p(12.6, 1.4), p(12.6, 5.8)]);
         }
         Icon::Clock => {
             circle(p(8.0, 8.0), 6.2, false);
@@ -2369,6 +2389,7 @@ mod tests {
             Clipboard,
             Scissors,
             Bell,
+            BellPlus,
             BellFill,
             Clock,
             Download,
