@@ -6,7 +6,7 @@ Tab Linking is between tabs and only ever touches the chart the user is working 
 
 Code: `model::tab_link` (pure model, hub and tests), `host::tab_link_host` (the switches, saved),
 `workspace/tab_link.rs` (a tab's side), `DegenViewApp::tick_tab_links` in `app.rs` (the tick),
-`ui/tab_link_menu.rs` (the menu section), and the dot and the right-click menu in `ui/tab_bar.rs`.
+`ui/tab_link_menu.rs` (the menu section), and the underline and the right-click menu in `ui/tab_bar.rs`.
 
 ## What TradingView says, and what is ours
 
@@ -26,7 +26,7 @@ Everything else is **not stated by TradingView, so it is a decision here**:
 | Defaults | Symbol on, the rest off, as the screenshot of TradingView's menu shows. |
 | Where are the options? | At the bottom of a chart tab's right-click menu, after a separator (the user's request); not in the toolbar. They act on the tab that was clicked, showing or not. |
 | Does clicking the chosen colour unlink? | Yes (its tooltip says so). |
-| Where does the tab show its colour? | A dot on the logo, ringed in the tab's fill, and "Linked tab: Orange" in its tooltip. |
+| Where does the tab show its colour? | A line under the tab in its colour, showing or not; a tab with no colour has no line (the old blue selection line is gone). Its tooltip also says "Linked tab: Orange". |
 | Who wins when a tab joins? | The joiner adopts the group's latest values for the enabled switches; the tabs already in it are never touched (the user's choice). |
 | What is Time, what is Date range? | Time is the **position** (the time at the right edge of the chart), Date range is the **zoom** (the span of time shown). These are `ChartSyncSettings::horizontal_position` / `horizontal_zoom`, so Link charts' table applies: both on gives the same time range. |
 | Restart | The colour is saved with the tab, the switches in a setting. No event is saved, and nothing moves at startup. |
@@ -84,11 +84,11 @@ a saved layout.
 
 ## UI
 
-The section follows the screenshot of TradingView's menu: a muted `TAB LINKING` heading, nine round
-swatches (the colours are sampled from the screenshot) with a check on the chosen one, then Symbol,
-Interval, Time and Date range, each with an info icon (a tooltip) and a switch. With no colour the
-switches are dimmed and do nothing. The switches are the app's own (`kit::paint_switch`), not
-TradingView's dark-knob style, and the labels are 15 pt where the app's body text is 13.
+The section borrows only the content of TradingView's menu (a heading, nine colours, four
+switches), not its look: it is drawn like the rest of the app's menus, with the same 24 pt rows,
+13 pt regular text, hover tint and 32 x 18 switch (`kit::paint_switch`). Nine small swatches (colours
+sampled from the screenshot), the chosen one ringed and ticked, then Symbol, Interval, Time and Date
+range, each with an info icon (a tooltip). With no colour the switches are dimmed and do nothing.
 
 ## Verified, and not
 

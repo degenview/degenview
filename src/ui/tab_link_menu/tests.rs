@@ -5,12 +5,12 @@ use std::cell::Cell;
 
 const ORIGIN: Pos2 = pos2(20.0, 20.0);
 /// Heading, then the swatches, then the rows: the same arithmetic `show` lays out.
-const SWATCH_Y: f32 = 20.0 + 4.0 + 24.0 + SWATCH_ROW / 2.0;
-const ROWS_TOP: f32 = 20.0 + 4.0 + 24.0 + SWATCH_ROW;
+const SWATCH_Y: f32 = 20.0 + 24.0 + SWATCH_ROW / 2.0;
+const ROWS_TOP: f32 = 20.0 + 24.0 + SWATCH_ROW;
 
 fn swatch_at(index: usize) -> Pos2 {
     pos2(
-        ORIGIN.x + PADDING + SWATCH / 2.0 + index as f32 * PITCH,
+        ORIGIN.x + TEXT_LEFT + SWATCH / 2.0 + index as f32 * PITCH,
         SWATCH_Y,
     )
 }
@@ -21,7 +21,7 @@ fn row_at(index: usize) -> Pos2 {
 
 /// Draws the popover a few frames, clicks `at`, and returns what it said.
 fn click(color: Option<LinkColor>, toggles: LinkToggles, at: Pos2) -> Option<TabLinkEdit> {
-    let mut screen = Screen::new(vec2(340.0, 320.0));
+    let mut screen = Screen::new(vec2(300.0, 260.0));
     let said = Cell::new(None);
     let frame = |screen: &mut Screen, events: Vec<egui::Event>| {
         screen.run(events, |ui| {
@@ -60,9 +60,9 @@ fn there_is_a_swatch_for_every_colour_and_no_two_alike() {
 
 #[test]
 fn the_nine_swatches_fit_the_popover_and_keep_their_hit_targets_apart() {
-    let last = swatch_at(8).x + HIT / 2.0;
-    assert!(last <= ORIGIN.x + WIDTH - PADDING + 2.0, "{last}");
-    const { assert!(PITCH >= HIT, "neighbouring hit targets must not overlap") };
+    let last = swatch_at(8).x + SWATCH / 2.0;
+    assert!(last <= ORIGIN.x + WIDTH - TEXT_LEFT + 2.0, "{last}");
+    const { assert!(PITCH > SWATCH + 4.0, "neighbouring swatches must not touch") };
 }
 
 #[test]
@@ -153,7 +153,7 @@ fn gallery_of_the_tab_linking() {
                 },
             ),
         ] {
-            let mut screen = Screen::new(vec2(340.0, 280.0));
+            let mut screen = Screen::new(vec2(300.0, 230.0));
             screen.ctx.set_theme(theme_choice);
             let mut last = None;
             for _ in 0..6 {

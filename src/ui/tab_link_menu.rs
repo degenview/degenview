@@ -10,24 +10,24 @@
 
 use crate::model::tab_link::{LinkColor, LinkKind, LinkToggles};
 use crate::ui::icons::{self, Icon};
-use crate::ui::kit::{self, MEDIUM};
+use crate::ui::kit::{self, REGULAR, size};
 use crate::ui::theme;
 use eframe::egui::{
     self, Color32, Id, Rect, Sense, Stroke, StrokeKind, Ui, WidgetInfo, WidgetType, pos2, vec2,
 };
 
 /// The room the section needs inside the menu; the menu is made at least this wide.
-pub const WIDTH: f32 = 288.0;
-const PADDING: f32 = 14.0;
+pub const WIDTH: f32 = 236.0;
+/// Where the text of a menu row starts: the app's menus keep a gutter for an icon.
+const TEXT_LEFT: f32 = 14.0;
 /// Distance between the centres of two swatches, their drawn size and their hit target.
-const PITCH: f32 = 30.0;
-const SWATCH: f32 = 18.0;
-const HIT: f32 = 24.0;
-const SWATCH_ROW: f32 = 40.0;
-const ROW: f32 = 33.0;
-const SWITCH: egui::Vec2 = vec2(38.0, 20.0);
-const LABEL_SIZE: f32 = 15.0;
-const INFO: f32 = 16.0;
+const PITCH: f32 = 24.0;
+const SWATCH: f32 = 14.0;
+const SWATCH_ROW: f32 = 30.0;
+/// A row is as tall as the rest of the menu's (`kit::menu_row`).
+const ROW: f32 = 24.0;
+const SWITCH: egui::Vec2 = vec2(32.0, 18.0);
+const INFO: f32 = 12.0;
 
 /// What the user changed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -53,7 +53,7 @@ pub fn swatch(color: LinkColor) -> Color32 {
     }
 }
 
-/// The check on a swatch: white, except on the light colours where it would vanish.
+/// The tick on a swatch: white, except on the light colours where it would vanish.
 fn check_color(color: LinkColor) -> Color32 {
     match color {
         LinkColor::Yellow | LinkColor::Pink => Color32::from_rgb(0x1c, 0x1c, 0x1c),
@@ -140,10 +140,10 @@ fn swatches(ui: &mut Ui, current: Option<LinkColor>) -> Option<Option<LinkColor>
     let mut picked = None;
     for (index, color) in LinkColor::ALL.into_iter().enumerate() {
         let center = pos2(
-            rect.left() + PADDING + SWATCH / 2.0 + index as f32 * PITCH,
+            rect.left() + TEXT_LEFT + SWATCH / 2.0 + index as f32 * PITCH,
             rect.center().y,
         );
-        let hit = Rect::from_center_size(center, vec2(HIT, HIT));
+        let hit = Rect::from_center_size(center, vec2(PITCH - 2.0, PITCH - 2.0));
         let selected = current == Some(color);
         let response = ui.interact(
             hit,
@@ -168,21 +168,28 @@ fn swatches(ui: &mut Ui, current: Option<LinkColor>) -> Option<Option<LinkColor>
         }
         let painter = ui.painter();
         let radius = SWATCH / 2.0;
-        painter.circle_filled(center, radius, swatch(color));
-        if response.hovered() && !selected {
-            painter.circle_stroke(center, radius + 2.0, Stroke::new(1.5, kit::primary(0.28)));
+        // The chosen one is ringed, like a chosen row elsewhere in the app, as well as ticked.
+        if selected {
+            painter.circle_stroke(
+                center,
+                radius + 2.5,
+                Stroke::new(1.5, theme::text_secondary()),
+            );
+        } else if response.hovered() {
+            painter.circle_filled(center, radius + 3.0, theme::selected_tint(true));
         }
+        painter.circle_filled(center, radius, swatch(color));
         if response.has_focus() {
             painter.circle_stroke(
                 center,
-                radius + 3.5,
+                radius + 4.0,
                 Stroke::new(2.0, theme::text_secondary()),
             );
         }
         if selected {
             icons::paint(
                 painter,
-                Rect::from_center_size(center, vec2(12.0, 12.0)),
+                Rect::from_center_size(center, vec2(9.0, 9.0)),
                 Icon::Check,
                 check_color(color),
             );
@@ -191,7 +198,8 @@ fn swatches(ui: &mut Ui, current: Option<LinkColor>) -> Option<Option<LinkColor>
     picked
 }
 
-/// One row: the label, an info icon, and the switch at the right. The row is the control.
+/// One row, drawn like `kit::menu_row`: the same height, text and hover. The info icon sits after
+/// the label and the switch at the right. The row is the control.
 fn switch_row(ui: &mut Ui, row: Row, on: &mut bool, enabled: bool) -> bool {
     let (rect, response) = ui.allocate_exact_size(
         vec2(ui.available_width(), ROW),
@@ -211,39 +219,42 @@ fn switch_row(ui: &mut Ui, row: Row, on: &mut bool, enabled: bool) -> bool {
         changed = true;
     }
     let painter = ui.painter();
-    let band = rect.shrink2(vec2(4.0, 1.0));
     if enabled && response.hovered() {
-        painter.rect_filled(band, 6.0, kit::primary(0.06));
+        painter.rect_filled(rect, 5.0, theme::selected_tint(true));
     }
     if enabled && response.has_focus() {
         painter.rect_stroke(
-            band,
-            6.0,
+            rect,
+            5.0,
             Stroke::new(2.0, theme::text_secondary()),
             StrokeKind::Inside,
         );
     }
-    let dim = if enabled { 1.0 } else { 0.45 };
+    let color = if enabled {
+        theme::text_primary()
+    } else {
+        theme::text_tertiary()
+    };
     let label = kit::galley(
         ui,
         row.title(),
-        LABEL_SIZE,
-        MEDIUM,
-        theme::text_primary().gamma_multiply(dim),
+        size::BODY,
+        REGULAR,
+        color,
         rect.width() / 2.0,
     );
     let label_pos = pos2(
-        rect.left() + PADDING,
+        rect.left() + TEXT_LEFT,
         rect.center().y - label.size().y / 2.0,
     );
     let info_center = pos2(
-        label_pos.x + label.size().x + 8.0 + INFO / 2.0,
+        label_pos.x + label.size().x + 7.0 + INFO / 2.0,
         rect.center().y,
     );
-    ui.painter().galley(label_pos, label, theme::text_primary());
+    ui.painter().galley(label_pos, label, color);
 
     // Not part of the row's click: pointing at it explains, pressing it does nothing.
-    let info_rect = Rect::from_center_size(info_center, vec2(INFO + 4.0, INFO + 4.0));
+    let info_rect = Rect::from_center_size(info_center, vec2(INFO + 6.0, INFO + 6.0));
     let info = ui.interact(
         info_rect,
         Id::new(("tab-link-info", row.title())),
@@ -267,7 +278,7 @@ fn switch_row(ui: &mut Ui, row: Row, on: &mut bool, enabled: bool) -> bool {
         .ctx()
         .animate_bool(Id::new(("tab-link-switch", row.title())), *on);
     let switch = Rect::from_center_size(
-        pos2(rect.right() - PADDING - SWITCH.x / 2.0, rect.center().y),
+        pos2(rect.right() - TEXT_LEFT - SWITCH.x / 2.0, rect.center().y),
         SWITCH,
     );
     kit::paint_switch(ui.painter(), switch, progress, !enabled);

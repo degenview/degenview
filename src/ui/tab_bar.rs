@@ -48,11 +48,9 @@ const CLOSE_SIZE: f32 = 18.0;
 const ICON_SIZE: f32 = 13.0;
 /// An instrument's logo, in a circle.
 const LOGO_SIZE: f32 = 18.0;
-/// The accent line under the active tab.
+/// The line under a linked tab, in its colour.
 const UNDERLINE: f32 = 2.5;
 const TEXT_SIZE: f32 = 12.5;
-/// The Tab Linking dot on a tab's logo.
-const LINK_DOT: f32 = 8.0;
 /// How long tabs take to slide to a new slot.
 const SLIDE_SECONDS: f32 = 0.1;
 
@@ -971,13 +969,18 @@ impl TabBar<'_> {
                 Stroke::new(1.5, theme::background()),
             );
         }
-        if raised {
-            // The one coloured thing in the strip: which tab is showing.
+        if let Some(link) = tab.link {
+            // The only coloured thing in the strip: the Tab Linking colour the tab is tagged
+            // with. A tab with no colour has no line, showing or not.
             let line = Rect::from_min_max(
                 pos2(rect.left() + 10.0, rect.bottom() - UNDERLINE),
                 pos2(rect.right() - 10.0, rect.bottom()),
             );
-            painter.rect_filled(line, UNDERLINE / 2.0, fade(theme::SYSTEM_ACCENT));
+            painter.rect_filled(
+                line,
+                UNDERLINE / 2.0,
+                fade(crate::ui::tab_link_menu::swatch(link)),
+            );
         }
 
         let primary = fade(if raised || look.hovered {
@@ -1000,21 +1003,6 @@ impl TabBar<'_> {
                 let logo =
                     Rect::from_center_size(pos2(x + LOGO_SIZE / 2.0, cy), Vec2::splat(LOGO_SIZE));
                 kit::chart_icon(ui, logo, &chart.symbol, chart.source, false);
-                if let Some(link) = tab.link {
-                    // Ringed in the tab's own fill so it reads against any logo.
-                    let center = logo.right_bottom() - vec2(1.0, 1.0);
-                    let ring = if raised {
-                        theme::background()
-                    } else {
-                        theme::chrome()
-                    };
-                    painter.circle_filled(center, LINK_DOT / 2.0 + 1.5, fade(ring));
-                    painter.circle_filled(
-                        center,
-                        LINK_DOT / 2.0,
-                        fade(crate::ui::tab_link_menu::swatch(link)),
-                    );
-                }
                 x = logo.right() + 8.0;
                 if detail > Detail::Logo {
                     let text = kit::galley(
@@ -1464,7 +1452,7 @@ mod tests {
                         icon: Icon::Plus,
                         chart: None,
                         timeframe: "1D",
-                        link: None,
+                        link: Some(LinkColor::Blue),
                         linkable: true,
                         link_toggles: LinkToggles::default(),
                     },
@@ -1612,6 +1600,17 @@ mod tests {
         width: f32,
         style: TabTitleStyle,
     ) -> Vec<egui::epaint::ClippedShape> {
+        paint_strip_linked(count, active, width, style, None)
+    }
+
+    /// [`paint_strip`] with the tab at `linked` tagged Orange.
+    fn paint_strip_linked(
+        count: usize,
+        active: usize,
+        width: f32,
+        style: TabTitleStyle,
+        linked: Option<usize>,
+    ) -> Vec<egui::epaint::ClippedShape> {
         let ctx = egui::Context::default();
         let tabs: Vec<TabView> = (0..count)
             .map(|index| TabView {
@@ -1626,7 +1625,7 @@ mod tests {
                     custom_title: None,
                 }),
                 timeframe: "1D",
-                link: None,
+                link: (linked == Some(index)).then_some(crate::model::tab_link::LinkColor::Orange),
                 linkable: false,
                 link_toggles: Default::default(),
             })
@@ -1653,21 +1652,34 @@ mod tests {
         output.shapes
     }
 
-    fn accent_lines(shapes: &[egui::epaint::ClippedShape]) -> usize {
+    /// Rects filled with `color`: the lines under tabs.
+    fn lines_of(shapes: &[egui::epaint::ClippedShape], color: Color32) -> usize {
         shapes
             .iter()
-            .filter(|clipped| {
-                matches!(&clipped.shape, egui::Shape::Rect(rect) if rect.fill == theme::SYSTEM_ACCENT)
-            })
+            .filter(
+                |clipped| matches!(&clipped.shape, egui::Shape::Rect(rect) if rect.fill == color),
+            )
             .count()
     }
 
     #[test]
-    fn only_the_active_tab_has_the_accent_line() {
+    fn a_tab_has_no_underline_unless_it_is_linked_and_then_it_is_its_colour() {
+        let orange = crate::ui::tab_link_menu::swatch(crate::model::tab_link::LinkColor::Orange);
         for style in TabTitleStyle::ALL {
             for width in [1400.0, 700.0, 300.0] {
-                let shapes = paint_strip(4, 1, width, style);
-                assert_eq!(accent_lines(&shapes), 1, "{style:?} at {width}");
+                let plain = paint_strip(4, 1, width, style);
+                assert_eq!(lines_of(&plain, theme::SYSTEM_ACCENT), 0, "no blue line");
+                assert_eq!(
+                    lines_of(&plain, orange),
+                    0,
+                    "unlinked: none, showing or not"
+                );
+                // Linked: its colour, whether it is the showing tab or not.
+                for active in [1, 2] {
+                    let linked = paint_strip_linked(4, active, width, style, Some(2));
+                    assert_eq!(lines_of(&linked, orange), 1, "{style:?} at {width}");
+                    assert_eq!(lines_of(&linked, theme::SYSTEM_ACCENT), 0);
+                }
             }
         }
     }
