@@ -487,6 +487,8 @@ impl LinkHub {
     /// A whole tick: [`reconcile`](Self::reconcile), then every drained signal in the order the
     /// tabs spoke. Deliveries to one tab are merged to the newest per kind, so a target is told
     /// once however many signals arrived; the last of BTC → ETH → SOL → AVAX is all it hears.
+    /// A tab is never told something older than what it said itself in the same tick, so every
+    /// tab of the group ends on the newest value.
     pub fn tick(
         &mut self,
         members: &[Member],
@@ -494,11 +496,25 @@ impl LinkHub {
         signals: Vec<(TabId, Vec<LinkSignal>)>,
     ) -> Vec<Delivery> {
         let mut all = self.reconcile(members, table);
+        // What each tab said itself this tick, and when. `ingest` leaves a signal's own origin
+        // out of its deliveries, so without this a tab that spoke last would still be handed
+        // an older signal of another tab, and end up unlike the tabs that took its value.
+        let mut said: HashMap<(TabId, LinkKind), u64> = HashMap::new();
         for (origin, signals) in signals {
             for signal in signals {
+                let kind = signal.kind();
+                let before = self.sequence;
                 all.extend(self.ingest(origin, signal, members, table));
+                // An ignored signal (unlinked tab, switch off) takes no sequence and has no say.
+                if self.sequence != before {
+                    said.insert((origin, kind), self.sequence);
+                }
             }
         }
+        all.retain(|delivery| {
+            said.get(&(delivery.target, delivery.signal.kind()))
+                .is_none_or(|own| delivery.sequence > *own)
+        });
         merge(all)
     }
 

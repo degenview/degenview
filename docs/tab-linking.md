@@ -47,6 +47,10 @@ Everything else is **not stated by TradingView, so it is a decision here**:
   focused, an unlinked tab (its outbox is cleared the moment it is unlinked).
 - The symbol is the whole watchlist row (provider, symbol, title, artwork), never a bare ticker.
   The chart keeps its type, settings, indicators, Pine instances, drawings and timeframe.
+- When several tabs speak in one tick, every tab of the group ends on the newest value: a tab is
+  never told something older than what it said itself.
+- Choosing a market that is already open on the tab (from the watchlist) is announced like any
+  other change of the focused market.
 - A symbol that cannot load is put back: the chart's first fetch fails with nothing on it, so the
   tab shows what it had and says so in the chart notice. The rest of the group is unaffected.
 - A tab with no market chart (a blank tab, a portfolio card in focus) has nothing to change and gets

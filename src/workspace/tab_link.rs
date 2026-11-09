@@ -8,6 +8,7 @@
 
 use super::ChartWorkspace;
 use crate::host::tab_link_host::TabLinkHost;
+use crate::model::InstrumentId;
 use crate::model::chart_sync::{ChartSyncSettings, SyncHub};
 use crate::model::tab_link::{LinkKind, LinkOutbox, LinkSignal, Member};
 use crate::model::watchlist::WatchlistInstrument;
@@ -18,7 +19,8 @@ use eframe::egui;
 /// the group is unaffected.
 pub(super) struct Probation {
     chart_id: u64,
-    symbol: String,
+    /// The whole market (provider and symbol): `BTCUSDT` on Coinbase is not `BTCUSDT` on Binance.
+    market: InstrumentId,
     previous: WatchlistInstrument,
 }
 
@@ -144,7 +146,7 @@ impl ChartWorkspace {
                     self.switch_chart(chart_id, item, ctx);
                     self.link_state.probation = Some(Probation {
                         chart_id,
-                        symbol: item.instrument.symbol.clone(),
+                        market: item.instrument.clone(),
                         previous,
                     });
                     true
@@ -194,7 +196,7 @@ impl ChartWorkspace {
             self.link_state.probation = None;
             return;
         };
-        if chart.symbol != probation.symbol {
+        if !InstrumentId::new(chart.source, &chart.symbol).is_same_market(&probation.market) {
             // The user moved on before it settled.
             self.link_state.probation = None;
         } else if !chart.candles.is_empty() {
@@ -202,7 +204,7 @@ impl ChartWorkspace {
         } else if chart.error.is_some() && !chart.loading {
             let Some(Probation {
                 chart_id,
-                symbol,
+                market,
                 previous,
             }) = self.link_state.probation.take()
             else {
@@ -212,8 +214,8 @@ impl ChartWorkspace {
             self.switch_chart(chart_id, &previous, ctx);
             self.say(
                 format!(
-                    "Couldn\u{2019}t load {symbol}. This tab kept {}.",
-                    previous.name
+                    "Couldn\u{2019}t load {}. This tab kept {}.",
+                    market.symbol, previous.name
                 ),
                 true,
             );

@@ -249,7 +249,11 @@ impl ChartWorkspace {
         }
     }
 
-    fn open_watchlist_instrument(&mut self, item: &WatchlistInstrument, ctx: &egui::Context) {
+    pub(super) fn open_watchlist_instrument(
+        &mut self,
+        item: &WatchlistInstrument,
+        ctx: &egui::Context,
+    ) {
         // A card is not a market: show the one already here, else add it beside the others
         // (never replace the focused chart's market with it).
         if let Some(card) = item.card {
@@ -263,6 +267,8 @@ impl ChartWorkspace {
             let chart_id = self.charts[existing].id;
             self.charts[existing].apply_watchlist_metadata(item);
             self.focus_chart(chart_id);
+            // The focused market is the tab's leader: this is a change of it like any other.
+            self.announce_market(item);
             return;
         }
         if let Some(focused) = self.resolved_focused_id() {
