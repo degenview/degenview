@@ -110,31 +110,65 @@ impl TradeBook {
     }
 
     /// Adds trades in any order. A trade already held (same time and id) or not valid is skipped.
+    ///
+    /// A batch is sorted and merged into the book in one pass, so a page of history that is older
+    /// than everything held (history arrives newest first) costs one pass over the book, not a move of
+    /// the whole book per trade.
     pub fn insert(&mut self, incoming: &[Trade]) -> Inserted {
         let mut result = Inserted::default();
+        let mut batch: Vec<Trade> = Vec::with_capacity(incoming.len());
         for trade in incoming {
-            if !trade.is_valid() {
+            if trade.is_valid() {
+                batch.push(*trade);
+            } else {
                 result.invalid += 1;
-                continue;
             }
-            // The common case is the newest trade.
-            let position = match self.trades.last() {
-                Some(last) if last.key().cmp(&trade.key()) == Ordering::Less => self.trades.len(),
-                _ => match self
-                    .trades
-                    .binary_search_by(|held| held.key().cmp(&trade.key()))
-                {
-                    Ok(_) => {
-                        result.duplicates += 1;
-                        continue;
+        }
+        batch.sort_unstable_by_key(Trade::key);
+        let before = batch.len();
+        batch.dedup_by_key(|trade| trade.key());
+        result.duplicates += before - batch.len();
+        let Some(first) = batch.first().copied() else {
+            return result;
+        };
+        match self.trades.last() {
+            // The common case, a live trade or a page after the newest: append.
+            Some(last) if last.key() >= first.key() => {}
+            _ => {
+                result.added = batch.len();
+                self.trades.extend(batch);
+                self.run_start = None;
+                self.trim();
+                return result;
+            }
+        }
+        // Merge two sorted lists, dropping what the book already holds.
+        let mut merged = Vec::with_capacity(self.trades.len() + batch.len());
+        let (mut held, mut new) = (self.trades.iter().peekable(), batch.iter().peekable());
+        loop {
+            match (held.peek(), new.peek()) {
+                (Some(h), Some(n)) => match h.key().cmp(&n.key()) {
+                    Ordering::Less => merged.push(*held.next().expect("peeked")),
+                    Ordering::Greater => {
+                        merged.push(*new.next().expect("peeked"));
+                        result.added += 1;
                     }
-                    Err(position) => position,
+                    Ordering::Equal => {
+                        merged.push(*held.next().expect("peeked"));
+                        new.next();
+                        result.duplicates += 1;
+                    }
                 },
-            };
-            self.trades.insert(position, *trade);
-            result.added += 1;
+                (Some(_), None) => merged.push(*held.next().expect("peeked")),
+                (None, Some(_)) => {
+                    merged.push(*new.next().expect("peeked"));
+                    result.added += 1;
+                }
+                (None, None) => break,
+            }
         }
         if result.added > 0 {
+            self.trades = merged;
             self.run_start = None;
             self.trim();
         }
@@ -360,5 +394,65 @@ mod tests {
         assert_eq!(book.complete_from_ms(), Some(1_011));
         book.insert(&run(5, 3)); // gap at 4
         assert_eq!(book.complete_from_ms(), Some(1_051));
+    }
+
+    #[test]
+    fn pages_of_history_that_are_older_than_everything_held_merge_in_order_without_loss() {
+        let mut book = TradeBook::default();
+        book.insert(&run(1_000, 500)); // 1000..1500
+        // Three older pages, newest first, each handed in reverse to prove the order is not assumed.
+        for from in [700u64, 400, 100] {
+            let mut page = run(from, 300);
+            page.reverse();
+            let result = book.insert(&page);
+            assert_eq!(result.added, 300, "page {from}");
+            assert_eq!(result.duplicates, 0);
+        }
+        // 100..700 and 1000..1500, with the pages 400..1000 overlapping 700..1000 by design.
+        let ids: Vec<u64> = book.trades().iter().map(|t| t.id).collect();
+        assert!(
+            ids.windows(2).all(|w| w[0] < w[1]),
+            "strictly ascending, no duplicate"
+        );
+        assert_eq!(ids.first(), Some(&100));
+        assert_eq!(ids.last(), Some(&1_499));
+        // A page overlapping what is held counts the overlap as duplicates and adds only the rest.
+        let result = book.insert(&run(1_400, 200));
+        assert_eq!((result.added, result.duplicates), (100, 100));
+    }
+
+    #[test]
+    fn a_big_newest_first_history_is_fast_enough() {
+        // 360 pages of 1000, each older than the last: the old per-trade insert at the front was
+        // quadratic. A loose bound that only a quadratic version misses.
+        let mut book = TradeBook::with_capacity(1_000_000);
+        let started = std::time::Instant::now();
+        for page in (0..360u64).rev() {
+            book.insert(&run(page * 1_000 + 1, 1_000));
+        }
+        assert_eq!(book.len(), 360_000);
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(20),
+            "{:?}",
+            started.elapsed()
+        );
+    }
+
+    #[test]
+    fn a_batch_with_its_own_duplicates_and_bad_trades_is_counted_honestly() {
+        let mut book = TradeBook::default();
+        let mut batch = run(1, 5);
+        batch.push(batch[2]);
+        batch.push(trade(99, 0, f64::NAN, 1.0, true));
+        let result = book.insert(&batch);
+        assert_eq!(
+            result,
+            Inserted {
+                added: 5,
+                duplicates: 1,
+                invalid: 1
+            }
+        );
+        assert_eq!(book.len(), 5);
     }
 }

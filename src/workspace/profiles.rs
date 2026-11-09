@@ -299,6 +299,15 @@ fn now_millis() -> i64 {
         .map_or(0, |elapsed| elapsed.as_millis() as i64)
 }
 
+/// The end of what a chart in replay needs: the end of its last displayed bar. A live chart needs
+/// everything up to now (`i64::MAX`).
+fn replay_end(bars: &[Kline], bar_ms: i64, replay_ms: Option<i64>) -> i64 {
+    match (replay_ms, bars.last()) {
+        (Some(_), Some(last)) => last.open_time.saturating_add(bar_ms),
+        _ => i64::MAX,
+    }
+}
+
 /// What the replay position lets a TPO read: candles opening before the end of the last displayed bar.
 fn tpo_until(bars: &[Kline], bar_ms: i64, replay_ms: Option<i64>) -> i64 {
     match (replay_ms, bars.last()) {
@@ -368,6 +377,7 @@ impl super::ChartWorkspace {
                             interval: plan.interval,
                             interval_ms: plan.interval_ms,
                             from_ms: bars.get(first).map_or(0, |bar| bar.open_time),
+                            to_ms: replay_end(bars, bar_ms, replay_ms),
                             trades: shape.tick_based,
                         })
                     }
@@ -388,6 +398,7 @@ impl super::ChartWorkspace {
                         interval,
                         interval_ms,
                         from_ms,
+                        to_ms: replay_end(bars, bar_ms, replay_ms),
                         trades: false,
                     })
                 }
@@ -400,6 +411,7 @@ impl super::ChartWorkspace {
                     interval: TPO_INTERVAL,
                     interval_ms: TPO_INTERVAL_MS,
                     from_ms: tpo_from(&spans, until),
+                    to_ms: replay_end(bars, bar_ms, replay_ms),
                     trades: false,
                 })
             };
@@ -609,6 +621,11 @@ impl super::ChartWorkspace {
                 status,
             )
         };
+        // What is wanted now is what is running (or already shown): a job that waited for a state the
+        // chart has since left would, once it ran, show a superseded set.
+        if chart.profile.key == Some(job.key()) {
+            chart.profile.waiting = None;
+        }
         if chart.profile.key != Some(job.key()) {
             if chart.profile.inbox.is_some() {
                 chart.profile.waiting = Some(Box::new(job));

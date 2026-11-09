@@ -39,6 +39,11 @@ stream), `src/workspace/profile_hub.rs` (fetches and shares the data).
 
 ## Decisions
 
+- **A bar is built from trades only if the book reaches both ends of it.** It must start before the bar (no gap since) and hold a trade at or after the bar's end (the last bar is still forming and is exempt), so a closed bar that spans a dropped connection stays an estimate until the gap is backfilled.
+- **Replay asks for the right candles.** A chart in replay far from now tells the hub where its needs *end* (`ProfileNeed::to_ms`), so the finer candles around the replay position are fetched, not the newest 60 000; stepping forward fetches what lies after what is held. Older history arriving into a full candle book makes room by dropping the newest, not the candles just fetched.
+- **Backfills queue.** Every skipped id range of a batch is kept and backfilled one after another.
+- **A doji follows the candle before it within its bar**; the first doji of a bar is a buy (TradingView compares with the previous intrabar, which may be in the previous bar: not reproduced).
+
 - **Exact where the exchange says so, labelled everywhere else.** A footprint bar built from trades
   is `TradeDerived`. From candles with Binance's taker-buy volume it is `ExchangeSplit` (the split of
   each candle is exact, which prices inside it traded is spread evenly). From close-versus-open it is

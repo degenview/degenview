@@ -253,22 +253,29 @@ pub fn custom_sessions(
         .collect();
     edges.sort_unstable();
     edges.dedup();
-    edges
-        .windows(2)
-        .filter(|pair| {
-            raw.iter()
-                .any(|s| s.start_ms <= pair[0] && pair[1] <= s.end_ms)
-        })
-        .map(|pair| Session {
+    // Sweep: with the windows sorted by start, an elementary interval `[a, b]` is covered when some
+    // window that has started by `a` ends at or after `b`, which the longest end so far answers.
+    raw.sort_unstable_by_key(|session| session.start_ms);
+    let (mut next, mut longest) = (0, i64::MIN);
+    let mut sessions = Vec::new();
+    for pair in edges.windows(2) {
+        while next < raw.len() && raw[next].start_ms <= pair[0] {
+            longest = longest.max(raw[next].end_ms);
+            next += 1;
+        }
+        let session = Session {
             start_ms: pair[0],
             end_ms: pair[1],
-        })
-        .filter(|session| session.end_ms > from_ms && session.start_ms < to_ms)
-        .collect()
+        };
+        if longest >= pair[1] && session.end_ms > from_ms && session.start_ms < to_ms {
+            sessions.push(session);
+        }
+    }
+    sessions
 }
 
-#[cfg(test)]
 /// The custom session `time_ms` is in, `None` between sessions.
+#[cfg(test)]
 pub fn custom_session_containing(
     spans: &[SessionSpan],
     zone: Option<Zone>,
@@ -615,5 +622,39 @@ mod tests {
     fn the_offered_block_sizes_include_the_default() {
         assert!(BLOCK_MINUTES.contains(&30));
         assert!(BLOCK_MINUTES.windows(2).all(|w| w[0] < w[1]));
+    }
+
+    #[test]
+    fn a_long_history_of_custom_windows_is_cut_quickly_and_the_same_as_before() {
+        let spans = [
+            SessionSpan::parse("0900-1100").unwrap(),
+            SessionSpan::parse("1000-1200").unwrap(),
+            SessionSpan::parse("2200-0600").unwrap(),
+            SessionSpan::parse("1500-1500").unwrap(),
+            SessionSpan::parse("0000-2400:17").unwrap(),
+        ];
+        let started = std::time::Instant::now();
+        let sessions = custom_sessions(&spans, None, 0, 3_000 * DAY_MS);
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(5),
+            "{:?}",
+            started.elapsed()
+        );
+        assert!(sessions.len() > 10_000);
+        // Ordered, never overlapping, every piece inside some window.
+        assert!(sessions.windows(2).all(|w| w[0].end_ms <= w[1].start_ms));
+        assert!(sessions.iter().all(|s| s.start_ms < s.end_ms));
+        // The overlap of 0900-1100 and 1000-1200 on day 0 is cut at its intersections.
+        let day = |d: i64| {
+            sessions
+                .iter()
+                .filter(|s| s.start_ms >= d * DAY_MS && s.start_ms < (d + 1) * DAY_MS)
+                .map(|s| (s.start_ms - d * DAY_MS, s.end_ms - d * DAY_MS))
+                .collect::<Vec<_>>()
+        };
+        let weekday = day(2); // 1970-01-03 is a Saturday: only the daily windows
+        assert!(
+            weekday.contains(&(9 * HOUR, 10 * HOUR)) && weekday.contains(&(10 * HOUR, 11 * HOUR))
+        );
     }
 }
