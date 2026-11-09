@@ -1,11 +1,13 @@
-//! The Object Tree's rows: the chart's symbol, its indicators and scripts, and its drawings.
+//! The Object Tree's rows: the chart's symbol, the markets compared on it, its indicators and
+//! scripts, and its drawings.
 //!
-//! A view over state the chart already owns (`IndicatorConfig`, the Pine instances, the drawing
-//! list), rebuilt from it; nothing here is stored. Drawings are listed topmost first, the order
+//! A view over state the chart already owns (`IndicatorConfig`, the Pine instances, the compared
+//! markets, the drawing list), rebuilt from it; nothing here is stored. Drawings are listed topmost first, the order
 //! the chart paints them back to front reversed, so the row on top is the one drawn on top.
 //! Pure: the panel draws the rows and the workspace applies what the user does to them.
 
 use super::drawings::Drawing;
+use super::overlay::{OverlayId, OverlayList};
 use super::pine_instance::PineInstance;
 use super::{BuiltIn, IndicatorConfig, Tool};
 
@@ -22,6 +24,8 @@ pub enum IndicatorKey {
 pub enum Key {
     Heading(Section),
     Symbol,
+    /// A market compared on the chart, by its id on the chart.
+    Overlay(OverlayId),
     Indicator(IndicatorKey),
     Drawing(u64),
 }
@@ -29,6 +33,7 @@ pub enum Key {
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum Section {
     Symbol,
+    Overlays,
     Indicators,
     Drawings,
 }
@@ -37,6 +42,7 @@ impl Section {
     fn title(self) -> &'static str {
         match self {
             Self::Symbol => "Symbol",
+            Self::Overlays => "Compared symbols",
             Self::Indicators => "Indicators",
             Self::Drawings => "Drawings",
         }
@@ -64,6 +70,8 @@ pub struct Inputs<'a> {
     pub source: &'a str,
     pub indicators: &'a IndicatorConfig,
     pub scripts: &'a [PineInstance],
+    /// The markets compared on the chart, in the order they are drawn.
+    pub overlays: &'a OverlayList,
     pub drawings: &'a [Drawing],
 }
 
@@ -102,6 +110,22 @@ pub fn rows(inputs: &Inputs, filter: &str) -> Vec<Row> {
             count: 0,
         }],
     ));
+
+    // The compared markets, in the order the list holds them (the legend's order too).
+    let overlays: Vec<Row> = inputs
+        .overlays
+        .iter()
+        .map(|overlay| Row {
+            key: Key::Overlay(overlay.id),
+            label: overlay.name(),
+            detail: overlay.instrument.source.display_name().to_owned(),
+            shown: Some(overlay.visible),
+            locked: None,
+            tool: None,
+            count: 0,
+        })
+        .collect();
+    sections.push((Section::Overlays, overlays));
 
     let mut indicators = Vec::new();
     for indicator in BuiltIn::ALL
@@ -219,11 +243,13 @@ mod tests {
         scripts: &'a [PineInstance],
         drawings: &'a [Drawing],
     ) -> Inputs<'a> {
+        static NO_OVERLAYS: std::sync::OnceLock<OverlayList> = std::sync::OnceLock::new();
         Inputs {
             title: "BTCUSDT",
             source: "Binance",
             indicators: config,
             scripts,
+            overlays: NO_OVERLAYS.get_or_init(OverlayList::new),
             drawings,
         }
     }
@@ -269,6 +295,59 @@ mod tests {
         let script = rows.iter().find(|row| row.label == "My script").unwrap();
         assert_eq!(script.key, Key::Indicator(IndicatorKey::Script(3)));
         assert_eq!(script.shown, Some(true));
+    }
+
+    #[test]
+    fn compared_markets_are_listed_after_the_symbol_in_the_order_the_list_holds_them() {
+        use crate::model::overlay::OverlayCommand;
+        use crate::model::{DataSource, InstrumentId};
+        let config = IndicatorConfig::default();
+        let main = InstrumentId::new(DataSource::Binance, "BTCUSDT");
+        let mut overlays = OverlayList::new();
+        let eth = overlays.add(
+            &main,
+            InstrumentId::new(DataSource::Binance, "ETHUSDT"),
+            None,
+        );
+        let sol = overlays.add(
+            &main,
+            InstrumentId::new(DataSource::Binance, "SOLUSDT"),
+            Some("Solana".into()),
+        );
+        let (
+            crate::model::overlay::AddOutcome::Added(eth),
+            crate::model::overlay::AddOutcome::Added(sol),
+        ) = (eth, sol)
+        else {
+            panic!("both added");
+        };
+        overlays.apply(OverlayCommand::SetVisible(sol, false));
+        let drawings = [line(1)];
+        let mut input = inputs(&config, &[], &drawings);
+        input.overlays = &overlays;
+        let rows = rows(&input, "");
+        assert_eq!(
+            labels(&rows),
+            [
+                "Symbol",
+                "BTCUSDT",
+                "Compared symbols",
+                "ETHUSDT",
+                "Solana",
+                "Drawings",
+                "Trend line 1",
+            ]
+        );
+        let row = |key| rows.iter().find(|row| row.key == key).unwrap();
+        // Hidden follows the overlay's eye; there is no lock and no tool.
+        assert_eq!(row(Key::Overlay(eth)).shown, Some(true));
+        assert_eq!(row(Key::Overlay(sol)).shown, Some(false));
+        assert_eq!(row(Key::Overlay(sol)).locked, None);
+        assert_eq!(row(Key::Overlay(sol)).detail, "Binance");
+        assert_eq!(row(Key::Heading(Section::Overlays)).count, 2);
+        // The filter finds one by its title or its market, and drops the other sections.
+        let found = super::rows(&input, "solana");
+        assert_eq!(labels(&found), ["Compared symbols", "Solana"]);
     }
 
     #[test]

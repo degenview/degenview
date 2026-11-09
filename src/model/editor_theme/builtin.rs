@@ -110,7 +110,7 @@ const fn light_syntax(role: SyntaxRole) -> Rgba {
 const fn dark_surface(surface: SurfaceColor) -> Rgba {
     use SurfaceColor as S;
     match surface {
-        S::Background => Rgba::hex(0x181F22),
+        S::Background => Rgba::hex(0x0E1315),
         S::CurrentLine => Rgba::with_alpha(0xFFFFFF, 15),
         S::Selection => Rgba::hex(0xBF52CB),
         S::SelectionText => Rgba::hex(0xFFFFFF),
@@ -122,11 +122,11 @@ const fn dark_surface(surface: SurfaceColor) -> Rgba {
         S::FindMatchActive => Rgba::with_alpha(0xFFD60A, 153),
         S::IndentGuide => Rgba::with_alpha(0xFFFFFF, 22),
         S::IndentGuideActive => Rgba::with_alpha(0x98989D, 153),
-        S::GutterBackground => Rgba::hex(0x1C2428),
+        S::GutterBackground => Rgba::hex(0x121619),
         S::LineNumber | S::LineNumberActive => Rgba::hex(0x98989D),
         S::DiagnosticError => Rgba::hex(0xFF453A),
         S::DiagnosticWarning => Rgba::hex(0xFFD60A),
-        S::PopupBackground => Rgba::hex(0x252D31),
+        S::PopupBackground => Rgba::hex(0x181D20),
         S::PopupSelection => Rgba::hex(0x586269),
     }
 }

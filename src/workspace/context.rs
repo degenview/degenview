@@ -17,6 +17,7 @@ use crate::model::chart_context::{
 };
 use crate::model::chart_template::ApplyScope;
 use crate::model::object_tree::{self, IndicatorKey, Key as TreeKey};
+use crate::model::overlay::OverlayCommand;
 use crate::model::paper::{PaperOrderSide, PaperOrderType};
 use crate::model::price_scale::PriceScaleMode;
 use crate::model::session_stats;
@@ -241,7 +242,8 @@ impl ChartWorkspace {
             paper,
             quantity,
             drawings: chart.drawings.iter().filter(|d| is_lockable(d)).count(),
-            indicators: applied + chart.chart.pine_instances().len(),
+            // The compared markets count as indicators here, and go with them.
+            indicators: applied + chart.chart.pine_instances().len() + chart.overlays.len(),
             clipboard: stored_clip(ctx).is_some(),
             time_locked: chart.chart.time_lock().is_some(),
             table_open: self.context.table_chart == Some(chart.id),
@@ -995,6 +997,7 @@ impl ChartWorkspace {
                 source: chart.source.display_name(),
                 indicators: &chart.indicators,
                 scripts: chart.chart.pine_instances(),
+                overlays: &chart.overlays,
                 drawings: &chart.drawings,
             },
             &self.context.tree.filter,
@@ -1041,6 +1044,12 @@ impl ChartWorkspace {
                 };
                 self.settings_chart = Some(chart_id);
             }
+            TreeAction::Settings(TreeKey::Overlay(_)) => {
+                // The Compare page, as from the legend's pill.
+                self.settings_state = ChartSettingsState::default();
+                self.settings_state.tab = chart_settings::Tab::Overlays;
+                self.settings_chart = Some(chart_id);
+            }
             TreeAction::Settings(_) => {}
             TreeAction::ToggleShown(TreeKey::Drawing(id)) => {
                 if let Some(mut changed) = drawing(self, id) {
@@ -1065,6 +1074,12 @@ impl ChartWorkspace {
                     .find(|candidate| candidate.id == id)
                     .is_some_and(|candidate| candidate.visible);
                 card.set_pine_visible(id, !visible);
+            }
+            TreeAction::ToggleShown(TreeKey::Overlay(id)) => {
+                // One undo step, from `apply_overlay_command` itself.
+                if let Some(visible) = self.charts[index].overlays.get(id).map(|o| o.visible) {
+                    self.apply_overlay_command(chart_id, OverlayCommand::SetVisible(id, !visible));
+                }
             }
             TreeAction::ToggleShown(_) => {}
             TreeAction::ToggleLocked(id) => {
@@ -1095,6 +1110,9 @@ impl ChartWorkspace {
                 self.remember_indicators(chart_id);
                 self.charts[index].chart.remove_pine_instance(id);
             }
+            TreeAction::Delete(TreeKey::Overlay(id)) => {
+                self.apply_overlay_command(chart_id, OverlayCommand::Remove(id));
+            }
             TreeAction::Delete(_) => {}
             TreeAction::Reorder(id, step) => {
                 self.apply_drawing_commands(chart_id, vec![DrawingCommand::Reorder { id, step }]);
@@ -1120,6 +1138,38 @@ impl ChartWorkspace {
         self.last_restyle = None;
     }
 
+    /// Removes the chart's built-in indicators, scripts and compared markets as one undo step.
+    fn remove_all_indicators(&mut self, chart_id: u64) {
+        let Some(chart) = self.charts.iter().find(|chart| chart.id == chart_id) else {
+            return;
+        };
+        let indicators = Snapshot::Indicators {
+            config: chart.indicators,
+            scripts: chart.chart.pine_instances().to_vec(),
+        };
+        let before = if chart.overlays.is_empty() {
+            indicators
+        } else {
+            Snapshot::All(vec![
+                indicators,
+                Snapshot::Overlays {
+                    list: chart.overlays.clone(),
+                    scale_mode: None,
+                },
+            ])
+        };
+        self.undo.push(UndoEntry { chart_id, before });
+        self.redo.clear();
+        self.last_restyle = None;
+        if let Some(chart) = self.charts.iter_mut().find(|chart| chart.id == chart_id) {
+            for indicator in BuiltIn::ALL {
+                indicator.set_applied(&mut chart.indicators, false);
+            }
+            chart.chart.set_pine_instances(Vec::new());
+            chart.overlays = crate::model::overlay::OverlayList::new();
+        }
+    }
+
     /// The confirmation behind "Remove N indicators". The scripts' saved source and their alert
     /// subscriptions are left alone: only the chart's instances go, and Undo brings them back.
     fn confirm_indicators_removal(&mut self, ctx: &Context) {
@@ -1135,16 +1185,20 @@ impl ChartWorkspace {
             .filter(|indicator| indicator.applied(&chart.indicators))
             .count();
         let scripts = chart.chart.pine_instances().len();
-        let count = applied + scripts;
+        let compared = chart.overlays.len();
+        let count = applied + scripts + compared;
         if count == 0 {
             self.context.confirm_remove_indicators = None;
             return;
         }
+        let including = match compared {
+            0 => String::new(),
+            1 => ", the compared symbol included,".to_owned(),
+            n => format!(", the {n} compared symbols included,"),
+        };
         let message = format!(
-            "{} will be removed from this chart. Saved scripts are kept, and you can undo it.",
-            chart_context::remove_indicators_label(count)
-                .trim_start_matches("Remove ")
-                .to_owned()
+            "{}{including} will be removed from this chart. Saved scripts are kept, and you can undo it.",
+            chart_context::remove_indicators_label(count).trim_start_matches("Remove ")
         );
         let result = ui::kit::confirm(
             ctx,
@@ -1159,13 +1213,7 @@ impl ChartWorkspace {
         match result {
             Some(ui::kit::ConfirmOutcome::Confirmed) => {
                 self.context.confirm_remove_indicators = None;
-                self.remember_indicators(chart_id);
-                if let Some(chart) = self.charts.iter_mut().find(|chart| chart.id == chart_id) {
-                    for indicator in BuiltIn::ALL {
-                        indicator.set_applied(&mut chart.indicators, false);
-                    }
-                    chart.chart.set_pine_instances(Vec::new());
-                }
+                self.remove_all_indicators(chart_id);
             }
             Some(ui::kit::ConfirmOutcome::Cancelled) => {
                 self.context.confirm_remove_indicators = None;

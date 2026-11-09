@@ -24,6 +24,20 @@ behavior.
   Grid ticks use `format_tick`; `ui::price_text` paints the Unicode subscript count. Other screens
   may use `format::price`; watchlist prices use `PriceFormat::AUTO`.
 
+## The header over the plot
+
+- The plot reaches the card's top edge and the header (logo, symbol, compare pills, indicators,
+  price) is drawn over it, after the body, in `workspace/grid.rs`. The workspace tells the card with
+  `ChartCard::set_top_inset(HEADER_HEIGHT)`. `PriceScale.top`/`height` start below the header
+  (`view`'s `top_inset`), so the bars clear it by default but may be panned under it; the plot, grid,
+  clip and pointer areas are the whole card.
+- Anything anchored to the plot's top (the OHLC and compare readouts, the replay pick tag and badge,
+  the logs-range tag, paper-trading pills) uses `ChartCard::below_header(plot)` or `top_inset`, never
+  `plot.top()`. Vertical pan converts pixels through `scale.height`, not `plot.height()`.
+- A snapshot has no header: it lays out with a zero inset and `snapshot_size()` drops the strip, so
+  its geometry is the plot's below the header. Do not hang interaction on the header's empty space: it
+  has no widget, so a drag there pans the chart. Portfolio cards keep the old header-above-body layout.
+
 ## Navigation
 
 - `model::viewport::ChartViewport` is the only chart view state (bars, fractional offset from the

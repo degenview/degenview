@@ -33,13 +33,20 @@ pub(super) enum Snapshot {
     /// What part of the chart was on screen before a Zoom In or Zoom out, and which way applying it
     /// takes Zoom out's history (a zoom is undone by going back; its inverse goes forward).
     View { step: ViewStep, direction: ViewMove },
+    /// Several of the above restored together: one step for a change that touched them all
+    /// (Remove indicators takes the compared markets with it).
+    All(Vec<Snapshot>),
 }
 
 impl Snapshot {
     /// Whether restoring this changes what a layout stores. A view does not: it is not saved
     /// with a layout, so undoing a zoom leaves the layout as clean as it found it.
     fn changes_layout(&self) -> bool {
-        !matches!(self, Self::View { .. })
+        match self {
+            Self::View { .. } => false,
+            Self::All(parts) => parts.iter().any(Self::changes_layout),
+            _ => true,
+        }
     }
 
     /// Puts this snapshot on `chart` and returns what the chart held, to undo the undo. `None` when
@@ -67,6 +74,12 @@ impl Snapshot {
                 step: chart.chart.apply_view(step, direction)?,
                 direction: direction.inverse(),
             },
+            Self::All(parts) => Self::All(
+                parts
+                    .into_iter()
+                    .map(|part| part.swap_into(chart))
+                    .collect::<Option<Vec<_>>>()?,
+            ),
         })
     }
 }

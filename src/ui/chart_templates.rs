@@ -7,6 +7,7 @@
 //! [`ChartTemplateStore`]); there is no database access in the paint path.
 
 use super::chart_card::ChartCard;
+use super::dialog;
 use super::icons::{self, Icon};
 use super::kit::{self, REGULAR, SEMIBOLD, size};
 use super::sheet;
@@ -498,7 +499,8 @@ enum Outcome {
     Cancel,
 }
 
-/// A neutral confirmation: a badge, the question, Cancel and the action.
+/// A neutral confirmation on the shared dialog: a grey badge, the question, Cancel and the action.
+/// Return presses the action (it starts focused), Escape cancels.
 fn confirm(
     ctx: &egui::Context,
     id: &'static str,
@@ -507,29 +509,11 @@ fn confirm(
     message: &str,
     action: &str,
 ) -> Option<Outcome> {
-    let mut outcome = None;
-    sheet::show(ctx, Id::new(id), DIALOG_WIDTH, |ui| {
-        ui.add_space(24.0);
-        sheet::inset(ui, |ui| {
-            sheet::header(ui, icon, title, message, theme::ACCENT);
-            ui.add_space(22.0);
-        });
-        sheet::footer(ui, |ui| {
-            if kit::sheet_button(ui, action, true, true).clicked() {
-                outcome = Some(Outcome::Confirm);
-            }
-            if kit::sheet_button(ui, "Cancel", false, true).clicked() {
-                outcome = Some(Outcome::Cancel);
-            }
-        });
-    });
-    if ctx.input(|input| input.key_pressed(egui::Key::Escape)) {
-        outcome = Some(Outcome::Cancel);
-    } else if outcome.is_none() && ctx.input(|input| input.key_pressed(egui::Key::Enter)) {
-        // Return answers a macOS alert with its default button.
-        outcome = Some(Outcome::Confirm);
-    }
-    outcome
+    let spec = dialog::Dialog::new(icon, theme::text_secondary(), title, message, action);
+    dialog::show(ctx, Id::new(id), &spec, |_| {}).map(|outcome| match outcome {
+        dialog::Outcome::Accepted => Outcome::Confirm,
+        dialog::Outcome::Dismissed | dialog::Outcome::Leading => Outcome::Cancel,
+    })
 }
 
 pub(super) fn text_field(

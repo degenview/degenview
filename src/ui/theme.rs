@@ -52,17 +52,17 @@ struct Palette {
 }
 
 const DARK: Palette = Palette {
-    background: Color32::from_rgb(28, 36, 40),
-    chrome: Color32::from_rgb(37, 45, 49),
-    surface: Color32::from_rgb(31, 40, 44),
-    surface_selected: Color32::from_rgb(45, 55, 60),
-    border: Color32::from_rgb(57, 68, 73),
-    grid: Color32::from_rgb(48, 59, 64),
+    background: Color32::from_rgb(18, 22, 25),
+    chrome: Color32::from_rgb(24, 29, 32),
+    surface: Color32::from_rgb(20, 26, 28),
+    surface_selected: Color32::from_rgb(34, 41, 44),
+    border: Color32::from_rgb(44, 53, 57),
+    grid: Color32::from_rgb(36, 44, 48),
     text_primary: Color32::from_rgb(235, 235, 240),
     text_secondary: Color32::from_rgb(152, 152, 157),
     text_tertiary: Color32::from_rgb(98, 98, 102),
-    separator: Color32::from_rgb(58, 69, 74),
-    editor_background: Color32::from_rgb(24, 31, 34),
+    separator: Color32::from_rgb(44, 53, 57),
+    editor_background: Color32::from_rgb(14, 19, 21),
     ink: Color32::WHITE,
 };
 
@@ -216,7 +216,7 @@ pub fn editor_background() -> Color32 {
 }
 /// The raised plate under a selected segment: a lifted grey on dark, white on light.
 pub fn selected_plate() -> Color32 {
-    pick(Color32::from_rgb(88, 98, 104), Color32::WHITE)
+    pick(Color32::from_rgb(74, 83, 88), Color32::WHITE)
 }
 /// Text and glyphs on [`selected_plate`].
 pub fn on_selected_plate() -> Color32 {
@@ -233,7 +233,7 @@ pub fn selected_stroke() -> egui::Stroke {
 }
 /// A bordered push button or stepper's bezel (`controlColor`).
 pub fn control_fill() -> Color32 {
-    pick(Color32::from_rgb(63, 72, 77), Color32::WHITE)
+    pick(Color32::from_rgb(49, 56, 60), Color32::WHITE)
 }
 /// `NSColor.windowBackgroundColor`: the gutter.
 pub fn gutter_background() -> Color32 {

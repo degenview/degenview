@@ -22,6 +22,7 @@ id, and nothing a script, alert, drawing or paper order reads looks at them: tho
 | Resolve against the bars in view, lines, tags, crosshair rows | `src/ui/chart_card/overlays.rs` |
 | Legend chips and menu | `src/ui/chart_indicator_strip.rs` (`Kind::Overlay`) |
 | Settings page | `src/ui/chart_settings.rs` (`Tab::Overlays`, "Compare") |
+| Object tree section "Compared symbols" | `src/model/object_tree.rs` (`Key::Overlay`), `src/workspace/context.rs` (`apply_tree_action`) |
 | Picker mode | `src/ui/symbol_picker/` (`PickMode`, `Output::Overlay`) |
 
 ## Behaviour
@@ -98,6 +99,11 @@ is Regular or Logarithmic, a notice says the axis cannot compare them and offers
 nothing leaves none. The add that switches Regular to Percent carries the old mode in its step, so undo
 puts the axis back and redo switches it again; no other step touches the mode. A colour dragged in the
 picker reports every frame and is one step (`last_overlay_style`, the 800 ms window drawings use).
+
+The Object tree lists the compared markets too, in a "Compared symbols" section under the symbol, in the
+list's order: an eye (hide or show the line), a trash (remove), and a double-click or Settings… that
+opens the Compare page. No lock and no reordering there (use the page or the legend). The tree runs the
+same `OverlayCommand`s through `apply_overlay_command`, so each is one undo step.
 
 ## Data
 

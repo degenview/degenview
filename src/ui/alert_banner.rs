@@ -174,7 +174,7 @@ fn capsule(ui: &mut egui::Ui, icon: Icon, banner: &Banner) -> bool {
     let mut dismissed = false;
     egui::Frame::new()
         .fill(theme::pick(
-            Color32::from_rgb(44, 52, 57),
+            Color32::from_rgb(31, 36, 40),
             Color32::from_rgb(250, 250, 251),
         ))
         .stroke(egui::Stroke::new(1.0, kit::primary(0.1)))

@@ -67,6 +67,7 @@ impl ChartWorkspace {
                     source: chart.source,
                     chart_types: !chart.source.is_line_chart(),
                     settings: chart.source != DataSource::CoinMarketCap,
+                    compare: self.can_compare(chart.id),
                 }),
             can_undo: !self.undo.is_empty(),
             can_redo: !self.redo.is_empty(),
@@ -116,6 +117,7 @@ impl ChartWorkspace {
                 ToolbarAction::Undo => self.undo(),
                 ToolbarAction::Redo => self.redo(),
                 ToolbarAction::OpenIndicators => self.indicator_picker.open(),
+                ToolbarAction::CompareSymbol => self.open_compare_picker(),
             }
         }
 

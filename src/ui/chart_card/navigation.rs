@@ -97,6 +97,8 @@ pub(super) struct Navigation<'a> {
     pub shown: Option<PriceRange>,
     pub total: usize,
     pub slot_width: f32,
+    /// The height the price scale spans: the plot's, less the part the header covers.
+    pub scale_height: f32,
     pub logarithmic: bool,
     /// Whether a drawing gesture owns the drag.
     pub drawing_claims: bool,
@@ -227,7 +229,7 @@ impl ChartCard {
                     &mut self.viewport,
                     (dx, dy),
                     nav.slot_width,
-                    nav.regions.plot.height(),
+                    nav.scale_height,
                     nav.total,
                     nav.logarithmic,
                 );

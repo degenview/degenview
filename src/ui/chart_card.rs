@@ -47,7 +47,9 @@ use std::sync::{
 
 /// The least the price axis is wide, for a chart whose labels are short.
 const PRICE_AXIS_WIDTH: f32 = 44.0;
-const HEADER_HEIGHT: f32 = 45.0;
+/// The header row's height. The header is drawn over the top of the plot (`set_top_inset`), which
+/// reaches the card's top edge.
+pub const HEADER_HEIGHT: f32 = 45.0;
 /// A plot shorter than this is not drawn: only the time axis stays.
 const MIN_PLOT_HEIGHT: f32 = 16.0;
 /// How many screens from the oldest bar held the view asks for an older page.
@@ -97,13 +99,14 @@ fn run_revision(candles: &[Kline], visible_range: Option<(i64, i64)>, now_ms: i6
     }
 }
 
-/// The header change uses the same candle window as the plot, including pan and zoom.
-fn visible_price_change(
+/// The header change uses the same candle window as the plot, including pan and zoom: the price
+/// change (last close less first) and the percent.
+fn visible_price_move(
     candles: &[Kline],
     visible_count: usize,
     right_offset: f64,
     reserved: usize,
-) -> Option<f64> {
+) -> Option<(f64, f64)> {
     let window = canvas::visible_window(candles.len(), visible_count, right_offset, reserved);
     let visible = candles.get(window.start..window.end)?;
     let (Some(first), Some(last)) = (visible.first(), visible.last()) else {
@@ -112,8 +115,23 @@ fn visible_price_change(
     if visible.len() < 2 || first.close == 0.0 {
         return None;
     }
-    let change = (last.close - first.close) / first.close * 100.0;
-    change.is_finite().then_some(change)
+    let amount = last.close - first.close;
+    let percent = amount / first.close * 100.0;
+    (amount.is_finite() && percent.is_finite()).then_some((amount, percent))
+}
+
+/// `+$67.13 (+0.10%)`, or `+0.10%` when the amount is left out (prediction markets quote
+/// probabilities, so a price difference means nothing there).
+fn change_text(amount: Option<f64>, percent: f64) -> String {
+    let sign = if percent >= 0.0 { "+" } else { "-" };
+    match amount {
+        Some(amount) => format!(
+            "{sign}{} ({sign}{:.2}%)",
+            format::headline(amount.abs(), false),
+            percent.abs()
+        ),
+        None => format!("{sign}{:.2}%", percent.abs()),
+    }
 }
 
 /// Half the width of a candle body, matching the real candles the Pine overlay recolours.
@@ -182,7 +200,9 @@ impl SettingsTip for egui::Response {
         if source == DataSource::CoinMarketCap {
             self
         } else {
-            self.on_hover_text("Chart settings")
+            // The plot's crosshair cursor is set before the header is drawn over it.
+            self.on_hover_cursor(egui::CursorIcon::PointingHand)
+                .on_hover_text("Chart settings")
         }
     }
 }
@@ -293,6 +313,9 @@ pub struct ChartCard {
     appearance: ChartAppearance,
     /// How big the plot area was drawn at the last frame, in points: what a snapshot is the size of.
     body_size: Vec2,
+    /// How much of the plot's top the header covers: the price scale starts below it, and what
+    /// anchors to the plot's top (readouts, tags) sits under it. A snapshot has no header.
+    top_inset: f32,
     /// A human-readable title shown instead of an opaque provider id.
     title: Option<String>,
     /// The choices of a multi-choice prediction market; empty for every other chart.
@@ -658,6 +681,7 @@ impl Default for ChartCard {
         Self {
             appearance: ChartAppearance::default(),
             body_size: Vec2::ZERO,
+            top_inset: 0.0,
             title: None,
             series: Vec::new(),
             series_cutoff: None,
@@ -760,7 +784,12 @@ impl ChartCard {
 
     /// The change across the candles on screen, by the same window the plot draws.
     pub fn visible_change(&self, candles: &[Kline]) -> Option<f64> {
-        visible_price_change(
+        self.visible_move(candles).map(|(_, percent)| percent)
+    }
+
+    /// The change across the candles on screen as (price, percent).
+    pub fn visible_move(&self, candles: &[Kline]) -> Option<(f64, f64)> {
+        visible_price_move(
             candles,
             self.viewport.horizontal.visible,
             self.viewport.horizontal.right_offset,
@@ -1605,11 +1634,25 @@ impl ChartCard {
         self.layer.open_notes()
     }
 
+    /// Tells the card how much of the plot's top the header covers (zero when there is none). The
+    /// plot reaches the card's top edge; the price scale starts below the header.
+    pub fn set_top_inset(&mut self, inset: f32) {
+        self.top_inset = inset.max(0.0);
+    }
+
+    /// `plot` less the part the header covers: what top-anchored readouts and tags are placed in.
+    pub(super) fn below_header(&self, plot: Rect) -> Rect {
+        Rect::from_min_max(
+            Pos2::new(plot.min.x, (plot.min.y + self.top_inset).min(plot.max.y)),
+            plot.max,
+        )
+    }
+
     /// Visible range and price scale for the current pan/zoom, if anything is shown.
     fn view(
         &self,
         candles: &[Kline],
-        plot: Rect,
+        (plot, top_inset): (Rect, f32),
         mode: PriceScaleMode,
         chart_type: ChartType,
     ) -> Option<View> {
@@ -1663,8 +1706,9 @@ impl ChartCard {
             scale: PriceScale {
                 minimum,
                 maximum,
-                top: plot.top(),
-                height: plot.height(),
+                // Below what covers the plot's top, so the bars clear the header by default.
+                top: plot.top() + top_inset,
+                height: (plot.height() - top_inset).max(1.0),
                 logarithmic,
                 mode,
                 // Percent and Indexed measure from the first bar shown, so a pan moves the
@@ -1837,8 +1881,9 @@ impl ChartCard {
         drag_id: u64,
     ) {
         let header_width = ui.available_width();
-        let price_change = self.visible_change(candles);
-        let reserved = 164.0
+        let price_change = self.visible_move(candles);
+        // The change sits beside the price now, so the right end holds the star and little else.
+        let reserved = 108.0
             + if self.paper.trading_enabled {
                 125.0
             } else {
@@ -1960,48 +2005,79 @@ impl ChartCard {
                                 .inner;
                         }
                     });
-                    if let Some(last) = candles.last()
-                        && ui
-                            .add(
-                                egui::Button::new(
-                                    egui::RichText::new(if source == DataSource::CoinMarketCap {
-                                        // An index on a 0–100 scale, not a price.
-                                        format!("{:.0} / 100", last.close)
-                                    } else if let Some((label, price)) = self.leading_choice() {
-                                        format!("{label} · {}", format::headline(price, true))
-                                    } else {
-                                        format::headline(last.close, source.is_prediction_market())
-                                    })
-                                    .size(11.0)
-                                    .color(theme::text_secondary()),
+                    if let Some(last) = candles.last() {
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = 6.0;
+                            let price = ui
+                                .add(
+                                    egui::Button::new(
+                                        egui::RichText::new(
+                                            if source == DataSource::CoinMarketCap {
+                                                // An index on a 0–100 scale, not a price.
+                                                format!("{:.0} / 100", last.close)
+                                            } else if let Some((label, price)) =
+                                                self.leading_choice()
+                                            {
+                                                format!(
+                                                    "{label} · {}",
+                                                    format::headline(price, true)
+                                                )
+                                            } else {
+                                                format::headline(
+                                                    last.close,
+                                                    source.is_prediction_market(),
+                                                )
+                                            },
+                                        )
+                                        .size(11.0)
+                                        .color(theme::text_secondary()),
+                                    )
+                                    .frame(false),
                                 )
-                                .frame(false),
-                            )
-                            .settings_tip(source)
-                            .clicked()
-                    {
-                        action.settings_requested = source != DataSource::CoinMarketCap;
+                                .settings_tip(source);
+                            if price.clicked() {
+                                action.settings_requested = source != DataSource::CoinMarketCap;
+                            }
+                            // The change over the bars on screen, beside the price it moved:
+                            // in price and percent where a price difference means something,
+                            // and the percent alone where it does not or the row is too tight.
+                            if let Some((amount, percent)) = price_change {
+                                let color = if percent >= 0.0 {
+                                    theme::UP
+                                } else {
+                                    theme::DOWN
+                                };
+                                let room = title_content_width - price.rect.width() - 6.0;
+                                let wide = !source.is_prediction_market()
+                                    && source != DataSource::CoinMarketCap;
+                                let measure = |text: &str| {
+                                    ui.painter()
+                                        .layout_no_wrap(
+                                            text.to_owned(),
+                                            egui::FontId::proportional(11.0),
+                                            color,
+                                        )
+                                        .size()
+                                        .x
+                                };
+                                let full = change_text(wide.then_some(amount), percent);
+                                let short = change_text(None, percent);
+                                let text = if measure(&full) <= room {
+                                    Some(full)
+                                } else if measure(&short) <= room {
+                                    Some(short)
+                                } else {
+                                    None
+                                };
+                                if let Some(text) = text {
+                                    ui.label(egui::RichText::new(text).color(color).size(11.0));
+                                }
+                            }
+                        });
                     }
                 });
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if let Some(change) = price_change {
-                        let color = if change >= 0.0 {
-                            theme::UP
-                        } else {
-                            theme::DOWN
-                        };
-                        ui.label(
-                            egui::RichText::new(format!(
-                                "{} {:.2}%",
-                                if change >= 0.0 { "↗" } else { "↘" },
-                                change.abs()
-                            ))
-                            .color(color)
-                            .size(11.0)
-                            .strong(),
-                        );
-                    }
                     if self.paper.trading_enabled
                         && let Some(last) = candles.last()
                     {
@@ -2035,13 +2111,25 @@ impl ChartCard {
                         theme::text_secondary()
                     };
                     let favorite_tip = if is_favorite {
-                        "Remove from Favorites"
+                        "Remove from watchlist"
                     } else {
-                        "Add to Favorites"
+                        "Add to watchlist"
                     };
                     ui.spacing_mut().item_spacing.x = 4.0;
-                    let favorite =
-                        icons::button(ui, favorite_icon, 27.0, favorite_color, favorite_tip);
+                    // At the header's top, not centred in it: the star then sits the same distance
+                    // from the card's top edge as from its right edge.
+                    let favorite = ui
+                        .allocate_ui_with_layout(
+                            Vec2::new(27.0, HEADER_HEIGHT),
+                            egui::Layout::top_down(egui::Align::Min),
+                            |ui| {
+                                // The star's points sit low in its square and its sides inset
+                                // from it: lift it until the two margins read the same.
+                                ui.add_space(-3.5);
+                                icons::button(ui, favorite_icon, 27.0, favorite_color, favorite_tip)
+                            },
+                        )
+                        .inner;
                     favorite.context_menu(|ui| {
                         ui.label(egui::RichText::new("Add to Watchlist").small().weak());
                         for list in watchlists {
@@ -2052,6 +2140,10 @@ impl ChartCard {
                             }
                         }
                     });
+                    // The header is drawn over the plot, whose crosshair cursor would show here.
+                    favorite
+                        .clone()
+                        .on_hover_cursor(egui::CursorIcon::PointingHand);
                     if favorite.clicked() {
                         action.toggle_favorite = true;
                     }
@@ -2197,14 +2289,14 @@ impl ChartCard {
             outputs: &outputs,
             indicators,
         };
-        let layout = self.frame_layout(&data, full_rect, &painter, &style);
+        let layout = self.frame_layout(&data, full_rect, self.top_inset, &painter, &style);
         self.keep_panes_in_step(&layout);
         let plot = layout.plot;
         let pane_rects = &layout.pane_rects;
         let chart_hovered = ui.rect_contains_pointer(full_rect);
         let regions = self.handle_frame_input(ui, &response, &data, &layout, drawing, replay);
 
-        let Some(view) = self.view(bars, plot, scale_mode, chart_type) else {
+        let Some(view) = self.view(bars, (plot, layout.top_inset), scale_mode, chart_type) else {
             return pointer;
         };
         self.near_oldest = view.start <= self.viewport.horizontal.visible * NEAR_OLDEST_SCREENS;
@@ -2324,7 +2416,13 @@ impl ChartCard {
         let x = plot.left()
             + view.slot_width * ((index - view.start) as f32 + 0.5)
             + view.slot_width * view.lead;
-        replay_overlay::paint_selection(painter, plot, x, open_time, self.pick_kind);
+        replay_overlay::paint_selection(
+            painter,
+            self.below_header(plot),
+            x,
+            open_time,
+            self.pick_kind,
+        );
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         if response.clicked() {
             replay.picked_ms = Some(open_time);
@@ -2881,15 +2979,17 @@ impl ChartCard {
             Color32::WHITE,
         );
 
+        // The header covers the plot's top, so the readouts start under it.
+        let below_header = self.below_header(plot);
         let readout_bottom = if style.ohlc_readout {
-            self.draw_readout(painter, plot, info, index, candle, show_volume)
+            self.draw_readout(painter, below_header, info, index, candle, show_volume)
         } else {
-            plot.top() - 4.0
+            below_header.top() - 4.0
         };
         let (overlay_frame, overlay_view) = info.overlays;
         self.paint_overlay_readout(
             painter,
-            plot,
+            below_header,
             readout_bottom,
             overlay_frame,
             overlay_view,
@@ -3352,7 +3452,12 @@ mod tests {
         let candles: Vec<Kline> = (0..100).map(|i| point(i, 1.0)).collect();
         let plot = Rect::from_min_size(Pos2::ZERO, Vec2::new(550.0, 200.0));
         let alone = card
-            .view(&candles, plot, PriceScaleMode::Regular, ChartType::Candles)
+            .view(
+                &candles,
+                (plot, 0.0),
+                PriceScaleMode::Regular,
+                ChartType::Candles,
+            )
             .expect("view");
         assert_eq!(alone.slot_width, 5.5);
         card.script_extent = OverlayExtent {
@@ -3360,7 +3465,12 @@ mod tests {
             values: vec![9.0],
         };
         let with_script = card
-            .view(&candles, plot, PriceScaleMode::Regular, ChartType::Candles)
+            .view(
+                &candles,
+                (plot, 0.0),
+                PriceScaleMode::Regular,
+                ChartType::Candles,
+            )
             .expect("view");
         assert_eq!(with_script.slot_width, 5.0, "550 px over 100 + 10 slots");
         assert!(
@@ -3370,18 +3480,65 @@ mod tests {
     }
 
     #[test]
+    fn the_price_scale_starts_below_the_header_while_the_plot_reaches_the_top() {
+        let card = ChartCard::default();
+        let candles: Vec<Kline> = (0..50).map(|i| point(i, 1.0 + i as f64 * 0.01)).collect();
+        let plot = Rect::from_min_size(Pos2::new(0.0, 10.0), Vec2::new(500.0, 300.0));
+        let bare = card
+            .view(
+                &candles,
+                (plot, 0.0),
+                PriceScaleMode::Regular,
+                ChartType::Candles,
+            )
+            .expect("view");
+        let covered = card
+            .view(
+                &candles,
+                (plot, HEADER_HEIGHT),
+                PriceScaleMode::Regular,
+                ChartType::Candles,
+            )
+            .expect("view");
+        assert_eq!(bare.scale.top, plot.top());
+        assert_eq!(covered.scale.top, plot.top() + HEADER_HEIGHT);
+        assert_eq!(covered.scale.height, plot.height() - HEADER_HEIGHT);
+        assert_eq!(covered.scale.maximum, bare.scale.maximum, "the same prices");
+        // The highest price lands at the same distance below the scale's top, so the bars clear
+        // the header by default.
+        let top = covered.scale.y(covered.scale.maximum);
+        assert!(top >= plot.top() + HEADER_HEIGHT - 0.01, "{top}");
+        // The part of the card under the header is still the plot: a snapshot loses it.
+        let mut card = ChartCard::default();
+        card.set_top_inset(HEADER_HEIGHT);
+        card.set_snapshot_size_for_tests(Vec2::new(500.0, 345.0));
+        assert_eq!(card.snapshot_size(), Vec2::new(500.0, 300.0));
+        assert_eq!(card.below_header(plot).top(), plot.top() + HEADER_HEIGHT);
+    }
+
+    #[test]
     fn the_price_range_covers_every_line_not_only_the_candles() {
         let mut card = ChartCard::default();
         let candles = [point(0, 0.2), point(1, 0.3)];
         let plot = Rect::from_min_size(Pos2::ZERO, Vec2::new(400.0, 200.0));
         let alone = card
-            .view(&candles, plot, PriceScaleMode::Regular, ChartType::Candles)
+            .view(
+                &candles,
+                (plot, 0.0),
+                PriceScaleMode::Regular,
+                ChartType::Candles,
+            )
             .expect("view")
             .scale
             .maximum;
         card.set_series(two_lines());
         let with_lines = card
-            .view(&candles, plot, PriceScaleMode::Regular, ChartType::Candles)
+            .view(
+                &candles,
+                (plot, 0.0),
+                PriceScaleMode::Regular,
+                ChartType::Candles,
+            )
             .expect("view")
             .scale
             .maximum;
@@ -3423,16 +3580,29 @@ mod tests {
             candle(95.0, 90.0),
             candle(115.0, 120.0),
         ];
+        let percent = |count, offset| {
+            visible_price_move(&candles, count, offset, 0).map(|(_, percent)| percent)
+        };
+        assert_eq!(percent(2, 0.0), Some(30.0 / 90.0 * 100.0));
+        assert_eq!(percent(2, 1.0), Some(-20.0 / 110.0 * 100.0));
+        assert_eq!(percent(1, 0.0), None);
+        assert_eq!(visible_price_move(&[], 2, 0.0, 0), None);
+    }
+
+    #[test]
+    fn the_header_change_reads_in_price_and_percent() {
+        let candles = [
+            candle(80.0, 100.0),
+            candle(105.0, 110.0),
+            candle(95.0, 90.0),
+        ];
         assert_eq!(
-            visible_price_change(&candles, 2, 0.0, 0),
-            Some(30.0 / 90.0 * 100.0)
+            visible_price_move(&candles, 2, 0.0, 0),
+            Some((-20.0, -20.0 / 110.0 * 100.0))
         );
-        assert_eq!(
-            visible_price_change(&candles, 2, 1.0, 0),
-            Some(-20.0 / 110.0 * 100.0)
-        );
-        assert_eq!(visible_price_change(&candles, 1, 0.0, 0), None);
-        assert_eq!(visible_price_change(&[], 2, 0.0, 0), None);
+        assert_eq!(change_text(Some(67.125), 0.1), "+$67.125 (+0.10%)");
+        assert_eq!(change_text(Some(-20.0), -18.18), "-$20.00 (-18.18%)");
+        assert_eq!(change_text(None, 0.0), "+0.00%");
     }
 
     #[test]

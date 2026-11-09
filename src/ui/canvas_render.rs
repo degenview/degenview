@@ -381,10 +381,10 @@ mod tests {
 
     fn dark() -> ThemeColors {
         ThemeColors {
-            surface: Color32::from_rgb(31, 40, 44),
-            grid: Color32::from_rgb(48, 59, 64),
+            surface: Color32::from_rgb(20, 26, 28),
+            grid: Color32::from_rgb(36, 44, 48),
             text: Color32::from_rgb(152, 152, 157),
-            border: Color32::from_rgb(57, 68, 73),
+            border: Color32::from_rgb(44, 53, 57),
             ink: Color32::from_white_alpha(22),
             gradient_tint: 0.16,
         }

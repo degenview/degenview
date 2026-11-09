@@ -374,11 +374,12 @@ impl ChartWorkspace {
                 Id::new(("snapshot-consent", self.id)),
                 &kit::Alert {
                     icon: Icon::ShareUp,
-                    tint: kit::ACCENT,
+                    tint: kit::ORANGE,
                     title: "Upload this chart image?",
                     message: &message,
                     accept: "Upload",
                     dismiss: "Cancel",
+                    cautious: true,
                 },
             );
             match outcome {
@@ -407,6 +408,7 @@ impl ChartWorkspace {
                     message: &waiting.message,
                     accept: "Try again",
                     dismiss: "Cancel",
+                    cautious: false,
                 },
             );
             match outcome {

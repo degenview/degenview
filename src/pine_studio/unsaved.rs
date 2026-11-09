@@ -4,12 +4,11 @@
 //! Studio owns the state and acts on the choice, so a failed save can keep the window open.
 
 use super::model::{ScriptId, ScriptType};
+use crate::ui::dialog;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, MEDIUM, REGULAR, size};
-use crate::ui::sheet;
 use crate::ui::theme;
 use eframe::egui::{self, Align, Color32, Id, Key, Layout, Modifiers, Sense, Stroke, Ui, vec2};
-use std::cell::Cell;
 
 const WIDTH: f32 = 440.0;
 /// Rows listed before the rest fold into "and N more".
@@ -91,54 +90,36 @@ fn title(scripts: &[UnsavedScript]) -> String {
     }
 }
 
-/// The sheet. Enter saves, Escape cancels, ⌘D is “Don’t Save” as in any macOS save sheet.
+/// The dialog: Don't Save on the left, Cancel and Save on the right. Enter saves, Escape cancels,
+/// ⌘D is “Don’t Save” as in any macOS save sheet.
 pub fn show(ctx: &egui::Context, prompt: &ExitPrompt) -> Option<UnsavedChoice> {
-    let chosen = Cell::new(None);
-    let many = prompt.scripts.len() > 1;
-    sheet::show(ctx, Id::new("script-unsaved"), WIDTH, |ui| {
-        ui.add_space(24.0);
-        sheet::inset(ui, |ui| {
-            sheet::header(
-                ui,
-                Icon::Curlybraces,
-                &title(&prompt.scripts),
-                prompt.reason.consequence(),
-                theme::ORANGE,
-            );
-            ui.add_space(18.0);
-            list(ui, &prompt.scripts);
-            ui.add_space(22.0);
-        });
-        sheet::footer_split(
-            ui,
-            |ui| {
-                if kit::sheet_button(ui, "Don’t Save", false, true).clicked() {
-                    chosen.set(Some(UnsavedChoice::Discard));
-                }
-            },
-            |ui| {
-                let save = if many { "Save All" } else { "Save" };
-                if kit::sheet_button(ui, save, true, true).clicked() {
-                    chosen.set(Some(UnsavedChoice::Save));
-                }
-                if kit::sheet_button(ui, "Cancel", false, true).clicked() {
-                    chosen.set(Some(UnsavedChoice::Cancel));
-                }
-            },
-        );
+    let title = title(&prompt.scripts);
+    let mut spec = dialog::Dialog::new(
+        Icon::Curlybraces,
+        theme::ORANGE,
+        &title,
+        prompt.reason.consequence(),
+        if prompt.scripts.len() > 1 {
+            "Save All"
+        } else {
+            "Save"
+        },
+    );
+    spec.leading = Some("Don’t Save");
+    let mut choice = dialog::show(ctx, Id::new("script-unsaved"), &spec, |ui| {
+        ui.add_space(18.0);
+        list(ui, &prompt.scripts);
+    })
+    .map(|outcome| match outcome {
+        dialog::Outcome::Accepted => UnsavedChoice::Save,
+        dialog::Outcome::Dismissed => UnsavedChoice::Cancel,
+        dialog::Outcome::Leading => UnsavedChoice::Discard,
     });
-    let mut choice = chosen.get();
     if choice.is_none() {
         choice = ctx.input_mut(|input| {
-            if input.key_pressed(Key::Escape) {
-                Some(UnsavedChoice::Cancel)
-            } else if input.key_pressed(Key::Enter) {
-                Some(UnsavedChoice::Save)
-            } else if input.consume_key(Modifiers::COMMAND, Key::D) {
-                Some(UnsavedChoice::Discard)
-            } else {
-                None
-            }
+            input
+                .consume_key(Modifiers::COMMAND, Key::D)
+                .then_some(UnsavedChoice::Discard)
         });
     }
     choice

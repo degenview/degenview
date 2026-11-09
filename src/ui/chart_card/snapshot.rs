@@ -99,7 +99,11 @@ impl Overlays for SnapshotOverlays<'_> {
 impl ChartCard {
     /// How big the chart was at the last frame, in points.
     pub fn snapshot_size(&self) -> Vec2 {
-        self.body_size
+        // Without the header's strip: a snapshot has no header over its plot.
+        Vec2::new(
+            self.body_size.x,
+            (self.body_size.y - self.top_inset).max(1.0),
+        )
     }
 
     /// What instance `id`'s last run drew, counted.
@@ -176,8 +180,8 @@ impl ChartCard {
             outputs: &outputs,
             indicators: input.indicators,
         };
-        let layout = self.frame_layout(&data, rect, painter, &style);
-        let Some(view) = self.view(bars, layout.plot, input.scale_mode, chart_type) else {
+        let layout = self.frame_layout(&data, rect, 0.0, painter, &style);
+        let Some(view) = self.view(bars, (layout.plot, 0.0), input.scale_mode, chart_type) else {
             return Err(SnapshotError::Empty);
         };
         let mut layer = DrawingLayer::default();

@@ -29,6 +29,7 @@ pub mod color_picker;
 pub mod content_card;
 pub mod content_sheet;
 pub mod date_picker;
+pub mod dialog;
 mod drawing_geometry;
 mod drawing_layer;
 pub mod drawing_properties;
@@ -132,6 +133,7 @@ pub mod workspace_toolbar;
 
 pub use alert_lines::AlertMove;
 pub use chart_card::ContextRequest;
+pub use chart_card::HEADER_HEIGHT as CHART_HEADER_HEIGHT;
 pub use chart_card::PREVIEW_INSTANCE;
 pub use chart_card::SnapshotInput;
 pub use chart_card::supports_alerts;

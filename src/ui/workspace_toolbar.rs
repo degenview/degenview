@@ -1,8 +1,8 @@
 //! The chart window's toolbar, flat like TradingView's and LuxAlgo's: borderless buttons that
 //! tint on hover, hairline separators between groups and labels that fall back to icons when the
 //! window is too narrow for them. Left to right: the symbol of the focused chart, the timeframe,
-//! the chart type, Indicators,
-//! Replay, Alert, Undo and Redo. On the right: the layout menu, chart settings, the snapshot menu,
+//! the chart type, Indicators, Replay and Alert (the last two icon only), Undo and Redo, in
+//! groups divided by separators. On the right: the layout menu, chart settings, the snapshot menu,
 //! Portfolio, Pine Studio,
 //! the watchlist toggle and Add Chart. The replay bar under it (`replay_bar.rs`) uses the same
 //! flat style. The symbol, chart type, Indicators and chart settings act on the
@@ -71,6 +71,8 @@ pub struct ToolbarChart {
     pub chart_types: bool,
     /// The market has a settings sheet (a CoinMarketCap gauge has none).
     pub settings: bool,
+    /// Another market can be drawn on it (not a line-only source or a price-based type).
+    pub compare: bool,
 }
 
 /// What the layout menu's Autosave row shows.
@@ -88,6 +90,8 @@ pub enum ToolbarAction {
     SetTimeframe(Timeframe),
     /// Open the symbol picker, to change the focused chart's market.
     OpenSymbolSearch,
+    /// Open the symbol picker to compare another market on the focused chart.
+    CompareSymbol,
     /// A type picked from the chart-type menu, for the focused chart.
     SetChartType(ChartType),
     SaveLayout,
@@ -390,6 +394,14 @@ fn left_items(input: &ToolbarInput) -> Vec<Item> {
         None => "Search symbol".to_owned(),
     });
     items.push(Item::Button(symbol));
+    // Beside the symbol, as TradingView has it: another market on this chart. The Compare page
+    // of the chart settings opens the same picker.
+    items.push(Item::Button(
+        Button::new("compare", "Compare or add symbol")
+            .icon(Icon::PlusCircle)
+            .enabled(input.chart.is_some_and(|chart| chart.compare))
+            .on_click(ToolbarAction::CompareSymbol),
+    ));
     items.push(Item::Separator);
     for timeframe in Timeframe::ALL {
         let selected = timeframe == input.timeframe;
@@ -415,6 +427,7 @@ fn left_items(input: &ToolbarInput) -> Vec<Item> {
     type_button.glyph = Some(Glyph::ChartType(chart_type));
     type_button.menu = Some(Menu::ChartType);
     items.push(Item::Button(type_button));
+    items.push(Item::Separator);
     items.push(Item::Button(
         Button::new("indicators", "Indicators: add one to the focused chart")
             .icon(Icon::Waveform)
@@ -422,12 +435,12 @@ fn left_items(input: &ToolbarInput) -> Vec<Item> {
             .enabled(has_chart)
             .on_click(ToolbarAction::OpenIndicators),
     ));
+    items.push(Item::Separator);
     let mut replay = Button::new(
         "replay",
         replay_tooltip(input.replay_open, input.can_replay),
     )
     .icon(Icon::Rewind)
-    .label("Replay")
     .enabled(input.can_replay || input.replay_open)
     .active(input.replay_open)
     .on_click(ToolbarAction::ToggleReplay);
@@ -435,8 +448,7 @@ fn left_items(input: &ToolbarInput) -> Vec<Item> {
     items.push(Item::Button(replay));
     items.push(Item::Button(
         Button::new("alert", "Create price alert")
-            .icon(Icon::BellBadge)
-            .label("Alert")
+            .icon(Icon::BellPlus)
             .enabled(
                 input
                     .chart
@@ -519,7 +531,7 @@ fn right_items(input: &ToolbarInput) -> Vec<Item> {
         Item::Separator,
         Item::Button(
             Button::new("add-chart", "Add Chart")
-                .icon(Icon::Plus)
+                .icon(Icon::ChartPlus)
                 .label("Add Chart")
                 .on_click(ToolbarAction::AddChart),
         ),
@@ -926,6 +938,7 @@ mod tests {
                 source: DataSource::Binance,
                 chart_types: true,
                 settings: true,
+                compare: true,
             }),
             can_undo: true,
             can_redo: false,
@@ -1079,6 +1092,7 @@ mod tests {
             ToolbarAction::Redo,
             ToolbarAction::ToggleReplay,
             ToolbarAction::CreateAlert,
+            ToolbarAction::CompareSymbol,
             ToolbarAction::OpenIndicators,
             ToolbarAction::OpenChartSettings,
             ToolbarAction::SetTimeframe(Timeframe::Week),
@@ -1115,6 +1129,7 @@ mod tests {
             ToolbarAction::Redo,
             ToolbarAction::ToggleReplay,
             ToolbarAction::CreateAlert,
+            ToolbarAction::CompareSymbol,
             ToolbarAction::OpenIndicators,
             ToolbarAction::OpenChartSettings,
         ] {
@@ -1203,7 +1218,7 @@ mod tests {
         let at = centre_of(&input, width, ToolbarAction::OpenIndicators);
         let _ = at;
         let (_, buttons) = layout_at(&input, width);
-        // The left run is symbol | timeframes | chart type, Indicators, Replay | undo, redo; a
+        // The left run is symbol | timeframes | chart type | Indicators | Replay, Alert | undo, redo; a
         // separator is the only gap wider than a button gap.
         let left_run: Vec<_> = buttons.iter().filter(|button| button.0 < 700.0).collect();
         let starts: Vec<usize> = std::iter::once(0)
