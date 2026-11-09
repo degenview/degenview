@@ -103,6 +103,8 @@ pub enum WorkspaceAction {
     OpenWebhookSettings,
     /// Open Settings on the Alpaca page (Add Chart's "Set up Alpaca" notice).
     OpenAlpacaSettings,
+    /// Open Settings on the Brokers page (the live trading panel).
+    OpenBrokerSettings,
     /// Open Settings on the Snapshots page (the camera menu's "Configure Snapshots…").
     OpenSnapshotSettings,
     /// Pause or resume a price alert (its line on a chart).
@@ -254,6 +256,10 @@ pub struct ChartWorkspace {
     watchlist_error: Option<crate::model::watchlist::WatchlistNotice>,
     watchlist_file_result: Option<Receiver<Result<(), String>>>,
     paper_panel_visible: bool,
+    /// Where this tab's trading happens: paper, or a connected broker with real money. Not
+    /// saved: a tab always starts on paper.
+    trading_venue: crate::model::trading_venue::TradingVenue,
+    broker_panel: crate::ui::broker_panel::BrokerPanelState,
     /// A chart's bell (or a watchlist row's menu) asked for a price alert this frame; `ui`
     /// opens the sheet on it.
     new_alert_request: Option<AlertRequest>,
@@ -428,6 +434,8 @@ impl ChartWorkspace {
             watchlist_error: None,
             watchlist_file_result: None,
             paper_panel_visible: false,
+            trading_venue: crate::model::trading_venue::TradingVenue::default(),
+            broker_panel: crate::ui::broker_panel::BrokerPanelState::default(),
             new_alert_request: None,
             context: ContextState::default(),
             snapshot: SnapshotState::default(),
@@ -758,16 +766,51 @@ impl ChartWorkspace {
         }
 
         if self.paper_panel_visible {
-            let panel_actions = egui::Panel::bottom(egui::Id::new(("paper_panel", self.id)))
+            let market = self
+                .focused_market_chart()
+                .map(|chart| degenview_brokers::MarketRef {
+                    source: chart.source.watchlist_slug().to_lowercase(),
+                    symbol: chart.symbol.clone(),
+                });
+            let broker_host = crate::host::broker_host::BrokerHost::global();
+            let mut venue = self.trading_venue;
+            let mut broker_actions = Vec::new();
+            let paper_actions = egui::Panel::bottom(egui::Id::new(("paper_panel", self.id)))
                 .resizable(true)
                 .default_size(340.0)
                 .min_size(280.0)
                 .frame(egui::Frame::new().fill(ui::kit::window()))
-                .show(ui, |ui| self.paper_panel.ui(ui, paper_host))
+                .show(ui, |ui| {
+                    if let Some(host) = &broker_host {
+                        crate::ui::broker_panel::venue_switch(ui, &mut venue, host);
+                    }
+                    match (venue.broker(), &broker_host) {
+                        (Some(id), Some(host)) => {
+                            broker_actions = crate::ui::broker_panel::ui(
+                                ui,
+                                &mut self.broker_panel,
+                                host,
+                                id,
+                                &crate::ui::broker_panel::PanelInput { market },
+                            );
+                            Vec::new()
+                        }
+                        _ => self.paper_panel.ui(ui, paper_host),
+                    }
+                })
                 .inner;
-            for action in panel_actions {
+            self.trading_venue = venue;
+            for action in paper_actions {
                 match action {
                     PaperPanelAction::Close => self.paper_panel_visible = false,
+                }
+            }
+            for action in broker_actions {
+                match action {
+                    crate::ui::broker_panel::PanelAction::Close => self.paper_panel_visible = false,
+                    crate::ui::broker_panel::PanelAction::OpenSettings => {
+                        actions.push(WorkspaceAction::OpenBrokerSettings);
+                    }
                 }
             }
         }

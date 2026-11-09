@@ -102,6 +102,12 @@ impl WebhookHost {
         self.open = true;
     }
 
+    /// Opens Settings on the Brokers page (the live trading panel's "Open Settings").
+    pub fn open_brokers(&mut self) {
+        self.state.section = crate::ui::settings_window::SettingsSection::Brokers;
+        self.open = true;
+    }
+
     /// Opens Settings on the AI Assistant page (the assistant panel's "Open Settings").
     pub fn open_ai(&mut self) {
         self.state.section = crate::ui::settings_window::SettingsSection::Ai;
