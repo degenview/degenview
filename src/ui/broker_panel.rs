@@ -353,9 +353,54 @@ pub fn venue_switch(ui: &mut egui::Ui, venue: &mut TradingVenue, host: &BrokerHo
 pub struct PanelInput {
     /// The focused chart's market, if it is a market chart.
     pub market: Option<MarketRef>,
+    /// A replay is running: no live order may be started.
+    pub replay: bool,
+}
+
+/// The ticket, the edit sheet and the cancel question, drawn when the panel itself is not (an order
+/// started from a chart, with the panel closed).
+pub fn dialogs_only(
+    ctx: &egui::Context,
+    state: &mut BrokerPanelState,
+    host: &BrokerHost,
+    broker_id: BrokerId,
+) {
+    let Some(snapshot) = host.snapshot(broker_id) else {
+        // The connection is gone: so are the questions about it.
+        state.ticket = None;
+        state.edit = None;
+        state.cancel_ask = None;
+        return;
+    };
+    poll_flights(state);
+    dialogs(ctx, state, host, broker_id, &snapshot);
 }
 
 impl BrokerPanelState {
+    /// Whether any question is open (the workspace keeps drawing them while the panel is closed).
+    pub fn has_dialog(&self) -> bool {
+        self.ticket.is_some() || self.edit.is_some() || self.cancel_ask.is_some()
+    }
+
+    /// The message the panel last showed, if it is still fresh: what a closed panel cannot show.
+    pub fn take_notice(&mut self) -> Option<(String, bool)> {
+        self.notice.take().map(|(text, error, _)| (text, error))
+    }
+
+    /// Closes the ticket and the edit sheet: a replay started, and no order may be made from one.
+    pub fn close_order_entry(&mut self) -> bool {
+        let open = self.ticket.is_some() || self.edit.is_some();
+        self.ticket = None;
+        self.edit = None;
+        open
+    }
+
+    /// Asks to cancel one order (a chart's ✕), following the user's confirmation choice.
+    pub fn cancel_one(&mut self, host: &BrokerHost, broker: BrokerId, id: OrderId) {
+        let confirm = host.prefs(broker).confirm_single_cancel;
+        request_cancel(self, host, broker, vec![id], confirm);
+    }
+
     /// Shows `tab`. The pictures and tests use it; the user does through the tab bar.
     #[cfg(test)]
     pub(crate) fn set_tab(&mut self, tab: BrokerTab) {
@@ -619,6 +664,10 @@ fn new_order(
     input: &PanelInput,
 ) {
     let descriptor = broker.descriptor();
+    if input.replay {
+        state.say("Not available during replay.", true);
+        return;
+    }
     let Some(market) = &input.market else {
         state.say(
             "Focus a market chart first: the order is for the chart's market.",

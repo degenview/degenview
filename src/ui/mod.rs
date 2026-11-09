@@ -9,6 +9,7 @@ mod alert_lines;
 mod annotation_geometry;
 mod art;
 pub mod broker_badge;
+pub mod broker_chart_trading;
 pub mod broker_panel;
 #[cfg(test)]
 mod broker_panel_gallery;

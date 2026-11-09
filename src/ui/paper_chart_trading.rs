@@ -260,17 +260,19 @@ pub(super) fn show(
     (actions, menu)
 }
 
-enum Drag {
+pub(super) enum Drag {
     None,
     Moving(f32),
     Dropped(f32),
 }
 
-struct MarkerResult {
-    closed: bool,
-    drag: Drag,
+pub(super) struct MarkerResult {
+    pub(super) closed: bool,
+    pub(super) drag: Drag,
     /// Where the pill was right-clicked.
-    secondary: Option<Pos2>,
+    pub(super) secondary: Option<Pos2>,
+    /// The pill's body was clicked (not dragged, not its close mark).
+    pub(super) clicked: bool,
 }
 
 /// A marker's pill, measured and placed.
@@ -388,7 +390,7 @@ fn paint_pill(painter: &egui::Painter, layout: PillLayout, pill: &Pill, hot: boo
 }
 
 /// A dashed rule across the plot at `y`, ending in the pill against the right edge.
-fn marker(
+pub(super) fn marker(
     ui: &mut egui::Ui,
     plot: Rect,
     y: f32,
@@ -414,7 +416,14 @@ fn marker(
     );
     paint_pill(&painter, layout, pill, body.hovered() || close.hovered());
 
-    let closed = close.clone().on_hover_text(&pill.close_label).clicked();
+    // The body is registered after the close mark and so lies over it: a click on the mark may be
+    // reported to either, so both are read.
+    let on_mark = body
+        .interact_pointer_pos()
+        .is_some_and(|at| close_rect.contains(at));
+    let closed =
+        close.clone().on_hover_text(&pill.close_label).clicked() || (body.clicked() && on_mark);
+    let clicked = body.clicked() && !closed;
     let drag = if !draggable {
         Drag::None
     } else if body.dragged() {
@@ -444,6 +453,7 @@ fn marker(
         closed,
         drag,
         secondary,
+        clicked,
     }
 }
 

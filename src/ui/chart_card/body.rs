@@ -26,6 +26,7 @@ pub(super) struct OverlayResults {
     pub alert_toggled: Vec<crate::model::alert::AlertId>,
     pub alert_deleted: Vec<crate::model::alert::AlertId>,
     pub paper: (Vec<PaperOverlayAction>, Option<MarkerMenu>),
+    pub live: Vec<crate::ui::broker_chart_trading::BrokerOverlayAction>,
     pub navigation: Option<chart_buttons::NavAction>,
     pub scale_mode: Option<PriceScaleMode>,
 }
@@ -210,6 +211,7 @@ impl ChartCard {
             alert_toggled,
             alert_deleted,
             paper,
+            live,
             navigation,
             scale_mode,
         } = results;
@@ -226,6 +228,7 @@ impl ChartCard {
             }
         }
         self.alert_deletes.extend(alert_deleted);
+        self.live.actions.extend(live);
         self.paper.actions.extend(paper.0);
         self.paper.menu = paper.1.or(self.paper.menu.take());
         if let Some(action) = navigation {

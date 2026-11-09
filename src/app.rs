@@ -3649,6 +3649,7 @@ impl eframe::App for DegenViewApp {
         self.tick_editor_themes();
         self.tick_tab_quotes(ctx);
         self.tick_broker_notices();
+        self.broker_host.tick_quotes();
         self.tick_tab_links(ctx);
         self.tab_host
             .restore_frames(ctx, native_bridge::screen_layout(), now_ms().max(0) as u64);

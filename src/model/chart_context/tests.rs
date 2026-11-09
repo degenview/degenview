@@ -556,3 +556,144 @@ fn stale_messages_are_actionable_sentences() {
         assert!(stale.message().ends_with('.'));
     }
 }
+
+// ---- Live orders ---------------------------------------------------------------------------------
+
+fn live_facts() -> LiveFacts {
+    LiveFacts {
+        broker_name: "Acme".to_owned(),
+        unavailable: None,
+        price_increment: Some("0.01".parse().unwrap()),
+        market: true,
+        limit: true,
+        stop_limit: true,
+        constructed: false,
+    }
+}
+
+fn live_items(entries: &[Entry]) -> Vec<&Item> {
+    items(entries)
+        .into_iter()
+        .filter(|item| matches!(item.command, Some(Command::LiveOrder(_))))
+        .collect()
+}
+
+#[test]
+fn a_live_venue_offers_live_orders_in_place_of_paper_ones_and_each_opens_the_ticket() {
+    let facts = Facts {
+        live: Some(live_facts()),
+        paper: PaperAccess::Unsupported,
+        ..facts()
+    };
+    let menu = menu(&context(Some(90_000.004)), &facts);
+    let live = live_items(&menu);
+    assert_eq!(live.len(), 6, "market, limit and stop-limit, each way");
+    assert!(
+        live.iter().all(|item| item.label.starts_with("Live · ")),
+        "{:?}",
+        labels(&menu)
+    );
+    assert!(live.iter().all(|item| item.is_enabled()));
+    assert!(
+        items(&menu).iter().all(|item| !matches!(
+            item.command,
+            Some(Command::QuickOrder(_) | Command::AddOrder)
+        )),
+        "no paper entries beside live ones"
+    );
+    // The clicked price arrives on the market's price step, as an exact decimal; a market order
+    // carries no price.
+    let request = |side, kind| {
+        live.iter()
+            .find_map(|item| match &item.command {
+                Some(Command::LiveOrder(r)) if r.side == side && r.kind == kind => Some(r.clone()),
+                _ => None,
+            })
+            .unwrap()
+    };
+    use degenview_brokers::Side;
+    assert_eq!(
+        request(Side::Buy, crate::model::broker_ticket::TicketKind::Limit).price,
+        Some("90000".parse().unwrap())
+    );
+    assert_eq!(
+        request(Side::Sell, crate::model::broker_ticket::TicketKind::Market).price,
+        None
+    );
+}
+
+#[test]
+fn live_orders_are_greyed_with_the_reason_whenever_one_could_not_be_placed() {
+    use crate::model::broker_chart::Unavailable;
+    let disabled = |facts: Facts, price: Option<f64>| {
+        let menu = menu(&context(price), &facts);
+        live_items(&menu)
+            .iter()
+            .map(|item| item.disabled)
+            .collect::<Vec<_>>()
+    };
+    let base = || Facts {
+        live: Some(live_facts()),
+        paper: PaperAccess::Unsupported,
+        ..facts()
+    };
+
+    // Not connected, view-only, market closed...: the reason is the broker layer's sentence.
+    let mut unavailable = base();
+    unavailable.live.as_mut().unwrap().unavailable = Some(Unavailable::ViewOnly);
+    assert!(
+        disabled(unavailable, Some(1.0))
+            .iter()
+            .all(|d| *d == Some(Unavailable::ViewOnly.text()))
+    );
+
+    // A replay's prices are history.
+    let mut replay = base();
+    replay.replay = true;
+    assert!(
+        disabled(replay, Some(1.0))
+            .iter()
+            .all(|d| *d == Some(IN_REPLAY))
+    );
+
+    // A constructed chart: a price entry has no market price to use, a market order still works.
+    let mut constructed = base();
+    constructed.live.as_mut().unwrap().constructed = true;
+    let reasons = disabled(constructed, Some(1.0));
+    assert_eq!(
+        reasons.iter().filter(|d| d.is_none()).count(),
+        2,
+        "only the two market orders"
+    );
+
+    // No price under the pointer: price entries are greyed, market orders are not.
+    assert_eq!(
+        disabled(base(), None)
+            .iter()
+            .filter(|d| d.is_none())
+            .count(),
+        2
+    );
+
+    // A market that cannot take stop-limit orders greys exactly those.
+    let mut limited = base();
+    limited.live.as_mut().unwrap().stop_limit = false;
+    assert_eq!(
+        disabled(limited, Some(1.0))
+            .iter()
+            .filter(|d| d.is_some())
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn without_live_facts_the_menu_is_the_paper_menu_it_was() {
+    let menu = menu(&context(Some(118_100.0)), &facts());
+    assert!(live_items(&menu).is_empty());
+    assert!(
+        items(&menu)
+            .iter()
+            .any(|item| matches!(item.command, Some(Command::QuickOrder(_))))
+    );
+}
