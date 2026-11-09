@@ -1193,8 +1193,8 @@ impl ChartWorkspace {
         }
         let including = match compared {
             0 => String::new(),
-            1 => ", the compared symbol included".to_owned(),
-            n => format!(", the {n} compared symbols included"),
+            1 => ", the compared symbol included,".to_owned(),
+            n => format!(", the {n} compared symbols included,"),
         };
         let message = format!(
             "{}{including} will be removed from this chart. Saved scripts are kept, and you can undo it.",
