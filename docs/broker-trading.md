@@ -133,6 +133,39 @@ left alone, and the menu says why instead of trading a similar market. The rules
 * Every window showing the market draws the same lines from the same snapshot; an order placed in
   one appears in all of them, once, and a cancel updates every one.
 
+## Trying it without an account
+
+The broker crate ships a mock exchange (the stateful fake its own tests use, built from the
+exchange's published specification). To drive the whole flow in a real window with no account and no
+money:
+
+```bash
+cd ../degenview-brokers && cargo run --example mock_exchange --features testing
+```
+
+It prints a throwaway key and the two addresses. Then start the app with those and the
+`dev-mock-broker` feature (never enable it for a distributed build: it compiles the mock in and reads
+the variables; the crate honours loopback addresses only, so a stray variable cannot redirect a signed
+request):
+
+```bash
+DEGENVIEW_MOCK_BROKER_URL=http://127.0.0.1:<port> DEGENVIEW_MOCK_BROKER_WS_URL=ws://127.0.0.1:<port> \
+  DEGENVIEW_NO_KEYCHAIN=1 cargo run --release --features dev-mock-broker
+```
+
+and paste the printed key in Settings ▸ Brokers. Place, edit and cancel orders from the panel and the
+chart; the mock keeps its own state, so nothing leaves the machine.
+
+## Verification
+
+Automated (all against the mock; none can place a real order): the crate's 119 tests including its
+conformance suite, and the app's tests of the host, the screens (confirm-then-send, edit, cancel,
+drag, Escape, the ✕), the workspace and the menu. Pictures for review are written by
+`DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib gallery_of_live_trading -- --ignored` (and
+`gallery_of_chart_trading`). Not done: the screens have not been driven in a real macOS window, and
+nothing has run against a real Coinbase account. Both are needed before this ships; see the pull
+request descriptions for the checklist.
+
 ## Not done yet / not verified
 
 * Nothing here has been run against a real account by the author of the change. The mock
