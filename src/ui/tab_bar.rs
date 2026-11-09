@@ -862,14 +862,14 @@ impl TabBar<'_> {
                 && !pointer.is_some_and(|pointer| rects[index].contains(pointer))
         };
         let painter = ui.painter();
-        for index in 0..self.tabs.len().saturating_sub(1) {
+        for (index, pair) in rects.windows(2).enumerate() {
             if slot_of(index + 1, gap) != slot_of(index, gap) + 1
                 || !at_rest(index)
                 || !at_rest(index + 1)
             {
                 continue;
             }
-            let rect = rects[index];
+            let rect = pair[0];
             let x = (rect.right() + TAB_GAP / 2.0).round() + 0.5;
             let cy = rect.center().y - 1.0;
             painter.vline(
