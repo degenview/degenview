@@ -1,5 +1,8 @@
 pub mod alert_host;
 pub mod alert_runtime;
+pub mod broker_host;
+#[cfg(test)]
+mod broker_host_tests;
 pub mod editor_theme_host;
 pub mod mcp_confirmation;
 pub mod mcp_host;

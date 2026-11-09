@@ -104,6 +104,7 @@ pub mod settings_ai;
 pub mod settings_api_keys;
 mod settings_appearance;
 pub mod settings_art;
+pub mod settings_brokers;
 pub mod settings_card;
 pub mod settings_font_picker;
 pub mod settings_mcp;

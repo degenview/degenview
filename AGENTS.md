@@ -10,6 +10,7 @@ scenario matches the work:
 | Scenario | Read |
 | --- | --- |
 | Providers, symbols, timeframes, prediction markets, caches, icons, live data, or watchlists | [Market data](docs/agent-guides/market-data.md) |
+| Live trading, brokers, broker credentials, or Settings ▸ Brokers | [Live trading](docs/broker-trading.md) |
 | The symbol picker (changing a chart's market), symbol search ranking, or how markets are named | [Symbol picker](docs/symbol-picker.md) |
 | Chart rendering, price labels, chart types, canvas, templates, drawings, portfolio cards, or snapshots | [Charts](docs/agent-guides/charts.md) |
 | Markets compared on a chart (Compare, overlays), their data, scales, legend or the picker's compare mode | [Chart overlays](docs/chart-overlays.md) |
@@ -114,6 +115,7 @@ because cargo never deletes old output. Finished worktrees are where the disk go
 ## Deeper references
 
 - [Architecture](docs/architecture.md) — module map and data flow.
+- [Live trading](docs/broker-trading.md) — brokers through the `degenview-brokers` crate: credentials, the pending-order journal, the host, what never reaches scripts or MCP.
 - [iCloud Sync](docs/icloud-sync.md) — what syncs, merge rules, account safety, Apple setup, what is unverified.
 - [Flatpak](docs/flatpak.md) — the manifest and reusable workflow, sandbox permissions, why the update check stays on, what is unverified.
 - [Chart types](docs/chart-types.md) — construction rules and Pine semantics.

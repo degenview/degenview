@@ -328,6 +328,10 @@ pub struct DegenViewApp {
     alert_fx_refreshed_at: Option<Instant>,
     portfolio: Arc<Mutex<PortfolioHost>>,
     paper: Arc<Mutex<PaperHost>>,
+    /// Live broker connections, shared by every window (never reachable from MCP or scripts).
+    broker_host: Arc<crate::host::broker_host::BrokerHost>,
+    /// The broker host's revision the tab windows were last repainted for.
+    broker_revision: u64,
     /// Orders placed over MCP by `request_id`, so a retried call places nothing twice.
     mcp_orders: Mutex<mcp_host::OrderMemory>,
     /// Chart pictures being made for MCP clients.
@@ -955,6 +959,11 @@ impl DegenViewApp {
 
         let portfolio = Arc::new(Mutex::new(PortfolioHost::load(store.clone())));
         let paper = Arc::new(Mutex::new(PaperHost::load(store.clone())));
+        // Live trading: shared by every window, outside the paper lock. A broker with saved
+        // credentials connects now (on its own thread), so an account is live when it is wanted.
+        let broker_host = crate::host::broker_host::BrokerHost::install(store.clone());
+        broker_host.attach(&creation.egui_ctx);
+        broker_host.connect_all_saved();
         let snapshots = SnapshotHost::load(store.clone());
         let tab_title_host = TabTitleHost::load(store.clone());
         let tab_link_host = TabLinkHost::load(store.clone());
@@ -1137,6 +1146,8 @@ impl DegenViewApp {
             alert_fx_refreshed_at: None,
             portfolio,
             paper,
+            broker_host,
+            broker_revision: 0,
             mcp_orders: Mutex::new(mcp_host::OrderMemory::default()),
             mcp_snapshots: Mutex::new(mcp_host::SnapshotJobs::default()),
             webhook_host,
@@ -1506,9 +1517,15 @@ impl DegenViewApp {
         // on its own schedule, and one with nothing animating would show the old titles.
         let revision = self.quote_book.revision();
         let style_revision = self.tab_title_host.revision();
-        if revision != self.tab_quote_revision || style_revision != self.tab_title_revision {
+        // A broker's orders and balances change on their own threads; every window shows them.
+        let broker_revision = self.broker_host.revision();
+        if revision != self.tab_quote_revision
+            || style_revision != self.tab_title_revision
+            || broker_revision != self.broker_revision
+        {
             self.tab_quote_revision = revision;
             self.tab_title_revision = style_revision;
+            self.broker_revision = broker_revision;
             for (window, _) in self.tab_host.snapshot() {
                 ctx.request_repaint_of(Self::viewport_id(window.id));
             }

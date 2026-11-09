@@ -65,6 +65,11 @@ tokio-rustls = { version = "0.26", default-features = false, features = ["ring",
 rcgen = { version = "0.14", default-features = false, features = ["ring", "pem"] }
 # Already in the tree through rustls: checks that a certificate really names the address it is kept for.
 rustls-webpki = { version = "0.103", default-features = false, features = ["ring", "std"] }
+# Broker integrations (live trading): the trading model, the adapters and the runtime that keeps an
+# account in sync, in their own repository (degenview/brokers) and published to crates.io. Pinned to
+# one exact version; no UI, database or async runtime lives in it. DegenView supplies the secret
+# store, the pending-order journal and everything on screen. docs/broker-trading.md.
+degenview-brokers = { version = "=0.1.0", features = ["coinbase"] }
 
 # Secret storage on Linux (docs/flatpak.md): the Secret Service, or the Secret portal in a Flatpak.
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -149,3 +154,7 @@ opt-level = 2
 [profile.release]
 lto = "thin"
 strip = true
+
+[dev-dependencies]
+# The crate's loopback mock exchange, for tests of the live-trading host.
+degenview-brokers = { version = "=0.1.0", features = ["testing"] }

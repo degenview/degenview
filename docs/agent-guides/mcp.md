@@ -80,6 +80,10 @@
   (`attach_quotes`), released on drop. Watchlist tools go through the bridge and
   `WatchlistStore::edit_list`; never write watchlist rows from a tool thread. A tool that needs a
   second permission (`get_watchlist` with `include_quotes`) checks it with `McpShared::allows`.
+- Live trading is not reachable from MCP. Nothing under `src/mcp/` may mention `degenview_brokers`
+  or `broker_host` (`host::broker_host_tests` fails the build otherwise); a future tool that could
+  reach a real broker needs its own design, permission and confirmation, not a new arm here.
+  See [Live trading](../broker-trading.md).
 - Paper-trading writes (`mcp/paper_tools.rs`, `mcp_host::place_paper_order` and friends) go through
   `PaperHost::{submit,modify,cancel,close_position}` only, always check
   `tradable_account` first (an account another Mac runs is never changed over MCP), and keep every
