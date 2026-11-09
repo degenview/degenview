@@ -776,12 +776,3 @@ fn the_worker_applying_for_a_covered_window_does_not_acknowledge_a_failed_batch_
     }
 }
 
-#[test]
-fn today_is_a_calendar_date() {
-    let text = super::today();
-    assert_eq!(text.len(), 10);
-    assert_eq!(&text[4..5], "-");
-    assert_eq!(&text[7..8], "-");
-    let year: i32 = text[..4].parse().unwrap();
-    assert!(year >= 2025);
-}

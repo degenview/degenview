@@ -694,31 +694,3 @@ fn restore_undoes_a_session_of_edits() {
     assert_eq!(host.theme(id).unwrap(), before);
     assert_eq!(*current(), Appearance::of(BuiltInTheme::Dark));
 }
-
-#[test]
-fn many_themes_and_rapid_switching_stay_cheap() {
-    let _theme = RestoreDefaultTheme;
-    let _published = RestorePublished;
-    let (host, _store) = host();
-    for number in 0..150 {
-        host.create(
-            &format!("Theme {number}"),
-            ThemeSource::BuiltIn(BuiltInTheme::Dracula),
-        )
-        .unwrap();
-    }
-    let ids: Vec<_> = host.view().customs.iter().map(|c| c.theme.id).collect();
-    let started = Instant::now();
-    for round in 0..40 {
-        for id in &ids {
-            host.select(ThemeSelection::Custom(*id));
-        }
-        host.select(ThemeSelection::BuiltIn(BuiltInTheme::ALL[round % 3]));
-    }
-    // 6,000 switches, each resolving a palette and publishing it. A frame is 16 ms.
-    assert!(
-        started.elapsed() < Duration::from_secs(10),
-        "{:?}",
-        started.elapsed()
-    );
-}

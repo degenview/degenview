@@ -31,7 +31,8 @@ a promoted RC binary.
   switching channel cannot downgrade. Every trust rule below applies to RCs unchanged.
 - Add a channel by adding a `Channel` variant, its `accepts` rule and a label; the version
   classification (`Kind`) already knows `rc`, everything else is "other" and offered nowhere.
-- Every build carries a build id: the short commit hash, `-dirty` for a build with uncommitted
+- Every build carries a build id: `dev` for a debug build (so a commit or branch switch does not
+  recompile the library before tests), otherwise the short commit hash, `-dirty` for a build with uncommitted
   changes, `unknown` without git (`DEGENVIEW_BUILD_ID` overrides it). `build.rs` sets it; Settings ▸
   About shows it and puts it in the copied build info. It is informational: nothing reads it back
   and it is never sent anywhere. A release is built from its tag's commit, so each has its own.

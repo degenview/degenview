@@ -16,12 +16,22 @@ fn main() {
 /// Exposes `DEGENVIEW_BUILD_ID` to the crate: the short commit hash the build was made from, with
 /// `-dirty` when the tree had uncommitted changes so a local build never claims to be a clean
 /// commit. A release is built from its tag's commit, so every release gets its own id.
+/// Debug builds are `dev` and do not look at git at all.
 /// `DEGENVIEW_BUILD_ID` in the environment overrides it; with no git (a source tarball) it is
 /// `unknown`. Informational only: Settings > About shows it.
 fn build_id() {
     use std::process::Command;
 
     println!("cargo:rerun-if-env-changed=DEGENVIEW_BUILD_ID");
+    // A debug build (`cargo run`, `cargo test`) is a development build: it says so instead of
+    // naming a commit. Following the checked-out commit made every commit or branch switch re-run
+    // this script and recompile the whole library (~2 min) before the next test run.
+    if std::env::var("PROFILE").is_ok_and(|profile| profile != "release")
+        && std::env::var_os("DEGENVIEW_BUILD_ID").is_none()
+    {
+        println!("cargo:rustc-env=DEGENVIEW_BUILD_ID=dev");
+        return;
+    }
     let git = |args: &[&str]| {
         Command::new("git")
             .args(args)
