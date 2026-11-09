@@ -235,7 +235,7 @@ impl BrokerHost {
                 Arc::new(SharedSecrets),
                 Arc::new(StoreJournal::new(store.clone())),
                 Some(store),
-                Env::default(),
+                production_env(),
                 |config| config,
             )
         }))
@@ -479,6 +479,24 @@ impl BrokerHost {
             .drain(..)
             .collect()
     }
+}
+
+/// The environment live trading runs in: the real brokers. A developer build with
+/// `dev-mock-broker` can point it at a local mock exchange instead (loopback only: the crate refuses
+/// anything else, so a stray variable can never send a signed request elsewhere).
+fn production_env() -> Env {
+    #[allow(unused_mut)]
+    let mut env = Env::default();
+    #[cfg(feature = "dev-mock-broker")]
+    {
+        if let Ok(url) = std::env::var("DEGENVIEW_MOCK_BROKER_URL") {
+            env = env.with_loopback_base_url(url);
+        }
+        if let Ok(url) = std::env::var("DEGENVIEW_MOCK_BROKER_WS_URL") {
+            env = env.with_loopback_ws_url(url);
+        }
+    }
+    env
 }
 
 /// The process-wide secret store as a `SecretStore` the host can own.
