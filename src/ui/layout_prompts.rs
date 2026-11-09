@@ -2,6 +2,7 @@
 //! question before switching layouts, and the error alert. Pure views: the workspace owns the
 //! state and acts on what they report.
 
+use crate::ui::dialog;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, REGULAR, size};
 use crate::ui::sheet;
@@ -141,58 +142,31 @@ pub fn show_name(
     outcome
 }
 
-/// "Save changes to “X”?" before another layout opens over unsaved edits.
+/// "Save changes to “X”?" before another layout opens over unsaved edits: Don't Save on the left,
+/// Cancel and Save on the right; Return saves, Escape cancels.
 pub fn show_unsaved(ctx: &egui::Context, layout_name: &str) -> Option<UnsavedChoice> {
-    let mut choice = None;
-    sheet::show(ctx, Id::new("layout-unsaved"), WIDTH, |ui| {
-        ui.add_space(24.0);
-        sheet::inset(ui, |ui| {
-            sheet::header(
-                ui,
-                Icon::TriangleFill,
-                &format!("Save changes to “{layout_name}”?"),
-                "Your changes will be lost if you switch layouts without saving.",
-                kit::ORANGE,
-            );
-            ui.add_space(22.0);
-        });
-        sheet::footer(ui, |ui| {
-            if kit::sheet_button(ui, "Save", true, true).clicked() {
-                choice = Some(UnsavedChoice::Save);
-            }
-            if kit::sheet_button(ui, "Cancel", false, true).clicked() {
-                choice = Some(UnsavedChoice::Cancel);
-            }
-            if kit::sheet_button(ui, "Don’t Save", false, true).clicked() {
-                choice = Some(UnsavedChoice::Discard);
-            }
-        });
-    });
-    if ctx.input(|input| input.key_pressed(egui::Key::Escape)) {
-        choice = Some(UnsavedChoice::Cancel);
-    } else if choice.is_none() && ctx.input(|input| input.key_pressed(egui::Key::Enter)) {
-        choice = Some(UnsavedChoice::Save);
-    }
-    choice
+    let title = format!("Save changes to “{layout_name}”?");
+    let mut spec = dialog::Dialog::new(
+        Icon::TriangleFill,
+        kit::ORANGE,
+        &title,
+        "Your changes will be lost if you switch layouts without saving.",
+        "Save",
+    );
+    spec.leading = Some("Don’t Save");
+    dialog::show(ctx, Id::new("layout-unsaved"), &spec, |_| {}).map(|outcome| match outcome {
+        dialog::Outcome::Accepted => UnsavedChoice::Save,
+        dialog::Outcome::Dismissed => UnsavedChoice::Cancel,
+        dialog::Outcome::Leading => UnsavedChoice::Discard,
+    })
 }
 
-/// A layout operation failed; true once the alert is dismissed.
+/// A layout operation failed; true once the alert is dismissed (OK, Return, Escape, the close
+/// button or a click outside).
 pub fn show_error(ctx: &egui::Context, message: &str) -> bool {
-    let mut dismissed = false;
-    sheet::show(ctx, Id::new("layout-error"), WIDTH, |ui| {
-        ui.add_space(24.0);
-        sheet::inset(ui, |ui| {
-            sheet::header(ui, Icon::TriangleFill, "Layout", message, kit::ORANGE);
-            ui.add_space(22.0);
-        });
-        sheet::footer(ui, |ui| {
-            dismissed = kit::sheet_button(ui, "OK", true, true).clicked();
-        });
-    });
-    dismissed
-        || ctx.input(|input| {
-            input.key_pressed(egui::Key::Escape) || input.key_pressed(egui::Key::Enter)
-        })
+    let mut spec = dialog::Dialog::new(Icon::TriangleFill, kit::ORANGE, "Layout", message, "OK");
+    spec.dismiss = "";
+    dialog::show(ctx, Id::new("layout-error"), &spec, |_| {}).is_some()
 }
 
 #[cfg(test)]
