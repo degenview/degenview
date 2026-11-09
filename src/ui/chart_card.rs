@@ -3321,6 +3321,8 @@ mod navigation_tests;
 
 #[cfg(test)]
 mod sync_tests;
+#[cfg(test)]
+mod tab_link_tests;
 
 #[cfg(test)]
 mod drawing_tests;

@@ -8,6 +8,7 @@
 
 use super::ChartWorkspace;
 use crate::host::tab_link_host::TabLinkHost;
+use crate::model::chart_sync::{ChartSyncSettings, SyncHub};
 use crate::model::tab_link::{LinkKind, LinkOutbox, LinkSignal, Member};
 use crate::model::watchlist::WatchlistInstrument;
 use eframe::egui;
@@ -30,7 +31,15 @@ pub(super) struct LinkState {
     pub(super) probation: Option<Probation>,
     /// The switches shared by every tab of a colour; handed in by the app.
     host: Option<TabLinkHost>,
+    /// Carries the group's pan and zoom to the focused chart, the way a layout's own hub carries
+    /// one chart's to the others. The group is its only origin ([`LINK_ORIGIN`]).
+    pub(super) hub: SyncHub,
+    /// What the hub was last told to carry; a change resets it so nothing stale is replayed.
+    pub(super) view_settings: ChartSyncSettings,
 }
+
+/// The "chart" that navigated, as far as the hub is concerned: no real chart has this id.
+const LINK_ORIGIN: u64 = u64::MAX;
 
 fn slot(kind: LinkKind) -> usize {
     match kind {
@@ -69,6 +78,18 @@ impl ChartWorkspace {
     /// Whether the user did something the app has not collected yet.
     pub fn has_link_signals(&self) -> bool {
         !self.link_state.outbox.is_empty()
+    }
+
+    /// What a pan or zoom carries across tabs for this tab: Time is the position, Date range the
+    /// zoom. Nothing while the tab has no colour or its group syncs neither.
+    pub(super) fn link_view_settings(&self) -> ChartSyncSettings {
+        match (self.link, &self.link_state.host) {
+            (Some(color), Some(host)) => host.toggles(color).viewport(),
+            _ => ChartSyncSettings {
+                horizontal_position: false,
+                horizontal_zoom: false,
+            },
+        }
     }
 
     /// What the user did since the app last asked.
@@ -137,8 +158,12 @@ impl ChartWorkspace {
                     true
                 }
             }
-            // Time and Date range arrive with the viewport follower.
-            LinkSignal::View(_) => false,
+            // The focused chart follows it before it next draws (`follow_sync`), once it has bars:
+            // a chart still loading keeps the event until there is something to move.
+            LinkSignal::View(change) => {
+                self.link_state.hub.publish(LINK_ORIGIN, *change);
+                true
+            }
         };
         self.link_state.applied[slot(kind)] = sequence;
         if changed {

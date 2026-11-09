@@ -291,6 +291,17 @@ impl ChartWorkspace {
         let sync = self.sync;
         let linked = self.market_charts() > 1 && sync.is_linked();
         let mut navigated = false;
+        // Tab Linking moves and listens to the focused chart only; a change of what is shared
+        // drops whatever the group's hub was carrying.
+        let link_view = self.link_view_settings();
+        if link_view != self.link_state.view_settings {
+            self.link_state.view_settings = link_view;
+            self.link_state.hub.reset();
+        }
+        let link_focus = link_view
+            .is_linked()
+            .then(|| self.resolved_focused_id())
+            .flatten();
 
         let mut drawing_commands: Vec<(u64, Vec<DrawingCommand>)> = Vec::new();
         let mut drawing_select: Option<(u64, Vec<u64>)> = None;
@@ -473,6 +484,17 @@ impl ChartWorkspace {
                                                 candles,
                                             );
                                         }
+                                        if link_focus == Some(chart_id) && !candles.is_empty() {
+                                            // A follower's move is made before the frame's baseline,
+                                            // so it is never announced back.
+                                            chart.chart.follow_sync(
+                                                &mut self.link_state.hub,
+                                                chart_id,
+                                                link_view,
+                                                chart.source,
+                                                candles,
+                                            );
+                                        }
                                         let instrument =
                                             InstrumentId::new(chart.source, &chart.symbol);
                                         let memberships: Vec<crate::ui::WatchlistMembership> =
@@ -582,6 +604,15 @@ impl ChartWorkspace {
                                             }
                                             if let Some(picked_ms) = replay_frame.picked_ms {
                                                 replay_picked = Some((chart_id, picked_ms));
+                                            }
+                                            if link_focus == Some(chart_id)
+                                                && let Some(change) = chart.chart.link_change()
+                                            {
+                                                self.link_state.outbox.push(
+                                                    crate::model::tab_link::LinkSignal::View(
+                                                        change,
+                                                    ),
+                                                );
                                             }
                                             if linked
                                                 && chart.chart.publish_sync(
@@ -698,6 +729,7 @@ impl ChartWorkspace {
         });
 
         self.sync_hub.end_frame();
+        self.link_state.hub.end_frame();
         if navigated {
             // Charts drawn before the one being navigated hear of it one frame later: ask for it
             // at once.

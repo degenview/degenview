@@ -53,6 +53,26 @@ Everything else is **not stated by TradingView, so it is a decision here**:
   no chart invented for it.
 - Tab Linking never touches the crosshair, drawings, alerts or Pine scripts.
 
+## Time and Date range
+
+A pan or zoom of a linked tab's **focused chart** becomes a `HorizontalChange` (a time range, never
+pixels or bar indices) in the tab's outbox, newest wins. The other tabs get it as an event in a
+`SyncHub` of their own (origin `u64::MAX`, no real chart has it) and their focused chart follows it
+with `follow_sync` before it draws, exactly as a chart follows another chart of its layout:
+
+| Time | Date range | A pan | A zoom |
+| --- | --- | --- | --- |
+| on | off | their right edge goes to the leader's time; their zoom is kept | – |
+| off | on | – | their bar count scales by the leader's factor; their position is kept |
+| on | on | as above | they show the leader's time range |
+
+A chart with no bars yet is not asked to follow, so the event waits for its candles. A change of
+the group's switches drops whatever the tab's hub was carrying (nothing jumps when a switch is
+turned on; the next navigation takes effect). A symbol or interval change resets every linked
+chart to its newest bars, the way it does for the user, and the view is not replayed afterwards.
+Price-based chart types (Renko, Kagi, Line Break, Point & Figure, Range) neither lead nor follow.
+Vertical scales are never carried.
+
 ## Persistence and iCloud
 
 `PersistedWorkspace.link` (`"orange"`, ...), skipped when none, so old rows decode and a row from a
@@ -71,9 +91,13 @@ TradingView's dark-knob style, and the labels are 15 pt where the app's body tex
 
 ## Verified, and not
 
-- The model, hub, persistence, the workspace's apply and probation, and the menu section's clicks
-  (`the_tab_menu_ends_with_the_tab_linking_section`) are covered by tests; the menu was drawn
-  headlessly in both themes (`gallery_of_the_tab_menu`, `gallery_of_the_tab_linking`) and looked at.
+- The model, hub, persistence, the workspace's apply and probation, the viewport path through real
+  pointer events (`ui/chart_card/tab_link_tests.rs`: two tabs, the four combinations of the
+  switches, different intervals, a chart that has no bars yet, no echo) and the menu section's
+  clicks (`the_tab_menu_ends_with_the_tab_linking_section`) are covered by tests. `render_grid`'s
+  own wiring of the same calls (`follow_sync` on the focused chart, `link_change` into the
+  outbox) is covered only by review and by driving the app. The menu was drawn headlessly in both
+  themes (`gallery_of_the_tab_menu`, `gallery_of_the_tab_linking`) and looked at.
 - **Not run in the real app** in a first pass of this document; see the end of the PR for what was
   driven by hand. Not verified at all: several physical monitors, Retina and non-Retina side by
   side, a real offline run, Windows and Linux.

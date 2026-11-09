@@ -164,10 +164,6 @@ impl LinkToggles {
 
     /// What a pan or zoom carries to the other tab, in the terms the chart-to-chart follower
     /// already has: Time is the position, Date range is the zoom.
-    #[cfg_attr(
-        not(test),
-        allow(dead_code, reason = "used by the viewport follower of the next change")
-    )]
     pub const fn viewport(self) -> ChartSyncSettings {
         ChartSyncSettings {
             horizontal_position: self.time,
