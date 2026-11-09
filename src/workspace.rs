@@ -55,6 +55,7 @@ mod drawings;
 mod empty_page;
 mod grid;
 mod input;
+mod journal;
 mod layouts;
 mod links;
 mod live;
@@ -88,6 +89,8 @@ pub enum WorkspaceAction {
     OpenPortfolio,
     /// Open the Trade Journal tab.
     OpenJournal,
+    /// Open the Trade Journal on one trade (a click on a chart's trade marker).
+    OpenJournalTrade(String),
     /// Open the Pine Studio tab.
     OpenPineScripts,
     /// Open the Pine Studio on the source of a Pine logs message.
@@ -259,6 +262,10 @@ pub struct ChartWorkspace {
     alert_editor: Option<PriceAlertEditorState>,
     /// USD → currency rates for the sheet's currency menu, pushed in by the app.
     alert_fx_rates: HashMap<AlertCurrency, f64>,
+    /// The journal's trades, handed in by the app; each market chart takes its own.
+    journal_marks: Option<Arc<crate::model::journal::marks::Marks>>,
+    /// A trade the user asked to see on a chart, waiting for its candles.
+    pending_range: Option<journal::PendingRange>,
     open_new_tab_request: Option<WatchlistInstrument>,
     /// What the empty page reads from the database and Keychain, loaded once per visit.
     empty_page: EmptyPageCache,
@@ -422,6 +429,8 @@ impl ChartWorkspace {
             snapshots: None,
             alert_editor: None,
             alert_fx_rates: HashMap::new(),
+            journal_marks: None,
+            pending_range: None,
             open_new_tab_request: None,
             empty_page: EmptyPageCache::default(),
             paper_panel: PaperPanel::default(),
@@ -660,6 +669,8 @@ impl ChartWorkspace {
         self.update_live_feed(&ctx);
         self.sync_paper_quotes(paper_host);
         self.configure_paper_cards(paper_host);
+        self.configure_journal_cards();
+        self.tick_pending_range(&ctx);
         self.handle_keyboard(ui);
         self.handle_clipboard(ui);
         self.tick_content(&ctx);

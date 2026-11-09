@@ -76,6 +76,17 @@ Read [chart overlays](../chart-overlays.md) first. The short rules:
   and the popover. Edit that one body, not copies.
 - Nothing caps the count; bound the *work* (in-flight requests, refresh rate, bars in view), never the list.
 
+## Journal trades
+
+The Trade Journal's trades are drawn on market charts ([Trading Journal](../trading-journal.md#trades-on-charts-and-view-on-chart)):
+`ChartCard::journal` (`JournalCardState`) is input the workspace fills each frame from the journal host
+(`configure_journal_cards`), painted in `paint_frame` after the script tables so a snapshot shares it
+(gated by `include_trading` through `Overlays::journal_trades`), hovered and clicked through
+`Overlays::journal_hover` on the live chart only. Geometry is `ui::journal_markers`, pure and
+tested; marks use fill prices and times and never the price scale. The card never reads the journal;
+a click is a `WorkspaceAction::OpenJournalTrade`, and View on chart is `ChartWorkspace::show_trade_range`
+(timeframe, history paging, `ChartCard::show_time_range`).
+
 ## Types, canvas, and templates
 
 - Never modify canonical candles. `model::synthetic` builds price-based types; the cached

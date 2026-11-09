@@ -106,6 +106,7 @@ pub fn show(
     );
     watermark_row(ui, canvas, swatch(defaults.watermark));
     readout_row(ui, &mut canvas.ohlc_readout);
+    journal_row(ui, &mut canvas.show_journal_trades);
 
     ui.add_space(16.0);
     section_title(ui, "Scales", Some("The price and time axes."));
@@ -387,6 +388,17 @@ fn readout_row(ui: &mut Ui, on: &mut bool) {
         "The values box under the crosshair is hidden. The crosshair itself stays."
     };
     settings_card::card(ui, Icon::Eye, "OHLC values", Some(hint), |ui| {
+        settings_card::switch(ui, on);
+    });
+}
+
+fn journal_row(ui: &mut Ui, on: &mut bool) {
+    let hint = if *on {
+        "Your Trade Journal trades on this market: a triangle at each entry, a diamond at each exit and the result."
+    } else {
+        "Trade Journal trades are not drawn on this chart."
+    };
+    settings_card::card(ui, Icon::Journal, "Journal trades", Some(hint), |ui| {
         settings_card::switch(ui, on);
     });
 }

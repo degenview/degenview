@@ -43,6 +43,8 @@ pub struct Input<'a> {
     pub shots_error: Option<&'a str>,
     /// How far the trade went for and against, estimated from candles.
     pub excursion: ExcursionView<'a>,
+    /// Whether this trade's market can be opened on a chart.
+    pub can_view_on_chart: bool,
 }
 
 /// What the excursion block has to show.
@@ -143,6 +145,8 @@ pub struct Output {
     pub shots: shots::Action,
     /// The user asked to try the excursion estimate again.
     pub retry_excursion: bool,
+    /// The user asked to see the trade on a chart.
+    pub view_on_chart: bool,
 }
 
 fn tone_color(tone: Tone) -> Color32 {
@@ -227,6 +231,12 @@ pub fn show(ui: &mut Ui, input: &Input<'_>, draft: &mut Draft) -> Output {
         theme::text_tertiary(),
     ));
 
+    if input.can_view_on_chart {
+        ui.add_space(8.0);
+        if kit::push_button(ui, Some(Icon::ChartLine), "View on chart", true).clicked() {
+            output.view_on_chart = true;
+        }
+    }
     summary(ui, input, draft);
     executions(ui, input);
     excursion_block(ui, input, &mut output);
@@ -995,6 +1005,7 @@ mod tests {
                             shots_busy: false,
                             shots_error: None,
                             excursion: ExcursionView::Hidden,
+                            can_view_on_chart: true,
                         },
                         &mut draft,
                     );

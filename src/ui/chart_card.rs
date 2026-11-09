@@ -355,6 +355,7 @@ pub struct ChartCard {
     layer: DrawingLayer,
     /// Paper-trading inputs and outputs for this card; the workspace fills and drains it.
     pub paper: PaperCardState,
+    pub journal: journal_marks::JournalCardState,
     /// The Pine scripts applied to this chart, in order. Overlay scripts draw over the candles;
     /// the others share a pane under them.
     instances: Vec<PineInstance>,
@@ -704,6 +705,7 @@ impl Default for ChartCard {
             script_extent: OverlayExtent::default(),
             layer: DrawingLayer::default(),
             paper: PaperCardState::default(),
+            journal: journal_marks::JournalCardState::default(),
             instances: Vec::new(),
             preview_inputs: HashMap::new(),
             runs: HashMap::new(),
@@ -2345,6 +2347,7 @@ impl ChartCard {
             scale_mode: None,
             overlay_action: None,
             on_overlay_card: false,
+            journal_open: None,
         };
         self.paint_frame(
             &painter,
@@ -2372,6 +2375,7 @@ impl ChartCard {
             scale_mode,
             overlay_action,
             on_overlay_card,
+            journal_open,
             ..
         } = overlays;
         pointer.overlay_action = overlay_action;
@@ -2387,6 +2391,7 @@ impl ChartCard {
                 paper,
                 navigation,
                 scale_mode,
+                journal_open,
             },
             bars.len(),
         );
@@ -3295,6 +3300,9 @@ mod bar_marker;
 mod body;
 mod context;
 mod frame;
+mod journal_marks;
+#[cfg(test)]
+mod journal_tests;
 mod live_overlays;
 mod navigation;
 mod overlay_card;

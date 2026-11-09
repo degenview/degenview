@@ -43,6 +43,12 @@ impl OlderHistory {
             && self.retry_at.is_none_or(|at| now >= at)
     }
 
+    /// Whether more history may still arrive: the provider serves it, has not run out, and the
+    /// chart is under its cap. (A wait after a failure still applies.)
+    pub fn can_progress(&self, supported: bool, held: usize) -> bool {
+        supported && !self.exhausted && held < MAX_CANDLES
+    }
+
     /// Whether nothing has been asked of the provider yet for the candles held: the first page is
     /// worth fetching ahead of the user, so scrolling back finds it already there.
     pub fn untouched(&self) -> bool {

@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::model::journal::daily::DailyEntry;
 use crate::model::journal::filters::RangePreset;
+use crate::model::journal::marks::Marks;
 use crate::model::journal::model::{CostBasis, Execution, JournalAccount, Trade};
 use crate::model::journal::playbook::Playbook;
 use crate::model::journal::reconstruct::reconstruct;
@@ -186,6 +187,9 @@ struct Built {
     days: Vec<DailyEntry>,
 }
 
+/// The chart marks and what they were built from: the build and the account shown.
+type MarksCache = ((u64, Option<String>), Arc<Marks>);
+
 pub struct JournalHost {
     store: SharedStore,
     data: Option<Arc<JournalData>>,
@@ -205,6 +209,7 @@ pub struct JournalHost {
     repaint: Arc<dyn Fn() + Send + Sync>,
     prefs: JournalPrefs,
     prefs_saved: JournalPrefs,
+    marks_cache: Option<MarksCache>,
 }
 
 impl JournalHost {
@@ -232,6 +237,7 @@ impl JournalHost {
             receiver,
             repaint,
             prefs_saved: prefs.clone(),
+            marks_cache: None,
             prefs,
         }
     }
@@ -432,6 +438,26 @@ impl JournalHost {
 
     /// Saves one review. An emptied review is removed. A review never changes a trade, an order or
     /// a balance.
+    /// The trades as chart marks, for the account the journal is showing. Rebuilt only when the
+    /// journal's trades or that account change.
+    pub fn marks(&mut self) -> Arc<Marks> {
+        let key = (self.build_id, self.prefs.account.clone());
+        if let Some((cached, marks)) = &self.marks_cache
+            && *cached == key
+        {
+            return Arc::clone(marks);
+        }
+        let marks = Arc::new(self.data.as_ref().map_or_else(Marks::default, |data| {
+            Marks::build(
+                &data.trades,
+                self.prefs.account.as_deref(),
+                rust_decimal::Decimal::ZERO,
+            )
+        }));
+        self.marks_cache = Some((key, Arc::clone(&marks)));
+        marks
+    }
+
     /// The store, for work that runs off the UI thread (reading a picture).
     pub fn store(&self) -> SharedStore {
         self.store.clone()

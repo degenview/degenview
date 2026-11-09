@@ -49,6 +49,7 @@ pub mod journal_charts;
 pub mod journal_compare;
 pub mod journal_daily;
 pub mod journal_detail;
+pub mod journal_markers;
 pub mod journal_overview;
 pub mod journal_playbooks;
 pub mod journal_shots;

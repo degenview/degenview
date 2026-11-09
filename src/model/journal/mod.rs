@@ -18,6 +18,7 @@ pub mod equity;
 pub mod excursion;
 pub mod filters;
 pub mod format;
+pub mod marks;
 pub mod metric;
 pub mod model;
 pub mod normalize;

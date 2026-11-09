@@ -328,6 +328,7 @@ impl ChartWorkspace {
         host: &mut PaperHost,
     ) -> Vec<WorkspaceAction> {
         let mut actions = self.apply_alert_moves();
+        actions.extend(self.apply_journal_opens());
         self.apply_scale_requests();
         if let Some(mut open) = self.context.menu.take() {
             match self.context_facts(ctx, &open.context, &open.templates) {

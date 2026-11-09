@@ -21,6 +21,7 @@ fn the_default_canvas_follows_the_theme_everywhere() {
     assert_eq!(canvas.crosshair.dash, LineDash::Dashed);
     assert_eq!(canvas.buttons.navigation, ButtonVisibility::OnHover);
     assert!(canvas.ohlc_readout);
+    assert!(canvas.show_journal_trades);
     assert_eq!(
         canvas.margins,
         ChartMargins {
