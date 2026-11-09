@@ -47,6 +47,7 @@ fn wicks_in_window(harness: &mut Harness) -> usize {
     gather(&shapes)
         .rects
         .iter()
+        .map(|(rect, _)| rect)
         .filter(|rect| rect.width() <= 2.0 && rect.height() > 0.0)
         .filter(|rect| {
             (0.0..=SIZE.y).contains(&rect.min.y)

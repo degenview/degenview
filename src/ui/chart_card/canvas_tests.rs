@@ -37,8 +37,6 @@ pub(super) fn series(count: usize) -> Vec<Kline> {
 #[derive(Default)]
 pub(super) struct Drawn {
     pub(super) segments: Vec<([Pos2; 2], Stroke)>,
-    /// Filled rectangles (a candle's body and its wicks, which are one pixel wide).
-    pub(super) rects: Vec<Rect>,
     pub(super) texts: Vec<(Pos2, String, f32)>,
     pub(super) meshes: Vec<Arc<egui::epaint::Mesh>>,
     pub(super) rects: Vec<(Rect, Color32)>,
@@ -47,7 +45,6 @@ pub(super) struct Drawn {
 fn collect(shape: &Shape, out: &mut Drawn) {
     match shape {
         Shape::LineSegment { points, stroke } => out.segments.push((*points, *stroke)),
-        Shape::Rect(rect) if rect.fill.a() > 0 => out.rects.push(rect.rect),
         Shape::Text(text) => {
             let size = text
                 .galley
