@@ -242,7 +242,8 @@ impl ChartWorkspace {
             paper,
             quantity,
             drawings: chart.drawings.iter().filter(|d| is_lockable(d)).count(),
-            indicators: applied + chart.chart.pine_instances().len(),
+            // The compared markets count as indicators here, and go with them.
+            indicators: applied + chart.chart.pine_instances().len() + chart.overlays.len(),
             clipboard: stored_clip(ctx).is_some(),
             time_locked: chart.chart.time_lock().is_some(),
             table_open: self.context.table_chart == Some(chart.id),
@@ -1137,6 +1138,38 @@ impl ChartWorkspace {
         self.last_restyle = None;
     }
 
+    /// Removes the chart's built-in indicators, scripts and compared markets as one undo step.
+    fn remove_all_indicators(&mut self, chart_id: u64) {
+        let Some(chart) = self.charts.iter().find(|chart| chart.id == chart_id) else {
+            return;
+        };
+        let indicators = Snapshot::Indicators {
+            config: chart.indicators,
+            scripts: chart.chart.pine_instances().to_vec(),
+        };
+        let before = if chart.overlays.is_empty() {
+            indicators
+        } else {
+            Snapshot::All(vec![
+                indicators,
+                Snapshot::Overlays {
+                    list: chart.overlays.clone(),
+                    scale_mode: None,
+                },
+            ])
+        };
+        self.undo.push(UndoEntry { chart_id, before });
+        self.redo.clear();
+        self.last_restyle = None;
+        if let Some(chart) = self.charts.iter_mut().find(|chart| chart.id == chart_id) {
+            for indicator in BuiltIn::ALL {
+                indicator.set_applied(&mut chart.indicators, false);
+            }
+            chart.chart.set_pine_instances(Vec::new());
+            chart.overlays = crate::model::overlay::OverlayList::new();
+        }
+    }
+
     /// The confirmation behind "Remove N indicators". The scripts' saved source and their alert
     /// subscriptions are left alone: only the chart's instances go, and Undo brings them back.
     fn confirm_indicators_removal(&mut self, ctx: &Context) {
@@ -1152,16 +1185,20 @@ impl ChartWorkspace {
             .filter(|indicator| indicator.applied(&chart.indicators))
             .count();
         let scripts = chart.chart.pine_instances().len();
-        let count = applied + scripts;
+        let compared = chart.overlays.len();
+        let count = applied + scripts + compared;
         if count == 0 {
             self.context.confirm_remove_indicators = None;
             return;
         }
+        let including = match compared {
+            0 => String::new(),
+            1 => ", the compared symbol included".to_owned(),
+            n => format!(", the {n} compared symbols included"),
+        };
         let message = format!(
-            "{} will be removed from this chart. Saved scripts are kept, and you can undo it.",
-            chart_context::remove_indicators_label(count)
-                .trim_start_matches("Remove ")
-                .to_owned()
+            "{}{including} will be removed from this chart. Saved scripts are kept, and you can undo it.",
+            chart_context::remove_indicators_label(count).trim_start_matches("Remove ")
         );
         let result = ui::kit::confirm(
             ctx,
@@ -1176,13 +1213,7 @@ impl ChartWorkspace {
         match result {
             Some(ui::kit::ConfirmOutcome::Confirmed) => {
                 self.context.confirm_remove_indicators = None;
-                self.remember_indicators(chart_id);
-                if let Some(chart) = self.charts.iter_mut().find(|chart| chart.id == chart_id) {
-                    for indicator in BuiltIn::ALL {
-                        indicator.set_applied(&mut chart.indicators, false);
-                    }
-                    chart.chart.set_pine_instances(Vec::new());
-                }
+                self.remove_all_indicators(chart_id);
             }
             Some(ui::kit::ConfirmOutcome::Cancelled) => {
                 self.context.confirm_remove_indicators = None;

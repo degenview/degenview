@@ -562,15 +562,8 @@ fn removing_indicators_asks_first_and_undo_brings_them_back() {
         "nothing yet"
     );
 
-    // What the confirmation does on Remove All, step by step.
-    rig.workspace.remember_indicators(chart);
-    {
-        let chart = rig.chart_mut(chart);
-        for indicator in BuiltIn::ALL {
-            indicator.set_applied(&mut chart.indicators, false);
-        }
-        chart.chart.set_pine_instances(Vec::new());
-    }
+    // What the confirmation does on Remove All.
+    rig.workspace.remove_all_indicators(chart);
     assert!(rig.chart_mut(chart).chart.pine_instances().is_empty());
     rig.workspace.undo();
     let restored = rig.chart_mut(chart);
@@ -580,6 +573,43 @@ fn removing_indicators_asks_first_and_undo_brings_them_back() {
     assert_eq!(restored.chart.pine_instances()[0].name, "My script");
     rig.workspace.redo();
     assert!(rig.chart_mut(chart).chart.pine_instances().is_empty());
+}
+
+#[test]
+fn remove_indicators_counts_and_takes_the_compared_markets_in_one_undo_step() {
+    use crate::model::{DataSource, InstrumentId};
+    let mut rig = Rig::new();
+    let chart = rig.chart("BTCUSDT", 100.0);
+    BuiltIn::Ema.set_applied(&mut rig.chart_mut(chart).indicators, true);
+    let added = rig.workspace.add_overlay(
+        chart,
+        InstrumentId::new(DataSource::Binance, "ETHUSDT"),
+        None,
+    );
+    assert!(matches!(
+        added,
+        Some(crate::model::overlay::AddOutcome::Added(_))
+    ));
+    // The menu counts both: the indicator and the compared market.
+    let context = rig.open(chart, 100.0);
+    let open = rig.workspace.context.menu.as_ref().expect("a menu is open");
+    let facts = rig
+        .workspace
+        .context_facts(&rig.ctx, &open.context, &[])
+        .expect("facts");
+    assert_eq!(facts.indicators, 2);
+    let _ = context;
+
+    let steps = rig.workspace.undo.len();
+    rig.workspace.remove_all_indicators(chart);
+    assert_eq!(rig.workspace.undo.len(), steps + 1, "one step for both");
+    assert!(!BuiltIn::Ema.applied(&rig.chart_mut(chart).indicators));
+    assert!(rig.chart_mut(chart).overlays.is_empty());
+    rig.workspace.undo();
+    assert!(BuiltIn::Ema.applied(&rig.chart_mut(chart).indicators));
+    assert_eq!(rig.chart_mut(chart).overlays.len(), 1, "the market is back");
+    rig.workspace.redo();
+    assert!(rig.chart_mut(chart).overlays.is_empty());
 }
 
 #[test]

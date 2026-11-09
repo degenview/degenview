@@ -38,7 +38,7 @@ before).
 | Session statistics | Docks a panel on the right that counts how often something happened on the chart's days, with N and a 95% interval. See [Session statistics](session-stats.md). | `model::session_stats`, `ui::session_stats_view` |
 | Chart template ▸ | Applies a preset or saved appearance template, saves the current look, manages templates, resets. | `ChartTemplateStore`, `ChartCard::apply_template`, the settings sheet's dialogs |
 | Remove *N* drawings | Asks, then removes the chart's drawings as one undo step. | `confirm_drawings_removal`, `apply_drawing_commands` |
-| Remove *N* indicators | Asks, then removes built-in indicators and scripts; undoable. | `Snapshot::Indicators` |
+| Remove *N* indicators | Asks, then removes built-in indicators, scripts and the compared markets (counted in *N*) as one undoable step. | `remove_all_indicators`, `Snapshot::Indicators` + `Snapshot::Overlays` in a `Snapshot::All` |
 | Settings… | Opens the settings sheet of the clicked chart on Appearance. | `chart_settings` |
 
 Groups are separated as in the reference screenshot; a group with nothing in it is left out, and
