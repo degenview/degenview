@@ -519,7 +519,7 @@ fn right_items(input: &ToolbarInput) -> Vec<Item> {
         Item::Separator,
         Item::Button(
             Button::new("add-chart", "Add Chart")
-                .icon(Icon::Plus)
+                .icon(Icon::ChartPlus)
                 .label("Add Chart")
                 .on_click(ToolbarAction::AddChart),
         ),
