@@ -118,7 +118,7 @@ pub(super) fn rows(ui: &mut Ui, id: Id, settings: &mut TpoSettings, palette: Pai
         &mut settings.sessions,
     );
     if settings.sessions == SessionMode::Custom {
-        custom_sessions(ui, id, settings);
+        custom_sessions(ui, id, &mut settings.custom);
     }
     let mut blocks = i64::from(settings.initial_balance_blocks);
     if int_row(
@@ -350,16 +350,12 @@ fn level_rows(ui: &mut Ui, title: &str, level: &mut TpoLevel, default: [u8; 4], 
 
 /// Up to five `HHMM-HHMM[:days]` windows, one per line. A line that does not read is left as it was
 /// and marked; an empty line removes its window.
-fn custom_sessions(ui: &mut Ui, id: Id, settings: &mut TpoSettings) {
-    for slot in 0..settings.custom.len() {
+pub(super) fn custom_sessions(ui: &mut Ui, id: Id, custom: &mut [Option<SessionSpan>; 5]) {
+    for (slot, window) in custom.iter_mut().enumerate() {
         let field_id = id.with(("session", slot));
         let mut text: String = ui
             .data(|data| data.get_temp::<String>(field_id))
-            .unwrap_or_else(|| {
-                settings.custom[slot]
-                    .map(|span| span.to_text())
-                    .unwrap_or_default()
-            });
+            .unwrap_or_else(|| window.map(SessionSpan::to_text).unwrap_or_default());
         let valid = text.trim().is_empty() || SessionSpan::parse(&text).is_some();
         settings_card::card(
             ui,
@@ -375,7 +371,7 @@ fn custom_sessions(ui: &mut Ui, id: Id, settings: &mut TpoSettings) {
             },
         );
         if valid {
-            settings.custom[slot] = if text.trim().is_empty() {
+            *window = if text.trim().is_empty() {
                 None
             } else {
                 SessionSpan::parse(&text)

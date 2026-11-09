@@ -83,6 +83,7 @@ impl ApplyScope {
                 // What a footprint is built from stays the target's too.
                 style.footprint.keep_shape_of(&own.footprint);
                 style.tpo.keep_shape_of(&own.tpo);
+                style.svp.keep_shape_of(&own.svp);
                 ChartAppearance {
                     style,
                     axis_decimals: target.axis_decimals,

@@ -528,3 +528,19 @@ fn colours_and_canvas_keep_what_a_tpo_is_built_from_and_take_the_look() {
     assert_eq!(merged.style.tpo.value_area_percent, 80);
     assert_eq!(merged.style.tpo.gradient[2], Some([9, 8, 7, 255]));
 }
+
+#[test]
+fn colours_and_canvas_keep_what_a_session_profile_is_built_from_and_take_the_look() {
+    let mut target = ChartAppearance::default();
+    target.style.chart_type = ChartType::SessionVolumeProfile;
+    target.style.svp.row_size = 40;
+    target.style.svp.value_area_percent = 80;
+    let mut template = ChartAppearance::default();
+    template.style.svp.row_size = 10;
+    template.style.svp.value_area_percent = 50;
+    template.style.svp.down_color = Some([9, 8, 7, 255]);
+    let merged = ApplyScope::ColorsAndCanvas.merge(&target, &template);
+    assert_eq!(merged.style.svp.row_size, 40);
+    assert_eq!(merged.style.svp.value_area_percent, 80);
+    assert_eq!(merged.style.svp.down_color, Some([9, 8, 7, 255]));
+}

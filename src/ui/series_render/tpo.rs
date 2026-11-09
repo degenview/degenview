@@ -461,6 +461,14 @@ fn paint_volume(
 
 /// The x a level is carried to: the first bar after the profile whose range reaches `price`, else the
 /// edge of the plot. Only for a finished profile (a forming one has nothing after it).
+pub(super) fn extended_to_bar(geo: &Geo, end_ms: i64, price: f64) -> f32 {
+    geo.bars
+        .iter()
+        .filter(|bar| bar.open_time >= end_ms)
+        .find(|bar| bar.low <= price && price <= bar.high)
+        .map_or(geo.plot.right(), |bar| geo.x_at(bar.open_time))
+}
+
 fn extended_to(geo: &Geo, profile: &TpoProfile, price: f64) -> f32 {
     geo.bars
         .iter()

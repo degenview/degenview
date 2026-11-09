@@ -3,6 +3,7 @@
 //! setting that means nothing for the type on screen is not offered.
 
 mod footprint_rows;
+mod svp_rows;
 mod tpo_rows;
 
 use super::chart_card::ChartCard;
@@ -98,6 +99,7 @@ pub fn show(
             footprint_rows::rows(ui, id, &mut style.footprint, palette, source);
         }
         ChartType::TimePriceOpportunity => tpo_rows::rows(ui, id, &mut style.tpo, palette),
+        ChartType::SessionVolumeProfile => svp_rows::rows(ui, id, &mut style.svp, palette),
         ChartType::Renko => {
             size_rows(
                 ui,

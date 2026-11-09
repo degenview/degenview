@@ -276,6 +276,44 @@ pub fn custom_session_containing(
         .find(|session| session.contains(time_ms))
 }
 
+// MARK: Spans over a chart
+
+/// The spans a chart of `bars` shows: periods (or custom windows when given) from the first bar to the
+/// end of the last, oldest first, at most `cap` of the newest. `until_ms` ends it early (the replay
+/// position).
+pub fn spans_covering(
+    bars: &[crate::model::Kline],
+    bar_ms: i64,
+    until_ms: i64,
+    period: Period,
+    custom: Option<&[SessionSpan]>,
+    cap: usize,
+) -> Vec<Session> {
+    let (Some(first), Some(last)) = (bars.first(), bars.last()) else {
+        return Vec::new();
+    };
+    let end = last
+        .open_time
+        .saturating_add(bar_ms)
+        .min(until_ms.max(last.open_time + 1));
+    let mut spans = if let Some(custom) = custom {
+        custom_sessions(custom, None, first.open_time, end)
+    } else {
+        let mut spans = Vec::new();
+        let mut at = first.open_time;
+        while at < end && spans.len() < 5_000 {
+            let span = period_containing(period, at, None);
+            at = span.end_ms;
+            spans.push(span);
+        }
+        spans
+    };
+    if spans.len() > cap {
+        spans.drain(..spans.len() - cap);
+    }
+    spans
+}
+
 // MARK: Blocks and letters
 
 /// The block sizes TradingView offers for a TPO profile, in minutes. 30 is the default.

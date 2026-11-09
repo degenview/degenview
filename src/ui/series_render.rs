@@ -11,6 +11,7 @@
 //! `pine_chart_render` as their own layer and are unaffected by the chart type.
 
 mod footprint;
+mod svp;
 mod tpo;
 
 use super::chart_card::PriceScale;
@@ -32,6 +33,15 @@ use eframe::egui::{
 
 /// How far a bar that can still change is faded.
 const UNCONFIRMED_ALPHA: f32 = 0.55;
+
+/// The default up and down colours of a session volume profile, for its settings page.
+pub fn svp_default_colors() -> [Rgba; 2] {
+    svp::default_colors()
+}
+
+/// A picture of a session-profile set for the live tests (see `svp::gallery_picture`).
+#[cfg(test)]
+pub(crate) use svp::gallery_picture as svp_gallery_picture;
 
 /// A picture of a TPO set for the live tests (see `tpo::gallery_picture`).
 #[cfg(test)]
@@ -63,6 +73,7 @@ pub fn footprint_hover(
     match frame.chart_type {
         ChartType::VolumeFootprint => footprint::hover(frame, pointer),
         ChartType::TimePriceOpportunity => tpo::hover(frame, pointer),
+        ChartType::SessionVolumeProfile => svp::hover(frame, pointer),
         _ => None,
     }
 }
@@ -158,6 +169,7 @@ pub fn paint(frame: &SeriesFrame) {
         ChartType::PointAndFigure => point_figure(&frame),
         ChartType::VolumeFootprint => footprint::paint(&frame),
         ChartType::TimePriceOpportunity => tpo::paint(&frame),
+        ChartType::SessionVolumeProfile => svp::paint(&frame),
     }
 }
 

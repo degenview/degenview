@@ -100,6 +100,9 @@ pub mod script_catalog;
 mod series_render;
 #[cfg(test)]
 pub(crate) use series_render::paint_gallery_for_tests;
+pub(crate) use series_render::svp_default_colors as series_render_defaults;
+#[cfg(test)]
+pub(crate) use series_render::svp_gallery_picture;
 #[cfg(test)]
 pub(crate) use series_render::tpo_gallery_picture;
 pub mod session_stats_view;

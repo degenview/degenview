@@ -24,6 +24,7 @@ pub mod footprint;
 pub mod price_grid;
 pub mod quality;
 pub mod sessions;
+pub mod svp;
 pub mod tick;
 pub mod tpo;
 pub mod trades;
