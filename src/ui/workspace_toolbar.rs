@@ -1,8 +1,8 @@
 //! The chart window's toolbar, flat like TradingView's and LuxAlgo's: borderless buttons that
 //! tint on hover, hairline separators between groups and labels that fall back to icons when the
 //! window is too narrow for them. Left to right: the symbol of the focused chart, the timeframe,
-//! the chart type, Indicators,
-//! Replay, Alert, Undo and Redo. On the right: the layout menu, chart settings, the snapshot menu,
+//! the chart type, Indicators, Replay and Alert (the last two icon only), Undo and Redo, in
+//! groups divided by separators. On the right: the layout menu, chart settings, the snapshot menu,
 //! Portfolio, Pine Studio,
 //! the watchlist toggle and Add Chart. The replay bar under it (`replay_bar.rs`) uses the same
 //! flat style. The symbol, chart type, Indicators and chart settings act on the
@@ -415,6 +415,7 @@ fn left_items(input: &ToolbarInput) -> Vec<Item> {
     type_button.glyph = Some(Glyph::ChartType(chart_type));
     type_button.menu = Some(Menu::ChartType);
     items.push(Item::Button(type_button));
+    items.push(Item::Separator);
     items.push(Item::Button(
         Button::new("indicators", "Indicators: add one to the focused chart")
             .icon(Icon::Waveform)
@@ -422,12 +423,12 @@ fn left_items(input: &ToolbarInput) -> Vec<Item> {
             .enabled(has_chart)
             .on_click(ToolbarAction::OpenIndicators),
     ));
+    items.push(Item::Separator);
     let mut replay = Button::new(
         "replay",
         replay_tooltip(input.replay_open, input.can_replay),
     )
     .icon(Icon::Rewind)
-    .label("Replay")
     .enabled(input.can_replay || input.replay_open)
     .active(input.replay_open)
     .on_click(ToolbarAction::ToggleReplay);
@@ -436,7 +437,6 @@ fn left_items(input: &ToolbarInput) -> Vec<Item> {
     items.push(Item::Button(
         Button::new("alert", "Create price alert")
             .icon(Icon::BellBadge)
-            .label("Alert")
             .enabled(
                 input
                     .chart
@@ -1203,7 +1203,7 @@ mod tests {
         let at = centre_of(&input, width, ToolbarAction::OpenIndicators);
         let _ = at;
         let (_, buttons) = layout_at(&input, width);
-        // The left run is symbol | timeframes | chart type, Indicators, Replay | undo, redo; a
+        // The left run is symbol | timeframes | chart type | Indicators | Replay, Alert | undo, redo; a
         // separator is the only gap wider than a button gap.
         let left_run: Vec<_> = buttons.iter().filter(|button| button.0 < 700.0).collect();
         let starts: Vec<usize> = std::iter::once(0)
