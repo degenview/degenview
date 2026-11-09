@@ -26,9 +26,9 @@ pub const HEIGHT: f32 = 40.0;
 /// Narrow enough to crowd a window with tabs (each shows just its logo), wide enough for the
 /// logo and the close button side by side.
 const MIN_TAB_WIDTH: f32 = 52.0;
-/// Wide enough for the whole title (symbol, price, change and a layout name) when there are few
-/// tabs; the strip narrows them all together when there are many.
-const MAX_TAB_WIDTH: f32 = 360.0;
+/// Wide enough for the symbol, price and change and some of the layout name (which fades out at
+/// the edge) when there are few tabs; the strip narrows them all together when there are many.
+const MAX_TAB_WIDTH: f32 = 300.0;
 const NEW_BUTTON_WIDTH: f32 = 34.0;
 const SETTINGS_BUTTON_WIDTH: f32 = 34.0;
 const LINK_BUTTON_WIDTH: f32 = 30.0;
@@ -951,15 +951,39 @@ impl TabBar<'_> {
                             secondary,
                         );
                         x += slash.size().x + 9.0;
+                        // Not cut with an ellipsis: the name runs on to the close button's edge
+                        // and fades into the tab's own fill, like the strip's ends.
                         let name = kit::galley(
                             ui,
                             layout,
                             TEXT_SIZE,
                             kit::REGULAR,
                             secondary,
-                            (right - x).max(0.0),
+                            f32::INFINITY,
                         );
-                        painter.galley(pos2(x, cy - name.size().y / 2.0), name, secondary);
+                        let room = (right - x).max(0.0);
+                        let overflows = name.size().x > room;
+                        let clipped = painter.with_clip_rect(painter.clip_rect().intersect(
+                            Rect::from_min_max(pos2(x, rect.top()), pos2(right, rect.bottom())),
+                        ));
+                        clipped.galley(pos2(x, cy - name.size().y / 2.0), name, secondary);
+                        if overflows {
+                            let mut base = if raised {
+                                theme::background()
+                            } else {
+                                theme::chrome()
+                            };
+                            if look.hovered && !raised {
+                                base = base.blend(theme::ink(14));
+                            }
+                            let width = NAME_FADE.min(room);
+                            fade_strip(
+                                painter,
+                                (right - width, right),
+                                (cy - 10.0, cy + 10.0),
+                                fade(base),
+                            );
+                        }
                     }
                 }
             }
@@ -1097,34 +1121,43 @@ const DRAG_SCROLL_SPEED: f32 = 520.0;
 fn fade_edge(painter: &Painter, clip: Rect, left: bool) {
     const WIDTH: f32 = 18.0;
     let solid = theme::chrome();
-    let clear = solid.gamma_multiply(0.0);
-    let (x0, x1, c0, c1) = if left {
-        (clip.left(), clip.left() + WIDTH, solid, clear)
+    let (from, to) = if left {
+        (clip.left() + WIDTH, clip.left())
     } else {
-        (clip.right(), clip.right() - WIDTH, solid, clear)
+        (clip.right() - WIDTH, clip.right())
     };
+    fade_strip(painter, (from, to), (clip.top(), clip.bottom()), solid);
+}
+
+/// How far a tab's layout name fades out before the close button's edge.
+const NAME_FADE: f32 = 28.0;
+
+/// A horizontal gradient from clear at `x.0` to `solid` at `x.1` (either may be the larger),
+/// between `y.0` and `y.1`.
+fn fade_strip(painter: &Painter, x: (f32, f32), y: (f32, f32), solid: Color32) {
+    let clear = solid.gamma_multiply(0.0);
     let mut mesh = egui::Mesh::default();
     let uv = egui::epaint::WHITE_UV;
     mesh.vertices.extend([
         egui::epaint::Vertex {
-            pos: pos2(x0, clip.top()),
+            pos: pos2(x.0, y.0),
             uv,
-            color: c0,
+            color: clear,
         },
         egui::epaint::Vertex {
-            pos: pos2(x1, clip.top()),
+            pos: pos2(x.1, y.0),
             uv,
-            color: c1,
+            color: solid,
         },
         egui::epaint::Vertex {
-            pos: pos2(x1, clip.bottom()),
+            pos: pos2(x.1, y.1),
             uv,
-            color: c1,
+            color: solid,
         },
         egui::epaint::Vertex {
-            pos: pos2(x0, clip.bottom()),
+            pos: pos2(x.0, y.1),
             uv,
-            color: c0,
+            color: clear,
         },
     ]);
     mesh.indices.extend([0, 1, 2, 0, 2, 3]);

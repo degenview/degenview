@@ -31,8 +31,9 @@
   nothing extra. Prediction markets and CoinMarketCap are not asked for (`tab_title::wants_quote`).
   The coordinator repaints only the root viewport, so the same tick repaints every tab window when
   `quote_book.revision()` moves.
-- A tab's width is uniform in a strip (reorder math relies on it) and the amount shown is chosen from
+- A tab's width is uniform in a strip (reorder math relies on it), at most `MAX_TAB_WIDTH` (300), and the amount shown is chosen from
   that width alone (`tab_title::Detail`), never from the live text, so a tick cannot move anything;
+  the `/ layout name` (from `Detail::LAYOUT_WIDTH`, 260) is cut off where the tab ends with a fade into the tab's fill, not an ellipsis;
   the price block also keeps the widest it has been (egui temp memory). At the narrowest
   (`MIN_TAB_WIDTH`) a tab is its logo. With more tabs than fit at the narrowest the row scrolls
   (`tab_bar::max_scroll`): wheel or trackpad over the strip, the active tab eased into view when it

@@ -79,12 +79,12 @@ pub enum Detail {
     Price,
     /// Plus the change.
     Change,
-    /// Plus the layout name, truncated to what is left.
+    /// Plus the layout name, cut off (and faded) where the tab ends.
     Layout,
 }
 
 impl Detail {
-    pub const LAYOUT_WIDTH: f32 = 330.0;
+    pub const LAYOUT_WIDTH: f32 = 260.0;
     pub const CHANGE_WIDTH: f32 = 230.0;
     pub const PRICE_WIDTH: f32 = 150.0;
     pub const SYMBOL_WIDTH: f32 = 96.0;
@@ -354,7 +354,7 @@ mod tests {
 
     #[test]
     fn detail_follows_width_only() {
-        assert_eq!(Detail::for_width(360.0), Detail::Layout);
+        assert_eq!(Detail::for_width(300.0), Detail::Layout);
         assert_eq!(Detail::for_width(Detail::LAYOUT_WIDTH), Detail::Layout);
         assert_eq!(
             Detail::for_width(Detail::LAYOUT_WIDTH - 0.1),
