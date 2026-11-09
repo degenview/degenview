@@ -73,6 +73,7 @@ pub mod session_stats;
 pub mod snapshot;
 mod source;
 pub mod synthetic;
+pub mod tab_link;
 pub mod tab_title;
 pub mod tab_windows;
 pub mod table;

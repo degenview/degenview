@@ -2,6 +2,7 @@ use crate::host::paper_host::{PaperHost, PaperPanel, PaperPanelAction};
 use crate::host::portfolio_card_host::PortfolioCardEnv;
 use crate::model::alert::{AlertCurrency, PriceAlert};
 use crate::model::chart_sync::SyncHub;
+use crate::model::tab_link::LinkColor;
 use crate::model::tab_title::TabChart;
 use crate::model::watchlist::{EntryId, WatchlistInstrument, now_ms};
 use crate::model::watchlist_text::ImportReport;
@@ -144,6 +145,14 @@ pub struct PersistedWorkspace {
     /// the `tab` table never syncs.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub custom_title: Option<String>,
+    /// The Tab Linking colour this tab is tagged with. Device-local like the title: the `tab`
+    /// table never syncs. A colour this build does not know reads as not linked.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "LinkColor::lenient"
+    )]
+    pub link: Option<LinkColor>,
 }
 
 impl crate::store::Document for PersistedWorkspace {
@@ -267,6 +276,9 @@ pub struct ChartWorkspace {
     active_view_name: Option<String>,
     /// What the user typed as this tab's title; `None` shows the symbol, price and layout.
     custom_title: Option<String>,
+    /// The Tab Linking group this tab is in, if any. Membership is the tab's own; the switches
+    /// belong to the colour and live in `TabLinkHost`.
+    link: Option<LinkColor>,
     /// The name prompt that is open, if any, and the text in it.
     layout_prompt: Option<NamePrompt>,
     prompt_name: String,
@@ -427,6 +439,7 @@ impl ChartWorkspace {
             active_view_id: None,
             active_view_name: None,
             custom_title: None,
+            link: None,
             layout_prompt: None,
             prompt_name: String::new(),
             prompt_focus: false,
@@ -490,6 +503,7 @@ impl ChartWorkspace {
             sync,
             active_view,
             custom_title,
+            link,
         } = saved;
 
         // The layout may have been deleted (here or on another Mac) since the tab was saved.
@@ -514,6 +528,7 @@ impl ChartWorkspace {
         workspace.sync = sync;
         workspace.focused = focused;
         workspace.custom_title = custom_title.filter(|title| !title.trim().is_empty());
+        workspace.link = link;
         if let Some(view) = active_view {
             workspace.active_view_id = Some(view.id);
             workspace.active_view_name = Some(view.name);
@@ -595,6 +610,30 @@ impl ChartWorkspace {
     #[cfg(test)]
     pub fn custom_title(&self) -> Option<&str> {
         self.custom_title.as_deref()
+    }
+
+    /// The Tab Linking colour this tab is tagged with.
+    #[allow(
+        dead_code,
+        reason = "wired up by the next change in the Tab Linking stack"
+    )]
+    pub fn link(&self) -> Option<LinkColor> {
+        self.link
+    }
+
+    /// Tags the tab with a colour, or unlinks it. Only the tag changes: the chart, its symbol,
+    /// timeframe and viewport are left exactly as they are, and the tab's tag is not part of any
+    /// layout. Returns whether it changed.
+    #[allow(
+        dead_code,
+        reason = "wired up by the next change in the Tab Linking stack"
+    )]
+    pub fn set_link(&mut self, link: Option<LinkColor>) -> bool {
+        if self.link == link {
+            return false;
+        }
+        self.link = link;
+        true
     }
 
     /// Sets or clears the tab's own title (blank clears). Not part of the layout: it belongs
@@ -1060,6 +1099,7 @@ mod tests {
             },
             active_view: Some(42),
             custom_title: Some("Earnings".into()),
+            link: Some(LinkColor::Orange),
         };
         let encoded = serde_json::to_string(&saved).expect("serialize workspace");
         let decoded: PersistedWorkspace =
@@ -1076,6 +1116,39 @@ mod tests {
                 .unwrap()
                 .contains("custom_title")
         );
+    }
+
+    #[test]
+    fn a_tab_link_survives_a_save_and_old_or_unreadable_values_mean_not_linked() {
+        let mut workspace = empty_workspace(8);
+        assert_eq!(workspace.persisted().link, None);
+        assert!(workspace.set_link(Some(LinkColor::Violet)));
+        assert!(!workspace.set_link(Some(LinkColor::Violet)), "no change");
+        let saved = workspace.persisted();
+        assert_eq!(saved.link, Some(LinkColor::Violet));
+        let mut json = serde_json::to_value(&saved).unwrap();
+        assert_eq!(json["link"], "violet");
+        let decoded: PersistedWorkspace = serde_json::from_value(json.clone()).unwrap();
+        assert_eq!(decoded.link, Some(LinkColor::Violet));
+
+        // A row from before Tab Linking has no key, and an unlinked tab writes none.
+        json.as_object_mut().unwrap().remove("link");
+        let old: PersistedWorkspace = serde_json::from_value(json.clone()).expect("old row");
+        assert_eq!(old.link, None);
+        assert!(!serde_json::to_string(&old).unwrap().contains("\"link\""));
+
+        // A colour from a newer build, a wrong type or a null must not make the row undecodable:
+        // a tab table with a bad row is never overwritten.
+        for bad in [
+            serde_json::json!("magenta"),
+            serde_json::json!(7),
+            serde_json::json!({"x": 1}),
+            serde_json::Value::Null,
+        ] {
+            json["link"] = bad;
+            let row: PersistedWorkspace = serde_json::from_value(json.clone()).expect("decodes");
+            assert_eq!(row.link, None);
+        }
     }
 
     #[test]

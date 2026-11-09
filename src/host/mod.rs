@@ -11,6 +11,7 @@ pub mod portfolio_host;
 pub mod portfolio_import_flow;
 pub mod snapshot_host;
 pub mod sync_host;
+pub mod tab_link_host;
 pub mod tab_title_host;
 pub mod tab_window_host;
 pub mod update_host;

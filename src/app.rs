@@ -3684,6 +3684,7 @@ mod tests {
                 sync: Default::default(),
                 active_view: Some(9),
                 custom_title: None,
+                link: None,
             })],
         };
         let encoded = serde_json::to_string(&session).expect("serialize session");
