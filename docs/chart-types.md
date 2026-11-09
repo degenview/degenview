@@ -65,6 +65,7 @@ sample prices (a price-based type's box/reversal/range size is replaced by one t
 | Range | Price-based | constructed | range-bar OHLC | range (traditional / ATR / %), candles or bars |
 | Volume footprint | Order flow & profiles | standard OHLC | real OHLC | row size, display, type, gradient, value area, POC, summary, imbalances, candle; see [Market profiles](market-profiles.md) |
 | Time price opportunity | Order flow & profiles | standard OHLC | real OHLC | period, block size, row size, value area, sessions, gradient, letters/blocks, levels, volume profile; split and merge from the right-click menu; see [Market profiles](market-profiles.md) |
+| Session volume profile | Order flow & profiles | standard OHLC | real OHLC | sessions, volume mode, value area, rows layout and size, POC/VAH/VAL with extend, developing levels, values, width, placement, colours, box; see [Market profiles](market-profiles.md) |
 
 Switching Candles ⇄ Line ⇄ Bars never changes what scripts and indicators receive. Switching to or
 from a price-based type rebuilds them against the other series. A source that draws a line

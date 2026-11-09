@@ -369,6 +369,17 @@ pub fn glyph(painter: &egui::Painter, rect: Rect, kind: ChartType, ink: Color32)
                 }
             }
         }
+        ChartType::SessionVolumeProfile => {
+            // Bars growing out of the left edge, longest in the middle.
+            for (y, end) in [(0.14, 0.4), (0.38, 0.75), (0.62, 0.95), (0.86, 0.55)] {
+                painter.rect_stroke(
+                    Rect::from_min_max(at(0.08, y - 0.1), at(end, y + 0.1)),
+                    0.0,
+                    thin,
+                    StrokeKind::Inside,
+                );
+            }
+        }
         ChartType::HeikinAshi => {
             candle(0.2, 0.55, 0.85, 0.5, 0.9, 0.11, false);
             candle(0.5, 0.35, 0.68, 0.3, 0.72, 0.11, false);

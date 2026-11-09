@@ -15,6 +15,7 @@ use crate::model::chart_type::{ChartType, SizeMethod, SizeRule};
 use crate::model::market_profile::feed::ProfileFeed;
 use crate::model::market_profile::flow::{CandleBook, FlowKline};
 use crate::model::market_profile::footprint::{self, Cache, SetInput};
+use crate::model::market_profile::svp;
 use crate::model::market_profile::tpo;
 use crate::model::market_profile::trades::{Trade, TradeBook};
 use crate::model::synthetic::{Construction, SyntheticSeries, build_with};
@@ -118,14 +119,11 @@ pub fn sample_footprint(appearance: &ChartAppearance) -> ProfileFeed {
 /// The hours of the sample a TPO preview covers: one UTC day, so one profile fills the card.
 const TPO_BARS: usize = 24;
 
-/// A deterministic TPO over the first day of the sample: each hourly sample candle is cut into twelve
-/// 5-minute candles that wander from its open to its close inside its range, the way a real hour
-/// does, and the same builder as a real chart's makes the profile with the user's block size and
-/// look. Made-up prices, so it says nothing of any market.
-pub fn sample_tpo(appearance: &ChartAppearance) -> ProfileFeed {
-    let bars: Vec<Kline> = sample_candles()[..TPO_BARS].to_vec();
+/// The 5-minute candles behind the TPO and session-profile previews: each hourly sample candle cut
+/// into twelve that wander from its open to its close inside its range.
+fn sample_five_minute_book(bars: &[Kline]) -> CandleBook {
     let mut book = CandleBook::new(300_000, 10_000);
-    for bar in &bars {
+    for bar in bars {
         let range = bar.high - bar.low;
         let mut previous = bar.open;
         for k in 0..12 {
@@ -156,6 +154,16 @@ pub fn sample_tpo(appearance: &ChartAppearance) -> ProfileFeed {
             previous = close;
         }
     }
+    book
+}
+
+/// A deterministic TPO over the first day of the sample: each hourly sample candle is cut into twelve
+/// 5-minute candles that wander from its open to its close inside its range, the way a real hour
+/// does, and the same builder as a real chart's makes the profile with the user's block size and
+/// look. Made-up prices, so it says nothing of any market.
+pub fn sample_tpo(appearance: &ChartAppearance) -> ProfileFeed {
+    let bars: Vec<Kline> = sample_candles()[..TPO_BARS].to_vec();
+    let book = sample_five_minute_book(&bars);
     let mut shape = appearance.style.tpo.shape();
     // The sample is one day: whatever period or custom windows the chart uses, the preview shows it
     // as one profile.
@@ -177,6 +185,31 @@ pub fn sample_tpo(appearance: &ChartAppearance) -> ProfileFeed {
     );
     ProfileFeed {
         tpo: Some(std::sync::Arc::new(set)),
+        ..ProfileFeed::default()
+    }
+}
+
+/// A deterministic session volume profile over the first day of the sample, from the same made-up
+/// 5-minute candles as the TPO preview, with the user's rows, volume and look settings.
+pub fn sample_svp(appearance: &ChartAppearance) -> ProfileFeed {
+    let bars: Vec<Kline> = sample_candles()[..TPO_BARS].to_vec();
+    let book = sample_five_minute_book(&bars);
+    let mut shape = appearance.style.svp.shape();
+    shape.sessions = crate::model::chart_type::SessionMode::All;
+    let set = svp::build_set(
+        svp::SetInput {
+            bars: &bars,
+            bar_ms: 3_600_000,
+            candles: &book,
+            exchange_tick: Some(SAMPLE_TICK),
+            shape,
+            until_ms: i64::MAX,
+            now_ms: i64::MAX,
+        },
+        &mut svp::Cache::default(),
+    );
+    ProfileFeed {
+        svp: Some(std::sync::Arc::new(set)),
         ..ProfileFeed::default()
     }
 }
@@ -221,7 +254,10 @@ pub fn preview_bars(
         let start = sample.len() - FOOTPRINT_BARS;
         return (sample[start..].to_vec(), None);
     }
-    if chart_type == ChartType::TimePriceOpportunity {
+    if matches!(
+        chart_type,
+        ChartType::TimePriceOpportunity | ChartType::SessionVolumeProfile
+    ) {
         return (sample[..TPO_BARS].to_vec(), None);
     }
     let mut style = appearance.style;
@@ -270,6 +306,7 @@ fn paint(ui: &Ui, plot: Rect, appearance: &ChartAppearance, chart_type: ChartTyp
     let feed = match chart_type {
         ChartType::VolumeFootprint => Some(sample_footprint(appearance)),
         ChartType::TimePriceOpportunity => Some(sample_tpo(appearance)),
+        ChartType::SessionVolumeProfile => Some(sample_svp(appearance)),
         _ => None,
     };
     series_render::paint(&SeriesFrame {
@@ -384,7 +421,9 @@ mod tests {
             !kind.is_synthetic()
                 && !matches!(
                     kind,
-                    ChartType::VolumeFootprint | ChartType::TimePriceOpportunity
+                    ChartType::VolumeFootprint
+                        | ChartType::TimePriceOpportunity
+                        | ChartType::SessionVolumeProfile
                 )
         }) {
             let (bars, series) = preview_bars(&appearance(ChartStyle::default()), kind);
@@ -432,6 +471,27 @@ mod tests {
         assert!(profile.rows.len() > 10 && profile.width() > 3);
         assert_eq!(
             sample_tpo(&appearance).tpo.unwrap().profiles[0],
+            set.profiles[0]
+        );
+    }
+
+    #[test]
+    fn the_session_profile_previews_one_sample_day_and_is_the_same_every_time() {
+        let appearance = appearance(ChartStyle::default());
+        let (bars, series) = preview_bars(&appearance, ChartType::SessionVolumeProfile);
+        assert_eq!(bars, sample_candles()[..TPO_BARS]);
+        assert!(series.is_none());
+        let set = sample_svp(&appearance).svp.expect("a profile set");
+        assert_eq!(set.profiles.len(), 1);
+        let profile = &set.profiles[0];
+        assert!(
+            profile.rows.len() >= 20 && profile.rows.len() <= 26,
+            "about 24 rows: {}",
+            profile.rows.len()
+        );
+        assert!(profile.total() > 0.0 && profile.up() > 0.0 && profile.down() > 0.0);
+        assert_eq!(
+            sample_svp(&appearance).svp.unwrap().profiles[0],
             set.profiles[0]
         );
     }

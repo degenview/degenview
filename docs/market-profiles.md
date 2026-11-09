@@ -4,7 +4,7 @@ Three chart types (Volume footprint, Time price opportunity, Session volume prof
 candle cannot say: who traded at which price, and how often a price was visited. This page is the
 shared engine and its data. The chart types themselves are documented as they land.
 
-Code: `src/model/market_profile/` (pure; the footprint builder is `footprint.rs`), `src/ui/series_render/footprint.rs` (painter), `src/ui/series_render/tpo.rs` (the TPO painter), `src/workspace/profiles.rs` (per-chart computation), `src/service/binance_trades.rs` (aggTrades and the live
+Code: `src/model/market_profile/` (pure; the footprint builder is `footprint.rs`), `src/ui/series_render/footprint.rs` (painter), `src/ui/series_render/tpo.rs` and `svp.rs` (the TPO and session-profile painters), `src/workspace/profiles.rs` (per-chart computation), `src/service/binance_trades.rs` (aggTrades and the live
 stream), `src/workspace/profile_hub.rs` (fetches and shares the data).
 
 ## What TradingView documents (sources: its Help Center pages on the three chart types)
@@ -212,3 +212,64 @@ over 80 rows, rounded to a step (5 up to 100, 50 up to 1000, 500 up to 10 000, a
 - Run once against real Binance (`live_binance_tpo_end_to_end`, ignored by default): four days of
   BTCUSDT 5-minute candles gave four profiles of 48 half-hour blocks (the current day forming with 43),
   with levels and a picture that looked right. Not compared with TradingView, not driven in a real window.
+
+## Session volume profile
+
+The third chart type on the engine: a horizontal volume histogram per session. Engine in
+`model/market_profile/svp.rs`, painter in `ui/series_render/svp.rs`, settings in
+`ui/chart_style_settings/svp_rows.rs`.
+
+**Data.** Lower-timeframe candles, the finest of 1, 5, 15, 30 or 60 minutes whose candles for every
+session in view fit the 60 000-candle budget (`candle_plan`: twenty days of minutes, a hundred days of
+5-minute candles, and so on; failing that hourly candles reaching as far back as the budget allows).
+Never the chart's own bars. TradingView supports intraday and daily charts only, and so does this:
+weekly and longer charts show "unavailable: the chart's bars are too long" and fetch nothing.
+
+**Built.** Each candle's volume is spread over the rows its high-to-low overlaps in proportion to the
+overlap (TradingView's documented rule), so the total is conserved. Up and down: a candle with
+Binance's taker-buy split contributes it exactly (the profile is then `ExchangeSplit`); any other is up
+when it closed above its open, down below, a doji following the candle before it (`Intrabar`, an
+estimate, said in the status line). POC and value area use the volume method (70 %). **Rows:** *Number
+of rows* (24) picks ticks per row as the session's range in ticks over the rows, rounded, at least one,
+on the global price grid, so a session can have a row more than asked (TradingView says extra rows may
+be added; its own worked example, 100 ticks with 30 rows giving 3 ticks and 34 rows, is a test);
+*Ticks per row* is as it says.
+
+**Developing levels** (POC, value-area edges) are the levels *as they stood* after each candle, from the
+volume that had traded by then and nothing later: there is a test that the level after the first `n`
+candles equals the point of control of a profile built from only those `n` candles. They are worked out
+only when a setting asks for them, at most 400 points a session. (The row size of a finished session
+comes from its whole range, so the rows are the same at every step; the volume in them is not.) Replay
+reads only candles before the end of the last displayed bar, and a session not over by the clock is
+*forming*: its lines are not extended.
+
+**Drawn.** Up/Down (stacked from the placed edge, up first), Total or Delta bars; up/down colours with
+separate value-area colours (outside the value area at half strength); the POC, VAH and VAL lines
+across the session, each optionally carried right until a bar crosses it; the developing lines as step
+lines; row values; width as a share of the session; left or right placement; a translucent histogram
+box. Thin rows (under 2 points) are merged into buckets of the **average** volume per row, so the
+shape is the same at any zoom. The candles of a covered session are not drawn (as in TradingView); a bar
+no profile covers stays a plain candle. Hover: the row's range, volume, up, down, delta, value-area
+membership, the session's span (UTC), its POC/VAH/VAL, totals and where its numbers came from.
+
+### Inferred (TradingView does not say)
+
+- Defaults other than 24 rows, 70 % and "extend off": width 30 %, left placement, POC/VAH/VAL shown,
+  developing lines off, box opacity 12 %.
+- Up/down for a candle without an exchange split follows TradingView's per-candle rule for volume
+  profiles (close against open); a doji follows the candle before it.
+- The developing value area is the value area of the volume so far (the same method, no lookahead).
+- The "extend" line stops at the first later bar whose range crosses it, and only for finished sessions.
+- Colours: teal and red, the value-area colours following them until set.
+
+### Not done / not verified
+
+- Session presets Each, Pre-market only, Market only and Post-market only are not offered: the app has no
+  extended-hours metadata and no exchange calendar (stocks are not supported at all here). Custom windows
+  are in UTC. There is no "custom session time zone" and no holiday handling.
+- TradingView's `max_total_rows` (about 6000) is not mirrored: the bound is 400 sessions and 1000 rows a
+  session. Its "profiles align to the start of the year" statement is not reproduced.
+- Run once against real Binance (`live_binance_svp_end_to_end`, ignored by default): four days of
+  BTCUSDT through the real hub gave four sessions from 1-minute candles with the exchange's buy/sell
+  split (25 rows each, 360 developing points), and a picture that looked right. Not compared with
+  TradingView, not driven in a real window.

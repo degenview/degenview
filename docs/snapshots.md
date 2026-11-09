@@ -51,7 +51,7 @@ click / shortcut ─► ChartWorkspace::begin_snapshot(chart_id, action)        
 ## What is in the image
 
 Everything the chart draws: canvas background (solid or gradient), grid, watermark (including
-" · Replay"), the main series of all 20 chart types (constructed bars for price-based ones),
+" · Replay"), the main series of all 21 chart types (constructed bars for price-based ones),
 built-in indicators, every script's plots, shapes, labels, lines, boxes, tables, fills and strategy
 trades in their layers, script panes with their scales and separators, drawings (visible ones;
 hidden, other-timeframe and unreadable ones stay out; no handles or selection), the last-price
@@ -156,7 +156,7 @@ trades on chart snapshots):
 
 ## Verifying
 
-`cargo test` covers the model, rasterizer, drift against the live chart (plain, all 20 types,
+`cargo test` covers the model, rasterizer, drift against the live chart (plain, all 21 types,
 indicators, script panes, script labels/lines/boxes/shapes/tables, drawings, alerts and the
 account, shape for shape), exclusions, no state
 mutation, PNG, atomic saving, the upload client against a mock server, the job, the workspace flow

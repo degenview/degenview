@@ -19,11 +19,13 @@
 
 use super::chart::displayed_candles;
 use super::profile_hub::{CandleShared, FlowStatus, MAX_CANDLES, ProfileNeed, TradeShared};
-use crate::model::chart_type::{ChartType, FootprintShape, TpoShape};
+use crate::model::chart_type::{ChartType, FootprintShape, SvpShape, TpoShape};
 use crate::model::market_profile::feed::ProfileFeed;
 use crate::model::market_profile::footprint::{
     self, Cache, FootprintSet, MAX_BARS, SetInput, SetStatus,
 };
+use crate::model::market_profile::quality::Unsupported;
+use crate::model::market_profile::svp::{self, SvpSet};
 use crate::model::market_profile::tpo::{self, TpoEdit, TpoSet};
 use crate::model::{InstrumentId, Kline};
 use eframe::egui;
@@ -36,6 +38,10 @@ use std::sync::{Arc, PoisonError};
 const TPO_INTERVAL: &str = "5m";
 const TPO_INTERVAL_MS: i64 = 300_000;
 
+/// The longest chart bar a session volume profile is offered on: TradingView supports intraday and
+/// daily charts, not weekly or longer.
+const SVP_LONGEST_BAR_MS: i64 = 7 * 86_400_000;
+
 /// One chart's computation state.
 #[derive(Default)]
 pub(super) struct ProfileRuntime {
@@ -47,6 +53,7 @@ pub(super) struct ProfileRuntime {
     inbox: Option<Receiver<Computed>>,
     footprint_cache: Option<Cache>,
     tpo_cache: Option<tpo::Cache>,
+    svp_cache: Option<svp::Cache>,
     /// What the next computation is for, when one is already running.
     waiting: Option<Box<Job>>,
     /// Whether the card holds a feed of this runtime's.
@@ -61,11 +68,13 @@ struct Computed {
 enum Done {
     Footprint(FootprintSet, Cache),
     Tpo(TpoSet, tpo::Cache),
+    Svp(SvpSet, svp::Cache),
 }
 
 enum Job {
     Footprint(Box<FootprintJob>),
     Tpo(Box<TpoJob>),
+    Svp(Box<SvpJob>),
 }
 
 impl Job {
@@ -73,6 +82,7 @@ impl Job {
         match self {
             Self::Footprint(job) => job.key,
             Self::Tpo(job) => job.key,
+            Self::Svp(job) => job.key,
         }
     }
 }
@@ -93,6 +103,15 @@ struct TpoJob {
     candles: Arc<CandleShared>,
     shape: TpoShape,
     edits: Vec<TpoEdit>,
+    until_ms: i64,
+}
+
+struct SvpJob {
+    key: u64,
+    bars: Vec<Kline>,
+    bar_ms: i64,
+    candles: Arc<CandleShared>,
+    shape: SvpShape,
     until_ms: i64,
 }
 
@@ -132,6 +151,22 @@ fn footprint_key(
         shape,
         candle_revision,
         trade_revision,
+        interval,
+    ))
+}
+
+fn svp_key(
+    bars: &[Kline],
+    shape: SvpShape,
+    candle_revision: u64,
+    until_ms: i64,
+    interval: &str,
+) -> u64 {
+    hash_of((
+        last_bar_signature(bars),
+        shape,
+        candle_revision,
+        until_ms,
         interval,
     ))
 }
@@ -226,6 +261,34 @@ impl ProfileRuntime {
                     repaint.request_repaint();
                 });
             }
+            Job::Svp(job) => {
+                let mut cache = self.svp_cache.take().unwrap_or_default();
+                crate::service::work_queue::submit(move || {
+                    let candle_guard = job
+                        .candles
+                        .data
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner);
+                    let set = svp::build_set(
+                        svp::SetInput {
+                            bars: &job.bars,
+                            bar_ms: job.bar_ms,
+                            candles: &candle_guard.book,
+                            exchange_tick: candle_guard.tick_size,
+                            shape: job.shape,
+                            until_ms: job.until_ms,
+                            now_ms: now_millis(),
+                        },
+                        &mut cache,
+                    );
+                    drop(candle_guard);
+                    let _ = sender.send(Computed {
+                        key: job.key,
+                        done: Done::Svp(set, cache),
+                    });
+                    repaint.request_repaint();
+                });
+            }
         }
     }
 }
@@ -271,7 +334,9 @@ impl super::ChartWorkspace {
             let order_flow = chart.is_market()
                 && matches!(
                     kind,
-                    ChartType::VolumeFootprint | ChartType::TimePriceOpportunity
+                    ChartType::VolumeFootprint
+                        | ChartType::TimePriceOpportunity
+                        | ChartType::SessionVolumeProfile
                 );
             if !order_flow {
                 if chart.profile.fed {
@@ -308,6 +373,24 @@ impl super::ChartWorkspace {
                     }
                     Err(reason) => Err(reason),
                 }
+            } else if kind == ChartType::SessionVolumeProfile {
+                // TradingView: intraday and daily charts only.
+                if bar_ms >= SVP_LONGEST_BAR_MS {
+                    Err(Unsupported::BarTooLong)
+                } else {
+                    let shape = style.svp.shape();
+                    let until = tpo_until(bars, bar_ms, replay_ms);
+                    let spans = svp::spans_for(bars, bar_ms, until, &shape);
+                    let (interval, interval_ms, from_ms) =
+                        svp::candle_plan(&spans, until, MAX_CANDLES);
+                    Ok(ProfileNeed {
+                        instrument,
+                        interval,
+                        interval_ms,
+                        from_ms,
+                        trades: false,
+                    })
+                }
             } else {
                 let shape = style.tpo.shape();
                 let until = tpo_until(bars, bar_ms, replay_ms);
@@ -326,18 +409,20 @@ impl super::ChartWorkspace {
                     .sync_chart(chart.id, std::slice::from_ref(&need)),
                 Err(reason) => {
                     self.profile_hub.forget_chart(chart.id);
-                    let feed = if kind == ChartType::VolumeFootprint {
-                        ProfileFeed {
-                            footprint: Some(Arc::new(FootprintSet::empty(SetStatus::Unsupported(
-                                reason,
-                            )))),
+                    let status = SetStatus::Unsupported(reason);
+                    let feed = match kind {
+                        ChartType::VolumeFootprint => ProfileFeed {
+                            footprint: Some(Arc::new(FootprintSet::empty(status))),
                             ..ProfileFeed::default()
-                        }
-                    } else {
-                        ProfileFeed {
-                            tpo: Some(Arc::new(TpoSet::empty(SetStatus::Unsupported(reason)))),
+                        },
+                        ChartType::SessionVolumeProfile => ProfileFeed {
+                            svp: Some(Arc::new(SvpSet::empty(status))),
                             ..ProfileFeed::default()
-                        }
+                        },
+                        _ => ProfileFeed {
+                            tpo: Some(Arc::new(TpoSet::empty(status))),
+                            ..ProfileFeed::default()
+                        },
                     };
                     chart.chart.set_profile_feed(Some(feed));
                     chart.profile.fed = true;
@@ -363,7 +448,9 @@ impl super::ChartWorkspace {
                 chart.is_market()
                     && matches!(
                         chart.chart.effective_chart_type(chart.source),
-                        ChartType::VolumeFootprint | ChartType::TimePriceOpportunity
+                        ChartType::VolumeFootprint
+                            | ChartType::TimePriceOpportunity
+                            | ChartType::SessionVolumeProfile
                     )
             })
             .map(|chart| chart.id)
@@ -402,6 +489,13 @@ impl super::ChartWorkspace {
                             chart.profile.tpo_cache = Some(cache);
                             ProfileFeed {
                                 tpo: Some(Arc::new(set)),
+                                ..ProfileFeed::default()
+                            }
+                        }
+                        Done::Svp(set, cache) => {
+                            chart.profile.svp_cache = Some(cache);
+                            ProfileFeed {
+                                svp: Some(Arc::new(set)),
                                 ..ProfileFeed::default()
                             }
                         }
@@ -449,6 +543,37 @@ impl super::ChartWorkspace {
                     candles,
                     trades: trades.map(|(shared, _)| shared),
                     shape,
+                })),
+                status,
+            )
+        } else if kind == ChartType::SessionVolumeProfile {
+            let shape = style.svp.shape();
+            if bar_ms >= SVP_LONGEST_BAR_MS {
+                return;
+            }
+            let until = tpo_until(bars, bar_ms, replay_ms);
+            let spans = svp::spans_for(bars, bar_ms, until, &shape);
+            let (interval, _, from) = svp::candle_plan(&spans, until, MAX_CANDLES);
+            let Some((candles, status)) = self.profile_hub.candles(&instrument, interval) else {
+                return;
+            };
+            let first = bars.partition_point(|bar| bar.open_time < from);
+            let window = &bars[first.min(bars.len())..];
+            let key = svp_key(
+                window,
+                shape,
+                candles.revision.load(Ordering::Acquire),
+                until,
+                interval,
+            );
+            (
+                Job::Svp(Box::new(SvpJob {
+                    key,
+                    bars: window.to_vec(),
+                    bar_ms,
+                    candles,
+                    shape,
+                    until_ms: until,
                 })),
                 status,
             )
@@ -967,6 +1092,207 @@ mod tests {
         // A picture of the real thing through the real painter.
         let bars: Vec<Kline> = workspace.charts[at].candles.clone();
         crate::ui::paint_gallery_for_tests("footprint-live-binance", &bars, &latest);
+    }
+
+    // MARK: Session volume profile
+
+    fn svp_workspace(fake: &Arc<Fake>, first_open: i64) -> (super::super::ChartWorkspace, u64) {
+        let (mut workspace, id) = footprint_workspace(fake, first_open);
+        let at = workspace.chart_index(id).unwrap();
+        workspace.charts[at]
+            .chart
+            .set_chart_type(ChartType::SessionVolumeProfile);
+        (workspace, id)
+    }
+
+    fn svp_of(workspace: &super::super::ChartWorkspace, id: u64) -> Option<Arc<SvpSet>> {
+        let at = workspace.chart_index(id)?;
+        workspace.charts[at]
+            .chart
+            .profile_feed()
+            .and_then(|feed| feed.svp.clone())
+    }
+
+    fn wait_for_svp(
+        workspace: &mut super::super::ChartWorkspace,
+        id: u64,
+        ready: impl Fn(&SvpSet) -> bool,
+    ) -> Arc<SvpSet> {
+        let ctx = egui::Context::default();
+        for _ in 0..400 {
+            workspace.tick_profiles(&ctx);
+            if let Some(set) = svp_of(workspace, id)
+                && ready(&set)
+            {
+                return set;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        panic!("no session profile arrived");
+    }
+
+    #[test]
+    fn a_session_profile_asks_for_the_finest_candles_that_fit_and_the_card_is_handed_sessions() {
+        let fake = Arc::new(Fake::default());
+        let first = 10 * DAY;
+        market_for(&fake, first, 2 * 24 * 60);
+        let (mut workspace, id) = svp_workspace(&fake, first);
+        let set = wait_for_svp(&mut workspace, id, |set| set.profiles.len() == 2);
+        assert_eq!(set.candle_minutes, 1, "two days of minutes fit the budget");
+        assert_eq!(set.profiles[0].start_ms, first);
+        assert!(set.profiles.iter().all(|p| p.total() > 0.0));
+        // The fake's candles carry a taker-buy split, so the profile says it is the exchange's.
+        assert_eq!(
+            set.profiles[0].quality,
+            crate::model::market_profile::quality::DataQuality::ExchangeSplit
+        );
+        let at = workspace.chart_index(id).unwrap();
+        let feed = workspace.charts[at].chart.profile_feed().unwrap();
+        assert!(feed.footprint.is_none() && feed.tpo.is_none());
+    }
+
+    #[test]
+    fn weekly_and_longer_charts_are_refused_for_a_session_profile_and_fetch_nothing() {
+        use crate::model::Timeframe;
+        let fake = Arc::new(Fake::default());
+        let first = 10 * DAY;
+        market_for(&fake, first, 2 * 24 * 60);
+        let (mut workspace, id) = svp_workspace(&fake, first);
+        workspace.timeframe = Timeframe::Week;
+        let ctx = egui::Context::default();
+        workspace.tick_profiles(&ctx);
+        let set = svp_of(&workspace, id).expect("a status");
+        assert_eq!(set.status, SetStatus::Unsupported(Unsupported::BarTooLong));
+        assert!(workspace.profile_hub.is_empty());
+        assert!(fake.candle_requests.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_changed_row_size_rebuilds_the_session_profile_and_leaving_the_type_clears_it() {
+        let fake = Arc::new(Fake::default());
+        let first = 10 * DAY;
+        market_for(&fake, first, 2 * 24 * 60);
+        let (mut workspace, id) = svp_workspace(&fake, first);
+        let a = wait_for_svp(&mut workspace, id, |set| set.profiles.len() == 2);
+        let at = workspace.chart_index(id).unwrap();
+        {
+            // The fake's candles span two ticks: rows of two ticks make fewer of them.
+            let svp = &mut workspace.charts[at].chart.chart_style_mut().svp;
+            svp.layout = crate::model::chart_type::RowsLayout::TicksPerRow;
+            svp.row_size = 2;
+        }
+        let b = wait_for_svp(&mut workspace, id, |set| {
+            set.profiles
+                .first()
+                .is_some_and(|p| p.rows.len() != a.profiles[0].rows.len())
+        });
+        assert!(b.profiles[0].rows.len() < a.profiles[0].rows.len());
+        workspace.charts[at]
+            .chart
+            .set_chart_type(ChartType::Candles);
+        workspace.tick_profiles(&egui::Context::default());
+        assert!(workspace.profile_hub.is_empty());
+        assert!(workspace.charts[at].chart.profile_feed().is_none());
+    }
+
+    #[test]
+    fn the_developing_levels_are_only_computed_when_a_setting_asks_for_them() {
+        let fake = Arc::new(Fake::default());
+        let first = 10 * DAY;
+        market_for(&fake, first, 2 * 24 * 60);
+        let (mut workspace, id) = svp_workspace(&fake, first);
+        let plain = wait_for_svp(&mut workspace, id, |set| set.profiles.len() == 2);
+        assert!(plain.profiles[0].developing.is_empty());
+        let at = workspace.chart_index(id).unwrap();
+        workspace.charts[at]
+            .chart
+            .chart_style_mut()
+            .svp
+            .developing_poc = true;
+        let with = wait_for_svp(&mut workspace, id, |set| {
+            set.profiles
+                .first()
+                .is_some_and(|p| !p.developing.is_empty())
+        });
+        assert!(with.profiles[0].developing.len() <= svp::MAX_DEVELOPING + 1);
+    }
+
+    /// Real Binance candles through the hub, the computation and the painter. The chosen candle size
+    /// is whatever fits the budget for the days asked for.
+    /// `DEGENVIEW_GALLERY_DIR=/tmp/g cargo test --lib live_binance_svp -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "needs the network"]
+    fn live_binance_svp_end_to_end() {
+        use crate::model::Timeframe;
+        let ctx = egui::Context::default();
+        let mut workspace = empty_workspace(1);
+        workspace.timeframe = Timeframe::Hour;
+        let id = workspace
+            .add_chart_for(&InstrumentId::new(DataSource::Binance, "BTCUSDT"), &ctx)
+            .chart_id;
+        let at = workspace.chart_index(id).unwrap();
+        workspace.charts[at]
+            .chart
+            .set_chart_type(ChartType::SessionVolumeProfile);
+        workspace.charts[at]
+            .chart
+            .chart_style_mut()
+            .svp
+            .developing_poc = true;
+        workspace.charts[at]
+            .chart
+            .chart_style_mut()
+            .svp
+            .developing_value_area = true;
+        let started = std::time::Instant::now();
+        while workspace.charts[at].candles.is_empty() && started.elapsed() < Duration::from_secs(30)
+        {
+            workspace.charts[at].receive_fetch();
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        assert!(
+            !workspace.charts[at].candles.is_empty(),
+            "no candles from Binance"
+        );
+        let keep = workspace.charts[at].candles.len() - 72;
+        workspace.charts[at].candles.drain(..keep);
+        let set = wait_for_svp(&mut workspace, id, |set| set.profiles.len() >= 3);
+        println!(
+            "{} sessions after {:?} from {}-minute candles; tick {:?}; refused {}",
+            set.profiles.len(),
+            started.elapsed(),
+            set.candle_minutes,
+            set.tick,
+            set.refused
+        );
+        for profile in &set.profiles {
+            println!(
+                "{}..{}: {} rows of {} ticks, volume {:.0} (up {:.0}, down {:.0}), {:?}, poc {:.2}, va {:.2}..{:.2}, developing {} points, forming {}",
+                profile.start_ms,
+                profile.end_ms,
+                profile.rows.len(),
+                profile.grid.ticks_per_row(),
+                profile.total(),
+                profile.up(),
+                profile.down(),
+                profile.quality,
+                profile.poc_price(),
+                profile.val(),
+                profile.vah(),
+                profile.developing.len(),
+                profile.forming,
+            );
+        }
+        assert_eq!(set.refused, 0, "{:?}", set.first_refusal);
+        for profile in &set.profiles {
+            assert!(profile.total() > 0.0);
+            // Volume is conserved: what the rows hold is what the candles reported.
+            if let Some(last) = profile.developing.last() {
+                assert!((last.poc - profile.poc_price()).abs() < 1e-6);
+            }
+        }
+        let bars = workspace.charts[at].candles.clone();
+        crate::ui::svp_gallery_picture("svp-live-binance", &bars, &set);
     }
 
     /// A TPO of real Binance 5-minute candles through the real hub, computation and painter.

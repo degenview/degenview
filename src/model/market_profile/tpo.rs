@@ -450,30 +450,14 @@ fn fingerprint(parts: impl IntoIterator<Item = u64>) -> u64 {
 /// The spans a chart of `bars` shows: the periods (or custom sessions) from the first bar to the
 /// end of the last, oldest first, at most [`MAX_PROFILES`] of the newest.
 pub fn spans_for(bars: &[Kline], bar_ms: i64, until_ms: i64, shape: &TpoShape) -> Vec<Session> {
-    let (Some(first), Some(last)) = (bars.first(), bars.last()) else {
-        return Vec::new();
-    };
-    let end = last
-        .open_time
-        .saturating_add(bar_ms)
-        .min(until_ms.max(last.open_time + 1));
-    let mut spans = if let Some(custom) = shape.custom_sessions() {
-        sessions::custom_sessions(&custom, None, first.open_time, end)
-    } else {
-        let period = shape.period();
-        let mut spans = Vec::new();
-        let mut at = first.open_time;
-        while at < end && spans.len() < 5_000 {
-            let span = sessions::period_containing(period, at, None);
-            at = span.end_ms;
-            spans.push(span);
-        }
-        spans
-    };
-    if spans.len() > MAX_PROFILES {
-        spans.drain(..spans.len() - MAX_PROFILES);
-    }
-    spans
+    sessions::spans_covering(
+        bars,
+        bar_ms,
+        until_ms,
+        shape.period(),
+        shape.custom_sessions().as_deref(),
+        MAX_PROFILES,
+    )
 }
 
 /// Builds the set. See [`SetInput`].

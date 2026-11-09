@@ -2,6 +2,7 @@
 //! trades and candles (a million trades are not copied into a card).
 
 use super::footprint::FootprintSet;
+use super::svp::SvpSet;
 use super::tpo::TpoSet;
 use std::sync::Arc;
 
@@ -11,6 +12,7 @@ use std::sync::Arc;
 pub struct ProfileFeed {
     pub footprint: Option<Arc<FootprintSet>>,
     pub tpo: Option<Arc<TpoSet>>,
+    pub svp: Option<Arc<SvpSet>>,
     /// Finer data is still being fetched (the chart draws what it has meanwhile).
     pub loading: bool,
     /// The last request for finer data failed.

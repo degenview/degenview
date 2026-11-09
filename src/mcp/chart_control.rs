@@ -95,7 +95,7 @@ pub struct SetChartTypeParams {
     /// One of: candles, hollow_candles, bars, high_low_bars, volume_candles, line,
     /// line_with_markers, step_line, area, hlc_area, baseline, columns, heikin_ashi, renko,
     /// line_break, kagi, point_and_figure, range, volume_footprint,
-    /// time_price_opportunity.
+    /// time_price_opportunity, session_volume_profile.
     #[schemars(length(min = 1, max = 32))]
     pub chart_type: String,
 }
@@ -157,7 +157,7 @@ impl DegenViewMcp {
 
     #[tool(
         name = "degenview_set_chart_type",
-        description = "Switch a market chart to another chart type, as its type menu does: candles, hollow candles, bars, lines, areas, Heikin Ashi, Renko and the rest. Each type keeps the settings it had. A market drawn as a line (prediction markets, CoinMarketCap), a source with no volume for volume candles, and a source with no intraday candles for the volume footprint and time price opportunity (only Binance, Coinbase and DEX markets have them) refuse with UNSUPPORTED. The volume footprint draws the market's own candles with the volume at each price beside them; time price opportunity draws a letter profile per day, week or session from 5-minute candles. Scripts and indicators keep reading the real candles. Price-based types (Heikin Ashi, Renko, Kagi, Line Break, Point & Figure, Range) draw bars built from the candles; degenview_get_candles still returns the market's own. Answers `unchanged` when the chart already draws it.",
+        description = "Switch a market chart to another chart type, as its type menu does: candles, hollow candles, bars, lines, areas, Heikin Ashi, Renko and the rest. Each type keeps the settings it had. A market drawn as a line (prediction markets, CoinMarketCap), a source with no volume for volume candles, and a source with no intraday candles for the volume footprint and time price opportunity (only Binance, Coinbase and DEX markets have them) refuse with UNSUPPORTED. The volume footprint draws the market's own candles with the volume at each price beside them; time price opportunity draws a letter profile per day, week or session from 5-minute candles; the session volume profile draws a volume histogram per session (intraday and daily charts only, and it hides the candles of the sessions it covers). Scripts and indicators keep reading the real candles. Price-based types (Heikin Ashi, Renko, Kagi, Line Break, Point & Figure, Range) draw bars built from the candles; degenview_get_candles still returns the market's own. Answers `unchanged` when the chart already draws it.",
         annotations(
             read_only_hint = false,
             destructive_hint = false,

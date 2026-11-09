@@ -192,7 +192,7 @@ out of the row while it holds its default (as the style fields are) and needs no
 set. Nothing tells a person on the older build that a drawing is hidden except the Object tree row;
 a count elsewhere would be easy to add.
 
-A chart type an older build does not know (`volume_footprint`, `time_price_opportunity`) is
+A chart type an older build does not know (`volume_footprint`, `time_price_opportunity`, `session_volume_profile`) is
 an unreadable value, not an unknown field: `ChartType` has no fallback, so the older build cannot decode
 the layout row or the template that holds it, and `Store::documents` skips an undecodable row, so
 the layout does not appear there until that build is updated (the row itself is left as written, and

@@ -41,6 +41,7 @@ pub enum ChartType {
     Columns,
     VolumeFootprint,
     TimePriceOpportunity,
+    SessionVolumeProfile,
 }
 
 /// Where a chart type sits in the selector.
@@ -105,7 +106,7 @@ impl ChartKind {
 }
 
 impl ChartType {
-    pub const ALL: [Self; 20] = [
+    pub const ALL: [Self; 21] = [
         Self::Candles,
         Self::HollowCandles,
         Self::Bars,
@@ -126,6 +127,7 @@ impl ChartType {
         Self::Range,
         Self::VolumeFootprint,
         Self::TimePriceOpportunity,
+        Self::SessionVolumeProfile,
     ];
 
     pub const fn label(self) -> &'static str {
@@ -150,6 +152,7 @@ impl ChartType {
             Self::Columns => "Columns",
             Self::VolumeFootprint => "Volume footprint",
             Self::TimePriceOpportunity => "Time price opportunity",
+            Self::SessionVolumeProfile => "Session volume profile",
         }
     }
 
@@ -176,6 +179,7 @@ impl ChartType {
             Self::Columns => "columns",
             Self::VolumeFootprint => "volume_footprint",
             Self::TimePriceOpportunity => "time_price_opportunity",
+            Self::SessionVolumeProfile => "session_volume_profile",
         }
     }
 
@@ -199,7 +203,9 @@ impl ChartType {
             | Self::LineBreak
             | Self::PointAndFigure
             | Self::Range => ChartGroup::PriceBased,
-            Self::VolumeFootprint | Self::TimePriceOpportunity => ChartGroup::OrderFlow,
+            Self::VolumeFootprint | Self::TimePriceOpportunity | Self::SessionVolumeProfile => {
+                ChartGroup::OrderFlow
+            }
         }
     }
 
@@ -248,7 +254,10 @@ impl ChartType {
         if self == Self::VolumeCandles && !source.provides_volume() {
             return Some("This source reports no volume");
         }
-        if matches!(self, Self::VolumeFootprint | Self::TimePriceOpportunity) {
+        if matches!(
+            self,
+            Self::VolumeFootprint | Self::TimePriceOpportunity | Self::SessionVolumeProfile
+        ) {
             return match source {
                 DataSource::Binance | DataSource::Coinbase | DataSource::DexScreener => None,
                 DataSource::Alpaca => Some("No intraday candles for stocks yet"),
@@ -1184,6 +1193,161 @@ impl TpoSettings {
     }
 }
 
+/// What the session volume profile's bars show.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SvpVolume {
+    /// Up volume and down volume side by side in each row.
+    #[default]
+    UpDown,
+    Total,
+    /// Up minus down, in the colour of whichever is larger.
+    Delta,
+}
+
+/// How the rows of a session volume profile are sized.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RowsLayout {
+    /// About this many rows between the session's low and high (TradingView's default, 24).
+    #[default]
+    NumberOfRows,
+    /// Rows this many price steps tall.
+    TicksPerRow,
+}
+
+/// A line the session volume profile marks: shown or not, and carried right until a bar crosses it.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(default)]
+pub struct SvpLine {
+    pub show: bool,
+    pub extend: bool,
+    pub color: Option<Rgba>,
+}
+
+impl Default for SvpLine {
+    fn default() -> Self {
+        Self {
+            show: true,
+            extend: false,
+            color: None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(default)]
+pub struct SvpSettings {
+    pub sessions: SessionMode,
+    /// Up to five `HHMM-HHMM[:days]` windows (UTC), one profile each.
+    pub custom: [Option<super::market_profile::sessions::SessionSpan>; 5],
+    pub volume: SvpVolume,
+    /// The share of a session's volume its value area holds, in percent.
+    pub value_area_percent: u32,
+    pub layout: RowsLayout,
+    pub row_size: u32,
+    pub poc: SvpLine,
+    pub vah: SvpLine,
+    pub val: SvpLine,
+    /// How the point of control moved through the session, built only from what had traded by each
+    /// moment.
+    pub developing_poc: bool,
+    /// How the value area's edges moved through the session.
+    pub developing_value_area: bool,
+    /// Write each row's volume at the end of its bar.
+    pub values: bool,
+    /// How much of its session's width the histogram takes, in percent.
+    pub width_percent: u32,
+    pub placement: VolumePlacement,
+    pub up_color: Option<Rgba>,
+    pub down_color: Option<Rgba>,
+    pub value_area_up_color: Option<Rgba>,
+    pub value_area_down_color: Option<Rgba>,
+    /// A translucent box behind the histogram, over the session's range.
+    pub box_color: Option<Rgba>,
+    pub box_opacity: u32,
+}
+
+impl Default for SvpSettings {
+    fn default() -> Self {
+        Self {
+            sessions: SessionMode::All,
+            custom: [None; 5],
+            volume: SvpVolume::UpDown,
+            value_area_percent: 70,
+            layout: RowsLayout::NumberOfRows,
+            row_size: 24,
+            poc: SvpLine::default(),
+            vah: SvpLine::default(),
+            val: SvpLine::default(),
+            developing_poc: false,
+            developing_value_area: false,
+            values: false,
+            width_percent: 30,
+            placement: VolumePlacement::Left,
+            up_color: None,
+            down_color: None,
+            value_area_up_color: None,
+            value_area_down_color: None,
+            box_color: None,
+            box_opacity: 12,
+        }
+    }
+}
+
+/// What decides which profiles are built and how: looks never rebuild, a template never changes it.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct SvpShape {
+    pub sessions: SessionMode,
+    pub custom: [Option<super::market_profile::sessions::SessionSpan>; 5],
+    pub value_area_percent: u32,
+    pub layout: RowsLayout,
+    pub row_size: u32,
+    /// Whether the developing levels are worked out (they cost a value area per step).
+    pub developing: bool,
+}
+
+impl SvpShape {
+    /// The custom windows, when the profiles are cut by them (at least one is valid).
+    pub fn custom_sessions(&self) -> Option<Vec<super::market_profile::sessions::SessionSpan>> {
+        if self.sessions != SessionMode::Custom {
+            return None;
+        }
+        let spans: Vec<_> = self.custom.iter().flatten().copied().collect();
+        (!spans.is_empty()).then_some(spans)
+    }
+}
+
+impl SvpSettings {
+    pub fn shape(&self) -> SvpShape {
+        SvpShape {
+            sessions: self.sessions,
+            custom: self.custom,
+            value_area_percent: self.value_area_percent,
+            layout: self.layout,
+            row_size: self.row_size,
+            developing: self.developing_poc || self.developing_value_area,
+        }
+    }
+
+    /// Takes the shaping fields of `own`, keeping this one's look.
+    pub fn keep_shape_of(&mut self, own: &Self) {
+        self.sessions = own.sessions;
+        self.custom = own.custom;
+        self.value_area_percent = own.value_area_percent;
+        self.layout = own.layout;
+        self.row_size = own.row_size;
+    }
+
+    fn sanitized(mut self) -> Self {
+        self.value_area_percent = self.value_area_percent.clamp(1, 100);
+        self.row_size = self.row_size.clamp(1, 1_000);
+        self.width_percent = self.width_percent.clamp(5, 100);
+        self.box_opacity = self.box_opacity.min(100);
+        self
+    }
+}
+
 /// The chart type and every type's own settings. Old rows without it decode as plain candles.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(default)]
@@ -1209,6 +1373,7 @@ pub struct ChartStyle {
     pub range: RangeSettings,
     pub footprint: FootprintSettings,
     pub tpo: TpoSettings,
+    pub svp: SvpSettings,
 }
 
 impl ChartStyle {
@@ -1324,6 +1489,7 @@ impl ChartStyle {
             | ChartType::StepLine
             | ChartType::Area
             | ChartType::TimePriceOpportunity => (None, None),
+            ChartType::SessionVolumeProfile => (self.svp.up_color, self.svp.down_color),
         };
         (up.unwrap_or(base.0), down.unwrap_or(base.1))
     }
@@ -1361,6 +1527,7 @@ impl ChartStyle {
             ChartType::Columns => self.columns = fresh.columns,
             ChartType::VolumeFootprint => self.footprint = fresh.footprint,
             ChartType::TimePriceOpportunity => self.tpo = fresh.tpo,
+            ChartType::SessionVolumeProfile => self.svp = fresh.svp,
         }
     }
 
@@ -1384,6 +1551,7 @@ impl ChartStyle {
         self.kagi.width = self.kagi.width.clamp(1, 4);
         self.footprint = self.footprint.sanitized();
         self.tpo = self.tpo.sanitized();
+        self.svp = self.svp.sanitized();
         self
     }
 }
@@ -1896,5 +2064,127 @@ mod tests {
         style.reset_selected();
         assert_eq!(style.tpo, TpoSettings::default());
         assert_eq!(style.footprint.stacked_levels, 7);
+    }
+
+    // MARK: Session volume profile
+
+    #[test]
+    fn the_session_profile_is_an_order_flow_type_over_the_real_candles() {
+        let kind = ChartType::SessionVolumeProfile;
+        assert_eq!(kind.label(), "Session volume profile");
+        assert_eq!(kind.slug(), "session_volume_profile");
+        assert_eq!(kind.group(), ChartGroup::OrderFlow);
+        assert_eq!(kind.data_class(), DataClass::StandardOhlc);
+        assert!(!kind.is_synthetic());
+        assert_eq!(kind.kind(), ChartKind::Standard);
+        for source in [
+            DataSource::Binance,
+            DataSource::Coinbase,
+            DataSource::DexScreener,
+        ] {
+            assert!(kind.supported_by(source), "{source:?}");
+        }
+        for source in [
+            DataSource::Alpaca,
+            DataSource::CoinGecko,
+            DataSource::Kalshi,
+        ] {
+            assert!(!kind.supported_by(source), "{source:?}");
+        }
+        // Its colours stand for the chart's up and down where the chart borrows them.
+        let mut style = ChartStyle {
+            chart_type: kind,
+            ..ChartStyle::default()
+        };
+        style.svp.up_color = Some([1, 2, 3, 255]);
+        assert_eq!(style.up_down(([9; 4], [8; 4])), ([1, 2, 3, 255], [8; 4]));
+    }
+
+    #[test]
+    fn the_session_profile_defaults_follow_tradingviews_inputs_and_round_trip() {
+        let svp = SvpSettings::default();
+        assert_eq!(svp.sessions, SessionMode::All);
+        assert_eq!(svp.volume, SvpVolume::UpDown);
+        assert_eq!(svp.value_area_percent, 70);
+        assert_eq!((svp.layout, svp.row_size), (RowsLayout::NumberOfRows, 24));
+        assert!(
+            !svp.poc.extend && !svp.vah.extend && !svp.val.extend,
+            "extends default off"
+        );
+        let old: ChartStyle =
+            serde_json::from_str(r#"{"chart_type":"time_price_opportunity"}"#).unwrap();
+        assert_eq!(old.svp, svp);
+        let mut style = ChartStyle {
+            chart_type: ChartType::SessionVolumeProfile,
+            ..ChartStyle::default()
+        };
+        style.svp.volume = SvpVolume::Delta;
+        style.svp.placement = VolumePlacement::Right;
+        style.svp.developing_poc = true;
+        style.svp.box_color = Some([1, 2, 3, 255]);
+        style.svp.custom[0] =
+            crate::model::market_profile::sessions::SessionSpan::parse("0900-1700");
+        let back: ChartStyle =
+            serde_json::from_str(&serde_json::to_string(&style).unwrap()).unwrap();
+        assert_eq!(back, style);
+    }
+
+    #[test]
+    fn impossible_session_profile_values_are_healed() {
+        let mut style = ChartStyle::default();
+        style.svp.value_area_percent = 0;
+        style.svp.row_size = 0;
+        style.svp.width_percent = 0;
+        style.svp.box_opacity = 900;
+        let healed = style.sanitized().svp;
+        assert_eq!((healed.value_area_percent, healed.row_size), (1, 1));
+        assert_eq!(healed.width_percent, 5);
+        assert_eq!(healed.box_opacity, 100);
+        style.svp.row_size = 1_000_000;
+        assert_eq!(style.sanitized().svp.row_size, 1_000);
+    }
+
+    #[test]
+    fn the_session_shape_is_what_decides_the_profiles_and_a_look_never_rebuilds() {
+        let base = SvpSettings::default();
+        let mut restyled = base;
+        restyled.up_color = Some([1, 2, 3, 255]);
+        restyled.volume = SvpVolume::Total;
+        restyled.values = true;
+        restyled.width_percent = 80;
+        restyled.placement = VolumePlacement::Right;
+        restyled.poc.extend = true;
+        assert_eq!(base.shape(), restyled.shape());
+        let mut reshaped = base;
+        reshaped.row_size = 30;
+        assert_ne!(base.shape(), reshaped.shape());
+        // Developing levels cost a value area per step: asking for one changes the build.
+        let mut developing = base;
+        developing.developing_value_area = true;
+        assert_ne!(base.shape(), developing.shape());
+        assert!(developing.shape().developing && !base.shape().developing);
+        // A template over a chart keeps that chart's shape and takes the look.
+        let mut theirs = restyled;
+        theirs.row_size = 99;
+        theirs.sessions = SessionMode::Custom;
+        theirs.keep_shape_of(&base);
+        assert_eq!((theirs.row_size, theirs.sessions), (24, SessionMode::All));
+        assert_eq!(theirs.up_color, Some([1, 2, 3, 255]));
+    }
+
+    #[test]
+    fn switching_away_from_the_session_profile_keeps_its_settings_and_reset_touches_only_it() {
+        let mut style = ChartStyle {
+            chart_type: ChartType::SessionVolumeProfile,
+            ..ChartStyle::default()
+        };
+        style.svp.row_size = 48;
+        style.tpo.block_minutes = 60;
+        style.chart_type = ChartType::TimePriceOpportunity;
+        style.chart_type = ChartType::SessionVolumeProfile;
+        assert_eq!(style.svp.row_size, 48);
+        style.reset_selected();
+        assert_eq!(style.svp, SvpSettings::default());
+        assert_eq!(style.tpo.block_minutes, 60);
     }
 }
