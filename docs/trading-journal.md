@@ -378,7 +378,53 @@ older history, or 30 s pass) it shows what it has and says that the start of the
 left edge. Nothing is fabricated. Charts are 1H or coarser, so a trade shorter than a bar is one
 mark inside a bar.
 
+## Import, export and backup
+
+The Data menu in the journal header.
+
+**Import executions (CSV)** (`model/journal/csv.rs`, `ui/journal_import.rs`, `host/journal_io.rs`).
+One execution per row. Required columns: time, symbol, side, quantity, price. Optional: account,
+execution id, chart provider, fee, fee currency, contract multiplier, asset class, currency, order
+id. Columns are found by their usual header names (`Date`, `Ticker`, `Action`, `Shares`, `Fill Price`,
+`Commission`, `Exchange`, ...) and can be remapped in the sheet; a column serves one field.
+
+- Every row either becomes a validated execution or is **refused with its row number and the
+  reason**; the sheet previews the first rows, the counts and every refusal before anything is
+  written, and the import runs on a worker. Cancelling writes nothing.
+- Times: ISO-8601 with a zone, epoch seconds or milliseconds, or a clock time with no zone, which is
+  read in UTC or this Mac's zone *as the user chooses* (never guessed). Numbers accept thousands
+  separators and a currency sign. Side accepts buy/sell/b/s/bot/sld/long/short.
+- **A blank fee stays unknown**, not zero; a negative fee is read as its size. A row whose currency
+  column differs from the account's is refused (no cross-currency summing).
+- **Identity and repeats.** A file's own execution id is the identity; without one, a hash of the
+  fill plus how many identical fills came before it in the file, so two real identical fills stay
+  two and importing the same file again adds nothing ("already in the journal"). A file id used
+  twice in one file refuses the second row.
+- The account is the file's account column, else the name typed in the sheet (default: the file's
+  name), with a currency, an optional starting balance and a cost basis (Average, FIFO, LIFO; the
+  paper engine is average cost). Each imported account is its own source, so importing another file
+  never archives an earlier one. The optional **chart provider** links the trades to charts (markers,
+  View on chart, MFE/MAE); without one they are journal-only and say so.
+- Remove imported account (same menu) deletes the account's executions, trades and reviews after a
+  confirmation; screenshots stay in the shared asset store.
+
+**Exports.** Full-precision decimals, ISO-8601 UTC times and an explicit currency. *Trades* and
+*Summary* are what the current range and filters show; *Executions* are the chosen account's (all
+accounts on All), in the import format, so an export can be imported back (a test round-trips it to the
+same trades, fees and unknown fees). *Notes* is a Markdown file of the daily entries and of every
+trade review that has words, with tags and playbook. The summary has one row per figure per
+currency with a `note` saying why a figure does not exist. Trades also carry the R multiple, hold
+time, rating, tags, mistakes, emotions and notes.
+
+**Backup and restore** (`model/journal/backup.rs`, `Store::journal_backup` / `journal_restore`). A
+versioned JSON file (`degenview-journal-backup`, version 1) with accounts, executions, reviews,
+playbooks, daily entries and the screenshots reviews use. Trades and statistics are rebuilt from the
+executions. Restore is a merge in one transaction: it adds what is missing, **never deletes, and
+never overwrites a review, playbook or day the journal edited after the backup's copy** (it says how
+many it left). Restoring the same file twice changes nothing. A file that is not a journal backup,
+or is from a newer version, is refused with a reason; unusable parts (an invalid execution, one
+whose account is not in the file, a damaged picture) are listed and the rest restored.
+
 Not built, by decision: an embedded chart inside the trade panel and a "capture chart" screenshot
 (attaching a picture from a file or the clipboard works; the chart's own camera menu already makes
-snapshots). Not built yet: CSV import and export, iCloud sync of reviews, playbooks and daily
-entries.
+snapshots). Not built yet: iCloud sync of reviews, playbooks and daily entries.

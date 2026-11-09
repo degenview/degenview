@@ -8,10 +8,12 @@
 
 pub mod accounting;
 pub mod analytics;
+pub mod backup;
 pub mod breakdown;
 pub mod calendar;
 pub mod cells;
 pub mod compare;
+pub mod csv;
 pub mod daily;
 pub mod edge;
 pub mod equity;
@@ -26,6 +28,7 @@ pub mod overview;
 pub mod playbook;
 pub mod process;
 pub mod reconstruct;
+pub mod report;
 pub mod reviews;
 pub mod risk;
 pub mod source;

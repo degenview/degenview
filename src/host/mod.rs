@@ -3,6 +3,7 @@ pub mod alert_runtime;
 pub mod editor_theme_host;
 pub mod journal_excursion;
 pub mod journal_host;
+pub mod journal_io;
 pub mod journal_shots;
 pub mod journal_tab;
 pub mod mcp_confirmation;
