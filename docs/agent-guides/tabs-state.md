@@ -49,8 +49,8 @@
   selection line is gone; the showing tab is the one joined to the content). A tab tagged with a Tab
   Linking colour (`PersistedWorkspace::link`, device-local; see [Tab Linking](../tab-linking.md)) has a
   line under it in that colour, showing or not: that is data, not a control or the accent.
-  The tab's right-click menu ends, after a separator, with the Tab Linking section (colour swatches
-  and the group's four switches; `TabBarEvent::SetLink` / `SetLinkToggles`); choosing the chosen
+  The tab's right-click menu ends, after a separator, with the Link Tabs section (colour swatches
+  and the group's four switches, Unlink Tab and Done; `TabBarEvent::SetLink` / `SetLinkToggles`); choosing the chosen
   colour again unlinks. There is no toolbar button for it.
 
 ## Windows and tabs

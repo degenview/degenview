@@ -1397,7 +1397,7 @@ mod tests {
                 .map(|response| response.rect)
         };
         let blue = swatch(LinkColor::Blue).expect("the section is in the menu");
-        let move_row = ctx.read_response(Id::new(("tab-link-info", "Symbol")));
+        let move_row = ctx.read_response(Id::new(("tab-link-option", "Symbol")));
         assert!(move_row.is_some(), "the switches are there too");
         // It is the last thing in the menu, under the tab rows.
         assert!(blue.top() > on_tab.y + 150.0, "{blue:?}");
@@ -1457,7 +1457,7 @@ mod tests {
                         link_toggles: LinkToggles::default(),
                     },
                 ];
-                let mut screen = Screen::new(vec2(520.0, 560.0));
+                let mut screen = Screen::new(vec2(520.0, 760.0));
                 screen.ctx.set_theme(choice);
                 let on_tab = pos2(tab_left(0, tab_width(2, 520.0)) + 100.0, 14.0);
                 let button = |pressed| egui::Event::PointerButton {

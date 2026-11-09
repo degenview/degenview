@@ -1,33 +1,40 @@
-//! The Tab Linking section at the bottom of a tab's right-click menu: a colour tag for the tab and
-//! the four things its group keeps in step. The tab strip owns the menu; this draws the section.
+//! "Link Tabs": the section at the bottom of a chart tab's right-click menu where the tab gets a
+//! colour tag and chooses which parts of its chart the tabs of that colour keep in step. The tab
+//! strip owns the menu; this draws the section.
 //!
-//! Laid out after TradingView Desktop's menu (the proportions and the nine colours were taken from
-//! a screenshot of it): a muted heading, a row of round swatches with a check on the chosen one,
-//! then Symbol, Interval, Time and Date range, each with an info icon and a switch.
+//! A header, a Link Color card with nine swatches, the four things that can be synced as a grid of
+//! cards (Symbol, Interval, Time, Date range) and a picture of two linked tabs, then Unlink Tab and
+//! Done. Choosing the colour that is already chosen also unlinks. The switches belong to the colour
+//! (every tab of that colour shares them), so with no colour the cards are dimmed and do nothing.
 //!
-//! Choosing the colour that is already chosen unlinks the tab. The switches belong to the colour
-//! (every tab of that colour shares them), so with no colour they are shown dimmed and do nothing.
+//! Unlike the mock-up this follows, nothing here is blue: a card that is on is marked by a lighter
+//! fill and a neutral outline, and Done is the app's neutral primary button.
 
 use crate::model::tab_link::{LinkColor, LinkKind, LinkToggles};
 use crate::ui::icons::{self, Icon};
-use crate::ui::kit::{self, REGULAR, size};
+use crate::ui::kit::{self, REGULAR, SEMIBOLD, size};
 use crate::ui::theme;
 use eframe::egui::{
-    self, Color32, Id, Rect, Sense, Stroke, StrokeKind, Ui, WidgetInfo, WidgetType, pos2, vec2,
+    self, Color32, CornerRadius, Id, Rect, Sense, Stroke, StrokeKind, Ui, WidgetInfo, WidgetType,
+    pos2, vec2,
 };
 
 /// The room the section needs inside the menu; the menu is made at least this wide.
-pub const WIDTH: f32 = 236.0;
-/// Where the text of a menu row starts: the app's menus keep a gutter for an icon.
-const TEXT_LEFT: f32 = 14.0;
-/// Distance between the centres of two swatches, their drawn size and their hit target.
-const PITCH: f32 = 24.0;
+pub const WIDTH: f32 = 332.0;
+/// Space between the section's edge and its cards.
+const PAD: f32 = 12.0;
+const HEADER: f32 = 44.0;
+const TILE: f32 = 36.0;
+/// The Link Color card, the option cards and the gap between neighbours.
+const COLOR_CARD: f32 = 40.0;
+const OPTION: f32 = 40.0;
+const GAP: f32 = 8.0;
+/// Distance between the centres of two swatches, and their drawn size.
+const PITCH: f32 = 21.0;
 const SWATCH: f32 = 14.0;
-const SWATCH_ROW: f32 = 30.0;
-/// A row is as tall as the rest of the menu's (`kit::menu_row`).
-const ROW: f32 = 24.0;
 const SWITCH: egui::Vec2 = vec2(32.0, 18.0);
-const INFO: f32 = 12.0;
+const PICTURE: f32 = 78.0;
+const BUTTON: f32 = 32.0;
 
 /// What the user changed.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -38,7 +45,7 @@ pub enum TabLinkEdit {
     Toggles(LinkToggles),
 }
 
-/// A colour's swatch. Taken from TradingView's own menu.
+/// A colour's swatch. The nine colours were sampled from TradingView's menu.
 pub fn swatch(color: LinkColor) -> Color32 {
     match color {
         LinkColor::Red => Color32::from_rgb(0xde, 0x43, 0x41),
@@ -91,6 +98,15 @@ impl Row {
         }
     }
 
+    fn icon(self) -> Icon {
+        match self {
+            Self::Symbol => Icon::ChartUptrend,
+            Self::Interval => Icon::BarChart,
+            Self::Time => Icon::Clock,
+            Self::DateRange => Icon::Calendar,
+        }
+    }
+
     fn get(self, toggles: &LinkToggles) -> bool {
         match self {
             Self::Symbol => toggles.symbol,
@@ -110,40 +126,172 @@ impl Row {
     }
 }
 
-/// Draws the section for a tab tagged `color`, whose group has `toggles`. Returns the
-/// change when the user made one.
+/// Draws the section for a tab tagged `color`, whose group has `toggles`. Returns the change when
+/// the user made one. Done closes the menu it is in.
 pub fn show(ui: &mut Ui, color: Option<LinkColor>, toggles: LinkToggles) -> Option<TabLinkEdit> {
     let mut edit = None;
     ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
-    kit::menu_heading(ui, "Tab linking");
-    if let Some(picked) = swatches(ui, color) {
+    let width = ui.available_width();
+    ui.add_space(8.0);
+    header(ui, width, color);
+    ui.add_space(10.0);
+    if let Some(picked) = color_card(ui, width, color) {
         edit = Some(TabLinkEdit::Color(picked));
     }
+    ui.add_space(10.0);
+    caption(ui, "Sync what");
     let enabled = color.is_some();
     let mut next = toggles;
-    for row in Row::ALL {
-        let mut on = row.get(&next);
-        if switch_row(ui, row, &mut on, enabled) {
-            row.set(&mut next, on);
+    for pair in Row::ALL.chunks(2) {
+        let (rect, _) = ui.allocate_exact_size(vec2(width, OPTION + GAP), Sense::hover());
+        let card = (width - 2.0 * PAD - GAP) / 2.0;
+        for (column, row) in pair.iter().enumerate() {
+            let at = Rect::from_min_size(
+                pos2(rect.left() + PAD + column as f32 * (card + GAP), rect.top()),
+                vec2(card, OPTION),
+            );
+            let mut on = row.get(&next);
+            if option_card(ui, at, *row, &mut on, enabled) {
+                row.set(&mut next, on);
+            }
         }
     }
     if enabled && next != toggles {
         edit = Some(TabLinkEdit::Toggles(next));
     }
+    ui.add_space(2.0);
+    picture(ui, width, color);
+    ui.add_space(10.0);
+    match footer(ui, width, enabled) {
+        Footer::Unlink => edit = Some(TabLinkEdit::Color(None)),
+        Footer::Done => ui.close(),
+        Footer::Nothing => {}
+    }
+    ui.add_space(8.0);
     edit
 }
 
-/// The nine round swatches. `Some(Some(c))` picks a colour, `Some(None)` unlinks.
-fn swatches(ui: &mut Ui, current: Option<LinkColor>) -> Option<Option<LinkColor>> {
-    let width = ui.available_width();
-    let (rect, _) = ui.allocate_exact_size(vec2(width, SWATCH_ROW), Sense::hover());
+/// The tile, the title and what the section is for. The tile takes the tab's colour.
+fn header(ui: &mut Ui, width: f32, color: Option<LinkColor>) {
+    let (rect, response) = ui.allocate_exact_size(vec2(width, HEADER), Sense::hover());
+    response.widget_info(|| WidgetInfo::labeled(WidgetType::Label, true, "Link Tabs"));
+    let tile = Rect::from_min_size(
+        pos2(rect.left() + PAD, rect.center().y - TILE / 2.0),
+        vec2(TILE, TILE),
+    );
+    let painter = ui.painter();
+    match color {
+        Some(color) => {
+            painter.rect_filled(tile, 10.0, swatch(color));
+        }
+        None => {
+            painter.rect_filled(tile, 10.0, theme::card_fill(true));
+            painter.rect_stroke(
+                tile,
+                10.0,
+                Stroke::new(1.0, theme::card_border(false)),
+                StrokeKind::Inside,
+            );
+        }
+    }
+    icons::paint(
+        painter,
+        Rect::from_center_size(tile.center(), vec2(18.0, 18.0)),
+        Icon::ChainLinked,
+        match color {
+            Some(color) => check_color(color),
+            None => theme::text_secondary(),
+        },
+    );
+    let left = tile.right() + 10.0;
+    let room = rect.right() - PAD - left;
+    let title = kit::galley(
+        ui,
+        "Link Tabs",
+        size::HEADLINE + 2.0,
+        SEMIBOLD,
+        theme::text_primary(),
+        room,
+    );
+    let subtitle = kit::paragraph(
+        ui,
+        "Sync this tab\u{2019}s charts with other tabs.",
+        size::SUBHEADLINE,
+        REGULAR,
+        theme::text_secondary(),
+        room,
+    );
+    let block = title.size().y + 2.0 + subtitle.size().y;
+    let top = rect.center().y - block / 2.0;
+    let title_height = title.size().y;
+    let painter = ui.painter();
+    painter.galley(pos2(left, top), title, theme::text_primary());
+    painter.galley(
+        pos2(left, top + title_height + 2.0),
+        subtitle,
+        theme::text_secondary(),
+    );
+}
+
+/// A rounded card like the app's settings cards: a faint fill, an edge and a lit top line.
+fn paint_card(ui: &Ui, rect: Rect, fill: Color32, edge: Stroke) {
+    let painter = ui.painter();
+    painter.rect_filled(rect, 10.0, fill);
+    painter.rect_stroke(rect, 10.0, edge, StrokeKind::Inside);
+}
+
+/// A small muted heading over a group ("SYNC WHAT"), in the menu headings' style.
+fn caption(ui: &mut Ui, text: &str) {
+    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 20.0), Sense::hover());
+    let color = theme::text_tertiary();
+    let label = kit::galley(
+        ui,
+        &text.to_uppercase(),
+        size::CAPTION,
+        SEMIBOLD,
+        color,
+        rect.width() - 2.0 * PAD,
+    );
+    ui.painter().galley(
+        pos2(
+            rect.left() + PAD + 2.0,
+            rect.center().y - label.size().y / 2.0 + 1.0,
+        ),
+        label,
+        color,
+    );
+    response.widget_info(|| WidgetInfo::labeled(WidgetType::Label, true, text));
+}
+
+/// "Link Color" and nine swatches. `Some(Some(c))` picks a colour, `Some(None)` unlinks.
+fn color_card(ui: &mut Ui, width: f32, current: Option<LinkColor>) -> Option<Option<LinkColor>> {
+    let (outer, _) = ui.allocate_exact_size(vec2(width, COLOR_CARD), Sense::hover());
+    let card = outer.shrink2(vec2(PAD, 0.0));
+    paint_card(
+        ui,
+        card,
+        theme::card_fill(false),
+        Stroke::new(1.0, theme::card_border(false)),
+    );
+    let label = kit::galley(
+        ui,
+        "Link Color",
+        size::BODY,
+        REGULAR,
+        theme::text_primary(),
+        card.width() / 2.0,
+    );
+    ui.painter().galley(
+        pos2(card.left() + 12.0, card.center().y - label.size().y / 2.0),
+        label,
+        theme::text_primary(),
+    );
     let mut picked = None;
+    let run = PITCH * 8.0 + SWATCH;
+    let first = card.right() - 12.0 - run + SWATCH / 2.0;
     for (index, color) in LinkColor::ALL.into_iter().enumerate() {
-        let center = pos2(
-            rect.left() + TEXT_LEFT + SWATCH / 2.0 + index as f32 * PITCH,
-            rect.center().y,
-        );
-        let hit = Rect::from_center_size(center, vec2(PITCH - 2.0, PITCH - 2.0));
+        let center = pos2(first + index as f32 * PITCH, card.center().y);
+        let hit = Rect::from_center_size(center, vec2(PITCH - 1.0, PITCH - 1.0));
         let selected = current == Some(color);
         let response = ui.interact(
             hit,
@@ -168,12 +316,12 @@ fn swatches(ui: &mut Ui, current: Option<LinkColor>) -> Option<Option<LinkColor>
         }
         let painter = ui.painter();
         let radius = SWATCH / 2.0;
-        // The chosen one is ringed, like a chosen row elsewhere in the app, as well as ticked.
         if selected {
+            // Ringed as well as ticked, so the choice is not told by hue alone.
             painter.circle_stroke(
                 center,
                 radius + 2.5,
-                Stroke::new(1.5, theme::text_secondary()),
+                Stroke::new(1.5, theme::text_primary()),
             );
         } else if response.hovered() {
             painter.circle_filled(center, radius + 3.0, theme::selected_tint(true));
@@ -182,7 +330,7 @@ fn swatches(ui: &mut Ui, current: Option<LinkColor>) -> Option<Option<LinkColor>
         if response.has_focus() {
             painter.circle_stroke(
                 center,
-                radius + 4.0,
+                radius + 4.5,
                 Stroke::new(2.0, theme::text_secondary()),
             );
         }
@@ -198,38 +346,209 @@ fn swatches(ui: &mut Ui, current: Option<LinkColor>) -> Option<Option<LinkColor>
     picked
 }
 
-/// One row, drawn like `kit::menu_row`: the same height, text and hover. The info icon sits after
-/// the label and the switch at the right. The row is the control.
-fn switch_row(ui: &mut Ui, row: Row, on: &mut bool, enabled: bool) -> bool {
-    let (rect, response) = ui.allocate_exact_size(
-        vec2(ui.available_width(), ROW),
+/// One of the four things to sync: a glyph, its name and a switch, on a card that is lit while
+/// it is on. The whole card is the control. Returns whether it was flipped.
+fn option_card(ui: &mut Ui, rect: Rect, row: Row, on: &mut bool, enabled: bool) -> bool {
+    let response = ui.interact(
+        rect,
+        Id::new(("tab-link-option", row.title())),
         if enabled {
             Sense::click()
         } else {
             Sense::hover()
         },
     );
+    let tip = explanation(row);
     let (name, state) = (row.title().to_owned(), *on);
     response.widget_info(move || {
         WidgetInfo::selected(WidgetType::Checkbox, enabled, state, name.clone())
     });
+    let response = response.on_hover_text(tip);
     let mut changed = false;
     if enabled && response.clicked() {
         *on = !*on;
         changed = true;
     }
-    let painter = ui.painter();
-    if enabled && response.hovered() {
-        painter.rect_filled(rect, 5.0, theme::selected_tint(true));
-    }
-    if enabled && response.has_focus() {
-        painter.rect_stroke(
-            rect,
-            5.0,
+    let lit = *on && enabled;
+    let hovered = enabled && response.hovered();
+    let dim = if enabled { 1.0 } else { 0.45 };
+    let (fill, edge) = if lit {
+        (
+            theme::card_fill(true),
+            Stroke::new(1.5, theme::text_secondary()),
+        )
+    } else {
+        (
+            theme::card_fill(hovered),
+            Stroke::new(1.0, theme::card_border(hovered)),
+        )
+    };
+    paint_card(ui, rect, fill, edge);
+    if response.has_focus() {
+        ui.painter().rect_stroke(
+            rect.expand(2.0),
+            12.0,
             Stroke::new(2.0, theme::text_secondary()),
-            StrokeKind::Inside,
+            StrokeKind::Outside,
         );
     }
+    let color = theme::text_primary().gamma_multiply(dim);
+    let icon_color = if lit {
+        theme::text_primary()
+    } else {
+        theme::text_secondary().gamma_multiply(dim)
+    };
+    icons::paint(
+        ui.painter(),
+        Rect::from_center_size(pos2(rect.left() + 20.0, rect.center().y), vec2(14.0, 14.0)),
+        row.icon(),
+        icon_color,
+    );
+    let label = kit::galley(
+        ui,
+        row.title(),
+        size::BODY,
+        REGULAR,
+        color,
+        rect.width() - 34.0 - SWITCH.x - 14.0,
+    );
+    ui.painter().galley(
+        pos2(rect.left() + 36.0, rect.center().y - label.size().y / 2.0),
+        label,
+        color,
+    );
+    let progress = ui
+        .ctx()
+        .animate_bool(Id::new(("tab-link-switch", row.title())), *on);
+    let switch = Rect::from_center_size(
+        pos2(rect.right() - 10.0 - SWITCH.x / 2.0, rect.center().y),
+        SWITCH,
+    );
+    kit::paint_switch(ui.painter(), switch, progress, !enabled);
+    changed
+}
+
+/// Two small tabs joined by an arrow, in the group's colour, and what linking does.
+fn picture(ui: &mut Ui, width: f32, color: Option<LinkColor>) {
+    let (outer, _) = ui.allocate_exact_size(vec2(width, PICTURE), Sense::hover());
+    let card = outer.shrink2(vec2(PAD, 0.0));
+    paint_card(
+        ui,
+        card,
+        theme::card_fill(false),
+        Stroke::new(1.0, theme::card_border(false)),
+    );
+    let accent = color.map_or_else(theme::text_tertiary, swatch);
+    let window = vec2(52.0, 44.0);
+    let top = card.center().y - window.y / 2.0;
+    let first = Rect::from_min_size(pos2(card.left() + 12.0, top), window);
+    let second = Rect::from_min_size(pos2(first.right() + 30.0, top), window);
+    for tab in [first, second] {
+        mini_tab(ui, tab, accent);
+    }
+    icons::paint(
+        ui.painter(),
+        Rect::from_center_size(
+            pos2((first.right() + second.left()) / 2.0, card.center().y),
+            vec2(13.0, 13.0),
+        ),
+        Icon::ArrowLeftRight,
+        theme::text_secondary(),
+    );
+    let divider = second.right() + 10.0;
+    ui.painter().vline(
+        divider,
+        (card.top() + 14.0)..=(card.bottom() - 14.0),
+        Stroke::new(1.0, theme::separator()),
+    );
+    let text = kit::paragraph(
+        ui,
+        "Changes you make (e.g. symbol) will be synced to other linked tabs with the same link color.",
+        size::SUBHEADLINE,
+        REGULAR,
+        theme::text_secondary(),
+        card.right() - 10.0 - (divider + 10.0),
+    );
+    ui.painter().galley(
+        pos2(divider + 10.0, card.center().y - text.size().y / 2.0),
+        text,
+        theme::text_secondary(),
+    );
+}
+
+/// A tab window in miniature: three dots, the colour line, a chain, a rising line.
+fn mini_tab(ui: &Ui, rect: Rect, accent: Color32) {
+    let painter = ui.painter();
+    painter.rect_filled(rect, 6.0, theme::well_fill());
+    painter.rect_stroke(
+        rect,
+        6.0,
+        Stroke::new(1.0, theme::card_border(true)),
+        StrokeKind::Inside,
+    );
+    for dot in 0..3 {
+        painter.circle_filled(
+            pos2(rect.left() + 7.0 + dot as f32 * 5.0, rect.top() + 7.0),
+            1.4,
+            theme::text_tertiary(),
+        );
+    }
+    icons::paint(
+        painter,
+        Rect::from_center_size(pos2(rect.right() - 9.0, rect.top() + 7.0), vec2(9.0, 9.0)),
+        Icon::ChainLinked,
+        accent,
+    );
+    let bar = Rect::from_min_max(
+        pos2(rect.left() + 6.0, rect.top() + 12.0),
+        pos2(rect.right() - 6.0, rect.top() + 14.5),
+    );
+    painter.rect_filled(bar, CornerRadius::same(1), accent);
+    let base = rect.bottom() - 7.0;
+    let points: Vec<egui::Pos2> = [0.0, 0.22, 0.12, 0.45, 0.35, 0.7, 1.0]
+        .iter()
+        .enumerate()
+        .map(|(index, rise)| {
+            pos2(
+                rect.left() + 7.0 + index as f32 * (rect.width() - 14.0) / 6.0,
+                base - rise * 14.0,
+            )
+        })
+        .collect();
+    painter.add(egui::Shape::line(
+        points,
+        Stroke::new(1.2, theme::text_secondary()),
+    ));
+}
+
+enum Footer {
+    Unlink,
+    Done,
+    Nothing,
+}
+
+/// Unlink Tab and Done, at the right.
+fn footer(ui: &mut Ui, width: f32, linked: bool) -> Footer {
+    let (rect, _) = ui.allocate_exact_size(vec2(width, BUTTON), Sense::hover());
+    let mut out = Footer::Nothing;
+    let mut inner = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(rect)
+            .layout(egui::Layout::right_to_left(egui::Align::Center)),
+    );
+    inner.spacing_mut().item_spacing = vec2(GAP, 0.0);
+    inner.add_space(PAD);
+    if kit::large_prominent_button(&mut inner, "Done", true, 84.0).clicked() {
+        out = Footer::Done;
+    }
+    if unlink_button(&mut inner, linked).clicked() && linked {
+        out = Footer::Unlink;
+    }
+    out
+}
+
+/// A neutral outlined button with a broken chain and "Unlink Tab".
+fn unlink_button(ui: &mut Ui, enabled: bool) -> egui::Response {
     let color = if enabled {
         theme::text_primary()
     } else {
@@ -237,52 +556,58 @@ fn switch_row(ui: &mut Ui, row: Row, on: &mut bool, enabled: bool) -> bool {
     };
     let label = kit::galley(
         ui,
-        row.title(),
-        size::BODY,
+        "Unlink Tab",
+        size::BODY + 1.0,
         REGULAR,
         color,
-        rect.width() / 2.0,
+        f32::INFINITY,
     );
-    let label_pos = pos2(
-        rect.left() + TEXT_LEFT,
-        rect.center().y - label.size().y / 2.0,
+    let (rect, _) = ui.allocate_exact_size(
+        vec2(label.size().x + 14.0 + 8.0 + 28.0, BUTTON),
+        Sense::hover(),
     );
-    let info_center = pos2(
-        label_pos.x + label.size().x + 7.0 + INFO / 2.0,
-        rect.center().y,
-    );
-    ui.painter().galley(label_pos, label, color);
-
-    // Not part of the row's click: pointing at it explains, pressing it does nothing.
-    let info_rect = Rect::from_center_size(info_center, vec2(INFO + 6.0, INFO + 6.0));
-    let info = ui.interact(
-        info_rect,
-        Id::new(("tab-link-info", row.title())),
-        Sense::click(),
-    );
-    let tip = explanation(row);
-    let info =
-        crate::ui::accessibility::label(info.on_hover_text(tip), format!("{}: {tip}", row.title()));
-    icons::paint(
-        ui.painter(),
-        Rect::from_center_size(info_center, vec2(INFO, INFO)),
-        Icon::InfoCircle,
-        if info.hovered() {
-            theme::text_secondary()
+    let response = ui.interact(
+        rect,
+        Id::new("tab-link-unlink"),
+        if enabled {
+            Sense::click()
         } else {
-            theme::text_tertiary()
+            Sense::hover()
         },
     );
-
-    let progress = ui
-        .ctx()
-        .animate_bool(Id::new(("tab-link-switch", row.title())), *on);
-    let switch = Rect::from_center_size(
-        pos2(rect.right() - TEXT_LEFT - SWITCH.x / 2.0, rect.center().y),
-        SWITCH,
+    let response = crate::ui::accessibility::label(response, "Unlink Tab");
+    let fill = kit::primary(
+        match (
+            enabled,
+            response.is_pointer_button_down_on(),
+            response.hovered(),
+        ) {
+            (false, _, _) => 0.04,
+            (true, true, _) => 0.18,
+            (true, false, true) => 0.12,
+            _ => 0.07,
+        },
     );
-    kit::paint_switch(ui.painter(), switch, progress, !enabled);
-    changed
+    let painter = ui.painter();
+    painter.rect_filled(rect, 8.0, fill);
+    painter.rect_stroke(
+        rect,
+        8.0,
+        Stroke::new(1.0, theme::card_border(response.hovered() && enabled)),
+        StrokeKind::Inside,
+    );
+    icons::paint(
+        painter,
+        Rect::from_center_size(pos2(rect.left() + 21.0, rect.center().y), vec2(14.0, 14.0)),
+        Icon::ChainBroken,
+        color,
+    );
+    painter.galley(
+        pos2(rect.left() + 36.0, rect.center().y - label.size().y / 2.0),
+        label,
+        color,
+    );
+    response
 }
 
 /// Which kinds a set of switches turns on, for a tab's tooltip.

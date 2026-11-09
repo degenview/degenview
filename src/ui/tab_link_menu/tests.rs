@@ -1,32 +1,20 @@
 use super::*;
 use crate::ui::render_tests::{Screen, gallery_dir};
-use eframe::egui::{Pos2, vec2};
+use eframe::egui::{Pos2, Vec2, vec2};
 use std::cell::Cell;
 
 const ORIGIN: Pos2 = pos2(20.0, 20.0);
-/// Heading, then the swatches, then the rows: the same arithmetic `show` lays out.
-const SWATCH_Y: f32 = 20.0 + 24.0 + SWATCH_ROW / 2.0;
-const ROWS_TOP: f32 = 20.0 + 24.0 + SWATCH_ROW;
+const SCREEN: Vec2 = vec2(380.0, 460.0);
 
-fn swatch_at(index: usize) -> Pos2 {
-    pos2(
-        ORIGIN.x + TEXT_LEFT + SWATCH / 2.0 + index as f32 * PITCH,
-        SWATCH_Y,
-    )
-}
-
-fn row_at(index: usize) -> Pos2 {
-    pos2(ORIGIN.x + 120.0, ROWS_TOP + ROW * index as f32 + ROW / 2.0)
-}
-
-/// Draws the popover a few frames, clicks `at`, and returns what it said.
-fn click(color: Option<LinkColor>, toggles: LinkToggles, at: Pos2) -> Option<TabLinkEdit> {
-    let mut screen = Screen::new(vec2(300.0, 260.0));
+/// Draws the section a few frames, then clicks the centre of the widget `target` and returns what
+/// the section said (and whether it asked to close the menu it was in).
+fn click(color: Option<LinkColor>, toggles: LinkToggles, target: Id) -> Option<TabLinkEdit> {
+    let mut screen = Screen::new(SCREEN);
     let said = Cell::new(None);
     let frame = |screen: &mut Screen, events: Vec<egui::Event>| {
         screen.run(events, |ui| {
             ui.scope_builder(
-                egui::UiBuilder::new().max_rect(Rect::from_min_size(ORIGIN, vec2(WIDTH, 300.0))),
+                egui::UiBuilder::new().max_rect(Rect::from_min_size(ORIGIN, vec2(WIDTH, 420.0))),
                 |ui| {
                     if let Some(edit) = show(ui, color, toggles) {
                         said.set(Some(edit));
@@ -35,19 +23,33 @@ fn click(color: Option<LinkColor>, toggles: LinkToggles, at: Pos2) -> Option<Tab
             );
         })
     };
+    for _ in 0..3 {
+        frame(&mut screen, Vec::new());
+    }
+    let at = screen
+        .ctx
+        .read_response(target)
+        .expect("the widget is drawn")
+        .rect
+        .center();
     let button = |pressed| egui::Event::PointerButton {
         pos: at,
         button: egui::PointerButton::Primary,
         pressed,
         modifiers: egui::Modifiers::NONE,
     };
-    for _ in 0..3 {
-        frame(&mut screen, Vec::new());
-    }
     frame(&mut screen, vec![egui::Event::PointerMoved(at)]);
     frame(&mut screen, vec![button(true)]);
     frame(&mut screen, vec![button(false)]);
     said.get()
+}
+
+fn swatch_id(color: LinkColor) -> Id {
+    Id::new(("tab-link-swatch", color.key()))
+}
+
+fn option_id(row: Row) -> Id {
+    Id::new(("tab-link-option", row.title()))
 }
 
 #[test]
@@ -59,17 +61,14 @@ fn there_is_a_swatch_for_every_colour_and_no_two_alike() {
 }
 
 #[test]
-fn the_nine_swatches_fit_the_popover_and_keep_their_hit_targets_apart() {
-    let last = swatch_at(8).x + SWATCH / 2.0;
-    assert!(last <= ORIGIN.x + WIDTH - TEXT_LEFT + 2.0, "{last}");
-    const { assert!(PITCH > SWATCH + 4.0, "neighbouring swatches must not touch") };
-}
-
-#[test]
 fn choosing_a_colour_tags_the_tab() {
-    let said = click(None, LinkToggles::default(), swatch_at(4));
+    let said = click(None, LinkToggles::default(), swatch_id(LinkColor::Orange));
     assert_eq!(said, Some(TabLinkEdit::Color(Some(LinkColor::Orange))));
-    let said = click(Some(LinkColor::Red), LinkToggles::default(), swatch_at(8));
+    let said = click(
+        Some(LinkColor::Red),
+        LinkToggles::default(),
+        swatch_id(LinkColor::Violet),
+    );
     assert_eq!(said, Some(TabLinkEdit::Color(Some(LinkColor::Violet))));
 }
 
@@ -78,40 +77,51 @@ fn choosing_the_chosen_colour_unlinks_the_tab() {
     let said = click(
         Some(LinkColor::Orange),
         LinkToggles::default(),
-        swatch_at(4),
+        swatch_id(LinkColor::Orange),
     );
     assert_eq!(said, Some(TabLinkEdit::Color(None)));
 }
 
 #[test]
-fn a_row_flips_its_own_switch_and_nothing_else() {
+fn a_card_flips_its_own_switch_and_nothing_else() {
     type Read = fn(LinkToggles) -> bool;
-    let rows: [(usize, Read); 4] = [
-        (0, |t| t.symbol),
-        (1, |t| t.interval),
-        (2, |t| t.time),
-        (3, |t| t.date_range),
+    let rows: [(Row, Read); 4] = [
+        (Row::Symbol, |t| t.symbol),
+        (Row::Interval, |t| t.interval),
+        (Row::Time, |t| t.time),
+        (Row::DateRange, |t| t.date_range),
     ];
-    for (index, check) in rows {
+    for (row, check) in rows {
         let before = LinkToggles::default();
-        let said = click(Some(LinkColor::Blue), before, row_at(index));
+        let said = click(Some(LinkColor::Blue), before, option_id(row));
         let Some(TabLinkEdit::Toggles(after)) = said else {
-            panic!("row {index}: {said:?}");
+            panic!("{row:?}: {said:?}");
         };
-        assert_ne!(check(after), check(before), "row {index} flipped");
-        let others = [
+        assert_ne!(check(after), check(before), "{row:?} flipped");
+        let changed = [
             after.symbol != before.symbol,
             after.interval != before.interval,
             after.time != before.time,
             after.date_range != before.date_range,
         ];
-        assert_eq!(others.iter().filter(|changed| **changed).count(), 1);
+        assert_eq!(changed.iter().filter(|changed| **changed).count(), 1);
     }
 }
 
 #[test]
+fn unlink_tab_unlinks_and_does_nothing_when_there_is_nothing_to_unlink() {
+    let button = Id::new("tab-link-unlink");
+    let said = click(Some(LinkColor::Pink), LinkToggles::default(), button);
+    assert_eq!(said, Some(TabLinkEdit::Color(None)));
+    assert_eq!(click(None, LinkToggles::default(), button), None);
+}
+
+#[test]
 fn with_no_colour_the_switches_do_nothing() {
-    assert_eq!(click(None, LinkToggles::default(), row_at(1)), None);
+    assert_eq!(
+        click(None, LinkToggles::default(), option_id(Row::Interval)),
+        None
+    );
 }
 
 #[test]
@@ -153,7 +163,7 @@ fn gallery_of_the_tab_linking() {
                 },
             ),
         ] {
-            let mut screen = Screen::new(vec2(300.0, 230.0));
+            let mut screen = Screen::new(vec2(380.0, 470.0));
             screen.ctx.set_theme(theme_choice);
             let mut last = None;
             for _ in 0..6 {
@@ -163,7 +173,7 @@ fn gallery_of_the_tab_linking() {
                         .rect_filled(ui.max_rect(), 0.0, theme::chrome());
                     ui.scope_builder(
                         egui::UiBuilder::new()
-                            .max_rect(Rect::from_min_size(ORIGIN, vec2(WIDTH, 250.0))),
+                            .max_rect(Rect::from_min_size(ORIGIN, vec2(WIDTH, 430.0))),
                         |ui| {
                             kit::menu_frame().show(ui, |ui| {
                                 show(ui, color, toggles);

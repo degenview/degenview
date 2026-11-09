@@ -90,11 +90,17 @@ a saved layout.
 
 ## UI
 
-The section borrows only the content of TradingView's menu (a heading, nine colours, four
-switches), not its look: it is drawn like the rest of the app's menus, with the same 24 pt rows,
-13 pt regular text, hover tint and 32 x 18 switch (`kit::paint_switch`). Nine small swatches (colours
-sampled from the screenshot), the chosen one ringed and ticked, then Symbol, Interval, Time and Date
-range, each with an info icon (a tooltip). With no colour the switches are dimmed and do nothing.
+The section is called **Link Tabs** and is drawn after a mock-up the user supplied: a tile with a
+chain (in the tab's colour once linked) with the title and "Sync this tab's charts with other
+tabs.", a **Link Color** card with the nine swatches (the chosen one ringed and ticked, so it is not
+told by hue alone), **Sync what** with Symbol, Interval, Time and Date range as a grid of cards
+(glyph, name, switch; the whole card is the control, its tooltip says what it does), a picture of
+two linked tabs with a line of explanation, then **Unlink Tab** and **Done** (Done closes the menu).
+With no colour the cards are dimmed and do nothing.
+
+Where it departs from the mock-up on purpose: nothing is blue (a card that is on has a lighter
+fill and a neutral outline, the switches are the app's neutral ones and Done is the neutral primary
+button), and the glyphs are the app's own set. It is 332 pt wide to fit the context menu.
 
 ## Verified, and not
 
