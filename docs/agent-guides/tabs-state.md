@@ -45,7 +45,7 @@
   menu): it stands in for the symbol and price, and a symbol or layout change never touches it. The
   app-wide style (symbol+price+layout, symbol only, layout name only) is `tab.title_style`
   (`host::tab_title_host`, Settings ▸ Appearance ▸ Tabs). Both are device-local: the `tab` table and
-  that key never sync. The active tab's blue underline is the one coloured thing in the strip; it
+  that key never sync. A hairline (`theme::separator()`, `paint_separators`) divides two neighbouring tabs that are both at rest: not the showing tab, not the one dragged or under the pointer, not across a gap left for an incoming tab. It follows the animated tab rects. The active tab's blue underline is the one coloured thing in the strip; it
   marks selection and is an intentional exception to "never blue".
 
 ## Windows and tabs

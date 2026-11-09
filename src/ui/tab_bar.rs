@@ -39,6 +39,8 @@ pub const DOCS_URL: &str = "https://docs.degenview.app";
 /// strip's right end on every platform and, on macOS, from the Help menu too.
 pub const GITHUB_URL: &str = "https://github.com/degenview";
 pub const COFFEE_URL: &str = "https://buymeacoffee.com/nicoswd";
+/// The hairline between two tabs at rest.
+const SEPARATOR_HEIGHT: f32 = 16.0;
 const TAB_GAP: f32 = 2.0;
 const SIDE_PADDING: f32 = 6.0;
 const CLOSE_SIZE: f32 = 18.0;
@@ -313,20 +315,28 @@ impl TabBar<'_> {
         );
         let outer_clip = ui.clip_rect();
         ui.set_clip_rect(outer_clip.intersect(tabs_clip));
+        let rects: Vec<Rect> = self
+            .tabs
+            .iter()
+            .enumerate()
+            .map(|(index, tab)| {
+                let left = match self.drag.dragging {
+                    Some((dragged, left)) if dragged == tab.id => {
+                        // Not slid: it follows the pointer exactly. Its own slot is remembered
+                        // so it settles there when let go.
+                        slide("x", tab.id, slot_of(index, gap));
+                        left
+                    }
+                    _ => slide("x", tab.id, slot_of(index, gap)),
+                };
+                Rect::from_min_size(
+                    pos2(strip.left() + left - scroll, strip.top() + 4.0),
+                    vec2(width, strip.height() - 4.0),
+                )
+            })
+            .collect();
         for (index, tab) in self.tabs.iter().enumerate() {
-            let left = match self.drag.dragging {
-                Some((dragged, left)) if dragged == tab.id => {
-                    // Not slid: it follows the pointer exactly. Its own slot is remembered so
-                    // it settles there when let go.
-                    slide("x", tab.id, slot_of(index, gap));
-                    left
-                }
-                _ => slide("x", tab.id, slot_of(index, gap)),
-            };
-            let rect = Rect::from_min_size(
-                pos2(strip.left() + left - scroll, strip.top() + 4.0),
-                vec2(width, strip.height() - 4.0),
-            );
+            let rect = rects[index];
             if self
                 .drag
                 .dragging
@@ -337,6 +347,7 @@ impl TabBar<'_> {
                 self.show_tab(ui, rect, (index, tab), false, &mut events);
             }
         }
+        self.paint_separators(ui, &rects, gap);
         // Drawn last so it passes over its neighbours.
         if let Some((rect, index, tab)) = lifted {
             self.show_tab(ui, rect, (index, tab), true, &mut events);
@@ -837,6 +848,38 @@ impl TabBar<'_> {
         segments
     }
 
+    /// A hairline in the gap between two neighbouring tabs that are both at rest: neither is the
+    /// showing tab, being dragged or under the pointer (those have a fill of their own), and
+    /// nothing is on its way in between them. It follows the animated rects, so it slides with
+    /// the tabs.
+    fn paint_separators(&self, ui: &Ui, rects: &[Rect], gap: Option<usize>) {
+        let pointer = ui.input(|input| input.pointer.hover_pos());
+        let dragged = self.drag.dragging.map(|(tab, _)| tab);
+        let at_rest = |index: usize| {
+            let tab = &self.tabs[index];
+            tab.id != self.active
+                && Some(tab.id) != dragged
+                && !pointer.is_some_and(|pointer| rects[index].contains(pointer))
+        };
+        let painter = ui.painter();
+        for index in 0..self.tabs.len().saturating_sub(1) {
+            if slot_of(index + 1, gap) != slot_of(index, gap) + 1
+                || !at_rest(index)
+                || !at_rest(index + 1)
+            {
+                continue;
+            }
+            let rect = rects[index];
+            let x = (rect.right() + TAB_GAP / 2.0).round() + 0.5;
+            let cy = rect.center().y - 1.0;
+            painter.vline(
+                x,
+                (cy - SEPARATOR_HEIGHT / 2.0)..=(cy + SEPARATOR_HEIGHT / 2.0),
+                Stroke::new(1.0, theme::separator()),
+            );
+        }
+    }
+
     fn paint_tab(&self, ui: &Ui, painter: &Painter, rect: Rect, tab: &TabView, look: Look) {
         let fade = |color: Color32| color.gamma_multiply(look.opacity);
         let raised = look.active || look.lifted;
@@ -1312,6 +1355,50 @@ mod tests {
                 assert_eq!(accent_lines(&shapes), 1, "{style:?} at {width}");
             }
         }
+    }
+
+    fn tab_separators(shapes: &[egui::epaint::ClippedShape]) -> usize {
+        shapes
+            .iter()
+            .filter(|clipped| match &clipped.shape {
+                egui::Shape::LineSegment { points, stroke } => {
+                    stroke.color == theme::separator()
+                        && points[0].x == points[1].x
+                        && (points[1].y - points[0].y).abs() == SEPARATOR_HEIGHT
+                }
+                _ => false,
+            })
+            .count()
+    }
+
+    #[test]
+    fn a_hairline_divides_two_tabs_only_when_neither_is_showing() {
+        // Five tabs: four gaps. The showing tab takes the gaps on both its sides.
+        assert_eq!(
+            tab_separators(&paint_strip(5, 0, 1400.0, TabTitleStyle::Full)),
+            3
+        );
+        assert_eq!(
+            tab_separators(&paint_strip(5, 2, 1400.0, TabTitleStyle::Full)),
+            2
+        );
+        assert_eq!(
+            tab_separators(&paint_strip(5, 4, 1400.0, TabTitleStyle::Full)),
+            3
+        );
+        // A lone tab, or one next to nothing else, has none; two tabs with one showing too.
+        assert_eq!(
+            tab_separators(&paint_strip(1, 0, 1400.0, TabTitleStyle::Full)),
+            0
+        );
+        assert_eq!(
+            tab_separators(&paint_strip(2, 0, 1400.0, TabTitleStyle::Full)),
+            0
+        );
+        assert_eq!(
+            tab_separators(&paint_strip(3, 1, 1400.0, TabTitleStyle::Full)),
+            0
+        );
     }
 
     #[test]
