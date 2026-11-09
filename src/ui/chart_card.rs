@@ -99,13 +99,14 @@ fn run_revision(candles: &[Kline], visible_range: Option<(i64, i64)>, now_ms: i6
     }
 }
 
-/// The header change uses the same candle window as the plot, including pan and zoom.
-fn visible_price_change(
+/// The header change uses the same candle window as the plot, including pan and zoom: the price
+/// change (last close less first) and the percent.
+fn visible_price_move(
     candles: &[Kline],
     visible_count: usize,
     right_offset: f64,
     reserved: usize,
-) -> Option<f64> {
+) -> Option<(f64, f64)> {
     let window = canvas::visible_window(candles.len(), visible_count, right_offset, reserved);
     let visible = candles.get(window.start..window.end)?;
     let (Some(first), Some(last)) = (visible.first(), visible.last()) else {
@@ -114,8 +115,23 @@ fn visible_price_change(
     if visible.len() < 2 || first.close == 0.0 {
         return None;
     }
-    let change = (last.close - first.close) / first.close * 100.0;
-    change.is_finite().then_some(change)
+    let amount = last.close - first.close;
+    let percent = amount / first.close * 100.0;
+    (amount.is_finite() && percent.is_finite()).then_some((amount, percent))
+}
+
+/// `+$67.13 (+0.10%)`, or `+0.10%` when the amount is left out (prediction markets quote
+/// probabilities, so a price difference means nothing there).
+fn change_text(amount: Option<f64>, percent: f64) -> String {
+    let sign = if percent >= 0.0 { "+" } else { "-" };
+    match amount {
+        Some(amount) => format!(
+            "{sign}{} ({sign}{:.2}%)",
+            format::headline(amount.abs(), false),
+            percent.abs()
+        ),
+        None => format!("{sign}{:.2}%", percent.abs()),
+    }
 }
 
 /// Half the width of a candle body, matching the real candles the Pine overlay recolours.
@@ -766,7 +782,12 @@ impl ChartCard {
 
     /// The change across the candles on screen, by the same window the plot draws.
     pub fn visible_change(&self, candles: &[Kline]) -> Option<f64> {
-        visible_price_change(
+        self.visible_move(candles).map(|(_, percent)| percent)
+    }
+
+    /// The change across the candles on screen as (price, percent).
+    pub fn visible_move(&self, candles: &[Kline]) -> Option<(f64, f64)> {
+        visible_price_move(
             candles,
             self.viewport.horizontal.visible,
             self.viewport.horizontal.right_offset,
@@ -1858,8 +1879,9 @@ impl ChartCard {
         drag_id: u64,
     ) {
         let header_width = ui.available_width();
-        let price_change = self.visible_change(candles);
-        let reserved = 164.0
+        let price_change = self.visible_move(candles);
+        // The change sits beside the price now, so the right end holds the star and little else.
+        let reserved = 108.0
             + if self.paper.trading_enabled {
                 125.0
             } else {
@@ -1981,48 +2003,79 @@ impl ChartCard {
                                 .inner;
                         }
                     });
-                    if let Some(last) = candles.last()
-                        && ui
-                            .add(
-                                egui::Button::new(
-                                    egui::RichText::new(if source == DataSource::CoinMarketCap {
-                                        // An index on a 0–100 scale, not a price.
-                                        format!("{:.0} / 100", last.close)
-                                    } else if let Some((label, price)) = self.leading_choice() {
-                                        format!("{label} · {}", format::headline(price, true))
-                                    } else {
-                                        format::headline(last.close, source.is_prediction_market())
-                                    })
-                                    .size(11.0)
-                                    .color(theme::text_secondary()),
+                    if let Some(last) = candles.last() {
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = 6.0;
+                            let price = ui
+                                .add(
+                                    egui::Button::new(
+                                        egui::RichText::new(
+                                            if source == DataSource::CoinMarketCap {
+                                                // An index on a 0–100 scale, not a price.
+                                                format!("{:.0} / 100", last.close)
+                                            } else if let Some((label, price)) =
+                                                self.leading_choice()
+                                            {
+                                                format!(
+                                                    "{label} · {}",
+                                                    format::headline(price, true)
+                                                )
+                                            } else {
+                                                format::headline(
+                                                    last.close,
+                                                    source.is_prediction_market(),
+                                                )
+                                            },
+                                        )
+                                        .size(11.0)
+                                        .color(theme::text_secondary()),
+                                    )
+                                    .frame(false),
                                 )
-                                .frame(false),
-                            )
-                            .settings_tip(source)
-                            .clicked()
-                    {
-                        action.settings_requested = source != DataSource::CoinMarketCap;
+                                .settings_tip(source);
+                            if price.clicked() {
+                                action.settings_requested = source != DataSource::CoinMarketCap;
+                            }
+                            // The change over the bars on screen, beside the price it moved:
+                            // in price and percent where a price difference means something,
+                            // and the percent alone where it does not or the row is too tight.
+                            if let Some((amount, percent)) = price_change {
+                                let color = if percent >= 0.0 {
+                                    theme::UP
+                                } else {
+                                    theme::DOWN
+                                };
+                                let room = title_content_width - price.rect.width() - 6.0;
+                                let wide = !source.is_prediction_market()
+                                    && source != DataSource::CoinMarketCap;
+                                let measure = |text: &str| {
+                                    ui.painter()
+                                        .layout_no_wrap(
+                                            text.to_owned(),
+                                            egui::FontId::proportional(11.0),
+                                            color,
+                                        )
+                                        .size()
+                                        .x
+                                };
+                                let full = change_text(wide.then_some(amount), percent);
+                                let short = change_text(None, percent);
+                                let text = if measure(&full) <= room {
+                                    Some(full)
+                                } else if measure(&short) <= room {
+                                    Some(short)
+                                } else {
+                                    None
+                                };
+                                if let Some(text) = text {
+                                    ui.label(egui::RichText::new(text).color(color).size(11.0));
+                                }
+                            }
+                        });
                     }
                 });
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if let Some(change) = price_change {
-                        let color = if change >= 0.0 {
-                            theme::UP
-                        } else {
-                            theme::DOWN
-                        };
-                        ui.label(
-                            egui::RichText::new(format!(
-                                "{} {:.2}%",
-                                if change >= 0.0 { "↗" } else { "↘" },
-                                change.abs()
-                            ))
-                            .color(color)
-                            .size(11.0)
-                            .strong(),
-                        );
-                    }
                     if self.paper.trading_enabled
                         && let Some(last) = candles.last()
                     {
@@ -3509,16 +3562,29 @@ mod tests {
             candle(95.0, 90.0),
             candle(115.0, 120.0),
         ];
+        let percent = |count, offset| {
+            visible_price_move(&candles, count, offset, 0).map(|(_, percent)| percent)
+        };
+        assert_eq!(percent(2, 0.0), Some(30.0 / 90.0 * 100.0));
+        assert_eq!(percent(2, 1.0), Some(-20.0 / 110.0 * 100.0));
+        assert_eq!(percent(1, 0.0), None);
+        assert_eq!(visible_price_move(&[], 2, 0.0, 0), None);
+    }
+
+    #[test]
+    fn the_header_change_reads_in_price_and_percent() {
+        let candles = [
+            candle(80.0, 100.0),
+            candle(105.0, 110.0),
+            candle(95.0, 90.0),
+        ];
         assert_eq!(
-            visible_price_change(&candles, 2, 0.0, 0),
-            Some(30.0 / 90.0 * 100.0)
+            visible_price_move(&candles, 2, 0.0, 0),
+            Some((-20.0, -20.0 / 110.0 * 100.0))
         );
-        assert_eq!(
-            visible_price_change(&candles, 2, 1.0, 0),
-            Some(-20.0 / 110.0 * 100.0)
-        );
-        assert_eq!(visible_price_change(&candles, 1, 0.0, 0), None);
-        assert_eq!(visible_price_change(&[], 2, 0.0, 0), None);
+        assert_eq!(change_text(Some(67.125), 0.1), "+$67.125 (+0.10%)");
+        assert_eq!(change_text(Some(-20.0), -18.18), "-$20.00 (-18.18%)");
+        assert_eq!(change_text(None, 0.0), "+0.00%");
     }
 
     #[test]
