@@ -11,6 +11,7 @@ use crate::sync::core::{PauseReason, Phase};
 use crate::sync::initial::{Counts, JoinMode, JoinSummary};
 use crate::sync::transport::ErrorKind;
 use crate::ui::alert_center::{Tone, relative_time};
+use crate::ui::dialog::{self, Dialog};
 use crate::ui::icons::Icon;
 use crate::ui::settings_window::{card, divider, row, section, status_badge, status_message};
 use crate::ui::{kit, settings_card, theme};
@@ -376,125 +377,90 @@ enum DialogOutcome {
     Cancel,
 }
 
-/// The confirmation: what goes, what stays, and the word to type. Escape or a click outside
-/// cancels; Return confirms only once the word is typed.
+/// The confirmation: what goes, what stays, and the word to type, on the shared dialog. Escape, the
+/// close button or a click outside cancels; Return confirms only once the word is typed.
 fn delete_dialog(ctx: &egui::Context) -> Option<DialogOutcome> {
     let id = egui::Id::new("icloud-delete-dialog-text");
     let mut typed: String = ctx.data(|data| data.get_temp(id)).unwrap_or_default();
-    let mut outcome = None;
-    let modal = egui::Modal::new(egui::Id::new("icloud-delete-modal"))
-        .backdrop_color(egui::Color32::from_black_alpha(90))
-        .frame(
-            egui::Frame::new()
-                .fill(theme::pick(
-                    egui::Color32::from_rgb(31, 36, 40),
-                    egui::Color32::from_rgb(246, 246, 247),
-                ))
-                .corner_radius(12.0)
-                .stroke(egui::Stroke::new(1.0, kit::primary(0.1)))
-                .inner_margin(egui::Margin::same(22))
-                .shadow(egui::Shadow {
-                    offset: [0, 10],
-                    blur: 30,
-                    spread: 0,
-                    color: egui::Color32::from_black_alpha(130),
-                }),
-        )
-        .show(ctx, |ui| {
-            ui.set_width(340.0);
-            ui.spacing_mut().item_spacing.y = 0.0;
-            ui.vertical_centered(|ui| {
-                let (badge, _) = ui.allocate_exact_size(egui::Vec2::splat(52.0), egui::Sense::hover());
-                ui.painter().rect_filled(badge, 12.0, theme::with_alpha(kit::RED, 0.14));
-                crate::ui::icons::paint(
-                    ui.painter(),
-                    egui::Rect::from_center_size(badge.center(), egui::Vec2::splat(24.0)),
-                    Icon::Trash,
+    let mut submitted = false;
+    let mut spec = Dialog::new(
+        Icon::Trash,
+        kit::RED,
+        "Delete all DegenView data from iCloud?",
+        "This permanently removes what DegenView synced to your private iCloud storage.",
+        "Delete iCloud Data",
+    );
+    spec.destructive = true;
+    // The field takes the focus first; the button is pressable once the word is typed (as of the
+    // previous frame, which a keystroke repaints).
+    spec.focus_body = true;
+    spec.accept_enabled = delete_confirmed(&typed);
+    let shown = dialog::show(ctx, egui::Id::new("icloud-delete-modal"), &spec, |ui| {
+        ui.add_space(16.0);
+        egui::Frame::new()
+            .fill(kit::primary(0.05))
+            .corner_radius(10.0)
+            .inner_margin(egui::Margin::symmetric(12, 10))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.spacing_mut().item_spacing.y = 10.0;
+                consequence(
+                    ui,
+                    Icon::XmarkCircleFill,
                     kit::RED,
+                    "Removed from iCloud",
+                    "Watchlists, layouts and drawings, templates, Pine scripts, alerts, portfolios, paper-trading accounts and preferences.",
                 );
-                ui.add_space(12.0);
-                ui.label(kit::text(
-                    "Delete all DegenView data from iCloud?",
-                    kit::size::HEADLINE,
-                    kit::BOLD,
-                    theme::text_primary(),
-                ));
-                ui.add_space(6.0);
-                ui.add(
-                    egui::Label::new(kit::text(
-                        "This permanently removes what DegenView synced to your private iCloud storage.",
-                        kit::size::SUBHEADLINE,
-                        kit::REGULAR,
-                        theme::text_secondary(),
-                    ))
-                    .wrap()
-                    .halign(egui::Align::Center),
+                consequence(
+                    ui,
+                    Icon::CheckCircleFill,
+                    kit::GREEN,
+                    "Kept on this Mac",
+                    "All your data stays here. Sync turns off.",
+                );
+                consequence(
+                    ui,
+                    Icon::Layers,
+                    theme::text_secondary(),
+                    "Your other Macs",
+                    "They keep their own copies and will offer to upload them again.",
                 );
             });
-            ui.add_space(16.0);
-            egui::Frame::new()
-                .fill(kit::primary(0.05))
-                .corner_radius(10.0)
-                .inner_margin(egui::Margin::symmetric(12, 10))
-                .show(ui, |ui| {
-                    ui.set_width(ui.available_width());
-                    ui.spacing_mut().item_spacing.y = 10.0;
-                    consequence(
-                        ui,
-                        Icon::XmarkCircleFill,
-                        kit::RED,
-                        "Removed from iCloud",
-                        "Watchlists, layouts and drawings, templates, Pine scripts, alerts, portfolios, paper-trading accounts and preferences.",
-                    );
-                    consequence(
-                        ui,
-                        Icon::CheckCircleFill,
-                        kit::GREEN,
-                        "Kept on this Mac",
-                        "All your data stays here. Sync turns off.",
-                    );
-                    consequence(
-                        ui,
-                        Icon::Layers,
-                        theme::text_secondary(),
-                        "Your other Macs",
-                        "They keep their own copies and will offer to upload them again.",
-                    );
-                });
-            ui.add_space(16.0);
-            ui.label(kit::text(
-                format!("Type “{DELETE_WORD}” to confirm"),
-                kit::size::CAPTION + 0.5,
-                kit::MEDIUM,
-                theme::text_secondary(),
-            ));
-            ui.add_space(6.0);
-            let field_id = egui::Id::new("icloud-delete-field");
-            let focused = ui.memory(|memory| memory.has_focus(field_id));
-            let field = kit::field_frame(focused)
-                .show(ui, |ui| {
-                    kit::plain_field(ui, field_id, &mut typed, DELETE_WORD, kit::size::BODY, kit::REGULAR, ui.available_width())
-                })
-                .inner;
-            if !ui.memory(|memory| memory.has_focus(field_id)) && typed.is_empty() {
-                field.request_focus();
-            }
-            let confirmed = delete_confirmed(&typed);
-            let submitted = field.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter));
-            ui.add_space(16.0);
-            if dialog_button(ui, "Delete iCloud Data", Some(kit::RED), confirmed).clicked()
-                || (submitted && confirmed)
-            {
-                outcome = Some(DialogOutcome::Delete);
-            }
-            ui.add_space(8.0);
-            if dialog_button(ui, "Cancel", None, true).clicked() {
-                outcome = Some(DialogOutcome::Cancel);
-            }
-        });
-    if outcome.is_none() && modal.should_close() {
-        outcome = Some(DialogOutcome::Cancel);
-    }
+        ui.add_space(16.0);
+        ui.label(kit::text(
+            format!("Type “{DELETE_WORD}” to confirm"),
+            kit::size::CAPTION + 0.5,
+            kit::MEDIUM,
+            theme::text_secondary(),
+        ));
+        ui.add_space(6.0);
+        let field_id = egui::Id::new("icloud-delete-field");
+        let focused = ui.memory(|memory| memory.has_focus(field_id));
+        let field = kit::field_frame(focused)
+            .show(ui, |ui| {
+                kit::plain_field(
+                    ui,
+                    field_id,
+                    &mut typed,
+                    DELETE_WORD,
+                    kit::size::BODY,
+                    kit::REGULAR,
+                    ui.available_width(),
+                )
+            })
+            .inner;
+        if !ui.memory(|memory| memory.has_focus(field_id)) && typed.is_empty() {
+            field.request_focus();
+        }
+        submitted = field.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter));
+    });
+    let outcome = match shown {
+        Some(dialog::Outcome::Accepted) if delete_confirmed(&typed) => Some(DialogOutcome::Delete),
+        Some(dialog::Outcome::Accepted) => None,
+        Some(_) => Some(DialogOutcome::Cancel),
+        None if submitted && delete_confirmed(&typed) => Some(DialogOutcome::Delete),
+        None => None,
+    };
     // Typed text never outlives the dialog, so it always opens empty.
     ctx.data_mut(|data| {
         if outcome.is_some() {
@@ -531,61 +497,6 @@ fn consequence(ui: &mut egui::Ui, icon: Icon, tint: egui::Color32, lead: &str, d
             );
         });
     });
-}
-
-/// A full-width dialog button, in the style of the app's alerts. A disabled one is dimmed and
-/// does nothing, so the destructive button reads as "not yet" until the word is typed.
-fn dialog_button(
-    ui: &mut egui::Ui,
-    label: &str,
-    fill: Option<egui::Color32>,
-    enabled: bool,
-) -> egui::Response {
-    let sense = if enabled {
-        egui::Sense::click()
-    } else {
-        egui::Sense::hover()
-    };
-    let (rect, response) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 30.0), sense);
-    let response = crate::ui::accessibility::label(response, label);
-    let pressed = enabled && response.is_pointer_button_down_on();
-    let background = match fill {
-        Some(color) if !enabled => color.gamma_multiply(0.3),
-        Some(color) if pressed => color.gamma_multiply(0.8),
-        Some(color) => color,
-        None => kit::primary(if pressed {
-            0.2
-        } else if response.hovered() {
-            0.15
-        } else {
-            0.1
-        }),
-    };
-    ui.painter().rect_filled(rect, 7.0, background);
-    let color = match (fill.is_some(), enabled) {
-        (true, true) => egui::Color32::WHITE,
-        (true, false) => egui::Color32::WHITE.gamma_multiply(0.55),
-        (false, _) => theme::text_primary(),
-    };
-    let galley = kit::galley(
-        ui,
-        label,
-        kit::size::BODY,
-        if fill.is_some() {
-            kit::MEDIUM
-        } else {
-            kit::REGULAR
-        },
-        color,
-        rect.width(),
-    );
-    ui.painter()
-        .galley(rect.center() - galley.size() / 2.0, galley, color);
-    if enabled {
-        response.on_hover_cursor(egui::CursorIcon::PointingHand)
-    } else {
-        response
-    }
 }
 
 fn small(ui: &mut egui::Ui, text: &str) {
@@ -1233,6 +1144,39 @@ mod tests {
         });
         out.textures_delta.clear();
         assert_eq!(outcome, None, "opening it asks for nothing");
+    }
+
+    /// A picture of the delete dialog, for a person to look at.
+    #[test]
+    #[ignore = "writes images for a person to look at"]
+    fn gallery_of_the_delete_dialog() {
+        use crate::ui::render_tests::{Screen, gallery_dir};
+        if gallery_dir().is_none() {
+            return;
+        }
+        let _restore = theme::RestoreDefaultTheme;
+        for light in [false, true] {
+            let mut screen = Screen::new(egui::vec2(560.0, 520.0));
+            screen.ctx.set_theme(if light {
+                egui::ThemePreference::Light
+            } else {
+                egui::ThemePreference::Dark
+            });
+            let mut last = None;
+            for _ in 0..5 {
+                last = Some(screen.run(Vec::new(), |ui| {
+                    theme::sync(ui.ctx());
+                    delete_dialog(ui.ctx());
+                }));
+            }
+            screen.save(
+                &format!(
+                    "dialog-icloud-delete-{}",
+                    if light { "light" } else { "dark" }
+                ),
+                last.expect("ran"),
+            );
+        }
     }
 
     fn draw(host: &SyncHost) {
