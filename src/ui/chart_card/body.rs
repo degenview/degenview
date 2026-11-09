@@ -150,7 +150,12 @@ impl ChartCard {
         let (bars, plot) = (data.bars, layout.plot);
         replay.picked_ms = None;
         replay.picked_range = None;
-        let view = self.view(bars, plot, data.scale_mode, data.chart_type);
+        let view = self.view(
+            bars,
+            (plot, layout.top_inset),
+            data.scale_mode,
+            data.chart_type,
+        );
         let regions = navigation::Regions {
             plot,
             main: layout.rect,
@@ -181,6 +186,9 @@ impl ChartCard {
                 .map(|view| PriceRange::new(view.scale.minimum, view.scale.maximum)),
             total: bars.len(),
             slot_width: self.slot_width(plot),
+            scale_height: view
+                .as_ref()
+                .map_or_else(|| plot.height(), |view| view.scale.height),
             logarithmic: view.as_ref().is_some_and(|view| view.scale.logarithmic),
             // Dragging over bars for the logs pane is not a pan.
             drawing_claims: self.layer.claims_drag()

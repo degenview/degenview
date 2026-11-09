@@ -47,7 +47,9 @@ use std::sync::{
 
 /// The least the price axis is wide, for a chart whose labels are short.
 const PRICE_AXIS_WIDTH: f32 = 44.0;
-const HEADER_HEIGHT: f32 = 45.0;
+/// The header row's height. The header is drawn over the top of the plot (`set_top_inset`), which
+/// reaches the card's top edge.
+pub const HEADER_HEIGHT: f32 = 45.0;
 /// A plot shorter than this is not drawn: only the time axis stays.
 const MIN_PLOT_HEIGHT: f32 = 16.0;
 /// How many screens from the oldest bar held the view asks for an older page.
@@ -293,6 +295,9 @@ pub struct ChartCard {
     appearance: ChartAppearance,
     /// How big the plot area was drawn at the last frame, in points: what a snapshot is the size of.
     body_size: Vec2,
+    /// How much of the plot's top the header covers: the price scale starts below it, and what
+    /// anchors to the plot's top (readouts, tags) sits under it. A snapshot has no header.
+    top_inset: f32,
     /// A human-readable title shown instead of an opaque provider id.
     title: Option<String>,
     /// The choices of a multi-choice prediction market; empty for every other chart.
@@ -658,6 +663,7 @@ impl Default for ChartCard {
         Self {
             appearance: ChartAppearance::default(),
             body_size: Vec2::ZERO,
+            top_inset: 0.0,
             title: None,
             series: Vec::new(),
             series_cutoff: None,
@@ -1605,11 +1611,25 @@ impl ChartCard {
         self.layer.open_notes()
     }
 
+    /// Tells the card how much of the plot's top the header covers (zero when there is none). The
+    /// plot reaches the card's top edge; the price scale starts below the header.
+    pub fn set_top_inset(&mut self, inset: f32) {
+        self.top_inset = inset.max(0.0);
+    }
+
+    /// `plot` less the part the header covers: what top-anchored readouts and tags are placed in.
+    pub(super) fn below_header(&self, plot: Rect) -> Rect {
+        Rect::from_min_max(
+            Pos2::new(plot.min.x, (plot.min.y + self.top_inset).min(plot.max.y)),
+            plot.max,
+        )
+    }
+
     /// Visible range and price scale for the current pan/zoom, if anything is shown.
     fn view(
         &self,
         candles: &[Kline],
-        plot: Rect,
+        (plot, top_inset): (Rect, f32),
         mode: PriceScaleMode,
         chart_type: ChartType,
     ) -> Option<View> {
@@ -1663,8 +1683,9 @@ impl ChartCard {
             scale: PriceScale {
                 minimum,
                 maximum,
-                top: plot.top(),
-                height: plot.height(),
+                // Below what covers the plot's top, so the bars clear the header by default.
+                top: plot.top() + top_inset,
+                height: (plot.height() - top_inset).max(1.0),
                 logarithmic,
                 mode,
                 // Percent and Indexed measure from the first bar shown, so a pan moves the
@@ -2197,14 +2218,14 @@ impl ChartCard {
             outputs: &outputs,
             indicators,
         };
-        let layout = self.frame_layout(&data, full_rect, &painter, &style);
+        let layout = self.frame_layout(&data, full_rect, self.top_inset, &painter, &style);
         self.keep_panes_in_step(&layout);
         let plot = layout.plot;
         let pane_rects = &layout.pane_rects;
         let chart_hovered = ui.rect_contains_pointer(full_rect);
         let regions = self.handle_frame_input(ui, &response, &data, &layout, drawing, replay);
 
-        let Some(view) = self.view(bars, plot, scale_mode, chart_type) else {
+        let Some(view) = self.view(bars, (plot, layout.top_inset), scale_mode, chart_type) else {
             return pointer;
         };
         self.near_oldest = view.start <= self.viewport.horizontal.visible * NEAR_OLDEST_SCREENS;
@@ -2324,7 +2345,13 @@ impl ChartCard {
         let x = plot.left()
             + view.slot_width * ((index - view.start) as f32 + 0.5)
             + view.slot_width * view.lead;
-        replay_overlay::paint_selection(painter, plot, x, open_time, self.pick_kind);
+        replay_overlay::paint_selection(
+            painter,
+            self.below_header(plot),
+            x,
+            open_time,
+            self.pick_kind,
+        );
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         if response.clicked() {
             replay.picked_ms = Some(open_time);
@@ -2881,15 +2908,17 @@ impl ChartCard {
             Color32::WHITE,
         );
 
+        // The header covers the plot's top, so the readouts start under it.
+        let below_header = self.below_header(plot);
         let readout_bottom = if style.ohlc_readout {
-            self.draw_readout(painter, plot, info, index, candle, show_volume)
+            self.draw_readout(painter, below_header, info, index, candle, show_volume)
         } else {
-            plot.top() - 4.0
+            below_header.top() - 4.0
         };
         let (overlay_frame, overlay_view) = info.overlays;
         self.paint_overlay_readout(
             painter,
-            plot,
+            below_header,
             readout_bottom,
             overlay_frame,
             overlay_view,
@@ -3352,7 +3381,12 @@ mod tests {
         let candles: Vec<Kline> = (0..100).map(|i| point(i, 1.0)).collect();
         let plot = Rect::from_min_size(Pos2::ZERO, Vec2::new(550.0, 200.0));
         let alone = card
-            .view(&candles, plot, PriceScaleMode::Regular, ChartType::Candles)
+            .view(
+                &candles,
+                (plot, 0.0),
+                PriceScaleMode::Regular,
+                ChartType::Candles,
+            )
             .expect("view");
         assert_eq!(alone.slot_width, 5.5);
         card.script_extent = OverlayExtent {
@@ -3360,7 +3394,12 @@ mod tests {
             values: vec![9.0],
         };
         let with_script = card
-            .view(&candles, plot, PriceScaleMode::Regular, ChartType::Candles)
+            .view(
+                &candles,
+                (plot, 0.0),
+                PriceScaleMode::Regular,
+                ChartType::Candles,
+            )
             .expect("view");
         assert_eq!(with_script.slot_width, 5.0, "550 px over 100 + 10 slots");
         assert!(
@@ -3370,18 +3409,65 @@ mod tests {
     }
 
     #[test]
+    fn the_price_scale_starts_below_the_header_while_the_plot_reaches_the_top() {
+        let card = ChartCard::default();
+        let candles: Vec<Kline> = (0..50).map(|i| point(i, 1.0 + i as f64 * 0.01)).collect();
+        let plot = Rect::from_min_size(Pos2::new(0.0, 10.0), Vec2::new(500.0, 300.0));
+        let bare = card
+            .view(
+                &candles,
+                (plot, 0.0),
+                PriceScaleMode::Regular,
+                ChartType::Candles,
+            )
+            .expect("view");
+        let covered = card
+            .view(
+                &candles,
+                (plot, HEADER_HEIGHT),
+                PriceScaleMode::Regular,
+                ChartType::Candles,
+            )
+            .expect("view");
+        assert_eq!(bare.scale.top, plot.top());
+        assert_eq!(covered.scale.top, plot.top() + HEADER_HEIGHT);
+        assert_eq!(covered.scale.height, plot.height() - HEADER_HEIGHT);
+        assert_eq!(covered.scale.maximum, bare.scale.maximum, "the same prices");
+        // The highest price lands at the same distance below the scale's top, so the bars clear
+        // the header by default.
+        let top = covered.scale.y(covered.scale.maximum);
+        assert!(top >= plot.top() + HEADER_HEIGHT - 0.01, "{top}");
+        // The part of the card under the header is still the plot: a snapshot loses it.
+        let mut card = ChartCard::default();
+        card.set_top_inset(HEADER_HEIGHT);
+        card.set_snapshot_size_for_tests(Vec2::new(500.0, 345.0));
+        assert_eq!(card.snapshot_size(), Vec2::new(500.0, 300.0));
+        assert_eq!(card.below_header(plot).top(), plot.top() + HEADER_HEIGHT);
+    }
+
+    #[test]
     fn the_price_range_covers_every_line_not_only_the_candles() {
         let mut card = ChartCard::default();
         let candles = [point(0, 0.2), point(1, 0.3)];
         let plot = Rect::from_min_size(Pos2::ZERO, Vec2::new(400.0, 200.0));
         let alone = card
-            .view(&candles, plot, PriceScaleMode::Regular, ChartType::Candles)
+            .view(
+                &candles,
+                (plot, 0.0),
+                PriceScaleMode::Regular,
+                ChartType::Candles,
+            )
             .expect("view")
             .scale
             .maximum;
         card.set_series(two_lines());
         let with_lines = card
-            .view(&candles, plot, PriceScaleMode::Regular, ChartType::Candles)
+            .view(
+                &candles,
+                (plot, 0.0),
+                PriceScaleMode::Regular,
+                ChartType::Candles,
+            )
             .expect("view")
             .scale
             .maximum;

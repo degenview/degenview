@@ -70,7 +70,7 @@ impl Overlays for LiveOverlays<'_> {
             );
         }
         if self.replay.active {
-            replay_overlay::paint_active(main_painter, layout.plot);
+            replay_overlay::paint_active(main_painter, self.card.below_header(layout.plot));
         }
         self.card.paint_zoom(self.ui, main_painter, layout.plot);
     }
@@ -134,7 +134,10 @@ impl Overlays for LiveOverlays<'_> {
         self.alert_moves.extend(alerts.moves);
         self.alert_toggled.extend(alerts.toggled);
         self.alert_deleted.extend(alerts.deleted);
-        self.paper = self.card.paper.show_markers(self.ui, plot, scale);
+        self.paper = self
+            .card
+            .paper
+            .show_markers(self.ui, self.card.below_header(plot), scale);
         if !self.replay.selecting
             && let Some(action) = chart_buttons::navigation(
                 self.ui,

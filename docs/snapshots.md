@@ -42,7 +42,8 @@ click / shortcut ─► ChartWorkspace::begin_snapshot(chart_id, action)        
   top-left fill rule, 8-bit rounding per draw). No window, GPU or readback is involved, so it works
   anywhere, at any scale, in tests. Text and lines are laid out at the image's scale: 2× is drawn
   again, not enlarged.
-- **Sizes.** The image is the chart's plot area (what the card drew last frame) at 1× or 2×
+- **Sizes.** The image is the chart's plot area (what the card drew last frame, less the strip the
+  header covers, `ChartCard::snapshot_size`) at 1× or 2×
   (Settings, default 2×). At most 8192 px a side and 32 Mi pixels (128 MiB RGBA); a larger chart
   is drawn at a smaller scale, and one too large for ¼× is refused. Custom export sizes are not
   offered.
