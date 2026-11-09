@@ -13,7 +13,9 @@ use super::theme;
 use crate::model::chart_look::Palette;
 use crate::model::chart_type::{ChartType, SizeMethod, SizeRule};
 use crate::model::market_profile::feed::ProfileFeed;
+use crate::model::market_profile::flow::{CandleBook, FlowKline};
 use crate::model::market_profile::footprint::{self, Cache, SetInput};
+use crate::model::market_profile::tpo;
 use crate::model::market_profile::trades::{Trade, TradeBook};
 use crate::model::synthetic::{Construction, SyntheticSeries, build_with};
 use crate::model::{ChartAppearance, Kline};
@@ -109,8 +111,73 @@ pub fn sample_footprint(appearance: &ChartAppearance) -> ProfileFeed {
     );
     ProfileFeed {
         footprint: Some(std::sync::Arc::new(set)),
-        loading: false,
-        error: None,
+        ..ProfileFeed::default()
+    }
+}
+
+/// The hours of the sample a TPO preview covers: one UTC day, so one profile fills the card.
+const TPO_BARS: usize = 24;
+
+/// A deterministic TPO over the first day of the sample: each hourly sample candle is cut into twelve
+/// 5-minute candles that wander from its open to its close inside its range, the way a real hour
+/// does, and the same builder as a real chart's makes the profile with the user's block size and
+/// look. Made-up prices, so it says nothing of any market.
+pub fn sample_tpo(appearance: &ChartAppearance) -> ProfileFeed {
+    let bars: Vec<Kline> = sample_candles()[..TPO_BARS].to_vec();
+    let mut book = CandleBook::new(300_000, 10_000);
+    for bar in &bars {
+        let range = bar.high - bar.low;
+        let mut previous = bar.open;
+        for k in 0..12 {
+            let along = (k + 1) as f64 / 12.0;
+            let wander = (k as f64 * 1.7 + bar.open).sin() * range * 0.22;
+            let close =
+                (bar.open + (bar.close - bar.open) * along + wander).clamp(bar.low, bar.high);
+            // Two of the twelve reach the hour's extremes, so the profile spans the whole range.
+            let (mut high, mut low) = (previous.max(close), previous.min(close));
+            if k == 3 {
+                high = bar.high;
+            }
+            if k == 8 {
+                low = bar.low;
+            }
+            book.insert([FlowKline {
+                kline: Kline {
+                    open_time: bar.open_time + k as i64 * 300_000,
+                    close_time: bar.open_time + (k as i64 + 1) * 300_000 - 1,
+                    open: previous,
+                    high,
+                    low,
+                    close,
+                    volume: 1.0 + ((k * 5) % 7) as f64,
+                },
+                taker_buy: None,
+            }]);
+            previous = close;
+        }
+    }
+    let mut shape = appearance.style.tpo.shape();
+    // The sample is one day: whatever period or custom windows the chart uses, the preview shows it
+    // as one profile.
+    shape.period = crate::model::chart_type::PeriodKind::Day;
+    shape.period_count = 1;
+    shape.sessions = crate::model::chart_type::SessionMode::All;
+    let set = tpo::build_set(
+        tpo::SetInput {
+            bars: &bars,
+            bar_ms: 3_600_000,
+            candles: &book,
+            exchange_tick: Some(SAMPLE_TICK),
+            shape,
+            edits: &[],
+            until_ms: i64::MAX,
+            now_ms: i64::MAX,
+        },
+        &mut tpo::Cache::default(),
+    );
+    ProfileFeed {
+        tpo: Some(std::sync::Arc::new(set)),
+        ..ProfileFeed::default()
     }
 }
 
@@ -153,6 +220,9 @@ pub fn preview_bars(
     if chart_type == ChartType::VolumeFootprint {
         let start = sample.len() - FOOTPRINT_BARS;
         return (sample[start..].to_vec(), None);
+    }
+    if chart_type == ChartType::TimePriceOpportunity {
+        return (sample[..TPO_BARS].to_vec(), None);
     }
     let mut style = appearance.style;
     style.chart_type = chart_type;
@@ -197,7 +267,11 @@ fn paint(ui: &Ui, plot: Rect, appearance: &ChartAppearance, chart_type: ChartTyp
     let slot = plot.width() / bars.len() as f32;
     let x_for = |index: usize| plot.left() + slot * (index as f32 + 0.5);
     let painter = ui.painter_at(plot);
-    let feed = (chart_type == ChartType::VolumeFootprint).then(|| sample_footprint(appearance));
+    let feed = match chart_type {
+        ChartType::VolumeFootprint => Some(sample_footprint(appearance)),
+        ChartType::TimePriceOpportunity => Some(sample_tpo(appearance)),
+        _ => None,
+    };
     series_render::paint(&SeriesFrame {
         painter: &painter,
         plot,
@@ -306,10 +380,13 @@ mod tests {
 
     #[test]
     fn standard_types_preview_the_sample_candles_as_they_are() {
-        for kind in ChartType::ALL
-            .into_iter()
-            .filter(|kind| !kind.is_synthetic() && *kind != ChartType::VolumeFootprint)
-        {
+        for kind in ChartType::ALL.into_iter().filter(|kind| {
+            !kind.is_synthetic()
+                && !matches!(
+                    kind,
+                    ChartType::VolumeFootprint | ChartType::TimePriceOpportunity
+                )
+        }) {
             let (bars, series) = preview_bars(&appearance(ChartStyle::default()), kind);
             assert_eq!(bars, sample_candles());
             assert!(series.is_none());
@@ -339,6 +416,23 @@ mod tests {
                 .unwrap()
                 .bars,
             set.bars
+        );
+    }
+
+    #[test]
+    fn the_tpo_previews_one_sample_day_as_one_profile_and_is_the_same_every_time() {
+        let appearance = appearance(ChartStyle::default());
+        let (bars, series) = preview_bars(&appearance, ChartType::TimePriceOpportunity);
+        assert_eq!(bars, sample_candles()[..TPO_BARS]);
+        assert!(series.is_none());
+        let set = sample_tpo(&appearance).tpo.expect("a profile set");
+        assert_eq!(set.profiles.len(), 1);
+        let profile = &set.profiles[0];
+        assert_eq!(profile.blocks, 48, "a day of 30-minute blocks");
+        assert!(profile.rows.len() > 10 && profile.width() > 3);
+        assert_eq!(
+            sample_tpo(&appearance).tpo.unwrap().profiles[0],
+            set.profiles[0]
         );
     }
 

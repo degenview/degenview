@@ -1695,3 +1695,29 @@ fn a_new_link_waits_for_a_click_and_arms_its_tool() {
     assert!(!rig.workspace.content.place_now, "a click places it");
     assert_eq!(rig.workspace.active_tool, Tool::Post);
 }
+
+#[test]
+fn splitting_merging_and_resetting_tpo_profiles_edits_the_chart_and_the_layout_sees_it() {
+    use crate::model::market_profile::tpo::TpoEdit;
+    let mut rig = Rig::new();
+    let id = rig.chart("BTCUSDT", 100.0);
+    let context = rig.open(id, 1.0);
+    let layout_before = rig.workspace.layout_snapshot();
+    rig.run(context.clone(), Command::SplitProfile(7_200_000));
+    rig.run(context.clone(), Command::MergeProfile(86_400_000));
+    assert_eq!(
+        rig.chart_mut(id).tpo_edits,
+        [
+            TpoEdit::Split { at_ms: 7_200_000 },
+            TpoEdit::Merge { at_ms: 86_400_000 }
+        ]
+    );
+    assert_ne!(
+        rig.workspace.layout_snapshot(),
+        layout_before,
+        "a split is a change to the layout"
+    );
+    rig.run(context, Command::ResetProfileEdits);
+    assert!(rig.chart_mut(id).tpo_edits.is_empty());
+    assert_eq!(rig.workspace.layout_snapshot(), layout_before);
+}

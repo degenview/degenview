@@ -11,6 +11,7 @@
 //! `pine_chart_render` as their own layer and are unaffected by the chart type.
 
 mod footprint;
+mod tpo;
 
 use super::chart_card::PriceScale;
 use super::theme;
@@ -32,14 +33,38 @@ use eframe::egui::{
 /// How far a bar that can still change is faded.
 const UNCONFIRMED_ALPHA: f32 = 0.55;
 
-/// The tooltip for the footprint cell under `pointer`, when the chart is a footprint.
+/// A picture of a TPO set for the live tests (see `tpo::gallery_picture`).
+#[cfg(test)]
+pub(crate) use tpo::gallery_picture as tpo_gallery_picture;
+
+/// What the right-click menu needs to read a TPO profile under the pointer.
+pub use tpo::Geo as TpoGeo;
+
+/// The context-menu target of the TPO letter under `pointer`, if it is over one.
+pub fn tpo_target(
+    geo: &TpoGeo,
+    set: &crate::model::market_profile::tpo::TpoSet,
+    settings: &crate::model::chart_type::TpoSettings,
+    pointer: Pos2,
+) -> Option<crate::model::chart_context::Target> {
+    tpo::target(geo, set, settings, pointer)
+}
+
+/// The default gradient colours of a TPO profile, for its settings page.
+pub fn tpo_default_gradient() -> [Rgba; 4] {
+    tpo::default_gradient()
+}
+
+/// The tooltip for the footprint cell or TPO letter under `pointer`, when the chart is one.
 pub fn footprint_hover(
     frame: &SeriesFrame,
     pointer: Pos2,
 ) -> Option<super::pine_chart_render::HoverTarget> {
-    (frame.chart_type == ChartType::VolumeFootprint)
-        .then(|| footprint::hover(frame, pointer))
-        .flatten()
+    match frame.chart_type {
+        ChartType::VolumeFootprint => footprint::hover(frame, pointer),
+        ChartType::TimePriceOpportunity => tpo::hover(frame, pointer),
+        _ => None,
+    }
 }
 
 pub struct SeriesFrame<'a> {
@@ -132,6 +157,7 @@ pub fn paint(frame: &SeriesFrame) {
         ChartType::Kagi => kagi(&frame),
         ChartType::PointAndFigure => point_figure(&frame),
         ChartType::VolumeFootprint => footprint::paint(&frame),
+        ChartType::TimePriceOpportunity => tpo::paint(&frame),
     }
 }
 

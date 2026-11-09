@@ -55,6 +55,10 @@ pub struct PersistedChart {
     /// layout that uses none is byte-for-byte what an older build writes and syncs.
     #[serde(default, skip_serializing_if = "OverlayList::is_empty")]
     pub overlays: OverlayList,
+    /// The TPO profiles the user split or merged. Left out of the row while empty, so a layout that
+    /// has none is byte-for-byte what an older build writes.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tpo_edits: Vec<super::market_profile::tpo::TpoEdit>,
 }
 
 impl PersistedChart {
@@ -93,6 +97,7 @@ mod tests {
             image_url: None,
             card: None,
             overlays: Default::default(),
+            tpo_edits: Default::default(),
         }
     }
 
@@ -409,5 +414,21 @@ mod tests {
         // sync sees no difference.
         let row = serde_json::to_value(chart()).unwrap();
         assert!(!row.as_object().unwrap().contains_key("overlays"));
+    }
+
+    #[test]
+    fn tpo_splits_are_saved_and_a_chart_without_any_writes_nothing_extra() {
+        use crate::model::market_profile::tpo::TpoEdit;
+        let plain = serde_json::to_value(chart()).expect("serialize");
+        assert!(plain.get("tpo_edits").is_none(), "left out while empty");
+        let mut split = chart();
+        split.tpo_edits = vec![TpoEdit::Split { at_ms: 5 }, TpoEdit::Merge { at_ms: 9 }];
+        let encoded = serde_json::to_value(&split).expect("serialize");
+        assert_eq!(encoded["tpo_edits"][0]["split"]["at_ms"], 5);
+        let back: PersistedChart = serde_json::from_value(encoded).expect("round trip");
+        assert_eq!(back.tpo_edits, split.tpo_edits);
+        // A row from before TPO profiles decodes with none.
+        let old: PersistedChart = serde_json::from_value(plain).expect("old row");
+        assert!(old.tpo_edits.is_empty());
     }
 }

@@ -56,12 +56,18 @@ pub(super) fn request(
     projection: &Projection,
     scale: &PriceScale,
     pane_ids: &[u64],
+    profile: &dyn Fn(Pos2) -> Option<Target>,
 ) -> ContextRequest {
     let finite = |price: f64| price.is_finite().then_some(price);
     let (time_ms, price, target) = match spot {
         Spot::Plot => {
             let Anchor { time_ms, price } = projection.anchor(at);
-            (Some(time_ms), finite(price), Target::Background)
+            // A letter of a TPO profile has its own entries (split, merge); anything else is the plot.
+            (
+                Some(time_ms),
+                finite(price),
+                profile(at).unwrap_or(Target::Background),
+            )
         }
         Spot::PriceAxis => (None, finite(scale.price(at.y)), Target::PriceAxis),
         Spot::TimeAxis => (Some(projection.time(at.x)), None, Target::TimeAxis),
@@ -81,6 +87,7 @@ pub(super) fn request(
 impl ChartCard {
     /// The request for this frame's right-click, if the chart's menu is to answer it. A drawing
     /// answers its own clicks; a paper marker is reported by its pill (drawn last frame).
+    #[allow(clippy::too_many_arguments)] // the frame's pieces, all read at one point
     pub(super) fn context_request(
         &mut self,
         response: &egui::Response,
@@ -89,6 +96,7 @@ impl ChartCard {
         projection: &Projection,
         scale: &PriceScale,
         drawing: &mut DrawingFrame,
+        profile: &dyn Fn(Pos2) -> Option<Target>,
     ) -> Option<ContextRequest> {
         if let Some(marker) = self.paper.menu.take() {
             return Some(ContextRequest {
@@ -108,7 +116,14 @@ impl ChartCard {
         }
         // The layer reports a plot click it did not use (no drawing, no draft to finish).
         if let Some(at) = drawing.background_click.take() {
-            return Some(request(at, Spot::Plot, projection, scale, &self.pane_ids));
+            return Some(request(
+                at,
+                Spot::Plot,
+                projection,
+                scale,
+                &self.pane_ids,
+                profile,
+            ));
         }
         if !response.secondary_clicked() {
             return None;
@@ -117,7 +132,14 @@ impl ChartCard {
         match spot(at, regions, panes)? {
             // A plot click is the layer's to classify.
             Spot::Plot => None,
-            other => Some(request(at, other, projection, scale, &self.pane_ids)),
+            other => Some(request(
+                at,
+                other,
+                projection,
+                scale,
+                &self.pane_ids,
+                profile,
+            )),
         }
     }
 }

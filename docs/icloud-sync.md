@@ -192,13 +192,17 @@ out of the row while it holds its default (as the style fields are) and needs no
 set. Nothing tells a person on the older build that a drawing is hidden except the Object tree row;
 a count elsewhere would be easy to add.
 
-A chart type an older build does not know (`volume_footprint`, and the order-flow types after it) is
+A chart type an older build does not know (`volume_footprint`, `time_price_opportunity`) is
 an unreadable value, not an unknown field: `ChartType` has no fallback, so the older build cannot decode
 the layout row or the template that holds it, and `Store::documents` skips an undecodable row, so
 the layout does not appear there until that build is updated (the row itself is left as written, and
 the template store refuses to overwrite it). This is the cost of a new `ChartType` variant; there is
 no `"since"` marker for it. New per-type settings inside `ChartStyle` are `#[serde(default)]`
 fields and cost an older build nothing it would notice.
+
+A chart's split and merged TPO profiles (`tpo_edits` in the layout's chart rows) are the same as the compared
+markets: no marker, left out of the row while empty, dropped by an older build that re-saves the layout
+(the other Mac's profiles then lose their splits).
 
 A chart's compared markets (`overlays` in the layout's chart rows, [chart overlays](chart-overlays.md))
 are the same: no marker, dropped by an older build that re-saves the layout, which makes a "conflict

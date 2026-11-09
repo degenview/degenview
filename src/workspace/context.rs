@@ -17,6 +17,7 @@ use crate::model::chart_context::{
     self, ChartContext, Command, Facts, Live, OrderFacts, PaneFacts, PaperAccess, TemplateRow,
 };
 use crate::model::chart_template::ApplyScope;
+use crate::model::market_profile::tpo::TpoEdit;
 use crate::model::object_tree::{self, IndicatorKey, Key as TreeKey};
 use crate::model::overlay::OverlayCommand;
 use crate::model::paper::{PaperOrderSide, PaperOrderType};
@@ -250,6 +251,7 @@ impl ChartWorkspace {
             table_open: self.context.table_chart == Some(chart.id),
             tree_open: self.context.tree_chart == Some(chart.id),
             stats_open: self.context.stats_chart == Some(chart.id),
+            tpo_edits: chart.tpo_edits.len(),
             scale_mode: chart.scale_mode,
             ..Facts::default()
         };
@@ -450,6 +452,13 @@ impl ChartWorkspace {
             Command::ToggleSessionStats => {
                 self.context.stats_chart = toggled(self.context.stats_chart, chart_id);
             }
+            Command::SplitProfile(at_ms) => {
+                self.charts[index].tpo_edits.push(TpoEdit::Split { at_ms });
+            }
+            Command::MergeProfile(at_ms) => {
+                self.charts[index].tpo_edits.push(TpoEdit::Merge { at_ms });
+            }
+            Command::ResetProfileEdits => self.charts[index].tpo_edits.clear(),
             Command::ApplyTemplate(id) => {
                 let store = self.store.clone();
                 let card = &mut self.charts[index].chart;

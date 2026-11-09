@@ -4,7 +4,7 @@ Three chart types (Volume footprint, Time price opportunity, Session volume prof
 candle cannot say: who traded at which price, and how often a price was visited. This page is the
 shared engine and its data. The chart types themselves are documented as they land.
 
-Code: `src/model/market_profile/` (pure; the footprint builder is `footprint.rs`), `src/ui/series_render/footprint.rs` (painter), `src/workspace/profiles.rs` (per-chart computation), `src/service/binance_trades.rs` (aggTrades and the live
+Code: `src/model/market_profile/` (pure; the footprint builder is `footprint.rs`), `src/ui/series_render/footprint.rs` (painter), `src/ui/series_render/tpo.rs` (the TPO painter), `src/workspace/profiles.rs` (per-chart computation), `src/service/binance_trades.rs` (aggTrades and the live
 stream), `src/workspace/profile_hub.rs` (fetches and shares the data).
 
 ## What TradingView documents (sources: its Help Center pages on the three chart types)
@@ -138,3 +138,77 @@ the exchange's, else inferred from the prices' decimals and labelled so.
 - The tooltip placement uses the existing script-tooltip mechanism (egui's own delay and placement).
 - A Pine script sees the real candles; whether TradingView does on its footprint charts is not
   verified.
+
+## Time price opportunity (TPO)
+
+The second chart type on the engine: a letter profile per day, week, month or custom session. Pure
+engine in `model/market_profile/tpo.rs`, painter in `ui/series_render/tpo.rs`, settings in
+`ui/chart_style_settings/tpo_rows.rs`.
+
+**Data.** Always **5-minute candles** (every block size TradingView offers, 5, 10, 15, 30, 60, 120 and
+240 minutes, is a multiple of five), fetched by the hub as `5m` from the oldest period the candle
+budget reaches (60 000 candles: about 208 days of days, 29 weeks, 6 months). They are never taken from
+the chart's own bars, so the chart's timeframe does not change the profile. A bar of the chart that no
+profile covers stays a plain candle, and the status line counts the profiles.
+
+**Built:** every candle marks each price row its high-to-low reaches with the letter of the block it
+opened in. A row's count is the number of blocks that visited it. A price exactly on a row boundary is
+in the row above it, so a candle whose high is the bottom of a row has visited that row.
+Point of control = most blocks; **value area from block counts** (TradingView's single-row steps,
+`value_area::tpo`), never volume; initial balance = the first `n` blocks (default 2); poor high / low =
+the extreme row holds more than one block; single prints = inner rows with one block; rotation factor,
+total / above / below POC counts; open, close, high, low. The **volume profile** beside it is a
+separate measure: each candle's volume spread evenly over its range, its own POC and value area.
+
+**Periods.** Day, week (Monday to Sunday) and month groups of `n` in UTC, or up to five custom
+`HHMM-HHMM[:days]` windows (UTC; overlapping windows are cut at their intersections). Block 0 starts at
+the span's start, so a split profile counts its blocks from the split.
+
+**Split and merge** are `TpoEdit`s kept per chart (`Chart::tpo_edits`, saved in the layout as
+`tpo_edits` and left out while empty), replayed over the periods the settings give: a split cuts the
+profile holding an instant, a merge joins the profile starting at an instant to the one before it, and
+an edit that names nothing does nothing. The right-click menu on a **letter** offers *Split profile at X*,
+*Merge with previous profile* and *Reset all merges and splits* (`Target::TpoBlock`). Changing the period,
+the periods per profile, the block size or the sessions drops them (TradingView's rule); a layout's saved
+edits survive the first look. They are not part of a template and not in the undo stack.
+
+**Replay and the clock.** The computation reads only candles that open before the end of the last
+displayed bar, and a span that has not ended by the clock is *forming*; a forming profile shows only the
+blocks that have happened and its levels are not extended.
+
+**Drawn.** Letters packed from the profile's start (or in the column of their block with *Expand
+blocks*), coloured by a four-colour gradient (the first two span A to Z, the last two a to z), rows
+outside the value area at a configurable opacity; with less room letters become coloured blocks, then one
+bar per row (the same data, less writing). Levels as lines across the profile (POC, VAH, VAL, midpoint,
+open, close, poor high / low, single prints, initial balance as a bracket on the left), POC / poor
+high / poor low / single prints optionally carried right until a later bar's range reaches them. The
+volume profile sits beside the letters (left or right, with optional values and POC / VAH / VAL lines).
+Hover: the row's range, count and letters, the block's time (UTC), the row's volume, the profile's
+POC / VAH / VAL and block count.
+
+**Automatic row size** is TradingView's documented formula: the range of the newest 300 bars in ticks,
+over 80 rows, rounded to a step (5 up to 100, 50 up to 1000, 500 up to 10 000, and so on), at least one.
+
+### Inferred (TradingView does not say)
+
+- POC tie: nearest the middle of the range, then the lower row. The step that reaches the value-area
+  target is taken whole.
+- The **TPO midpoint** is the middle of the profile's high and low.
+- Letters are packed left to right in block order; *Expand blocks* puts each in its block's column.
+  How TradingView lays them out was not compared.
+- Where the volume profile and the lines sit, the default colours and the defaults (initial balance of
+  2 blocks, volume profile on at the right, poor highs, poor lows and single prints on).
+- "Extend until intersected" means the first later bar whose high-low range reaches the level; only
+  finished profiles are extended.
+- Weeks start on Monday; `n` days group from the epoch.
+
+### Not done / not verified
+
+- **Summary info** (the pane of per-profile values: HL range, VA range, rotation factor, ...) is not
+  implemented (the values are computed; there is no pane). Session presets other than All and Custom
+  (Each, pre-market, market, post-market) are not offered: there is no extended-hours metadata. Custom
+  windows are in UTC, not the exchange or chart time zone; there is no holiday calendar.
+- Split and merge are not in the undo stack; alerts on TPO levels are not implemented.
+- Run once against real Binance (`live_binance_tpo_end_to_end`, ignored by default): four days of
+  BTCUSDT 5-minute candles gave four profiles of 48 half-hour blocks (the current day forming with 43),
+  with levels and a picture that looked right. Not compared with TradingView, not driven in a real window.

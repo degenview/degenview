@@ -82,6 +82,7 @@ impl ApplyScope {
                 style.range.size = own.range.size;
                 // What a footprint is built from stays the target's too.
                 style.footprint.keep_shape_of(&own.footprint);
+                style.tpo.keep_shape_of(&own.tpo);
                 ChartAppearance {
                     style,
                     axis_decimals: target.axis_decimals,

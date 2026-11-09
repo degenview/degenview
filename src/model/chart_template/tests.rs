@@ -512,3 +512,19 @@ fn colours_and_canvas_keep_what_a_footprint_is_built_from_and_take_the_look() {
     assert_eq!(merged.style.footprint.imbalance_percent, 450);
     assert_eq!(merged.style.footprint.buy_color, Some([5, 6, 7, 255]));
 }
+
+#[test]
+fn colours_and_canvas_keep_what_a_tpo_is_built_from_and_take_the_look() {
+    let mut target = ChartAppearance::default();
+    target.style.chart_type = ChartType::TimePriceOpportunity;
+    target.style.tpo.block_minutes = 60;
+    target.style.tpo.value_area_percent = 80;
+    let mut template = ChartAppearance::default();
+    template.style.tpo.block_minutes = 5;
+    template.style.tpo.value_area_percent = 50;
+    template.style.tpo.gradient[2] = Some([9, 8, 7, 255]);
+    let merged = ApplyScope::ColorsAndCanvas.merge(&target, &template);
+    assert_eq!(merged.style.tpo.block_minutes, 60);
+    assert_eq!(merged.style.tpo.value_area_percent, 80);
+    assert_eq!(merged.style.tpo.gradient[2], Some([9, 8, 7, 255]));
+}

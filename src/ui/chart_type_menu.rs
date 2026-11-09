@@ -348,6 +348,27 @@ pub fn glyph(painter: &egui::Painter, rect: Rect, kind: ChartType, ink: Color32)
                 painter.line_segment([at(0.42, y), at(end, y)], thin);
             }
         }
+        ChartType::TimePriceOpportunity => {
+            // Rows of blocks that widen toward the middle and narrow again, like a letter profile.
+            for (y, from, to) in [
+                (0.15, 0.40, 0.55),
+                (0.32, 0.25, 0.70),
+                (0.5, 0.1, 0.85),
+                (0.68, 0.25, 0.70),
+                (0.85, 0.40, 0.55),
+            ] {
+                let mut x = from;
+                while x + 0.14 <= to + 0.001 {
+                    painter.rect_stroke(
+                        Rect::from_min_max(at(x, y - 0.075), at(x + 0.14, y + 0.075)),
+                        0.0,
+                        thin,
+                        StrokeKind::Inside,
+                    );
+                    x += 0.15;
+                }
+            }
+        }
         ChartType::HeikinAshi => {
             candle(0.2, 0.55, 0.85, 0.5, 0.9, 0.11, false);
             candle(0.5, 0.35, 0.68, 0.3, 0.72, 0.11, false);

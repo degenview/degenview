@@ -25,5 +25,6 @@ pub mod price_grid;
 pub mod quality;
 pub mod sessions;
 pub mod tick;
+pub mod tpo;
 pub mod trades;
 pub mod value_area;
