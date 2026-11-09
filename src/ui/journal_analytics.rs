@@ -12,9 +12,11 @@ use super::paper_grid;
 use super::theme;
 use crate::model::journal::breakdown::{Dimension, Sample, Slice};
 use crate::model::journal::cells::NONE;
+use crate::model::journal::edge::{ComponentKey, EdgeScore};
 use crate::model::journal::format;
 use crate::model::journal::metric::Metric;
 use crate::model::journal::overview::Overview;
+use crate::model::journal::process::{MIN_REVIEWED, ProcessScore};
 
 const CHART_HEIGHT: f32 = 220.0;
 const WIDE: f32 = 980.0;
@@ -68,6 +70,7 @@ fn metric_f(metric: &Metric<f64>, text: impl Fn(f64) -> String) -> String {
 pub fn show(
     ui: &mut Ui,
     overview: &Overview,
+    process: &ProcessScore,
     dimension: Dimension,
     slices: &[Slice],
     currency: &str,
@@ -75,6 +78,40 @@ pub fn show(
     let mut picked = None;
     let s = &overview.summary;
     let wide = ui.available_width() >= WIDE;
+
+    // The two scores, side by side when there is room. They never blend.
+    let scores: [&dyn Fn(&mut Ui); 2] = [&|ui| edge_card(ui, &overview.edge), &|ui| {
+        process_card(ui, process)
+    }];
+    if wide {
+        let gap = 12.0;
+        let width = (ui.available_width() - gap) / 2.0;
+        ui.horizontal_top(|ui| {
+            ui.spacing_mut().item_spacing.x = gap;
+            for score in scores {
+                ui.allocate_ui_with_layout(
+                    vec2(width, 0.0),
+                    egui::Layout::top_down(egui::Align::Min),
+                    |ui| {
+                        ui.set_width(width);
+                        kit::card_frame(false).show(ui, |ui| {
+                            ui.set_width(width - 28.0);
+                            score(ui);
+                        });
+                    },
+                );
+            }
+        });
+    } else {
+        for score in scores {
+            kit::card_frame(false).show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                score(ui);
+            });
+            ui.add_space(12.0);
+        }
+    }
+    ui.add_space(12.0);
 
     // Risk and consistency.
     kit::card_frame(false).show(ui, |ui| {
@@ -204,6 +241,181 @@ pub fn show(
         slice_table(ui, slices, currency);
     });
     picked
+}
+
+fn component_input(key: ComponentKey, input: Option<f64>) -> String {
+    let Some(value) = input else {
+        return NONE.to_owned();
+    };
+    match key {
+        ComponentKey::WinRate | ComponentKey::Drawdown | ComponentKey::Consistency => {
+            format::percent(value)
+        }
+        ComponentKey::ProfitFactor | ComponentKey::AvgWinLoss | ComponentKey::Recovery => {
+            format::ratio(value)
+        }
+    }
+}
+
+fn edge_card(ui: &mut Ui, edge: &EdgeScore) {
+    ui.horizontal(|ui| {
+        ui.vertical(|ui| {
+            ui.label(kit::text(
+                "Edge score",
+                size::BODY + 1.0,
+                SEMIBOLD,
+                theme::text_primary(),
+            ));
+            ui.label(kit::text(
+                format!(
+                    "Version {}, LuxAlgo's published formula. Results only.",
+                    edge.version
+                ),
+                size::CAPTION + 1.0,
+                REGULAR,
+                theme::text_tertiary(),
+            ));
+        });
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+            let text = match &edge.score {
+                Metric::Value(score) => format!("{score:.0} /100"),
+                Metric::Unavailable(reason) => format!("withheld: {}", reason.explain()),
+            };
+            ui.label(kit::text(
+                text,
+                size::BODY + 2.0,
+                SEMIBOLD,
+                theme::text_primary(),
+            ));
+        });
+    });
+    ui.add_space(8.0);
+    for component in &edge.components {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 8.0;
+            charts::fixed_cell(ui, vec2(120.0, 22.0), |ui| {
+                ui.label(kit::text(
+                    component.key.label(),
+                    size::BODY,
+                    REGULAR,
+                    theme::text_primary(),
+                ));
+            });
+            charts::fixed_cell(ui, vec2(48.0, 22.0), |ui| {
+                ui.label(kit::text(
+                    format!("{:.0}", component.value),
+                    size::BODY,
+                    MEDIUM,
+                    theme::text_primary(),
+                ));
+            });
+            charts::fixed_cell(ui, vec2(52.0, 22.0), |ui| {
+                ui.label(kit::text(
+                    format!("w {}", component.weight),
+                    size::CAPTION + 1.0,
+                    REGULAR,
+                    theme::text_tertiary(),
+                ));
+            });
+            charts::fixed_cell(ui, vec2(70.0, 22.0), |ui| {
+                ui.label(kit::text(
+                    component_input(component.key, component.input),
+                    size::CAPTION + 1.0,
+                    REGULAR,
+                    theme::text_secondary(),
+                ));
+            });
+        })
+        .response
+        .on_hover_text(format!(
+            "Full marks: {}.{}",
+            component.key.full_marks(),
+            component
+                .note
+                .map_or(String::new(), |note| format!(" {note}"))
+        ));
+    }
+    ui.add_space(6.0);
+    ui.label(kit::text(
+        "Hover a row for its full-marks threshold. The score measures the record, not the future; the trade count matters.",
+        size::CAPTION,
+        REGULAR,
+        theme::text_tertiary(),
+    ));
+}
+
+fn process_card(ui: &mut Ui, process: &ProcessScore) {
+    ui.horizontal(|ui| {
+        ui.vertical(|ui| {
+            ui.label(kit::text(
+                "Process score",
+                size::BODY + 1.0,
+                SEMIBOLD,
+                theme::text_primary(),
+            ));
+            ui.label(kit::text(
+                "From your own reviews. Never part of the Edge score.",
+                size::CAPTION + 1.0,
+                REGULAR,
+                theme::text_tertiary(),
+            ));
+        });
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+            let text = match &process.score {
+                Metric::Value(score) => format!("{score:.0} /100"),
+                Metric::Unavailable(_) => format!("needs {MIN_REVIEWED} reviewed trades"),
+            };
+            ui.label(kit::text(
+                text,
+                size::BODY + 2.0,
+                SEMIBOLD,
+                theme::text_primary(),
+            ));
+        });
+    });
+    ui.add_space(8.0);
+    for component in &process.components {
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 8.0;
+            charts::fixed_cell(ui, vec2(130.0, 22.0), |ui| {
+                ui.label(kit::text(
+                    component.key.label(),
+                    size::BODY,
+                    REGULAR,
+                    theme::text_primary(),
+                ));
+            });
+            charts::fixed_cell(ui, vec2(70.0, 22.0), |ui| {
+                let text = component
+                    .value
+                    .map_or(NONE.to_owned(), |v| format!("{v:.0}"));
+                ui.label(kit::text(text, size::BODY, MEDIUM, theme::text_primary()));
+            });
+            charts::fixed_cell(ui, vec2(120.0, 22.0), |ui| {
+                ui.label(kit::text(
+                    format!(
+                        "w {} \u{00b7} {} trades",
+                        component.weight, component.samples
+                    ),
+                    size::CAPTION + 1.0,
+                    REGULAR,
+                    theme::text_tertiary(),
+                ));
+            });
+        })
+        .response
+        .on_hover_text(component.key.definition());
+    }
+    ui.add_space(6.0);
+    ui.label(kit::text(
+        format!(
+            "{} of {} closed trades reviewed. Ratings are self-reported: a record of process, not a measure of skill.",
+            process.reviewed, process.closed
+        ),
+        size::CAPTION,
+        REGULAR,
+        theme::text_tertiary(),
+    ));
 }
 
 fn sample_badge(ui: &mut Ui, sample: Sample) {
@@ -339,6 +551,7 @@ mod tests {
             breakeven_tolerance: Decimal::ZERO,
             offset: &utc,
         });
+        let process = crate::model::journal::process::process_score(&refs, &reviews, &[]);
         let ctx = egui::Context::default();
         for dimension in Dimension::ALL {
             for width in [1300.0, 640.0] {
@@ -347,6 +560,7 @@ mod tests {
                     dimension,
                     &Context {
                         reviews: &reviews,
+                        playbook_names: &HashMap::new(),
                         offset: &utc,
                         breakeven_tolerance: Decimal::ZERO,
                     },
@@ -361,7 +575,10 @@ mod tests {
                     },
                     |ui| {
                         egui::ScrollArea::vertical().show(ui, |ui| {
-                            assert_eq!(show(ui, &overview, dimension, &slices, "USD"), None);
+                            assert_eq!(
+                                show(ui, &overview, &process, dimension, &slices, "USD"),
+                                None
+                            );
                         });
                     },
                 );
@@ -381,7 +598,7 @@ mod tests {
             offset: &utc,
         });
         let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
-            show(ui, &empty, Dimension::Weekday, &[], "");
+            show(ui, &empty, &process, Dimension::Weekday, &[], "");
         });
         out.textures_delta.clear();
     }

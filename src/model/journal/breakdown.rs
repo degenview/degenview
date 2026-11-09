@@ -86,7 +86,7 @@ impl Dimension {
             Self::Side => "Long against short.",
             Self::HoldTime => "By how long the trade was held.",
             Self::Size => "By entry value, in quartiles of this selection.",
-            Self::Strategy => "By the strategy written in the review.",
+            Self::Strategy => "By the playbook chosen in the review.",
             Self::Tag => "By review tag. A trade with several tags counts in each.",
             Self::Mistake => "By mistake noted in the review. A trade can have several.",
             Self::Emotion => "By emotion noted in the review. A trade can have several.",
@@ -161,6 +161,8 @@ pub struct Slice {
 
 pub struct Context<'a> {
     pub reviews: &'a HashMap<String, Review>,
+    /// Playbook id to name.
+    pub playbook_names: &'a HashMap<String, String>,
     pub offset: Offset<'a>,
     pub breakeven_tolerance: Decimal,
 }
@@ -259,10 +261,10 @@ fn labels_for(
             None => vec![(0, "All sizes".to_owned())],
         },
         Dimension::Strategy => match review
-            .map(|r| r.strategy.as_str())
-            .filter(|s| !s.is_empty())
+            .and_then(|r| r.playbook.as_ref())
+            .and_then(|id| context.playbook_names.get(id))
         {
-            Some(strategy) => vec![(0, strategy.to_owned())],
+            Some(name) => vec![(0, name.clone())],
             None => vec![(i64::MAX, NONE_LABEL.to_owned())],
         },
         Dimension::Tag => list(review.map(|r| &r.tags)),

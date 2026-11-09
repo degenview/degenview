@@ -177,6 +177,7 @@ pub fn return_fraction(trade: &Trade) -> Option<f64> {
 /// Everything the ordering reads besides the trades.
 pub struct SortContext<'a> {
     pub reviews: &'a HashMap<String, Review>,
+    pub playbook_names: &'a HashMap<String, String>,
     pub account_names: &'a HashMap<String, String>,
     pub breakeven_tolerance: Decimal,
 }
@@ -236,14 +237,16 @@ fn compare(column: Column, a: &Trade, b: &Trade, context: &SortContext<'_>) -> O
             compare_f64(r(a), r(b))
         }
         Column::Duration => a.duration_ms().cmp(&b.duration_ms()),
-        Column::Strategy => review(a)
-            .map(|r| r.strategy.to_lowercase())
-            .unwrap_or_default()
-            .cmp(
-                &review(b)
-                    .map(|r| r.strategy.to_lowercase())
-                    .unwrap_or_default(),
-            ),
+        Column::Strategy => {
+            let name = |t: &Trade| {
+                review(t)
+                    .and_then(|r| r.playbook.as_ref())
+                    .and_then(|id| context.playbook_names.get(id))
+                    .map(|n| n.to_lowercase())
+                    .unwrap_or_default()
+            };
+            name(a).cmp(&name(b))
+        }
         Column::Tags => review(a)
             .map(|r| r.tags.join(",").to_lowercase())
             .unwrap_or_default()
@@ -306,6 +309,7 @@ mod tests {
         let names = HashMap::new();
         let context = SortContext {
             reviews: &reviews,
+            playbook_names: &HashMap::new(),
             account_names: &names,
             breakeven_tolerance: Decimal::ZERO,
         };
@@ -416,6 +420,7 @@ mod tests {
         let names = HashMap::new();
         let context = SortContext {
             reviews: &reviews,
+            playbook_names: &HashMap::new(),
             account_names: &names,
             breakeven_tolerance: Decimal::ZERO,
         };

@@ -9,6 +9,7 @@
 //! **Realised R** is net P&L divided by initial risk, for closed trades only.
 
 use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive;
 
 use super::metric::{Metric, Reason};
 use super::model::{Direction, Trade};
@@ -43,6 +44,35 @@ pub fn r_multiple(trade: &Trade, stop: Option<Decimal>) -> Metric<Decimal> {
         return Metric::Unavailable(Reason::OpenTrade);
     }
     initial_risk(trade, stop).map(|risk| trade.net_pnl() / risk)
+}
+
+/// The planned reward-to-risk ratio: distance to the target over distance to the stop, from the
+/// planned entry (else the average fill). `None` without a target and a valid stop; never a guess.
+pub fn planned_reward_risk(
+    trade: &Trade,
+    planned_entry: Option<Decimal>,
+    stop: Option<Decimal>,
+    target: Option<Decimal>,
+) -> Option<f64> {
+    let entry = planned_entry
+        .filter(|p| *p > Decimal::ZERO)
+        .unwrap_or(trade.avg_entry);
+    let stop = stop.or(trade.initial_stop)?;
+    let target = target?;
+    let (risk, reward) = match trade.direction {
+        Direction::Long => (entry - stop, target - entry),
+        Direction::Short => (stop - entry, entry - target),
+    };
+    if risk <= Decimal::ZERO || reward <= Decimal::ZERO {
+        return None;
+    }
+    (reward / risk).to_f64().filter(|r| r.is_finite())
+}
+
+/// Initial risk as a fraction of an account balance; `None` without a positive balance.
+pub fn risk_fraction(initial_risk: Decimal, balance: Option<Decimal>) -> Option<f64> {
+    let balance = balance.filter(|b| *b > Decimal::ZERO)?;
+    (initial_risk / balance).to_f64().filter(|r| r.is_finite())
 }
 
 #[cfg(test)]
@@ -165,5 +195,53 @@ mod tests {
             exec("2", Side::Sell, "1", "95", 2_000),
         ]);
         assert_eq!(r_multiple(&t, None), Metric::Value(d("-1")));
+    }
+
+    #[test]
+    fn planned_reward_risk_reads_the_plan_not_the_fill() {
+        let long = trade(&[
+            exec("1", Side::Buy, "1", "101", 1_000).stop("95"),
+            exec("2", Side::Sell, "1", "110", 2_000),
+        ]);
+        // From the fill 101: risk 6, reward 9 -> 1.5. From a planned 100: risk 5, reward 10 -> 2.
+        assert_eq!(
+            planned_reward_risk(&long, None, None, Some(d("110"))),
+            Some(1.5)
+        );
+        assert_eq!(
+            planned_reward_risk(&long, Some(d("100")), None, Some(d("110"))),
+            Some(2.0)
+        );
+        assert_eq!(
+            planned_reward_risk(&long, Some(d("100")), Some(d("90")), Some(d("130"))),
+            Some(3.0)
+        );
+        // No target, a target on the wrong side, or no stop: no ratio.
+        assert_eq!(planned_reward_risk(&long, None, None, None), None);
+        assert_eq!(planned_reward_risk(&long, None, None, Some(d("100"))), None);
+        let no_stop = trade(&[
+            exec("1", Side::Buy, "1", "100", 1_000),
+            exec("2", Side::Sell, "1", "110", 2_000),
+        ]);
+        assert_eq!(
+            planned_reward_risk(&no_stop, None, None, Some(d("120"))),
+            None
+        );
+        let short = trade(&[
+            exec("1", Side::Sell, "1", "100", 1_000),
+            exec("2", Side::Buy, "1", "90", 2_000),
+        ]);
+        assert_eq!(
+            planned_reward_risk(&short, None, Some(d("104")), Some(d("88"))),
+            Some(3.0)
+        );
+    }
+
+    #[test]
+    fn risk_as_a_share_of_the_account_needs_a_balance() {
+        assert_eq!(risk_fraction(d("50"), Some(d("1000"))), Some(0.05));
+        assert_eq!(risk_fraction(d("50"), None), None);
+        assert_eq!(risk_fraction(d("50"), Some(d("0"))), None);
+        assert_eq!(risk_fraction(d("50"), Some(d("-5"))), None);
     }
 }

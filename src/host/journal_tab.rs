@@ -17,6 +17,8 @@ use crate::model::journal::calendar::{
 };
 use crate::model::journal::cells::{self, CellContext, Tone};
 use crate::model::journal::compare::{self, AccountColumn};
+#[cfg(test)]
+use crate::model::journal::daily::DailyEntry;
 use crate::model::journal::filters::{
     OutcomeFilter, RangePreset, TradeFilter, outcome_of, previous_window, range_for,
 };
@@ -25,6 +27,8 @@ use crate::model::journal::model::{Direction, Trade};
 use crate::model::journal::overview::{
     Input as OverviewInput, Overview, accounts_in_scope, compute, currencies_of,
 };
+use crate::model::journal::playbook::Playbook;
+use crate::model::journal::process::{ProcessScore, process_score};
 use crate::model::journal::table::{Column, Sort, SortContext, sort_indices};
 use crate::service::timezone::local_utc_offset_secs;
 use crate::ui::header_controls;
@@ -32,8 +36,10 @@ use crate::ui::icons::Icon;
 use crate::ui::journal_analytics;
 use crate::ui::journal_calendar;
 use crate::ui::journal_compare;
+use crate::ui::journal_daily;
 use crate::ui::journal_detail::{self, Draft};
 use crate::ui::journal_overview::{self, OverviewState};
+use crate::ui::journal_playbooks;
 use crate::ui::journal_table::{self, TableSpec};
 use crate::ui::kit::{self, REGULAR, SEMIBOLD, size};
 use crate::ui::paper_grid;
@@ -98,6 +104,13 @@ pub struct JournalTab {
     breakdown_dimension: Dimension,
     breakdown: Option<(StatsKey, Dimension, Vec<Slice>)>,
     compare: Option<(StatsKey, Vec<AccountColumn>)>,
+    process: Option<(StatsKey, ProcessScore)>,
+    playbook_stats: Option<(StatsKey, Vec<Slice>, std::collections::HashMap<String, f64>)>,
+    playbook_selected: Option<String>,
+    playbook_draft: Option<journal_playbooks::Draft>,
+    playbook_delete: Option<String>,
+    daily_date: Option<Civil>,
+    daily_draft: Option<journal_daily::Draft>,
     month: Option<(StatsKey, MonthView)>,
     /// The month the calendar shows; `None` is the current one.
     calendar_month: Option<(i32, u8)>,
@@ -125,6 +138,13 @@ impl JournalTab {
             breakdown_dimension: Dimension::Weekday,
             breakdown: None,
             compare: None,
+            process: None,
+            playbook_stats: None,
+            playbook_selected: None,
+            playbook_draft: None,
+            playbook_delete: None,
+            daily_date: None,
+            daily_draft: None,
             month: None,
             calendar_month: None,
             currency: None,
@@ -189,8 +209,11 @@ impl JournalTab {
             self.close_trade(host);
         }
 
+        let (range_row, filter_row) = Self::header_rows(host.prefs().section);
+        let header_height =
+            24.0 + 36.0 + 44.0 * f32::from(u8::from(range_row) + u8::from(filter_row));
         egui::Panel::top(egui::Id::new(("journal-header", self.id)))
-            .exact_size(92.0)
+            .exact_size(header_height)
             .frame(
                 egui::Frame::new()
                     .fill(theme::background())
@@ -226,12 +249,22 @@ impl JournalTab {
         if section != Section::Trades && self.selected.is_some() {
             self.close_trade(host);
         }
+        if section != Section::Playbooks {
+            self.flush_playbook(host);
+            self.playbook_draft = None;
+        }
+        if section != Section::Daily {
+            self.flush_daily(host);
+            self.daily_draft = None;
+        }
         match section {
             Section::Trades => self.trades_section(ui, host, &data, &reviews),
             Section::Overview => self.overview_section(ui, host, &data),
             Section::Calendar => self.calendar_section(ui, host, &data),
             Section::Analytics => self.analytics_section(ui, host, &data),
             Section::Compare => self.compare_section(ui, host, &data),
+            Section::Playbooks => self.playbooks_section(ui, host, &data),
+            Section::Daily => self.daily_section(ui, host, &data),
         }
         host.flush_prefs_if_idle(ui.ctx());
         actions
@@ -266,6 +299,14 @@ impl JournalTab {
             }
             let mut nav = None;
             let mut close = false;
+            let emotions = crate::model::journal::reviews::suggestions(
+                &crate::model::journal::reviews::DEFAULT_EMOTIONS,
+                reviews.values().flat_map(|review| review.emotions.iter()),
+            );
+            let mistakes = crate::model::journal::reviews::suggestions(
+                &crate::model::journal::reviews::DEFAULT_MISTAKES,
+                reviews.values().flat_map(|review| review.mistakes.iter()),
+            );
             egui::Panel::right(egui::Id::new(("journal-detail", self.id)))
                 .default_size(DETAIL_WIDTH)
                 .size_range(360.0..=680.0)
@@ -296,6 +337,12 @@ impl JournalTab {
                                         selected_row.map_or(0, |row| row + 1),
                                         self.rows.len(),
                                     ),
+                                    playbooks: host.playbooks(),
+                                    emotion_suggestions: &emotions,
+                                    mistake_suggestions: &mistakes,
+                                    account_balance: data
+                                        .account(&trade.account_uid)
+                                        .and_then(|account| account.initial_balance),
                                 },
                                 draft,
                             );
@@ -376,6 +423,353 @@ impl JournalTab {
                     }
                 })
             });
+    }
+
+    // MARK: Playbooks and the daily journal
+
+    /// The currency chips' choice for `selected`.
+    fn choose_currency(&self, selected: &[&Trade]) -> (Vec<Option<String>>, Option<String>) {
+        let currencies = currencies_of(selected);
+        let current = self
+            .currency
+            .clone()
+            .filter(|chosen| currencies.contains(chosen))
+            .or_else(|| currencies.first().cloned())
+            .unwrap_or(None);
+        (currencies, current)
+    }
+
+    fn playbooks_section(
+        &mut self,
+        ui: &mut egui::Ui,
+        host: &mut JournalHost,
+        data: &Arc<JournalData>,
+    ) {
+        let key = self.overview_key(host, data);
+        let selected: Vec<&Trade> = self.rows.iter().map(|&i| &data.trades[i]).collect();
+        let (currencies, current) = self.choose_currency(&selected);
+        if self
+            .playbook_stats
+            .as_ref()
+            .is_none_or(|(cached, _, _)| cached != &key)
+        {
+            let mine: Vec<&Trade> = selected
+                .iter()
+                .copied()
+                .filter(|trade| trade.currency == current)
+                .collect();
+            let reviews = host.reviews().clone();
+            let slices = breakdown::breakdown(
+                &mine,
+                Dimension::Strategy,
+                &breakdown::Context {
+                    reviews: &reviews,
+                    playbook_names: host.playbook_names(),
+                    offset: &local_utc_offset_secs,
+                    breakeven_tolerance: BREAKEVEN_TOLERANCE,
+                },
+            );
+            let mut adherence: std::collections::HashMap<String, f64> = Default::default();
+            for playbook in host.playbooks().iter() {
+                let shares: Vec<f64> = mine
+                    .iter()
+                    .filter(|t| t.status == crate::model::journal::model::TradeStatus::Closed)
+                    .filter_map(|t| reviews.get(&t.key))
+                    .filter_map(|review| {
+                        crate::model::journal::playbook::rule_adherence(review, playbook)
+                    })
+                    .collect();
+                if !shares.is_empty() {
+                    adherence.insert(
+                        playbook.id.clone(),
+                        shares.iter().sum::<f64>() / shares.len() as f64,
+                    );
+                }
+            }
+            self.playbook_stats = Some((key, slices, adherence));
+        }
+
+        // The draft follows the selection.
+        if let Some(id) = self.playbook_selected.clone()
+            && host.playbooks().iter().all(|p| p.id != id)
+        {
+            self.playbook_selected = None;
+        }
+        match self.playbook_selected.clone() {
+            Some(id) => {
+                if self
+                    .playbook_draft
+                    .as_ref()
+                    .is_none_or(|draft| draft.playbook.id != id)
+                {
+                    self.flush_playbook(host);
+                    self.playbook_draft = host
+                        .playbooks()
+                        .iter()
+                        .find(|p| p.id == id)
+                        .map(journal_playbooks::Draft::new);
+                }
+            }
+            None => {
+                self.flush_playbook(host);
+                self.playbook_draft = None;
+            }
+        }
+
+        let playbooks = host.playbooks().clone();
+        let mut output = journal_playbooks::Output::default();
+        let mut chosen = None;
+        egui::CentralPanel::default()
+            .frame(egui::Frame::new().fill(theme::background()))
+            .show(ui, |ui| {
+                aligned(ui, |ui| {
+                    ui.add_space(10.0);
+                    egui::ScrollArea::vertical()
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            chosen = journal_overview::currency_chips(ui, &currencies, &current);
+                            let Some((_, slices, adherence)) = self.playbook_stats.as_ref() else {
+                                return;
+                            };
+                            let rows: Vec<journal_playbooks::Row<'_>> = playbooks
+                                .iter()
+                                .map(|playbook| journal_playbooks::Row {
+                                    playbook,
+                                    slice: slices.iter().find(|s| s.label == playbook.name),
+                                    adherence: adherence.get(&playbook.id).copied(),
+                                })
+                                .collect();
+                            output = journal_playbooks::show(
+                                ui,
+                                &rows,
+                                self.playbook_selected.as_deref(),
+                                self.playbook_draft.as_mut(),
+                                current.as_deref().unwrap_or(""),
+                            );
+                        });
+                })
+            });
+        if let Some(chosen) = chosen {
+            self.currency = Some(chosen);
+        }
+        let now = ui.input(|input| input.time);
+        if let Some(draft) = self.playbook_draft.as_mut() {
+            if output.changed {
+                draft.edited_at = Some(now);
+                draft.error = None;
+            }
+            let due = draft.edited_at.is_some_and(|at| now - at >= SAVE_AFTER);
+            if draft.is_dirty() && (due || output.blurred && draft.edited_at.is_some()) {
+                match host.save_playbook(&draft.playbook) {
+                    Ok(saved) => {
+                        draft.saved = saved;
+                        draft.edited_at = None;
+                        draft.saved_until = Some(now + 2.0);
+                        draft.error = None;
+                    }
+                    Err(error) => {
+                        draft.error = Some(error);
+                        draft.edited_at = None;
+                    }
+                }
+            } else if draft.is_dirty() {
+                ui.ctx()
+                    .request_repaint_after(std::time::Duration::from_millis(900));
+            }
+        }
+        if let Some(id) = output.select {
+            self.playbook_selected = Some(id);
+        }
+        if output.create {
+            let playbook = Playbook::new(JournalHost::new_playbook_id(), "New playbook");
+            if let Ok(saved) = host.save_playbook(&playbook) {
+                self.playbook_selected = Some(saved.id);
+            }
+        }
+        if let Some(id) = output.delete {
+            self.playbook_delete = Some(id);
+        }
+        if let Some(id) = self.playbook_delete.clone() {
+            match kit::confirm(
+                ui.ctx(),
+                egui::Id::new(("journal-delete-playbook", self.id)),
+                &kit::Confirm {
+                    icon: Icon::Trash,
+                    title: "Delete this playbook?",
+                    message: "Reviews that used it keep their other notes but show no playbook. \
+                              This can't be undone.",
+                    destructive: "Delete Playbook",
+                },
+            ) {
+                Some(kit::ConfirmOutcome::Confirmed) => {
+                    let _ = host.delete_playbook(&id);
+                    if self.playbook_selected.as_deref() == Some(id.as_str()) {
+                        self.playbook_selected = None;
+                        self.playbook_draft = None;
+                    }
+                    self.playbook_delete = None;
+                }
+                Some(kit::ConfirmOutcome::Cancelled) => self.playbook_delete = None,
+                None => {}
+            }
+        }
+    }
+
+    fn flush_playbook(&mut self, host: &mut JournalHost) {
+        if let Some(draft) = self.playbook_draft.as_mut()
+            && draft.is_dirty()
+            && let Ok(saved) = host.save_playbook(&draft.playbook)
+        {
+            draft.saved = saved;
+            draft.edited_at = None;
+        }
+    }
+
+    fn flush_daily(&mut self, host: &mut JournalHost) {
+        if let Some(draft) = self.daily_draft.as_mut()
+            && draft.is_dirty()
+            && host.save_day(&draft.entry).is_ok()
+        {
+            draft.saved = draft.entry.clone();
+            draft.edited_at = None;
+        }
+    }
+
+    fn daily_section(
+        &mut self,
+        ui: &mut egui::Ui,
+        host: &mut JournalHost,
+        data: &Arc<JournalData>,
+    ) {
+        let today = journal_calendar::civil_today(now_ms(), &local_utc_offset_secs);
+        let date = self.daily_date.unwrap_or(today);
+        let date_key = format::iso_date(date);
+        let day = days_from_civil(date);
+
+        let scope = self.scope_indices(data);
+        let on_day: Vec<&Trade> = scope
+            .iter()
+            .map(|&i| &data.trades[i])
+            .filter(|trade| {
+                trade
+                    .close_ts_ms
+                    .is_some_and(|close| calendar::day_number(close, &local_utc_offset_secs) == day)
+            })
+            .collect();
+        let (currencies, current) = self.choose_currency(&on_day);
+        let mut rows: Vec<journal_daily::DayTrade> = on_day
+            .iter()
+            .map(|trade| journal_daily::DayTrade {
+                key: trade.key.clone(),
+                symbol: trade.instrument.display_name.clone(),
+                direction: trade.direction,
+                net: trade.net_pnl(),
+                close_ts_ms: trade.close_ts_ms.unwrap_or(trade.open_ts_ms),
+            })
+            .collect();
+        rows.sort_by_key(|row| (row.close_ts_ms, row.key.clone()));
+        let mine: Vec<&Trade> = on_day
+            .iter()
+            .copied()
+            .filter(|trade| trade.currency == current)
+            .collect();
+        let summary = journal_daily::Summary {
+            trades: mine.len(),
+            wins: mine
+                .iter()
+                .filter(|t| outcome_of(t, BREAKEVEN_TOLERANCE) == OutcomeFilter::Win)
+                .count(),
+            losses: mine
+                .iter()
+                .filter(|t| outcome_of(t, BREAKEVEN_TOLERANCE) == OutcomeFilter::Loss)
+                .count(),
+            net: mine.iter().map(|t| t.net_pnl()).sum(),
+            currency: current.clone().unwrap_or_default(),
+        };
+
+        if self
+            .daily_draft
+            .as_ref()
+            .is_none_or(|draft| draft.entry.date != date_key)
+        {
+            self.flush_daily(host);
+            self.daily_draft = Some(journal_daily::Draft::new(
+                &date_key,
+                host.days().get(&date_key),
+            ));
+        }
+        let mood: Vec<String> = crate::model::journal::reviews::suggestions(
+            &crate::model::journal::reviews::DEFAULT_EMOTIONS,
+            host.days()
+                .values()
+                .flat_map(|d| d.mood.iter())
+                .chain(host.reviews().values().flat_map(|r| r.emotions.iter())),
+        );
+
+        let mut output = journal_daily::Output::default();
+        let mut chosen = None;
+        egui::CentralPanel::default()
+            .frame(egui::Frame::new().fill(theme::background()))
+            .show(ui, |ui| {
+                aligned(ui, |ui| {
+                    ui.add_space(10.0);
+                    egui::ScrollArea::vertical()
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            chosen = journal_overview::currency_chips(ui, &currencies, &current);
+                            if let Some(draft) = self.daily_draft.as_mut() {
+                                output = journal_daily::show(
+                                    ui,
+                                    date,
+                                    &summary,
+                                    &rows,
+                                    draft,
+                                    &mood,
+                                    &local_utc_offset_secs,
+                                );
+                            }
+                        });
+                })
+            });
+        if let Some(chosen) = chosen {
+            self.currency = Some(chosen);
+        }
+        let now = ui.input(|input| input.time);
+        if let Some(draft) = self.daily_draft.as_mut() {
+            if output.changed {
+                draft.edited_at = Some(now);
+                draft.error = None;
+            }
+            let due = draft.edited_at.is_some_and(|at| now - at >= SAVE_AFTER);
+            if draft.is_dirty() && (due || output.blurred && draft.edited_at.is_some()) {
+                match host.save_day(&draft.entry) {
+                    Ok(()) => {
+                        draft.saved = draft.entry.clone();
+                        draft.edited_at = None;
+                        draft.saved_until = Some(now + 2.0);
+                        draft.error = None;
+                    }
+                    Err(error) => {
+                        draft.error = Some(error);
+                        draft.edited_at = None;
+                    }
+                }
+            } else if draft.is_dirty() {
+                ui.ctx()
+                    .request_repaint_after(std::time::Duration::from_millis(900));
+            }
+        }
+        if let Some(shift) = output.shift {
+            self.daily_date = Some(calendar::civil_from_days(day + shift));
+        }
+        if output.today {
+            self.daily_date = None;
+        }
+        if let Some(key) = output.open_trade {
+            self.flush_daily(host);
+            host.prefs_mut().section = Section::Trades;
+            self.selected = Some(key);
+        }
     }
 
     // MARK: Overview and calendar
@@ -555,11 +949,26 @@ impl JournalTab {
                 dimension,
                 &breakdown::Context {
                     reviews: &reviews,
+                    playbook_names: host.playbook_names(),
                     offset: &local_utc_offset_secs,
                     breakeven_tolerance: BREAKEVEN_TOLERANCE,
                 },
             );
-            self.breakdown = Some((key, dimension, slices));
+            self.breakdown = Some((key.clone(), dimension, slices));
+        }
+        if self
+            .process
+            .as_ref()
+            .is_none_or(|(cached, _)| cached != &key)
+        {
+            let selected: Vec<&Trade> = self
+                .rows
+                .iter()
+                .map(|&i| &data.trades[i])
+                .filter(|trade| trade.currency == currency)
+                .collect();
+            let score = process_score(&selected, host.reviews(), host.playbooks());
+            self.process = Some((key.clone(), score));
         }
         let mut picked = None;
         let mut chosen = None;
@@ -583,9 +992,11 @@ impl JournalTab {
                                 }
                                 return;
                             }
-                            let (Some((_, overview)), Some((_, _, slices))) =
-                                (self.overview.as_ref(), self.breakdown.as_ref())
-                            else {
+                            let (Some((_, overview)), Some((_, _, slices)), Some((_, process))) = (
+                                self.overview.as_ref(),
+                                self.breakdown.as_ref(),
+                                self.process.as_ref(),
+                            ) else {
                                 return;
                             };
                             chosen = journal_overview::currency_chips(
@@ -596,6 +1007,7 @@ impl JournalTab {
                             picked = journal_analytics::show(
                                 ui,
                                 overview,
+                                process,
                                 dimension,
                                 slices,
                                 overview.currency.as_deref().unwrap_or(""),
@@ -789,16 +1201,8 @@ impl JournalTab {
             self.calendar_month = None;
         }
         if let Some(day) = output.open_day {
-            let text = format::iso_date(day);
-            self.custom_from = text.clone();
-            self.custom_to = text.clone();
-            let prefs = host.prefs_mut();
-            prefs.range = RangeChoice::Custom {
-                from: text.clone(),
-                to: text,
-            };
-            prefs.section = Section::Trades;
-            self.range_cache = None;
+            self.daily_date = Some(day);
+            host.prefs_mut().section = Section::Daily;
         }
         let _ = Civil {
             year,
@@ -853,7 +1257,17 @@ impl JournalTab {
         range
     }
 
+    /// How many rows the header has on this page: the page bar, the range, the filters.
+    fn header_rows(section: Section) -> (bool, bool) {
+        match section {
+            Section::Daily => (false, false),
+            Section::Calendar => (false, true),
+            _ => (true, true),
+        }
+    }
+
     fn header(&mut self, ui: &mut egui::Ui, host: &mut JournalHost, data: &Arc<JournalData>) {
+        let (show_range, show_filters) = Self::header_rows(host.prefs().section);
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 10.0;
             let mut section = host.prefs().section;
@@ -863,6 +1277,8 @@ impl JournalTab {
                 (Section::Trades, "Trades", Icon::DocText),
                 (Section::Analytics, "Analytics", Icon::ChartLine),
                 (Section::Compare, "Compare", Icon::SplitColumns),
+                (Section::Playbooks, "Playbooks", Icon::Books),
+                (Section::Daily, "Daily", Icon::Journal),
             ]
             .map(|(value, title, icon)| kit::TabItem {
                 value,
@@ -879,120 +1295,122 @@ impl JournalTab {
             if section != host.prefs().section {
                 host.prefs_mut().section = section;
             }
-            ui.add_space(6.0);
-            let show_range = section != Section::Calendar;
-            let mut kind = self.range_choice(host);
-            let before = kind;
-            if !show_range {
+            if section != Section::Daily {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     self.account_menu(ui, host, data);
                 });
-                return;
             }
-            kit::segmented(
-                ui,
-                egui::Id::new(("journal-range", self.id)),
-                &[
-                    (RangeKind::Preset(RangePreset::Today), "Today"),
-                    (RangeKind::Preset(RangePreset::Week), "Week"),
-                    (RangeKind::Preset(RangePreset::Month), "Month"),
-                    (RangeKind::Preset(RangePreset::Year), "Year"),
-                    (RangeKind::Preset(RangePreset::YearToDate), "YTD"),
-                    (RangeKind::Preset(RangePreset::All), "All"),
-                    (RangeKind::Custom, "Custom"),
-                ],
-                &mut kind,
-            );
-            if kind != before {
-                host.prefs_mut().range = match kind {
-                    RangeKind::Preset(preset) => RangeChoice::Preset(preset),
-                    RangeKind::Custom => RangeChoice::Custom {
-                        from: self.custom_from.clone(),
-                        to: self.custom_to.clone(),
-                    },
-                };
-                self.range_cache = None;
-            }
-            if kind == RangeKind::Custom {
-                let mut changed = false;
-                for (salt, text) in [("from", &mut self.custom_from), ("to", &mut self.custom_to)] {
-                    let bad = !text.trim().is_empty() && format::parse_iso_date(text).is_none();
-                    let response = kit::field_frame(false)
-                        .inner_margin(egui::Margin::symmetric(8, 4))
-                        .stroke(egui::Stroke::new(
-                            1.0,
-                            if bad { theme::LOSS } else { kit::primary(0.12) },
-                        ))
-                        .show(ui, |ui| {
-                            kit::plain_field(
-                                ui,
-                                egui::Id::new(("journal-custom", self.id, salt)),
-                                text,
-                                if salt == "from" {
-                                    "From YYYY-MM-DD"
-                                } else {
-                                    "To YYYY-MM-DD"
-                                },
-                                size::BODY,
-                                REGULAR,
-                                110.0,
-                            )
-                        })
-                        .inner;
-                    changed |= response.changed();
+        });
+        if show_range {
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 10.0;
+                self.range_controls(ui, host);
+                let section = host.prefs().section;
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if section == Section::Trades {
+                        self.columns_menu(ui, host);
+                    }
+                    let open = self
+                        .rows
+                        .iter()
+                        .filter(|&&index| data.trades[index].is_open())
+                        .count();
+                    let mut text = format!(
+                        "{} trade{}",
+                        self.rows.len(),
+                        if self.rows.len() == 1 { "" } else { "s" }
+                    );
+                    if open > 0 {
+                        text.push_str(&format!(" \u{00b7} {open} open"));
+                    }
+                    ui.label(kit::text(
+                        text,
+                        size::BODY,
+                        REGULAR,
+                        theme::text_secondary(),
+                    ))
+                    .on_hover_text(format!("Built from {} executions", data.executions));
+                });
+            });
+        }
+        if show_filters {
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 8.0;
+                self.filter_menus(ui, host, data);
+                let active = self.filter.is_active()
+                    || host.prefs().account.is_some()
+                    || host.prefs().range != RangeChoice::Preset(RangePreset::All);
+                if active && kit::sheet_button(ui, "Reset", false, true).clicked() {
+                    self.reset_filters(host);
                 }
-                if changed {
-                    host.prefs_mut().range = RangeChoice::Custom {
-                        from: self.custom_from.clone(),
-                        to: self.custom_to.clone(),
-                    };
-                }
-            }
+            });
+        }
+    }
 
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                self.account_menu(ui, host, data);
-            });
-        });
-        ui.add_space(10.0);
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 8.0;
-            self.filter_menus(ui, host, data);
-            let active = self.filter.is_active()
-                || host.prefs().account.is_some()
-                || host.prefs().range != RangeChoice::Preset(RangePreset::All);
-            if active && kit::sheet_button(ui, "Reset", false, true).clicked() {
-                self.reset_filters(host);
+    fn range_controls(&mut self, ui: &mut egui::Ui, host: &mut JournalHost) {
+        let mut kind = self.range_choice(host);
+        let before = kind;
+        kit::segmented(
+            ui,
+            egui::Id::new(("journal-range", self.id)),
+            &[
+                (RangeKind::Preset(RangePreset::Today), "Today"),
+                (RangeKind::Preset(RangePreset::Week), "Week"),
+                (RangeKind::Preset(RangePreset::Month), "Month"),
+                (RangeKind::Preset(RangePreset::Year), "Year"),
+                (RangeKind::Preset(RangePreset::YearToDate), "YTD"),
+                (RangeKind::Preset(RangePreset::All), "All"),
+                (RangeKind::Custom, "Custom"),
+            ],
+            &mut kind,
+        );
+        if kind != before {
+            host.prefs_mut().range = match kind {
+                RangeKind::Preset(preset) => RangeChoice::Preset(preset),
+                RangeKind::Custom => RangeChoice::Custom {
+                    from: self.custom_from.clone(),
+                    to: self.custom_to.clone(),
+                },
+            };
+            self.range_cache = None;
+        }
+        if kind == RangeKind::Custom {
+            let mut changed = false;
+            for (salt, text) in [("from", &mut self.custom_from), ("to", &mut self.custom_to)] {
+                let bad = !text.trim().is_empty() && format::parse_iso_date(text).is_none();
+                let response = kit::field_frame(false)
+                    .inner_margin(egui::Margin::symmetric(8, 4))
+                    .stroke(egui::Stroke::new(
+                        1.0,
+                        if bad { theme::LOSS } else { kit::primary(0.12) },
+                    ))
+                    .show(ui, |ui| {
+                        kit::plain_field(
+                            ui,
+                            egui::Id::new(("journal-custom", self.id, salt)),
+                            text,
+                            if salt == "from" {
+                                "From YYYY-MM-DD"
+                            } else {
+                                "To YYYY-MM-DD"
+                            },
+                            size::BODY,
+                            REGULAR,
+                            110.0,
+                        )
+                    })
+                    .inner;
+                changed |= response.changed();
             }
-            let section = host.prefs().section;
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if section == Section::Trades {
-                    self.columns_menu(ui, host);
-                }
-                if section == Section::Calendar {
-                    return;
-                }
-                let open = self
-                    .rows
-                    .iter()
-                    .filter(|&&index| data.trades[index].is_open())
-                    .count();
-                let mut text = format!(
-                    "{} trade{}",
-                    self.rows.len(),
-                    if self.rows.len() == 1 { "" } else { "s" }
-                );
-                if open > 0 {
-                    text.push_str(&format!(" \u{00b7} {open} open"));
-                }
-                ui.label(kit::text(
-                    text,
-                    size::BODY,
-                    REGULAR,
-                    theme::text_secondary(),
-                ))
-                .on_hover_text(format!("Built from {} executions", data.executions));
-            });
-        });
+            if changed {
+                host.prefs_mut().range = RangeChoice::Custom {
+                    from: self.custom_from.clone(),
+                    to: self.custom_to.clone(),
+                };
+            }
+        }
     }
 
     fn account_menu(&mut self, ui: &mut egui::Ui, host: &mut JournalHost, data: &Arc<JournalData>) {
@@ -1216,6 +1634,7 @@ impl JournalTab {
             host.prefs().sort,
             &SortContext {
                 reviews,
+                playbook_names: host.playbook_names(),
                 account_names: &names,
                 breakeven_tolerance: BREAKEVEN_TOLERANCE,
             },
@@ -1275,6 +1694,7 @@ impl JournalTab {
         let names = data.account_names();
         let context = CellContext {
             reviews,
+            playbook_names: host.playbook_names(),
             account_names: &names,
             breakeven_tolerance: BREAKEVEN_TOLERANCE,
             offset: &local_utc_offset_secs,
@@ -1844,7 +2264,7 @@ mod tests {
         let trade = host.data().unwrap().trades[0].clone();
         let mut review =
             crate::model::journal::reviews::Review::new(&trade.key, &trade.account_uid);
-        review.strategy = "Breakout".into();
+        review.playbook = Some("pb1".into());
         host.save_review(&review).unwrap();
         tab.breakdown_dimension = Dimension::Strategy;
         frame(&ctx, &mut tab, &mut host, 5.0);
@@ -1879,6 +2299,154 @@ mod tests {
         let columns = &tab.compare.as_ref().unwrap().1;
         assert_eq!(columns.len(), 2);
         assert!(columns.iter().any(|c| c.name == "Swing account"));
+    }
+
+    #[test]
+    fn a_playbook_is_created_edited_saved_and_deleted() {
+        let (store, mut host, mut tab, ctx) = ready();
+        host.prefs_mut().section = Section::Playbooks;
+        frame(&ctx, &mut tab, &mut host, 0.0);
+        assert!(host.playbooks().is_empty());
+
+        // Create (what the New playbook button does), then it is selected and has a draft.
+        let created = host
+            .save_playbook(&Playbook::new(JournalHost::new_playbook_id(), "Breakout"))
+            .unwrap();
+        tab.playbook_selected = Some(created.id.clone());
+        frame(&ctx, &mut tab, &mut host, 1.0);
+        let draft = tab.playbook_draft.as_mut().expect("draft");
+        assert_eq!(draft.playbook.name, "Breakout");
+        draft.playbook.description = "Trade the break.".into();
+        draft.checklist_text = "Volume\nStop placed".into();
+        draft.sync_fields();
+        draft.edited_at = Some(1.0);
+        frame(&ctx, &mut tab, &mut host, 3.0);
+        let saved = &host.playbooks()[0];
+        assert_eq!(saved.description, "Trade the break.");
+        assert_eq!(saved.checklist, ["Volume", "Stop placed"]);
+
+        // It survives a restart.
+        let mut again = JournalHost::new(store, Arc::new(|| {}));
+        again.rebuild_blocking();
+        assert_eq!(again.playbooks()[0].name, "Breakout");
+
+        // An emptied name is refused and the old one stays stored.
+        let draft = tab.playbook_draft.as_mut().unwrap();
+        draft.playbook.name.clear();
+        draft.edited_at = Some(3.0);
+        frame(&ctx, &mut tab, &mut host, 5.0);
+        assert!(tab.playbook_draft.as_ref().unwrap().error.is_some());
+        assert_eq!(host.playbooks()[0].name, "Breakout");
+
+        // Leaving the page flushes a good draft instead of losing it.
+        let draft = tab.playbook_draft.as_mut().unwrap();
+        draft.playbook.name = "Breakout v2".into();
+        draft.error = None;
+        host.prefs_mut().section = Section::Trades;
+        frame(&ctx, &mut tab, &mut host, 6.0);
+        assert_eq!(host.playbooks()[0].name, "Breakout v2");
+        assert!(tab.playbook_draft.is_none());
+
+        host.delete_playbook(&created.id).unwrap();
+        assert!(host.playbooks().is_empty());
+    }
+
+    #[test]
+    fn a_trade_follows_a_playbook_and_adherence_reaches_the_pages() {
+        let (_, mut host, mut tab, ctx) = ready();
+        let mut playbook = Playbook::new(JournalHost::new_playbook_id(), "Breakout");
+        playbook.checklist = vec!["Volume".into(), "Stop".into()];
+        let playbook = host.save_playbook(&playbook).unwrap();
+        let trade = host
+            .data()
+            .unwrap()
+            .trades
+            .iter()
+            .find(|t| !t.is_open())
+            .unwrap()
+            .clone();
+        let mut review =
+            crate::model::journal::reviews::Review::new(&trade.key, &trade.account_uid);
+        review.playbook = Some(playbook.id.clone());
+        review.checks = ["Volume".to_owned()].into();
+        host.save_review(&review).unwrap();
+        host.prefs_mut().section = Section::Playbooks;
+        frame(&ctx, &mut tab, &mut host, 0.0);
+        let (_, slices, adherence) = tab.playbook_stats.as_ref().unwrap();
+        assert_eq!(
+            slices
+                .iter()
+                .find(|s| s.label == "Breakout")
+                .unwrap()
+                .trades,
+            1
+        );
+        assert_eq!(adherence[&playbook.id], 0.5);
+        // The Strategy column and breakdown use its name.
+        host.prefs_mut().section = Section::Trades;
+        frame(&ctx, &mut tab, &mut host, 1.0);
+        host.prefs_mut().section = Section::Analytics;
+        tab.breakdown_dimension = Dimension::Strategy;
+        frame(&ctx, &mut tab, &mut host, 2.0);
+        let labels: Vec<_> = tab
+            .breakdown
+            .as_ref()
+            .unwrap()
+            .2
+            .iter()
+            .map(|s| s.label.clone())
+            .collect();
+        assert!(labels.contains(&"Breakout".to_owned()), "{labels:?}");
+        let (_, process) = tab.process.as_ref().unwrap();
+        assert_eq!(process.reviewed, 1);
+    }
+
+    #[test]
+    fn the_daily_journal_saves_per_day_and_follows_the_date() {
+        let (store, mut host, mut tab, ctx) = ready();
+        host.prefs_mut().section = Section::Daily;
+        frame(&ctx, &mut tab, &mut host, 0.0);
+        let today = journal_calendar::civil_today(now_ms(), &local_utc_offset_secs);
+        let key = format::iso_date(today);
+        let draft = tab.daily_draft.as_mut().expect("draft");
+        assert_eq!(draft.entry.date, key);
+        draft.entry.plan = "Trade the open.".into();
+        draft.mood_text = "calm".into();
+        draft.sync_fields();
+        draft.edited_at = Some(0.0);
+        frame(&ctx, &mut tab, &mut host, 2.0);
+        assert_eq!(host.days()[&key].plan, "Trade the open.");
+        assert_eq!(host.days()[&key].mood, ["calm"]);
+
+        // Another day has its own empty entry; typing and moving on saves the first.
+        tab.daily_draft.as_mut().unwrap().entry.lessons = "Wait.".into();
+        tab.daily_date = Some(calendar::civil_from_days(days_from_civil(today) - 1));
+        frame(&ctx, &mut tab, &mut host, 3.0);
+        assert_eq!(host.days()[&key].lessons, "Wait.");
+        assert!(tab.daily_draft.as_ref().unwrap().entry.plan.is_empty());
+
+        let mut again = JournalHost::new(store, Arc::new(|| {}));
+        again.rebuild_blocking();
+        assert_eq!(again.days()[&key].lessons, "Wait.");
+
+        // A day with no entry and no trades is allowed to stay empty and stores nothing.
+        tab.daily_date = Some(calendar::civil_from_days(days_from_civil(today) - 400));
+        frame(&ctx, &mut tab, &mut host, 4.0);
+        assert_eq!(host.days().len(), 1);
+    }
+
+    #[test]
+    fn the_days_trades_are_listed_on_the_daily_page_and_open_in_trades() {
+        let (_, mut host, mut tab, ctx) = ready();
+        host.prefs_mut().section = Section::Daily;
+        frame(&ctx, &mut tab, &mut host, 0.0);
+        // The two closed trades were made today: they are on the page (it drew without panic) and
+        // a click would select one.
+        let key = host.data().unwrap().trades[0].key.clone();
+        tab.selected = Some(key.clone());
+        host.prefs_mut().section = Section::Trades;
+        frame(&ctx, &mut tab, &mut host, 1.0);
+        assert_eq!(tab.draft.as_ref().unwrap().review.trade_key, key);
     }
 
     #[test]
@@ -1938,6 +2506,50 @@ mod tests {
         assert_eq!(tab.rows.len(), 3);
     }
 
+    /// Playbooks, reviews and a daily entry for the pictures.
+    fn seed_gallery(host: &mut JournalHost) {
+        let mut breakout = Playbook::new(JournalHost::new_playbook_id(), "Breakout");
+        breakout.description = "Trade the break of a well-tested level.".into();
+        breakout.checklist = vec![
+            "Volume spike".into(),
+            "Above VWAP".into(),
+            "Stop placed".into(),
+        ];
+        let breakout = host.save_playbook(&breakout).unwrap();
+        let mut reversion = Playbook::new(JournalHost::new_playbook_id(), "Mean reversion");
+        reversion.checklist = vec!["Extended from VWAP".into(), "Stop placed".into()];
+        let reversion = host.save_playbook(&reversion).unwrap();
+        let trades = host.data().unwrap().trades.clone();
+        for (index, trade) in trades.iter().filter(|t| !t.is_open()).enumerate().take(44) {
+            let mut review =
+                crate::model::journal::reviews::Review::new(&trade.key, &trade.account_uid);
+            let playbook = if index % 2 == 0 {
+                &breakout
+            } else {
+                &reversion
+            };
+            review.playbook = Some(playbook.id.clone());
+            review.checks = playbook
+                .checklist
+                .iter()
+                .take(1 + index % playbook.checklist.len())
+                .cloned()
+                .collect();
+            review.discipline = Some(2 + (index % 4) as u8);
+            if index % 5 == 0 {
+                review.mistakes = vec!["Moved stop".into()];
+            }
+            review.notes = "Entered on the retest.".into();
+            host.save_review(&review).unwrap();
+        }
+        let today = journal_calendar::civil_today(now_ms(), &local_utc_offset_secs);
+        let mut day = DailyEntry::new(&format::iso_date(today));
+        day.plan = "Trade the open only. No trades after the first hour.".into();
+        day.mood = vec!["Calm".into()];
+        day.lessons = "Waiting for the retest worked.".into();
+        host.save_day(&day).unwrap();
+    }
+
     /// The tab as pictures: `DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib journal_tab::tests::gallery -- --ignored`.
     #[test]
     #[ignore = "writes pictures"]
@@ -1952,6 +2564,7 @@ mod tests {
                 .journal_ingest(&Synthetic, true)
                 .unwrap();
             host.rebuild_blocking();
+            seed_gallery(&mut host);
             let mut screen = Screen::new(egui::vec2(1400.0, 860.0));
             screen.ctx.set_theme(if light {
                 egui::ThemePreference::Light
@@ -1990,6 +2603,8 @@ mod tests {
                 (Section::Calendar, "calendar"),
                 (Section::Analytics, "analytics"),
                 (Section::Compare, "compare"),
+                (Section::Playbooks, "playbooks"),
+                (Section::Daily, "daily"),
             ] {
                 host.prefs_mut().section = section;
                 for _ in 0..4 {

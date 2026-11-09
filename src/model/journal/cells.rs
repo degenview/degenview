@@ -67,6 +67,8 @@ impl Cell {
 
 pub struct CellContext<'a> {
     pub reviews: &'a HashMap<String, Review>,
+    /// Playbook id to name.
+    pub playbook_names: &'a HashMap<String, String>,
     pub account_names: &'a HashMap<String, String>,
     pub breakeven_tolerance: Decimal,
     pub offset: Offset<'a>,
@@ -193,10 +195,10 @@ pub fn cell(column: Column, trade: &Trade, context: &CellContext<'_>) -> Cell {
             None => Cell::muted(NONE),
         },
         Column::Strategy => match review
-            .map(|r| r.strategy.as_str())
-            .filter(|s| !s.is_empty())
+            .and_then(|r| r.playbook.as_ref())
+            .and_then(|id| context.playbook_names.get(id))
         {
-            Some(strategy) => Cell::plain(strategy),
+            Some(name) => Cell::plain(name.clone()),
             None => Cell::muted(NONE),
         },
         Column::Tags => match review.map(|r| r.tags.join(", ")).filter(|t| !t.is_empty()) {
@@ -224,6 +226,9 @@ mod tests {
     use crate::model::journal::reconstruct::reconstruct;
     use crate::model::journal::testing::{d, exec};
 
+    static PLAYBOOKS: std::sync::LazyLock<HashMap<String, String>> =
+        std::sync::LazyLock::new(|| HashMap::from([("pb".to_owned(), "Breakout".to_owned())]));
+
     fn trade(executions: &[crate::model::journal::model::Execution]) -> Trade {
         reconstruct(executions, |_| CostBasis::AverageCost).remove(0)
     }
@@ -234,6 +239,7 @@ mod tests {
     ) -> CellContext<'a> {
         CellContext {
             reviews,
+            playbook_names: &PLAYBOOKS,
             account_names: names,
             breakeven_tolerance: Decimal::ZERO,
             offset: &utc,
@@ -325,7 +331,7 @@ mod tests {
             exec("2", Side::Sell, "1", "110", 2_000),
         ]);
         let mut review = Review::new(&t.key, "acct");
-        review.strategy = "Breakout".into();
+        review.playbook = Some("pb".into());
         review.tags = vec!["a".into(), "b".into()];
         review.stop = Some(d("95"));
         review.reviewed = true;

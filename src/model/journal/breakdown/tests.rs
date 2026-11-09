@@ -6,6 +6,9 @@ use crate::model::journal::testing::{d, exec};
 
 const HOUR: i64 = 3_600_000;
 
+static PLAYBOOKS: std::sync::LazyLock<HashMap<String, String>> =
+    std::sync::LazyLock::new(|| HashMap::from([("pb".to_owned(), "Breakout".to_owned())]));
+
 fn at(year: i32, month: u8, day: u8, hour: i64) -> i64 {
     days_from_civil(Civil { year, month, day }) * 86_400_000 + hour * HOUR
 }
@@ -30,6 +33,7 @@ fn run(trades: &[Trade], dimension: Dimension, reviews: &HashMap<String, Review>
         dimension,
         &Context {
             reviews,
+            playbook_names: &PLAYBOOKS,
             offset: &utc,
             breakeven_tolerance: Decimal::ZERO,
         },
@@ -70,6 +74,7 @@ fn weekday_is_the_close_day_and_hour_is_the_open_hour() {
         Dimension::Hour,
         &Context {
             reviews: &HashMap::new(),
+            playbook_names: &PLAYBOOKS,
             offset: &|_| 5 * 3_600,
             breakeven_tolerance: Decimal::ZERO,
         },
@@ -193,11 +198,11 @@ fn review_dimensions_use_the_review_and_none_comes_last() {
     let trades = build(e);
     let mut reviews = HashMap::new();
     let mut a = Review::new(&trades[0].key, "acct");
-    a.strategy = "Breakout".into();
+    a.playbook = Some("pb".into());
     a.tags = vec!["fomo".into(), "early".into()];
     a.rating = Some(4);
     let mut b = Review::new(&trades[1].key, "acct");
-    b.strategy = "Breakout".into();
+    b.playbook = Some("pb".into());
     b.tags = vec!["fomo".into()];
     b.mistakes = vec!["no stop".into()];
     reviews.insert(trades[0].key.clone(), a);

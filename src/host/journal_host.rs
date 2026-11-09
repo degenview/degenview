@@ -14,8 +14,10 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 
 use serde::{Deserialize, Serialize};
 
+use crate::model::journal::daily::DailyEntry;
 use crate::model::journal::filters::RangePreset;
 use crate::model::journal::model::{CostBasis, Execution, JournalAccount, Trade};
+use crate::model::journal::playbook::Playbook;
 use crate::model::journal::reconstruct::reconstruct;
 use crate::model::journal::reviews::Review;
 use crate::model::journal::table::{Column, Sort};
@@ -102,6 +104,8 @@ pub enum Section {
     Trades,
     Analytics,
     Compare,
+    Playbooks,
+    Daily,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -178,6 +182,8 @@ impl JournalPrefs {
 struct Built {
     data: Result<JournalData, String>,
     reviews: Vec<Review>,
+    playbooks: Vec<Playbook>,
+    days: Vec<DailyEntry>,
 }
 
 pub struct JournalHost {
@@ -185,6 +191,10 @@ pub struct JournalHost {
     data: Option<Arc<JournalData>>,
     load_error: Option<String>,
     reviews: Arc<HashMap<String, Review>>,
+    playbooks: Arc<Vec<Playbook>>,
+    playbook_names: Arc<HashMap<String, String>>,
+    days: Arc<HashMap<String, DailyEntry>>,
+    /// Moves whenever a review, a playbook or a daily entry changes: what the user wrote.
     reviews_revision: u64,
     build_id: u64,
     last_paper_revision: Option<u64>,
@@ -210,6 +220,9 @@ impl JournalHost {
             data: None,
             load_error: None,
             reviews: Arc::new(HashMap::new()),
+            playbooks: Arc::new(Vec::new()),
+            playbook_names: Arc::new(HashMap::new()),
+            days: Arc::new(HashMap::new()),
             reviews_revision: 0,
             build_id: 0,
             last_paper_revision: None,
@@ -283,7 +296,25 @@ impl JournalHost {
                 .map(|review| (review.trade_key.clone(), review))
                 .collect(),
         );
+        self.set_playbooks(built.playbooks);
+        self.days = Arc::new(
+            built
+                .days
+                .into_iter()
+                .map(|day| (day.date.clone(), day))
+                .collect(),
+        );
         self.reviews_revision += 1;
+    }
+
+    fn set_playbooks(&mut self, playbooks: Vec<Playbook>) {
+        self.playbook_names = Arc::new(
+            playbooks
+                .iter()
+                .map(|p| (p.id.clone(), p.name.clone()))
+                .collect(),
+        );
+        self.playbooks = Arc::new(playbooks);
     }
 
     /// Rebuilds on this thread and waits. For tests.
@@ -312,9 +343,91 @@ impl JournalHost {
         &self.reviews
     }
 
-    /// Moves whenever a review is saved or the reviews are reloaded.
+    /// Moves whenever a review, a playbook or a daily entry is saved or everything is reloaded.
     pub fn reviews_revision(&self) -> u64 {
         self.reviews_revision
+    }
+
+    pub fn playbooks(&self) -> &Arc<Vec<Playbook>> {
+        &self.playbooks
+    }
+
+    /// Playbook id to name.
+    pub fn playbook_names(&self) -> &Arc<HashMap<String, String>> {
+        &self.playbook_names
+    }
+
+    pub fn days(&self) -> &Arc<HashMap<String, DailyEntry>> {
+        &self.days
+    }
+
+    /// Saves a playbook; one with no name is refused with a reason.
+    pub fn save_playbook(&mut self, playbook: &Playbook) -> Result<Playbook, String> {
+        let saved = {
+            let store = self
+                .store
+                .lock()
+                .map_err(|_| "The journal's store is unavailable.".to_owned())?;
+            store
+                .journal_save_playbook(playbook, now_ms())
+                .map_err(|error| format!("The playbook could not be saved: {error}"))?
+        }
+        .ok_or_else(|| "A playbook needs a name.".to_owned())?;
+        let mut all: Vec<Playbook> = self.playbooks.iter().cloned().collect();
+        match all.iter_mut().find(|p| p.id == saved.id) {
+            Some(existing) => *existing = saved.clone(),
+            None => all.push(saved.clone()),
+        }
+        all.sort_by_key(|p| (p.name.to_lowercase(), p.id.clone()));
+        self.set_playbooks(all);
+        self.reviews_revision += 1;
+        Ok(saved)
+    }
+
+    pub fn delete_playbook(&mut self, id: &str) -> Result<(), String> {
+        {
+            let store = self
+                .store
+                .lock()
+                .map_err(|_| "The journal's store is unavailable.".to_owned())?;
+            store
+                .journal_delete_playbook(id)
+                .map_err(|error| format!("The playbook could not be deleted: {error}"))?;
+        }
+        let all: Vec<Playbook> = self
+            .playbooks
+            .iter()
+            .filter(|p| p.id != id)
+            .cloned()
+            .collect();
+        self.set_playbooks(all);
+        self.reviews_revision += 1;
+        Ok(())
+    }
+
+    /// Saves one day's entry. An entry with nothing in it is removed.
+    pub fn save_day(&mut self, entry: &DailyEntry) -> Result<(), String> {
+        let saved = {
+            let store = self
+                .store
+                .lock()
+                .map_err(|_| "The journal's store is unavailable.".to_owned())?;
+            store
+                .journal_save_day(entry, now_ms())
+                .map_err(|error| format!("The entry could not be saved: {error}"))?
+        };
+        let days = Arc::make_mut(&mut self.days);
+        match saved {
+            Some(saved) => days.insert(saved.date.clone(), saved),
+            None => days.remove(&entry.date),
+        };
+        self.reviews_revision += 1;
+        Ok(())
+    }
+
+    /// A fresh playbook id.
+    pub fn new_playbook_id() -> String {
+        crate::model::watchlist::new_id().to_string()
     }
 
     /// Saves one review. An emptied review is removed. A review never changes a trade, an order or
@@ -383,16 +496,31 @@ fn read_and_build(store: &SharedStore, build_id: u64) -> Built {
                 .journal_accounts()
                 .map_err(|error| error.to_string())?;
             let reviews = store.journal_reviews().map_err(|error| error.to_string())?;
-            Ok((payloads, accounts, reviews, store.journal_last_error()))
+            let playbooks = store
+                .journal_playbooks()
+                .map_err(|error| error.to_string())?;
+            let days = store.journal_days().map_err(|error| error.to_string())?;
+            Ok((
+                payloads,
+                accounts,
+                reviews,
+                playbooks,
+                days,
+                store.journal_last_error(),
+            ))
         });
     match read {
-        Ok((payloads, accounts, reviews, ingest_error)) => Built {
+        Ok((payloads, accounts, reviews, playbooks, days, ingest_error)) => Built {
             data: build_data(&payloads, accounts, build_id, ingest_error),
             reviews,
+            playbooks,
+            days,
         },
         Err(error) => Built {
             data: Err(format!("The journal could not be read: {error}")),
             reviews: Vec::new(),
+            playbooks: Vec::new(),
+            days: Vec::new(),
         },
     }
 }
@@ -587,6 +715,35 @@ mod tests {
         review.stop = Some("1".parse().unwrap());
         host.save_review(&review).unwrap();
         assert_eq!(store.lock().unwrap().paper_trading().unwrap(), paper_before);
+    }
+
+    #[test]
+    fn playbooks_and_days_save_and_reload() {
+        let store = store();
+        let mut host = host(&store);
+        host.rebuild_blocking();
+        let mut playbook = Playbook::new(JournalHost::new_playbook_id(), "Breakout");
+        playbook.checklist = vec!["Volume".into()];
+        let before = host.reviews_revision();
+        let saved = host.save_playbook(&playbook).unwrap();
+        assert!(host.reviews_revision() > before);
+        assert_eq!(host.playbook_names()[&saved.id], "Breakout");
+        assert!(host.save_playbook(&Playbook::new("x".into(), " ")).is_err());
+
+        let mut day = DailyEntry::new("2026-11-09");
+        day.plan = "Trade the open.".into();
+        host.save_day(&day).unwrap();
+        assert_eq!(host.days()["2026-11-09"].plan, "Trade the open.");
+
+        let mut again = JournalHost::new(store.clone(), Arc::new(|| {}));
+        again.rebuild_blocking();
+        assert_eq!(again.playbooks().len(), 1);
+        assert_eq!(again.days().len(), 1);
+
+        host.delete_playbook(&saved.id).unwrap();
+        assert!(host.playbooks().is_empty() && host.playbook_names().is_empty());
+        host.save_day(&DailyEntry::new("2026-11-09")).unwrap();
+        assert!(host.days().is_empty());
     }
 
     #[test]

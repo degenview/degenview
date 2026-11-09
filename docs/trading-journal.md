@@ -7,8 +7,8 @@ and the comparison with other journals: [trading-journal-research.md](reviews/tr
 **Status.** Built: the canonical execution model, trade reconstruction, the paper source, storage
 and capture, the pure analytics (statistics, equity and drawdown, calendar, filters, R-multiple,
 Edge Score), and the Journal tab with the Overview, Calendar, Trades, Analytics and Compare pages,
-the trade panel and reviews. Playbooks, the daily journal, charts, import/export and iCloud follow
-as separate changes; their sections are added as they land.
+Playbooks and Daily pages, the trade panel and reviews. Screenshots and MFE/MAE, charts,
+import/export and iCloud follow as separate changes; their sections are added as they land.
 
 ## Layers
 
@@ -268,5 +268,41 @@ expectancy, max drawdown, average R, day win rate and Edge Score per account. It
 accounts with trades in the selection and says so otherwise. Percentages need each account's own
 initial balance.
 
-Not built yet: playbooks and the daily journal, an Edge Score inspector and process score, chart
-markers and "view on chart", CSV import and export, iCloud sync of reviews.
+## Playbooks, the daily journal and the review workflow
+
+**Reviews** now hold: a playbook (by id) with its checklist ticks, setup, entry and exit rationale,
+tags, mistakes, emotions (one-click suggestions: a default set plus everything already used),
+1 to 5 discipline and confidence ratings, a planned entry, stop and target, notes, the star rating
+and the reviewed switch. The plan read-out shows the **planned reward to risk** (target distance
+over stop distance from the planned entry, else the fill; never without a target and a valid stop)
+and the **risk as a share of the account's starting balance** (needs a balance). A review's
+strategy is its playbook: the Strategy column, sort, breakdown and filter all use the playbook's
+name.
+
+**Playbooks page** (`model/journal/playbook.rs`, `ui/journal_playbooks.rs`). A playbook has a name,
+description, setup criteria, entry, exit and risk rules, a checklist (one rule per line) and tags.
+The page compares every playbook over the current range and filters: trades, win rate, profit
+factor, expectancy, average R, net, THIN/SMALL flags, and **rule adherence**, the mean share of its
+checklist ticked over its reviewed trades (a checklist item is matched by its text). Edits save
+after a pause, on blur and when you leave the page; deleting asks first and leaves reviews'
+other notes intact.
+
+**Daily page** (`model/journal/daily.rs`, `ui/journal_daily.rs`). One entry per local calendar day for
+the whole journal: outlook, plan, goals, emotional state, session notes, mistakes, lessons and an
+end-of-day review, next to that day's closed trades (a click opens one) and their tally. Days with
+no trades are fine, nothing is required, and an entry with nothing in it is not stored. Clicking a
+calendar day opens it here.
+
+**Psychology.** Emotions and mistakes are free tags with suggestions; the Analytics breakdown by
+mistake or emotion shows outcomes per tag and says the associations are descriptive.
+
+**Process score** (`model/journal/process.rs`), shown beside the Edge Score and never blended into
+it: rule adherence (40), discipline (30: the mean 1 to 5 rating scaled to 0 to 100) and clean
+execution (30: reviewed trades with no mistake noted), over the *reviewed* closed trades. A
+component with no inputs is left out and the weights of the rest renormalised; withheld below 10
+reviewed trades. It records self-reported process, not skill, and a rating never changes an
+objective figure. The Analytics page also lists each Edge Score component with its value, weight,
+input and full-marks threshold.
+
+Not built yet: screenshots and MFE/MAE, chart markers and "view on chart", CSV import and export,
+iCloud sync of reviews, playbooks and daily entries.

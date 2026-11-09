@@ -24,11 +24,27 @@ pub struct Review {
     pub account_uid: String,
     #[serde(default)]
     pub notes: String,
-    /// Free text for now; playbooks replace it with a choice.
+    /// The playbook this trade followed (its id).
     #[serde(default)]
-    pub strategy: String,
+    pub playbook: Option<String>,
+    /// The playbook checklist items ticked, by their text.
+    #[serde(default)]
+    pub checks: std::collections::BTreeSet<String>,
     #[serde(default)]
     pub setup: String,
+    #[serde(default)]
+    pub entry_rationale: String,
+    #[serde(default)]
+    pub exit_rationale: String,
+    /// 1 to 5, how well the plan was followed.
+    #[serde(default)]
+    pub discipline: Option<u8>,
+    /// 1 to 5, how sure the trader was going in.
+    #[serde(default)]
+    pub confidence: Option<u8>,
+    /// What the trader intended to enter at, when it differs from the fill.
+    #[serde(default)]
+    pub planned_entry: Option<Decimal>,
     #[serde(default)]
     pub tags: Vec<String>,
     #[serde(default)]
@@ -71,6 +87,50 @@ pub fn parse_list(text: &str) -> Vec<String> {
     )
 }
 
+/// Emotions and behaviours offered as one-click tags. Users add their own by typing; everything
+/// already used in a review is offered too.
+pub const DEFAULT_EMOTIONS: [&str; 9] = [
+    "FOMO",
+    "Hesitation",
+    "Impatience",
+    "Calm",
+    "Confident",
+    "Anxious",
+    "Frustrated",
+    "Following plan",
+    "Good execution",
+];
+
+pub const DEFAULT_MISTAKES: [&str; 7] = [
+    "Revenge trading",
+    "Overtrading",
+    "Breaking rules",
+    "Poor risk management",
+    "Emotional exit",
+    "Moved stop",
+    "Chased entry",
+];
+
+/// `defaults` followed by anything in `used` that is not already there (ignoring case), the used
+/// ones in alphabetical order.
+pub fn suggestions<'a>(
+    defaults: &[&str],
+    used: impl IntoIterator<Item = &'a String>,
+) -> Vec<String> {
+    let mut out: Vec<String> = defaults.iter().map(|d| (*d).to_owned()).collect();
+    let mut extra: Vec<&String> = used.into_iter().collect();
+    extra.sort_by_key(|item| item.to_lowercase());
+    for item in extra {
+        if !out
+            .iter()
+            .any(|existing| existing.eq_ignore_ascii_case(item))
+        {
+            out.push(item.clone());
+        }
+    }
+    out
+}
+
 impl Review {
     pub fn new(trade_key: &str, account_uid: &str) -> Self {
         Self {
@@ -83,8 +143,14 @@ impl Review {
     /// Normalises the fields the way they are stored.
     pub fn tidy(&mut self) {
         self.notes = self.notes.trim_end().to_owned();
-        self.strategy = self.strategy.trim().to_owned();
+        self.playbook = self.playbook.take().filter(|id| !id.trim().is_empty());
         self.setup = self.setup.trim().to_owned();
+        self.entry_rationale = self.entry_rationale.trim_end().to_owned();
+        self.exit_rationale = self.exit_rationale.trim_end().to_owned();
+        self.checks.retain(|item| !item.trim().is_empty());
+        self.discipline = self.discipline.filter(|rating| (1..=5).contains(rating));
+        self.confidence = self.confidence.filter(|rating| (1..=5).contains(rating));
+        self.planned_entry = self.planned_entry.filter(|price| *price > Decimal::ZERO);
         self.tags = clean_list(&self.tags);
         self.mistakes = clean_list(&self.mistakes);
         self.emotions = clean_list(&self.emotions);
@@ -96,8 +162,14 @@ impl Review {
     /// Nothing written and nothing marked: not worth a row.
     pub fn is_empty(&self) -> bool {
         self.notes.trim().is_empty()
-            && self.strategy.is_empty()
+            && self.playbook.is_none()
+            && self.checks.is_empty()
             && self.setup.is_empty()
+            && self.entry_rationale.trim().is_empty()
+            && self.exit_rationale.trim().is_empty()
+            && self.discipline.is_none()
+            && self.confidence.is_none()
+            && self.planned_entry.is_none()
             && self.tags.is_empty()
             && self.mistakes.is_empty()
             && self.emotions.is_empty()
@@ -149,6 +221,19 @@ mod tests {
     }
 
     #[test]
+    fn suggestions_are_the_defaults_then_what_was_used() {
+        let used = [
+            "late fill".to_owned(),
+            "fomo".to_owned(),
+            "Anxious".to_owned(),
+            "chart gap".to_owned(),
+        ];
+        let list = suggestions(&["FOMO", "Anxious"], used.iter());
+        assert_eq!(list, ["FOMO", "Anxious", "chart gap", "late fill"]);
+        assert_eq!(suggestions(&[], std::iter::empty()), Vec::<String>::new());
+    }
+
+    #[test]
     fn a_new_review_is_empty_and_pending() {
         let review = Review::new("k", "acct");
         assert!(review.is_empty());
@@ -175,14 +260,18 @@ mod tests {
     fn tidy_normalises_what_is_stored() {
         let mut review = Review::new("k", "acct");
         review.notes = "text  \n\n".into();
-        review.strategy = " Breakout ".into();
+        review.playbook = Some(" p1 ".into());
+        review.discipline = Some(9);
+        review.planned_entry = Some(d("0"));
         review.tags = vec!["a".into(), "A".into(), " ".into()];
         review.rating = Some(9);
         review.stop = Some(d("0"));
         review.target = Some(d("12.5"));
         review.tidy();
         assert_eq!(review.notes, "text");
-        assert_eq!(review.strategy, "Breakout");
+        assert_eq!(review.playbook.as_deref(), Some(" p1 "));
+        assert_eq!(review.discipline, None);
+        assert_eq!(review.planned_entry, None);
         assert_eq!(review.tags, ["a"]);
         assert_eq!(review.rating, None);
         assert_eq!(review.stop, None);

@@ -17,6 +17,7 @@ use crate::model::journal::filters::outcome_of;
 use crate::model::journal::format;
 use crate::model::journal::metric::Metric;
 use crate::model::journal::model::{Direction, Side, Trade};
+use crate::model::journal::playbook::Playbook;
 use crate::model::journal::reviews::{Review, parse_list};
 use crate::model::journal::risk;
 use crate::model::journal::table::return_fraction;
@@ -28,6 +29,12 @@ pub struct Input<'a> {
     pub offset: Offset<'a>,
     /// 1-based place of this trade among the rows shown, and how many there are.
     pub position: (usize, usize),
+    pub playbooks: &'a [Playbook],
+    /// Emotion and mistake tags to offer: the defaults and every one already used.
+    pub emotion_suggestions: &'a [String],
+    pub mistake_suggestions: &'a [String],
+    /// The account's initial balance, for risk as a share of it.
+    pub account_balance: Option<Decimal>,
 }
 
 /// The review being edited. `saved` is what is stored, so the tab can tell when there is
@@ -40,6 +47,7 @@ pub struct Draft {
     pub emotions_text: String,
     pub stop_text: String,
     pub target_text: String,
+    pub planned_entry_text: String,
     /// When the user last changed something not yet saved (egui time, seconds).
     pub edited_at: Option<f64>,
     /// Show "Saved" until this time.
@@ -69,6 +77,7 @@ impl Draft {
             emotions_text: review.emotions.join(", "),
             stop_text: decimal_text(review.stop),
             target_text: decimal_text(review.target),
+            planned_entry_text: decimal_text(review.planned_entry),
             saved: review.clone(),
             review,
             edited_at: None,
@@ -84,6 +93,7 @@ impl Draft {
         self.review.emotions = parse_list(&self.emotions_text);
         self.review.stop = parse_price(&self.stop_text);
         self.review.target = parse_price(&self.target_text);
+        self.review.planned_entry = parse_price(&self.planned_entry_text);
     }
 
     /// The text of a price field that is not a number.
@@ -425,6 +435,58 @@ fn labelled(ui: &mut Ui, label: &str) {
     ui.add_space(3.0);
 }
 
+/// Suggestion chips for a comma-separated list: click one to add or remove it.
+fn suggestion_chips(ui: &mut Ui, suggestions: &[String], text: &mut String) {
+    if suggestions.is_empty() {
+        return;
+    }
+    let mut items = parse_list(text);
+    let mut changed = false;
+    ui.add_space(4.0);
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing = vec2(5.0, 5.0);
+        for suggestion in suggestions {
+            let on = items
+                .iter()
+                .any(|item| item.eq_ignore_ascii_case(suggestion));
+            if kit::value_chip(ui, suggestion, on).clicked() {
+                if on {
+                    items.retain(|item| !item.eq_ignore_ascii_case(suggestion));
+                } else {
+                    items.push(suggestion.clone());
+                }
+                changed = true;
+            }
+        }
+    });
+    if changed {
+        *text = items.join(", ");
+    }
+}
+
+/// A 1 to 5 rating as five chips; clicking the chosen one clears it.
+fn rating_row(ui: &mut Ui, label: &str, value: &mut Option<u8>) {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 5.0;
+        ui.label(kit::text(
+            label,
+            size::BODY,
+            REGULAR,
+            theme::text_secondary(),
+        ));
+        ui.add_space(6.0);
+        for rating in 1..=5u8 {
+            if kit::value_chip(ui, &rating.to_string(), *value == Some(rating)).clicked() {
+                *value = if *value == Some(rating) {
+                    None
+                } else {
+                    Some(rating)
+                };
+            }
+        }
+    });
+}
+
 fn review(ui: &mut Ui, input: &Input<'_>, draft: &mut Draft, output: &mut Output) {
     let key = &input.trade.key;
     section(ui, "Review");
@@ -435,6 +497,7 @@ fn review(ui: &mut Ui, input: &Input<'_>, draft: &mut Draft, output: &mut Output
         draft.emotions_text.clone(),
         draft.stop_text.clone(),
         draft.target_text.clone(),
+        draft.planned_entry_text.clone(),
     );
 
     ui.horizontal(|ui| {
@@ -484,14 +547,78 @@ fn review(ui: &mut Ui, input: &Input<'_>, draft: &mut Draft, output: &mut Output
         blurred |= response.lost_focus();
     };
 
-    labelled(ui, "Strategy");
-    text_field(
+    // Playbook and its checklist.
+    labelled(ui, "Playbook");
+    let current_name = draft
+        .review
+        .playbook
+        .as_ref()
+        .and_then(|id| input.playbooks.iter().find(|p| &p.id == id))
+        .map_or("No playbook", |p| p.name.as_str());
+    let labels: Vec<&str> = std::iter::once("No playbook")
+        .chain(input.playbooks.iter().map(|p| p.name.as_str()))
+        .collect();
+    let mut chosen: Option<Option<String>> = None;
+    header_controls::menu_button(
         ui,
-        "strategy",
-        &mut draft.review.strategy,
-        "Breakout, mean reversion\u{2026}",
+        egui::Id::new(("journal-playbook", key)),
+        Icon::Journal,
+        current_name,
+        &labels,
         false,
+        |ui| {
+            if header_controls::choice(ui, "No playbook", draft.review.playbook.is_none()) {
+                chosen = Some(None);
+            }
+            for playbook in input.playbooks {
+                if header_controls::choice(
+                    ui,
+                    &playbook.name,
+                    draft.review.playbook.as_deref() == Some(playbook.id.as_str()),
+                ) {
+                    chosen = Some(Some(playbook.id.clone()));
+                }
+            }
+        },
     );
+    if let Some(choice) = chosen {
+        draft.review.playbook = choice;
+        draft.review.checks.clear();
+    }
+    if let Some(playbook) = draft
+        .review
+        .playbook
+        .as_ref()
+        .and_then(|id| input.playbooks.iter().find(|p| &p.id == id))
+        && !playbook.checklist.is_empty()
+    {
+        ui.add_space(6.0);
+        for item in &playbook.checklist {
+            let mut ticked = draft.review.checks.contains(item);
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 8.0;
+                kit::switch(ui, &mut ticked, item);
+                ui.label(kit::text(item, size::BODY, REGULAR, theme::text_primary()));
+            });
+            if ticked {
+                draft.review.checks.insert(item.clone());
+            } else {
+                draft.review.checks.remove(item);
+            }
+        }
+        if let Some(share) =
+            crate::model::journal::playbook::rule_adherence(&draft.review, playbook)
+        {
+            ui.add_space(2.0);
+            ui.label(kit::text(
+                format!("Rule adherence {}", format::percent(share)),
+                size::CAPTION + 1.0,
+                REGULAR,
+                theme::text_tertiary(),
+            ));
+        }
+    }
+
     labelled(ui, "Setup");
     text_field(
         ui,
@@ -510,6 +637,7 @@ fn review(ui: &mut Ui, input: &Input<'_>, draft: &mut Draft, output: &mut Output
         "Comma separated",
         false,
     );
+    suggestion_chips(ui, input.mistake_suggestions, &mut draft.mistakes_text);
     labelled(ui, "Emotions");
     text_field(
         ui,
@@ -518,33 +646,85 @@ fn review(ui: &mut Ui, input: &Input<'_>, draft: &mut Draft, output: &mut Output
         "Comma separated",
         false,
     );
+    suggestion_chips(ui, input.emotion_suggestions, &mut draft.emotions_text);
 
+    ui.add_space(10.0);
+    rating_row(ui, "Discipline", &mut draft.review.discipline);
+    rating_row(ui, "Confidence", &mut draft.review.confidence);
+
+    // The plan: entry, stop, target.
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 10.0;
-        let half = (ui.available_width() - 10.0) / 2.0;
-        for (label, salt, which) in [("Stop", "stop", 0), ("Target", "target", 1)] {
-            ui.allocate_ui(vec2(half, 0.0), |ui| {
-                ui.set_width(half);
-                labelled(ui, label);
-                let text = if which == 0 {
-                    &mut draft.stop_text
-                } else {
-                    &mut draft.target_text
-                };
-                let error = Draft::price_error(text);
-                text_field(ui, salt, text, "Price", error);
-            });
+        let third = (ui.available_width() - 20.0) / 3.0;
+        for (label, salt, which) in [
+            ("Planned entry", "planned-entry", 0),
+            ("Stop", "stop", 1),
+            ("Target", "target", 2),
+        ] {
+            ui.allocate_ui_with_layout(
+                vec2(third, 0.0),
+                egui::Layout::top_down(egui::Align::Min),
+                |ui| {
+                    ui.set_width(third);
+                    labelled(ui, label);
+                    let text = match which {
+                        0 => &mut draft.planned_entry_text,
+                        1 => &mut draft.stop_text,
+                        _ => &mut draft.target_text,
+                    };
+                    let error = Draft::price_error(text);
+                    text_field(ui, salt, text, "Price", error);
+                },
+            );
         }
     });
-    if Draft::price_error(&draft.stop_text) || Draft::price_error(&draft.target_text) {
+    if Draft::price_error(&draft.stop_text)
+        || Draft::price_error(&draft.target_text)
+        || Draft::price_error(&draft.planned_entry_text)
+    {
         ui.add_space(4.0);
         ui.label(kit::text(
-            "A stop or target must be a price above zero.",
+            "A price must be a number above zero.",
             size::CAPTION + 1.0,
             REGULAR,
             theme::LOSS,
         ));
     }
+    draft.sync_fields();
+    plan_readout(ui, input, draft);
+
+    labelled(ui, "Why you entered");
+    let id = egui::Id::new(("journal-review", key, "entry-why"));
+    let focused = ui.memory(|memory| memory.has_focus(id));
+    let response = kit::field_frame(focused)
+        .inner_margin(egui::Margin::symmetric(10, 8))
+        .show(ui, |ui| {
+            ui.add(
+                egui::TextEdit::multiline(&mut draft.review.entry_rationale)
+                    .id(id)
+                    .desired_rows(3)
+                    .desired_width(f32::INFINITY)
+                    .frame(egui::Frame::NONE),
+            )
+        })
+        .inner;
+    blurred |= response.lost_focus();
+    labelled(ui, "Why you exited");
+    let id = egui::Id::new(("journal-review", key, "exit-why"));
+    let focused = ui.memory(|memory| memory.has_focus(id));
+    let response = kit::field_frame(focused)
+        .inner_margin(egui::Margin::symmetric(10, 8))
+        .show(ui, |ui| {
+            ui.add(
+                egui::TextEdit::multiline(&mut draft.review.exit_rationale)
+                    .id(id)
+                    .desired_rows(3)
+                    .desired_width(f32::INFINITY)
+                    .frame(egui::Frame::NONE),
+            )
+        })
+        .inner;
+    blurred |= response.lost_focus();
 
     labelled(ui, "Notes");
     let id = egui::Id::new(("journal-review", key, "notes"));
@@ -575,6 +755,7 @@ fn review(ui: &mut Ui, input: &Input<'_>, draft: &mut Draft, output: &mut Output
         draft.emotions_text.clone(),
         draft.stop_text.clone(),
         draft.target_text.clone(),
+        draft.planned_entry_text.clone(),
     );
     output.changed = before != after;
     output.blurred = blurred;
@@ -592,6 +773,39 @@ fn review(ui: &mut Ui, input: &Input<'_>, draft: &mut Draft, output: &mut Output
     };
     if let Some((text, color)) = status {
         ui.label(kit::text(text, size::CAPTION + 1.0, REGULAR, color));
+    }
+}
+
+/// What the plan implies: reward to risk, and what the risk was as a share of the account.
+fn plan_readout(ui: &mut Ui, input: &Input<'_>, draft: &Draft) {
+    let trade = input.trade;
+    let review = &draft.review;
+    let mut lines = Vec::new();
+    if let Some(ratio) =
+        risk::planned_reward_risk(trade, review.planned_entry, review.stop, review.target)
+    {
+        lines.push(format!(
+            "Planned reward to risk {}",
+            format::ratio(ratio)
+                .trim_end_matches('0')
+                .trim_end_matches('.')
+        ));
+    }
+    if let Metric::Value(risk_amount) = risk::initial_risk(trade, review.stop)
+        && let Some(fraction) = risk::risk_fraction(risk_amount, input.account_balance)
+    {
+        lines.push(format!(
+            "Risk {} of the account's starting balance",
+            format::percent(fraction)
+        ));
+    }
+    for line in lines {
+        ui.label(kit::text(
+            line,
+            size::CAPTION + 1.0,
+            REGULAR,
+            theme::text_tertiary(),
+        ));
     }
 }
 
@@ -688,6 +902,10 @@ mod tests {
                             breakeven_tolerance: Decimal::ZERO,
                             offset: &crate::model::journal::calendar::utc,
                             position: (1, 3),
+                            playbooks: &[],
+                            emotion_suggestions: &[],
+                            mistake_suggestions: &[],
+                            account_balance: None,
                         },
                         &mut draft,
                     );
