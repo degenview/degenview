@@ -26,6 +26,16 @@ enum Side {
     Above,
 }
 
+/// Where the panel sits along its anchor.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Placement {
+    /// Centred on the anchor, the usual pointed popover.
+    Centered,
+    /// Its left edge at the anchor's left edge: for a wide anchor at the left of the window, where
+    /// centring would push the panel out over what lies to the left of it.
+    Start,
+}
+
 /// Shows `body` in a panel `width` wide, pointing at `anchor`. `padding` is the panel's inner
 /// margin. Returns whether it was dismissed: Esc, or a press outside the panel and its anchor.
 /// `consume_escape` takes the Esc away from whatever draws after it (a sheet that would close too).
@@ -38,12 +48,36 @@ pub fn show(
     consume_escape: bool,
     body: impl FnOnce(&mut Ui),
 ) -> bool {
+    show_placed(
+        ctx,
+        id,
+        anchor,
+        Placement::Centered,
+        width,
+        padding,
+        consume_escape,
+        body,
+    )
+}
+
+/// [`show`], with the panel placed along its anchor as `placement` says.
+#[allow(clippy::too_many_arguments)]
+pub fn show_placed(
+    ctx: &Context,
+    id: Id,
+    anchor: Rect,
+    placement: Placement,
+    width: f32,
+    padding: i8,
+    consume_escape: bool,
+    body: impl FnOnce(&mut Ui),
+) -> bool {
     let window = ctx.content_rect();
     let last_height = ctx
         .data(|data| data.get_temp::<f32>(id.with("height")))
         .unwrap_or(320.0);
     let side = side_for(window, anchor, last_height + ARROW_HEIGHT + GAP);
-    let left = panel_left(window, anchor, width);
+    let left = panel_left(window, anchor, width, placement);
     let (pivot, y) = match side {
         Side::Below => (Align2::LEFT_TOP, anchor.bottom() + GAP),
         Side::Above => (Align2::LEFT_BOTTOM, anchor.top() - GAP),
@@ -125,11 +159,15 @@ fn side_for(window: Rect, anchor: Rect, needed: f32) -> Side {
     }
 }
 
-/// The panel's left edge: centred on the anchor, kept inside the window.
-fn panel_left(window: Rect, anchor: Rect, width: f32) -> f32 {
+/// The panel's left edge: centred on the anchor or starting at it, kept inside the window.
+fn panel_left(window: Rect, anchor: Rect, width: f32, placement: Placement) -> f32 {
     let lowest = window.left() + EDGE;
     let highest = (window.right() - EDGE - width).max(lowest);
-    (anchor.center().x - width / 2.0).clamp(lowest, highest)
+    let wanted = match placement {
+        Placement::Centered => anchor.center().x - width / 2.0,
+        Placement::Start => anchor.left(),
+    };
+    wanted.clamp(lowest, highest)
 }
 
 /// The pointed edge, drawn over the panel's border so the two read as one outline.
@@ -177,15 +215,41 @@ mod tests {
     #[test]
     fn the_panel_centres_on_its_anchor_and_stays_in_the_window() {
         let anchor = |x: f32| Rect::from_min_size(pos2(x, 40.0), vec2(40.0, 20.0));
-        assert_eq!(panel_left(window(), anchor(480.0), 440.0), 280.0);
-        assert_eq!(panel_left(window(), anchor(0.0), 440.0), EDGE);
         assert_eq!(
-            panel_left(window(), anchor(980.0), 440.0),
+            panel_left(window(), anchor(480.0), 440.0, Placement::Centered),
+            280.0
+        );
+        assert_eq!(
+            panel_left(window(), anchor(0.0), 440.0, Placement::Centered),
+            EDGE
+        );
+        assert_eq!(
+            panel_left(window(), anchor(980.0), 440.0, Placement::Centered),
             1000.0 - EDGE - 440.0
         );
         // A window narrower than the panel pins it to the left edge instead of panicking.
         let narrow = Rect::from_min_size(pos2(0.0, 0.0), vec2(300.0, 700.0));
-        assert_eq!(panel_left(narrow, anchor(100.0), 440.0), EDGE);
+        assert_eq!(
+            panel_left(narrow, anchor(100.0), 440.0, Placement::Centered),
+            EDGE
+        );
+    }
+
+    #[test]
+    fn a_start_placed_panel_begins_at_its_anchor_and_stays_in_the_window() {
+        let anchor = |x: f32| Rect::from_min_size(pos2(x, 40.0), vec2(200.0, 20.0));
+        assert_eq!(
+            panel_left(window(), anchor(150.0), 360.0, Placement::Start),
+            150.0
+        );
+        assert_eq!(
+            panel_left(window(), anchor(0.0), 360.0, Placement::Start),
+            EDGE
+        );
+        assert_eq!(
+            panel_left(window(), anchor(900.0), 360.0, Placement::Start),
+            1000.0 - EDGE - 360.0
+        );
     }
 
     #[test]

@@ -36,15 +36,18 @@ impl ChartWorkspace {
             Some(ChartSettingsAction::Done) => {
                 self.settings_chart = None;
                 self.script_popover = None;
+                self.overlay_popover = None;
             }
             Some(ChartSettingsAction::RemoveChart) => {
                 self.settings_chart = None;
                 self.script_popover = None;
+                self.overlay_popover = None;
                 self.remove_chart(chart_id);
             }
             Some(ChartSettingsAction::OpenPineStudio) => {
                 self.settings_chart = None;
                 self.script_popover = None;
+                self.overlay_popover = None;
                 actions.push(WorkspaceAction::OpenPineScripts);
             }
             Some(ChartSettingsAction::ConfigureScript(id, anchor)) => {
@@ -58,6 +61,7 @@ impl ChartWorkspace {
                 // The picker is a modal of its own: the sheet gives way to it.
                 self.settings_chart = None;
                 self.script_popover = None;
+                self.overlay_popover = None;
                 self.focus_chart(chart_id);
                 self.open_compare_picker();
             }

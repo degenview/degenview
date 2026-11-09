@@ -20,14 +20,15 @@ id, and nothing a script, alert, drawing or paper order reads looks at them: tho
 | Data: one fetch per market, shared, scheduled | `src/workspace/overlays.rs` (`OverlayHub`) |
 | Add, edit, remove as undo steps; Regular → Percent on the first add | `src/workspace/overlay_actions.rs` |
 | Resolve against the bars in view, lines, tags, crosshair rows | `src/ui/chart_card/overlays.rs` |
-| Legend chips and menu | `src/ui/chart_indicator_strip.rs` (`Kind::Overlay`) |
+| The overlay card: rows, eye / settings / remove, right-click menu | `src/ui/chart_card/overlay_card.rs` |
+| Settings of one market (shared body) and its popover | `src/ui/overlay_settings.rs`, `src/ui/overlay_settings_popover.rs`, `src/workspace/overlay_actions.rs` |
 | Settings page | `src/ui/chart_settings.rs` (`Tab::Overlays`, "Compare") |
 | Object tree section "Compared symbols" | `src/model/object_tree.rs` (`Key::Overlay`), `src/workspace/context.rs` (`apply_tree_action`) |
 | Picker mode | `src/ui/symbol_picker/` (`PickMode`, `Output::Overlay`) |
 
 ## Behaviour
 
-**Adding.** There is no toolbar button. In the symbol picker (⌘K) ⌥Return draws the highlighted
+**Adding.** The toolbar's Compare button opens the picker in compare mode. In the symbol picker (⌘K) ⌥Return draws the highlighted
 market over the focused chart once and closes, the highlighted row has a Compare button next to its
 plus, and the row's right-click menu has "Compare with …". The chart settings' Compare page has "Add
 symbol…", which opens the picker in compare mode (`PickMode::Compare`): Return draws the highlighted
@@ -38,7 +39,7 @@ Nothing is added for the chart's own market or a market already compared (compar
 `InstrumentId::key()`, so `BTC` and `btcusdt` are one). A chart that is a line-only source
 (prediction markets, CoinMarketCap) or draws a price-based type (Renko, Kagi, Line Break, Point &
 Figure, Range) takes none: those types have no shared time axis. Overlays already on a chart that is
-switched to such a type stay in its configuration, are not drawn, and the legend says why.
+switched to such a type stay in its configuration, are not drawn, and the overlay card says why in a row's tooltip.
 
 **Time alignment.** By the *midpoint of the candle's span*, never by index and not by open time. Each
 chart bar owns the span from its open to the earlier of the next bar's open and one nominal bar later;
@@ -54,55 +55,81 @@ the crosshair reads "—". Only the bars in view are aligned, so the cost follow
   ratio. On the Percent and Indexed to 100 axes that reads as the overlay's own change from its first
   visible value, which moves with a pan, as TradingView's does. Because a ratio is multiplicative the
   logarithmic axis works unchanged, and a coin at 0.2 and one at 100,000 compare. Adding the first such
-  overlay to a chart on the Regular axis switches it to Percent (TradingView does the same); removing
-  overlays never switches it back. On Regular or Logarithmic the legend and tags read real prices.
+  overlay to a chart on the Regular axis switches it to Percent (TradingView does the same); taking
+  the last compared market off (one at a time, Remove all, or Remove indicators) puts a Percent or
+  Indexed axis back to Regular, a Logarithmic one stays (a choice of its own; DegenView's decision, not
+  checked against TradingView). On Regular or Logarithmic the card and tags read real prices.
 * *Its own scale* (TradingView's "New price scale" without the axis column): the group's visible values
   fill the plot height with an 8% margin. There is no second axis; the value is in the tag at the
-  line's end and in the legend. Overlays that carry the same group id share one fit ("Scale of X").
+  line's end and in the card. Overlays that carry the same group id share one fit ("Scale of X").
 
-An overlay with no usable value in view, or a chart with no reference price, is not drawn (legend:
+An overlay with no usable value in view, or a chart with no reference price, is not drawn (card:
 "No data in view").
 
 **Drawing.** Under the main series, over the grid and the Pine visuals behind the chart, clipped to the
 plot, one line per run of bars (lines break at gaps); a single isolated bar is a dot. Order is the list's
 order. Last value: a tag on the axis for a chart-scale line (it reads as the axis does), a pill in the
 plot's right edge for an own-scale line; neighbours are pushed apart. The price range grows to fit
-rebased lines. The crosshair adds a ring on each line and a box under the OHLC box with one row per
-overlay on the chart (colour, name, value, a dash where it has no candle or nothing in view; hidden and
-blocked ones are not listed); rows that do not fit are counted ("+N more") and stay in the legend and
-settings. Lines are painted by `paint_frame`, the frame snapshots share, so snapshots include them
+rebased lines. The crosshair adds a ring on each line and the overlay card under the OHLC box (see
+[Overlay card](#overlay-card-and-settings)); rows that do not fit are counted ("+N more") and stay in
+the Compare page and the Object tree. Lines are painted by `paint_frame`, the frame snapshots share, so snapshots include them
 (`snapshot_tests` compares the two shape for shape).
 
 **Replay.** The card is handed bars already cut at the replay cursor, and an overlay candle can only
 land on one of them, so the lines, baseline, price range, tags, crosshair and snapshots never see a
 later candle. Paging older history follows the chart's own oldest candle, never a replay position.
 
-## Legend and settings
+## Overlay card and settings
 
-Compared markets are chips in the indicator strip after the indicators and scripts: colour dot, name,
-eye / settings on hover, an x, and a right-click menu (Settings, Hide/Show, Scale ▸ Chart's / Its own /
-Scale of …, Visual order ▸ Bring to front / forward / Send backward / to back, Remove). More than three
-fold into the strip's "+N" list, which scrolls and shows each market's newest price. The Compare page
-of the chart settings (`ui/chart_settings_compare.rs`) has one card per market. The header always shows
-the line as drawn (colour, width, dash), the name, the exchange and how the data is doing (last price,
-"Loading…", "Waiting to load", or an orange "Couldn't load: …" / "Same market as the chart" / "Not
-shown on price-based chart types"), with the eye, a menu (Bring to front / forward, Send backward / to
-back, Remove) and a chevron; clicking the header opens the settings: colour (the palette, or any), line
-width and style, the price of each candle the line follows (open, high, low, close, HL2, HLC3, OHLC4),
-scale with a sentence on what it does, and the last-value tag. Cards start open while there are three
-or fewer and closed after that, and what the user opened or closed is kept while the sheet is open. Past
-six markets a search field appears (name, symbol, exchange); reordering is off while it filters. The
-row above the cards has "Add symbol…", a count ("12 markets · 1 hidden") and a menu: Show all, Hide
-all, and Remove all…, which asks first. While any visible market is on the chart's scale and the axis
-is Regular or Logarithmic, a notice says the axis cannot compare them and offers Percent and Indexed to
-100. With nothing compared, the page invites the first one. Every edit is an `OverlayCommand` and one undo step (`Snapshot::Overlays`); an edit that changes
-nothing leaves none. The add that switches Regular to Percent carries the old mode in its step, so undo
-puts the axis back and redo switches it again; no other step touches the mode. A colour dragged in the
-picker reports every frame and is one step (`last_overlay_style`, the 800 ms window drawings use).
+There are no chips for compared markets next to the ticker. They live on the **overlay card**
+(`ui/chart_card/overlay_card.rs`), the box under the OHLC box that shows while the pointer is on the
+chart. One row per market on the chart, hidden and blocked ones included so they can be shown again
+or removed: colour dot, name, the value at the crosshair bar (the market's own change on the Percent
+and Indexed axes, its price otherwise; a dash where it has no candle or nothing in view; "hidden" for a
+hidden one). A hovered row shows an eye, a settings button and an x; clicking the row opens the
+settings too, and a right-click opens the menu (Settings…, Hide/Show, Scale ▸ Chart's / Its own /
+Scale of …, Visual order ▸ Bring to front / forward, Send backward / to back, Remove). The tooltip names
+the market, the provider and how its data is doing. A row is as tall as the OHLC box's text, so the card with one market is as tall as that box. At rest the card is as wide as its text; while the
+pointer is on it (or a settings popover is up) it widens by the room of the three buttons. Rows that do
+not fit are counted ("+N more").
+
+The card takes the pointer, so a press on it does not pan the chart, and the plot under it sees no
+hover. While the pointer is on the card the chart keeps a *frozen* crosshair (`CrosshairInfo::frozen`,
+set by `freeze` in `workspace/grid.rs` from `ChartPointer::on_overlay_card`): the OHLC box, the rings and
+the card stay on the bar the pointer left, and the lines and the price and time tags go. The card also
+remembers, per chart, the bar and the place it was last drawn at (`Memo` in `overlay_card.rs`, in egui
+temp memory), which keeps it up while a market's settings popover is open with the pointer elsewhere.
+Not verified: a touch screen, where there is no hover to keep.
+
+**Settings** open in a popover pointing at the row (`OverlaySettingsPopover`, on `ui/popover.rs` like
+the script settings popover), with the market's name and exchange, the same settings as the Compare
+page (colour: the palette or any; line width and style; the price of each candle the line follows:
+open, high, low, close, HL2, HLC3, OHLC4; scale with a sentence on what it does; the last-value tag),
+and Hide/Show and Remove in the footer. Unlike a script's popover there is no Apply: edits are live,
+each one an undo step, because the chart is the preview. The settings body is `overlay_settings::body`,
+shared with the Compare page, which answers with the `OverlayCommand` that makes each change. Only one
+of the script and the market popovers is open at a time; opening the chart settings sheet closes it.
+
+The Compare page of the chart settings (`ui/chart_settings_compare.rs`) has one card per market. The
+header always shows the line as drawn (colour, width, dash), the name, the exchange and how the data is
+doing (last price, "Loading…", "Waiting to load", or an orange "Couldn't load: …" / "Same market as the
+chart" / "Not shown on price-based chart types"), with the eye, a menu (Bring to front / forward, Send
+backward / to back, Remove) and a chevron; clicking the header opens the settings. Cards start open
+while there are three or fewer and closed after that, and what the user opened or closed is kept while
+the sheet is open. Past six markets a search field appears (name, symbol, exchange); reordering is off
+while it filters. The row above the cards has "Add symbol…", a count ("12 markets · 1 hidden") and a
+menu: Show all, Hide all, and Remove all…, which asks first. While any visible market is on the chart's
+scale and the axis is Regular or Logarithmic, a notice says the axis cannot compare them and offers
+Percent and Indexed to 100. With nothing compared, the page invites the first one. Every edit is an
+`OverlayCommand` and one undo step (`Snapshot::Overlays`); an edit that changes nothing leaves none.
+The add that switches Regular to Percent, and the removal of the last market that switches it back,
+carry the old mode in their step, so undo puts the axis back and redo switches it again; no other step
+touches the mode. A colour dragged in the picker reports every
+frame and is one step (`last_overlay_style`, the 800 ms window drawings use).
 
 The Object tree lists the compared markets too, in a "Compared symbols" section under the symbol, in the
 list's order: an eye (hide or show the line), a trash (remove), and a double-click or Settings… that
-opens the Compare page. No lock and no reordering there (use the page or the legend). The tree runs the
+opens the Compare page. No lock and no reordering there (use the page or the card's menu). The tree runs the
 same `OverlayCommand`s through `apply_overlay_command`, so each is one undo step.
 
 ## Data
@@ -172,7 +199,7 @@ bar (its own first visible value); the colour palette; hide and order controls; 
 own scale; switching Regular to Percent only for the first line on the chart's scale.
 
 Not done, and different from TradingView: no "new pane" placement; no second price axis column (an
-own scale has a tag and a legend value, no ticks); overlays are lines only (no candles, bars or areas
+own scale has a tag and a card value, no ticks); overlays are lines only (no candles, bars or areas
 for a compared market) with solid, dashed or dotted strokes; no drag-and-drop reordering (menu and
 buttons); no MCP tool (a snapshot taken over MCP includes the lines, `list_charts` does not name them);
 no entry in the chart's right-click menu; a Regular axis shows rebased prices, so the first overlay

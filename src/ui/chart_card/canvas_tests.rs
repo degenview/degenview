@@ -840,6 +840,7 @@ fn the_crosshair_takes_its_style_and_stays_above_the_series() {
     canvas.crosshair.dash = LineDash::Solid;
     let mut harness = Harness::new(canvas);
     harness.crosshair = Some(CrosshairInfo {
+        frozen: false,
         owner_id: 1,
         x_fraction: 0.5,
         price: 230.0,
@@ -855,6 +856,7 @@ fn the_crosshair_takes_its_style_and_stays_above_the_series() {
     assert!(lines.iter().all(|(_, stroke)| stroke.width == 3.0));
     // Only another chart's column carries just the vertical line.
     harness.crosshair = Some(CrosshairInfo {
+        frozen: false,
         owner_id: 99,
         x_fraction: 0.5,
         price: 230.0,
@@ -874,6 +876,7 @@ fn the_crosshair_takes_its_style_and_stays_above_the_series() {
 fn a_dashed_crosshair_is_the_default_and_a_style_change_keeps_the_position() {
     let mut harness = Harness::new(ChartCanvas::default());
     harness.crosshair = Some(CrosshairInfo {
+        frozen: false,
         owner_id: 1,
         x_fraction: 0.25,
         price: 230.0,
@@ -906,6 +909,7 @@ fn a_dashed_crosshair_is_the_default_and_a_style_change_keeps_the_position() {
 fn the_ohlc_readout_hides_without_touching_the_crosshair() {
     let mut harness = Harness::new(ChartCanvas::default());
     harness.crosshair = Some(CrosshairInfo {
+        frozen: false,
         owner_id: 1,
         x_fraction: 0.5,
         price: 230.0,

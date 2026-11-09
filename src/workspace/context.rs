@@ -9,6 +9,7 @@
 //! snapshot is checked against the live workspace first, and a stale one is refused with a
 //! message.
 
+use super::overlay_actions::reverts_to_regular;
 use super::*;
 use crate::model::alert::AlertCondition;
 use crate::model::chart_clipboard::DrawingClip;
@@ -1147,6 +1148,8 @@ impl ChartWorkspace {
             config: chart.indicators,
             scripts: chart.chart.pine_instances().to_vec(),
         };
+        // With no compared markets left the axis goes back to Regular, and undo puts it back.
+        let reverts = reverts_to_regular(chart.scale_mode);
         let before = if chart.overlays.is_empty() {
             indicators
         } else {
@@ -1154,7 +1157,7 @@ impl ChartWorkspace {
                 indicators,
                 Snapshot::Overlays {
                     list: chart.overlays.clone(),
-                    scale_mode: None,
+                    scale_mode: reverts.then_some(chart.scale_mode),
                 },
             ])
         };
@@ -1166,6 +1169,9 @@ impl ChartWorkspace {
                 indicator.set_applied(&mut chart.indicators, false);
             }
             chart.chart.set_pine_instances(Vec::new());
+            if !chart.overlays.is_empty() && reverts {
+                chart.scale_mode = PriceScaleMode::Regular;
+            }
             chart.overlays = crate::model::overlay::OverlayList::new();
         }
     }

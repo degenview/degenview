@@ -264,6 +264,7 @@ fn the_crosshair_names_every_overlay_and_says_so_where_a_market_has_no_candle() 
 
 fn crosshair_at(_chart: &Harness, x_fraction: f64) -> CrosshairInfo {
     CrosshairInfo {
+        frozen: false,
         x_fraction,
         price: 120.0,
         owner_id: 1,
@@ -333,6 +334,64 @@ fn the_readout_has_the_same_padding_above_its_first_row_and_below_its_last() {
 }
 
 #[test]
+fn the_card_with_one_market_is_as_tall_as_the_ohlc_box_above_it() {
+    let mut chart = harness(&[("ETHUSDT", market(300, |n| 4_000.0 + n as f64))]);
+    chart.crosshair = Some(crosshair_at(&chart, 0.5));
+    let (drawn, _) = chart.draw();
+    let box_fill = theme::chrome().gamma_multiply(0.94);
+    let mut boxes: Vec<Rect> = drawn
+        .rects
+        .iter()
+        .filter(|(_, fill)| *fill == box_fill)
+        .map(|(rect, _)| *rect)
+        .collect();
+    boxes.sort_by(|a, b| a.top().total_cmp(&b.top()));
+    assert!(boxes.len() >= 2, "the OHLC box and the card: {boxes:?}");
+    assert!(
+        (boxes[0].height() - boxes[1].height()).abs() < 0.5,
+        "{} vs {}",
+        boxes[0].height(),
+        boxes[1].height()
+    );
+}
+
+#[test]
+fn a_frozen_crosshair_keeps_the_ohlc_box_and_the_card_but_draws_no_lines_or_tags() {
+    let mut chart = harness(&[("ETHUSDT", market(300, |n| 4_000.0 + n as f64))]);
+    let live = crosshair_at(&chart, 0.5);
+    chart.crosshair = Some(live);
+    let (moving, _) = chart.draw();
+    chart.crosshair = Some(CrosshairInfo {
+        frozen: true,
+        ..live
+    });
+    let (frozen, _) = chart.draw();
+    let has = |drawn: &super::canvas_tests::Drawn, text: &str| {
+        drawn.texts.iter().any(|(_, t, _)| t.starts_with(text))
+    };
+    for text in ["O ", "C ", "Vol ", "ETHUSDT"] {
+        assert!(
+            has(&moving, text) && has(&frozen, text),
+            "{text} stays: {:?} / {:?}",
+            moving.texts.iter().map(|t| t.1.clone()).collect::<Vec<_>>(),
+            frozen.texts.iter().map(|t| t.1.clone()).collect::<Vec<_>>()
+        );
+    }
+    assert!(
+        frozen.segments.len() < moving.segments.len(),
+        "the crosshair's lines are gone: {} vs {}",
+        frozen.segments.len(),
+        moving.segments.len()
+    );
+    assert!(
+        frozen.texts.len() < moving.texts.len(),
+        "so are the price and time tags: {} vs {}",
+        frozen.texts.len(),
+        moving.texts.len()
+    );
+}
+
+#[test]
 fn the_source_and_scale_are_per_overlay() {
     let mut chart = harness(&[
         ("ETHUSDT", market(300, |n| 4_000.0 + n as f64)),
@@ -377,7 +436,7 @@ fn the_crosshair_names_a_market_with_nothing_in_view_and_gives_it_a_dash() {
         .collect();
     assert!(texts.contains(&"OLDUSDT"), "it still has a row: {texts:?}");
     assert!(texts.contains(&"—"), "with a dash: {texts:?}");
-    // A hidden market is not listed.
+    // A hidden market stays on the card, so it can be shown again; it says it is hidden.
     let mut list = chart.card.overlay_list().clone();
     let old = list.as_slice()[1].id;
     list.set_visible(old, false);
@@ -389,7 +448,21 @@ fn the_crosshair_names_a_market_with_nothing_in_view_and_gives_it_a_dash() {
         .card
         .set_overlays(list, feeds, 2, DataSource::Binance, "BTCUSDT");
     let (drawn, _) = chart.draw();
-    assert!(drawn.texts.iter().all(|(_, text, _)| text != "OLDUSDT"));
+    assert!(drawn.texts.iter().any(|(_, text, _)| text == "OLDUSDT"));
+    assert!(drawn.texts.iter().any(|(_, text, _)| text == "hidden"));
+}
+
+#[test]
+fn the_card_is_only_there_while_the_crosshair_is_and_has_no_controls_until_a_row_is_hovered() {
+    let mut chart = harness(&[("ETHUSDT", market(300, |n| 4_000.0 + n as f64))]);
+    let (drawn, _) = chart.draw();
+    assert!(
+        drawn.texts.iter().all(|(_, text, _)| text != "ETHUSDT"),
+        "no crosshair, no card"
+    );
+    chart.crosshair = Some(crosshair_at(&chart, 0.5));
+    let (drawn, _) = chart.draw();
+    assert!(drawn.texts.iter().any(|(_, text, _)| text == "ETHUSDT"));
 }
 
 /// The right edge of the plot: where the grid lines stop (the lines that run on to the card's
