@@ -161,6 +161,13 @@ impl ChartWorkspace {
             // The focused chart follows it before it next draws (`follow_sync`), once it has bars:
             // a chart still loading keeps the event until there is something to move.
             LinkSignal::View(change) => {
+                // An event under other switches than the last one starts the hub afresh, so a
+                // half-finished zoom of the old kind is never finished under the new.
+                let settings = self.link_view_settings();
+                if settings != self.link_state.view_settings {
+                    self.link_state.view_settings = settings;
+                    self.link_state.hub.reset();
+                }
                 self.link_state.hub.publish(LINK_ORIGIN, *change);
                 true
             }

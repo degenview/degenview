@@ -379,3 +379,41 @@ fn a_tab_joining_a_group_adopts_its_symbol_without_touching_the_others() {
     assert_eq!(shown(&a, chart_a), "ETHUSDT");
     assert_eq!(shown(&b, chart_b), "ETHUSDT");
 }
+
+#[test]
+fn a_view_delivered_while_the_tab_is_hidden_waits_for_its_next_draw_even_if_the_switches_changed() {
+    use crate::model::chart_sync::{HorizontalChange, TimeRange};
+    use crate::model::tab_link::LinkToggles;
+    let ctx = egui::Context::default();
+    let mut workspace = empty_workspace(1);
+    chart_with_drawings(&mut workspace, "BTCUSDT", &[]);
+    let host = crate::host::tab_link_host::TabLinkHost::default();
+    workspace.set_link_host(&host);
+    workspace.set_link(Some(LinkColor::Orange));
+    let change = HorizontalChange {
+        range: TimeRange {
+            left: 0.0,
+            right: 1_000.0,
+        },
+        latest: false,
+        moved: true,
+        zoom: None,
+    };
+    // Symbol only: the tab's last draw happened under "nothing to follow".
+    assert!(!workspace.link_view_settings().is_linked());
+    // The user turns Time on while this tab is hidden, then pans another tab.
+    host.set_toggles(
+        None,
+        LinkColor::Orange,
+        LinkToggles {
+            time: true,
+            ..LinkToggles::default()
+        },
+    )
+    .unwrap();
+    assert!(workspace.apply_link(1, &LinkSignal::View(change), &ctx));
+    assert!(
+        workspace.link_state.hub.latest_event().is_some(),
+        "the event is kept for the tab's next draw"
+    );
+}

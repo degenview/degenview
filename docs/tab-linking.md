@@ -66,9 +66,10 @@ with `follow_sync` before it draws, exactly as a chart follows another chart of 
 | off | on | – | their bar count scales by the leader's factor; their position is kept |
 | on | on | as above | they show the leader's time range |
 
-A chart with no bars yet is not asked to follow, so the event waits for its candles. A change of
-the group's switches drops whatever the tab's hub was carrying (nothing jumps when a switch is
-turned on; the next navigation takes effect). A symbol or interval change resets every linked
+A chart with no bars yet is not asked to follow, so the event waits for its candles, and so does
+a tab that is not showing (it follows when it is next drawn). Nothing jumps when a switch is turned
+on; the next navigation takes effect, and an event that arrives under other switches than the last
+one starts the tab's hub afresh. A symbol or interval change resets every linked
 chart to its newest bars, the way it does for the user, and the view is not replayed afterwards.
 Price-based chart types (Renko, Kagi, Line Break, Point & Figure, Range) neither lead nor follow.
 Vertical scales are never carried.

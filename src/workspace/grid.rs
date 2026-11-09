@@ -291,13 +291,10 @@ impl ChartWorkspace {
         let sync = self.sync;
         let linked = self.market_charts() > 1 && sync.is_linked();
         let mut navigated = false;
-        // Tab Linking moves and listens to the focused chart only; a change of what is shared
-        // drops whatever the group's hub was carrying.
+        // Tab Linking moves and listens to the focused chart only. (A change of what is shared is
+        // dealt with when the next event arrives, not here: a tab that was hidden when the
+        // switches changed must still hear what was said while it was.)
         let link_view = self.link_view_settings();
-        if link_view != self.link_state.view_settings {
-            self.link_state.view_settings = link_view;
-            self.link_state.hub.reset();
-        }
         let link_focus = link_view
             .is_linked()
             .then(|| self.resolved_focused_id())
