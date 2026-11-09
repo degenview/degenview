@@ -94,8 +94,8 @@
   icons at the strip's far right on every platform, left of the window buttons, and also in
   macOS's Help menu. The user guide (`tab_bar::DOCS_URL`) is the first Help item on macOS and a
   Documentation row in Settings ▸ About on every platform.
-- The first window opens at 80% of the main screen's usable area (`NSScreen.visibleFrame`,
-  `native_bridge::main_work_area`), at least 960x620, at most 2000x1300, never bigger than the area,
+- The first window opens at 80% of the width and 90% of the height of the main screen's usable area
+  (`NSScreen.visibleFrame`, `native_bridge::main_work_area`), at least 960x620, at most 2000x1300, never bigger than the area,
   centered (`Placement::for_work_area`). Windows and Linux have no screen lookup and open at the
   fixed `Placement::DEFAULT_SIZE`. A torn-off window keeps its source's size. Window frames are not
   saved across restarts. The share and limits are a taste choice, not measured.

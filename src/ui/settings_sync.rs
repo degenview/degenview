@@ -387,7 +387,7 @@ fn delete_dialog(ctx: &egui::Context) -> Option<DialogOutcome> {
         .frame(
             egui::Frame::new()
                 .fill(theme::pick(
-                    egui::Color32::from_rgb(44, 52, 57),
+                    egui::Color32::from_rgb(31, 36, 40),
                     egui::Color32::from_rgb(246, 246, 247),
                 ))
                 .corner_radius(12.0)

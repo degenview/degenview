@@ -25,8 +25,8 @@ pub struct Placement {
 impl Placement {
     /// The size where the screen is not known.
     pub const DEFAULT_SIZE: Vec2 = vec2(1600.0, 1000.0);
-    /// What share of the screen's usable area the first window takes.
-    const SCREEN_SHARE: f32 = 0.8;
+    /// What share of the screen's usable width and height the first window takes.
+    const SCREEN_SHARE: Vec2 = vec2(0.8, 0.9);
     /// Never smaller than a chart window can be, nor bigger than this on a huge display.
     const FIRST_MIN: Vec2 = vec2(960.0, 620.0);
     const FIRST_MAX: Vec2 = vec2(2000.0, 1300.0);
@@ -1063,16 +1063,17 @@ mod tests {
     #[test]
     fn a_laptop_gets_most_of_its_usable_area_centered() {
         let placement = Placement::for_work_area(Some(area(0.0, 38.0, 1512.0, 944.0)));
-        assert_eq!(placement.size, vec2(1209.6, 755.2));
+        assert!((placement.size.x - 1209.6).abs() < 0.01);
+        assert!((placement.size.y - 849.6).abs() < 0.01);
         let position = placement.position.unwrap();
         assert!((position.x - 151.2).abs() < 0.01);
-        assert!((position.y - (38.0 + 944.0 / 2.0 - 755.2 / 2.0)).abs() < 0.01);
+        assert!((position.y - (38.0 + 944.0 / 2.0 - 849.6 / 2.0)).abs() < 0.01);
     }
 
     #[test]
     fn a_huge_display_is_capped() {
         let placement = Placement::for_work_area(Some(area(0.0, 0.0, 5120.0, 1400.0)));
-        assert_eq!(placement.size, vec2(2000.0, 1120.0));
+        assert_eq!(placement.size, vec2(2000.0, 1260.0));
     }
 
     #[test]
@@ -1087,10 +1088,10 @@ mod tests {
     #[test]
     fn a_second_display_centers_in_its_own_area() {
         let placement = Placement::for_work_area(Some(area(1080.0, -400.0, 2560.0, 1400.0)));
-        assert_eq!(placement.size, vec2(2000.0, 1120.0));
+        assert_eq!(placement.size, vec2(2000.0, 1260.0));
         assert_eq!(
             placement.position,
-            Some(pos2(1080.0 + 280.0, -400.0 + 140.0))
+            Some(pos2(1080.0 + 280.0, -400.0 + 70.0))
         );
     }
 

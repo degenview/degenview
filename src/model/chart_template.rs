@@ -201,7 +201,7 @@ fn default_dark() -> ChartAppearance {
         canvas: ChartCanvas {
             background: BackgroundAppearance {
                 mode: BackgroundMode::Solid,
-                solid: Some([31, 40, 44, 255]),
+                solid: Some([20, 26, 28, 255]),
                 ..BackgroundAppearance::default()
             },
             vertical_grid: LineAppearance {

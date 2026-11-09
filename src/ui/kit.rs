@@ -1146,7 +1146,7 @@ pub fn menu_separator(ui: &mut Ui) {
 /// What menus and popovers are filled with.
 pub fn menu_fill() -> Color32 {
     theme::pick(
-        Color32::from_rgb(42, 50, 55),
+        Color32::from_rgb(28, 34, 38),
         Color32::from_rgb(250, 250, 251),
     )
 }
@@ -1667,7 +1667,7 @@ fn alert_sheet(
         .frame(
             egui::Frame::new()
                 .fill(theme::pick(
-                    Color32::from_rgb(44, 52, 57),
+                    Color32::from_rgb(31, 36, 40),
                     Color32::from_rgb(246, 246, 247),
                 ))
                 .corner_radius(12.0)
