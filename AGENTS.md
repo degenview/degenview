@@ -18,6 +18,7 @@ scenario matches the work:
 | Chart patterns, Elliott waves or cycle drawings | [Chart patterns, Elliott waves and cycles](docs/pattern-tools.md) |
 | Position, forecast, volume profile, VWAP or measurement drawings | [Forecasting, volume and measurement tools](docs/forecast-tools.md) |
 | Fibonacci or Gann drawings, level lists, fans, circles, arcs, spirals or Gann angles | [Fibonacci and Gann tools](docs/fibonacci-gann-tools.md) |
+| Market profile engine, the footprint/TPO/session-profile chart types' data, trades, sessions, value areas | [Market profiles](docs/market-profiles.md) |
 | Session statistics: gap fills, prior-day breaks, weekday effects, `degenview_get_session_stats` | [Session statistics](docs/session-stats.md) |
 | Pine language/runtime, Pine Studio, editor behavior, or example scripts | [Pine and scripts](docs/agent-guides/pine.md) |
 | Adding an indicator to a chart: the toolbar's Indicators button, the indicator catalog, or the Pine indicators bundled with the app | [Indicator catalog](docs/indicator-picker.md) |
@@ -126,6 +127,7 @@ because cargo never deletes old output. Finished worktrees are where the disk go
 - [Annotation tools](docs/annotation-tools.md) — text, notes, tables, images and posts; assets and previews.
 - [Chart patterns, Elliott waves and cycles](docs/pattern-tools.md) — the Patterns tile: ratios, labels and degrees, cycles counted in bars, provenance.
 - [Forecasting, volume and measurement tools](docs/forecast-tools.md) — the Forecast tile: hypothetical positions, ghost feed, VWAP and volume profiles from the chart's own bars, measurers, provenance.
+- [Market profiles](docs/market-profiles.md) — the shared engine under the footprint, TPO and session-profile chart types: tick-index price grid, value areas, sessions, trades and candles with taker-buy volume, the hub, data quality, what is inferred.
 - [Session statistics](docs/session-stats.md) — `P(outcome | conditions)` over the chart's own days with N and a 95% interval: sessions, outcomes, filters, the panel and the MCP tool, what the missing sub-hourly bars cost, provenance.
 - [Fibonacci and Gann tools](docs/fibonacci-gann-tools.md) — the Fibonacci and Gann tile: editable level lists, bar-counted time lines, curves sampled where they show, Gann angles as ratios of price to time, provenance.
 - [Symbol picker](docs/symbol-picker.md) — the modal that changes the focused chart's market: scopes, ranking of search hits, exchange names, detail panel, what is verified.

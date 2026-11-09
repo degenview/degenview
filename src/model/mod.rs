@@ -34,6 +34,8 @@ mod instrument;
 mod kline;
 mod layout;
 pub mod link_card;
+#[allow(dead_code)] // the engine under the order-flow chart types, which land on top of it
+pub mod market_profile;
 pub mod mcp;
 pub mod mcp_activity;
 pub mod measure;

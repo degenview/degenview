@@ -43,3 +43,12 @@ pub fn coingecko() -> &'static RateLimiter {
 pub fn geckoterminal() -> &'static RateLimiter {
     GECKOTERMINAL.get_or_init(|| RateLimiter::new(Duration::from_millis(2_200)))
 }
+
+static BINANCE_TRADES: OnceLock<RateLimiter> = OnceLock::new();
+
+/// Binance's `aggTrades` weighs 2 against a shared 6000-a-minute budget (klines, quotes and every
+/// other request of this IP included). One request every 250 ms is at most 480 a minute, leaving
+/// the rest to the charts.
+pub fn binance_trades() -> &'static RateLimiter {
+    BINANCE_TRADES.get_or_init(|| RateLimiter::new(Duration::from_millis(250)))
+}
