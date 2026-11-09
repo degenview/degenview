@@ -120,6 +120,7 @@ pub mod source_logo;
 pub mod split;
 pub mod symbol_picker;
 pub mod tab_bar;
+pub mod tab_link_menu;
 pub mod theme;
 pub mod tool_sidebar;
 pub mod update_indicator;

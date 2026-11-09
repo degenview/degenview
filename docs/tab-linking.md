@@ -1,0 +1,81 @@
+# Tab Linking
+
+Tabs tagged with the same colour keep chosen parts of their chart in step, in any window. This is
+not [Link charts](chart-sync.md), which carries a pan or zoom between the charts of one layout;
+Tab Linking is between tabs and only ever touches the chart the user is working in.
+
+Code: `model::tab_link` (pure model, hub and tests), `host::tab_link_host` (the switches, saved),
+`workspace/tab_link.rs` (a tab's side), `DegenViewApp::tick_tab_links` in `app.rs` (the tick),
+`ui/tab_link_menu.rs` (the menu section), and the dot and the right-click menu in `ui/tab_bar.rs`.
+
+## What TradingView says, and what is ours
+
+Read from TradingView's pages (the Desktop posts of Nov 2025 and May 2026, "Symbol syncing between
+tabs", "How to sync the charts of my layout"):
+
+- Tabs share a **colour tag**; tabs with the same colour form a linked group. Stated.
+- Symbol and Interval are chosen "within each" group, and the options can be used together or
+  separately. Stated. Interval syncs across tabs **and windows**. Stated.
+- Time and Date range exist as sync options for chart tabs. Stated, **but neither is defined**.
+
+Everything else is **not stated by TradingView, so it is a decision here**:
+
+| Question | Decision |
+| --- | --- |
+| Where are the switches kept? | Per colour group: one set per colour, shared by its tabs (the user's choice). |
+| Defaults | Symbol on, the rest off, as the screenshot of TradingView's menu shows. |
+| Where are the options? | At the bottom of a chart tab's right-click menu, after a separator (the user's request); not in the toolbar. They act on the tab that was clicked, showing or not. |
+| Does clicking the chosen colour unlink? | Yes (its tooltip says so). |
+| Where does the tab show its colour? | A dot on the logo, ringed in the tab's fill, and "Linked tab: Orange" in its tooltip. |
+| Who wins when a tab joins? | The joiner adopts the group's latest values for the enabled switches; the tabs already in it are never touched (the user's choice). |
+| What is Time, what is Date range? | Time is the **position** (the time at the right edge of the chart), Date range is the **zoom** (the span of time shown). These are `ChartSyncSettings::horizontal_position` / `horizontal_zoom`, so Link charts' table applies: both on gives the same time range. |
+| Restart | The colour is saved with the tab, the switches in a setting. No event is saved, and nothing moves at startup. |
+| Replay | A tab in replay takes neither a symbol nor an interval (it would move the replay's timeline from under it); it catches up with the group's next change. |
+| Multi-chart layouts | The **focused market chart** leads and follows. Its siblings are not moved by the link; they follow only through their own Link charts when the user navigates. |
+
+## Rules
+
+- A tab is in one group or none. The hub reads membership from the tabs every frame, so a closed,
+  moved or recoloured tab cannot leave a stale subscriber, and a group with no tabs keeps nothing.
+- Only a user's action is announced: the symbol picker, a watchlist click, the timeframe buttons,
+  `degenview_set_timeframe`, and (with Time or Date range) the focused chart's own pan or zoom.
+  Applying a delivery goes through the same commands (`switch_chart`, `reload_for_timeframe`) but
+  never touches the outbox, so nothing echoes. There is no value comparison in the loop guard.
+- A tab's outbox has one slot per kind, newest wins (so BTC → ETH → SOL → AVAX is one delivery,
+  AVAX), and a delivery with an older sequence than one already applied is dropped.
+- Not announced: restoring a session, loading a saved layout, adding a chart, a chart that is not
+  focused, an unlinked tab (its outbox is cleared the moment it is unlinked).
+- The symbol is the whole watchlist row (provider, symbol, title, artwork), never a bare ticker.
+  The chart keeps its type, settings, indicators, Pine instances, drawings and timeframe.
+- A symbol that cannot load is put back: the chart's first fetch fails with nothing on it, so the
+  tab shows what it had and says so in the chart notice. The rest of the group is unaffected.
+- A tab with no market chart (a blank tab, a portfolio card in focus) has nothing to change and gets
+  no chart invented for it.
+- Tab Linking never touches the crosshair, drawings, alerts or Pine scripts.
+
+## Persistence and iCloud
+
+`PersistedWorkspace.link` (`"orange"`, ...), skipped when none, so old rows decode and a row from a
+newer build with a colour this one does not know reads as not linked rather than failing the whole
+`tab` table. The switches are the `tab.link_toggles` setting. The `tab` table and that key are
+both local to the Mac (`sync::policy`), so nothing here reaches CloudKit, and the colour is not in
+a saved layout.
+
+## UI
+
+The section follows the screenshot of TradingView's menu: a muted `TAB LINKING` heading, nine round
+swatches (the colours are sampled from the screenshot) with a check on the chosen one, then Symbol,
+Interval, Time and Date range, each with an info icon (a tooltip) and a switch. With no colour the
+switches are dimmed and do nothing. The switches are the app's own (`kit::paint_switch`), not
+TradingView's dark-knob style, and the labels are 15 pt where the app's body text is 13.
+
+## Verified, and not
+
+- The model, hub, persistence, the workspace's apply and probation, and the menu section's clicks
+  (`the_tab_menu_ends_with_the_tab_linking_section`) are covered by tests; the menu was drawn
+  headlessly in both themes (`gallery_of_the_tab_menu`, `gallery_of_the_tab_linking`) and looked at.
+- **Not run in the real app** in a first pass of this document; see the end of the PR for what was
+  driven by hand. Not verified at all: several physical monitors, Retina and non-Retina side by
+  side, a real offline run, Windows and Linux.
+- The apply latency is the root frame plus a repaint of the target window (one or two frames).
+  A tab in a background window applies a symbol or interval at once but draws it when shown.

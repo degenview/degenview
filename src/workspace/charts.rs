@@ -314,6 +314,7 @@ impl ChartWorkspace {
             return false;
         }
         self.reload_for_timeframe(timeframe, ctx);
+        self.announce_timeframe();
         true
     }
 

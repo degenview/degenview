@@ -68,6 +68,7 @@ mod replay;
 mod settings;
 mod snapshot;
 mod symbol_picker;
+mod tab_link;
 #[cfg(test)]
 mod test_support;
 mod tool_rail;
@@ -279,6 +280,7 @@ pub struct ChartWorkspace {
     /// The Tab Linking group this tab is in, if any. Membership is the tab's own; the switches
     /// belong to the colour and live in `TabLinkHost`.
     link: Option<LinkColor>,
+    link_state: tab_link::LinkState,
     /// The name prompt that is open, if any, and the text in it.
     layout_prompt: Option<NamePrompt>,
     prompt_name: String,
@@ -440,6 +442,7 @@ impl ChartWorkspace {
             active_view_name: None,
             custom_title: None,
             link: None,
+            link_state: Default::default(),
             layout_prompt: None,
             prompt_name: String::new(),
             prompt_focus: false,
@@ -613,10 +616,6 @@ impl ChartWorkspace {
     }
 
     /// The Tab Linking colour this tab is tagged with.
-    #[allow(
-        dead_code,
-        reason = "wired up by the next change in the Tab Linking stack"
-    )]
     pub fn link(&self) -> Option<LinkColor> {
         self.link
     }
@@ -624,15 +623,16 @@ impl ChartWorkspace {
     /// Tags the tab with a colour, or unlinks it. Only the tag changes: the chart, its symbol,
     /// timeframe and viewport are left exactly as they are, and the tab's tag is not part of any
     /// layout. Returns whether it changed.
-    #[allow(
-        dead_code,
-        reason = "wired up by the next change in the Tab Linking stack"
-    )]
     pub fn set_link(&mut self, link: Option<LinkColor>) -> bool {
         if self.link == link {
             return false;
         }
         self.link = link;
+        if link.is_none() {
+            // Unlinking stops what the tab would have announced, at once.
+            self.link_state.outbox.take();
+            self.link_state.probation = None;
+        }
         true
     }
 
@@ -693,6 +693,7 @@ impl ChartWorkspace {
             }
         }
 
+        self.tick_link_probation(&ctx);
         self.tick_overlays(&ctx);
         self.update_live_feed(&ctx);
         self.sync_paper_quotes(paper_host);

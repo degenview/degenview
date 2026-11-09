@@ -159,7 +159,7 @@ fn a_damaged_table_loses_only_what_is_damaged() {
     }
 }
 
-// MARK: Outbox and bus
+// MARK: Outbox
 
 #[test]
 fn an_outbox_keeps_one_slot_per_kind_newest_wins() {
@@ -180,23 +180,6 @@ fn an_outbox_keeps_one_slot_per_kind_newest_wins() {
     assert_eq!(taken[1], LinkSignal::Timeframe(Timeframe::Day));
     assert_eq!(taken[2], LinkSignal::View(view(2.0)));
     assert!(outbox.is_empty());
-}
-
-#[test]
-fn a_bus_stays_bounded_under_a_flood_and_keeps_the_order_tabs_spoke_in() {
-    let mut bus = LinkBus::default();
-    for step in 0..10_000 {
-        bus.push(9, LinkSignal::View(view(f64::from(step))));
-        bus.push(3, LinkSignal::View(view(f64::from(step))));
-    }
-    let taken = bus.take();
-    assert_eq!(
-        taken.iter().map(|(tab, _)| *tab).collect::<Vec<_>>(),
-        [9, 3]
-    );
-    assert!(taken.iter().all(|(_, signals)| signals.len() == 1));
-    assert_eq!(taken[0].1[0], LinkSignal::View(view(9_999.0)));
-    assert!(bus.is_empty());
 }
 
 // MARK: Symbol
@@ -746,4 +729,29 @@ fn a_delivered_signal_is_not_a_new_signal() {
     for _ in 0..100 {
         assert!(hub.tick(&members, &table, Vec::new()).is_empty());
     }
+}
+
+#[test]
+fn a_group_restored_with_several_tabs_gives_a_joiner_its_longest_standing_tabs_values() {
+    let mut hub = LinkHub::default();
+    let table = table(LinkColor::Orange, ALL);
+    let mut members = vec![
+        member(5, on(LinkColor::Orange), "ETHUSDT", Timeframe::Week),
+        member(2, on(LinkColor::Orange), "BTCUSDT", Timeframe::Day),
+    ];
+    // The restore: nothing is delivered and nobody is overwritten.
+    assert!(hub.reconcile(&members, &table).is_empty());
+    // A tab is tagged afterwards: it adopts the lowest-id member's values.
+    members.push(member(9, on(LinkColor::Orange), "SOLUSDT", Timeframe::Hour));
+    let out = hub.reconcile(&members, &table);
+    assert_eq!(targets(&out), [9, 9]);
+    assert_eq!(symbol_of(&out[0]), "BTCUSDT");
+    assert!(matches!(
+        out[1].signal,
+        LinkSignal::Timeframe(Timeframe::Day)
+    ));
+    assert!(
+        hub.reconcile(&members, &table).is_empty(),
+        "the others were not touched"
+    );
 }

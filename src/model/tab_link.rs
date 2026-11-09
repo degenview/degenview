@@ -25,11 +25,6 @@
 //! without defining them): Time is the position (the time at the right edge of the chart) and
 //! Date range is the zoom (the span of time shown), which is what [`ChartSyncSettings`] already
 //! calls them; both on gives the same time range.
-#![allow(
-    dead_code,
-    reason = "wired up by the next change in the Tab Linking stack"
-)]
-
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -151,6 +146,7 @@ impl Default for LinkToggles {
 }
 
 impl LinkToggles {
+    #[cfg(test)]
     pub const NONE: Self = Self {
         symbol: false,
         interval: false,
@@ -168,6 +164,10 @@ impl LinkToggles {
 
     /// What a pan or zoom carries to the other tab, in the terms the chart-to-chart follower
     /// already has: Time is the position, Date range is the zoom.
+    #[cfg_attr(
+        not(test),
+        allow(dead_code, reason = "used by the viewport follower of the next change")
+    )]
     pub const fn viewport(self) -> ChartSyncSettings {
         ChartSyncSettings {
             horizontal_position: self.time,
@@ -289,37 +289,6 @@ impl LinkOutbox {
     }
 }
 
-/// Every tab's outbox, collected for the hub. Same newest-wins rule per tab and kind, and the
-/// order tabs first spoke in is kept so a tick is deterministic.
-#[derive(Clone, Debug, Default)]
-pub struct LinkBus {
-    entries: Vec<(TabId, LinkOutbox)>,
-}
-
-impl LinkBus {
-    pub fn push(&mut self, tab: TabId, signal: LinkSignal) {
-        match self.entries.iter_mut().find(|(id, _)| *id == tab) {
-            Some((_, outbox)) => outbox.push(signal),
-            None => {
-                let mut outbox = LinkOutbox::default();
-                outbox.push(signal);
-                self.entries.push((tab, outbox));
-            }
-        }
-    }
-
-    pub fn take(&mut self) -> Vec<(TabId, Vec<LinkSignal>)> {
-        std::mem::take(&mut self.entries)
-            .into_iter()
-            .map(|(tab, mut outbox)| (tab, outbox.take()))
-            .collect()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
-    }
-}
-
 /// What the hub needs to know about one tab, read from the tabs themselves each tick.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Member {
@@ -394,16 +363,31 @@ impl LinkHub {
                 .copied()
                 .filter(|member| !group.members.contains(&member.tab))
                 .collect();
+            // The tab that has been in the group longest (the lowest id, so it does not depend on
+            // the order tabs are listed in) stands for what the group holds until someone changes
+            // it. Only used when a tab joins a group that already had tabs.
+            let veteran = present
+                .iter()
+                .copied()
+                .filter(|member| group.members.contains(&member.tab))
+                .min_by_key(|member| member.tab);
             group.members = ids;
 
             // The first tab of a group seeds what the group holds, so the next one to join has
-            // something to adopt. A restore (several tabs at once) seeds nothing.
-            if let [only] = present.as_slice() {
+            // something to adopt; so does a veteran when the group has no value yet (it was
+            // restored with several tabs at once, and nobody has changed anything). A restore
+            // itself delivers nothing: every tab is new and none is a veteran.
+            let seed = match (present.as_slice(), veteran) {
+                ([only], _) => Some(*only),
+                (_, Some(veteran)) if !joiners.is_empty() => Some(veteran),
+                _ => None,
+            };
+            if let Some(seed) = seed {
                 if toggles.symbol && group.market.is_none() {
-                    group.market = only.market.clone();
+                    group.market = seed.market.clone();
                 }
                 if toggles.interval && group.timeframe.is_none() {
-                    group.timeframe = Some(only.timeframe);
+                    group.timeframe = Some(seed.timeframe);
                 }
             }
 
@@ -522,17 +506,20 @@ impl LinkHub {
         merge(all)
     }
 
-    /// The most recent value the group shares, for tests and diagnostics.
+    /// The most recent value the group shares, for tests.
+    #[cfg(test)]
     pub fn group_timeframe(&self, color: LinkColor) -> Option<Timeframe> {
         self.groups.get(&color).and_then(|group| group.timeframe)
     }
 
+    #[cfg(test)]
     pub fn group_market(&self, color: LinkColor) -> Option<&WatchlistInstrument> {
         self.groups
             .get(&color)
             .and_then(|group| group.market.as_deref())
     }
 
+    #[cfg(test)]
     pub fn has_group(&self, color: LinkColor) -> bool {
         self.groups.contains_key(&color)
     }

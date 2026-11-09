@@ -10,6 +10,7 @@ use crate::host::pine_subscription_host::PineSubscriptionHost;
 use crate::host::portfolio_card_host::PortfolioCardEnv;
 use crate::host::portfolio_host::{PortfolioHost, PortfolioTab};
 use crate::host::snapshot_host::SnapshotHost;
+use crate::host::tab_link_host::TabLinkHost;
 use crate::host::tab_title_host::TabTitleHost;
 use crate::host::tab_window_host::{Placement, TabRequest, TabWindowHost};
 use crate::host::update_host::{Phase, UpdateHost, UpdateView};
@@ -305,6 +306,10 @@ pub struct DegenViewApp {
     quote_coordinator: WatchlistQuoteCoordinator,
     /// How chart tabs name themselves, shared by every window and Settings.
     tab_title_host: TabTitleHost,
+    /// Tab Linking: the switches of every colour, and who is in which group.
+    tab_link_host: TabLinkHost,
+    link_hub: crate::model::tab_link::LinkHub,
+    tab_link_revision: u64,
     /// The markets the tab strips asked quotes for last time (their keys), so the demand is only
     /// re-issued when a tab's focused chart changes.
     tab_quote_keys: Vec<String>,
@@ -472,6 +477,7 @@ struct WindowEnv {
     /// The shared quotes the tab strip reads its prices from.
     quote_book: WatchlistQuoteBook,
     tab_title: TabTitleHost,
+    tab_link: TabLinkHost,
 }
 
 impl WindowEnv {
@@ -482,9 +488,14 @@ impl WindowEnv {
     fn view(&self, tab: u64) -> Option<TabView> {
         let content = self.content(tab)?;
         let content = content.lock().ok()?;
-        let (chart, timeframe) = match &*content {
-            TabContent::Chart(workspace) => (workspace.tab_chart(), workspace.timeframe().label()),
-            _ => (None, ""),
+        let (chart, timeframe, link, linkable) = match &*content {
+            TabContent::Chart(workspace) => (
+                workspace.tab_chart(),
+                workspace.timeframe().label(),
+                workspace.link(),
+                true,
+            ),
+            _ => (None, "", None, false),
         };
         Some(TabView {
             id: tab,
@@ -492,7 +503,26 @@ impl WindowEnv {
             icon: content.icon(),
             chart,
             timeframe,
+            link,
+            linkable,
+            link_toggles: link
+                .map(|color| self.tab_link.toggles(color))
+                .unwrap_or_default(),
         })
+    }
+
+    /// Tags a chart tab with a Tab Linking colour, or takes it out of its group. The chart is left
+    /// as it is; the hub aligns a tab that joined a group on the next frame.
+    fn set_tab_link(&self, tab: u64, color: Option<crate::model::tab_link::LinkColor>) {
+        let Some(content) = self.content(tab) else {
+            return;
+        };
+        if let Ok(mut content) = content.lock()
+            && let TabContent::Chart(workspace) = &mut *content
+            && workspace.set_link(color)
+        {
+            self.tab_link.touch();
+        }
     }
 
     /// Gives a chart tab its own title (or takes it away). Other tabs have none.
@@ -615,6 +645,15 @@ fn show_window(
     events.retain(|event| match event {
         tab_bar::TabBarEvent::SetCustomTitle { tab, title } => {
             env.set_custom_title(*tab, title.clone());
+            false
+        }
+        tab_bar::TabBarEvent::SetLink { tab, color } => {
+            env.set_tab_link(*tab, *color);
+            false
+        }
+        tab_bar::TabBarEvent::SetLinkToggles { color, toggles } => {
+            // A failed write leaves the choice in force until the app quits.
+            let _ = env.tab_link.set_toggles(None, *color, *toggles);
             false
         }
         tab_bar::TabBarEvent::SetTitleStyle(style) => {
@@ -766,11 +805,16 @@ fn show_tab(
             }
             workspace.set_card_env(&env.card_env);
             workspace.set_snapshots(&env.snapshots);
+            workspace.set_link_host(&env.tab_link);
             let actions = env
                 .paper_host
                 .lock()
                 .map(|mut host| workspace.ui(ui, &mut host))
                 .unwrap_or_default();
+            if workspace.has_link_signals() {
+                // The root window collects them; it only draws when asked.
+                ui.ctx().request_repaint_of(egui::ViewportId::ROOT);
+            }
             if !actions.is_empty()
                 && let Ok(mut pending) = env.app_actions.lock()
             {
@@ -913,6 +957,7 @@ impl DegenViewApp {
         let paper = Arc::new(Mutex::new(PaperHost::load(store.clone())));
         let snapshots = SnapshotHost::load(store.clone());
         let tab_title_host = TabTitleHost::load(store.clone());
+        let tab_link_host = TabLinkHost::load(store.clone());
         let editor_themes = {
             let loaded = store
                 .lock()
@@ -1096,6 +1141,9 @@ impl DegenViewApp {
             mcp_snapshots: Mutex::new(mcp_host::SnapshotJobs::default()),
             webhook_host,
             tab_title_host,
+            tab_link_host,
+            link_hub: Default::default(),
+            tab_link_revision: 0,
             tab_quote_keys: Vec::new(),
             tab_quote_revision: 0,
             tab_title_revision: 0,
@@ -1461,6 +1509,59 @@ impl DegenViewApp {
         if revision != self.tab_quote_revision || style_revision != self.tab_title_revision {
             self.tab_quote_revision = revision;
             self.tab_title_revision = style_revision;
+            for (window, _) in self.tab_host.snapshot() {
+                ctx.request_repaint_of(Self::viewport_id(window.id));
+            }
+        }
+    }
+
+    /// Tab Linking, once per frame of the root window: reads who is in which group from the tabs,
+    /// collects what the users did since the last frame, and applies what the groups answer.
+    ///
+    /// Membership comes from the tabs themselves each frame (never from a second list), so a tab
+    /// that was closed, moved to another window or recoloured is already right. Tabs are locked
+    /// one at a time and never while another is: a delivery is applied after every tab has been
+    /// read. Nothing here waits on the network; a delivery starts the same fetch the user's own
+    /// choice would have.
+    fn tick_tab_links(&mut self, ctx: &egui::Context) {
+        let mut members = Vec::new();
+        let mut signals = Vec::new();
+        let mut slots = Vec::new();
+        for (index, slot) in self.tabs.iter().enumerate() {
+            let Ok(mut content) = slot.content.lock() else {
+                continue;
+            };
+            if let TabContent::Chart(workspace) = &mut *content {
+                let member = workspace.link_member();
+                let said = workspace.take_link_signals();
+                if !said.is_empty() {
+                    signals.push((member.tab, said));
+                }
+                slots.push((member.tab, index));
+                members.push(member);
+            }
+        }
+        let table = self.tab_link_host.table();
+        let deliveries = self.link_hub.tick(&members, &table, signals);
+        let mut moved = false;
+        for delivery in deliveries {
+            let Some(&(_, index)) = slots.iter().find(|(tab, _)| *tab == delivery.target) else {
+                continue;
+            };
+            let Ok(mut content) = self.tabs[index].content.lock() else {
+                continue;
+            };
+            if let TabContent::Chart(workspace) = &mut *content
+                && workspace.apply_link(delivery.sequence, &delivery.signal, ctx)
+            {
+                moved = true;
+            }
+        }
+        // The tab windows are viewports of their own: a changed chart, a new colour dot or a
+        // changed switch is only seen by a window that is asked to draw.
+        let revision = self.tab_link_host.revision();
+        if moved || revision != self.tab_link_revision {
+            self.tab_link_revision = revision;
             for (window, _) in self.tab_host.snapshot() {
                 ctx.request_repaint_of(Self::viewport_id(window.id));
             }
@@ -2834,6 +2935,7 @@ impl DegenViewApp {
             mcp_confirmations: Arc::clone(&self.mcp_confirmations),
             quote_book: self.quote_book.clone(),
             tab_title: self.tab_title_host.clone(),
+            tab_link: self.tab_link_host.clone(),
         };
         for (window, placement) in self.tab_host.snapshot() {
             let active = self
@@ -3478,6 +3580,7 @@ impl eframe::App for DegenViewApp {
         self.tick_sync(ctx);
         self.tick_editor_themes();
         self.tick_tab_quotes(ctx);
+        self.tick_tab_links(ctx);
         self.tab_host
             .restore_frames(ctx, native_bridge::screen_layout(), now_ms().max(0) as u64);
         if self.session_last_saved_at.elapsed() >= Duration::from_secs(10) {

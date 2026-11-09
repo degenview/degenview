@@ -85,7 +85,11 @@ impl ChartWorkspace {
         for action in workspace_toolbar::show(ui, &input) {
             match action {
                 ToolbarAction::SetTimeframe(timeframe) => {
+                    let changed = self.timeframe != timeframe;
                     self.reload_for_timeframe(timeframe, ctx);
+                    if changed {
+                        self.announce_timeframe();
+                    }
                 }
                 ToolbarAction::OpenSymbolSearch => self.open_symbol_picker(),
                 ToolbarAction::SaveLayout => save_clicked = true,

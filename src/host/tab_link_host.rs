@@ -1,24 +1,17 @@
-//! Tab Linking's shared state: the switches of every colour group, saved to the `setting` table,
-//! and the mailbox the tabs drop what the user did into. One of these is shared by every window
-//! (and any menu that edits a group). The choices are local to the Mac, like the tabs themselves.
+//! Tab Linking's shared state: the switches of every colour group, saved to the `setting` table.
+//! One of these is shared by every window (and any menu that edits a group). The choices are local to the Mac, like the tabs themselves.
 //!
 //! A tab's own colour is not here: it is saved with the tab (`PersistedWorkspace::link`).
-#![allow(
-    dead_code,
-    reason = "wired up by the next change in the Tab Linking stack"
-)]
-
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use crate::model::tab_link::{LinkBus, LinkColor, LinkSignal, LinkTable, LinkToggles, TabId};
+use crate::model::tab_link::{LinkColor, LinkTable, LinkToggles};
 use crate::store::{SharedStore, Store};
 
 #[derive(Clone, Default)]
 pub struct TabLinkHost {
     store: Option<SharedStore>,
     table: Arc<Mutex<LinkTable>>,
-    bus: Arc<Mutex<LinkBus>>,
     /// Bumped on every change to a group's switches or a colour, so the app can repaint the tab
     /// windows (each repaints on its own and an idle one would keep showing the old state).
     revision: Arc<AtomicU64>,
@@ -37,7 +30,6 @@ impl TabLinkHost {
         Self {
             store: Some(store),
             table: Arc::new(Mutex::new(table)),
-            bus: Arc::default(),
             revision: Arc::default(),
         }
     }
@@ -89,33 +81,11 @@ impl TabLinkHost {
             .map_err(|_| "The settings database is unavailable.".to_owned())?;
         write(&store)
     }
-
-    /// A tab reports what its user did. Newest per tab and kind wins.
-    pub fn push(&self, tab: TabId, signal: LinkSignal) {
-        self.bus
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .push(tab, signal);
-    }
-
-    /// Everything reported since the last call, in the order tabs first reported.
-    pub fn drain(&self) -> Vec<(TabId, Vec<LinkSignal>)> {
-        self.bus.lock().unwrap_or_else(|e| e.into_inner()).take()
-    }
-
-    pub fn has_signals(&self) -> bool {
-        !self
-            .bus
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .is_empty()
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::Timeframe;
 
     fn shared() -> SharedStore {
         Arc::new(Mutex::new(Store::open_in_memory().expect("store")))
@@ -187,25 +157,5 @@ mod tests {
             .unwrap();
         let host = TabLinkHost::load(store);
         assert_eq!(host.toggles(LinkColor::Green), LinkToggles::default());
-    }
-
-    #[test]
-    fn the_mailbox_keeps_the_newest_per_tab_and_kind_and_empties_on_drain() {
-        let host = TabLinkHost::load(shared());
-        assert!(!host.has_signals());
-        host.push(4, LinkSignal::Timeframe(Timeframe::Hour));
-        host.push(4, LinkSignal::Timeframe(Timeframe::Week));
-        host.push(2, LinkSignal::Timeframe(Timeframe::Day));
-        assert!(host.has_signals());
-        let drained = host.drain();
-        assert_eq!(
-            drained,
-            vec![
-                (4, vec![LinkSignal::Timeframe(Timeframe::Week)]),
-                (2, vec![LinkSignal::Timeframe(Timeframe::Day)]),
-            ]
-        );
-        assert!(!host.has_signals());
-        assert!(host.drain().is_empty());
     }
 }
