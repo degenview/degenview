@@ -114,6 +114,7 @@ impl ChartWorkspace {
         let item =
             WatchlistInstrument::from_market(result.source, &result.symbol, &result.full_symbol);
         self.switch_chart(chart_id, &item, ctx);
+        self.announce_market(&item);
     }
 }
 

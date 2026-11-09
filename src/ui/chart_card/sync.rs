@@ -82,6 +82,15 @@ impl ChartCard {
         }
     }
 
+    /// What the user's navigation changed this frame, left in place for [`publish_sync`] to take:
+    /// Tab Linking reads it for the tab's focused chart, whether or not the charts of the layout
+    /// are linked to each other.
+    ///
+    /// [`publish_sync`]: Self::publish_sync
+    pub fn link_change(&self) -> Option<HorizontalChange> {
+        self.sync_change
+    }
+
     /// The horizontal viewport, for tests and diagnostics.
     #[cfg(test)]
     pub fn horizontal(&self) -> crate::model::viewport::HorizontalViewport {

@@ -374,7 +374,9 @@ impl TabWindowHost {
                 // and the titles, which belong to the tab and the app).
                 TabBarEvent::UpdateClicked
                 | TabBarEvent::SetCustomTitle { .. }
-                | TabBarEvent::SetTitleStyle(_) => {}
+                | TabBarEvent::SetTitleStyle(_)
+                | TabBarEvent::SetLink { .. }
+                | TabBarEvent::SetLinkToggles { .. } => {}
             }
         }
     }

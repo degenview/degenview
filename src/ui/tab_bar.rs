@@ -5,6 +5,7 @@
 use super::icons::{self, Icon};
 use super::kit;
 use super::shortcut;
+use super::tab_link_menu::{self, TabLinkEdit};
 use super::theme;
 use super::update_indicator;
 use super::window_chrome::{self, Control};
@@ -47,7 +48,7 @@ const CLOSE_SIZE: f32 = 18.0;
 const ICON_SIZE: f32 = 13.0;
 /// An instrument's logo, in a circle.
 const LOGO_SIZE: f32 = 18.0;
-/// The accent line under the active tab.
+/// The line under a linked tab, in its colour.
 const UNDERLINE: f32 = 2.5;
 const TEXT_SIZE: f32 = 12.5;
 /// How long tabs take to slide to a new slot.
@@ -64,6 +65,12 @@ pub struct TabView {
     pub chart: Option<TabChart>,
     /// The timeframe shown in the hover text.
     pub timeframe: &'static str,
+    /// The Tab Linking colour the tab is tagged with, shown as a dot on its logo.
+    pub link: Option<crate::model::tab_link::LinkColor>,
+    /// A chart tab can be linked (the portfolio and Pine Studio cannot): its menu has the section.
+    pub linkable: bool,
+    /// What the tab's colour group keeps in step, for the menu's switches.
+    pub link_toggles: crate::model::tab_link::LinkToggles,
 }
 
 /// A window a tab can be sent to from the context menu.
@@ -129,6 +136,17 @@ pub enum TabBarEvent {
         title: Option<String>,
     },
     SetTitleStyle(TabTitleStyle),
+    /// Tag the tab with a Tab Linking colour, or `None` to unlink it. Only the tag changes: the
+    /// chart is left as it is.
+    SetLink {
+        tab: TabId,
+        color: Option<crate::model::tab_link::LinkColor>,
+    },
+    /// The switches of a Tab Linking colour changed.
+    SetLinkToggles {
+        color: crate::model::tab_link::LinkColor,
+        toggles: crate::model::tab_link::LinkToggles,
+    },
     MoveToNewWindow(TabId),
     MoveToWindow {
         tab: TabId,
@@ -598,6 +616,14 @@ impl TabBar<'_> {
                     .quotes
                     .get(&InstrumentId::new(chart.source, &chart.symbol));
                 ui.label(tab_title::tooltip(chart, quote.as_ref(), tab.timeframe));
+                if let Some(link) = tab.link {
+                    // Said in words too: a dot's colour alone is not enough.
+                    ui.label(format!(
+                        "Linked tab: {} ({})",
+                        link.title(),
+                        tab_link_menu::describe(tab.link_toggles)
+                    ));
+                }
             }),
             // A tab squeezed to its glyph is named on hover.
             None if !lifted && rect.width() < Detail::SYMBOL_WIDTH => {
@@ -622,7 +648,13 @@ impl TabBar<'_> {
         }
 
         let rows = MENU_ROWS.map(|label| (label, None));
-        kit::fitted_context_menu(ui, &response, &rows, |ui| {
+        // The Tab Linking section at the bottom has a width of its own.
+        let section = if tab.linkable {
+            tab_link_menu::WIDTH
+        } else {
+            0.0
+        };
+        kit::fitted_context_menu_min(ui, &response, &rows, section, |ui| {
             self.tab_menu(ui, rect, (index, tab), events);
         });
     }
@@ -725,6 +757,20 @@ impl TabBar<'_> {
                     }
                 }
             });
+        }
+        if tab.linkable {
+            kit::menu_separator(ui);
+            match tab_link_menu::show(ui, tab.link, tab.link_toggles) {
+                Some(TabLinkEdit::Color(color)) => {
+                    events.push(TabBarEvent::SetLink { tab: tab.id, color });
+                }
+                Some(TabLinkEdit::Toggles(toggles)) => {
+                    if let Some(color) = tab.link {
+                        events.push(TabBarEvent::SetLinkToggles { color, toggles });
+                    }
+                }
+                None => {}
+            }
         }
     }
 
@@ -923,13 +969,18 @@ impl TabBar<'_> {
                 Stroke::new(1.5, theme::background()),
             );
         }
-        if raised {
-            // The one coloured thing in the strip: which tab is showing.
+        if let Some(link) = tab.link {
+            // The only coloured thing in the strip: the Tab Linking colour the tab is tagged
+            // with. A tab with no colour has no line, showing or not.
             let line = Rect::from_min_max(
                 pos2(rect.left() + 10.0, rect.bottom() - UNDERLINE),
                 pos2(rect.right() - 10.0, rect.bottom()),
             );
-            painter.rect_filled(line, UNDERLINE / 2.0, fade(theme::SYSTEM_ACCENT));
+            painter.rect_filled(
+                line,
+                UNDERLINE / 2.0,
+                fade(crate::ui::tab_link_menu::swatch(link)),
+            );
         }
 
         let primary = fade(if raised || look.hovered {
@@ -1262,6 +1313,252 @@ mod tests {
         assert!(used <= 800.0 + 0.01, "{used}");
     }
 
+    /// A right-click on a chart tab opens the menu with the Tab Linking section at the bottom
+    /// (after a separator), and its swatches and switches say what changed for that tab.
+    #[test]
+    fn the_tab_menu_ends_with_the_tab_linking_section() {
+        use crate::model::tab_link::{LinkColor, LinkToggles};
+        let ctx = egui::Context::default();
+        let quotes = WatchlistQuoteBook::default();
+        let tabs = [
+            TabView {
+                id: 7,
+                title: "BTC".to_owned(),
+                icon: Icon::Plus,
+                chart: None,
+                timeframe: "1D",
+                link: Some(LinkColor::Orange),
+                linkable: true,
+                link_toggles: LinkToggles::default(),
+            },
+            TabView {
+                id: 8,
+                title: "Portfolio".to_owned(),
+                icon: Icon::Plus,
+                chart: None,
+                timeframe: "",
+                link: None,
+                linkable: false,
+                link_toggles: LinkToggles::default(),
+            },
+        ];
+        let mut time = 0.0;
+        let mut events = Vec::new();
+        let mut frame = |ctx: &egui::Context, input: Vec<egui::Event>| {
+            time += 0.05;
+            let raw = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(pos2(0.0, 0.0), vec2(900.0, 700.0))),
+                time: Some(time),
+                events: input,
+                ..Default::default()
+            };
+            let mut output = ctx.run_ui(raw, |ui| {
+                let shown = TabBar {
+                    window: 1,
+                    tabs: &tabs,
+                    active: 7,
+                    drag: DragView::default(),
+                    other_windows: &[],
+                    quotes: &quotes,
+                    style: TabTitleStyle::default(),
+                    update: None,
+                }
+                .show(ui);
+                events.extend(shown.events);
+            });
+            output.textures_delta.clear();
+        };
+        let button =
+            |at: Pos2, button: egui::PointerButton, pressed: bool| egui::Event::PointerButton {
+                pos: at,
+                button,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            };
+        for _ in 0..3 {
+            frame(&ctx, Vec::new());
+        }
+        let on_tab = pos2(tab_left(0, tab_width(2, 900.0)) + 120.0, 14.0);
+        frame(&ctx, vec![egui::Event::PointerMoved(on_tab)]);
+        frame(
+            &ctx,
+            vec![button(on_tab, egui::PointerButton::Secondary, true)],
+        );
+        frame(
+            &ctx,
+            vec![button(on_tab, egui::PointerButton::Secondary, false)],
+        );
+        for _ in 0..4 {
+            frame(&ctx, Vec::new());
+        }
+
+        let swatch = |color: LinkColor| {
+            ctx.read_response(Id::new(("tab-link-swatch", color.key())))
+                .map(|response| response.rect)
+        };
+        let blue = swatch(LinkColor::Blue).expect("the section is in the menu");
+        let move_row = ctx.read_response(Id::new(("tab-link-option", "Symbol")));
+        assert!(move_row.is_some(), "the switches are there too");
+        // It is the last thing in the menu, under the tab rows.
+        assert!(blue.top() > on_tab.y + 150.0, "{blue:?}");
+
+        let at = blue.center();
+        frame(&ctx, vec![egui::Event::PointerMoved(at)]);
+        frame(&ctx, vec![button(at, egui::PointerButton::Primary, true)]);
+        frame(&ctx, vec![button(at, egui::PointerButton::Primary, false)]);
+        frame(&ctx, Vec::new());
+        assert!(
+            events.contains(&TabBarEvent::SetLink {
+                tab: 7,
+                color: Some(LinkColor::Blue)
+            }),
+            "{events:?}"
+        );
+    }
+
+    /// The tab menu as a picture, both themes. Run by hand with `DEGENVIEW_GALLERY_DIR` set.
+    #[test]
+    #[ignore = "writes images for a person to look at"]
+    fn gallery_of_the_tab_menu() {
+        use crate::model::tab_link::{LinkColor, LinkToggles};
+        use crate::ui::render_tests::{Screen, gallery_dir};
+        if gallery_dir().is_none() {
+            return;
+        }
+        let _restore = theme::RestoreDefaultTheme;
+        let quotes = WatchlistQuoteBook::default();
+        for (name, choice) in [("dark", egui::Theme::Dark), ("light", egui::Theme::Light)] {
+            for (state, link) in [("linked", Some(LinkColor::Orange)), ("unlinked", None)] {
+                let tabs = [
+                    TabView {
+                        id: 7,
+                        title: "BTCUSDT".to_owned(),
+                        icon: Icon::Plus,
+                        chart: Some(TabChart {
+                            source: crate::model::DataSource::Binance,
+                            symbol: "BTCUSDT".to_owned(),
+                            title: "BTC/USDT".to_owned(),
+                            layout: None,
+                            custom_title: None,
+                        }),
+                        timeframe: "1D",
+                        link,
+                        linkable: true,
+                        link_toggles: LinkToggles::default(),
+                    },
+                    TabView {
+                        id: 8,
+                        title: "Other".to_owned(),
+                        icon: Icon::Plus,
+                        chart: None,
+                        timeframe: "1D",
+                        link: Some(LinkColor::Blue),
+                        linkable: true,
+                        link_toggles: LinkToggles::default(),
+                    },
+                ];
+                let mut screen = Screen::new(vec2(520.0, 760.0));
+                screen.ctx.set_theme(choice);
+                let on_tab = pos2(tab_left(0, tab_width(2, 520.0)) + 100.0, 14.0);
+                let button = |pressed| egui::Event::PointerButton {
+                    pos: on_tab,
+                    button: egui::PointerButton::Secondary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                };
+                let run = |screen: &mut Screen, events: Vec<egui::Event>| {
+                    screen.run(events, |ui| {
+                        theme::sync(ui.ctx());
+                        TabBar {
+                            window: 1,
+                            tabs: &tabs,
+                            active: 7,
+                            drag: DragView::default(),
+                            other_windows: &[],
+                            quotes: &quotes,
+                            style: TabTitleStyle::default(),
+                            update: None,
+                        }
+                        .show(ui);
+                    })
+                };
+                for _ in 0..3 {
+                    run(&mut screen, Vec::new());
+                }
+                run(&mut screen, vec![egui::Event::PointerMoved(on_tab)]);
+                run(&mut screen, vec![button(true)]);
+                run(&mut screen, vec![button(false)]);
+                let mut last = None;
+                for _ in 0..5 {
+                    last = Some(run(&mut screen, Vec::new()));
+                }
+                screen.save(&format!("tab-menu-{state}-{name}"), last.expect("a frame"));
+            }
+        }
+    }
+
+    /// A tab that cannot be linked (the portfolio, Pine Studio) has no such section.
+    #[test]
+    fn a_tab_that_cannot_be_linked_has_no_section() {
+        use crate::model::tab_link::LinkColor;
+        let ctx = egui::Context::default();
+        let quotes = WatchlistQuoteBook::default();
+        let tabs = [TabView {
+            id: 8,
+            title: "Portfolio".to_owned(),
+            icon: Icon::Plus,
+            chart: None,
+            timeframe: "",
+            link: None,
+            linkable: false,
+            link_toggles: Default::default(),
+        }];
+        let mut time = 0.0;
+        let mut frame = |input: Vec<egui::Event>| {
+            time += 0.05;
+            let raw = egui::RawInput {
+                screen_rect: Some(Rect::from_min_size(pos2(0.0, 0.0), vec2(900.0, 700.0))),
+                time: Some(time),
+                events: input,
+                ..Default::default()
+            };
+            let mut output = ctx.run_ui(raw, |ui| {
+                TabBar {
+                    window: 1,
+                    tabs: &tabs,
+                    active: 8,
+                    drag: DragView::default(),
+                    other_windows: &[],
+                    quotes: &quotes,
+                    style: TabTitleStyle::default(),
+                    update: None,
+                }
+                .show(ui);
+            });
+            output.textures_delta.clear();
+        };
+        let on_tab = pos2(tab_left(0, tab_width(1, 900.0)) + 120.0, 14.0);
+        let button = |pressed| egui::Event::PointerButton {
+            pos: on_tab,
+            button: egui::PointerButton::Secondary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        for _ in 0..3 {
+            frame(Vec::new());
+        }
+        frame(vec![egui::Event::PointerMoved(on_tab)]);
+        frame(vec![button(true)]);
+        frame(vec![button(false)]);
+        for _ in 0..4 {
+            frame(Vec::new());
+        }
+        assert!(
+            ctx.read_response(Id::new(("tab-link-swatch", LinkColor::Blue.key())))
+                .is_none()
+        );
+    }
+
     /// The strip the tabs get for a window, with or without an update mark.
     fn strip_with(update: Option<&UpdateView>) -> Rect {
         let ctx = egui::Context::default();
@@ -1273,6 +1570,9 @@ mod tests {
                 icon: Icon::Plus,
                 chart: None,
                 timeframe: "1D",
+                link: None,
+                linkable: false,
+                link_toggles: Default::default(),
             }];
             let quotes = WatchlistQuoteBook::default();
             strip = TabBar {
@@ -1300,6 +1600,17 @@ mod tests {
         width: f32,
         style: TabTitleStyle,
     ) -> Vec<egui::epaint::ClippedShape> {
+        paint_strip_linked(count, active, width, style, None)
+    }
+
+    /// [`paint_strip`] with the tab at `linked` tagged Orange.
+    fn paint_strip_linked(
+        count: usize,
+        active: usize,
+        width: f32,
+        style: TabTitleStyle,
+        linked: Option<usize>,
+    ) -> Vec<egui::epaint::ClippedShape> {
         let ctx = egui::Context::default();
         let tabs: Vec<TabView> = (0..count)
             .map(|index| TabView {
@@ -1314,6 +1625,9 @@ mod tests {
                     custom_title: None,
                 }),
                 timeframe: "1D",
+                link: (linked == Some(index)).then_some(crate::model::tab_link::LinkColor::Orange),
+                linkable: false,
+                link_toggles: Default::default(),
             })
             .collect();
         let quotes = WatchlistQuoteBook::default();
@@ -1338,21 +1652,34 @@ mod tests {
         output.shapes
     }
 
-    fn accent_lines(shapes: &[egui::epaint::ClippedShape]) -> usize {
+    /// Rects filled with `color`: the lines under tabs.
+    fn lines_of(shapes: &[egui::epaint::ClippedShape], color: Color32) -> usize {
         shapes
             .iter()
-            .filter(|clipped| {
-                matches!(&clipped.shape, egui::Shape::Rect(rect) if rect.fill == theme::SYSTEM_ACCENT)
-            })
+            .filter(
+                |clipped| matches!(&clipped.shape, egui::Shape::Rect(rect) if rect.fill == color),
+            )
             .count()
     }
 
     #[test]
-    fn only_the_active_tab_has_the_accent_line() {
+    fn a_tab_has_no_underline_unless_it_is_linked_and_then_it_is_its_colour() {
+        let orange = crate::ui::tab_link_menu::swatch(crate::model::tab_link::LinkColor::Orange);
         for style in TabTitleStyle::ALL {
             for width in [1400.0, 700.0, 300.0] {
-                let shapes = paint_strip(4, 1, width, style);
-                assert_eq!(accent_lines(&shapes), 1, "{style:?} at {width}");
+                let plain = paint_strip(4, 1, width, style);
+                assert_eq!(lines_of(&plain, theme::SYSTEM_ACCENT), 0, "no blue line");
+                assert_eq!(
+                    lines_of(&plain, orange),
+                    0,
+                    "unlinked: none, showing or not"
+                );
+                // Linked: its colour, whether it is the showing tab or not.
+                for active in [1, 2] {
+                    let linked = paint_strip_linked(4, active, width, style, Some(2));
+                    assert_eq!(lines_of(&linked, orange), 1, "{style:?} at {width}");
+                    assert_eq!(lines_of(&linked, theme::SYSTEM_ACCENT), 0);
+                }
             }
         }
     }
@@ -1480,6 +1807,9 @@ mod tests {
                 icon: Icon::Plus,
                 chart: None,
                 timeframe: "1D",
+                link: None,
+                linkable: false,
+                link_toggles: Default::default(),
             })
             .collect();
         let quotes = WatchlistQuoteBook::default();

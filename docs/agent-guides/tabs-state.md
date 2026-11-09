@@ -45,8 +45,13 @@
   menu): it stands in for the symbol and price, and a symbol or layout change never touches it. The
   app-wide style (symbol+price+layout, symbol only, layout name only) is `tab.title_style`
   (`host::tab_title_host`, Settings ▸ Appearance ▸ Tabs). Both are device-local: the `tab` table and
-  that key never sync. A hairline (`theme::separator()`, `paint_separators`) divides two neighbouring tabs that are both at rest: not the showing tab, not the one dragged or under the pointer, not across a gap left for an incoming tab. It follows the animated tab rects. The active tab's blue underline is the one coloured thing in the strip; it
-  marks selection and is an intentional exception to "never blue".
+  that key never sync. A hairline (`theme::separator()`, `paint_separators`) divides two neighbouring tabs that are both at rest: not the showing tab, not the one dragged or under the pointer, not across a gap left for an incoming tab. It follows the animated tab rects. A tab has **no underline by default**, showing or not (the blue
+  selection line is gone; the showing tab is the one joined to the content). A tab tagged with a Tab
+  Linking colour (`PersistedWorkspace::link`, device-local; see [Tab Linking](../tab-linking.md)) has a
+  line under it in that colour, showing or not: that is data, not a control or the accent.
+  The tab's right-click menu ends, after a separator, with the Link Tabs section (colour swatches
+  and the group's four switches, shown once a colour is chosen; `TabBarEvent::SetLink` / `SetLinkToggles`); choosing the chosen
+  colour again unlinks. There is no toolbar button for it.
 
 ## Windows and tabs
 

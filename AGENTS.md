@@ -30,6 +30,7 @@ scenario matches the work:
 | The top toolbar: its buttons, labels collapsing to icons, undo/redo, replay or chart-type controls | [Workspace toolbar](docs/workspace-toolbar.md) |
 | The AI assistant, LLM providers, or the AI API keys | [AI assistant](docs/ai-assistant.md) |
 | Price/Pine alerts or webhooks | [Alerts and webhooks](docs/agent-guides/alerts-webhooks.md) |
+| Tab Linking: colour-tagged tabs that share symbol, interval, time or date range across windows | [Tab Linking](docs/tab-linking.md) |
 | Tabs, windows, workspaces, saved layouts, session state, or app-wide state | [Tabs and state](docs/agent-guides/tabs-state.md) |
 | MCP server, tools, permissions, or clients | [MCP](docs/agent-guides/mcp.md) |
 | Releases, signing, packaging, self-update, or update UI | [Releases and updates](docs/agent-guides/releases-updates.md) |
@@ -120,6 +121,7 @@ because cargo never deletes old output. Finished worktrees are where the disk go
 - [Price scale modes](docs/price-scale.md) — Regular, Percent, Indexed to 100, Logarithmic; reference price, ticks, corner menu, persistence.
 - [Chart overlays](docs/chart-overlays.md) — markets compared on one chart: the midpoint alignment, rebased and own scales, the hub that fetches each market once, what is bounded instead of the count, verified versus decided, differences from TradingView.
 - [Linked charts](docs/chart-sync.md) — position/zoom sync between a workspace's charts.
+- [Tab Linking](docs/tab-linking.md) — colour-tagged tabs sharing symbol, interval, time and date range across windows: the hub, the apply rules, persistence, what TradingView states and what is decided here.
 - [Chart canvas](docs/chart-canvas.md) — settings, geometry, layering, and templates.
 - [Chart context menus](docs/chart-context-menu.md) — right-click menus, Table view, Object tree, what is verified.
 - [Drawing tools](docs/drawing-tools.md) — tools, geometry, verified versus inferred behavior, limits.

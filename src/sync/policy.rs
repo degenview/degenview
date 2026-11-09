@@ -352,6 +352,9 @@ mod tests {
             "update.channel",
             // Open tabs are device-local, and so is how they name themselves.
             "tab.title_style",
+            // Which parts of a chart a Tab Linking colour keeps in step; the tabs' colours are in
+            // the `tab` table, which is local too.
+            "tab.link_toggles",
         ] {
             assert_eq!(setting_policy(key), SettingPolicy::Local, "{key}");
         }

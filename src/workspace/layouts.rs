@@ -49,6 +49,7 @@ impl ChartWorkspace {
             sync: self.sync,
             active_view: self.active_view_id,
             custom_title: self.custom_title.clone(),
+            link: self.link,
         }
     }
 

@@ -1833,13 +1833,25 @@ pub fn fitted_context_menu<R>(
     rows: &[(&str, Option<&str>)],
     body: impl FnOnce(&mut Ui) -> R,
 ) -> Option<R> {
+    fitted_context_menu_min(ui, response, rows, 0.0, body)
+}
+
+/// [`fitted_context_menu`] for a menu that also holds something of its own width (`content_width`
+/// is the room that content needs inside the menu): as wide as the rows or that, whichever is more.
+pub fn fitted_context_menu_min<R>(
+    ui: &Ui,
+    response: &egui::Response,
+    rows: &[(&str, Option<&str>)],
+    content_width: f32,
+    body: impl FnOnce(&mut Ui) -> R,
+) -> Option<R> {
     // Rows are drawn by the hundred and this runs for each: measure only once a menu is wanted.
     let wanted = response.secondary_clicked()
         || egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(response));
     if !wanted {
         return None;
     }
-    let width = menu_width_for_rows(ui, rows, 0.0);
+    let width = menu_width_for_rows(ui, rows, 0.0).max(content_width + MENU_FRAME_MARGIN);
     context_popup(response)
         .width(width)
         .show(|ui| {
