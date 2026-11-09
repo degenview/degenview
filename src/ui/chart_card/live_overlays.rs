@@ -2,6 +2,7 @@
 //! point at.
 
 use super::frame::{FrameData, FrameLayout, Overlays, PaneSlot, paint_pane_title};
+use super::overlays::OverlayFrame;
 use super::*;
 use crate::ui::paper_chart_trading::{MarkerMenu, PaperOverlayAction};
 use crate::ui::scale_menu;
@@ -22,6 +23,8 @@ pub(super) struct LiveOverlays<'a> {
     pub paper: (Vec<PaperOverlayAction>, Option<MarkerMenu>),
     pub navigation: Option<chart_buttons::NavAction>,
     pub scale_mode: Option<PriceScaleMode>,
+    pub overlay_action: Option<chart_indicator_strip::Action>,
+    pub on_overlay_card: bool,
 }
 
 /// The widest a script tooltip gets before it wraps (inferred: TradingView does not document it).
@@ -117,7 +120,13 @@ impl Overlays for LiveOverlays<'_> {
         }
     }
 
-    fn finish(&mut self, _data: &FrameData, layout: &FrameLayout, view: &View) {
+    fn finish(
+        &mut self,
+        _data: &FrameData,
+        layout: &FrameLayout,
+        view: &View,
+        overlays: &OverlayFrame,
+    ) {
         let (plot, scale) = (layout.plot, &view.scale);
         let alerts = alert_lines::show(
             self.ui,
@@ -149,6 +158,15 @@ impl Overlays for LiveOverlays<'_> {
         {
             self.navigation = Some(action);
         }
+        let card = self.card.overlay_card(
+            self.ui,
+            self.chart_id,
+            self.card.below_header(plot),
+            view,
+            overlays,
+        );
+        self.overlay_action = card.action;
+        self.on_overlay_card = card.on_card;
         // The scale menu sits where the axes meet, which a chart with no plot to draw has not got.
         if layout.main_visible
             && self.card.scale_menu

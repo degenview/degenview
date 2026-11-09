@@ -6,8 +6,7 @@ use super::kit::{self, size};
 use super::popover;
 use super::theme;
 pub use crate::model::BuiltIn;
-use crate::model::overlay::{Move, OverlayCommand, OverlayId, OverlayScale, ScaleChoice};
-use crate::model::overlay_feed::OverlayStatus;
+use crate::model::overlay::{OverlayCommand, OverlayId};
 use crate::model::{DataSource, EMA_PERIODS, IndicatorConfig};
 use crate::pine_studio::indicators::BundledIndicator;
 use crate::pine_studio::model::LocalScript;
@@ -18,8 +17,6 @@ use std::sync::Arc;
 pub enum Kind {
     BuiltIn(BuiltIn),
     Script(u64),
-    /// A market compared on the chart.
-    Overlay(OverlayId),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -39,8 +36,9 @@ pub enum Action {
     OpenIndicatorSettings,
     /// Open the Pine logs pane on a script.
     OpenPineLogs(u64),
-    /// Edit the compared markets (the chart settings' Compare page).
-    OpenOverlaySettings,
+    /// Open (or put away) a compared market's settings popover, pointing at its row `Rect` on
+    /// the chart's overlay card.
+    ConfigureOverlay(OverlayId, Rect),
     /// Change a compared market.
     Overlay(OverlayCommand),
 }
@@ -50,22 +48,6 @@ struct Item {
     title: String,
     visible: bool,
     error: bool,
-    /// A compared market's colour, drawn before its name.
-    swatch: Option<Color32>,
-    /// What a tooltip says: the market and how its data is doing.
-    note: Option<String>,
-    /// A compared market's newest price, for the list.
-    value: Option<String>,
-    overlay: Option<OverlayInfo>,
-}
-
-/// What a compared market's menu needs to know.
-struct OverlayInfo {
-    scale: OverlayScale,
-    first: bool,
-    last: bool,
-    /// The other markets that have a scale of their own, to share it with.
-    own_scales: Vec<(OverlayId, String)>,
 }
 
 fn items(config: &IndicatorConfig, card: &ChartCard, source: DataSource) -> Vec<Item> {
@@ -78,10 +60,6 @@ fn items(config: &IndicatorConfig, card: &ChartCard, source: DataSource) -> Vec<
             title: kind.chip_title(config),
             visible: !kind.hidden(config),
             error: false,
-            swatch: None,
-            note: None,
-            value: None,
-            overlay: None,
         })
         .collect();
     if !source.is_line_chart() {
@@ -93,83 +71,10 @@ fn items(config: &IndicatorConfig, card: &ChartCard, source: DataSource) -> Vec<
                 error: card
                     .pine_status(instance.id)
                     .is_some_and(|status| status.error.is_some()),
-                swatch: None,
-                note: None,
-                value: None,
-                overlay: None,
             }
         }));
-        items.extend(overlay_items(card, source));
     }
     items
-}
-
-/// The compared markets, in visual order.
-fn overlay_items(card: &ChartCard, source: DataSource) -> Vec<Item> {
-    let list = card.overlay_list();
-    let price_based = card.effective_chart_type(source).is_synthetic();
-    let own_scales: Vec<(OverlayId, String)> = list
-        .iter()
-        .filter_map(|overlay| match overlay.scale {
-            OverlayScale::Own(group) if group == overlay.id => Some((overlay.id, overlay.name())),
-            _ => None,
-        })
-        .collect();
-    let count = list.len();
-    list.iter()
-        .enumerate()
-        .map(|(index, overlay)| {
-            let status = card.overlay_feed(overlay.id).map(|feed| &feed.status);
-            let mut note = format!(
-                "{} · {}",
-                overlay.name(),
-                overlay.instrument.source.display_name()
-            );
-            let mut error = false;
-            let mut extra = |text: &str, problem: bool| {
-                note.push_str(" — ");
-                note.push_str(text);
-                error |= problem;
-            };
-            if price_based {
-                extra("not available on price-based chart types", true);
-            }
-            match status {
-                Some(OverlayStatus::Queued) => extra("waiting to load", false),
-                Some(OverlayStatus::Loading) => extra("loading", false),
-                Some(OverlayStatus::Error(message)) => {
-                    extra(&format!("could not load: {message}"), true)
-                }
-                Some(OverlayStatus::Blocked(reason)) => extra(&reason.to_lowercase(), true),
-                Some(OverlayStatus::Ready) | None => {}
-            }
-            Item {
-                kind: Kind::Overlay(overlay.id),
-                title: overlay.name(),
-                visible: overlay.visible,
-                error,
-                swatch: Some(Color32::from_rgb(
-                    overlay.color.r,
-                    overlay.color.g,
-                    overlay.color.b,
-                )),
-                note: Some(note),
-                value: card
-                    .overlay_last_price(overlay.id)
-                    .map(|price| card.appearance().price_format().format(price)),
-                overlay: Some(OverlayInfo {
-                    scale: overlay.scale,
-                    first: index == 0,
-                    last: index + 1 == count,
-                    own_scales: own_scales
-                        .iter()
-                        .filter(|(id, _)| *id != overlay.id)
-                        .cloned()
-                        .collect(),
-                }),
-            }
-        })
-        .collect()
 }
 
 /// Which script's settings popover is up, as (chart id, instance id), so its chip keeps its
@@ -201,8 +106,6 @@ const CAPSULE_HEIGHT: f32 = 20.0;
 const CAPSULE_PADDING: f32 = 8.0;
 const CHIP_TEXT_SIZE: f32 = 10.0;
 const CHIP_NAME_MAX_WIDTH: f32 = 110.0;
-/// A compared market's colour dot.
-const SWATCH: f32 = 8.0;
 /// A hover control is a 16pt square with a 10pt glyph, 1pt apart.
 const CONTROL_SIZE: f32 = 16.0;
 const CONTROL_GLYPH: f32 = 10.0;
@@ -246,27 +149,11 @@ impl Item {
             title: title.to_owned(),
             visible,
             error: false,
-            swatch: None,
-            note: None,
-            value: None,
-            overlay: None,
         }
     }
 
     fn has_settings(&self) -> bool {
-        matches!(
-            self.kind,
-            Kind::Script(_) | Kind::BuiltIn(BuiltIn::Ema) | Kind::Overlay(_)
-        )
-    }
-
-    /// The room a colour dot takes before the name.
-    fn swatch_room(&self) -> f32 {
-        if self.swatch.is_some() {
-            SWATCH + SPACING
-        } else {
-            0.0
-        }
+        matches!(self.kind, Kind::Script(_) | Kind::BuiltIn(BuiltIn::Ema))
     }
 
     fn title_galley(&self, ui: &Ui, visible_color: Color32) -> Arc<Galley> {
@@ -293,7 +180,6 @@ fn name_color(visible: bool) -> Color32 {
 /// The resting width of a chip: its name, a warning if it has one, and the capsule padding.
 fn resting_width(ui: &Ui, item: &Item) -> f32 {
     CAPSULE_PADDING
-        + item.swatch_room()
         + item.title_galley(ui, Color32::WHITE).size().x
         + if item.error { SPACING + 9.0 } else { 0.0 }
         + REMOVE_ROOM
@@ -500,7 +386,6 @@ fn remove_action(item: &Item) -> Action {
     match item.kind {
         Kind::BuiltIn(kind) => Action::Remove(kind),
         Kind::Script(id) => Action::RemoveScript(id),
-        Kind::Overlay(id) => Action::Overlay(OverlayCommand::Remove(id)),
     }
 }
 
@@ -535,18 +420,17 @@ fn overflow_list(
             false,
             |ui| {
                 ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
-                list_header(ui, list_title(items), items.len());
+                list_header(ui, "Indicators", items.len());
                 let mut picked = None;
                 let rows = |ui: &mut Ui, picked: &mut Option<Action>| {
                     let group_of = |item: &Item| match item.kind {
                         Kind::BuiltIn(_) => 0,
                         Kind::Script(_) => 1,
-                        Kind::Overlay(_) => 2,
                     };
-                    let groups = (0..3)
+                    let groups = (0..2)
                         .filter(|group| items.iter().any(|i| group_of(i) == *group))
                         .count();
-                    for (heading, wanted) in [("Built-in", 0), ("Scripts", 1), ("Compare", 2)] {
+                    for (heading, wanted) in [("Built-in", 0), ("Scripts", 1)] {
                         let group: Vec<&Item> =
                             items.iter().filter(|i| group_of(i) == wanted).collect();
                         if group.is_empty() {
@@ -584,19 +468,6 @@ fn overflow_list(
         }
     }
     ctx.data_mut(|data| data.insert_temp(open_id, open));
-}
-
-/// What the list is called: by what is in it, so a list of compared markets is not "Indicators".
-fn list_title(items: &[Item]) -> &'static str {
-    let overlays = items
-        .iter()
-        .filter(|item| matches!(item.kind, Kind::Overlay(_)))
-        .count();
-    match overlays {
-        0 => "Indicators",
-        n if n == items.len() => "Compared markets",
-        _ => "On this chart",
-    }
 }
 
 /// The list's title and how many rows it has.
@@ -696,25 +567,7 @@ fn list_row(
             });
         }
     }
-    let mut text_right = x - 2.0;
-    // A compared market's newest price, right-aligned before the controls.
-    if let Some(value) = &item.value {
-        let price = kit::galley(
-            ui,
-            value,
-            size::CAPTION + 0.5,
-            kit::MEDIUM,
-            theme::with_alpha(theme::text_secondary(), dim),
-            90.0,
-        );
-        let width = price.size().x;
-        ui.painter().galley(
-            pos2(text_right - width, rect.center().y - price.size().y / 2.0),
-            price,
-            theme::text_secondary(),
-        );
-        text_right -= width + 8.0;
-    }
+    let text_right = x - 2.0;
 
     // The glyph tile and the name.
     let tile = Rect::from_center_size(pos2(rect.left() + 20.0, rect.center().y), Vec2::splat(22.0));
@@ -726,12 +579,8 @@ fn list_row(
         match item.kind {
             Kind::BuiltIn(kind) => kind.icon(),
             Kind::Script(_) => Icon::Curlybraces,
-            Kind::Overlay(_) => Icon::Compare,
         },
-        item.swatch.map_or_else(
-            || theme::with_alpha(theme::text_secondary(), dim.max(0.6)),
-            |swatch| swatch.gamma_multiply(dim.max(0.6)),
-        ),
+        theme::with_alpha(theme::text_secondary(), dim.max(0.6)),
     );
     let name_left = tile.right() + 9.0;
     let warning = if item.error { 9.0 + SPACING } else { 0.0 };
@@ -761,10 +610,6 @@ fn list_row(
         );
     }
 
-    let body = match &item.note {
-        Some(note) => body.on_hover_text(note),
-        None => body,
-    };
     let body = crate::ui::accessibility::label(
         body,
         if item.has_settings() {
@@ -782,7 +627,6 @@ fn list_row(
             Kind::BuiltIn(BuiltIn::Ema) => {}
             Kind::Script(script) => *action = Some(Action::ConfigureScript(script, rect)),
             Kind::BuiltIn(_) => *action = Some(Action::ToggleVisible(item.kind)),
-            Kind::Overlay(_) => *action = Some(Action::OpenOverlaySettings),
         }
     }
     if item.kind == Kind::BuiltIn(BuiltIn::Ema) {
@@ -821,11 +665,8 @@ fn chip(
     } else {
         0.0
     };
-    let content = item.swatch_room()
-        + name.size().x
-        + if item.error { SPACING + 9.0 } else { 0.0 }
-        + controls_width
-        + REMOVE_ROOM;
+    let content =
+        name.size().x + if item.error { SPACING + 9.0 } else { 0.0 } + controls_width + REMOVE_ROOM;
     let (rect, body) = ui.allocate_exact_size(
         vec2(CAPSULE_PADDING + content + REMOVE_PADDING, CAPSULE_HEIGHT),
         Sense::click(),
@@ -835,21 +676,8 @@ fn chip(
         .rect_filled(rect, CAPSULE_HEIGHT / 2.0, kit::primary(fill * opacity));
 
     // The name: opens the settings when there are any, otherwise it just shows or hides.
-    if let Some(swatch) = item.swatch {
-        ui.painter().circle_filled(
-            pos2(
-                rect.left() + CAPSULE_PADDING + SWATCH / 2.0,
-                rect.center().y,
-            ),
-            SWATCH / 2.0,
-            swatch.gamma_multiply(opacity),
-        );
-    }
     let name_rect = Rect::from_min_size(
-        pos2(
-            rect.left() + CAPSULE_PADDING + item.swatch_room(),
-            rect.top(),
-        ),
+        pos2(rect.left() + CAPSULE_PADDING, rect.top()),
         vec2(name.size().x, CAPSULE_HEIGHT),
     );
     let name_response = ui
@@ -867,10 +695,10 @@ fn chip(
             )
         },
     );
-    let name_response = match (&item.note, item.has_settings()) {
-        (Some(note), _) => name_response.on_hover_text(note),
-        (None, true) => name_response.on_hover_text(format!("Edit {}", item.title)),
-        (None, false) => name_response,
+    let name_response = if item.has_settings() {
+        name_response.on_hover_text(format!("Edit {}", item.title))
+    } else {
+        name_response
     };
     let mut x = name_rect.right();
     ui.painter().galley(
@@ -883,7 +711,6 @@ fn chip(
             Kind::BuiltIn(BuiltIn::Ema) => {}
             Kind::Script(script) => *action = Some(Action::ConfigureScript(script, rect)),
             Kind::BuiltIn(_) => *action = Some(Action::ToggleVisible(item.kind)),
-            Kind::Overlay(_) => *action = Some(Action::OpenOverlaySettings),
         }
     }
     if item.kind == Kind::BuiltIn(BuiltIn::Ema) {
@@ -987,17 +814,9 @@ fn control_buttons(item: &Item) -> Vec<Control> {
             Icon::EyeSlash
         },
         label: if item.visible { "Hide" } else { "Show" },
-        action: match item.kind {
-            Kind::Overlay(id) => Action::Overlay(OverlayCommand::SetVisible(id, !item.visible)),
-            kind => Action::ToggleVisible(kind),
-        },
+        action: Action::ToggleVisible(item.kind),
     }];
     match item.kind {
-        Kind::Overlay(_) => buttons.push(Control {
-            icon: Icon::Sliders,
-            label: "Settings",
-            action: Action::OpenOverlaySettings,
-        }),
         Kind::BuiltIn(BuiltIn::Ema) => buttons.push(Control {
             icon: Icon::Sliders,
             label: "Settings",
@@ -1014,7 +833,7 @@ fn control_buttons(item: &Item) -> Vec<Control> {
 }
 
 /// A small section label in a menu.
-fn menu_heading(ui: &mut Ui, title: &str) {
+pub(crate) fn menu_heading(ui: &mut Ui, title: &str) {
     ui.horizontal(|ui| {
         ui.add_space(10.0);
         ui.label(kit::text(
@@ -1044,101 +863,16 @@ fn ema_menu(ui: &mut Ui, config: &IndicatorConfig, action: &mut Option<Action>) 
     }
 }
 
-/// A compared market's scale and its place in the drawing order.
-fn overlay_menu(ui: &mut Ui, id: OverlayId, info: &OverlayInfo, action: &mut Option<Action>) {
-    let mut send = |ui: &mut Ui, command: OverlayCommand| {
-        *action = Some(Action::Overlay(command));
-        ui.close();
-    };
-    kit::menu_separator(ui);
-    menu_heading(ui, "Scale");
-    let own = info.scale == OverlayScale::Own(id);
-    let shared = matches!(info.scale, OverlayScale::Own(group) if group != id);
-    if kit::menu_item_marked(
-        ui,
-        Icon::Check,
-        "Chart's scale",
-        info.scale == OverlayScale::Main,
-    ) {
-        send(ui, OverlayCommand::SetScale(id, ScaleChoice::Main));
-    }
-    if kit::menu_item_marked(ui, Icon::Check, "Its own scale", own) {
-        send(ui, OverlayCommand::SetScale(id, ScaleChoice::Own));
-    }
-    for (other, name) in &info.own_scales {
-        let marked = shared && info.scale == OverlayScale::Own(*other);
-        if kit::menu_item_marked(ui, Icon::Check, &format!("Scale of {name}"), marked) {
-            send(
-                ui,
-                OverlayCommand::SetScale(id, ScaleChoice::SharedWith(*other)),
-            );
-        }
-    }
-    kit::menu_separator(ui);
-    menu_heading(ui, "Visual order");
-    for (label, to, enabled) in [
-        ("Bring to front", Move::ToFront, !info.last),
-        ("Bring forward", Move::Forward, !info.last),
-        ("Send backward", Move::Backward, !info.first),
-        ("Send to back", Move::ToBack, !info.first),
-    ] {
-        if kit::menu_item(ui, Icon::ArrowUp, label, enabled, false) {
-            send(ui, OverlayCommand::Move(id, to));
-        }
-    }
-}
-
-/// The right-click menu of a chip or list row. A compared market's has rows that vary with its
-/// name (`Scale of <market>`), so it is as wide as its longest row (`kit::fitted_context_menu`);
-/// the indicators' and scripts' keep their one fixed width.
+/// The right-click menu of a chip or list row.
 fn item_context_menu(
-    ui: &Ui,
+    _ui: &Ui,
     body: &egui::Response,
     item: &Item,
     chip: Rect,
     config: &IndicatorConfig,
     action: &mut Option<Action>,
 ) {
-    if !matches!(item.kind, Kind::Overlay(_)) {
-        body.context_menu(|ui| item_menu(ui, item, chip, config, action));
-        return;
-    }
-    // Rows are drawn by the hundred: the labels are only worked out for a menu that is wanted.
-    let wanted = body.secondary_clicked()
-        || egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(body));
-    if !wanted {
-        return;
-    }
-    let labels = overlay_menu_labels(item);
-    let rows: Vec<(&str, Option<&str>)> = labels.iter().map(|l| (l.as_str(), None)).collect();
-    kit::fitted_context_menu(ui, body, &rows, |ui| {
-        item_menu(ui, item, chip, config, action)
-    });
-}
-
-/// Every label a compared market's menu can show, for measuring it.
-fn overlay_menu_labels(item: &Item) -> Vec<String> {
-    let mut labels: Vec<String> = [
-        if item.visible { "Hide" } else { "Show" },
-        "Settings…",
-        "Chart's scale",
-        "Its own scale",
-        "Bring to front",
-        "Bring forward",
-        "Send backward",
-        "Send to back",
-        "Remove",
-    ]
-    .map(str::to_owned)
-    .to_vec();
-    if let Some(info) = &item.overlay {
-        labels.extend(
-            info.own_scales
-                .iter()
-                .map(|(_, name)| format!("Scale of {name}")),
-        );
-    }
-    labels
+    body.context_menu(|ui| item_menu(ui, item, chip, config, action));
 }
 
 fn item_menu(
@@ -1148,9 +882,7 @@ fn item_menu(
     config: &IndicatorConfig,
     action: &mut Option<Action>,
 ) {
-    if !matches!(item.kind, Kind::Overlay(_)) {
-        ui.set_width(180.0);
-    }
+    ui.set_width(180.0);
     ui.spacing_mut().item_spacing.y = 0.0;
     let (icon, label) = if item.visible {
         (Icon::EyeSlash, "Hide")
@@ -1174,15 +906,6 @@ fn item_menu(
             if kit::menu_item(ui, Icon::DocText, "Pine logs", true, false) {
                 *action = Some(Action::OpenPineLogs(id));
                 ui.close();
-            }
-        }
-        Kind::Overlay(id) => {
-            if kit::menu_item(ui, Icon::Sliders, "Settings…", true, false) {
-                *action = Some(Action::OpenOverlaySettings);
-                ui.close();
-            }
-            if let Some(info) = &item.overlay {
-                overlay_menu(ui, id, info, action);
             }
         }
         Kind::BuiltIn(_) => {}
@@ -1458,7 +1181,7 @@ mod tests {
 
     fn card_comparing(symbols: &[&str]) -> ChartCard {
         use crate::model::overlay::OverlayList;
-        use crate::model::overlay_feed::OverlayFeed;
+        use crate::model::overlay_feed::{OverlayFeed, OverlayStatus};
         let main = crate::model::InstrumentId::new(DataSource::Binance, "BTCUSDT");
         let mut list = OverlayList::new();
         for symbol in symbols {
@@ -1477,124 +1200,28 @@ mod tests {
     }
 
     #[test]
-    fn compared_markets_follow_the_indicators_in_their_visual_order_with_their_colours() {
+    fn compared_markets_are_not_chips() {
+        // They are rows of the chart's overlay card (with the eye, settings and remove), so the
+        // strip lists only the indicators and scripts however many markets are compared.
         let config = IndicatorConfig {
             show_ema: true,
             ..IndicatorConfig::default()
         };
-        let mut card = card_comparing(&["ETHUSDT", "SOLUSDT"]);
-        let script = card.add_pine_instance(None, "My script", "plot(close)");
-        let items = items(&config, &card, DataSource::Binance);
-        let kinds: Vec<_> = items.iter().map(|item| item.kind).collect();
-        assert_eq!(kinds[0], Kind::BuiltIn(BuiltIn::Ema));
-        assert_eq!(kinds[1], Kind::Script(script));
-        assert!(matches!(kinds[2], Kind::Overlay(_)) && matches!(kinds[3], Kind::Overlay(_)));
-        assert_eq!(items[2].title, "ETHUSDT");
-        assert_ne!(items[2].swatch, items[3].swatch);
-        assert!(items[2].note.as_deref().unwrap().contains("Binance"));
-        // A line-only market (prediction markets) shows none of them.
-        assert!(
-            super::items(&config, &card, DataSource::Polymarket)
-                .iter()
-                .all(|item| !matches!(item.kind, Kind::Overlay(_)))
-        );
-    }
-
-    #[test]
-    fn a_compared_markets_controls_name_it_by_id_and_every_edit_is_a_command() {
-        let card = card_comparing(&["ETHUSDT", "SOLUSDT"]);
-        let items = overlay_items(&card, DataSource::Binance);
-        let (first, second) = (items[0].kind, items[1].kind);
-        let (Kind::Overlay(a), Kind::Overlay(b)) = (first, second) else {
-            panic!()
-        };
-        assert_eq!(
-            remove_action(&items[0]),
-            Action::Overlay(OverlayCommand::Remove(a))
-        );
-        let buttons = control_buttons(&items[1]);
-        assert_eq!(buttons.len(), 2);
-        assert_eq!(
-            buttons[0].action,
-            Action::Overlay(OverlayCommand::SetVisible(b, false))
-        );
-        assert_eq!(buttons[1].action, Action::OpenOverlaySettings);
-        let info = items[0].overlay.as_ref().unwrap();
-        assert!(info.first && !info.last);
-        assert!(items[1].overlay.as_ref().unwrap().last);
-    }
-
-    #[test]
-    fn sixty_compared_markets_fold_into_the_list_and_never_overflow_the_row() {
         let symbols: Vec<String> = (0..60).map(|n| format!("S{n}USDT")).collect();
         let refs: Vec<&str> = symbols.iter().map(String::as_str).collect();
-        let card = card_comparing(&refs);
-        let config = IndicatorConfig::default();
-        assert_eq!(items(&config, &card, DataSource::Binance).len(), 60);
-        for width in [600.0, 300.0, 140.0, 64.0] {
+        let mut card = card_comparing(&refs);
+        let script = card.add_pine_instance(None, "My script", "plot(close)");
+        let kinds: Vec<_> = items(&config, &card, DataSource::Binance)
+            .iter()
+            .map(|item| item.kind)
+            .collect();
+        assert_eq!(
+            kinds,
+            vec![Kind::BuiltIn(BuiltIn::Ema), Kind::Script(script)]
+        );
+        for width in [600.0, 140.0, 64.0] {
             let used = drawn_width(&config, &card, width);
             assert!(used <= width + 0.5, "{used} overflows a {width} row");
         }
-    }
-
-    #[test]
-    fn the_compared_markets_menu_is_as_wide_as_its_longest_row() {
-        let ctx = egui::Context::default();
-        crate::ui::theme::install_offscreen(&ctx);
-        let card = card_comparing(&["ETHUSDT", "SOLUSDT"]);
-        let short = overlay_items(&card, DataSource::Binance);
-        let mut long = overlay_items(&card, DataSource::Binance);
-        // Another market with a scale of its own, named by a long DEX pair.
-        long[1].overlay.as_mut().unwrap().own_scales = vec![(
-            OverlayId(9),
-            "A very long decentralised pair name / WETH".to_owned(),
-        )];
-        let width = |item: &Item| {
-            let labels = overlay_menu_labels(item);
-            let rows: Vec<(&str, Option<&str>)> =
-                labels.iter().map(|l| (l.as_str(), None)).collect();
-            let mut width = 0.0;
-            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
-                width = kit::menu_width_for_rows(ui, &rows, 0.0);
-            });
-            output.textures_delta.clear();
-            width
-        };
-        assert!(
-            overlay_menu_labels(&long[1])
-                .iter()
-                .any(|l| l.starts_with("Scale of A very long")),
-            "the dynamic row is among the labels measured"
-        );
-        assert!(
-            width(&long[1]) > width(&short[1]) + 40.0,
-            "a long row widens the menu: {} vs {}",
-            width(&long[1]),
-            width(&short[1])
-        );
-        assert!(
-            width(&short[1]) < 180.0 + 24.0,
-            "and a short menu is not padded to a guess"
-        );
-        // Hide or Show follows the market's state.
-        assert!(overlay_menu_labels(&short[1]).contains(&"Hide".to_owned()));
-    }
-
-    #[test]
-    fn a_list_is_named_by_what_it_holds() {
-        let mut card = card_comparing(&["ETHUSDT", "SOLUSDT"]);
-        let config = IndicatorConfig {
-            show_ema: true,
-            ..IndicatorConfig::default()
-        };
-        let compared = overlay_items(&card, DataSource::Binance);
-        assert_eq!(list_title(&compared), "Compared markets");
-        let indicators = items(&config, &ChartCard::default(), DataSource::Binance);
-        assert_eq!(list_title(&indicators), "Indicators");
-        let _ = card.add_pine_instance(None, "x", "plot(close)");
-        assert_eq!(
-            list_title(&items(&config, &card, DataSource::Binance)),
-            "On this chart"
-        );
     }
 }

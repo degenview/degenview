@@ -433,6 +433,7 @@ fn the_crosshair_a_hover_and_the_replay_badge_never_reach_a_snapshot() {
     let (_, rect) = settled(&mut plain);
     let mut pointed = Harness::new(ChartCanvas::default());
     pointed.crosshair = Some(CrosshairInfo {
+        frozen: false,
         owner_id: 1,
         x_fraction: 0.4,
         price: 240.0,

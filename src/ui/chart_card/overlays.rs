@@ -11,7 +11,7 @@
 //! own: the bars the card is given are already cut at the replay cursor, and an overlay candle
 //! can only land on one of them.
 
-use super::{ChartCard, READOUT_MARGIN, READOUT_PAD, READOUT_ROW_GAP, View, truncated};
+use super::{ChartCard, View};
 use crate::model::chart_type::{ChartType, PriceSource};
 use crate::model::editor_theme::Rgba;
 use crate::model::overlay::{ChartOverlay, OverlayId, OverlayList};
@@ -22,7 +22,7 @@ use crate::model::price_scale::{self, PriceScaleMode};
 use crate::model::{DataSource, Kline, PriceFormat, Timeframe};
 use crate::ui::canvas_render::CanvasStyle;
 use crate::ui::{price_text, series_render, theme};
-use eframe::egui::{self, Align2, Color32, FontId, Painter, Pos2, Rect, Stroke, Vec2};
+use eframe::egui::{Align2, Color32, Painter, Pos2, Rect, Stroke};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
@@ -478,28 +478,19 @@ impl ChartCard {
         }
     }
 
-    /// Under the crosshair at bar `index` of the view: a ring on each line and a row per overlay
-    /// below the OHLC box, `top` being where that box ends. Rows that do not fit the plot are
-    /// counted ("+N more") and stay reachable in the legend and the settings page.
-    #[allow(clippy::too_many_arguments)]
-    pub(super) fn paint_overlay_readout(
+    /// A ring on each listed line at the bar under the crosshair. The card of values is the
+    /// overlay card's (`overlay_card.rs`).
+    pub(super) fn paint_overlay_rings(
         &self,
         painter: &Painter,
         plot: Rect,
-        top: f32,
         frame: &OverlayFrame,
         view: &View,
         index: usize,
         x: f32,
     ) {
-        let format = self.appearance.price_format();
-        let mode = view.scale.mode;
-        let mut rows: Vec<(Color32, String, String)> = Vec::new();
-        // Every market that is on the chart gets a row, one with nothing in view included: panning
-        // past a market's history still names it, with a dash.
         for line in frame.lines.iter().filter(|line| line.listed()) {
-            let value = line.values.get(index).copied().flatten();
-            if let Some(value) = value
+            if let Some(value) = line.values.get(index).copied().flatten()
                 && let Some(y) = line.y(value, &view.scale)
                 && plot.contains(Pos2::new(x, y))
             {
@@ -510,95 +501,6 @@ impl ChartCard {
                     Stroke::new(2.0, line.color()),
                 );
             }
-            rows.push((
-                line.color(),
-                truncated(&line.overlay.name(), 18),
-                // A bar the market has no candle for says so; nothing is carried forward.
-                value.map_or_else(|| "—".to_owned(), |value| line.text(value, mode, format)),
-            ));
-        }
-        if rows.is_empty() {
-            return;
-        }
-        let font = FontId::monospace(10.0);
-        let row_height = painter
-            .layout_no_wrap("0".into(), font.clone(), Color32::WHITE)
-            .size()
-            .y;
-        // Aligned with the OHLC box above: the same left edge, inner padding and row gap (between
-        // rows only, so the padding above the first row and below the last are the same).
-        let pad = READOUT_PAD;
-        let stride = row_height + READOUT_ROW_GAP;
-        let room = (plot.bottom() - top - 8.0 - 2.0 * pad.y + READOUT_ROW_GAP) / stride;
-        let fit = (room.floor().max(1.0)) as usize;
-        let hidden = rows.len().saturating_sub(fit);
-        let shown = if hidden > 0 {
-            fit.saturating_sub(1).max(1)
-        } else {
-            rows.len()
-        };
-        let hidden = rows.len() - shown;
-        let name_width = rows
-            .iter()
-            .take(shown)
-            .map(|(_, name, _)| {
-                painter
-                    .layout_no_wrap(name.clone(), font.clone(), Color32::WHITE)
-                    .size()
-                    .x
-            })
-            .fold(0.0, f32::max);
-        let value_width = rows
-            .iter()
-            .take(shown)
-            .map(|(_, _, value)| {
-                painter
-                    .layout_no_wrap(value.clone(), font.clone(), Color32::WHITE)
-                    .size()
-                    .x
-            })
-            .fold(0.0, f32::max);
-        let lines = shown + usize::from(hidden > 0);
-        let content = Vec2::new(
-            12.0 + name_width + 8.0 + value_width,
-            lines as f32 * row_height + lines.saturating_sub(1) as f32 * READOUT_ROW_GAP,
-        );
-        let origin = Pos2::new(plot.left() + READOUT_MARGIN, top + 4.0);
-        painter.rect(
-            Rect::from_min_size(origin, content + pad * 2.0),
-            4.0,
-            theme::chrome().gamma_multiply(0.94),
-            Stroke::new(1.0, theme::border()),
-            egui::StrokeKind::Inside,
-        );
-        for (n, (color, name, value)) in rows.iter().take(shown).enumerate() {
-            let y = origin.y + pad.y + n as f32 * stride;
-            let mid = y + row_height / 2.0;
-            painter.circle_filled(Pos2::new(origin.x + pad.x + 3.0, mid), 3.0, *color);
-            painter.text(
-                Pos2::new(origin.x + pad.x + 12.0, mid),
-                Align2::LEFT_CENTER,
-                name,
-                font.clone(),
-                theme::text_primary(),
-            );
-            painter.text(
-                Pos2::new(origin.x + pad.x + 12.0 + name_width + 8.0, mid),
-                Align2::LEFT_CENTER,
-                value,
-                font.clone(),
-                *color,
-            );
-        }
-        if hidden > 0 {
-            let y = origin.y + pad.y + shown as f32 * stride + row_height / 2.0;
-            painter.text(
-                Pos2::new(origin.x + pad.x, y),
-                Align2::LEFT_CENTER,
-                format!("+{hidden} more"),
-                font,
-                theme::text_secondary(),
-            );
         }
     }
 }

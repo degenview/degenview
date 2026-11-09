@@ -29,6 +29,18 @@ enum ChartCommand {
     NewColumn(u64),
 }
 
+/// The crosshair as it stays while the pointer is on `chart_id`'s overlay card, which takes the
+/// pointer from the plot: where it was, drawn as readouts only. Only the chart that owned the
+/// crosshair keeps it.
+fn freeze(previous: Option<CrosshairInfo>, chart_id: u64) -> Option<CrosshairInfo> {
+    previous
+        .filter(|crosshair| crosshair.owner_id == chart_id)
+        .map(|crosshair| CrosshairInfo {
+            frozen: true,
+            ..crosshair
+        })
+}
+
 /// A star or membership toggle that finds the market already in (or already out of) the list
 /// has nothing to report; anything else says why it was refused.
 fn star_result(
@@ -536,7 +548,7 @@ impl ChartWorkspace {
                                                 picked_ms: None,
                                                 picked_range: None,
                                             };
-                                            let pointer = chart.chart.body(
+                                            let mut pointer = chart.chart.body(
                                                 ui,
                                                 &chart.symbol,
                                                 candles,
@@ -618,6 +630,18 @@ impl ChartWorkspace {
                                             if pointer.clicked {
                                                 action.focus_requested = true;
                                             }
+                                            if pointer.on_overlay_card && crosshair_update.is_none()
+                                            {
+                                                crosshair_update = freeze(crosshair, chart_id);
+                                            }
+                                            if let Some(overlay_action) =
+                                                pointer.overlay_action.take()
+                                            {
+                                                commands.push(ChartCommand::Indicator(
+                                                    chart_id,
+                                                    overlay_action,
+                                                ));
+                                            }
                                             if let Some(anchor) = pointer.hover_anchor {
                                                 hover_update = Some((chart_id, anchor));
                                             }
@@ -628,6 +652,7 @@ impl ChartWorkspace {
                                                 (pointer.hover_x_fraction, pointer.hover_price)
                                             {
                                                 crosshair_update = Some(CrosshairInfo {
+                                                    frozen: false,
                                                     owner_id: chart_id,
                                                     x_fraction,
                                                     price,
@@ -735,10 +760,8 @@ impl ChartWorkspace {
                             self.toggle_script_popover(chart_id, id, anchor);
                         }
                         Action::OpenPineLogs(id) => self.open_pine_logs(chart_id, Some(id)),
-                        Action::OpenOverlaySettings => {
-                            self.settings_state = ChartSettingsState::default();
-                            self.settings_state.tab = crate::ui::chart_settings::Tab::Overlays;
-                            self.settings_chart = Some(chart_id);
+                        Action::ConfigureOverlay(id, anchor) => {
+                            self.toggle_overlay_popover(chart_id, id, anchor);
                         }
                         Action::Overlay(command) => {
                             self.apply_overlay_command(chart_id, command);
@@ -918,5 +941,33 @@ mod favorite_tests {
             assert!(keys.contains(&InstrumentId::new(source, symbol).key()));
         }
         assert!(!keys.contains(&InstrumentId::new(DataSource::Binance, "ETHUSDT").key()));
+    }
+}
+
+#[cfg(test)]
+mod freeze_tests {
+    use super::*;
+
+    fn crosshair(owner_id: u64) -> CrosshairInfo {
+        CrosshairInfo {
+            frozen: false,
+            owner_id,
+            x_fraction: 0.25,
+            price: 12.5,
+        }
+    }
+
+    #[test]
+    fn a_frozen_crosshair_stays_where_it_was_and_only_for_its_own_chart() {
+        let frozen = freeze(Some(crosshair(3)), 3).expect("kept");
+        assert!(frozen.frozen);
+        assert_eq!((frozen.x_fraction, frozen.price), (0.25, 12.5));
+        assert!(
+            freeze(Some(crosshair(3)), 4).is_none(),
+            "another chart's is dropped"
+        );
+        assert!(freeze(None, 3).is_none());
+        // Freezing again changes nothing: the pointer stays on the card for many frames.
+        assert!(freeze(Some(frozen), 3).is_some_and(|again| again.frozen));
     }
 }

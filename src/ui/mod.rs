@@ -51,6 +51,8 @@ pub mod markdown_view;
 pub mod mcp_activity;
 pub mod mcp_confirmation;
 pub mod object_tree;
+mod overlay_settings;
+pub mod overlay_settings_popover;
 pub mod paper_account_sheet;
 pub mod paper_chart_trading;
 pub mod paper_form;

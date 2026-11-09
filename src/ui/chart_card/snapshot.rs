@@ -9,6 +9,7 @@ use super::frame::{
     Decor, FrameData, FrameLayout, Overlays, PaneSlot, Placed, paint_pane_title,
     split_forced_overlays,
 };
+use super::overlays::OverlayFrame;
 use super::*;
 use crate::model::snapshot::SnapshotDimensions;
 use crate::model::{Drawing, Tool};
@@ -71,7 +72,13 @@ impl Overlays for SnapshotOverlays<'_> {
         paint_pane_title(painter, layout, slot, false);
     }
 
-    fn finish(&mut self, _data: &FrameData, layout: &FrameLayout, view: &View) {
+    fn finish(
+        &mut self,
+        _data: &FrameData,
+        layout: &FrameLayout,
+        view: &View,
+        _overlays: &OverlayFrame,
+    ) {
         let painter = self.painter.with_clip_rect(layout.plot);
         alert_lines::paint(
             &painter,

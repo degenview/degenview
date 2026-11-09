@@ -71,6 +71,9 @@ Read [chart overlays](../chart-overlays.md) first. The short rules:
 - Rebasing and fitting are `model::overlay_scale`; a painter must not repeat that arithmetic. The lines are
   painted in `paint_frame` so snapshots get them; do not add them to `Overlays`.
 - Edits are `OverlayCommand`s applied by `apply_overlay_command` (one undo step, none when nothing changed).
+- Compared markets have no chips in the header strip: their controls are the overlay card's
+  (`chart_card/overlay_card.rs`) and their settings are `overlay_settings::body`, shared by the Compare page
+  and the popover. Edit that one body, not copies.
 - Nothing caps the count; bound the *work* (in-flight requests, refresh rate, bars in view), never the list.
 
 ## Types, canvas, and templates

@@ -24,8 +24,9 @@ pub(super) enum Snapshot {
         scripts: Vec<crate::model::pine_instance::PineInstance>,
     },
     /// The markets compared on the chart, with their looks: configuration only, never candles.
-    /// `scale_mode` is set only by the add that switched the axis to Percent, so undoing it puts the
-    /// axis back too (and redo switches it again); any other step leaves the mode alone.
+    /// `scale_mode` is set only by the add that switched the axis to Percent and by the removal of
+    /// the last market that switched it back to Regular, so undoing either puts the axis back too
+    /// (and redo switches it again); any other step leaves the mode alone.
     Overlays {
         list: crate::model::overlay::OverlayList,
         scale_mode: Option<crate::model::price_scale::PriceScaleMode>,

@@ -3,9 +3,17 @@
 use super::ChartWorkspace;
 use super::undo::{RESTYLE_WINDOW, Snapshot, UndoEntry};
 use crate::model::InstrumentId;
-use crate::model::overlay::{AddOutcome, OverlayCommand, OverlayScale};
+use crate::model::overlay::{AddOutcome, OverlayCommand, OverlayId, OverlayScale};
 use crate::model::price_scale::PriceScaleMode;
+use crate::ui::overlay_settings_popover::{self, OverlaySettingsPopover};
+use eframe::egui;
 use std::time::Instant;
+
+/// The axes that only compared markets call for: with none left they go back to Regular.
+/// (Logarithmic is a choice of its own and stays.)
+pub(super) fn reverts_to_regular(mode: PriceScaleMode) -> bool {
+    matches!(mode, PriceScaleMode::Percent | PriceScaleMode::IndexedTo100)
+}
 
 impl ChartWorkspace {
     /// Pushes the chart's overlays as they stand, to undo the edit that follows. `scale_mode` is the
@@ -77,6 +85,73 @@ impl ChartWorkspace {
         Some(outcome)
     }
 
+    /// Opens the settings of one compared market beside `anchor` (its row on the overlay card), or
+    /// puts them away when they are already up for it.
+    pub(super) fn toggle_overlay_popover(
+        &mut self,
+        chart_id: u64,
+        overlay_id: OverlayId,
+        anchor: egui::Rect,
+    ) {
+        if self
+            .overlay_popover
+            .as_ref()
+            .is_some_and(|popover| popover.is_for(chart_id, overlay_id))
+        {
+            self.overlay_popover = None;
+            return;
+        }
+        let exists = self
+            .charts
+            .iter()
+            .find(|chart| chart.id == chart_id)
+            .is_some_and(|chart| chart.overlays.get(overlay_id).is_some());
+        if exists {
+            // One popover at a time: a script's would otherwise sit under this one.
+            self.script_popover = None;
+            self.overlay_popover = Some(OverlaySettingsPopover::open(chart_id, overlay_id, anchor));
+        }
+    }
+
+    /// Draws the open overlay popover, if any, and applies the edit it returns. It goes when its
+    /// market (or chart) does.
+    pub(super) fn show_overlay_popover(&mut self, ctx: &egui::Context) {
+        let Some(popover) = self.overlay_popover.take() else {
+            overlay_settings_popover::set_open(ctx, None);
+            return;
+        };
+        let (chart_id, overlay_id) = (popover.chart_id(), popover.overlay_id());
+        let Some(chart) = self.charts.iter().find(|chart| chart.id == chart_id) else {
+            overlay_settings_popover::set_open(ctx, None);
+            return;
+        };
+        let Some(overlay) = chart.overlays.get(overlay_id) else {
+            overlay_settings_popover::set_open(ctx, None);
+            return;
+        };
+        let own_scales = overlay_settings_popover::own_scales(chart.overlays.iter());
+        let outcome = popover.show(ctx, overlay, &own_scales, chart.scale_mode);
+        match outcome {
+            overlay_settings_popover::Outcome::Close => {
+                overlay_settings_popover::set_open(ctx, None);
+            }
+            overlay_settings_popover::Outcome::Open => {
+                overlay_settings_popover::set_open(ctx, Some((chart_id, overlay_id)));
+                self.overlay_popover = Some(popover);
+            }
+            overlay_settings_popover::Outcome::Command(command) => {
+                let removed = matches!(command, OverlayCommand::Remove(_));
+                self.apply_overlay_command(chart_id, command);
+                if removed {
+                    overlay_settings_popover::set_open(ctx, None);
+                } else {
+                    overlay_settings_popover::set_open(ctx, Some((chart_id, overlay_id)));
+                    self.overlay_popover = Some(popover);
+                }
+            }
+        }
+    }
+
     /// Applies an edit to `chart_id`'s overlays as one undo step. Returns whether it changed
     /// anything; an edit that changes nothing leaves no step.
     pub(super) fn apply_overlay_command(&mut self, chart_id: u64, command: OverlayCommand) -> bool {
@@ -103,11 +178,25 @@ impl ChartWorkspace {
                         && now.saturating_duration_since(at) <= RESTYLE_WINDOW
                 })
         });
+        // Taking the last compared market off puts the axis back to Regular, as adding the first
+        // switched it to Percent; the step carries the old mode so undo restores both.
+        let reverts = if probe.is_empty() {
+            self.charts
+                .iter()
+                .find(|chart| chart.id == chart_id)
+                .map(|chart| chart.scale_mode)
+                .filter(|mode| reverts_to_regular(*mode))
+        } else {
+            None
+        };
         if !merges {
-            self.remember_overlays(chart_id, None);
+            self.remember_overlays(chart_id, reverts);
         }
         if let Some(chart) = self.charts.iter_mut().find(|chart| chart.id == chart_id) {
             chart.overlays = probe;
+            if reverts.is_some() {
+                chart.scale_mode = PriceScaleMode::Regular;
+            }
         }
         self.last_overlay_style = style_run.map(|id| (chart_id, id, self.undo.len(), now));
         true
@@ -231,6 +320,45 @@ mod tests {
         workspace.charts[0].chart.appearance_mut().style.chart_type =
             crate::model::ChartType::Renko;
         assert!(!workspace.can_compare(a));
+    }
+
+    #[test]
+    fn taking_the_last_compared_market_off_puts_the_axis_back_to_regular() {
+        let mut workspace = empty_workspace(1);
+        let a = chart_with_drawings(&mut workspace, "BTCUSDT", &[]);
+        workspace.add_overlay(a, market("ETHUSDT"), None);
+        workspace.add_overlay(a, market("SOLUSDT"), None);
+        assert_eq!(chart(&workspace, a).scale_mode, PriceScaleMode::Percent);
+        let (first, second) = {
+            let list = chart(&workspace, a).overlays.as_slice();
+            (list[0].id, list[1].id)
+        };
+        // One left: still comparing, the axis stays.
+        workspace.apply_overlay_command(a, OverlayCommand::Remove(first));
+        assert_eq!(chart(&workspace, a).scale_mode, PriceScaleMode::Percent);
+        workspace.apply_overlay_command(a, OverlayCommand::Remove(second));
+        assert!(overlays_of(&workspace, a).is_empty());
+        assert_eq!(chart(&workspace, a).scale_mode, PriceScaleMode::Regular);
+        // Undo brings the market and its axis back in one step; redo takes both off again.
+        workspace.undo();
+        assert_eq!(overlays_of(&workspace, a), ["SOLUSDT"]);
+        assert_eq!(chart(&workspace, a).scale_mode, PriceScaleMode::Percent);
+        workspace.redo();
+        assert_eq!(chart(&workspace, a).scale_mode, PriceScaleMode::Regular);
+    }
+
+    #[test]
+    fn remove_all_reverts_the_axis_too_but_a_logarithmic_axis_stays() {
+        let mut workspace = empty_workspace(1);
+        let a = chart_with_drawings(&mut workspace, "BTCUSDT", &[]);
+        workspace.add_overlay(a, market("ETHUSDT"), None);
+        workspace.apply_overlay_command(a, OverlayCommand::RemoveAll);
+        assert_eq!(chart(&workspace, a).scale_mode, PriceScaleMode::Regular);
+
+        workspace.add_overlay(a, market("ETHUSDT"), None);
+        workspace.set_scale_mode(a, PriceScaleMode::Logarithmic);
+        workspace.apply_overlay_command(a, OverlayCommand::RemoveAll);
+        assert_eq!(chart(&workspace, a).scale_mode, PriceScaleMode::Logarithmic);
     }
 
     #[test]

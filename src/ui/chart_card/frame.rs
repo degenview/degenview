@@ -7,6 +7,7 @@
 //! navigation pill, a replay pick) comes in through [`Overlays`] at the exact points the live
 //! chart draws it, so the live layering is unchanged.
 
+use super::overlays::OverlayFrame;
 use super::*;
 use crate::model::canvas::PaneHeights;
 use crate::ui::pine_chart_render::{hover_targets_in_order, target_at};
@@ -129,7 +130,14 @@ pub(super) trait Overlays {
     fn pine_tooltip(&mut self, _target: &HoverTarget) {}
 
     /// Last, over the whole plot: alert lines, trading markers, the navigation pill.
-    fn finish(&mut self, _data: &FrameData, _layout: &FrameLayout, _view: &View) {}
+    fn finish(
+        &mut self,
+        _data: &FrameData,
+        _layout: &FrameLayout,
+        _view: &View,
+        _overlays: &OverlayFrame,
+    ) {
+    }
 }
 
 /// The title a script pane carries when its buttons are wanted: the buttons' own cue. A snapshot
@@ -634,7 +642,7 @@ impl ChartCard {
         }
 
         if main_visible {
-            overlays.finish(data, layout, view);
+            overlays.finish(data, layout, view, &overlay_frame);
         }
     }
 }

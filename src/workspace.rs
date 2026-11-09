@@ -20,6 +20,7 @@ use crate::ui::chart_settings::{self, ChartSettingsState};
 use crate::ui::drawing_properties::DrawingProperties;
 use crate::ui::indicator_picker::{self, IndicatorPicker};
 use crate::ui::layout_prompts::NamePrompt;
+use crate::ui::overlay_settings_popover::OverlaySettingsPopover;
 use crate::ui::paper_chart_trading::PaperOverlayAction;
 use crate::ui::pine_settings_popover::PineSettingsPopover;
 use crate::ui::replay_date_sheet::{self, ReplayDateSheetState};
@@ -183,6 +184,8 @@ pub struct ChartWorkspace {
     settings_chart: Option<u64>,
     /// The Inputs and Style popover of an applied script, up beside its chip or settings row.
     script_popover: Option<PineSettingsPopover>,
+    /// The settings of a compared market, up beside its row on the chart's overlay card.
+    overlay_popover: Option<OverlaySettingsPopover>,
     /// The open properties dialog of a drawing.
     drawing_props: Option<DrawingProperties>,
     /// Saved drawing templates, each tool's default style and the strip's remembered options.
@@ -374,6 +377,7 @@ impl ChartWorkspace {
             overlay_hub: overlays::OverlayHub::new(),
             settings_chart: None,
             script_popover: None,
+            overlay_popover: None,
             drawing_props: None,
             drawing_templates: None,
             saved_prefs: DrawingPrefs::default(),
@@ -866,6 +870,7 @@ impl ChartWorkspace {
         }
         // Before the sheet, so the popover takes an Esc the sheet would otherwise act on.
         self.show_script_popover(&ctx);
+        self.show_overlay_popover(&ctx);
         self.show_drawing_properties(&ctx);
         self.confirm_drawings_removal(&ctx);
         if self.settings_chart.is_some() {

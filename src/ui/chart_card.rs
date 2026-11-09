@@ -164,6 +164,9 @@ pub struct WatchlistMembership {
 /// of plot width so the same column lines up on every card.
 #[derive(Clone, Copy, Debug)]
 pub struct CrosshairInfo {
+    /// The pointer is on the overlay card, not the plot: the bar stays where it was and only the
+    /// readouts are drawn (no lines, no tags).
+    pub frozen: bool,
     pub owner_id: u64,
     pub x_fraction: f64,
     pub price: f64,
@@ -188,6 +191,10 @@ pub struct ChartPointer {
     pub hover_anchor: Option<Anchor>,
     /// The chart's plot area, once allocated.
     pub rect: Option<Rect>,
+    /// What a control on the overlay card asked for.
+    pub overlay_action: Option<chart_indicator_strip::Action>,
+    /// The pointer is on the overlay card, which takes it from the plot.
+    pub on_overlay_card: bool,
 }
 
 /// The "Chart settings" hover hint, except where a chart has no settings to open.
@@ -2336,6 +2343,8 @@ impl ChartCard {
             paper: (Vec::new(), None),
             navigation: None,
             scale_mode: None,
+            overlay_action: None,
+            on_overlay_card: false,
         };
         self.paint_frame(
             &painter,
@@ -2361,8 +2370,12 @@ impl ChartCard {
             paper,
             navigation,
             scale_mode,
+            overlay_action,
+            on_overlay_card,
             ..
         } = overlays;
+        pointer.overlay_action = overlay_action;
+        pointer.on_overlay_card = on_overlay_card;
         self.layer = layer;
         self.apply_overlay_results(
             OverlayResults {
@@ -2921,17 +2934,17 @@ impl ChartCard {
 
         // Vertical line — every chart draws it at the shared column, through the price chart and
         // on through each script pane under it.
-        if main_visible {
+        if main_visible && !crosshair.frozen {
             canvas_render::vertical(painter, x, (plot.top(), plot.bottom()), line);
         }
-        for pane in pane_rects {
+        for pane in pane_rects.iter().filter(|_| !crosshair.frozen) {
             if pane.height() > crate::model::canvas::COLLAPSED_PANE_HEIGHT {
                 canvas_render::vertical(painter, x, (pane.top(), pane.bottom()), line);
             }
         }
 
         // Horizontal line + price pill — only the chart the pointer is over.
-        if main_visible && crosshair.owner_id == chart_id {
+        if main_visible && crosshair.owner_id == chart_id && !crosshair.frozen {
             let y = scale.y(crosshair.price);
             if plot.y_range().contains(y) {
                 canvas_render::horizontal(painter, (plot.left(), plot.right()), y, line);
@@ -2960,24 +2973,26 @@ impl ChartCard {
             return;
         };
 
-        let date = format::timestamp(candle.open_time);
-        let time_tag_width = 116.0 * style.time_size / 9.0;
-        let time_tag = Rect::from_center_size(
-            Pos2::new(x, rect.bottom() - style.time_axis_height() / 2.0),
-            Vec2::new(time_tag_width, style.time_axis_height() - 6.0),
-        )
-        .intersect(Rect::from_min_max(
-            Pos2::new(plot.left(), plot.bottom()),
-            Pos2::new(plot.right(), rect.bottom()),
-        ));
-        painter.rect_filled(time_tag, 3.0, Color32::from_gray(79));
-        painter.text(
-            time_tag.center(),
-            Align2::CENTER_CENTER,
-            date,
-            style.time_font(),
-            Color32::WHITE,
-        );
+        if !crosshair.frozen {
+            let date = format::timestamp(candle.open_time);
+            let time_tag_width = 116.0 * style.time_size / 9.0;
+            let time_tag = Rect::from_center_size(
+                Pos2::new(x, rect.bottom() - style.time_axis_height() / 2.0),
+                Vec2::new(time_tag_width, style.time_axis_height() - 6.0),
+            )
+            .intersect(Rect::from_min_max(
+                Pos2::new(plot.left(), plot.bottom()),
+                Pos2::new(plot.right(), rect.bottom()),
+            ));
+            painter.rect_filled(time_tag, 3.0, Color32::from_gray(79));
+            painter.text(
+                time_tag.center(),
+                Align2::CENTER_CENTER,
+                date,
+                style.time_font(),
+                Color32::WHITE,
+            );
+        }
 
         // The header covers the plot's top, so the readouts start under it.
         let below_header = self.below_header(plot);
@@ -2987,15 +3002,8 @@ impl ChartCard {
             below_header.top() - 4.0
         };
         let (overlay_frame, overlay_view) = info.overlays;
-        self.paint_overlay_readout(
-            painter,
-            below_header,
-            readout_bottom,
-            overlay_frame,
-            overlay_view,
-            index,
-            x,
-        );
+        self.paint_overlay_rings(painter, below_header, overlay_frame, overlay_view, index, x);
+        overlay_card::remember(painter.ctx(), chart_id, index, readout_bottom);
 
         // Line, area and baseline charts follow one value: ring it on the bar under the pointer.
         if info.chart_type.data_class() == DataClass::StandardLine
@@ -3289,6 +3297,7 @@ mod context;
 mod frame;
 mod live_overlays;
 mod navigation;
+mod overlay_card;
 mod overlays;
 mod snapshot;
 mod sync;

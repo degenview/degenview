@@ -10,12 +10,10 @@
 use super::chart_card::ChartCard;
 use super::chart_settings::ChartSettingsAction;
 use super::icons::{self, Icon};
+use super::overlay_settings::{self, rgb};
 use super::{kit, settings_card, theme};
-use crate::model::chart_type::{LineDash, PriceSource};
-use crate::model::editor_theme::Rgba;
-use crate::model::overlay::{
-    ChartOverlay, Move, OverlayCommand, OverlayId, OverlayScale, PALETTE, ScaleChoice,
-};
+use crate::model::chart_type::LineDash;
+use crate::model::overlay::{ChartOverlay, Move, OverlayCommand, OverlayId, OverlayScale};
 use crate::model::overlay_feed::OverlayStatus;
 use crate::model::price_scale::PriceScaleMode;
 use eframe::egui::{self, Align, Color32, Id, Layout, Rect, Sense, Stroke, Ui, Vec2, pos2, vec2};
@@ -25,9 +23,6 @@ use std::collections::HashMap;
 const OPEN_UP_TO: usize = 3;
 /// A search field appears past this many.
 const SEARCH_FROM: usize = 6;
-const WIDTHS: [f32; 6] = [0.5, 1.0, 1.5, 2.0, 3.0, 4.0];
-/// The width of a setting's name in an open card.
-const NAME_COLUMN: f32 = 104.0;
 
 /// What the page remembers while the sheet is open.
 #[derive(Default)]
@@ -612,205 +607,21 @@ fn card_menu(
     action
 }
 
-// MARK: Settings of one market
-
+/// The settings under a card's chevron.
 fn details(
     ui: &mut Ui,
     input: &CompareInput,
     overlay: &ChartOverlay,
     own_scales: &[(OverlayId, String)],
 ) -> Option<ChartSettingsAction> {
-    let mut action = None;
-    let id = overlay.id;
-    let mut send = |command: OverlayCommand| action = Some(ChartSettingsAction::Overlay(command));
-    egui::Grid::new(("compare-details", id))
-        .num_columns(2)
-        .spacing([16.0, 12.0])
-        .min_col_width(NAME_COLUMN)
-        .show(ui, |ui| {
-            setting_name(ui, "Colour");
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 6.0;
-                for hex in PALETTE {
-                    let color = Rgba::hex(hex);
-                    if swatch_button(ui, rgb(color), overlay.color == color) {
-                        send(OverlayCommand::SetColor(id, color));
-                    }
-                }
-                ui.add_space(8.0);
-                ui.label(kit::text(
-                    "Custom",
-                    10.5,
-                    kit::REGULAR,
-                    theme::text_secondary(),
-                ));
-                let custom = !PALETTE.iter().any(|hex| Rgba::hex(*hex) == overlay.color);
-                if let Some(picked) = kit::color_well(
-                    ui,
-                    vec2(26.0, 20.0),
-                    &format!("{} custom colour", overlay.name()),
-                    rgb(overlay.color),
-                    egui::color_picker::Alpha::Opaque,
-                ) {
-                    send(OverlayCommand::SetColor(
-                        id,
-                        Rgba::new(picked.r(), picked.g(), picked.b(), 255),
-                    ));
-                }
-                if custom {
-                    ui.label(kit::text(
-                        overlay.color.to_hex(),
-                        10.5,
-                        kit::REGULAR,
-                        theme::text_tertiary(),
-                    ));
-                }
-            });
-            ui.end_row();
-
-            setting_name(ui, "Line");
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 8.0;
-                let widths: Vec<String> = WIDTHS.iter().map(|w| format!("{w} px")).collect();
-                let at = WIDTHS
-                    .iter()
-                    .position(|w| (*w - overlay.width).abs() < 0.01)
-                    .unwrap_or(2);
-                if let Some(pick) = kit::menu_picker(ui, 84.0, &widths, at, true) {
-                    send(OverlayCommand::SetWidth(id, WIDTHS[pick]));
-                }
-                let dashes: Vec<String> =
-                    LineDash::ALL.iter().map(|d| d.label().to_owned()).collect();
-                let at = LineDash::ALL
-                    .iter()
-                    .position(|d| *d == overlay.dash)
-                    .unwrap_or(0);
-                if let Some(pick) = kit::menu_picker(ui, 96.0, &dashes, at, true) {
-                    send(OverlayCommand::SetDash(id, LineDash::ALL[pick]));
-                }
-            });
-            ui.end_row();
-
-            setting_name(ui, "Price");
-            ui.vertical(|ui| {
-                ui.spacing_mut().item_spacing.y = 4.0;
-                let sources: Vec<String> = PriceSource::ALL
-                    .iter()
-                    .map(|s| s.label().to_owned())
-                    .collect();
-                let at = PriceSource::ALL
-                    .iter()
-                    .position(|s| *s == overlay.source)
-                    .unwrap_or(3);
-                if let Some(pick) = kit::menu_picker(ui, 96.0, &sources, at, true) {
-                    send(OverlayCommand::SetSource(id, PriceSource::ALL[pick]));
-                }
-                hint(ui, "The value of each candle the line follows.");
-            });
-            ui.end_row();
-
-            setting_name(ui, "Scale");
-            ui.vertical(|ui| {
-                ui.spacing_mut().item_spacing.y = 4.0;
-                let mut labels = vec!["Chart's scale".to_owned(), "Its own scale".to_owned()];
-                let mut choices = vec![ScaleChoice::Main, ScaleChoice::Own];
-                for (other, name) in own_scales.iter().filter(|(other, _)| *other != id) {
-                    labels.push(format!("Scale of {name}"));
-                    choices.push(ScaleChoice::SharedWith(*other));
-                }
-                let at = match overlay.scale {
-                    OverlayScale::Main => 0,
-                    OverlayScale::Own(group) if group == id => 1,
-                    OverlayScale::Own(group) => own_scales
-                        .iter()
-                        .filter(|(other, _)| *other != id)
-                        .position(|(other, _)| *other == group)
-                        .map_or(1, |n| n + 2),
-                };
-                if let Some(pick) = kit::menu_picker(ui, 190.0, &labels, at, true) {
-                    send(OverlayCommand::SetScale(id, choices[pick]));
-                }
-                hint(ui, &scale_hint(overlay, own_scales, input.scale_mode));
-            });
-            ui.end_row();
-
-            setting_name(ui, "Last value tag");
-            ui.vertical(|ui| {
-                ui.spacing_mut().item_spacing.y = 4.0;
-                let mut shown = overlay.show_label;
-                if settings_card::switch(ui, &mut shown) {
-                    send(OverlayCommand::SetLabel(id, shown));
-                }
-                hint(ui, "A label at the end of the line with its latest value.");
-            });
-            ui.end_row();
-        });
-    action
-}
-
-/// One sentence on what a market's scale does to its line.
-pub fn scale_hint(
-    overlay: &ChartOverlay,
-    own_scales: &[(OverlayId, String)],
-    mode: PriceScaleMode,
-) -> String {
-    match overlay.scale {
-        OverlayScale::Main => match mode {
-            PriceScaleMode::Percent | PriceScaleMode::IndexedTo100 => {
-                "Starts where the chart does, so the axis reads this market's own change.".to_owned()
-            }
-            PriceScaleMode::Regular | PriceScaleMode::Logarithmic => {
-                "Starts where the chart does. Use the Percent or Indexed axis to read it as a change."
-                    .to_owned()
-            }
-        },
-        OverlayScale::Own(group) if group == overlay.id => {
-            "Fitted to the height of the chart. Its price is in the tag and the legend, not on the axis."
-                .to_owned()
-        }
-        OverlayScale::Own(group) => {
-            let owner = own_scales
-                .iter()
-                .find(|(other, _)| *other == group)
-                .map_or("another market", |(_, name)| name.as_str());
-            format!("Fitted together with {owner}, so they can be read against each other.")
-        }
-    }
-}
-
-fn setting_name(ui: &mut Ui, name: &str) {
-    ui.with_layout(Layout::top_down(Align::Min), |ui| {
-        ui.add_space(3.0);
-        ui.label(kit::text(name, 11.5, kit::MEDIUM, theme::text_secondary()));
-    });
-}
-
-fn hint(ui: &mut Ui, text: &str) {
-    ui.add(egui::Label::new(kit::text(text, 10.5, kit::REGULAR, theme::text_secondary())).wrap());
-}
-
-/// A palette colour as a round button, ringed while it is the market's colour.
-fn swatch_button(ui: &mut Ui, color: Color32, selected: bool) -> bool {
-    let (rect, response) = ui.allocate_exact_size(Vec2::splat(20.0), Sense::click());
-    let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
-    let center = rect.center();
-    ui.painter().circle_filled(center, 7.5, color);
-    if selected {
-        ui.painter()
-            .circle_stroke(center, 9.5, Stroke::new(1.5, theme::text_primary()));
-    } else if response.hovered() {
-        ui.painter()
-            .circle_stroke(center, 9.5, Stroke::new(1.0, theme::ink(40)));
-    }
-    crate::ui::accessibility::label(response, format!("Colour {}", color_name(color))).clicked()
-}
-
-fn color_name(color: Color32) -> String {
-    format!("#{:02X}{:02X}{:02X}", color.r(), color.g(), color.b())
-}
-
-fn rgb(color: Rgba) -> Color32 {
-    Color32::from_rgb(color.r, color.g, color.b)
+    overlay_settings::body(
+        ui,
+        overlay,
+        own_scales,
+        input.scale_mode,
+        overlay_settings::Density::Roomy,
+    )
+    .map(ChartSettingsAction::Overlay)
 }
 
 #[cfg(test)]
@@ -819,7 +630,9 @@ mod tests {
     use crate::model::DataSource;
     use crate::model::InstrumentId;
     use crate::model::overlay::OverlayList;
+    use crate::model::overlay::ScaleChoice;
     use crate::model::overlay_feed::OverlayFeed;
+    use crate::ui::overlay_settings::scale_hint;
 
     fn list_of(symbols: &[&str]) -> OverlayList {
         let main = InstrumentId::new(DataSource::Binance, "BTCUSDT");
