@@ -150,6 +150,18 @@ mod tests {
     }
 
     #[test]
+    fn the_toolbars_plus_opens_the_compare_picker_on_a_chart_that_can_take_one() {
+        use crate::ui::symbol_picker::PickMode;
+        let mut workspace = empty_workspace(1);
+        let a = chart_with_drawings(&mut workspace, "BTCUSDT", &[]);
+        workspace.focus_chart(a);
+        assert!(workspace.can_compare(a));
+        workspace.open_compare_picker();
+        assert!(workspace.symbol_picker.is_open());
+        assert_eq!(workspace.symbol_picker.mode(), PickMode::Compare);
+    }
+
+    #[test]
     fn adding_draws_on_the_chart_alone_and_switches_regular_to_percent() {
         let mut workspace = empty_workspace(1);
         let a = chart_with_drawings(&mut workspace, "BTCUSDT", &[]);

@@ -24,6 +24,8 @@ pub enum Icon {
     Plus,
     /// Two candlesticks and a plus: Add Chart.
     ChartPlus,
+    /// A plus in a ring: compare or add a symbol.
+    PlusCircle,
     Magnifier,
     ZoomIn,
     ZoomOut,
@@ -520,6 +522,11 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
         Icon::Plus => {
             line(&[p(8.0, 3.0), p(8.0, 13.0)]);
             line(&[p(3.0, 8.0), p(13.0, 8.0)]);
+        }
+        Icon::PlusCircle => {
+            circle(p(8.0, 8.0), 6.4, false);
+            line(&[p(8.0, 5.0), p(8.0, 11.0)]);
+            line(&[p(5.0, 8.0), p(11.0, 8.0)]);
         }
         Icon::ChartPlus => {
             // Two candles, the second a step higher, and the plus where a third would stand.
@@ -2359,6 +2366,7 @@ mod tests {
             StarFill,
             Plus,
             ChartPlus,
+            PlusCircle,
             Magnifier,
             ZoomIn,
             ZoomOut,

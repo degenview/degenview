@@ -71,6 +71,8 @@ pub struct ToolbarChart {
     pub chart_types: bool,
     /// The market has a settings sheet (a CoinMarketCap gauge has none).
     pub settings: bool,
+    /// Another market can be drawn on it (not a line-only source or a price-based type).
+    pub compare: bool,
 }
 
 /// What the layout menu's Autosave row shows.
@@ -88,6 +90,8 @@ pub enum ToolbarAction {
     SetTimeframe(Timeframe),
     /// Open the symbol picker, to change the focused chart's market.
     OpenSymbolSearch,
+    /// Open the symbol picker to compare another market on the focused chart.
+    CompareSymbol,
     /// A type picked from the chart-type menu, for the focused chart.
     SetChartType(ChartType),
     SaveLayout,
@@ -390,6 +394,14 @@ fn left_items(input: &ToolbarInput) -> Vec<Item> {
         None => "Search symbol".to_owned(),
     });
     items.push(Item::Button(symbol));
+    // Beside the symbol, as TradingView has it: another market on this chart. The Compare page
+    // of the chart settings opens the same picker.
+    items.push(Item::Button(
+        Button::new("compare", "Compare or add symbol")
+            .icon(Icon::PlusCircle)
+            .enabled(input.chart.is_some_and(|chart| chart.compare))
+            .on_click(ToolbarAction::CompareSymbol),
+    ));
     items.push(Item::Separator);
     for timeframe in Timeframe::ALL {
         let selected = timeframe == input.timeframe;
@@ -926,6 +938,7 @@ mod tests {
                 source: DataSource::Binance,
                 chart_types: true,
                 settings: true,
+                compare: true,
             }),
             can_undo: true,
             can_redo: false,
@@ -1079,6 +1092,7 @@ mod tests {
             ToolbarAction::Redo,
             ToolbarAction::ToggleReplay,
             ToolbarAction::CreateAlert,
+            ToolbarAction::CompareSymbol,
             ToolbarAction::OpenIndicators,
             ToolbarAction::OpenChartSettings,
             ToolbarAction::SetTimeframe(Timeframe::Week),
@@ -1115,6 +1129,7 @@ mod tests {
             ToolbarAction::Redo,
             ToolbarAction::ToggleReplay,
             ToolbarAction::CreateAlert,
+            ToolbarAction::CompareSymbol,
             ToolbarAction::OpenIndicators,
             ToolbarAction::OpenChartSettings,
         ] {
