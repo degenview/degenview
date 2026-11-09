@@ -760,19 +760,20 @@ mod tests {
         let fake = Arc::new(Fake::default());
         fake.trades.store(true, Ordering::Release);
         fake.trade_count.store(50, Ordering::Release); // ids 1..=50 at times 1001..=1050
-        // The first bar opens after the first trade, so the book is complete from it.
-        let first = 1_010;
+        // The second (last, still forming) bar opens after the first trade, so the book is complete
+        // from it; the first bar opened before the book starts, so candles build it.
+        let first = 1_010 - DAY;
         market_for(&fake, first, 2 * 24 * 60);
         let (mut workspace, id) = footprint_workspace(&fake, first);
         let set = wait_for_set(&mut workspace, id, |set| {
             set.counts.trades == 1 && set.counts.split == 1
         });
         assert_eq!(
-            set.bars[0].as_ref().unwrap().quality,
+            set.bars[1].as_ref().unwrap().quality,
             DataQuality::TradeDerived
         );
         assert_eq!(
-            set.bars[1].as_ref().unwrap().quality,
+            set.bars[0].as_ref().unwrap().quality,
             DataQuality::ExchangeSplit
         );
     }
