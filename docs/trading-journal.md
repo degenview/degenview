@@ -6,9 +6,9 @@ and the comparison with other journals: [trading-journal-research.md](reviews/tr
 
 **Status.** Built: the canonical execution model, trade reconstruction, the paper source, storage
 and capture, the pure analytics (statistics, equity and drawdown, calendar, filters, R-multiple,
-Edge Score), and the Journal tab with the trade table, trade panel and reviews. The dashboard,
-playbooks, daily journal, charts, import/export and iCloud follow as separate changes; their
-sections are added as they land.
+Edge Score), and the Journal tab with the Overview, Calendar and Trades pages, the trade panel and
+reviews. Breakdowns, playbooks, the daily journal, charts, import/export and iCloud follow as
+separate changes; their sections are added as they land.
 
 ## Layers
 
@@ -208,5 +208,37 @@ balance (tested). A trade whose executions disappear leaves its review behind.
 on by default, in the delete confirmation and in the reset sheet). Keeping archives the account;
 removing deletes its executions and reviews. An MCP reset keeps.
 
-Not built yet: the dashboard, calendar view, analytics pages, playbooks and the daily journal,
-chart markers and "view on chart", CSV import and export, iCloud sync of reviews.
+## Overview and Calendar pages
+
+The tab has three pages (`Section`, remembered in `journal.prefs`): Overview, Calendar, Trades.
+The header (range, account, instrument, side, status, search) filters all of them; the Calendar
+ignores the range, because it has its own month navigation.
+
+**Overview** (`model/journal/overview.rs` computes it, `ui/journal_overview.rs` draws it): five
+headline cards (net P&L, win rate, profit factor, average win/loss, day win rate, each with a
+tooltip definition and, where the range has a previous period, the change against it), twelve
+smaller figures (gross, fees, trades, expectancy, average R, max drawdown, trading, winning, best
+and worst day, duration, streak), the realised-equity curve with an optional previous-period
+overlay, the Edge Score radar, daily P&L bars, drawdown (amount or percentage, with the overlay),
+the distribution of results, long against short, and the latest closed trades (click opens one).
+A figure that does not exist is a dash with the reason as its tooltip, never a zero.
+
+- **One currency at a time.** A selection that spans currencies (a USD and a USDT account) shows
+  chips to pick which one the page describes; amounts are never added.
+- **Equity needs a balance.** With every account's initial balance known the curve is *realised
+  equity* (balance, plus what was earned before the range, plus the range's trades) and drawdown
+  has a percentage; otherwise it is titled *cumulative net P&L* and says it is not account equity.
+- **Previous period.** The window of equal length just before the range, shifted onto it; it has
+  no previous period for "All" or a half-open custom range.
+- **Distribution.** Bins of a round width whose edges are multiples of it, so zero is always an
+  edge and a bar is wholly a win or wholly a loss.
+- Computed when the filter, the build or the currency changes, not per frame.
+
+**Calendar** (`ui/journal_calendar.rs`): one tile per day tinted by its result with the net, an
+arrow, the trade count and win rate; a week total at the end of each row (Sunday-first); month net,
+best and worst day and activity underneath; hover for the day's tally; click opens that day on the
+Trades page. Sign is always in the text and an arrow, so colour is never the only cue.
+
+Not built yet: breakdowns by hour, weekday, instrument and strategy, account Compare, playbooks and
+the daily journal, chart markers and "view on chart", CSV import and export, iCloud sync of
+reviews. There is no drag-to-zoom on the charts: the range presets are the zoom.

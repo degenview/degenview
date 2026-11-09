@@ -92,6 +92,16 @@ pub fn build_data(
     })
 }
 
+/// The pages of the Journal tab.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Section {
+    #[default]
+    Overview,
+    Calendar,
+    Trades,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RangeChoice {
@@ -106,6 +116,8 @@ pub enum RangeChoice {
 /// What the journal remembers about how the user left it. Local to this Mac.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct JournalPrefs {
+    #[serde(default)]
+    pub section: Section,
     #[serde(default = "default_columns")]
     pub columns: Vec<Column>,
     #[serde(default)]
@@ -133,6 +145,7 @@ fn default_range() -> RangeChoice {
 impl Default for JournalPrefs {
     fn default() -> Self {
         Self {
+            section: Section::default(),
             columns: default_columns(),
             widths: BTreeMap::new(),
             sort: Sort::default(),

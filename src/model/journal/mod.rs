@@ -17,6 +17,7 @@ pub mod format;
 pub mod metric;
 pub mod model;
 pub mod normalize;
+pub mod overview;
 pub mod reconstruct;
 pub mod reviews;
 pub mod risk;

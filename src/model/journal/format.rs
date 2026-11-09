@@ -148,6 +148,64 @@ pub fn datetime(ts_ms: i64, offset: Offset<'_>) -> String {
     )
 }
 
+/// `Nov 9`, in the zone `offset` describes.
+pub fn short_date(ts_ms: i64, offset: Offset<'_>) -> String {
+    let civil = civil_from_days(day_number(ts_ms, offset));
+    format!("{} {}", month_name(civil.month), civil.day)
+}
+
+/// `Nov 9` for a civil date.
+pub fn short_civil(civil: Civil) -> String {
+    format!("{} {}", month_name(civil.month), civil.day)
+}
+
+/// A figure for a chart axis: `950`, `1.2K`, `3.4M`, `-2.5K`.
+pub fn compact(value: f64) -> String {
+    if !value.is_finite() {
+        return "\u{2014}".to_owned();
+    }
+    let abs = value.abs();
+    let (scaled, suffix) = if abs >= 1e9 {
+        (value / 1e9, "B")
+    } else if abs >= 1e6 {
+        (value / 1e6, "M")
+    } else if abs >= 1e3 {
+        (value / 1e3, "K")
+    } else {
+        (value, "")
+    };
+    let text = if suffix.is_empty() {
+        if abs >= 100.0 || scaled.fract() == 0.0 {
+            format!("{scaled:.0}")
+        } else {
+            format!("{scaled:.2}")
+        }
+    } else {
+        let t = format!("{scaled:.1}");
+        t.trim_end_matches(".0").to_owned()
+    };
+    format!("{text}{suffix}")
+}
+
+/// `November 2026`.
+pub fn month_title(year: i32, month: u8) -> String {
+    const FULL: [&str; 12] = [
+        "January",
+        "February",
+        "March",
+        "April",
+        "May",
+        "June",
+        "July",
+        "August",
+        "September",
+        "October",
+        "November",
+        "December",
+    ];
+    format!("{} {year}", FULL[usize::from(month.clamp(1, 12)) - 1])
+}
+
 /// `Sun, Nov 9, 2026`.
 pub fn date(civil: Civil) -> String {
     let days = super::calendar::days_from_civil(civil);
@@ -242,6 +300,28 @@ mod tests {
         assert_eq!(datetime(ts, &utc), "Nov 9, 2026 15:04");
         assert_eq!(datetime(ts, &|_| 10 * 3_600), "Nov 10, 2026 01:04");
         assert_eq!(datetime(ts, &|_| -16 * 3_600), "Nov 8, 2026 23:04");
+    }
+
+    #[test]
+    fn axis_figures_are_short() {
+        assert_eq!(compact(0.0), "0");
+        assert_eq!(compact(950.0), "950");
+        assert_eq!(compact(1_200.0), "1.2K");
+        assert_eq!(compact(-2_500.0), "-2.5K");
+        assert_eq!(compact(3_400_000.0), "3.4M");
+        assert_eq!(compact(2_000.0), "2K");
+        assert_eq!(compact(0.25), "0.25");
+        assert_eq!(compact(f64::NAN), "\u{2014}");
+        assert_eq!(month_title(2026, 11), "November 2026");
+        assert_eq!(
+            short_civil(Civil {
+                year: 2026,
+                month: 11,
+                day: 9
+            }),
+            "Nov 9"
+        );
+        assert_eq!(short_date(0, &utc), "Jan 1");
     }
 
     #[test]

@@ -8,17 +8,28 @@ use std::sync::Arc;
 use eframe::egui::{self, Key};
 use rust_decimal::Decimal;
 
-use crate::host::journal_host::{JournalData, JournalHost, JournalPrefs, RangeChoice, now_ms};
-use crate::model::journal::calendar::{self, days_from_civil};
+use crate::host::journal_host::{
+    JournalData, JournalHost, JournalPrefs, RangeChoice, Section, now_ms,
+};
+use crate::model::journal::calendar::{
+    self, Civil, MonthView, days_from_civil, month_view, shift_month,
+};
 use crate::model::journal::cells::{self, CellContext, Tone};
-use crate::model::journal::filters::{OutcomeFilter, RangePreset, TradeFilter, range_for};
+use crate::model::journal::filters::{
+    OutcomeFilter, RangePreset, TradeFilter, outcome_of, previous_window, range_for,
+};
 use crate::model::journal::format;
-use crate::model::journal::model::Direction;
+use crate::model::journal::model::{Direction, Trade};
+use crate::model::journal::overview::{
+    Input as OverviewInput, Overview, accounts_in_scope, compute, currencies_of,
+};
 use crate::model::journal::table::{Column, Sort, SortContext, sort_indices};
 use crate::service::timezone::local_utc_offset_secs;
 use crate::ui::header_controls;
 use crate::ui::icons::Icon;
+use crate::ui::journal_calendar;
 use crate::ui::journal_detail::{self, Draft};
+use crate::ui::journal_overview::{self, OverviewState};
 use crate::ui::journal_table::{self, TableSpec};
 use crate::ui::kit::{self, REGULAR, SEMIBOLD, size};
 use crate::ui::paper_grid;
@@ -45,6 +56,15 @@ enum RangeKind {
     Custom,
 }
 
+/// What a cached overview or month was computed from.
+#[derive(Clone, PartialEq)]
+struct StatsKey {
+    build_id: u64,
+    filter: TradeFilter,
+    currency: Option<Option<String>>,
+    month: Option<(i32, u8)>,
+}
+
 /// What the cached row order was computed from.
 #[derive(Clone, PartialEq)]
 struct RowsKey {
@@ -68,6 +88,13 @@ pub struct JournalTab {
     prefs_applied: bool,
     /// The resolved range is refreshed every so often, not every frame.
     range_cache: Option<(i64, Option<i64>, Option<i64>)>,
+    overview_state: OverviewState,
+    overview: Option<(StatsKey, Overview)>,
+    month: Option<(StatsKey, MonthView)>,
+    /// The month the calendar shows; `None` is the current one.
+    calendar_month: Option<(i32, u8)>,
+    /// The currency the overview and calendar describe when the selection has several.
+    currency: Option<Option<String>>,
 }
 
 impl JournalTab {
@@ -85,6 +112,11 @@ impl JournalTab {
             scroll_to: None,
             prefs_applied: false,
             range_cache: None,
+            overview_state: OverviewState::default(),
+            overview: None,
+            month: None,
+            calendar_month: None,
+            currency: None,
         }
     }
 
@@ -179,6 +211,28 @@ impl JournalTab {
 
         let reviews = host.reviews().clone();
         self.refresh_rows(host, &data, &reviews);
+        let section = host.prefs().section;
+        if section != Section::Trades && self.selected.is_some() {
+            self.close_trade(host);
+        }
+        match section {
+            Section::Trades => self.trades_section(ui, host, &data, &reviews),
+            Section::Overview => self.overview_section(ui, host, &data),
+            Section::Calendar => self.calendar_section(ui, host, &data),
+        }
+        host.flush_prefs_if_idle(ui.ctx());
+        actions
+    }
+
+    fn trades_section(
+        &mut self,
+        ui: &mut egui::Ui,
+        host: &mut JournalHost,
+        data: &Arc<JournalData>,
+        reviews: &Arc<std::collections::HashMap<String, crate::model::journal::reviews::Review>>,
+    ) {
+        let data = data.clone();
+        let reviews = reviews.clone();
 
         // The trade panel, on the right.
         let selected_row = self.selected.as_ref().and_then(|key| {
@@ -309,8 +363,242 @@ impl JournalTab {
                     }
                 })
             });
-        host.flush_prefs_if_idle(ui.ctx());
-        actions
+    }
+
+    // MARK: Overview and calendar
+
+    /// The trades the filters pick, ignoring the range.
+    fn scope_indices(&self, data: &JournalData) -> Vec<usize> {
+        let mut filter = self.filter.clone();
+        filter.from_ms = None;
+        filter.to_ms = None;
+        filter.matching_indices(&data.trades, BREAKEVEN_TOLERANCE)
+    }
+
+    fn overview_section(
+        &mut self,
+        ui: &mut egui::Ui,
+        host: &mut JournalHost,
+        data: &Arc<JournalData>,
+    ) {
+        let key = StatsKey {
+            build_id: data.build_id,
+            filter: self.filter.clone(),
+            currency: self.currency.clone(),
+            month: None,
+        };
+        if data.trades.is_empty() {
+            egui::CentralPanel::default()
+                .frame(egui::Frame::new().fill(theme::background()))
+                .show(ui, |ui| {
+                    message_page(
+                        ui,
+                        Icon::Journal,
+                        "Your trades appear here",
+                        "Place a paper trade on a chart. Every execution is recorded automatically \
+                         and grouped into trades you can review.",
+                        None,
+                    );
+                });
+            return;
+        }
+        if self
+            .overview
+            .as_ref()
+            .is_none_or(|(cached, _)| cached != &key)
+        {
+            let scope = self.scope_indices(data);
+            let selected: Vec<&Trade> = self.rows.iter().map(|&i| &data.trades[i]).collect();
+            let scope_refs: Vec<&Trade> = scope.iter().map(|&i| &data.trades[i]).collect();
+            let (from, to) = (self.filter.from_ms, self.filter.to_ms);
+            let before: Vec<&Trade> = match from {
+                Some(from) => scope_refs
+                    .iter()
+                    .copied()
+                    .filter(|t| t.close_ts_ms.is_some_and(|close| close < from))
+                    .collect(),
+                None => Vec::new(),
+            };
+            let previous: Option<Vec<&Trade>> = previous_window(from, to).map(|(start, end)| {
+                scope_refs
+                    .iter()
+                    .copied()
+                    .filter(|trade| {
+                        let at = trade.close_ts_ms.unwrap_or(trade.open_ts_ms);
+                        at >= start && at < end
+                    })
+                    .collect()
+            });
+            let accounts =
+                accounts_in_scope(&data.accounts, host.prefs().account.as_deref(), &scope_refs);
+            let overview = compute(&OverviewInput {
+                trades: &selected,
+                previous: previous.as_deref(),
+                before: &before,
+                accounts: &accounts,
+                from_ms: from,
+                to_ms: to,
+                currency: self.currency.clone(),
+                breakeven_tolerance: BREAKEVEN_TOLERANCE,
+                offset: &local_utc_offset_secs,
+            });
+            self.overview = Some((key, overview));
+        }
+        let mut currency = None;
+        let mut open_trade = None;
+        egui::CentralPanel::default()
+            .frame(egui::Frame::new().fill(theme::background()))
+            .show(ui, |ui| {
+                aligned(ui, |ui| {
+                    ui.add_space(10.0);
+                    egui::ScrollArea::vertical()
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            if self.rows.is_empty() {
+                                if message_page(
+                                    ui,
+                                    Icon::Filter,
+                                    "No trades match",
+                                    "Nothing in the journal fits the range and filters.",
+                                    Some("Reset filters"),
+                                ) {
+                                    self.reset_filters(host);
+                                }
+                                return;
+                            }
+                            let Some((_, overview)) = self.overview.as_ref() else {
+                                return;
+                            };
+                            let output = journal_overview::show(
+                                ui,
+                                overview,
+                                &mut self.overview_state,
+                                &local_utc_offset_secs,
+                                &data.trades,
+                            );
+                            currency = output.currency;
+                            open_trade = output.open_trade;
+                        });
+                })
+            });
+        if let Some(chosen) = currency {
+            self.currency = Some(chosen);
+        }
+        if let Some(key) = open_trade {
+            host.prefs_mut().section = Section::Trades;
+            self.selected = Some(key);
+            self.scroll_to = None;
+        }
+    }
+
+    fn calendar_section(
+        &mut self,
+        ui: &mut egui::Ui,
+        host: &mut JournalHost,
+        data: &Arc<JournalData>,
+    ) {
+        let today = journal_calendar::civil_today(now_ms(), &local_utc_offset_secs);
+        let (year, month) = self.calendar_month.unwrap_or((today.year, today.month));
+        let key = StatsKey {
+            build_id: data.build_id,
+            filter: {
+                let mut filter = self.filter.clone();
+                filter.from_ms = None;
+                filter.to_ms = None;
+                filter
+            },
+            currency: self.currency.clone(),
+            month: Some((year, month)),
+        };
+        let scope = self.scope_indices(data);
+        let scope_refs: Vec<&Trade> = scope.iter().map(|&i| &data.trades[i]).collect();
+        let currencies = currencies_of(&scope_refs);
+        let current = self
+            .currency
+            .clone()
+            .filter(|chosen| currencies.contains(chosen))
+            .or_else(|| currencies.first().cloned())
+            .unwrap_or(None);
+        if self.month.as_ref().is_none_or(|(cached, _)| cached != &key) {
+            let mine: Vec<&Trade> = scope_refs
+                .iter()
+                .copied()
+                .filter(|trade| trade.currency == current)
+                .collect();
+            let view =
+                month_view(
+                    &mine,
+                    year,
+                    month,
+                    &local_utc_offset_secs,
+                    &|trade| match outcome_of(trade, BREAKEVEN_TOLERANCE) {
+                        OutcomeFilter::Win => calendar::Outcome::Win,
+                        OutcomeFilter::Loss => calendar::Outcome::Loss,
+                        _ => calendar::Outcome::Breakeven,
+                    },
+                );
+            self.month = Some((key, view));
+        }
+        let mut chosen = None;
+        let mut output = journal_calendar::Output::default();
+        egui::CentralPanel::default()
+            .frame(egui::Frame::new().fill(theme::background()))
+            .show(ui, |ui| {
+                aligned(ui, |ui| {
+                    ui.add_space(10.0);
+                    egui::ScrollArea::vertical()
+                        .auto_shrink([false, false])
+                        .show(ui, |ui| {
+                            if data.trades.is_empty() {
+                                message_page(
+                                    ui,
+                                    Icon::Journal,
+                                    "Your trades appear here",
+                                    "Place a paper trade on a chart. Every execution is recorded \
+                                 automatically and grouped into trades you can review.",
+                                    None,
+                                );
+                                return;
+                            }
+                            chosen = journal_overview::currency_chips(ui, &currencies, &current);
+                            if let Some((_, view)) = self.month.as_ref() {
+                                output = journal_calendar::show(
+                                    ui,
+                                    view,
+                                    WEEK_START,
+                                    current.as_deref().unwrap_or(""),
+                                    Some(today),
+                                );
+                            }
+                        });
+                })
+            });
+        if let Some(chosen) = chosen {
+            self.currency = Some(chosen);
+        }
+        if let Some(delta) = output.shift {
+            self.calendar_month = Some(shift_month(year, month, delta));
+        }
+        if output.today {
+            self.calendar_month = None;
+        }
+        if let Some(day) = output.open_day {
+            let text = format::iso_date(day);
+            self.custom_from = text.clone();
+            self.custom_to = text.clone();
+            let prefs = host.prefs_mut();
+            prefs.range = RangeChoice::Custom {
+                from: text.clone(),
+                to: text,
+            };
+            prefs.section = Section::Trades;
+            self.range_cache = None;
+        }
+        let _ = Civil {
+            year,
+            month,
+            day: 1,
+        };
     }
 
     // MARK: Header
@@ -362,8 +650,37 @@ impl JournalTab {
     fn header(&mut self, ui: &mut egui::Ui, host: &mut JournalHost, data: &Arc<JournalData>) {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 10.0;
+            let mut section = host.prefs().section;
+            let items = [
+                (Section::Overview, "Overview", Icon::PieChart),
+                (Section::Calendar, "Calendar", Icon::Calendar),
+                (Section::Trades, "Trades", Icon::DocText),
+            ]
+            .map(|(value, title, icon)| kit::TabItem {
+                value,
+                title,
+                icon,
+                count: 0,
+            });
+            kit::tab_bar_slim(
+                ui,
+                egui::Id::new(("journal-sections", self.id)),
+                &items,
+                &mut section,
+            );
+            if section != host.prefs().section {
+                host.prefs_mut().section = section;
+            }
+            ui.add_space(6.0);
+            let show_range = section != Section::Calendar;
             let mut kind = self.range_choice(host);
             let before = kind;
+            if !show_range {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    self.account_menu(ui, host, data);
+                });
+                return;
+            }
             kit::segmented(
                 ui,
                 egui::Id::new(("journal-range", self.id)),
@@ -438,8 +755,14 @@ impl JournalTab {
             if active && kit::sheet_button(ui, "Reset", false, true).clicked() {
                 self.reset_filters(host);
             }
+            let section = host.prefs().section;
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                self.columns_menu(ui, host);
+                if section == Section::Trades {
+                    self.columns_menu(ui, host);
+                }
+                if section == Section::Calendar {
+                    return;
+                }
                 let open = self
                     .rows
                     .iter()
@@ -984,8 +1307,107 @@ mod tests {
         let store = store();
         traded(&store);
         let mut host = JournalHost::new(store.clone(), Arc::new(|| {}));
+        host.prefs_mut().section = Section::Trades;
         host.rebuild_blocking();
         (store, host, JournalTab::new(1), egui::Context::default())
+    }
+
+    /// Sixty trades over about six weeks, wins and losses, three symbols, both directions.
+    struct Synthetic;
+
+    impl crate::model::journal::source::TradingActivitySource for Synthetic {
+        fn source_id(&self) -> crate::model::journal::model::SourceId {
+            crate::model::journal::model::SourceId("synthetic".into())
+        }
+        fn kind(&self) -> crate::model::journal::model::TradingSourceKind {
+            crate::model::journal::model::TradingSourceKind::Imported
+        }
+        fn capabilities(&self) -> crate::model::journal::source::SourceCapabilities {
+            Default::default()
+        }
+        fn accounts(&self) -> Vec<crate::model::journal::model::JournalAccount> {
+            vec![crate::model::journal::model::JournalAccount {
+                uid: "synthetic:1".into(),
+                source: self.source_id(),
+                kind: self.kind(),
+                external_id: "1".into(),
+                name: "Swing account".into(),
+                currency: "USD".into(),
+                initial_balance: Some("10000".parse().unwrap()),
+                cost_basis: Default::default(),
+                archived: false,
+                created_at_ms: 1,
+            }]
+        }
+        fn executions(
+            &self,
+            _: &str,
+            _: Option<&crate::model::journal::source::Cursor>,
+        ) -> Result<
+            crate::model::journal::source::ExecutionBatch,
+            crate::model::journal::source::SourceError,
+        > {
+            use crate::model::journal::model::Side;
+            use crate::model::journal::testing::exec;
+            const DAY: i64 = 86_400_000;
+            let now = now_ms();
+            let mut state = 12_345u64;
+            let mut next = || {
+                state = state
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
+                (state >> 33) as f64 / (1u64 << 31) as f64
+            };
+            let mut executions = Vec::new();
+            for index in 0..60i64 {
+                let symbol = ["BTC", "ETH", "SOL"][(index % 3) as usize];
+                let long = next() > 0.35;
+                let entry = 100.0 + next() * 20.0;
+                let move_pct = (next() - 0.42) * 0.09;
+                let exit = if long {
+                    entry * (1.0 + move_pct)
+                } else {
+                    entry * (1.0 - move_pct)
+                };
+                let open = now - (42 * DAY) + index * 42 * DAY / 60 + (next() * 4.0e6) as i64;
+                let close = open + 600_000 + (next() * 20_000_000.0) as i64;
+                let (first, second) = if long {
+                    (Side::Buy, Side::Sell)
+                } else {
+                    (Side::Sell, Side::Buy)
+                };
+                let mut buy = exec(
+                    &format!("{index}a"),
+                    first,
+                    "10",
+                    &format!("{entry:.2}"),
+                    open,
+                )
+                .of(symbol)
+                .in_account("synthetic:1")
+                .fee("0.5");
+                if index % 2 == 0 {
+                    let stop = if long { entry * 0.97 } else { entry * 1.03 };
+                    buy = buy.stop(&format!("{stop:.2}"));
+                }
+                let sell = exec(
+                    &format!("{index}b"),
+                    second,
+                    "10",
+                    &format!("{exit:.2}"),
+                    close,
+                )
+                .of(symbol)
+                .in_account("synthetic:1")
+                .fee("0.5");
+                executions.push(buy);
+                executions.push(sell);
+            }
+            Ok(crate::model::journal::source::ExecutionBatch {
+                executions,
+                ..Default::default()
+            })
+        }
     }
 
     #[test]
@@ -1169,6 +1591,71 @@ mod tests {
     }
 
     #[test]
+    fn the_overview_describes_the_selection_and_follows_the_filters() {
+        let (_, mut host, mut tab, ctx) = ready();
+        host.prefs_mut().section = Section::Overview;
+        for step in 0..3 {
+            frame(&ctx, &mut tab, &mut host, step as f64);
+        }
+        let (_, overview) = tab.overview.as_ref().expect("overview computed");
+        assert_eq!(overview.summary.closed, 2);
+        assert_eq!(overview.summary.open, 1);
+        assert_eq!(overview.summary.net_pnl, "5".parse().unwrap());
+        assert_eq!(overview.initial_balance, Some("100000".parse().unwrap()));
+
+        tab.filter.outcome = Some(OutcomeFilter::Loss);
+        frame(&ctx, &mut tab, &mut host, 4.0);
+        assert_eq!(tab.overview.as_ref().unwrap().1.summary.closed, 1);
+        // Nothing matching draws the guidance, not an empty dashboard.
+        tab.filter.direction = Some(Direction::Short);
+        frame(&ctx, &mut tab, &mut host, 5.0);
+    }
+
+    #[test]
+    fn the_calendar_shows_the_current_month_and_can_move() {
+        let (_, mut host, mut tab, ctx) = ready();
+        host.prefs_mut().section = Section::Calendar;
+        frame(&ctx, &mut tab, &mut host, 0.0);
+        let today = journal_calendar::civil_today(now_ms(), &local_utc_offset_secs);
+        let (_, view) = tab.month.as_ref().expect("month computed");
+        assert_eq!((view.year, view.month), (today.year, today.month));
+        assert_eq!(view.trades, 2, "the two closed trades were made today");
+        // The range filter does not hide a month's days.
+        host.prefs_mut().range = RangeChoice::Custom {
+            from: "2001-01-01".into(),
+            to: "2001-01-02".into(),
+        };
+        frame(&ctx, &mut tab, &mut host, 1.0);
+        assert_eq!(tab.month.as_ref().unwrap().1.trades, 2);
+        tab.calendar_month = Some(shift_month(today.year, today.month, -1));
+        frame(&ctx, &mut tab, &mut host, 2.0);
+        assert_eq!(tab.month.as_ref().unwrap().1.trades, 0);
+    }
+
+    #[test]
+    fn leaving_the_trades_page_closes_the_panel() {
+        let (_, mut host, mut tab, ctx) = ready();
+        frame(&ctx, &mut tab, &mut host, 0.0);
+        let key = host.data().unwrap().trades[tab.rows[0]].key.clone();
+        tab.select_trade(&key);
+        frame(&ctx, &mut tab, &mut host, 1.0);
+        assert!(tab.selected.is_some());
+        host.prefs_mut().section = Section::Overview;
+        frame(&ctx, &mut tab, &mut host, 2.0);
+        assert!(tab.selected.is_none() && tab.draft.is_none());
+    }
+
+    #[test]
+    fn the_chosen_page_is_remembered() {
+        let (store, mut host, mut tab, ctx) = ready();
+        host.prefs_mut().section = Section::Calendar;
+        frame(&ctx, &mut tab, &mut host, 0.0);
+        host.flush_prefs();
+        let again = JournalHost::new(store, Arc::new(|| {}));
+        assert_eq!(again.prefs().section, Section::Calendar);
+    }
+
+    #[test]
     fn an_invalid_custom_date_leaves_that_end_open() {
         let (_, mut host, mut tab, ctx) = ready();
         host.prefs_mut().range = RangeChoice::Custom {
@@ -1188,7 +1675,13 @@ mod tests {
         use crate::ui::render_tests::Screen;
         let _restore = crate::ui::theme::RestoreDefaultTheme;
         for light in [false, true] {
-            let (_, mut host, mut tab, _) = ready();
+            let (store, mut host, mut tab, _) = ready();
+            store
+                .lock()
+                .unwrap()
+                .journal_ingest(&Synthetic, true)
+                .unwrap();
+            host.rebuild_blocking();
             let mut screen = Screen::new(egui::vec2(1400.0, 860.0));
             screen.ctx.set_theme(if light {
                 egui::ThemePreference::Light
@@ -1222,6 +1715,23 @@ mod tests {
                 last.take().expect("ran"),
             );
 
+            for (section, name) in [
+                (Section::Overview, "overview"),
+                (Section::Calendar, "calendar"),
+            ] {
+                host.prefs_mut().section = section;
+                for _ in 0..4 {
+                    last = Some(screen.run(vec![], |ui| {
+                        crate::ui::theme::sync(ui.ctx());
+                        tab.ui(ui, &mut host, 1);
+                    }));
+                }
+                screen.save(
+                    &format!("journal-{name}-{suffix}"),
+                    last.take().expect("ran"),
+                );
+            }
+            host.prefs_mut().section = Section::Trades;
             tab.filter.direction = Some(Direction::Short);
             tab.close_trade(&mut host);
             for _ in 0..4 {
