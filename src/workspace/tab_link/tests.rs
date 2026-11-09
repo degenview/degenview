@@ -379,3 +379,55 @@ fn a_tab_joining_a_group_adopts_its_symbol_without_touching_the_others() {
     assert_eq!(shown(&a, chart_a), "ETHUSDT");
     assert_eq!(shown(&b, chart_b), "ETHUSDT");
 }
+
+#[test]
+fn choosing_an_already_open_market_in_the_watchlist_is_announced() {
+    let ctx = egui::Context::default();
+    let mut workspace = empty_workspace(1);
+    let first = chart_with_drawings(&mut workspace, "BTCUSDT", &[]);
+    let second = chart_with_drawings(&mut workspace, "ETHUSDT", &[]);
+    workspace.focused = Some(first);
+    workspace.set_link(Some(LinkColor::Orange));
+    assert!(workspace.take_link_signals().is_empty());
+
+    // The user clicks ETH in the watchlist: it is already on the tab, so its chart takes the focus.
+    workspace.open_watchlist_instrument(&row("ETHUSDT"), &ctx);
+    assert_eq!(workspace.focused, Some(second), "focus moved");
+    let signals = workspace.take_link_signals();
+    assert_eq!(signals.len(), 1, "{signals:?}");
+    assert!(matches!(&signals[0], LinkSignal::Market(m) if m.instrument.symbol == "ETHUSDT"));
+}
+
+#[test]
+fn a_symbol_the_user_chose_over_a_pending_link_is_not_reverted_when_it_fails() {
+    let ctx = egui::Context::default();
+    let mut workspace = empty_workspace(1);
+    let chart = chart_with_drawings(&mut workspace, "ETHUSDT", &[]);
+    workspace.set_link(Some(LinkColor::Orange));
+
+    // The group asks for Coinbase BTCUSDT; before it settles the user picks Binance BTCUSDT
+    // (same ticker, another provider).
+    let coinbase = LinkSignal::Market(Box::new(WatchlistInstrument::from_market(
+        DataSource::Coinbase,
+        "BTCUSDT",
+        "BTCUSDT",
+    )));
+    assert!(workspace.apply_link(1, &coinbase, &ctx));
+    workspace.switch_chart(chart, &row("BTCUSDT"), &ctx);
+    workspace.announce_market(&row("BTCUSDT"));
+    let index = workspace.chart_index(chart).unwrap();
+    assert_eq!(workspace.charts[index].source, DataSource::Binance);
+
+    // The user's choice fails to load.
+    workspace.charts[index].inbox = None;
+    workspace.charts[index].loading = false;
+    workspace.charts[index].error = Some("Unknown symbol".into());
+    workspace.tick_link_probation(&ctx);
+
+    assert_eq!(workspace.charts[index].source, DataSource::Binance);
+    assert_eq!(
+        workspace.charts[index].symbol, "BTCUSDT",
+        "not put back to ETH"
+    );
+    assert!(workspace.link_state.probation.is_none());
+}
