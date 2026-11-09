@@ -2114,8 +2114,20 @@ impl ChartCard {
                         "Add to Favorites"
                     };
                     ui.spacing_mut().item_spacing.x = 4.0;
-                    let favorite =
-                        icons::button(ui, favorite_icon, 27.0, favorite_color, favorite_tip);
+                    // At the header's top, not centred in it: the star then sits the same distance
+                    // from the card's top edge as from its right edge.
+                    let favorite = ui
+                        .allocate_ui_with_layout(
+                            Vec2::new(27.0, HEADER_HEIGHT),
+                            egui::Layout::top_down(egui::Align::Min),
+                            |ui| {
+                                // The star's points sit low in its square and its sides inset
+                                // from it: lift it until the two margins read the same.
+                                ui.add_space(-3.5);
+                                icons::button(ui, favorite_icon, 27.0, favorite_color, favorite_tip)
+                            },
+                        )
+                        .inner;
                     favorite.context_menu(|ui| {
                         ui.label(egui::RichText::new("Add to Watchlist").small().weak());
                         for list in watchlists {
