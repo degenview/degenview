@@ -200,7 +200,9 @@ impl SettingsTip for egui::Response {
         if source == DataSource::CoinMarketCap {
             self
         } else {
-            self.on_hover_text("Chart settings")
+            // The plot's crosshair cursor is set before the header is drawn over it.
+            self.on_hover_cursor(egui::CursorIcon::PointingHand)
+                .on_hover_text("Chart settings")
         }
     }
 }
@@ -2109,9 +2111,9 @@ impl ChartCard {
                         theme::text_secondary()
                     };
                     let favorite_tip = if is_favorite {
-                        "Remove from Favorites"
+                        "Remove from watchlist"
                     } else {
-                        "Add to Favorites"
+                        "Add to watchlist"
                     };
                     ui.spacing_mut().item_spacing.x = 4.0;
                     // At the header's top, not centred in it: the star then sits the same distance
@@ -2138,6 +2140,10 @@ impl ChartCard {
                             }
                         }
                     });
+                    // The header is drawn over the plot, whose crosshair cursor would show here.
+                    favorite
+                        .clone()
+                        .on_hover_cursor(egui::CursorIcon::PointingHand);
                     if favorite.clicked() {
                         action.toggle_favorite = true;
                     }
