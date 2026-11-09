@@ -17,7 +17,8 @@ impl ChartWorkspace {
     /// is on screen. With the panel closed only instruments the host holds an order or a position
     /// on are sent. Nothing runs while the app is quit, asleep or showing no such chart.
     pub(super) fn sync_paper_quotes(&mut self, host: &mut PaperHost) {
-        if self.paper_panel_visible {
+        // The simulated account is only made when the user is trading on paper.
+        if self.paper_panel_visible && !self.trading_venue.is_live() {
             let _ = host.ensure_default_account();
         }
         let now = Instant::now();
@@ -64,6 +65,7 @@ impl ChartWorkspace {
                 .find(|account| account.id == id)
         });
         let enabled = self.paper_panel_visible
+            && !self.trading_venue.is_live()
             && self.paper_panel.show_trading_on_charts()
             && account.is_some();
         let currency = account.map_or(PaperCurrency::Usd, |account| account.base_currency);

@@ -538,7 +538,13 @@ pub fn show(
                 section,
                 "Connect a broker to trade for real from your charts. Paper trading is separate.",
                 false,
-                |ui| crate::ui::settings_brokers::body(ui, &mut state.brokers),
+                |ui| {
+                    crate::ui::settings_brokers::body(
+                        ui,
+                        &mut state.brokers,
+                        crate::host::broker_host::BrokerHost::global(),
+                    )
+                },
             );
         }
         SettingsSection::CoinMarketCap => {

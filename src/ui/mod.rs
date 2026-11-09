@@ -8,6 +8,11 @@ pub mod alert_editor;
 mod alert_lines;
 mod annotation_geometry;
 mod art;
+pub mod broker_badge;
+pub mod broker_panel;
+#[cfg(test)]
+mod broker_panel_gallery;
+pub mod broker_ticket;
 #[cfg(test)]
 mod bundled_fonts_tests;
 pub mod canvas_render;

@@ -154,6 +154,11 @@ impl ChartWorkspace {
 
     // MARK: Messages
 
+    /// Shows a short message at the foot of the tab (a live order filled, say).
+    pub fn announce(&mut self, text: impl Into<String>, error: bool) {
+        self.say(text, error);
+    }
+
     pub(super) fn say(&mut self, text: impl Into<String>, error: bool) {
         self.context.notice = Some(Notice {
             text: text.into(),

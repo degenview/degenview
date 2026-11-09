@@ -36,6 +36,7 @@ fn host(
     let host = BrokerHost::new(
         secrets.clone(),
         Arc::new(StoreJournal::new(store.clone())),
+        Some(store.clone()),
         env,
         |config| config.fast(),
     );
@@ -141,6 +142,23 @@ fn saved_credentials_connect_at_startup_and_a_revoked_key_shows_as_needing_atten
             .is_some_and(|s| matches!(s.status, Status::Failed(_)))
     });
     assert!(host.snapshot(ID).unwrap().orders.is_empty() || !is_live(&host));
+}
+
+#[test]
+fn choices_about_trading_default_to_asking_and_survive_a_restart() {
+    let exchange = CoinbaseExchange::start();
+    let store = store();
+    let (first, _) = host(&exchange, &store);
+    assert!(first.prefs(ID).confirm_resting_orders);
+    let mut prefs = first.prefs(ID);
+    prefs.confirm_resting_orders = false;
+    prefs.notify = false;
+    first.set_prefs(ID, prefs).unwrap();
+    // A new process over the same database.
+    let (second, _) = host(&exchange, &store);
+    assert!(!second.prefs(ID).confirm_resting_orders);
+    assert!(!second.prefs(ID).notify);
+    assert!(second.prefs(BrokerId::new("other")).confirm_resting_orders);
 }
 
 #[test]

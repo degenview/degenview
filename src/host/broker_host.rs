@@ -30,6 +30,7 @@ use degenview_brokers::{
     NoticeSink, RuntimeConfig, SecretStore, Session, Waker,
 };
 
+use crate::model::broker_prefs::{self, AllPrefs, BrokerPrefs};
 use crate::service::keychain_broker_secrets::BrokerSecrets;
 use crate::store::SharedStore;
 
@@ -158,9 +159,19 @@ pub enum Connection {
     Running(Arc<BrokerSnapshot>),
 }
 
+impl Connection {
+    /// Credentials are saved but no connection is up (yet).
+    pub fn is_saved(&self) -> bool {
+        matches!(self, Self::Saved)
+    }
+}
+
 pub struct BrokerHost {
     secrets: Arc<dyn SecretStore>,
     journal: Arc<dyn PendingJournal>,
+    /// Where the choices about trading are kept; none in tests that need none.
+    store: Option<SharedStore>,
+    prefs: Mutex<AllPrefs>,
     env: Env,
     config: fn(RuntimeConfig) -> RuntimeConfig,
     runtimes: Mutex<BTreeMap<BrokerId, Arc<BrokerRuntime>>>,
@@ -176,12 +187,19 @@ impl BrokerHost {
     pub fn new(
         secrets: Arc<dyn SecretStore>,
         journal: Arc<dyn PendingJournal>,
+        store: Option<SharedStore>,
         env: Env,
         config: fn(RuntimeConfig) -> RuntimeConfig,
     ) -> Arc<Self> {
+        let prefs = store
+            .as_ref()
+            .and_then(|store| store.lock().ok()?.setting::<AllPrefs>(broker_prefs::KEY))
+            .unwrap_or_default();
         Arc::new(Self {
             secrets,
             journal,
+            store,
+            prefs: Mutex::new(prefs),
             env,
             config,
             runtimes: Mutex::new(BTreeMap::new()),
@@ -196,7 +214,8 @@ impl BrokerHost {
         Arc::clone(GLOBAL.get_or_init(|| {
             Self::new(
                 Arc::new(SharedSecrets),
-                Arc::new(StoreJournal::new(store)),
+                Arc::new(StoreJournal::new(store.clone())),
+                Some(store),
                 Env::default(),
                 |config| config,
             )
@@ -221,6 +240,34 @@ impl BrokerHost {
     fn changed(&self) {
         self.changes.fetch_add(1, Ordering::AcqRel);
         self.waker.wake();
+    }
+
+    /// How the user trades at `id`: confirmations, notifications, chart overlays.
+    pub fn prefs(&self, id: BrokerId) -> BrokerPrefs {
+        self.prefs
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .of(id.as_str())
+    }
+
+    /// Saves the choices for `id` (to this Mac only). Applies at once even if saving fails.
+    pub fn set_prefs(&self, id: BrokerId, prefs: BrokerPrefs) -> Result<(), String> {
+        let mut all = self.prefs.lock().unwrap_or_else(|e| e.into_inner());
+        all.set(id.as_str(), prefs);
+        let result = match &self.store {
+            Some(store) => store
+                .lock()
+                .map_err(|_| "the store is unavailable".to_owned())
+                .and_then(|store| {
+                    store
+                        .set_setting(broker_prefs::KEY, &*all)
+                        .map_err(|error| error.to_string())
+                }),
+            None => Ok(()),
+        };
+        drop(all);
+        self.changed();
+        result
     }
 
     /// Every broker this build can connect to.
