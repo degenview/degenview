@@ -16,10 +16,11 @@
 //! Nothing here names a particular broker (a guard test checks); the list comes from the crate's
 //! registry. Live trading has no path to Pine scripts, alerts, webhooks or MCP.
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
 use degenview_brokers::model::pending::{
     JournalError, PendingJournal, PendingSubmission, SubmissionOutcome,
@@ -27,7 +28,7 @@ use degenview_brokers::model::pending::{
 use degenview_brokers::model::reducer::Notice;
 use degenview_brokers::{
     Broker, BrokerError, BrokerId, BrokerRuntime, BrokerSnapshot, ClientOrderId, Credentials, Env,
-    NoticeSink, RuntimeConfig, SecretStore, Session, Waker,
+    NoticeSink, Pending, ProductId, Quote, RuntimeConfig, SecretStore, Session, Waker,
 };
 
 use crate::model::broker_prefs::{self, AllPrefs, BrokerPrefs};
@@ -166,6 +167,22 @@ impl Connection {
     }
 }
 
+/// How often a market's best prices are read while something is drawing them.
+const QUOTE_EVERY: Duration = Duration::from_secs(2);
+/// A market nobody has asked for lately is no longer read.
+const QUOTE_WANTED_FOR: Duration = Duration::from_secs(4);
+/// A price older than this is not shown as a price.
+const QUOTE_FRESH_FOR: Duration = Duration::from_secs(10);
+
+/// The best prices of one market at one broker, read for the charts and tickets that show them.
+#[derive(Default)]
+struct QuoteEntry {
+    quote: Option<(Quote, Instant)>,
+    pending: Option<Pending<Quote>>,
+    asked_at: Option<Instant>,
+    wanted_at: Option<Instant>,
+}
+
 pub struct BrokerHost {
     secrets: Arc<dyn SecretStore>,
     journal: Arc<dyn PendingJournal>,
@@ -175,6 +192,7 @@ pub struct BrokerHost {
     env: Env,
     config: fn(RuntimeConfig) -> RuntimeConfig,
     runtimes: Mutex<BTreeMap<BrokerId, Arc<BrokerRuntime>>>,
+    quotes: Mutex<HashMap<(BrokerId, ProductId), QuoteEntry>>,
     waker: Arc<AppWaker>,
     notices: Arc<NoticeQueue>,
     /// Bumped on connect and disconnect (runtime changes arrive through the waker).
@@ -203,6 +221,7 @@ impl BrokerHost {
             env,
             config,
             runtimes: Mutex::new(BTreeMap::new()),
+            quotes: Mutex::new(HashMap::new()),
             waker: Arc::new(AppWaker::default()),
             notices: Arc::new(NoticeQueue::default()),
             changes: AtomicU64::new(0),
@@ -220,6 +239,12 @@ impl BrokerHost {
                 |config| config,
             )
         }))
+    }
+
+    /// Makes `host` the shared host for tests of the windows that read it. The first one stays.
+    #[cfg(test)]
+    pub(crate) fn set_global_for_tests(host: Arc<Self>) -> Arc<Self> {
+        Arc::clone(GLOBAL.get_or_init(|| host))
     }
 
     /// The shared host, once [`BrokerHost::install`] has run.
@@ -268,6 +293,62 @@ impl BrokerHost {
         drop(all);
         self.changed();
         result
+    }
+
+    /// Says that something on screen wants this market's best prices. Cheap; call it every frame
+    /// the prices are drawn. They are read every couple of seconds for as long as this goes on, and
+    /// not at all once it stops: nothing polls for a chart nobody is looking at.
+    pub fn want_quote(&self, id: BrokerId, product: &ProductId) {
+        let mut quotes = self.quotes.lock().unwrap_or_else(|e| e.into_inner());
+        quotes.entry((id, product.clone())).or_default().wanted_at = Some(Instant::now());
+    }
+
+    /// The market's best prices, when they are fresh. A price that is too old is `None`, never
+    /// shown as if it were current.
+    pub fn quote(&self, id: BrokerId, product: &ProductId) -> Option<Quote> {
+        let quotes = self.quotes.lock().unwrap_or_else(|e| e.into_inner());
+        let (quote, at) = quotes.get(&(id, product.clone()))?.quote.as_ref()?;
+        (at.elapsed() < QUOTE_FRESH_FOR).then(|| quote.clone())
+    }
+
+    /// Takes the prices that arrived and asks for the ones wanted, once a frame, from the app.
+    /// Never waits: a request is a message to the runtime and its answer is picked up next time.
+    pub fn tick_quotes(&self) {
+        let mut quotes = self.quotes.lock().unwrap_or_else(|e| e.into_inner());
+        let mut changed = false;
+        for ((broker, product), entry) in quotes.iter_mut() {
+            if let Some(pending) = &entry.pending
+                && let Some(answer) = pending.poll()
+            {
+                entry.pending = None;
+                if let Ok(quote) = answer {
+                    entry.quote = Some((quote, Instant::now()));
+                    changed = true;
+                }
+            }
+            let wanted = entry
+                .wanted_at
+                .is_some_and(|at| at.elapsed() < QUOTE_WANTED_FOR);
+            if wanted
+                && entry.pending.is_none()
+                && entry.asked_at.is_none_or(|at| at.elapsed() >= QUOTE_EVERY)
+                && let Some(runtime) = self.runtime(*broker)
+                && runtime.snapshot().is_live()
+            {
+                entry.asked_at = Some(Instant::now());
+                entry.pending = Some(runtime.quote(product.clone()));
+            }
+        }
+        quotes.retain(|_, entry| {
+            entry.pending.is_some()
+                || entry
+                    .wanted_at
+                    .is_some_and(|at| at.elapsed() < Duration::from_secs(30))
+        });
+        drop(quotes);
+        if changed {
+            self.waker.wake();
+        }
     }
 
     /// Every broker this build can connect to.

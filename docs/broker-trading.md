@@ -100,16 +100,50 @@ the focused tab and a system notification, once each (the crate's book deduplica
 orders already open when a connection starts are not announced). Settings ▸ Brokers turns them off
 (`broker.prefs`, local to this Mac).
 
+## Trading from a chart
+
+With a broker as the tab's venue, a chart whose data comes from **that broker's own source** (the
+descriptor's `market_source`: a Coinbase chart for Coinbase) gets live controls; every other chart is
+left alone, and the menu says why instead of trading a similar market. The rules are pure
+(`model/broker_chart.rs`); `workspace/broker.rs` fills each card each frame.
+
+* **Header SELL / BUY** show the broker's own best bid and ask (read for as long as a card shows them,
+  every two seconds, never for a chart nobody is looking at: `BrokerHost::want_quote`), never the
+  chart's last price, which is another feed's. They open the ticket; nothing is placed from them.
+  Greyed, with the reason as the tooltip, when orders are not possible (reconnecting, view-only key,
+  market not tradable, replay).
+* **Order lines**: one per working order, on the chart's price scale, tagged `LIVE`. A line is the
+  order *as the broker has it*. ✕ asks to cancel (the single-cancel setting decides whether it asks
+  first) and the line stays, marked "cancel requested", until the broker confirms. Clicking the pill
+  opens the edit sheet. **Dragging** shows where the line would land (on the market's price step) and,
+  on release, opens the edit sheet with that price: the broker is asked nothing until the user has
+  seen the preview and approved the change. Escape drops the proposal; the line only moves when the
+  broker's order changes. A line that cannot be edited (not open, a stop-limit the broker will not
+  edit, a cancel in progress) cannot be dragged.
+* **Right-click** adds "Live · Buy / Sell … at market / limit @ price / stop-limit @ price" entries in
+  place of the paper ones. They open the ticket filled in from the click (the price is put on the
+  market's price step, exactly), never place an order. Greyed with the reason when it could not be
+  placed from this chart, and the price entries are greyed on a Renko, Kagi, Heikin Ashi... chart,
+  whose prices are constructed, not traded.
+* **Replay** refuses all of it: the pills and menu entries are greyed, a ticket that is open when a
+  replay starts is closed unsent, and a line cannot start an edit. Cancelling stays possible.
+* The ticket, the edit sheet and the cancel question are drawn by the workspace even when the trading
+  panel is closed, so starting an order from a chart does not need the panel.
+* Live orders are **never** drawn into a shared snapshot of the chart.
+* Every window showing the market draws the same lines from the same snapshot; an order placed in
+  one appears in all of them, once, and a cancel updates every one.
+
 ## Not done yet / not verified
 
-* Chart trading (order lines, the context menu, header BUY/SELL, dragging an order) comes in the
-  next change; until then orders are managed from the panel.
 * Nothing here has been run against a real account by the author of the change. The mock
   exchange is built from Coinbase's published specification; see the crate's `docs/coinbase.md` for
   what could not be verified.
 * The ticket offers good-til-cancelled and fill-or-kill, not good-til-date (it needs a date picker).
   Brackets, TWAP and scaled orders are not implemented.
+* A chart's lines show the working orders of *its* market only; a position-style summary does not
+  exist (spot balances are not positions).
 * Figures use `.` for decimals and `,` for thousands whatever the system locale; typed numbers accept
   `.` or `,` as the decimal separator but never a thousands separator.
 * The shared widgets of the paper ticket were not extracted: the live ticket builds from `kit`
-  controls, so paper trading is untouched.
+  controls, so paper trading is untouched. The one shared change is the pill's hit testing in
+  `paper_chart_trading::marker`, which now also reads a click on the ✕ that lands on the pill's body.

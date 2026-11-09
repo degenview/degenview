@@ -148,6 +148,7 @@ fn show_panel(
                             source: "coinbase".to_owned(),
                             symbol: "BTC-USD".to_owned(),
                         }),
+                        replay: false,
                     },
                 );
             });
@@ -370,7 +371,16 @@ fn an_edit_is_previewed_confirmed_and_sent_as_an_edit_never_a_cancel_and_replace
             egui::Panel::bottom(egui::Id::new("edit-gallery"))
                 .exact_size(300.0)
                 .show(ui, |ui| {
-                    broker_panel::ui(ui, state, &rig.host, ID, &PanelInput { market: None });
+                    broker_panel::ui(
+                        ui,
+                        state,
+                        &rig.host,
+                        ID,
+                        &PanelInput {
+                            market: None,
+                            replay: false,
+                        },
+                    );
                 });
         })
     };

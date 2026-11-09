@@ -8,6 +8,8 @@
 //! the click are captured once, so moving the pointer to an entry never changes them.
 
 use super::alert::{AlertId, AlertState};
+use super::broker_chart::Unavailable as LiveUnavailable;
+use super::broker_ticket::TicketKind;
 use super::paper::{PaperOrderSide, PaperOrderType};
 use super::pine_instance::VisualOrder;
 use super::price_scale::PriceScaleMode;
@@ -66,6 +68,32 @@ pub enum PaperAccess {
     Unsupported,
 }
 
+/// What the menu needs to offer live orders on this chart (a broker is the active venue).
+#[derive(Clone, Debug, PartialEq)]
+pub struct LiveFacts {
+    /// The broker's name, for the menu's labels.
+    pub broker_name: String,
+    /// Why orders cannot be placed from this chart now; `None` when they can.
+    pub unavailable: Option<LiveUnavailable>,
+    /// The market's price step, to put a clicked price on it.
+    pub price_increment: Option<degenview_brokers::Decimal>,
+    pub market: bool,
+    pub limit: bool,
+    pub stop_limit: bool,
+    /// The chart's prices are constructed (Renko, Heikin Ashi...): a click on one is not a price the
+    /// market trades at.
+    pub constructed: bool,
+}
+
+/// A live order the menu asks the ticket to open. The ticket, not the menu, places it, after the
+/// user has seen exactly what will be sent.
+#[derive(Clone, Debug, PartialEq)]
+pub struct LiveOrderRequest {
+    pub side: degenview_brokers::Side,
+    pub kind: TicketKind,
+    pub price: Option<degenview_brokers::Decimal>,
+}
+
 /// One quick order the clicked price suggests.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct QuickOrder {
@@ -110,6 +138,8 @@ pub struct Facts {
     pub replay: bool,
     pub alerts_supported: bool,
     pub paper: PaperAccess,
+    /// Live trading at a broker, when one is the active venue (then paper entries are not offered).
+    pub live: Option<LiveFacts>,
     /// The ticket's default quantity text, empty when it has none (never assumed to be 1).
     pub quantity: String,
     /// Drawings a Remove would delete (the user's, not the ruler).
@@ -139,6 +169,7 @@ impl Default for Facts {
             replay: false,
             alerts_supported: true,
             paper: PaperAccess::Available,
+            live: None,
             quantity: String::new(),
             drawings: 0,
             indicators: 0,
@@ -171,6 +202,8 @@ pub enum Command {
     AddAlert,
     QuickOrder(QuickOrder),
     AddOrder,
+    /// Open the live order ticket at a broker, filled in from the click.
+    LiveOrder(LiveOrderRequest),
     ToggleTimeLock,
     ToggleTable,
     ToggleObjectTree,
@@ -436,6 +469,62 @@ fn grouped(groups: Vec<Vec<Item>>) -> Vec<Entry> {
     entries
 }
 
+const CONSTRUCTED_PRICES: &str =
+    "This chart's prices are constructed, not market prices. Use a candle or line chart.";
+
+/// The live entries: a market order and a limit and stop-limit order each way. They open the
+/// ticket; none places anything. Greyed, with the reason, whenever an order could not be placed
+/// from here.
+fn live_items(context: &ChartContext, facts: &Facts, live: &LiveFacts) -> Vec<Item> {
+    use super::broker_chart::snap_to_increment;
+    use degenview_brokers::Side;
+    let symbol = &context.symbol;
+    let shown = |price: f64| facts.price_format.format(price);
+    let clicked = context.price();
+    let snapped = clicked
+        .zip(live.price_increment)
+        .and_then(|(price, increment)| snap_to_increment(price, increment));
+    let mut items = Vec::new();
+    for (side, word) in [(Side::Buy, "Buy"), (Side::Sell, "Sell")] {
+        for (kind, supported, kind_word, needs_price) in [
+            (TicketKind::Market, live.market, "at market", false),
+            (TicketKind::Limit, live.limit, "limit", true),
+            (TicketKind::StopLimit, live.stop_limit, "stop-limit", true),
+        ] {
+            let label = match (needs_price, clicked) {
+                (true, Some(price)) => {
+                    format!("Live · {word} {symbol} {kind_word} @ {}…", shown(price))
+                }
+                (true, None) => format!("Live · {word} {symbol} {kind_word}…"),
+                (false, _) => format!("Live · {word} {symbol} {kind_word}…"),
+            };
+            let item = Item::new(
+                Command::LiveOrder(LiveOrderRequest {
+                    side,
+                    kind,
+                    price: if needs_price { snapped } else { None },
+                }),
+                label,
+            );
+            let item = if let Some(reason) = live.unavailable {
+                item.disabled_unless(false, reason.text())
+            } else if facts.replay {
+                item.disabled_unless(false, IN_REPLAY)
+            } else if !supported {
+                item.disabled_unless(false, "Not available in this market.")
+            } else if needs_price && live.constructed {
+                item.disabled_unless(false, CONSTRUCTED_PRICES)
+            } else if needs_price && snapped.is_none() {
+                item.disabled_unless(false, NO_PRICE)
+            } else {
+                item
+            };
+            items.push(item);
+        }
+    }
+    items
+}
+
 fn background(context: &ChartContext, facts: &Facts) -> Vec<Entry> {
     let price = context.price();
     let format = facts.price_format;
@@ -466,7 +555,9 @@ fn background(context: &ChartContext, facts: &Facts) -> Vec<Entry> {
                 .disabled_unless(!facts.replay, IN_REPLAY),
         );
     }
-    if facts.paper != PaperAccess::Unsupported {
+    if let Some(live) = &facts.live {
+        trading.extend(live_items(context, facts, live));
+    } else if facts.paper != PaperAccess::Unsupported {
         let reason = facts.replay.then_some(IN_REPLAY);
         let quantity = if facts.quantity.is_empty() {
             String::new()

@@ -150,6 +150,8 @@ pub struct ChartCardAction {
     pub indicator_action: Option<chart_indicator_strip::Action>,
     /// A header SELL / BUY pill was clicked: open the order ticket on that side.
     pub quick_trade: Option<PaperOrderSide>,
+    /// A live SELL / BUY pill was pressed: open the live ticket on that side.
+    pub live_trade: Option<degenview_brokers::Side>,
     pub toggle_favorite: bool,
     pub watchlist_change: Option<(u64, bool)>,
 }
@@ -355,6 +357,8 @@ pub struct ChartCard {
     layer: DrawingLayer,
     /// Paper-trading inputs and outputs for this card; the workspace fills and drains it.
     pub paper: PaperCardState,
+    /// Live trading at a broker: the header pills and the lines of working orders.
+    pub live: crate::ui::broker_chart_trading::BrokerCardState,
     /// The Pine scripts applied to this chart, in order. Overlay scripts draw over the candles;
     /// the others share a pane under them.
     instances: Vec<PineInstance>,
@@ -704,6 +708,7 @@ impl Default for ChartCard {
             script_extent: OverlayExtent::default(),
             layer: DrawingLayer::default(),
             paper: PaperCardState::default(),
+            live: Default::default(),
             instances: Vec::new(),
             preview_inputs: HashMap::new(),
             runs: HashMap::new(),
@@ -1896,6 +1901,7 @@ impl ChartCard {
             } else {
                 0.0
             }
+            + if self.live.pills_visible() { 190.0 } else { 0.0 }
             // The camera and the gap after it.
             + 31.0;
         let title_block_width = (header_width - reserved).max(96.0);
@@ -2085,6 +2091,18 @@ impl ChartCard {
                 });
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if let Some(entry) = self.live.order_entry {
+                        // Live pills: the broker's own bid and ask, never the chart's last price.
+                        if let Some(side) = crate::ui::broker_chart_trading::quick_trade_buttons(
+                            ui,
+                            &self.live.broker_name,
+                            self.live.bid.as_deref(),
+                            self.live.ask.as_deref(),
+                            entry,
+                        ) {
+                            action.live_trade = Some(side);
+                        }
+                    }
                     if self.paper.trading_enabled
                         && let Some(last) = candles.last()
                     {
@@ -2341,6 +2359,7 @@ impl ChartCard {
             alert_toggled: Vec::new(),
             alert_deleted: Vec::new(),
             paper: (Vec::new(), None),
+            live: Vec::new(),
             navigation: None,
             scale_mode: None,
             overlay_action: None,
@@ -2368,6 +2387,7 @@ impl ChartCard {
             alert_toggled,
             alert_deleted,
             paper,
+            live,
             navigation,
             scale_mode,
             overlay_action,
@@ -2385,6 +2405,7 @@ impl ChartCard {
                 alert_toggled,
                 alert_deleted,
                 paper,
+                live,
                 navigation,
                 scale_mode,
             },

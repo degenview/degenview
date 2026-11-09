@@ -48,6 +48,7 @@ pub const MAX_CUSTOM_TITLE_CHARS: usize = 60;
 
 mod alerts;
 mod autosave;
+mod broker;
 mod chart;
 mod charts;
 mod content;
@@ -706,6 +707,7 @@ impl ChartWorkspace {
         self.update_live_feed(&ctx);
         self.sync_paper_quotes(paper_host);
         self.configure_paper_cards(paper_host);
+        self.configure_broker_cards();
         self.handle_keyboard(ui);
         self.handle_clipboard(ui);
         self.tick_content(&ctx);
@@ -772,6 +774,7 @@ impl ChartWorkspace {
                     source: chart.source.watchlist_slug().to_lowercase(),
                     symbol: chart.symbol.clone(),
                 });
+            let replay = self.replay_blocks_trading();
             let broker_host = crate::host::broker_host::BrokerHost::global();
             let mut venue = self.trading_venue;
             let mut broker_actions = Vec::new();
@@ -791,7 +794,7 @@ impl ChartWorkspace {
                                 &mut self.broker_panel,
                                 host,
                                 id,
-                                &crate::ui::broker_panel::PanelInput { market },
+                                &crate::ui::broker_panel::PanelInput { market, replay },
                             );
                             Vec::new()
                         }
@@ -815,6 +818,7 @@ impl ChartWorkspace {
             }
         }
 
+        self.show_broker_dialogs(&ctx);
         self.sync_context_panels();
         if self.context.tree_chart.is_some() {
             egui::Panel::right(egui::Id::new(("object_tree", self.id)))

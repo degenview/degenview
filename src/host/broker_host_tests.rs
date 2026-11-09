@@ -162,6 +162,37 @@ fn choices_about_trading_default_to_asking_and_survive_a_restart() {
 }
 
 #[test]
+fn prices_are_read_only_while_something_wants_them_and_a_stale_one_is_not_shown() {
+    let exchange = CoinbaseExchange::start();
+    let (host, _) = host(&exchange, &store());
+    host.adopt(ID, credentials(&generate_key_pem())).unwrap();
+    wait_for("live", || is_live(&host));
+    let product = ProductId::new("BTC-USD");
+    let reads = |exchange: &CoinbaseExchange| {
+        exchange.rest.with_state(|s| {
+            s.requests_seen
+                .iter()
+                .filter(|r| r.ends_with("/best_bid_ask"))
+                .count()
+        })
+    };
+    host.tick_quotes();
+    std::thread::sleep(Duration::from_millis(100));
+    assert_eq!(reads(&exchange), 0, "nothing asked for them");
+    assert!(host.quote(ID, &product).is_none());
+
+    host.want_quote(ID, &product);
+    wait_for("a price", || {
+        host.tick_quotes();
+        host.quote(ID, &product).is_some()
+    });
+    let quote = host.quote(ID, &product).unwrap();
+    assert_eq!(quote.bid.unwrap().to_string(), "89999.50");
+    assert_eq!(quote.ask.unwrap().to_string(), "90000.50");
+    assert!(reads(&exchange) >= 1);
+}
+
+#[test]
 fn the_revision_rises_when_a_connection_changes_state() {
     let exchange = CoinbaseExchange::start();
     let (host, _) = host(&exchange, &store());

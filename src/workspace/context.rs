@@ -224,7 +224,13 @@ impl ChartWorkspace {
             .last()
             .map(|candle| candle.close);
         let instrument = Self::paper_instrument(chart);
-        let paper = Self::paper_access(chart);
+        let live = self.live_facts(chart);
+        // On a live venue the menu offers live orders, not paper ones.
+        let paper = if live.is_some() {
+            PaperAccess::Unsupported
+        } else {
+            Self::paper_access(chart)
+        };
         let quantity = if paper == PaperAccess::Unsupported {
             String::new()
         } else {
@@ -246,6 +252,7 @@ impl ChartWorkspace {
             replay: self.replay.is_active() || self.replay.status == ReplayStatus::SelectingStart,
             alerts_supported: chart.is_market() && ui::supports_alerts(chart.source),
             paper,
+            live,
             quantity,
             drawings: chart.drawings.iter().filter(|d| is_lockable(d)).count(),
             // The compared markets count as indicators here, and go with them.
@@ -534,6 +541,7 @@ impl ChartWorkspace {
                 }
             }
             Command::DeleteAlert(id) => actions.push(WorkspaceAction::DeleteAlert(id)),
+            Command::LiveOrder(request) => self.open_live_ticket(index, request),
             Command::CancelOrder(id) => {
                 let failures = Self::apply_paper_overlay_actions(
                     host,
