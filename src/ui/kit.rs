@@ -3,6 +3,7 @@
 //! confirmation alerts and empty states.
 
 use crate::model::DataSource;
+use crate::ui::dialog::{self, Dialog};
 use crate::ui::icons::{self, Icon};
 use crate::ui::{source_logo, theme};
 use eframe::egui::{
@@ -1576,48 +1577,49 @@ pub enum ConfirmOutcome {
     Cancelled,
 }
 
-/// A macOS-style confirmation alert: a badge, a bold title, the message, then the destructive
-/// action over Cancel. Escape or a click outside cancels.
+/// A confirmation of something destructive, drawn by [`crate::ui::dialog`]: a red badge, the
+/// title and message, then Cancel and the red action side by side. Escape, the close button or a
+/// click outside cancels; the dialog starts on Cancel, so a stray Enter destroys nothing.
 pub fn confirm(ctx: &egui::Context, id: Id, confirm: &Confirm) -> Option<ConfirmOutcome> {
-    alert(
-        ctx,
-        id,
-        &Alert {
-            icon: confirm.icon,
-            tint: RED,
-            title: confirm.title,
-            message: confirm.message,
-            accept: confirm.destructive,
-            dismiss: "Cancel",
-        },
-    )
+    let mut spec = Dialog::new(
+        confirm.icon,
+        RED,
+        confirm.title,
+        confirm.message,
+        confirm.destructive,
+    );
+    spec.destructive = true;
+    outcome_of(dialog::show(ctx, id, &spec, |_| {}))
 }
 
 /// What an `alert`'s badge and buttons say.
 pub struct Alert<'a> {
     pub icon: Icon,
-    /// The badge and the accept button.
+    /// The badge.
     pub tint: Color32,
     pub title: &'a str,
     pub message: &'a str,
     pub accept: &'a str,
     pub dismiss: &'a str,
+    /// The dialog starts on the dismiss button, so a stray Enter does not approve (a request to
+    /// let something through, an upload).
+    pub cautious: bool,
 }
 
-/// The same alert as `confirm` for a question that is not a warning (a restart to finish an
-/// update): `tint` colours the badge and the accept button, and the dismiss button says
-/// what it does.
+/// The same dialog as `confirm` for a question that is not a warning (a restart to finish an
+/// update): `tint` colours the badge, the action is neutral, and the dismiss button says what it
+/// does.
 pub fn alert(ctx: &egui::Context, id: Id, spec: &Alert) -> Option<ConfirmOutcome> {
-    alert_sheet(ctx, id, ALERT_WIDTH, spec, |ui| {
-        let mut outcome = None;
-        if alert_button(ui, spec.accept, Some(spec.tint)).clicked() {
-            outcome = Some(ConfirmOutcome::Confirmed);
-        }
-        ui.add_space(8.0);
-        if alert_button(ui, spec.dismiss, None).clicked() {
-            outcome = Some(ConfirmOutcome::Cancelled);
-        }
-        outcome
+    let mut dialog = Dialog::new(spec.icon, spec.tint, spec.title, spec.message, spec.accept);
+    dialog.dismiss = spec.dismiss;
+    dialog.cautious = spec.cautious;
+    outcome_of(dialog::show(ctx, id, &dialog, |_| {}))
+}
+
+fn outcome_of(outcome: Option<dialog::Outcome>) -> Option<ConfirmOutcome> {
+    outcome.map(|outcome| match outcome {
+        dialog::Outcome::Accepted => ConfirmOutcome::Confirmed,
+        dialog::Outcome::Dismissed | dialog::Outcome::Leading => ConfirmOutcome::Cancelled,
     })
 }
 
@@ -1629,133 +1631,12 @@ pub struct Notice<'a> {
     pub message: &'a str,
 }
 
-/// A one-button alert that only informs ("Already in Watchlist"). Return, Escape, the button or
-/// a click outside all dismiss it. Returns true on the frame it is dismissed.
+/// A one-button dialog that only informs ("Already in Watchlist"). Enter, Escape, the button, the
+/// close button or a click outside all dismiss it. Returns true on the frame it is dismissed.
 pub fn notice(ctx: &egui::Context, id: Id, spec: &Notice) -> bool {
-    let alert = Alert {
-        icon: spec.icon,
-        tint: spec.tint,
-        title: spec.title,
-        message: spec.message,
-        accept: "OK",
-        dismiss: "",
-    };
-    let clicked = alert_sheet(ctx, id, NOTICE_WIDTH, &alert, |ui| {
-        alert_button(ui, "OK", None)
-            .clicked()
-            .then_some(ConfirmOutcome::Cancelled)
-    });
-    let entered = ctx.input(|input| input.key_pressed(egui::Key::Enter));
-    clicked.is_some() || entered
-}
-
-const ALERT_WIDTH: f32 = 232.0;
-const NOTICE_WIDTH: f32 = 272.0;
-
-/// The badge, title and message of an alert, then whatever `buttons` draws. `buttons` returns the
-/// outcome; a click outside or Escape cancels.
-fn alert_sheet(
-    ctx: &egui::Context,
-    id: Id,
-    width: f32,
-    spec: &Alert,
-    buttons: impl FnOnce(&mut Ui) -> Option<ConfirmOutcome>,
-) -> Option<ConfirmOutcome> {
-    let mut outcome = None;
-    let modal = egui::Modal::new(id)
-        .backdrop_color(Color32::from_black_alpha(90))
-        .frame(
-            egui::Frame::new()
-                .fill(theme::pick(
-                    Color32::from_rgb(31, 36, 40),
-                    Color32::from_rgb(246, 246, 247),
-                ))
-                .corner_radius(12.0)
-                .stroke(Stroke::new(1.0, primary(0.1)))
-                .inner_margin(egui::Margin::same(18))
-                .shadow(egui::Shadow {
-                    offset: [0, 10],
-                    blur: 30,
-                    spread: 0,
-                    color: Color32::from_black_alpha(130),
-                }),
-        )
-        .show(ctx, |ui| {
-            ui.set_width(width);
-            ui.spacing_mut().item_spacing.y = 0.0;
-            ui.vertical_centered(|ui| {
-                let (badge, _) = ui.allocate_exact_size(Vec2::splat(52.0), Sense::hover());
-                ui.painter()
-                    .rect_filled(badge, 12.0, theme::with_alpha(spec.tint, 0.14));
-                icons::paint(
-                    ui.painter(),
-                    Rect::from_center_size(badge.center(), Vec2::splat(24.0)),
-                    spec.icon,
-                    spec.tint,
-                );
-                ui.add_space(12.0);
-                ui.add(
-                    egui::Label::new(text(
-                        spec.title,
-                        size::HEADLINE,
-                        BOLD,
-                        theme::text_primary(),
-                    ))
-                    .wrap()
-                    .halign(egui::Align::Center),
-                );
-                ui.add_space(6.0);
-                ui.add(
-                    egui::Label::new(text(
-                        spec.message,
-                        size::SUBHEADLINE,
-                        REGULAR,
-                        theme::text_primary(),
-                    ))
-                    .wrap()
-                    .halign(egui::Align::Center),
-                );
-                ui.add_space(16.0);
-                outcome = buttons(ui);
-            });
-        });
-    if outcome.is_none() && modal.should_close() {
-        outcome = Some(ConfirmOutcome::Cancelled);
-    }
-    outcome
-}
-
-fn alert_button(ui: &mut Ui, label: &str, fill: Option<Color32>) -> egui::Response {
-    let (rect, response) = ui.allocate_exact_size(vec2(ui.available_width(), 28.0), Sense::click());
-    let response = crate::ui::accessibility::label(response, label);
-    let pressed = response.is_pointer_button_down_on();
-    let painter = ui.painter();
-    let background = match fill {
-        Some(color) if pressed => color.gamma_multiply(0.8),
-        Some(color) => color,
-        None => primary(if pressed {
-            0.2
-        } else if response.hovered() {
-            0.15
-        } else {
-            0.1
-        }),
-    };
-    painter.rect_filled(rect, 7.0, background);
-    let galley = galley(
-        ui,
-        label,
-        size::BODY,
-        if fill.is_some() { MEDIUM } else { REGULAR },
-        if fill.is_some() {
-            Color32::WHITE
-        } else {
-            theme::text_primary()
-        },
-        rect.width(),
-    );
-    painter.galley(rect.center() - galley.size() / 2.0, galley, Color32::WHITE);
-    response
+    let mut dialog = Dialog::new(spec.icon, spec.tint, spec.title, spec.message, "OK");
+    dialog.dismiss = "";
+    dialog::show(ctx, id, &dialog, |_| {}).is_some()
 }
 
 // MARK: Form controls

@@ -29,6 +29,7 @@ pub mod color_picker;
 pub mod content_card;
 pub mod content_sheet;
 pub mod date_picker;
+pub mod dialog;
 mod drawing_geometry;
 mod drawing_layer;
 pub mod drawing_properties;

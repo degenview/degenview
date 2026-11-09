@@ -1855,9 +1855,9 @@ mod tests {
     fn turning_off_approvals_asks_first_and_only_a_chosen_button_does_it() {
         let (actions, open) = unprotect_alert_after(&[]);
         assert!(actions.is_empty() && open);
-        // Return alone does nothing; Escape cancels without changing anything.
+        // The dialog starts on Cancel: Return alone cancels, changing nothing, and so does Escape.
         let (actions, open) = unprotect_alert_after(&[egui::Key::Enter]);
-        assert!(actions.is_empty() && open);
+        assert!(actions.is_empty() && !open);
         let (actions, open) = unprotect_alert_after(&[egui::Key::Escape]);
         assert!(actions.is_empty() && !open);
         let (actions, open) = unprotect_alert_after(&[egui::Key::Tab, egui::Key::Enter]);
