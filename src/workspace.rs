@@ -63,8 +63,8 @@ mod overlays;
 mod paper;
 mod pine;
 mod pine_logs;
-#[allow(dead_code)] // read by the order-flow chart types, which land on top of this
 mod profile_hub;
+mod profiles;
 mod replay;
 mod settings;
 mod snapshot;
@@ -183,6 +183,8 @@ pub struct ChartWorkspace {
     live_feed: Option<BinanceLiveFeed>,
     /// The candles of every overlay market on this workspace's charts, fetched once per market.
     overlay_hub: overlays::OverlayHub,
+    /// The finer candles and trades behind the order-flow chart types, fetched once per market.
+    profile_hub: profile_hub::ProfileHub,
     settings_chart: Option<u64>,
     /// The Inputs and Style popover of an applied script, up beside its chip or settings row.
     script_popover: Option<PineSettingsPopover>,
@@ -377,6 +379,7 @@ impl ChartWorkspace {
             card_env: None,
             live_feed: None,
             overlay_hub: overlays::OverlayHub::new(),
+            profile_hub: profile_hub::ProfileHub::new(),
             settings_chart: None,
             script_popover: None,
             overlay_popover: None,
@@ -657,6 +660,7 @@ impl ChartWorkspace {
         }
 
         self.tick_overlays(&ctx);
+        self.tick_profiles(&ctx);
         self.update_live_feed(&ctx);
         self.sync_paper_quotes(paper_host);
         self.configure_paper_cards(paper_host);

@@ -4,7 +4,7 @@ Three chart types (Volume footprint, Time price opportunity, Session volume prof
 candle cannot say: who traded at which price, and how often a price was visited. This page is the
 shared engine and its data. The chart types themselves are documented as they land.
 
-Code: `src/model/market_profile/` (pure), `src/service/binance_trades.rs` (aggTrades and the live
+Code: `src/model/market_profile/` (pure; the footprint builder is `footprint.rs`), `src/ui/series_render/footprint.rs` (painter), `src/workspace/profiles.rs` (per-chart computation), `src/service/binance_trades.rs` (aggTrades and the live
 stream), `src/workspace/profile_hub.rs` (fetches and shares the data).
 
 ## What TradingView documents (sources: its Help Center pages on the three chart types)
@@ -78,3 +78,56 @@ stream), `src/workspace/profile_hub.rs` (fetches and shares the data).
   fakes and the documented payload. Rate-limit behaviour (429/418) is by the documentation, not observed.
 - No holiday or early-close calendar (the app has none); a stock "session" is a time window only.
 - Coinbase has a trades endpoint with a side; it is not wired (follow-up).
+
+## Volume footprint
+
+The first chart type on the engine. Selected from the new "Order flow & profiles" group of the
+chart-type menu.
+
+**Data flow.** Once a frame `ChartWorkspace::tick_profiles` asks the hub for what each footprint
+chart needs (`intrabar_plan`: the finest of 1m, 5m, 15m, 30m, 1h candles that divides the chart's
+bar and keeps the newest bars within 60 000 candles, else the coarsest that divides it, and trades
+for Binance), computes the set on the work queue when anything it depends on changed (one
+computation per chart at a time, newest request wins, completed bars cached), and hands the card a
+`ProfileFeed`. The card and the snapshot only draw it. Replay cuts the bars the set is built for, so
+nothing after the replay position is read; the current replay bar is shown whole, as its candle is.
+
+**Per bar, best first:** trades of the bar when the book covers all of it (`TradeDerived`), candles
+with Binance's buy/sell split (`ExchangeSplit`), candles by TradingView's close-versus-open rule
+(`Intrabar`), the chart's own candle (`ChartBars`). The status line at the bottom left of the chart
+counts bars per source; a hover shows the bar's source. Imbalances and stacks exist only for
+trade-derived bars.
+
+**Drawn:** the candle in the middle of each bar, sell cells on its left and buy cells on its right
+(Cluster) or as wide as their volume (Profile); Buy and sell, Delta, Total or Ladder; the four-step
+gradient (below 25 %, 50 %, 75 %, above) against the busiest side on screen; the point of control
+outlined; the value area shaded with lines at its ends; imbalances as an edge bar (buy right, sell
+left); stacked imbalances projected right until a later bar's range enters them; a two-line summary
+(delta, volume) under each bar; the hover (price range, buy, sell, total, delta, imbalance, POC or
+value area, the bar's totals and its data source). With less room a cell loses its numbers, then
+becomes a shaded cell, then the bar is a plain candle: the meaning never changes, only the writing
+(`detail`: 11 points tall and 26 wide for numbers, 2 and 3 for cells).
+
+**Automatic row size** is 0.2 × the average true range (length 14) in whole ticks, at least one
+(TradingView: "0.2 × normalized ATR"; the length is inferred, its default is not stated). The tick is
+the exchange's, else inferred from the prices' decimals and labelled so.
+
+### Inferred (TradingView does not say)
+
+- Gradient scale: the busiest single side of any cell on screen (TradingView says "relative to the
+  range"). One scale for every bar in view, so a colour means the same volume everywhere.
+- The summary is a two-line text under each bar (delta, volume); TradingView's Info Box and Table are
+  not reproduced. The **Table** summary mode and the other summary fields (volume change, min and
+  max delta, session CVD, open interest) are **not implemented**.
+- Defaults other than the 300 % imbalance and 70 % value area; stacked levels 3.
+- Candle in the middle of the bar; TradingView's layout was not compared side by side.
+- Tick-based calculation is on by default where the market has trades.
+
+### Not verified
+
+- Never compared against a TradingView chart, and not driven in a real window (headless frames and
+  PNG galleries only). The live WebSocket and a real-account flow were not run.
+- Bars older than the newest 3000 draw as plain candles; a footprint is not built for them.
+- The tooltip placement uses the existing script-tooltip mechanism (egui's own delay and placement).
+- A Pine script sees the real candles; whether TradingView does on its footprint charts is not
+  verified.

@@ -82,8 +82,6 @@ pub enum TradeStatus {
     Live,
     /// History ended early: `HistoryEnd` says why. What arrived is kept and is gap free.
     Partial(HistoryEnd),
-    /// The market has no trades from this source.
-    Unavailable,
 }
 
 // MARK: Backend
@@ -91,6 +89,8 @@ pub enum TradeStatus {
 /// A live trade stream held open for a market; dropping the guard closes it.
 pub struct LiveTrades {
     pub inbox: Arc<TradeInbox>,
+    /// Dropping it closes the stream; never read.
+    #[allow(dead_code)]
     pub guard: Box<dyn Send>,
 }
 
@@ -229,6 +229,17 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+/// The lock if nobody holds it right now. The UI thread uses this: a computation reads the shared
+/// data under the lock for as long as it runs, and a frame must never wait for it. What could not be
+/// stored is kept and stored on a later frame.
+fn try_lock<T>(mutex: &Mutex<T>) -> Option<std::sync::MutexGuard<'_, T>> {
+    match mutex.try_lock() {
+        Ok(guard) => Some(guard),
+        Err(std::sync::TryLockError::Poisoned(poisoned)) => Some(poisoned.into_inner()),
+        Err(std::sync::TryLockError::WouldBlock) => None,
+    }
+}
+
 // MARK: Series
 
 /// What a candle request brings back.
@@ -267,6 +278,10 @@ struct CandleSeries {
     last_tail: Option<Instant>,
     retry_at: Option<Instant>,
     loaded_once: bool,
+    /// An answer that could not be stored because a computation held the data; tried again next frame.
+    pending: Option<Loaded>,
+    /// The oldest candle held, kept here so asking for older ones never needs the lock.
+    oldest_held: Option<i64>,
 }
 
 impl CandleSeries {
@@ -291,6 +306,8 @@ impl CandleSeries {
             last_tail: None,
             retry_at: None,
             loaded_once: false,
+            pending: None,
+            oldest_held: None,
         }
     }
 
@@ -299,7 +316,7 @@ impl CandleSeries {
     }
 
     fn busy(&self) -> bool {
-        self.inbox.is_some()
+        self.inbox.is_some() || self.pending.is_some()
     }
 }
 
@@ -311,6 +328,8 @@ struct TradeSeries {
     /// Set to stop the history and backfill jobs when the market is dropped.
     cancel: Arc<AtomicBool>,
     live: Option<LiveTrades>,
+    /// Live trades that could not be stored yet because a computation held the book.
+    stash: Vec<Trade>,
     reconnects_seen: u64,
     history_started: bool,
     /// Whether a backfill job runs, so two never overlap.
@@ -359,8 +378,15 @@ impl ProfileHub {
     }
 
     /// Changes whenever data or state a chart shows may differ from the last frame's.
+    #[cfg(test)]
     pub fn version(&self) -> u64 {
         self.version
+    }
+
+    /// Whether nothing is held for any chart.
+    #[cfg(test)]
+    pub fn is_empty(&self) -> bool {
+        self.candles.is_empty() && self.trades.is_empty()
     }
 
     pub fn in_flight(&self) -> usize {
@@ -423,6 +449,7 @@ impl ProfileHub {
                         status: Arc::new(Mutex::new(TradeStatus::Loading)),
                         cancel: Arc::new(AtomicBool::new(false)),
                         live: None,
+                        stash: Vec::new(),
                         reconnects_seen: 0,
                         history_started: false,
                         backfilling: Arc::new(AtomicBool::new(false)),
@@ -546,8 +573,7 @@ fn request_candles(
     let current = Arc::downgrade(&series.generation);
     let (worker, repaint) = (Arc::clone(backend), ctx.clone());
     let wanted = series.wanted_from().unwrap_or(0);
-    let oldest_held = lock(&series.shared.data).book.oldest_open();
-    let end_for_range = oldest_held.map(|open| open + step);
+    let end_for_range = series.oldest_held.map(|open| open + step);
     let first_load = !series.loaded_once;
     backend.submit(
         instrument.source,
@@ -606,6 +632,9 @@ fn request_candles(
 }
 
 fn receive(series: &mut CandleSeries, now: Instant) -> bool {
+    if let Some(loaded) = series.pending.take() {
+        return store(series, loaded);
+    }
     let Some(receiver) = &series.inbox else {
         return false;
     };
@@ -618,39 +647,45 @@ fn receive(series: &mut CandleSeries, now: Instant) -> bool {
     };
     series.inbox = None;
     match result {
-        Ok(loaded) => {
-            let oldest_returned = loaded.candles.iter().map(|c| c.kline.open_time).min();
-            {
-                let mut data = lock(&series.shared.data);
-                data.book.insert(loaded.candles);
-                if loaded.tick_size.is_some() {
-                    data.tick_size = loaded.tick_size;
-                }
-            }
-            series.shared.revision.fetch_add(1, Ordering::AcqRel);
-            if loaded.kind == Kind::Range {
-                series.loaded_once = true;
-                // Reached what was asked for, or as far as the provider goes (and then no further
-                // request for the same start: it would be answered the same way).
-                let reached = match oldest_returned {
-                    Some(oldest) if oldest > loaded.from_ms + 2 * series.interval_ms => {
-                        series.exhausted = true;
-                        oldest
-                    }
-                    _ => loaded.from_ms,
-                };
-                series.reached_ms =
-                    Some(series.reached_ms.map_or(reached, |held| held.min(reached)));
-            }
-            series.status = FlowStatus::Ready;
-            series.retry_at = None;
-        }
+        Ok(loaded) => store(series, loaded),
         Err(message) => {
             series.status = FlowStatus::Error(message.into());
             series.retry_at = Some(now + RETRY_AFTER);
             // A failed first load is retried as a first load.
+            true
         }
     }
+}
+
+/// Puts an answer into the shared data, or keeps it for the next frame when a computation holds it.
+fn store(series: &mut CandleSeries, loaded: Loaded) -> bool {
+    let Some(mut data) = try_lock(&series.shared.data) else {
+        series.pending = Some(loaded);
+        return false;
+    };
+    let oldest_returned = loaded.candles.iter().map(|c| c.kline.open_time).min();
+    data.book.insert(loaded.candles);
+    if loaded.tick_size.is_some() {
+        data.tick_size = loaded.tick_size;
+    }
+    series.oldest_held = data.book.oldest_open();
+    drop(data);
+    series.shared.revision.fetch_add(1, Ordering::AcqRel);
+    if loaded.kind == Kind::Range {
+        series.loaded_once = true;
+        // Reached what was asked for, or as far as the provider goes (and then no further request
+        // for the same start: it would be answered the same way).
+        let reached = match oldest_returned {
+            Some(oldest) if oldest > loaded.from_ms + 2 * series.interval_ms => {
+                series.exhausted = true;
+                oldest
+            }
+            _ => loaded.from_ms,
+        };
+        series.reached_ms = Some(series.reached_ms.map_or(reached, |held| held.min(reached)));
+    }
+    series.status = FlowStatus::Ready;
+    series.retry_at = None;
     true
 }
 
@@ -708,18 +743,24 @@ fn drain_live(
     backend: &Arc<dyn ProfileBackend>,
     ctx: &egui::Context,
 ) -> bool {
-    let Some(live) = &series.live else {
+    let Some(inbox) = series.live.as_ref().map(|live| Arc::clone(&live.inbox)) else {
         return false;
     };
-    let mut incoming = live.inbox.drain();
-    series.reconnects_seen = live.inbox.reconnects();
+    let mut incoming = std::mem::take(&mut series.stash);
+    incoming.extend(inbox.drain());
+    series.reconnects_seen = inbox.reconnects();
     if incoming.is_empty() {
         return false;
     }
     incoming.sort_by_key(|trade| trade.id);
     let first_live = incoming[0].id;
-    let newest_held = lock(&series.shared.book).newest().map(|trade| trade.id);
-    lock(&series.shared.book).insert(&incoming);
+    let Some(mut book) = try_lock(&series.shared.book) else {
+        series.stash = incoming;
+        return false;
+    };
+    let newest_held = book.newest().map(|trade| trade.id);
+    book.insert(&incoming);
+    drop(book);
     series.shared.revision.fetch_add(1, Ordering::AcqRel);
     if let Some(newest) = newest_held
         && first_live > newest + 1
@@ -748,16 +789,18 @@ fn drain_live(
     true
 }
 
+/// A scripted backend the hub's and the workspace's tests share: jobs run inline, candles come from
+/// a table, trades from a count, and every request is logged.
 #[cfg(test)]
-mod tests {
+pub(in crate::workspace) mod testing {
     use super::*;
     use crate::model::Kline;
     use crate::model::market_profile::trades::Trade;
     use std::sync::atomic::AtomicUsize;
 
-    const MINUTE: i64 = 60_000;
+    pub(in crate::workspace) const MINUTE: i64 = 60_000;
 
-    fn flow(open_time: i64) -> FlowKline {
+    pub(in crate::workspace) fn flow(open_time: i64) -> FlowKline {
         FlowKline {
             kline: Kline {
                 open_time,
@@ -772,7 +815,7 @@ mod tests {
         }
     }
 
-    fn trade(id: u64) -> Trade {
+    pub(in crate::workspace) fn trade(id: u64) -> Trade {
         Trade {
             id,
             time_ms: 1_000 + id as i64,
@@ -784,18 +827,18 @@ mod tests {
 
     /// Runs jobs inline; answers candles over a fixed range; keeps a log of what was asked.
     #[derive(Default)]
-    struct Fake {
+    pub(in crate::workspace) struct Fake {
         /// Candles the "exchange" holds, by open time.
-        market: Mutex<Vec<i64>>,
-        candle_requests: Mutex<Vec<(i64, i64, usize)>>,
-        tick: Option<f64>,
-        trades: AtomicBool,
+        pub(in crate::workspace) market: Mutex<Vec<i64>>,
+        pub(in crate::workspace) candle_requests: Mutex<Vec<(i64, i64, usize)>>,
+        pub(in crate::workspace) tick: Option<f64>,
+        pub(in crate::workspace) trades: AtomicBool,
         /// Trades the REST endpoint holds: ids 1..=count.
-        trade_count: AtomicU64,
-        history_requests: AtomicUsize,
-        range_requests: Mutex<Vec<(u64, u64)>>,
-        inbox: Mutex<Option<Arc<TradeInbox>>>,
-        fail_candles: AtomicBool,
+        pub(in crate::workspace) trade_count: AtomicU64,
+        pub(in crate::workspace) history_requests: AtomicUsize,
+        pub(in crate::workspace) range_requests: Mutex<Vec<(u64, u64)>>,
+        pub(in crate::workspace) inbox: Mutex<Option<Arc<TradeInbox>>>,
+        pub(in crate::workspace) fail_candles: AtomicBool,
     }
 
     impl ProfileBackend for Fake {
@@ -874,7 +917,12 @@ mod tests {
             })
         }
     }
+}
 
+#[cfg(test)]
+mod tests {
+    use super::testing::*;
+    use super::*;
     fn need(from_ms: i64, trades: bool) -> ProfileNeed {
         ProfileNeed {
             instrument: InstrumentId::new(DataSource::Binance, "BTCUSDT"),

@@ -356,6 +356,7 @@ impl ChartWorkspace {
     pub(super) fn remove_chart(&mut self, chart_id: u64) {
         self.sync_hub.forget(chart_id);
         self.overlay_hub.forget_chart(chart_id);
+        self.profile_hub.forget_chart(chart_id);
         self.charts.retain(|chart| chart.id != chart_id);
         if self.focused == Some(chart_id) {
             self.focused = None;

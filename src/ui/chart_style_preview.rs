@@ -12,6 +12,9 @@ use super::series_render::{self, SeriesFrame};
 use super::theme;
 use crate::model::chart_look::Palette;
 use crate::model::chart_type::{ChartType, SizeMethod, SizeRule};
+use crate::model::market_profile::feed::ProfileFeed;
+use crate::model::market_profile::footprint::{self, Cache, SetInput};
+use crate::model::market_profile::trades::{Trade, TradeBook};
 use crate::model::synthetic::{Construction, SyntheticSeries, build_with};
 use crate::model::{ChartAppearance, Kline};
 use eframe::egui::{Rect, Sense, Ui, vec2};
@@ -39,6 +42,76 @@ pub fn sample_candles() -> Vec<Kline> {
             }
         })
         .collect()
+}
+
+/// The bars the footprint preview shows: the last few sample candles, so each has room for cells.
+const FOOTPRINT_BARS: usize = 6;
+
+/// The tick the sample prices trade on.
+const SAMPLE_TICK: f64 = 0.5;
+
+/// A deterministic footprint over the sample candles: a trade at every tick of each bar's range, the
+/// sizes from a fixed sequence, so it reads the same every time and on every market. Built by the
+/// same builder as a real chart's, only from made-up trades (the preview says nothing of any market).
+pub fn sample_footprint(appearance: &ChartAppearance) -> ProfileFeed {
+    let bars: Vec<Kline> = {
+        let all = sample_candles();
+        all[all.len() - FOOTPRINT_BARS..].to_vec()
+    };
+    let mut book = TradeBook::default();
+    let mut id = 1u64;
+    let mut seed = 0x2545_f491_4f6c_dd1du64;
+    let mut next = |bound: u64| {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        seed % bound
+    };
+    let mut trades = Vec::new();
+    // One trade before the first bar, so the book is complete from the first bar's open.
+    trades.push(Trade {
+        id,
+        time_ms: bars[0].open_time - 1,
+        price: bars[0].open,
+        quantity: 0.01,
+        buyer_is_maker: false,
+    });
+    id += 1;
+    for bar in &bars {
+        let mut price = (bar.low / SAMPLE_TICK).floor() * SAMPLE_TICK;
+        while price <= bar.high {
+            // Heavier near the close, so every bar has a point of control away from its edges.
+            let weight = 1.0 + 6.0 / (1.0 + (price - bar.close).abs());
+            for buy in [true, false] {
+                trades.push(Trade {
+                    id,
+                    time_ms: bar.open_time + 1 + (id as i64 % 3_000_000),
+                    price,
+                    quantity: weight * (1 + next(9)) as f64,
+                    buyer_is_maker: !buy,
+                });
+                id += 1;
+            }
+            price += SAMPLE_TICK;
+        }
+    }
+    book.insert(&trades);
+    let set = footprint::build_set(
+        SetInput {
+            bars: &bars,
+            bar_ms: 3_600_000,
+            candles: None,
+            trades: Some(&mut book),
+            exchange_tick: Some(SAMPLE_TICK),
+            shape: appearance.style.footprint.shape(),
+        },
+        &mut Cache::default(),
+    );
+    ProfileFeed {
+        footprint: Some(std::sync::Arc::new(set)),
+        loading: false,
+        error: None,
+    }
 }
 
 /// `construction` with its size replaced by one that suits the sample prices.
@@ -77,6 +150,10 @@ pub fn preview_bars(
     chart_type: ChartType,
 ) -> (Vec<Kline>, Option<SyntheticSeries>) {
     let sample = sample_candles();
+    if chart_type == ChartType::VolumeFootprint {
+        let start = sample.len() - FOOTPRINT_BARS;
+        return (sample[start..].to_vec(), None);
+    }
     let mut style = appearance.style;
     style.chart_type = chart_type;
     match Construction::of(&style) {
@@ -120,6 +197,7 @@ fn paint(ui: &Ui, plot: Rect, appearance: &ChartAppearance, chart_type: ChartTyp
     let slot = plot.width() / bars.len() as f32;
     let x_for = |index: usize| plot.left() + slot * (index as f32 + 0.5);
     let painter = ui.painter_at(plot);
+    let feed = (chart_type == ChartType::VolumeFootprint).then(|| sample_footprint(appearance));
     series_render::paint(&SeriesFrame {
         painter: &painter,
         plot,
@@ -135,6 +213,7 @@ fn paint(ui: &Ui, plot: Rect, appearance: &ChartAppearance, chart_type: ChartTyp
         chart_type,
         recolor: None,
         price_format: appearance.price_format(),
+        profiles: feed.as_ref(),
     });
 }
 
@@ -229,12 +308,38 @@ mod tests {
     fn standard_types_preview_the_sample_candles_as_they_are() {
         for kind in ChartType::ALL
             .into_iter()
-            .filter(|kind| !kind.is_synthetic())
+            .filter(|kind| !kind.is_synthetic() && *kind != ChartType::VolumeFootprint)
         {
             let (bars, series) = preview_bars(&appearance(ChartStyle::default()), kind);
             assert_eq!(bars, sample_candles());
             assert!(series.is_none());
         }
+    }
+
+    #[test]
+    fn the_footprint_previews_the_last_few_sample_candles_with_a_footprint_of_each() {
+        let (bars, series) = preview_bars(
+            &appearance(ChartStyle::default()),
+            ChartType::VolumeFootprint,
+        );
+        let sample = sample_candles();
+        assert_eq!(bars, sample[sample.len() - FOOTPRINT_BARS..]);
+        assert!(series.is_none());
+        let feed = sample_footprint(&appearance(ChartStyle::default()));
+        let set = feed.footprint.expect("a footprint");
+        assert_eq!(
+            set.counts.trades, FOOTPRINT_BARS,
+            "every bar is built from the sample trades"
+        );
+        assert!(set.bars.iter().all(Option::is_some));
+        // The same every time: the preview must not flicker.
+        assert_eq!(
+            sample_footprint(&appearance(ChartStyle::default()))
+                .footprint
+                .unwrap()
+                .bars,
+            set.bars
+        );
     }
 
     #[test]

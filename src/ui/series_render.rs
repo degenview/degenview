@@ -10,6 +10,8 @@
 //! Everything here is the *main series*. A script's `plotcandle()` and `plotbar()` are drawn by
 //! `pine_chart_render` as their own layer and are unaffected by the chart type.
 
+mod footprint;
+
 use super::chart_card::PriceScale;
 use super::theme;
 use crate::model::chart_look::{
@@ -19,6 +21,7 @@ use crate::model::chart_look::{
 use crate::model::chart_type::{
     ChartStyle, ChartType, LineDash, LineSettings, PriceSource, RangeLook, Rgba,
 };
+use crate::model::market_profile::feed::ProfileFeed;
 use crate::model::synthetic::{BarShape, SyntheticBar};
 use crate::model::{Kline, PriceFormat};
 use eframe::egui::{
@@ -28,6 +31,16 @@ use eframe::egui::{
 
 /// How far a bar that can still change is faded.
 const UNCONFIRMED_ALPHA: f32 = 0.55;
+
+/// The tooltip for the footprint cell under `pointer`, when the chart is a footprint.
+pub fn footprint_hover(
+    frame: &SeriesFrame,
+    pointer: Pos2,
+) -> Option<super::pine_chart_render::HoverTarget> {
+    (frame.chart_type == ChartType::VolumeFootprint)
+        .then(|| footprint::hover(frame, pointer))
+        .flatten()
+}
 
 pub struct SeriesFrame<'a> {
     pub painter: &'a Painter,
@@ -51,6 +64,8 @@ pub struct SeriesFrame<'a> {
     pub recolor: Option<&'a dyn Fn(usize) -> Option<Color32>>,
     /// How the chart writes a price (the high and low markers).
     pub price_format: PriceFormat,
+    /// What the order-flow types draw from (`None` for every other type, and until it arrives).
+    pub profiles: Option<&'a ProfileFeed>,
 }
 
 pub fn color(rgba: Rgba) -> Color32 {
@@ -116,6 +131,7 @@ pub fn paint(frame: &SeriesFrame) {
         ChartType::Columns => columns(&frame),
         ChartType::Kagi => kagi(&frame),
         ChartType::PointAndFigure => point_figure(&frame),
+        ChartType::VolumeFootprint => footprint::paint(&frame),
     }
 }
 
@@ -829,6 +845,7 @@ mod tests {
                 chart_type,
                 recolor: None,
                 price_format: PriceFormat::AUTO,
+                profiles: None,
             });
         });
         count += output.shapes.len();

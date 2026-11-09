@@ -39,6 +39,7 @@ pub enum ChartType {
     HlcArea,
     Baseline,
     Columns,
+    VolumeFootprint,
 }
 
 /// Where a chart type sits in the selector.
@@ -47,16 +48,25 @@ pub enum ChartGroup {
     Standard,
     LinesAndAreas,
     PriceBased,
+    /// Types that draw what a candle cannot say: who traded at which price, how often a price was
+    /// visited. They are built from finer data than the chart's own bars (see `market_profile`).
+    OrderFlow,
 }
 
 impl ChartGroup {
-    pub const ALL: [Self; 3] = [Self::Standard, Self::LinesAndAreas, Self::PriceBased];
+    pub const ALL: [Self; 4] = [
+        Self::Standard,
+        Self::LinesAndAreas,
+        Self::PriceBased,
+        Self::OrderFlow,
+    ];
 
     pub const fn label(self) -> &'static str {
         match self {
             Self::Standard => "Standard",
             Self::LinesAndAreas => "Lines & Areas",
             Self::PriceBased => "Price-Based",
+            Self::OrderFlow => "Order flow & profiles",
         }
     }
 }
@@ -94,7 +104,7 @@ impl ChartKind {
 }
 
 impl ChartType {
-    pub const ALL: [Self; 18] = [
+    pub const ALL: [Self; 19] = [
         Self::Candles,
         Self::HollowCandles,
         Self::Bars,
@@ -113,6 +123,7 @@ impl ChartType {
         Self::Kagi,
         Self::PointAndFigure,
         Self::Range,
+        Self::VolumeFootprint,
     ];
 
     pub const fn label(self) -> &'static str {
@@ -135,6 +146,7 @@ impl ChartType {
             Self::HlcArea => "HLC Area",
             Self::Baseline => "Baseline",
             Self::Columns => "Columns",
+            Self::VolumeFootprint => "Volume footprint",
         }
     }
 
@@ -159,6 +171,7 @@ impl ChartType {
             Self::HlcArea => "hlc_area",
             Self::Baseline => "baseline",
             Self::Columns => "columns",
+            Self::VolumeFootprint => "volume_footprint",
         }
     }
 
@@ -182,6 +195,7 @@ impl ChartType {
             | Self::LineBreak
             | Self::PointAndFigure
             | Self::Range => ChartGroup::PriceBased,
+            Self::VolumeFootprint => ChartGroup::OrderFlow,
         }
     }
 
@@ -193,7 +207,9 @@ impl ChartType {
 
     pub const fn data_class(self) -> DataClass {
         match self.group() {
-            ChartGroup::Standard => DataClass::StandardOhlc,
+            // The order-flow types draw over the provider's own candles, which scripts and
+            // indicators keep reading.
+            ChartGroup::Standard | ChartGroup::OrderFlow => DataClass::StandardOhlc,
             ChartGroup::LinesAndAreas => DataClass::StandardLine,
             ChartGroup::PriceBased => DataClass::Synthetic,
         }
@@ -227,6 +243,13 @@ impl ChartType {
         }
         if self == Self::VolumeCandles && !source.provides_volume() {
             return Some("This source reports no volume");
+        }
+        if self == Self::VolumeFootprint {
+            return match source {
+                DataSource::Binance | DataSource::Coinbase | DataSource::DexScreener => None,
+                DataSource::Alpaca => Some("No intraday candles for stocks yet"),
+                _ => Some("This source has no volume or intraday candles"),
+            };
         }
         None
     }
@@ -738,6 +761,163 @@ impl Default for RangeSettings {
     }
 }
 
+/// How a footprint's rows are sized.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RowMode {
+    /// A fifth of the average true range (TradingView's automatic row size).
+    #[default]
+    Auto,
+    /// A fixed number of ticks per row.
+    Manual,
+}
+
+/// Whether a footprint's cells are all one width or as wide as their volume.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FootprintDisplay {
+    /// Equal cells.
+    #[default]
+    Cluster,
+    /// Cells as wide as their share of the bar's busiest row.
+    Profile,
+}
+
+/// What each footprint cell says.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FootprintKind {
+    /// Sell volume on the left, buy volume on the right.
+    #[default]
+    BuyAndSell,
+    /// Buy minus sell.
+    Delta,
+    /// Buy plus sell.
+    Total,
+    /// Buy and sell, with the busiest level of each row highlighted.
+    Ladder,
+}
+
+/// What is written under or beside each footprint bar.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FootprintSummary {
+    /// A box with the bar's total, buy and sell volume and delta.
+    #[default]
+    InfoBox,
+    Off,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(default)]
+pub struct FootprintSettings {
+    /// Build a bar from the exchange's trades (each with its aggressor side) where the market has
+    /// them and they cover the bar; off, or where there are none, the finer candles are used.
+    pub tick_based: bool,
+    pub row_mode: RowMode,
+    /// The averaging length of the automatic row size.
+    pub atr_length: u32,
+    /// Ticks per row when the row size is manual.
+    pub ticks_per_row: u32,
+    pub display: FootprintDisplay,
+    pub kind: FootprintKind,
+    /// Colour each cell by its volume against the bar's busiest row, in four steps.
+    pub gradient: bool,
+    pub buy_color: Option<Rgba>,
+    pub sell_color: Option<Rgba>,
+    pub show_value_area: bool,
+    /// The share of a bar's volume its value area holds, in percent.
+    pub value_area_percent: u32,
+    pub show_poc: bool,
+    pub summary: FootprintSummary,
+    /// A level is a buy imbalance when its buy volume is at least this percent of the sell volume
+    /// of the level below (and the other way for sell), TradingView's 300.
+    pub imbalance_percent: u32,
+    pub highlight_imbalances: bool,
+    pub buy_imbalance_color: Option<Rgba>,
+    pub sell_imbalance_color: Option<Rgba>,
+    pub highlight_stacked: bool,
+    /// Consecutive imbalanced levels of one side that make a stack.
+    pub stacked_levels: u32,
+    /// The candle drawn beside the cells.
+    pub candle: CandleSettings,
+}
+
+impl Default for FootprintSettings {
+    fn default() -> Self {
+        Self {
+            tick_based: true,
+            row_mode: RowMode::Auto,
+            atr_length: 14,
+            ticks_per_row: 10,
+            display: FootprintDisplay::Cluster,
+            kind: FootprintKind::BuyAndSell,
+            gradient: true,
+            buy_color: None,
+            sell_color: None,
+            show_value_area: true,
+            value_area_percent: 70,
+            show_poc: true,
+            summary: FootprintSummary::InfoBox,
+            imbalance_percent: 300,
+            highlight_imbalances: true,
+            buy_imbalance_color: None,
+            sell_imbalance_color: None,
+            highlight_stacked: true,
+            stacked_levels: 3,
+            candle: CandleSettings::default(),
+        }
+    }
+}
+
+/// The part of the footprint settings that changes what is built (rows, areas, imbalances), not how
+/// it looks: restyling never rebuilds a footprint, and applying a template never changes these.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct FootprintShape {
+    pub tick_based: bool,
+    pub row_mode: RowMode,
+    pub atr_length: u32,
+    pub ticks_per_row: u32,
+    pub value_area_percent: u32,
+    pub imbalance_percent: u32,
+    pub stacked_levels: u32,
+}
+
+impl FootprintSettings {
+    pub fn shape(&self) -> FootprintShape {
+        FootprintShape {
+            tick_based: self.tick_based,
+            row_mode: self.row_mode,
+            atr_length: self.atr_length,
+            ticks_per_row: self.ticks_per_row,
+            value_area_percent: self.value_area_percent,
+            imbalance_percent: self.imbalance_percent,
+            stacked_levels: self.stacked_levels,
+        }
+    }
+
+    /// Takes the shaping fields of `own`, keeping this one's look.
+    pub fn keep_shape_of(&mut self, own: &Self) {
+        self.tick_based = own.tick_based;
+        self.row_mode = own.row_mode;
+        self.atr_length = own.atr_length;
+        self.ticks_per_row = own.ticks_per_row;
+        self.value_area_percent = own.value_area_percent;
+        self.imbalance_percent = own.imbalance_percent;
+        self.stacked_levels = own.stacked_levels;
+    }
+
+    /// Heals values a hand-edited or older row could leave the builder unable to use.
+    fn sanitized(mut self) -> Self {
+        self.atr_length = self.atr_length.clamp(1, 500);
+        self.ticks_per_row = self.ticks_per_row.clamp(1, 100_000);
+        self.value_area_percent = self.value_area_percent.clamp(1, 100);
+        self.imbalance_percent = self.imbalance_percent.clamp(100, 10_000);
+        self.stacked_levels = self.stacked_levels.clamp(2, 20);
+        self
+    }
+}
+
 /// The chart type and every type's own settings. Old rows without it decode as plain candles.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(default)]
@@ -761,6 +941,7 @@ pub struct ChartStyle {
     pub line_break: LineBreakSettings,
     pub point_figure: PointFigureSettings,
     pub range: RangeSettings,
+    pub footprint: FootprintSettings,
 }
 
 impl ChartStyle {
@@ -774,6 +955,7 @@ impl ChartStyle {
             ChartType::Renko => &self.renko.candle,
             ChartType::LineBreak => &self.line_break.candle,
             ChartType::Range if self.range.look == RangeLook::Candles => &self.range.candle,
+            ChartType::VolumeFootprint => &self.footprint.candle,
             _ => return None,
         })
     }
@@ -787,6 +969,7 @@ impl ChartStyle {
             ChartType::Renko => &mut self.renko.candle,
             ChartType::LineBreak => &mut self.line_break.candle,
             ChartType::Range if self.range.look == RangeLook::Candles => &mut self.range.candle,
+            ChartType::VolumeFootprint => &mut self.footprint.candle,
             _ => return None,
         })
     }
@@ -852,9 +1035,12 @@ impl ChartStyle {
             | ChartType::VolumeCandles
             | ChartType::HeikinAshi
             | ChartType::Renko
-            | ChartType::LineBreak => self.candle_settings().map_or((None, None), |settings| {
-                (settings.up_body, settings.down_body)
-            }),
+            | ChartType::LineBreak
+            | ChartType::VolumeFootprint => {
+                self.candle_settings().map_or((None, None), |settings| {
+                    (settings.up_body, settings.down_body)
+                })
+            }
             ChartType::Range => match self.range.look {
                 RangeLook::Candles => (self.range.candle.up_body, self.range.candle.down_body),
                 RangeLook::Bars => (self.range.bars.up, self.range.bars.down),
@@ -905,6 +1091,7 @@ impl ChartStyle {
             ChartType::HlcArea => self.hlc_area = fresh.hlc_area,
             ChartType::Baseline => self.baseline = fresh.baseline,
             ChartType::Columns => self.columns = fresh.columns,
+            ChartType::VolumeFootprint => self.footprint = fresh.footprint,
         }
     }
 
@@ -926,6 +1113,7 @@ impl ChartStyle {
         self.hlc_area.width = self.hlc_area.width.clamp(1, 4);
         self.baseline.width = self.baseline.width.clamp(1, 4);
         self.kagi.width = self.kagi.width.clamp(1, 4);
+        self.footprint = self.footprint.sanitized();
         self
     }
 }
@@ -1149,5 +1337,161 @@ mod tests {
         assert_eq!(healed.line.width, 4);
         assert_eq!(healed.baseline.level_percent, 100.0);
         assert_eq!(healed.line_break.lines, 1);
+    }
+
+    // MARK: Volume footprint
+
+    #[test]
+    fn the_footprint_is_an_order_flow_type_drawn_over_the_real_candles() {
+        let kind = ChartType::VolumeFootprint;
+        assert_eq!(kind.label(), "Volume footprint");
+        assert_eq!(kind.slug(), "volume_footprint");
+        assert_eq!(kind.group(), ChartGroup::OrderFlow);
+        // Scripts and indicators keep reading the provider's own candles.
+        assert_eq!(kind.data_class(), DataClass::StandardOhlc);
+        assert!(!kind.is_synthetic());
+        assert_eq!(kind.kind(), ChartKind::Standard);
+        assert!(ChartType::ALL.contains(&kind));
+    }
+
+    #[test]
+    fn only_markets_with_intraday_candles_and_volume_can_show_a_footprint() {
+        let kind = ChartType::VolumeFootprint;
+        for source in [
+            DataSource::Binance,
+            DataSource::Coinbase,
+            DataSource::DexScreener,
+        ] {
+            assert!(kind.supported_by(source), "{source:?}");
+        }
+        for source in [
+            DataSource::Alpaca,
+            DataSource::CoinGecko,
+            DataSource::Polymarket,
+            DataSource::Kalshi,
+            DataSource::CoinMarketCap,
+        ] {
+            assert!(!kind.supported_by(source), "{source:?}");
+            assert!(kind.unsupported_reason(source).is_some());
+        }
+        // The choice is kept; the chart draws candles where it cannot.
+        let style = ChartStyle {
+            chart_type: kind,
+            ..ChartStyle::default()
+        };
+        assert_eq!(style.effective_type(DataSource::Alpaca), ChartType::Candles);
+        assert_eq!(style.effective_type(DataSource::Binance), kind);
+    }
+
+    #[test]
+    fn an_old_row_has_the_default_footprint_settings_and_a_new_one_round_trips() {
+        let old: ChartStyle = serde_json::from_str(r#"{"chart_type":"candles"}"#).expect("old row");
+        assert_eq!(old.footprint, FootprintSettings::default());
+        let mut style = ChartStyle {
+            chart_type: ChartType::VolumeFootprint,
+            ..ChartStyle::default()
+        };
+        style.footprint.imbalance_percent = 450;
+        style.footprint.kind = FootprintKind::Delta;
+        style.footprint.buy_color = Some([1, 2, 3, 255]);
+        let back: ChartStyle =
+            serde_json::from_str(&serde_json::to_string(&style).unwrap()).expect("round trip");
+        assert_eq!(back, style);
+        // A newer build's extra field is ignored, a missing one defaults.
+        let partial: ChartStyle = serde_json::from_str(
+            r#"{"chart_type":"volume_footprint","footprint":{"imbalance_percent":500,"future_field":1}}"#,
+        )
+        .expect("lenient");
+        assert_eq!(partial.footprint.imbalance_percent, 500);
+        assert_eq!(partial.footprint.value_area_percent, 70);
+    }
+
+    #[test]
+    fn the_defaults_are_tradingviews_where_it_says() {
+        let footprint = FootprintSettings::default();
+        assert_eq!(footprint.imbalance_percent, 300);
+        assert_eq!(footprint.value_area_percent, 70);
+        assert_eq!(footprint.kind, FootprintKind::BuyAndSell);
+        assert_eq!(footprint.summary, FootprintSummary::InfoBox);
+        assert_eq!(footprint.row_mode, RowMode::Auto);
+    }
+
+    #[test]
+    fn impossible_footprint_values_are_healed() {
+        let mut style = ChartStyle::default();
+        style.footprint.atr_length = 0;
+        style.footprint.ticks_per_row = 0;
+        style.footprint.value_area_percent = 0;
+        style.footprint.imbalance_percent = 5;
+        style.footprint.stacked_levels = 0;
+        let healed = style.sanitized().footprint;
+        assert_eq!(healed.atr_length, 1);
+        assert_eq!(healed.ticks_per_row, 1);
+        assert_eq!(healed.value_area_percent, 1);
+        assert_eq!(healed.imbalance_percent, 100);
+        assert_eq!(healed.stacked_levels, 2);
+        style.footprint.value_area_percent = 5_000;
+        style.footprint.ticks_per_row = u32::MAX;
+        let healed = style.sanitized().footprint;
+        assert_eq!(healed.value_area_percent, 100);
+        assert_eq!(healed.ticks_per_row, 100_000);
+    }
+
+    #[test]
+    fn switching_away_and_back_keeps_the_footprint_settings_and_reset_touches_only_it() {
+        let mut style = ChartStyle {
+            chart_type: ChartType::VolumeFootprint,
+            ..ChartStyle::default()
+        };
+        style.footprint.stacked_levels = 5;
+        style.candles.wick = false;
+        style.chart_type = ChartType::Candles;
+        style.chart_type = ChartType::VolumeFootprint;
+        assert_eq!(style.footprint.stacked_levels, 5);
+        style.reset_selected();
+        assert_eq!(style.footprint, FootprintSettings::default());
+        assert!(
+            !style.candles.wick,
+            "another type's settings are left alone"
+        );
+    }
+
+    #[test]
+    fn the_footprints_candle_is_its_own_and_the_up_down_colours_follow_it() {
+        let mut style = ChartStyle {
+            chart_type: ChartType::VolumeFootprint,
+            ..ChartStyle::default()
+        };
+        style.footprint.candle.up_body = Some([9, 9, 9, 255]);
+        assert_eq!(
+            style.candle_settings().unwrap().up_body,
+            Some([9, 9, 9, 255])
+        );
+        let (up, down) = style.up_down(([1, 1, 1, 255], [2, 2, 2, 255]));
+        assert_eq!((up, down), ([9, 9, 9, 255], [2, 2, 2, 255]));
+    }
+
+    #[test]
+    fn the_shaping_fields_are_the_ones_that_change_what_is_built() {
+        let base = FootprintSettings::default();
+        let mut restyled = base;
+        restyled.buy_color = Some([1, 1, 1, 255]);
+        restyled.display = FootprintDisplay::Profile;
+        restyled.gradient = false;
+        restyled.show_poc = false;
+        assert_eq!(
+            base.shape(),
+            restyled.shape(),
+            "looks never rebuild a footprint"
+        );
+        let mut reshaped = base;
+        reshaped.ticks_per_row = 20;
+        assert_ne!(base.shape(), reshaped.shape());
+        // A template applied over a chart keeps that chart's shaping and takes the look.
+        let mut theirs = restyled;
+        theirs.ticks_per_row = 99;
+        theirs.keep_shape_of(&base);
+        assert_eq!(theirs.ticks_per_row, base.ticks_per_row);
+        assert_eq!(theirs.buy_color, Some([1, 1, 1, 255]));
     }
 }

@@ -3,6 +3,7 @@ use crate::host::pine_host::KlineSecurityDataProvider;
 use crate::model::canvas::{self, PaneSpec, Window};
 use crate::model::chart_look::Palette;
 use crate::model::chart_type::{ChartStyle, ChartType, DataClass};
+use crate::model::market_profile::feed::ProfileFeed;
 use crate::model::paper::PaperOrderSide;
 use crate::model::pine_instance::{PineInstance, StoredInput, VisualOrder};
 use crate::model::price_scale::{self, PriceScaleMode};
@@ -332,6 +333,9 @@ pub struct ChartCard {
     /// The markets compared on this chart: their configuration and candles, handed in by the
     /// workspace. Drawn under the main series on the chart's own time axis.
     overlay: overlays::OverlayState,
+    /// What the order-flow chart types draw from: finished sets handed in by the workspace, never
+    /// fetched or computed here (a snapshot reads it like the live chart does).
+    profile_feed: Option<ProfileFeed>,
     /// What part of the chart is on screen: the one place every pan, zoom and scale gesture
     /// writes and every painter reads.
     viewport: ChartViewport,
@@ -693,6 +697,7 @@ impl Default for ChartCard {
             series: Vec::new(),
             series_cutoff: None,
             overlay: overlays::OverlayState::default(),
+            profile_feed: None,
             viewport: ChartViewport::default(),
             gesture: None,
             newest_bar: None,
@@ -832,6 +837,18 @@ impl ChartCard {
     /// show it.
     pub fn effective_chart_type(&self, source: DataSource) -> ChartType {
         self.appearance.style.effective_type(source)
+    }
+
+    /// What the order-flow types are drawing from, if the workspace handed the card anything.
+    #[cfg(test)]
+    pub fn profile_feed(&self) -> Option<&ProfileFeed> {
+        self.profile_feed.as_ref()
+    }
+
+    /// Hands the card what the order-flow types draw from (`None` clears it). The card never
+    /// fetches or computes it: the workspace does, off the UI thread.
+    pub fn set_profile_feed(&mut self, feed: Option<ProfileFeed>) {
+        self.profile_feed = feed;
     }
 
     /// Says what the next click on a candle is for, while the chart is picking one.

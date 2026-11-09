@@ -99,6 +99,12 @@ impl Overlays for LiveOverlays<'_> {
         });
     }
 
+    fn profile_tooltip(&mut self, target: &HoverTarget) {
+        // The same way a script's tooltip is placed: asked of a copy of the canvas response that
+        // covers the cell, so egui keeps its own delay and "only when still" rules.
+        self.pine_tooltip(target);
+    }
+
     fn pane(&mut self, painter: &egui::Painter, layout: &FrameLayout, slot: &PaneSlot) {
         let hovered = self.ui.rect_contains_pointer(slot.rect);
         paint_pane_title(painter, layout, slot, hovered);

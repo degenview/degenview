@@ -60,6 +60,8 @@ pub(super) struct Chart {
     /// The card's own price demand and feeds, made the first frame it is drawn with an app that
     /// has portfolios (`ChartWorkspace::set_card_env`). Dropping it releases the demand.
     pub(super) card_runtime: Option<CardRuntime>,
+    /// The order-flow chart types' computation for this chart (idle on every other type).
+    pub(super) profile: super::profiles::ProfileRuntime,
 }
 
 /// What one fetch brought back: the candles the chart reads, and for a multi-choice prediction
@@ -121,6 +123,7 @@ impl Chart {
             last_live_open_time: None,
             pm_series: Vec::new(),
             overlays: OverlayList::new(),
+            profile: super::profiles::ProfileRuntime::default(),
             image_url: None,
             card: None,
             card_runtime: None,
