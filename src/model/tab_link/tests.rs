@@ -747,3 +747,168 @@ fn a_delivered_signal_is_not_a_new_signal() {
         assert!(hub.tick(&members, &table, Vec::new()).is_empty());
     }
 }
+
+// MARK: Several tabs speaking in one tick
+
+fn three() -> [Member; 3] {
+    [
+        member(1, on(LinkColor::Orange), "BTCUSDT", Timeframe::Hour),
+        member(2, on(LinkColor::Orange), "BTCUSDT", Timeframe::Hour),
+        member(3, on(LinkColor::Orange), "BTCUSDT", Timeframe::Hour),
+    ]
+}
+
+fn kind_for(out: &[Delivery], target: TabId, kind: LinkKind) -> Option<&Delivery> {
+    out.iter()
+        .find(|d| d.target == target && d.signal.kind() == kind)
+}
+
+#[test]
+fn a_tab_that_spoke_last_in_a_tick_is_not_overwritten_by_an_older_signal() {
+    let mut hub = LinkHub::default();
+    let table = table(LinkColor::Orange, LinkToggles::default());
+    let members = three();
+    hub.reconcile(&members, &table);
+    // Tab 1 picks ETH, then tab 2 picks SOL, in the same tick.
+    let out = hub.tick(
+        &members,
+        &table,
+        vec![
+            (1, vec![LinkSignal::Market(market("ETHUSDT"))]),
+            (2, vec![LinkSignal::Market(market("SOLUSDT"))]),
+        ],
+    );
+    assert!(
+        kind_for(&out, 2, LinkKind::Symbol).is_none(),
+        "tab 2's own, newer choice stands: {out:?}"
+    );
+    for tab in [1, 3] {
+        let delivery = kind_for(&out, tab, LinkKind::Symbol).expect("told");
+        assert_eq!(
+            symbol_of(delivery),
+            "SOLUSDT",
+            "tab {tab} ends on the newest"
+        );
+    }
+}
+
+#[test]
+fn the_reverse_order_leaves_the_other_tab_standing() {
+    let mut hub = LinkHub::default();
+    let table = table(LinkColor::Orange, LinkToggles::default());
+    let members = three();
+    hub.reconcile(&members, &table);
+    let out = hub.tick(
+        &members,
+        &table,
+        vec![
+            (2, vec![LinkSignal::Market(market("SOLUSDT"))]),
+            (1, vec![LinkSignal::Market(market("ETHUSDT"))]),
+        ],
+    );
+    assert!(kind_for(&out, 1, LinkKind::Symbol).is_none());
+    for tab in [2, 3] {
+        assert_eq!(
+            symbol_of(kind_for(&out, tab, LinkKind::Symbol).expect("told")),
+            "ETHUSDT"
+        );
+    }
+}
+
+#[test]
+fn an_interval_chosen_later_in_a_tick_wins_the_same_way() {
+    let mut hub = LinkHub::default();
+    let table = table(LinkColor::Orange, ALL);
+    let members = three();
+    hub.reconcile(&members, &table);
+    let out = hub.tick(
+        &members,
+        &table,
+        vec![
+            (1, vec![LinkSignal::Timeframe(Timeframe::Day)]),
+            (2, vec![LinkSignal::Timeframe(Timeframe::Week)]),
+        ],
+    );
+    assert!(kind_for(&out, 2, LinkKind::Interval).is_none());
+    for tab in [1, 3] {
+        assert!(matches!(
+            kind_for(&out, tab, LinkKind::Interval)
+                .expect("told")
+                .signal,
+            LinkSignal::Timeframe(Timeframe::Week)
+        ));
+    }
+}
+
+#[test]
+fn one_kind_by_one_tab_does_not_suppress_another_kind_for_it() {
+    let mut hub = LinkHub::default();
+    let table = table(LinkColor::Orange, ALL);
+    let members = three();
+    hub.reconcile(&members, &table);
+    // Tab 2 changes its symbol; tab 1 (earlier) changes the interval: tab 2 still hears the interval.
+    let out = hub.tick(
+        &members,
+        &table,
+        vec![
+            (1, vec![LinkSignal::Timeframe(Timeframe::Day)]),
+            (2, vec![LinkSignal::Market(market("SOLUSDT"))]),
+        ],
+    );
+    assert!(kind_for(&out, 2, LinkKind::Interval).is_some());
+    assert!(kind_for(&out, 2, LinkKind::Symbol).is_none());
+}
+
+#[test]
+fn a_switched_off_kind_spoken_by_a_tab_suppresses_nothing() {
+    let mut hub = LinkHub::default();
+    let table = table(
+        LinkColor::Orange,
+        LinkToggles {
+            symbol: true,
+            interval: false,
+            ..LinkToggles::NONE
+        },
+    );
+    let members = three();
+    hub.reconcile(&members, &table);
+    // Tab 2's interval is not shared, so it has no say; the symbol from tab 1 still reaches it.
+    let out = hub.tick(
+        &members,
+        &table,
+        vec![
+            (1, vec![LinkSignal::Market(market("ETHUSDT"))]),
+            (2, vec![LinkSignal::Timeframe(Timeframe::Week)]),
+        ],
+    );
+    assert!(kind_for(&out, 2, LinkKind::Symbol).is_some());
+}
+
+#[test]
+fn a_joiners_adoption_older_than_its_own_signal_is_dropped() {
+    let mut hub = LinkHub::default();
+    let table = table(LinkColor::Orange, LinkToggles::default());
+    let mut members = vec![
+        member(1, on(LinkColor::Orange), "ETHUSDT", Timeframe::Hour),
+        member(2, on(LinkColor::Orange), "ETHUSDT", Timeframe::Hour),
+    ];
+    hub.reconcile(&members, &table);
+    hub.ingest(1, LinkSignal::Market(market("ETHUSDT")), &members, &table);
+    // Tab 3 is tagged Orange and, in the same tick, picks SOL itself.
+    members.push(member(3, on(LinkColor::Orange), "SOLUSDT", Timeframe::Hour));
+    let out = hub.tick(
+        &members,
+        &table,
+        vec![(3, vec![LinkSignal::Market(market("SOLUSDT"))])],
+    );
+    assert!(
+        kind_for(&out, 3, LinkKind::Symbol).is_none(),
+        "the joiner's own choice is newer than what it would adopt"
+    );
+    for tab in [1, 2] {
+        assert_eq!(
+            symbol_of(kind_for(&out, tab, LinkKind::Symbol).expect("told")),
+            "SOLUSDT"
+        );
+    }
+}
