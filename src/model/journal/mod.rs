@@ -7,9 +7,16 @@
 //! `docs/trading-journal.md`.
 
 pub mod accounting;
+pub mod analytics;
+pub mod calendar;
+pub mod edge;
+pub mod equity;
+pub mod filters;
+pub mod metric;
 pub mod model;
 pub mod normalize;
 pub mod reconstruct;
+pub mod risk;
 pub mod source;
 pub mod sources;
 

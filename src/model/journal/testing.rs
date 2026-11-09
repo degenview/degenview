@@ -78,3 +78,11 @@ impl Execution {
         self
     }
 }
+
+impl Execution {
+    pub fn currency(mut self, currency: &str) -> Self {
+        self.settlement_currency = Some(currency.to_owned());
+        self.fee_currency = Some(currency.to_owned());
+        self
+    }
+}

@@ -4,10 +4,10 @@ A journal for every execution DegenView knows about. Paper trading is the first 
 file imports are meant to arrive as further sources without touching the journal's core. Research
 and the comparison with other journals: [trading-journal-research.md](reviews/trading-journal-research.md).
 
-**Status.** The foundation (this page's first sections) is built: the canonical execution model,
-trade reconstruction, the paper source, storage and capture. The analytics, the Journal tab,
-reviews, charts, import/export and iCloud follow as separate changes; the sections for them are
-added as they land.
+**Status.** Built: the canonical execution model, trade reconstruction, the paper source, storage
+and capture, and the pure analytics (statistics, equity and drawdown, calendar, filters, R-multiple,
+Edge Score). The Journal tab, reviews, charts, import/export and iCloud follow as separate changes;
+their sections are added as they land.
 
 ## Layers
 
@@ -95,3 +95,73 @@ resets cannot ask and keep the history.
 
 A test runs real engine order sequences and checks that the journal's average-cost net P&L equals
 the engine's closed trades and the account's `realized_pnl` once the position is flat.
+
+## Analytics
+
+Pure functions over trades in `model/journal/`: `analytics.rs` (summary), `equity.rs` (curve and
+drawdown), `calendar.rs` (days and the month view), `filters.rs` (selection and ranges), `risk.rs`
+(R), `edge.rs` (Edge Score), `metric.rs` (the figure-or-reason type). None reads egui or SQLite.
+
+### A figure that may not exist
+
+Every statistic is a `Metric<T>`: a value, or the `Reason` there is none (no trades, no losses, no
+stop, no initial balance, mixed currencies, too few samples, no spread). Nothing is NaN or
+infinite: a profit factor with no losses is "no losses", an empty selection is "no closed trades"
+and not zero, and a test runs degenerate records and checks every ratio is finite.
+
+### Definitions
+
+- **Closed trade**: flat to flat. Open trades are counted separately and are in no realised figure.
+- **Outcome**: net P&L above `+tolerance` wins, below `-tolerance` loses, otherwise breakeven. The
+  tolerance is an amount in the account currency (default zero).
+- **Win rate** = wins / closed trades. **Gross profit / gross loss**: the sum of positive and of
+  negative net P&L of all closed trades, whatever their label. **Profit factor** = gross profit /
+  gross loss. **Average win / loss**: mean net P&L of winners / losers; **payoff** is their ratio.
+  **Expectancy** = net P&L per closed trade.
+- **Streaks** run in close order; a breakeven ends both.
+- **Equity** is *realised*: cumulative net P&L of closed trades at each close, plus the initial
+  balance when known. It is not account equity (no unrealised P&L, and paper accounts have no cash
+  movements). **Drawdown** is the distance below the running peak of cumulative P&L, which starts at
+  zero; its percentage is `drawdown / (initial balance + peak)` and exists only with a positive
+  initial balance.
+- **Sharpe, Sortino, Calmar** use daily returns on trading days (days with no closed trade are not
+  zero-return days), are not annualised, take a zero risk-free rate, and need an initial balance and
+  at least 30 trading days. **SQN** is `sqrt(n) x mean R / stdev R` and needs 30 trades with an R.
+  Below the thresholds they are unavailable with the count, never a guess.
+- **Currencies** are never added: a selection with more than one currency is refused by
+  `summarize` and split by `summarize_by_currency`. There is no conversion.
+
+### Days and ranges
+
+A trade belongs to the day it **closed**, in the journal's time zone, at the offset in force at the
+closing instant, so a daylight-saving day is 23 or 25 hours. A trade that spans midnight counts on
+its close day; open trades belong to no day. The calendar, daily P&L, day statistics and the
+weekday breakdown all use this rule. A range filter uses the same: a closed trade is in
+`[from, to)` by its close time, an open one by its open time. Presets: Today, Week (starts Sunday
+or Monday), Month, Year (the last 365 local days), Year to date, All; the previous period is the
+window of the same length just before.
+
+### R-multiple
+
+`initial risk = sum over entry legs of quantity x |entry price - stop| x multiplier`, with the
+stop the user entered, else the one the source attached to the entry order, else none: a stop is
+never guessed, and a stop on the wrong side of an entry is invalid, not negative risk. Scaling in
+therefore adds the risk taken at each entry. **Realised R** = net P&L / initial risk, closed
+trades only.
+
+### Edge Score (version 2)
+
+The published LuxAlgo composite, reimplemented natively from `LuxAlgo/trade-journal`
+(`packages/core/src/edge-score.ts`, `docs/edge-score.md`; the repository states the MIT licence).
+Six components against full-marks thresholds, weights summing to 100: win rate 60% (15), profit
+factor 3.0 (25), average win over average loss 2.5 (20), drawdown 0% of balance plus peak and zero
+at 25% (15), recovery factor 3 (10), consistency with the largest winning day at most 15% of
+winning-day profit (15). Withheld under five closed trades, rounded to two decimals, shown with the
+trade count.
+
+The published code and documentation disagree in two cases; this follows the **documentation**:
+no drawdown at all with a known balance scores 100 (the reference code gives its neutral 50), and
+no initial balance scores a neutral 50 (the reference code measures against peak P&L). So results
+match LuxAlgo's except in those two cases. The score uses only objective trade results; review
+ratings never enter it. A separate process score (rule adherence, checklists) will sit beside it
+and never blend with it.
