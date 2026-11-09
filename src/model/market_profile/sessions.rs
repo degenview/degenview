@@ -25,10 +25,12 @@ pub struct Session {
 }
 
 impl Session {
+    #[cfg(test)]
     pub fn contains(&self, time_ms: i64) -> bool {
         time_ms >= self.start_ms && time_ms < self.end_ms
     }
 
+    #[cfg(test)]
     pub fn length_ms(&self) -> i64 {
         self.end_ms - self.start_ms
     }
@@ -265,6 +267,7 @@ pub fn custom_sessions(
         .collect()
 }
 
+#[cfg(test)]
 /// The custom session `time_ms` is in, `None` between sessions.
 pub fn custom_session_containing(
     spans: &[SessionSpan],
@@ -316,6 +319,7 @@ pub fn spans_covering(
 
 // MARK: Blocks and letters
 
+#[cfg(test)]
 /// The block sizes TradingView offers for a TPO profile, in minutes. 30 is the default.
 pub const BLOCK_MINUTES: [u32; 7] = [5, 10, 15, 30, 60, 120, 240];
 

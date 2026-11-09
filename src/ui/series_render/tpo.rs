@@ -449,7 +449,11 @@ fn paint_volume(
         } else {
             (bars.base, bars.base + bars.length)
         };
-        painter.hline(a..=b, y, Stroke::new(1.5, tint([255, 255, 255, 255], 0.7)));
+        painter.hline(
+            a..=b,
+            y,
+            Stroke::new(1.5, theme::text_primary().gamma_multiply(0.8)),
+        );
     }
     if settings.volume.show_vah {
         line(area.1, true, "VAH");

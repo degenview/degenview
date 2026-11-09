@@ -439,4 +439,26 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn the_order_flow_types_construct_nothing_so_scripts_and_indicators_read_the_real_candles() {
+        use crate::model::chart_type::{ChartKind, ChartStyle, ChartType};
+        for chart_type in [
+            ChartType::VolumeFootprint,
+            ChartType::TimePriceOpportunity,
+            ChartType::SessionVolumeProfile,
+        ] {
+            let style = ChartStyle {
+                chart_type,
+                ..ChartStyle::default()
+            };
+            assert!(Construction::of(&style).is_none(), "{chart_type:?}");
+            assert_eq!(
+                chart_type.kind(),
+                ChartKind::Standard,
+                "chart.is_* stays standard"
+            );
+            assert!(!chart_type.is_synthetic());
+        }
+    }
 }

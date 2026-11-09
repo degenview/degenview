@@ -78,10 +78,12 @@ impl CandleBook {
         self.interval_ms
     }
 
+    #[cfg(test)]
     pub fn len(&self) -> usize {
         self.candles.len()
     }
 
+    #[cfg(test)]
     pub fn is_empty(&self) -> bool {
         self.candles.is_empty()
     }
@@ -90,6 +92,7 @@ impl CandleBook {
         self.candles.keys().next().copied()
     }
 
+    #[cfg(test)]
     pub fn newest_open(&self) -> Option<i64> {
         self.candles.keys().next_back().copied()
     }
@@ -119,6 +122,7 @@ impl CandleBook {
             .map(|(_, candle)| candle)
     }
 
+    #[cfg(test)]
     /// Open times in `[start_ms, end_ms)` (aligned to the interval) for which no candle is held:
     /// where a profile has a hole. Bounded to `limit` entries.
     pub fn missing(&self, start_ms: i64, end_ms: i64, limit: usize) -> Vec<i64> {
@@ -134,6 +138,7 @@ impl CandleBook {
         missing
     }
 
+    #[cfg(test)]
     /// Drops every candle opening before `time_ms`.
     pub fn forget_before(&mut self, time_ms: i64) {
         self.candles = self.candles.split_off(&time_ms);

@@ -696,7 +696,7 @@ pub fn build_set(input: SetInput<'_>, cache: &mut Cache) -> FootprintSet {
                     DataQuality::TradeDerived => counts.trades += 1,
                     DataQuality::ExchangeSplit => counts.split += 1,
                     DataQuality::Intrabar => counts.intrabar += 1,
-                    DataQuality::ChartBars | DataQuality::Unsupported(_) => counts.chart_bars += 1,
+                    DataQuality::ChartBars => counts.chart_bars += 1,
                 }
                 built[index] = Some(footprint);
             }

@@ -84,18 +84,23 @@ impl TradeBook {
         }
     }
 
+    #[cfg(test)]
     pub fn len(&self) -> usize {
         self.trades.len()
     }
 
+    #[cfg(test)]
+    #[allow(dead_code)] // the pair of `len`, which clippy asks for
     pub fn is_empty(&self) -> bool {
         self.trades.is_empty()
     }
 
+    #[cfg(test)]
     pub fn trades(&self) -> &[Trade] {
         &self.trades
     }
 
+    #[cfg(test)]
     pub fn oldest(&self) -> Option<&Trade> {
         self.trades.first()
     }
@@ -186,11 +191,13 @@ impl TradeBook {
             .is_some_and(|from| bar_start_ms >= from)
     }
 
+    #[cfg(test)]
     /// Whether older trades were dropped for capacity.
     pub fn has_evicted(&self) -> bool {
         self.evicted
     }
 
+    #[cfg(test)]
     /// Drops every trade older than `time_ms` (a bound on age as well as count).
     pub fn forget_before(&mut self, time_ms: i64) {
         let cut = self.trades.partition_point(|t| t.time_ms < time_ms);
@@ -202,6 +209,7 @@ impl TradeBook {
     }
 
     /// The id to ask the exchange for next to continue after the newest trade.
+    #[cfg(test)]
     pub fn next_id(&self) -> Option<u64> {
         self.newest().map(|t| t.id.wrapping_add(1))
     }

@@ -62,7 +62,41 @@ pub fn menu(
             ui.data_mut(|data| data.insert_temp(query_id.with("seen"), true));
             ui.add_space(4.0);
             let matching = matching_types(&query);
-            let enter = filter.has_focus() && ui.input(|input| input.key_pressed(Key::Enter));
+            // A one-line field gives up its focus on Enter, so the frame of the press only sees it lost.
+            let enter = (filter.has_focus() || filter.lost_focus())
+                && ui.input(|input| input.key_pressed(Key::Enter));
+            // Arrow keys walk the rows that can be picked; Enter picks the one the cursor is on (the
+            // first match while the cursor has not moved). Typing a new filter puts it back at the top.
+            let cursor_id = query_id.with("cursor");
+            let last_query_id = query_id.with("last-query");
+            let mut cursor: Option<ChartType> = ui.data(|data| data.get_temp(cursor_id)).flatten();
+            let before: String = ui
+                .data(|data| data.get_temp(last_query_id))
+                .unwrap_or_default();
+            if before != query {
+                cursor = None;
+            }
+            let pickable: Vec<ChartType> = matching
+                .iter()
+                .copied()
+                .filter(|kind| kind.unsupported_reason(source).is_none())
+                .collect();
+            let moved = ui.input(|input| {
+                i32::from(input.key_pressed(Key::ArrowDown))
+                    - i32::from(input.key_pressed(Key::ArrowUp))
+            });
+            let mut cursor_moved = false;
+            if moved != 0 {
+                cursor = step_cursor(&pickable, cursor, moved);
+                cursor_moved = true;
+            }
+            let target = cursor
+                .filter(|kind| pickable.contains(kind))
+                .or_else(|| pickable.first().copied());
+            ui.data_mut(|data| {
+                data.insert_temp(cursor_id, cursor);
+                data.insert_temp(last_query_id, query.clone());
+            });
             let mut shown_any = false;
             // The list scrolls only when the window is shorter than it, so the menu never runs off
             // the screen and a menu that fits is not a scroll area at all.
@@ -90,16 +124,20 @@ pub fn menu(
                     ui.add_space(2.0);
                     for kind in rows {
                         let reason = kind.unsupported_reason(source);
-                        let (clicked, response) = row(ui, kind, kind == current, reason.is_none());
-                        if let Some(reason) = reason {
-                            response.on_hover_text(reason);
+                        // Only once the arrows have been used does a row show the cursor.
+                        let on_cursor = cursor.is_some() && target == Some(kind);
+                        let (clicked, response) =
+                            row(ui, kind, kind == current, reason.is_none(), on_cursor);
+                        if on_cursor && cursor_moved {
+                            response.scroll_to_me(None);
                         }
-                        let first_match = enter
-                            && matching
-                                .iter()
-                                .find(|k| k.unsupported_reason(source).is_none())
-                                == Some(&kind);
-                        if (clicked || first_match) && reason.is_none() {
+                        let response = match reason {
+                            Some(reason) => response.on_hover_text(reason),
+                            None => response,
+                        };
+                        let _ = &response;
+                        let chosen = enter && target == Some(kind);
+                        if (clicked || chosen) && reason.is_none() {
                             picked = Some(kind);
                             ui.close();
                         }
@@ -132,6 +170,22 @@ pub fn menu(
     picked
 }
 
+/// The row after (`delta` 1) or before (`-1`) `cursor` among the rows that can be picked, wrapping at
+/// the ends; from no cursor, down is the first row and up the last. `None` when there are no rows.
+pub fn step_cursor(rows: &[ChartType], cursor: Option<ChartType>, delta: i32) -> Option<ChartType> {
+    if rows.is_empty() {
+        return None;
+    }
+    let count = rows.len() as i32;
+    let at = cursor.and_then(|kind| rows.iter().position(|row| *row == kind));
+    let next = match (at, delta.signum()) {
+        (Some(at), step) => (at as i32 + step).rem_euclid(count),
+        (None, 1) => 0,
+        (None, _) => count - 1,
+    };
+    rows.get(next as usize).copied()
+}
+
 /// The types whose name contains `query`, in the menu's order.
 pub fn matching_types(query: &str) -> Vec<ChartType> {
     let needle = query.trim().to_lowercase();
@@ -147,6 +201,7 @@ fn row(
     kind: ChartType,
     selected: bool,
     enabled: bool,
+    cursor: bool,
 ) -> (bool, egui::Response) {
     let width = ui.available_width();
     let sense = if enabled {
@@ -155,7 +210,7 @@ fn row(
         Sense::hover()
     };
     let (rect, response) = ui.allocate_exact_size(vec2(width, ROW_HEIGHT), sense);
-    let highlighted = enabled && response.hovered();
+    let highlighted = enabled && (response.hovered() || cursor);
     if highlighted {
         ui.painter()
             .rect_filled(rect, 5.0, theme::selected_tint(true));
@@ -553,5 +608,127 @@ mod tests {
         let (open, picked) = open_selector(DataSource::Binance, Some(pos2(560.0, 660.0)));
         assert!(!open);
         assert!(picked.is_empty());
+    }
+
+    /// Opens the menu with a click, presses `keys` one frame each, and returns what was picked.
+    fn press(source: DataSource, keys: &[Key]) -> Vec<ChartType> {
+        let ctx = egui::Context::default();
+        let screen = Rect::from_min_size(pos2(0.0, 0.0), vec2(600.0, 900.0));
+        let mut time = 0.0;
+        let mut picked = Vec::new();
+        let mut frame = |events: Vec<egui::Event>| {
+            time += 0.1;
+            let input = egui::RawInput {
+                screen_rect: Some(screen),
+                time: Some(time),
+                events,
+                ..Default::default()
+            };
+            let mut output = ctx.run_ui(input, |ui| {
+                let (_, anchor) = ui.allocate_exact_size(Vec2::splat(27.0), Sense::click());
+                if let Some(kind) = menu(ui, &anchor, source, ChartType::Candles, 7) {
+                    picked.push(kind);
+                }
+            });
+            output.textures_delta.clear();
+        };
+        let at = pos2(21.0, 21.0);
+        let click = |pressed| egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        frame(vec![egui::Event::PointerMoved(at)]);
+        frame(vec![click(true)]);
+        frame(vec![click(false)]);
+        for _ in 0..4 {
+            frame(Vec::new());
+        }
+        for key in keys {
+            frame(vec![egui::Event::Key {
+                key: *key,
+                physical_key: Some(*key),
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            }]);
+            frame(Vec::new());
+        }
+        picked
+    }
+
+    fn pickable(source: DataSource) -> Vec<ChartType> {
+        matching_types("")
+            .into_iter()
+            .filter(|kind| kind.supported_by(source))
+            .collect()
+    }
+
+    #[test]
+    fn enter_alone_picks_the_first_row_and_the_arrows_move_the_cursor_first() {
+        let rows = pickable(DataSource::Binance);
+        assert_eq!(press(DataSource::Binance, &[Key::Enter]), [rows[0]]);
+        assert_eq!(
+            press(DataSource::Binance, &[Key::ArrowDown, Key::Enter]),
+            [rows[0]],
+            "the first arrow lands on the first row"
+        );
+        assert_eq!(
+            press(
+                DataSource::Binance,
+                &[Key::ArrowDown, Key::ArrowDown, Key::Enter]
+            ),
+            [rows[1]]
+        );
+        assert_eq!(
+            press(
+                DataSource::Binance,
+                &[Key::ArrowDown, Key::ArrowDown, Key::ArrowUp, Key::Enter]
+            ),
+            [rows[0]]
+        );
+    }
+
+    #[test]
+    fn up_from_nothing_goes_to_the_last_row_and_the_cursor_skips_rows_the_source_cannot_show() {
+        let binance = pickable(DataSource::Binance);
+        assert_eq!(
+            press(DataSource::Binance, &[Key::ArrowUp, Key::Enter]),
+            [*binance.last().unwrap()]
+        );
+        assert_eq!(*binance.last().unwrap(), ChartType::SessionVolumeProfile);
+        // Stocks cannot show the order-flow types: the last row they can is Range.
+        let alpaca = pickable(DataSource::Alpaca);
+        assert!(!alpaca.contains(&ChartType::VolumeFootprint));
+        assert_eq!(
+            press(DataSource::Alpaca, &[Key::ArrowUp, Key::Enter]),
+            [*alpaca.last().unwrap()]
+        );
+    }
+
+    #[test]
+    fn the_cursor_wraps_at_both_ends() {
+        let rows = [ChartType::Candles, ChartType::Bars, ChartType::Range];
+        assert_eq!(step_cursor(&rows, None, 1), Some(ChartType::Candles));
+        assert_eq!(step_cursor(&rows, None, -1), Some(ChartType::Range));
+        assert_eq!(
+            step_cursor(&rows, Some(ChartType::Range), 1),
+            Some(ChartType::Candles)
+        );
+        assert_eq!(
+            step_cursor(&rows, Some(ChartType::Candles), -1),
+            Some(ChartType::Range)
+        );
+        assert_eq!(
+            step_cursor(&rows, Some(ChartType::Bars), 1),
+            Some(ChartType::Range)
+        );
+        // A cursor on a row that is no longer there starts again; no rows, no cursor.
+        assert_eq!(
+            step_cursor(&rows, Some(ChartType::Kagi), 1),
+            Some(ChartType::Candles)
+        );
+        assert_eq!(step_cursor(&[], None, 1), None);
     }
 }

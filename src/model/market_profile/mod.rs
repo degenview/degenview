@@ -18,6 +18,8 @@
 //! The per-type builders (footprint, TPO, session profile) sit on top of these and arrive with the
 //! chart types that draw them. Nothing here fetches, draws or reads the clock.
 
+#[cfg(test)]
+mod bench;
 pub mod feed;
 pub mod flow;
 pub mod footprint;
