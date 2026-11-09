@@ -39,6 +39,7 @@ pub(super) struct Drawn {
     pub(super) segments: Vec<([Pos2; 2], Stroke)>,
     pub(super) texts: Vec<(Pos2, String, f32)>,
     pub(super) meshes: Vec<Arc<egui::epaint::Mesh>>,
+    pub(super) rects: Vec<(Rect, Color32)>,
 }
 
 fn collect(shape: &Shape, out: &mut Drawn) {
@@ -59,6 +60,7 @@ fn collect(shape: &Shape, out: &mut Drawn) {
             ));
         }
         Shape::Mesh(mesh) => out.meshes.push(Arc::clone(mesh)),
+        Shape::Rect(rect) => out.rects.push((rect.rect, rect.fill)),
         Shape::Vec(shapes) => shapes.iter().for_each(|shape| collect(shape, out)),
         _ => {}
     }
