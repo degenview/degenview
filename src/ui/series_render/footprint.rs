@@ -211,7 +211,7 @@ fn visible_peak(frame: &SeriesFrame, set: &FootprintSet) -> f64 {
         .fold(0.0, f64::max)
 }
 
-fn plain_candle(frame: &SeriesFrame, index: usize) {
+pub(super) fn plain_candle(frame: &SeriesFrame, index: usize) {
     let bar = &frame.bars[index];
     let settings = frame.style.candle_settings().copied().unwrap_or_default();
     let look = chart_look::candle_look(

@@ -95,6 +95,9 @@ pub struct ChartConfig {
     /// The compared markets and how they look: a change is a change to the layout.
     #[serde(default, skip_serializing_if = "super::overlay::OverlayList::is_empty")]
     pub overlays: super::overlay::OverlayList,
+    /// The TPO profiles split or merged: a change is a change to the layout.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tpo_edits: Vec<super::market_profile::tpo::TpoEdit>,
 }
 
 /// The part of a workspace a saved layout owns, reduced to what decides
@@ -197,6 +200,7 @@ mod tests {
                     appearance: crate::model::ChartAppearance::default(),
                     card: None,
                     overlays: Default::default(),
+                    tpo_edits: Default::default(),
                 },
                 ChartConfig {
                     id: 2,
@@ -206,6 +210,7 @@ mod tests {
                     appearance: crate::model::ChartAppearance::default(),
                     card: None,
                     overlays: Default::default(),
+                    tpo_edits: Default::default(),
                 },
             ],
             columns: vec![vec![1], vec![2]],
@@ -231,6 +236,7 @@ mod tests {
                 appearance: crate::model::ChartAppearance::default(),
                 card: None,
                 overlays: Default::default(),
+                tpo_edits: Default::default(),
             }],
             columns: vec![vec![1]],
             sync: Default::default(),

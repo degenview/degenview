@@ -100,6 +100,8 @@ pub mod script_catalog;
 mod series_render;
 #[cfg(test)]
 pub(crate) use series_render::paint_gallery_for_tests;
+#[cfg(test)]
+pub(crate) use series_render::tpo_gallery_picture;
 pub mod session_stats_view;
 pub mod settings_about;
 pub mod settings_ai;

@@ -9,6 +9,7 @@
 //! piece gets its own profile, as TradingView documents.
 
 use crate::pine::timezone::Zone;
+use serde::{Deserialize, Serialize};
 
 pub const DAY_MS: i64 = 86_400_000;
 const MINUTE_MS: i64 = 60_000;
@@ -134,7 +135,7 @@ pub fn period_containing(period: Period, time_ms: i64, zone: Option<Zone>) -> Se
 
 /// One window of a custom session: `HHMM-HHMM` optionally followed by `:` and the days it runs on
 /// (digits 1 to 7, Sunday is 1: TradingView's numbering).
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct SessionSpan {
     /// Minutes after local midnight the window opens (0..1440).
     pub start_min: u16,
@@ -184,6 +185,21 @@ impl SessionSpan {
     pub fn length_min(&self) -> i64 {
         let length = (i64::from(self.end_min) - i64::from(self.start_min)).rem_euclid(1_440);
         if length == 0 { 1_440 } else { length }
+    }
+
+    /// The window as `HHMM-HHMM`, with `:days` unless it runs every day (what [`Self::parse`] reads).
+    pub fn to_text(self) -> String {
+        let clock = |minutes: u16| format!("{:02}{:02}", minutes / 60, minutes % 60);
+        let mut text = format!("{}-{}", clock(self.start_min), clock(self.end_min));
+        if self.days != Self::ALL_DAYS {
+            text.push(':');
+            for day in 0..7u8 {
+                if self.days & (1 << day) != 0 {
+                    text.push(char::from(b'1' + day));
+                }
+            }
+        }
+        text
     }
 
     fn runs_on(&self, weekday: i64) -> bool {
@@ -408,6 +424,19 @@ mod tests {
         assert_eq!(SessionSpan::parse("2200-0600").unwrap().length_min(), 480);
         assert_eq!(SessionSpan::parse("0000-0000").unwrap().length_min(), 1_440);
         assert_eq!(SessionSpan::parse("0000-2400").unwrap().length_min(), 1_440);
+    }
+
+    #[test]
+    fn a_window_reads_back_as_the_text_it_came_from() {
+        for text in [
+            "0930-1600",
+            "0930-1600:23456",
+            "2200-0600",
+            "0000-2400",
+            "0000-0000:17",
+        ] {
+            assert_eq!(SessionSpan::parse(text).unwrap().to_text(), text);
+        }
     }
 
     #[test]

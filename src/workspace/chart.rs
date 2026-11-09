@@ -62,7 +62,20 @@ pub(super) struct Chart {
     pub(super) card_runtime: Option<CardRuntime>,
     /// The order-flow chart types' computation for this chart (idle on every other type).
     pub(super) profile: super::profiles::ProfileRuntime,
+    /// The TPO profiles this chart's user split or merged, replayed over the periods the settings
+    /// give. Saved with the layout; never in a template.
+    pub(super) tpo_edits: Vec<crate::model::market_profile::tpo::TpoEdit>,
+    /// What the edits were made under (periods, block size, sessions): a change drops them.
+    pub(super) tpo_edit_key: Option<TpoEditKey>,
 }
+
+pub(super) type TpoEditKey = (
+    crate::model::chart_type::PeriodKind,
+    u32,
+    u32,
+    crate::model::chart_type::SessionMode,
+    [Option<crate::model::market_profile::sessions::SessionSpan>; 5],
+);
 
 /// What one fetch brought back: the candles the chart reads, and for a multi-choice prediction
 /// market each choice's own history.
@@ -124,6 +137,8 @@ impl Chart {
             pm_series: Vec::new(),
             overlays: OverlayList::new(),
             profile: super::profiles::ProfileRuntime::default(),
+            tpo_edits: Vec::new(),
+            tpo_edit_key: None,
             image_url: None,
             card: None,
             card_runtime: None,
@@ -214,6 +229,7 @@ impl Chart {
         chart.chart.set_title(saved.title);
         chart.pm_series = saved.pm_series;
         chart.overlays = saved.overlays;
+        chart.tpo_edits = saved.tpo_edits;
         chart.image_url = saved.image_url;
         chart.fetch(timeframe, ctx);
         chart.scale_mode = scale_mode;
@@ -629,6 +645,7 @@ mod tests {
             ],
             image_url: Some("https://img/fed.png".into()),
             overlays: Default::default(),
+            tpo_edits: Default::default(),
         };
         let encoded = serde_json::to_value(&saved).expect("serialize");
         assert_eq!(encoded["pm_series"][0]["tokenID"], "111");

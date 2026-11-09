@@ -171,6 +171,9 @@ fn icon_for(item: &Item) -> Option<Icon> {
         Command::ToggleTable => Icon::List,
         Command::ToggleObjectTree => Icon::Layers,
         Command::ToggleSessionStats => Icon::ChartUptrend,
+        Command::SplitProfile(_) | Command::MergeProfile(_) | Command::ResetProfileEdits => {
+            Icon::Layers
+        }
         Command::ApplyTemplate(_) => Icon::Palette,
         Command::SaveTemplate => Icon::Plus,
         Command::ManageTemplates => Icon::Sliders,

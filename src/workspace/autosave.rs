@@ -120,6 +120,7 @@ mod tests {
                 appearance: crate::model::ChartAppearance::default(),
                 card: None,
                 overlays: Default::default(),
+                tpo_edits: Default::default(),
             }],
             columns: vec![vec![1]],
             sync: Default::default(),

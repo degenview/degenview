@@ -2336,6 +2336,28 @@ impl ChartCard {
             });
         }
         let projection = view.projection(plot, bars, self.appearance.price_format(), ui.ctx());
+        // What a right-click on a letter of a TPO profile is, read with the geometry the painter used.
+        let tpo_feed = self.profile_feed.clone();
+        let tpo_settings = self.appearance.style.tpo;
+        let tpo_on = chart_type == ChartType::TimePriceOpportunity;
+        let shown_bars = &bars[view.start..view.end];
+        let (slot, lead) = (view.slot_width, view.lead);
+        let x_for = |index: usize| plot.left() + slot * (index as f32 + 0.5) + slot * lead;
+        let profile_target = |at: Pos2| {
+            let set = tpo_feed.as_ref()?.tpo.as_deref().filter(|_| tpo_on)?;
+            series_render::tpo_target(
+                &series_render::TpoGeo {
+                    plot,
+                    bars: shown_bars,
+                    x_for: &x_for,
+                    slot_width: slot,
+                    scale: &view.scale,
+                },
+                set,
+                &tpo_settings,
+                at,
+            )
+        };
         pointer.context = self.context_request(
             &response,
             &regions,
@@ -2343,6 +2365,7 @@ impl ChartCard {
             &projection,
             &view.scale,
             drawing,
+            &profile_target,
         );
         let mut layer = std::mem::take(&mut self.layer);
         let mut overlays = LiveOverlays {

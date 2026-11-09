@@ -64,11 +64,12 @@ sample prices (a price-based type's box/reversal/range size is replaced by one t
 | Point & Figure | Price-based | constructed | column OHLC | box size, reversal boxes, source, colours, outlines |
 | Range | Price-based | constructed | range-bar OHLC | range (traditional / ATR / %), candles or bars |
 | Volume footprint | Order flow & profiles | standard OHLC | real OHLC | row size, display, type, gradient, value area, POC, summary, imbalances, candle; see [Market profiles](market-profiles.md) |
+| Time price opportunity | Order flow & profiles | standard OHLC | real OHLC | period, block size, row size, value area, sessions, gradient, letters/blocks, levels, volume profile; split and merge from the right-click menu; see [Market profiles](market-profiles.md) |
 
 Switching Candles ⇄ Line ⇄ Bars never changes what scripts and indicators receive. Switching to or
 from a price-based type rebuilds them against the other series. A source that draws a line
 (prediction markets, CoinMarketCap indices) keeps its line and the toolbar's chart-type button is disabled; Volume Candles
-is unavailable on a source that reports no volume, and Volume footprint on a source without intraday candles (everything but Binance, Coinbase and DEX markets), each with the reason in the menu. A saved type the
+is unavailable on a source that reports no volume, and Volume footprint and Time price opportunity on a source without intraday candles (everything but Binance, Coinbase and DEX markets), each with the reason in the menu. A saved type the
 source cannot show falls back to candles on screen and is kept for when it can.
 
 ## Construction rules

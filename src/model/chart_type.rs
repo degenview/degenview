@@ -40,6 +40,7 @@ pub enum ChartType {
     Baseline,
     Columns,
     VolumeFootprint,
+    TimePriceOpportunity,
 }
 
 /// Where a chart type sits in the selector.
@@ -104,7 +105,7 @@ impl ChartKind {
 }
 
 impl ChartType {
-    pub const ALL: [Self; 19] = [
+    pub const ALL: [Self; 20] = [
         Self::Candles,
         Self::HollowCandles,
         Self::Bars,
@@ -124,6 +125,7 @@ impl ChartType {
         Self::PointAndFigure,
         Self::Range,
         Self::VolumeFootprint,
+        Self::TimePriceOpportunity,
     ];
 
     pub const fn label(self) -> &'static str {
@@ -147,6 +149,7 @@ impl ChartType {
             Self::Baseline => "Baseline",
             Self::Columns => "Columns",
             Self::VolumeFootprint => "Volume footprint",
+            Self::TimePriceOpportunity => "Time price opportunity",
         }
     }
 
@@ -172,6 +175,7 @@ impl ChartType {
             Self::Baseline => "baseline",
             Self::Columns => "columns",
             Self::VolumeFootprint => "volume_footprint",
+            Self::TimePriceOpportunity => "time_price_opportunity",
         }
     }
 
@@ -195,7 +199,7 @@ impl ChartType {
             | Self::LineBreak
             | Self::PointAndFigure
             | Self::Range => ChartGroup::PriceBased,
-            Self::VolumeFootprint => ChartGroup::OrderFlow,
+            Self::VolumeFootprint | Self::TimePriceOpportunity => ChartGroup::OrderFlow,
         }
     }
 
@@ -244,7 +248,7 @@ impl ChartType {
         if self == Self::VolumeCandles && !source.provides_volume() {
             return Some("This source reports no volume");
         }
-        if self == Self::VolumeFootprint {
+        if matches!(self, Self::VolumeFootprint | Self::TimePriceOpportunity) {
             return match source {
                 DataSource::Binance | DataSource::Coinbase | DataSource::DexScreener => None,
                 DataSource::Alpaca => Some("No intraday candles for stocks yet"),
@@ -918,6 +922,268 @@ impl FootprintSettings {
     }
 }
 
+/// How long a TPO profile's period is.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PeriodKind {
+    #[default]
+    Day,
+    Week,
+    Month,
+}
+
+/// Which stretches of time get a profile.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionMode {
+    /// One profile per period.
+    #[default]
+    All,
+    /// One profile per custom window (up to five, in UTC).
+    Custom,
+}
+
+/// Which side of the TPO the volume profile sits on.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VolumePlacement {
+    Left,
+    #[default]
+    Right,
+}
+
+/// A level a TPO profile can mark: shown or not, and (for the ones that can) carried right until
+/// price reaches it again.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(default)]
+pub struct TpoLevel {
+    pub show: bool,
+    pub extend: bool,
+    pub color: Option<Rgba>,
+}
+
+impl TpoLevel {
+    const fn on() -> Self {
+        Self {
+            show: true,
+            extend: false,
+            color: None,
+        }
+    }
+
+    const fn off() -> Self {
+        Self {
+            show: false,
+            extend: false,
+            color: None,
+        }
+    }
+}
+
+impl Default for TpoLevel {
+    fn default() -> Self {
+        Self::on()
+    }
+}
+
+/// The volume profile beside the TPO.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(default)]
+pub struct TpoVolume {
+    pub show: bool,
+    pub placement: VolumePlacement,
+    /// Write each row's volume at the end of its bar.
+    pub values: bool,
+    pub show_poc: bool,
+    pub show_vah: bool,
+    pub show_val: bool,
+    pub color: Option<Rgba>,
+    pub value_area_color: Option<Rgba>,
+}
+
+impl Default for TpoVolume {
+    fn default() -> Self {
+        Self {
+            show: true,
+            placement: VolumePlacement::Right,
+            values: false,
+            show_poc: true,
+            show_vah: false,
+            show_val: false,
+            color: None,
+            value_area_color: None,
+        }
+    }
+}
+
+/// The block sizes (minutes) a TPO offers.
+pub const TPO_BLOCK_MINUTES: [u32; 7] = [5, 10, 15, 30, 60, 120, 240];
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(default)]
+pub struct TpoSettings {
+    pub period: PeriodKind,
+    pub period_count: u32,
+    pub block_minutes: u32,
+    pub row_mode: RowMode,
+    pub ticks_per_row: u32,
+    pub value_area_percent: u32,
+    pub sessions: SessionMode,
+    pub custom: [Option<super::market_profile::sessions::SessionSpan>; 5],
+    /// Blocks the initial balance covers.
+    pub initial_balance_blocks: u32,
+    /// The four gradient colours: the first two span the blocks A to Z, the last two a to z.
+    pub gradient: [Option<Rgba>; 4],
+    pub show_blocks: bool,
+    pub show_letters: bool,
+    /// How much of its colour a row outside the value area keeps, in percent.
+    pub opacity_outside_value_area: u32,
+    /// Put each letter in the column of its block (leaving gaps) instead of packing a row's letters
+    /// together.
+    pub expand_blocks: bool,
+    pub poc: TpoLevel,
+    pub vah: TpoLevel,
+    pub val: TpoLevel,
+    pub midpoint: TpoLevel,
+    pub open: TpoLevel,
+    pub close: TpoLevel,
+    pub poor_high: TpoLevel,
+    pub poor_low: TpoLevel,
+    pub single_prints: TpoLevel,
+    pub initial_balance: TpoLevel,
+    pub volume: TpoVolume,
+}
+
+impl Default for TpoSettings {
+    fn default() -> Self {
+        Self {
+            period: PeriodKind::Day,
+            period_count: 1,
+            block_minutes: 30,
+            row_mode: RowMode::Auto,
+            ticks_per_row: 10,
+            value_area_percent: 70,
+            sessions: SessionMode::All,
+            custom: [None; 5],
+            initial_balance_blocks: 2,
+            gradient: [None; 4],
+            show_blocks: true,
+            show_letters: true,
+            opacity_outside_value_area: 55,
+            expand_blocks: false,
+            poc: TpoLevel::on(),
+            vah: TpoLevel::on(),
+            val: TpoLevel::on(),
+            midpoint: TpoLevel::off(),
+            open: TpoLevel::off(),
+            close: TpoLevel::off(),
+            poor_high: TpoLevel::on(),
+            poor_low: TpoLevel::on(),
+            single_prints: TpoLevel::on(),
+            initial_balance: TpoLevel::on(),
+            volume: TpoVolume::default(),
+        }
+    }
+}
+
+/// The part of the TPO settings that changes what is built (periods, blocks, rows, the value-area
+/// share): looks never rebuild, a template never changes these, and changing the period or the block
+/// size drops a chart's splits and merges (TradingView's rule).
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct TpoShape {
+    pub period: PeriodKind,
+    pub period_count: u32,
+    pub block_minutes: u32,
+    pub row_mode: RowMode,
+    pub ticks_per_row: u32,
+    pub value_area_percent: u32,
+    pub sessions: SessionMode,
+    pub custom: [Option<super::market_profile::sessions::SessionSpan>; 5],
+    pub initial_balance_blocks: u32,
+}
+
+impl TpoShape {
+    pub fn period(&self) -> super::market_profile::sessions::Period {
+        use super::market_profile::sessions::Period;
+        match self.period {
+            PeriodKind::Day => Period::Days(self.period_count),
+            PeriodKind::Week => Period::Weeks(self.period_count),
+            PeriodKind::Month => Period::Months(self.period_count),
+        }
+    }
+
+    /// The custom windows, when the profiles are cut by them (at least one is valid).
+    pub fn custom_sessions(&self) -> Option<Vec<super::market_profile::sessions::SessionSpan>> {
+        if self.sessions != SessionMode::Custom {
+            return None;
+        }
+        let spans: Vec<_> = self.custom.iter().flatten().copied().collect();
+        (!spans.is_empty()).then_some(spans)
+    }
+
+    /// What decides which splits and merges still mean something: the period and the block size.
+    pub fn edit_key(
+        &self,
+    ) -> (
+        PeriodKind,
+        u32,
+        u32,
+        SessionMode,
+        [Option<super::market_profile::sessions::SessionSpan>; 5],
+    ) {
+        (
+            self.period,
+            self.period_count,
+            self.block_minutes,
+            self.sessions,
+            self.custom,
+        )
+    }
+}
+
+impl TpoSettings {
+    pub fn shape(&self) -> TpoShape {
+        TpoShape {
+            period: self.period,
+            period_count: self.period_count,
+            block_minutes: self.block_minutes,
+            row_mode: self.row_mode,
+            ticks_per_row: self.ticks_per_row,
+            value_area_percent: self.value_area_percent,
+            sessions: self.sessions,
+            custom: self.custom,
+            initial_balance_blocks: self.initial_balance_blocks,
+        }
+    }
+
+    /// Takes the shaping fields of `own`, keeping this one's look.
+    pub fn keep_shape_of(&mut self, own: &Self) {
+        self.period = own.period;
+        self.period_count = own.period_count;
+        self.block_minutes = own.block_minutes;
+        self.row_mode = own.row_mode;
+        self.ticks_per_row = own.ticks_per_row;
+        self.value_area_percent = own.value_area_percent;
+        self.sessions = own.sessions;
+        self.custom = own.custom;
+        self.initial_balance_blocks = own.initial_balance_blocks;
+    }
+
+    fn sanitized(mut self) -> Self {
+        self.period_count = self.period_count.clamp(1, 60);
+        // Only the sizes TradingView offers: anything else becomes the nearest one.
+        self.block_minutes = TPO_BLOCK_MINUTES
+            .into_iter()
+            .min_by_key(|size| size.abs_diff(self.block_minutes))
+            .unwrap_or(30);
+        self.ticks_per_row = self.ticks_per_row.clamp(1, 100_000);
+        self.value_area_percent = self.value_area_percent.clamp(1, 100);
+        self.initial_balance_blocks = self.initial_balance_blocks.clamp(1, 20);
+        self.opacity_outside_value_area = self.opacity_outside_value_area.min(100);
+        self
+    }
+}
+
 /// The chart type and every type's own settings. Old rows without it decode as plain candles.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(default)]
@@ -942,6 +1208,7 @@ pub struct ChartStyle {
     pub point_figure: PointFigureSettings,
     pub range: RangeSettings,
     pub footprint: FootprintSettings,
+    pub tpo: TpoSettings,
 }
 
 impl ChartStyle {
@@ -1055,7 +1322,8 @@ impl ChartStyle {
             ChartType::Line
             | ChartType::LineWithMarkers
             | ChartType::StepLine
-            | ChartType::Area => (None, None),
+            | ChartType::Area
+            | ChartType::TimePriceOpportunity => (None, None),
         };
         (up.unwrap_or(base.0), down.unwrap_or(base.1))
     }
@@ -1092,6 +1360,7 @@ impl ChartStyle {
             ChartType::Baseline => self.baseline = fresh.baseline,
             ChartType::Columns => self.columns = fresh.columns,
             ChartType::VolumeFootprint => self.footprint = fresh.footprint,
+            ChartType::TimePriceOpportunity => self.tpo = fresh.tpo,
         }
     }
 
@@ -1114,6 +1383,7 @@ impl ChartStyle {
         self.baseline.width = self.baseline.width.clamp(1, 4);
         self.kagi.width = self.kagi.width.clamp(1, 4);
         self.footprint = self.footprint.sanitized();
+        self.tpo = self.tpo.sanitized();
         self
     }
 }
@@ -1493,5 +1763,138 @@ mod tests {
         theirs.keep_shape_of(&base);
         assert_eq!(theirs.ticks_per_row, base.ticks_per_row);
         assert_eq!(theirs.buy_color, Some([1, 1, 1, 255]));
+    }
+
+    // MARK: Time price opportunity
+
+    #[test]
+    fn the_tpo_is_an_order_flow_type_over_the_real_candles_for_the_same_sources_as_the_footprint() {
+        let kind = ChartType::TimePriceOpportunity;
+        assert_eq!(kind.label(), "Time price opportunity");
+        assert_eq!(kind.slug(), "time_price_opportunity");
+        assert_eq!(kind.group(), ChartGroup::OrderFlow);
+        assert_eq!(kind.data_class(), DataClass::StandardOhlc);
+        assert!(!kind.is_synthetic());
+        assert_eq!(kind.kind(), ChartKind::Standard);
+        for source in [
+            DataSource::Binance,
+            DataSource::Coinbase,
+            DataSource::DexScreener,
+        ] {
+            assert!(kind.supported_by(source), "{source:?}");
+        }
+        for source in [
+            DataSource::Alpaca,
+            DataSource::CoinGecko,
+            DataSource::Kalshi,
+        ] {
+            assert!(!kind.supported_by(source), "{source:?}");
+        }
+    }
+
+    #[test]
+    fn the_tpo_defaults_follow_tradingview_where_it_says_and_an_old_row_has_them() {
+        let tpo = TpoSettings::default();
+        assert_eq!((tpo.period, tpo.period_count), (PeriodKind::Day, 1));
+        assert_eq!(tpo.block_minutes, 30);
+        assert_eq!(tpo.row_mode, RowMode::Auto);
+        assert_eq!(tpo.value_area_percent, 70);
+        let old: ChartStyle = serde_json::from_str(r#"{"chart_type":"volume_footprint"}"#).unwrap();
+        assert_eq!(old.tpo, tpo);
+        let mut style = ChartStyle {
+            chart_type: ChartType::TimePriceOpportunity,
+            ..ChartStyle::default()
+        };
+        style.tpo.block_minutes = 60;
+        style.tpo.sessions = SessionMode::Custom;
+        style.tpo.custom[1] =
+            crate::model::market_profile::sessions::SessionSpan::parse("0930-1600:23456");
+        style.tpo.poc.extend = true;
+        style.tpo.volume.placement = VolumePlacement::Left;
+        let back: ChartStyle =
+            serde_json::from_str(&serde_json::to_string(&style).unwrap()).unwrap();
+        assert_eq!(back, style);
+    }
+
+    #[test]
+    fn impossible_tpo_values_are_healed_and_a_block_size_becomes_one_tradingview_offers() {
+        let mut style = ChartStyle::default();
+        style.tpo.period_count = 0;
+        style.tpo.block_minutes = 40;
+        style.tpo.ticks_per_row = 0;
+        style.tpo.value_area_percent = 500;
+        style.tpo.initial_balance_blocks = 0;
+        style.tpo.opacity_outside_value_area = 900;
+        let healed = style.sanitized().tpo;
+        assert_eq!(healed.period_count, 1);
+        assert_eq!(healed.block_minutes, 30, "40 is nearer 30 than 60");
+        assert_eq!(healed.ticks_per_row, 1);
+        assert_eq!(healed.value_area_percent, 100);
+        assert_eq!(healed.initial_balance_blocks, 1);
+        assert_eq!(healed.opacity_outside_value_area, 100);
+        style.tpo.block_minutes = 1_000;
+        assert_eq!(style.sanitized().tpo.block_minutes, 240);
+    }
+
+    #[test]
+    fn the_tpo_shape_is_what_decides_the_profiles_and_a_look_never_rebuilds() {
+        let base = TpoSettings::default();
+        let mut restyled = base;
+        restyled.gradient[0] = Some([1, 2, 3, 255]);
+        restyled.show_letters = false;
+        restyled.poc.extend = true;
+        restyled.volume.show = false;
+        restyled.opacity_outside_value_area = 10;
+        assert_eq!(base.shape(), restyled.shape());
+        assert_eq!(base.shape().edit_key(), restyled.shape().edit_key());
+        let mut reshaped = base;
+        reshaped.block_minutes = 60;
+        assert_ne!(base.shape(), reshaped.shape());
+        assert_ne!(
+            base.shape().edit_key(),
+            reshaped.shape().edit_key(),
+            "splits mean nothing then"
+        );
+        // Row size and the value area change what is built but not where a split is.
+        let mut rows = base;
+        rows.ticks_per_row = 77;
+        assert_ne!(base.shape(), rows.shape());
+        assert_eq!(base.shape().edit_key(), rows.shape().edit_key());
+        // A template over a chart keeps that chart's shape and takes the look.
+        let mut theirs = restyled;
+        theirs.period = PeriodKind::Week;
+        theirs.keep_shape_of(&base);
+        assert_eq!(theirs.period, PeriodKind::Day);
+        assert!(!theirs.show_letters);
+    }
+
+    #[test]
+    fn custom_sessions_are_only_used_when_chosen_and_one_is_valid() {
+        let mut tpo = TpoSettings::default();
+        tpo.custom[0] = crate::model::market_profile::sessions::SessionSpan::parse("0900-1700");
+        assert!(
+            tpo.shape().custom_sessions().is_none(),
+            "All ignores the windows"
+        );
+        tpo.sessions = SessionMode::Custom;
+        assert_eq!(tpo.shape().custom_sessions().unwrap().len(), 1);
+        tpo.custom[0] = None;
+        assert!(tpo.shape().custom_sessions().is_none(), "no valid window");
+    }
+
+    #[test]
+    fn switching_away_from_the_tpo_keeps_its_settings_and_reset_touches_only_it() {
+        let mut style = ChartStyle {
+            chart_type: ChartType::TimePriceOpportunity,
+            ..ChartStyle::default()
+        };
+        style.tpo.value_area_percent = 55;
+        style.footprint.stacked_levels = 7;
+        style.chart_type = ChartType::VolumeFootprint;
+        style.chart_type = ChartType::TimePriceOpportunity;
+        assert_eq!(style.tpo.value_area_percent, 55);
+        style.reset_selected();
+        assert_eq!(style.tpo, TpoSettings::default());
+        assert_eq!(style.footprint.stacked_levels, 7);
     }
 }

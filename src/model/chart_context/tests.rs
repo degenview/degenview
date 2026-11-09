@@ -556,3 +556,76 @@ fn stale_messages_are_actionable_sentences() {
         assert!(stale.message().ends_with('.'));
     }
 }
+
+// MARK: TPO letters
+
+fn tpo_context(letter: char, first_block: bool, merge_at_ms: Option<i64>) -> ChartContext {
+    ChartContext {
+        target: Target::TpoBlock {
+            letter,
+            split_at_ms: 1_000,
+            first_block,
+            merge_at_ms,
+        },
+        ..context(Some(100.0))
+    }
+}
+
+#[test]
+fn a_letters_menu_offers_split_merge_and_reset_before_the_ordinary_entries() {
+    let entries = menu(&tpo_context('D', false, Some(500)), &facts());
+    let labels = labels(&entries);
+    assert_eq!(
+        &labels[..3],
+        [
+            "Split profile at D",
+            "Merge with previous profile",
+            "Reset all merges and splits"
+        ]
+    );
+    assert!(
+        labels.iter().any(|label| label.starts_with("Copy price")),
+        "the plot's own entries follow"
+    );
+    let split = find(&entries, &Command::SplitProfile(1_000)).expect("split");
+    assert!(split.is_enabled());
+    let merge = find(&entries, &Command::MergeProfile(500)).expect("merge");
+    assert!(merge.is_enabled());
+}
+
+#[test]
+fn a_profile_cannot_be_split_at_its_start_or_merged_with_nothing_or_reset_when_untouched() {
+    let entries = menu(&tpo_context('A', true, None), &facts());
+    assert!(
+        find(&entries, &Command::SplitProfile(1_000))
+            .unwrap()
+            .disabled
+            .is_some()
+    );
+    let merge = items(&entries)
+        .into_iter()
+        .find(|item| item.label == "Merge with previous profile")
+        .unwrap();
+    assert!(merge.disabled.is_some());
+    let reset = find(&entries, &Command::ResetProfileEdits).unwrap();
+    assert!(reset.disabled.is_some(), "nothing has been split or merged");
+    let touched = Facts {
+        tpo_edits: 2,
+        ..facts()
+    };
+    let entries = menu(&tpo_context('A', true, None), &touched);
+    assert!(
+        find(&entries, &Command::ResetProfileEdits)
+            .unwrap()
+            .is_enabled()
+    );
+}
+
+#[test]
+fn a_letters_menu_stays_valid_while_the_chart_is_the_same() {
+    let live = Live {
+        chart: Some(("BTCUSD".to_owned(), DataSource::Binance)),
+        ..Live::default()
+    };
+    assert!(check(&tpo_context('B', false, None), &live).is_ok());
+}

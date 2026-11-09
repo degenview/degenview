@@ -1,27 +1,30 @@
-//! The order-flow chart types' data, per chart: what a chart asks the profile hub for, the footprint
+//! The order-flow chart types' data, per chart: what a chart asks the profile hub for, the set
 //! computed from it on a worker, and the finished set handed to the card.
 //!
 //! The card draws and the hub fetches; this is the part between. Once a frame, for every market chart
-//! on an order-flow type:
+//! on an order-flow type (the volume footprint, the TPO):
 //!
 //! 1. the finer data it needs is asked of the [`ProfileHub`](super::profile_hub::ProfileHub) (a
-//!    comparison when nothing changed);
-//! 2. when anything the footprint depends on changed (the bars, the finer candles, the trades, the
-//!    settings that shape it, the replay position) a computation is started on the work queue, one at
-//!    a time per chart, newest request wins;
-//! 3. a finished set is handed to the card; completed bars are cached across computations, so a live
-//!    trade rebuilds the forming bar only.
+//!    comparison when nothing changed): the footprint wants the finest candles that cut its bar (and
+//!    trades), the TPO 5-minute candles back to its oldest period;
+//! 2. when anything the set depends on changed (the bars, the finer data, the settings that shape it,
+//!    the splits and merges, the replay position) a computation is started on the work queue, one at a
+//!    time per chart, newest request wins;
+//! 3. a finished set is handed to the card; what was built for completed bars or periods is cached
+//!    across computations, so a live candle or trade rebuilds only what it touches.
 //!
 //! A chart on another type drops its hold on the hub. Replay hands the computation the bars up to the
-//! replay position, so nothing after it is ever read.
+//! replay position and tells the TPO not to read candles past the end of the last of them, so nothing
+//! after it is ever read.
 
 use super::chart::displayed_candles;
 use super::profile_hub::{CandleShared, FlowStatus, MAX_CANDLES, ProfileNeed, TradeShared};
-use crate::model::chart_type::{ChartType, FootprintShape};
+use crate::model::chart_type::{ChartType, FootprintShape, TpoShape};
 use crate::model::market_profile::feed::ProfileFeed;
 use crate::model::market_profile::footprint::{
     self, Cache, FootprintSet, MAX_BARS, SetInput, SetStatus,
 };
+use crate::model::market_profile::tpo::{self, TpoEdit, TpoSet};
 use crate::model::{InstrumentId, Kline};
 use eframe::egui;
 use std::hash::{Hash, Hasher};
@@ -29,15 +32,21 @@ use std::sync::atomic::Ordering;
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, PoisonError};
 
-/// One chart's footprint computation state.
+/// The candles a TPO is built from: every block size TradingView offers is a multiple of five minutes.
+const TPO_INTERVAL: &str = "5m";
+const TPO_INTERVAL_MS: i64 = 300_000;
+
+/// One chart's computation state.
 #[derive(Default)]
 pub(super) struct ProfileRuntime {
+    /// The type the state below belongs to.
+    kind: Option<ChartType>,
     /// What the last computation was started for (or the card was last given).
     key: Option<u64>,
     /// The running computation's answer.
     inbox: Option<Receiver<Computed>>,
-    /// The cache of built bars, held here between computations and lent to each.
-    cache: Option<Cache>,
+    footprint_cache: Option<Cache>,
+    tpo_cache: Option<tpo::Cache>,
     /// What the next computation is for, when one is already running.
     waiting: Option<Box<Job>>,
     /// Whether the card holds a feed of this runtime's.
@@ -46,11 +55,29 @@ pub(super) struct ProfileRuntime {
 
 struct Computed {
     key: u64,
-    set: FootprintSet,
-    cache: Cache,
+    done: Done,
 }
 
-struct Job {
+enum Done {
+    Footprint(FootprintSet, Cache),
+    Tpo(TpoSet, tpo::Cache),
+}
+
+enum Job {
+    Footprint(Box<FootprintJob>),
+    Tpo(Box<TpoJob>),
+}
+
+impl Job {
+    fn key(&self) -> u64 {
+        match self {
+            Self::Footprint(job) => job.key,
+            Self::Tpo(job) => job.key,
+        }
+    }
+}
+
+struct FootprintJob {
     key: u64,
     bars: Vec<Kline>,
     bar_ms: i64,
@@ -59,38 +86,69 @@ struct Job {
     shape: FootprintShape,
 }
 
+struct TpoJob {
+    key: u64,
+    bars: Vec<Kline>,
+    bar_ms: i64,
+    candles: Arc<CandleShared>,
+    shape: TpoShape,
+    edits: Vec<TpoEdit>,
+    until_ms: i64,
+}
+
 fn hash_of(parts: impl Hash) -> u64 {
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     parts.hash(&mut hasher);
     hasher.finish()
 }
 
+fn last_bar_signature(bars: &[Kline]) -> (usize, Option<i64>, Option<[u64; 6]>) {
+    (
+        bars.len(),
+        bars.first().map(|bar| bar.open_time),
+        bars.last().map(|bar| {
+            [
+                bar.open_time as u64,
+                bar.open.to_bits(),
+                bar.high.to_bits(),
+                bar.low.to_bits(),
+                bar.close.to_bits(),
+                bar.volume.to_bits(),
+            ]
+        }),
+    )
+}
+
 /// What the footprint of `bars` depends on, hashed: change any and it is built again.
-fn key_of(
+fn footprint_key(
     bars: &[Kline],
     shape: FootprintShape,
     candle_revision: u64,
     trade_revision: Option<u64>,
     interval: &str,
 ) -> u64 {
-    let last = bars.last();
     hash_of((
-        bars.len(),
-        bars.first().map(|bar| bar.open_time),
-        last.map(|bar| {
-            (
-                bar.open_time,
-                bar.open.to_bits(),
-                bar.high.to_bits(),
-                bar.low.to_bits(),
-                bar.close.to_bits(),
-                bar.volume.to_bits(),
-            )
-        }),
+        last_bar_signature(bars),
         shape,
         candle_revision,
         trade_revision,
         interval,
+    ))
+}
+
+fn tpo_key(
+    bars: &[Kline],
+    shape: TpoShape,
+    edits: &[TpoEdit],
+    candle_revision: u64,
+    until_ms: i64,
+) -> u64 {
+    hash_of((
+        last_bar_signature(bars),
+        shape,
+        edits.iter().map(|e| format!("{e:?}")).collect::<Vec<_>>(),
+        candle_revision,
+        until_ms,
     ))
 }
 
@@ -102,47 +160,104 @@ impl ProfileRuntime {
 
     fn run(&mut self, job: Job, ctx: &egui::Context) {
         let (sender, receiver) = mpsc::channel();
-        let mut cache = self.cache.take().unwrap_or_default();
-        self.key = Some(job.key);
+        self.key = Some(job.key());
         self.inbox = Some(receiver);
         let repaint = ctx.clone();
-        crate::service::work_queue::submit(move || {
-            let tick = job
-                .candles
-                .data
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .tick_size;
-            let candle_guard = job
-                .candles
-                .data
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner);
-            let mut trade_guard = job
-                .trades
-                .as_ref()
-                .map(|trades| trades.book.lock().unwrap_or_else(PoisonError::into_inner));
-            let set = footprint::build_set(
-                SetInput {
-                    bars: &job.bars,
-                    bar_ms: job.bar_ms,
-                    candles: Some(&candle_guard.book),
-                    trades: trade_guard.as_deref_mut(),
-                    exchange_tick: tick,
-                    shape: job.shape,
-                },
-                &mut cache,
-            );
-            drop(trade_guard);
-            drop(candle_guard);
-            let _ = sender.send(Computed {
-                key: job.key,
-                set,
-                cache,
-            });
-            repaint.request_repaint();
-        });
+        match job {
+            Job::Footprint(job) => {
+                let mut cache = self.footprint_cache.take().unwrap_or_default();
+                crate::service::work_queue::submit(move || {
+                    let candle_guard = job
+                        .candles
+                        .data
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner);
+                    let tick = candle_guard.tick_size;
+                    let mut trade_guard = job
+                        .trades
+                        .as_ref()
+                        .map(|trades| trades.book.lock().unwrap_or_else(PoisonError::into_inner));
+                    let set = footprint::build_set(
+                        SetInput {
+                            bars: &job.bars,
+                            bar_ms: job.bar_ms,
+                            candles: Some(&candle_guard.book),
+                            trades: trade_guard.as_deref_mut(),
+                            exchange_tick: tick,
+                            shape: job.shape,
+                        },
+                        &mut cache,
+                    );
+                    drop(trade_guard);
+                    drop(candle_guard);
+                    let _ = sender.send(Computed {
+                        key: job.key,
+                        done: Done::Footprint(set, cache),
+                    });
+                    repaint.request_repaint();
+                });
+            }
+            Job::Tpo(job) => {
+                let mut cache = self.tpo_cache.take().unwrap_or_default();
+                crate::service::work_queue::submit(move || {
+                    let candle_guard = job
+                        .candles
+                        .data
+                        .lock()
+                        .unwrap_or_else(PoisonError::into_inner);
+                    let set = tpo::build_set(
+                        tpo::SetInput {
+                            bars: &job.bars,
+                            bar_ms: job.bar_ms,
+                            candles: &candle_guard.book,
+                            exchange_tick: candle_guard.tick_size,
+                            shape: job.shape,
+                            edits: &job.edits,
+                            until_ms: job.until_ms,
+                            now_ms: now_millis(),
+                        },
+                        &mut cache,
+                    );
+                    drop(candle_guard);
+                    let _ = sender.send(Computed {
+                        key: job.key,
+                        done: Done::Tpo(set, cache),
+                    });
+                    repaint.request_repaint();
+                });
+            }
+        }
     }
+}
+
+fn now_millis() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_millis() as i64)
+}
+
+/// What the replay position lets a TPO read: candles opening before the end of the last displayed bar.
+fn tpo_until(bars: &[Kline], bar_ms: i64, replay_ms: Option<i64>) -> i64 {
+    match (replay_ms, bars.last()) {
+        (Some(_), Some(last)) => last.open_time.saturating_add(bar_ms),
+        _ => i64::MAX,
+    }
+}
+
+/// The oldest instant the candle budget lets a TPO of `spans` reach: the newest spans whose 5-minute
+/// candles together fit, so a long history does not ask for more than the hub holds.
+fn tpo_from(spans: &[crate::model::market_profile::sessions::Session], until_ms: i64) -> i64 {
+    let mut candles = 0i64;
+    let mut from = spans.last().map_or(0, |span| span.start_ms);
+    for span in spans.iter().rev() {
+        let end = span.end_ms.min(until_ms);
+        candles += (end - span.start_ms).max(0) / TPO_INTERVAL_MS + 1;
+        if candles > MAX_CANDLES as i64 {
+            break;
+        }
+        from = span.start_ms;
+    }
+    from
 }
 
 impl super::ChartWorkspace {
@@ -152,48 +267,93 @@ impl super::ChartWorkspace {
         let replay_ms = self.replay_cut();
         let bar_ms = self.timeframe.nominal_ms();
         for chart in &mut self.charts {
+            let kind = chart.chart.effective_chart_type(chart.source);
             let order_flow = chart.is_market()
-                && chart.chart.effective_chart_type(chart.source) == ChartType::VolumeFootprint;
+                && matches!(
+                    kind,
+                    ChartType::VolumeFootprint | ChartType::TimePriceOpportunity
+                );
             if !order_flow {
                 if chart.profile.fed {
                     chart.chart.set_profile_feed(None);
                 }
-                if chart.profile.key.is_some() || chart.profile.fed {
+                if chart.profile.kind.is_some() || chart.profile.fed {
                     self.profile_hub.forget_chart(chart.id);
                     chart.profile.clear();
                 }
                 continue;
             }
+            if chart.profile.kind != Some(kind) {
+                // Another order-flow type: nothing built for the last one means anything here.
+                chart.chart.set_profile_feed(None);
+                chart.profile.clear();
+                chart.profile.kind = Some(kind);
+            }
             let style = chart.chart.appearance().style;
-            let shape = style.footprint.shape();
             let bars = displayed_candles(&chart.candles, replay_ms);
-            // The footprint is built for the newest bars the candle budget covers.
-            let plan = footprint::intrabar_plan(bar_ms, bars.len(), MAX_CANDLES);
-            let plan = match plan {
-                Ok(plan) => plan,
+            let instrument = InstrumentId::new(chart.source, chart.symbol.clone());
+            let need = if kind == ChartType::VolumeFootprint {
+                let shape = style.footprint.shape();
+                // The footprint is built for the newest bars the candle budget covers.
+                match footprint::intrabar_plan(bar_ms, bars.len(), MAX_CANDLES) {
+                    Ok(plan) => {
+                        let first = bars.len().saturating_sub(plan.bars.min(MAX_BARS));
+                        Ok(ProfileNeed {
+                            instrument,
+                            interval: plan.interval,
+                            interval_ms: plan.interval_ms,
+                            from_ms: bars.get(first).map_or(0, |bar| bar.open_time),
+                            trades: shape.tick_based,
+                        })
+                    }
+                    Err(reason) => Err(reason),
+                }
+            } else {
+                let shape = style.tpo.shape();
+                let until = tpo_until(bars, bar_ms, replay_ms);
+                let spans = tpo::spans_for(bars, bar_ms, until, &shape);
+                Ok(ProfileNeed {
+                    instrument,
+                    interval: TPO_INTERVAL,
+                    interval_ms: TPO_INTERVAL_MS,
+                    from_ms: tpo_from(&spans, until),
+                    trades: false,
+                })
+            };
+            match need {
+                Ok(need) => self
+                    .profile_hub
+                    .sync_chart(chart.id, std::slice::from_ref(&need)),
                 Err(reason) => {
                     self.profile_hub.forget_chart(chart.id);
-                    let set = FootprintSet::empty(SetStatus::Unsupported(reason));
-                    chart.chart.set_profile_feed(Some(ProfileFeed {
-                        footprint: Some(Arc::new(set)),
-                        ..ProfileFeed::default()
-                    }));
+                    let feed = if kind == ChartType::VolumeFootprint {
+                        ProfileFeed {
+                            footprint: Some(Arc::new(FootprintSet::empty(SetStatus::Unsupported(
+                                reason,
+                            )))),
+                            ..ProfileFeed::default()
+                        }
+                    } else {
+                        ProfileFeed {
+                            tpo: Some(Arc::new(TpoSet::empty(SetStatus::Unsupported(reason)))),
+                            ..ProfileFeed::default()
+                        }
+                    };
+                    chart.chart.set_profile_feed(Some(feed));
                     chart.profile.fed = true;
                     chart.profile.key = None;
-                    continue;
                 }
-            };
-            let first = bars.len().saturating_sub(plan.bars.min(MAX_BARS));
-            let instrument = InstrumentId::new(chart.source, chart.symbol.clone());
-            let need = ProfileNeed {
-                instrument: instrument.clone(),
-                interval: plan.interval,
-                interval_ms: plan.interval_ms,
-                from_ms: bars.get(first).map_or(0, |bar| bar.open_time),
-                trades: shape.tick_based,
-            };
-            self.profile_hub
-                .sync_chart(chart.id, std::slice::from_ref(&need));
+            }
+            // Splits and merges mean something only for the periods and block size they were made
+            // under: changing either drops them (TradingView's rule). The first look keeps what a
+            // saved layout brought.
+            let edit_key = style.tpo.shape().edit_key();
+            if kind == ChartType::TimePriceOpportunity {
+                if chart.tpo_edit_key.is_some_and(|key| key != edit_key) {
+                    chart.tpo_edits.clear();
+                }
+                chart.tpo_edit_key = Some(edit_key);
+            }
         }
         self.profile_hub.poll(ctx, std::time::Instant::now());
         let ids: Vec<u64> = self
@@ -201,16 +361,19 @@ impl super::ChartWorkspace {
             .iter()
             .filter(|chart| {
                 chart.is_market()
-                    && chart.chart.effective_chart_type(chart.source) == ChartType::VolumeFootprint
+                    && matches!(
+                        chart.chart.effective_chart_type(chart.source),
+                        ChartType::VolumeFootprint | ChartType::TimePriceOpportunity
+                    )
             })
             .map(|chart| chart.id)
             .collect();
         for id in ids {
-            self.advance_footprint(id, ctx, replay_ms, bar_ms);
+            self.advance_profile(id, ctx, replay_ms, bar_ms);
         }
     }
 
-    fn advance_footprint(
+    fn advance_profile(
         &mut self,
         chart_id: u64,
         ctx: &egui::Context,
@@ -221,18 +384,29 @@ impl super::ChartWorkspace {
             return;
         };
         let chart = &mut self.charts[index];
+        let kind = chart.chart.effective_chart_type(chart.source);
         // Take in a finished computation.
         if let Some(receiver) = &chart.profile.inbox {
             match receiver.try_recv() {
                 Ok(done) => {
                     chart.profile.inbox = None;
-                    chart.profile.cache = Some(done.cache);
-                    let loading = false;
-                    chart.chart.set_profile_feed(Some(ProfileFeed {
-                        footprint: Some(Arc::new(done.set)),
-                        loading,
-                        error: None,
-                    }));
+                    let feed = match done.done {
+                        Done::Footprint(set, cache) => {
+                            chart.profile.footprint_cache = Some(cache);
+                            ProfileFeed {
+                                footprint: Some(Arc::new(set)),
+                                ..ProfileFeed::default()
+                            }
+                        }
+                        Done::Tpo(set, cache) => {
+                            chart.profile.tpo_cache = Some(cache);
+                            ProfileFeed {
+                                tpo: Some(Arc::new(set)),
+                                ..ProfileFeed::default()
+                            }
+                        }
+                    };
+                    chart.chart.set_profile_feed(Some(feed));
                     chart.profile.fed = true;
                     chart.profile.key = Some(done.key);
                 }
@@ -241,67 +415,101 @@ impl super::ChartWorkspace {
             }
         }
         let style = chart.chart.appearance().style;
-        let shape = style.footprint.shape();
         let bars = displayed_candles(&chart.candles, replay_ms);
-        let Ok(plan) = footprint::intrabar_plan(bar_ms, bars.len(), MAX_CANDLES) else {
-            return;
-        };
         let instrument = InstrumentId::new(chart.source, chart.symbol.clone());
-        let Some((candles, status)) = self.profile_hub.candles(&instrument, plan.interval) else {
-            return;
-        };
-        let trades = shape
-            .tick_based
-            .then(|| self.profile_hub.trades(&instrument))
-            .flatten();
-        let first = bars.len().saturating_sub(plan.bars.min(MAX_BARS));
-        let window = &bars[first.min(bars.len())..];
-        let key = key_of(
-            window,
-            shape,
-            candles.revision.load(Ordering::Acquire),
-            trades
-                .as_ref()
-                .map(|(shared, _)| shared.revision.load(Ordering::Acquire)),
-            plan.interval,
-        );
-        // Until the first finer candles arrive, say so instead of drawing estimates as if final.
-        if chart.profile.key != Some(key) {
-            let job = Job {
-                key,
-                bars: window.to_vec(),
-                bar_ms,
-                candles,
-                trades: trades.map(|(shared, _)| shared),
-                shape,
+        let (job, status) = if kind == ChartType::VolumeFootprint {
+            let shape = style.footprint.shape();
+            let Ok(plan) = footprint::intrabar_plan(bar_ms, bars.len(), MAX_CANDLES) else {
+                return;
             };
+            let Some((candles, status)) = self.profile_hub.candles(&instrument, plan.interval)
+            else {
+                return;
+            };
+            let trades = shape
+                .tick_based
+                .then(|| self.profile_hub.trades(&instrument))
+                .flatten();
+            let first = bars.len().saturating_sub(plan.bars.min(MAX_BARS));
+            let window = &bars[first.min(bars.len())..];
+            let key = footprint_key(
+                window,
+                shape,
+                candles.revision.load(Ordering::Acquire),
+                trades
+                    .as_ref()
+                    .map(|(shared, _)| shared.revision.load(Ordering::Acquire)),
+                plan.interval,
+            );
+            (
+                Job::Footprint(Box::new(FootprintJob {
+                    key,
+                    bars: window.to_vec(),
+                    bar_ms,
+                    candles,
+                    trades: trades.map(|(shared, _)| shared),
+                    shape,
+                })),
+                status,
+            )
+        } else {
+            let shape = style.tpo.shape();
+            let Some((candles, status)) = self.profile_hub.candles(&instrument, TPO_INTERVAL)
+            else {
+                return;
+            };
+            let until = tpo_until(bars, bar_ms, replay_ms);
+            // Only the bars from the oldest period the budget reaches: the rest cannot have a profile.
+            let spans = tpo::spans_for(bars, bar_ms, until, &shape);
+            let from = tpo_from(&spans, until);
+            let first = bars.partition_point(|bar| bar.open_time < from);
+            let window = &bars[first.min(bars.len())..];
+            let key = tpo_key(
+                window,
+                shape,
+                &chart.tpo_edits,
+                candles.revision.load(Ordering::Acquire),
+                until,
+            );
+            (
+                Job::Tpo(Box::new(TpoJob {
+                    key,
+                    bars: window.to_vec(),
+                    bar_ms,
+                    candles,
+                    shape,
+                    edits: chart.tpo_edits.clone(),
+                    until_ms: until,
+                })),
+                status,
+            )
+        };
+        if chart.profile.key != Some(job.key()) {
             if chart.profile.inbox.is_some() {
                 chart.profile.waiting = Some(Box::new(job));
             } else {
                 chart.profile.run(job, ctx);
             }
         } else if chart.profile.inbox.is_none()
-            && let Some(job) = chart.profile.waiting.take()
-            && chart.profile.key != Some(job.key)
+            && let Some(waiting) = chart.profile.waiting.take()
+            && chart.profile.key != Some(waiting.key())
         {
-            chart.profile.run(*job, ctx);
+            chart.profile.run(*waiting, ctx);
         }
         // A computation that finished while a newer one was waiting: start the waiting one.
         if chart.profile.inbox.is_none()
-            && let Some(job) = chart.profile.waiting.take()
+            && let Some(waiting) = chart.profile.waiting.take()
         {
-            chart.profile.run(*job, ctx);
+            chart.profile.run(*waiting, ctx);
         }
-        if let FlowStatus::Error(message) = status {
-            let current = chart.profile.fed;
-            if !current {
-                chart.chart.set_profile_feed(Some(ProfileFeed {
-                    footprint: None,
-                    loading: false,
-                    error: Some(message),
-                }));
-                chart.profile.fed = true;
-            }
+        if let FlowStatus::Error(message) = status
+            && !chart.profile.fed
+        {
+            chart.chart.set_profile_feed(Some(ProfileFeed {
+                error: Some(message),
+                ..ProfileFeed::default()
+            }));
+            chart.profile.fed = true;
         }
     }
 }
@@ -495,6 +703,163 @@ mod tests {
         assert!(one.grid.unwrap().ticks_per_row() != two.grid.unwrap().ticks_per_row());
     }
 
+    // MARK: TPO
+
+    use crate::model::chart_type::PeriodKind;
+    use crate::model::market_profile::tpo::TpoSet;
+
+    /// Five-minute candles from `first` for `days` days: what the hub's fake serves a TPO.
+    fn five_minute_market(fake: &Fake, first: i64, days: i64) {
+        *fake.market.lock().unwrap() = (0..days * 288).map(|i| first + i * 300_000).collect();
+    }
+
+    fn tpo_workspace(fake: &Arc<Fake>, first_open: i64) -> (super::super::ChartWorkspace, u64) {
+        let (mut workspace, id) = footprint_workspace(fake, first_open);
+        let at = workspace.chart_index(id).unwrap();
+        workspace.charts[at]
+            .chart
+            .set_chart_type(ChartType::TimePriceOpportunity);
+        (workspace, id)
+    }
+
+    fn tpo_of(workspace: &super::super::ChartWorkspace, id: u64) -> Option<Arc<TpoSet>> {
+        let at = workspace.chart_index(id)?;
+        workspace.charts[at]
+            .chart
+            .profile_feed()
+            .and_then(|feed| feed.tpo.clone())
+    }
+
+    fn wait_for_tpo(
+        workspace: &mut super::super::ChartWorkspace,
+        id: u64,
+        ready: impl Fn(&TpoSet) -> bool,
+    ) -> Arc<TpoSet> {
+        let ctx = egui::Context::default();
+        for _ in 0..400 {
+            workspace.tick_profiles(&ctx);
+            if let Some(set) = tpo_of(workspace, id)
+                && ready(&set)
+            {
+                return set;
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        panic!("no TPO arrived");
+    }
+
+    #[test]
+    fn a_tpo_chart_asks_for_five_minute_candles_and_the_card_is_handed_profiles() {
+        let fake = Arc::new(Fake::default());
+        let first = 10 * DAY;
+        five_minute_market(&fake, first, 2);
+        let (mut workspace, id) = tpo_workspace(&fake, first);
+        let set = wait_for_tpo(&mut workspace, id, |set| set.profiles.len() == 2);
+        assert_eq!(set.profiles[0].start_ms, first);
+        assert_eq!(set.profiles[0].blocks, 48);
+        assert_eq!(set.block_ms, 1_800_000);
+        // No trades, no footprint: only the TPO's feed.
+        let at = workspace.chart_index(id).unwrap();
+        assert!(
+            workspace.charts[at]
+                .chart
+                .profile_feed()
+                .unwrap()
+                .footprint
+                .is_none()
+        );
+        let requests = fake.candle_requests.lock().unwrap();
+        assert!(requests.iter().any(|(start, _, _)| *start <= first));
+        assert!(
+            fake.history_requests.load(Ordering::Acquire) == 0,
+            "a TPO has no use for trades"
+        );
+    }
+
+    #[test]
+    fn switching_between_the_order_flow_types_rebuilds_for_the_new_one() {
+        let fake = Arc::new(Fake::default());
+        let first = 10 * DAY;
+        five_minute_market(&fake, first, 2);
+        let (mut workspace, id) = footprint_workspace(&fake, first);
+        // Footprint first (the fake serves 5-minute spacing as its minutes: still candles).
+        wait_for_set(&mut workspace, id, |set| !set.bars.is_empty());
+        let at = workspace.chart_index(id).unwrap();
+        workspace.charts[at]
+            .chart
+            .set_chart_type(ChartType::TimePriceOpportunity);
+        let set = wait_for_tpo(&mut workspace, id, |set| !set.profiles.is_empty());
+        assert!(!set.profiles.is_empty());
+        assert!(
+            workspace.charts[at]
+                .chart
+                .profile_feed()
+                .unwrap()
+                .footprint
+                .is_none(),
+            "the footprint's set is gone"
+        );
+    }
+
+    #[test]
+    fn splits_and_merges_change_the_profiles_and_changing_the_block_size_drops_them() {
+        let fake = Arc::new(Fake::default());
+        let first = 10 * DAY;
+        five_minute_market(&fake, first, 2);
+        let (mut workspace, id) = tpo_workspace(&fake, first);
+        wait_for_tpo(&mut workspace, id, |set| set.profiles.len() == 2);
+        let at = workspace.chart_index(id).unwrap();
+        workspace.charts[at].tpo_edits = vec![crate::model::market_profile::tpo::TpoEdit::Split {
+            at_ms: first + 12 * 3_600_000,
+        }];
+        let split = wait_for_tpo(&mut workspace, id, |set| set.profiles.len() == 3);
+        assert_eq!(split.profiles[1].start_ms, first + 12 * 3_600_000);
+        // The user changes the block size: the splits no longer mean anything.
+        workspace.charts[at]
+            .chart
+            .chart_style_mut()
+            .tpo
+            .block_minutes = 60;
+        let rebuilt = wait_for_tpo(&mut workspace, id, |set| set.block_ms == 3_600_000);
+        assert_eq!(rebuilt.profiles.len(), 2);
+        assert!(workspace.charts[at].tpo_edits.is_empty());
+    }
+
+    #[test]
+    fn a_layouts_saved_splits_survive_the_first_look() {
+        let fake = Arc::new(Fake::default());
+        let first = 10 * DAY;
+        five_minute_market(&fake, first, 2);
+        let (mut workspace, id) = tpo_workspace(&fake, first);
+        let at = workspace.chart_index(id).unwrap();
+        // As if restored from a layout: edits present, never seen with a key before.
+        workspace.charts[at].tpo_edits = vec![crate::model::market_profile::tpo::TpoEdit::Split {
+            at_ms: first + 6 * 3_600_000,
+        }];
+        let set = wait_for_tpo(&mut workspace, id, |set| set.profiles.len() == 3);
+        assert_eq!(set.profiles[1].start_ms, first + 6 * 3_600_000);
+        assert_eq!(workspace.charts[at].tpo_edits.len(), 1);
+    }
+
+    #[test]
+    fn weekly_periods_group_the_days_and_leaving_the_tpo_clears_the_card() {
+        let fake = Arc::new(Fake::default());
+        let first = 10 * DAY;
+        five_minute_market(&fake, first, 2);
+        let (mut workspace, id) = tpo_workspace(&fake, first);
+        let at = workspace.chart_index(id).unwrap();
+        workspace.charts[at].chart.chart_style_mut().tpo.period = PeriodKind::Week;
+        wait_for_tpo(&mut workspace, id, |set| {
+            set.profiles.len() == 1 || set.profiles.len() == 2
+        });
+        workspace.charts[at]
+            .chart
+            .set_chart_type(ChartType::Candles);
+        workspace.tick_profiles(&egui::Context::default());
+        assert!(workspace.profile_hub.is_empty());
+        assert!(workspace.charts[at].chart.profile_feed().is_none());
+    }
+
     /// The whole path against real Binance: klines with the taker-buy split, the exchange tick size,
     /// trade history and the live stream through the real hub, the real computation, and the real
     /// painter into a picture. `DEGENVIEW_GALLERY_DIR=/tmp/g cargo test --lib live_binance_footprint
@@ -602,5 +967,74 @@ mod tests {
         // A picture of the real thing through the real painter.
         let bars: Vec<Kline> = workspace.charts[at].candles.clone();
         crate::ui::paint_gallery_for_tests("footprint-live-binance", &bars, &latest);
+    }
+
+    /// A TPO of real Binance 5-minute candles through the real hub, computation and painter.
+    /// `DEGENVIEW_GALLERY_DIR=/tmp/g cargo test --lib live_binance_tpo -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "needs the network"]
+    fn live_binance_tpo_end_to_end() {
+        use crate::model::Timeframe;
+        let ctx = egui::Context::default();
+        let mut workspace = empty_workspace(1);
+        workspace.timeframe = Timeframe::Hour;
+        let id = workspace
+            .add_chart_for(&InstrumentId::new(DataSource::Binance, "BTCUSDT"), &ctx)
+            .chart_id;
+        let at = workspace.chart_index(id).unwrap();
+        workspace.charts[at]
+            .chart
+            .set_chart_type(ChartType::TimePriceOpportunity);
+        let started = std::time::Instant::now();
+        while workspace.charts[at].candles.is_empty() && started.elapsed() < Duration::from_secs(30)
+        {
+            workspace.charts[at].receive_fetch();
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        assert!(
+            !workspace.charts[at].candles.is_empty(),
+            "no candles from Binance"
+        );
+        // The newest three days of hourly bars.
+        let keep = workspace.charts[at].candles.len() - 72;
+        workspace.charts[at].candles.drain(..keep);
+        let set = wait_for_tpo(&mut workspace, id, |set| {
+            set.profiles.len() >= 3 && set.profiles.iter().all(|p| p.blocks > 0)
+        });
+        println!(
+            "{} profiles after {:?}; tick {:?}; {} ticks a row; refused {}",
+            set.profiles.len(),
+            started.elapsed(),
+            set.tick,
+            set.grid.map_or(0, |grid| grid.ticks_per_row()),
+            set.refused
+        );
+        for profile in &set.profiles {
+            println!(
+                "{}..{}: {} rows, {} blocks, width {}, poc row {} ({} blocks), value area rows {:?}, IB {:?}, poor high {} low {}, single prints {}, rotation {}, volume {:.0}, forming {}",
+                profile.start_ms,
+                profile.end_ms,
+                profile.rows.len(),
+                profile.blocks,
+                profile.width(),
+                profile.poc_row(),
+                profile.rows[profile.poc].count(),
+                profile.value_area,
+                profile.initial_balance,
+                profile.poor_high,
+                profile.poor_low,
+                profile.single_prints.len(),
+                profile.rotation,
+                profile.volume_total(),
+                profile.forming,
+            );
+        }
+        assert_eq!(set.refused, 0, "{:?}", set.first_refusal);
+        // Every finished day of 5-minute candles has all 48 half-hour blocks.
+        for profile in set.profiles.iter().filter(|p| !p.forming) {
+            assert_eq!(profile.blocks, 48);
+        }
+        let bars = workspace.charts[at].candles.clone();
+        crate::ui::tpo_gallery_picture("tpo-live-binance", &bars, &set);
     }
 }

@@ -34,6 +34,17 @@ pub enum Target {
     Position {
         key: String,
     },
+    /// A letter of a TPO profile (the Time price opportunity chart type).
+    TpoBlock {
+        /// The letter under the click.
+        letter: char,
+        /// The instant the letter's block starts: where "Split" would cut the profile.
+        split_at_ms: i64,
+        /// The letter is block 0: the profile already starts there, so there is nothing to split.
+        first_block: bool,
+        /// The start of the profile, when a profile before it touches it (what "Merge" joins).
+        merge_at_ms: Option<i64>,
+    },
 }
 
 /// Everything a menu needs to remember about the click. Taken once; never recomputed from the
@@ -122,6 +133,8 @@ pub struct Facts {
     pub table_open: bool,
     pub tree_open: bool,
     pub stats_open: bool,
+    /// Splits and merges the chart's TPO profiles carry (what "Reset" would drop).
+    pub tpo_edits: usize,
     /// The chart's price-scale mode, which the price-axis menu marks.
     pub scale_mode: PriceScaleMode,
     pub templates: Vec<TemplateRow>,
@@ -147,6 +160,7 @@ impl Default for Facts {
             table_open: false,
             tree_open: false,
             stats_open: false,
+            tpo_edits: 0,
             scale_mode: PriceScaleMode::Regular,
             templates: Vec::new(),
             pane: None,
@@ -198,6 +212,12 @@ pub enum Command {
     CancelOrder(u64),
     ClosePosition(String),
     ShowPaperPanel,
+    /// Cut the TPO profile that holds this instant in two.
+    SplitProfile(i64),
+    /// Join the TPO profile that starts at this instant to the one before it.
+    MergeProfile(i64),
+    /// Drop every split and merge of the chart's TPO profiles.
+    ResetProfileEdits,
 }
 
 /// The glyph of a row that cannot be told from its command (a submenu has none).
@@ -312,6 +332,9 @@ const NO_MARKET: &str = "Price is at the market";
 const NOTHING_TO_PASTE: &str = "No copied drawings to paste";
 const NOTHING_TO_REMOVE: &str = "Nothing to remove";
 const FILLED: &str = "The order is no longer working";
+const ALREADY_THE_START: &str = "The profile already starts here";
+const NO_PREVIOUS_PROFILE: &str = "There is no profile before this one";
+const NOTHING_SPLIT: &str = "No profile has been split or merged";
 
 // MARK: Labels
 
@@ -421,7 +444,42 @@ pub fn menu(context: &ChartContext, facts: &Facts) -> Vec<Entry> {
         Target::Alert { id } => alert(*id, facts),
         Target::Order { id } => order(*id, facts),
         Target::Position { key } => position(key),
+        Target::TpoBlock {
+            letter,
+            split_at_ms,
+            first_block,
+            merge_at_ms,
+        } => {
+            let mut entries = tpo_block(*letter, *split_at_ms, *first_block, *merge_at_ms, facts);
+            entries.push(Entry::Separator);
+            entries.extend(background(context, facts));
+            entries
+        }
     }
+}
+
+/// The profile group of a letter's menu: split here, merge with the one before, reset.
+fn tpo_block(
+    letter: char,
+    split_at_ms: i64,
+    first_block: bool,
+    merge_at_ms: Option<i64>,
+    facts: &Facts,
+) -> Vec<Entry> {
+    grouped(vec![vec![
+        Item::new(
+            Command::SplitProfile(split_at_ms),
+            format!("Split profile at {letter}"),
+        )
+        .disabled_unless(!first_block, ALREADY_THE_START),
+        Item::new(
+            Command::MergeProfile(merge_at_ms.unwrap_or_default()),
+            "Merge with previous profile",
+        )
+        .disabled_unless(merge_at_ms.is_some(), NO_PREVIOUS_PROFILE),
+        Item::new(Command::ResetProfileEdits, "Reset all merges and splits")
+            .disabled_unless(facts.tpo_edits > 0, NOTHING_SPLIT),
+    ]])
 }
 
 /// Groups joined by one separator each, empty groups dropped.
@@ -754,7 +812,7 @@ pub fn check(context: &ChartContext, live: &Live) -> Result<(), Stale> {
         return Err(Stale::ChartChanged);
     }
     let present = match &context.target {
-        Target::Background | Target::PriceAxis | Target::TimeAxis => true,
+        Target::Background | Target::PriceAxis | Target::TimeAxis | Target::TpoBlock { .. } => true,
         Target::Pane { instance } => live.instances.contains(instance),
         Target::Alert { id } => live.alerts.contains(id),
         Target::Order { id } => live.orders.contains(id),

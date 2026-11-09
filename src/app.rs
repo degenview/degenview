@@ -3678,6 +3678,7 @@ mod tests {
                     image_url: None,
                     card: None,
                     overlays: Default::default(),
+                    tpo_edits: Default::default(),
                 }],
                 columns: vec![ChartColumn::new(10, vec![1])],
                 focused: Some(1),
