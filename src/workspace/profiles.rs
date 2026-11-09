@@ -494,4 +494,113 @@ mod tests {
         });
         assert!(one.grid.unwrap().ticks_per_row() != two.grid.unwrap().ticks_per_row());
     }
+
+    /// The whole path against real Binance: klines with the taker-buy split, the exchange tick size,
+    /// trade history and the live stream through the real hub, the real computation, and the real
+    /// painter into a picture. `DEGENVIEW_GALLERY_DIR=/tmp/g cargo test --lib live_binance_footprint
+    /// -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "needs the network"]
+    fn live_binance_footprint_end_to_end() {
+        use crate::model::Timeframe;
+        let ctx = egui::Context::default();
+        let mut workspace = empty_workspace(1);
+        workspace.timeframe = Timeframe::Hour;
+        let id = workspace
+            .add_chart_for(&InstrumentId::new(DataSource::Binance, "BTCUSDT"), &ctx)
+            .chart_id;
+        let at = workspace.chart_index(id).unwrap();
+        workspace.charts[at]
+            .chart
+            .set_chart_type(ChartType::VolumeFootprint);
+        let started = std::time::Instant::now();
+        // Wait for the chart's own candles.
+        while workspace.charts[at].candles.is_empty() && started.elapsed() < Duration::from_secs(30)
+        {
+            workspace.charts[at].receive_fetch();
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        assert!(
+            !workspace.charts[at].candles.is_empty(),
+            "no candles from Binance"
+        );
+        println!(
+            "{} chart candles after {:?}",
+            workspace.charts[at].candles.len(),
+            started.elapsed()
+        );
+        // Keep only the newest few so the hub fetches little and the picture is readable.
+        let keep = workspace.charts[at].candles.len() - 8;
+        workspace.charts[at].candles.drain(..keep);
+        let set = wait_for_set(&mut workspace, id, |set| {
+            set.counts.split + set.counts.trades >= 7
+        });
+        println!(
+            "{:?} after {:?}; tick {:?}; grid rows of {} tick(s)",
+            set.counts,
+            started.elapsed(),
+            set.tick,
+            set.grid.map_or(0, |grid| grid.ticks_per_row())
+        );
+        // Let the trade history and the live stream run a while, then look again.
+        let deadline = std::time::Instant::now() + Duration::from_secs(60);
+        let mut latest = set;
+        while std::time::Instant::now() < deadline {
+            workspace.tick_profiles(&ctx);
+            if let Some(next) = feed_of(&workspace, id) {
+                latest = next;
+                if latest.counts.trades >= 1 {
+                    break;
+                }
+            }
+            std::thread::sleep(Duration::from_millis(200));
+        }
+        println!("{:?} after {:?}", latest.counts, started.elapsed());
+        for (index, bar) in latest.bars.iter().enumerate() {
+            if let Some(bar) = bar {
+                println!(
+                    "bar {index}: {:?} {} rows, buy {:.2} sell {:.2}, poc row {}, stacks {}",
+                    bar.quality,
+                    bar.cells.len(),
+                    bar.buy,
+                    bar.sell,
+                    bar.poc_row(),
+                    bar.stacks.len()
+                );
+            }
+        }
+        assert!(
+            latest.counts.split + latest.counts.trades >= 7,
+            "{:?}",
+            latest.counts
+        );
+        assert!(latest.counts.refused == 0, "{:?}", latest.first_refusal);
+        // History is a one-off fetch, so only the live stream can make the book's newest trade
+        // newer: watch it move, with no id gap behind it.
+        let instrument = InstrumentId::new(DataSource::Binance, "BTCUSDT");
+        let (shared, _) = workspace
+            .profile_hub
+            .trades(&instrument)
+            .expect("trades held");
+        let newest = |workspace: &mut super::super::ChartWorkspace| {
+            for _ in 0..50 {
+                workspace.tick_profiles(&ctx);
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            let book = shared.book.lock().unwrap();
+            (book.newest().map(|t| t.id), book.len())
+        };
+        let (before, held_before) = newest(&mut workspace);
+        let (after, held_after) = newest(&mut workspace);
+        println!(
+            "live stream: newest trade id {before:?} -> {after:?}, trades held {held_before} -> {held_after}"
+        );
+        assert!(after > before, "the live stream added no trades");
+        let mut book = shared.book.lock().unwrap();
+        let from = book.complete_from_ms().expect("a complete run");
+        println!("book complete from {from}");
+        // A picture of the real thing through the real painter.
+        let bars: Vec<Kline> = workspace.charts[at].candles.clone();
+        crate::ui::paint_gallery_for_tests("footprint-live-binance", &bars, &latest);
+    }
 }

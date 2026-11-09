@@ -126,7 +126,14 @@ the exchange's, else inferred from the prices' decimals and labelled so.
 ### Not verified
 
 - Never compared against a TradingView chart, and not driven in a real window (headless frames and
-  PNG galleries only). The live WebSocket and a real-account flow were not run.
+  PNG galleries only).
+- Run once against **real Binance** (`live_binance_footprint_end_to_end`, ignored by default): the
+  chart's candles, the 1-minute candles with the taker-buy split, the exchange tick size (0.01 for
+  BTCUSDT), the trade history and the live `aggTrade` stream all arrived through the real hub; seven
+  bars came out `ExchangeSplit`, the current hour `TradeDerived`, and the live stream kept adding trades
+  to the book (the newest id advanced between two looks 5 s apart). That is one run on one market, not
+  a soak: reconnect/backfill against the real exchange, a long session and rate-limit refusals were not
+  exercised.
 - Bars older than the newest 3000 draw as plain candles; a footprint is not built for them.
 - The tooltip placement uses the existing script-tooltip mechanism (egui's own delay and placement).
 - A Pine script sees the real candles; whether TradingView does on its footprint charts is not
