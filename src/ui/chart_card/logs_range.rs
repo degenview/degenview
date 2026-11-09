@@ -163,7 +163,7 @@ impl ChartCard {
             painter,
             plot,
             band.center().x,
-            plot.top() + 12.0,
+            plot.top() + self.top_inset + 12.0,
             text,
             accent,
         );

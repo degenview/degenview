@@ -78,6 +78,8 @@ pub fn show(ctx: &egui::Context, pending: &[PendingView]) -> Option<Answer> {
             message: &message(view, pending.len()),
             accept: "Allow Once",
             dismiss: "Deny",
+            // A stray Enter must not let a tool call through.
+            cautious: true,
         },
     )?;
     Some(match outcome {
@@ -172,7 +174,7 @@ mod tests {
     fn an_open_question_stays_open_until_it_is_answered_on_purpose() {
         let open = [view(7, "Delete a price alert", "BTC/USDT")];
         assert_eq!(answer_after(&open, &[]), None);
-        // Return alone must not approve anything: no button has focus yet.
+        // Return alone must not answer anything: no button has focus yet.
         assert_eq!(answer_after(&open, &[egui::Key::Enter]), None);
     }
 
@@ -186,10 +188,14 @@ mod tests {
             answer_after(&open, &[egui::Key::Escape]),
             Some(Answer::Deny(7))
         );
-        // Tab moves to the first button, Allow Once; Return presses it. Only the oldest question
-        // is on screen, so the answer is for that one.
+        // Tab moves left to right: Deny, then Allow Once; Return presses the focused one. Only the
+        // oldest question is on screen, so the answer is for that one.
         assert_eq!(
             answer_after(&open, &[egui::Key::Tab, egui::Key::Enter]),
+            Some(Answer::Deny(7))
+        );
+        assert_eq!(
+            answer_after(&open, &[egui::Key::Tab, egui::Key::Tab, egui::Key::Enter]),
             Some(Answer::Allow(7))
         );
     }

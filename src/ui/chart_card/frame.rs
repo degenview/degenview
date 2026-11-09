@@ -60,6 +60,8 @@ pub(super) struct FrameLayout<'a> {
     /// The card above its script panes.
     pub rect: Rect,
     pub plot: Rect,
+    /// What the header covers of the plot's top (see `ChartCard::set_top_inset`).
+    pub top_inset: f32,
     pub heights: PaneHeights,
     pub pane_specs: Vec<PaneSpec>,
     pub pane_rects: Vec<Rect>,
@@ -157,6 +159,7 @@ impl ChartCard {
         &self,
         data: &FrameData<'a>,
         rect: Rect,
+        top_inset: f32,
         painter: &egui::Painter,
         style: &CanvasStyle,
     ) -> FrameLayout<'a> {
@@ -235,7 +238,7 @@ impl ChartCard {
                     .x
             };
             let mut widest = 0.0f32;
-            if let Some(view) = self.view(bars, provisional, scale_mode, chart_type) {
+            if let Some(view) = self.view(bars, (provisional, top_inset), scale_mode, chart_type) {
                 let scale = &view.scale;
                 let budget = canvas::tick_budget(provisional.height(), style.price_tick_spacing());
                 let AxisTicks { prices, step } = scale.axis_ticks(budget);
@@ -280,6 +283,7 @@ impl ChartCard {
             full_rect,
             rect,
             plot,
+            top_inset,
             heights,
             pane_specs,
             pane_rects,

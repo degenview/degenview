@@ -22,6 +22,10 @@ pub enum Icon {
     Star,
     StarFill,
     Plus,
+    /// Two candlesticks and a plus: Add Chart.
+    ChartPlus,
+    /// A plus in a ring: compare or add a symbol.
+    PlusCircle,
     Magnifier,
     ZoomIn,
     ZoomOut,
@@ -54,6 +58,8 @@ pub enum Icon {
     Scissors,
     Bell,
     BellBadge,
+    /// A bell with a plus at its shoulder: create an alert.
+    BellPlus,
     BellFill,
     Clock,
     Download,
@@ -517,6 +523,28 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             line(&[p(8.0, 3.0), p(8.0, 13.0)]);
             line(&[p(3.0, 8.0), p(13.0, 8.0)]);
         }
+        Icon::PlusCircle => {
+            circle(p(8.0, 8.0), 6.4, false);
+            line(&[p(8.0, 5.0), p(8.0, 11.0)]);
+            line(&[p(5.0, 8.0), p(11.0, 8.0)]);
+        }
+        Icon::ChartPlus => {
+            // Two candles, the second a step higher, and the plus where a third would stand.
+            for (x, wick, body) in [
+                (3.5, (3.0, 13.0), (5.5, 10.5)),
+                (8.5, (2.0, 9.0), (3.8, 7.5)),
+            ] {
+                line(&[p(x, wick.0), p(x, wick.1)]);
+                closed(&[
+                    p(x - 1.6, body.0),
+                    p(x + 1.6, body.0),
+                    p(x + 1.6, body.1),
+                    p(x - 1.6, body.1),
+                ]);
+            }
+            line(&[p(10.4, 11.5), p(14.8, 11.5)]);
+            line(&[p(12.6, 9.3), p(12.6, 13.7)]);
+        }
         Icon::Magnifier => {
             circle(p(7.0, 7.0), 4.4, false);
             line(&[p(10.3, 10.3), p(13.6, 13.6)]);
@@ -748,6 +776,24 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
                 painter.circle_filled(p(12.5, 4.0), 2.8 * scale, super::theme::surface());
                 painter.circle_filled(p(12.5, 4.0), 1.7 * scale, color);
             }
+        }
+        Icon::BellPlus => {
+            // The bell shifted left to leave the top right corner to the plus.
+            let outline = [
+                p(2.0, 11.8),
+                p(3.0, 10.3),
+                p(3.0, 7.3),
+                p(4.0, 4.8),
+                p(6.5, 3.8),
+                p(9.0, 4.8),
+                p(10.0, 7.3),
+                p(10.0, 10.3),
+                p(11.0, 11.8),
+            ];
+            closed(&outline);
+            line(&[p(5.0, 13.6), p(8.0, 13.6)]);
+            line(&[p(10.4, 3.6), p(14.8, 3.6)]);
+            line(&[p(12.6, 1.4), p(12.6, 5.8)]);
         }
         Icon::Clock => {
             circle(p(8.0, 8.0), 6.2, false);
@@ -2319,6 +2365,8 @@ mod tests {
             Star,
             StarFill,
             Plus,
+            ChartPlus,
+            PlusCircle,
             Magnifier,
             ZoomIn,
             ZoomOut,
@@ -2349,6 +2397,7 @@ mod tests {
             Clipboard,
             Scissors,
             Bell,
+            BellPlus,
             BellFill,
             Clock,
             Download,

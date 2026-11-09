@@ -34,11 +34,11 @@ before).
 | Add order on *SYMBOL* at *p*… | Opens the full ticket with the price and the type the price suggests. | `PaperPanel::open_ticket` |
 | Lock / Unlock vertical cursor line by time | Pins a vertical line to the clicked time. | `ChartCard::time_lock` |
 | Table view | Docks the bars and indicator values as a table under the charts. | `model::chart_table`, `ui::chart_table_view` |
-| Object tree | Docks the symbol, indicators, scripts and drawings as a list on the right. | `model::object_tree`, `ui::object_tree` |
+| Object tree | Docks the symbol, compared symbols, indicators, scripts and drawings as a list on the right. | `model::object_tree`, `ui::object_tree` |
 | Session statistics | Docks a panel on the right that counts how often something happened on the chart's days, with N and a 95% interval. See [Session statistics](session-stats.md). | `model::session_stats`, `ui::session_stats_view` |
 | Chart template ▸ | Applies a preset or saved appearance template, saves the current look, manages templates, resets. | `ChartTemplateStore`, `ChartCard::apply_template`, the settings sheet's dialogs |
 | Remove *N* drawings | Asks, then removes the chart's drawings as one undo step. | `confirm_drawings_removal`, `apply_drawing_commands` |
-| Remove *N* indicators | Asks, then removes built-in indicators and scripts; undoable. | `Snapshot::Indicators` |
+| Remove *N* indicators | Asks, then removes built-in indicators, scripts and the compared markets (counted in *N*) as one undoable step. | `remove_all_indicators`, `Snapshot::Indicators` + `Snapshot::Overlays` in a `Snapshot::All` |
 | Settings… | Opens the settings sheet of the clicked chart on Appearance. | `chart_settings` |
 
 Groups are separated as in the reference screenshot; a group with nothing in it is left out, and
@@ -100,7 +100,9 @@ price format, the compact volume, and the chart's UTC times. Only the rows on sc
 
 ## Object tree
 
-The symbol, the built-in indicators and scripts, and the drawings (topmost first). Click selects a
+The symbol, the markets compared on the chart (in the legend's order), the built-in indicators and
+scripts, and the drawings (topmost first). A compared market has an eye and a trash; double-click or
+Settings… opens the Compare page; it has no lock and no reordering. Click selects a
 drawing (the workspace's one selection, so it highlights on the chart too); double-click opens its
 settings; the row buttons hide, lock and delete; the row menu reorders and deletes. Everything goes
 through the paths the chart's own controls use, so drawing changes are undoable. There is no
@@ -119,7 +121,7 @@ bar. See [Pine Logs](pine-logs.md).
 
 The workspace's history is one chronological stack of typed entries: a chart's drawings before a
 batch, or its built-in indicators and scripts before a removal. Paste, Remove drawings and every
-Object Tree drawing change are one `apply_drawing_commands` step. Removing indicators (bulk, from a
+Object Tree drawing change are one `apply_drawing_commands` step. Hiding, showing or removing a compared market (from the tree or anywhere else) is one `Snapshot::Overlays` step. Removing indicators (bulk, from a
 pane or from the tree) restores the indicators and the script instances on Undo. Template changes
 and cursor locks are not in history. Removing a script from a chart never touches its saved source
 or its alert subscriptions; a subscription whose instance is gone is marked changed by the
@@ -209,7 +211,7 @@ Not verifiable from the documentation, so built from the specification and marke
 3. Add alert: the editor opens with the level and direction; closing it creates nothing.
 4. Sell limit / Buy stop above price, Buy limit / Sell stop below: the ticket opens, no order exists.
 5. Lock vertical cursor line: pan, zoom and resize; the line holds its time.
-6. Table view and Object tree: open, scroll, flip order, select and hide a drawing, undo.
+6. Table view and Object tree: open, scroll, flip order, select and hide a drawing, undo; with a compared symbol, hide it from the tree, remove it, undo.
 7. Remove drawings and Remove indicators: the count is right, one Undo restores all.
 8. Two charts: every entry acts on the chart that was clicked.
 9. Light and dark themes; a detached window.

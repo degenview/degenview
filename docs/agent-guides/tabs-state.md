@@ -31,8 +31,9 @@
   nothing extra. Prediction markets and CoinMarketCap are not asked for (`tab_title::wants_quote`).
   The coordinator repaints only the root viewport, so the same tick repaints every tab window when
   `quote_book.revision()` moves.
-- A tab's width is uniform in a strip (reorder math relies on it) and the amount shown is chosen from
+- A tab's width is uniform in a strip (reorder math relies on it), at most `MAX_TAB_WIDTH` (300), and the amount shown is chosen from
   that width alone (`tab_title::Detail`), never from the live text, so a tick cannot move anything;
+  the `/ layout name` (from `Detail::LAYOUT_WIDTH`, 260) is cut off where the tab ends with a fade into the tab's fill, not an ellipsis;
   the price block also keeps the widest it has been (egui temp memory). At the narrowest
   (`MIN_TAB_WIDTH`) a tab is its logo. With more tabs than fit at the narrowest the row scrolls
   (`tab_bar::max_scroll`): wheel or trackpad over the strip, the active tab eased into view when it
@@ -44,7 +45,7 @@
   menu): it stands in for the symbol and price, and a symbol or layout change never touches it. The
   app-wide style (symbol+price+layout, symbol only, layout name only) is `tab.title_style`
   (`host::tab_title_host`, Settings ▸ Appearance ▸ Tabs). Both are device-local: the `tab` table and
-  that key never sync. The active tab's blue underline is the one coloured thing in the strip; it
+  that key never sync. A hairline (`theme::separator()`, `paint_separators`) divides two neighbouring tabs that are both at rest: not the showing tab, not the one dragged or under the pointer, not across a gap left for an incoming tab. It follows the animated tab rects. The active tab's blue underline is the one coloured thing in the strip; it
   marks selection and is an intentional exception to "never blue".
 
 ## Windows and tabs
@@ -93,8 +94,8 @@
   icons at the strip's far right on every platform, left of the window buttons, and also in
   macOS's Help menu. The user guide (`tab_bar::DOCS_URL`) is the first Help item on macOS and a
   Documentation row in Settings ▸ About on every platform.
-- The first window opens at 80% of the main screen's usable area (`NSScreen.visibleFrame`,
-  `native_bridge::main_work_area`), at least 960x620, at most 2000x1300, never bigger than the area,
+- The first window opens at 80% of the width and 90% of the height of the main screen's usable area
+  (`NSScreen.visibleFrame`, `native_bridge::main_work_area`), at least 960x620, at most 2000x1300, never bigger than the area,
   centered (`Placement::for_work_area`). Windows and Linux have no screen lookup and open at the
   fixed `Placement::DEFAULT_SIZE`. A torn-off window keeps its source's size. Window frames are not
   saved across restarts. The share and limits are a taste choice, not measured.

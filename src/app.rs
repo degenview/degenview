@@ -726,6 +726,7 @@ fn show_restart_prompt(ctx: &egui::Context, env: &WindowEnv, update: &UpdateView
             message: &message,
             accept: "Restart Now",
             dismiss: "Later",
+            cautious: false,
         },
     );
     match outcome {

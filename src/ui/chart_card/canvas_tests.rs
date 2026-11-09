@@ -39,6 +39,7 @@ pub(super) struct Drawn {
     pub(super) segments: Vec<([Pos2; 2], Stroke)>,
     pub(super) texts: Vec<(Pos2, String, f32)>,
     pub(super) meshes: Vec<Arc<egui::epaint::Mesh>>,
+    pub(super) rects: Vec<(Rect, Color32)>,
 }
 
 fn collect(shape: &Shape, out: &mut Drawn) {
@@ -59,6 +60,7 @@ fn collect(shape: &Shape, out: &mut Drawn) {
             ));
         }
         Shape::Mesh(mesh) => out.meshes.push(Arc::clone(mesh)),
+        Shape::Rect(rect) => out.rects.push((rect.rect, rect.fill)),
         Shape::Vec(shapes) => shapes.iter().for_each(|shape| collect(shape, out)),
         _ => {}
     }
@@ -570,7 +572,12 @@ fn scale_lines_use_their_own_colour() {
 fn plot_of(card: &ChartCard, candles: &[Kline]) -> (Rect, View) {
     let plot = Rect::from_min_size(Pos2::ZERO, vec2(600.0, 400.0));
     let view = card
-        .view(candles, plot, PriceScaleMode::Regular, ChartType::Candles)
+        .view(
+            candles,
+            (plot, 0.0),
+            PriceScaleMode::Regular,
+            ChartType::Candles,
+        )
         .expect("a view");
     (plot, view)
 }
@@ -612,7 +619,7 @@ fn the_margins_follow_the_chart_whatever_its_type_or_scale() {
             let view = card
                 .view(
                     &candles,
-                    plot,
+                    (plot, 0.0),
                     PriceScaleMode::from_log_flag(log),
                     chart_type,
                 )

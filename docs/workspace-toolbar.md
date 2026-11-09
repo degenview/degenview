@@ -6,18 +6,20 @@ faint tint on hover, hairline separators between groups, small corner radius.
 
 ## Layout
 
-Left to right: symbol (the focused chart's market, opens the [symbol picker](symbol-picker.md)) |
-timeframe row (`1H … 1Y`, current one lit) | chart type | Indicators, Replay, Alert | Undo, Redo. Right end, from the edge inwards: Add Chart | watchlist toggle, Pine Studio, Portfolio |
+Left to right: symbol (the focused chart's market, opens the [symbol picker](symbol-picker.md)) and a
+⊕ beside it that compares another market (the same picker in Compare mode as the chart settings'
+Compare page, `open_compare_picker`; disabled where a chart cannot take one) |
+timeframe row (`1H … 1Y`, current one lit) | chart type | Indicators | Replay, Alert | Undo, Redo. Right end, from the edge inwards: Add Chart | watchlist toggle, Pine Studio, Portfolio |
 snapshot menu, chart settings | layout menu.
 
 - Every button is a `Button` (id, glyph, label, tooltip, enabled, lit, action). `measure` lays the
   labels out, `arrange` places the two runs, `paint_button` draws one. Tests use `arrange`, so the
   geometry they check is the one drawn.
-- Width: when both runs with labels do not fit, labels (Indicators, Replay, Add Chart) drop and the
-  icons stay; a button without an icon (a timeframe, the layout name) keeps its text. If the runs still
+- Width: when both runs with labels do not fit, labels (Indicators, Add Chart) drop and the
+  icons stay (Replay and Alert are icon only at every width, their tooltips name them); a button without an icon (a timeframe, the layout name) keeps its text. If the runs still
   collide, the right run drops buttons from its left end (the layout menu first). Never overlap. The
   narrowest window is 960 wide and keeps everything but possibly the layout name (the icon-only
-  bar needs about 910 points; it is tested at 960).
+  bar with the layout menu measures 975 points, 910 before the separators and the compare button; at 960 the layout menu is the one that drops, and every other button is tested there).
 - The colours are neutral (`kit::primary` tints, `text_primary` / `text_secondary` /
   `text_tertiary`); the only colour is Replay's orange while a replay is open (state, not a control).
 - `replay_bar.rs` (the strip under the toolbar while a replay is open) uses the same flat style: its

@@ -296,6 +296,43 @@ fn many_overlays_draw_and_the_readout_counts_the_rows_it_cannot_fit() {
 }
 
 #[test]
+fn the_readout_has_the_same_padding_above_its_first_row_and_below_its_last() {
+    let mut chart = harness(&[
+        ("ETHUSDT", market(300, |n| 4_000.0 + n as f64)),
+        ("SOLUSDT", market(300, |n| 150.0 + n as f64)),
+    ]);
+    chart.crosshair = Some(crosshair_at(&chart, 0.5));
+    let (drawn, _) = chart.draw();
+    let names = ["ETHUSDT", "SOLUSDT"];
+    let centres: Vec<f32> = names
+        .iter()
+        .map(|name| {
+            drawn
+                .texts
+                .iter()
+                .find(|(_, text, _)| text == name)
+                .unwrap_or_else(|| panic!("a row for {name}: {:?}", drawn.texts))
+                .0
+                .y
+        })
+        .collect();
+    let box_fill = theme::chrome().gamma_multiply(0.94);
+    let (boxed, _) = drawn
+        .rects
+        .iter()
+        .find(|(rect, fill)| {
+            *fill == box_fill && rect.contains(Pos2::new(rect.center().x, centres[0]))
+        })
+        .expect("the readout box");
+    let above = centres[0] - boxed.top();
+    let below = boxed.bottom() - centres[1];
+    assert!(
+        (above - below).abs() < 0.01,
+        "padding above {above} and below {below}"
+    );
+}
+
+#[test]
 fn the_source_and_scale_are_per_overlay() {
     let mut chart = harness(&[
         ("ETHUSDT", market(300, |n| 4_000.0 + n as f64)),

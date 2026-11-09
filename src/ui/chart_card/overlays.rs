@@ -11,7 +11,7 @@
 //! own: the bars the card is given are already cut at the replay cursor, and an overlay candle
 //! can only land on one of them.
 
-use super::{ChartCard, READOUT_MARGIN, READOUT_PAD, View, truncated};
+use super::{ChartCard, READOUT_MARGIN, READOUT_PAD, READOUT_ROW_GAP, View, truncated};
 use crate::model::chart_type::{ChartType, PriceSource};
 use crate::model::editor_theme::Rgba;
 use crate::model::overlay::{ChartOverlay, OverlayId, OverlayList};
@@ -524,11 +524,12 @@ impl ChartCard {
         let row_height = painter
             .layout_no_wrap("0".into(), font.clone(), Color32::WHITE)
             .size()
-            .y
-            + 2.0;
-        // Aligned with the OHLC box above: the same left edge and inner padding.
+            .y;
+        // Aligned with the OHLC box above: the same left edge, inner padding and row gap (between
+        // rows only, so the padding above the first row and below the last are the same).
         let pad = READOUT_PAD;
-        let room = (plot.bottom() - top - 8.0 - 2.0 * pad.y) / row_height;
+        let stride = row_height + READOUT_ROW_GAP;
+        let room = (plot.bottom() - top - 8.0 - 2.0 * pad.y + READOUT_ROW_GAP) / stride;
         let fit = (room.floor().max(1.0)) as usize;
         let hidden = rows.len().saturating_sub(fit);
         let shown = if hidden > 0 {
@@ -557,9 +558,10 @@ impl ChartCard {
                     .x
             })
             .fold(0.0, f32::max);
+        let lines = shown + usize::from(hidden > 0);
         let content = Vec2::new(
             12.0 + name_width + 8.0 + value_width,
-            (shown + usize::from(hidden > 0)) as f32 * row_height,
+            lines as f32 * row_height + lines.saturating_sub(1) as f32 * READOUT_ROW_GAP,
         );
         let origin = Pos2::new(plot.left() + READOUT_MARGIN, top + 4.0);
         painter.rect(
@@ -570,8 +572,8 @@ impl ChartCard {
             egui::StrokeKind::Inside,
         );
         for (n, (color, name, value)) in rows.iter().take(shown).enumerate() {
-            let y = origin.y + pad.y + n as f32 * row_height;
-            let mid = y + row_height / 2.0 - 1.0;
+            let y = origin.y + pad.y + n as f32 * stride;
+            let mid = y + row_height / 2.0;
             painter.circle_filled(Pos2::new(origin.x + pad.x + 3.0, mid), 3.0, *color);
             painter.text(
                 Pos2::new(origin.x + pad.x + 12.0, mid),
@@ -589,7 +591,7 @@ impl ChartCard {
             );
         }
         if hidden > 0 {
-            let y = origin.y + pad.y + shown as f32 * row_height + row_height / 2.0 - 1.0;
+            let y = origin.y + pad.y + shown as f32 * stride + row_height / 2.0;
             painter.text(
                 Pos2::new(origin.x + pad.x, y),
                 Align2::LEFT_CENTER,

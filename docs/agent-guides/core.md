@@ -60,6 +60,14 @@ See [the architecture map](../architecture.md) before changing module boundaries
   `theme::SYSTEM_ACCENT`. More generally do not reach for the blue accent in new UI: it is not a
   link colour, a button colour or decoration. Existing uses (selection, focus, the intro step badges)
   are not a precedent; do not extend them, and do not recolour them unasked.
+- Small modal dialogs (a confirmation, a question, a notice) are `kit::confirm`, `kit::alert` and
+  `kit::notice`, all drawn by `ui::dialog::show`: a tinted badge with the title and message, a close
+  button, and Cancel and the action side by side at the bottom right. Never hand-roll a modal frame or
+  stack full-width buttons. A destructive action is `Dialog::destructive` (solid red, and the dialog
+  starts on Cancel); an approval that a stray Enter must not give (a request from a program, an
+  upload) is `cautious` (no button focused). A dialog with more to say passes a `body` (a list, a
+  field); a third button on the left is `leading`. The tint colours the badge only, never blue. Big
+  forms are sheets (`ui::sheet`), not dialogs. Look at it in `gallery_of_the_dialogs` before shipping.
 - Outside `src/mcp/`, use background threads and `std::sync::mpsc`, not an async runtime. Shared
   state is `Arc<Mutex<...>>`; keep store locks short.
 - User data lives in bundled-rusqlite SQLite through `store::Store`. Document tables are ordered

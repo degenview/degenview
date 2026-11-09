@@ -477,18 +477,17 @@ impl ChartWorkspace {
                                                 .collect();
                                         card.show(ui, |ui| {
                                             let mut action = ChartCardAction::default();
-                                            chart.chart.header(
-                                                ui,
-                                                &chart.symbol,
-                                                chart.source,
-                                                &chart.indicators,
-                                                candles,
-                                                replay_ms.is_some(),
-                                                favorites.contains(&instrument.key()),
-                                                &memberships,
-                                                &mut action,
-                                                chart_id,
+                                            // The chart reaches the card's top edge and the header is drawn
+                                            // over it afterwards, so its widgets sit above the plot's own
+                                            // pointer area and its empty space still pans the chart.
+                                            let header_rect = egui::Rect::from_min_size(
+                                                ui.available_rect_before_wrap().min,
+                                                egui::vec2(
+                                                    ui.available_width(),
+                                                    ui::CHART_HEADER_HEIGHT,
+                                                ),
                                             );
+                                            chart.chart.set_top_inset(ui::CHART_HEADER_HEIGHT);
                                             let selected = selected_drawing
                                                 .as_ref()
                                                 .filter(|(chart, _)| *chart == chart_id)
@@ -550,6 +549,21 @@ impl ChartWorkspace {
                                                 chart_id,
                                                 &mut frame,
                                                 &mut replay_frame,
+                                            );
+                                            let mut header_ui = ui.new_child(
+                                                egui::UiBuilder::new().max_rect(header_rect),
+                                            );
+                                            chart.chart.header(
+                                                &mut header_ui,
+                                                &chart.symbol,
+                                                chart.source,
+                                                &chart.indicators,
+                                                candles,
+                                                replay_ms.is_some(),
+                                                favorites.contains(&instrument.key()),
+                                                &memberships,
+                                                &mut action,
+                                                chart_id,
                                             );
                                             if let Some(range) = replay_frame.picked_range {
                                                 logs_picked = Some(range);

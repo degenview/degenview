@@ -1035,7 +1035,7 @@ fn tooltip(ui: &Ui, id: Id, response: &egui::Response, tile: Rect, strip_right: 
         rect,
         8.0,
         theme::pick(
-            Color32::from_rgb(48, 57, 62),
+            Color32::from_rgb(33, 40, 44),
             Color32::from_rgb(250, 250, 251),
         ),
     );
