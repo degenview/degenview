@@ -43,14 +43,17 @@ fn wicks_in_window(harness: &mut Harness) -> usize {
         harness.frame();
     }
     let (shapes, _) = harness.frame();
+    // A wick is a filled rectangle about one pixel wide.
     gather(&shapes)
-        .segments
+        .rects
         .iter()
-        .filter(|(points, _)| points[0].x == points[1].x && points[0].y != points[1].y)
-        .filter(|(points, _)| {
-            points
-                .iter()
-                .all(|p| (0.0..=SIZE.y).contains(&p.y) && (0.0..=SIZE.x).contains(&p.x))
+        .map(|(rect, _)| rect)
+        .filter(|rect| rect.width() <= 2.0 && rect.height() > 0.0)
+        .filter(|rect| {
+            (0.0..=SIZE.y).contains(&rect.min.y)
+                && (0.0..=SIZE.y).contains(&rect.max.y)
+                && (0.0..=SIZE.x).contains(&rect.min.x)
+                && (0.0..=SIZE.x).contains(&rect.max.x)
         })
         .count()
 }

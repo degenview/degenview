@@ -891,10 +891,13 @@ fn paint_candle(painter: &Painter, candle: &super::shape::Candle) {
             );
         }
         CandleLook::Body { fill, border, wick } => {
+            let snapped =
+                series_render::snap_candle(x, candle.half, 1.0, painter.ctx().pixels_per_point());
             if let Some(wick) = wick {
-                painter.line_segment(
-                    [pos2(x, top), pos2(x, bottom)],
-                    Stroke::new(1.0, series_render::color(wick)),
+                painter.rect_filled(
+                    Rect::from_min_max(pos2(snapped.wick.0, top), pos2(snapped.wick.1, bottom)),
+                    0.0,
+                    series_render::color(wick),
                 );
             }
             let (body_top, body_bottom) = (
@@ -905,8 +908,8 @@ fn paint_candle(painter: &Painter, candle: &super::shape::Candle) {
                     .max(candle.open.min(candle.close) + 1.0),
             );
             let body = Rect::from_min_max(
-                pos2(x - candle.half, body_top),
-                pos2(x + candle.half, body_bottom),
+                pos2(snapped.body.0, body_top),
+                pos2(snapped.body.1, body_bottom),
             );
             painter.rect_filled(body, 0.0, series_render::color(fill));
             if let Some(border) = border {
