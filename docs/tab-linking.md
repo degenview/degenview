@@ -90,13 +90,14 @@ a saved layout.
 
 ## UI
 
-The section is called **Link Tabs** and is drawn after a mock-up the user supplied: a tile with a
-chain (in the tab's colour once linked) with the title and "Sync this tab's charts with other
-tabs.", a **Link Color** card with the nine swatches (the chosen one ringed and ticked, so it is not
-told by hue alone), **Sync what** with Symbol, Interval, Time and Date range as a grid of cards
-(glyph, name, switch; the whole card is the control, its tooltip says what it does), a picture of
-two linked tabs with a line of explanation, then **Unlink Tab** and **Done** (Done closes the menu).
-With no colour the cards are dimmed and do nothing.
+The section is called **Link Tabs** and is drawn after a mock-up the user supplied: the title and
+"Sync this tab's charts with other tabs.", a **Link Color** card with the nine swatches (the chosen
+one ringed and ticked, so it is not told by hue alone) and, **only while a colour is chosen**,
+**Sync what** with Symbol, Interval, Time and Date range as a grid of cards (glyph, name, switch; the
+whole card is the control, its tooltip says what it does) and a picture of two linked tabs with a
+line of explanation. Choosing the chosen colour again unlinks and the lower part goes away. There
+is no icon beside the title and no Unlink Tab / Done buttons (the mock-up has them; they were
+dropped on request): the menu closes like any context menu.
 
 Where it departs from the mock-up on purpose: nothing is blue (a card that is on has a lighter
 fill and a neutral outline, the switches are the app's neutral ones and Done is the neutral primary

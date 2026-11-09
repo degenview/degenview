@@ -108,20 +108,38 @@ fn a_card_flips_its_own_switch_and_nothing_else() {
     }
 }
 
-#[test]
-fn unlink_tab_unlinks_and_does_nothing_when_there_is_nothing_to_unlink() {
-    let button = Id::new("tab-link-unlink");
-    let said = click(Some(LinkColor::Pink), LinkToggles::default(), button);
-    assert_eq!(said, Some(TabLinkEdit::Color(None)));
-    assert_eq!(click(None, LinkToggles::default(), button), None);
+/// Draws the section a few frames and says whether the widget `target` is there.
+fn is_drawn(color: Option<LinkColor>, target: Id) -> bool {
+    let mut screen = Screen::new(SCREEN);
+    for _ in 0..3 {
+        screen.run(Vec::new(), |ui| {
+            ui.scope_builder(
+                egui::UiBuilder::new().max_rect(Rect::from_min_size(ORIGIN, vec2(WIDTH, 420.0))),
+                |ui| {
+                    show(ui, color, LinkToggles::default());
+                },
+            );
+        });
+    }
+    screen.ctx.read_response(target).is_some()
 }
 
 #[test]
-fn with_no_colour_the_switches_do_nothing() {
-    assert_eq!(
-        click(None, LinkToggles::default(), option_id(Row::Interval)),
-        None
-    );
+fn what_to_sync_only_shows_while_a_colour_is_chosen() {
+    for row in Row::ALL {
+        assert!(!is_drawn(None, option_id(row)), "{row:?} with no colour");
+        assert!(
+            is_drawn(Some(LinkColor::Green), option_id(row)),
+            "{row:?} with a colour"
+        );
+    }
+    // The colours themselves are always there, to choose one.
+    assert!(is_drawn(None, swatch_id(LinkColor::Red)));
+}
+
+#[test]
+fn there_are_no_buttons_under_the_cards() {
+    assert!(!is_drawn(Some(LinkColor::Blue), Id::new("tab-link-unlink")));
 }
 
 #[test]
