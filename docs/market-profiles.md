@@ -39,6 +39,11 @@ stream), `src/workspace/profile_hub.rs` (fetches and shares the data).
 
 ## Decisions
 
+- **A bar is built from trades only if the book reaches both ends of it.** It must start before the bar (no gap since) and hold a trade at or after the bar's end (the last bar is still forming and is exempt), so a closed bar that spans a dropped connection stays an estimate until the gap is backfilled.
+- **Replay asks for the right candles.** A chart in replay far from now tells the hub where its needs *end* (`ProfileNeed::to_ms`), so the finer candles around the replay position are fetched, not the newest 60 000; stepping forward fetches what lies after what is held. Older history arriving into a full candle book makes room by dropping the newest, not the candles just fetched.
+- **Backfills queue.** Every skipped id range of a batch is kept and backfilled one after another.
+- **A doji follows the candle before it within its bar**; the first doji of a bar is a buy (TradingView compares with the previous intrabar, which may be in the previous bar: not reproduced).
+
 - **Exact where the exchange says so, labelled everywhere else.** A footprint bar built from trades
   is `TradeDerived`. From candles with Binance's taker-buy volume it is `ExchangeSplit` (the split of
   each candle is exact, which prices inside it traded is spread evenly). From close-versus-open it is
@@ -273,3 +278,109 @@ membership, the session's span (UTC), its POC/VAH/VAL, totals and where its numb
   BTCUSDT through the real hub gave four sessions from 1-minute candles with the exchange's buy/sell
   split (25 rows each, 360 developing points), and a picture that looked right. Not compared with
   TradingView, not driven in a real window.
+
+## All three together
+
+### Data sources: what is exact and what is estimated
+
+| Market | Volume footprint | Time price opportunity | Session volume profile |
+| --- | --- | --- | --- |
+| Binance | **Trade-derived** (exact per price) for bars the recent trade window covers (up to 6 h or 1 M trades, newest first, plus live); older bars **ExchangeSplit** (each 1-minute-or-finer candle's buy/sell exact, rows estimated) | Exact on 5-minute candles | Up/down **exact per candle** (taker-buy), rows spread evenly: `ExchangeSplit` |
+| Coinbase | Estimated (close vs open on candles); ~60 days of 5-minute candles | Exact on 5-minute candles (~60 days) | Estimated up/down; same depth |
+| DEX (GeckoTerminal) | Estimated; 180 days, hourly paging only | Exact on 5-minute candles | Estimated up/down |
+| Alpaca (stocks) | Unsupported (no intraday candles wired, IEX-only volume) | Unsupported | Unsupported |
+| CoinGecko, prediction markets, CMC | Unsupported (no volume or candles) | Unsupported | Unsupported |
+
+Nothing estimated is presented as exchange data: each footprint bar and each session profile carries a
+`DataQuality`, shown in the status line and the hover.
+
+### Settings inventory
+
+- **Volume footprint:** tick-based calculation, row size (auto or ticks) and ATR length, display
+  (cluster, profile), type (buy and sell, delta, total, ladder), gradient, buy and sell colours, value
+  area on/off and percent, point of control, summary (info box, off), imbalance percent, highlight,
+  colours, stacked highlight and levels, the candle's own settings.
+- **Time price opportunity:** period (days, weeks, months) and count, block size (7 sizes), row size and
+  ticks, value area percent, sessions (all, custom ×5), initial balance blocks, four gradient colours,
+  blocks, letters, opacity outside the value area, expand blocks, ten levels each with show, colour and
+  (where it applies) extend, the volume profile (show, placement, values, POC/VAH/VAL, two colours).
+- **Session volume profile:** sessions (all, custom ×5), volume (up/down, total, delta), value area
+  percent, rows layout and size, POC/VAH/VAL each with show, extend and colour, developing POC, developing
+  value area, values, width, placement, four colours, histogram box colour and opacity.
+
+Every control changes what is built or drawn; none is decorative. Unavailable ones are disabled with the
+reason (tick-based calculation on a market with no trades) or not offered (session presets without
+extended-hours data).
+
+### Compatibility
+
+- **Pine and indicators.** The three types are `DataClass::StandardOhlc` and construct nothing
+  (`Construction::of` is `None`, `chart.is_*` stays standard), so scripts, indicators, `request.security`,
+  script alerts and panes read the provider's own candles exactly as on a candle chart. Tests:
+  `the_order_flow_types_construct_nothing…`, `a_script_alert_on_an_order_flow_chart…`, and the snapshot
+  test with indicators, drawings and replay on. Whether TradingView feeds scripts the same on its own
+  footprint charts was not verified.
+- **Drawings and alerts.** Pinned to time and price through the chart's own projection; the painters
+  never move or hide them, and the snapshot drift test runs with a drawing on. Price alerts read quotes,
+  never a profile level; alerts on TPO or profile levels are not implemented.
+- **Replay.** Each computation reads only bars up to the replay position (and, for the TPO and session
+  profile, candles that open before the end of the last displayed bar): footprint bars, TPO blocks and
+  developing levels never show the future (prefix properties are tests). The current replay bar is shown
+  whole, as its candle is, and there is no sub-bar stepping.
+- **Snapshots.** One renderer (`paint_frame`); a test compares live and snapshot shape for shape for each
+  type *with its data*, and that taking a snapshot changes nothing.
+- **Persistence.** Per-type settings ride in `ChartStyle` (`#[serde(default)]`), kept per type, in layouts
+  and templates (what a profile is built from stays the target's); the TPO's splits and merges are saved
+  with the layout. An older build cannot read a layout that uses the new types (documented).
+- **MCP.** `degenview_set_chart_type` lists the three types and refuses unsupported sources;
+  `degenview_get_candles` still returns the market's own candles.
+- **Menu.** The type menu has a new group, scrolls only when the window is shorter, and is keyboard
+  navigable (arrows, Enter).
+
+### Compared with TradingView
+
+Implemented from its documentation and **checked by tests against those documented rules**: the
+imbalance test and its defaults, the four-step gradient, aggregated-intrabar classification, letters and
+block sizes, the TPO value-area steps, the TPO row-size formula, the session-profile row rule and its own
+worked example, 70 % value areas, the initial balance, poor highs/lows, single prints, "extend until
+intersected". **Not verified:** any pixel or layout comparison (no TradingView chart was compared side by
+side), the exact letter layout, the footprint cell layout, defaults TradingView does not state, tick-based
+calculation beyond Binance, the summary panes and tables, session presets, and how scripts behave on its
+own footprint charts. Do not read "similar to TradingView" as parity.
+
+### Measured
+
+Release builds, one machine (Apple silicon), made-up but realistic data
+(`cargo test --release --lib market_profile::bench -- --ignored --nocapture`, and
+`series_render::bench` for frames):
+
+| Work | Time |
+| --- | --- |
+| Insert 300 000 trades into the book | 2.6 ms |
+| Footprint, 500 hourly bars (30 000 one-minute candles, 5 trade-derived bars), cold | 12.6 ms |
+| Footprint, nothing changed / one live trade | 1.7 ms / 1.4 ms |
+| TPO, 120 daily profiles from 34 560 five-minute candles, cold | 14.4 ms |
+| TPO, nothing changed / the newest candle revised | 0.3 ms / 0.3 ms |
+| Session profiles, 200 sessions, cold: without / with developing levels | 11.6 ms / 22.9 ms |
+| Session profiles, nothing changed | 0.5-0.7 ms |
+| One frame (shapes plus tessellation), 2400 x 1400 points: footprint, 40 bars and 3 038 cells with numbers | 1.8 ms |
+| One frame: footprint with coarse rows / TPO with 19 909 letters / session profile with developing lines | 0.2 ms / 2.8 ms / 0.2 ms |
+
+Work runs on the work queue, never the UI thread, and the hub's shared data is only `try_lock`ed on the
+UI thread. Not measured: memory use, the network fetches (the history of a day of Binance trades is
+hundreds of requests at 4 a second), repeated type switching, replay rewinds, snapshot generation time.
+
+### Looked at
+
+Pictures of each painter in the dark theme (wide, medium, narrow, short, each option) and the light theme
+(`series_render::gallery`) were looked at; the light ones read fine except the volume profile's point-of-control
+line, which was white and is now the theme's text colour. Real-data pictures of each type came from the
+ignored live tests. Not looked at: a real window, a high-DPI display other than the 2x the gallery uses.
+
+### Known limitations
+
+Exact footprints only on Binance and only in the recent trade window; the footprint is built for the
+newest 3000 bars; weekly and longer charts have no session profile; no extended-hours session presets, no
+holiday calendar, custom sessions in UTC; summary panes and tables, alerts on levels and undo for TPO
+splits are not implemented; Alpaca and other non-crypto markets are unsupported; nothing was compared with
+TradingView or driven in a real window.

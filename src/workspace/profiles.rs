@@ -299,6 +299,15 @@ fn now_millis() -> i64 {
         .map_or(0, |elapsed| elapsed.as_millis() as i64)
 }
 
+/// The end of what a chart in replay needs: the end of its last displayed bar. A live chart needs
+/// everything up to now (`i64::MAX`).
+fn replay_end(bars: &[Kline], bar_ms: i64, replay_ms: Option<i64>) -> i64 {
+    match (replay_ms, bars.last()) {
+        (Some(_), Some(last)) => last.open_time.saturating_add(bar_ms),
+        _ => i64::MAX,
+    }
+}
+
 /// What the replay position lets a TPO read: candles opening before the end of the last displayed bar.
 fn tpo_until(bars: &[Kline], bar_ms: i64, replay_ms: Option<i64>) -> i64 {
     match (replay_ms, bars.last()) {
@@ -368,6 +377,7 @@ impl super::ChartWorkspace {
                             interval: plan.interval,
                             interval_ms: plan.interval_ms,
                             from_ms: bars.get(first).map_or(0, |bar| bar.open_time),
+                            to_ms: replay_end(bars, bar_ms, replay_ms),
                             trades: shape.tick_based,
                         })
                     }
@@ -388,6 +398,7 @@ impl super::ChartWorkspace {
                         interval,
                         interval_ms,
                         from_ms,
+                        to_ms: replay_end(bars, bar_ms, replay_ms),
                         trades: false,
                     })
                 }
@@ -400,6 +411,7 @@ impl super::ChartWorkspace {
                     interval: TPO_INTERVAL,
                     interval_ms: TPO_INTERVAL_MS,
                     from_ms: tpo_from(&spans, until),
+                    to_ms: replay_end(bars, bar_ms, replay_ms),
                     trades: false,
                 })
             };
@@ -609,6 +621,11 @@ impl super::ChartWorkspace {
                 status,
             )
         };
+        // What is wanted now is what is running (or already shown): a job that waited for a state the
+        // chart has since left would, once it ran, show a superseded set.
+        if chart.profile.key == Some(job.key()) {
+            chart.profile.waiting = None;
+        }
         if chart.profile.key != Some(job.key()) {
             if chart.profile.inbox.is_some() {
                 chart.profile.waiting = Some(Box::new(job));
@@ -743,19 +760,20 @@ mod tests {
         let fake = Arc::new(Fake::default());
         fake.trades.store(true, Ordering::Release);
         fake.trade_count.store(50, Ordering::Release); // ids 1..=50 at times 1001..=1050
-        // The first bar opens after the first trade, so the book is complete from it.
-        let first = 1_010;
+        // The second (last, still forming) bar opens after the first trade, so the book is complete
+        // from it; the first bar opened before the book starts, so candles build it.
+        let first = 1_010 - DAY;
         market_for(&fake, first, 2 * 24 * 60);
         let (mut workspace, id) = footprint_workspace(&fake, first);
         let set = wait_for_set(&mut workspace, id, |set| {
             set.counts.trades == 1 && set.counts.split == 1
         });
         assert_eq!(
-            set.bars[0].as_ref().unwrap().quality,
+            set.bars[1].as_ref().unwrap().quality,
             DataQuality::TradeDerived
         );
         assert_eq!(
-            set.bars[1].as_ref().unwrap().quality,
+            set.bars[0].as_ref().unwrap().quality,
             DataQuality::ExchangeSplit
         );
     }

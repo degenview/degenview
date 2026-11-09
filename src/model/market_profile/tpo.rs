@@ -192,6 +192,7 @@ impl TpoProfile {
             .and_then(|index| self.rows.get(index))
     }
 
+    #[cfg(test)]
     pub fn volume_total(&self) -> f64 {
         self.rows.iter().map(|row| row.volume).sum()
     }
@@ -396,6 +397,7 @@ impl TpoSet {
         }
     }
 
+    #[cfg(test)]
     /// The profile that holds `time_ms`.
     pub fn profile_at(&self, time_ms: i64) -> Option<&Arc<TpoProfile>> {
         let index = self.profiles.partition_point(|p| p.end_ms <= time_ms);

@@ -7,7 +7,8 @@
 //! 2. *Finer candles with the exchange's buy/sell split* (Binance taker-buy volume): each candle's
 //!    split is exact, and its volume is spread evenly over its low-to-high (an estimate per price).
 //! 3. *Finer candles*: each classed by TradingView's aggregated-intrabar rule (close above open is
-//!    buy, below is sell, a doji follows the candle before it), volume spread evenly.
+//!    buy, below is sell, a doji follows the candle before it *within the bar*: the first doji of a bar
+//!    is a buy), volume spread evenly.
 //! 4. *The chart's own candle*, the same rule on one candle: a coarse estimate.
 //!
 //! A bar is never built from trades *and* candles. **Imbalances exist only for trade-derived bars**:
@@ -293,7 +294,7 @@ pub fn from_trades(
 }
 
 /// TradingView's aggregated-intrabar class of a candle: buy when it closed above its open, sell
-/// below, and a doji follows the candle before it (buy when there is none).
+/// below, and a doji follows the candle before it *in the same bar* (a bar's first doji is a buy).
 fn classify(open: f64, close: f64, previous: Option<(f64, bool)>) -> bool {
     if close > open {
         true
@@ -330,8 +331,7 @@ fn spread_into(
     true
 }
 
-/// A bar from the finer candles inside it. `previous_close` is the close of what came before the
-/// first candle (the doji rule's reference).
+/// A bar from the finer candles inside it.
 pub fn from_candles<'a>(
     open_time: i64,
     end_time: i64,
@@ -623,7 +623,12 @@ pub fn build_set(input: SetInput<'_>, cache: &mut Cache) -> FootprintSet {
         let previous_close = index.checked_sub(1).map(|i| bars[i].close);
         let trade_slice = match (shape.tick_based, trades.as_deref_mut()) {
             (true, Some(book)) => {
-                if book.covers_from(bar.open_time) {
+                // The book must start before the bar and reach its end: a closed bar that spans a
+                // dropped connection holds some of its trades, and is not trade data until the gap is
+                // filled. (The last bar is still forming: its end has not come.)
+                let reaches_end = index + 1 == bars.len()
+                    || book.newest().is_some_and(|newest| newest.time_ms >= end);
+                if reaches_end && book.covers_from(bar.open_time) {
                     let slice = book.between(bar.open_time, end);
                     (!slice.is_empty()).then_some(slice)
                 } else {
@@ -696,7 +701,7 @@ pub fn build_set(input: SetInput<'_>, cache: &mut Cache) -> FootprintSet {
                     DataQuality::TradeDerived => counts.trades += 1,
                     DataQuality::ExchangeSplit => counts.split += 1,
                     DataQuality::Intrabar => counts.intrabar += 1,
-                    DataQuality::ChartBars | DataQuality::Unsupported(_) => counts.chart_bars += 1,
+                    DataQuality::ChartBars => counts.chart_bars += 1,
                 }
                 built[index] = Some(footprint);
             }
@@ -1348,6 +1353,9 @@ mod tests {
                 (103.0, 12.0, 0.0),
             ],
         ));
+        // The book keeps up with the later bars (ids 8 and 9), so the first closed bar is whole.
+        book.insert(&trades_at(HOUR + 5, 8, &[(105.0, 1.0, 0.0)]));
+        book.insert(&trades_at(2 * HOUR + 5, 9, &[(104.0, 1.0, 0.0)]));
         let set = build_set(
             SetInput {
                 bars: &bars,
@@ -1480,5 +1488,45 @@ mod tests {
             &mut Cache::default(),
         );
         assert_eq!(set.grid.unwrap().ticks_per_row(), 4);
+    }
+
+    #[test]
+    fn a_closed_bar_the_trade_book_does_not_reach_the_end_of_is_not_called_trade_data() {
+        let bars = two_bars();
+        let build = |book: &mut TradeBook| {
+            build_set(
+                SetInput {
+                    bars: &bars,
+                    bar_ms: HOUR,
+                    candles: None,
+                    trades: Some(book),
+                    exchange_tick: Some(1.0),
+                    shape: shape(1),
+                },
+                &mut Cache::default(),
+            )
+        };
+        // The stream dropped after the first bar's early trades: the book stops inside the bar.
+        let mut book = TradeBook::default();
+        book.insert(&[lead()]);
+        book.insert(&trades_at(5, 2, &[(100.0, 1.0, 1.0)]));
+        let set = build(&mut book);
+        assert_eq!(set.counts.trades, 0, "{:?}", set.counts);
+        assert_eq!(
+            set.bars[0].as_ref().unwrap().quality,
+            DataQuality::ChartBars
+        );
+        // A trade after the bar proves the book got past its end: now it is trade data.
+        book.insert(&trades_at(HOUR + 5, 4, &[(102.0, 1.0, 1.0)]));
+        let set = build(&mut book);
+        assert_eq!(
+            set.bars[0].as_ref().unwrap().quality,
+            DataQuality::TradeDerived
+        );
+        // The last bar is still forming and may be built from what has arrived.
+        assert_eq!(
+            set.bars[1].as_ref().unwrap().quality,
+            DataQuality::TradeDerived
+        );
     }
 }

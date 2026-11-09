@@ -59,6 +59,9 @@ pub struct ProfileNeed {
     pub interval_ms: i64,
     /// The oldest time the chart needs data for.
     pub from_ms: i64,
+    /// The end of what it needs: `i64::MAX` for a live chart (everything up to now), the end of the
+    /// last displayed bar in replay, where the candles it needs are not the newest ones.
+    pub to_ms: i64,
     /// Whether trades are wanted too (honoured where the source has them: Binance).
     pub trades: bool,
 }
@@ -253,8 +256,12 @@ struct Loaded {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Kind {
-    /// The first load, or older candles: reaches back to `from_ms`.
-    Range,
+    /// The first load: from the need's start to its end (or now).
+    First,
+    /// Older candles: reaches back to `from_ms`.
+    Older,
+    /// Candles after the newest held, up to the need's end (replay moving forward).
+    Newer,
     /// The newest few.
     Tail,
 }
@@ -264,7 +271,7 @@ struct CandleSeries {
     interval: &'static str,
     interval_ms: i64,
     /// Holder chart id → the oldest time it needs.
-    holders: HashMap<u64, i64>,
+    holders: HashMap<u64, (i64, i64)>,
     shared: Arc<CandleShared>,
     status: FlowStatus,
     generation: Arc<AtomicU64>,
@@ -282,6 +289,11 @@ struct CandleSeries {
     pending: Option<Loaded>,
     /// The oldest candle held, kept here so asking for older ones never needs the lock.
     oldest_held: Option<i64>,
+    /// And the newest.
+    newest_held: Option<i64>,
+    /// The end a newer-candles request was last made for, so an answer with nothing newer is not
+    /// asked for again until the need moves.
+    newer_asked: Option<i64>,
 }
 
 impl CandleSeries {
@@ -308,11 +320,17 @@ impl CandleSeries {
             loaded_once: false,
             pending: None,
             oldest_held: None,
+            newest_held: None,
+            newer_asked: None,
         }
     }
 
     fn wanted_from(&self) -> Option<i64> {
-        self.holders.values().copied().min()
+        self.holders.values().map(|(from, _)| *from).min()
+    }
+
+    fn wanted_to(&self) -> Option<i64> {
+        self.holders.values().map(|(_, to)| *to).max()
     }
 
     fn busy(&self) -> bool {
@@ -334,6 +352,9 @@ struct TradeSeries {
     history_started: bool,
     /// Whether a backfill job runs, so two never overlap.
     backfilling: Arc<AtomicBool>,
+    /// Id ranges `(from, to)` (`to` exclusive) the stream skipped and no backfill has asked for yet:
+    /// a gap found while a backfill runs waits here instead of being forgotten.
+    gaps: Vec<(u64, u64)>,
 }
 
 fn key_of(instrument: &InstrumentId) -> String {
@@ -434,7 +455,7 @@ impl ProfileHub {
                 .candles
                 .entry(candle_key(&need.instrument, need.interval))
                 .or_insert_with(|| CandleSeries::new(need));
-            series.holders.insert(chart_id, need.from_ms);
+            series.holders.insert(chart_id, (need.from_ms, need.to_ms));
             if need.trades && self.backend.has_trades(need.instrument.source) {
                 let trades = self
                     .trades
@@ -453,6 +474,7 @@ impl ProfileHub {
                         reconnects_seen: 0,
                         history_started: false,
                         backfilling: Arc::new(AtomicBool::new(false)),
+                        gaps: Vec::new(),
                     });
                 trades.holders.insert(chart_id, need.from_ms);
             }
@@ -508,16 +530,26 @@ impl ProfileHub {
             let Some(wanted) = series.wanted_from() else {
                 continue;
             };
+            let target = series.wanted_to().map_or(i64::MIN, |to| to.min(now_ms()));
             let class = if !series.loaded_once {
                 0
             } else if !series.exhausted && series.reached_ms.is_none_or(|reached| wanted < reached)
             {
                 1
+            } else if series.wanted_to().is_some_and(|to| to < i64::MAX)
+                && series
+                    .newest_held
+                    .is_some_and(|newest| target > newest + 2 * series.interval_ms)
+                && series
+                    .newer_asked
+                    .is_none_or(|asked| target > asked + series.interval_ms)
+            {
+                2
             } else if series
                 .last_tail
                 .is_none_or(|at| now.duration_since(at) >= tail_refresh(series.instrument.source))
             {
-                2
+                3
             } else {
                 continue;
             };
@@ -531,7 +563,13 @@ impl ProfileHub {
             let Some(series) = self.candles.get_mut(&key) else {
                 continue;
             };
-            request_candles(series, &backend, ctx, now, class == 2);
+            let kind = match class {
+                0 => Kind::First,
+                1 => Kind::Older,
+                2 => Kind::Newer,
+                _ => Kind::Tail,
+            };
+            request_candles(series, &backend, ctx, now, kind);
             if class == 0 {
                 series.status = FlowStatus::Loading;
             }
@@ -564,7 +602,7 @@ fn request_candles(
     backend: &Arc<dyn ProfileBackend>,
     ctx: &egui::Context,
     now: Instant,
-    tail: bool,
+    kind: Kind,
 ) {
     let (sender, receiver) = mpsc::channel();
     let instrument = series.instrument.clone();
@@ -573,8 +611,13 @@ fn request_candles(
     let current = Arc::downgrade(&series.generation);
     let (worker, repaint) = (Arc::clone(backend), ctx.clone());
     let wanted = series.wanted_from().unwrap_or(0);
+    let wanted_to = series.wanted_to().unwrap_or(i64::MAX);
     let end_for_range = series.oldest_held.map(|open| open + step);
+    let newest_held = series.newest_held;
     let first_load = !series.loaded_once;
+    if kind == Kind::Newer {
+        series.newer_asked = Some(wanted_to.min(now_ms()));
+    }
     backend.submit(
         instrument.source,
         Box::new(move || {
@@ -585,7 +628,7 @@ fn request_candles(
                 return;
             }
             let now_ms = now_ms();
-            let result = if tail {
+            let result = if kind == Kind::Tail {
                 worker
                     .candles(
                         instrument.source,
@@ -601,10 +644,35 @@ fn request_candles(
                         from_ms: now_ms - TAIL_CANDLES * step,
                         kind: Kind::Tail,
                     })
+            } else if kind == Kind::Newer {
+                // After what is held, up to where the need ends (the candle of overlap is
+                // deduplicated by open time).
+                let start = newest_held.map_or(wanted, |open| open - step);
+                let end = wanted_to.min(now_ms) + step;
+                worker
+                    .candles(
+                        instrument.source,
+                        &instrument.symbol,
+                        interval,
+                        start,
+                        end,
+                        MAX_CANDLES,
+                    )
+                    .map(|candles| Loaded {
+                        candles,
+                        tick_size: None,
+                        from_ms: start,
+                        kind: Kind::Newer,
+                    })
             } else {
-                // A first load reaches from the need to now; later ones fill the part before what
-                // is held (the one candle of overlap is deduplicated by open time).
-                let end = end_for_range.unwrap_or(now_ms + step);
+                // A first load reaches from the need's start to its end (now for a live chart, the
+                // replay position in replay: the newest candles are not what replay needs); later
+                // ones fill the part before what is held (the one candle of overlap is deduplicated
+                // by open time).
+                let end = match (kind, end_for_range) {
+                    (Kind::Older, Some(end)) => end,
+                    _ => wanted_to.min(now_ms) + step,
+                };
                 worker
                     .candles(
                         instrument.source,
@@ -620,7 +688,11 @@ fn request_candles(
                             .then(|| worker.tick_size(instrument.source, &instrument.symbol))
                             .flatten(),
                         from_ms: wanted,
-                        kind: Kind::Range,
+                        kind: if kind == Kind::First {
+                            Kind::First
+                        } else {
+                            Kind::Older
+                        },
                     })
             };
             let _ = sender.send(result);
@@ -664,14 +736,21 @@ fn store(series: &mut CandleSeries, loaded: Loaded) -> bool {
         return false;
     };
     let oldest_returned = loaded.candles.iter().map(|c| c.kline.open_time).min();
-    data.book.insert(loaded.candles);
+    if loaded.kind == Kind::Older {
+        // Older history into a full book: the candles just fetched are the oldest, so it is the
+        // newest that makes room.
+        data.book.insert_evicting_newest(loaded.candles);
+    } else {
+        data.book.insert(loaded.candles);
+    }
     if loaded.tick_size.is_some() {
         data.tick_size = loaded.tick_size;
     }
     series.oldest_held = data.book.oldest_open();
+    series.newest_held = data.book.newest_open();
     drop(data);
     series.shared.revision.fetch_add(1, Ordering::AcqRel);
-    if loaded.kind == Kind::Range {
+    if matches!(loaded.kind, Kind::First | Kind::Older) {
         series.loaded_once = true;
         // Reached what was asked for, or as far as the provider goes (and then no further request
         // for the same start: it would be answered the same way).
@@ -749,24 +828,36 @@ fn drain_live(
     let mut incoming = std::mem::take(&mut series.stash);
     incoming.extend(inbox.drain());
     series.reconnects_seen = inbox.reconnects();
-    if incoming.is_empty() {
-        return false;
+    let mut changed = false;
+    if !incoming.is_empty() {
+        incoming.sort_by_key(|trade| trade.id);
+        let Some(mut book) = try_lock(&series.shared.book) else {
+            series.stash = incoming;
+            return false;
+        };
+        let newest_held = book.newest().map(|trade| trade.id);
+        book.insert(&incoming);
+        drop(book);
+        series.shared.revision.fetch_add(1, Ordering::AcqRel);
+        changed = true;
+        // Every skipped id range: between what was held and the batch, and inside the batch (a
+        // reconnect between two drains that were stashed together).
+        let mut previous = newest_held;
+        for trade in &incoming {
+            if let Some(before) = previous
+                && trade.id > before + 1
+            {
+                let gap = (before + 1, trade.id);
+                if gap.1 - gap.0 <= MAX_BACKFILL && !series.gaps.contains(&gap) {
+                    series.gaps.push(gap);
+                }
+            }
+            previous = Some(previous.map_or(trade.id, |before| before.max(trade.id)));
+        }
     }
-    incoming.sort_by_key(|trade| trade.id);
-    let first_live = incoming[0].id;
-    let Some(mut book) = try_lock(&series.shared.book) else {
-        series.stash = incoming;
-        return false;
-    };
-    let newest_held = book.newest().map(|trade| trade.id);
-    book.insert(&incoming);
-    drop(book);
-    series.shared.revision.fetch_add(1, Ordering::AcqRel);
-    if let Some(newest) = newest_held
-        && first_live > newest + 1
-        && first_live - (newest + 1) <= MAX_BACKFILL
-        && !series.backfilling.swap(true, Ordering::AcqRel)
-    {
+    // One backfill at a time; the next waiting gap starts when the last ends.
+    if !series.gaps.is_empty() && !series.backfilling.swap(true, Ordering::AcqRel) {
+        let (from, to) = series.gaps.remove(0);
         let (shared, cancel, flag) = (
             Arc::clone(&series.shared),
             Arc::clone(&series.cancel),
@@ -777,7 +868,7 @@ fn drain_live(
         backend.submit(
             series.instrument.source,
             Box::new(move || {
-                worker.trade_range(&symbol, newest + 1, first_live, &cancel, &mut |page| {
+                worker.trade_range(&symbol, from, to, &cancel, &mut |page| {
                     lock(&shared.book).insert(&page);
                     shared.revision.fetch_add(1, Ordering::AcqRel);
                     repaint.request_repaint();
@@ -785,8 +876,9 @@ fn drain_live(
                 flag.store(false, Ordering::Release);
             }),
         );
+        changed = true;
     }
-    true
+    changed
 }
 
 /// A scripted backend the hub's and the workspace's tests share: jobs run inline, candles come from
@@ -929,6 +1021,7 @@ mod tests {
             interval: "1m",
             interval_ms: MINUTE,
             from_ms,
+            to_ms: i64::MAX,
             trades,
         }
     }
@@ -1252,5 +1345,117 @@ mod tests {
         hub.forget_chart(1);
         assert!(cancel.load(Ordering::Acquire));
         assert!(hub.trades.is_empty());
+    }
+
+    // MARK: Replay
+
+    fn open_range(shared: &CandleShared) -> (Option<i64>, Option<i64>, usize) {
+        let data = lock(&shared.data);
+        (
+            data.book.oldest_open(),
+            data.book.newest_open(),
+            data.book.len(),
+        )
+    }
+
+    #[test]
+    fn a_chart_in_replay_far_from_now_gets_the_candles_around_the_replay_not_the_newest() {
+        let fake = Arc::new(Fake::default());
+        let t0 = 1_000 * MINUTE;
+        // More candles than the book holds: the newest 60 000 are nowhere near the replay.
+        *fake.market.lock().unwrap() = (0..100_000).map(|i| t0 + i * MINUTE).collect();
+        let mut hub = hub(&fake);
+        let ctx = egui::Context::default();
+        let mut replay = need(t0 + 70_000 * MINUTE, false);
+        replay.to_ms = t0 + 75_000 * MINUTE;
+        hub.sync_chart(1, std::slice::from_ref(&replay));
+        hub.poll(&ctx, Instant::now());
+        hub.poll(&ctx, Instant::now());
+        let (shared, _) = hub.candles(&replay.instrument, "1m").unwrap();
+        let (oldest, newest, count) = open_range(&shared);
+        assert_eq!(
+            oldest,
+            Some(t0 + 70_000 * MINUTE),
+            "from the start of the need"
+        );
+        assert!(
+            newest.unwrap() <= t0 + 75_000 * MINUTE,
+            "not past the replay: {newest:?}"
+        );
+        assert!(count > 4_000, "{count}");
+        // Replay steps forward: the candles after what is held are fetched, not the newest ones.
+        replay.to_ms = t0 + 80_000 * MINUTE;
+        hub.sync_chart(1, std::slice::from_ref(&replay));
+        hub.poll(&ctx, Instant::now());
+        hub.poll(&ctx, Instant::now());
+        let (oldest, newest, _) = open_range(&shared);
+        assert_eq!(oldest, Some(t0 + 70_000 * MINUTE));
+        assert_eq!(newest, Some(t0 + 80_000 * MINUTE), "up to the new position");
+        let opens = open_times(&shared);
+        assert!(
+            opens.windows(2).all(|w| w[1] - w[0] == MINUTE),
+            "no hole between the two loads"
+        );
+        // Nothing newer exists to fetch beyond what the replay asked for: no repeated request.
+        let requests = fake.candle_requests.lock().unwrap().len();
+        hub.poll(&ctx, Instant::now());
+        hub.poll(&ctx, Instant::now());
+        assert_eq!(fake.candle_requests.lock().unwrap().len(), requests);
+    }
+
+    #[test]
+    fn a_live_chart_still_loads_up_to_now_and_a_replay_ending_in_the_future_is_clamped_to_now() {
+        let fake = fake_with_candles(5);
+        let mut hub = hub(&fake);
+        let ctx = egui::Context::default();
+        hub.sync_chart(1, &[need(T0, false)]);
+        hub.poll(&ctx, Instant::now());
+        hub.poll(&ctx, Instant::now());
+        let requests = fake.candle_requests.lock().unwrap().clone();
+        let first = requests[0];
+        assert!(
+            first.1
+                > std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis() as i64
+                    - MINUTE * 10,
+            "the end of a first load is about now, not i64::MAX: {}",
+            first.1
+        );
+        assert!(first.1 < i64::MAX / 2);
+    }
+
+    // MARK: Gaps
+
+    #[test]
+    fn every_skipped_id_range_of_a_batch_is_backfilled_one_after_the_other() {
+        let fake = fake_with_candles(3);
+        fake.trades.store(true, Ordering::Release);
+        fake.trade_count.store(10, Ordering::Release);
+        let mut hub = hub(&fake);
+        let ctx = egui::Context::default();
+        hub.sync_chart(1, &[need(T0, true)]);
+        hub.poll(&ctx, Instant::now());
+        let inbox = fake.inbox.lock().unwrap().clone().unwrap();
+        // After a reconnect: 11..=39 missed, then 40..=42, then 43..=89 missed again, then 90.
+        for id in [40, 41, 42, 90] {
+            inbox.push(trade(id));
+        }
+        for _ in 0..4 {
+            hub.poll(&ctx, Instant::now());
+        }
+        assert_eq!(
+            *fake.range_requests.lock().unwrap(),
+            vec![(11, 40), (43, 90)]
+        );
+        let (shared, _) = hub.trades(&need(T0, true).instrument).unwrap();
+        let mut book = lock(&shared.book);
+        let ids: Vec<u64> = book.trades().iter().map(|t| t.id).collect();
+        assert!(
+            ids.windows(2).all(|w| w[1] == w[0] + 1),
+            "the book is gap free: {ids:?}"
+        );
+        assert!(book.complete_from_ms().is_some());
     }
 }

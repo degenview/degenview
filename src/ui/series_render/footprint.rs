@@ -495,33 +495,37 @@ fn paint_projections(
     if !settings.highlight_stacked || !settings.highlight_imbalances {
         return;
     }
-    // `set.projections` indexes the set's bars; the frame shows a slice of the chart's bars.
-    let Some(first_open) = frame.bars.first().map(|bar| bar.open_time) else {
-        return;
-    };
-    let offset = set.open_times.binary_search(&first_open).ok();
-    let Some(offset) = offset else { return };
+    // `set.projections` index the set's bars, which can reach further back than the view starts (and
+    // start later than it does): each end is found in the view by its bar's open time.
     let plot = frame.plot;
-    for projection in &set.projections {
-        let from = projection.from as isize - offset as isize;
-        let until = projection
-            .until
-            .map(|until| until as isize - offset as isize);
-        // Entirely before the view, or touched before it.
-        if until.is_some_and(|until| until < 0) || from >= frame.bars.len() as isize {
-            continue;
-        }
-        let start_x = if from < 0 {
-            plot.left()
+    let slot_of = |time_ms: i64| -> Slot {
+        let at = frame.bars.partition_point(|bar| bar.open_time < time_ms);
+        if frame.bars.is_empty() || at == 0 && frame.bars[0].open_time != time_ms {
+            Slot::Before
+        } else if at >= frame.bars.len() {
+            Slot::After
         } else {
-            (frame.x_for)(from as usize) + frame.slot_width * 0.45
+            Slot::At(at)
+        }
+    };
+    for projection in &set.projections {
+        let Some(from_time) = set.open_times.get(projection.from).copied() else {
+            continue;
         };
-        let end_x = match until {
-            Some(until) if (until as usize) < frame.bars.len() => {
-                (frame.x_for)(until.max(0) as usize)
-            }
-            Some(_) => plot.right(),
-            None => plot.right(),
+        let start_x = match slot_of(from_time) {
+            Slot::Before => plot.left(),
+            Slot::At(index) => (frame.x_for)(index) + frame.slot_width * 0.45,
+            Slot::After => continue,
+        };
+        let end_x = match projection
+            .until
+            .and_then(|until| set.open_times.get(until).copied())
+            .map(slot_of)
+        {
+            // Touched before the view starts: nothing of it is on screen.
+            Some(Slot::Before) => continue,
+            Some(Slot::At(index)) => (frame.x_for)(index),
+            Some(Slot::After) | None => plot.right(),
         };
         let (top, bottom) = (frame.y(projection.high), frame.y(projection.low));
         if end_x <= start_x || bottom < plot.top() || top > plot.bottom() {
@@ -606,6 +610,13 @@ pub fn hover(
         ),
         text: lines.join("\n"),
     })
+}
+
+/// Where an instant falls in the bars in view.
+enum Slot {
+    Before,
+    At(usize),
+    After,
 }
 
 /// Where the data came from, or why there is none: bottom left, small.
@@ -984,6 +995,108 @@ mod tests {
                 }));
             }
             screen.save(name, last.expect("a frame"));
+        }
+    }
+
+    #[test]
+    fn stacked_imbalance_projections_are_drawn_when_the_view_starts_after_the_bar_that_owns_them() {
+        use crate::model::market_profile::footprint::{Cache, SetInput, build_set};
+        use crate::model::market_profile::trades::{Trade, TradeBook};
+        // Bar 0 builds a stack of buy imbalances at 101..104; later bars stay clear of it.
+        let hour = 3_600_000;
+        let mk = |i: i64, low: f64, high: f64| Kline {
+            open_time: i * hour,
+            close_time: (i + 1) * hour - 1,
+            open: low + 1.0,
+            high,
+            low,
+            close: high - 1.0,
+            volume: 10.0,
+        };
+        let chart = vec![
+            mk(0, 100.0, 104.0),
+            mk(1, 108.0, 112.0),
+            mk(2, 108.0, 112.0),
+            mk(3, 108.0, 112.0),
+        ];
+        let mut book = TradeBook::default();
+        let t = |id: u64, time_ms: i64, price: f64, qty: f64, buy: bool| Trade {
+            id,
+            time_ms,
+            price,
+            quantity: qty,
+            buyer_is_maker: !buy,
+        };
+        book.insert(&[
+            t(1, -1, 100.0, 0.01, false),
+            t(2, 5, 100.0, 4.0, false),
+            t(3, 5, 100.0, 4.0, true),
+            t(4, 5, 101.0, 12.0, true),
+            t(5, 5, 101.0, 4.0, false),
+            t(6, 5, 102.0, 12.0, true),
+            t(7, 5, 102.0, 4.0, false),
+            t(8, 5, 103.0, 12.0, true),
+            t(9, hour + 5, 110.0, 1.0, true),
+            t(10, 2 * hour + 5, 110.0, 1.0, true),
+            t(11, 3 * hour + 5, 110.0, 1.0, true),
+        ]);
+        let set = build_set(
+            SetInput {
+                bars: &chart,
+                bar_ms: hour,
+                candles: None,
+                trades: Some(&mut book),
+                exchange_tick: Some(1.0),
+                shape: ChartStyle::default().footprint.shape(),
+            },
+            &mut Cache::default(),
+        );
+        assert!(
+            !set.projections.is_empty(),
+            "the fixture makes a stack: {:?}",
+            set.counts
+        );
+        let feed = ProfileFeed {
+            footprint: Some(std::sync::Arc::new(set)),
+            ..ProfileFeed::default()
+        };
+        let count = |highlight: bool, from: usize| {
+            let mut style = style();
+            style.footprint.highlight_stacked = highlight;
+            let ctx = egui::Context::default();
+            let shown = &chart[from..];
+            let plot = Rect::from_min_max(Pos2::ZERO, Pos2::new(600.0, 600.0));
+            let scale = PriceScale::linear(95.0, 115.0, 0.0, 600.0);
+            let slot = 600.0 / shown.len() as f32;
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                let x_for = |index: usize| slot * (index as f32 + 0.5);
+                paint(&SeriesFrame {
+                    painter: ui.painter(),
+                    plot,
+                    bars: shown,
+                    synthetic: None,
+                    box_size: None,
+                    previous_close: None,
+                    slot_width: slot,
+                    x_for: &x_for,
+                    scale: &scale,
+                    palette: Palette::new([0, 200, 0], [200, 0, 0]),
+                    style: &style,
+                    chart_type: ChartType::VolumeFootprint,
+                    recolor: None,
+                    price_format: PriceFormat::AUTO,
+                    profiles: Some(&feed),
+                });
+            });
+            output.textures_delta.clear();
+            output.shapes.len()
+        };
+        // Seen from the first bar and from the second: the stack (never touched) is drawn in both.
+        for from in [0, 1] {
+            assert!(
+                count(true, from) > count(false, from),
+                "view from bar {from}"
+            );
         }
     }
 }

@@ -10,7 +10,11 @@
 //! Everything here is the *main series*. A script's `plotcandle()` and `plotbar()` are drawn by
 //! `pine_chart_render` as their own layer and are unaffected by the chart type.
 
+#[cfg(test)]
+mod bench;
 mod footprint;
+#[cfg(test)]
+mod gallery;
 mod svp;
 mod tpo;
 

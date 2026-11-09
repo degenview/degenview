@@ -3799,4 +3799,33 @@ mod tests {
         card.appearance_mut().bearish = [1, 2, 3];
         assert_eq!(card.bearish_color(), Color32::from_rgb(1, 2, 3));
     }
+
+    #[test]
+    fn a_script_alert_on_an_order_flow_chart_runs_over_the_real_candles() {
+        let candles: Vec<Kline> = (0..30)
+            .map(|i| Kline {
+                open_time: i * 3_600_000,
+                close_time: (i + 1) * 3_600_000 - 1,
+                open: 100.0 + i as f64,
+                high: 103.0 + i as f64,
+                low: 99.0 + i as f64,
+                close: 101.0 + i as f64,
+                volume: 5.0,
+            })
+            .collect();
+        for chart_type in [
+            ChartType::VolumeFootprint,
+            ChartType::TimePriceOpportunity,
+            ChartType::SessionVolumeProfile,
+        ] {
+            let mut card = ChartCard::default();
+            card.set_chart_type(chart_type);
+            let (bars, run) = card.pine_feed(&candles, DataSource::Binance, 0);
+            assert_eq!(bars, candles, "{chart_type:?}");
+            assert_eq!(run.construction, None);
+            // Where the source cannot show it the chart draws candles and scripts read the same.
+            let (bars, _) = card.pine_feed(&candles, DataSource::Alpaca, 0);
+            assert_eq!(bars, candles);
+        }
+    }
 }

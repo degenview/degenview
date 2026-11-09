@@ -1753,3 +1753,154 @@ fn gallery_of_the_cards() {
     }
     theme::apply(&egui::Context::default(), AppTheme::Dark);
 }
+
+// MARK: Order-flow types with data
+
+/// A feed of each order-flow type built by the real engines over the harness's own candles: the
+/// footprint from the chart's candles alone, the TPO and session profile from five-minute candles
+/// cut from each hourly one.
+fn order_flow_feed(
+    chart_type: ChartType,
+    candles: &[Kline],
+) -> crate::model::market_profile::feed::ProfileFeed {
+    use crate::model::chart_type::ChartStyle;
+    use crate::model::market_profile::feed::ProfileFeed;
+    use crate::model::market_profile::flow::{CandleBook, FlowKline};
+    use crate::model::market_profile::{footprint, svp, tpo};
+    use std::sync::Arc;
+    let style = ChartStyle::default();
+    let mut book = CandleBook::new(300_000, 100_000);
+    for bar in candles {
+        book.insert((0..12).map(|k| FlowKline {
+            kline: Kline {
+                open_time: bar.open_time + k * 300_000,
+                close_time: bar.open_time + (k + 1) * 300_000 - 1,
+                open: bar.open,
+                high: bar.high,
+                low: bar.low,
+                close: bar.close,
+                volume: bar.volume / 12.0,
+            },
+            taker_buy: None,
+        }));
+    }
+    match chart_type {
+        ChartType::VolumeFootprint => ProfileFeed {
+            footprint: Some(Arc::new(footprint::build_set(
+                footprint::SetInput {
+                    bars: candles,
+                    bar_ms: HOUR,
+                    candles: None,
+                    trades: None,
+                    exchange_tick: Some(0.5),
+                    shape: style.footprint.shape(),
+                },
+                &mut footprint::Cache::default(),
+            ))),
+            ..ProfileFeed::default()
+        },
+        ChartType::TimePriceOpportunity => ProfileFeed {
+            tpo: Some(Arc::new(tpo::build_set(
+                tpo::SetInput {
+                    bars: candles,
+                    bar_ms: HOUR,
+                    candles: &book,
+                    exchange_tick: Some(0.5),
+                    shape: style.tpo.shape(),
+                    edits: &[],
+                    until_ms: i64::MAX,
+                    now_ms: i64::MAX,
+                },
+                &mut tpo::Cache::default(),
+            ))),
+            ..ProfileFeed::default()
+        },
+        _ => ProfileFeed {
+            svp: Some(Arc::new(svp::build_set(
+                svp::SetInput {
+                    bars: candles,
+                    bar_ms: HOUR,
+                    candles: &book,
+                    exchange_tick: Some(0.5),
+                    shape: style.svp.shape(),
+                    until_ms: i64::MAX,
+                    now_ms: i64::MAX,
+                },
+                &mut svp::Cache::default(),
+            ))),
+            ..ProfileFeed::default()
+        },
+    }
+}
+
+const ORDER_FLOW: [ChartType; 3] = [
+    ChartType::VolumeFootprint,
+    ChartType::TimePriceOpportunity,
+    ChartType::SessionVolumeProfile,
+];
+
+#[test]
+fn the_order_flow_types_snapshot_as_they_draw_with_their_data_in() {
+    for chart_type in ORDER_FLOW {
+        let mut harness = Harness::new(ChartCanvas::default());
+        harness.card.appearance_mut().style.chart_type = chart_type;
+        let feed = order_flow_feed(chart_type, &harness.candles);
+        harness.card.set_profile_feed(Some(feed));
+        let (live, rect) = settled(&mut harness);
+        let (only_live, only_snapshot) =
+            differences(&live, &snapshot_shapes(&harness, rect, false));
+        let gists = |dumps: &[String]| dumps.iter().map(|d| gist(d)).collect::<Vec<_>>();
+        assert!(
+            only_snapshot.is_empty(),
+            "{chart_type:?}: {:#?}",
+            gists(&only_snapshot)
+        );
+        assert!(
+            only_live.is_empty(),
+            "{chart_type:?}: {:#?}",
+            gists(&only_live)
+        );
+        // The data is really in the picture: more shapes than the bare chart draws.
+        let mut bare = Harness::new(ChartCanvas::default());
+        bare.card.appearance_mut().style.chart_type = chart_type;
+        let (bare_live, _) = settled(&mut bare);
+        assert!(
+            live.len() > bare_live.len() || chart_type == ChartType::VolumeFootprint,
+            "{chart_type:?}"
+        );
+    }
+}
+
+#[test]
+fn a_snapshot_with_the_data_in_does_not_change_the_chart() {
+    for chart_type in ORDER_FLOW {
+        let mut harness = Harness::new(ChartCanvas::default());
+        harness.card.appearance_mut().style.chart_type = chart_type;
+        let feed = order_flow_feed(chart_type, &harness.candles);
+        harness.card.set_profile_feed(Some(feed.clone()));
+        let (before, rect) = settled(&mut harness);
+        let _ = snapshot_shapes(&harness, rect, false);
+        let _ = snapshot_shapes(&harness, rect, true);
+        let (after, _) = settled(&mut harness);
+        assert_eq!(dumped(&before), dumped(&after), "{chart_type:?}");
+        assert_eq!(
+            harness.card.profile_feed(),
+            Some(&feed),
+            "the feed is untouched"
+        );
+    }
+}
+
+#[test]
+fn indicators_drawings_and_replay_still_draw_over_each_order_flow_type() {
+    for chart_type in ORDER_FLOW {
+        let mut harness = Harness::new(ChartCanvas::default());
+        harness.card.appearance_mut().style.chart_type = chart_type;
+        harness.indicators = everything_on();
+        harness.drawings = vec![trend_line()];
+        harness.replay_active = true;
+        let feed = order_flow_feed(chart_type, &harness.candles);
+        harness.card.set_profile_feed(Some(feed));
+        same_as_live(&mut harness, false);
+    }
+}

@@ -5,7 +5,8 @@
 //! showing. Nothing estimated is ever presented as exchange data, and a bar that cannot be built says
 //! why instead of drawing something plausible.
 
-/// The quality of one bar's (or session's) data, best first.
+/// The quality of one bar's (or session's) data, best first. A bar that cannot be built has no
+/// quality: it carries an [`Unsupported`] reason instead.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DataQuality {
     /// Every trade of the bar, each with the exchange's aggressor side: exact per price.
@@ -18,8 +19,6 @@ pub enum DataQuality {
     Intrabar,
     /// The chart's own candles only (no finer data): a coarse estimate.
     ChartBars,
-    /// Nothing can be built.
-    Unsupported(Unsupported),
 }
 
 /// Why a bar or chart cannot be built.
@@ -27,20 +26,14 @@ pub enum DataQuality {
 pub enum Unsupported {
     /// The market carries no volume (some providers send none).
     NoVolume,
-    /// The source has no intraday candles (stocks on hourly bars, prediction markets).
-    NoIntradayData,
     /// The chart's bar is too short to cut into anything finer.
     BarTooShort,
     /// The chart's bar is too long for this chart type.
     BarTooLong,
     /// The price step of the market is unknown and cannot be inferred.
     NoTickSize,
-    /// Finer data could not be loaded (network error, provider limit).
-    FetchFailed,
     /// The rows asked for would be more than the engine draws.
     TooManyRows,
-    /// A custom session is not valid.
-    BadSession,
 }
 
 impl DataQuality {
@@ -63,11 +56,11 @@ impl DataQuality {
             Self::ExchangeSplit => "Exchange buy/sell split, prices estimated",
             Self::Intrabar => "Estimated from lower-timeframe candles",
             Self::ChartBars => "Estimated from chart candles",
-            Self::Unsupported(_) => "Not available",
         }
     }
 
     /// One or two sentences saying what the data is and is not.
+    #[cfg(test)]
     pub fn explanation(self) -> &'static str {
         match self {
             Self::TradeDerived => {
@@ -85,7 +78,6 @@ impl DataQuality {
             Self::ChartBars => {
                 "No finer data is available, so volume is spread over each chart candle's range."
             }
-            Self::Unsupported(reason) => reason.explanation(),
         }
     }
 }
@@ -94,13 +86,10 @@ impl Unsupported {
     pub fn explanation(self) -> &'static str {
         match self {
             Self::NoVolume => "This market has no volume data.",
-            Self::NoIntradayData => "This source has no intraday candles to build it from.",
             Self::BarTooShort => "The chart's bars are too short to cut into finer data.",
             Self::BarTooLong => "The chart's bars are too long for this chart type.",
             Self::NoTickSize => "The price step of this market is not known.",
-            Self::FetchFailed => "The finer data could not be loaded.",
             Self::TooManyRows => "That row size would need too many rows. Use a larger row size.",
-            Self::BadSession => "A custom session is not valid.",
         }
     }
 }
@@ -115,7 +104,6 @@ mod tests {
             DataQuality::ExchangeSplit,
             DataQuality::Intrabar,
             DataQuality::ChartBars,
-            DataQuality::Unsupported(Unsupported::NoVolume),
         ] {
             assert!(!quality.is_exact(), "{quality:?}");
             assert!(!quality.has_real_rows(), "{quality:?}");
@@ -131,7 +119,6 @@ mod tests {
             DataQuality::ExchangeSplit,
             DataQuality::Intrabar,
             DataQuality::ChartBars,
-            DataQuality::Unsupported(Unsupported::FetchFailed),
         ] {
             assert!(!quality.label().is_empty());
             assert!(quality.explanation().ends_with('.'), "{quality:?}");

@@ -78,10 +78,12 @@ impl CandleBook {
         self.interval_ms
     }
 
+    #[cfg(test)]
     pub fn len(&self) -> usize {
         self.candles.len()
     }
 
+    #[cfg(test)]
     pub fn is_empty(&self) -> bool {
         self.candles.is_empty()
     }
@@ -112,6 +114,23 @@ impl CandleBook {
         stored
     }
 
+    /// Like [`Self::insert`], but when the book is over capacity the **newest** go: for older history
+    /// arriving into a full book, whose oldest candles are the ones just fetched.
+    pub fn insert_evicting_newest(
+        &mut self,
+        incoming: impl IntoIterator<Item = FlowKline>,
+    ) -> usize {
+        let before = self.capacity;
+        // Let the insert run unbounded, then trim from the other end.
+        self.capacity = usize::MAX;
+        let stored = self.insert(incoming);
+        self.capacity = before;
+        while self.candles.len() > self.capacity {
+            self.candles.pop_last();
+        }
+        stored
+    }
+
     /// The candles opening in `start_ms <= open_time < end_ms`, oldest first.
     pub fn between(&self, start_ms: i64, end_ms: i64) -> impl Iterator<Item = &FlowKline> {
         self.candles
@@ -119,6 +138,7 @@ impl CandleBook {
             .map(|(_, candle)| candle)
     }
 
+    #[cfg(test)]
     /// Open times in `[start_ms, end_ms)` (aligned to the interval) for which no candle is held:
     /// where a profile has a hole. Bounded to `limit` entries.
     pub fn missing(&self, start_ms: i64, end_ms: i64, limit: usize) -> Vec<i64> {
@@ -134,6 +154,7 @@ impl CandleBook {
         missing
     }
 
+    #[cfg(test)]
     /// Drops every candle opening before `time_ms`.
     pub fn forget_before(&mut self, time_ms: i64) {
         self.candles = self.candles.split_off(&time_ms);
@@ -246,5 +267,20 @@ mod tests {
         book.forget_before(3 * MINUTE);
         assert_eq!(book.oldest_open(), Some(3 * MINUTE));
         assert_eq!(book.len(), 2);
+    }
+
+    #[test]
+    fn older_history_into_a_full_book_keeps_what_was_just_fetched() {
+        let mut book = CandleBook::new(MINUTE, 5);
+        book.insert((10..15).map(|i| candle(i * MINUTE, 100.0, 1.0, None)));
+        // Inserting older candles the usual way drops them: they are the oldest.
+        let mut usual = book.clone();
+        usual.insert((5..10).map(|i| candle(i * MINUTE, 100.0, 1.0, None)));
+        assert_eq!(usual.oldest_open(), Some(10 * MINUTE));
+        // The older-history insert keeps them and drops the newest instead.
+        book.insert_evicting_newest((5..10).map(|i| candle(i * MINUTE, 100.0, 1.0, None)));
+        assert_eq!(book.len(), 5);
+        assert_eq!(book.oldest_open(), Some(5 * MINUTE));
+        assert_eq!(book.newest_open(), Some(9 * MINUTE));
     }
 }

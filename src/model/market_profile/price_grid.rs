@@ -29,14 +29,12 @@ impl PriceGrid {
         })
     }
 
-    pub fn tick(&self) -> f64 {
-        self.tick
-    }
-
+    #[cfg(test)]
     pub fn ticks_per_row(&self) -> u32 {
         self.ticks_per_row
     }
 
+    #[cfg(test)]
     /// The height of a row in price.
     pub fn height(&self) -> f64 {
         self.tick * f64::from(self.ticks_per_row)

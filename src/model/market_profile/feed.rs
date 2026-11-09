@@ -20,6 +20,7 @@ pub struct ProfileFeed {
 }
 
 impl ProfileFeed {
+    #[cfg(test)]
     pub fn loading() -> Self {
         Self {
             loading: true,
