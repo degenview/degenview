@@ -154,7 +154,11 @@ impl Tabs {
                         tab.said.push(LinkSignal::View(change));
                         tab.announced += 1;
                     }
-                    tab.hub.end_frame();
+                    // As the workspace does: a chart with no bars was not asked to follow, so the
+                    // frame does not count towards ending a zoom burst.
+                    if !tab.candles.is_empty() {
+                        tab.hub.end_frame();
+                    }
                 });
             }
         });
@@ -352,4 +356,26 @@ fn a_flood_of_frames_stays_bounded() {
     tabs.wheel(tabs.in_plot(0), Vec2::new(0.0, 40.0));
     tabs.wheel(tabs.in_plot(0), Vec2::new(0.0, -40.0));
     assert!(tabs.tabs[0].said.is_empty() && tabs.tabs[1].said.is_empty());
+}
+
+#[test]
+fn a_zoom_made_while_the_other_tab_is_loading_reaches_it_when_its_bars_arrive() {
+    let leader = series(T0, HOUR, 800);
+    let mut tabs = Tabs::new(toggles(false, true), [leader, Vec::new()]);
+    tabs.wheel(tabs.in_plot(0), Vec2::new(0.0, 60.0));
+    let leader_zoom = tabs.view(0).visible;
+    assert_ne!(
+        leader_zoom,
+        crate::model::viewport::DEFAULT_VISIBLE,
+        "the leader zoomed"
+    );
+    // Many frames pass with the other tab still empty.
+    tabs.frames(30);
+    tabs.tabs[1].candles = series(T0, HOUR, 800);
+    tabs.frames(4);
+    assert_ne!(
+        tabs.view(1).visible,
+        crate::model::viewport::DEFAULT_VISIBLE,
+        "the follower took the zoom"
+    );
 }

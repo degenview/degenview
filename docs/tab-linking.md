@@ -73,8 +73,10 @@ with `follow_sync` before it draws, exactly as a chart follows another chart of 
 A chart with no bars yet is not asked to follow, so the event waits for its candles, and so does
 a tab that is not showing (it follows when it is next drawn). Nothing jumps when a switch is turned
 on; the next navigation takes effect, and an event that arrives under other switches than the last
-one starts the tab's hub afresh. A symbol or interval change resets every linked
-chart to its newest bars, the way it does for the user, and the view is not replayed afterwards.
+one starts the tab's hub afresh. A symbol or interval change (the group's or the user's own) resets every linked
+chart to its newest bars, the way it does for the user, and drops a view the tab was still waiting
+to follow, so the old series' view is never replayed on the new one. A zoom waits for a chart that
+has no bars yet: a frame without bars does not count towards ending the zoom.
 Price-based chart types (Renko, Kagi, Line Break, Point & Figure, Range) neither lead nor follow.
 Vertical scales are never carried.
 

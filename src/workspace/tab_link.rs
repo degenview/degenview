@@ -43,6 +43,26 @@ pub(super) struct LinkState {
 /// The "chart" that navigated, as far as the hub is concerned: no real chart has this id.
 const LINK_ORIGIN: u64 = u64::MAX;
 
+impl LinkState {
+    /// End of a frame of the tab's grid. `waiting`: the chart that follows the group had no bars
+    /// this frame, so it was not asked to follow and nothing has been delivered to it yet.
+    ///
+    /// The hub ends a zoom burst with the first frame that did not zoom. A chart that was not
+    /// asked to follow must not count that frame, or a zoom-only follower whose bars arrive a
+    /// few frames later would find the burst over and the zoom lost.
+    pub(super) fn end_frame(&mut self, waiting: bool) {
+        if !waiting {
+            self.hub.end_frame();
+        }
+    }
+
+    /// The tab's series changed (another market, another timeframe): what the hub was carrying
+    /// was about the old one, and the chart is back at its newest bars.
+    pub(super) fn series_changed(&mut self) {
+        self.hub.reset();
+    }
+}
+
 fn slot(kind: LinkKind) -> usize {
     match kind {
         LinkKind::Symbol => 0,

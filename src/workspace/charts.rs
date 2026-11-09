@@ -298,6 +298,7 @@ impl ChartWorkspace {
         self.replay_rebase |= self.replay.session.is_some();
         self.drop_rulers();
         self.forget_views(None);
+        self.link_state.series_changed();
         for chart in &mut self.charts {
             chart.chart.reset_view();
             chart.candles.clear();
@@ -395,6 +396,7 @@ impl ChartWorkspace {
         chart.replace_market(item);
         chart.chart.reset_view();
         chart.fetch(self.timeframe, ctx);
+        self.link_state.series_changed();
         self.forget_views(Some(chart_id));
         self.focus_chart(chart_id);
     }

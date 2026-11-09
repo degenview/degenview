@@ -299,6 +299,8 @@ impl ChartWorkspace {
             .is_linked()
             .then(|| self.resolved_focused_id())
             .flatten();
+        // The chart that follows the group had no bars to follow with this frame.
+        let mut link_waiting = false;
 
         let mut drawing_commands: Vec<(u64, Vec<DrawingCommand>)> = Vec::new();
         let mut drawing_select: Option<(u64, Vec<u64>)> = None;
@@ -480,6 +482,9 @@ impl ChartWorkspace {
                                                 chart.source,
                                                 candles,
                                             );
+                                        }
+                                        if link_focus == Some(chart_id) && candles.is_empty() {
+                                            link_waiting = true;
                                         }
                                         if link_focus == Some(chart_id) && !candles.is_empty() {
                                             // A follower's move is made before the frame's baseline,
@@ -726,7 +731,7 @@ impl ChartWorkspace {
         });
 
         self.sync_hub.end_frame();
-        self.link_state.hub.end_frame();
+        self.link_state.end_frame(link_waiting);
         if navigated {
             // Charts drawn before the one being navigated hear of it one frame later: ask for it
             // at once.

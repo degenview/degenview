@@ -469,3 +469,128 @@ fn a_symbol_the_user_chose_over_a_pending_link_is_not_reverted_when_it_fails() {
     );
     assert!(workspace.link_state.probation.is_none());
 }
+
+fn pan_to(right: f64) -> crate::model::chart_sync::HorizontalChange {
+    crate::model::chart_sync::HorizontalChange {
+        range: crate::model::chart_sync::TimeRange {
+            left: right - 1_000.0,
+            right,
+        },
+        latest: false,
+        moved: true,
+        zoom: None,
+    }
+}
+
+#[test]
+fn a_symbol_or_interval_change_drops_a_view_the_old_series_was_waiting_for() {
+    let ctx = egui::Context::default();
+    for (name, change) in [
+        ("symbol", market("ETHUSDT")),
+        ("interval", LinkSignal::Timeframe(Timeframe::Week)),
+    ] {
+        let mut workspace = empty_workspace(1);
+        chart_with_drawings(&mut workspace, "BTCUSDT", &[]);
+        workspace.set_link(Some(LinkColor::Orange));
+        // A pan arrives while the tab is hidden or loading, then the group changes the series.
+        assert!(workspace.apply_link(1, &LinkSignal::View(pan_to(5_000.0)), &ctx));
+        assert!(workspace.link_state.hub.latest_event().is_some());
+        assert!(workspace.apply_link(2, &change, &ctx), "{name}");
+        assert!(
+            workspace.link_state.hub.latest_event().is_none(),
+            "{name}: the old series' view must not be replayed on the new one"
+        );
+    }
+}
+
+#[test]
+fn a_view_that_arrives_after_the_series_changed_is_kept() {
+    let ctx = egui::Context::default();
+    let mut workspace = empty_workspace(1);
+    chart_with_drawings(&mut workspace, "BTCUSDT", &[]);
+    workspace.set_link(Some(LinkColor::Orange));
+    assert!(workspace.apply_link(1, &market("ETHUSDT"), &ctx));
+    assert!(workspace.apply_link(2, &LinkSignal::View(pan_to(5_000.0)), &ctx));
+    assert!(
+        workspace.link_state.hub.latest_event().is_some(),
+        "the leader panned after changing symbol: that pan is for the new series"
+    );
+}
+
+#[test]
+fn the_users_own_symbol_or_interval_change_also_drops_a_pending_view() {
+    let ctx = egui::Context::default();
+    let mut workspace = empty_workspace(1);
+    let chart = chart_with_drawings(&mut workspace, "BTCUSDT", &[]);
+    workspace.set_link(Some(LinkColor::Orange));
+    workspace.apply_link(1, &LinkSignal::View(pan_to(5_000.0)), &ctx);
+    workspace.switch_chart(chart, &row("ETHUSDT"), &ctx);
+    assert!(workspace.link_state.hub.latest_event().is_none());
+    workspace.apply_link(2, &LinkSignal::View(pan_to(6_000.0)), &ctx);
+    workspace.reload_for_timeframe(Timeframe::Hour, &ctx);
+    assert!(workspace.link_state.hub.latest_event().is_none());
+}
+
+#[test]
+fn a_switch_to_the_market_already_shown_keeps_a_pending_view() {
+    let ctx = egui::Context::default();
+    let mut workspace = empty_workspace(1);
+    let chart = chart_with_drawings(&mut workspace, "BTCUSDT", &[]);
+    workspace.set_link(Some(LinkColor::Orange));
+    workspace.apply_link(1, &LinkSignal::View(pan_to(5_000.0)), &ctx);
+    workspace.switch_chart(chart, &row("BTCUSDT"), &ctx); // nothing changes on the chart
+    assert!(workspace.link_state.hub.latest_event().is_some());
+}
+
+#[test]
+fn a_zoom_waits_for_a_chart_that_has_no_bars_yet() {
+    use crate::model::chart_sync::{ChartSyncSettings, HorizontalChange, TimeAxis, TimeRange};
+    use crate::model::viewport::HorizontalViewport;
+    let zoom_only = ChartSyncSettings {
+        horizontal_position: false,
+        horizontal_zoom: true,
+    };
+    let bars: Vec<_> = (0..400)
+        .map(|index| super::super::test_support::candle(index * 60_000, 1.0))
+        .collect();
+    let zoomed = HorizontalChange {
+        range: TimeRange {
+            left: 0.0,
+            right: 1.0,
+        },
+        latest: true,
+        moved: false,
+        zoom: Some(crate::model::chart_sync::Zoom { from: 120, to: 95 }),
+    };
+    let run = |waiting_frames: usize, waiting: bool| {
+        let mut state = super::LinkState::default();
+        state.hub.publish(u64::MAX, zoomed);
+        // Frames drawn while the chart has no candles: it is not asked to follow.
+        for _ in 0..waiting_frames {
+            state.end_frame(waiting);
+        }
+        let mut view = HorizontalViewport {
+            visible: 120,
+            right_offset: 0.0,
+        };
+        state
+            .hub
+            .deliver(1, zoom_only, &TimeAxis::new(&bars), &mut view);
+        view.visible
+    };
+    assert_eq!(run(5, true), 95, "the zoom is still there when bars arrive");
+    assert_eq!(run(0, false), 95);
+    // A burst that was followed does end with the first frame that does not zoom.
+    let mut state = super::LinkState::default();
+    state.hub.publish(u64::MAX, zoomed);
+    state.end_frame(false);
+    state.end_frame(false);
+    let mut view = HorizontalViewport {
+        visible: 120,
+        right_offset: 0.0,
+    };
+    state
+        .hub
+        .deliver(1, zoom_only, &TimeAxis::new(&bars), &mut view);
+    assert_eq!(view.visible, 120, "a delivered-or-expired burst is over");
+}
