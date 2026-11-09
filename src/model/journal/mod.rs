@@ -15,6 +15,7 @@ pub mod compare;
 pub mod daily;
 pub mod edge;
 pub mod equity;
+pub mod excursion;
 pub mod filters;
 pub mod format;
 pub mod metric;

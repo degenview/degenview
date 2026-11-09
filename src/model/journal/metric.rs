@@ -32,6 +32,11 @@ pub enum Reason {
     NoSpread,
     /// Nothing happened that this figure measures (no drawdown episode, no winning day).
     NotApplicable,
+    /// The provider returned no candles over the hold.
+    NoCandles,
+    /// The hold is shorter than one candle, or every candle in it contains a fill: nothing can be
+    /// said without looking inside a bar.
+    NoCompleteBar,
 }
 
 impl Reason {
@@ -51,6 +56,11 @@ impl Reason {
             }
             Self::NoSpread => "Every value is the same.".to_owned(),
             Self::NotApplicable => "Nothing to measure.".to_owned(),
+            Self::NoCandles => "No candles were available over this trade.".to_owned(),
+            Self::NoCompleteBar => {
+                "No complete candle sits between the fills; the hold is too short for this interval."
+                    .to_owned()
+            }
         }
     }
 }

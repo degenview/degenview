@@ -8,11 +8,13 @@ use rust_decimal::prelude::ToPrimitive;
 
 use super::header_controls;
 use super::icons::{self, Icon};
+use super::journal_shots::{self as shots, Shot};
 use super::kit::{self, MEDIUM, REGULAR, SEMIBOLD, size};
 use super::paper_grid;
 use super::theme;
 use crate::model::journal::calendar::Offset;
 use crate::model::journal::cells::{self, Tone, status_label, status_tone, tone_of};
+use crate::model::journal::excursion::Excursion;
 use crate::model::journal::filters::outcome_of;
 use crate::model::journal::format;
 use crate::model::journal::metric::Metric;
@@ -35,6 +37,22 @@ pub struct Input<'a> {
     pub mistake_suggestions: &'a [String],
     /// The account's initial balance, for risk as a share of it.
     pub account_balance: Option<Decimal>,
+    /// The review's screenshots as they are right now.
+    pub shots: &'a [Shot],
+    pub shots_busy: bool,
+    pub shots_error: Option<&'a str>,
+    /// How far the trade went for and against, estimated from candles.
+    pub excursion: ExcursionView<'a>,
+}
+
+/// What the excursion block has to show.
+pub enum ExcursionView<'a> {
+    /// Not applicable (the trade is open).
+    Hidden,
+    Loading,
+    /// The estimate could not be made; the message says why. Offers a retry.
+    Failed(&'a str),
+    Ready(&'a Metric<Excursion>),
 }
 
 /// The review being edited. `saved` is what is stored, so the tab can tell when there is
@@ -121,6 +139,10 @@ pub struct Output {
     pub changed: bool,
     /// A text field lost focus: a good moment to save.
     pub blurred: bool,
+    /// What the user asked of the screenshots; the tab does it.
+    pub shots: shots::Action,
+    /// The user asked to try the excursion estimate again.
+    pub retry_excursion: bool,
 }
 
 fn tone_color(tone: Tone) -> Color32 {
@@ -207,6 +229,7 @@ pub fn show(ui: &mut Ui, input: &Input<'_>, draft: &mut Draft) -> Output {
 
     summary(ui, input, draft);
     executions(ui, input);
+    excursion_block(ui, input, &mut output);
     review(ui, input, draft, &mut output);
     output
 }
@@ -406,6 +429,65 @@ fn executions(ui: &mut Ui, input: &Input<'_>) {
         REGULAR,
         theme::text_tertiary(),
     ));
+}
+
+/// Best and worst the trade got to while open, and how much of the best the exit kept. Always
+/// labelled as an estimate, with the reason when there is no figure.
+fn excursion_block(ui: &mut Ui, input: &Input<'_>, output: &mut Output) {
+    if matches!(input.excursion, ExcursionView::Hidden) {
+        return;
+    }
+    section(ui, "Excursion");
+    let note = |ui: &mut Ui, text: &str| {
+        ui.label(kit::text(
+            text,
+            size::CAPTION + 1.0,
+            REGULAR,
+            theme::text_tertiary(),
+        ));
+    };
+    match &input.excursion {
+        ExcursionView::Hidden => {}
+        ExcursionView::Loading => note(ui, "Estimating from candles\u{2026}"),
+        ExcursionView::Failed(message) => {
+            note(ui, message);
+            ui.add_space(4.0);
+            if kit::push_button(ui, None, "Try again", true).clicked() {
+                output.retry_excursion = true;
+            }
+        }
+        ExcursionView::Ready(Metric::Unavailable(reason)) => note(ui, &reason.explain()),
+        ExcursionView::Ready(Metric::Value(value)) => {
+            egui::Grid::new(("journal-excursion", &input.trade.key))
+                .num_columns(2)
+                .spacing(vec2(12.0, 7.0))
+                .min_col_width(110.0)
+                .show(ui, |ui| {
+                    pair(
+                        ui,
+                        "Best (MFE)",
+                        &format::signed_money(value.mfe),
+                        tone_of(value.mfe),
+                    );
+                    pair(
+                        ui,
+                        "Worst (MAE)",
+                        &format::signed_money(-value.mae),
+                        tone_of(-value.mae),
+                    );
+                    pair(
+                        ui,
+                        "Exit efficiency",
+                        &value
+                            .exit_efficiency
+                            .map_or_else(|| cells::NONE.to_owned(), format::percent),
+                        Tone::Normal,
+                    );
+                });
+            ui.add_space(4.0);
+            note(ui, &value.provenance());
+        }
+    }
 }
 
 /// A single-line field in the app's form well.
@@ -653,7 +735,7 @@ fn review(ui: &mut Ui, input: &Input<'_>, draft: &mut Draft, output: &mut Output
     rating_row(ui, "Confidence", &mut draft.review.confidence);
 
     // The plan: entry, stop, target.
-    ui.horizontal(|ui| {
+    ui.horizontal_top(|ui| {
         ui.spacing_mut().item_spacing.x = 10.0;
         let third = (ui.available_width() - 20.0) / 3.0;
         for (label, salt, which) in [
@@ -746,6 +828,9 @@ fn review(ui: &mut Ui, input: &Input<'_>, draft: &mut Draft, output: &mut Output
         })
         .inner;
     blurred |= response.lost_focus();
+
+    labelled(ui, "Screenshots");
+    output.shots = shots::strip(ui, input.shots, input.shots_busy, input.shots_error);
 
     draft.sync_fields();
     let after = (
@@ -906,6 +991,10 @@ mod tests {
                             emotion_suggestions: &[],
                             mistake_suggestions: &[],
                             account_balance: None,
+                            shots: &[],
+                            shots_busy: false,
+                            shots_error: None,
+                            excursion: ExcursionView::Hidden,
                         },
                         &mut draft,
                     );

@@ -61,10 +61,22 @@ pub struct Review {
     pub stop: Option<Decimal>,
     #[serde(default)]
     pub target: Option<Decimal>,
+    /// Screenshots, by the hash of their bytes (the pictures live in the asset store, which
+    /// drawings share). In the order the user attached them.
+    #[serde(default)]
+    pub images: Vec<String>,
     #[serde(default)]
     pub created_ms: i64,
     #[serde(default)]
     pub updated_ms: i64,
+}
+
+/// Most screenshots one review keeps.
+pub const MAX_IMAGES: usize = 12;
+
+/// Whether `text` is the name of a stored picture: 64 lower-case hex digits.
+pub fn is_picture_hash(text: &str) -> bool {
+    text.len() == 64 && text.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 /// Trims, drops empties and removes case-insensitive duplicates, keeping the first spelling.
@@ -157,6 +169,10 @@ impl Review {
         self.rating = self.rating.filter(|rating| (1..=5).contains(rating));
         self.stop = self.stop.filter(|stop| *stop > Decimal::ZERO);
         self.target = self.target.filter(|target| *target > Decimal::ZERO);
+        let mut seen = std::collections::BTreeSet::new();
+        self.images
+            .retain(|hash| is_picture_hash(hash) && seen.insert(hash.clone()));
+        self.images.truncate(MAX_IMAGES);
     }
 
     /// Nothing written and nothing marked: not worth a row.
@@ -177,6 +193,7 @@ impl Review {
             && !self.reviewed
             && self.stop.is_none()
             && self.target.is_none()
+            && self.images.is_empty()
     }
 
     pub fn status(&self) -> ReviewStatus {
@@ -291,5 +308,25 @@ mod tests {
         let review: Review =
             serde_json::from_str(r#"{"trade_key":"k","account_uid":"a"}"#).unwrap();
         assert!(review.is_empty());
+    }
+
+    #[test]
+    fn images_keep_valid_hashes_once_in_order_and_cap() {
+        let a = "a".repeat(64);
+        let b = "b".repeat(64);
+        let mut review = Review::new("k", "acct");
+        review.images = vec![
+            a.clone(),
+            "not-a-hash".into(),
+            b.clone(),
+            a.clone(),
+            "A".repeat(64),
+        ];
+        review.tidy();
+        assert_eq!(review.images, [a, b]);
+        assert!(!review.is_empty(), "a screenshot alone is worth keeping");
+        review.images = (0..40).map(|n| format!("{n:064x}")).collect();
+        review.tidy();
+        assert_eq!(review.images.len(), MAX_IMAGES);
     }
 }
