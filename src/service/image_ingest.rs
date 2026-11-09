@@ -400,6 +400,11 @@ mod tests {
             kept.width < 1_800 || kept.height < 1_800,
             "it had to shrink"
         );
+    }
+
+    #[test]
+    fn transparent_noise_is_squeezed_by_size_not_quality_and_still_fits() {
+        let mut state = 0x2545F4914F6CDD1Du64;
         // Transparent noise cannot be squeezed by quality, only by size: it still fits.
         let noisy = RgbaImage::from_fn(900, 900, |x, y| {
             state ^= state << 13;

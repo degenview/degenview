@@ -129,6 +129,10 @@ objc2-user-notifications = { version = "0.3.2", features = [
     "UNUserNotificationCenter",
 ] }
 
+[lib]
+# The only doc blocks are `text`/`json` illustrations, so the rustdoc pass of `cargo test` ran nothing.
+doctest = false
+
 [profile.dev]
 # Line tables keep file:line in backtraces; full DWARF for every dependency was a third of a fresh target/.
 debug = "line-tables-only"
@@ -137,6 +141,10 @@ split-debuginfo = "off"
 
 [profile.dev.package."*"]
 debug = false
+# Dependencies are compiled once and cached, so optimising them is nearly free, and the unit tests
+# spend most of their time inside egui/epaint layout and the image codecs. At opt-level 0 a single
+# "draws at every size" test took 30-70 s.
+opt-level = 2
 
 [profile.release]
 lto = "thin"

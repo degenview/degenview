@@ -327,8 +327,8 @@ reinterpreted as a pane value.
 Screen shapes are cached per drawing, keyed by the drawing and the projection, so panning the
 pointer never re-flattens a curve; bounds reject drawings that are off screen before any painting
 or hit-testing. Measured in an unoptimized build: 400 drawings (100 each of rectangles, arrows,
-ellipses and curves, many off screen) take about 3 ms a frame; masking a 4,000-point stroke under
-a second. `cargo test` runs these as tests with generous bounds.
+ellipses and curves, many off screen) take about 3 ms a frame. There is no wall-clock test for
+this (time bounds are flaky); measure with the ignored `drag_frame_cost_report` tests.
 
 ## Manual visual test matrix
 

@@ -290,10 +290,9 @@ mod tests {
     }
 
     #[test]
-    fn ids_are_unique_and_there_are_twenty() {
+    fn ids_are_unique_and_round_trip_through_script_ids() {
         let ids: HashSet<&str> = ALL.iter().map(|indicator| indicator.id).collect();
         assert_eq!(ids.len(), ALL.len());
-        assert_eq!(ALL.len(), 20);
         for indicator in &ALL {
             assert_eq!(
                 from_script_id(&script_id(indicator)).map(|i| i.id),

@@ -217,9 +217,14 @@ fn the_workloads_agree_both_ways() {
     }
 }
 
-#[test]
-fn every_registered_function_runs_the_same_both_ways() {
-    for name in super::registry::all_functions() {
+/// A quarter of the registry, so the four quarters run in parallel instead of one long loop.
+fn registered_functions_run_the_same_both_ways(quarter: usize) {
+    for name in super::registry::all_functions()
+        .into_iter()
+        .enumerate()
+        .filter(|(index, _)| index % 4 == quarter)
+        .map(|(_, name)| name)
+    {
         let header = if name.starts_with("strategy.") {
             "strategy(\"T\")"
         } else {
@@ -231,6 +236,26 @@ fn every_registered_function_runs_the_same_both_ways() {
             ));
         }
     }
+}
+
+#[test]
+fn every_registered_function_runs_the_same_both_ways_1_of_4() {
+    registered_functions_run_the_same_both_ways(0);
+}
+
+#[test]
+fn every_registered_function_runs_the_same_both_ways_2_of_4() {
+    registered_functions_run_the_same_both_ways(1);
+}
+
+#[test]
+fn every_registered_function_runs_the_same_both_ways_3_of_4() {
+    registered_functions_run_the_same_both_ways(2);
+}
+
+#[test]
+fn every_registered_function_runs_the_same_both_ways_4_of_4() {
+    registered_functions_run_the_same_both_ways(3);
 }
 
 #[test]

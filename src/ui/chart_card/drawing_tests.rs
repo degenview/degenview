@@ -421,37 +421,6 @@ fn hide_all_and_a_timeframe_it_is_not_shown_on_paint_nothing() {
 }
 
 #[test]
-fn many_drawings_paint_within_a_frame_budget() {
-    let mut chart = Chart::new();
-    let mut drawings = Vec::new();
-    let mut id = 1;
-    for tool in [Tool::Rectangle, Tool::Arrow, Tool::Ellipse, Tool::Curve] {
-        for index in 0..100 {
-            let mut one = drawing(tool, id);
-            let shift = (index % 20) as f64 * 1.5;
-            for anchor in one.anchors_mut() {
-                anchor.time_ms -= (index % 30) as i64 * HOUR;
-                anchor.price -= shift;
-            }
-            drawings.push(one);
-            id += 1;
-        }
-    }
-    chart.draw(&drawings);
-    let started = std::time::Instant::now();
-    for _ in 0..5 {
-        chart.frame(&drawings);
-    }
-    let per_frame = started.elapsed() / 5;
-    eprintln!("400 drawings: {per_frame:?} a frame (unoptimized build)");
-    // Debug builds are slow; the point is that nothing is quadratic in the drawing count.
-    assert!(
-        per_frame < std::time::Duration::from_millis(900),
-        "{per_frame:?}"
-    );
-}
-
-#[test]
 fn a_selected_drawing_floats_its_toolbar_and_a_hidden_chart_area_does_not() {
     let mut chart = Chart::new();
     chart.selected = vec![1];

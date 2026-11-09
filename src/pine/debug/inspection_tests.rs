@@ -695,8 +695,9 @@ fn observed(session: &crate::pine::session::Session) -> String {
     format!("{:?}", session.output())
 }
 
-#[test]
-fn inspecting_and_evaluating_at_every_statement_changes_no_output() {
+/// One script of the "inspecting changes no output" check. Each script is its own test so the
+/// suite runs them in parallel instead of one long serial loop.
+fn inspecting_and_evaluating_changes_no_output(which: usize) {
     let data = bench_tests::bars(80, bench_tests::MINUTE_MS);
     let scripts = [
         ("simple", bench_tests::SIMPLE.to_owned(), false),
@@ -726,7 +727,8 @@ fn inspecting_and_evaluating_at_every_statement_changes_no_output() {
         "ta.sma(close, 3)",
         "undefined_thing",
     ];
-    for (name, source, security) in scripts {
+    {
+        let (name, source, security) = scripts.into_iter().nth(which).unwrap();
         let plain = observed(&run_script(&source, &data, security, |_| {}));
         let probe: Probe = Box::new(move |_, view| {
             for frame in view.stack() {
@@ -757,6 +759,26 @@ fn inspecting_and_evaluating_at_every_statement_changes_no_output() {
         assert_eq!(plain, debugged, "{name}");
         assert!(!seen.lock().unwrap().is_empty(), "{name} never stopped");
     }
+}
+
+macro_rules! inspection_changes_no_output {
+    ($($test:ident => $index:expr),* $(,)?) => {
+        $(
+            #[test]
+            fn $test() {
+                inspecting_and_evaluating_changes_no_output($index);
+            }
+        )*
+    };
+}
+
+inspection_changes_no_output! {
+    inspecting_a_simple_script_changes_no_output => 0,
+    inspecting_containers_changes_no_output => 1,
+    inspecting_nested_functions_changes_no_output => 2,
+    inspecting_a_strategy_changes_no_output => 3,
+    inspecting_a_long_history_changes_no_output => 4,
+    inspecting_straight_line_code_changes_no_output => 5,
 }
 
 #[test]

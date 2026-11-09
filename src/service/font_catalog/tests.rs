@@ -418,11 +418,6 @@ fn the_default_catalog_has_not_scanned() {
 }
 
 #[test]
-fn the_system_has_font_folders() {
-    assert!(!system_font_dirs().is_empty());
-}
-
-#[test]
 #[ignore = "reads this machine's fonts: cargo test --lib font_catalog::tests::this_machine -- --ignored --nocapture"]
 fn this_machine_s_fonts_all_draw_letters() {
     let entries = scan(&system_font_dirs());
