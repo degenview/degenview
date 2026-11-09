@@ -3,6 +3,8 @@ use crate::host::alert_runtime::{
     AlertRuntimeLease, AlertRuntimeRunner, GuiRuntimeDecision, gui_runtime_decision,
 };
 use crate::host::editor_theme_host::EditorThemeHost;
+use crate::host::journal_host::JournalHost;
+use crate::host::journal_tab::{JournalAction, JournalTab};
 use crate::host::mcp_confirmation::{self, ConfirmationHost};
 use crate::host::mcp_host::{self, McpHost};
 use crate::host::paper_host::PaperHost;
@@ -139,6 +141,7 @@ impl AlertRuntimeControl {
 enum TabContent {
     Chart(Box<ChartWorkspace>),
     Portfolio(Box<PortfolioTab>),
+    Journal(Box<JournalTab>),
     Pine(Box<PineStudio>),
 }
 
@@ -147,6 +150,7 @@ impl TabContent {
         match self {
             Self::Chart(workspace) => workspace.id(),
             Self::Portfolio(portfolio) => portfolio.id(),
+            Self::Journal(journal) => journal.id(),
             Self::Pine(pine) => pine.id(),
         }
     }
@@ -155,6 +159,7 @@ impl TabContent {
         match self {
             Self::Chart(workspace) => workspace.title(),
             Self::Portfolio(portfolio) => portfolio.title().to_owned(),
+            Self::Journal(journal) => journal.title().to_owned(),
             Self::Pine(pine) => pine.title(),
         }
     }
@@ -163,6 +168,7 @@ impl TabContent {
         match self {
             Self::Chart(_) => Icon::ChartLine,
             Self::Portfolio(_) => Icon::Briefcase,
+            Self::Journal(_) => Icon::Journal,
             Self::Pine(_) => Icon::Curlybraces,
         }
     }
@@ -192,6 +198,7 @@ type TabRegistry = Arc<Mutex<std::collections::HashMap<u64, Arc<Mutex<TabContent
 #[serde(rename_all = "snake_case")]
 enum PersistedSpecialTabKind {
     Portfolio,
+    Journal,
     Pine,
 }
 
@@ -234,6 +241,7 @@ enum AppAction {
         proceed: bool,
     },
     OpenPortfolio,
+    OpenJournal,
     OpenPine,
     /// Open the Pine Studio on the source of a Pine logs message.
     OpenPineSource(crate::model::pine_logs_view::SourceTarget),
@@ -322,6 +330,7 @@ pub struct DegenViewApp {
     alert_fx_receiver: Option<Receiver<std::collections::HashMap<AlertCurrency, f64>>>,
     alert_fx_refreshed_at: Option<Instant>,
     portfolio: Arc<Mutex<PortfolioHost>>,
+    journal: Arc<Mutex<JournalHost>>,
     paper: Arc<Mutex<PaperHost>>,
     /// Orders placed over MCP by `request_id`, so a retried call places nothing twice.
     mcp_orders: Mutex<mcp_host::OrderMemory>,
@@ -460,6 +469,7 @@ struct WindowEnv {
     registry: TabRegistry,
     focused_tab: Arc<AtomicU64>,
     portfolio_host: Arc<Mutex<PortfolioHost>>,
+    journal_host: Arc<Mutex<JournalHost>>,
     card_env: PortfolioCardEnv,
     paper_host: Arc<Mutex<PaperHost>>,
     alert_host: Arc<Mutex<AlertHost>>,
@@ -776,6 +786,7 @@ fn show_tab(
             {
                 pending.extend(actions.into_iter().map(|action| match action {
                     WorkspaceAction::OpenPortfolio => AppAction::OpenPortfolio,
+                    WorkspaceAction::OpenJournal => AppAction::OpenJournal,
                     WorkspaceAction::OpenPineScripts => AppAction::OpenPine,
                     WorkspaceAction::OpenPineSource(target) => AppAction::OpenPineSource(target),
                     WorkspaceAction::OpenAlerts => AppAction::OpenAlerts,
@@ -801,6 +812,25 @@ fn show_tab(
         TabContent::Portfolio(portfolio) => {
             if let Ok(mut host) = env.portfolio_host.lock() {
                 portfolio.ui(ui, &mut host);
+            }
+        }
+        TabContent::Journal(journal) => {
+            let paper_revision = env.paper_host.lock().map_or(0, |paper| paper.revision());
+            let actions = match env.journal_host.lock() {
+                Ok(mut host) => journal.ui(ui, &mut host, paper_revision),
+                Err(_) => Vec::new(),
+            };
+            for action in actions {
+                match action {
+                    JournalAction::RetryIngest => {
+                        if let Ok(paper) = env.paper_host.lock() {
+                            let _ = paper.reconcile_journal();
+                        }
+                        if let Ok(mut host) = env.journal_host.lock() {
+                            host.mark_dirty();
+                        }
+                    }
+                }
             }
         }
         TabContent::Pine(pine) => {
@@ -910,6 +940,11 @@ impl DegenViewApp {
         );
 
         let portfolio = Arc::new(Mutex::new(PortfolioHost::load(store.clone())));
+        let journal_repaint = creation.egui_ctx.clone();
+        let journal = Arc::new(Mutex::new(JournalHost::new(
+            store.clone(),
+            Arc::new(move || journal_repaint.request_repaint()),
+        )));
         let paper = Arc::new(Mutex::new(PaperHost::load(store.clone())));
         let snapshots = SnapshotHost::load(store.clone());
         let tab_title_host = TabTitleHost::load(store.clone());
@@ -1023,6 +1058,7 @@ impl DegenViewApp {
             )
         } else {
             let mut has_portfolio = false;
+            let mut has_journal = false;
             let mut has_pine = false;
             let tabs = saved_tabs
                 .into_iter()
@@ -1044,6 +1080,15 @@ impl DegenViewApp {
                         has_portfolio = true;
                         Some(TabSlot::new(TabContent::Portfolio(Box::new(
                             PortfolioTab::new(id, portfolio_quotes.clone()),
+                        ))))
+                    }
+                    PersistedTab::Special(PersistedSpecialTab {
+                        id,
+                        kind: PersistedSpecialTabKind::Journal,
+                    }) if !has_journal => {
+                        has_journal = true;
+                        Some(TabSlot::new(TabContent::Journal(Box::new(
+                            JournalTab::new(id),
                         ))))
                     }
                     PersistedTab::Special(PersistedSpecialTab {
@@ -1091,6 +1136,7 @@ impl DegenViewApp {
             alert_fx_receiver: None,
             alert_fx_refreshed_at: None,
             portfolio,
+            journal,
             paper,
             mcp_orders: Mutex::new(mcp_host::OrderMemory::default()),
             mcp_snapshots: Mutex::new(mcp_host::SnapshotJobs::default()),
@@ -1288,6 +1334,7 @@ impl DegenViewApp {
                     }
                 }
                 AppAction::OpenPortfolio => self.open_portfolio(ctx),
+                AppAction::OpenJournal => self.open_journal(ctx),
                 AppAction::OpenPine => self.open_pine(ctx),
                 AppAction::OpenPineSource(target) => self.open_pine_source(ctx, &target),
                 AppAction::OpenAlpacaSettings => {
@@ -1536,7 +1583,7 @@ impl DegenViewApp {
             let content = tab.content.lock().ok()?;
             match &*content {
                 TabContent::Portfolio(portfolio) => Some(portfolio.id()),
-                TabContent::Chart(_) | TabContent::Pine(_) => None,
+                TabContent::Chart(_) | TabContent::Journal(_) | TabContent::Pine(_) => None,
             }
         });
         if let Some(id) = existing {
@@ -1550,6 +1597,24 @@ impl DegenViewApp {
             id,
             self.portfolio_quotes.clone(),
         ))));
+        self.register(slot, None);
+    }
+
+    fn open_journal(&mut self, ctx: &egui::Context) {
+        let existing = self.tabs.iter().find_map(|tab| {
+            let content = tab.content.lock().ok()?;
+            match &*content {
+                TabContent::Journal(journal) => Some(journal.id()),
+                TabContent::Chart(_) | TabContent::Portfolio(_) | TabContent::Pine(_) => None,
+            }
+        });
+        if let Some(id) = existing {
+            self.show_tab(ctx, id);
+            return;
+        }
+        let id = self.next_id;
+        self.next_id += 1;
+        let slot = TabSlot::new(TabContent::Journal(Box::new(JournalTab::new(id))));
         self.register(slot, None);
     }
 
@@ -1597,7 +1662,7 @@ impl DegenViewApp {
             let content = tab.content.lock().ok()?;
             match &*content {
                 TabContent::Pine(pine) => Some(pine.id()),
-                TabContent::Chart(_) | TabContent::Portfolio(_) => None,
+                TabContent::Chart(_) | TabContent::Portfolio(_) | TabContent::Journal(_) => None,
             }
         });
         if let Some(id) = existing {
@@ -2537,6 +2602,11 @@ impl DegenViewApp {
                         "{workspace_id} is a portfolio tab, not a chart workspace"
                     )));
                 }
+                TabContent::Journal(tab) if tab.id() == workspace_id => {
+                    return Err(McpError::InvalidArgument(format!(
+                        "{workspace_id} is the Trade Journal, not a chart workspace"
+                    )));
+                }
                 TabContent::Pine(manager) if manager.id() == workspace_id => {
                     return Err(McpError::InvalidArgument(format!(
                         "{workspace_id} is the Pine Studio, not a chart workspace"
@@ -2823,6 +2893,7 @@ impl DegenViewApp {
             registry: Arc::clone(&self.registry),
             focused_tab: Arc::clone(&self.focused_tab),
             portfolio_host: Arc::clone(&self.portfolio),
+            journal_host: Arc::clone(&self.journal),
             card_env: self.card_env.clone(),
             paper_host: Arc::clone(&self.paper),
             alert_host: Arc::clone(&self.alert_host),
@@ -3413,6 +3484,10 @@ impl DegenViewApp {
                             kind: PersistedSpecialTabKind::Portfolio,
                         })
                     }
+                    TabContent::Journal(journal) => PersistedTab::Special(PersistedSpecialTab {
+                        id: journal.id(),
+                        kind: PersistedSpecialTabKind::Journal,
+                    }),
                     TabContent::Pine(pine) => PersistedTab::Special(PersistedSpecialTab {
                         id: pine.id(),
                         kind: PersistedSpecialTabKind::Pine,
@@ -3690,6 +3765,21 @@ mod tests {
         let decoded: PersistedSession =
             serde_json::from_str(&encoded).expect("deserialize session");
         assert_eq!(decoded, session);
+    }
+
+    #[test]
+    fn the_journal_tab_is_saved_and_restored_as_a_special_tab() {
+        let journal = serde_json::json!({ "id": 11, "kind": "journal" });
+        let tab: PersistedTab = serde_json::from_value(journal).expect("journal tab");
+        assert_eq!(
+            tab,
+            PersistedTab::Special(PersistedSpecialTab {
+                id: 11,
+                kind: PersistedSpecialTabKind::Journal,
+            })
+        );
+        let encoded = serde_json::to_value(&tab).expect("encode");
+        assert_eq!(encoded, serde_json::json!({ "id": 11, "kind": "journal" }));
     }
 
     #[test]

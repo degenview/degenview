@@ -86,6 +86,8 @@ pub use pine::PineRunView;
 #[derive(Clone, Debug, PartialEq)]
 pub enum WorkspaceAction {
     OpenPortfolio,
+    /// Open the Trade Journal tab.
+    OpenJournal,
     /// Open the Pine Studio tab.
     OpenPineScripts,
     /// Open the Pine Studio on the source of a Pine logs message.

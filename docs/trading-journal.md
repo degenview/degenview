@@ -5,9 +5,10 @@ file imports are meant to arrive as further sources without touching the journal
 and the comparison with other journals: [trading-journal-research.md](reviews/trading-journal-research.md).
 
 **Status.** Built: the canonical execution model, trade reconstruction, the paper source, storage
-and capture, and the pure analytics (statistics, equity and drawdown, calendar, filters, R-multiple,
-Edge Score). The Journal tab, reviews, charts, import/export and iCloud follow as separate changes;
-their sections are added as they land.
+and capture, the pure analytics (statistics, equity and drawdown, calendar, filters, R-multiple,
+Edge Score), and the Journal tab with the trade table, trade panel and reviews. The dashboard,
+playbooks, daily journal, charts, import/export and iCloud follow as separate changes; their
+sections are added as they land.
 
 ## Layers
 
@@ -165,3 +166,47 @@ no initial balance scores a neutral 50 (the reference code measures against peak
 match LuxAlgo's except in those two cases. The score uses only objective trade results; review
 ratings never enter it. A separate process score (rule adherence, checklists) will sit beside it
 and never blend with it.
+
+## The Journal tab
+
+A top-level tab (`TabContent::Journal`, one per app, persisted like the Portfolio tab) opened from
+the toolbar's Trade Journal button. `host/journal_host.rs` holds the app-wide state and
+`host/journal_tab.rs` the per-window view; `ui/journal_table.rs` and `ui/journal_detail.rs` draw.
+
+**Data flow.** `JournalHost` rebuilds the trades on a worker thread (`work_queue`) from the stored
+executions whenever the paper ledger's revision changes, and publishes the result as an `Arc`
+only once it is complete, so a frame never waits on it. Each frame the tab asks "did the ledger
+revision change?" (a counter compare, no SQLite) and polls a channel. A stored execution that no
+longer decodes fails the build and the last good trades stay on screen with the error; leaving the
+row out would change a trade's result. The table's row order (filter then sort) is cached against
+the build, the reviews, the filter and the sort and recomputed only when one changes.
+
+**Header.** Range presets (Today, Week, Month, Year, YTD, All, Custom with two `YYYY-MM-DD` ends,
+the end date included), account (all, or one; archived accounts are marked), instrument, side,
+status, symbol search, reset, column visibility. Everything is one `TradeFilter`; the preference
+(range, account, sort, visible columns and widths) is saved in the local `journal.prefs` setting
+when the pointer is released, never while a column is being dragged.
+
+**Table.** Sortable headers, drag-to-resize columns, virtualised rows (only visible rows are
+formatted), arrow keys or `j`/`k` to move, Escape to close the panel. Columns: opened, closed,
+symbol, account, side, status, quantity, average entry and exit, gross, fees, net, return, R,
+duration, strategy, tags, review. Return is net P&L over the entry notional, not over margin or
+equity. A fee total with an unknown part is shown as a floor (`>= 1.00`). Open trades show no exit
+and no result until something has closed.
+
+**Trade panel.** Summary, every execution with the position after it and the P&L it realised, and
+the review. Previous and next follow the rows as filtered and sorted.
+
+**Review.** Notes, strategy and setup (free text until playbooks exist), tags, mistakes, emotions,
+a 1 to 5 rating, a reviewed switch, and the user's own stop and target. A stop entered here
+overrides the one the source attached when R is computed. It saves 0.8 s after the last change,
+when a field loses focus, and when another trade is opened; an empty review is not stored. A review
+is keyed by the trade's key and lives in `journal_review`; it never changes a trade, an order or a
+balance (tested). A trade whose executions disappear leaves its review behind.
+
+**Resetting or deleting a paper account** asks whether to keep its history in the journal (a switch,
+on by default, in the delete confirmation and in the reset sheet). Keeping archives the account;
+removing deletes its executions and reviews. An MCP reset keeps.
+
+Not built yet: the dashboard, calendar view, analytics pages, playbooks and the daily journal,
+chart markers and "view on chart", CSV import and export, iCloud sync of reviews.

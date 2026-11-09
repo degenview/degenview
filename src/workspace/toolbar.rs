@@ -98,6 +98,7 @@ impl ChartWorkspace {
                     self.watchlist_visible = !self.watchlist_visible;
                 }
                 ToolbarAction::OpenPortfolio => actions.push(WorkspaceAction::OpenPortfolio),
+                ToolbarAction::OpenJournal => actions.push(WorkspaceAction::OpenJournal),
                 ToolbarAction::OpenPineStudio => {
                     actions.push(WorkspaceAction::OpenPineScripts);
                 }

@@ -9,16 +9,20 @@
 pub mod accounting;
 pub mod analytics;
 pub mod calendar;
+pub mod cells;
 pub mod edge;
 pub mod equity;
 pub mod filters;
+pub mod format;
 pub mod metric;
 pub mod model;
 pub mod normalize;
 pub mod reconstruct;
+pub mod reviews;
 pub mod risk;
 pub mod source;
 pub mod sources;
+pub mod table;
 
 #[cfg(test)]
 pub(crate) mod testing;

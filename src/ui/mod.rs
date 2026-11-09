@@ -43,6 +43,8 @@ pub mod grid_drop;
 pub mod header_controls;
 pub mod icons;
 pub mod indicator_picker;
+pub mod journal_detail;
+pub mod journal_table;
 pub mod kit;
 pub mod layout_prompts;
 pub mod line_geometry;

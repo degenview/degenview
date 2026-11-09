@@ -22,6 +22,23 @@ pub enum OutcomeFilter {
     Breakeven,
 }
 
+/// Open, or by net P&L against the tolerance: above wins, below its negative loses, else breakeven.
+pub fn outcome_of(trade: &Trade, breakeven_tolerance: Decimal) -> OutcomeFilter {
+    match trade.status {
+        TradeStatus::Open => OutcomeFilter::Open,
+        TradeStatus::Closed => {
+            let net = trade.net_pnl();
+            if net > breakeven_tolerance {
+                OutcomeFilter::Win
+            } else if net < -breakeven_tolerance {
+                OutcomeFilter::Loss
+            } else {
+                OutcomeFilter::Breakeven
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct TradeFilter {
     /// Journal account uids; empty means every account.
@@ -110,23 +127,10 @@ impl TradeFilter {
         if self.from_ms.is_some_and(|from| at < from) || self.to_ms.is_some_and(|to| at >= to) {
             return false;
         }
-        if let Some(outcome) = self.outcome {
-            let actual = match trade.status {
-                TradeStatus::Open => OutcomeFilter::Open,
-                TradeStatus::Closed => {
-                    let net = trade.net_pnl();
-                    if net > breakeven_tolerance {
-                        OutcomeFilter::Win
-                    } else if net < -breakeven_tolerance {
-                        OutcomeFilter::Loss
-                    } else {
-                        OutcomeFilter::Breakeven
-                    }
-                }
-            };
-            if actual != outcome {
-                return false;
-            }
+        if let Some(outcome) = self.outcome
+            && outcome_of(trade, breakeven_tolerance) != outcome
+        {
+            return false;
         }
         let needle = self.search.trim().to_lowercase();
         if !needle.is_empty()
@@ -142,6 +146,16 @@ impl TradeFilter {
         true
     }
 
+    /// Positions in `trades` of the ones that match, in order.
+    pub fn matching_indices(&self, trades: &[Trade], breakeven_tolerance: Decimal) -> Vec<usize> {
+        trades
+            .iter()
+            .enumerate()
+            .filter(|(_, trade)| self.matches(trade, breakeven_tolerance))
+            .map(|(index, _)| index)
+            .collect()
+    }
+
     pub fn apply<'a>(&self, trades: &'a [Trade], breakeven_tolerance: Decimal) -> Vec<&'a Trade> {
         trades
             .iter()
@@ -150,7 +164,8 @@ impl TradeFilter {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum RangePreset {
     Today,
     Week,
