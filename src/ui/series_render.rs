@@ -157,6 +157,51 @@ pub fn candle_half_width(slot_width: f32) -> f32 {
     (slot_width * 0.34).clamp(1.0, 8.0)
 }
 
+/// A candle's body and wick edges (points, left and right), laid on the physical pixel grid.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SnappedCandle {
+    pub body: (f32, f32),
+    pub wick: (f32, f32),
+}
+
+/// Lays a candle centred on `x` on whole physical pixels, so every body of one width paints the
+/// same number of pixels and the wick sits in the middle of it.
+///
+/// A fractional centre and half width otherwise land each candle on a different sub-pixel phase:
+/// the same body shows 5 px wide in one slot and 6 in the next, and the wick is off-centre. The
+/// body gets the width nearest to `2 * half_width` that has the wick's parity (an odd body for a
+/// one-pixel wick), which is what lets the wick be exactly centred.
+pub fn snap_candle(
+    x: f32,
+    half_width: f32,
+    wick_width: f32,
+    pixels_per_point: f32,
+) -> SnappedCandle {
+    let ppp = if pixels_per_point.is_finite() && pixels_per_point > 0.0 {
+        pixels_per_point
+    } else {
+        1.0
+    };
+    let wick_px = (wick_width * ppp).round().max(1.0);
+    let ideal = 2.0 * half_width * ppp;
+    let mut body_px = ideal.round().max(wick_px);
+    if (body_px - wick_px) % 2.0 != 0.0 {
+        let down = body_px - 1.0;
+        let up = body_px + 1.0;
+        body_px = if down >= wick_px && (ideal - down).abs() < (up - ideal).abs() {
+            down
+        } else {
+            up
+        };
+    }
+    let wick_left = (x * ppp - wick_px / 2.0).round();
+    let body_left = wick_left - (body_px - wick_px) / 2.0;
+    SnappedCandle {
+        body: (body_left / ppp, (body_left + body_px) / ppp),
+        wick: (wick_left / ppp, (wick_left + wick_px) / ppp),
+    }
+}
+
 /// Bricks and lines fill more of their slot than a candle does.
 fn brick_half_width(slot_width: f32) -> f32 {
     (slot_width * 0.46).clamp(1.0, 24.0)
@@ -217,20 +262,21 @@ pub(crate) fn paint_candle(
     let (open_y, close_y) = (frame.y(open), frame.y(close));
     let (body_top, body_bottom) = (open_y.min(close_y), open_y.max(close_y));
     let body_bottom = body_bottom.max(body_top + 1.0);
+    let snapped = snap_candle(x, half_width, 1.0, painter.ctx().pixels_per_point());
     if let Some(wick) = look.wick {
-        let stroke = Stroke::new(1.0, frame.fade(index, color(wick)));
-        painter.line_segment(
-            [Pos2::new(x, frame.y(high)), Pos2::new(x, body_top)],
-            stroke,
-        );
-        painter.line_segment(
-            [Pos2::new(x, body_bottom), Pos2::new(x, frame.y(low))],
-            stroke,
-        );
+        let tint = frame.fade(index, color(wick));
+        let (left, right) = snapped.wick;
+        for (top, bottom) in [(frame.y(high), body_top), (body_bottom, frame.y(low))] {
+            painter.rect_filled(
+                Rect::from_min_max(Pos2::new(left, top), Pos2::new(right, bottom)),
+                0.0,
+                tint,
+            );
+        }
     }
     let body = Rect::from_min_max(
-        Pos2::new(x - half_width, body_top),
-        Pos2::new(x + half_width, body_bottom),
+        Pos2::new(snapped.body.0, body_top),
+        Pos2::new(snapped.body.1, body_bottom),
     );
     if let Fill::Solid(fill) = look.body {
         painter.rect_filled(body, 0.5, frame.fade(index, color(fill)));
@@ -859,6 +905,33 @@ mod tests {
             None,
         );
         assert_eq!(look.body, Fill::Hollow);
+    }
+
+    #[test]
+    fn snapped_candles_keep_one_width_and_a_centred_wick_at_every_phase() {
+        for ppp in [1.0_f32, 1.25, 1.5, 2.0, 3.0] {
+            for slot in 3..40 {
+                let half = candle_half_width(slot as f32 * 0.7);
+                let mut width = None;
+                for step in 0..200 {
+                    let x = 100.0 + step as f32 * 0.137;
+                    let c = snap_candle(x, half, 1.0, ppp);
+                    let px = |v: f32| v * ppp;
+                    for edge in [c.body.0, c.body.1, c.wick.0, c.wick.1] {
+                        assert!((px(edge) - px(edge).round()).abs() < 1e-3, "off grid");
+                    }
+                    let body = (px(c.body.1) - px(c.body.0)).round();
+                    let wick = (px(c.wick.1) - px(c.wick.0)).round();
+                    assert_eq!(*width.get_or_insert(body), body, "ppp {ppp} slot {slot}");
+                    assert!(wick >= 1.0 && body >= wick);
+                    assert!(
+                        (px(c.body.0) + px(c.body.1) - px(c.wick.0) - px(c.wick.1)).abs() < 1e-3,
+                        "wick not centred (ppp {ppp}, slot {slot}, x {x})"
+                    );
+                    assert!((px(c.wick.0 + c.wick.1) / 2.0 - px(x)).abs() <= 0.5 + 1e-3);
+                }
+            }
+        }
     }
 
     #[test]

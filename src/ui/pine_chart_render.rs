@@ -28,6 +28,7 @@ use crate::ui::pine_geometry::{
     candle_index_for_bar, dash_pattern, extended_line, faded, font_size, is_visible, label_layout,
     marker_radius, polyline_points, rgba, series_index,
 };
+use crate::ui::series_render::snap_candle;
 use eframe::egui::{
     self, Align2, Color32, FontId, Painter, Pos2, Rect, Shape, Stroke, Vec2,
     epaint::{Mesh, Vertex, WHITE_UV},
@@ -524,11 +525,17 @@ impl PineLayer<'_> {
                     self.draw_ohlc_bar(painter, x, bar, (high, low));
                     continue;
                 }
+                let snapped = snap_candle(
+                    x,
+                    style.body_width / 2.0,
+                    style.wick_width,
+                    painter.ctx().pixels_per_point(),
+                );
                 if let Some(wick) = bar.wick_color.filter(|c| is_visible(*c)) {
                     let (top, bottom) = (self.y(high), self.y(low));
-                    let rect = Rect::from_min_size(
-                        Pos2::new(x - style.wick_width / 2.0, top),
-                        Vec2::new(style.wick_width, (bottom - top).max(0.5)),
+                    let rect = Rect::from_min_max(
+                        Pos2::new(snapped.wick.0, top),
+                        Pos2::new(snapped.wick.1, top + (bottom - top).max(0.5)),
                     );
                     painter.rect_filled(rect, 0.0, rgba(wick));
                 }
@@ -536,9 +543,12 @@ impl PineLayer<'_> {
                     self.y(bar.open.max(bar.close)),
                     self.y(bar.open.min(bar.close)),
                 );
-                let body = Rect::from_min_size(
-                    Pos2::new(x - style.body_width / 2.0, top),
-                    Vec2::new(style.body_width, (bottom - top).max(style.min_body_height)),
+                let body = Rect::from_min_max(
+                    Pos2::new(snapped.body.0, top),
+                    Pos2::new(
+                        snapped.body.1,
+                        top + (bottom - top).max(style.min_body_height),
+                    ),
                 );
                 if let Some(fill) = bar.color.filter(|c| is_visible(*c)) {
                     painter.rect_filled(body, 0.0, rgba(fill));
