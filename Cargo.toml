@@ -65,6 +65,7 @@ tokio-rustls = { version = "0.26", default-features = false, features = ["ring",
 rcgen = { version = "0.14", default-features = false, features = ["ring", "pem"] }
 # Already in the tree through rustls: checks that a certificate really names the address it is kept for.
 rustls-webpki = { version = "0.103", default-features = false, features = ["ring", "std"] }
+rust_decimal = { version = "1.43.0", default-features = false, features = ["std", "serde-str"] }
 
 # Secret storage on Linux (docs/flatpak.md): the Secret Service, or the Secret portal in a Flatpak.
 [target.'cfg(target_os = "linux")'.dependencies]

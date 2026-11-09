@@ -12,6 +12,7 @@ scenario matches the work:
 | Providers, symbols, timeframes, prediction markets, caches, icons, live data, or watchlists | [Market data](docs/agent-guides/market-data.md) |
 | The symbol picker (changing a chart's market), symbol search ranking, or how markets are named | [Symbol picker](docs/symbol-picker.md) |
 | Chart rendering, price labels, chart types, canvas, templates, drawings, portfolio cards, or snapshots | [Charts](docs/agent-guides/charts.md) |
+| The trading journal: executions, trade reconstruction, journal analytics, reviews, or anything that reads paper fills for the journal | [Trading journal](docs/trading-journal.md) |
 | Markets compared on a chart (Compare, overlays), their data, scales, legend or the picker's compare mode | [Chart overlays](docs/chart-overlays.md) |
 | The Portfolio tab: Overview, Holdings, Transactions, Statistics, their empty states, or portfolio revaluation | [Portfolio page](docs/portfolio-page.md) |
 | Text, note, table, image or post drawings | [Annotation tools](docs/annotation-tools.md) |
@@ -140,6 +141,7 @@ because cargo never deletes old output. Finished worktrees are where the disk go
 - [Pine volume footprints](docs/pine-footprint.md) — `request.footprint()`: built from intrabar candles, stateless handles, what is inferred and what is not verified.
 - [Pine Logs](docs/pine-logs.md) — `log.*()` messages: the sink, limits, batches, what is verified against TradingView.
 - [AI assistant](docs/ai-assistant.md) — prompting an LLM to edit the open Pine script: bring-your-own key, providers and streaming, what is verified.
+- [Trading journal](docs/trading-journal.md) — executions, trade reconstruction, capture from paper trading, research in [reviews/trading-journal-research.md](docs/reviews/trading-journal-research.md).
 - [Portfolio cards](docs/portfolio-cards.md) — card design and known gaps.
 - [Portfolio page](docs/portfolio-page.md) — the Portfolio tab: throttled revaluation, centred column and wide layout, empty-state pictures.
 - [Chart snapshots](docs/snapshots.md) — the camera menu, one shared renderer, hosted sharing protocol, privacy.

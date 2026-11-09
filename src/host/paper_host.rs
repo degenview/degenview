@@ -121,6 +121,12 @@ impl PaperHost {
                 // would put the previous session's price into a new order ticket until the first
                 // live update arrives.
                 snapshot.quotes.clear();
+                // Everything the ledger already holds reaches the journal, whether it predates
+                // the journal, arrived from another Mac, or missed an earlier pass. Idempotent;
+                // a failure is kept by the journal and does not stop paper trading.
+                if let Ok(store) = store.lock() {
+                    let _ = store.journal_reconcile_paper(&snapshot);
+                }
                 let mut host = Self {
                     store,
                     engine: PaperTradingEngine::new(snapshot),
@@ -176,6 +182,11 @@ impl PaperHost {
                     .is_some_and(|id| snapshot.accounts.iter().any(|a| a.id == id));
                 if !selected_exists {
                     snapshot.selected_account_id = snapshot.accounts.first().map(|a| a.id);
+                }
+                // Fills another Mac made reach the journal here: they came through the bundle,
+                // not through this Mac's save.
+                if let Ok(store) = self.store.lock() {
+                    store.journal_ingest_paper(&snapshot);
                 }
                 self.engine = PaperTradingEngine::new(snapshot);
                 self.revision = self.revision.wrapping_add(1);
@@ -1776,6 +1787,178 @@ mod tests {
             store.lock().unwrap().paper_trading().unwrap(),
             *host.snapshot()
         );
+    }
+
+    // MARK: Trading journal capture
+
+    fn btc_quote(last: f64) -> PaperQuote {
+        PaperQuote {
+            instrument_key: "Binance:BTCUSDT".into(),
+            bid: None,
+            ask: None,
+            last: Some(last),
+            timestamp: now_ms(),
+            is_market_open: true,
+        }
+    }
+
+    fn journal_executions(store: &SharedStore) -> Vec<crate::model::journal::model::Execution> {
+        store.lock().unwrap().journal_executions().unwrap()
+    }
+
+    #[test]
+    fn a_ticket_fill_reaches_the_journal() {
+        let store = store();
+        let mut host = PaperHost::load(store.clone());
+        let id = account(&mut host);
+        host.process_quote(btc_quote(50_000.0)).unwrap();
+        host.submit(market_request(id)).unwrap();
+
+        let executions = journal_executions(&store);
+        assert_eq!(executions.len(), 1);
+        assert_eq!(executions[0].quantity, rust_decimal::Decimal::ONE);
+        assert_eq!(executions[0].instrument.symbol, "BTCUSDT");
+    }
+
+    #[test]
+    fn a_fill_made_by_a_quote_reaches_the_journal() {
+        let store = store();
+        let mut host = PaperHost::load(store.clone());
+        let id = account(&mut host);
+        host.process_quote(btc_quote(50_000.0)).unwrap();
+        let mut request = market_request(id);
+        request.kind = PaperOrderType::Limit;
+        request.limit_price = Some(40_000.0);
+        host.submit(request).unwrap();
+        assert!(
+            journal_executions(&store).is_empty(),
+            "a working order is not a fill"
+        );
+
+        host.process_quote(btc_quote(39_000.0)).unwrap();
+        let executions = journal_executions(&store);
+        assert_eq!(executions.len(), 1);
+        assert_eq!(
+            executions[0].order_ref.as_deref(),
+            Some(&*host.snapshot().orders[0].id.to_string())
+        );
+    }
+
+    #[test]
+    fn opening_and_closing_gives_the_journal_one_completed_trade() {
+        use crate::model::journal::model::{CostBasis, TradeStatus};
+        use crate::model::journal::reconstruct::reconstruct;
+        let store = store();
+        let mut host = PaperHost::load(store.clone());
+        let id = account(&mut host);
+        host.process_quote(btc_quote(50_000.0)).unwrap();
+        host.submit(market_request(id)).unwrap();
+        host.process_quote(btc_quote(51_000.0)).unwrap();
+        host.close_position(id, "Binance:BTCUSDT").unwrap();
+
+        let executions = journal_executions(&store);
+        assert_eq!(executions.len(), 2);
+        let trades = reconstruct(&executions, |_| CostBasis::AverageCost);
+        assert_eq!(trades.len(), 1);
+        assert_eq!(trades[0].status, TradeStatus::Closed);
+        let engine_net: f64 = host
+            .snapshot()
+            .closed_trades
+            .iter()
+            .map(|t| t.net_pnl())
+            .sum();
+        assert_eq!(
+            trades[0].net_pnl().to_string().parse::<f64>().unwrap(),
+            engine_net
+        );
+    }
+
+    #[test]
+    fn checking_an_order_does_not_touch_the_journal() {
+        let store = store();
+        let mut host = PaperHost::load(store.clone());
+        let id = account(&mut host);
+        host.process_quote(btc_quote(50_000.0)).unwrap();
+        host.check_order(market_request(id)).unwrap();
+        assert!(journal_executions(&store).is_empty());
+        assert!(host.snapshot().fills.is_empty());
+    }
+
+    #[test]
+    fn a_restart_does_not_duplicate_what_the_journal_holds() {
+        let store = store();
+        {
+            let mut host = PaperHost::load(store.clone());
+            let id = account(&mut host);
+            host.process_quote(btc_quote(50_000.0)).unwrap();
+            host.submit(market_request(id)).unwrap();
+        }
+        let first = journal_executions(&store);
+        assert_eq!(first.len(), 1);
+        let _restarted = PaperHost::load(store.clone());
+        let _again = PaperHost::load(store.clone());
+        assert_eq!(journal_executions(&store), first);
+    }
+
+    #[test]
+    fn existing_history_is_backfilled_when_the_host_loads() {
+        let store = store();
+        {
+            let mut host = PaperHost::load(store.clone());
+            let id = account(&mut host);
+            host.process_quote(btc_quote(50_000.0)).unwrap();
+            host.submit(market_request(id)).unwrap();
+        }
+        {
+            let guard = store.lock().unwrap();
+            guard
+                .raw_connection()
+                .execute("DELETE FROM journal_execution", [])
+                .unwrap();
+            guard
+                .raw_connection()
+                .execute("DELETE FROM journal_cursor", [])
+                .unwrap();
+            guard
+                .raw_connection()
+                .execute("DELETE FROM journal_account", [])
+                .unwrap();
+        }
+        assert!(journal_executions(&store).is_empty());
+        let _host = PaperHost::load(store.clone());
+        assert_eq!(journal_executions(&store).len(), 1);
+        assert_eq!(store.lock().unwrap().journal_accounts().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn fills_that_arrive_through_the_ledger_reach_the_journal_on_reload() {
+        let store = store();
+        let mut host = PaperHost::load(store.clone());
+        let id = account(&mut host);
+        host.process_quote(btc_quote(50_000.0)).unwrap();
+        host.submit(market_request(id)).unwrap();
+        // What an iCloud apply does: the paper tables change without this Mac's save path.
+        let mut other = host.snapshot().clone();
+        let mut fill = other.fills[0].clone();
+        fill.id += 1_000;
+        fill.timestamp += 5;
+        other.fills.push(fill);
+        {
+            let guard = store.lock().unwrap();
+            guard
+                .raw_connection()
+                .execute(
+                    "INSERT INTO paper_fill (account_id, payload) VALUES (?1, ?2)",
+                    rusqlite::params![
+                        id.to_string(),
+                        serde_json::to_string(&other.fills[1]).unwrap()
+                    ],
+                )
+                .unwrap();
+        }
+        assert_eq!(journal_executions(&store).len(), 1);
+        host.reload();
+        assert_eq!(journal_executions(&store).len(), 2);
     }
 
     #[test]
