@@ -144,8 +144,8 @@ pub const DISCONNECT_MESSAGE: &str = "This removes the key from this Mac and sto
 
 // ---- View ----------------------------------------------------------------------------------------
 
-pub fn body(ui: &mut egui::Ui, state: &mut BrokersState) {
-    let Some(host) = BrokerHost::global() else {
+pub fn body(ui: &mut egui::Ui, state: &mut BrokersState, host: Option<std::sync::Arc<BrokerHost>>) {
+    let Some(host) = host else {
         kit::notice_card(
             ui,
             Icon::InfoCircle,
@@ -206,6 +206,8 @@ fn broker_card(
                     if let Some(snapshot) = &snapshot {
                         connected_details(ui, snapshot, form.checked);
                     }
+                    ui.add_space(12.0);
+                    trading_choices(ui, host, id);
                     ui.add_space(12.0);
                     if destructive_button(ui, "Disconnect").clicked() {
                         form.confirming_disconnect = true;
@@ -316,6 +318,67 @@ fn connected_details(ui: &mut egui::Ui, snapshot: &BrokerSnapshot, checked: Opti
             );
         }
     }
+}
+
+/// How the user trades at this broker. Saved to this Mac only; the questions that guard real money
+/// (a market order, an edit, Cancel all) are not on this list because they are not optional.
+fn trading_choices(ui: &mut egui::Ui, host: &BrokerHost, id: degenview_brokers::BrokerId) {
+    let mut prefs = host.prefs(id);
+    let before = prefs.clone();
+    ui.label(kit::text(
+        "Trading",
+        kit::size::SUBHEADLINE + 1.0,
+        kit::SEMIBOLD,
+        theme::text_primary(),
+    ));
+    ui.add_space(6.0);
+    pref_row(
+        ui,
+        "Ask before sending a limit or stop-limit order",
+        &mut prefs.confirm_resting_orders,
+    );
+    pref_row(
+        ui,
+        "Ask before cancelling a single order",
+        &mut prefs.confirm_single_cancel,
+    );
+    pref_row(
+        ui,
+        "Tell me when orders are placed, fill, cancel or are rejected",
+        &mut prefs.notify,
+    );
+    pref_row(
+        ui,
+        "Show working orders on charts",
+        &mut prefs.show_on_charts,
+    );
+    pref_row(
+        ui,
+        "Start a market buy as an amount to spend",
+        &mut prefs.spend_in_quote_by_default,
+    );
+    ui.add_space(4.0);
+    muted(
+        ui,
+        "Market orders, changing an order and Cancel all always ask.",
+    );
+    if prefs != before {
+        let _ = host.set_prefs(id, prefs);
+    }
+}
+
+fn pref_row(ui: &mut egui::Ui, label: &str, value: &mut bool) {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 10.0;
+        kit::switch(ui, value, label);
+        ui.label(kit::text(
+            label,
+            kit::size::BODY,
+            kit::REGULAR,
+            theme::text_primary(),
+        ));
+    });
+    ui.add_space(4.0);
 }
 
 fn connect_form(
@@ -432,12 +495,14 @@ fn muted(ui: &mut egui::Ui, text: &str) {
 fn numbered_step(ui: &mut egui::Ui, number: usize, text: &str) {
     ui.horizontal_top(|ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
-        ui.label(kit::text(
+        let (slot, _) = ui.allocate_exact_size(egui::vec2(18.0, 14.0), egui::Sense::hover());
+        ui.painter().text(
+            slot.right_top(),
+            egui::Align2::RIGHT_TOP,
             format!("{number}."),
-            12.0,
-            kit::SEMIBOLD,
+            egui::FontId::proportional(12.0),
             theme::text_tertiary(),
-        ));
+        );
         ui.add(
             egui::Label::new(kit::text(text, 12.0, kit::REGULAR, theme::text_secondary())).wrap(),
         );

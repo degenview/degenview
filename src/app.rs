@@ -240,6 +240,7 @@ enum AppAction {
     OpenPineSource(crate::model::pine_logs_view::SourceTarget),
     /// Open Settings on the Alpaca page.
     OpenAlpacaSettings,
+    OpenBrokerSettings,
     /// Open Settings on the AI Assistant page.
     OpenAiSettings,
     /// Open Settings on the Snapshots page.
@@ -835,6 +836,7 @@ fn show_tab(
                         AppAction::OpenWatchlistInNewTab(item)
                     }
                     WorkspaceAction::OpenAlpacaSettings => AppAction::OpenAlpacaSettings,
+                    WorkspaceAction::OpenBrokerSettings => AppAction::OpenBrokerSettings,
                     WorkspaceAction::OpenSnapshotSettings => AppAction::OpenSnapshotSettings,
                     WorkspaceAction::SetAlertState { id, state } => {
                         AppAction::SetAlertState { id, state }
@@ -1352,6 +1354,9 @@ impl DegenViewApp {
                 AppAction::OpenAlpacaSettings => {
                     self.open_settings_page(ctx, WebhookHost::open_alpaca);
                 }
+                AppAction::OpenBrokerSettings => {
+                    self.open_settings_page(ctx, WebhookHost::open_brokers);
+                }
                 AppAction::OpenAiSettings => {
                     self.open_settings_page(ctx, WebhookHost::open_ai);
                 }
@@ -1486,6 +1491,52 @@ impl DegenViewApp {
     /// there are: the coordinator merges demand by market, so a market a sidebar, an alert or a
     /// portfolio card already follows costs nothing more. Unlike a sidebar's lease it does not
     /// lapse, so a tab in the background keeps its price.
+    /// Tells the user what happened to their live orders: a short message at the foot of the
+    /// focused tab and a system notification. Each notice arrives once (the broker crate's book
+    /// deduplicates replayed messages) and none for the orders already open when a connection
+    /// starts.
+    fn tick_broker_notices(&mut self) {
+        let notices = self.broker_host.drain_notices();
+        if notices.is_empty() {
+            return;
+        }
+        let focused = self.focused_tab.load(Ordering::Acquire);
+        for (broker, notice) in notices {
+            let prefs = self.broker_host.prefs(broker);
+            if !prefs.notify {
+                continue;
+            }
+            let name = degenview_brokers::registry::by_id(broker)
+                .map_or(broker.as_str(), |b| b.descriptor().display_name);
+            let spec = self
+                .broker_host
+                .snapshot(broker)
+                .and_then(|snapshot| snapshot.product(&notice.order.product).cloned());
+            let text = crate::model::broker_ticket::notice_text(&notice, name, spec.as_ref());
+            for slot in &self.tabs {
+                if slot.id() != focused {
+                    continue;
+                }
+                if let Ok(mut content) = slot.content.lock()
+                    && let TabContent::Chart(workspace) = &mut *content
+                {
+                    workspace.announce(format!("{}: {}", text.title, text.body), text.error);
+                }
+            }
+            macos_notifications::notify_async(
+                Arc::clone(&self.notifier),
+                crate::model::alert_notification::NotificationContent {
+                    title: text.title,
+                    body: text.body,
+                    identifier: text.identifier,
+                    sound: false,
+                    user_info: Vec::new(),
+                },
+                |_, _| {},
+            );
+        }
+    }
+
     fn tick_tab_quotes(&mut self, ctx: &egui::Context) {
         let mut wanted: Vec<InstrumentId> = Vec::new();
         for slot in &self.tabs {
@@ -3597,6 +3648,7 @@ impl eframe::App for DegenViewApp {
         self.tick_sync(ctx);
         self.tick_editor_themes();
         self.tick_tab_quotes(ctx);
+        self.tick_broker_notices();
         self.tick_tab_links(ctx);
         self.tab_host
             .restore_frames(ctx, native_bridge::screen_layout(), now_ms().max(0) as u64);

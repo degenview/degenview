@@ -48,7 +48,68 @@ A key that can move funds gets a warning; a key that can only view says so, and 
 offered. **Disconnect** removes the key from this Mac and stops the connection. It does not revoke
 the key at the broker, and orders already placed stay live there; the dialog says both.
 
+## The panel
+
+The Paper Trading panel is the trading panel: when a broker is connected, a "Trade on" switch
+(Paper | Coinbase...) appears above it, per tab (`ChartWorkspace::trading_venue`, never saved: a tab
+starts on paper). On a live venue the panel is `ui/broker_panel.rs`, with an amber rule and a
+`LIVE · NAME` badge (`ui/broker_badge.rs`; amber is not the buy/sell colour and never blue) that
+paper trading never uses. The paper account is only created while the venue is Paper, and paper
+overlays on charts are hidden while it is live.
+
+It draws `BrokerHost::snapshot()` and nothing else, so every window shows the same state.
+
+* **Orders**: working orders and the ones that just finished (dimmed), plus *unconfirmed* sends. Pick
+  rows to cancel several at once. A cancel marks the row "Cancel requested" and leaves it listed until
+  the broker confirms; an order that filled during the cancel says so.
+* **History** (finished orders, filterable, paged), **Fills** (the snapshot's recent fills, older ones
+  on request) and **Balances** (available and held, never a dollar value that was not read from the
+  broker).
+* A banner says when the connection is down (what is shown may be out of date and new orders are
+  paused), when the key was revoked, and when it can view but not trade.
+
+## Ordering
+
+**New order** opens the ticket for the focused chart's market, if the chart's data source is the
+broker's: `Broker::resolve_market` maps it, and a chart whose data comes from anywhere else is
+refused with a sentence, never traded on a similar market. The ticket (`ui/broker_ticket.rs`, rules in
+`model/broker_ticket.rs`) takes the market's rules and the best bid and ask from the broker, not the
+chart, and says so. It offers only what the market allows. Text is parsed exactly (`0.001` stays
+`0.001`); a value off the market's increment is reported with the nearest valid value and **never
+rounded**. The broker's own preview (fees, total, warnings, refusals) replaces the estimate when it
+arrives, and a refusal blocks the order.
+
+Review opens a confirmation with the account, market, side, type, size, price, estimated value and
+fee. A **market order, an edit and Cancel all always ask**; confirming a limit or stop-limit order, or a
+single cancel, is a setting (Settings ▸ Brokers; the defaults ask for orders and do not ask for a
+single cancel). The dialog starts with no button focused, so a stray Enter sends nothing. The order
+is then handed to the runtime, which records it in the pending journal before it sends it, sends it
+once, and shows it as *Sending* / *Unconfirmed* until the broker lists it.
+
+## Editing and cancelling
+
+The pencil edits an open limit or stop-limit order's price and size **in place** (the broker's edit,
+previewed first). It is disabled, with the reason, for anything else. Cancel-and-replace is not
+offered anywhere. The confirmation says the order can still fill at its old terms until the change
+is applied and that a new price may lose its place in the queue.
+
+## Notifications
+
+Orders placed, partly filled, filled, cancelled, expired or rejected produce a message at the foot of
+the focused tab and a system notification, once each (the crate's book deduplicates replays, and the
+orders already open when a connection starts are not announced). Settings ▸ Brokers turns them off
+(`broker.prefs`, local to this Mac).
+
 ## Not done yet / not verified
 
-See the pull request descriptions of the stack for the current list. Nothing here has been run
-against a real account by the author of the change.
+* Chart trading (order lines, the context menu, header BUY/SELL, dragging an order) comes in the
+  next change; until then orders are managed from the panel.
+* Nothing here has been run against a real account by the author of the change. The mock
+  exchange is built from Coinbase's published specification; see the crate's `docs/coinbase.md` for
+  what could not be verified.
+* The ticket offers good-til-cancelled and fill-or-kill, not good-til-date (it needs a date picker).
+  Brackets, TWAP and scaled orders are not implemented.
+* Figures use `.` for decimals and `,` for thousands whatever the system locale; typed numbers accept
+  `.` or `,` as the decimal separator but never a thousands separator.
+* The shared widgets of the paper ticket were not extracted: the live ticket builds from `kit`
+  controls, so paper trading is untouched.
