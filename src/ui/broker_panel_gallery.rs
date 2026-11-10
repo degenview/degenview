@@ -1089,3 +1089,95 @@ fn an_order_can_be_reviewed_and_placed_on_the_sandbox_without_prices() {
         .wait()
         .expect("placed");
 }
+
+/// The trading panel's top edge can be dragged to make it taller on every tab, whether the account
+/// holds orders or nothing: a panel whose content is a footer short of the room it was given
+/// shrinks back every frame and cannot be resized.
+#[test]
+fn the_trading_panel_can_be_resized_on_every_tab_with_and_without_orders() {
+    let _restore = theme::RestoreDefaultTheme;
+    let mut results = Vec::new();
+    for (name, rig) in [("no orders", self::rig()), ("with orders", live_rig())] {
+        if name == "no orders" {
+            rig.host
+                .adopt(ID, credentials(&generate_key_pem()))
+                .unwrap();
+            wait("live", || {
+                rig.host
+                    .snapshot(ID)
+                    .is_some_and(|s| s.status == Status::Live)
+            });
+        }
+        for tab in [
+            BrokerTab::Orders,
+            BrokerTab::History,
+            BrokerTab::Fills,
+            BrokerTab::Balances,
+        ] {
+            let mut screen = Screen::new(Vec2::new(1_100.0, 760.0));
+            let mut state = BrokerPanelState::default();
+            state.set_tab(tab);
+            let height = std::cell::Cell::new(0.0_f32);
+            let mut draw = |screen: &mut Screen, events: Vec<egui::Event>| {
+                screen.run(events, |ui| {
+                    theme::sync(ui.ctx());
+                    let shown = egui::Panel::bottom(egui::Id::new("resize-gallery"))
+                        .resizable(true)
+                        .default_size(340.0)
+                        .min_size(280.0)
+                        .frame(egui::Frame::new().fill(crate::ui::kit::window()))
+                        .show(ui, |ui| {
+                            broker_panel::ui(
+                                ui,
+                                &mut state,
+                                &rig.host,
+                                ID,
+                                &PanelInput {
+                                    market: Some(degenview_brokers::MarketRef {
+                                        source: "coinbase".to_owned(),
+                                        symbol: "BTC-USD".to_owned(),
+                                    }),
+                                    replay: false,
+                                },
+                            );
+                        });
+                    height.set(shown.response.rect.height());
+                });
+            };
+            for _ in 0..6 {
+                draw(
+                    &mut screen,
+                    vec![egui::Event::PointerMoved(egui::pos2(600.0, 100.0))],
+                );
+                std::thread::sleep(Duration::from_millis(15));
+            }
+            let before = height.get();
+            let edge = 760.0 - before;
+            let button = |pos, pressed| egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            };
+            let start = egui::pos2(600.0, edge);
+            draw(&mut screen, vec![egui::Event::PointerMoved(start)]);
+            draw(&mut screen, vec![button(start, true)]);
+            for step in 1..=8 {
+                let at = egui::pos2(600.0, edge - 10.0 * step as f32);
+                draw(&mut screen, vec![egui::Event::PointerMoved(at)]);
+            }
+            let end = egui::pos2(600.0, edge - 80.0);
+            draw(&mut screen, vec![button(end, false)]);
+            for _ in 0..3 {
+                draw(&mut screen, vec![egui::Event::PointerMoved(end)]);
+            }
+            results.push((name, tab, before, height.get()));
+        }
+    }
+    for (name, tab, before, after) in &results {
+        assert!(
+            *after > *before + 40.0,
+            "{name} / {tab:?}: dragging the top edge up by 80 should make the panel taller: {before} -> {after} ({results:?})"
+        );
+    }
+}

@@ -592,6 +592,14 @@ pub fn ui(
         BrokerTab::Fills => fills_tab(ui, state, host, broker_id, &snapshot),
         BrokerTab::Balances => balances_tab(ui, &snapshot),
     }
+    // The tables leave room for the orders footer, which only the Orders tab draws. Whatever is
+    // left is taken, so the panel's content is as tall as the room it was given: a resizable panel
+    // sizes itself to its content, and one that is short by a footer shrinks every frame, so a
+    // drag of its edge never sticks.
+    let rest = ui.available_height();
+    if rest > 0.0 {
+        ui.allocate_exact_size(egui::vec2(ui.available_width(), rest), egui::Sense::hover());
+    }
 
     dialogs(ui.ctx(), state, host, broker_id, &snapshot);
     actions

@@ -225,6 +225,10 @@ fn row(
             cell(ui, index, column);
         });
     }
+    // A cell that draws nothing leaves its scope's rect at the middle of the row (centred, no
+    // height), and a scope moves the cursor to its own end: the next row would start half a row
+    // too high. Always continue from the row's own bottom.
+    ui.advance_cursor_after_rect(rect);
 }
 
 // MARK: Cells
@@ -305,5 +309,38 @@ mod tests {
             output.textures_delta.clear();
         }
         assert!(cells >= 3, "the cells ran: {cells}");
+    }
+    /// A row whose last cell draws nothing (a finished order has no buttons) must not pull the
+    /// rows after it up: every row starts one row height below the one before.
+    #[test]
+    fn rows_stay_one_row_height_apart_when_the_last_cell_is_empty() {
+        let ctx = egui::Context::default();
+        let tops = std::cell::RefCell::new(Vec::new());
+        for _ in 0..2 {
+            tops.borrow_mut().clear();
+            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                show(ui, "gap-grid", &COLS, 5, |ui, row, column| match column {
+                    0 => {
+                        tops.borrow_mut().push((row, ui.max_rect().top()));
+                        figure(ui, "x", Color32::WHITE);
+                    }
+                    // Rows 1 and 2 draw nothing in the last column, as a finished order does.
+                    2 if row == 0 || row > 2 => figure(ui, "y", Color32::WHITE),
+                    _ => {}
+                });
+            });
+            output.textures_delta.clear();
+        }
+        let tops = tops.into_inner();
+        assert!(tops.len() >= 4, "the rows were drawn: {tops:?}");
+        for pair in tops.windows(2) {
+            let gap = pair[1].1 - pair[0].1;
+            assert!(
+                (gap - ROW_HEIGHT).abs() < 0.01,
+                "row {} starts {gap} below row {}, not {ROW_HEIGHT}: {tops:?}",
+                pair[1].0,
+                pair[0].0
+            );
+        }
     }
 }
