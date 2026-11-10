@@ -372,6 +372,26 @@ so there is no signature check beyond those.
   (display, Secret Service) and the new build id in Settings > About. Builds before the first
   updater-capable release have to be replaced by hand once.
 
+### Startup diagnostics
+
+The Windows exe is a GUI-subsystem build: no console, so a panic or a stalled start shows nothing.
+`src/crash_report.rs` gives a user something to send:
+
+- `startup.log` in the data directory (`%APPDATA%\es.nico.degenview`), rewritten every launch: version,
+  build, OS, then the stages reached (database open, graphics ready with the wgpu adapter and
+  backend, first tab window drawn). The last line says where a start that shows nothing stopped.
+- `crash.log`, appended on every panic (message, location, thread, backtrace), capped at 256 KiB.
+  A main-thread panic also shows a message box naming the file. Worker-thread panics are logged but
+  not announced: the MCP server and the Pine runners catch some on purpose.
+- Release builds are stripped, so a backtrace is mostly addresses. The message and location carry it.
+
+CI job `smoke-windows` (x64 and ARM64) builds the release exe, launches it against a scratch
+`APPDATA` and waits for "first tab window drawn" in `startup.log`, then checks it is still running
+15 s later. The runners have no GPU, so wgpu uses the WARP software adapter: this proves the startup
+path and window loop, not a real driver (an old Intel driver, a VM, an overlay that hooks DXGI).
+Ask a reporter for both logs, the Windows version and whether SmartScreen appeared; try
+`set WGPU_BACKEND=gl` or `dx12` from `cmd` to separate a backend problem.
+
 ### Windows installer
 
 `DegenView-<tag>-windows-x64-setup.exe` and `-windows-arm64-setup.exe`, built by

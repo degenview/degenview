@@ -116,3 +116,71 @@ jobs:
         env:
           DEGENVIEW_NO_KEYCHAIN: "1"
         run: cargo test --locked --lib -- self_update update_archive update_check update_host windows_credentials tls_protect
+
+  # Starts the real release executable (GUI subsystem, as shipped) and waits for a window to draw. The
+  # Windows build was never launched anywhere before this job, so "the app does not open" could not
+  # be told from "it opens". The runner has no GPU: wgpu falls back to the WARP software adapter, which
+  # proves the startup path and the window loop, not any real driver. `startup.log` (see
+  # `crash_report`) is what the job reads, and prints when it fails.
+  smoke-windows:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Launch windows
+            os: windows-latest
+            key: windows-smoke
+          - name: Launch windows arm64
+            os: windows-11-arm
+            key: windows-arm64-smoke
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          key: ${{ matrix.key }}
+
+      - name: Build the release executable
+        shell: bash
+        run: cargo build --release --locked
+
+      - name: Launch it and wait for a window
+        shell: pwsh
+        run: |
+          $data = Join-Path $env:RUNNER_TEMP 'smoke-data'
+          New-Item -ItemType Directory -Force $data | Out-Null
+          # A scratch profile: no saved session, no real credentials.
+          $env:APPDATA = $data
+          $env:LOCALAPPDATA = $data
+          $env:DEGENVIEW_NO_KEYCHAIN = '1'
+          $log = Join-Path $data 'es.nico.degenview\startup.log'
+          $crash = Join-Path $data 'es.nico.degenview\crash.log'
+          $process = Start-Process -FilePath (Resolve-Path 'target\release\degenview.exe') -PassThru
+          $drawn = $false
+          $deadline = (Get-Date).AddSeconds(90)
+          while ((Get-Date) -lt $deadline -and -not $process.HasExited) {
+            if ((Test-Path $log) -and (Select-String -Path $log -Pattern 'first tab window drawn' -Quiet)) {
+              $drawn = $true
+              break
+            }
+            Start-Sleep -Seconds 1
+          }
+          # A window that draws once and then dies is still a failed start.
+          if ($drawn) { Start-Sleep -Seconds 15 }
+          $process.Refresh()
+          $alive = -not $process.HasExited
+          foreach ($file in @($log, $crash)) {
+            if (Test-Path $file) { Write-Host "::group::$file"; Get-Content $file; Write-Host '::endgroup::' }
+          }
+          if ($alive) { Stop-Process -Id $process.Id -Force }
+          if (-not $drawn) { Write-Host "::error::no window was drawn within 90 s (exited: $($process.HasExited))"; exit 1 }
+          if (-not $alive) { Write-Host "::error::the app exited after its first window (code $($process.ExitCode))"; exit 1 }

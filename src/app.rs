@@ -563,6 +563,7 @@ fn show_window(
     chart_info: Option<crate::pine_studio::ChartInfo>,
 ) {
     let ctx = ui.ctx().clone();
+    crate::crash_report::note_first("first tab window drawn");
     if ui.input(|input| input.viewport().close_requested()) {
         // The app closes the window's tabs (a script with edits asks first) and drops the
         // window itself; until then it stays up.
