@@ -1110,6 +1110,8 @@ dependencies = [
 [[package]]
 name = "degenview-journal"
 version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "61f8743f7e4b592d8944a20199731119e62e5e3b082d54ee86c63a707982db89"
 dependencies = [
  "rust_decimal",
  "serde",
