@@ -487,6 +487,27 @@ fn gallery_of_live_trading() {
         });
         tall.save(&format!("live-ticket-{suffix}"), output);
 
+        // The approval, with the broker's own figures.
+        ticket.press_review();
+        let output = frames(&mut tall, 4, |ui| {
+            let _ = broker_ticket::show(ui.ctx(), &mut ticket, &rig.host);
+        });
+        tall.save(&format!("live-confirm-{suffix}"), output);
+
+        // A broker that cannot preview: Review is off, and the ticket says why.
+        rig.exchange.rest.with_state(|s| s.fail_preview = true);
+        let mut unpreviewed = TicketState::new(ID, ProductId::new("BTC-USD"), {
+            let mut draft = TicketDraft::new(Side::Buy);
+            draft.size_text = "0.001".to_owned();
+            draft.price_text = "90000.00".to_owned();
+            draft
+        });
+        let output = frames(&mut tall, 40, |ui| {
+            let _ = broker_ticket::show(ui.ctx(), &mut unpreviewed, &rig.host);
+        });
+        tall.save(&format!("live-ticket-no-preview-{suffix}"), output);
+        rig.exchange.rest.with_state(|s| s.fail_preview = false);
+
         let mut problem = TicketState::new(ID, ProductId::new("BTC-USD"), {
             let mut draft = TicketDraft::new(Side::Buy);
             draft.size_text = "50".to_owned();
@@ -516,4 +537,247 @@ fn gallery_of_live_trading() {
         });
         page.save(&format!("live-settings-idle-{suffix}"), output);
     }
+
+    // The record of unconfirmed orders cannot be read: the panel says so and orders are paused.
+    let broken = live_rig();
+    broken.host.corrupt_pending_record_for_test();
+    wait("the unreadable record to be noticed", || {
+        broken
+            .host
+            .snapshot(ID)
+            .is_some_and(|s| s.journal_error.is_some())
+    });
+    let mut screen = Screen::new(Vec2::new(1_100.0, 400.0));
+    let mut state = BrokerPanelState::default();
+    let output = show_panel(&mut screen, &mut state, &broken.host, 380.0);
+    screen.save("live-panel-journal-unreadable-dark", output);
+}
+
+fn posts(rig: &Rig, suffix: &str) -> usize {
+    rig.exchange.rest.with_state(|s| {
+        s.requests_seen
+            .iter()
+            .filter(|r| r.starts_with("POST") && r.ends_with(suffix))
+            .count()
+    })
+}
+
+/// The broker's preview is part of the rule, not a courtesy: when it cannot be had, Review does
+/// nothing, and sending is possible again only after a preview that came back.
+#[test]
+fn an_order_cannot_be_reviewed_or_sent_without_the_brokers_preview() {
+    let _restore = theme::RestoreDefaultTheme;
+    let rig = rig();
+    rig.host
+        .adopt(ID, credentials(&generate_key_pem()))
+        .unwrap();
+    wait("live", || {
+        rig.host
+            .snapshot(ID)
+            .is_some_and(|s| s.status == Status::Live)
+    });
+    rig.exchange.rest.with_state(|s| s.fail_preview = true);
+    let mut ticket = TicketState::new(ID, ProductId::new("BTC-USD"), {
+        let mut draft = TicketDraft::new(Side::Buy);
+        draft.size_text = "0.001".to_owned();
+        draft.price_text = "90000.00".to_owned();
+        draft
+    });
+    let mut screen = Screen::new(Vec2::new(900.0, 900.0));
+    let mut run = |events: Vec<egui::Event>, ticket: &mut TicketState| {
+        screen.run(events, |ui| {
+            theme::sync(ui.ctx());
+            let _ = broker_ticket::show(ui.ctx(), ticket, &rig.host);
+        })
+    };
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while !ticket.preview_failed() {
+        assert!(Instant::now() < deadline, "the preview should fail");
+        run(vec![], &mut ticket);
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(!ticket.ready_to_review());
+    assert!(
+        !ticket.review_enabled(),
+        "the Review button is off when the broker could not preview"
+    );
+
+    // Review, and Enter, and the keyboard path through the ticket: nothing opens, nothing is sent.
+    ticket.press_review();
+    run(vec![], &mut ticket);
+    run(key(egui::Key::Enter), &mut ticket);
+    run(vec![], &mut ticket);
+    assert!(
+        !ticket.confirming(),
+        "no review without the broker's answer"
+    );
+    assert_eq!(rig.exchange.order_posts(), 0);
+
+    // The broker can preview again, and the user asks again.
+    rig.exchange.rest.with_state(|s| s.fail_preview = false);
+    ticket.retry_preview();
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while !ticket.ready_to_review() {
+        assert!(
+            Instant::now() < deadline,
+            "the second preview should arrive"
+        );
+        run(vec![], &mut ticket);
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    run(vec![], &mut ticket);
+    assert!(ticket.review_enabled(), "and on again once it did");
+    ticket.press_review();
+    run(vec![], &mut ticket);
+    run(vec![], &mut ticket);
+    assert!(ticket.confirming());
+    assert_eq!(rig.exchange.order_posts(), 0, "and still nothing is sent");
+}
+
+#[test]
+fn an_edit_cannot_be_reviewed_before_or_without_the_brokers_preview() {
+    let _restore = theme::RestoreDefaultTheme;
+    let rig = live_rig();
+    let snapshot = rig.host.snapshot(ID).unwrap();
+    let order = snapshot
+        .working_orders()
+        .find(|v| v.order.side == Side::Sell)
+        .map(|v| v.order.clone())
+        .unwrap();
+    rig.exchange.rest.with_state(|s| s.fail_preview = true);
+    let mut state = BrokerPanelState::default();
+    state.begin_edit(ID, order, Some("92500.00".parse().unwrap()));
+    let mut screen = Screen::new(Vec2::new(900.0, 700.0));
+    let mut run = |events: Vec<egui::Event>, state: &mut BrokerPanelState| {
+        screen.run(events, |ui| {
+            theme::sync(ui.ctx());
+            egui::Panel::bottom(egui::Id::new("edit-gate"))
+                .exact_size(300.0)
+                .show(ui, |ui| {
+                    broker_panel::ui(
+                        ui,
+                        state,
+                        &rig.host,
+                        ID,
+                        &PanelInput {
+                            market: None,
+                            replay: false,
+                        },
+                    );
+                });
+        })
+    };
+    // Before any answer exists (the preview is asked for after typing pauses): not reviewable.
+    run(vec![], &mut state);
+    assert!(
+        !state.edit_review_enabled(),
+        "the Review button is off before the preview"
+    );
+    state.press_edit_review();
+    run(vec![], &mut state);
+    assert!(!state.edit_confirming(), "no review before the preview");
+
+    // The preview fails: still not reviewable, and the edit is never sent.
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while !state.edit_preview_failed() {
+        assert!(Instant::now() < deadline, "the preview should fail");
+        run(vec![], &mut state);
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(
+        !state.edit_review_enabled(),
+        "the Review button is off when the broker could not preview"
+    );
+    state.press_edit_review();
+    run(vec![], &mut state);
+    run(vec![], &mut state);
+    assert!(
+        !state.edit_confirming(),
+        "no review without the broker's answer"
+    );
+    assert_eq!(posts(&rig, "/orders/edit"), 0, "nothing was sent");
+
+    // Once the broker can preview and is asked again, the review opens.
+    rig.exchange.rest.with_state(|s| s.fail_preview = false);
+    state.retry_edit_preview();
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while !state.edit_ready() {
+        assert!(
+            Instant::now() < deadline,
+            "the second preview should arrive"
+        );
+        run(vec![], &mut state);
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    run(vec![], &mut state);
+    assert!(state.edit_review_enabled(), "and on again once it did");
+    state.press_edit_review();
+    run(vec![], &mut state);
+    run(vec![], &mut state);
+    assert!(state.edit_confirming());
+    assert_eq!(posts(&rig, "/orders/edit"), 0, "approval is still to come");
+}
+
+/// An unreadable record of orders waiting for confirmation: no new order, from the ticket or
+/// anywhere, and the reason is on the snapshot. (The store here holds something that is not a list.)
+#[test]
+fn an_unreadable_record_of_unconfirmed_orders_stops_new_orders_at_the_ticket() {
+    let _restore = theme::RestoreDefaultTheme;
+    let rig = rig();
+    rig.host
+        .adopt(ID, credentials(&generate_key_pem()))
+        .unwrap();
+    wait("live", || {
+        rig.host
+            .snapshot(ID)
+            .is_some_and(|s| s.status == Status::Live)
+    });
+    let mut ticket = TicketState::new(ID, ProductId::new("BTC-USD"), {
+        let mut draft = TicketDraft::new(Side::Buy);
+        draft.size_text = "0.001".to_owned();
+        draft.price_text = "90000.00".to_owned();
+        draft
+    });
+    let mut screen = Screen::new(Vec2::new(900.0, 900.0));
+    let mut run = |events: Vec<egui::Event>, ticket: &mut TicketState| {
+        screen.run(events, |ui| {
+            theme::sync(ui.ctx());
+            let _ = broker_ticket::show(ui.ctx(), ticket, &rig.host);
+        })
+    };
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while !ticket.ready_to_review() {
+        assert!(Instant::now() < deadline, "the preview should arrive");
+        run(vec![], &mut ticket);
+        std::thread::sleep(Duration::from_millis(20));
+    }
+
+    rig.host.corrupt_pending_record_for_test();
+    wait("the unreadable record to be noticed", || {
+        rig.host
+            .snapshot(ID)
+            .is_some_and(|s| s.journal_error.is_some())
+    });
+    assert!(!rig.host.snapshot(ID).unwrap().can_send_orders());
+    run(vec![], &mut ticket);
+    assert!(
+        !ticket.review_enabled(),
+        "the Review button is off while the record is unreadable"
+    );
+    ticket.press_review();
+    run(vec![], &mut ticket);
+    run(vec![], &mut ticket);
+    assert!(
+        !ticket.confirming(),
+        "no review while the record is unreadable"
+    );
+    assert_eq!(rig.exchange.order_posts(), 0);
+    // And the runtime itself refuses, should anything get past the screen.
+    let runtime = rig.host.runtime(ID).unwrap();
+    let error = runtime
+        .submit(limit(Side::Buy, "0.001", "90000.00"))
+        .wait()
+        .unwrap_err();
+    assert!(error.to_string().contains("No order was sent"), "{error}");
+    assert_eq!(rig.exchange.order_posts(), 0);
 }

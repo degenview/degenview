@@ -35,8 +35,9 @@ const PREVIEW_AFTER: Duration = Duration::from_millis(450);
 
 enum Stage {
     Editing,
-    /// The user has pressed Review: the order is shown for approval.
-    Confirming(Box<OrderDraft>),
+    /// The user has pressed Review: the order, and the broker's preview of exactly it, are shown
+    /// for approval.
+    Confirming(Box<OrderDraft>, Box<OrderPreview>),
     Sending(Pending<PlacedOrder>),
 }
 
@@ -66,6 +67,8 @@ pub struct TicketState {
     preview: Option<OrderPreview>,
     preview_error: Option<String>,
     preview_pending: Option<(String, Pending<OrderPreview>)>,
+    /// When the broker's answer arrived: an old answer is asked for again.
+    preview_at: Option<Instant>,
     seen: String,
     changed_at: Instant,
     stage: Stage,
@@ -73,20 +76,47 @@ pub struct TicketState {
     /// A test presses Review without a pointer.
     #[cfg(test)]
     force_review: bool,
+    /// Whether the Review button was enabled in the last frame.
+    #[cfg(test)]
+    review_enabled: bool,
 }
 
 impl TicketState {
-    /// Whether the market's rules and the broker's preview have arrived.
+    /// Whether the market's rules have arrived and the broker has accepted the order in a preview.
     #[cfg(test)]
     pub(crate) fn ready_to_review(&self) -> bool {
         self.spec.is_some()
             && self.preview_for.is_some()
             && self.preview_for == Some(self.seen.clone())
+            && self
+                .preview
+                .as_ref()
+                .is_some_and(OrderPreview::is_acceptable)
+    }
+
+    /// Asks the broker again, at once. Reached by the "Try again" button.
+    pub(crate) fn retry_preview(&mut self) {
+        self.preview_error = None;
+        self.preview_for = None;
+        self.preview_at = None;
+        self.changed_at = Instant::now()
+            .checked_sub(PREVIEW_AFTER)
+            .unwrap_or_else(Instant::now);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn review_enabled(&self) -> bool {
+        self.review_enabled
+    }
+
+    #[cfg(test)]
+    pub(crate) fn preview_failed(&self) -> bool {
+        self.preview_error.is_some()
     }
 
     #[cfg(test)]
     pub(crate) fn confirming(&self) -> bool {
-        matches!(self.stage, Stage::Confirming(_))
+        matches!(self.stage, Stage::Confirming(..))
     }
 
     #[cfg(test)]
@@ -108,12 +138,15 @@ impl TicketState {
             preview: None,
             preview_error: None,
             preview_pending: None,
+            preview_at: None,
             seen: String::new(),
             changed_at: Instant::now(),
             stage: Stage::Editing,
             error: None,
             #[cfg(test)]
             force_review: false,
+            #[cfg(test)]
+            review_enabled: false,
         }
     }
 
@@ -171,10 +204,12 @@ fn drive(
                 Ok(preview) => {
                     state.preview = Some(preview);
                     state.preview_error = None;
+                    state.preview_at = Some(Instant::now());
                 }
                 Err(error) => {
                     state.preview = None;
                     state.preview_error = Some(error.to_string());
+                    state.preview_at = None;
                 }
             }
             state.preview_for = Some(signature);
@@ -256,6 +291,20 @@ pub fn show(ctx: &egui::Context, state: &mut TicketState, host: &BrokerHost) -> 
         state.preview_error = None;
         state.preview_for = None;
         state.preview_pending = None;
+        state.preview_at = None;
+    }
+    // An answer older than a minute is a statement about an older market: it is asked for again.
+    if state
+        .preview_at
+        .is_some_and(|at| at.elapsed() > rules::PREVIEW_FRESH)
+        && matches!(state.stage, Stage::Editing)
+    {
+        state.preview = None;
+        state.preview_for = None;
+        state.preview_at = None;
+        state.changed_at = Instant::now()
+            .checked_sub(PREVIEW_AFTER)
+            .unwrap_or_else(Instant::now);
     }
     if let Some(order) = &built
         && state.preview_for.as_deref() != Some(signature.as_str())
@@ -266,13 +315,21 @@ pub fn show(ctx: &egui::Context, state: &mut TicketState, host: &BrokerHost) -> 
     {
         state.preview_pending = Some((signature.clone(), runtime.preview(order.clone())));
     }
-    let previewing = built.is_some()
-        && state.preview_for.as_deref() != Some(signature.as_str())
-        && state.preview_error.is_none();
-    let refused = state
-        .preview
-        .as_ref()
-        .is_some_and(|preview| !preview.is_acceptable());
+    // Review is possible only on the broker's fresh answer that it would accept this order exactly.
+    let answer = if built.is_none() || state.preview_for.as_deref() != Some(signature.as_str()) {
+        rules::PreviewAnswer::Waiting
+    } else {
+        match (&state.preview, &state.preview_error) {
+            (Some(preview), _) if preview.is_acceptable() => rules::PreviewAnswer::Accepted,
+            (Some(_), _) => rules::PreviewAnswer::Problems,
+            (None, Some(error)) => rules::PreviewAnswer::Failed(error.clone()),
+            (None, None) => rules::PreviewAnswer::Waiting,
+        }
+    };
+    let gate = rules::preview_gate(answer, state.preview_at.map(|at| at.elapsed()));
+    let previewing = built.is_some() && gate == rules::PreviewGate::Waiting;
+    // Orders cannot be sent while the record of unconfirmed ones cannot be read.
+    let journal_blocked = snapshot.journal_error.is_some();
 
     // The submission in flight.
     let mut event = TicketEvent::Open;
@@ -308,8 +365,8 @@ pub fn show(ctx: &egui::Context, state: &mut TicketState, host: &BrokerHost) -> 
     let escape = ctx.input(|input| input.key_pressed(egui::Key::Escape));
 
     // The approval, shown over the ticket.
-    if let Stage::Confirming(order) = &state.stage {
-        let lines = rules::confirmation_lines(order, &spec, &estimate, &account);
+    if let Stage::Confirming(order, preview) = &state.stage {
+        let lines = rules::confirmation_lines(order, &spec, preview, &account);
         let message = format!(
             "This sends a real order to {}. Check every line.",
             descriptor.display_name
@@ -352,7 +409,13 @@ pub fn show(ctx: &egui::Context, state: &mut TicketState, host: &BrokerHost) -> 
         match outcome {
             Some(dialog::Outcome::Accepted) => {
                 let order = (**order).clone();
-                if let Some(runtime) = host.runtime(state.broker) {
+                if snapshot.journal_error.is_some() {
+                    state.error = Some(
+                        "No order was sent: the record of orders waiting for confirmation cannot be read."
+                            .to_owned(),
+                    );
+                    state.stage = Stage::Editing;
+                } else if let Some(runtime) = host.runtime(state.broker) {
                     state.error = None;
                     state.stage = Stage::Sending(runtime.submit(order));
                 }
@@ -387,12 +450,14 @@ pub fn show(ctx: &egui::Context, state: &mut TicketState, host: &BrokerHost) -> 
                             account: &account,
                             broker: descriptor.display_name,
                             previewing,
+                            gate: &gate,
                         },
                     );
                 });
                 ui.add_space(20.0);
             });
-        let can_review = built.is_some() && !refused && !state.sending() && !previewing;
+        let can_review =
+            built.is_some() && gate.allows_review() && !state.sending() && !journal_blocked;
         can_review_now = can_review;
         ui.horizontal(|ui| {
             ui.add_space(24.0);
@@ -417,6 +482,10 @@ pub fn show(ctx: &egui::Context, state: &mut TicketState, host: &BrokerHost) -> 
         ui.add_space(16.0);
     });
     #[cfg(test)]
+    {
+        state.review_enabled = can_review_now;
+    }
+    #[cfg(test)]
     if std::mem::take(&mut state.force_review) && can_review_now {
         review = true;
     }
@@ -426,9 +495,12 @@ pub fn show(ctx: &egui::Context, state: &mut TicketState, host: &BrokerHost) -> 
     if close {
         return TicketEvent::Closed;
     }
-    if review && let Some(order) = built {
+    if review
+        && let Some(order) = built
+        && let Some(preview) = state.preview.clone()
+    {
         if state.draft.needs_confirmation(prefs.confirm_resting_orders) {
-            state.stage = Stage::Confirming(Box::new(order));
+            state.stage = Stage::Confirming(Box::new(order), Box::new(preview));
         } else if let Some(runtime) = host.runtime(state.broker) {
             state.error = None;
             state.stage = Stage::Sending(runtime.submit(order));
@@ -446,6 +518,7 @@ struct FormFacts<'a> {
     account: &'a str,
     broker: &'a str,
     previewing: bool,
+    gate: &'a rules::PreviewGate,
 }
 
 fn problem_under(ui: &mut egui::Ui, issues: &[TicketIssue], field: TicketField) {
@@ -749,7 +822,7 @@ fn price_buttons(ui: &mut egui::Ui, state: &mut TicketState, spec: &ProductSpec)
     });
 }
 
-fn summary(ui: &mut egui::Ui, state: &TicketState, facts: &FormFacts) {
+fn summary(ui: &mut egui::Ui, state: &mut TicketState, facts: &FormFacts) {
     let spec = facts.spec;
     kit::card_frame(false).show(ui, |ui| {
         ui.set_width(ui.available_width());
@@ -836,12 +909,29 @@ fn summary(ui: &mut egui::Ui, state: &TicketState, facts: &FormFacts) {
                 theme::text_tertiary(),
             ));
         }
-        if let Some(error) = &state.preview_error {
+        if let rules::PreviewGate::Failed(error) = facts.gate {
+            // Without the broker's answer the order is not reviewed: the figures above are only this
+            // application's own estimate.
             ui.label(kit::text(
-                format!("The preview is unavailable: {error}"),
+                format!(
+                    "{} could not preview this order ({error}). It cannot be placed without that.",
+                    facts.broker
+                ),
                 kit::size::CAPTION + 0.5,
                 kit::REGULAR,
-                theme::text_tertiary(),
+                kit::RED,
+            ));
+            ui.add_space(4.0);
+            if kit::push_button(ui, None, "Try again", true).clicked() {
+                state.retry_preview();
+            }
+        }
+        if let Some(error) = &facts.snapshot.journal_error {
+            ui.label(kit::text(
+                error.to_string(),
+                kit::size::CAPTION + 0.5,
+                kit::MEDIUM,
+                kit::RED,
             ));
         }
         if let Some(preview) = &state.preview {
