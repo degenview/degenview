@@ -18,6 +18,8 @@ pub struct PaperTradingEngine {
     snapshot: PaperTradingSnapshot,
     next_id: u64,
     quote_max_age_ms: i64,
+    /// New and reset accounts get a creation time above this (see `fresh_account_time`).
+    account_time_floor: i64,
 }
 
 impl PaperTradingEngine {
@@ -39,7 +41,14 @@ impl PaperTradingEngine {
             snapshot,
             next_id,
             quote_max_age_ms: 30_000,
+            account_time_floor: i64::MIN,
         }
+    }
+
+    /// Creation times at or below `floor` are taken: by accounts that no longer exist but whose
+    /// history the Trade Journal keeps under that time.
+    pub fn set_account_time_floor(&mut self, floor: i64) {
+        self.account_time_floor = floor;
     }
 
     pub fn snapshot(&self) -> &PaperTradingSnapshot {
@@ -52,9 +61,9 @@ impl PaperTradingEngine {
 
     // MARK: Accounts
 
-    /// The creation time for a new (or reset) account: now, but never equal to another account's.
-    /// The Trade Journal names an account by this time, so two accounts made in one millisecond
-    /// must not share it.
+    /// The creation time for a new (or reset) account: now, but never equal to another account's,
+    /// nor to one the Trade Journal still holds history under (`account_time_floor`: an account
+    /// that was deleted, or a clock that went back). The journal names an account by this time.
     fn fresh_account_time(&self) -> i64 {
         let latest = self
             .snapshot
@@ -63,7 +72,9 @@ impl PaperTradingEngine {
             .map(|account| account.created_at)
             .max()
             .unwrap_or(i64::MIN);
-        now_ms().max(latest.saturating_add(1))
+        now_ms()
+            .max(latest.saturating_add(1))
+            .max(self.account_time_floor.saturating_add(1))
     }
 
     pub fn create_account(
@@ -1372,6 +1383,38 @@ mod step_tests {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_new_account_never_takes_a_time_an_earlier_account_had() {
+        // Finding 9: after a delete or a clock rollback `now` can equal an old account's creation
+        // time, and the journal names accounts by it. The floor keeps new times above it.
+        let mut engine = PaperTradingEngine::new(PaperTradingSnapshot::default());
+        let far_future = now_ms() + 1_000_000_000;
+        engine.set_account_time_floor(far_future);
+        let id = engine
+            .create_account("Again", PaperCurrency::Usd, 1_000.0, Default::default())
+            .unwrap();
+        let account = engine
+            .snapshot()
+            .accounts
+            .iter()
+            .find(|a| a.id == id)
+            .unwrap();
+        assert!(account.created_at > far_future);
+        engine
+            .reset_account(id, PaperCurrency::Usd, 1_000.0, Default::default())
+            .unwrap();
+        let account = engine
+            .snapshot()
+            .accounts
+            .iter()
+            .find(|a| a.id == id)
+            .unwrap();
+        assert!(
+            account.created_at > far_future,
+            "a reset is a new generation too"
+        );
+    }
+
     use super::*;
 
     fn instrument(symbol: &str) -> PaperInstrument {

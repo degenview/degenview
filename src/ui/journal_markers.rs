@@ -45,7 +45,7 @@ impl Palette {
         match outcome {
             OutcomeFilter::Win => self.win,
             OutcomeFilter::Loss => self.loss,
-            OutcomeFilter::Breakeven => self.flat,
+            OutcomeFilter::Breakeven | OutcomeFilter::Undetermined => self.flat,
             OutcomeFilter::Open => self.open,
         }
     }
@@ -271,6 +271,7 @@ pub fn tooltip(mark: &TradeMark) -> Vec<String> {
         OutcomeFilter::Win => "win",
         OutcomeFilter::Loss => "loss",
         OutcomeFilter::Breakeven => "breakeven",
+        OutcomeFilter::Undetermined => "fees unknown",
         OutcomeFilter::Open => "open",
     };
     let mut lines = vec![format!(
