@@ -314,6 +314,69 @@ impl PaperHost {
         self.apply_for(Some(id), |engine| engine.delete_account(id))
     }
 
+    /// The journal's uid for a paper account (it changes when the account is reset).
+    pub fn journal_account_uid(&self, id: u64) -> Option<String> {
+        crate::model::journal_paper_source::PaperSource::new(self.snapshot())
+            .account_uid(id)
+            .map(str::to_owned)
+    }
+
+    /// `reset_account`, and when `keep_history` is false the old account's Trade Journal history is
+    /// removed too. The journal keeps it by default: a caller that cannot ask (MCP) passes true.
+    pub fn reset_account_keeping(
+        &mut self,
+        id: u64,
+        currency: PaperCurrency,
+        initial_balance: f64,
+        settings: PaperAccountSettings,
+        keep_history: bool,
+    ) -> Result<(), PaperHostError> {
+        let old_uid = self.journal_account_uid(id);
+        self.reset_account(id, currency, initial_balance, settings)?;
+        if !keep_history {
+            self.purge_journal(old_uid);
+        }
+        Ok(())
+    }
+
+    /// `delete_account`, with the same choice about the Trade Journal's copy of its history.
+    pub fn delete_account_keeping(
+        &mut self,
+        id: u64,
+        keep_history: bool,
+    ) -> Result<(), PaperHostError> {
+        let uid = self.journal_account_uid(id);
+        self.delete_account(id)?;
+        if !keep_history {
+            self.purge_journal(uid);
+        }
+        Ok(())
+    }
+
+    fn purge_journal(&mut self, uid: Option<String>) {
+        if let Some(uid) = uid
+            && let Ok(store) = self.store.lock()
+        {
+            let _ = store.journal_purge_account(&uid);
+        }
+        // The journal changed under the paper ledger; whoever watches the revision refreshes.
+        self.revision = self.revision.wrapping_add(1);
+    }
+
+    /// Runs every paper fill through the journal again (idempotent). What the journal's "retry"
+    /// does after a failed pass.
+    pub fn reconcile_journal(&self) -> Result<(), String> {
+        let snapshot = self.snapshot().clone();
+        let store = self
+            .store
+            .lock()
+            .map_err(|_| "the store is unavailable".to_owned())?;
+        store
+            .journal_reconcile_paper(&snapshot)
+            .map(drop)
+            .map_err(|error| error.to_string())
+    }
+
     pub fn submit(&mut self, request: PaperOrderRequest) -> Result<u64, PaperHostError> {
         let account = request.account_id;
         self.apply_for(Some(account), move |engine| engine.submit(request))
@@ -716,6 +779,8 @@ pub struct PaperPanel {
     account_sheet: Option<PaperAccountSheetState>,
     /// The account whose deletion is waiting for confirmation.
     pending_delete: Option<u64>,
+    /// The delete dialog's switch: keep the account's history in the Trade Journal.
+    keep_history_on_delete: bool,
     ticket: Option<PaperTicketState>,
     show_trading_on_charts: bool,
     notice: Option<PanelNotice>,
@@ -736,6 +801,7 @@ impl Default for PaperPanel {
             positions: PositionsState::default(),
             account_sheet: None,
             pending_delete: None,
+            keep_history_on_delete: true,
             ticket: None,
             show_trading_on_charts: true,
             notice: None,
@@ -1099,6 +1165,7 @@ impl PaperPanel {
                     }
                 }
                 PaperHeaderAction::DeleteAccount => {
+                    self.keep_history_on_delete = true;
                     self.pending_delete = account.map(|account| account.id);
                 }
                 PaperHeaderAction::ToggleShowOnCharts => {
@@ -1170,9 +1237,13 @@ impl PaperPanel {
             Some(AccountSheetOutcome::Submit(result)) => {
                 let outcome = if is_reset {
                     match selected_account_id {
-                        Some(id) => {
-                            host.reset_account(id, result.currency, result.balance, result.settings)
-                        }
+                        Some(id) => host.reset_account_keeping(
+                            id,
+                            result.currency,
+                            result.balance,
+                            result.settings,
+                            result.keep_journal_history,
+                        ),
                         None => Ok(()),
                     }
                 } else {
@@ -1215,10 +1286,14 @@ impl PaperPanel {
             self.pending_delete = None;
             return;
         };
-        match crate::ui::paper_header::delete_confirm(context, &name) {
+        match crate::ui::paper_header::delete_confirm(
+            context,
+            &name,
+            &mut self.keep_history_on_delete,
+        ) {
             Some(crate::ui::kit::ConfirmOutcome::Confirmed) => {
                 self.pending_delete = None;
-                if let Err(error) = host.delete_account(id) {
+                if let Err(error) = host.delete_account_keeping(id, self.keep_history_on_delete) {
                     self.report_failures(host, &[error]);
                 }
             }
@@ -1959,6 +2034,81 @@ mod tests {
         assert_eq!(journal_executions(&store).len(), 1);
         host.reload();
         assert_eq!(journal_executions(&store).len(), 2);
+    }
+
+    fn host_with_a_fill(store: &SharedStore) -> (PaperHost, u64) {
+        let mut host = PaperHost::load(store.clone());
+        let id = account(&mut host);
+        host.create_account(
+            "Second",
+            PaperCurrency::Usd,
+            1_000.0,
+            PaperAccountSettings::default(),
+        )
+        .unwrap();
+        host.process_quote(btc_quote(50_000.0)).unwrap();
+        host.submit(market_request(id)).unwrap();
+        (host, id)
+    }
+
+    #[test]
+    fn deleting_an_account_can_keep_its_journal_history() {
+        let store = store();
+        let (mut host, id) = host_with_a_fill(&store);
+        host.delete_account_keeping(id, true).unwrap();
+        assert_eq!(journal_executions(&store).len(), 1);
+        let accounts = store.lock().unwrap().journal_accounts().unwrap();
+        assert!(
+            accounts
+                .iter()
+                .any(|account| account.archived && account.name == "Main")
+        );
+    }
+
+    #[test]
+    fn deleting_an_account_can_remove_its_journal_history() {
+        let store = store();
+        let (mut host, id) = host_with_a_fill(&store);
+        let revision = host.revision();
+        host.delete_account_keeping(id, false).unwrap();
+        assert!(journal_executions(&store).is_empty());
+        let accounts = store.lock().unwrap().journal_accounts().unwrap();
+        assert_eq!(accounts.len(), 1, "only the other account is left");
+        assert_eq!(accounts[0].name, "Second");
+        assert!(host.revision() > revision, "watchers refresh");
+        // A later save does not bring it back.
+        host.process_quote(btc_quote(50_100.0)).unwrap();
+        assert!(journal_executions(&store).is_empty());
+    }
+
+    #[test]
+    fn a_reset_keeps_or_removes_only_the_old_generation() {
+        for keep in [true, false] {
+            let store = store();
+            let (mut host, id) = host_with_a_fill(&store);
+            std::thread::sleep(std::time::Duration::from_millis(3));
+            host.reset_account_keeping(
+                id,
+                PaperCurrency::Usd,
+                100_000.0,
+                PaperAccountSettings::default(),
+                keep,
+            )
+            .unwrap();
+            host.process_quote(btc_quote(51_000.0)).unwrap();
+            host.submit(market_request(id)).unwrap();
+            let executions = journal_executions(&store);
+            assert_eq!(executions.len(), if keep { 2 } else { 1 }, "keep={keep}");
+        }
+    }
+
+    #[test]
+    fn retrying_the_journal_pass_is_safe_to_repeat() {
+        let store = store();
+        let (host, _) = host_with_a_fill(&store);
+        host.reconcile_journal().unwrap();
+        host.reconcile_journal().unwrap();
+        assert_eq!(journal_executions(&store).len(), 1);
     }
 
     #[test]

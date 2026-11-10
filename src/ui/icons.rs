@@ -92,6 +92,8 @@ pub enum Icon {
     SportsCourt,
     CloudSun,
     Briefcase,
+    /// The Trade Journal: a notebook.
+    Journal,
     PieChart,
     Layers,
     Exchange,
@@ -392,6 +394,18 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             );
             line(&[p(5.3, 5.0), p(5.3, 2.7), p(10.7, 2.7), p(10.7, 5.0)]);
             line(&[p(1.8, 8.3), p(6.7, 9.4), p(9.3, 9.4), p(14.2, 8.3)]);
+        }
+        Icon::Journal => {
+            painter.rect_stroke(
+                rect_of(p(3.0, 1.8), p(13.0, 14.2)),
+                round(1.6),
+                stroke,
+                StrokeKind::Middle,
+            );
+            line(&[p(5.6, 1.8), p(5.6, 14.2)]);
+            for y in [5.4, 8.0, 10.6] {
+                line(&[p(7.6, y), p(11.0, y)]);
+            }
         }
         Icon::PieChart => {
             line(&arc(7.6, 8.3, 5.6, -64.0, 296.0));

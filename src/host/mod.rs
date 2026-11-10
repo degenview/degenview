@@ -1,6 +1,8 @@
 pub mod alert_host;
 pub mod alert_runtime;
 pub mod editor_theme_host;
+pub mod journal_host;
+pub mod journal_tab;
 pub mod mcp_confirmation;
 pub mod mcp_host;
 pub mod paper_host;

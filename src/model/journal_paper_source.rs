@@ -55,7 +55,6 @@ impl<'a> PaperSource<'a> {
     }
 
     /// The journal uid of a paper account.
-    #[allow(dead_code)] // used by the Journal tab, which follows
     pub fn account_uid(&self, account_id: u64) -> Option<&str> {
         self.uids.get(&account_id).map(String::as_str)
     }

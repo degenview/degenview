@@ -22,8 +22,11 @@ use rusqlite::{OptionalExtension, params};
 use crate::model::journal_paper_source::PaperSource;
 use crate::model::paper::PaperTradingSnapshot;
 use crate::store::Store;
+use degenview_journal::daily::DailyEntry;
 use degenview_journal::model::{Execution, ExecutionStatus, JournalAccount};
 use degenview_journal::normalize;
+use degenview_journal::playbook::Playbook;
+use degenview_journal::reviews::Review;
 use degenview_journal::source::{Cursor, RejectedExecution, TradingActivitySource};
 
 const KEY_REVISION: &str = "revision";
@@ -76,6 +79,29 @@ impl Store {
                 account_uid TEXT PRIMARY KEY,
                 cursor TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS journal_review (
+                trade_key TEXT PRIMARY KEY,
+                account_uid TEXT NOT NULL,
+                playbook TEXT NOT NULL,
+                status TEXT NOT NULL,
+                updated_ms INTEGER NOT NULL,
+                payload TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS journal_review_on_account ON journal_review (account_uid);
+            CREATE INDEX IF NOT EXISTS journal_review_on_playbook ON journal_review (playbook);
+            CREATE INDEX IF NOT EXISTS journal_review_on_status ON journal_review (status);
+            CREATE INDEX IF NOT EXISTS journal_review_on_updated ON journal_review (updated_ms);
+            CREATE TABLE IF NOT EXISTS journal_playbook (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                updated_ms INTEGER NOT NULL,
+                payload TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS journal_day (
+                date TEXT PRIMARY KEY,
+                updated_ms INTEGER NOT NULL,
+                payload TEXT NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS journal_meta (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
@@ -106,6 +132,158 @@ impl Store {
     /// one would change a trade's result.
     pub fn journal_executions(&self) -> rusqlite::Result<Vec<Execution>> {
         self.payloads_strict("SELECT payload FROM journal_execution ORDER BY seq")
+    }
+
+    /// The stored execution payloads, undecoded: for a reader that decodes them after letting go
+    /// of the store (a rebuild on a worker thread).
+    pub fn journal_execution_payloads(&self) -> rusqlite::Result<Vec<String>> {
+        let mut statement = self
+            .connection
+            .prepare("SELECT payload FROM journal_execution ORDER BY seq")?;
+        statement
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect()
+    }
+
+    pub fn journal_reviews(&self) -> rusqlite::Result<Vec<Review>> {
+        self.payloads_strict("SELECT payload FROM journal_review ORDER BY updated_ms, trade_key")
+    }
+
+    /// Saves one review, stamping its times. A review with nothing in it is removed instead of
+    /// stored. Returns what was stored (`None` when it was removed).
+    pub fn journal_save_review(
+        &self,
+        review: &Review,
+        now_ms: i64,
+    ) -> rusqlite::Result<Option<Review>> {
+        let mut review = review.clone();
+        review.tidy();
+        if review.is_empty() {
+            self.connection.execute(
+                "DELETE FROM journal_review WHERE trade_key = ?1",
+                params![review.trade_key],
+            )?;
+            return Ok(None);
+        }
+        let created: Option<i64> = self
+            .connection
+            .query_row(
+                "SELECT payload FROM journal_review WHERE trade_key = ?1",
+                params![review.trade_key],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+            .and_then(|payload| serde_json::from_str::<Review>(&payload).ok())
+            .map(|existing| existing.created_ms);
+        review.created_ms = created.filter(|created| *created > 0).unwrap_or(now_ms);
+        review.updated_ms = now_ms;
+        self.connection.execute(
+            "INSERT INTO journal_review (trade_key, account_uid, playbook, status, updated_ms, payload)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(trade_key) DO UPDATE SET
+                account_uid = excluded.account_uid, playbook = excluded.playbook,
+                status = excluded.status, updated_ms = excluded.updated_ms,
+                payload = excluded.payload",
+            params![
+                review.trade_key,
+                review.account_uid,
+                review.playbook.clone().unwrap_or_default(),
+                review.status().label(),
+                review.updated_ms,
+                json(&review)?,
+            ],
+        )?;
+        Ok(Some(review))
+    }
+
+    pub fn journal_playbooks(&self) -> rusqlite::Result<Vec<Playbook>> {
+        self.payloads_strict(
+            "SELECT payload FROM journal_playbook ORDER BY name COLLATE NOCASE, id",
+        )
+    }
+
+    /// Saves one playbook, stamping its times. `None` when it has no name (nothing is stored).
+    pub fn journal_save_playbook(
+        &self,
+        playbook: &Playbook,
+        now_ms: i64,
+    ) -> rusqlite::Result<Option<Playbook>> {
+        let mut playbook = playbook.clone();
+        playbook.tidy();
+        if !playbook.is_valid() {
+            return Ok(None);
+        }
+        let created: Option<i64> = self
+            .connection
+            .query_row(
+                "SELECT payload FROM journal_playbook WHERE id = ?1",
+                params![playbook.id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+            .and_then(|payload| serde_json::from_str::<Playbook>(&payload).ok())
+            .map(|existing| existing.created_ms);
+        playbook.created_ms = created.filter(|created| *created > 0).unwrap_or(now_ms);
+        playbook.updated_ms = now_ms;
+        self.connection.execute(
+            "INSERT INTO journal_playbook (id, name, updated_ms, payload) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(id) DO UPDATE SET name = excluded.name,
+                updated_ms = excluded.updated_ms, payload = excluded.payload",
+            params![
+                playbook.id,
+                playbook.name,
+                playbook.updated_ms,
+                json(&playbook)?
+            ],
+        )?;
+        Ok(Some(playbook))
+    }
+
+    /// Removes a playbook. Reviews that named it keep the id and show no playbook.
+    pub fn journal_delete_playbook(&self, id: &str) -> rusqlite::Result<()> {
+        self.connection
+            .execute("DELETE FROM journal_playbook WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    pub fn journal_days(&self) -> rusqlite::Result<Vec<DailyEntry>> {
+        self.payloads_strict("SELECT payload FROM journal_day ORDER BY date")
+    }
+
+    /// Saves one day's entry; an entry with nothing in it is removed instead.
+    pub fn journal_save_day(
+        &self,
+        entry: &DailyEntry,
+        now_ms: i64,
+    ) -> rusqlite::Result<Option<DailyEntry>> {
+        let mut entry = entry.clone();
+        entry.tidy();
+        if entry.is_empty() {
+            self.connection.execute(
+                "DELETE FROM journal_day WHERE date = ?1",
+                params![entry.date],
+            )?;
+            return Ok(None);
+        }
+        let created: Option<i64> = self
+            .connection
+            .query_row(
+                "SELECT payload FROM journal_day WHERE date = ?1",
+                params![entry.date],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+            .and_then(|payload| serde_json::from_str::<DailyEntry>(&payload).ok())
+            .map(|existing| existing.created_ms);
+        entry.created_ms = created.filter(|created| *created > 0).unwrap_or(now_ms);
+        entry.updated_ms = now_ms;
+        self.connection.execute(
+            "INSERT INTO journal_day (date, updated_ms, payload) VALUES (?1, ?2, ?3)
+             ON CONFLICT(date) DO UPDATE SET updated_ms = excluded.updated_ms,
+                payload = excluded.payload",
+            params![entry.date, entry.updated_ms, json(&entry)?],
+        )?;
+        Ok(Some(entry))
     }
 
     /// Executions on one market (`Execution::instrument.market_key`) in a time window, for chart
@@ -408,12 +586,11 @@ impl Store {
 
     // MARK: Removal
 
-    /// Deletes one account's journal data: its executions, cursor and the account itself. What
-    /// the user chooses when they decline to keep an account's history. Reviews and notes attach
-    /// to trades and are removed with them once they exist.
+    /// Deletes one account's journal data: its executions, cursor, reviews and the account
+    /// itself. What the user chooses when they decline to keep an account's history.
     pub fn journal_purge_account(&self, account_uid: &str) -> rusqlite::Result<()> {
         self.in_savepoint("journal_purge", || {
-            for table in ["journal_execution", "journal_cursor"] {
+            for table in ["journal_execution", "journal_cursor", "journal_review"] {
                 self.connection.execute(
                     &format!("DELETE FROM {table} WHERE account_uid = ?1"),
                     params![account_uid],
@@ -442,6 +619,8 @@ fn json<T: serde::Serialize>(value: &T) -> rusqlite::Result<String> {
 
 #[cfg(test)]
 mod tests {
+    use degenview_journal::reviews::Review;
+
     use super::*;
     use crate::model::DataSource;
     use crate::model::paper::{
@@ -804,6 +983,137 @@ mod tests {
             "whole paper save, journal included: {:?}",
             started.elapsed()
         );
+    }
+
+    #[test]
+    fn a_review_is_saved_updated_and_removed_when_emptied() {
+        let store = Store::open_in_memory().unwrap();
+        let mut review = Review::new("trade-1", "acct");
+        review.notes = "  Entered early.  ".into();
+        review.tags = vec!["fomo".into(), "FOMO".into()];
+        review.rating = Some(3);
+        let saved = store.journal_save_review(&review, 1_000).unwrap().unwrap();
+        assert_eq!(saved.notes, "  Entered early.");
+        assert_eq!(saved.tags, ["fomo"]);
+        assert_eq!((saved.created_ms, saved.updated_ms), (1_000, 1_000));
+
+        review.reviewed = true;
+        let again = store.journal_save_review(&review, 5_000).unwrap().unwrap();
+        assert_eq!((again.created_ms, again.updated_ms), (1_000, 5_000));
+        let all = store.journal_reviews().unwrap();
+        assert_eq!(all.len(), 1);
+        assert!(all[0].reviewed);
+
+        let empty = Review::new("trade-1", "acct");
+        assert_eq!(store.journal_save_review(&empty, 9_000).unwrap(), None);
+        assert!(store.journal_reviews().unwrap().is_empty());
+    }
+
+    #[test]
+    fn purging_an_account_takes_its_reviews_with_it() {
+        let store = Store::open_in_memory().unwrap();
+        let (mut engine, id) = engine();
+        buy_then_sell(&mut engine, id);
+        store.save_paper_trading(engine.snapshot()).unwrap();
+        let uid = store.journal_accounts().unwrap()[0].uid.clone();
+        let mut mine = Review::new("t1", &uid);
+        mine.notes = "x".into();
+        let mut other = Review::new("t2", "someone-else");
+        other.notes = "y".into();
+        store.journal_save_review(&mine, 1).unwrap();
+        store.journal_save_review(&other, 1).unwrap();
+        store.journal_purge_account(&uid).unwrap();
+        let left = store.journal_reviews().unwrap();
+        assert_eq!(left.len(), 1);
+        assert_eq!(left[0].trade_key, "t2");
+    }
+
+    #[test]
+    fn reviews_survive_a_restart_and_a_journal_reconcile() {
+        let path = std::env::temp_dir().join(format!(
+            "degenview-journal-review-{}-{}.sqlite",
+            std::process::id(),
+            now()
+        ));
+        {
+            let store = Store::open(&path).unwrap();
+            let mut review = Review::new("k", "a");
+            review.notes = "kept".into();
+            store.journal_save_review(&review, 7).unwrap();
+        }
+        {
+            let store = Store::open(&path).unwrap();
+            store
+                .journal_reconcile_paper(&PaperTradingSnapshot::default())
+                .unwrap();
+            assert_eq!(store.journal_reviews().unwrap()[0].notes, "kept");
+        }
+        for suffix in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{suffix}", path.display()));
+        }
+    }
+
+    #[test]
+    fn playbooks_save_update_delete_and_need_a_name() {
+        let store = Store::open_in_memory().unwrap();
+        let mut playbook = Playbook::new("1".into(), " Breakout ");
+        playbook.checklist = vec!["Volume".into(), "volume".into(), "Stop".into()];
+        let saved = store
+            .journal_save_playbook(&playbook, 100)
+            .unwrap()
+            .unwrap();
+        assert_eq!(saved.name, "Breakout");
+        assert_eq!(saved.checklist, ["Volume", "Stop"]);
+        assert_eq!((saved.created_ms, saved.updated_ms), (100, 100));
+        playbook.description = "x".into();
+        let again = store
+            .journal_save_playbook(&playbook, 900)
+            .unwrap()
+            .unwrap();
+        assert_eq!((again.created_ms, again.updated_ms), (100, 900));
+        store
+            .journal_save_playbook(&Playbook::new("2".into(), "alpha"), 5)
+            .unwrap();
+        let names: Vec<_> = store
+            .journal_playbooks()
+            .unwrap()
+            .into_iter()
+            .map(|p| p.name)
+            .collect();
+        assert_eq!(
+            names,
+            ["alpha", "Breakout"],
+            "ordered by name, ignoring case"
+        );
+        assert_eq!(
+            store
+                .journal_save_playbook(&Playbook::new("3".into(), "  "), 1)
+                .unwrap(),
+            None
+        );
+        store.journal_delete_playbook("1").unwrap();
+        assert_eq!(store.journal_playbooks().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn daily_entries_save_by_date_and_vanish_when_emptied() {
+        let store = Store::open_in_memory().unwrap();
+        let mut entry = DailyEntry::new("2026-11-09");
+        entry.plan = "Trade the open.  ".into();
+        let saved = store.journal_save_day(&entry, 10).unwrap().unwrap();
+        assert_eq!(saved.plan, "Trade the open.");
+        entry.lessons = "Wait for the close.".into();
+        store.journal_save_day(&entry, 20).unwrap();
+        let days = store.journal_days().unwrap();
+        assert_eq!(days.len(), 1);
+        assert_eq!((days[0].created_ms, days[0].updated_ms), (10, 20));
+        assert_eq!(
+            store
+                .journal_save_day(&DailyEntry::new("2026-11-09"), 30)
+                .unwrap(),
+            None
+        );
+        assert!(store.journal_days().unwrap().is_empty());
     }
 
     #[test]

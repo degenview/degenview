@@ -102,6 +102,7 @@ pub enum ToolbarAction {
     DeleteLayout(u64),
     ToggleWatchlist,
     OpenPortfolio,
+    OpenJournal,
     OpenPineStudio,
     AddChart,
     /// Open the indicator picker for the focused chart.
@@ -516,6 +517,11 @@ fn right_items(input: &ToolbarInput) -> Vec<Item> {
             Button::new("portfolio", "Portfolio Tracker")
                 .icon(Icon::Briefcase)
                 .on_click(ToolbarAction::OpenPortfolio),
+        ),
+        Item::Button(
+            Button::new("journal", "Trade Journal")
+                .icon(Icon::Journal)
+                .on_click(ToolbarAction::OpenJournal),
         ),
         Item::Button(
             Button::new("pine-studio", "Pine Studio")
