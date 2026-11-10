@@ -90,6 +90,8 @@ pub(super) struct Harness {
     pub(super) error: Option<&'static str>,
     pub(super) scale_mode: PriceScaleMode,
     pub(super) source: DataSource,
+    /// Events sent with the next frame only, after the pointer's move.
+    pub(super) extra_events: Vec<egui::Event>,
 }
 
 impl Harness {
@@ -109,6 +111,7 @@ impl Harness {
             error: None,
             scale_mode: PriceScaleMode::Regular,
             source: DataSource::Binance,
+            extra_events: Vec::new(),
         }
     }
 
@@ -119,6 +122,7 @@ impl Harness {
                 .pointer
                 .map(egui::Event::PointerMoved)
                 .into_iter()
+                .chain(std::mem::take(&mut self.extra_events))
                 .collect(),
             ..Default::default()
         };

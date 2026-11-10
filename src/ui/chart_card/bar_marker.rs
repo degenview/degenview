@@ -68,10 +68,53 @@ impl ChartCard {
         Scrolled::Done
     }
 
+    /// Frames `[from_ms, to_ms]`: the view is zoomed so the span fills about two thirds of the
+    /// plot and centred on it, with the price range fitted to what is then in view. The bars are
+    /// the ones the chart draws, as for [`Self::scroll_to_time`]. `BeforeHistory` when `from_ms`
+    /// is older than the first bar held: the view went to the oldest bar, so older history can
+    /// load, and the caller may try again once it has.
+    pub fn show_time_range(&mut self, from_ms: i64, to_ms: i64, candles: &[Kline]) -> Scrolled {
+        let constructed = self.constructed.clone();
+        let candles = constructed
+            .as_ref()
+            .map_or(candles, |built| built.klines.as_slice());
+        let total = candles.len();
+        let Some(first) = candles.first() else {
+            return Scrolled::NoBars;
+        };
+        self.scroll_from.get_or_insert(self.viewport.horizontal);
+        if from_ms < first.open_time {
+            let horizontal = &mut self.viewport.horizontal;
+            horizontal.right_offset = horizontal.offset_limits(total).1;
+            return Scrolled::BeforeHistory;
+        }
+        let index_of = |time: i64| {
+            candles
+                .partition_point(|candle| candle.open_time <= time)
+                .saturating_sub(1)
+        };
+        let (a, b) = (index_of(from_ms), index_of(to_ms.max(from_ms)));
+        let span = b - a + 1;
+        let visible = (span as f64 * 1.6).ceil() as usize + 8;
+        let horizontal = &mut self.viewport.horizontal;
+        horizontal.set_visible(visible, total);
+        let centre = (a + b) as f64 / 2.0;
+        horizontal.right_offset = (total - 1) as f64 - centre - horizontal.visible as f64 / 2.0;
+        horizontal.clamp(total);
+        self.viewport.vertical.reset();
+        Scrolled::Done
+    }
+
     /// How many bars the view is scrolled back from the newest.
     #[cfg(test)]
     pub fn scrolled_back(&self) -> f64 {
         self.viewport.horizontal.right_offset
+    }
+
+    /// How many bars the view shows.
+    #[cfg(test)]
+    pub fn visible_bars(&self) -> usize {
+        self.viewport.horizontal.visible
     }
 
     /// The open time of the bar the marker stands on, while it is up.

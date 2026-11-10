@@ -70,6 +70,9 @@ opacity. Every row writes straight into the chart, which repaints at once.
   where they apply). On by default. Off hides the whole box; the crosshair lines, the price and time
   tags and the ring on a line chart's bar stay. The switch is DegenView's own, not stated by the
   TradingView pages cited above. Snapshots never contain the box (it belongs to the crosshair).
+- **Journal trades.** On/off (on by default) for the Trade Journal's entries, exits and results on
+  this market. DegenView's own setting; see [Trading Journal](trading-journal.md). A snapshot draws
+  them only when it includes trading.
 - **Watermark.** Hidden, Symbol (market and timeframe, with the source) or Replay mode. Centred in
   the plot, sized to the plot (at most 72 pt, never above 70 % of its width or 24 % of its height
   for the title) and left out when it would be under 16 pt. It is painted behind everything the

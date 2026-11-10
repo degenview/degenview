@@ -117,6 +117,21 @@ pub(super) trait Overlays {
     ) {
     }
 
+    /// Whether the Trade Journal's trades are drawn: a snapshot draws them only when it includes
+    /// trading.
+    fn journal_trades(&self) -> bool {
+        true
+    }
+
+    /// The journal trade under the pointer after this frame's trades were drawn. `idle` is true
+    /// when no drawing tool is in use, so a click may be answered.
+    fn journal_hover(
+        &mut self,
+        _hovered: Option<&degenview_journal::marks::TradeMark>,
+        _idle: bool,
+    ) {
+    }
+
     /// For each script pane, once its contents and axis edge are painted.
     fn pane(&mut self, _painter: &egui::Painter, _layout: &FrameLayout, _slot: &PaneSlot) {}
 
@@ -478,6 +493,18 @@ impl ChartCard {
             pine_layer.draw_tables(&clipped);
         }
         overlays.after_tables(&main_painter, data, layout, view);
+        if overlays.journal_trades() && self.shows_journal() {
+            let hovered = self.paint_journal_marks(
+                &main_painter.with_clip_rect(plot),
+                &projection,
+                plot,
+                overlays.pointer(),
+            );
+            overlays.journal_hover(
+                hovered.as_ref(),
+                drawing.tool == crate::model::drawing_tool::Tool::Cursor,
+            );
+        }
         // Script tooltips: only looked for while the pointer is over the plot.
         let pointer = overlays.pointer();
         let mut tooltip = pointer

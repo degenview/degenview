@@ -235,6 +235,14 @@ impl crate::store::Document for PersistedTab {
 
 #[derive(Clone, Debug, PartialEq)]
 enum AppAction {
+    /// Show a journal trade on a chart: the span from its first fill to its last.
+    ViewTradeOnChart {
+        instrument: InstrumentId,
+        from_ms: i64,
+        to_ms: i64,
+    },
+    /// Open the Trade Journal on one trade (a click on a chart's trade).
+    OpenJournalTrade(String),
     /// Quit, after asking about unsaved scripts.
     Quit,
     /// A Pine Studio answered the "save changes?" question a quit raised.
@@ -816,6 +824,17 @@ fn show_tab(
             workspace.set_card_env(&env.card_env);
             workspace.set_snapshots(&env.snapshots);
             workspace.set_link_host(&env.tab_link);
+            let marks = if workspace.wants_journal_marks() {
+                let paper_revision = env.paper_host.lock().map_or(0, |paper| paper.revision());
+                env.journal_host.lock().ok().map(|mut host| {
+                    host.sync(paper_revision);
+                    host.poll();
+                    host.marks()
+                })
+            } else {
+                None
+            };
+            workspace.set_journal_marks(marks);
             let actions = env
                 .paper_host
                 .lock()
@@ -831,6 +850,7 @@ fn show_tab(
                 pending.extend(actions.into_iter().map(|action| match action {
                     WorkspaceAction::OpenPortfolio => AppAction::OpenPortfolio,
                     WorkspaceAction::OpenJournal => AppAction::OpenJournal,
+                    WorkspaceAction::OpenJournalTrade(key) => AppAction::OpenJournalTrade(key),
                     WorkspaceAction::OpenPineScripts => AppAction::OpenPine,
                     WorkspaceAction::OpenPineSource(target) => AppAction::OpenPineSource(target),
                     WorkspaceAction::OpenAlerts => AppAction::OpenAlerts,
@@ -866,6 +886,19 @@ fn show_tab(
             };
             for action in actions {
                 match action {
+                    JournalAction::ViewOnChart {
+                        instrument,
+                        from_ms,
+                        to_ms,
+                    } => {
+                        if let Ok(mut pending) = env.app_actions.lock() {
+                            pending.push(AppAction::ViewTradeOnChart {
+                                instrument,
+                                from_ms,
+                                to_ms,
+                            });
+                        }
+                    }
                     JournalAction::RetryIngest => {
                         if let Ok(paper) = env.paper_host.lock() {
                             let _ = paper.reconcile_journal();
@@ -1383,6 +1416,12 @@ impl DegenViewApp {
                 }
                 AppAction::OpenPortfolio => self.open_portfolio(ctx),
                 AppAction::OpenJournal => self.open_journal(ctx),
+                AppAction::OpenJournalTrade(key) => self.open_journal_trade(ctx, &key),
+                AppAction::ViewTradeOnChart {
+                    instrument,
+                    from_ms,
+                    to_ms,
+                } => self.view_trade_on_chart(ctx, &instrument, from_ms, to_ms),
                 AppAction::OpenPine => self.open_pine(ctx),
                 AppAction::OpenPineSource(target) => self.open_pine_source(ctx, &target),
                 AppAction::OpenAlpacaSettings => {
@@ -1699,6 +1738,63 @@ impl DegenViewApp {
             self.portfolio_quotes.clone(),
         ))));
         self.register(slot, None);
+    }
+
+    /// Shows a trade on a chart: in a tab that already charts its market, else in a new tab.
+    fn view_trade_on_chart(
+        &mut self,
+        ctx: &egui::Context,
+        instrument: &InstrumentId,
+        from_ms: i64,
+        to_ms: i64,
+    ) {
+        let existing = self.tabs.iter().find_map(|tab| {
+            let mut content = tab.content.lock().ok()?;
+            match &mut *content {
+                TabContent::Chart(workspace) if workspace.has_market(instrument) => {
+                    workspace.show_trade_range(instrument, from_ms, to_ms, ctx);
+                    Some(workspace.id())
+                }
+                _ => None,
+            }
+        });
+        if let Some(id) = existing {
+            self.show_tab(ctx, id);
+            return;
+        }
+        let item = WatchlistInstrument::new(
+            instrument.clone(),
+            instrument.symbol.clone(),
+            instrument.source.display_name(),
+        );
+        let id = self.next_id;
+        self.next_id += 1;
+        let mut workspace = ChartWorkspace::new_for_watchlist(
+            id,
+            &item,
+            Arc::clone(&self.watchlist),
+            self.quote_book.clone(),
+            self.quote_coordinator.clone(),
+            self.store.clone(),
+            ctx,
+        );
+        workspace.show_trade_range(instrument, from_ms, to_ms, ctx);
+        self.register(TabSlot::new(TabContent::Chart(Box::new(workspace))), None);
+    }
+
+    /// Opens the journal on one trade (a click on a chart's trade).
+    fn open_journal_trade(&mut self, ctx: &egui::Context, key: &str) {
+        self.open_journal(ctx);
+        for tab in &self.tabs {
+            let Ok(mut content) = tab.content.lock() else {
+                continue;
+            };
+            if let TabContent::Journal(journal) = &mut *content
+                && let Ok(mut host) = self.journal.lock()
+            {
+                journal.show_trade(key, &mut host);
+            }
+        }
     }
 
     fn open_journal(&mut self, ctx: &egui::Context) {

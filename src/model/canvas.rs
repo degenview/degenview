@@ -314,6 +314,8 @@ pub struct ChartCanvas {
     /// Whether the box of values (open, high, low, close, volume…) under the crosshair is shown.
     /// The crosshair itself is drawn either way.
     pub ohlc_readout: bool,
+    /// Whether the Trade Journal's trades on this market (entries, exits, the result) are drawn.
+    pub show_journal_trades: bool,
 }
 
 impl Default for ChartCanvas {
@@ -330,6 +332,7 @@ impl Default for ChartCanvas {
             buttons: ChartButtons::default(),
             margins: ChartMargins::default(),
             ohlc_readout: true,
+            show_journal_trades: true,
         }
     }
 }

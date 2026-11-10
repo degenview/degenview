@@ -68,6 +68,10 @@ struct SnapshotOverlays<'a> {
 }
 
 impl Overlays for SnapshotOverlays<'_> {
+    fn journal_trades(&self) -> bool {
+        self.include_trading
+    }
+
     fn pane(&mut self, painter: &egui::Painter, layout: &FrameLayout, slot: &PaneSlot) {
         paint_pane_title(painter, layout, slot, false);
     }

@@ -4,9 +4,11 @@
 use super::frame::{FrameData, FrameLayout, Overlays, PaneSlot, paint_pane_title};
 use super::overlays::OverlayFrame;
 use super::*;
+use crate::ui::journal_markers;
 use crate::ui::paper_chart_trading::{MarkerMenu, PaperOverlayAction};
 use crate::ui::scale_menu;
 use crate::ui::{kit, theme};
+use degenview_journal::marks::TradeMark;
 
 pub(super) struct LiveOverlays<'a> {
     pub ui: &'a mut egui::Ui,
@@ -25,6 +27,7 @@ pub(super) struct LiveOverlays<'a> {
     pub scale_mode: Option<PriceScaleMode>,
     pub overlay_action: Option<chart_indicator_strip::Action>,
     pub on_overlay_card: bool,
+    pub journal_open: Option<String>,
 }
 
 /// The widest a script tooltip gets before it wraps (inferred: TradingView does not document it).
@@ -76,6 +79,33 @@ impl Overlays for LiveOverlays<'_> {
             replay_overlay::paint_active(main_painter, self.card.below_header(layout.plot));
         }
         self.card.paint_zoom(self.ui, main_painter, layout.plot);
+    }
+
+    fn journal_hover(&mut self, hovered: Option<&TradeMark>, idle: bool) {
+        let Some(mark) = hovered else { return };
+        self.ui
+            .ctx()
+            .set_cursor_icon(egui::CursorIcon::PointingHand);
+        if let Some(pointer) = self.response.hover_pos() {
+            let mut over = self.response.clone();
+            let target = Rect::from_center_size(pointer, egui::vec2(16.0, 16.0));
+            over.rect = target;
+            over.interact_rect = target;
+            over.on_hover_ui(|ui| {
+                ui.set_max_width(260.0);
+                for (index, line) in journal_markers::tooltip(mark).into_iter().enumerate() {
+                    let (weight, color) = if index == 0 {
+                        (kit::SEMIBOLD, theme::text_primary())
+                    } else {
+                        (kit::REGULAR, theme::text_secondary())
+                    };
+                    ui.label(kit::text(line, 12.0, weight, color));
+                }
+            });
+        }
+        if idle && self.response.clicked() {
+            self.journal_open = Some(mark.key.clone());
+        }
     }
 
     fn pointer(&self) -> Option<Pos2> {

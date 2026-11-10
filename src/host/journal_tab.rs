@@ -61,6 +61,26 @@ const BREAKEVEN_TOLERANCE: Decimal = Decimal::ZERO;
 pub enum JournalAction {
     /// Run every paper fill through the journal again.
     RetryIngest,
+    /// Show a trade on a chart: its market, and the span from its first fill to its last (or to
+    /// now while it is open).
+    ViewOnChart {
+        instrument: crate::model::InstrumentId,
+        from_ms: i64,
+        to_ms: i64,
+    },
+}
+
+/// The chart market a trade was made on, when its provider is one the app charts.
+fn chart_market(trade: &Trade) -> Option<crate::model::InstrumentId> {
+    let source = trade
+        .instrument
+        .provider
+        .as_deref()
+        .and_then(crate::model::DataSource::from_display_name)?;
+    Some(crate::model::InstrumentId::new(
+        source,
+        &trade.instrument.symbol,
+    ))
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -120,6 +140,8 @@ pub struct JournalTab {
     /// The currency the overview and calendar describe when the selection has several.
     currency: Option<Option<String>>,
     shots: Shots,
+    /// Actions for the app raised while drawing, handed over at the end of the frame.
+    outbox: Vec<JournalAction>,
     excursions: Excursions,
     fetcher: std::sync::Arc<dyn CandleFetcher>,
 }
@@ -155,6 +177,7 @@ impl JournalTab {
             calendar_month: None,
             currency: None,
             shots: Shots::default(),
+            outbox: Vec::new(),
             excursions: Excursions::default(),
             fetcher: crate::host::journal_excursion::default_fetcher(),
         }
@@ -166,6 +189,14 @@ impl JournalTab {
 
     pub fn title(&self) -> &'static str {
         "Trade Journal"
+    }
+
+    /// Shows one trade: clears the range and filters that could hide it and opens its panel. What
+    /// a click on a chart's trade does.
+    pub fn show_trade(&mut self, key: &str, host: &mut JournalHost) {
+        self.reset_filters(host);
+        host.prefs_mut().section = Section::Trades;
+        self.selected = Some(key.to_owned());
     }
 
     /// Opens the trade panel on one trade.
@@ -276,6 +307,7 @@ impl JournalTab {
             Section::Daily => self.daily_section(ui, host, &data),
         }
         host.flush_prefs_if_idle(ui.ctx());
+        actions.append(&mut self.outbox);
         actions
     }
 
@@ -348,6 +380,7 @@ impl JournalTab {
             }
             let excursion_state = self.excursions.state(trade).cloned();
             let mut retry_excursion = false;
+            let mut view_on_chart = false;
             let (shots_busy, shots_error) = (self.shots.busy(), self.shots.error.clone());
             let mut shot_action = shots_ui::Action::default();
             egui::Panel::right(egui::Id::new(("journal-detail", self.id)))
@@ -386,6 +419,7 @@ impl JournalTab {
                                     account_balance: data
                                         .account(&trade.account_uid)
                                         .and_then(|account| account.initial_balance),
+                                    can_view_on_chart: chart_market(trade).is_some(),
                                     shots: &shot_list,
                                     shots_busy,
                                     shots_error: shots_error.as_deref(),
@@ -408,6 +442,7 @@ impl JournalTab {
                             );
                             shot_action = std::mem::take(&mut output.shots);
                             retry_excursion = output.retry_excursion;
+                            view_on_chart = output.view_on_chart;
                             let now = ui.input(|input| input.time);
                             if output.changed {
                                 draft.edited_at = Some(now);
@@ -454,6 +489,13 @@ impl JournalTab {
                     move || repaint.request_repaint(),
                     true,
                 );
+            }
+            if view_on_chart && let Some(instrument) = chart_market(trade) {
+                self.outbox.push(JournalAction::ViewOnChart {
+                    instrument,
+                    from_ms: trade.open_ts_ms,
+                    to_ms: trade.close_ts_ms.unwrap_or_else(now_ms),
+                });
             }
             self.handle_shots(ui, host, shot_action, &shot_list);
             if let Some(step) = nav {
@@ -2433,6 +2475,39 @@ mod tests {
             )))
         ));
         frame(&ctx, &mut tab, &mut host, time);
+    }
+
+    #[test]
+    fn showing_a_trade_from_a_chart_clears_what_could_hide_it_and_opens_its_panel() {
+        let (_, mut host, mut tab, ctx) = ready();
+        frame(&ctx, &mut tab, &mut host, 0.0);
+        let data = host.data().unwrap().clone();
+        let key = data.trades[tab.rows[1]].key.clone();
+        // A range and a search that exclude everything.
+        host.prefs_mut().range = RangeChoice::Custom {
+            from: "2001-01-01".into(),
+            to: "2001-12-31".into(),
+        };
+        tab.search = "nothing-matches".into();
+        tab.range_cache = None;
+        frame(&ctx, &mut tab, &mut host, 1.0);
+        assert!(tab.rows.is_empty());
+        tab.show_trade(&key, &mut host);
+        frame(&ctx, &mut tab, &mut host, 2.0);
+        assert_eq!(tab.selected.as_deref(), Some(key.as_str()));
+        assert_eq!(tab.draft.as_ref().unwrap().review.trade_key, key);
+        assert_eq!(host.prefs().section, Section::Trades);
+    }
+
+    #[test]
+    fn the_host_offers_marks_for_the_selected_account_and_caches_them() {
+        let (_, mut host, mut tab, ctx) = ready();
+        frame(&ctx, &mut tab, &mut host, 0.0);
+        let all = host.marks();
+        assert_eq!(all.len(), 3);
+        assert!(Arc::ptr_eq(&all, &host.marks()), "cached");
+        host.prefs_mut().account = Some("paper:none".into());
+        assert!(host.marks().is_empty());
     }
 
     #[test]
