@@ -123,6 +123,11 @@ impl TradingHub {
         Arc::clone(GLOBAL.get_or_init(|| hub))
     }
 
+    #[cfg(test)]
+    pub(crate) fn paper_for_tests(&self) -> Arc<Mutex<PaperHost>> {
+        Arc::clone(&self.paper)
+    }
+
     pub fn brokers(&self) -> &Arc<BrokerHost> {
         &self.brokers
     }

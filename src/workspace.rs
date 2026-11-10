@@ -693,7 +693,15 @@ impl ChartWorkspace {
 
     // MARK: Grid
 
-    pub fn ui(&mut self, ui: &mut egui::Ui, paper_host: &mut PaperHost) -> Vec<WorkspaceAction> {
+    /// Draws the workspace. The paper host is passed as its shared handle and locked only around
+    /// the parts that edit it: the order sheet and the venue pill read it through the trading hub,
+    /// which locks the same mutex, so a guard held across the whole frame would deadlock them.
+    pub fn ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        paper: &std::sync::Arc<std::sync::Mutex<PaperHost>>,
+    ) -> Vec<WorkspaceAction> {
+        let lock = || paper.lock().unwrap_or_else(|e| e.into_inner());
         let ctx = ui.ctx().clone();
         let timeframe = self.timeframe;
         for chart in &mut self.charts {
@@ -711,8 +719,11 @@ impl ChartWorkspace {
         self.tick_link_probation(&ctx);
         self.tick_overlays(&ctx);
         self.update_live_feed(&ctx);
-        self.sync_paper_quotes(paper_host);
-        self.configure_paper_cards(paper_host);
+        {
+            let mut host = lock();
+            self.sync_paper_quotes(&mut host);
+            self.configure_paper_cards(&host);
+        }
         self.configure_broker_cards();
         self.handle_keyboard(ui);
         self.handle_clipboard(ui);
@@ -808,7 +819,7 @@ impl ChartWorkspace {
                                 crate::ui::broker_panel::ui(ui, &mut self.broker_panel, host, id);
                             Vec::new()
                         }
-                        _ => self.paper_panel.ui(ui, paper_host),
+                        _ => self.paper_panel.ui(ui, &mut lock()),
                     }
                 })
                 .inner;
@@ -887,7 +898,7 @@ impl ChartWorkspace {
                     .fill(ui::theme::background())
                     .inner_margin(egui::Margin::same(10)),
             )
-            .show(ui, |ui| self.render_grid(ui, paper_host));
+            .show(ui, |ui| self.render_grid(ui, &mut lock()));
         if let Some(item) = self.open_new_tab_request.take() {
             actions.push(WorkspaceAction::OpenWatchlistInNewTab(item));
         }
@@ -980,7 +991,7 @@ impl ChartWorkspace {
             self.confirm_chart_removal(&ctx, chart_id);
         }
         actions.extend(self.show_alert_editor(&ctx));
-        actions.extend(self.show_context_ui(&ctx, paper_host));
+        actions.extend(self.show_context_ui(&ctx, &mut lock()));
         actions.extend(self.take_logs_actions());
         if self.date_sheet.is_open() {
             let timeline = self.replay_timeline();

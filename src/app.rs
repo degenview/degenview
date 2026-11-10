@@ -811,11 +811,7 @@ fn show_tab(
             workspace.set_card_env(&env.card_env);
             workspace.set_snapshots(&env.snapshots);
             workspace.set_link_host(&env.tab_link);
-            let actions = env
-                .paper_host
-                .lock()
-                .map(|mut host| workspace.ui(ui, &mut host))
-                .unwrap_or_default();
+            let actions = workspace.ui(ui, &env.paper_host);
             if workspace.has_link_signals() {
                 // The root window collects them; it only draws when asked.
                 ui.ctx().request_repaint_of(egui::ViewportId::ROOT);

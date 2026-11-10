@@ -179,3 +179,69 @@ impl ChartWorkspace {
         Some(venue)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::mpsc;
+    use std::sync::{Arc, Mutex};
+    use std::time::Duration;
+
+    use degenview_brokers::{Env, MemorySecretStore};
+    use eframe::egui;
+
+    use crate::host::broker_host::{BrokerHost, StoreJournal};
+    use crate::host::paper_host::PaperHost;
+    use crate::host::trading_hub::TradingHub;
+    use crate::model::trading_venue::TradingVenue;
+    use crate::store::{SharedStore, Store};
+    use crate::workspace::test_support::empty_workspace;
+
+    /// The app used to hold the paper host's lock for the whole frame, and the paper venue reads
+    /// the same host through the trading hub: opening the trading panel locked a mutex its own
+    /// thread already held, and the window froze. The frame must run to the end with the sheet and
+    /// the orders panel open on paper.
+    #[test]
+    fn opening_the_trading_panel_on_paper_does_not_wait_on_a_lock_the_frame_holds() {
+        let store: SharedStore = Arc::new(Mutex::new(Store::open_in_memory().unwrap()));
+        let brokers = BrokerHost::new(
+            Arc::new(MemorySecretStore::new()),
+            Arc::new(StoreJournal::new(store.clone())),
+            Some(store.clone()),
+            Env::default(),
+            |config| config.fast(),
+        );
+        let paper = Arc::new(Mutex::new(PaperHost::load(store.clone())));
+        let hub = TradingHub::set_global_for_tests(TradingHub::new(
+            brokers,
+            paper.clone(),
+            Some(store.clone()),
+        ));
+        // The process-wide hub is the first one a test installed; the frame must lock its paper host.
+        let paper = hub.paper_for_tests();
+        paper
+            .lock()
+            .unwrap()
+            .ensure_default_account()
+            .expect("default account");
+        hub.enable(TradingVenue::Paper);
+
+        let (done, finished) = mpsc::channel();
+        std::thread::spawn(move || {
+            let mut workspace = empty_workspace(1);
+            workspace.trading_venue = TradingVenue::Paper;
+            workspace.trade_sheet_visible = true;
+            workspace.paper_panel_visible = true;
+            let ctx = egui::Context::default();
+            for _ in 0..3 {
+                let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+                    workspace.ui(ui, &paper);
+                });
+                output.textures_delta.clear();
+            }
+            let _ = done.send(());
+        });
+        finished
+            .recv_timeout(Duration::from_secs(20))
+            .expect("the frame never finished: the trading panel waits on a lock the frame holds");
+    }
+}
