@@ -499,6 +499,10 @@ fn poll_check(
         Ok(session) => {
             form.checked = Some(session.permissions);
             form.status = Some(match host.adopt(descriptor.id, credentials) {
+                // A broker that takes no key has nothing to keep: say so instead of "saved".
+                Ok(()) if descriptor.credential_fields.is_empty() => StatusMessage::ok(
+                    "Connected. Nothing is saved: connect again after restarting DegenView.",
+                ),
                 Ok(()) => StatusMessage::ok(crate::platform::saved_securely()),
                 Err(error) => StatusMessage::error(format!(
                     "Connected, but the key could not be saved, so it will be forgotten when you quit: {error}"

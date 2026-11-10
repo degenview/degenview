@@ -989,3 +989,47 @@ fn the_live_pills_can_be_pressed_and_the_star_stays_at_the_right_edge() {
         "the star is at the right edge"
     );
 }
+
+/// The sandbox connects from the Settings page with no key at all, shows its canned account, and
+/// is a broker of its own beside the real one.
+#[test]
+fn the_sandbox_connects_without_a_key_and_is_listed_beside_coinbase() {
+    use degenview_brokers::coinbase::SANDBOX_ID;
+
+    let rig = rig();
+    let ids: Vec<_> = rig
+        .host
+        .brokers()
+        .iter()
+        .map(|b| b.descriptor().id)
+        .collect();
+    assert_eq!(ids, vec![ID, SANDBOX_ID]);
+    let sandbox = degenview_brokers::registry::by_id(SANDBOX_ID).expect("the sandbox");
+    assert!(sandbox.descriptor().credential_fields.is_empty());
+
+    let mut state = settings_brokers::BrokersState::default();
+    let mut screen = Screen::new(Vec2::new(600.0, 1200.0));
+    state.connect_for_test(&rig.host, sandbox, &[]);
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while Instant::now() < deadline {
+        frames(&mut screen, 1, |ui| {
+            egui::CentralPanel::default().show(ui, |ui| {
+                settings_brokers::body(ui, &mut state, Some(rig.host.clone()));
+            });
+        });
+        if rig
+            .host
+            .snapshot(SANDBOX_ID)
+            .is_some_and(|s| s.status == Status::Live)
+        {
+            break;
+        }
+    }
+    let snapshot = rig.host.snapshot(SANDBOX_ID).expect("connected");
+    assert_eq!(snapshot.status, Status::Live);
+    assert!(snapshot.session.as_ref().unwrap().permissions.can_trade);
+    assert!(
+        rig.host.snapshot(ID).is_none(),
+        "the real broker is untouched"
+    );
+}
