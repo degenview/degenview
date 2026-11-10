@@ -432,6 +432,11 @@ impl JournalHost {
 
     /// Saves one review. An emptied review is removed. A review never changes a trade, an order or
     /// a balance.
+    /// The store, for work that runs off the UI thread (reading a picture).
+    pub fn store(&self) -> SharedStore {
+        self.store.clone()
+    }
+
     pub fn save_review(&mut self, review: &Review) -> Result<(), String> {
         let saved = {
             let store = self

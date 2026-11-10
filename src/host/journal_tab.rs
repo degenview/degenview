@@ -8,9 +8,11 @@ use std::sync::Arc;
 use eframe::egui::{self, Key};
 use rust_decimal::Decimal;
 
+use crate::host::journal_excursion::{CandleFetcher, Excursions, State as ExcursionState};
 use crate::host::journal_host::{
     JournalData, JournalHost, JournalPrefs, RangeChoice, Section, now_ms,
 };
+use crate::host::journal_shots::{Shots, Source};
 use crate::service::timezone::local_utc_offset_secs;
 use crate::ui::header_controls;
 use crate::ui::icons::Icon;
@@ -21,6 +23,7 @@ use crate::ui::journal_daily;
 use crate::ui::journal_detail::{self, Draft};
 use crate::ui::journal_overview::{self, OverviewState};
 use crate::ui::journal_playbooks;
+use crate::ui::journal_shots as shots_ui;
 use crate::ui::journal_table::{self, TableSpec};
 use crate::ui::kit::{self, REGULAR, SEMIBOLD, size};
 use crate::ui::paper_grid;
@@ -116,6 +119,9 @@ pub struct JournalTab {
     calendar_month: Option<(i32, u8)>,
     /// The currency the overview and calendar describe when the selection has several.
     currency: Option<Option<String>>,
+    shots: Shots,
+    excursions: Excursions,
+    fetcher: std::sync::Arc<dyn CandleFetcher>,
 }
 
 impl JournalTab {
@@ -148,6 +154,9 @@ impl JournalTab {
             month: None,
             calendar_month: None,
             currency: None,
+            shots: Shots::default(),
+            excursions: Excursions::default(),
+            fetcher: crate::host::journal_excursion::default_fetcher(),
         }
     }
 
@@ -307,6 +316,40 @@ impl JournalTab {
                 &degenview_journal::reviews::DEFAULT_MISTAKES,
                 reviews.values().flat_map(|review| review.mistakes.iter()),
             );
+            if let Some(hash) = self.shots.poll(ui.ctx()) {
+                let draft = self.draft.as_mut().expect("draft");
+                if !draft.review.images.contains(&hash) {
+                    draft.review.images.push(hash);
+                    // Attaching is a deliberate act: it is saved at once, not after a pause.
+                    draft.edited_at = Some(ui.input(|input| input.time) - SAVE_AFTER);
+                }
+            }
+            let shot_list: Vec<shots_ui::Shot> = {
+                let hashes = self.draft.as_ref().expect("draft").review.images.clone();
+                self.shots.keep_only(&hashes);
+                hashes
+                    .into_iter()
+                    .map(|hash| shots_ui::Shot {
+                        thumb: self.shots.thumb(ui.ctx(), &hash),
+                        hash,
+                    })
+                    .collect()
+            };
+            self.excursions.poll();
+            if !trade.is_open() {
+                let repaint = ui.ctx().clone();
+                self.excursions.request(
+                    trade,
+                    &host.store(),
+                    self.fetcher.clone(),
+                    move || repaint.request_repaint(),
+                    false,
+                );
+            }
+            let excursion_state = self.excursions.state(trade).cloned();
+            let mut retry_excursion = false;
+            let (shots_busy, shots_error) = (self.shots.busy(), self.shots.error.clone());
+            let mut shot_action = shots_ui::Action::default();
             egui::Panel::right(egui::Id::new(("journal-detail", self.id)))
                 .default_size(DETAIL_WIDTH)
                 .size_range(360.0..=680.0)
@@ -326,7 +369,7 @@ impl JournalTab {
                                     account.name.as_str()
                                 });
                             let draft = self.draft.as_mut().expect("draft");
-                            let output = journal_detail::show(
+                            let mut output = journal_detail::show(
                                 ui,
                                 &journal_detail::Input {
                                     trade,
@@ -343,9 +386,28 @@ impl JournalTab {
                                     account_balance: data
                                         .account(&trade.account_uid)
                                         .and_then(|account| account.initial_balance),
+                                    shots: &shot_list,
+                                    shots_busy,
+                                    shots_error: shots_error.as_deref(),
+                                    excursion: match &excursion_state {
+                                        _ if trade.is_open() => {
+                                            journal_detail::ExcursionView::Hidden
+                                        }
+                                        None | Some(ExcursionState::Loading) => {
+                                            journal_detail::ExcursionView::Loading
+                                        }
+                                        Some(ExcursionState::Done(Err(message))) => {
+                                            journal_detail::ExcursionView::Failed(message)
+                                        }
+                                        Some(ExcursionState::Done(Ok(metric))) => {
+                                            journal_detail::ExcursionView::Ready(metric)
+                                        }
+                                    },
                                 },
                                 draft,
                             );
+                            shot_action = std::mem::take(&mut output.shots);
+                            retry_excursion = output.retry_excursion;
                             let now = ui.input(|input| input.time);
                             if output.changed {
                                 draft.edited_at = Some(now);
@@ -383,6 +445,17 @@ impl JournalTab {
                             close = output.close;
                         });
                 });
+            if retry_excursion {
+                let repaint = ui.ctx().clone();
+                self.excursions.request(
+                    trade,
+                    &host.store(),
+                    self.fetcher.clone(),
+                    move || repaint.request_repaint(),
+                    true,
+                );
+            }
+            self.handle_shots(ui, host, shot_action, &shot_list);
             if let Some(step) = nav {
                 self.step(step, &data);
             }
@@ -1643,6 +1716,59 @@ impl JournalTab {
         self.rows_key = Some(key);
     }
 
+    /// Does what the user asked of the screenshots: add, paste, drop, view, remove.
+    fn handle_shots(
+        &mut self,
+        ui: &mut egui::Ui,
+        host: &mut JournalHost,
+        action: shots_ui::Action,
+        list: &[shots_ui::Shot],
+    ) {
+        let ctx = ui.ctx().clone();
+        if action.attach {
+            self.shots.start(&ctx, host.store(), Source::Panel);
+        }
+        if action.paste {
+            self.shots.start(&ctx, host.store(), Source::Clipboard);
+        }
+        // A picture dropped on the window while a trade is open is attached to it.
+        let dropped = ctx.input(|input| {
+            input
+                .raw
+                .dropped_files
+                .first()
+                .map(|file| file.path().to_path_buf())
+        });
+        if let Some(path) = dropped {
+            self.shots.start(&ctx, host.store(), Source::Path(path));
+        }
+        if let Some(hash) = action.open {
+            self.shots.viewing = Some(hash);
+        }
+        if let Some(hash) = action.remove {
+            if let Some(draft) = self.draft.as_mut() {
+                draft.review.images.retain(|image| *image != hash);
+                draft.edited_at = Some(ctx.input(|input| input.time) - SAVE_AFTER);
+            }
+            if self.shots.viewing.as_deref() == Some(hash.as_str()) {
+                self.shots.viewing = None;
+            }
+        }
+        if let Some(hash) = self.shots.viewing.clone() {
+            let shot = list
+                .iter()
+                .find(|shot| shot.hash == hash)
+                .cloned()
+                .unwrap_or(shots_ui::Shot {
+                    hash,
+                    thumb: shots_ui::Thumb::Missing,
+                });
+            if shots_ui::viewer(&ctx, &shot) {
+                self.shots.viewing = None;
+            }
+        }
+    }
+
     fn step(&mut self, delta: isize, data: &Arc<JournalData>) {
         if self.rows.is_empty() {
             return;
@@ -2172,6 +2298,144 @@ mod tests {
     }
 
     #[test]
+    fn an_attached_screenshot_is_stored_once_saved_with_the_review_and_survives_a_restart() {
+        let (store, mut host, mut tab, ctx) = ready();
+        crate::service::asset_host::install(
+            &ctx,
+            crate::service::asset_host::AssetHost::new(store.clone()),
+        );
+        frame(&ctx, &mut tab, &mut host, 0.0);
+        let data = host.data().unwrap().clone();
+        let trade = data.trades[tab.rows[0]].clone();
+        tab.select_trade(&trade.key);
+        frame(&ctx, &mut tab, &mut host, 1.0);
+
+        let path =
+            std::env::temp_dir().join(format!("degenview-journal-shot-{}.png", std::process::id()));
+        let image =
+            image::RgbaImage::from_fn(60, 40, |x, y| image::Rgba([x as u8, y as u8, 90, 255]));
+        image.save(&path).unwrap();
+        tab.shots
+            .start(&ctx, host.store(), Source::Path(path.clone()));
+        let mut time = 1.1;
+        while tab.draft.as_ref().unwrap().review.images.is_empty() {
+            assert!(time < 8.0, "the picture never arrived");
+            frame(&ctx, &mut tab, &mut host, time);
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            time += 0.1;
+        }
+        std::fs::remove_file(&path).ok();
+        // Saved at once, not after the pause.
+        frame(&ctx, &mut tab, &mut host, time + 0.1);
+        let hash = host.reviews()[&trade.key].images[0].clone();
+        assert!(store.lock().unwrap().asset(&hash).unwrap().is_some());
+        assert!(!tab.draft.as_ref().unwrap().is_dirty());
+
+        // The viewer opens on it and draws.
+        tab.shots.viewing = Some(hash.clone());
+        frame(&ctx, &mut tab, &mut host, time + 0.2);
+        frame(&ctx, &mut tab, &mut host, time + 0.3);
+
+        let mut again = JournalHost::new(store, Arc::new(|| {}));
+        again.rebuild_blocking();
+        assert_eq!(again.reviews()[&trade.key].images, [hash]);
+    }
+
+    #[test]
+    fn a_file_that_is_not_a_picture_is_reported_and_attaches_nothing() {
+        let (_, mut host, mut tab, ctx) = ready();
+        frame(&ctx, &mut tab, &mut host, 0.0);
+        let data = host.data().unwrap().clone();
+        tab.select_trade(&data.trades[tab.rows[0]].key.clone());
+        frame(&ctx, &mut tab, &mut host, 1.0);
+        let path = std::env::temp_dir().join(format!(
+            "degenview-journal-notshot-{}.png",
+            std::process::id()
+        ));
+        std::fs::write(&path, b"not a picture").unwrap();
+        tab.shots
+            .start(&ctx, host.store(), Source::Path(path.clone()));
+        let mut time = 1.1;
+        while tab.shots.error.is_none() {
+            assert!(time < 8.0, "no error came back");
+            frame(&ctx, &mut tab, &mut host, time);
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            time += 0.1;
+        }
+        std::fs::remove_file(&path).ok();
+        assert!(tab.draft.as_ref().unwrap().review.images.is_empty());
+    }
+
+    #[test]
+    fn the_excursion_block_reports_a_failed_fetch_and_a_retry_that_gets_an_answer() {
+        struct OneBar;
+        impl CandleFetcher for OneBar {
+            fn candles(
+                &self,
+                _: crate::model::DataSource,
+                _: &str,
+                _: &str,
+                start: i64,
+                _: i64,
+                _: usize,
+            ) -> Result<Vec<crate::model::Kline>, String> {
+                Ok(vec![crate::model::Kline {
+                    open_time: start,
+                    close_time: start + 59_999,
+                    open: 1.0,
+                    high: 2.0,
+                    low: 1.0,
+                    close: 2.0,
+                    volume: 1.0,
+                }])
+            }
+        }
+        let (_, mut host, mut tab, ctx) = ready();
+        frame(&ctx, &mut tab, &mut host, 0.0);
+        let data = host.data().unwrap().clone();
+        let closed = data
+            .trades
+            .iter()
+            .find(|trade| !trade.is_open())
+            .unwrap()
+            .clone();
+        tab.select_trade(&closed.key);
+        let mut time = 1.0;
+        let mut wait =
+            |tab: &mut JournalTab, host: &mut JournalHost, done: fn(&ExcursionState) -> bool| {
+                for _ in 0..200 {
+                    frame(&ctx, tab, host, time);
+                    time += 0.1;
+                    if tab.excursions.state(&closed).is_some_and(done) {
+                        return;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                panic!("no answer");
+            };
+        // The test fetcher is offline.
+        wait(&mut tab, &mut host, |state| {
+            matches!(state, ExcursionState::Done(Err(_)))
+        });
+        tab.fetcher = Arc::new(OneBar);
+        tab.excursions
+            .request(&closed, &host.store(), tab.fetcher.clone(), || {}, true);
+        wait(&mut tab, &mut host, |state| {
+            matches!(state, ExcursionState::Done(Ok(_)))
+        });
+        // Fills a few milliseconds apart leave no complete candle between them.
+        assert!(matches!(
+            tab.excursions.state(&closed),
+            Some(ExcursionState::Done(Ok(
+                degenview_journal::metric::Metric::Unavailable(
+                    degenview_journal::metric::Reason::NoCompleteBar
+                )
+            )))
+        ));
+        frame(&ctx, &mut tab, &mut host, time);
+    }
+
+    #[test]
     fn switching_trades_saves_what_was_typed_instead_of_losing_it() {
         let (_, mut host, mut tab, ctx) = ready();
         frame(&ctx, &mut tab, &mut host, 0.0);
@@ -2584,6 +2848,54 @@ mod tests {
 
             let data = host.data().unwrap().clone();
             let key = data.trades[tab.rows[1]].key.clone();
+            crate::service::asset_host::install(
+                &screen.ctx,
+                crate::service::asset_host::AssetHost::new(store.clone()),
+            );
+            let account = data.trades[tab.rows[1]].account_uid.clone();
+            let mut review = host
+                .reviews()
+                .get(&key)
+                .cloned()
+                .unwrap_or_else(|| degenview_journal::reviews::Review::new(&key, &account));
+            for seed in [30u8, 160] {
+                let image = image::RgbaImage::from_fn(320, 200, |x, y| {
+                    image::Rgba([seed, (x / 2) as u8, (y + u32::from(seed)) as u8, 255])
+                });
+                let mut png = Vec::new();
+                image::ImageEncoder::write_image(
+                    image::codecs::png::PngEncoder::new(&mut png),
+                    image.as_raw(),
+                    320,
+                    200,
+                    image::ExtendedColorType::Rgba8,
+                )
+                .unwrap();
+                let picture = crate::service::image_ingest::ingest(&png).unwrap();
+                store
+                    .lock()
+                    .unwrap()
+                    .put_asset(&crate::store::asset_store::StoredAsset::from_ingested(
+                        &picture,
+                    ))
+                    .unwrap();
+                review.images.push(picture.id);
+            }
+            host.save_review(&review).unwrap();
+            let trade = data.trades[tab.rows[1]].clone();
+            tab.excursions.put(
+                &trade,
+                Ok(degenview_journal::metric::Metric::Value(
+                    degenview_journal::excursion::Excursion {
+                        mfe: trade.net_pnl().abs() * rust_decimal::Decimal::TWO,
+                        mae: trade.net_pnl().abs() / rust_decimal::Decimal::TWO,
+                        gross: trade.gross_pnl,
+                        exit_efficiency: Some(0.5),
+                        bars: 42,
+                        interval: "5m".into(),
+                    },
+                )),
+            );
             tab.select_trade(&key);
             for _ in 0..4 {
                 last = Some(screen.run(vec![], |ui| {
@@ -2595,6 +2907,24 @@ mod tests {
                 &format!("journal-detail-{suffix}"),
                 last.take().expect("ran"),
             );
+
+            if !light {
+                let mut tall = Screen::new(egui::vec2(1400.0, 2500.0));
+                // Textures belong to the context that loaded them.
+                tab.shots = Shots::default();
+                crate::service::asset_host::install(
+                    &tall.ctx,
+                    crate::service::asset_host::AssetHost::new(store.clone()),
+                );
+                for _ in 0..8 {
+                    last = Some(tall.run(vec![], |ui| {
+                        crate::ui::theme::sync(ui.ctx());
+                        tab.ui(ui, &mut host, 1);
+                    }));
+                    std::thread::sleep(std::time::Duration::from_millis(60));
+                }
+                tall.save("journal-detail-tall-dark", last.take().expect("ran"));
+            }
 
             for (section, name) in [
                 (Section::Overview, "overview"),

@@ -102,6 +102,14 @@ impl Store {
                 updated_ms INTEGER NOT NULL,
                 payload TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS journal_trade_stats (
+                trade_key TEXT PRIMARY KEY,
+                account_uid TEXT NOT NULL,
+                fingerprint TEXT NOT NULL,
+                payload TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS journal_trade_stats_on_account
+                ON journal_trade_stats (account_uid);
             CREATE TABLE IF NOT EXISTS journal_meta (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
@@ -143,6 +151,39 @@ impl Store {
         statement
             .query_map([], |row| row.get::<_, String>(0))?
             .collect()
+    }
+
+    /// A cached figure for a trade, only when it was computed from the same fills and candle
+    /// interval (`fingerprint`). The cache is rebuildable: nothing depends on it being there.
+    pub fn journal_stat(
+        &self,
+        trade_key: &str,
+        fingerprint: &str,
+    ) -> rusqlite::Result<Option<String>> {
+        self.connection
+            .query_row(
+                "SELECT payload FROM journal_trade_stats WHERE trade_key = ?1 AND fingerprint = ?2",
+                params![trade_key, fingerprint],
+                |row| row.get(0),
+            )
+            .optional()
+    }
+
+    pub fn journal_save_stat(
+        &self,
+        trade_key: &str,
+        account_uid: &str,
+        fingerprint: &str,
+        payload: &str,
+    ) -> rusqlite::Result<()> {
+        self.connection.execute(
+            "INSERT INTO journal_trade_stats (trade_key, account_uid, fingerprint, payload)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(trade_key) DO UPDATE SET account_uid = excluded.account_uid,
+                fingerprint = excluded.fingerprint, payload = excluded.payload",
+            params![trade_key, account_uid, fingerprint, payload],
+        )?;
+        Ok(())
     }
 
     pub fn journal_reviews(&self) -> rusqlite::Result<Vec<Review>> {
@@ -590,7 +631,12 @@ impl Store {
     /// itself. What the user chooses when they decline to keep an account's history.
     pub fn journal_purge_account(&self, account_uid: &str) -> rusqlite::Result<()> {
         self.in_savepoint("journal_purge", || {
-            for table in ["journal_execution", "journal_cursor", "journal_review"] {
+            for table in [
+                "journal_execution",
+                "journal_cursor",
+                "journal_review",
+                "journal_trade_stats",
+            ] {
                 self.connection.execute(
                     &format!("DELETE FROM {table} WHERE account_uid = ?1"),
                     params![account_uid],
