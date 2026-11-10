@@ -265,5 +265,45 @@ Paper accounts now get a creation time no other account shares (the engine bumps
 millisecond when needed): the journal names an account by it, and two accounts made in one
 millisecond used to swap names when one was deleted.
 
-Not built yet: chart markers and "view on chart", CSV import and export, iCloud sync of reviews,
-playbooks and daily entries.
+## Trades on charts and View on chart
+
+**Markers** (`degenview_journal::marks`, `ui/journal_markers.rs`, `ui/chart_card/journal_marks.rs`).
+Every market chart draws the journal's trades for its own market, in the vocabulary of LuxAlgo's
+journal: a **triangle at each entry fill** (up for a buy, down for a sell), a **diamond at each exit**,
+a **dashed line** between the average entry and the average exit in the result's colour, and a
+**chip with the net result** (`+112.88`). Win and loss use the chart's own up and down colours; the
+triangle's direction and the chip's sign carry the result as well, so colour is never the only cue;
+breakeven and open trades are neutral grey and an open trade has no line or chip.
+
+- Prices are the fills' own, never a constructed bar's, so a mark sits where the trade happened
+  under every chart type. Time uses the same time-to-x map as drawings, so a trade shorter than a
+  bar sits inside it. Marks never feed the price scale: one far off the range is clipped to the
+  plot's edge, not chased (a test pins it).
+- Drawn in the shared frame, so a **snapshot** includes them only when it includes trading
+  (`snapshot.prefs`, off by default), and in a **replay** a trade that has not happened yet at the
+  cursor is left out.
+- Clutter: past 120 trades in view only the glyphs are drawn (no lines or chips); a chip that would
+  sit on another is dropped; at most 600 trades are laid out per frame.
+- **Hover** shows a tooltip (market, side, result, entry to exit, quantity, net) and a pointing
+  hand; **a click opens the trade in the journal** (`AppAction::OpenJournalTrade`: the range and
+  filters that could hide it are cleared and its panel opens). The click is ignored while a drawing
+  tool is active.
+- A chart setting, Canvas ▸ **Journal trades** (on by default; `canvas.show_journal_trades`).
+  The workspace hands each chart its market's marks from the journal host each frame (a pointer
+  copy); the journal is read only while some chart has the setting on. Which account's trades show
+  follows the account picker of the journal tab (all accounts when it is on All).
+
+**View on chart.** The trade panel's button asks the app to open the trade's market on a chart,
+framed on the hold. A chart tab that already charts the market is used (a new tab otherwise). The
+workspace timeframe is kept when it shows the hold in 2 to 150 bars, else it is changed to the
+smallest that fits in 80 bars (never below 1H) and the chart says so. If the candles held do not
+reach the trade's first fill the chart goes to its oldest bar, which makes it page older history in
+by itself, and frames the trade when it arrives; if the provider has nothing older (or serves no
+older history, or 30 s pass) it shows what it has and says that the start of the trade is off the
+left edge. Nothing is fabricated. Charts are 1H or coarser, so a trade shorter than a bar is one
+mark inside a bar.
+
+Not built, by decision: an embedded chart inside the trade panel and a "capture chart" screenshot
+(attaching a picture from a file or the clipboard works; the chart's own camera menu already makes
+snapshots). Not built yet: CSV import and export, iCloud sync of reviews, playbooks and daily
+entries.

@@ -28,6 +28,7 @@ pub(super) struct OverlayResults {
     pub paper: (Vec<PaperOverlayAction>, Option<MarkerMenu>),
     pub navigation: Option<chart_buttons::NavAction>,
     pub scale_mode: Option<PriceScaleMode>,
+    pub journal_open: Option<String>,
 }
 
 /// What a script's `syminfo.*` and `chart.is_*` read for this market and chart type.
@@ -212,6 +213,7 @@ impl ChartCard {
             paper,
             navigation,
             scale_mode,
+            journal_open,
         } = results;
         for (id, action) in pane_actions {
             self.apply_pane_action(id, action);
@@ -233,6 +235,9 @@ impl ChartCard {
         }
         if scale_mode.is_some() {
             self.scale_request = scale_mode;
+        }
+        if journal_open.is_some() {
+            self.journal.open = journal_open;
         }
     }
 }
