@@ -25,11 +25,23 @@ use crate::model::journal_paper_source::PaperSource;
 use crate::model::paper::PaperTradingSnapshot;
 use crate::store::Store;
 use degenview_journal::daily::DailyEntry;
-use degenview_journal::model::{Execution, ExecutionStatus, JournalAccount};
+use degenview_journal::model::{Execution, ExecutionStatus, JournalAccount, TradingSourceKind};
 use degenview_journal::normalize;
 use degenview_journal::playbook::Playbook;
 use degenview_journal::reviews::Review;
 use degenview_journal::source::{Cursor, RejectedExecution, TradingActivitySource};
+
+/// An import (or any pass) disagrees with an account that already exists.
+#[derive(Debug)]
+struct AccountConflict(String);
+
+impl std::fmt::Display for AccountConflict {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for AccountConflict {}
 
 const KEY_REVISION: &str = "revision";
 const KEY_LAST_ERROR: &str = "last_error";
@@ -113,6 +125,17 @@ impl Store {
 
     // MARK: Reads
 
+    /// The latest creation time of any paper account the journal has ever seen, archived ones
+    /// included: a new paper account must be created after it.
+    pub fn journal_max_paper_account_time(&self) -> rusqlite::Result<Option<i64>> {
+        Ok(self
+            .journal_accounts()?
+            .iter()
+            .filter(|account| account.kind == TradingSourceKind::Paper)
+            .map(|account| account.created_at_ms)
+            .max())
+    }
+
     pub fn journal_accounts(&self) -> rusqlite::Result<Vec<JournalAccount>> {
         let mut accounts: Vec<JournalAccount> =
             self.payloads_strict("SELECT payload FROM journal_account ORDER BY rowid")?;
@@ -186,6 +209,45 @@ impl Store {
         table: &str,
     ) -> rusqlite::Result<Vec<T>> {
         self.payloads_strict(&format!("SELECT payload FROM {table} ORDER BY id"))
+    }
+
+    /// The rows of a document table that decode, and the `table id` of each that does not: one
+    /// damaged row must not hide the rest. Writes keep using the strict read.
+    fn journal_documents_report<T: serde::de::DeserializeOwned>(
+        &self,
+        table: &str,
+    ) -> rusqlite::Result<(Vec<T>, Vec<String>)> {
+        let mut statement = self
+            .connection
+            .prepare(&format!("SELECT id, payload FROM {table} ORDER BY id"))?;
+        let rows: Vec<(String, String)> = statement
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<Result<_, _>>()?;
+        let mut good = Vec::with_capacity(rows.len());
+        let mut bad = Vec::new();
+        for (id, payload) in rows {
+            match serde_json::from_str::<T>(&payload) {
+                Ok(value) => good.push(value),
+                Err(_) => bad.push(format!("{table} {id}")),
+            }
+        }
+        Ok((good, bad))
+    }
+
+    pub fn journal_reviews_report(&self) -> rusqlite::Result<(Vec<Review>, Vec<String>)> {
+        let (mut reviews, bad) = self.journal_documents_report::<Review>(REVIEWS)?;
+        reviews.sort_by(|a, b| (a.updated_ms, &a.trade_key).cmp(&(b.updated_ms, &b.trade_key)));
+        Ok((reviews, bad))
+    }
+
+    pub fn journal_playbooks_report(&self) -> rusqlite::Result<(Vec<Playbook>, Vec<String>)> {
+        let (mut playbooks, bad) = self.journal_documents_report::<Playbook>(PLAYBOOKS)?;
+        playbooks.sort_by_key(|playbook| (playbook.name.to_lowercase(), playbook.id.clone()));
+        Ok((playbooks, bad))
+    }
+
+    pub fn journal_days_report(&self) -> rusqlite::Result<(Vec<DailyEntry>, Vec<String>)> {
+        self.journal_documents_report::<DailyEntry>(DAYS)
     }
 
     fn journal_document_text(&self, table: &str, id: &str) -> rusqlite::Result<Option<String>> {
@@ -530,6 +592,37 @@ impl Store {
             .optional()?;
         if existing.as_deref() == Some(payload.as_str()) {
             return Ok(false);
+        }
+        if let Some(existing) = existing.as_deref() {
+            // An account is its currency, its cost basis and where it came from for good: a later
+            // pass (an import under a name already used) must not reinterpret the executions the
+            // account already holds. Imported accounts are not rewritten at all.
+            let stored: JournalAccount = serde_json::from_str(existing).map_err(|error| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    0,
+                    rusqlite::types::Type::Text,
+                    Box::new(error),
+                )
+            })?;
+            if stored.currency != account.currency
+                || stored.cost_basis != account.cost_basis
+                || stored.kind != account.kind
+                || stored.source != account.source
+            {
+                return Err(rusqlite::Error::ToSqlConversionFailure(Box::new(
+                    AccountConflict(format!(
+                        "The account \"{}\" already exists ({}, {:?} cost basis); this pass has it as {}, {:?}. Use another account name.",
+                        stored.name,
+                        stored.currency,
+                        stored.cost_basis,
+                        account.currency,
+                        account.cost_basis,
+                    )),
+                )));
+            }
+            if stored.kind == TradingSourceKind::Imported {
+                return Ok(false);
+            }
         }
         self.connection.execute(
             "INSERT INTO journal_account (uid, source, archived, payload) VALUES (?1, ?2, 0, ?3)
@@ -1574,5 +1667,85 @@ mod tests {
                 .iter()
                 .any(|r| r.contains("not a valid picture"))
         );
+    }
+    fn try_import(
+        store: &Store,
+        text: &str,
+        options: &ImportOptions,
+    ) -> rusqlite::Result<IngestReport> {
+        let table = read_table(text).unwrap();
+        let outcomes = interpret(
+            &table,
+            &ColumnMap::detect(&table.headers),
+            options,
+            &degenview_journal::csv::NoMarkets,
+            &|_| 0,
+        );
+        let mut total = IngestReport::default();
+        for source in ImportSource::split(plan(
+            &outcomes,
+            options,
+            &degenview_journal::csv::NoMarkets,
+            1,
+        )) {
+            let report = store.journal_ingest(&source, true)?;
+            total.inserted += report.inserted;
+            total.already_present += report.already_present;
+        }
+        Ok(total)
+    }
+
+    #[test]
+    fn a_second_import_cannot_change_an_accounts_currency_or_cost_basis() {
+        // Finding 3: the second import used to overwrite the account's row and keep its executions.
+        let store = Store::open_in_memory().unwrap();
+        let usd = ImportOptions {
+            account_name: "Main".into(),
+            ..ImportOptions::default()
+        };
+        try_import(&store, FILE, &usd).unwrap();
+        let eur = ImportOptions {
+            currency: "EUR".into(),
+            ..usd.clone()
+        };
+        let error = try_import(&store, FILE, &eur).unwrap_err().to_string();
+        assert!(error.contains("Main") && error.contains("USD"), "{error}");
+        let fifo = ImportOptions {
+            cost_basis: CostBasis::Fifo,
+            ..usd.clone()
+        };
+        assert!(try_import(&store, FILE, &fifo).is_err());
+        let accounts = store.journal_accounts().unwrap();
+        assert!(accounts.iter().all(|account| account.currency == "USD"));
+        assert!(
+            accounts
+                .iter()
+                .all(|account| account.cost_basis == CostBasis::AverageCost)
+        );
+        // The same options again are the idempotent re-import it always was.
+        assert_eq!(try_import(&store, FILE, &usd).unwrap().inserted, 0);
+    }
+
+    #[test]
+    fn an_imported_account_is_never_overwritten_by_a_later_import() {
+        let store = Store::open_in_memory().unwrap();
+        let first = ImportOptions {
+            initial_balance: Some(rust_decimal::Decimal::from(5_000)),
+            ..ImportOptions::default()
+        };
+        try_import(&store, FILE, &first).unwrap();
+        let second = ImportOptions {
+            initial_balance: Some(rust_decimal::Decimal::from(9_999)),
+            ..ImportOptions::default()
+        };
+        try_import(&store, FILE, &second).unwrap();
+        for account in store.journal_accounts().unwrap() {
+            assert_eq!(
+                account.initial_balance,
+                Some(rust_decimal::Decimal::from(5_000)),
+                "{}",
+                account.name
+            );
+        }
     }
 }

@@ -15,7 +15,8 @@ use crate::model::journal_markets::AppMarkets;
 use crate::model::portfolio_csv::format_iso8601;
 use degenview_journal::calendar::Offset;
 use degenview_journal::csv::{
-    ColumnMap, Field, ImportOptions, NaiveTime, Plan, RowOutcome, Table, interpret, plan,
+    ColumnMap, FeeDefault, Field, ImportOptions, NaiveTime, Plan, RowOutcome, Table, interpret,
+    plan,
 };
 use degenview_journal::format;
 use degenview_journal::model::CostBasis;
@@ -47,6 +48,8 @@ pub struct ImportSheet {
     pub balance_text: String,
     pub cost_basis: CostBasis,
     pub naive_time: NaiveTime,
+    /// What a row with no fee figure is: unknown, unless the person says the file has no fees.
+    pub missing_fee: FeeDefault,
     pub provider: Option<DataSource>,
     pub preview: Preview,
     dirty: bool,
@@ -80,6 +83,7 @@ impl ImportSheet {
             balance_text: String::new(),
             cost_basis: CostBasis::AverageCost,
             naive_time: NaiveTime::Utc,
+            missing_fee: FeeDefault::Unknown,
             provider: None,
             preview: Preview::default(),
             dirty: true,
@@ -93,6 +97,7 @@ impl ImportSheet {
             initial_balance: parse_balance(&self.balance_text),
             cost_basis: self.cost_basis,
             naive_time: self.naive_time,
+            missing_fee: self.missing_fee,
             default_provider: self.provider.map(|source| source.display_name().to_owned()),
         }
     }
@@ -189,6 +194,7 @@ pub fn show(ctx: &egui::Context, sheet_state: &mut ImportSheet, offset: Offset<'
         sheet_state.balance_text.clone(),
         sheet_state.cost_basis,
         sheet_state.naive_time,
+        sheet_state.missing_fee,
         sheet_state.provider,
     );
     let (_, outside) =
@@ -245,6 +251,7 @@ pub fn show(ctx: &egui::Context, sheet_state: &mut ImportSheet, offset: Offset<'
         sheet_state.balance_text.clone(),
         sheet_state.cost_basis,
         sheet_state.naive_time,
+        sheet_state.missing_fee,
         sheet_state.provider,
     );
     if before != after {
@@ -370,6 +377,17 @@ fn body(ui: &mut Ui, state: &mut ImportSheet) {
                 &mut state.cost_basis,
             );
             ui.end_row();
+            label(ui, "Rows with no fee");
+            kit::segmented(
+                ui,
+                egui::Id::new("journal-import-fee"),
+                &[
+                    (FeeDefault::Unknown, "Unknown"),
+                    (FeeDefault::Zero, "This file has no fees"),
+                ],
+                &mut state.missing_fee,
+            );
+            ui.end_row();
             label(ui, "Times with no zone");
             kit::segmented(
                 ui,
@@ -416,6 +434,14 @@ fn body(ui: &mut Ui, state: &mut ImportSheet) {
             }
             ui.end_row();
         });
+    ui.add_space(4.0);
+    ui.label(kit::text(
+        "A row with no fee leaves the trade's result without a final figure, so win rate and the \
+         other ratios are withheld. Choose \"This file has no fees\" only if it really charges none.",
+        size::CAPTION,
+        REGULAR,
+        theme::text_tertiary(),
+    ));
     ui.add_space(4.0);
     ui.label(kit::text(
         "A row in a file's own account column goes to that account. The provider only links trades \

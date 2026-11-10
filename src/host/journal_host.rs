@@ -25,6 +25,10 @@ use degenview_journal::reconstruct::reconstruct;
 use degenview_journal::reviews::Review;
 use degenview_journal::table::{Column, Sort};
 
+const REVIEWS_TABLE: &str = "journal_review";
+const PLAYBOOKS_TABLE: &str = "journal_playbook";
+const DAYS_TABLE: &str = "journal_day";
+
 const PREFS_KEY: &str = "journal.prefs";
 
 /// Everything a view reads about the journal's trades. Immutable once built.
@@ -180,11 +184,30 @@ impl JournalPrefs {
     }
 }
 
+/// One user-written collection as read: the rows that decode and the `table id` of those that do
+/// not. `None` in a [`Built`] means the table could not be read at all.
+struct Read<T> {
+    rows: Vec<T>,
+    unreadable: Vec<String>,
+}
+
 struct Built {
     data: Result<JournalData, String>,
-    reviews: Vec<Review>,
-    playbooks: Vec<Playbook>,
-    days: Vec<DailyEntry>,
+    reviews: Result<Read<Review>, String>,
+    playbooks: Result<Read<Playbook>, String>,
+    days: Result<Read<DailyEntry>, String>,
+}
+
+impl Built {
+    /// A build that produced nothing: every collection stays as it was.
+    fn failed(message: String) -> Self {
+        Self {
+            data: Err(message.clone()),
+            reviews: Err(message.clone()),
+            playbooks: Err(message.clone()),
+            days: Err(message),
+        }
+    }
 }
 
 /// The chart marks and what they were built from: the build and the account shown.
@@ -210,6 +233,10 @@ pub struct JournalHost {
     prefs: JournalPrefs,
     prefs_saved: JournalPrefs,
     marks_cache: Option<MarksCache>,
+    /// Reads and builds. A field so a test can make it fail.
+    builder: fn(&SharedStore, u64) -> Built,
+    /// Rows of the user-written collections that could not be decoded, named.
+    unreadable: Vec<String>,
 }
 
 impl JournalHost {
@@ -238,6 +265,8 @@ impl JournalHost {
             repaint,
             prefs_saved: prefs.clone(),
             marks_cache: None,
+            builder: read_and_build,
+            unreadable: Vec::new(),
             prefs,
         }
     }
@@ -268,8 +297,17 @@ impl JournalHost {
         let store = self.store.clone();
         let sender = self.sender.clone();
         let repaint = self.repaint.clone();
+        let builder = self.builder;
         work_queue::submit(move || {
-            let built = read_and_build(&store, build_id);
+            // A panic in the build must still end the flight, or the journal would never rebuild.
+            let built = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                builder(&store, build_id)
+            }))
+            .unwrap_or_else(|_| {
+                Built::failed(
+                    "The journal could not be rebuilt: the build stopped unexpectedly.".to_owned(),
+                )
+            });
             let _ = sender.send(built);
             repaint();
         });
@@ -288,29 +326,53 @@ impl JournalHost {
     }
 
     fn apply(&mut self, built: Built) {
+        let mut problems: Vec<String> = Vec::new();
         match built.data {
-            Ok(data) => {
-                self.data = Some(Arc::new(data));
-                self.load_error = None;
-            }
-            Err(error) => self.load_error = Some(error),
+            Ok(data) => self.data = Some(Arc::new(data)),
+            Err(error) => problems.push(error),
         }
-        self.reviews = Arc::new(
-            built
-                .reviews
-                .into_iter()
-                .map(|review| (review.trade_key.clone(), review))
-                .collect(),
-        );
-        self.set_playbooks(built.playbooks);
-        self.days = Arc::new(
-            built
-                .days
-                .into_iter()
-                .map(|day| (day.date.clone(), day))
-                .collect(),
-        );
+        // A collection that could not be read stays exactly as it was (the last good one); one that
+        // was read replaces it, minus the rows that do not decode, which are named.
+        match built.reviews {
+            Ok(read) => {
+                self.take_unreadable(REVIEWS_TABLE, read.unreadable);
+                self.reviews = Arc::new(
+                    read.rows
+                        .into_iter()
+                        .map(|review| (review.trade_key.clone(), review))
+                        .collect(),
+                );
+            }
+            Err(error) => problems.push(format!("The reviews could not be read: {error}")),
+        }
+        match built.playbooks {
+            Ok(read) => {
+                self.take_unreadable(PLAYBOOKS_TABLE, read.unreadable);
+                self.set_playbooks(read.rows);
+            }
+            Err(error) => problems.push(format!("The playbooks could not be read: {error}")),
+        }
+        match built.days {
+            Ok(read) => {
+                self.take_unreadable(DAYS_TABLE, read.unreadable);
+                self.days = Arc::new(
+                    read.rows
+                        .into_iter()
+                        .map(|day| (day.date.clone(), day))
+                        .collect(),
+                );
+            }
+            Err(error) => problems.push(format!("The daily entries could not be read: {error}")),
+        }
+        problems.dedup();
+        self.load_error = (!problems.is_empty()).then(|| problems.join(" "));
         self.reviews_revision += 1;
+    }
+
+    /// Replaces what was unreadable in one table.
+    fn take_unreadable(&mut self, table: &str, rows: Vec<String>) {
+        self.unreadable.retain(|row| !row.starts_with(table));
+        self.unreadable.extend(rows);
     }
 
     fn set_playbooks(&mut self, playbooks: Vec<Playbook>) {
@@ -327,7 +389,7 @@ impl JournalHost {
     #[cfg(test)]
     pub fn rebuild_blocking(&mut self) {
         self.build_id += 1;
-        let built = read_and_build(&self.store, self.build_id);
+        let built = (self.builder)(&self.store, self.build_id);
         self.dirty = false;
         self.apply(built);
     }
@@ -352,6 +414,11 @@ impl JournalHost {
     /// Moves whenever a review, a playbook or a daily entry is saved or everything is reloaded.
     pub fn reviews_revision(&self) -> u64 {
         self.reviews_revision
+    }
+
+    /// Rows of reviews, playbooks or days that could not be read the last time, by table and id.
+    pub fn unreadable_rows(&self) -> &[String] {
+        &self.unreadable
     }
 
     pub fn playbooks(&self) -> &Arc<Vec<Playbook>> {
@@ -441,7 +508,12 @@ impl JournalHost {
     /// The trades as chart marks, for the account the journal is showing. Rebuilt only when the
     /// journal's trades or that account change.
     pub fn marks(&mut self) -> Arc<Marks> {
-        let key = (self.build_id, self.prefs.account.clone());
+        // The build that is *installed*: `build_id` moves when a build starts, long before its
+        // trades are in.
+        let key = (
+            self.data.as_ref().map_or(0, |data| data.build_id),
+            self.prefs.account.clone(),
+        );
         if let Some((cached, marks)) = &self.marks_cache
             && *cached == key
         {
@@ -535,43 +607,41 @@ impl JournalHost {
 
 fn read_and_build(store: &SharedStore, build_id: u64) -> Built {
     // Hold the store only for the reads; decoding and reconstruction happen after it is released.
-    let read = store
-        .lock()
-        .map_err(|_| "The journal's store is unavailable.".to_owned())
-        .and_then(|store| {
-            let payloads = store
-                .journal_execution_payloads()
-                .map_err(|error| error.to_string())?;
-            let accounts = store
+    // Each table is read on its own, so one that fails leaves the others to be shown.
+    let Ok(guard) = store.lock() else {
+        return Built::failed("The journal's store is unavailable.".to_owned());
+    };
+    let inputs = guard
+        .journal_execution_payloads()
+        .map_err(|error| error.to_string())
+        .and_then(|payloads| {
+            guard
                 .journal_accounts()
-                .map_err(|error| error.to_string())?;
-            let reviews = store.journal_reviews().map_err(|error| error.to_string())?;
-            let playbooks = store
-                .journal_playbooks()
-                .map_err(|error| error.to_string())?;
-            let days = store.journal_days().map_err(|error| error.to_string())?;
-            Ok((
-                payloads,
-                accounts,
-                reviews,
-                playbooks,
-                days,
-                store.journal_last_error(),
-            ))
+                .map(|accounts| (payloads, accounts))
+                .map_err(|error| error.to_string())
         });
-    match read {
-        Ok((payloads, accounts, reviews, playbooks, days, ingest_error)) => Built {
-            data: build_data(&payloads, accounts, build_id, ingest_error),
-            reviews,
-            playbooks,
-            days,
+    let ingest_error = guard.journal_last_error();
+    let reviews = guard
+        .journal_reviews_report()
+        .map(|(rows, unreadable)| Read { rows, unreadable })
+        .map_err(|error| error.to_string());
+    let playbooks = guard
+        .journal_playbooks_report()
+        .map(|(rows, unreadable)| Read { rows, unreadable })
+        .map_err(|error| error.to_string());
+    let days = guard
+        .journal_days_report()
+        .map(|(rows, unreadable)| Read { rows, unreadable })
+        .map_err(|error| error.to_string());
+    drop(guard);
+    Built {
+        data: match inputs {
+            Ok((payloads, accounts)) => build_data(&payloads, accounts, build_id, ingest_error),
+            Err(error) => Err(format!("The journal could not be read: {error}")),
         },
-        Err(error) => Built {
-            data: Err(format!("The journal could not be read: {error}")),
-            reviews: Vec::new(),
-            playbooks: Vec::new(),
-            days: Vec::new(),
-        },
+        reviews,
+        playbooks,
+        days,
     }
 }
 
@@ -836,5 +906,132 @@ mod tests {
     fn old_preference_rows_decode_with_defaults() {
         let prefs: JournalPrefs = serde_json::from_str("{}").unwrap();
         assert_eq!(prefs, JournalPrefs::default());
+    }
+    fn wait_for_build(host: &mut JournalHost) {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while host.in_flight {
+            host.poll();
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the build never ended"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+
+    #[test]
+    fn chart_marks_follow_the_installed_build_not_the_one_in_flight() {
+        // Finding 6: a chart asking for marks while a rebuild runs cached the old trades under the
+        // new build's id, and the finished build never invalidated them.
+        let store = store();
+        trade_through(&store);
+        let mut host = host(&store);
+        host.rebuild_blocking();
+        assert_eq!(host.marks().len(), 1);
+        trade_through(&store);
+        host.mark_dirty();
+        host.start_if_wanted();
+        assert!(host.in_flight);
+        let stale = host.marks();
+        assert_eq!(stale.len(), 1, "still the old trades while the build runs");
+        wait_for_build(&mut host);
+        assert_eq!(
+            host.marks().len(),
+            2,
+            "the new trade appears once the build is in"
+        );
+    }
+
+    #[test]
+    fn a_panicking_build_still_ends_the_flight_and_reports() {
+        // Findings 4/7: a panic in the worker used to leave `in_flight` set for ever.
+        let store = store();
+        trade_through(&store);
+        let mut host = host(&store);
+        host.rebuild_blocking();
+        host.builder = |_, _| panic!("boom");
+        host.mark_dirty();
+        host.start_if_wanted();
+        wait_for_build(&mut host);
+        assert!(!host.in_flight);
+        assert!(
+            host.load_error()
+                .is_some_and(|error| error.contains("could not be rebuilt"))
+        );
+        assert_eq!(host.data().unwrap().trades.len(), 1, "the old trades stay");
+        // And it recovers.
+        host.builder = read_and_build;
+        host.mark_dirty();
+        host.start_if_wanted();
+        wait_for_build(&mut host);
+        assert!(host.load_error().is_none());
+    }
+
+    #[test]
+    fn one_unreadable_row_does_not_empty_the_other_collections() {
+        // Finding 7: one undecodable review used to blank every review, playbook and day.
+        let store = store();
+        trade_through(&store);
+        trade_through(&store);
+        let mut host = host(&store);
+        host.rebuild_blocking();
+        let trades: Vec<_> = host.data().unwrap().trades.clone();
+        assert_eq!(trades.len(), 2);
+        for (index, trade) in trades.iter().enumerate() {
+            let mut review = Review::new(&trade.key, &trade.account_uid);
+            review.notes = format!("note {index}");
+            host.save_review(&review).unwrap();
+        }
+        let playbook = host
+            .save_playbook(&Playbook::new(JournalHost::new_playbook_id(), "Breakout"))
+            .unwrap();
+        let mut day = DailyEntry::new("2026-11-09");
+        day.plan = "Trade the plan.".into();
+        host.save_day(&day).unwrap();
+        let broken = crate::store::journal::review_row_id(&trades[0].key);
+        store
+            .lock()
+            .unwrap()
+            .raw_connection()
+            .execute(
+                "UPDATE journal_review SET payload = 'not json' WHERE id = ?1",
+                [&broken],
+            )
+            .unwrap();
+        host.rebuild_blocking();
+        assert_eq!(host.reviews().len(), 1, "the readable review stays");
+        assert_eq!(host.reviews()[&trades[1].key].notes, "note 1");
+        assert_eq!(host.playbooks().len(), 1);
+        assert_eq!(host.playbooks()[0].id, playbook.id);
+        assert_eq!(host.days().len(), 1);
+        assert_eq!(host.unreadable_rows().len(), 1, "and the bad row is named");
+        assert!(host.unreadable_rows()[0].contains(&broken));
+    }
+
+    #[test]
+    fn a_failed_read_keeps_every_collection_as_it_was() {
+        let store = store();
+        trade_through(&store);
+        let mut host = host(&store);
+        host.rebuild_blocking();
+        let trade = host.data().unwrap().trades[0].clone();
+        let mut review = Review::new(&trade.key, &trade.account_uid);
+        review.notes = "keep me".into();
+        host.save_review(&review).unwrap();
+        host.save_playbook(&Playbook::new(JournalHost::new_playbook_id(), "Breakout"))
+            .unwrap();
+        store
+            .lock()
+            .unwrap()
+            .raw_connection()
+            .execute(
+                "ALTER TABLE journal_review RENAME TO journal_review_gone",
+                [],
+            )
+            .unwrap();
+        host.rebuild_blocking();
+        assert!(host.load_error().is_some());
+        assert_eq!(host.reviews()[&trade.key].notes, "keep me");
+        assert_eq!(host.playbooks().len(), 1);
     }
 }

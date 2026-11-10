@@ -130,6 +130,8 @@ pub struct JournalTab {
     custom_from: String,
     custom_to: String,
     selected: Option<String>,
+    /// The time of the frame being drawn, so a failed save can schedule its retry.
+    now: f64,
     rows: Vec<usize>,
     rows_key: Option<RowsKey>,
     draft: Option<Draft>,
@@ -178,6 +180,7 @@ impl JournalTab {
             custom_from: String::new(),
             custom_to: String::new(),
             selected: None,
+            now: 0.0,
             rows: Vec::new(),
             rows_key: None,
             draft: None,
@@ -241,6 +244,7 @@ impl JournalTab {
         paper_revision: u64,
     ) -> Vec<JournalAction> {
         let mut actions = Vec::new();
+        self.now = ui.input(|input| input.time);
         host.sync(paper_revision);
         host.poll();
         if !self.prefs_applied {
@@ -312,19 +316,74 @@ impl JournalTab {
                 });
         }
 
+        // What was written but could not be read is named, not silently missing: one damaged row
+        // never hides the rest, and a table that could not be read keeps what it showed.
+        let unreadable = host.unreadable_rows().to_vec();
+        if host.load_error().is_some() || !unreadable.is_empty() {
+            let mut detail = host.load_error().map(str::to_owned).unwrap_or_default();
+            if !unreadable.is_empty() {
+                let shown: Vec<&str> = unreadable.iter().take(3).map(String::as_str).collect();
+                if !detail.is_empty() {
+                    detail.push(' ');
+                }
+                detail.push_str(&format!(
+                    "{} row{} could not be read and {} left out: {}{}.",
+                    unreadable.len(),
+                    if unreadable.len() == 1 { "" } else { "s" },
+                    if unreadable.len() == 1 { "is" } else { "are" },
+                    shown.join(", "),
+                    if unreadable.len() > shown.len() {
+                        ", \u{2026}"
+                    } else {
+                        ""
+                    },
+                ));
+            }
+            egui::Panel::top(egui::Id::new(("journal-unreadable", self.id)))
+                .frame(egui::Frame::new().fill(theme::background()))
+                .show(ui, |ui| {
+                    aligned(ui, |ui| {
+                        ui.add_space(4.0);
+                        kit::notice_card(
+                            ui,
+                            Icon::TriangleFill,
+                            kit::RED,
+                            "Some of the journal could not be read",
+                            Some(&detail),
+                            None,
+                        );
+                        if kit::sheet_button(ui, "Retry", false, true).clicked() {
+                            host.mark_dirty();
+                        }
+                        ui.add_space(6.0);
+                    })
+                });
+        }
+
         let reviews = host.reviews().clone();
         self.refresh_rows(host, &data, &reviews);
-        let section = host.prefs().section;
-        if section != Section::Trades && self.selected.is_some() {
-            self.close_trade(host);
+        let mut section = host.prefs().section;
+        // Leaving a page whose edit cannot be saved is refused: the person stays on it, with the
+        // error, instead of losing what they wrote.
+        if section != Section::Trades && self.selected.is_some() && !self.close_trade(host) {
+            section = Section::Trades;
         }
         if section != Section::Playbooks {
-            self.flush_playbook(host);
-            self.playbook_draft = None;
+            if self.flush_playbook(host) {
+                self.playbook_draft = None;
+            } else {
+                section = Section::Playbooks;
+            }
         }
         if section != Section::Daily {
-            self.flush_daily(host);
-            self.daily_draft = None;
+            if self.flush_daily(host) {
+                self.daily_draft = None;
+            } else {
+                section = Section::Daily;
+            }
+        }
+        if section != host.prefs().section {
+            host.prefs_mut().section = section;
         }
         self.io_ui(ui.ctx(), host);
         match section {
@@ -357,6 +416,17 @@ impl JournalTab {
                 .iter()
                 .position(|&index| &data.trades[index].key == key)
         });
+        // Moving to another trade while the notes of this one cannot be saved: stay on this one.
+        if let Some(open) = self
+            .draft
+            .as_ref()
+            .filter(|draft| draft.is_dirty())
+            .map(|draft| draft.review.trade_key.clone())
+            && self.selected.as_deref() != Some(open.as_str())
+            && !self.flush_draft(host)
+        {
+            self.selected = Some(open);
+        }
         if let Some(key) = self.selected.clone()
             && let Some(trade) = data.trades.iter().find(|trade| trade.key == key)
         {
@@ -510,8 +580,10 @@ impl JournalTab {
                                         );
                                     }
                                     Err(error) => {
+                                        // Keep the edit and try again after the usual pause: a failed save is not a
+                                        // reason to stop saving.
                                         draft.error = Some(error);
-                                        draft.edited_at = None;
+                                        draft.edited_at = Some(now);
                                     }
                                 }
                             } else if draft.is_dirty() {
@@ -551,8 +623,7 @@ impl JournalTab {
             if close {
                 self.close_trade(host);
             }
-        } else {
-            self.flush_draft(host);
+        } else if self.flush_draft(host) {
             self.draft = None;
         }
 
@@ -657,6 +728,16 @@ impl JournalTab {
         {
             self.playbook_selected = None;
         }
+        if let Some(open) = self
+            .playbook_draft
+            .as_ref()
+            .filter(|draft| draft.is_dirty())
+            .map(|draft| draft.playbook.id.clone())
+            && self.playbook_selected.as_deref() != Some(open.as_str())
+            && !self.flush_playbook(host)
+        {
+            self.playbook_selected = Some(open);
+        }
         match self.playbook_selected.clone() {
             Some(id) => {
                 if self
@@ -731,7 +812,7 @@ impl JournalTab {
                     }
                     Err(error) => {
                         draft.error = Some(error);
-                        draft.edited_at = None;
+                        draft.edited_at = Some(now);
                     }
                 }
             } else if draft.is_dirty() {
@@ -777,23 +858,49 @@ impl JournalTab {
         }
     }
 
-    fn flush_playbook(&mut self, host: &mut JournalHost) {
-        if let Some(draft) = self.playbook_draft.as_mut()
-            && draft.is_dirty()
-            && let Ok(saved) = host.save_playbook(&draft.playbook)
-        {
-            draft.saved = saved;
-            draft.edited_at = None;
+    /// As [`Self::flush_draft`], for the playbook being edited.
+    fn flush_playbook(&mut self, host: &mut JournalHost) -> bool {
+        let now = self.now;
+        let Some(draft) = self
+            .playbook_draft
+            .as_mut()
+            .filter(|draft| draft.is_dirty())
+        else {
+            return true;
+        };
+        match host.save_playbook(&draft.playbook) {
+            Ok(saved) => {
+                draft.saved = saved;
+                draft.edited_at = None;
+                draft.error = None;
+                true
+            }
+            Err(error) => {
+                draft.error = Some(error);
+                draft.edited_at = Some(now);
+                false
+            }
         }
     }
 
-    fn flush_daily(&mut self, host: &mut JournalHost) {
-        if let Some(draft) = self.daily_draft.as_mut()
-            && draft.is_dirty()
-            && host.save_day(&draft.entry).is_ok()
-        {
-            draft.saved = draft.entry.clone();
-            draft.edited_at = None;
+    /// As [`Self::flush_draft`], for the daily entry being edited.
+    fn flush_daily(&mut self, host: &mut JournalHost) -> bool {
+        let now = self.now;
+        let Some(draft) = self.daily_draft.as_mut().filter(|draft| draft.is_dirty()) else {
+            return true;
+        };
+        match host.save_day(&draft.entry) {
+            Ok(()) => {
+                draft.saved = draft.entry.clone();
+                draft.edited_at = None;
+                draft.error = None;
+                true
+            }
+            Err(error) => {
+                draft.error = Some(error);
+                draft.edited_at = Some(now);
+                false
+            }
         }
     }
 
@@ -854,7 +961,18 @@ impl JournalTab {
             .as_ref()
             .is_none_or(|draft| draft.entry.date != date_key)
         {
-            self.flush_daily(host);
+            if !self.flush_daily(host) {
+                // The entry on screen cannot be saved: stay on its day, with the error.
+                if let Some(open) = self
+                    .daily_draft
+                    .as_ref()
+                    .and_then(|draft| parse_date_key(&draft.entry.date))
+                {
+                    self.daily_date = Some(open);
+                }
+                ui.ctx().request_repaint();
+                return;
+            }
             self.daily_draft = Some(journal_daily::Draft::new(
                 &date_key,
                 host.days().get(&date_key),
@@ -913,7 +1031,7 @@ impl JournalTab {
                     }
                     Err(error) => {
                         draft.error = Some(error);
-                        draft.edited_at = None;
+                        draft.edited_at = Some(now);
                     }
                 }
             } else if draft.is_dirty() {
@@ -927,8 +1045,9 @@ impl JournalTab {
         if output.today {
             self.daily_date = None;
         }
-        if let Some(key) = output.open_trade {
-            self.flush_daily(host);
+        if let Some(key) = output.open_trade
+            && self.flush_daily(host)
+        {
             host.prefs_mut().section = Section::Trades;
             self.selected = Some(key);
         }
@@ -1314,7 +1433,10 @@ impl JournalTab {
                     &|trade| match outcome_of(trade, BREAKEVEN_TOLERANCE) {
                         OutcomeFilter::Win => calendar::Outcome::Win,
                         OutcomeFilter::Loss => calendar::Outcome::Loss,
-                        _ => calendar::Outcome::Breakeven,
+                        OutcomeFilter::Undetermined => calendar::Outcome::Undetermined,
+                        OutcomeFilter::Breakeven | OutcomeFilter::Open => {
+                            calendar::Outcome::Breakeven
+                        }
                     },
                 );
             self.month = Some((key, view));
@@ -1587,12 +1709,12 @@ impl JournalTab {
         let imported: Vec<(String, String)> = data
             .accounts
             .iter()
-            .filter(|account| account.kind == TradingSourceKind::Imported)
+            .filter(|account| account.kind == TradingSourceKind::Imported || account.archived)
             .map(|account| (account.uid.clone(), account.name.clone()))
             .collect();
         let removals: Vec<String> = imported
             .iter()
-            .map(|(_, name)| format!("Remove imported account \u{201c}{name}\u{201d}\u{2026}"))
+            .map(|(_, name)| format!("Remove account \u{201c}{name}\u{201d}\u{2026}"))
             .collect();
         let mut labels: Vec<String> = [
             "Import executions (CSV)\u{2026}",
@@ -2018,6 +2140,7 @@ impl JournalTab {
             ("Wins", Some(OutcomeFilter::Win)),
             ("Losses", Some(OutcomeFilter::Loss)),
             ("Breakeven", Some(OutcomeFilter::Breakeven)),
+            ("Fees unknown", Some(OutcomeFilter::Undetermined)),
         ];
         let title = status_options
             .iter()
@@ -2334,25 +2457,50 @@ impl JournalTab {
 
     // MARK: Review drafts
 
-    fn flush_draft(&mut self, host: &mut JournalHost) {
-        if let Some(draft) = self.draft.as_mut()
-            && draft.is_dirty()
-            && host.save_review(&draft.review).is_ok()
-        {
-            draft.saved = host
-                .reviews()
-                .get(&draft.review.trade_key)
-                .cloned()
-                .unwrap_or_else(|| draft.review.clone());
-            draft.edited_at = None;
+    /// Saves a pending review edit. `true` when nothing is left unsaved; on failure the edit stays
+    /// in the panel with its error and a retry scheduled, and the caller must not discard it.
+    fn flush_draft(&mut self, host: &mut JournalHost) -> bool {
+        let now = self.now;
+        let Some(draft) = self.draft.as_mut().filter(|draft| draft.is_dirty()) else {
+            return true;
+        };
+        match host.save_review(&draft.review) {
+            Ok(()) => {
+                draft.saved = host
+                    .reviews()
+                    .get(&draft.review.trade_key)
+                    .cloned()
+                    .unwrap_or_else(|| draft.review.clone());
+                draft.edited_at = None;
+                draft.error = None;
+                true
+            }
+            Err(error) => {
+                draft.error = Some(error);
+                draft.edited_at = Some(now);
+                false
+            }
         }
     }
 
-    fn close_trade(&mut self, host: &mut JournalHost) {
-        self.flush_draft(host);
+    /// Closes the open trade, unless its notes cannot be saved: then it stays open, with the error.
+    fn close_trade(&mut self, host: &mut JournalHost) -> bool {
+        if !self.flush_draft(host) {
+            return false;
+        }
         self.draft = None;
         self.selected = None;
+        true
     }
+}
+
+/// `YYYY-MM-DD` as a date.
+fn parse_date_key(key: &str) -> Option<Civil> {
+    let mut parts = key.split('-');
+    let year = parts.next()?.parse().ok()?;
+    let month = parts.next()?.parse().ok()?;
+    let day = parts.next()?.parse().ok()?;
+    parts.next().is_none().then_some(Civil { year, month, day })
 }
 
 fn account_label(account: &degenview_journal::model::JournalAccount) -> String {
@@ -3676,5 +3824,122 @@ mod tests {
             }));
         }
         screen.save("journal-empty-dark", last.take().expect("ran"));
+    }
+    /// Makes saving a kind of document fail (the table is "gone"), and brings it back.
+    fn break_table(store: &SharedStore, table: &str) {
+        store
+            .lock()
+            .unwrap()
+            .raw_connection()
+            .execute(&format!("ALTER TABLE {table} RENAME TO {table}_gone"), [])
+            .unwrap();
+    }
+
+    fn fix_table(store: &SharedStore, table: &str) {
+        store
+            .lock()
+            .unwrap()
+            .raw_connection()
+            .execute(&format!("ALTER TABLE {table}_gone RENAME TO {table}"), [])
+            .unwrap();
+    }
+
+    #[test]
+    fn a_failed_autosave_keeps_the_edit_and_retries_until_it_lands() {
+        // Finding 5: a failed save cleared the edit time, so nothing retried.
+        let (store, mut host, mut tab, ctx) = ready();
+        frame(&ctx, &mut tab, &mut host, 0.0);
+        let key = host.data().unwrap().trades[tab.rows[0]].key.clone();
+        tab.select_trade(&key);
+        frame(&ctx, &mut tab, &mut host, 1.0);
+        tab.draft.as_mut().unwrap().review.notes = "typed".into();
+        tab.draft.as_mut().unwrap().edited_at = Some(1.0);
+        break_table(&store, "journal_review");
+        frame(&ctx, &mut tab, &mut host, 1.0 + SAVE_AFTER + 0.1);
+        let draft = tab.draft.as_ref().unwrap();
+        assert!(draft.error.is_some());
+        assert!(draft.is_dirty());
+        assert!(draft.edited_at.is_some(), "a retry stays scheduled");
+        fix_table(&store, "journal_review");
+        frame(&ctx, &mut tab, &mut host, 1.0 + 3.0 * SAVE_AFTER);
+        assert_eq!(host.reviews()[&key].notes, "typed");
+        assert!(tab.draft.as_ref().unwrap().error.is_none());
+    }
+
+    #[test]
+    fn a_trade_cannot_be_left_while_its_notes_cannot_be_saved() {
+        let (store, mut host, mut tab, ctx) = ready();
+        frame(&ctx, &mut tab, &mut host, 0.0);
+        let data = host.data().unwrap().clone();
+        let (a, b) = (
+            data.trades[tab.rows[0]].key.clone(),
+            data.trades[tab.rows[1]].key.clone(),
+        );
+        tab.select_trade(&a);
+        frame(&ctx, &mut tab, &mut host, 1.0);
+        tab.draft.as_mut().unwrap().review.notes = "unsaved".into();
+        break_table(&store, "journal_review");
+        tab.select_trade(&b);
+        frame(&ctx, &mut tab, &mut host, 1.1);
+        assert_eq!(
+            tab.selected.as_deref(),
+            Some(a.as_str()),
+            "stays on the trade"
+        );
+        let draft = tab.draft.as_ref().unwrap();
+        assert_eq!(draft.review.notes, "unsaved");
+        assert!(draft.error.is_some());
+        assert!(!tab.close_trade(&mut host), "closing it is refused too");
+        assert_eq!(tab.draft.as_ref().unwrap().review.notes, "unsaved");
+        fix_table(&store, "journal_review");
+        assert!(tab.close_trade(&mut host));
+        assert_eq!(host.reviews()[&a].notes, "unsaved");
+    }
+
+    #[test]
+    fn a_playbook_page_cannot_be_left_while_its_edit_cannot_be_saved() {
+        let (store, mut host, mut tab, ctx) = ready();
+        host.prefs_mut().section = Section::Playbooks;
+        let saved = host
+            .save_playbook(&Playbook::new(JournalHost::new_playbook_id(), "Breakout"))
+            .unwrap();
+        tab.playbook_selected = Some(saved.id.clone());
+        frame(&ctx, &mut tab, &mut host, 0.0);
+        tab.playbook_draft.as_mut().unwrap().playbook.description = "my plan".into();
+        break_table(&store, "journal_playbook");
+        host.prefs_mut().section = Section::Trades;
+        frame(&ctx, &mut tab, &mut host, 1.0);
+        assert_eq!(
+            host.prefs().section,
+            Section::Playbooks,
+            "stays on the page"
+        );
+        assert_eq!(
+            tab.playbook_draft.as_ref().unwrap().playbook.description,
+            "my plan"
+        );
+        fix_table(&store, "journal_playbook");
+        host.prefs_mut().section = Section::Trades;
+        frame(&ctx, &mut tab, &mut host, 2.0);
+        assert_eq!(host.prefs().section, Section::Trades);
+        assert_eq!(host.playbooks()[0].description, "my plan");
+    }
+
+    #[test]
+    fn a_daily_entry_cannot_be_left_while_it_cannot_be_saved() {
+        let (store, mut host, mut tab, ctx) = ready();
+        host.prefs_mut().section = Section::Daily;
+        frame(&ctx, &mut tab, &mut host, 0.0);
+        tab.daily_draft.as_mut().unwrap().entry.plan = "the plan".into();
+        break_table(&store, "journal_day");
+        host.prefs_mut().section = Section::Trades;
+        frame(&ctx, &mut tab, &mut host, 1.0);
+        assert_eq!(host.prefs().section, Section::Daily, "stays on the page");
+        assert_eq!(tab.daily_draft.as_ref().unwrap().entry.plan, "the plan");
+        fix_table(&store, "journal_day");
+        host.prefs_mut().section = Section::Trades;
+        frame(&ctx, &mut tab, &mut host, 2.0);
+        assert_eq!(host.prefs().section, Section::Trades);
+        assert_eq!(host.days().values().next().unwrap().plan, "the plan");
     }
 }

@@ -49,8 +49,19 @@ rejected with a reason in the ingest report, never stored and never dropped sile
   per-Mac counter that is reused after a reset and tagged when it syncs, so it names nothing
   durable.
 - A paper account is `paper:<created_at>`. Resetting an account gives it a new `created_at`, so the
-  journal sees a new account and the old one's history stays under it, marked archived. Two
-  accounts made in the same millisecond get a `-1`, `-2` suffix in id order.
+  journal sees a new account and the old one's history stays under it, marked archived. The engine
+  never gives a new or reset account a creation time at or below one the journal already holds
+  (`PaperTradingEngine::set_account_time_floor`, fed by `Store::journal_max_paper_account_time`,
+  archived accounts included), so a delete followed by a create in the same millisecond, or a clock
+  that went back, cannot attach new fills to an old account's history. **Residual:** two Macs that
+  create accounts in the same millisecond, or accounts that predate this rule, can still share a
+  creation time; the later one by id then gets a `-1`, `-2` suffix, which is only stable while both
+  accounts exist.
+- An imported account is `import:` plus a hash of its trimmed, case-folded name (the crate's
+  `csv::account_uid`): different names never share an account, the same name always does, which is
+  what makes a second import of one file add nothing. `Store::upsert_account` refuses a pass that
+  disagrees with an existing account's currency, cost basis, kind or source (the import fails with
+  a message naming the account) and never rewrites an imported account's row.
 - Storage enforces `UNIQUE(uid)` and `UNIQUE(account_uid, source_exec_id)`; ingest is
   `INSERT OR IGNORE`. Replaying a source never duplicates, and two separate fills with the same
   time, price and size stay separate because their identities differ.
@@ -77,7 +88,10 @@ kept in `journal_meta.last_error`, and the next pass retries.
 A paper account that is reset or deleted keeps its journal history: the account is marked archived
 and still counts. `Store::journal_purge_account` removes one account's journal data for good; the
 paper UI asks which to do before it resets or deletes (see below, once the tab lands). MCP-initiated
-resets cannot ask and keep the history.
+resets cannot ask and keep the history. If the removal fails after the paper operation succeeded,
+the caller gets `PaperHostError::JournalHistory`: the account is gone from paper trading, its
+history is still in the journal as an archived account, and the Journal's Data menu lists archived
+accounts under "Remove account" for another try.
 
 ## Trade reconstruction
 
@@ -355,6 +369,23 @@ whose account is not in the file, a damaged picture) are listed and the rest res
 Not built, by decision: an embedded chart inside the trade panel and a "capture chart" screenshot
 (attaching a picture from a file or the clipboard works; the chart's own camera menu already makes
 snapshots).
+
+## Errors, drafts and unknown fees
+
+- **Reading.** Each collection (executions and accounts, reviews, playbooks, daily entries) is read
+  on its own. A row that does not decode is left out and named in a banner ("N rows could not be
+  read"); a table that cannot be read at all keeps what it showed. Nothing is replaced by an empty
+  collection because of an error. A build that panics still ends (the journal shows "could not be
+  rebuilt" and keeps the last good data).
+- **Writing.** A failed save of a review, playbook or daily entry keeps the edit open with its
+  error and retries after the usual pause. The trade, page or day cannot be left while its edit
+  cannot be saved; the person stays where they are.
+- **Chart marks** follow the build that is installed, not the one in flight.
+- **Unknown fees.** A trade with an execution that has no fee figure has a net result that is only
+  an upper bound. The table shows it as `≤ …` with status "FEES UNKNOWN" (unless it is already a
+  loss), and while the selection has one, win rate and the other ratios of net results, R and the
+  Edge Score are withheld with the reason. The import sheet's "This file has no fees" switch is the
+  only way an absent fee becomes zero. Rules in the crate's `docs/model.md`.
 
 ## iCloud
 

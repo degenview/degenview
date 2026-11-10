@@ -68,7 +68,7 @@ rustls-webpki = { version = "0.103", default-features = false, features = ["ring
 # The Trading Journal's domain layer (executions, trades, statistics, reviews, import and export),
 # in its own repository (degenview/journal) and published to crates.io. Pinned to an exact version:
 # nothing reaches a release that was not reviewed (see AGENTS.md, Supply chain).
-degenview-journal = { version = "=0.1.0" }
+degenview-journal = { version = "=0.2.0" }
 rust_decimal = { version = "1.43.0", default-features = false, features = ["std", "serde-str"] }
 
 # Secret storage on Linux (docs/flatpak.md): the Secret Service, or the Secret portal in a Flatpak.
@@ -157,4 +157,4 @@ strip = true
 
 [dev-dependencies]
 # Fixture builders of the journal crate, for the tests of the journal host, store and sync.
-degenview-journal = { version = "=0.1.0", features = ["testing"] }
+degenview-journal = { version = "=0.2.0", features = ["testing"] }

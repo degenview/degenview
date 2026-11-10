@@ -43,6 +43,9 @@ pub enum PaperHostError {
     /// The data disagrees with itself; nothing was saved or shown from it.
     Integrity(String),
     StoreUnavailable,
+    /// The paper operation was done; removing the Trade Journal's copy of the old account's
+    /// history was not. The text says what to do.
+    JournalHistory(String),
 }
 
 impl PaperHostError {
@@ -55,6 +58,7 @@ impl PaperHostError {
                 format!("Paper trading data failed a consistency check: {message}")
             }
             Self::StoreUnavailable => "The paper-trading database is unavailable.".to_owned(),
+            Self::JournalHistory(message) => message.clone(),
         }
     }
 }
@@ -281,7 +285,22 @@ impl PaperHost {
         initial_balance: f64,
         settings: PaperAccountSettings,
     ) -> Result<u64, PaperHostError> {
-        self.apply(|engine| engine.create_account(name, currency, initial_balance, settings))
+        let floor = self.account_time_floor();
+        self.apply(move |engine| {
+            engine.set_account_time_floor(floor);
+            engine.create_account(name, currency, initial_balance, settings)
+        })
+    }
+
+    /// Creation times a new or reset account must stay above: those of every paper account the
+    /// Trade Journal keeps history for, deleted ones included. Unreadable means no floor; the
+    /// engine still keeps times unique among the live accounts.
+    fn account_time_floor(&self) -> i64 {
+        self.store
+            .lock()
+            .ok()
+            .and_then(|store| store.journal_max_paper_account_time().ok().flatten())
+            .unwrap_or(i64::MIN)
     }
 
     pub fn select_account(&mut self, id: u64) -> Result<(), PaperHostError> {
@@ -305,7 +324,9 @@ impl PaperHost {
         initial_balance: f64,
         settings: PaperAccountSettings,
     ) -> Result<(), PaperHostError> {
+        let floor = self.account_time_floor();
         self.apply_for(Some(id), move |engine| {
+            engine.set_account_time_floor(floor);
             engine.reset_account(id, currency, initial_balance, settings)
         })
     }
@@ -334,7 +355,7 @@ impl PaperHost {
         let old_uid = self.journal_account_uid(id);
         self.reset_account(id, currency, initial_balance, settings)?;
         if !keep_history {
-            self.purge_journal(old_uid);
+            self.purge_journal(old_uid, "reset")?;
         }
         Ok(())
     }
@@ -348,19 +369,34 @@ impl PaperHost {
         let uid = self.journal_account_uid(id);
         self.delete_account(id)?;
         if !keep_history {
-            self.purge_journal(uid);
+            self.purge_journal(uid, "deleted")?;
         }
         Ok(())
     }
 
-    fn purge_journal(&mut self, uid: Option<String>) {
-        if let Some(uid) = uid
-            && let Ok(store) = self.store.lock()
-        {
-            let _ = store.journal_purge_account(&uid);
-        }
-        // The journal changed under the paper ledger; whoever watches the revision refreshes.
+    /// Removes the old account's Trade Journal history. The paper operation has already happened,
+    /// so a failure is reported as such: the history is still there, as an archived journal
+    /// account that the Journal's Data menu can remove.
+    fn purge_journal(&mut self, uid: Option<String>, what: &str) -> Result<(), PaperHostError> {
+        let result = match uid {
+            Some(uid) => self
+                .store
+                .lock()
+                .map_err(|_| "the store is unavailable".to_owned())
+                .and_then(|store| {
+                    store
+                        .journal_purge_account(&uid)
+                        .map_err(|error| error.to_string())
+                }),
+            None => Ok(()),
+        };
+        // The journal may have changed under the paper ledger; whoever watches the revision refreshes.
         self.revision = self.revision.wrapping_add(1);
+        result.map_err(|reason| {
+            PaperHostError::JournalHistory(format!(
+                "The account was {what}, but its Trade Journal history could not be removed ({reason}). It is kept as an archived account; remove it from the Journal's Data menu."
+            ))
+        })
     }
 
     /// Runs every paper fill through the journal again (idempotent). What the journal's "retry"
@@ -2062,6 +2098,75 @@ mod tests {
             accounts
                 .iter()
                 .any(|account| account.archived && account.name == "Main")
+        );
+    }
+
+    #[test]
+    fn a_new_paper_account_never_reuses_a_time_the_journal_already_knows() {
+        // Finding 9: delete the newest account, keep its history, roll the clock back (here: an
+        // archived journal account from "the future"), create another: it must get a fresh time.
+        use degenview_journal::model::{CostBasis, JournalAccount, SourceId, TradingSourceKind};
+        let store = store();
+        let mut host = PaperHost::load(store.clone());
+        let future = now_ms() + 1_000_000_000;
+        let old = JournalAccount {
+            uid: format!("paper:{future}"),
+            source: SourceId("paper".into()),
+            kind: TradingSourceKind::Paper,
+            external_id: "1".into(),
+            name: "Old".into(),
+            currency: "USD".into(),
+            initial_balance: None,
+            cost_basis: CostBasis::AverageCost,
+            archived: true,
+            created_at_ms: future,
+        };
+        store
+            .lock()
+            .unwrap()
+            .raw_connection()
+            .execute(
+                "INSERT INTO journal_account (uid, source, archived, payload) VALUES (?1, 'paper', 1, ?2)",
+                rusqlite::params![old.uid, serde_json::to_string(&old).unwrap()],
+            )
+            .unwrap();
+        let id = host
+            .create_account(
+                "New",
+                PaperCurrency::Usd,
+                1_000.0,
+                PaperAccountSettings::default(),
+            )
+            .unwrap();
+        let created = host
+            .snapshot()
+            .accounts
+            .iter()
+            .find(|account| account.id == id)
+            .unwrap()
+            .created_at;
+        assert!(created > future, "{created} vs {future}");
+    }
+
+    #[test]
+    fn a_failed_purge_is_reported_not_swallowed() {
+        // Finding 8: the account was deleted, the purge failed, and the caller was told Ok.
+        let store = store();
+        let (mut host, id) = host_with_a_fill(&store);
+        store
+            .lock()
+            .unwrap()
+            .raw_connection()
+            .execute(
+                "ALTER TABLE journal_execution RENAME TO journal_execution_gone",
+                [],
+            )
+            .unwrap();
+        let error = host.delete_account_keeping(id, false).unwrap_err();
+        assert!(
+            error.message().contains("history could not be removed"),
+            "{}",
+            error.message()
         );
     }
 
