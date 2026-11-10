@@ -71,30 +71,111 @@ impl ChartWorkspace {
             replay: self.replay_blocks_trading(),
         };
         for action in order_sheet::show(ui, &mut self.trade_sheet, &input) {
-            match action {
-                SheetAction::PickVenue(venue) => {
-                    self.trading_venue = venue;
-                    hub.set_last_used(venue);
-                }
-                SheetAction::AddBroker | SheetAction::OpenSettings => {
-                    actions.push(WorkspaceAction::OpenBrokerSettings);
-                }
-                SheetAction::Connect(venue) => {
-                    let needs_no_key = all
-                        .iter()
-                        .find(|info| info.venue == venue)
-                        .is_some_and(|info| info.needs_no_credentials);
-                    if needs_no_key {
-                        hub.enable(venue);
-                        self.trading_venue = venue;
-                        hub.set_last_used(venue);
-                    } else {
-                        actions.push(WorkspaceAction::OpenBrokerSettings);
-                    }
-                }
-                SheetAction::Close => self.trade_sheet_visible = false,
-            }
+            self.apply_sheet_action(&hub, &all, action, &mut actions);
         }
         actions
+    }
+
+    /// What the sheet's and the panel's venue controls ask for.
+    fn apply_sheet_action(
+        &mut self,
+        hub: &std::sync::Arc<TradingHub>,
+        all: &[VenueInfo],
+        action: SheetAction,
+        actions: &mut Vec<WorkspaceAction>,
+    ) {
+        match action {
+            SheetAction::PickVenue(venue) => {
+                self.trading_venue = venue;
+                hub.set_last_used(venue);
+            }
+            SheetAction::AddBroker | SheetAction::OpenSettings => {
+                actions.push(WorkspaceAction::OpenBrokerSettings);
+            }
+            SheetAction::Connect(venue) => {
+                let needs_no_key = all
+                    .iter()
+                    .find(|info| info.venue == venue)
+                    .is_some_and(|info| info.needs_no_credentials);
+                if needs_no_key {
+                    hub.enable(venue);
+                    self.trading_venue = venue;
+                    hub.set_last_used(venue);
+                } else {
+                    actions.push(WorkspaceAction::OpenBrokerSettings);
+                }
+            }
+            SheetAction::Close => self.trade_sheet_visible = false,
+        }
+    }
+
+    /// The top of the trading panel: the venue pill, shared with the sheet. Returns the venue this
+    /// tab trades on, or none when nothing is enabled (the list to choose from is drawn instead,
+    /// and the panel has nothing else to show).
+    pub(super) fn show_panel_venue(
+        &mut self,
+        ui: &mut egui::Ui,
+        actions: &mut Vec<WorkspaceAction>,
+    ) -> Option<TradingVenue> {
+        let Some(hub) = TradingHub::global() else {
+            return Some(TradingVenue::Paper);
+        };
+        let all: Vec<VenueInfo> = hub.infos();
+        let enabled: Vec<VenueInfo> = all
+            .iter()
+            .filter(|info| hub.is_enabled(info.venue))
+            .cloned()
+            .collect();
+        let venue = self.resolved_venue(&hub);
+        let Some(venue) = venue else {
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    let width = ui.available_width();
+                    egui::Frame::new()
+                        .inner_margin(egui::Margin::symmetric(24, 0))
+                        .show(ui, |ui| {
+                            ui.set_width(width - 48.0);
+                            if let Some(venue) = crate::ui::trade::connect_list::show(ui, &all) {
+                                self.apply_sheet_action(
+                                    &hub,
+                                    &all,
+                                    SheetAction::Connect(venue),
+                                    actions,
+                                );
+                            }
+                        });
+                });
+            return None;
+        };
+        if let Some((info, backend)) = all
+            .iter()
+            .find(|info| info.venue == venue)
+            .zip(hub.backend(venue))
+        {
+            let mut picked = None;
+            egui::Frame::new()
+                .inner_margin(egui::Margin::symmetric(12, 8))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        picked = crate::ui::trade::venue_pill::show(
+                            ui,
+                            info,
+                            &backend.state(),
+                            &enabled,
+                        );
+                    });
+                });
+            match picked {
+                Some(crate::ui::trade::venue_pill::PillAction::Pick(venue)) => {
+                    self.apply_sheet_action(&hub, &all, SheetAction::PickVenue(venue), actions);
+                }
+                Some(crate::ui::trade::venue_pill::PillAction::AddBroker) => {
+                    self.apply_sheet_action(&hub, &all, SheetAction::AddBroker, actions);
+                }
+                None => {}
+            }
+        }
+        Some(venue)
     }
 }

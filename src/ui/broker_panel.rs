@@ -18,18 +18,15 @@ use degenview_brokers::model::orders::{
     Page, PlacedOrder,
 };
 use degenview_brokers::{
-    Broker, BrokerId, BrokerSnapshot, ClientOrderId, Decimal, LiveFill, LiveOrder, MarketRef,
-    OrderId, OrderKind, OrderSize, OrderStatus, OrderType, Pending, PendingState,
-    ProductResolution, Side, Status,
+    BrokerId, BrokerSnapshot, ClientOrderId, Decimal, LiveFill, LiveOrder, OrderId, OrderKind,
+    OrderSize, OrderStatus, OrderType, Pending, PendingState, Side, Status,
 };
 use eframe::egui::{self, Color32, Id};
 
 use crate::host::broker_host::BrokerHost;
 use crate::model::broker_prefs::BrokerPrefs;
-use crate::model::broker_ticket::{self as rules, StatusTone, TicketDraft};
-use crate::model::trading_venue::TradingVenue;
+use crate::model::broker_ticket::{self as rules, StatusTone};
 use crate::ui::alert_center::Tone;
-use crate::ui::broker_ticket::{self, TicketEvent, TicketState};
 use crate::ui::icons::{self, Icon};
 use crate::ui::paper_grid::{self as grid, Col, col};
 use crate::ui::paper_tables::empty;
@@ -169,7 +166,6 @@ pub struct BrokerPanelState {
     history: Paged<LiveOrder>,
     history_choice: HistoryChoice,
     fills_more: Paged<LiveFill>,
-    ticket: Option<TicketState>,
     edit: Option<EditState>,
     cancel_ask: Option<CancelAsk>,
     flights: Vec<Flight>,
@@ -186,7 +182,6 @@ impl Default for BrokerPanelState {
             history: Paged::default(),
             history_choice: HistoryChoice::All,
             fills_more: Paged::default(),
-            ticket: None,
             edit: None,
             cancel_ask: None,
             flights: Vec::new(),
@@ -300,55 +295,8 @@ fn size_text(order: &LiveOrder) -> String {
 
 // ---- The panel -----------------------------------------------------------------------------------
 
-/// Chooses the venue of a tab. Shown only when a broker is saved or connected, so a user with
-/// paper trading alone sees no change. Returns true when the venue changed.
-pub fn venue_switch(ui: &mut egui::Ui, venue: &mut TradingVenue, host: &BrokerHost) -> bool {
-    let mut options: Vec<(TradingVenue, String)> = vec![(TradingVenue::Paper, "Paper".to_owned())];
-    for broker in host.brokers() {
-        let id = broker.descriptor().id;
-        let present = !matches!(
-            host.connection(id),
-            crate::host::broker_host::Connection::NotConfigured
-        );
-        if present || *venue == TradingVenue::Broker(id) {
-            options.push((
-                TradingVenue::Broker(id),
-                broker.descriptor().display_name.to_owned(),
-            ));
-        }
-    }
-    if options.len() == 1 {
-        return false;
-    }
-    let before = *venue;
-    ui.horizontal(|ui| {
-        ui.add_space(12.0);
-        ui.spacing_mut().item_spacing.x = 10.0;
-        ui.label(kit::text(
-            "Trade on",
-            kit::size::CAPTION + 0.5,
-            kit::MEDIUM,
-            theme::text_secondary(),
-        ));
-        let labelled: Vec<(TradingVenue, &str)> = options
-            .iter()
-            .map(|(v, name)| (*v, name.as_str()))
-            .collect();
-        kit::segmented(ui, Id::new("broker-venue"), &labelled, venue);
-    });
-    ui.add_space(6.0);
-    *venue != before
-}
-
-pub struct PanelInput {
-    /// The focused chart's market, if it is a market chart.
-    pub market: Option<MarketRef>,
-    /// A replay is running: no live order may be started.
-    pub replay: bool,
-}
-
-/// The ticket, the edit sheet and the cancel question, drawn when the panel itself is not (an order
-/// started from a chart, with the panel closed).
+/// The edit sheet and the cancel question, drawn when the panel itself is not (an edit started from
+/// a chart's line, with the panel closed).
 pub fn dialogs_only(
     ctx: &egui::Context,
     state: &mut BrokerPanelState,
@@ -357,7 +305,6 @@ pub fn dialogs_only(
 ) {
     let Some(snapshot) = host.snapshot(broker_id) else {
         // The connection is gone: so are the questions about it.
-        state.ticket = None;
         state.edit = None;
         state.cancel_ask = None;
         return;
@@ -369,7 +316,7 @@ pub fn dialogs_only(
 impl BrokerPanelState {
     /// Whether any question is open (the workspace keeps drawing them while the panel is closed).
     pub fn has_dialog(&self) -> bool {
-        self.ticket.is_some() || self.edit.is_some() || self.cancel_ask.is_some()
+        self.edit.is_some() || self.cancel_ask.is_some()
     }
 
     /// The message the panel last showed, if it is still fresh: what a closed panel cannot show.
@@ -377,10 +324,9 @@ impl BrokerPanelState {
         self.notice.take().map(|(text, error, _)| (text, error))
     }
 
-    /// Closes the ticket and the edit sheet: a replay started, and no order may be made from one.
+    /// Closes the edit sheet: a replay started, and no order may be changed from one.
     pub fn close_order_entry(&mut self) -> bool {
-        let open = self.ticket.is_some() || self.edit.is_some();
-        self.ticket = None;
+        let open = self.edit.is_some();
         self.edit = None;
         open
     }
@@ -458,17 +404,6 @@ impl BrokerPanelState {
         self.force_edit_review = true;
     }
 
-    /// Opens the ticket for `product` with `draft` already filled (a click on the chart, say).
-    #[allow(dead_code)] // The chart's menu and order buttons open it next.
-    pub fn open_ticket(
-        &mut self,
-        broker: BrokerId,
-        product: degenview_brokers::ProductId,
-        draft: TicketDraft,
-    ) {
-        self.ticket = Some(TicketState::new(broker, product, draft));
-    }
-
     fn say(&mut self, text: impl Into<String>, error: bool) {
         self.notice = Some((text.into(), error, Instant::now()));
     }
@@ -508,26 +443,17 @@ pub fn ui(
     state: &mut BrokerPanelState,
     host: &BrokerHost,
     broker_id: BrokerId,
-    input: &PanelInput,
 ) -> Vec<PanelAction> {
     let mut actions = Vec::new();
-    let Some(broker) = degenview_brokers::registry::by_id(broker_id) else {
+    if degenview_brokers::registry::by_id(broker_id).is_none() {
         return actions;
-    };
+    }
     ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
     broker_badge::rule(ui);
     let snapshot = host.snapshot(broker_id);
     let prefs = host.prefs(broker_id);
 
-    header(
-        ui,
-        state,
-        host,
-        broker,
-        snapshot.as_deref(),
-        input,
-        &mut actions,
-    );
+    header(ui, snapshot.as_deref(), &mut actions);
     divider(ui);
 
     let Some(snapshot) = snapshot else {
@@ -612,23 +538,13 @@ fn note(ui: &mut egui::Ui, text: &str, error: bool) {
         });
 }
 
-fn header(
-    ui: &mut egui::Ui,
-    state: &mut BrokerPanelState,
-    host: &BrokerHost,
-    broker: &'static dyn Broker,
-    snapshot: Option<&BrokerSnapshot>,
-    input: &PanelInput,
-    actions: &mut Vec<PanelAction>,
-) {
-    let descriptor = broker.descriptor();
+fn header(ui: &mut egui::Ui, snapshot: Option<&BrokerSnapshot>, actions: &mut Vec<PanelAction>) {
     egui::Frame::new()
         .inner_margin(egui::Margin::symmetric(12, 9))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 10.0;
-                broker_badge::badge(ui, descriptor.display_name);
                 if let Some(snapshot) = snapshot {
                     let (text, tone) =
                         crate::ui::settings_brokers::status_badge_for(&snapshot.status);
@@ -1383,7 +1299,7 @@ fn balances_tab(ui: &mut egui::Ui, snapshot: &BrokerSnapshot) {
     );
 }
 
-// ---- Dialogs: the ticket, the edit, the cancel question -----------------------------------------------
+// ---- Dialogs: the edit, the cancel question -----------------------------------------------
 
 fn dialogs(
     ctx: &egui::Context,
@@ -1392,27 +1308,6 @@ fn dialogs(
     broker_id: BrokerId,
     snapshot: &BrokerSnapshot,
 ) {
-    if let Some(ticket) = &mut state.ticket {
-        match broker_ticket::show(ctx, ticket, host) {
-            TicketEvent::Open => {}
-            TicketEvent::Closed => state.ticket = None,
-            TicketEvent::Placed => {
-                state.ticket = None;
-                state.say(
-                    "Order sent. It appears under Orders as the broker confirms it.",
-                    false,
-                );
-            }
-            TicketEvent::Unconfirmed(text) => {
-                state.ticket = None;
-                state.tab = BrokerTab::Orders;
-                state.say(
-                    format!("{text} It is listed as Unconfirmed until the broker is asked."),
-                    true,
-                );
-            }
-        }
-    }
     if let Some(ask) = &state.cancel_ask {
         let count = ask.ids.len();
         let mut spec = dialog::Dialog::new(
@@ -1907,7 +1802,6 @@ fn edit_sheet(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::broker_ticket::TicketKind;
     use degenview_brokers::{Capabilities, OrderStatus, ProductId, TifKind, Tradability};
     use std::str::FromStr;
 
@@ -2100,7 +1994,6 @@ mod tests {
             }),
             "Market"
         );
-        assert_eq!(TicketKind::Market.label(), "Market");
         assert_eq!(short_id("abcdefghijkl"), "abcdefgh");
     }
 }

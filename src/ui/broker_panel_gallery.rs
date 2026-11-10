@@ -9,16 +9,13 @@ use std::time::{Duration, Instant};
 use degenview_brokers::coinbase::fake::{CoinbaseExchange, credentials, generate_key_pem};
 use degenview_brokers::testing::conformance::Exchange as _;
 use degenview_brokers::{
-    BrokerId, ClientOrderId, Env, MemorySecretStore, OrderDraft, OrderKind, ProductId, Side,
-    Status, TimeInForce,
+    BrokerId, Env, MemorySecretStore, OrderDraft, OrderKind, ProductId, Side, Status, TimeInForce,
 };
 use eframe::egui::{self, Vec2};
 
 use crate::host::broker_host::{BrokerHost, StoreJournal};
-use crate::model::broker_ticket::{TicketDraft, TicketKind};
 use crate::store::Store;
-use crate::ui::broker_panel::{self, BrokerPanelState, BrokerTab, PanelInput};
-use crate::ui::broker_ticket::{self, TicketState};
+use crate::ui::broker_panel::{self, BrokerPanelState, BrokerTab};
 use crate::ui::render_tests::Screen;
 use crate::ui::{settings_brokers, theme};
 
@@ -138,19 +135,7 @@ fn show_panel(
             .exact_size(height)
             .frame(egui::Frame::new().fill(crate::ui::kit::window()))
             .show(ui, |ui| {
-                broker_panel::ui(
-                    ui,
-                    state,
-                    host,
-                    ID,
-                    &PanelInput {
-                        market: Some(degenview_brokers::MarketRef {
-                            source: "coinbase".to_owned(),
-                            symbol: "BTC-USD".to_owned(),
-                        }),
-                        replay: false,
-                    },
-                );
+                broker_panel::ui(ui, state, host, ID);
             });
     })
 }
@@ -171,19 +156,6 @@ fn every_live_trading_surface_draws() {
         let output = show_panel(&mut screen, &mut state, &rig.host, 380.0);
         assert!(shapes(&output) > 20, "{tab:?}");
     }
-
-    // The ticket.
-    let mut ticket = TicketState::new(ID, ProductId::new("BTC-USD"), {
-        let mut draft = TicketDraft::new(Side::Buy);
-        draft.size_text = "0.001".to_owned();
-        draft.price_text = "90000.00".to_owned();
-        draft
-    });
-    let mut tall = Screen::new(Vec2::new(900.0, 900.0));
-    let output = frames(&mut tall, 40, |ui| {
-        let _ = broker_ticket::show(ui.ctx(), &mut ticket, &rig.host);
-    });
-    assert!(shapes(&output) > 40, "the ticket");
 
     // The Brokers settings page, with a connected card.
     let mut page_state = settings_brokers::BrokersState::default();
@@ -212,8 +184,6 @@ fn every_live_trading_surface_draws() {
     let mut state = BrokerPanelState::default();
     let output = show_panel(&mut screen, &mut state, &idle.host, 380.0);
     assert!(shapes(&output) > 5);
-    let _ = ClientOrderId::new("x");
-    let _ = TicketKind::Limit;
 }
 
 fn key(key: egui::Key) -> Vec<egui::Event> {
@@ -227,83 +197,6 @@ fn key(key: egui::Key) -> Vec<egui::Event> {
             modifiers: egui::Modifiers::NONE,
         })
         .collect()
-}
-
-/// The whole path through the screen: fill in an order, review it, see that nothing has been sent,
-/// approve it with the keyboard, and find the order at the exchange and in the panel.
-#[test]
-fn an_order_is_confirmed_before_it_is_sent_and_then_appears_everywhere() {
-    let _restore = theme::RestoreDefaultTheme;
-    let rig = rig();
-    rig.host
-        .adopt(ID, credentials(&generate_key_pem()))
-        .unwrap();
-    wait("live", || {
-        rig.host
-            .snapshot(ID)
-            .is_some_and(|s| s.status == Status::Live)
-    });
-    let mut ticket = TicketState::new(ID, ProductId::new("BTC-USD"), {
-        let mut draft = TicketDraft::new(Side::Buy);
-        draft.size_text = "0.001".to_owned();
-        draft.price_text = "90000.00".to_owned();
-        draft
-    });
-    let mut screen = Screen::new(Vec2::new(900.0, 900.0));
-    let mut run = |events: Vec<egui::Event>, ticket: &mut TicketState| {
-        screen.run(events, |ui| {
-            theme::sync(ui.ctx());
-            let _ = broker_ticket::show(ui.ctx(), ticket, &rig.host);
-        })
-    };
-    let deadline = Instant::now() + Duration::from_secs(8);
-    while !ticket.ready_to_review() {
-        assert!(
-            Instant::now() < deadline,
-            "the broker's preview should arrive"
-        );
-        run(vec![], &mut ticket);
-        std::thread::sleep(Duration::from_millis(20));
-    }
-
-    // Review: the order is shown for approval and nothing has been sent.
-    ticket.press_review();
-    run(vec![], &mut ticket);
-    run(vec![], &mut ticket);
-    assert!(
-        ticket.confirming(),
-        "pressing Review opens the confirmation"
-    );
-    assert_eq!(
-        rig.exchange.order_posts(),
-        0,
-        "nothing is sent before approval"
-    );
-    assert_eq!(rig.host.snapshot(ID).unwrap().working_orders().count(), 0);
-
-    // A stray Enter approves nothing: the dialog starts with no button focused.
-    run(key(egui::Key::Enter), &mut ticket);
-    assert!(ticket.confirming());
-    assert_eq!(rig.exchange.order_posts(), 0);
-
-    // Tab to "Back", Tab to "Place order", Enter.
-    for events in [key(egui::Key::Tab), key(egui::Key::Tab)] {
-        run(events, &mut ticket);
-    }
-    run(key(egui::Key::Enter), &mut ticket);
-    let deadline = Instant::now() + Duration::from_secs(8);
-    while rig.exchange.order_posts() == 0 {
-        assert!(Instant::now() < deadline, "approving should send the order");
-        run(vec![], &mut ticket);
-        std::thread::sleep(Duration::from_millis(20));
-    }
-    assert_eq!(rig.exchange.order_posts(), 1, "sent exactly once");
-    wait("the order in the panel's snapshot", || {
-        rig.host
-            .snapshot(ID)
-            .is_some_and(|s| s.working_orders().count() == 1)
-    });
-    assert_eq!(rig.exchange.orders_created(), 1);
 }
 
 #[test]
@@ -371,16 +264,7 @@ fn an_edit_is_previewed_confirmed_and_sent_as_an_edit_never_a_cancel_and_replace
             egui::Panel::bottom(egui::Id::new("edit-gallery"))
                 .exact_size(300.0)
                 .show(ui, |ui| {
-                    broker_panel::ui(
-                        ui,
-                        state,
-                        &rig.host,
-                        ID,
-                        &PanelInput {
-                            market: None,
-                            replay: false,
-                        },
-                    );
+                    broker_panel::ui(ui, state, &rig.host, ID);
                 });
         })
     };
@@ -474,51 +358,6 @@ fn gallery_of_live_trading() {
             screen.save(&format!("live-panel-{name}-{suffix}"), output);
         }
 
-        let mut tall = Screen::new(Vec2::new(720.0, 880.0));
-        tall.ctx.set_theme(theme_pref);
-        let mut ticket = TicketState::new(ID, ProductId::new("BTC-USD"), {
-            let mut draft = TicketDraft::new(Side::Buy);
-            draft.size_text = "0.001".to_owned();
-            draft.price_text = "90000.00".to_owned();
-            draft
-        });
-        let output = frames(&mut tall, 40, |ui| {
-            let _ = broker_ticket::show(ui.ctx(), &mut ticket, &rig.host);
-        });
-        tall.save(&format!("live-ticket-{suffix}"), output);
-
-        // The approval, with the broker's own figures.
-        ticket.press_review();
-        let output = frames(&mut tall, 4, |ui| {
-            let _ = broker_ticket::show(ui.ctx(), &mut ticket, &rig.host);
-        });
-        tall.save(&format!("live-confirm-{suffix}"), output);
-
-        // A broker that cannot preview: Review is off, and the ticket says why.
-        rig.exchange.rest.with_state(|s| s.fail_preview = true);
-        let mut unpreviewed = TicketState::new(ID, ProductId::new("BTC-USD"), {
-            let mut draft = TicketDraft::new(Side::Buy);
-            draft.size_text = "0.001".to_owned();
-            draft.price_text = "90000.00".to_owned();
-            draft
-        });
-        let output = frames(&mut tall, 40, |ui| {
-            let _ = broker_ticket::show(ui.ctx(), &mut unpreviewed, &rig.host);
-        });
-        tall.save(&format!("live-ticket-no-preview-{suffix}"), output);
-        rig.exchange.rest.with_state(|s| s.fail_preview = false);
-
-        let mut problem = TicketState::new(ID, ProductId::new("BTC-USD"), {
-            let mut draft = TicketDraft::new(Side::Buy);
-            draft.size_text = "50".to_owned();
-            draft.price_text = "90000.005".to_owned();
-            draft
-        });
-        let output = frames(&mut tall, 40, |ui| {
-            let _ = broker_ticket::show(ui.ctx(), &mut problem, &rig.host);
-        });
-        tall.save(&format!("live-ticket-problems-{suffix}"), output);
-
         let mut page_state = settings_brokers::BrokersState::default();
         let mut page = Screen::new(Vec2::new(620.0, 980.0));
         page.ctx.set_theme(theme_pref);
@@ -562,78 +401,6 @@ fn posts(rig: &Rig, suffix: &str) -> usize {
     })
 }
 
-/// The broker's preview is part of the rule, not a courtesy: when it cannot be had, Review does
-/// nothing, and sending is possible again only after a preview that came back.
-#[test]
-fn an_order_cannot_be_reviewed_or_sent_without_the_brokers_preview() {
-    let _restore = theme::RestoreDefaultTheme;
-    let rig = rig();
-    rig.host
-        .adopt(ID, credentials(&generate_key_pem()))
-        .unwrap();
-    wait("live", || {
-        rig.host
-            .snapshot(ID)
-            .is_some_and(|s| s.status == Status::Live)
-    });
-    rig.exchange.rest.with_state(|s| s.fail_preview = true);
-    let mut ticket = TicketState::new(ID, ProductId::new("BTC-USD"), {
-        let mut draft = TicketDraft::new(Side::Buy);
-        draft.size_text = "0.001".to_owned();
-        draft.price_text = "90000.00".to_owned();
-        draft
-    });
-    let mut screen = Screen::new(Vec2::new(900.0, 900.0));
-    let mut run = |events: Vec<egui::Event>, ticket: &mut TicketState| {
-        screen.run(events, |ui| {
-            theme::sync(ui.ctx());
-            let _ = broker_ticket::show(ui.ctx(), ticket, &rig.host);
-        })
-    };
-    let deadline = Instant::now() + Duration::from_secs(8);
-    while !ticket.preview_failed() {
-        assert!(Instant::now() < deadline, "the preview should fail");
-        run(vec![], &mut ticket);
-        std::thread::sleep(Duration::from_millis(20));
-    }
-    assert!(!ticket.ready_to_review());
-    assert!(
-        !ticket.review_enabled(),
-        "the Review button is off when the broker could not preview"
-    );
-
-    // Review, and Enter, and the keyboard path through the ticket: nothing opens, nothing is sent.
-    ticket.press_review();
-    run(vec![], &mut ticket);
-    run(key(egui::Key::Enter), &mut ticket);
-    run(vec![], &mut ticket);
-    assert!(
-        !ticket.confirming(),
-        "no review without the broker's answer"
-    );
-    assert_eq!(rig.exchange.order_posts(), 0);
-
-    // The broker can preview again, and the user asks again.
-    rig.exchange.rest.with_state(|s| s.fail_preview = false);
-    ticket.retry_preview();
-    let deadline = Instant::now() + Duration::from_secs(8);
-    while !ticket.ready_to_review() {
-        assert!(
-            Instant::now() < deadline,
-            "the second preview should arrive"
-        );
-        run(vec![], &mut ticket);
-        std::thread::sleep(Duration::from_millis(20));
-    }
-    run(vec![], &mut ticket);
-    assert!(ticket.review_enabled(), "and on again once it did");
-    ticket.press_review();
-    run(vec![], &mut ticket);
-    run(vec![], &mut ticket);
-    assert!(ticket.confirming());
-    assert_eq!(rig.exchange.order_posts(), 0, "and still nothing is sent");
-}
-
 #[test]
 fn an_edit_cannot_be_reviewed_before_or_without_the_brokers_preview() {
     let _restore = theme::RestoreDefaultTheme;
@@ -654,16 +421,7 @@ fn an_edit_cannot_be_reviewed_before_or_without_the_brokers_preview() {
             egui::Panel::bottom(egui::Id::new("edit-gate"))
                 .exact_size(300.0)
                 .show(ui, |ui| {
-                    broker_panel::ui(
-                        ui,
-                        state,
-                        &rig.host,
-                        ID,
-                        &PanelInput {
-                            market: None,
-                            replay: false,
-                        },
-                    );
+                    broker_panel::ui(ui, state, &rig.host, ID);
                 });
         })
     };
@@ -716,70 +474,6 @@ fn an_edit_cannot_be_reviewed_before_or_without_the_brokers_preview() {
     run(vec![], &mut state);
     assert!(state.edit_confirming());
     assert_eq!(posts(&rig, "/orders/edit"), 0, "approval is still to come");
-}
-
-/// An unreadable record of orders waiting for confirmation: no new order, from the ticket or
-/// anywhere, and the reason is on the snapshot. (The store here holds something that is not a list.)
-#[test]
-fn an_unreadable_record_of_unconfirmed_orders_stops_new_orders_at_the_ticket() {
-    let _restore = theme::RestoreDefaultTheme;
-    let rig = rig();
-    rig.host
-        .adopt(ID, credentials(&generate_key_pem()))
-        .unwrap();
-    wait("live", || {
-        rig.host
-            .snapshot(ID)
-            .is_some_and(|s| s.status == Status::Live)
-    });
-    let mut ticket = TicketState::new(ID, ProductId::new("BTC-USD"), {
-        let mut draft = TicketDraft::new(Side::Buy);
-        draft.size_text = "0.001".to_owned();
-        draft.price_text = "90000.00".to_owned();
-        draft
-    });
-    let mut screen = Screen::new(Vec2::new(900.0, 900.0));
-    let mut run = |events: Vec<egui::Event>, ticket: &mut TicketState| {
-        screen.run(events, |ui| {
-            theme::sync(ui.ctx());
-            let _ = broker_ticket::show(ui.ctx(), ticket, &rig.host);
-        })
-    };
-    let deadline = Instant::now() + Duration::from_secs(8);
-    while !ticket.ready_to_review() {
-        assert!(Instant::now() < deadline, "the preview should arrive");
-        run(vec![], &mut ticket);
-        std::thread::sleep(Duration::from_millis(20));
-    }
-
-    rig.host.corrupt_pending_record_for_test();
-    wait("the unreadable record to be noticed", || {
-        rig.host
-            .snapshot(ID)
-            .is_some_and(|s| s.journal_error.is_some())
-    });
-    assert!(!rig.host.snapshot(ID).unwrap().can_send_orders());
-    run(vec![], &mut ticket);
-    assert!(
-        !ticket.review_enabled(),
-        "the Review button is off while the record is unreadable"
-    );
-    ticket.press_review();
-    run(vec![], &mut ticket);
-    run(vec![], &mut ticket);
-    assert!(
-        !ticket.confirming(),
-        "no review while the record is unreadable"
-    );
-    assert_eq!(rig.exchange.order_posts(), 0);
-    // And the runtime itself refuses, should anything get past the screen.
-    let runtime = rig.host.runtime(ID).unwrap();
-    let error = runtime
-        .submit(limit(Side::Buy, "0.001", "90000.00"))
-        .wait()
-        .unwrap_err();
-    assert!(error.to_string().contains("No order was sent"), "{error}");
-    assert_eq!(rig.exchange.order_posts(), 0);
 }
 
 /// Typing a key and pressing Connect must never stall a frame: the check and the save happen off
@@ -1034,62 +728,6 @@ fn the_sandbox_connects_without_a_key_and_is_listed_beside_coinbase() {
     );
 }
 
-/// An order can be previewed, reviewed and placed on the sandbox, which has no prices: nothing in
-/// the ticket waits for a quote that never comes.
-#[test]
-fn an_order_can_be_reviewed_and_placed_on_the_sandbox_without_prices() {
-    use degenview_brokers::coinbase::SANDBOX_ID;
-
-    let _restore = theme::RestoreDefaultTheme;
-    let rig = rig();
-    let sandbox = degenview_brokers::registry::by_id(SANDBOX_ID).expect("the sandbox");
-    rig.host
-        .adopt(SANDBOX_ID, degenview_brokers::Credentials::new())
-        .unwrap();
-    wait("the sandbox to go live", || {
-        rig.host
-            .snapshot(SANDBOX_ID)
-            .is_some_and(|s| s.status == Status::Live)
-    });
-    assert!(sandbox.descriptor().credential_fields.is_empty());
-
-    let mut ticket = TicketState::new(SANDBOX_ID, ProductId::new("BTC-USD"), {
-        let mut draft = TicketDraft::new(Side::Buy);
-        draft.size_text = "0.001".to_owned();
-        draft.price_text = "90000.00".to_owned();
-        draft
-    });
-    let mut screen = Screen::new(Vec2::new(900.0, 900.0));
-    let mut run = |ticket: &mut TicketState| {
-        screen.run(vec![], |ui| {
-            theme::sync(ui.ctx());
-            let _ = broker_ticket::show(ui.ctx(), ticket, &rig.host);
-        })
-    };
-    let deadline = Instant::now() + Duration::from_secs(8);
-    while !ticket.ready_to_review() {
-        assert!(
-            Instant::now() < deadline,
-            "the broker's preview should arrive without any prices"
-        );
-        run(&mut ticket);
-        std::thread::sleep(Duration::from_millis(20));
-    }
-    run(&mut ticket);
-    assert!(ticket.review_enabled(), "Review is on");
-    ticket.press_review();
-    run(&mut ticket);
-    run(&mut ticket);
-    assert!(ticket.confirming(), "the confirmation opens");
-
-    // And the order is accepted by the sandbox adapter.
-    let runtime = rig.host.runtime(SANDBOX_ID).expect("running");
-    runtime
-        .submit(limit(Side::Buy, "0.001", "90000.00"))
-        .wait()
-        .expect("placed");
-}
-
 /// The trading panel's top edge can be dragged to make it taller on every tab, whether the account
 /// holds orders or nothing: a panel whose content is a footer short of the room it was given
 /// shrinks back every frame and cannot be resized.
@@ -1127,19 +765,7 @@ fn the_trading_panel_can_be_resized_on_every_tab_with_and_without_orders() {
                         .min_size(280.0)
                         .frame(egui::Frame::new().fill(crate::ui::kit::window()))
                         .show(ui, |ui| {
-                            broker_panel::ui(
-                                ui,
-                                &mut state,
-                                &rig.host,
-                                ID,
-                                &PanelInput {
-                                    market: Some(degenview_brokers::MarketRef {
-                                        source: "coinbase".to_owned(),
-                                        symbol: "BTC-USD".to_owned(),
-                                    }),
-                                    replay: false,
-                                },
-                            );
+                            broker_panel::ui(ui, &mut state, &rig.host, ID);
                         });
                     height.set(shown.response.rect.height());
                 });

@@ -7,13 +7,12 @@
 
 use crate::model::paper::{
     PaperAccount, PaperAccountMetrics, PaperAccountSettings, PaperClosedTrade, PaperCurrency,
-    PaperInstrument, PaperJournalEntry, PaperOrder, PaperOrderChanges, PaperOrderEvent,
-    PaperOrderRequest, PaperOrderSide, PaperOrderType, PaperPosition, PaperQuote, PaperTimeInForce,
-    PaperTradingError, PaperTradingSnapshot,
+    PaperJournalEntry, PaperOrder, PaperOrderChanges, PaperOrderEvent, PaperOrderRequest,
+    PaperOrderSide, PaperOrderType, PaperPosition, PaperQuote, PaperTimeInForce, PaperTradingError,
+    PaperTradingSnapshot,
 };
 use crate::model::paper_engine::PaperTradingEngine;
 use crate::model::paper_export;
-use crate::model::paper_ticket::TicketDraft;
 use crate::store::SharedStore;
 use crate::store::sync::Elsewhere;
 use crate::ui::icons::{self, Icon};
@@ -23,9 +22,6 @@ use crate::ui::paper_account_sheet::{
 use crate::ui::paper_header::{
     self, AccountChoice, PaperFooterAction, PaperFooterState, PaperHeaderAction, PaperHeaderInput,
     PaperHeaderState,
-};
-use crate::ui::paper_order_ticket::{
-    PaperTicketAction, PaperTicketInput, PaperTicketState, show as show_ticket,
 };
 use crate::ui::paper_tables::{
     self, Context as TableContext, FooterFacts, OrdersInput, PaperTab, PaperTableAction,
@@ -705,7 +701,6 @@ pub struct PaperPanel {
     account_sheet: Option<PaperAccountSheetState>,
     /// The account whose deletion is waiting for confirmation.
     pending_delete: Option<u64>,
-    ticket: Option<PaperTicketState>,
     show_trading_on_charts: bool,
     notice: Option<PanelNotice>,
     /// The lists the panel shows for the selected account, rebuilt only when the host's data
@@ -725,7 +720,6 @@ impl Default for PaperPanel {
             positions: PositionsState::default(),
             account_sheet: None,
             pending_delete: None,
-            ticket: None,
             show_trading_on_charts: true,
             notice: None,
             cached_view: None,
@@ -744,47 +738,9 @@ impl PaperPanel {
         self.show_trading_on_charts
     }
 
-    pub fn open_ticket(
-        &mut self,
-        host: &mut PaperHost,
-        instrument: PaperInstrument,
-        reference_price: Option<f64>,
-        side: PaperOrderSide,
-    ) {
-        host.clear_error();
-        self.ticket = Some(PaperTicketState::new(TicketDraft::opening(
-            instrument,
-            reference_price,
-            side,
-        )));
-    }
-
-    /// The draft the open ticket holds, for tests of what opened it.
-    #[cfg(test)]
-    pub fn ticket_draft(&self) -> Option<&TicketDraft> {
-        self.ticket.as_ref().map(|ticket| &ticket.draft)
-    }
-
-    /// Opens the ticket on a pending order (a limit or stop) at `price`, for the user to review
-    /// and submit. Nothing is placed by opening it.
-    pub fn open_pending_ticket(
-        &mut self,
-        host: &mut PaperHost,
-        instrument: PaperInstrument,
-        side: PaperOrderSide,
-        kind: PaperOrderType,
-        price: f64,
-    ) {
-        host.clear_error();
-        self.ticket = Some(PaperTicketState::new(TicketDraft::pending(
-            instrument, side, kind, price,
-        )));
-    }
-
     pub fn ui(&mut self, ui: &mut egui::Ui, host: &mut PaperHost) -> Vec<PaperPanelAction> {
         let mut panel_actions = Vec::new();
         ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
-        let _ = host.ensure_default_account();
         let view = self.view(host);
         let account_id = view.account_id;
         let account = view.account.as_ref();
@@ -891,7 +847,6 @@ impl PaperPanel {
         }
         self.show_account_sheet(ui.ctx(), host, account_id);
         self.show_delete_confirm(ui.ctx(), host);
-        self.show_ticket(ui.ctx(), host, currency);
         panel_actions
     }
 
@@ -1213,74 +1168,6 @@ impl PaperPanel {
             }
             Some(crate::ui::kit::ConfirmOutcome::Cancelled) => self.pending_delete = None,
             None => {}
-        }
-    }
-
-    fn show_ticket(
-        &mut self,
-        context: &egui::Context,
-        host: &mut PaperHost,
-        currency: PaperCurrency,
-    ) {
-        let Some(ticket) = self.ticket.as_mut() else {
-            return;
-        };
-        let account_id = host.snapshot().selected_account_id;
-        let instrument_key = ticket.draft.instrument.key.clone();
-        let quote = host.snapshot().quotes.get(&instrument_key).cloned();
-        let existing = host
-            .snapshot()
-            .positions
-            .iter()
-            .find(|position| {
-                Some(position.account_id) == account_id && position.instrument.key == instrument_key
-            })
-            .map_or(0.0, |position| position.signed_quantity);
-        let available = account_id.map(|id| host.metrics(id).available_funds);
-        if let Some(account) = account_id.and_then(|id| {
-            host.snapshot()
-                .accounts
-                .iter()
-                .find(|account| account.id == id)
-        }) {
-            ticket.draft.leverage = account
-                .settings
-                .leverage
-                .leverage(ticket.draft.instrument.asset_class);
-            ticket.draft.commission = account.settings.commission;
-        }
-        ticket.refresh_market(
-            quote.as_ref().and_then(|quote| quote.bid),
-            quote.as_ref().and_then(|quote| quote.ask),
-            quote.as_ref().and_then(|quote| quote.last),
-            available,
-            existing,
-        );
-        let error = host.last_error().map(PaperHostError::message);
-        let actions = show_ticket(
-            context,
-            ticket,
-            &PaperTicketInput {
-                account_id,
-                currency,
-                error: error.as_deref(),
-            },
-        );
-        for action in actions {
-            match action {
-                PaperTicketAction::Submit(request) => match host.submit(*request) {
-                    Ok(_) => self.ticket = None,
-                    Err(_) => {
-                        if let Some(ticket) = &mut self.ticket {
-                            ticket.finish();
-                        }
-                    }
-                },
-                PaperTicketAction::Cancel => {
-                    host.clear_error();
-                    self.ticket = None;
-                }
-            }
         }
     }
 }

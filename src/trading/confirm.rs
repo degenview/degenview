@@ -5,7 +5,7 @@
 use degenview_brokers::Decimal;
 
 use super::draft::{Estimate, PreviewResult, TradeDraft};
-use super::model::{MarketRules, OrderClass};
+use super::model::{MarketRules, OrderClass, VenueKind};
 use crate::model::broker_ticket::display;
 
 /// A price with at least the market's precision (`90,000.00`, not `90,000`).
@@ -26,18 +26,30 @@ pub fn price_text(value: Decimal, increment: Decimal) -> String {
     }
 }
 
+/// Whether an order must be reviewed before it is sent. Only an order that costs real money is: a
+/// market order always, whatever the settings say, and a resting one (limit, stop) when the user
+/// asked to confirm those too.
+pub fn needs_review(kind: VenueKind, class: OrderClass, confirm_resting: bool) -> bool {
+    kind.is_real_money() && (class == OrderClass::Market || confirm_resting)
+}
+
 /// `(label, value)` rows, in the order a person checks an order.
 pub fn lines(
     draft: &TradeDraft,
     rules: &MarketRules,
+    account: Option<&str>,
     estimate: &Estimate,
     preview: Option<&PreviewResult>,
 ) -> Vec<(String, String)> {
-    let mut rows = vec![
+    let mut rows = Vec::new();
+    if let Some(account) = account {
+        rows.push(("Account".to_owned(), account.to_owned()));
+    }
+    rows.extend([
         ("Market".to_owned(), rules.name.clone()),
         ("Side".to_owned(), draft.side_label().to_owned()),
         ("Type".to_owned(), draft.class.label().to_owned()),
-    ];
+    ]);
     let size = draft.size_text.trim();
     if draft.spend_in_quote {
         rows.push(("Spend".to_owned(), format!("{size} {}", rules.quote_asset)));
@@ -154,12 +166,23 @@ mod tests {
             warnings: vec!["Large order".to_owned()],
             ..PreviewResult::default()
         };
-        let rows = lines(&draft, &rules(), &estimate, Some(&preview));
+        let rows = lines(
+            &draft,
+            &rules(),
+            Some("Default portfolio"),
+            &estimate,
+            Some(&preview),
+        );
         let get = |label: &str| {
             rows.iter()
                 .find(|(l, _)| l == label)
                 .map(|(_, v)| v.as_str())
         };
+        assert_eq!(get("Account"), Some("Default portfolio"));
+        assert_eq!(
+            rows[0].0, "Account",
+            "the account is the first thing checked"
+        );
         assert_eq!(get("Market"), Some("BTC-USD"));
         assert_eq!(get("Side"), Some("Buy"));
         assert_eq!(get("Type"), Some("Limit"));
@@ -174,11 +197,28 @@ mod tests {
         assert_eq!(get("Fee (estimate)"), Some("≈ 0.54 USD"));
         assert_eq!(get("Note"), Some("Large order"));
         // Without a preview the sheet's own figures are labelled as such.
-        let rows = lines(&draft, &rules(), &estimate, None);
+        let rows = lines(&draft, &rules(), None, &estimate, None);
         assert!(
             rows.iter()
                 .any(|(l, v)| l == "Total (estimate)" && v == "≈ 90 USD")
         );
+    }
+
+    #[test]
+    fn a_market_order_always_asks_and_a_resting_one_asks_when_told_to_and_only_for_real_money() {
+        use VenueKind::{Live, Simulated, Test};
+        assert!(!needs_review(Live, OrderClass::Limit, false));
+        assert!(needs_review(Live, OrderClass::Limit, true));
+        assert!(
+            needs_review(Live, OrderClass::Market, false),
+            "whatever the settings say"
+        );
+        for harmless in [Simulated, Test] {
+            assert!(
+                !needs_review(harmless, OrderClass::Market, true),
+                "{harmless:?} costs nothing"
+            );
+        }
     }
 
     #[test]
@@ -187,7 +227,7 @@ mod tests {
         draft.class = OrderClass::Market;
         draft.spend_in_quote = true;
         draft.size_text = "100".to_owned();
-        let rows = lines(&draft, &rules(), &Estimate::default(), None);
+        let rows = lines(&draft, &rules(), None, &Estimate::default(), None);
         assert!(rows.iter().any(|(l, v)| l == "Spend" && v == "100 USD"));
         assert!(!rows.iter().any(|(l, _)| l == "Size"));
     }

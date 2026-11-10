@@ -105,6 +105,18 @@ impl SheetState {
         self.prefilled = true;
     }
 
+    /// Whether the venue's preview failed (it could not be asked, or it errored).
+    #[cfg(test)]
+    pub(crate) fn preview_failed(&self) -> bool {
+        matches!(self.preview.gate(Instant::now()), PreviewGate::Failed(_))
+    }
+
+    /// Asks the venue again (the "Try again" button).
+    #[cfg(test)]
+    pub(crate) fn retry_preview(&mut self) {
+        self.preview.retry(Instant::now());
+    }
+
     /// Whether the review dialog is open.
     #[cfg(test)]
     pub(crate) fn is_reviewing(&self) -> bool {
@@ -167,6 +179,11 @@ pub enum SheetAction {
 pub fn show(ui: &mut egui::Ui, state: &mut SheetState, input: &SheetInput) -> Vec<SheetAction> {
     let mut actions = Vec::new();
     ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
+    #[cfg(test)]
+    {
+        state.button = None;
+        state.button_enabled = false;
+    }
     let Some((info, backend)) = input.current else {
         egui::ScrollArea::vertical()
             .auto_shrink([false, false])
@@ -362,17 +379,15 @@ fn form(
     let now = Instant::now();
     state.draft.fit_to(&rules.caps);
     let quote = backend.quote(market);
-    if !state.prefilled {
-        if let Some(reference) = quote
+    if !state.prefilled
+        && let Some(reference) = quote
             .as_ref()
             .and_then(|quote| quote.reference(state.draft.side))
-        {
-            if state.draft.price_text.is_empty() {
-                state.draft.price_text =
-                    plain(floor_to_increment(reference, rules.price_increment));
-            }
-            state.prefilled = true;
+    {
+        if state.draft.price_text.is_empty() {
+            state.draft.price_text = plain(floor_to_increment(reference, rules.price_increment));
         }
+        state.prefilled = true;
     }
     let paused = match bstate {
         BackendState::Paused(text) => Some(text.as_str()),
@@ -491,7 +506,7 @@ fn form(
             ui.spacing_mut().item_spacing.x = 8.0;
             kit::switch(ui, &mut state.draft.spend_in_quote, "Spend an amount");
             ui.label(kit::text(
-                &format!("Spend an amount of {quote_unit}"),
+                format!("Spend an amount of {quote_unit}"),
                 kit::size::BODY,
                 kit::REGULAR,
                 theme::text_primary(),
@@ -562,9 +577,7 @@ fn form(
         response.clone().on_hover_text(reason);
     }
     if response.clicked() && can_send {
-        let needs = info.kind.is_real_money()
-            && (state.draft.class == OrderClass::Market || input.confirm_resting);
-        if needs {
+        if confirm::needs_review(info.kind, state.draft.class, input.confirm_resting) {
             state.stage = Stage::Confirming;
         } else {
             state.stage = Stage::Sending(backend.submit(market, &state.draft));
@@ -807,7 +820,7 @@ fn status_line(
     match gate {
         PreviewGate::Waiting | PreviewGate::Stale => {
             ui.label(kit::text(
-                &format!("Checking with {}…", info.name),
+                format!("Checking with {}…", info.name),
                 kit::size::CAPTION + 1.0,
                 kit::REGULAR,
                 theme::text_tertiary(),
@@ -885,7 +898,7 @@ fn available_line(ui: &mut egui::Ui, backend: &dyn TradingBackend, market: &Mark
     ui.add_space(8.0);
     ui.vertical_centered(|ui| {
         ui.label(kit::text(
-            &format!(
+            format!(
                 "Available {} {}",
                 crate::model::broker_ticket::display(funds.value),
                 funds.asset
@@ -921,7 +934,14 @@ fn review_dialog(
     if !matches!(state.stage, Stage::Confirming) {
         return;
     }
-    let lines = confirm::lines(&state.draft, rules, &check.estimate, state.preview.result());
+    let account = backend.account().map(|account| account.label);
+    let lines = confirm::lines(
+        &state.draft,
+        rules,
+        account.as_deref(),
+        &check.estimate,
+        state.preview.result(),
+    );
     let message = format!(
         "This sends a real order to {}. Check every line.",
         info.name
@@ -1021,7 +1041,7 @@ fn open_orders(ui: &mut egui::Ui, state: &mut SheetState, backend: &dyn TradingB
             theme::text_primary(),
         ));
         ui.label(kit::text(
-            &format!(" {}", rows.len()),
+            format!(" {}", rows.len()),
             kit::size::BODY,
             kit::REGULAR,
             theme::text_secondary(),
@@ -1062,7 +1082,7 @@ fn open_orders(ui: &mut egui::Ui, state: &mut SheetState, backend: &dyn TradingB
                 .map_or_else(|| "—".to_owned(), crate::model::broker_ticket::display);
             ui.add(
                 egui::Label::new(kit::text(
-                    &format!("{size} @ {price}"),
+                    format!("{size} @ {price}"),
                     kit::size::CAPTION + 1.0,
                     kit::REGULAR,
                     theme::text_primary(),
@@ -1090,7 +1110,7 @@ fn open_orders(ui: &mut egui::Ui, state: &mut SheetState, backend: &dyn TradingB
     }
     if rows.len() > SHOWN {
         ui.label(kit::text(
-            &format!("{} more in the orders panel", rows.len() - SHOWN),
+            format!("{} more in the orders panel", rows.len() - SHOWN),
             kit::size::CAPTION + 1.0,
             kit::REGULAR,
             theme::text_tertiary(),

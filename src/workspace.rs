@@ -790,15 +790,8 @@ impl ChartWorkspace {
         }
 
         if self.paper_panel_visible {
-            let market = self
-                .focused_market_chart()
-                .map(|chart| degenview_brokers::MarketRef {
-                    source: chart.source.watchlist_slug().to_lowercase(),
-                    symbol: chart.symbol.clone(),
-                });
-            let replay = self.replay_blocks_trading();
             let broker_host = crate::host::broker_host::BrokerHost::global();
-            let mut venue = self.trading_venue;
+            let mut panel_actions: Vec<WorkspaceAction> = Vec::new();
             let mut broker_actions = Vec::new();
             let paper_actions = egui::Panel::bottom(egui::Id::new(("paper_panel", self.id)))
                 .resizable(true)
@@ -806,25 +799,20 @@ impl ChartWorkspace {
                 .min_size(280.0)
                 .frame(egui::Frame::new().fill(ui::kit::window()))
                 .show(ui, |ui| {
-                    if let Some(host) = &broker_host {
-                        crate::ui::broker_panel::venue_switch(ui, &mut venue, host);
-                    }
+                    let Some(venue) = self.show_panel_venue(ui, &mut panel_actions) else {
+                        return Vec::new();
+                    };
                     match (venue.broker(), &broker_host) {
                         (Some(id), Some(host)) => {
-                            broker_actions = crate::ui::broker_panel::ui(
-                                ui,
-                                &mut self.broker_panel,
-                                host,
-                                id,
-                                &crate::ui::broker_panel::PanelInput { market, replay },
-                            );
+                            broker_actions =
+                                crate::ui::broker_panel::ui(ui, &mut self.broker_panel, host, id);
                             Vec::new()
                         }
                         _ => self.paper_panel.ui(ui, paper_host),
                     }
                 })
                 .inner;
-            self.trading_venue = venue;
+            actions.extend(panel_actions);
             for action in paper_actions {
                 match action {
                     PaperPanelAction::Close => self.paper_panel_visible = false,

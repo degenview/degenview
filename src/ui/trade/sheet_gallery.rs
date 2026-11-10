@@ -311,3 +311,197 @@ fn a_broker_that_is_not_connected_says_so_instead_of_offering_a_form() {
     assert!(state.button.is_none(), "no order can be started");
     screen.save("sheet-not-connected", output);
 }
+
+fn key(key: egui::Key) -> Vec<egui::Event> {
+    [true, false]
+        .into_iter()
+        .map(|pressed| egui::Event::Key {
+            key,
+            physical_key: Some(key),
+            pressed,
+            repeat: false,
+            modifiers: egui::Modifiers::NONE,
+        })
+        .collect()
+}
+
+/// The whole path through the sheet: type an order, review it, see that nothing has been sent,
+/// approve it with the keyboard, and find the order at the exchange and in the list.
+#[test]
+fn a_live_order_is_confirmed_before_it_is_sent_and_then_appears_everywhere() {
+    let _restore = theme::RestoreDefaultTheme;
+    let rig = rig();
+    rig.connect_broker();
+    let venue = Some(TradingVenue::Broker(COINBASE));
+    let mut screen = Screen::new(Vec2::new(900.0, 900.0));
+    let mut state = SheetState::default();
+    limit_order(&mut state, "0.001", "90000.00");
+    rig.until_sendable(&mut screen, &mut state, venue);
+    let button = state.button.expect("the button was drawn");
+    rig.press(&mut screen, &mut state, venue, button.center());
+    rig.frames(&mut screen, &mut state, venue, 2);
+    assert!(state.is_reviewing(), "pressing the button opens the review");
+    assert_eq!(
+        rig.exchange.order_posts(),
+        0,
+        "nothing is sent before approval"
+    );
+    assert_eq!(
+        rig.brokers
+            .snapshot(COINBASE)
+            .unwrap()
+            .working_orders()
+            .count(),
+        0
+    );
+
+    // A stray Enter approves nothing: the dialog starts with no button focused.
+    rig.frame(&mut screen, &mut state, venue, key(egui::Key::Enter));
+    assert!(state.is_reviewing());
+    assert_eq!(rig.exchange.order_posts(), 0);
+
+    // Tab to "Back", Tab to "Place order", Enter.
+    for events in [
+        key(egui::Key::Tab),
+        key(egui::Key::Tab),
+        key(egui::Key::Enter),
+    ] {
+        rig.frame(&mut screen, &mut state, venue, events);
+    }
+    wait("the order to be sent", || {
+        rig.frames(&mut screen, &mut state, venue, 1);
+        rig.exchange.order_posts() > 0
+    });
+    assert_eq!(rig.exchange.order_posts(), 1, "sent exactly once");
+    wait("the order in the snapshot", || {
+        rig.brokers
+            .snapshot(COINBASE)
+            .is_some_and(|s| s.working_orders().count() == 1)
+    });
+    assert_eq!(rig.exchange.orders_created(), 1);
+    rig.frames(&mut screen, &mut state, venue, 3);
+    assert_eq!(state.notice_text(), Some("Order placed."));
+}
+
+#[test]
+fn an_order_cannot_be_reviewed_or_sent_without_the_venues_preview() {
+    let _restore = theme::RestoreDefaultTheme;
+    let rig = rig();
+    rig.connect_broker();
+    let venue = Some(TradingVenue::Broker(COINBASE));
+    rig.exchange.rest.with_state(|s| s.fail_preview = true);
+    let mut screen = Screen::new(Vec2::new(900.0, 900.0));
+    let mut state = SheetState::default();
+    limit_order(&mut state, "0.001", "90000.00");
+    wait("the preview to fail", || {
+        rig.frames(&mut screen, &mut state, venue, 1);
+        state.preview_failed()
+    });
+    assert!(
+        !state.button_enabled_for_test(),
+        "the button is off when the venue could not preview"
+    );
+
+    // The button, and Enter, and the keyboard path: nothing opens, nothing is sent.
+    let button = state.button.expect("the button was drawn");
+    rig.press(&mut screen, &mut state, venue, button.center());
+    rig.frame(&mut screen, &mut state, venue, key(egui::Key::Enter));
+    rig.frames(&mut screen, &mut state, venue, 2);
+    assert!(
+        !state.is_reviewing(),
+        "no review without the venue's answer"
+    );
+    assert_eq!(rig.exchange.order_posts(), 0);
+
+    // The venue can preview again, and the user asks again.
+    rig.exchange.rest.with_state(|s| s.fail_preview = false);
+    state.retry_preview();
+    rig.until_sendable(&mut screen, &mut state, venue);
+    let button = state.button.expect("the button was drawn");
+    rig.press(&mut screen, &mut state, venue, button.center());
+    rig.frames(&mut screen, &mut state, venue, 2);
+    assert!(state.is_reviewing(), "and the review opens once it did");
+    assert_eq!(rig.exchange.order_posts(), 0, "and still nothing is sent");
+}
+
+#[test]
+fn an_unreadable_record_of_unconfirmed_orders_stops_new_orders_at_the_sheet() {
+    let _restore = theme::RestoreDefaultTheme;
+    let rig = rig();
+    rig.connect_broker();
+    let venue = Some(TradingVenue::Broker(COINBASE));
+    let mut screen = Screen::new(Vec2::new(900.0, 900.0));
+    let mut state = SheetState::default();
+    limit_order(&mut state, "0.001", "90000.00");
+    rig.until_sendable(&mut screen, &mut state, venue);
+
+    rig.brokers.corrupt_pending_record_for_test();
+    wait("the unreadable record to be noticed", || {
+        rig.brokers
+            .snapshot(COINBASE)
+            .is_some_and(|s| s.journal_error.is_some())
+    });
+    assert!(!rig.brokers.snapshot(COINBASE).unwrap().can_send_orders());
+    rig.frames(&mut screen, &mut state, venue, 3);
+    assert!(
+        !state.button_enabled_for_test(),
+        "the button is off while the record is unreadable"
+    );
+    // The form is not even offered: the venue is paused, and the sheet says so.
+    assert!(state.button.is_none(), "there is no button to press");
+    let output = rig.frames(&mut screen, &mut state, venue, 2);
+    screen.save("sheet-live-paused", output);
+    assert!(
+        !state.is_reviewing(),
+        "no review while the record is unreadable"
+    );
+    assert_eq!(rig.exchange.order_posts(), 0);
+    // And the runtime itself refuses, should anything get past the screen.
+    let runtime = rig.brokers.runtime(COINBASE).unwrap();
+    let error = runtime
+        .submit(degenview_brokers::OrderDraft {
+            product: degenview_brokers::ProductId::new("BTC-USD"),
+            side: Side::Buy,
+            kind: degenview_brokers::OrderKind::Limit {
+                base_size: "0.001".parse().unwrap(),
+                price: "90000.00".parse().unwrap(),
+                tif: degenview_brokers::TimeInForce::GoodTilCancelled,
+                post_only: false,
+            },
+        })
+        .wait()
+        .unwrap_err();
+    assert!(error.to_string().contains("No order was sent"), "{error}");
+    assert_eq!(rig.exchange.order_posts(), 0);
+}
+
+/// The sandbox has no prices and no money: an order is checked and sent with no review, and the
+/// pill says it is a test.
+#[test]
+fn an_order_can_be_placed_on_the_sandbox_without_prices() {
+    use degenview_brokers::coinbase::SANDBOX_ID;
+    let _restore = theme::RestoreDefaultTheme;
+    let rig = rig();
+    let sandbox = TradingVenue::Broker(SANDBOX_ID);
+    rig.hub.enable(sandbox);
+    wait("the sandbox to go live", || {
+        rig.brokers
+            .snapshot(SANDBOX_ID)
+            .is_some_and(|s| s.status == Status::Live)
+    });
+    let venue = Some(sandbox);
+    let mut screen = Screen::new(Vec2::new(340.0, 900.0));
+    let mut state = SheetState::default();
+    limit_order(&mut state, "0.001", "60000.00");
+    rig.until_sendable(&mut screen, &mut state, venue);
+    let output = rig.frames(&mut screen, &mut state, venue, 2);
+    screen.save("sheet-sandbox-ready", output);
+    let button = state.button.expect("the button was drawn");
+    rig.press(&mut screen, &mut state, venue, button.center());
+    rig.frames(&mut screen, &mut state, venue, 2);
+    assert!(!state.is_reviewing(), "no real money, so no review");
+    wait("the order to reach the exchange", || {
+        rig.frames(&mut screen, &mut state, venue, 1);
+        rig.exchange.order_posts() == 1
+    });
+}

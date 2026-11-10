@@ -260,7 +260,6 @@ fn row(ui: &mut egui::Ui, height: f32, add: impl FnOnce(&mut egui::Ui)) {
 
 fn identity(ui: &mut egui::Ui, input: &PaperHeaderInput, actions: &mut Vec<PaperHeaderAction>) {
     ui.spacing_mut().item_spacing.x = 8.0;
-    badge(ui);
     account_menu(ui, input, actions);
 }
 

@@ -11,7 +11,7 @@ use std::str::FromStr;
 
 use std::time::Duration;
 
-use degenview_brokers::model::orders::{FeeSummary, OrderPreview};
+use degenview_brokers::model::orders::FeeSummary;
 use degenview_brokers::model::reducer::{Notice, NoticeKind};
 use degenview_brokers::validate::{self, Field};
 use degenview_brokers::{
@@ -26,37 +26,10 @@ pub enum TicketKind {
     StopLimit,
 }
 
-impl TicketKind {
-    pub fn order_type(self) -> OrderType {
-        match self {
-            Self::Market => OrderType::Market,
-            Self::Limit => OrderType::Limit,
-            Self::StopLimit => OrderType::StopLimit,
-        }
-    }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Market => "Market",
-            Self::Limit => "Limit",
-            Self::StopLimit => "Stop-limit",
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum TicketTif {
     GoodTilCancelled,
     FillOrKill,
-}
-
-impl TicketTif {
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::GoodTilCancelled => "Good til cancelled",
-            Self::FillOrKill => "Fill or kill",
-        }
-    }
 }
 
 /// Which input a problem belongs to.
@@ -365,12 +338,6 @@ impl TicketDraft {
             fee: notional.zip(rate).map(|(notional, rate)| notional * rate),
         }
     }
-
-    /// Whether this order needs the user to confirm it. A market order always does, whatever the
-    /// settings say.
-    pub fn needs_confirmation(&self, confirm_resting: bool) -> bool {
-        self.kind == TicketKind::Market || confirm_resting
-    }
 }
 
 /// What an order would cost, estimated from the fee schedule.
@@ -485,121 +452,6 @@ pub fn preview_gate(answer: PreviewAnswer, age: Option<Duration>) -> PreviewGate
             Some(age) if age <= PREVIEW_FRESH => PreviewGate::Ready,
             _ => PreviewGate::Stale,
         },
-    }
-}
-
-/// The lines of the confirmation: what is about to be sent, in the words of the ticket.
-pub fn confirmation_lines(
-    draft: &OrderDraft,
-    spec: &ProductSpec,
-    preview: &OrderPreview,
-    account: &str,
-) -> Vec<(&'static str, String)> {
-    let mut lines = vec![
-        ("Account", account.to_owned()),
-        ("Market", spec.display_name.clone()),
-        (
-            "Action",
-            match draft.side {
-                Side::Buy => "Buy".to_owned(),
-                Side::Sell => "Sell".to_owned(),
-            },
-        ),
-    ];
-    match &draft.kind {
-        OrderKind::Market { size } => {
-            lines.push(("Type", "Market".to_owned()));
-            match size {
-                OrderSize::Base(size) => {
-                    lines.push(("Size", format!("{} {}", display(*size), spec.base)))
-                }
-                OrderSize::Quote(amount) => {
-                    lines.push(("Spend", format!("{} {}", display(*amount), spec.quote)));
-                }
-            }
-            lines.push(("Price", "At the best available price".to_owned()));
-        }
-        OrderKind::Limit {
-            base_size,
-            price,
-            tif,
-            post_only,
-        } => {
-            lines.push((
-                "Type",
-                if *post_only {
-                    "Limit, post-only"
-                } else {
-                    "Limit"
-                }
-                .to_owned(),
-            ));
-            lines.push(("Size", format!("{} {}", display(*base_size), spec.base)));
-            lines.push((
-                "Price",
-                format!("{} {}", price_display(*price, spec), spec.quote),
-            ));
-            lines.push(("Time in force", tif_label(*tif).to_owned()));
-        }
-        OrderKind::StopLimit {
-            base_size,
-            stop_price,
-            limit_price,
-            direction,
-            ..
-        } => {
-            lines.push(("Type", "Stop-limit".to_owned()));
-            lines.push(("Size", format!("{} {}", display(*base_size), spec.base)));
-            lines.push((
-                "Stop",
-                format!(
-                    "{} {} (triggers when the price {} it)",
-                    price_display(*stop_price, spec),
-                    spec.quote,
-                    match direction {
-                        StopDirection::Up => "rises to",
-                        StopDirection::Down => "falls to",
-                    }
-                ),
-            ));
-            lines.push((
-                "Limit",
-                format!("{} {}", price_display(*limit_price, spec), spec.quote),
-            ));
-        }
-    }
-    // The figures are the broker's answer to a preview of exactly this order, never this
-    // application's own estimate from the best prices it last saw.
-    if let Some(total) = preview.order_total {
-        lines.push((
-            "Total (broker's estimate)",
-            format!("{} {}", display(total.round_dp(8)), spec.quote),
-        ));
-    }
-    if let Some(fee) = preview.fees {
-        lines.push((
-            "Fee (broker's estimate)",
-            format!("{} {}", display(fee.round_dp(8)), spec.quote),
-        ));
-    }
-    if let Some(price) = preview.estimated_average_price {
-        lines.push((
-            "Estimated price",
-            format!("{} {}", price_display(price, spec), spec.quote),
-        ));
-    }
-    for warning in &preview.warnings {
-        lines.push(("Broker's note", warning.clone()));
-    }
-    lines
-}
-
-fn tif_label(tif: TimeInForce) -> &'static str {
-    match tif {
-        TimeInForce::GoodTilCancelled => "Good til cancelled",
-        TimeInForce::GoodTilDate(_) => "Good til date",
-        TimeInForce::ImmediateOrCancel => "Immediate or cancel",
-        TimeInForce::FillOrKill => "Fill or kill",
     }
 }
 
@@ -966,65 +818,6 @@ mod tests {
             assert_eq!(market.estimate(ctx).notional, Some(d("90.0005")));
             // Nothing is guessed from a ticket that does not parse yet.
             assert_eq!(limit("", "").estimate(ctx), Estimate::default());
-        });
-    }
-
-    #[test]
-    fn a_market_order_always_asks_and_a_resting_one_asks_when_told_to() {
-        let mut ticket = limit("1", "1");
-        assert!(!ticket.needs_confirmation(false));
-        assert!(ticket.needs_confirmation(true));
-        ticket.kind = TicketKind::Market;
-        assert!(
-            ticket.needs_confirmation(false),
-            "whatever the settings say"
-        );
-    }
-
-    fn broker_preview() -> OrderPreview {
-        OrderPreview {
-            order_total: Some(d("90.54")),
-            fees: Some(d("0.54")),
-            estimated_average_price: Some(d("90000")),
-            warnings: vec!["This order is larger than usual.".to_owned()],
-            ..OrderPreview::default()
-        }
-    }
-
-    #[test]
-    fn the_confirmation_says_everything_that_is_about_to_be_sent() {
-        with(|ctx| {
-            let ticket = limit("0.001", "90000.00");
-            let draft = ticket.build(ctx).unwrap();
-            let lines =
-                confirmation_lines(&draft, ctx.spec, &broker_preview(), "Default portfolio");
-            let text: Vec<String> = lines.iter().map(|(k, v)| format!("{k}: {v}")).collect();
-            for expected in [
-                "Account: Default portfolio",
-                "Market: BTC-USD",
-                "Action: Buy",
-                "Type: Limit",
-                "Size: 0.001 BTC",
-                "Price: 90,000.00 USD",
-                "Time in force: Good til cancelled",
-                "Total (broker's estimate): 90.54 USD",
-                "Fee (broker's estimate): 0.54 USD",
-                "Estimated price: 90,000.00 USD",
-                "Broker's note: This order is larger than usual.",
-            ] {
-                assert!(
-                    text.iter().any(|line| line == expected),
-                    "missing {expected} in {text:?}"
-                );
-            }
-            // Not this application's own estimate from the best prices it last saw.
-            assert!(
-                !text
-                    .iter()
-                    .any(|line| line.starts_with("Estimated value")
-                        || line.starts_with("Estimated fee")),
-                "{text:?}"
-            );
         });
     }
 
