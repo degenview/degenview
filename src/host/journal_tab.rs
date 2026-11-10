@@ -2221,11 +2221,12 @@ impl JournalTab {
         if ui.ctx().egui_wants_keyboard_input() {
             return;
         }
-        let (down, up, escape) = ui.input(|input| {
+        let (down, up, escape, enter) = ui.input(|input| {
             (
                 input.key_pressed(Key::ArrowDown) || input.key_pressed(Key::J),
                 input.key_pressed(Key::ArrowUp) || input.key_pressed(Key::K),
                 input.key_pressed(Key::Escape),
+                input.key_pressed(Key::Enter),
             )
         });
         if down {
@@ -2234,6 +2235,9 @@ impl JournalTab {
             self.step(-1, data);
         } else if escape && self.selected.is_some() {
             self.selected = None;
+        } else if enter && self.selected.is_none() {
+            // Enter opens the first trade, so the keyboard alone reaches the panel.
+            self.step(1, data);
         }
     }
 
@@ -2266,6 +2270,29 @@ impl JournalTab {
         let output = journal_table::show(
             ui,
             &TableSpec {
+                row_label: &|row: usize| {
+                    let trade = &data.trades[rows[row]];
+                    let outcome =
+                        degenview_journal::filters::outcome_of(trade, BREAKEVEN_TOLERANCE);
+                    format!(
+                        "{} {}, {}, {}",
+                        trade.instrument.display_name,
+                        match trade.direction {
+                            degenview_journal::model::Direction::Long => "long",
+                            degenview_journal::model::Direction::Short => "short",
+                        },
+                        cells::status_label(outcome),
+                        if trade.is_open() {
+                            "still open".to_owned()
+                        } else {
+                            format!(
+                                "net {} {}",
+                                format::signed_money(trade.net_pnl()),
+                                trade.currency.clone().unwrap_or_default()
+                            )
+                        }
+                    )
+                },
                 salt: "journal-trades",
                 columns: &columns,
                 width_of: &width_of,
@@ -3443,6 +3470,25 @@ mod tests {
         day.mood = vec!["Calm".into()];
         day.lessons = "Waiting for the retest worked.".into();
         host.save_day(&day).unwrap();
+    }
+
+    /// A database for trying the journal in a real window:
+    /// `DEGENVIEW_SEED_DB=<path> cargo test --lib journal_tab::tests::seed_real_window -- --ignored`.
+    #[test]
+    #[ignore = "writes a database"]
+    fn seed_real_window() {
+        let Some(path) = std::env::var_os("DEGENVIEW_SEED_DB").map(std::path::PathBuf::from) else {
+            return;
+        };
+        let store: SharedStore = Arc::new(Mutex::new(Store::open(&path).unwrap()));
+        store
+            .lock()
+            .unwrap()
+            .journal_ingest(&Synthetic, true)
+            .unwrap();
+        let mut host = JournalHost::new(store.clone(), Arc::new(|| {}));
+        host.rebuild_blocking();
+        seed_gallery(&mut host);
     }
 
     /// The tab as pictures: `DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib journal_tab::tests::gallery -- --ignored`.

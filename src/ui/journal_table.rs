@@ -25,6 +25,8 @@ pub struct TableSpec<'a> {
     pub width_of: &'a dyn Fn(Column) -> f32,
     pub sort: Sort,
     pub rows: usize,
+    /// What a screen reader says for a row: the trade in a sentence.
+    pub row_label: &'a dyn Fn(usize) -> String,
     pub selected: Option<usize>,
     /// Bring this row into view (the keyboard moved the selection).
     pub scroll_to: Option<usize>,
@@ -136,6 +138,7 @@ fn header(
                 Sense::click(),
             )
             .on_hover_cursor(CursorIcon::PointingHand);
+        let response = super::accessibility::label(response, format!("Sort by {}", column.label()));
         if response.clicked() {
             output.sort_by = Some(column);
         }
@@ -215,6 +218,7 @@ fn row(
     if !ui.is_rect_visible(rect) {
         return false;
     }
+    let response = super::accessibility::label(response, (spec.row_label)(index));
     let selected = spec.selected == Some(index);
     let hovered = ui.rect_contains_pointer(rect.intersect(frame));
     let fill = if selected {
@@ -287,6 +291,7 @@ mod tests {
                             width_of: &|c| c.default_width(),
                             sort: Sort::default(),
                             rows: 10_000,
+                            row_label: &|row| format!("trade {row}"),
                             selected: Some(3),
                             scroll_to: None,
                             height: 300.0,
