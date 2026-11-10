@@ -30,3 +30,11 @@ architecture index; use the topic documents for detail.
 
 For feature-specific behavior, also see [chart types](chart-types.md),
 [chart canvas](chart-canvas.md), and [portfolio cards](portfolio-cards.md).
+
+## Trading journal
+
+the `degenview-journal` crate (pure: executions, reconstruction, analytics, marks, CSV, backup) + the paper
+connector `model/journal_paper_source.rs` -> `store/journal.rs`
+(tables, ingest, restore) -> `host/journal_host.rs` (worker rebuild, `Arc` snapshot) -> `host/journal_tab.rs`
+and `ui/journal_*.rs` (the tab). Charts get its trades through `workspace/journal.rs`; sync carries the
+user's reviews, days and playbooks. See [Trading journal](trading-journal.md).
