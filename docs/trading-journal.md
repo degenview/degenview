@@ -229,5 +229,41 @@ reviewed trades. It records self-reported process, not skill, and a rating never
 objective figure. The Analytics page also lists each Edge Score component with its value, weight,
 input and full-marks threshold.
 
-Not built yet: screenshots and MFE/MAE, chart markers and "view on chart", CSV import and export,
-iCloud sync of reviews, playbooks and daily entries.
+## Screenshots and excursion
+
+**Screenshots** (`host/journal_shots.rs`, `ui/journal_shots.rs`). A review holds up to 12 pictures,
+attached from a file (the system chooser), pasted, or dropped on the window while a trade is open.
+They go through `image_ingest` like drawing pictures (PNG or JPEG, shrunk to at most 600 kB, no
+upload anywhere) into the existing content-addressed asset store (`drawing_asset`), and the review
+keeps only their hashes (`Review.images`). Reading and storing run on a worker; thumbnails get
+their texture once the asset host has decoded the picture; a click opens a full-size viewer.
+Attach and remove save the review at once. Removing a picture from a review leaves it in the store,
+and removing an account's journal history leaves its pictures too: the store is shared with
+drawings, never garbage-collected, and syncs by hash already. Capturing the chart as a screenshot
+comes with the chart integration.
+
+**MFE / MAE** (`degenview_journal::excursion`, `host/journal_excursion.rs`). How far a closed trade
+went for and against the trader, **estimated** from candles and labelled so ("Estimated from N 5m
+candles between the fills"). The finest candle interval whose bars over the hold fit in one
+request (1m up to 1d, at most 1,000 bars) is fetched from the trade's own provider. Rules:
+
+- A bar containing a fill is never used for its high or low: whether the extreme came before or
+  after the fill is unknown. Fills themselves are points on the path, valued at the fill price.
+- Only bars lying wholly between the first and last fill count. With none, the answer is
+  "unavailable" with the reason, never a number built from the fills alone.
+- The position is valued at its weighted-average cost plus what earlier exits realised, so scaling
+  in and out is followed. Gross of fees. MFE and MAE are floored at zero; exit efficiency is gross
+  result over MFE (negative when a profitable stretch ended in a loss, none when it never was).
+- A fetch that fails or returns nothing is shown with Try again and not cached. A figure, and the
+  deterministic "no complete bar fits", are cached in the rebuildable `journal_trade_stats` table
+  keyed by the fills and interval, so editing history re-estimates.
+
+Open trades show no block. Markets without a candle provider (imports) say so. The estimate starts
+when a closed trade is opened, once per session per set of fills.
+
+Paper accounts now get a creation time no other account shares (the engine bumps it by a
+millisecond when needed): the journal names an account by it, and two accounts made in one
+millisecond used to swap names when one was deleted.
+
+Not built yet: chart markers and "view on chart", CSV import and export, iCloud sync of reviews,
+playbooks and daily entries.

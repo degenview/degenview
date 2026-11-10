@@ -29,6 +29,24 @@ impl DataSource {
         }
     }
 
+    /// The source whose [`display_name`](Self::display_name) is `name`.
+    pub fn from_display_name(name: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|source| source.display_name() == name)
+    }
+
+    pub const ALL: [DataSource; 8] = [
+        DataSource::Binance,
+        DataSource::Coinbase,
+        DataSource::CoinGecko,
+        DataSource::DexScreener,
+        DataSource::Alpaca,
+        DataSource::Polymarket,
+        DataSource::Kalshi,
+        DataSource::CoinMarketCap,
+    ];
+
     /// Upper-case provider prefix in the import/export text format.
     pub fn watchlist_slug(self) -> &'static str {
         match self {
@@ -45,17 +63,8 @@ impl DataSource {
 
     /// The source a `watchlist_slug` names, in any case.
     pub fn from_watchlist_slug(slug: &str) -> Option<Self> {
-        const ALL: [DataSource; 8] = [
-            DataSource::Binance,
-            DataSource::Coinbase,
-            DataSource::CoinGecko,
-            DataSource::DexScreener,
-            DataSource::Alpaca,
-            DataSource::Polymarket,
-            DataSource::Kalshi,
-            DataSource::CoinMarketCap,
-        ];
-        ALL.into_iter()
+        Self::ALL
+            .into_iter()
             .find(|source| source.watchlist_slug().eq_ignore_ascii_case(slug))
     }
 
