@@ -1109,6 +1109,8 @@ dependencies = [
 [[package]]
 name = "degenview-brokers"
 version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f606787d49f05c849d5294acc2ca5e2c79b5ff2cd11475f3c461f78e4c551fe5"
 dependencies = [
  "base64 0.22.1",
  "getrandom 0.4.3",
