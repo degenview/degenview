@@ -1033,3 +1033,59 @@ fn the_sandbox_connects_without_a_key_and_is_listed_beside_coinbase() {
         "the real broker is untouched"
     );
 }
+
+/// An order can be previewed, reviewed and placed on the sandbox, which has no prices: nothing in
+/// the ticket waits for a quote that never comes.
+#[test]
+fn an_order_can_be_reviewed_and_placed_on_the_sandbox_without_prices() {
+    use degenview_brokers::coinbase::SANDBOX_ID;
+
+    let _restore = theme::RestoreDefaultTheme;
+    let rig = rig();
+    let sandbox = degenview_brokers::registry::by_id(SANDBOX_ID).expect("the sandbox");
+    rig.host
+        .adopt(SANDBOX_ID, degenview_brokers::Credentials::new())
+        .unwrap();
+    wait("the sandbox to go live", || {
+        rig.host
+            .snapshot(SANDBOX_ID)
+            .is_some_and(|s| s.status == Status::Live)
+    });
+    assert!(sandbox.descriptor().credential_fields.is_empty());
+
+    let mut ticket = TicketState::new(SANDBOX_ID, ProductId::new("BTC-USD"), {
+        let mut draft = TicketDraft::new(Side::Buy);
+        draft.size_text = "0.001".to_owned();
+        draft.price_text = "90000.00".to_owned();
+        draft
+    });
+    let mut screen = Screen::new(Vec2::new(900.0, 900.0));
+    let mut run = |ticket: &mut TicketState| {
+        screen.run(vec![], |ui| {
+            theme::sync(ui.ctx());
+            let _ = broker_ticket::show(ui.ctx(), ticket, &rig.host);
+        })
+    };
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while !ticket.ready_to_review() {
+        assert!(
+            Instant::now() < deadline,
+            "the broker's preview should arrive without any prices"
+        );
+        run(&mut ticket);
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    run(&mut ticket);
+    assert!(ticket.review_enabled(), "Review is on");
+    ticket.press_review();
+    run(&mut ticket);
+    run(&mut ticket);
+    assert!(ticket.confirming(), "the confirmation opens");
+
+    // And the order is accepted by the sandbox adapter.
+    let runtime = rig.host.runtime(SANDBOX_ID).expect("running");
+    runtime
+        .submit(limit(Side::Buy, "0.001", "90000.00"))
+        .wait()
+        .expect("placed");
+}

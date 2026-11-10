@@ -27,6 +27,8 @@ pub enum Unavailable {
     JournalUnreadable,
     ViewOnly,
     RulesNotRead,
+    /// The broker's market list is loaded and this market is not on it.
+    MarketNotOffered,
     /// The broker's own words for why this market cannot be traded with this account.
     MarketNotTradable(&'static str),
     InReplay,
@@ -50,6 +52,9 @@ impl Unavailable {
             }
             Self::ViewOnly => "This key can view but not trade.",
             Self::RulesNotRead => "Reading the market's rules…",
+            Self::MarketNotOffered => {
+                "This broker does not offer this market, so it cannot be traded here."
+            }
             Self::MarketNotTradable(reason) => reason,
             Self::InReplay => "Not available during replay.",
         }
@@ -116,7 +121,12 @@ pub fn chart_trading(
         return ChartTrading::Unavailable(Unavailable::ViewOnly);
     }
     match snapshot.capabilities_of(&product) {
-        None => return ChartTrading::Unavailable(Unavailable::RulesNotRead),
+        // Not read yet is different from not on the list: once the market list is loaded, a market
+        // missing from it never will be, so it must not read as "reading" for ever.
+        None if snapshot.capabilities.is_empty() => {
+            return ChartTrading::Unavailable(Unavailable::RulesNotRead);
+        }
+        None => return ChartTrading::Unavailable(Unavailable::MarketNotOffered),
         Some(caps) if !caps.is_tradable() => {
             let reason = snapshot
                 .product(&product)
@@ -213,6 +223,7 @@ mod tests {
             Unavailable::NeedsAttention,
             Unavailable::ViewOnly,
             Unavailable::RulesNotRead,
+            Unavailable::MarketNotOffered,
             Unavailable::MarketNotTradable(NOT_TRADABLE),
             Unavailable::InReplay,
         ] {
@@ -344,6 +355,15 @@ mod tests {
         assert_eq!(
             check(Some(&snapshot(Status::Live, true, None, true)), false).reason(),
             Some(Unavailable::RulesNotRead)
+        );
+        // A loaded market list that lacks this market says so, rather than "reading" for ever.
+        assert_eq!(
+            check(
+                Some(&snapshot(Status::Live, true, Some("ETH-USD"), true)),
+                false
+            )
+            .reason(),
+            Some(Unavailable::MarketNotOffered)
         );
         // The broker's own words are what the user reads, not a generic sentence.
         let blocked = check(
