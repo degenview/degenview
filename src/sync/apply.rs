@@ -167,6 +167,9 @@ pub fn table_of(kind: EntityKind) -> Option<&'static str> {
         EntityKind::Alert => Some("price_alert"),
         EntityKind::Portfolio => Some("portfolio"),
         EntityKind::PortfolioTransaction => Some(portfolio::TRANSACTIONS),
+        EntityKind::JournalReview => Some("journal_review"),
+        EntityKind::JournalDay => Some("journal_day"),
+        EntityKind::JournalPlaybook => Some("journal_playbook"),
         EntityKind::Setting | EntityKind::Script | EntityKind::PaperAccount => None,
     }
 }
@@ -360,6 +363,9 @@ impl<'a> Work<'a> {
             | EntityKind::DrawingTemplate
             | EntityKind::EditorTheme
             | EntityKind::Portfolio
+            | EntityKind::JournalReview
+            | EntityKind::JournalDay
+            | EntityKind::JournalPlaybook
             | EntityKind::Setting => self.apply_simple(record),
             EntityKind::PortfolioTransaction => self.apply_transaction(record),
             EntityKind::Layout => self.apply_layout(record),
@@ -1797,6 +1803,9 @@ fn compose_row(
         EntityKind::ChartTemplate
         | EntityKind::DrawingTemplate
         | EntityKind::EditorTheme
+        | EntityKind::JournalReview
+        | EntityKind::JournalDay
+        | EntityKind::JournalPlaybook
         | EntityKind::Portfolio => {}
         _ => return None,
     }

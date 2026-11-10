@@ -34,6 +34,21 @@ use degenview_journal::source::{Cursor, RejectedExecution, TradingActivitySource
 const KEY_REVISION: &str = "revision";
 const KEY_LAST_ERROR: &str = "last_error";
 
+pub const REVIEWS: &str = "journal_review";
+pub const PLAYBOOKS: &str = "journal_playbook";
+pub const DAYS: &str = "journal_day";
+
+/// The name a review has in the document table and in iCloud: a trade key holds `:` and `|`, which a
+/// record name may not, so the row is named by the hash of the key (the key itself is in the row).
+pub fn review_row_id(trade_key: &str) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(trade_key.as_bytes())
+        .iter()
+        .take(16)
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
 /// What one ingest pass did.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct IngestReport {
@@ -80,29 +95,6 @@ impl Store {
             CREATE TABLE IF NOT EXISTS journal_cursor (
                 account_uid TEXT PRIMARY KEY,
                 cursor TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS journal_review (
-                trade_key TEXT PRIMARY KEY,
-                account_uid TEXT NOT NULL,
-                playbook TEXT NOT NULL,
-                status TEXT NOT NULL,
-                updated_ms INTEGER NOT NULL,
-                payload TEXT NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS journal_review_on_account ON journal_review (account_uid);
-            CREATE INDEX IF NOT EXISTS journal_review_on_playbook ON journal_review (playbook);
-            CREATE INDEX IF NOT EXISTS journal_review_on_status ON journal_review (status);
-            CREATE INDEX IF NOT EXISTS journal_review_on_updated ON journal_review (updated_ms);
-            CREATE TABLE IF NOT EXISTS journal_playbook (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                updated_ms INTEGER NOT NULL,
-                payload TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS journal_day (
-                date TEXT PRIMARY KEY,
-                updated_ms INTEGER NOT NULL,
-                payload TEXT NOT NULL
             );
             CREATE TABLE IF NOT EXISTS journal_trade_stats (
                 trade_key TEXT PRIMARY KEY,
@@ -188,8 +180,78 @@ impl Store {
         Ok(())
     }
 
+    /// Reads the journal's user-written rows from a document table.
+    fn journal_documents<T: serde::de::DeserializeOwned>(
+        &self,
+        table: &str,
+    ) -> rusqlite::Result<Vec<T>> {
+        self.payloads_strict(&format!("SELECT payload FROM {table} ORDER BY id"))
+    }
+
+    fn journal_document_text(&self, table: &str, id: &str) -> rusqlite::Result<Option<String>> {
+        self.connection
+            .query_row(
+                &format!("SELECT payload FROM {table} WHERE id = ?1"),
+                params![id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+    }
+
+    /// Writes one row of a journal document table as it is and queues its upload, in one
+    /// savepoint. The stored text carries the row's `id`, which is how rows are named in the
+    /// table and by sync; reading ignores it.
+    fn put_journal_document<T: serde::Serialize>(
+        &self,
+        table: &str,
+        id: &str,
+        value: &T,
+    ) -> rusqlite::Result<()> {
+        let mut value = serde_json::to_value(value)
+            .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+        if let Some(object) = value.as_object_mut() {
+            object.insert("id".to_owned(), serde_json::Value::String(id.to_owned()));
+        }
+        let text = value.to_string();
+        self.in_savepoint("journal_document_put", || {
+            let old = self.journal_document_text(table, id)?;
+            if old.as_deref() == Some(text.as_str()) {
+                return Ok(());
+            }
+            self.connection.execute(
+                &format!(
+                    "INSERT INTO {table} (id, position, payload) VALUES (?1, 0, ?2)
+                     ON CONFLICT(id) DO UPDATE SET payload = excluded.payload"
+                ),
+                params![id, text],
+            )?;
+            if self.sync_enabled() {
+                let old: Vec<(String, String)> =
+                    old.into_iter().map(|text| (id.to_owned(), text)).collect();
+                self.track_documents(table, &old, &[(id.to_owned(), 0, text)])?;
+            }
+            Ok(())
+        })
+    }
+
+    fn delete_journal_document(&self, table: &str, id: &str) -> rusqlite::Result<()> {
+        self.in_savepoint("journal_document_delete", || {
+            let Some(old) = self.journal_document_text(table, id)? else {
+                return Ok(());
+            };
+            self.connection
+                .execute(&format!("DELETE FROM {table} WHERE id = ?1"), params![id])?;
+            if self.sync_enabled() {
+                self.track_documents(table, &[(id.to_owned(), old)], &[])?;
+            }
+            Ok(())
+        })
+    }
+
     pub fn journal_reviews(&self) -> rusqlite::Result<Vec<Review>> {
-        self.payloads_strict("SELECT payload FROM journal_review ORDER BY updated_ms, trade_key")
+        let mut reviews: Vec<Review> = self.journal_documents(REVIEWS)?;
+        reviews.sort_by(|a, b| (a.updated_ms, &a.trade_key).cmp(&(b.updated_ms, &b.trade_key)));
+        Ok(reviews)
     }
 
     /// Saves one review, stamping its times. A review with nothing in it is removed instead of
@@ -202,32 +264,23 @@ impl Store {
         let mut review = review.clone();
         review.tidy();
         if review.is_empty() {
-            self.connection.execute(
-                "DELETE FROM journal_review WHERE trade_key = ?1",
-                params![review.trade_key],
-            )?;
+            self.delete_journal_document(REVIEWS, &review_row_id(&review.trade_key))?;
             return Ok(None);
         }
-        let created: Option<i64> = self
-            .connection
-            .query_row(
-                "SELECT payload FROM journal_review WHERE trade_key = ?1",
-                params![review.trade_key],
-                |row| row.get::<_, String>(0),
-            )
-            .optional()?
+        let created = self
+            .journal_document_text(REVIEWS, &review_row_id(&review.trade_key))?
             .and_then(|payload| serde_json::from_str::<Review>(&payload).ok())
             .map(|existing| existing.created_ms);
         review.created_ms = created.filter(|created| *created > 0).unwrap_or(now_ms);
         review.updated_ms = now_ms;
-        self.write_review(&review)?;
+        self.put_journal_document(REVIEWS, &review_row_id(&review.trade_key), &review)?;
         Ok(Some(review))
     }
 
     pub fn journal_playbooks(&self) -> rusqlite::Result<Vec<Playbook>> {
-        self.payloads_strict(
-            "SELECT payload FROM journal_playbook ORDER BY name COLLATE NOCASE, id",
-        )
+        let mut playbooks: Vec<Playbook> = self.journal_documents(PLAYBOOKS)?;
+        playbooks.sort_by_key(|playbook| (playbook.name.to_lowercase(), playbook.id.clone()));
+        Ok(playbooks)
     }
 
     /// Saves one playbook, stamping its times. `None` when it has no name (nothing is stored).
@@ -241,41 +294,23 @@ impl Store {
         if !playbook.is_valid() {
             return Ok(None);
         }
-        let created: Option<i64> = self
-            .connection
-            .query_row(
-                "SELECT payload FROM journal_playbook WHERE id = ?1",
-                params![playbook.id],
-                |row| row.get::<_, String>(0),
-            )
-            .optional()?
+        let created = self
+            .journal_document_text(PLAYBOOKS, &playbook.id)?
             .and_then(|payload| serde_json::from_str::<Playbook>(&payload).ok())
             .map(|existing| existing.created_ms);
         playbook.created_ms = created.filter(|created| *created > 0).unwrap_or(now_ms);
         playbook.updated_ms = now_ms;
-        self.connection.execute(
-            "INSERT INTO journal_playbook (id, name, updated_ms, payload) VALUES (?1, ?2, ?3, ?4)
-             ON CONFLICT(id) DO UPDATE SET name = excluded.name,
-                updated_ms = excluded.updated_ms, payload = excluded.payload",
-            params![
-                playbook.id,
-                playbook.name,
-                playbook.updated_ms,
-                json(&playbook)?
-            ],
-        )?;
+        self.put_journal_document(PLAYBOOKS, &playbook.id, &playbook)?;
         Ok(Some(playbook))
     }
 
     /// Removes a playbook. Reviews that named it keep the id and show no playbook.
     pub fn journal_delete_playbook(&self, id: &str) -> rusqlite::Result<()> {
-        self.connection
-            .execute("DELETE FROM journal_playbook WHERE id = ?1", params![id])?;
-        Ok(())
+        self.delete_journal_document(PLAYBOOKS, id)
     }
 
     pub fn journal_days(&self) -> rusqlite::Result<Vec<DailyEntry>> {
-        self.payloads_strict("SELECT payload FROM journal_day ORDER BY date")
+        self.journal_documents(DAYS)
     }
 
     /// Saves one day's entry; an entry with nothing in it is removed instead.
@@ -287,30 +322,16 @@ impl Store {
         let mut entry = entry.clone();
         entry.tidy();
         if entry.is_empty() {
-            self.connection.execute(
-                "DELETE FROM journal_day WHERE date = ?1",
-                params![entry.date],
-            )?;
+            self.delete_journal_document(DAYS, &entry.date)?;
             return Ok(None);
         }
-        let created: Option<i64> = self
-            .connection
-            .query_row(
-                "SELECT payload FROM journal_day WHERE date = ?1",
-                params![entry.date],
-                |row| row.get::<_, String>(0),
-            )
-            .optional()?
+        let created = self
+            .journal_document_text(DAYS, &entry.date)?
             .and_then(|payload| serde_json::from_str::<DailyEntry>(&payload).ok())
             .map(|existing| existing.created_ms);
         entry.created_ms = created.filter(|created| *created > 0).unwrap_or(now_ms);
         entry.updated_ms = now_ms;
-        self.connection.execute(
-            "INSERT INTO journal_day (date, updated_ms, payload) VALUES (?1, ?2, ?3)
-             ON CONFLICT(date) DO UPDATE SET updated_ms = excluded.updated_ms,
-                payload = excluded.payload",
-            params![entry.date, entry.updated_ms, json(&entry)?],
-        )?;
+        self.put_journal_document(DAYS, &entry.date, &entry)?;
         Ok(Some(entry))
     }
 
@@ -618,16 +639,18 @@ impl Store {
     /// itself. What the user chooses when they decline to keep an account's history.
     pub fn journal_purge_account(&self, account_uid: &str) -> rusqlite::Result<()> {
         self.in_savepoint("journal_purge", || {
-            for table in [
-                "journal_execution",
-                "journal_cursor",
-                "journal_review",
-                "journal_trade_stats",
-            ] {
+            for table in ["journal_execution", "journal_cursor", "journal_trade_stats"] {
                 self.connection.execute(
                     &format!("DELETE FROM {table} WHERE account_uid = ?1"),
                     params![account_uid],
                 )?;
+            }
+            let reviews: Vec<Review> = self.journal_documents(REVIEWS)?;
+            for review in reviews
+                .iter()
+                .filter(|review| review.account_uid == account_uid)
+            {
+                self.delete_journal_document(REVIEWS, &review_row_id(&review.trade_key))?;
             }
             self.connection.execute(
                 "DELETE FROM journal_account WHERE uid = ?1",
@@ -733,14 +756,8 @@ impl Store {
                 if review.is_empty() || review.trade_key.is_empty() {
                     continue;
                 }
-                let local: Option<String> = self
-                    .connection
-                    .query_row(
-                        "SELECT payload FROM journal_review WHERE trade_key = ?1",
-                        params![review.trade_key],
-                        |row| row.get(0),
-                    )
-                    .optional()?;
+                let local =
+                    self.journal_document_text(REVIEWS, &review_row_id(&review.trade_key))?;
                 let local_updated = local
                     .and_then(|payload| serde_json::from_str::<Review>(&payload).ok())
                     .map(|existing| existing.updated_ms);
@@ -748,7 +765,7 @@ impl Store {
                     report.kept_newer += 1;
                     continue;
                 }
-                self.write_review(&review)?;
+                self.put_journal_document(REVIEWS, &review_row_id(&review.trade_key), &review)?;
                 report.reviews_restored += 1;
             }
             for playbook in &backup.playbooks {
@@ -760,14 +777,7 @@ impl Store {
                         .push(format!("playbook {:?} has no name", playbook.id));
                     continue;
                 }
-                let local: Option<String> = self
-                    .connection
-                    .query_row(
-                        "SELECT payload FROM journal_playbook WHERE id = ?1",
-                        params![playbook.id],
-                        |row| row.get(0),
-                    )
-                    .optional()?;
+                let local = self.journal_document_text(PLAYBOOKS, &playbook.id)?;
                 let local_updated = local
                     .and_then(|payload| serde_json::from_str::<Playbook>(&payload).ok())
                     .map(|existing| existing.updated_ms);
@@ -775,12 +785,7 @@ impl Store {
                     report.kept_newer += 1;
                     continue;
                 }
-                self.connection.execute(
-                    "INSERT INTO journal_playbook (id, name, updated_ms, payload) VALUES (?1, ?2, ?3, ?4)
-                     ON CONFLICT(id) DO UPDATE SET name = excluded.name,
-                        updated_ms = excluded.updated_ms, payload = excluded.payload",
-                    params![playbook.id, playbook.name, playbook.updated_ms, json(&playbook)?],
-                )?;
+                self.put_journal_document(PLAYBOOKS, &playbook.id, &playbook)?;
                 report.playbooks_restored += 1;
             }
             for day in &backup.days {
@@ -789,14 +794,7 @@ impl Store {
                 if day.is_empty() {
                     continue;
                 }
-                let local: Option<String> = self
-                    .connection
-                    .query_row(
-                        "SELECT payload FROM journal_day WHERE date = ?1",
-                        params![day.date],
-                        |row| row.get(0),
-                    )
-                    .optional()?;
+                let local = self.journal_document_text(DAYS, &day.date)?;
                 let local_updated = local
                     .and_then(|payload| serde_json::from_str::<DailyEntry>(&payload).ok())
                     .map(|existing| existing.updated_ms);
@@ -804,12 +802,7 @@ impl Store {
                     report.kept_newer += 1;
                     continue;
                 }
-                self.connection.execute(
-                    "INSERT INTO journal_day (date, updated_ms, payload) VALUES (?1, ?2, ?3)
-                     ON CONFLICT(date) DO UPDATE SET updated_ms = excluded.updated_ms,
-                        payload = excluded.payload",
-                    params![day.date, day.updated_ms, json(&day)?],
-                )?;
+                self.put_journal_document(DAYS, &day.date, &day)?;
                 report.days_restored += 1;
             }
             for asset in &backup.assets {
@@ -834,27 +827,6 @@ impl Store {
             Ok(report)
         })
     }
-
-    /// Writes a review as it is, times included.
-    fn write_review(&self, review: &Review) -> rusqlite::Result<()> {
-        self.connection.execute(
-            "INSERT INTO journal_review (trade_key, account_uid, playbook, status, updated_ms, payload)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-             ON CONFLICT(trade_key) DO UPDATE SET
-                account_uid = excluded.account_uid, playbook = excluded.playbook,
-                status = excluded.status, updated_ms = excluded.updated_ms,
-                payload = excluded.payload",
-            params![
-                review.trade_key,
-                review.account_uid,
-                review.playbook.clone().unwrap_or_default(),
-                review.status().label(),
-                review.updated_ms,
-                json(review)?,
-            ],
-        )?;
-        Ok(())
-    }
 }
 
 fn status_name(status: ExecutionStatus) -> &'static str {
@@ -871,6 +843,15 @@ fn json<T: serde::Serialize>(value: &T) -> rusqlite::Result<String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_review_row_id_is_a_legal_record_name_and_depends_only_on_the_key() {
+        let id = super::review_row_id("import:main|csv-0a1b");
+        assert_eq!(id.len(), 32);
+        assert!(id.bytes().all(|b| b.is_ascii_hexdigit()));
+        assert_eq!(id, super::review_row_id("import:main|csv-0a1b"));
+        assert_ne!(id, super::review_row_id("paper:1:2:0"));
+    }
+
     use degenview_journal::reviews::Review;
 
     use super::*;

@@ -367,6 +367,17 @@ impl JournalTab {
             {
                 self.flush_draft(host);
                 self.draft = Some(Draft::new(trade, reviews.get(&key)));
+            } else if let Some(draft) = self.draft.as_ref()
+                && draft.edited_at.is_none()
+                && !draft.is_dirty()
+                && match reviews.get(&key) {
+                    Some(stored) => *stored != draft.saved,
+                    None => !draft.saved.is_empty(),
+                }
+            {
+                // The review changed underneath an open panel that has no edit of its own in it
+                // (another Mac's edit arrived through iCloud): show it.
+                self.draft = Some(Draft::new(trade, reviews.get(&key)));
             }
             let mut nav = None;
             let mut close = false;
@@ -484,7 +495,13 @@ impl JournalTab {
                             {
                                 match host.save_review(&draft.review) {
                                     Ok(()) => {
-                                        draft.saved = draft.review.clone();
+                                        // What was stored (times stamped, lists tidied), so a
+                                        // later difference means somebody else wrote it.
+                                        draft.saved = host
+                                            .reviews()
+                                            .get(&draft.review.trade_key)
+                                            .cloned()
+                                            .unwrap_or_else(|| draft.review.clone());
                                         draft.edited_at = None;
                                         draft.saved_until = Some(now + 2.0);
                                         draft.error = None;
@@ -2295,7 +2312,11 @@ impl JournalTab {
             && draft.is_dirty()
             && host.save_review(&draft.review).is_ok()
         {
-            draft.saved = draft.review.clone();
+            draft.saved = host
+                .reviews()
+                .get(&draft.review.trade_key)
+                .cloned()
+                .unwrap_or_else(|| draft.review.clone());
             draft.edited_at = None;
         }
     }
@@ -3017,6 +3038,34 @@ mod tests {
             Backup::empty("2026-11-10T00:00:00.000Z".into(), "test"),
         ));
         frame(&ctx, &mut tab, &mut host, 4.0);
+    }
+
+    #[test]
+    fn a_review_changed_elsewhere_shows_in_an_open_panel_unless_it_has_an_edit_of_its_own() {
+        let (_, mut host, mut tab, ctx) = ready();
+        frame(&ctx, &mut tab, &mut host, 0.0);
+        let data = host.data().unwrap().clone();
+        let trade = data.trades[tab.rows[1]].clone();
+        tab.select_trade(&trade.key);
+        frame(&ctx, &mut tab, &mut host, 1.0);
+        assert_eq!(tab.draft.as_ref().unwrap().review.notes, "");
+        // Another Mac's edit arrives (written here the way the sync apply leaves it).
+        let mut theirs = degenview_journal::reviews::Review::new(&trade.key, &trade.account_uid);
+        theirs.notes = "From the other Mac.".into();
+        host.save_review(&theirs).unwrap();
+        frame(&ctx, &mut tab, &mut host, 2.0);
+        assert_eq!(
+            tab.draft.as_ref().unwrap().review.notes,
+            "From the other Mac."
+        );
+        // The panel's own typing is never replaced.
+        tab.draft.as_mut().unwrap().review.notes = "Typing here.".into();
+        tab.draft.as_mut().unwrap().edited_at = Some(2.1);
+        let mut again = theirs.clone();
+        again.notes = "Changed again elsewhere.".into();
+        host.save_review(&again).unwrap();
+        frame(&ctx, &mut tab, &mut host, 2.2);
+        assert_eq!(tab.draft.as_ref().unwrap().review.notes, "Typing here.");
     }
 
     #[test]

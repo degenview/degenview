@@ -27,6 +27,8 @@ pub struct Counts {
     pub alerts: usize,
     pub portfolios: usize,
     pub paper_accounts: usize,
+    /// Reviews, daily entries and playbooks.
+    pub journal: usize,
     pub settings: usize,
 }
 
@@ -39,6 +41,7 @@ impl Counts {
             + self.alerts
             + self.portfolios
             + self.paper_accounts
+            + self.journal
             + self.settings
     }
 
@@ -53,6 +56,9 @@ impl Counts {
             EntityKind::Alert => self.alerts += 1,
             EntityKind::Portfolio => self.portfolios += 1,
             EntityKind::PaperAccount => self.paper_accounts += 1,
+            EntityKind::JournalReview | EntityKind::JournalDay | EntityKind::JournalPlaybook => {
+                self.journal += 1
+            }
             EntityKind::Setting => self.settings += 1,
             // Counted with their portfolio and layout.
             EntityKind::LayoutDrawing
@@ -112,6 +118,7 @@ pub fn summarize(store: &Store, local_scripts: usize) -> rusqlite::Result<JoinSu
         alerts: rows("price_alert")?,
         portfolios: rows("portfolio")?,
         paper_accounts: rows("paper_account")?,
+        journal: rows("journal_review")? + rows("journal_day")? + rows("journal_playbook")?,
         settings: 0,
     };
     Ok(JoinSummary {

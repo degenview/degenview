@@ -37,9 +37,10 @@ against SQLite, and every sync problem leaves the app fully usable.
 | Price alert definitions | one per alert | arrive **switched off** on other Macs, see below |
 | Portfolios | one per portfolio, and one per transaction | valuation history is not synced; it is rebuilt on each Mac |
 | Paper trading | one record per account holding the account, its orders, fills, positions, events, closed trades and journal, and which Mac runs it | see [Portfolios and paper trading](#portfolios-and-paper-trading) |
+| Trading journal | one record per trade review (`journalreview`, named by the hash of the trade key), per daily entry (`journalday`, by date) and per playbook (`journalplaybook`) | what the user writes: notes, tags, ratings, checklists, screenshots (by hash; the pictures travel as Pictures). See [Trading journal](#trading-journal) |
 | Preferences | `appTheme`, `drawing.defaults`, `drawing.prefs`, `snapshot.prefs` (host, scale, include-trading only), `editor.prefs` (which editor theme, the editor font, size and line height) | |
 
-Never synced: the trading journal's executions and accounts (rebuilt on each Mac from the paper bundle; see [Trading journal](trading-journal.md)), market and icon caches, portfolio valuation history, which paper account or
+Never synced: the trading journal's executions, accounts, trades and statistics (rebuilt on each Mac from the paper bundle and its own imports; see [Trading journal](trading-journal.md)), market and icon caches, portfolio valuation history, which paper account or
 portfolio is selected, live paper quotes, webhook endpoints and their Keychain secrets, API keys, MCP clients/tokens/port and the MCP activity log, Pine alert subscriptions
 (they bind device-local chart ids), the open tabs and windows, alert runtime state and history,
 snapshot consent and token, and `content.prefs` (whether a Post card may fetch a preview from X). Every document table and `setting` key is classified in
@@ -250,6 +251,49 @@ round trips made by the engine (a limit buy and a limit sell, both filled), one 
 wire limit would come at about 7,600. One that is still too large is blocked (the "too large" notice
 applies) and stays on its Mac, and multi-record accounts are future work. A mirror shows the account as of the owner's last upload.
 
+## Trading journal
+
+What the user *writes* in the [Trade Journal](trading-journal.md) syncs; what is *derived* does not.
+
+* **Not synced.** Executions, accounts, trades and statistics. Paper executions are rebuilt on every
+  Mac from the paper account's own record, so the one-active-Mac rule of [paper
+  accounts](#portfolios-and-paper-trading) is untouched: the journal never fills or changes
+  anything, and a mirrored account's fills appear in its journal when the bundle arrives. Syncing
+  executions as well would need a second copy and an ownership rule for no gain. Imported accounts
+  (CSV) are per Mac; each Mac imports its own files, and the journal's Backup is the way to move
+  them. Candle-estimated MFE/MAE, UI preferences (`journal.prefs`) and a tab's open trade are local.
+* **Records.** `journalreview.<hash>` holds one review (the row is a `Review`; its `trade_key` is
+  inside, and the record is named by the hash of the key because a trade key contains `:` and `|`,
+  which a record name may not), `journalday.<date>` one daily entry, `journalplaybook.<id>` one
+  playbook. They are ordinary document tables (`journal_review`, `journal_day`, `journal_playbook`),
+  so the outbox, tombstones, mass-delete hold, first-sync choices and "newer version" inbox all
+  apply unchanged. Switch: **Trading journal** (on by default).
+* **Merge.** Last writer by `(revision, edit time, device id)`, **except that the loser's text is kept**:
+  for a review's `notes`, `setup`, `entry_rationale` and `exit_rationale`, and for each text of a daily
+  entry, a text the loser wrote that the winner does not already contain is added after the winner's
+  under `--- another version of this text ---`. The rule is symmetric (the winner comes from the
+  stamps alone) and idempotent (a text already contained is not added again), so two Macs converge and
+  settling again changes nothing. Structured fields (rating, tags, checklist ticks, stop, target,
+  playbook) are the winner's. A playbook is plain last writer. Edit beats delete.
+* **Validation** (`sync/validate.rs::check_journal`): the record's name must be what its row says (the
+  hash of its trade key; the date; the id), a review must decode as the model and name at most 12
+  screenshots by 64-hex hash, a day's date must be a date, a playbook needs a name, texts are at most
+  200 kB each and lists at most 500 entries. Anything else is kept in the inbox, never applied.
+* **Screenshots** are the shared pictures (`drawingasset`, category *Layouts*): they sync with the
+  Layouts switch, are immutable and never deleted, so a review on another Mac shows a placeholder
+  until its picture arrives. With Layouts off and the journal on, reviews arrive with their picture
+  names and no pictures.
+* **Reviews without trades.** A review does not need its trade to exist: it is data keyed by the
+  trade's key, held until the paper bundle or import that makes the trade arrives.
+* **Open panel.** A review that changes under an open trade panel (another Mac's edit applied) is shown
+  unless the panel has an edit of its own in it, which is never replaced.
+* **Tested** on `MockCloud` (`sync/journal_tests.rs`): a review reaching the other Mac without echoing
+  back, edit and clear (delete), two edits keeping both texts and converging, identical text not
+  doubled, playbooks and days, the category switch (nothing uploaded while off, held back while off
+  on the receiver, applied when switched on), a review whose trade is absent, and damaged or foreign
+  records refused. **Not verified:** real CloudKit transfer of these records, and two Macs editing
+  one review at the same moment on real devices.
+
 ## Merge rules
 
 Every rule is symmetric (merge(a, b) = merge(b, a)), so two Macs resolving the same conflict
@@ -263,7 +307,8 @@ converge. Randomized tests exercise this. Ordering ties break on `(revision, edi
 | Pine script | the loser always survives as a conflict-copy script; text being typed is never overwritten (the update waits until it is saved); a name taken here is suffixed and the suffix is not uploaded |
 | Portfolio, transaction | last writer; a change that would make the ledger impossible is held (see above) |
 | Paper account | the changed side wins; both changed: later edit keeps the account, the other becomes a paused copy |
-| Templates, editor themes, alerts, scalar settings | last writer |
+| Trade review, daily entry | last writer, and the loser's text is kept after the winner's (see [Trading journal](#trading-journal)) |
+| Playbook, templates, editor themes, alerts, scalar settings | last writer |
 | Object-valued settings | per key three-way |
 
 ### Deletion
