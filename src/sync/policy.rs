@@ -12,11 +12,13 @@ pub enum Category {
     Alerts,
     Portfolios,
     PaperTrading,
+    /// What the user writes in the Trade Journal: reviews, playbooks, daily entries.
+    TradingJournal,
     Preferences,
 }
 
 impl Category {
-    pub const ALL: [Category; 8] = [
+    pub const ALL: [Category; 9] = [
         Self::Watchlists,
         Self::Layouts,
         Self::Templates,
@@ -24,6 +26,7 @@ impl Category {
         Self::Alerts,
         Self::Portfolios,
         Self::PaperTrading,
+        Self::TradingJournal,
         Self::Preferences,
     ];
 
@@ -37,6 +40,7 @@ impl Category {
             Self::Alerts => "alerts",
             Self::Portfolios => "portfolios",
             Self::PaperTrading => "paper_trading",
+            Self::TradingJournal => "trading_journal",
             Self::Preferences => "preferences",
         }
     }
@@ -50,6 +54,7 @@ impl Category {
             Self::Alerts => "Price alerts",
             Self::Portfolios => "Portfolios",
             Self::PaperTrading => "Paper trading",
+            Self::TradingJournal => "Trading journal",
             Self::Preferences => "Preferences",
         }
     }
@@ -84,11 +89,17 @@ pub enum EntityKind {
     PortfolioTransaction,
     /// One paper account with everything that belongs to it, as a single record.
     PaperAccount,
+    /// One trade's review: notes, tags, rating, checklist, screenshots (by hash).
+    JournalReview,
+    /// One day's journal entry.
+    JournalDay,
+    /// One playbook.
+    JournalPlaybook,
     Setting,
 }
 
 impl EntityKind {
-    pub const ALL: [EntityKind; 13] = [
+    pub const ALL: [EntityKind; 16] = [
         Self::Layout,
         Self::LayoutDrawing,
         Self::DrawingAsset,
@@ -101,6 +112,9 @@ impl EntityKind {
         Self::Portfolio,
         Self::PortfolioTransaction,
         Self::PaperAccount,
+        Self::JournalReview,
+        Self::JournalDay,
+        Self::JournalPlaybook,
         Self::Setting,
     ];
 
@@ -118,6 +132,9 @@ impl EntityKind {
             Self::Portfolio => "portfolio",
             Self::PortfolioTransaction => "portfoliotx",
             Self::PaperAccount => "paperaccount",
+            Self::JournalReview => "journalreview",
+            Self::JournalDay => "journalday",
+            Self::JournalPlaybook => "journalplaybook",
             Self::Setting => "setting",
         }
     }
@@ -135,6 +152,9 @@ impl EntityKind {
             Self::Alert => Category::Alerts,
             Self::Portfolio | Self::PortfolioTransaction => Category::Portfolios,
             Self::PaperAccount => Category::PaperTrading,
+            Self::JournalReview | Self::JournalDay | Self::JournalPlaybook => {
+                Category::TradingJournal
+            }
             Self::Setting => Category::Preferences,
         }
     }
@@ -151,7 +171,10 @@ impl EntityKind {
             | Self::Alert
             | Self::Portfolio
             | Self::PortfolioTransaction
+            | Self::JournalPlaybook
             | Self::Setting => Merge::LastWriterWins,
+            // Last writer, except that text the loser wrote is kept after the winner's.
+            Self::JournalReview | Self::JournalDay => Merge::KeepBoth,
         }
     }
 }
@@ -164,7 +187,13 @@ impl EntityKind {
     pub const fn combines_edits(self) -> bool {
         matches!(
             self,
-            Self::Watchlist | Self::Setting | Self::Layout | Self::Script | Self::PaperAccount
+            Self::Watchlist
+                | Self::Setting
+                | Self::Layout
+                | Self::Script
+                | Self::PaperAccount
+                | Self::JournalReview
+                | Self::JournalDay
         )
     }
 }
@@ -198,6 +227,9 @@ pub fn table_policy(table: &str) -> TablePolicy {
         "drawing_asset" => TablePolicy::Synced(EntityKind::DrawingAsset),
         "portfolio" => TablePolicy::Synced(EntityKind::Portfolio),
         "paper_account" => TablePolicy::Bundled(EntityKind::PaperAccount),
+        "journal_review" => TablePolicy::Synced(EntityKind::JournalReview),
+        "journal_day" => TablePolicy::Synced(EntityKind::JournalDay),
+        "journal_playbook" => TablePolicy::Synced(EntityKind::JournalPlaybook),
         "webhook_endpoint" => TablePolicy::Local(
             "plaintext URL templates; secrets are Keychain-only and do not travel",
         ),
@@ -298,7 +330,10 @@ mod tests {
                 "watchlist",
                 "portfolio",
                 "price_alert",
-                "drawing_asset"
+                "drawing_asset",
+                "journal_review",
+                "journal_playbook",
+                "journal_day"
             ]
         );
     }

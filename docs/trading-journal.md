@@ -427,4 +427,13 @@ whose account is not in the file, a damaged picture) are listed and the rest res
 
 Not built, by decision: an embedded chart inside the trade panel and a "capture chart" screenshot
 (attaching a picture from a file or the clipboard works; the chart's own camera menu already makes
-snapshots). Not built yet: iCloud sync of reviews, playbooks and daily entries.
+snapshots).
+
+## iCloud
+
+Reviews, daily entries and playbooks sync (category **Trading journal**); executions, accounts,
+trades and statistics do not (they are rebuilt per Mac from the paper bundle and imports). The
+design, merge rule (last writer, with the loser's text kept), validation and what is tested are in
+[iCloud Sync](icloud-sync.md#trading-journal). The three user tables are document tables, written
+through `put_journal_document` / `delete_journal_document` (one row, one savepoint, upload queued in
+it); a review is named by the hash of its trade key (`review_row_id`).

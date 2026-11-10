@@ -128,6 +128,14 @@ build first, then a notarized Developer ID build.
 - [ ] Only the owning Mac fills working orders.
 - [x] A fresh Mac creates its own default paper account, which then shows as a duplicate. *(Fixed 2026-10-21 and verified on real CloudKit in Development: an untouched default is dropped at the first-time merge when iCloud has paper accounts; a default with an order or a changed balance is kept.)* *(Reproduced: a Mac that opened the paper panel before joining kept its own default and every Mac ended with a third "Paper Trading". A Mac that joins first and opens the panel after gets the synced account and creates none.)*
 
+- [ ] **Trading journal.** *(Mock-cloud tested only; nothing here has run on real CloudKit.)* On Mac A write a
+  review (notes, tags, a rating, a screenshot) on a trade, a daily entry and a playbook: they reach Mac B
+  within a sync, the review shows on B's trade (once B has the trade), and the screenshot shows once its
+  picture arrives (needs Layouts on). Edit the same review's notes on both Macs offline, then reconnect:
+  both converge on one text with the other Mac's words after `--- another version of this text ---`
+  and nothing doubles on the next sync. Clear a review on A: it disappears on B. Turn the Trading journal
+  switch off on B: nothing arrives or leaves; turn it on: it catches up.
+
 ## 4. Offline, conflicts and resilience
 
 - [ ] B: edit the same watchlist, layout and script on both Macs at once. Conflict copies and the notice

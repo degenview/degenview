@@ -957,6 +957,15 @@ impl Store {
             EntityKind::DrawingAsset => {
                 pick("drawing_asset", sync_id, by_id("drawing_asset", sync_id)?)
             }
+            EntityKind::JournalReview => {
+                pick("journal_review", sync_id, by_id("journal_review", sync_id)?)
+            }
+            EntityKind::JournalDay => pick("journal_day", sync_id, by_id("journal_day", sync_id)?),
+            EntityKind::JournalPlaybook => pick(
+                "journal_playbook",
+                sync_id,
+                by_id("journal_playbook", sync_id)?,
+            ),
             EntityKind::Layout => pick("saved_view", sync_id, by_id("saved_view", sync_id)?),
             EntityKind::LayoutDrawing => {
                 let layout = sync_id.split('.').next().unwrap_or_default();
@@ -1774,6 +1783,13 @@ pub fn row_decodes(table: &str, payload: &str) -> bool {
         "portfolio_transaction" => {
             serde_json::from_str::<model::portfolio::PortfolioTransaction>(payload).is_ok()
         }
+        "journal_review" => {
+            serde_json::from_str::<model::journal::reviews::Review>(payload).is_ok()
+        }
+        "journal_day" => serde_json::from_str::<model::journal::daily::DailyEntry>(payload).is_ok(),
+        "journal_playbook" => {
+            serde_json::from_str::<model::journal::playbook::Playbook>(payload).is_ok()
+        }
         _ => false,
     }
 }
@@ -1828,6 +1844,9 @@ impl Store {
             EntityKind::Portfolio,
             EntityKind::PortfolioTransaction,
             EntityKind::PaperAccount,
+            EntityKind::JournalReview,
+            EntityKind::JournalDay,
+            EntityKind::JournalPlaybook,
             EntityKind::Setting,
         ] {
             by_kind.insert(kind, HashMap::new());

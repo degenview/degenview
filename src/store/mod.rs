@@ -104,7 +104,7 @@ pub trait Document {
     fn document_id(&self) -> String;
 }
 
-pub(crate) const DOCUMENT_TABLES: [&str; 14] = [
+pub(crate) const DOCUMENT_TABLES: [&str; 17] = [
     "saved_view",
     "chart_template",
     "drawing_template",
@@ -119,6 +119,9 @@ pub(crate) const DOCUMENT_TABLES: [&str; 14] = [
     "pine_alert_subscription",
     "mcp_client",
     "drawing_asset",
+    "journal_review",
+    "journal_playbook",
+    "journal_day",
 ];
 
 pub struct Store {

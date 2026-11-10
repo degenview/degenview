@@ -21,6 +21,10 @@ pub const MAX_NAME_CHARS: usize = crate::model::watchlist::MAX_NAME_CHARS;
 pub const MAX_PAPER_ROWS: usize = 20_000;
 pub const MAX_DEVICE_ID_CHARS: usize = 64;
 pub const MAX_SETTING_BYTES: usize = 100_000;
+/// A journal row's key (a trade key, a date, a playbook id), and its longest text and lists.
+pub const MAX_JOURNAL_KEY_CHARS: usize = 300;
+pub const MAX_JOURNAL_TEXT_BYTES: usize = 200_000;
+pub const MAX_JOURNAL_LIST: usize = 500;
 pub const MAX_JSON_DEPTH: usize = 64;
 /// Prices and timestamps in millisecond epochs stay far below this.
 pub const MAX_ABS_NUMBER: f64 = 1e18;
@@ -115,6 +119,9 @@ fn check(record: &SyncRecord, value: &Value) -> Result<(), String> {
                 .verified_bytes()
                 .map(|_| ())
                 .ok_or_else(|| "a picture is not what its name says".into())
+        }
+        EntityKind::JournalReview | EntityKind::JournalDay | EntityKind::JournalPlaybook => {
+            check_journal(kind, id, value)
         }
         EntityKind::Watchlist => {
             let object = object(value)?;
@@ -251,6 +258,89 @@ fn id_matches_number(
             kind.prefix()
         ))
     }
+}
+
+/// Journal rows hold the user's own words, so the bounds are generous, but a row must be what
+/// its record name says and decode as the model the journal reads.
+fn check_journal(kind: EntityKind, id: &str, value: &Value) -> Result<(), String> {
+    let object = object(value)?;
+    let (key, field) = match kind {
+        EntityKind::JournalReview => ("trade_key", "trade_key"),
+        EntityKind::JournalDay => ("date", "date"),
+        _ => ("id", "id"),
+    };
+    let stored = object
+        .get(key)
+        .and_then(Value::as_str)
+        .ok_or_else(|| format!("`{field}` is missing"))?;
+    if stored.is_empty() || stored.chars().count() > MAX_JOURNAL_KEY_CHARS {
+        return Err(format!("`{field}` is not a usable key"));
+    }
+    // A review is named by the hash of its trade key; the other two are named by what they hold.
+    let expected = if kind == EntityKind::JournalReview {
+        crate::model::journal::reviews::review_row_id(stored)
+    } else {
+        stored.to_owned()
+    };
+    if expected != id {
+        return Err(format!("`{field}` is not the record's id"));
+    }
+    // The row's own `id` is how the table names it.
+    if object
+        .get("id")
+        .and_then(Value::as_str)
+        .is_some_and(|row_id| row_id != id)
+    {
+        return Err("the row's id is not the record's id".into());
+    }
+    for (name, text) in object
+        .iter()
+        .filter_map(|(name, v)| Some((name, v.as_str()?)))
+    {
+        if text.len() > MAX_JOURNAL_TEXT_BYTES {
+            return Err(format!("`{name}` is too long"));
+        }
+    }
+    match kind {
+        EntityKind::JournalReview => {
+            let review: crate::model::journal::reviews::Review =
+                serde_json::from_value(value.clone()).map_err(|_| "a review is malformed")?;
+            if review.images.len() > crate::model::journal::reviews::MAX_IMAGES
+                || review
+                    .images
+                    .iter()
+                    .any(|hash| !crate::model::journal::reviews::is_picture_hash(hash))
+            {
+                return Err("a review names screenshots wrongly".into());
+            }
+            for list in [&review.tags, &review.mistakes, &review.emotions] {
+                if list.len() > MAX_JOURNAL_LIST {
+                    return Err("a review has too many tags".into());
+                }
+            }
+            if review.checks.len() > MAX_JOURNAL_LIST {
+                return Err("a review has too many checks".into());
+            }
+        }
+        EntityKind::JournalDay => {
+            let entry: crate::model::journal::daily::DailyEntry =
+                serde_json::from_value(value.clone()).map_err(|_| "a daily entry is malformed")?;
+            if crate::model::journal::format::parse_iso_date(&entry.date).is_none() {
+                return Err("a daily entry's date is not a date".into());
+            }
+        }
+        _ => {
+            let playbook: crate::model::journal::playbook::Playbook =
+                serde_json::from_value(value.clone()).map_err(|_| "a playbook is malformed")?;
+            if playbook.name.trim().is_empty() || playbook.name.chars().count() > MAX_NAME_CHARS {
+                return Err("a playbook needs a name of reasonable length".into());
+            }
+            if playbook.checklist.len() > MAX_JOURNAL_LIST {
+                return Err("a playbook has too many checklist items".into());
+            }
+        }
+    }
+    Ok(())
 }
 
 fn name_ok(object: &serde_json::Map<String, Value>, key: &str) -> Result<(), String> {

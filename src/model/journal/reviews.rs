@@ -71,6 +71,17 @@ pub struct Review {
     pub updated_ms: i64,
 }
 
+/// The name a review has in the document table and in iCloud: a trade key holds `:` and `|`, which a
+/// record name may not, so the row is named by the hash of the key (the key itself is in the row).
+pub fn review_row_id(trade_key: &str) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(trade_key.as_bytes())
+        .iter()
+        .take(16)
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
 /// Most screenshots one review keeps.
 pub const MAX_IMAGES: usize = 12;
 
@@ -308,6 +319,15 @@ mod tests {
         let review: Review =
             serde_json::from_str(r#"{"trade_key":"k","account_uid":"a"}"#).unwrap();
         assert!(review.is_empty());
+    }
+
+    #[test]
+    fn a_review_row_id_is_a_legal_record_name_and_depends_only_on_the_key() {
+        let id = review_row_id("import:main|csv-0a1b");
+        assert_eq!(id.len(), 32);
+        assert!(id.bytes().all(|b| b.is_ascii_hexdigit()));
+        assert_eq!(id, review_row_id("import:main|csv-0a1b"));
+        assert_ne!(id, review_row_id("paper:1:2:0"));
     }
 
     #[test]

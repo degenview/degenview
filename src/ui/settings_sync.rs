@@ -65,6 +65,7 @@ pub fn counts_text(counts: &Counts) -> String {
         (counts.alerts, "alert", "alerts"),
         (counts.portfolios, "portfolio", "portfolios"),
         (counts.paper_accounts, "paper account", "paper accounts"),
+        (counts.journal, "journal entry", "journal entries"),
     ];
     let listed: Vec<String> = parts
         .iter()
