@@ -3,10 +3,12 @@
 ## Ownership
 
 - Each tab owns one `ChartWorkspace`; never treat it as app-global. `DegenViewApp` owns `TabSlot`s
-  containing a workspace, portfolio tab, or Pine Studio.
+  containing a workspace, portfolio tab, trade journal, or Pine Studio.
 - Per-workspace live feeds and refreshes follow that workspace window's visibility/occlusion;
   hidden tabs suspend. Stores and portfolio/paper/alert/webhook/Pine hosts are shared `Arc<Mutex>`;
   presentation state is per tab/window.
+- The Trade Journal is a fourth tab kind (`TabContent::Journal`, persisted as `kind: "journal"`, one
+  instance). Its trades are shared app-wide in `JournalHost`; see [Trading journal](../trading-journal.md).
 - Saved-layout dirty state is a `LayoutSnapshot` fingerprint, not a flag. It covers timeframe,
   chart configs, and columns—not zoom, drawings, replay, or market data. (An Autosave layout also
   writes on a drawing-only edit, via `ChartWorkspace::drawings_dirty`, so drawings reach iCloud

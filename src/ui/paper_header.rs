@@ -8,6 +8,7 @@
 
 use crate::model::paper::PaperCurrency;
 use crate::ui::accessibility;
+use crate::ui::dialog;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, Confirm, ConfirmOutcome};
 use crate::ui::paper_tables::{self, FooterFacts, PaperTab, footer_note};
@@ -80,20 +81,45 @@ pub fn delete_title(name: &str) -> String {
     format!("Delete \u{201c}{name}\u{201d}?")
 }
 
-pub const DELETE_MESSAGE: &str = "Every position, order, fill, history and journal entry in this account is removed. This can't be undone.";
+pub const DELETE_MESSAGE: &str = "Every position, order, fill and activity-log entry in this account is removed. This can't be undone.";
 
-/// The confirmation for deleting an account; `None` while it is still open.
-pub fn delete_confirm(ctx: &egui::Context, name: &str) -> Option<ConfirmOutcome> {
-    kit::confirm(
-        ctx,
-        Id::new("paper-delete-account"),
-        &Confirm {
-            icon: Icon::Trash,
-            title: &delete_title(name),
-            message: DELETE_MESSAGE,
-            destructive: "Delete Account",
-        },
-    )
+/// The confirmation for deleting an account; `None` while it is still open. `keep_history` is the
+/// switch under the message: whether the account's history stays in the Trade Journal.
+pub fn delete_confirm(
+    ctx: &egui::Context,
+    name: &str,
+    keep_history: &mut bool,
+) -> Option<ConfirmOutcome> {
+    let title = delete_title(name);
+    let mut spec = dialog::Dialog::new(
+        Icon::Trash,
+        kit::RED,
+        &title,
+        DELETE_MESSAGE,
+        "Delete Account",
+    );
+    spec.destructive = true;
+    let outcome = dialog::show(ctx, Id::new("paper-delete-account"), &spec, |ui| {
+        ui.add_space(14.0);
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 10.0;
+            kit::switch(
+                ui,
+                keep_history,
+                "Keep this account's history in the Trade Journal",
+            );
+            ui.label(kit::text(
+                "Keep this account's history in the Trade Journal",
+                kit::size::BODY,
+                kit::REGULAR,
+                theme::text_primary(),
+            ));
+        });
+    });
+    outcome.map(|outcome| match outcome {
+        dialog::Outcome::Accepted => ConfirmOutcome::Confirmed,
+        dialog::Outcome::Dismissed | dialog::Outcome::Leading => ConfirmOutcome::Cancelled,
+    })
 }
 
 /// The count shown beside a tab; only the live sections carry one.

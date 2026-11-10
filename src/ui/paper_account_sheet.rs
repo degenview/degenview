@@ -81,6 +81,8 @@ pub struct AccountSheetResult {
     pub currency: PaperCurrency,
     pub balance: f64,
     pub settings: PaperAccountSettings,
+    /// A reset only: keep the old account's history in the Trade Journal (else remove it).
+    pub keep_journal_history: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -103,6 +105,8 @@ pub struct PaperAccountSheetState {
     focus_pending: bool,
     /// Why the last submit failed to save, shown until the next try.
     pub submit_error: Option<String>,
+    /// A reset keeps the account's history in the Trade Journal unless the user says otherwise.
+    pub keep_journal_history: bool,
 }
 
 impl PaperAccountSheetState {
@@ -118,6 +122,7 @@ impl PaperAccountSheetState {
             commission_text: "0".to_owned(),
             focus_pending: true,
             submit_error: None,
+            keep_journal_history: true,
         }
     }
 
@@ -135,6 +140,7 @@ impl PaperAccountSheetState {
             commission_text: decimal_text(commission, false),
             focus_pending: false,
             submit_error: None,
+            keep_journal_history: true,
         }
     }
 
@@ -251,6 +257,7 @@ impl PaperAccountSheetState {
             currency: self.currency,
             balance,
             settings,
+            keep_journal_history: self.keep_journal_history,
         })
     }
 }
@@ -316,11 +323,24 @@ fn form(ui: &mut egui::Ui, state: &mut PaperAccountSheetState) {
             Icon::TriangleFill,
             kit::RED,
             "This can't be undone",
-            Some(
-                "Every position, order, fill, history and journal entry in this account is removed.",
-            ),
+            Some("Every position, order, fill and activity-log entry in this account is removed."),
             None,
         );
+        ui.add_space(GAP);
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 10.0;
+            kit::switch(
+                ui,
+                &mut state.keep_journal_history,
+                "Keep this account's history in the Trade Journal",
+            );
+            ui.label(kit::text(
+                "Keep this account's history in the Trade Journal",
+                kit::size::BODY,
+                kit::REGULAR,
+                theme::text_primary(),
+            ));
+        });
         ui.add_space(GAP);
     }
 

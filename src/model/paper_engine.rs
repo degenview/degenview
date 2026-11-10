@@ -52,6 +52,20 @@ impl PaperTradingEngine {
 
     // MARK: Accounts
 
+    /// The creation time for a new (or reset) account: now, but never equal to another account's.
+    /// The Trade Journal names an account by this time, so two accounts made in one millisecond
+    /// must not share it.
+    fn fresh_account_time(&self) -> i64 {
+        let latest = self
+            .snapshot
+            .accounts
+            .iter()
+            .map(|account| account.created_at)
+            .max()
+            .unwrap_or(i64::MIN);
+        now_ms().max(latest.saturating_add(1))
+    }
+
     pub fn create_account(
         &mut self,
         name: &str,
@@ -77,7 +91,7 @@ impl PaperTradingEngine {
             cash_balance: initial_balance,
             realized_pnl: 0.0,
             settings,
-            created_at: now_ms(),
+            created_at: self.fresh_account_time(),
         };
         self.snapshot.accounts.push(account);
         self.snapshot.selected_account_id = Some(id);
@@ -141,7 +155,7 @@ impl PaperTradingEngine {
             cash_balance: initial_balance,
             realized_pnl: 0.0,
             settings,
-            created_at: now_ms(),
+            created_at: self.fresh_account_time(),
         };
         self.snapshot.orders.retain(|order| order.account_id != id);
         self.snapshot.fills.retain(|fill| fill.account_id != id);
@@ -1388,6 +1402,30 @@ mod tests {
             take_profit: None,
             stop_loss: None,
         }
+    }
+
+    #[test]
+    fn accounts_made_in_the_same_millisecond_get_different_creation_times() {
+        let mut engine = PaperTradingEngine::new(PaperTradingSnapshot::default());
+        let settings = PaperAccountSettings::default;
+        for name in ["A", "B", "C"] {
+            engine
+                .create_account(name, PaperCurrency::Usd, 1_000.0, settings())
+                .unwrap();
+        }
+        let id = engine.snapshot().accounts[0].id;
+        engine
+            .reset_account(id, PaperCurrency::Usd, 1_000.0, settings())
+            .unwrap();
+        let mut times: Vec<i64> = engine
+            .snapshot()
+            .accounts
+            .iter()
+            .map(|account| account.created_at)
+            .collect();
+        times.sort_unstable();
+        times.dedup();
+        assert_eq!(times.len(), 3);
     }
 
     fn engine_with_account() -> (PaperTradingEngine, u64) {
