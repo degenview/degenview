@@ -775,3 +775,4 @@ fn the_worker_applying_for_a_covered_window_does_not_acknowledge_a_failed_batch_
         std::thread::sleep(Duration::from_millis(20));
     }
 }
+
