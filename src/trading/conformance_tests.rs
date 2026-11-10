@@ -101,6 +101,18 @@ fn check(backend: &dyn TradingBackend, kind: VenueKind, settle_cancel: &dyn Fn(&
         .expect("the account has funds");
     assert!(funds.value > Decimal::ZERO && !funds.asset.is_empty());
     assert!(backend.account().is_some());
+
+    // The strip: a big figure and quieter ones, every one with a title and a value to draw.
+    let stats = backend.stats().expect("an account with numbers");
+    assert_eq!(stats.hero.title, "Equity");
+    assert!(!stats.hero.value.is_empty());
+    assert!(stats.cells.len() >= 4);
+    assert!(
+        stats
+            .cells
+            .iter()
+            .all(|cell| !cell.title.is_empty() && !cell.value.is_empty() && !cell.help.is_empty())
+    );
     let most = backend
         .max_size(&market(), Side::Buy, Some(d("90000")))
         .expect("the account can afford some");

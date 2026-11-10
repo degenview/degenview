@@ -14,9 +14,9 @@ use super::draft::{
     Submitted, TradeDraft,
 };
 use super::model::{
-    AccountStrip, Amount, BackendState, BalanceRow, FillRow, MarketAccess, MarketRules, OrderClass,
-    OrderRow, PositionRow, QuoteView, RowStatus, TabKind, TicketCaps, TimeInForce, Tone,
-    Unavailable, UnavailableKind, VenueInfo, VenueKind,
+    AccountStats, AccountStrip, Amount, BackendState, BalanceRow, FillRow, MarketAccess,
+    MarketRules, OrderClass, OrderRow, PositionRow, QuoteView, RowStatus, TabKind, TicketCaps,
+    TimeInForce, Tone, Unavailable, UnavailableKind, VenueInfo, VenueKind,
 };
 use super::task::Task;
 use crate::host::paper_host::PaperHost;
@@ -106,6 +106,7 @@ fn order_row(order: &PaperOrder) -> OrderRow {
         side: side(order.side),
         kind: kind_label(order.kind).to_owned(),
         price: order.limit_price.or(order.stop_price).map(dec),
+        trigger: order.limit_price.and(order.stop_price).map(dec),
         filled: dec(order.filled_quantity),
         size: Some(dec(order.original_quantity)),
         spend: None,
@@ -269,6 +270,20 @@ impl TradingBackend for PaperBackend {
                 code(account.base_currency),
             )),
         })
+    }
+
+    fn stats(&self) -> Option<AccountStats> {
+        let host = self.host();
+        let snapshot = host.snapshot();
+        let account = snapshot
+            .selected_account_id
+            .and_then(|id| snapshot.accounts.iter().find(|a| a.id == id))
+            .or_else(|| snapshot.accounts.first())?;
+        let metrics = host.metrics(account.id);
+        Some(crate::ui::paper_tables::stats(
+            Some(&metrics),
+            account.base_currency,
+        ))
     }
 
     fn available(&self, _market: &MarketRef, _side: Side) -> Option<Amount> {

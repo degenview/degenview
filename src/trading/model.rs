@@ -234,6 +234,61 @@ pub struct AccountStrip {
     pub equity: Option<Amount>,
 }
 
+/// How a figure in the account strip is coloured: quiet, green or red for a gain or a loss, orange
+/// or red for a buffer that is thin or nearly gone.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StatTone {
+    Neutral,
+    Profit,
+    Loss,
+    Thin,
+    Critical,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Trend {
+    Up,
+    Down,
+    Flat,
+}
+
+/// The line under the strip's big figure: a trend arrow, a figure and a word ("open").
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HeroNote {
+    pub trend: Trend,
+    pub text: String,
+    pub tone: StatTone,
+    pub label: String,
+}
+
+/// The big figure at the left of the account strip.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Hero {
+    pub title: String,
+    pub value: String,
+    /// What the figure is not exact about (a value that leaves out unpriced assets), shown on hover.
+    pub help: Option<String>,
+    pub note: Option<HeroNote>,
+}
+
+/// One quieter figure of the strip.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StatCell {
+    pub title: String,
+    pub value: String,
+    pub tone: StatTone,
+    /// Said on hover.
+    pub help: String,
+}
+
+/// The account's numbers, in words and figures the strip draws as they are: every venue builds its
+/// own, the strip knows none of them.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AccountStats {
+    pub hero: Hero,
+    pub cells: Vec<StatCell>,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Tone {
     Good,
@@ -258,6 +313,8 @@ pub struct OrderRow {
     pub kind: String,
     /// The limit price, or the stop's when that is all the order has.
     pub price: Option<Decimal>,
+    /// The price that sets a stop order off, when the order has both a trigger and a limit.
+    pub trigger: Option<Decimal>,
     pub filled: Decimal,
     /// The size asked for, in the base asset; `None` for a market order sized by an amount to spend.
     pub size: Option<Decimal>,
@@ -316,6 +373,18 @@ pub enum TabKind {
 }
 
 impl TabKind {
+    /// The icon on the tab, the same wherever the tab appears.
+    pub fn icon(self) -> crate::ui::icons::Icon {
+        use crate::ui::icons::Icon;
+        match self {
+            Self::Positions => Icon::ChartUptrend,
+            Self::Orders => Icon::List,
+            Self::History => Icon::Clock,
+            Self::Fills => Icon::Exchange,
+            Self::Balances => Icon::Banknote,
+        }
+    }
+
     pub fn title(self) -> &'static str {
         match self {
             Self::Positions => "Positions",
@@ -336,6 +405,23 @@ mod tests {
         assert!(VenueKind::Live.is_real_money());
         assert!(!VenueKind::Test.is_real_money());
         assert!(!VenueKind::Simulated.is_real_money());
+    }
+
+    #[test]
+    fn every_tab_has_its_own_icon_and_title() {
+        let tabs = [
+            TabKind::Positions,
+            TabKind::Orders,
+            TabKind::History,
+            TabKind::Fills,
+            TabKind::Balances,
+        ];
+        for (index, a) in tabs.iter().enumerate() {
+            for b in &tabs[index + 1..] {
+                assert_ne!(a.icon(), b.icon(), "{a:?} and {b:?}");
+                assert_ne!(a.title(), b.title());
+            }
+        }
     }
 
     #[test]

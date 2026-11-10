@@ -12,6 +12,7 @@ use crate::model::paper::{
 use crate::model::paper_format::{
     self as fmt, BadgeTone, BufferLevel, PnlTone, margin_buffer_level, pnl_tone,
 };
+use crate::trading::model::{AccountStats, Hero, HeroNote, StatCell, StatTone, Trend};
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, Confirm, ConfirmOutcome};
 use crate::ui::paper_grid::{self as grid, Col, col};
@@ -221,6 +222,55 @@ pub fn metric_cells(
             help: "Available funds as a share of equity".to_owned(),
         },
     ]
+}
+
+fn stat_tone(tone: PnlTone) -> StatTone {
+    match tone {
+        PnlTone::Profit => StatTone::Profit,
+        PnlTone::Loss => StatTone::Loss,
+        PnlTone::Flat => StatTone::Neutral,
+    }
+}
+
+/// The account's numbers in the words every venue's strip uses: this is the paper account's.
+pub fn stats(metrics: Option<&PaperAccountMetrics>, currency: PaperCurrency) -> AccountStats {
+    let note = metrics.map(|m| {
+        let trend = if m.unrealized_pnl > 0.0 {
+            Trend::Up
+        } else if m.unrealized_pnl < 0.0 {
+            Trend::Down
+        } else {
+            Trend::Flat
+        };
+        HeroNote {
+            trend,
+            text: unrealized_text(m, currency),
+            tone: stat_tone(pnl_tone(m.unrealized_pnl)),
+            label: "open".to_owned(),
+        }
+    });
+    AccountStats {
+        hero: Hero {
+            title: "Equity".to_owned(),
+            value: metrics.map_or_else(|| "—".to_owned(), |m| fmt::money(m.equity, currency)),
+            help: None,
+            note,
+        },
+        cells: metric_cells(metrics, currency)
+            .into_iter()
+            .map(|cell| StatCell {
+                title: cell.title.to_owned(),
+                value: cell.value,
+                tone: match (cell.tone, cell.buffer) {
+                    (Some(tone), _) => stat_tone(tone),
+                    (None, Some(BufferLevel::Critical)) => StatTone::Critical,
+                    (None, Some(BufferLevel::Thin)) => StatTone::Thin,
+                    _ => StatTone::Neutral,
+                },
+                help: cell.help,
+            })
+            .collect(),
+    }
 }
 
 /// Height of the metrics strip: the hero's three lines between 9 pt of padding.
@@ -1129,6 +1179,47 @@ mod tests {
             available_funds: 9_120.0,
             margin_buffer: 0.9,
         }
+    }
+
+    #[test]
+    fn the_strip_says_what_the_paper_panel_always_said() {
+        let usd = PaperCurrency::Usd;
+        let strip = stats(Some(&metrics()), usd);
+        assert_eq!(strip.hero.title, "Equity");
+        assert_eq!(strip.hero.value, "$10,120.00");
+        let note = strip.hero.note.as_ref().expect("a note under the figure");
+        assert_eq!(note.text, "+$120.00 (+1.20%)");
+        assert_eq!((note.trend, note.tone), (Trend::Up, StatTone::Profit));
+        assert_eq!(note.label, "open");
+        let cells: Vec<(&str, &str, StatTone)> = strip
+            .cells
+            .iter()
+            .map(|c| (c.title.as_str(), c.value.as_str(), c.tone))
+            .collect();
+        assert_eq!(
+            cells,
+            [
+                ("Balance", "$10,000.00", StatTone::Neutral),
+                ("Realized P&L", "+$50.00", StatTone::Profit),
+                ("Available", "$9,120.00", StatTone::Neutral),
+                ("Margin used", "$1,000.00", StatTone::Neutral),
+                ("Margin buffer", "90.00%", StatTone::Neutral),
+            ]
+        );
+        // Without an account: dashes, no note.
+        let empty = stats(None, usd);
+        assert_eq!(empty.hero.value, "—");
+        assert!(empty.hero.note.is_none());
+        assert!(empty.cells.iter().all(|c| c.value == "—"));
+        // A thin buffer and a loss.
+        let thin = PaperAccountMetrics {
+            margin_buffer: 0.2,
+            unrealized_pnl: -50.0,
+            ..metrics()
+        };
+        let strip = stats(Some(&thin), usd);
+        assert_eq!(strip.cells[4].tone, StatTone::Thin);
+        assert_eq!(strip.hero.note.unwrap().trend, Trend::Down);
     }
 
     #[test]

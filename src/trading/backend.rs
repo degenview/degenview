@@ -9,8 +9,8 @@ use degenview_brokers::{Decimal, MarketRef, Side};
 
 use super::draft::{CancelResult, DraftCheck, PreviewResult, SubmitResult, TradeDraft};
 use super::model::{
-    AccountStrip, Amount, BackendState, BalanceRow, FillRow, MarketAccess, OrderRow, PositionRow,
-    QuoteView, TabKind, VenueInfo,
+    AccountStats, AccountStrip, Amount, BackendState, BalanceRow, FillRow, MarketAccess, OrderRow,
+    PositionRow, QuoteView, TabKind, VenueInfo,
 };
 use super::task::Task;
 
@@ -21,6 +21,10 @@ pub trait TradingBackend: Send + Sync {
 
     /// The account the orders go to; `None` while there is none to show.
     fn account(&self) -> Option<AccountStrip>;
+
+    /// The account's numbers for the strip at the top of the orders panel. Calling it says the
+    /// prices behind them are wanted, so call it every frame the strip is drawn.
+    fn stats(&self) -> Option<AccountStats>;
 
     /// What can be spent on an order of `side` in `market`: the quote asset to buy, the base asset
     /// to sell (a venue that nets positions counts its free funds either way).

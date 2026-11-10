@@ -19,11 +19,13 @@ use super::draft::{
     Submitted, TradeDraft, floor_to_increment,
 };
 use super::model::{
-    AccountStrip, Amount, BackendState, BalanceRow, FillRow, MarketAccess, MarketRules, OrderClass,
-    OrderRow, PositionRow, QuoteView, RowStatus, TabKind, TicketCaps, TimeInForce, Tone,
-    Unavailable, UnavailableKind, VenueInfo, VenueKind,
+    AccountStats, AccountStrip, Amount, BackendState, BalanceRow, FillRow, Hero, HeroNote,
+    MarketAccess, MarketRules, OrderClass, OrderRow, PositionRow, QuoteView, RowStatus, StatCell,
+    StatTone, TabKind, TicketCaps, TimeInForce, Tone, Trend, Unavailable, UnavailableKind,
+    VenueInfo, VenueKind,
 };
 use super::task::Task;
+use super::valuation::{self, Holding};
 use crate::host::broker_host::{BrokerHost, Connection};
 use crate::model::broker_chart::{self, ChartTrading};
 use crate::model::broker_ticket::{
@@ -164,6 +166,7 @@ fn order_row(view: &OrderView, snapshot: &BrokerSnapshot) -> OrderRow {
         side: order.side,
         kind: rules::type_label(order),
         price: order.limit_price.or(order.stop_price),
+        trigger: order.limit_price.and(order.stop_price),
         filled: order.filled_size,
         size,
         spend,
@@ -184,21 +187,28 @@ fn order_row(view: &OrderView, snapshot: &BrokerSnapshot) -> OrderRow {
 
 fn pending_row(pending: &PendingView) -> OrderRow {
     let draft = &pending.draft;
-    let (kind, price, size, spend) = match &draft.kind {
+    let (kind, price, trigger, size, spend) = match &draft.kind {
         OrderKind::Market {
             size: OrderSize::Base(size),
-        } => ("Market", None, Some(*size), None),
+        } => ("Market", None, None, Some(*size), None),
         OrderKind::Market {
             size: OrderSize::Quote(amount),
-        } => ("Market", None, None, Some(*amount)),
+        } => ("Market", None, None, None, Some(*amount)),
         OrderKind::Limit {
             base_size, price, ..
-        } => ("Limit", Some(*price), Some(*base_size), None),
+        } => ("Limit", Some(*price), None, Some(*base_size), None),
         OrderKind::StopLimit {
             base_size,
             limit_price,
+            stop_price,
             ..
-        } => ("Stop-limit", Some(*limit_price), Some(*base_size), None),
+        } => (
+            "Stop-limit",
+            Some(*limit_price),
+            Some(*stop_price),
+            Some(*base_size),
+            None,
+        ),
     };
     let unconfirmed = pending.state == PendingState::Unknown;
     OrderRow {
@@ -207,6 +217,7 @@ fn pending_row(pending: &PendingView) -> OrderRow {
         side: draft.side,
         kind: kind.to_owned(),
         price,
+        trigger,
         filled: Decimal::ZERO,
         size,
         spend,
@@ -353,6 +364,127 @@ impl TradingBackend for BrokerBackend {
         Some(AccountStrip {
             label,
             equity: None,
+        })
+    }
+
+    fn stats(&self) -> Option<AccountStats> {
+        let snapshot = self.snapshot()?;
+        let holdings: Vec<Holding> = snapshot
+            .balances
+            .iter()
+            .map(|balance| Holding {
+                asset: balance.asset.clone(),
+                available: balance.available,
+                held: balance.held,
+            })
+            .collect();
+        let currency = valuation::valuation_currency(&holdings);
+        // Prices come from the market that pairs the asset with the valuation currency. Asking is
+        // cheap and only done while the strip is drawn, and only for assets actually held.
+        let valuation = valuation::value(&holdings, &currency, |asset| {
+            let spec = snapshot
+                .products
+                .iter()
+                .find(|spec| spec.base == asset && spec.quote == currency)?;
+            self.host.want_quote(self.id(), &spec.id);
+            let quote = self.host.quote(self.id(), &spec.id)?;
+            match (quote.bid, quote.ask) {
+                (Some(bid), Some(ask)) => Some((bid + ask) / Decimal::TWO),
+                _ => quote.last,
+            }
+        });
+        let money = |value| valuation::money(value, &currency);
+        let working = snapshot
+            .orders
+            .iter()
+            .filter(|view| view.order.status.is_working())
+            .count()
+            + snapshot.pending.len();
+        let note = if valuation.assets == 0 {
+            None
+        } else {
+            let assets = format!(
+                "{} {}",
+                valuation.assets,
+                if valuation.assets == 1 {
+                    "asset"
+                } else {
+                    "assets"
+                }
+            );
+            Some(HeroNote {
+                trend: Trend::Flat,
+                text: if valuation.unpriced.is_empty() {
+                    assets
+                } else {
+                    format!("{assets} · {} unpriced", valuation.unpriced.len())
+                },
+                tone: if valuation.unpriced.is_empty() {
+                    StatTone::Neutral
+                } else {
+                    StatTone::Thin
+                },
+                label: String::new(),
+            })
+        };
+        let mut cells = vec![
+            StatCell {
+                title: "Cash".to_owned(),
+                value: money(valuation.cash),
+                tone: StatTone::Neutral,
+                help: format!("{currency} free to spend"),
+            },
+            StatCell {
+                title: "On hold".to_owned(),
+                value: money(valuation.on_hold),
+                tone: StatTone::Neutral,
+                help: "Committed to open orders".to_owned(),
+            },
+            StatCell {
+                title: "Holdings".to_owned(),
+                value: money(valuation.holdings),
+                tone: StatTone::Neutral,
+                help: format!("Everything held except {currency}, at the latest prices"),
+            },
+            StatCell {
+                title: "Open orders".to_owned(),
+                value: working.to_string(),
+                tone: StatTone::Neutral,
+                help: "Orders resting at the broker or being sent".to_owned(),
+            },
+        ];
+        if let Some(fees) = &snapshot.fees
+            && let (Some(maker), Some(taker)) = (fees.maker_rate, fees.taker_rate)
+        {
+            cells.push(StatCell {
+                title: "Fees".to_owned(),
+                value: format!(
+                    "{} / {}",
+                    valuation::percent(maker),
+                    valuation::percent(taker)
+                ),
+                tone: StatTone::Neutral,
+                help: format!("Maker / taker, {}", fees.tier),
+            });
+        }
+        let help = (!valuation.unpriced.is_empty()).then(|| {
+            format!(
+                "An estimate: {} could not be priced and is left out.",
+                valuation.unpriced.join(", ")
+            )
+        });
+        Some(AccountStats {
+            hero: Hero {
+                title: "Equity".to_owned(),
+                value: if valuation.assets == 0 {
+                    "—".to_owned()
+                } else {
+                    format!("≈ {}", money(valuation.equity))
+                },
+                help,
+                note,
+            },
+            cells,
         })
     }
 

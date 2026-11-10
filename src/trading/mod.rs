@@ -11,6 +11,7 @@ pub mod model;
 pub mod paper_backend;
 pub mod preview;
 pub mod task;
+pub mod valuation;
 
 #[allow(unused_imports)]
 pub use backend::TradingBackend;
