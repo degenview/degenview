@@ -90,6 +90,13 @@ impl TradeDraft {
         draft
     }
 
+    pub fn side_label(&self) -> &'static str {
+        match self.side {
+            Side::Buy => "Buy",
+            Side::Sell => "Sell",
+        }
+    }
+
     pub fn uses_limit_price(&self) -> bool {
         matches!(self.class, OrderClass::Limit | OrderClass::StopLimit)
     }

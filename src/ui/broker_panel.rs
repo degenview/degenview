@@ -201,6 +201,8 @@ impl Default for BrokerPanelState {
 pub enum PanelAction {
     Close,
     OpenSettings,
+    /// "New order": the order sheet takes it from here.
+    NewOrder,
 }
 
 // ---- Rules (pure) --------------------------------------------------------------------------------
@@ -670,51 +672,11 @@ fn header(
                             && s.session.as_ref().is_some_and(|x| x.permissions.can_trade)
                     });
                     if kit::sheet_button(ui, "New order", true, can_trade).clicked() {
-                        new_order(state, host, broker, input);
+                        actions.push(PanelAction::NewOrder);
                     }
                 });
             });
         });
-}
-
-/// Opens a ticket for the focused chart's market, if that chart is a market this broker trades.
-fn new_order(
-    state: &mut BrokerPanelState,
-    host: &BrokerHost,
-    broker: &'static dyn Broker,
-    input: &PanelInput,
-) {
-    let descriptor = broker.descriptor();
-    if input.replay {
-        state.say("Not available during replay.", true);
-        return;
-    }
-    let Some(market) = &input.market else {
-        state.say(
-            "Focus a market chart first: the order is for the chart's market.",
-            true,
-        );
-        return;
-    };
-    match broker.resolve_market(market) {
-        ProductResolution::Market(product) => {
-            let prefs = host.prefs(descriptor.id);
-            let mut draft = TicketDraft::new(Side::Buy);
-            draft.spend_in_quote = prefs.spend_in_quote_by_default;
-            state.ticket = Some(TicketState::new(descriptor.id, product, draft));
-        }
-        ProductResolution::OtherSource { .. } => state.say(
-            format!(
-                "This chart's data does not come from {name}, so it is not a {name} market. Open the market's {name} chart to trade it.",
-                name = descriptor.display_name
-            ),
-            true,
-        ),
-        ProductResolution::Unrecognised => state.say(
-            format!("{} is not a market {} can trade.", market.symbol, descriptor.display_name),
-            true,
-        ),
-    }
 }
 
 fn banners(ui: &mut egui::Ui, snapshot: &BrokerSnapshot, actions: &mut Vec<PanelAction>) {

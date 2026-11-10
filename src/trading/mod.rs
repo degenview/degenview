@@ -5,9 +5,11 @@
 
 pub mod backend;
 pub mod broker_backend;
+pub mod confirm;
 pub mod draft;
 pub mod model;
 pub mod paper_backend;
+pub mod preview;
 pub mod task;
 
 #[allow(unused_imports)]

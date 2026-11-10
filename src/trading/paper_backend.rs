@@ -298,7 +298,7 @@ impl TradingBackend for PaperBackend {
         }
         MarketAccess::Ready(Box::new(MarketRules {
             name: instrument.display_name.clone(),
-            base_asset: instrument.symbol.clone(),
+            base_asset: crate::model::paper_ticket::base_symbol(&instrument),
             quote_asset: code(instrument.quote_currency).to_owned(),
             price_increment: dec(instrument.tick_size),
             size_increment: dec(instrument.quantity_increment),

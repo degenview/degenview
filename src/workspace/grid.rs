@@ -890,12 +890,15 @@ impl ChartWorkspace {
         }
         let paper_failures = Self::apply_paper_overlay_actions(paper_host, paper_actions);
         self.paper_panel.report_messages(&paper_failures);
-        if let Some((chart_id, side, reference_price)) = quick_trade
-            && let Some(chart) = self.charts.iter().find(|chart| chart.id == chart_id)
-        {
-            let instrument = Self::paper_instrument(chart);
-            self.paper_panel
-                .open_ticket(paper_host, instrument, reference_price, side);
+        if let Some((_, side, _)) = quick_trade {
+            self.start_order(
+                match side {
+                    crate::model::paper::PaperOrderSide::Buy => degenview_brokers::Side::Buy,
+                    crate::model::paper::PaperOrderSide::Sell => degenview_brokers::Side::Sell,
+                },
+                Some(crate::trading::model::OrderClass::Market),
+                None,
+            );
         }
         if let Some((chart_id, select)) = drawing_select {
             self.selected_drawing = (!select.is_empty()).then_some((chart_id, select));

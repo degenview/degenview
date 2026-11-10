@@ -17,9 +17,10 @@ use super::ChartWorkspace;
 use super::chart::Chart;
 use crate::host::broker_host::BrokerHost;
 use crate::model::broker_chart::{ChartTrading, Unavailable, chart_trading};
-use crate::model::broker_ticket::{self as rules, TicketDraft, TicketKind};
+use crate::model::broker_ticket::{self as rules, TicketKind};
 use crate::model::chart_context::{LiveFacts, LiveOrderRequest};
 use crate::model::chart_type::ChartType;
+use crate::trading::model::OrderClass;
 use crate::ui::broker_chart_trading::{BrokerOverlayAction, OrderLine};
 use crate::ui::broker_panel;
 use crate::ui::theme;
@@ -70,7 +71,8 @@ impl ChartWorkspace {
         let snapshot = host.snapshot(id);
         let prefs = host.prefs(id);
         let replay = self.replay_blocks_trading();
-        if replay && self.broker_panel.close_order_entry() {
+        let review_closed = replay && self.trade_sheet.close_review();
+        if (replay && self.broker_panel.close_order_entry()) || review_closed {
             self.say(
                 "A replay started, so the live order was closed unsent.",
                 true,
@@ -207,8 +209,8 @@ impl ChartWorkspace {
         })
     }
 
-    /// Opens the live ticket for this chart's market, filled in as the menu or a pill asks. Refused,
-    /// with the reason, whenever an order could not be placed from this chart.
+    /// Starts an order in the sheet for this chart's market, filled in as the menu or a pill asks.
+    /// Refused, with the reason, whenever an order could not be placed from this chart.
     pub(super) fn open_live_ticket(&mut self, chart_index: usize, request: LiveOrderRequest) {
         let Some((id, broker, host)) = self.active_broker() else {
             self.say("Choose a broker in the trading panel first.", true);
@@ -223,23 +225,19 @@ impl ChartWorkspace {
             snapshot.as_deref(),
             self.replay_blocks_trading(),
         );
-        let ChartTrading::Ready { product } = trading else {
-            let reason = trading.reason().map_or("", Unavailable::text);
-            self.say(reason, true);
+        if let ChartTrading::Unavailable(reason) = trading {
+            self.say(reason.text(), true);
             return;
-        };
-        let mut draft = match request.price {
-            Some(price) => TicketDraft::at_price(request.side, request.kind, price),
-            None => {
-                let mut draft = TicketDraft::new(request.side);
-                draft.kind = request.kind;
-                draft
-            }
-        };
-        if request.kind == TicketKind::Market && request.side == Side::Buy {
-            draft.spend_in_quote = host.prefs(id).spend_in_quote_by_default;
         }
-        self.broker_panel.open_ticket(id, product, draft);
+        let class = match request.kind {
+            TicketKind::Market => OrderClass::Market,
+            TicketKind::Limit => OrderClass::Limit,
+            TicketKind::StopLimit => OrderClass::StopLimit,
+        };
+        self.start_order(request.side, Some(class), request.price);
+        if request.kind == TicketKind::Market && request.side == Side::Buy {
+            self.trade_sheet.draft.spend_in_quote = host.prefs(id).spend_in_quote_by_default;
+        }
     }
 
     /// Acts on what the charts' live lines reported: ask to cancel, or open the edit sheet. Neither
@@ -458,9 +456,11 @@ mod tests {
         };
         workspace.open_live_ticket(0, request());
         assert!(
-            workspace.broker_panel.has_dialog(),
-            "outside replay the ticket opens"
+            workspace.trade_sheet_visible,
+            "outside replay the order starts in the sheet"
         );
+        assert_eq!(workspace.trade_sheet.draft.side, Side::Buy);
+        assert_eq!(workspace.trade_sheet.draft.class, OrderClass::Market);
 
         workspace.replay.start(1, "BTC-USD", vec![1, 2, 3]);
         assert!(workspace.replay.is_active());
@@ -470,14 +470,11 @@ mod tests {
             Some(Err(Unavailable::InReplay)),
             "the pills stay, greyed, with the reason"
         );
-        assert!(
-            !workspace.broker_panel.has_dialog(),
-            "a ticket open when the replay began is closed unsent"
-        );
+        workspace.trade_sheet_visible = false;
         workspace.open_live_ticket(0, request());
         assert!(
-            !workspace.broker_panel.has_dialog(),
-            "and none can be opened during one"
+            !workspace.trade_sheet_visible,
+            "and no order can be started during one"
         );
         // Editing from a line is refused too.
         let order = OrderId::new("anything");

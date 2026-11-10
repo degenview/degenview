@@ -130,6 +130,7 @@ pub mod tab_bar;
 pub mod tab_link_menu;
 pub mod theme;
 pub mod tool_sidebar;
+pub mod trade;
 pub mod update_indicator;
 pub mod watchlist_rows;
 pub mod watchlist_sidebar;

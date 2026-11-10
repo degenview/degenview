@@ -74,6 +74,7 @@ mod tab_link;
 mod test_support;
 mod tool_rail;
 mod toolbar;
+mod trade_sheet;
 mod undo;
 mod watchlist;
 
@@ -257,6 +258,9 @@ pub struct ChartWorkspace {
     watchlist_error: Option<crate::model::watchlist::WatchlistNotice>,
     watchlist_file_result: Option<Receiver<Result<(), String>>>,
     paper_panel_visible: bool,
+    /// The order sheet beside the chart. Open and closed with the trading panel, and by its own ✕.
+    trade_sheet_visible: bool,
+    trade_sheet: crate::ui::trade::order_sheet::SheetState,
     /// Where this tab's trading happens: paper, or a connected broker with real money. Not
     /// saved: a tab always starts on paper.
     trading_venue: crate::model::trading_venue::TradingVenue,
@@ -435,6 +439,8 @@ impl ChartWorkspace {
             watchlist_error: None,
             watchlist_file_result: None,
             paper_panel_visible: false,
+            trade_sheet_visible: false,
+            trade_sheet: crate::ui::trade::order_sheet::SheetState::default(),
             trading_venue: crate::model::trading_venue::TradingVenue::default(),
             broker_panel: crate::ui::broker_panel::BrokerPanelState::default(),
             new_alert_request: None,
@@ -767,6 +773,22 @@ impl ChartWorkspace {
             self.suspend_watchlist_demand();
         }
 
+        if self.trade_sheet_visible {
+            let sheet_actions = egui::Panel::right(egui::Id::new(("trade_sheet", self.id)))
+                .resizable(true)
+                .default_size(340.0)
+                .min_size(300.0)
+                .max_size(460.0)
+                .frame(
+                    egui::Frame::new()
+                        .fill(ui::kit::window())
+                        .inner_margin(egui::Margin::ZERO),
+                )
+                .show(ui, |ui| self.show_trade_sheet(ui))
+                .inner;
+            actions.extend(sheet_actions);
+        }
+
         if self.paper_panel_visible {
             let market = self
                 .focused_market_chart()
@@ -811,6 +833,9 @@ impl ChartWorkspace {
             for action in broker_actions {
                 match action {
                     crate::ui::broker_panel::PanelAction::Close => self.paper_panel_visible = false,
+                    crate::ui::broker_panel::PanelAction::NewOrder => {
+                        self.start_order(degenview_brokers::Side::Buy, None, None);
+                    }
                     crate::ui::broker_panel::PanelAction::OpenSettings => {
                         actions.push(WorkspaceAction::OpenBrokerSettings);
                     }

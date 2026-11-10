@@ -7,7 +7,7 @@ use crate::ui::kit;
 use crate::ui::theme;
 use eframe::egui::{self, Id, Vec2};
 
-const FIELD_HEIGHT: f32 = 34.0;
+pub(crate) const FIELD_HEIGHT: f32 = 34.0;
 
 pub fn field_label(ui: &mut egui::Ui, text: &str) {
     ui.label(kit::text(

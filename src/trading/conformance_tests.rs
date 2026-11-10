@@ -74,7 +74,8 @@ fn check(backend: &dyn TradingBackend, kind: VenueKind, settle_cancel: &dyn Fn(&
     let rules = access.rules().expect("a market of this venue");
     assert!(rules.caps.allows(OrderClass::Market) && rules.caps.allows(OrderClass::Limit));
     assert!(rules.price_increment > Decimal::ZERO && rules.size_increment > Decimal::ZERO);
-    assert!(!rules.quote_asset.is_empty());
+    assert_eq!(rules.base_asset, "BTC");
+    assert_eq!(rules.quote_asset, "USD");
 
     // A chart of a source no venue prices is nobody's market: nothing is offered or substituted.
     let other = MarketRef {
