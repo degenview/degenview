@@ -275,24 +275,26 @@ impl BrokerHost {
             .of(id.as_str())
     }
 
-    /// Saves the choices for `id` (to this Mac only). Applies at once even if saving fails.
-    pub fn set_prefs(&self, id: BrokerId, prefs: BrokerPrefs) -> Result<(), String> {
-        let mut all = self.prefs.lock().unwrap_or_else(|e| e.into_inner());
-        all.set(id.as_str(), prefs);
-        let result = match &self.store {
-            Some(store) => store
-                .lock()
-                .map_err(|_| "the store is unavailable".to_owned())
-                .and_then(|store| {
-                    store
-                        .set_setting(broker_prefs::KEY, &*all)
-                        .map_err(|error| error.to_string())
-                }),
-            None => Ok(()),
-        };
-        drop(all);
+    /// Applies the choices for `id` at once and saves them (to this Mac only) on a thread of their
+    /// own. The Settings page calls this while the shared store is locked, so saving here would wait
+    /// for the lock the caller holds. A save that fails leaves the choices applied for this session.
+    pub fn set_prefs(self: &Arc<Self>, id: BrokerId, prefs: BrokerPrefs) {
+        self.prefs
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .set(id.as_str(), prefs);
         self.changed();
-        result
+        let Some(store) = self.store.clone() else {
+            return;
+        };
+        let host = Arc::clone(self);
+        std::thread::spawn(move || {
+            // The newest choices, whichever save runs last: two quick changes cannot reorder.
+            let all = host.prefs.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            if let Ok(store) = store.lock() {
+                let _ = store.set_setting(broker_prefs::KEY, &all);
+            }
+        });
     }
 
     /// Says that something on screen wants this market's best prices. Cheap; call it every frame
@@ -423,12 +425,17 @@ impl BrokerHost {
 
     /// Saves checked credentials and starts the connection. A save that fails still connects for
     /// this session; the error says the credentials were not kept.
-    pub fn adopt(&self, id: BrokerId, credentials: Credentials) -> Result<(), String> {
+    ///
+    /// Starting reads the record of unconfirmed orders, which takes the shared store's lock. The
+    /// Settings window is drawn while that lock is held, so starting on the interface thread would
+    /// wait for itself and freeze the application. It starts on its own thread instead.
+    pub fn adopt(self: &Arc<Self>, id: BrokerId, credentials: Credentials) -> Result<(), String> {
         let saved = self
             .secrets
             .save(id, PROFILE, &credentials)
             .map_err(|error| error.0);
-        self.start(id, credentials);
+        let host = Arc::clone(self);
+        std::thread::spawn(move || host.start(id, credentials));
         saved
     }
 

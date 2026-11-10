@@ -106,6 +106,50 @@ fn a_key_is_checked_then_saved_then_connected_and_disconnect_removes_it() {
     assert!(matches!(host.connection(ID), Connection::NotConfigured));
 }
 
+/// The Settings window is drawn while the shared store is locked. Connecting from it must not wait
+/// for that lock on the interface thread: it did, and the whole application froze.
+#[test]
+fn connecting_while_the_caller_holds_the_store_does_not_wait_for_it() {
+    let exchange = CoinbaseExchange::start();
+    let store = store();
+    let (host, _) = host(&exchange, &store);
+    let held = store.lock().expect("the store");
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let ui_thread = Arc::clone(&host);
+    std::thread::spawn(move || {
+        let saved = ui_thread.adopt(ID, credentials(&generate_key_pem()));
+        let _ = sender.send(saved);
+    });
+    receiver
+        .recv_timeout(Duration::from_secs(3))
+        .expect("adopt returned while the store was locked")
+        .expect("saved");
+    drop(held);
+    wait_for("the connection to go live", || is_live(&host));
+}
+
+/// Changing a trading choice on the Settings page also happens under the store's lock.
+#[test]
+fn changing_choices_while_the_caller_holds_the_store_does_not_wait_for_it() {
+    let exchange = CoinbaseExchange::start();
+    let store = store();
+    let (host, _) = host(&exchange, &store);
+    let held = store.lock().expect("the store");
+    let (sender, receiver) = std::sync::mpsc::channel();
+    let ui_thread = Arc::clone(&host);
+    std::thread::spawn(move || {
+        let mut prefs = ui_thread.prefs(ID);
+        prefs.notify = false;
+        ui_thread.set_prefs(ID, prefs);
+        let _ = sender.send(());
+    });
+    receiver
+        .recv_timeout(Duration::from_secs(3))
+        .expect("set_prefs returned while the store was locked");
+    assert!(!host.prefs(ID).notify, "applied at once");
+    drop(held);
+}
+
 #[test]
 fn a_bad_key_is_refused_without_echoing_it_and_nothing_is_saved() {
     let exchange = CoinbaseExchange::start();
@@ -153,7 +197,17 @@ fn choices_about_trading_default_to_asking_and_survive_a_restart() {
     let mut prefs = first.prefs(ID);
     prefs.confirm_resting_orders = false;
     prefs.notify = false;
-    first.set_prefs(ID, prefs).unwrap();
+    first.set_prefs(ID, prefs);
+    // Saved on a thread of its own; wait until it is in the database.
+    wait_for("the choices to be saved", || {
+        store
+            .lock()
+            .expect("the store")
+            .setting_strict::<serde_json::Value>(crate::model::broker_prefs::KEY)
+            .ok()
+            .flatten()
+            .is_some()
+    });
     // A new process over the same database.
     let (second, _) = host(&exchange, &store);
     assert!(!second.prefs(ID).confirm_resting_orders);

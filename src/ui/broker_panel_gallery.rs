@@ -781,3 +781,111 @@ fn an_unreadable_record_of_unconfirmed_orders_stops_new_orders_at_the_ticket() {
     assert!(error.to_string().contains("No order was sent"), "{error}");
     assert_eq!(rig.exchange.order_posts(), 0);
 }
+
+/// Typing a key and pressing Connect must never stall a frame: the check and the save happen off
+/// the interface thread or are quick, and the page after connecting draws at once.
+#[test]
+fn connecting_a_key_from_the_settings_page_never_stalls_a_frame() {
+    let rig = rig();
+    let broker = degenview_brokers::registry::by_id(ID).expect("coinbase");
+    let key = credentials(&generate_key_pem());
+    let mut state = settings_brokers::BrokersState::default();
+    let mut screen = Screen::new(Vec2::new(600.0, 900.0));
+    let mut slowest = Duration::ZERO;
+    let mut draw = |state: &mut settings_brokers::BrokersState| {
+        let start = Instant::now();
+        frames(&mut screen, 1, |ui| {
+            egui::CentralPanel::default().show(ui, |ui| {
+                settings_brokers::body(ui, state, Some(rig.host.clone()));
+            });
+        });
+        slowest = slowest.max(start.elapsed() - Duration::from_millis(15));
+    };
+    draw(&mut state);
+    state.connect_for_test(
+        &rig.host,
+        broker,
+        &[
+            ("name", key.get("name").unwrap()),
+            ("private_key", key.get("private_key").unwrap()),
+        ],
+    );
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while Instant::now() < deadline {
+        draw(&mut state);
+        if rig
+            .host
+            .snapshot(ID)
+            .is_some_and(|s| s.status == Status::Live)
+        {
+            break;
+        }
+    }
+    for _ in 0..20 {
+        draw(&mut state);
+    }
+    assert!(rig.host.snapshot(ID).is_some(), "connected");
+    assert!(
+        slowest < Duration::from_millis(250),
+        "a frame took {slowest:?}"
+    );
+}
+
+/// A base64 secret (Coinbase's Ed25519 form) typed or pasted into the secret box, character by
+/// character and at once, draws every frame quickly.
+#[test]
+fn typing_a_base64_secret_never_stalls_a_frame() {
+    let rig = rig();
+    let broker = degenview_brokers::registry::by_id(ID).expect("coinbase");
+    let label = broker.descriptor().credential_fields[1].label;
+    let secret = "M".repeat(86) + "==";
+    let mut state = settings_brokers::BrokersState::default();
+    let mut screen = Screen::new(Vec2::new(600.0, 900.0));
+    let ctx = screen.ctx.clone();
+    let slowest = std::cell::Cell::new(Duration::ZERO);
+    let mut step = |events: Vec<egui::Event>, state: &mut settings_brokers::BrokersState| {
+        let start = Instant::now();
+        screen.run(events, |ui| {
+            theme::sync(ui.ctx());
+            egui::CentralPanel::default().show(ui, |ui| {
+                settings_brokers::body(ui, state, Some(rig.host.clone()));
+            });
+        });
+        slowest.set(slowest.get().max(start.elapsed()));
+    };
+    step(vec![], &mut state);
+    let id = egui::Id::new(("broker-secret", label));
+    // One by one, as a person types (focus is kept as long as the box stays).
+    for (index, ch) in secret.chars().enumerate() {
+        if index == 0 {
+            ctx.memory_mut(|m| m.request_focus(id));
+        }
+        step(vec![egui::Event::Text(ch.to_string())], &mut state);
+    }
+    for _ in 0..10 {
+        step(vec![], &mut state);
+    }
+    assert_eq!(
+        state.typed_for_test("coinbase", "private_key").as_deref(),
+        Some(secret.as_str()),
+        "every typed character reaches the form"
+    );
+    assert!(
+        slowest.get() < Duration::from_millis(250),
+        "a frame took {:?}",
+        slowest.get()
+    );
+    // And all at once.
+    let mut state = settings_brokers::BrokersState::default();
+    step(vec![], &mut state);
+    ctx.memory_mut(|m| m.request_focus(id));
+    step(vec![egui::Event::Paste(secret.clone())], &mut state);
+    for _ in 0..10 {
+        step(vec![], &mut state);
+    }
+    assert!(
+        slowest.get() < Duration::from_millis(250),
+        "a frame took {:?}",
+        slowest.get()
+    );
+}

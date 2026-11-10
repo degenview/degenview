@@ -173,7 +173,7 @@ pub fn body(ui: &mut egui::Ui, state: &mut BrokersState, host: Option<std::sync:
 
 fn broker_card(
     ui: &mut egui::Ui,
-    host: &BrokerHost,
+    host: &std::sync::Arc<BrokerHost>,
     broker: &'static dyn Broker,
     form: &mut BrokerForm,
 ) {
@@ -322,7 +322,11 @@ fn connected_details(ui: &mut egui::Ui, snapshot: &BrokerSnapshot, checked: Opti
 
 /// How the user trades at this broker. Saved to this Mac only; the questions that guard real money
 /// (a market order, an edit, Cancel all) are not on this list because they are not optional.
-fn trading_choices(ui: &mut egui::Ui, host: &BrokerHost, id: degenview_brokers::BrokerId) {
+fn trading_choices(
+    ui: &mut egui::Ui,
+    host: &std::sync::Arc<BrokerHost>,
+    id: degenview_brokers::BrokerId,
+) {
     let mut prefs = host.prefs(id);
     let before = prefs.clone();
     ui.label(kit::text(
@@ -363,7 +367,7 @@ fn trading_choices(ui: &mut egui::Ui, host: &BrokerHost, id: degenview_brokers::
         "Market orders, changing an order and Cancel all always ask.",
     );
     if prefs != before {
-        let _ = host.set_prefs(id, prefs);
+        host.set_prefs(id, prefs);
     }
 }
 
@@ -426,12 +430,7 @@ fn connect_form(
         let checking = form.checking.is_some();
         let enabled = !checking && can_connect(descriptor, &form.values);
         if kit::sheet_button(ui, "Connect", true, enabled).clicked() {
-            let credentials = credentials_from(descriptor, &form.values);
-            form.status = None;
-            form.checking = Some((
-                credentials.clone(),
-                host.validate(descriptor.id, credentials),
-            ));
+            start_check(host, descriptor, form);
         }
         if checking {
             ui.add(
@@ -444,9 +443,45 @@ fn connect_form(
     });
 }
 
+/// Starts checking the typed key, off the interface thread.
+fn start_check(host: &BrokerHost, descriptor: &'static Descriptor, form: &mut BrokerForm) {
+    let credentials = credentials_from(descriptor, &form.values);
+    form.status = None;
+    form.checking = Some((
+        credentials.clone(),
+        host.validate(descriptor.id, credentials),
+    ));
+}
+
+/// What a click on Connect does, for a test that has no pointer.
+#[cfg(test)]
+impl BrokersState {
+    pub(crate) fn typed_for_test(&self, broker: &'static str, field: &str) -> Option<String> {
+        self.forms.get(broker)?.values.get(field).cloned()
+    }
+
+    pub(crate) fn connect_for_test(
+        &mut self,
+        host: &BrokerHost,
+        broker: &'static dyn Broker,
+        values: &[(&str, &str)],
+    ) {
+        let descriptor = broker.descriptor();
+        let form = self.forms.entry(descriptor.id.as_str()).or_default();
+        for (key, value) in values {
+            form.values.insert((*key).to_owned(), (*value).to_owned());
+        }
+        start_check(host, descriptor, form);
+    }
+}
+
 /// Takes the check's answer. A key that works is saved and connected; the form is emptied so the
 /// private key is no longer held by the page.
-fn poll_check(host: &BrokerHost, descriptor: &'static Descriptor, form: &mut BrokerForm) {
+fn poll_check(
+    host: &std::sync::Arc<BrokerHost>,
+    descriptor: &'static Descriptor,
+    form: &mut BrokerForm,
+) {
     let Some((_, receiver)) = &form.checking else {
         return;
     };
@@ -550,10 +585,13 @@ fn secret_block(ui: &mut egui::Ui, title: &str, hint: &str, text: &mut String) {
         .inner_margin(egui::Margin::symmetric(10, 8))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            if text.is_empty() || revealed {
+            let edit_id = egui::Id::new(("broker-secret", title));
+            // The box stays while it has focus: swapping it for the hidden summary after the
+            // first typed character would drop the rest of what is being typed.
+            if text.is_empty() || revealed || ui.memory(|memory| memory.has_focus(edit_id)) {
                 ui.add(
                     egui::TextEdit::multiline(text)
-                        .id(egui::Id::new(("broker-secret", title)))
+                        .id(edit_id)
                         .frame(egui::Frame::NONE)
                         .font(egui::FontId::monospace(kit::size::CAPTION + 0.5))
                         .text_color(theme::text_primary())
