@@ -25,6 +25,8 @@ pub mod metric;
 pub mod model;
 pub mod normalize;
 pub mod overview;
+#[cfg(test)]
+mod perf_tests;
 pub mod playbook;
 pub mod process;
 pub mod reconstruct;

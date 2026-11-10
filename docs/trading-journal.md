@@ -4,11 +4,13 @@ A journal for every execution DegenView knows about. Paper trading is the first 
 file imports are meant to arrive as further sources without touching the journal's core. Research
 and the comparison with other journals: [trading-journal-research.md](reviews/trading-journal-research.md).
 
-**Status.** Built: the canonical execution model, trade reconstruction, the paper source, storage
-and capture, the pure analytics (statistics, equity and drawdown, calendar, filters, R-multiple,
-Edge Score), and the Journal tab with the Overview, Calendar, Trades, Analytics and Compare pages,
-Playbooks and Daily pages, the trade panel and reviews. Screenshots and MFE/MAE, charts,
-import/export and iCloud follow as separate changes; their sections are added as they land.
+**Status.** Built: the canonical execution model, trade reconstruction, the paper source, storage and
+capture, the pure analytics (statistics, equity and drawdown, calendar, filters, R-multiple, Edge
+Score, Process score), the Journal tab (Overview, Calendar, Trades, Analytics, Compare, Playbooks,
+Daily, the trade panel and reviews), screenshots, candle-estimated MFE/MAE, trades on charts and View
+on chart, CSV import, exports, backup and restore, and iCloud sync of what the user writes. Checked
+by headless tests and pictures, and looked at in a real release window against seeded data
+(Overview, Calendar and Trades; see [Verification](#verification-and-known-limitations)).
 
 ## Layers
 
@@ -437,3 +439,84 @@ design, merge rule (last writer, with the loser's text kept), validation and wha
 [iCloud Sync](icloud-sync.md#trading-journal). The three user tables are document tables, written
 through `put_journal_document` / `delete_journal_document` (one row, one savepoint, upload queued in
 it); a review is named by the hash of its trade key (`review_row_id`).
+
+## Adding a broker or file source
+
+A source is a `TradingActivitySource` (`model/journal/source.rs`): it names itself, lists its accounts
+(`JournalAccount`: name, currency, optional starting balance, cost basis), and yields batches of
+`Execution`s (exact decimals, UTC times, optional fee, a stable `source_exec_id`, optional planned
+stop) with the ids of any it has voided. It has no method that places or changes an order. To add
+one: implement the trait (a broker adapter does its network work before it builds a batch), give each
+account its own `SourceId` if another account of the same source must not archive it, and ingest with
+`Store::journal_ingest` (which validates every execution, reports refusals with reasons, and is
+idempotent on `(account, source_exec_id)`). `model/journal/csv.rs::ImportSource` is the worked
+example; `sources/paper.rs` is the one that reads a live engine's snapshot. Nothing else in the
+journal, the charts or sync changes.
+
+## Differences from LuxAlgo's Journal
+
+Built to the behaviour LuxAlgo documents (research in
+[trading-journal-research.md](reviews/trading-journal-research.md)); where DegenView differs, on purpose
+or from what could not be verified:
+
+- **Native, not a docked column.** A Journal tab (opened from the toolbar) instead of a column beside
+  the chart; View on chart and chart markers stand in for "Show on chart" and the right rail. No
+  *Maximize/Return to chart* pair, and no "Add trade" (manual entry): the journal is fed by paper
+  trading and imports.
+- **Sources.** Paper trading and CSV import; no broker sync (none is built, and none is faked).
+  CSV is the canonical format with column mapping, not LuxAlgo's twelve statement parsers.
+- **Edge Score** is LuxAlgo's published v2 (`edge-score.ts`), including where its code and
+  documentation disagree (the documentation was followed and the difference noted). A separate
+  **Process score** is DegenView's own and is never blended into it.
+- **Calendar** adds week totals (LuxAlgo documents them) and a sign glyph so colour is not the only cue;
+  the "win rate in each cell" LuxAlgo's page shows but its docs do not describe is here as
+  `trades · win rate`.
+- **Breakdowns** add thin-sample (under 5) and small-sample (under 30) flags; LuxAlgo gates its auto
+  read at 3 trades. Hold time, size quartile, strategy, tag, mistake, emotion and rating are all here.
+- **MFE/MAE** is estimated from candles with stated rules and said to be an estimate; LuxAlgo's
+  documents do not describe any.
+- **Account model.** Per-account cost basis (Average for paper, Average/FIFO/LIFO for imports),
+  currencies never summed.
+- **Light theme** is DegenView's own design (the reference screenshots are dark only).
+- **Not copied:** assets, colours, copy, undocumented scores (Tiltmeter, Zella Score), anything from
+  TraderSync (its site returned 403, so nothing was verified).
+
+## Performance
+
+Measured in a release build on the development Mac with `journal::perf_tests` (10,000 trades from
+50,000 fills): reconstruct 13.9 ms, summary 2.5 ms, overview (equity, drawdown, distributions,
+Edge Score) 4.6 ms, sort 2.5 ms, chart marks 6.5 ms. The rebuild runs on a worker and the tab never
+touches SQLite while painting; the table draws only the rows in view (a test pins 10,000 rows to
+under 30 drawn). Paper ingest of 5,000 fills: first full pass 90 ms, one new fill 0.37 ms, a whole
+paper save about 107 ms against the existing rewrite's 84 ms (measured earlier, release).
+
+## Verification and known limitations
+
+**Checked.** The full unit suite (pure analytics against hand-computed fixtures, reconstruction under
+average cost, FIFO and LIFO, a differential test against the real paper engine, store and sync tests
+on an in-memory cloud, headless renders of every page and sheet in dark and light); the Overview,
+Calendar and Trades pages in a real release window against a seeded database (captured by window id
+only); pictures of the trade panel, chart markers and the import sheet from the gallery tests.
+
+**Not verified, and not claimed.**
+- Real interaction: clicking, the file chooser and save panel, paste from the clipboard, drag and drop,
+  the Data menu's flows, View on chart against a live provider, a real broker's CSV.
+- Real CloudKit for the journal's records (mock cloud only; on the release checklist), and two Macs
+  editing one review at once on real hardware.
+- Light theme in a real window; small windows; Retina scaling beyond the one seen.
+- Provider behaviour for MFE/MAE (needs a provider with a time-range endpoint) and for older-history
+  paging.
+
+**Known limitations.**
+- Entry points: the toolbar button and a click on a chart's trade. There is no macOS menu entry and no
+  "Open in Journal" in the paper panel yet.
+- No embedded chart in the trade panel and no "capture chart" screenshot.
+- Executions of imported accounts do not sync (back them up and restore them); a review of an imported
+  trade syncs but has no trade on a Mac that did not import the file.
+- Removing a journal account leaves its screenshots in the shared picture store (pictures are never
+  deleted).
+- Day boundaries use the Mac's time zone at each instant; a trade crossing midnight counts on the day
+  it closed.
+- Charts are 1H or coarser, so a trade shorter than a bar is a single mark inside a bar.
+- Open trades are valued at nothing: the journal has no unrealised P&L (the equity curve is
+  *realised* equity).

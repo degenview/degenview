@@ -30,3 +30,10 @@ architecture index; use the topic documents for detail.
 
 For feature-specific behavior, also see [chart types](chart-types.md),
 [chart canvas](chart-canvas.md), and [portfolio cards](portfolio-cards.md).
+
+## Trading journal
+
+`model/journal/` (pure: executions, reconstruction, analytics, marks, CSV, backup) -> `store/journal.rs`
+(tables, ingest, restore) -> `host/journal_host.rs` (worker rebuild, `Arc` snapshot) -> `host/journal_tab.rs`
+and `ui/journal_*.rs` (the tab). Charts get its trades through `workspace/journal.rs`; sync carries the
+user's reviews, days and playbooks. See [Trading journal](trading-journal.md).
