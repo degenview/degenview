@@ -10,6 +10,9 @@ use degenview_brokers::{
     Broker, BrokerSnapshot, Decimal, MarketRef, ProductId, ProductResolution, Status,
 };
 
+/// Said when the broker marks a market untradable without saying why.
+const NOT_TRADABLE: &str = "Trading is not available in this market right now.";
+
 /// Why a chart cannot place live orders. The sentences are shown to the user.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Unavailable {
@@ -24,7 +27,8 @@ pub enum Unavailable {
     JournalUnreadable,
     ViewOnly,
     RulesNotRead,
-    MarketNotTradable,
+    /// The broker's own words for why this market cannot be traded with this account.
+    MarketNotTradable(&'static str),
     InReplay,
 }
 
@@ -46,7 +50,7 @@ impl Unavailable {
             }
             Self::ViewOnly => "This key can view but not trade.",
             Self::RulesNotRead => "Reading the market's rules…",
-            Self::MarketNotTradable => "Trading is not available in this market right now.",
+            Self::MarketNotTradable(reason) => reason,
             Self::InReplay => "Not available during replay.",
         }
     }
@@ -114,7 +118,11 @@ pub fn chart_trading(
     match snapshot.capabilities_of(&product) {
         None => return ChartTrading::Unavailable(Unavailable::RulesNotRead),
         Some(caps) if !caps.is_tradable() => {
-            return ChartTrading::Unavailable(Unavailable::MarketNotTradable);
+            let reason = snapshot
+                .product(&product)
+                .and_then(|spec| spec.restrictions.blocked_reason())
+                .unwrap_or(NOT_TRADABLE);
+            return ChartTrading::Unavailable(Unavailable::MarketNotTradable(reason));
         }
         Some(_) => {}
     }
@@ -205,7 +213,7 @@ mod tests {
             Unavailable::NeedsAttention,
             Unavailable::ViewOnly,
             Unavailable::RulesNotRead,
-            Unavailable::MarketNotTradable,
+            Unavailable::MarketNotTradable(NOT_TRADABLE),
             Unavailable::InReplay,
         ] {
             assert!(
@@ -337,13 +345,15 @@ mod tests {
             check(Some(&snapshot(Status::Live, true, None, true)), false).reason(),
             Some(Unavailable::RulesNotRead)
         );
-        assert_eq!(
-            check(
-                Some(&snapshot(Status::Live, true, Some("BTC-USD"), false)),
-                false
-            )
-            .reason(),
-            Some(Unavailable::MarketNotTradable)
+        // The broker's own words are what the user reads, not a generic sentence.
+        let blocked = check(
+            Some(&snapshot(Status::Live, true, Some("BTC-USD"), false)),
+            false,
+        )
+        .reason();
+        assert!(
+            matches!(blocked, Some(Unavailable::MarketNotTradable(text)) if !text.is_empty()),
+            "{blocked:?}"
         );
         // A replay refuses even a fully tradable market.
         assert_eq!(
