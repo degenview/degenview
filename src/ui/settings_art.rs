@@ -26,6 +26,7 @@ pub fn paint(ui: &Ui, rect: Rect, section: SettingsSection) {
         SettingsSection::Appearance => art.appearance(),
         SettingsSection::PineStudio => art.pine_studio(),
         SettingsSection::Alpaca => art.alpaca(),
+        SettingsSection::Brokers => art.brokers(),
         SettingsSection::CoinMarketCap => art.coinmarketcap(),
         SettingsSection::Ai => art.ai(),
         SettingsSection::Notifications => art.notifications(),
@@ -214,6 +215,33 @@ impl Art<'_> {
             chip.center().y,
             Stroke::new(2.0, Color32::WHITE.gamma_multiply(0.85)),
         );
+    }
+
+    /// Two order lines across a chart, a buy under the price and a sell above it, and a chip with
+    /// the swap arrows.
+    fn brokers(&self) {
+        let card = self.scene();
+        let sell = card.top() + 14.0;
+        let buy = card.top() + 31.0;
+        for (y, color) in [(sell, kit::RED), (buy, kit::GREEN)] {
+            self.painter.hline(
+                card.left() + 9.0..=card.right() - 22.0,
+                y,
+                Stroke::new(1.3, color),
+            );
+            let pill = Rect::from_center_size(pos2(card.right() - 14.0, y), vec2(14.0, 7.0));
+            self.painter.rect_filled(pill, 3.0, color);
+        }
+        // The price between them.
+        let mid = (sell + buy) / 2.0;
+        self.painter.hline(
+            card.left() + 9.0..=card.right() - 22.0,
+            mid,
+            Stroke::new(1.6, ghost()),
+        );
+        let chip = Rect::from_min_size(card.left_top() + vec2(-7.0, -5.0), vec2(30.0, 12.0));
+        self.chip(chip);
+        self.glyph(Icon::ArrowLeftRight, chip.center(), 9.0, Color32::WHITE);
     }
 
     /// A gauge from red to green with its needle, and a coin.

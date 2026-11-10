@@ -347,6 +347,10 @@ mod tests {
             "scripts.demosSeeded",
             "addTicker.recentMarkets",
             "paper.selectedAccountID",
+            // Live trading: orders sent and not yet confirmed at one broker on this Mac, and
+            // the choices about how to trade there. Another Mac must never act on either.
+            "broker.pending",
+            "broker.prefs",
             "portfolio.privacyMode",
             // A channel is chosen per Mac: syncing it would move every other Mac onto it.
             "update.channel",

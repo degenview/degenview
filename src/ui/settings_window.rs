@@ -34,6 +34,7 @@ pub enum SettingsSection {
     Appearance,
     PineStudio,
     Alpaca,
+    Brokers,
     CoinMarketCap,
     Ai,
     Notifications,
@@ -46,10 +47,11 @@ pub enum SettingsSection {
 }
 
 impl SettingsSection {
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 13] = [
         Self::Appearance,
         Self::PineStudio,
         Self::Alpaca,
+        Self::Brokers,
         Self::CoinMarketCap,
         Self::Ai,
         Self::Notifications,
@@ -73,6 +75,7 @@ impl SettingsSection {
             Self::Appearance => "Appearance",
             Self::PineStudio => "Pine Studio",
             Self::Alpaca => "Alpaca",
+            Self::Brokers => "Brokers",
             Self::CoinMarketCap => "CoinMarketCap",
             Self::Ai => "AI Assistant",
             Self::Notifications => "Notifications",
@@ -91,6 +94,7 @@ impl SettingsSection {
             Self::Appearance => Color32::from_rgb(94, 92, 230),
             Self::PineStudio => Color32::from_rgb(172, 142, 104),
             Self::Alpaca => Color32::from_rgb(255, 159, 10),
+            Self::Brokers => Color32::from_rgb(255, 112, 67),
             Self::CoinMarketCap => Color32::from_rgb(10, 132, 255),
             Self::Ai => Color32::from_rgb(255, 214, 10),
             Self::Notifications => Color32::from_rgb(255, 69, 58),
@@ -109,6 +113,7 @@ impl SettingsSection {
             Self::Appearance => "appearance",
             Self::PineStudio => "pinestudio",
             Self::Alpaca => "alpaca",
+            Self::Brokers => "brokers",
             Self::CoinMarketCap => "coinmarketcap",
             Self::Ai => "ai",
             Self::Notifications => "notifications",
@@ -171,6 +176,7 @@ pub struct SettingsState {
     pub section: SettingsSection,
     pub webhooks: WebhookSettingsState,
     pub api_keys: ApiKeysState,
+    pub brokers: crate::ui::settings_brokers::BrokersState,
     pub ai: crate::ui::settings_ai::AiSettingsState,
     pub storage: StorageState,
     pub mcp: McpSettingsState,
@@ -333,6 +339,7 @@ impl SettingsSection {
             Self::Appearance => Icon::Paintbrush,
             Self::PineStudio => Icon::Curlybraces,
             Self::Alpaca => Icon::ChartLine,
+            Self::Brokers => Icon::ArrowLeftRight,
             Self::CoinMarketCap => Icon::Gauge,
             Self::Ai => Icon::Sparkles,
             Self::Notifications => Icon::BellBadge,
@@ -524,6 +531,15 @@ pub fn show(
             if let Some(mut footer) = footer {
                 settings_api_keys::alpaca_footer(&mut footer, &mut state.api_keys, store);
             }
+        }
+        SettingsSection::Brokers => {
+            page_shell(
+                &mut page,
+                section,
+                "Connect a broker to trade for real from your charts. Paper trading is separate.",
+                false,
+                |ui| crate::ui::settings_brokers::body(ui, &mut state.brokers),
+            );
         }
         SettingsSection::CoinMarketCap => {
             let store = CoinMarketCapKeyStore::shared();
