@@ -889,3 +889,103 @@ fn typing_a_base64_secret_never_stalls_a_frame() {
         slowest.get()
     );
 }
+
+/// The header of a chart with live SELL and BUY pills and long prices: both pills are inside the
+/// header and can be pressed, and the star stays at the right edge with the pills to its left.
+#[test]
+fn the_live_pills_can_be_pressed_and_the_star_stays_at_the_right_edge() {
+    use crate::model::{DataSource, IndicatorConfig};
+    use crate::ui::chart_card::{ChartCard, ChartCardAction};
+
+    let _restore = theme::RestoreDefaultTheme;
+    let width = 520.0;
+    let mut card = ChartCard::default();
+    card.live.order_entry = Some(Ok(()));
+    card.live.broker_name = "Coinbase".to_owned();
+    card.live.bid = Some("74,380.32".to_owned());
+    card.live.ask = Some("74,396.74".to_owned());
+    let mut screen = Screen::new(Vec2::new(width, 60.0));
+    let indicators = IndicatorConfig::default();
+
+    // Presses at `x` along the header's middle and reports what the header said.
+    let mut press = |x: f32| -> ChartCardAction {
+        let at = egui::pos2(x, 22.0);
+        let mut said = ChartCardAction::default();
+        for (events, last) in [
+            (
+                vec![
+                    egui::Event::PointerMoved(at),
+                    egui::Event::PointerButton {
+                        pos: at,
+                        button: egui::PointerButton::Primary,
+                        pressed: true,
+                        modifiers: egui::Modifiers::NONE,
+                    },
+                ],
+                false,
+            ),
+            (
+                vec![egui::Event::PointerButton {
+                    pos: at,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+                true,
+            ),
+        ] {
+            let mut action = ChartCardAction::default();
+            screen.run(events, |ui| {
+                theme::sync(ui.ctx());
+                egui::CentralPanel::default()
+                    .frame(egui::Frame::NONE)
+                    .show(ui, |ui| {
+                        card.header(
+                            ui,
+                            "BTC-USD",
+                            DataSource::Coinbase,
+                            &indicators,
+                            &[],
+                            false,
+                            false,
+                            &[],
+                            &mut action,
+                            1,
+                        );
+                    });
+            });
+            if last {
+                said = action;
+            }
+        }
+        said
+    };
+
+    let (mut sell, mut buy, mut star) = (Vec::new(), Vec::new(), Vec::new());
+    let mut x = 2.0;
+    while x < width {
+        let said = press(x);
+        match said.live_trade {
+            Some(degenview_brokers::Side::Sell) => sell.push(x),
+            Some(degenview_brokers::Side::Buy) => buy.push(x),
+            None => {}
+        }
+        if said.toggle_favorite {
+            star.push(x);
+        }
+        x += 4.0;
+    }
+    assert!(!sell.is_empty(), "SELL can be pressed");
+    assert!(!buy.is_empty(), "BUY can be pressed");
+    assert!(!star.is_empty(), "the star can be pressed");
+    let leftmost_star = star.iter().copied().fold(f32::MAX, f32::min);
+    let rightmost_pill = sell.iter().chain(&buy).copied().fold(0.0, f32::max);
+    assert!(
+        rightmost_pill < leftmost_star,
+        "the pills are left of the star: pills end {rightmost_pill}, star starts {leftmost_star}"
+    );
+    assert!(
+        star.iter().copied().fold(0.0, f32::max) > width - 60.0,
+        "the star is at the right edge"
+    );
+}
