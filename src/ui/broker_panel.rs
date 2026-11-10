@@ -26,10 +26,13 @@ use eframe::egui::{self, Color32, Id};
 use crate::host::broker_host::BrokerHost;
 use crate::model::broker_prefs::BrokerPrefs;
 use crate::model::broker_ticket::{self as rules, StatusTone};
+use crate::trading::model::{AccountStats, TabKind};
 use crate::ui::alert_center::Tone;
 use crate::ui::icons::{self, Icon};
 use crate::ui::paper_grid::{self as grid, Col, col};
 use crate::ui::paper_tables::empty;
+use crate::ui::trade::panel_header::{self, Chip, Header, HeaderEvent, PanelEvent, VenueBar};
+use crate::ui::trade::{notice, stats_strip};
 use crate::ui::{broker_badge, dialog, kit, sheet, theme};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -38,6 +41,18 @@ pub enum BrokerTab {
     History,
     Fills,
     Balances,
+}
+
+impl BrokerTab {
+    /// The tab's title and icon come from the kind, so they read the same in every venue.
+    fn kind(self) -> TabKind {
+        match self {
+            Self::Orders => TabKind::Orders,
+            Self::History => TabKind::History,
+            Self::Fills => TabKind::Fills,
+            Self::Balances => TabKind::Balances,
+        }
+    }
 }
 
 /// Which finished orders the History tab lists.
@@ -190,14 +205,6 @@ impl Default for BrokerPanelState {
             force_edit_review: false,
         }
     }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PanelAction {
-    Close,
-    OpenSettings,
-    /// "New order": the order sheet takes it from here.
-    NewOrder,
 }
 
 // ---- Rules (pure) --------------------------------------------------------------------------------
@@ -443,7 +450,9 @@ pub fn ui(
     state: &mut BrokerPanelState,
     host: &BrokerHost,
     broker_id: BrokerId,
-) -> Vec<PanelAction> {
+    bar: &VenueBar,
+    stats: Option<&AccountStats>,
+) -> Vec<PanelEvent> {
     let mut actions = Vec::new();
     if degenview_brokers::registry::by_id(broker_id).is_none() {
         return actions;
@@ -453,7 +462,7 @@ pub fn ui(
     let snapshot = host.snapshot(broker_id);
     let prefs = host.prefs(broker_id);
 
-    header(ui, snapshot.as_deref(), &mut actions);
+    header(ui, state, bar, snapshot.as_deref(), &mut actions);
     divider(ui);
 
     let Some(snapshot) = snapshot else {
@@ -463,7 +472,7 @@ pub fn ui(
             "Connect this broker in Settings ▸ Brokers to trade here."
         };
         if empty_with_settings(ui, message) {
-            actions.push(PanelAction::OpenSettings);
+            actions.push(PanelEvent::OpenSettings);
         }
         return actions;
     };
@@ -477,7 +486,7 @@ pub fn ui(
         }
     }
     poll_flights(state);
-    tab_row(ui, state, &snapshot);
+    stats_strip::show(ui, stats);
     divider(ui);
 
     match state.tab {
@@ -510,92 +519,79 @@ fn empty_with_settings(ui: &mut egui::Ui, message: &str) -> bool {
 }
 
 fn divider(ui: &mut egui::Ui) {
-    let (line, _) =
-        ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
-    ui.painter().rect_filled(line, 0.0, theme::separator());
+    notice::divider(ui);
 }
 
 fn note(ui: &mut egui::Ui, text: &str, error: bool) {
-    let tint = if error {
-        kit::RED
-    } else {
-        theme::text_secondary()
+    notice::note(ui, text, error);
+}
+
+/// The shared header: the venue pill, the portfolio, the sections with the working-order count and
+/// the panel's buttons.
+fn header(
+    ui: &mut egui::Ui,
+    state: &mut BrokerPanelState,
+    bar: &VenueBar,
+    snapshot: Option<&BrokerSnapshot>,
+    actions: &mut Vec<PanelEvent>,
+) {
+    let working = snapshot.map_or(0, |snapshot| {
+        snapshot
+            .orders
+            .iter()
+            .filter(|v| v.order.status.is_working())
+            .count()
+            + snapshot.pending.len()
+    });
+    let tabs: Vec<kit::TabItem<BrokerTab>> = [
+        BrokerTab::Orders,
+        BrokerTab::History,
+        BrokerTab::Fills,
+        BrokerTab::Balances,
+    ]
+    .into_iter()
+    .map(|tab| kit::TabItem {
+        value: tab,
+        title: tab.kind().title(),
+        icon: tab.kind().icon(),
+        count: if tab == BrokerTab::Orders { working } else { 0 },
+    })
+    .collect();
+    let account = snapshot
+        .and_then(|snapshot| snapshot.session.as_ref())
+        .and_then(|session| session.accounts.first())
+        .map(|account| account.label.clone());
+    let chip = Chip {
+        label: account.unwrap_or_default(),
+        sub: None,
+        tip: "The account orders go to".to_owned(),
+        rows: Vec::new(),
+        add: None,
     };
-    egui::Frame::new()
-        .fill(theme::with_alpha(tint, 0.1))
-        .inner_margin(egui::Margin::symmetric(12, 7))
-        .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.add(
-                egui::Label::new(kit::text(
-                    text,
-                    kit::size::CAPTION + 0.5,
-                    kit::REGULAR,
-                    tint,
-                ))
-                .wrap(),
-            );
-        });
+    let can_order = snapshot.is_some_and(|s| {
+        s.can_send_orders() && s.session.as_ref().is_some_and(|x| x.permissions.can_trade)
+    });
+    let events = panel_header::show(
+        ui,
+        &Header {
+            bar,
+            chip: &chip,
+            tabs: &tabs,
+            overlay: None,
+            can_order,
+            more: &[],
+            settings_tip: "Brokers settings",
+        },
+        &mut state.tab,
+    );
+    for event in events {
+        if let HeaderEvent::Panel(event) = event {
+            actions.push(event);
+        }
+    }
 }
 
-fn header(ui: &mut egui::Ui, snapshot: Option<&BrokerSnapshot>, actions: &mut Vec<PanelAction>) {
-    egui::Frame::new()
-        .inner_margin(egui::Margin::symmetric(12, 9))
-        .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 10.0;
-                if let Some(snapshot) = snapshot {
-                    let (text, tone) =
-                        crate::ui::settings_brokers::status_badge_for(&snapshot.status);
-                    kit::status_badge(ui, &text, tone);
-                    if let Some(account) =
-                        snapshot.session.as_ref().and_then(|s| s.accounts.first())
-                    {
-                        ui.label(kit::text(
-                            &account.label,
-                            kit::size::BODY,
-                            kit::REGULAR,
-                            theme::text_secondary(),
-                        ));
-                    }
-                }
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if icons::button(
-                        ui,
-                        Icon::Gear,
-                        22.0,
-                        theme::text_secondary(),
-                        "Brokers settings",
-                    )
-                    .clicked()
-                    {
-                        actions.push(PanelAction::OpenSettings);
-                    }
-                    if icons::button(
-                        ui,
-                        Icon::Xmark,
-                        22.0,
-                        theme::text_secondary(),
-                        "Close panel",
-                    )
-                    .clicked()
-                    {
-                        actions.push(PanelAction::Close);
-                    }
-                    let can_trade = snapshot.is_some_and(|s| {
-                        s.can_send_orders()
-                            && s.session.as_ref().is_some_and(|x| x.permissions.can_trade)
-                    });
-                    if kit::sheet_button(ui, "New order", true, can_trade).clicked() {
-                        actions.push(PanelAction::NewOrder);
-                    }
-                });
-            });
-        });
-}
-
-fn banners(ui: &mut egui::Ui, snapshot: &BrokerSnapshot, actions: &mut Vec<PanelAction>) {
+fn banners(ui: &mut egui::Ui, snapshot: &BrokerSnapshot, actions: &mut Vec<PanelEvent>) {
     match &snapshot.status {
         Status::Failed(error) => {
             note(
@@ -630,50 +626,6 @@ fn banners(ui: &mut egui::Ui, snapshot: &BrokerSnapshot, actions: &mut Vec<Panel
             }
         }
     }
-}
-
-fn tab_row(ui: &mut egui::Ui, state: &mut BrokerPanelState, snapshot: &BrokerSnapshot) {
-    let working = snapshot
-        .orders
-        .iter()
-        .filter(|v| v.order.status.is_working())
-        .count()
-        + snapshot.pending.len();
-    egui::Frame::new()
-        .inner_margin(egui::Margin::symmetric(12, 8))
-        .show(ui, |ui| {
-            kit::tab_bar_slim(
-                ui,
-                Id::new("broker-tabs"),
-                &[
-                    kit::TabItem {
-                        value: BrokerTab::Orders,
-                        title: "Orders",
-                        icon: Icon::List,
-                        count: working,
-                    },
-                    kit::TabItem {
-                        value: BrokerTab::History,
-                        title: "History",
-                        icon: Icon::List,
-                        count: 0,
-                    },
-                    kit::TabItem {
-                        value: BrokerTab::Fills,
-                        title: "Fills",
-                        icon: Icon::List,
-                        count: 0,
-                    },
-                    kit::TabItem {
-                        value: BrokerTab::Balances,
-                        title: "Balances",
-                        icon: Icon::List,
-                        count: 0,
-                    },
-                ],
-                &mut state.tab,
-            );
-        });
 }
 
 fn poll_flights(state: &mut BrokerPanelState) {

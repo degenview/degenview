@@ -124,10 +124,27 @@ fn shapes(output: &egui::FullOutput) -> usize {
     output.shapes.len()
 }
 
+/// The panel as the workspace draws it: the shared header's venue and the account strip.
+fn draw(
+    ui: &mut egui::Ui,
+    state: &mut BrokerPanelState,
+    host: &Arc<BrokerHost>,
+) -> Vec<crate::ui::trade::panel_header::PanelEvent> {
+    use crate::trading::backend::TradingBackend;
+    let broker = degenview_brokers::registry::by_id(ID).expect("coinbase");
+    let stats = crate::trading::broker_backend::BrokerBackend::new(host.clone(), broker).stats();
+    let bar = crate::ui::trade::panel_header::sample_bar(
+        crate::model::trading_venue::TradingVenue::Broker(ID),
+        crate::trading::model::VenueKind::Live,
+        "Coinbase",
+    );
+    broker_panel::ui(ui, state, host, ID, &bar, stats.as_ref())
+}
+
 fn show_panel(
     screen: &mut Screen,
     state: &mut BrokerPanelState,
-    host: &BrokerHost,
+    host: &Arc<BrokerHost>,
     height: f32,
 ) -> egui::FullOutput {
     frames(screen, 3, |ui| {
@@ -135,7 +152,7 @@ fn show_panel(
             .exact_size(height)
             .frame(egui::Frame::new().fill(crate::ui::kit::window()))
             .show(ui, |ui| {
-                broker_panel::ui(ui, state, host, ID);
+                draw(ui, state, host);
             });
     })
 }
@@ -264,7 +281,7 @@ fn an_edit_is_previewed_confirmed_and_sent_as_an_edit_never_a_cancel_and_replace
             egui::Panel::bottom(egui::Id::new("edit-gallery"))
                 .exact_size(300.0)
                 .show(ui, |ui| {
-                    broker_panel::ui(ui, state, &rig.host, ID);
+                    draw(ui, state, &rig.host);
                 });
         })
     };
@@ -421,7 +438,7 @@ fn an_edit_cannot_be_reviewed_before_or_without_the_brokers_preview() {
             egui::Panel::bottom(egui::Id::new("edit-gate"))
                 .exact_size(300.0)
                 .show(ui, |ui| {
-                    broker_panel::ui(ui, state, &rig.host, ID);
+                    draw(ui, state, &rig.host);
                 });
         })
     };
@@ -765,7 +782,7 @@ fn the_trading_panel_can_be_resized_on_every_tab_with_and_without_orders() {
                         .min_size(280.0)
                         .frame(egui::Frame::new().fill(crate::ui::kit::window()))
                         .show(ui, |ui| {
-                            broker_panel::ui(ui, &mut state, &rig.host, ID);
+                            draw(ui, &mut state, &rig.host);
                         });
                     height.set(shown.response.rect.height());
                 });

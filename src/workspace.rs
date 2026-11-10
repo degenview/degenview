@@ -1,4 +1,4 @@
-use crate::host::paper_host::{PaperHost, PaperPanel, PaperPanelAction};
+use crate::host::paper_host::{PaperHost, PaperPanel};
 use crate::host::portfolio_card_host::PortfolioCardEnv;
 use crate::model::alert::{AlertCurrency, PriceAlert};
 use crate::model::chart_sync::SyncHub;
@@ -803,42 +803,36 @@ impl ChartWorkspace {
         if self.paper_panel_visible {
             let broker_host = crate::host::broker_host::BrokerHost::global();
             let mut panel_actions: Vec<WorkspaceAction> = Vec::new();
-            let mut broker_actions = Vec::new();
-            let paper_actions = egui::Panel::bottom(egui::Id::new(("paper_panel", self.id)))
+            let events = egui::Panel::bottom(egui::Id::new(("paper_panel", self.id)))
                 .resizable(true)
                 .default_size(340.0)
                 .min_size(280.0)
                 .frame(egui::Frame::new().fill(ui::kit::window()))
                 .show(ui, |ui| {
-                    let Some(venue) = self.show_panel_venue(ui, &mut panel_actions) else {
+                    let Some((venue, bar)) = self.panel_venue(ui, &mut panel_actions) else {
                         return Vec::new();
                     };
                     match (venue.broker(), &broker_host) {
                         (Some(id), Some(host)) => {
-                            broker_actions =
-                                crate::ui::broker_panel::ui(ui, &mut self.broker_panel, host, id);
-                            Vec::new()
+                            let stats = crate::host::trading_hub::TradingHub::global()
+                                .and_then(|hub| hub.backend(venue))
+                                .and_then(|backend| backend.stats());
+                            crate::ui::broker_panel::ui(
+                                ui,
+                                &mut self.broker_panel,
+                                host,
+                                id,
+                                &bar,
+                                stats.as_ref(),
+                            )
                         }
-                        _ => self.paper_panel.ui(ui, &mut lock()),
+                        _ => self.paper_panel.ui(ui, &mut lock(), &bar),
                     }
                 })
                 .inner;
             actions.extend(panel_actions);
-            for action in paper_actions {
-                match action {
-                    PaperPanelAction::Close => self.paper_panel_visible = false,
-                }
-            }
-            for action in broker_actions {
-                match action {
-                    crate::ui::broker_panel::PanelAction::Close => self.paper_panel_visible = false,
-                    crate::ui::broker_panel::PanelAction::NewOrder => {
-                        self.start_order(degenview_brokers::Side::Buy, None, None);
-                    }
-                    crate::ui::broker_panel::PanelAction::OpenSettings => {
-                        actions.push(WorkspaceAction::OpenBrokerSettings);
-                    }
-                }
+            for event in events {
+                self.apply_panel_event(event, &mut actions);
             }
         }
 

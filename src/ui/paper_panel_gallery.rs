@@ -122,7 +122,7 @@ fn gallery_of_the_panel() {
             1_240.0,
             300.0,
             false,
-            Some(egui::pos2(130.0, 24.0)),
+            Some(egui::pos2(142.0, 24.0)),
         ),
         (
             "menu-more",
@@ -130,7 +130,7 @@ fn gallery_of_the_panel() {
             1_240.0,
             300.0,
             false,
-            Some(egui::pos2(1_184.0, 24.0)),
+            Some(egui::pos2(1_154.0, 24.0)),
         ),
         (
             "menu-row",
@@ -180,20 +180,38 @@ fn gallery_of_the_panel() {
                         .exact_size(height)
                         .frame(egui::Frame::new().fill(crate::ui::kit::window()))
                         .show(ui, |ui| {
-                            paper_header::header(
+                            let input = PaperHeaderInput {
+                                accounts: &accounts,
+                                selected: Some(1),
+                                currency: Some(PaperCurrency::Usd),
+                                position_count: shown_positions.len(),
+                                working_order_count: shown_orders.len(),
+                                show_trading_on_charts: true,
+                            };
+                            let parts = paper_header::header_parts(&input);
+                            let bar = crate::ui::trade::panel_header::sample_bar(
+                                crate::model::trading_venue::TradingVenue::Paper,
+                                crate::trading::model::VenueKind::Simulated,
+                                "Paper",
+                            );
+                            crate::ui::trade::panel_header::show(
                                 ui,
-                                &mut header_state,
-                                &PaperHeaderInput {
-                                    accounts: &accounts,
-                                    selected: Some(1),
-                                    currency: Some(PaperCurrency::Usd),
-                                    position_count: shown_positions.len(),
-                                    working_order_count: shown_orders.len(),
-                                    show_trading_on_charts: true,
+                                &crate::ui::trade::panel_header::Header {
+                                    bar: &bar,
+                                    chip: &parts.chip,
+                                    tabs: &parts.tabs,
+                                    overlay: Some(true),
+                                    can_order: true,
+                                    more: &parts.more,
+                                    settings_tip: "Paper trading settings",
                                 },
+                                &mut header_state.tab,
                             );
                             divider(ui);
-                            paper_tables::metrics_strip(ui, Some(&metrics()), PaperCurrency::Usd);
+                            crate::ui::trade::stats_strip::show(
+                                ui,
+                                Some(&paper_tables::stats(Some(&metrics()), PaperCurrency::Usd)),
+                            );
                             divider(ui);
                             match tab {
                                 PaperTab::Orders => {

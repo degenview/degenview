@@ -27,6 +27,8 @@ use crate::ui::paper_tables::{
     self, Context as TableContext, FooterFacts, OrdersInput, PaperTab, PaperTableAction,
     PositionsInput, PositionsState,
 };
+use crate::ui::trade::panel_header::{self, ChipPick, Header, HeaderEvent, PanelEvent, VenueBar};
+use crate::ui::trade::stats_strip;
 use eframe::egui;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -588,11 +590,6 @@ impl PaperHost {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PaperPanelAction {
-    Close,
-}
-
 /// What a finished export tells the panel: the folder it wrote to, or why it did not.
 type ExportOutcome = Result<Option<(std::path::PathBuf, String)>, String>;
 
@@ -738,7 +735,12 @@ impl PaperPanel {
         self.show_trading_on_charts
     }
 
-    pub fn ui(&mut self, ui: &mut egui::Ui, host: &mut PaperHost) -> Vec<PaperPanelAction> {
+    pub fn ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        host: &mut PaperHost,
+        bar: &VenueBar,
+    ) -> Vec<PanelEvent> {
         let mut panel_actions = Vec::new();
         ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
         let view = self.view(host);
@@ -757,18 +759,48 @@ impl PaperPanel {
             .map(|position| host.unrealized_pnl(position))
             .sum();
 
-        let header_actions = paper_header::header(
+        let input = PaperHeaderInput {
+            accounts,
+            selected: account_id,
+            currency: account.map(|account| account.base_currency),
+            position_count: positions.len(),
+            working_order_count: working_orders.len(),
+            show_trading_on_charts: self.show_trading_on_charts,
+        };
+        let parts = paper_header::header_parts(&input);
+        let header_events = panel_header::show(
             ui,
-            &mut self.header,
-            &PaperHeaderInput {
-                accounts,
-                selected: account_id,
-                currency: account.map(|account| account.base_currency),
-                position_count: positions.len(),
-                working_order_count: working_orders.len(),
-                show_trading_on_charts: self.show_trading_on_charts,
+            &Header {
+                bar,
+                chip: &parts.chip,
+                tabs: &parts.tabs,
+                overlay: Some(self.show_trading_on_charts),
+                can_order: account.is_some(),
+                more: &parts.more,
+                settings_tip: "Paper trading settings",
             },
+            &mut self.header.tab,
         );
+        let mut header_actions = Vec::new();
+        for event in header_events {
+            match event {
+                HeaderEvent::Panel(event) => panel_actions.push(event),
+                HeaderEvent::Chip(ChipPick::Row(index)) => {
+                    if let Some(choice) = accounts.get(index) {
+                        header_actions.push(PaperHeaderAction::SelectAccount(choice.id));
+                    }
+                }
+                HeaderEvent::Chip(ChipPick::Add) => {
+                    header_actions.push(PaperHeaderAction::NewAccount)
+                }
+                HeaderEvent::ToggleOverlay => {
+                    header_actions.push(PaperHeaderAction::ToggleShowOnCharts);
+                }
+                HeaderEvent::More(index) => {
+                    header_actions.extend(parts.more_actions.get(index).cloned())
+                }
+            }
+        }
         divider(ui);
         self.poll_export(ui.ctx());
         self.show_notice(ui);
@@ -786,7 +818,8 @@ impl PaperPanel {
                 self.account_sheet = Some(PaperAccountSheetState::create());
             }
         } else {
-            paper_tables::metrics_strip(ui, metrics.as_ref(), currency);
+            let strip = paper_tables::stats(metrics.as_ref(), currency);
+            stats_strip::show(ui, Some(&strip));
             divider(ui);
             let context = TableContext {
                 currency,
@@ -1024,7 +1057,7 @@ impl PaperPanel {
         actions: Vec<PaperHeaderAction>,
         host: &mut PaperHost,
         account: Option<&crate::model::paper::PaperAccount>,
-        panel_actions: &mut Vec<PaperPanelAction>,
+        panel_actions: &mut Vec<PanelEvent>,
     ) {
         for action in actions {
             match action {
@@ -1048,7 +1081,7 @@ impl PaperPanel {
                 PaperHeaderAction::ToggleShowOnCharts => {
                     self.show_trading_on_charts = !self.show_trading_on_charts;
                 }
-                PaperHeaderAction::Close => panel_actions.push(PaperPanelAction::Close),
+                PaperHeaderAction::Close => panel_actions.push(PanelEvent::Close),
             }
         }
     }
@@ -1821,7 +1854,15 @@ mod tests {
                             .exact_size(260.0)
                             .frame(egui::Frame::new().fill(crate::ui::kit::window()))
                             .show(ui, |ui| {
-                                panel.ui(ui, &mut host);
+                                panel.ui(
+                                    ui,
+                                    &mut host,
+                                    &crate::ui::trade::panel_header::sample_bar(
+                                        crate::model::trading_venue::TradingVenue::Paper,
+                                        crate::trading::model::VenueKind::Simulated,
+                                        "Paper",
+                                    ),
+                                );
                             });
                     }));
                 }

@@ -9,6 +9,8 @@ use crate::host::trading_hub::TradingHub;
 use crate::model::trading_venue::TradingVenue;
 use crate::trading::model::{OrderClass, VenueInfo};
 use crate::ui::trade::order_sheet::{self, SheetAction, SheetInput};
+use crate::ui::trade::panel_header::{PanelEvent, VenueBar};
+use crate::ui::trade::venue_pill::PillAction;
 
 impl ChartWorkspace {
     /// The venue this tab trades on: the one it chose while that is still enabled, else the one
@@ -109,16 +111,29 @@ impl ChartWorkspace {
         }
     }
 
-    /// The top of the trading panel: the venue pill, shared with the sheet. Returns the venue this
-    /// tab trades on, or none when nothing is enabled (the list to choose from is drawn instead,
-    /// and the panel has nothing else to show).
-    pub(super) fn show_panel_venue(
+    /// What the trading panel needs to know about its venue: the venue it trades on and the
+    /// pieces the shared header draws. When nothing is enabled the list to choose from is drawn
+    /// instead and there is nothing else to show: `None`.
+    pub(super) fn panel_venue(
         &mut self,
         ui: &mut egui::Ui,
         actions: &mut Vec<WorkspaceAction>,
-    ) -> Option<TradingVenue> {
+    ) -> Option<(TradingVenue, VenueBar)> {
         let Some(hub) = TradingHub::global() else {
-            return Some(TradingVenue::Paper);
+            return Some((
+                TradingVenue::Paper,
+                VenueBar {
+                    info: crate::trading::model::VenueInfo {
+                        venue: TradingVenue::Paper,
+                        name: "Paper".to_owned(),
+                        kind: crate::trading::model::VenueKind::Simulated,
+                        summary: String::new(),
+                        needs_no_credentials: true,
+                    },
+                    state: crate::trading::model::BackendState::Ready,
+                    enabled: Vec::new(),
+                },
+            ));
         };
         let all: Vec<VenueInfo> = hub.infos();
         let enabled: Vec<VenueInfo> = all
@@ -148,35 +163,43 @@ impl ChartWorkspace {
                 });
             return None;
         };
-        if let Some((info, backend)) = all
-            .iter()
-            .find(|info| info.venue == venue)
-            .zip(hub.backend(venue))
-        {
-            let mut picked = None;
-            egui::Frame::new()
-                .inner_margin(egui::Margin::symmetric(12, 8))
-                .show(ui, |ui| {
-                    ui.horizontal(|ui| {
-                        picked = crate::ui::trade::venue_pill::show(
-                            ui,
-                            info,
-                            &backend.state(),
-                            &enabled,
-                        );
-                    });
-                });
-            match picked {
-                Some(crate::ui::trade::venue_pill::PillAction::Pick(venue)) => {
-                    self.apply_sheet_action(&hub, &all, SheetAction::PickVenue(venue), actions);
+        let info = all.iter().find(|info| info.venue == venue)?.clone();
+        let state = hub.backend(venue)?.state();
+        Some((
+            venue,
+            VenueBar {
+                info,
+                state,
+                enabled,
+            },
+        ))
+    }
+
+    /// Applies what the panel's header asked for, whichever venue drew it.
+    pub(super) fn apply_panel_event(
+        &mut self,
+        event: PanelEvent,
+        actions: &mut Vec<WorkspaceAction>,
+    ) {
+        match event {
+            PanelEvent::Close => self.paper_panel_visible = false,
+            PanelEvent::NewOrder => self.start_order(degenview_brokers::Side::Buy, None, None),
+            PanelEvent::OpenSettings => actions.push(WorkspaceAction::OpenBrokerSettings),
+            PanelEvent::Venue(action) => {
+                let Some(hub) = TradingHub::global() else {
+                    return;
+                };
+                let all = hub.infos();
+                match action {
+                    PillAction::Pick(venue) => {
+                        self.apply_sheet_action(&hub, &all, SheetAction::PickVenue(venue), actions);
+                    }
+                    PillAction::AddBroker => {
+                        self.apply_sheet_action(&hub, &all, SheetAction::AddBroker, actions);
+                    }
                 }
-                Some(crate::ui::trade::venue_pill::PillAction::AddBroker) => {
-                    self.apply_sheet_action(&hub, &all, SheetAction::AddBroker, actions);
-                }
-                None => {}
             }
         }
-        Some(venue)
     }
 }
 

@@ -36,6 +36,23 @@ fn tint(kind: VenueKind) -> Color32 {
     }
 }
 
+/// Where the pill is drawn: the order sheet has room for the whole title, the panel's header row
+/// has the account and the tabs beside it and says the name with a small tag.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PillSize {
+    Sheet,
+    Panel,
+}
+
+/// The tag beside the name in the panel: only real money and test environments carry one.
+pub fn tag(kind: VenueKind) -> Option<&'static str> {
+    match kind {
+        VenueKind::Live => Some("LIVE"),
+        VenueKind::Test => Some("TEST"),
+        VenueKind::Simulated => None,
+    }
+}
+
 /// What the pill says: `LIVE · COINBASE`, `TEST · COINBASE SANDBOX`, `PAPER TRADING`.
 pub fn title(info: &VenueInfo) -> String {
     match info.kind {
@@ -53,20 +70,57 @@ pub fn row_label(info: &VenueInfo) -> String {
     }
 }
 
+/// What the dot means, for the tooltip.
+fn state_sentence(state: &BackendState) -> String {
+    match state {
+        BackendState::Ready => "Connected".to_owned(),
+        BackendState::Connecting => "Connecting…".to_owned(),
+        BackendState::NotConnected => "Not connected".to_owned(),
+        BackendState::Paused(reason) | BackendState::NeedsAttention(reason) => reason.clone(),
+    }
+}
+
 /// Draws the pill for `current` and its menu of `venues`. Returns what the user chose.
 pub fn show(
     ui: &mut Ui,
     current: &VenueInfo,
     state: &BackendState,
     venues: &[VenueInfo],
+    pill: PillSize,
 ) -> Option<PillAction> {
     let tint = tint(current.kind);
     let text = title(current);
-    let galley = kit::galley(ui, &text, 10.5, kit::BOLD, tint, f32::INFINITY);
-    let size = vec2(galley.size().x + 44.0, galley.size().y + 10.0);
+    let (label, tag_text) = match pill {
+        PillSize::Sheet => (text.clone(), None),
+        PillSize::Panel => (current.name.clone(), tag(current.kind)),
+    };
+    let (font, weight) = match pill {
+        PillSize::Sheet => (10.5, kit::BOLD),
+        PillSize::Panel => (12.0, kit::SEMIBOLD),
+    };
+    let galley = kit::galley(ui, &label, font, weight, tint, f32::INFINITY);
+    let tag_galley = tag_text.map(|tag| {
+        kit::galley(
+            ui,
+            tag,
+            9.0,
+            kit::BOLD,
+            theme::with_alpha(tint, 0.75),
+            f32::INFINITY,
+        )
+    });
+    let tag_width = tag_galley.as_ref().map_or(0.0, |tag| 6.0 + tag.size().x);
+    let size = vec2(
+        galley.size().x + tag_width + 44.0,
+        match pill {
+            PillSize::Sheet => galley.size().y + 10.0,
+            PillSize::Panel => crate::ui::trade::panel_header::CONTROL_HEIGHT,
+        },
+    );
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
     let response = crate::ui::accessibility::label(response, &text)
-        .on_hover_cursor(egui::CursorIcon::PointingHand);
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .on_hover_text(state_sentence(state));
     let open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&response));
     let alpha = if current.kind == VenueKind::Live {
         0.16
@@ -91,11 +145,19 @@ pub fn show(
         3.5,
         state_color(state),
     );
+    let name_width = galley.size().x;
     ui.painter().galley(
         rect.left_center() + vec2(22.0, -galley.size().y / 2.0),
         galley,
         tint,
     );
+    if let Some(tag) = tag_galley {
+        ui.painter().galley(
+            rect.left_center() + vec2(22.0 + name_width + 6.0, -tag.size().y / 2.0),
+            tag,
+            tint,
+        );
+    }
     icons::paint(
         ui.painter(),
         egui::Rect::from_center_size(rect.right_center() - vec2(11.0, 0.0), vec2(9.0, 9.0)),
@@ -168,6 +230,13 @@ mod tests {
             row_label(&info(VenueKind::Simulated, "Paper trading")),
             "Paper trading"
         );
+    }
+
+    #[test]
+    fn only_real_money_and_test_environments_carry_a_tag() {
+        assert_eq!(tag(VenueKind::Live), Some("LIVE"));
+        assert_eq!(tag(VenueKind::Test), Some("TEST"));
+        assert_eq!(tag(VenueKind::Simulated), None);
     }
 
     #[test]

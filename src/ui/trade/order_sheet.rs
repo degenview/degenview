@@ -231,7 +231,7 @@ fn header(
     actions: &mut Vec<SheetAction>,
 ) {
     ui.horizontal(|ui| {
-        match venue_pill::show(ui, info, bstate, input.enabled) {
+        match venue_pill::show(ui, info, bstate, input.enabled, venue_pill::PillSize::Sheet) {
             Some(PillAction::Pick(venue)) => actions.push(SheetAction::PickVenue(venue)),
             Some(PillAction::AddBroker) => actions.push(SheetAction::AddBroker),
             None => {}
