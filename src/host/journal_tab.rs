@@ -12,6 +12,7 @@ use crate::host::journal_excursion::{CandleFetcher, Excursions, State as Excursi
 use crate::host::journal_host::{
     JournalData, JournalHost, JournalPrefs, RangeChoice, Section, now_ms,
 };
+use crate::host::journal_io::{Io, Outcome as IoOutcome};
 use crate::host::journal_shots::{Shots, Source};
 use crate::service::timezone::local_utc_offset_secs;
 use crate::ui::header_controls;
@@ -21,6 +22,7 @@ use crate::ui::journal_calendar;
 use crate::ui::journal_compare;
 use crate::ui::journal_daily;
 use crate::ui::journal_detail::{self, Draft};
+use crate::ui::journal_import::{self, ImportSheet};
 use crate::ui::journal_overview::{self, OverviewState};
 use crate::ui::journal_playbooks;
 use crate::ui::journal_shots as shots_ui;
@@ -28,6 +30,7 @@ use crate::ui::journal_table::{self, TableSpec};
 use crate::ui::kit::{self, REGULAR, SEMIBOLD, size};
 use crate::ui::paper_grid;
 use crate::ui::theme;
+use degenview_journal::backup::Backup;
 use degenview_journal::breakdown::{self, Dimension, Slice};
 use degenview_journal::calendar::{
     self, Civil, MonthView, days_from_civil, month_view, shift_month,
@@ -56,6 +59,18 @@ const WEEK_START: u8 = 0;
 /// A review saves this long after the last keystroke, or when its field loses focus.
 const SAVE_AFTER: f64 = 0.8;
 const BREAKEVEN_TOLERANCE: Decimal = Decimal::ZERO;
+
+/// What the Data menu can do.
+enum DataAction {
+    Import,
+    ExportTrades,
+    ExportExecutions,
+    ExportSummary,
+    ExportNotes,
+    Backup,
+    Restore,
+    RemoveAccount(String, String),
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum JournalAction {
@@ -142,6 +157,14 @@ pub struct JournalTab {
     shots: Shots,
     /// Actions for the app raised while drawing, handed over at the end of the frame.
     outbox: Vec<JournalAction>,
+    io: Io,
+    import: Option<ImportSheet>,
+    /// Rows the import sheet already refused, for the result message.
+    import_skipped: usize,
+    restore: Option<(String, Backup)>,
+    remove_account: Option<(String, String)>,
+    /// A result or an error to tell the user: (is an error, text).
+    notice: Option<(bool, String)>,
     excursions: Excursions,
     fetcher: std::sync::Arc<dyn CandleFetcher>,
 }
@@ -178,6 +201,12 @@ impl JournalTab {
             currency: None,
             shots: Shots::default(),
             outbox: Vec::new(),
+            io: Io::default(),
+            import: None,
+            import_skipped: 0,
+            restore: None,
+            remove_account: None,
+            notice: None,
             excursions: Excursions::default(),
             fetcher: crate::host::journal_excursion::default_fetcher(),
         }
@@ -297,6 +326,7 @@ impl JournalTab {
             self.flush_daily(host);
             self.daily_draft = None;
         }
+        self.io_ui(ui.ctx(), host);
         match section {
             Section::Trades => self.trades_section(ui, host, &data, &reviews),
             Section::Overview => self.overview_section(ui, host, &data),
@@ -1413,6 +1443,11 @@ impl JournalTab {
             if section != Section::Daily {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     self.account_menu(ui, host, data);
+                    self.data_menu(ui, host, data);
+                });
+            } else {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    self.data_menu(ui, host, data);
                 });
             }
         });
@@ -1524,6 +1559,341 @@ impl JournalTab {
                     from: self.custom_from.clone(),
                     to: self.custom_to.clone(),
                 };
+            }
+        }
+    }
+
+    // MARK: Import, export and backup
+
+    fn data_menu(&mut self, ui: &mut egui::Ui, host: &mut JournalHost, data: &Arc<JournalData>) {
+        use degenview_journal::model::TradingSourceKind;
+        let imported: Vec<(String, String)> = data
+            .accounts
+            .iter()
+            .filter(|account| account.kind == TradingSourceKind::Imported)
+            .map(|account| (account.uid.clone(), account.name.clone()))
+            .collect();
+        let removals: Vec<String> = imported
+            .iter()
+            .map(|(_, name)| format!("Remove imported account \u{201c}{name}\u{201d}\u{2026}"))
+            .collect();
+        let mut labels: Vec<String> = [
+            "Import executions (CSV)\u{2026}",
+            "Export trades (CSV)\u{2026}",
+            "Export executions (CSV)\u{2026}",
+            "Export summary (CSV)\u{2026}",
+            "Export notes (Markdown)\u{2026}",
+            "Back up journal\u{2026}",
+            "Restore from backup\u{2026}",
+        ]
+        .map(str::to_owned)
+        .to_vec();
+        labels.extend(removals.iter().cloned());
+        let mut chosen: Option<DataAction> = None;
+        header_controls::menu_button(
+            ui,
+            egui::Id::new(("journal-data", self.id)),
+            Icon::Download,
+            "Data",
+            &labels,
+            self.io.is_busy(),
+            |ui| {
+                if header_controls::action(ui, Icon::Download, &labels[0]) {
+                    chosen = Some(DataAction::Import);
+                }
+                header_controls::separator(ui);
+                for (index, action) in [
+                    DataAction::ExportTrades,
+                    DataAction::ExportExecutions,
+                    DataAction::ExportSummary,
+                    DataAction::ExportNotes,
+                ]
+                .into_iter()
+                .enumerate()
+                {
+                    if header_controls::action(ui, Icon::ArrowUpRightSquare, &labels[1 + index]) {
+                        chosen = Some(action);
+                    }
+                }
+                header_controls::separator(ui);
+                if header_controls::action(ui, Icon::Briefcase, &labels[5]) {
+                    chosen = Some(DataAction::Backup);
+                }
+                if header_controls::action(ui, Icon::Download, &labels[6]) {
+                    chosen = Some(DataAction::Restore);
+                }
+                if !imported.is_empty() {
+                    header_controls::separator(ui);
+                    for ((uid, name), label) in imported.iter().zip(&removals) {
+                        if header_controls::action(ui, Icon::Trash, label) {
+                            chosen = Some(DataAction::RemoveAccount(uid.clone(), name.clone()));
+                        }
+                    }
+                }
+            },
+        );
+        if let Some(action) = chosen {
+            self.run_data_action(ui.ctx(), host, data, action);
+        }
+    }
+
+    fn run_data_action(
+        &mut self,
+        ctx: &egui::Context,
+        host: &mut JournalHost,
+        data: &Arc<JournalData>,
+        action: DataAction,
+    ) {
+        use degenview_journal::{csv as journal_csv, report};
+        if self.io.is_busy() {
+            return;
+        }
+        let names = data.account_names();
+        let account_name =
+            move |uid: &str| names.get(uid).cloned().unwrap_or_else(|| uid.to_owned());
+        let playbooks = host.playbook_names().clone();
+        let playbook_name =
+            move |id: &str| playbooks.get(id).cloned().unwrap_or_else(|| id.to_owned());
+        let in_view: Vec<&Trade> = self.rows.iter().map(|&index| &data.trades[index]).collect();
+        match action {
+            DataAction::Import => self.io.pick_csv(ctx),
+            DataAction::ExportTrades => {
+                if in_view.is_empty() {
+                    self.notice = Some((true, "There are no trades in view to export.".to_owned()));
+                    return;
+                }
+                let text = journal_csv::export_trades(
+                    &in_view,
+                    host.reviews(),
+                    &playbook_name,
+                    &account_name,
+                );
+                self.io
+                    .save_text(ctx, "the trades", "journal-trades.csv", text);
+            }
+            DataAction::ExportExecutions => {
+                let store = host.store();
+                let account = host.prefs().account.clone();
+                self.io
+                    .save_built(ctx, "the executions", "journal-executions.csv", move || {
+                        let executions = store
+                            .lock()
+                            .map_err(|_| "The journal's store is unavailable.".to_owned())?
+                            .journal_executions()
+                            .map_err(|error| {
+                                format!("The executions could not be read: {error}")
+                            })?;
+                        let chosen: Vec<&degenview_journal::model::Execution> = executions
+                            .iter()
+                            .filter(|execution| {
+                                account
+                                    .as_deref()
+                                    .is_none_or(|uid| uid == execution.account_uid)
+                            })
+                            .collect();
+                        if chosen.is_empty() {
+                            return Err("There are no executions to export.".to_owned());
+                        }
+                        Ok(journal_csv::export_executions(&chosen, &account_name))
+                    });
+            }
+            DataAction::ExportSummary => {
+                let reviews = host.reviews().clone();
+                let r_of = |trade: &Trade| {
+                    degenview_journal::risk::r_multiple(
+                        trade,
+                        reviews.get(&trade.key).and_then(|review| review.stop),
+                    )
+                };
+                let summaries = degenview_journal::analytics::summarize_by_currency(
+                    &in_view,
+                    &degenview_journal::analytics::Options {
+                        initial_balance: None,
+                        breakeven_tolerance: BREAKEVEN_TOLERANCE,
+                        offset: &local_utc_offset_secs,
+                        r_of: &r_of,
+                    },
+                );
+                if summaries.is_empty() {
+                    self.notice =
+                        Some((true, "There are no trades in view to summarise.".to_owned()));
+                    return;
+                }
+                self.io.save_text(
+                    ctx,
+                    "the summary",
+                    "journal-summary.csv",
+                    report::summary_csv(&summaries),
+                );
+            }
+            DataAction::ExportNotes => {
+                let all: Vec<&Trade> = data.trades.iter().collect();
+                let days: Vec<&degenview_journal::daily::DailyEntry> =
+                    host.days().values().collect();
+                let text = report::notes_markdown(
+                    &all,
+                    host.reviews(),
+                    &days,
+                    &playbook_name,
+                    &account_name,
+                    &local_utc_offset_secs,
+                    &format::iso_date(journal_calendar::civil_today(
+                        now_ms(),
+                        &local_utc_offset_secs,
+                    )),
+                );
+                self.io
+                    .save_text(ctx, "the notes", "journal-notes.md", text);
+            }
+            DataAction::Backup => {
+                let store = host.store();
+                self.io.save_built(
+                    ctx,
+                    "the backup",
+                    "degenview-journal-backup.json",
+                    move || {
+                        let backup = store
+                            .lock()
+                            .map_err(|_| "The journal's store is unavailable.".to_owned())?
+                            .journal_backup(
+                                crate::model::portfolio_csv::format_iso8601(now_ms()),
+                                env!("CARGO_PKG_VERSION"),
+                            )
+                            .map_err(|error| format!("The journal could not be read: {error}"))?;
+                        backup.to_json()
+                    },
+                );
+            }
+            DataAction::Restore => self.io.pick_backup(ctx),
+            DataAction::RemoveAccount(uid, name) => self.remove_account = Some((uid, name)),
+        }
+    }
+
+    /// Runs the import the sheet describes.
+    fn start_import(&mut self, ctx: &egui::Context, host: &mut JournalHost) {
+        let Some(sheet) = self.import.take() else {
+            return;
+        };
+        let planned = sheet.plan(&local_utc_offset_secs, now_ms());
+        self.import_skipped = planned.rejected.len();
+        let sources = degenview_journal::csv::ImportSource::split(planned);
+        self.io.import(ctx, host.store(), sources);
+    }
+
+    /// Restores the backup that was asked about.
+    fn start_restore(&mut self, ctx: &egui::Context, host: &mut JournalHost) {
+        if let Some((_, backup)) = self.restore.take() {
+            self.io.restore(ctx, host.store(), backup);
+        }
+    }
+
+    /// Takes in a finished job and draws the sheet and dialogs the import and restore need.
+    fn io_ui(&mut self, ctx: &egui::Context, host: &mut JournalHost) {
+        if let Some(outcome) = self.io.poll(ctx) {
+            match outcome {
+                IoOutcome::CsvPicked(Ok(Some((name, table)))) => {
+                    self.import = Some(ImportSheet::new(name, table));
+                }
+                IoOutcome::CsvPicked(Ok(None)) | IoOutcome::BackupPicked(Ok(None)) => {}
+                IoOutcome::CsvPicked(Err(error)) | IoOutcome::BackupPicked(Err(error)) => {
+                    self.notice = Some((true, error));
+                }
+                IoOutcome::Saved { what, result } => match result {
+                    Ok(Some(path)) => {
+                        self.notice = Some((false, format!("Saved {what} to {}.", path.display())));
+                    }
+                    Ok(None) => {}
+                    Err(error) => self.notice = Some((true, error)),
+                },
+                IoOutcome::Imported(Ok(summary)) => {
+                    host.mark_dirty();
+                    self.notice = Some((false, summary.message(self.import_skipped)));
+                }
+                IoOutcome::Imported(Err(error)) | IoOutcome::Restored(Err(error)) => {
+                    self.notice = Some((true, error));
+                }
+                IoOutcome::BackupPicked(Ok(Some(picked))) => self.restore = Some(picked),
+                IoOutcome::Restored(Ok(report)) => {
+                    host.mark_dirty();
+                    self.notice = Some((false, format!("Restored: {}.", report.summary())));
+                }
+            }
+        }
+
+        if let Some(sheet) = self.import.as_mut() {
+            match journal_import::show(ctx, sheet, &local_utc_offset_secs) {
+                journal_import::Outcome::Open => {}
+                journal_import::Outcome::Cancel => self.import = None,
+                journal_import::Outcome::Import => self.start_import(ctx, host),
+            }
+        }
+
+        if let Some((name, backup)) = &self.restore {
+            let message = format!(
+                "{name} holds {}. Restoring adds what the journal does not have. Nothing is deleted, and anything you edited after the backup was made is kept as it is.",
+                backup.summary()
+            );
+            match kit::alert(
+                ctx,
+                egui::Id::new(("journal-restore", self.id)),
+                &kit::Alert {
+                    icon: Icon::Download,
+                    tint: theme::text_secondary(),
+                    title: "Restore this backup?",
+                    message: &message,
+                    accept: "Restore",
+                    dismiss: "Cancel",
+                    cautious: false,
+                },
+            ) {
+                Some(kit::ConfirmOutcome::Confirmed) => self.start_restore(ctx, host),
+                Some(kit::ConfirmOutcome::Cancelled) => self.restore = None,
+                None => {}
+            }
+        }
+
+        if let Some((uid, name)) = self.remove_account.clone() {
+            let message = format!(
+                "This removes \u{201c}{name}\u{201d} from the journal with its executions, trades and reviews. Screenshots stay in the library. It cannot be undone, and importing the file again brings the executions back without the reviews."
+            );
+            match kit::confirm(
+                ctx,
+                egui::Id::new(("journal-remove-account", self.id)),
+                &kit::Confirm {
+                    icon: Icon::Trash,
+                    title: "Remove this account?",
+                    message: &message,
+                    destructive: "Remove",
+                },
+            ) {
+                Some(kit::ConfirmOutcome::Confirmed) => {
+                    self.remove_account = None;
+                    if let Err(error) = host.remove_account(&uid) {
+                        self.notice = Some((true, error));
+                    }
+                }
+                Some(kit::ConfirmOutcome::Cancelled) => self.remove_account = None,
+                None => {}
+            }
+        }
+
+        if let Some((error, text)) = &self.notice {
+            let dismissed = kit::notice(
+                ctx,
+                egui::Id::new(("journal-notice", self.id)),
+                &kit::Notice {
+                    icon: if *error {
+                        Icon::XmarkOctagonFill
+                    } else {
+                        Icon::CheckCircleFill
+                    },
+                    tint: if *error { theme::LOSS } else { theme::WIN },
+                    title: if *error { "That did not work" } else { "Done" },
+                    message: text,
+                },
+            );
+            if dismissed {
+                self.notice = None;
             }
         }
     }
@@ -2510,6 +2880,145 @@ mod tests {
         assert!(host.marks().is_empty());
     }
 
+    fn wait_for_io(tab: &mut JournalTab, host: &mut JournalHost, ctx: &egui::Context) {
+        let mut time = 50.0;
+        while tab.io.is_busy() {
+            assert!(time < 60.0, "the job never finished");
+            frame(ctx, tab, host, time);
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            time += 0.05;
+        }
+        frame(ctx, tab, host, time);
+    }
+
+    #[test]
+    fn an_import_adds_an_account_and_its_trades_and_a_repeat_adds_nothing() {
+        let (_, mut host, mut tab, ctx) = ready();
+        frame(&ctx, &mut tab, &mut host, 0.0);
+        let before = host.data().unwrap().trades.len();
+        let text = "time,symbol,side,qty,price,fee\n\
+            2026-11-09T10:00:00Z,SOL,buy,10,100,1\n\
+            2026-11-09T11:00:00Z,SOL,sell,10,110,1\n\
+            not-a-time,SOL,buy,1,100,\n";
+        for round in 0..2 {
+            let table = degenview_journal::csv::read_table(text).unwrap();
+            tab.import = Some(ImportSheet::new("broker-fills.csv".into(), table));
+            tab.start_import(&ctx, &mut host);
+            assert!(tab.import.is_none());
+            wait_for_io(&mut tab, &mut host, &ctx);
+            let (error, message) = tab.notice.clone().expect("a result");
+            assert!(!error, "{message}");
+            if round == 0 {
+                assert!(
+                    message.starts_with("2 new executions added to 1 account"),
+                    "{message}"
+                );
+                assert!(message.contains("1 rows were refused"), "{message}");
+            } else {
+                assert!(message.starts_with("0 new executions"), "{message}");
+                assert!(
+                    message.contains("2 were already in the journal"),
+                    "{message}"
+                );
+            }
+            tab.notice = None;
+            // The journal rebuilds on its worker.
+            let mut waited = 0;
+            while host.is_building() && waited < 500 {
+                host.poll();
+                std::thread::sleep(std::time::Duration::from_millis(5));
+                waited += 1;
+            }
+            host.sync(1);
+            while host.is_building() {
+                host.poll();
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            frame(&ctx, &mut tab, &mut host, 100.0 + f64::from(round));
+        }
+        let data = host.data().unwrap().clone();
+        assert_eq!(data.trades.len(), before + 1);
+        let imported = data
+            .accounts
+            .iter()
+            .find(|account| account.name == "broker-fills")
+            .expect("the imported account");
+        assert_eq!(
+            imported.kind,
+            degenview_journal::model::TradingSourceKind::Imported
+        );
+
+        // Removing it takes the trade with it.
+        let uid = imported.uid.clone();
+        host.remove_account(&uid).unwrap();
+        host.sync(2);
+        while host.is_building() {
+            host.poll();
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        host.poll();
+        assert_eq!(host.data().unwrap().trades.len(), before);
+    }
+
+    #[test]
+    fn a_backup_made_here_restores_into_another_journal_through_the_tab() {
+        let (store_a, mut host_a, mut tab_a, ctx) = ready();
+        frame(&ctx, &mut tab_a, &mut host_a, 0.0);
+        let key = host_a.data().unwrap().trades[0].key.clone();
+        let mut review = degenview_journal::reviews::Review::new(
+            &key,
+            &host_a.data().unwrap().trades[0].account_uid,
+        );
+        review.notes = "Backed up.".into();
+        host_a.save_review(&review).unwrap();
+        let backup = store_a
+            .lock()
+            .unwrap()
+            .journal_backup("2026-11-10T00:00:00.000Z".into(), "test")
+            .unwrap();
+
+        let store_b = store();
+        let mut host_b = JournalHost::new(store_b.clone(), Arc::new(|| {}));
+        let mut tab_b = JournalTab::new(2);
+        tab_b.restore = Some(("backup.json".into(), backup));
+        tab_b.start_restore(&ctx, &mut host_b);
+        wait_for_io(&mut tab_b, &mut host_b, &ctx);
+        let (error, message) = tab_b.notice.clone().expect("a result");
+        assert!(!error, "{message}");
+        assert!(message.starts_with("Restored:"), "{message}");
+        host_b.rebuild_blocking();
+        assert_eq!(
+            host_b.data().unwrap().trades.len(),
+            host_a.data().unwrap().trades.len()
+        );
+        assert_eq!(host_b.reviews()[&key].notes, "Backed up.");
+    }
+
+    #[test]
+    fn the_data_menu_and_sheet_draw_in_every_state() {
+        let (_, mut host, mut tab, ctx) = ready();
+        frame(&ctx, &mut tab, &mut host, 0.0);
+        let table = degenview_journal::csv::read_table(
+            "time,symbol,side,qty,price\n2026-11-09T10:00:00Z,SOL,buy,1,100\n",
+        )
+        .unwrap();
+        tab.import = Some(ImportSheet::new("f.csv".into(), table));
+        frame(&ctx, &mut tab, &mut host, 1.0);
+        frame(&ctx, &mut tab, &mut host, 1.1);
+        tab.import = None;
+        tab.notice = Some((true, "That did not work.".into()));
+        frame(&ctx, &mut tab, &mut host, 2.0);
+        tab.notice = None;
+        tab.remove_account = Some(("import:x".into(), "X".into()));
+        frame(&ctx, &mut tab, &mut host, 3.0);
+        tab.remove_account = None;
+        tab.restore = Some((
+            "b.json".into(),
+            Backup::empty("2026-11-10T00:00:00.000Z".into(), "test"),
+        ));
+        frame(&ctx, &mut tab, &mut host, 4.0);
+    }
+
     #[test]
     fn switching_trades_saves_what_was_typed_instead_of_losing_it() {
         let (_, mut host, mut tab, ctx) = ready();
@@ -2999,6 +3508,30 @@ mod tests {
                     std::thread::sleep(std::time::Duration::from_millis(60));
                 }
                 tall.save("journal-detail-tall-dark", last.take().expect("ran"));
+            }
+
+            {
+                let table = degenview_journal::csv::read_table(
+                    "Date,Ticker,Action,Shares,Fill Price,Commission,Exchange\n\
+                     2026-11-09 09:31:02,AAPL,BOT,100,212.40,1.00,alpaca\n\
+                     2026-11-09 10:14:45,AAPL,SLD,100,214.05,1.00,alpaca\n\
+                     2026-11-09 10:40:10,NVDA,BOT,20,141.2,1.00,alpaca\n\
+                     2026-11-09 15:55:00,NVDA,SLD,20,139.75,,alpaca\n\
+                     yesterday,TSLA,BOT,5,330,1.00,alpaca\n\
+                     2026-11-10 09:35:00,TSLA,HOLD,5,330,1.00,alpaca\n\
+                     2026-11-10 09:36:00,TSLA,BOT,0,330,1.00,alpaca\n",
+                )
+                .unwrap();
+                tab.import = Some(ImportSheet::new("ibkr-fills.csv".into(), table));
+                let mut sheet_screen = Screen::new(egui::vec2(1400.0, 1000.0));
+                for _ in 0..4 {
+                    last = Some(sheet_screen.run(vec![], |ui| {
+                        crate::ui::theme::sync(ui.ctx());
+                        tab.ui(ui, &mut host, 1);
+                    }));
+                }
+                sheet_screen.save("journal-import-dark", last.take().expect("ran"));
+                tab.import = None;
             }
 
             for (section, name) in [
