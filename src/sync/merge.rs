@@ -112,7 +112,14 @@ pub fn merge(kind: EntityKind, base: Option<&Value>, local: Side, remote: Side) 
                 loser: loser.clone(),
             }
         }
+        // What the user wrote: the later edit wins, but text the other side wrote is kept after it
+        // rather than lost. Symmetric: the winner is decided by the stamps alone.
+        EntityKind::JournalReview | EntityKind::JournalDay => {
+            let (winner, loser) = order(&local, &remote);
+            Outcome::Resolved(keep_other_text(kind, winner, loser))
+        }
         EntityKind::LayoutDrawing
+        | EntityKind::JournalPlaybook
         | EntityKind::DrawingAsset
         | EntityKind::ChartTemplate
         | EntityKind::DrawingTemplate
@@ -121,6 +128,47 @@ pub fn merge(kind: EntityKind, base: Option<&Value>, local: Side, remote: Side) 
         | EntityKind::Portfolio
         | EntityKind::PortfolioTransaction => Outcome::Resolved(lww(&local, &remote).clone()),
     }
+}
+
+/// The text fields of a review or a daily entry, which are the user's own words.
+fn text_fields(kind: EntityKind) -> &'static [&'static str] {
+    match kind {
+        EntityKind::JournalReview => &["notes", "setup", "entry_rationale", "exit_rationale"],
+        EntityKind::JournalDay => &[
+            "outlook", "plan", "goals", "notes", "mistakes", "lessons", "review",
+        ],
+        _ => &[],
+    }
+}
+
+/// The winning version, with each text field the losing version wrote differently added after
+/// the winner's under a divider. A text the winner already contains is not added again, so
+/// merging the result with either original changes nothing.
+pub const OTHER_VERSION: &str = "--- another version of this text ---";
+
+fn keep_other_text(kind: EntityKind, winner: &Value, loser: &Value) -> Value {
+    let mut merged = winner.clone();
+    let (Some(object), Some(other)) = (merged.as_object_mut(), loser.as_object()) else {
+        return merged;
+    };
+    for field in text_fields(kind) {
+        let kept = object.get(*field).and_then(Value::as_str).unwrap_or("");
+        let theirs = other
+            .get(*field)
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim_end();
+        if theirs.is_empty() || kept.contains(theirs) {
+            continue;
+        }
+        let text = if kept.trim().is_empty() {
+            theirs.to_owned()
+        } else {
+            format!("{}\n\n{OTHER_VERSION}\n{theirs}", kept.trim_end())
+        };
+        object.insert((*field).to_owned(), Value::String(text));
+    }
+    merged
 }
 
 fn lww<'a>(local: &Side<'a>, remote: &Side<'a>) -> &'a Value {

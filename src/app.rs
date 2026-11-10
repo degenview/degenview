@@ -2994,6 +2994,13 @@ impl DegenViewApp {
                     }
                 }
             }
+            if (report.tables.contains("journal_review")
+                || report.tables.contains("journal_day")
+                || report.tables.contains("journal_playbook"))
+                && let Ok(mut journal) = self.journal.lock()
+            {
+                journal.mark_dirty();
+            }
             if report.tables.contains("paper_account")
                 && let Ok(mut paper) = self.paper.lock()
             {
