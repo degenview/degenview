@@ -178,6 +178,24 @@ pub fn line_pill(line: &OrderLine, price_text: &str) -> Pill {
     }
 }
 
+/// The room SELL and BUY take in the header, from the prices they show. A long price (74,396.74
+/// against 0.5412) is wider than any fixed guess, and a header that reserved too little pushed the
+/// pills out past its own edge, where they could not be clicked.
+pub fn quick_trade_width(ui: &egui::Ui, bid: Option<&str>, ask: Option<&str>) -> f32 {
+    let pill = |word: &str, price: Option<&str>| {
+        let text = match price {
+            Some(price) => format!("{word}  {price}"),
+            None => word.to_owned(),
+        };
+        ui.painter()
+            .layout_no_wrap(text, FontId::proportional(11.5), theme::DOWN)
+            .size()
+            .x
+            + 18.0
+    };
+    pill("SELL", bid) + pill("BUY", ask) + 4.0
+}
+
 /// SELL and BUY in the card header with the broker's own best bid and ask (not the chart's last
 /// price: they are not the same price and only the broker's can be traded). They open the ticket;
 /// nothing is placed from here. Returns the side pressed.

@@ -1901,7 +1901,15 @@ impl ChartCard {
             } else {
                 0.0
             }
-            + if self.live.pills_visible() { 190.0 } else { 0.0 }
+            + if self.live.pills_visible() {
+                crate::ui::broker_chart_trading::quick_trade_width(
+                    ui,
+                    self.live.bid.as_deref(),
+                    self.live.ask.as_deref(),
+                ) + 8.0
+            } else {
+                0.0
+            }
             // The camera and the gap after it.
             + 31.0;
         let title_block_width = (header_width - reserved).max(96.0);
@@ -2091,28 +2099,6 @@ impl ChartCard {
                 });
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if let Some(entry) = self.live.order_entry {
-                        // Live pills: the broker's own bid and ask, never the chart's last price.
-                        if let Some(side) = crate::ui::broker_chart_trading::quick_trade_buttons(
-                            ui,
-                            &self.live.broker_name,
-                            self.live.bid.as_deref(),
-                            self.live.ask.as_deref(),
-                            entry,
-                        ) {
-                            action.live_trade = Some(side);
-                        }
-                    }
-                    if self.paper.trading_enabled
-                        && let Some(last) = candles.last()
-                    {
-                        let price_text = self.appearance.price_format().format(last.close);
-                        if let Some(side) =
-                            paper_chart_trading::quick_trade_buttons(ui, &price_text)
-                        {
-                            action.quick_trade = Some(side);
-                        }
-                    }
                     if source == DataSource::CoinMarketCap
                         && icons::button(
                             ui,
@@ -2171,6 +2157,28 @@ impl ChartCard {
                         .on_hover_cursor(egui::CursorIcon::PointingHand);
                     if favorite.clicked() {
                         action.toggle_favorite = true;
+                    }
+                    if self.paper.trading_enabled
+                        && let Some(last) = candles.last()
+                    {
+                        let price_text = self.appearance.price_format().format(last.close);
+                        if let Some(side) =
+                            paper_chart_trading::quick_trade_buttons(ui, &price_text)
+                        {
+                            action.quick_trade = Some(side);
+                        }
+                    }
+                    if let Some(entry) = self.live.order_entry {
+                        // Live pills: the broker's own bid and ask, never the chart's last price.
+                        if let Some(side) = crate::ui::broker_chart_trading::quick_trade_buttons(
+                            ui,
+                            &self.live.broker_name,
+                            self.live.bid.as_deref(),
+                            self.live.ask.as_deref(),
+                            entry,
+                        ) {
+                            action.live_trade = Some(side);
+                        }
                     }
                 });
             },
