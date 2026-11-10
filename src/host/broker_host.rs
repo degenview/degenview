@@ -289,9 +289,10 @@ impl BrokerHost {
         };
         let host = Arc::clone(self);
         std::thread::spawn(move || {
-            // The newest choices, whichever save runs last: two quick changes cannot reorder.
-            let all = host.prefs.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            // The newest choices, read once the store's lock is held: a thread that read before
+            // waiting for it would write older choices after newer ones.
             if let Ok(store) = store.lock() {
+                let all = host.prefs.lock().unwrap_or_else(|e| e.into_inner()).clone();
                 let _ = store.set_setting(broker_prefs::KEY, &all);
             }
         });
@@ -451,6 +452,18 @@ impl BrokerHost {
                 host.start(id, credentials);
             }
         });
+    }
+
+    /// Connects a broker that needs no credential (a test environment) on its own thread. Nothing
+    /// is read from or written to the secret store. A broker that does need one is left alone.
+    pub fn connect_without_credentials(self: &Arc<Self>, id: BrokerId) {
+        let takes_none = degenview_brokers::registry::by_id(id)
+            .is_some_and(|broker| broker.descriptor().credential_fields.is_empty());
+        if !takes_none || self.runtime(id).is_some() {
+            return;
+        }
+        let host = Arc::clone(self);
+        std::thread::spawn(move || host.start(id, Credentials::new()));
     }
 
     /// Connects every broker that has saved credentials.

@@ -18,8 +18,8 @@ use degenview_brokers::model::orders::{
     Page, PlacedOrder,
 };
 use degenview_brokers::{
-    Broker, BrokerId, BrokerSnapshot, Capabilities, ClientOrderId, Decimal, LiveFill, LiveOrder,
-    MarketRef, OrderId, OrderKind, OrderSize, OrderStatus, OrderType, Pending, PendingState,
+    Broker, BrokerId, BrokerSnapshot, ClientOrderId, Decimal, LiveFill, LiveOrder, MarketRef,
+    OrderId, OrderKind, OrderSize, OrderStatus, OrderType, Pending, PendingState,
     ProductResolution, Side, Status,
 };
 use eframe::egui::{self, Color32, Id};
@@ -251,41 +251,7 @@ fn capitalise(text: &str) -> String {
     })
 }
 
-/// Why an order cannot be edited, or `None` when it can.
-pub fn edit_blocker(
-    order: &LiveOrder,
-    caps: Option<&Capabilities>,
-    cancelling: bool,
-) -> Option<&'static str> {
-    if order.status != OrderStatus::Open {
-        return Some("Only open orders can be edited.");
-    }
-    if cancelling {
-        return Some("A cancel is in progress for this order.");
-    }
-    if !matches!(order.order_type, OrderType::Limit | OrderType::StopLimit) {
-        return Some("This type of order cannot be edited.");
-    }
-    if matches!(order.size, Some(OrderSize::Quote(_))) || order.size.is_none() {
-        return Some("Orders sized by an amount to spend cannot be edited.");
-    }
-    match caps {
-        Some(caps) if caps.native_edit => None,
-        Some(_) => Some("This broker does not support editing this market's orders."),
-        None => Some("The market's rules have not been read yet."),
-    }
-}
-
-/// The type column.
-pub fn type_label(order: &LiveOrder) -> String {
-    match order.order_type {
-        OrderType::Market => "Market".to_owned(),
-        OrderType::Limit if order.post_only => "Limit, post-only".to_owned(),
-        OrderType::Limit => "Limit".to_owned(),
-        OrderType::StopLimit => "Stop-limit".to_owned(),
-        OrderType::Other => "Other".to_owned(),
-    }
-}
+pub use crate::model::broker_ticket::{edit_blocker, type_label};
 
 fn tone(tone: StatusTone) -> Tone {
     match tone {
@@ -1980,7 +1946,7 @@ fn edit_sheet(
 mod tests {
     use super::*;
     use crate::model::broker_ticket::TicketKind;
-    use degenview_brokers::{OrderStatus, ProductId, TifKind, Tradability};
+    use degenview_brokers::{Capabilities, OrderStatus, ProductId, TifKind, Tradability};
     use std::str::FromStr;
 
     fn d(text: &str) -> Decimal {

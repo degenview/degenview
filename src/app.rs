@@ -965,7 +965,13 @@ impl DegenViewApp {
         // credentials connects now (on its own thread), so an account is live when it is wanted.
         let broker_host = crate::host::broker_host::BrokerHost::install(store.clone());
         broker_host.attach(&creation.egui_ctx);
-        broker_host.connect_all_saved();
+        // The venues the user chose: connects every saved key and each chosen broker that needs none.
+        let trading_hub = crate::host::trading_hub::TradingHub::install(
+            broker_host.clone(),
+            paper.clone(),
+            store.clone(),
+        );
+        trading_hub.connect_enabled();
         let snapshots = SnapshotHost::load(store.clone());
         let tab_title_host = TabTitleHost::load(store.clone());
         let tab_link_host = TabLinkHost::load(store.clone());

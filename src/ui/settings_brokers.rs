@@ -671,6 +671,7 @@ mod tests {
             },
             market_source: "acme",
             account_model: degenview_brokers::AccountModel::Flat,
+            real_money: true,
             min_request_gap_ms: 100,
         }
     }

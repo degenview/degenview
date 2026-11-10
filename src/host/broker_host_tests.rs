@@ -150,6 +150,58 @@ fn changing_choices_while_the_caller_holds_the_store_does_not_wait_for_it() {
     drop(held);
 }
 
+/// Quick changes made while the store is locked each save on a thread. Whichever runs last must
+/// write the newest choices: a thread that read them before it had the lock wrote an older set
+/// after a newer one.
+#[test]
+fn quick_changes_save_the_newest_choices_whatever_order_the_saves_run_in() {
+    // The order the waiting saves run in is the platform's: several rounds make a wrong one likely
+    // to show.
+    for _ in 0..6 {
+        quick_changes_round();
+    }
+}
+
+fn quick_changes_round() {
+    let exchange = CoinbaseExchange::start();
+    let store = store();
+    let (host, _) = host(&exchange, &store);
+    let held = store.lock().expect("the store");
+    let ui_thread = Arc::clone(&host);
+    let changer = std::thread::spawn(move || {
+        for step in 0..8 {
+            let mut prefs = ui_thread.prefs(ID);
+            match step % 4 {
+                0 => prefs.notify = !prefs.notify,
+                1 => prefs.show_on_charts = !prefs.show_on_charts,
+                2 => prefs.confirm_single_cancel = !prefs.confirm_single_cancel,
+                _ => prefs.confirm_resting_orders = !prefs.confirm_resting_orders,
+            }
+            ui_thread.set_prefs(ID, prefs);
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    });
+    changer.join().expect("the changes were made");
+    // Let every save thread reach the lock before it is released.
+    std::thread::sleep(Duration::from_millis(100));
+    let newest = host.prefs(ID);
+    drop(held);
+    wait_for("the choices to be saved", || {
+        store
+            .lock()
+            .unwrap()
+            .setting::<crate::model::broker_prefs::AllPrefs>(crate::model::broker_prefs::KEY)
+            .is_some_and(|saved| saved.of(ID.as_str()) == newest)
+    });
+    std::thread::sleep(Duration::from_millis(150));
+    let saved = store
+        .lock()
+        .unwrap()
+        .setting::<crate::model::broker_prefs::AllPrefs>(crate::model::broker_prefs::KEY)
+        .expect("saved");
+    assert_eq!(saved.of(ID.as_str()), newest, "no older save landed last");
+}
+
 #[test]
 fn a_bad_key_is_refused_without_echoing_it_and_nothing_is_saved() {
     let exchange = CoinbaseExchange::start();
@@ -377,7 +429,12 @@ fn the_applications_broker_layers_name_no_broker() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     for file in [
         "host/broker_host.rs",
+        "host/trading_hub.rs",
         "service/keychain_broker_secrets.rs",
+        "trading/backend.rs",
+        "trading/broker_backend.rs",
+        "trading/model.rs",
+        "trading/paper_backend.rs",
         "ui/settings_brokers.rs",
     ] {
         let text = std::fs::read_to_string(root.join(file))

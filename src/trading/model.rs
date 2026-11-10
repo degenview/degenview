@@ -1,0 +1,357 @@
+//! What the trading interface knows about a venue, in words that belong to none of them.
+//!
+//! A *venue* is somewhere orders go: the simulated paper account, or a connected broker. The
+//! interface (the order sheet, the orders panel, the chart pills) is drawn from these types only;
+//! each venue's adapter turns its own account state into them. Nothing here names a venue.
+//!
+//! Money and sizes are [`Decimal`]: the paper engine works in `f64` and converts at its edge,
+//! rounded to the market's increments, so a number shown here is a number that can be sent.
+
+use degenview_brokers::{Decimal, Side};
+
+use crate::model::trading_venue::TradingVenue;
+
+/// How a venue treats the orders sent to it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum VenueKind {
+    /// Nothing leaves this computer: a practice account with pretend money.
+    Simulated,
+    /// A broker's test environment: real software, canned or fake money.
+    Test,
+    /// Real money.
+    Live,
+}
+
+impl VenueKind {
+    /// Whether an order placed here costs real money, so it is confirmed and marked as such.
+    pub fn is_real_money(self) -> bool {
+        self == Self::Live
+    }
+
+    /// The word on the venue's pill.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Simulated => "Simulated",
+            Self::Test => "Test",
+            Self::Live => "Live",
+        }
+    }
+}
+
+/// A venue, as the list the user chooses from shows it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VenueInfo {
+    pub venue: TradingVenue,
+    pub name: String,
+    pub kind: VenueKind,
+    /// One line on what this is, for the list of venues to connect.
+    pub summary: String,
+    /// Connecting needs no credential: it is enabled with one click and kept as a choice.
+    pub needs_no_credentials: bool,
+}
+
+/// Whether a venue can be used right now.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum BackendState {
+    /// Chosen by the user but not connected (no connection, or none yet).
+    NotConnected,
+    Connecting,
+    Ready,
+    /// Working, but orders are held back until it recovers; the sentence says why.
+    Paused(String),
+    /// Needs the user (a rejected key, an unreadable record); the sentence says what.
+    NeedsAttention(String),
+}
+
+impl BackendState {
+    pub fn is_ready(&self) -> bool {
+        matches!(self, Self::Ready)
+    }
+}
+
+/// Which kind of order the sheet offers.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum OrderClass {
+    Market,
+    Limit,
+    /// Triggers at a price, then trades at the market.
+    Stop,
+    /// Triggers at a price, then rests at a limit.
+    StopLimit,
+}
+
+impl OrderClass {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Market => "Market",
+            Self::Limit => "Limit",
+            Self::Stop => "Stop",
+            Self::StopLimit => "Stop limit",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum TimeInForce {
+    GoodTilCancelled,
+    Day,
+    ImmediateOrCancel,
+    FillOrKill,
+}
+
+impl TimeInForce {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::GoodTilCancelled => "Good til cancelled",
+            Self::Day => "Day",
+            Self::ImmediateOrCancel => "Immediate or cancel",
+            Self::FillOrKill => "Fill or kill",
+        }
+    }
+}
+
+/// What can be asked for in one market at one venue. The order sheet shows exactly this: a control
+/// the venue cannot honour is not drawn.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TicketCaps {
+    pub order_classes: Vec<OrderClass>,
+    pub time_in_force: Vec<TimeInForce>,
+    /// An order that must rest and never take liquidity.
+    pub post_only: bool,
+    /// An order that may only shrink a position.
+    pub reduce_only: bool,
+    /// Take-profit and stop-loss orders attached to an entry.
+    pub brackets: bool,
+    /// A market buy may be sized as an amount of the quote asset to spend.
+    pub quote_sized_market: bool,
+    /// A sell may open a position the account does not hold.
+    pub shorting: bool,
+    /// A working order's price or size can be changed in place.
+    pub edit_in_place: bool,
+}
+
+impl TicketCaps {
+    pub fn allows(&self, class: OrderClass) -> bool {
+        self.order_classes.contains(&class)
+    }
+}
+
+/// How a market is sized and priced at a venue.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct MarketRules {
+    /// What the venue calls the market, for display (`BTC-USD`).
+    pub name: String,
+    pub base_asset: String,
+    pub quote_asset: String,
+    pub price_increment: Decimal,
+    pub size_increment: Decimal,
+    pub min_size: Decimal,
+    /// The smallest order value in the quote asset, where the venue has one.
+    pub min_notional: Decimal,
+    pub caps: TicketCaps,
+}
+
+/// Why a chart's market cannot be traded at a venue.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Unavailable {
+    pub kind: UnavailableKind,
+    /// The sentence shown to the user.
+    pub text: String,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum UnavailableKind {
+    /// The chart is not a market of this venue at all (another data source, or no market):
+    /// nothing is offered and nothing is substituted.
+    NotThisVenue,
+    /// Will be possible shortly (connecting, reading the market's rules).
+    Waiting,
+    /// Not possible now, and the user can do something about it or must wait for the venue.
+    Blocked,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum MarketAccess {
+    Ready(Box<MarketRules>),
+    Unavailable(Unavailable),
+}
+
+impl MarketAccess {
+    pub fn rules(&self) -> Option<&MarketRules> {
+        match self {
+            Self::Ready(rules) => Some(rules),
+            Self::Unavailable(_) => None,
+        }
+    }
+
+    pub fn unavailable(&self) -> Option<&Unavailable> {
+        match self {
+            Self::Ready(_) => None,
+            Self::Unavailable(reason) => Some(reason),
+        }
+    }
+}
+
+/// The best prices of a market. A venue with no book (paper) gives only `last`.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct QuoteView {
+    pub bid: Option<Decimal>,
+    pub ask: Option<Decimal>,
+    pub last: Option<Decimal>,
+}
+
+impl QuoteView {
+    /// The price an order of `side` would meet first, falling back to the last trade.
+    pub fn reference(&self, side: Side) -> Option<Decimal> {
+        match side {
+            Side::Buy => self.ask.or(self.last),
+            Side::Sell => self.bid.or(self.last),
+        }
+    }
+}
+
+/// An amount of one asset.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Amount {
+    pub value: Decimal,
+    pub asset: String,
+}
+
+impl Amount {
+    pub fn new(value: Decimal, asset: impl Into<String>) -> Self {
+        Self {
+            value,
+            asset: asset.into(),
+        }
+    }
+}
+
+/// The account line at the top of the sheet.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AccountStrip {
+    pub label: String,
+    /// Total value including open positions, where the venue knows it.
+    pub equity: Option<Amount>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Tone {
+    Good,
+    Warning,
+    Bad,
+    Neutral,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RowStatus {
+    pub label: &'static str,
+    pub tone: Tone,
+}
+
+/// One order, working or finished.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OrderRow {
+    /// The venue's id, as a string; opaque to the interface, passed back to cancel or edit.
+    pub id: String,
+    pub market: String,
+    pub side: Side,
+    pub kind: String,
+    /// The limit price, or the stop's when that is all the order has.
+    pub price: Option<Decimal>,
+    pub filled: Decimal,
+    /// The size asked for, in the base asset; `None` for a market order sized by an amount to spend.
+    pub size: Option<Decimal>,
+    /// The note shown beside a size sized in the quote asset ("spend").
+    pub spend: Option<Decimal>,
+    pub status: RowStatus,
+    pub created_ms: Option<i64>,
+    pub working: bool,
+    pub can_cancel: bool,
+    pub can_edit: bool,
+    /// The venue's words when it refused or ended the order.
+    pub note: Option<String>,
+    /// Sent, and the answer was lost: it may or may not be live. `id` is then the key to look it up.
+    pub unconfirmed: bool,
+}
+
+/// An open position (a venue that nets orders into positions).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PositionRow {
+    pub id: String,
+    pub market: String,
+    /// Positive long, negative short.
+    pub size: Decimal,
+    pub entry_price: Decimal,
+    pub mark_price: Option<Decimal>,
+    pub unrealized: Option<Decimal>,
+    pub currency: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FillRow {
+    pub id: String,
+    pub market: String,
+    pub side: Side,
+    pub price: Decimal,
+    pub size: Decimal,
+    pub fee: Decimal,
+    pub time_ms: i64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BalanceRow {
+    pub asset: String,
+    pub available: Decimal,
+    pub held: Decimal,
+}
+
+/// The tabs of the orders panel a venue has data for.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum TabKind {
+    Positions,
+    Orders,
+    History,
+    Fills,
+    Balances,
+}
+
+impl TabKind {
+    pub fn title(self) -> &'static str {
+        match self {
+            Self::Positions => "Positions",
+            Self::Orders => "Orders",
+            Self::History => "History",
+            Self::Fills => "Fills",
+            Self::Balances => "Balances",
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_a_live_venue_is_real_money() {
+        assert!(VenueKind::Live.is_real_money());
+        assert!(!VenueKind::Test.is_real_money());
+        assert!(!VenueKind::Simulated.is_real_money());
+    }
+
+    #[test]
+    fn a_quote_without_a_book_falls_back_to_the_last_trade() {
+        let quote = QuoteView {
+            last: Some(Decimal::new(100, 0)),
+            ..Default::default()
+        };
+        assert_eq!(quote.reference(Side::Buy), Some(Decimal::new(100, 0)));
+        assert_eq!(quote.reference(Side::Sell), Some(Decimal::new(100, 0)));
+        let book = QuoteView {
+            bid: Some(Decimal::new(99, 0)),
+            ask: Some(Decimal::new(101, 0)),
+            last: Some(Decimal::new(100, 0)),
+        };
+        assert_eq!(book.reference(Side::Buy), Some(Decimal::new(101, 0)));
+        assert_eq!(book.reference(Side::Sell), Some(Decimal::new(99, 0)));
+    }
+}
