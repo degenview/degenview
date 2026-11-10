@@ -5,12 +5,14 @@
 //! `Arc` snapshot or a locked read); a screen calls these every frame. Anything that waits on a
 //! network is a command with a handle that is polled, and arrives with the order entry.
 
-use degenview_brokers::{MarketRef, Side};
+use degenview_brokers::{Decimal, MarketRef, Side};
 
+use super::draft::{CancelResult, DraftCheck, PreviewResult, SubmitResult, TradeDraft};
 use super::model::{
     AccountStrip, Amount, BackendState, BalanceRow, FillRow, MarketAccess, OrderRow, PositionRow,
     QuoteView, TabKind, VenueInfo,
 };
+use super::task::Task;
 
 pub trait TradingBackend: Send + Sync {
     fn info(&self) -> VenueInfo;
@@ -42,6 +44,27 @@ pub trait TradingBackend: Send + Sync {
     fn fills(&self) -> Vec<FillRow>;
 
     fn balances(&self) -> Vec<BalanceRow>;
+
+    /// What is wrong with the order as typed, and what it would cost as far as can be known without
+    /// asking the venue. Cheap: called every frame.
+    fn check(&self, market: &MarketRef, draft: &TradeDraft) -> DraftCheck;
+
+    /// The largest size of `side` in `market` the account can afford at `price` (the reference price
+    /// when `None`), a whole number of the market's size increments.
+    fn max_size(&self, market: &MarketRef, side: Side, price: Option<Decimal>) -> Option<Decimal>;
+
+    /// Asks the venue what the order would do, without placing it. The draft must be complete.
+    fn preview(
+        &self,
+        market: &MarketRef,
+        draft: &TradeDraft,
+    ) -> Task<Result<PreviewResult, String>>;
+
+    /// Sends the order. The draft must be complete.
+    fn submit(&self, market: &MarketRef, draft: &TradeDraft) -> Task<SubmitResult>;
+
+    /// Cancels the working order with this id (an [`OrderRow::id`](super::model::OrderRow::id)).
+    fn cancel(&self, order_id: &str) -> Task<CancelResult>;
 
     /// Rises whenever anything above may have changed, so a screen can skip rebuilding rows.
     fn revision(&self) -> u64;

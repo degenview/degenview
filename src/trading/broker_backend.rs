@@ -5,21 +5,30 @@
 
 use std::sync::Arc;
 
+use degenview_brokers::model::orders::CancelOutcome;
 use degenview_brokers::model::reducer::{OrderView, OverlayKind};
 use degenview_brokers::{
-    Broker, BrokerSnapshot, Capabilities, Decimal, LiveFill, MarketRef, OrderKind, OrderSize,
-    OrderType, PendingState, PendingView, ProductResolution, Side, Status, TifKind,
+    Broker, BrokerSnapshot, Capabilities, Decimal, LiveFill, MarketRef, OrderId, OrderKind,
+    OrderSize, OrderType, PendingState, PendingView, ProductId, ProductResolution, ProductSpec,
+    Quote, Side, Status, TifKind,
 };
 
 use super::backend::TradingBackend;
+use super::draft::{
+    CancelResult, DraftCheck, DraftField, DraftIssue, Estimate, PreviewResult, SubmitResult,
+    Submitted, TradeDraft, floor_to_increment,
+};
 use super::model::{
     AccountStrip, Amount, BackendState, BalanceRow, FillRow, MarketAccess, MarketRules, OrderClass,
     OrderRow, PositionRow, QuoteView, RowStatus, TabKind, TicketCaps, TimeInForce, Tone,
     Unavailable, UnavailableKind, VenueInfo, VenueKind,
 };
+use super::task::Task;
 use crate::host::broker_host::{BrokerHost, Connection};
 use crate::model::broker_chart::{self, ChartTrading};
-use crate::model::broker_ticket::{self as rules, StatusTone};
+use crate::model::broker_ticket::{
+    self as rules, StatusTone, TicketContext, TicketDraft, TicketField, TicketKind, TicketTif,
+};
 use crate::model::trading_venue::TradingVenue;
 
 pub struct BrokerBackend {
@@ -38,6 +47,21 @@ impl BrokerBackend {
 
     fn snapshot(&self) -> Option<Arc<BrokerSnapshot>> {
         self.host.snapshot(self.id())
+    }
+
+    fn market_of(&self, market: &MarketRef) -> Option<Market> {
+        let snapshot = self.snapshot()?;
+        let product = self.product(market)?;
+        let spec = snapshot.product(&product)?.clone();
+        let caps = snapshot.capabilities_of(&product)?.clone();
+        let quote = self.host.quote(self.id(), &product);
+        Some(Market {
+            snapshot,
+            product,
+            spec,
+            caps,
+            quote,
+        })
     }
 
     fn product(&self, market: &MarketRef) -> Option<degenview_brokers::ProductId> {
@@ -218,6 +242,75 @@ fn fill_row(fill: &LiveFill) -> FillRow {
     }
 }
 
+/// What a draft needs to be read against one market at this broker.
+struct Market {
+    snapshot: Arc<BrokerSnapshot>,
+    product: ProductId,
+    spec: ProductSpec,
+    caps: Capabilities,
+    quote: Option<Quote>,
+}
+
+impl Market {
+    fn context(&self) -> TicketContext<'_> {
+        TicketContext {
+            spec: &self.spec,
+            caps: &self.caps,
+            quote: self.quote.as_ref(),
+            balances: &self.snapshot.balances,
+            fees: self.snapshot.fees.as_ref(),
+            now_ms: crate::model::watchlist::now_ms(),
+        }
+    }
+}
+
+fn ticket_of(draft: &TradeDraft) -> TicketDraft {
+    TicketDraft {
+        side: draft.side,
+        kind: match draft.class {
+            OrderClass::Market => TicketKind::Market,
+            OrderClass::Limit | OrderClass::Stop => TicketKind::Limit,
+            OrderClass::StopLimit => TicketKind::StopLimit,
+        },
+        size_text: draft.size_text.clone(),
+        spend_in_quote: draft.spend_in_quote,
+        price_text: draft.price_text.clone(),
+        stop_text: draft.stop_text.clone(),
+        tif: match draft.tif {
+            TimeInForce::FillOrKill => TicketTif::FillOrKill,
+            _ => TicketTif::GoodTilCancelled,
+        },
+        post_only: draft.post_only,
+    }
+}
+
+fn field_of(field: TicketField) -> DraftField {
+    match field {
+        TicketField::Size => DraftField::Size,
+        TicketField::Price | TicketField::LimitPrice => DraftField::Price,
+        TicketField::StopPrice => DraftField::StopPrice,
+        TicketField::TimeInForce => DraftField::TimeInForce,
+        TicketField::Type => DraftField::Order,
+    }
+}
+
+const NO_STOP: &str = "This broker has no plain stop order. Use a stop limit.";
+
+fn cancel_text(outcome: CancelOutcome) -> CancelResult {
+    match outcome {
+        CancelOutcome::Requested => Ok(()),
+        CancelOutcome::AlreadyFilled => Err("It filled before the cancel arrived.".to_owned()),
+        CancelOutcome::NotFound => Err("The broker does not know this order any more.".to_owned()),
+        CancelOutcome::BeingReplaced => {
+            Err("The order is being changed. Try again in a moment.".to_owned())
+        }
+        CancelOutcome::Rejected(text) => Err(text),
+        CancelOutcome::Unknown(_) => Err(
+            "The cancel was sent but the answer was lost. The order is being checked.".to_owned(),
+        ),
+    }
+}
+
 impl TradingBackend for BrokerBackend {
     fn info(&self) -> VenueInfo {
         let descriptor = self.broker.descriptor();
@@ -373,6 +466,159 @@ impl TradingBackend for BrokerBackend {
             .collect();
         rows.sort_by(|a, b| a.asset.cmp(&b.asset));
         rows
+    }
+
+    fn check(&self, market: &MarketRef, draft: &TradeDraft) -> DraftCheck {
+        let missing = draft.missing();
+        let Some(found) = self.market_of(market) else {
+            return DraftCheck {
+                issues: vec![DraftIssue::new(
+                    DraftField::Order,
+                    "The market's rules have not been read yet.",
+                )],
+                missing,
+                estimate: Estimate::default(),
+            };
+        };
+        if draft.class == OrderClass::Stop {
+            return DraftCheck {
+                issues: vec![DraftIssue::new(DraftField::Order, NO_STOP)],
+                missing,
+                estimate: Estimate::default(),
+            };
+        }
+        let ticket = ticket_of(draft);
+        let context = found.context();
+        // A field left empty is not yet a fault; the ticket reports it as one, so it is dropped.
+        let issues = ticket
+            .issues(&context)
+            .into_iter()
+            .map(|issue| DraftIssue::new(field_of(issue.field), issue.text))
+            .filter(|issue| !missing.contains(&issue.field))
+            .collect();
+        let estimate = ticket.estimate(&context);
+        DraftCheck {
+            issues,
+            missing,
+            estimate: Estimate {
+                reference: estimate.reference,
+                notional: estimate.notional,
+                fee: estimate.fee,
+                margin: None,
+            },
+        }
+    }
+
+    fn max_size(&self, market: &MarketRef, side: Side, price: Option<Decimal>) -> Option<Decimal> {
+        let found = self.market_of(market)?;
+        let available = |asset: &str| -> Decimal {
+            found
+                .snapshot
+                .balances
+                .iter()
+                .filter(|balance| balance.asset == asset)
+                .map(|balance| balance.available)
+                .sum()
+        };
+        let size = match side {
+            Side::Sell => available(&found.spec.base),
+            Side::Buy => {
+                let price = price
+                    .or_else(|| {
+                        found
+                            .quote
+                            .as_ref()
+                            .and_then(|quote| quote.ask.or(quote.last))
+                    })
+                    .filter(|price| *price > Decimal::ZERO)?;
+                available(&found.spec.quote) / price
+            }
+        };
+        let size = floor_to_increment(size, found.spec.base_increment);
+        (size >= found.spec.base_min && size > Decimal::ZERO).then_some(size)
+    }
+
+    fn preview(
+        &self,
+        market: &MarketRef,
+        draft: &TradeDraft,
+    ) -> Task<Result<PreviewResult, String>> {
+        let Some(found) = self.market_of(market) else {
+            return Task::ready(Err("The market's rules have not been read yet.".to_owned()));
+        };
+        let Some(runtime) = self.host.runtime(self.id()) else {
+            return Task::ready(Err("The broker is not connected.".to_owned()));
+        };
+        let order = match ticket_of(draft).build(&found.context()) {
+            Ok(order) => order,
+            Err(issues) => {
+                let text = issues.first().map_or_else(
+                    || "The order is not complete.".to_owned(),
+                    |i| i.text.clone(),
+                );
+                return Task::ready(Err(text));
+            }
+        };
+        let pending = runtime.preview(order);
+        Task::new(move || {
+            pending.poll().map(|answer| {
+                answer
+                    .map(|preview| PreviewResult {
+                        accepted: preview.is_acceptable(),
+                        total: preview.order_total,
+                        fee: preview.fees,
+                        average_price: preview.estimated_average_price,
+                        problems: preview.problems.iter().map(|p| p.text.clone()).collect(),
+                        warnings: preview.warnings.clone(),
+                    })
+                    .map_err(|error| error.to_string())
+            })
+        })
+    }
+
+    fn submit(&self, market: &MarketRef, draft: &TradeDraft) -> Task<SubmitResult> {
+        let Some(found) = self.market_of(market) else {
+            return Task::ready(Err("The market's rules have not been read yet.".to_owned()));
+        };
+        let Some(runtime) = self.host.runtime(self.id()) else {
+            return Task::ready(Err("The broker is not connected.".to_owned()));
+        };
+        let order = match ticket_of(draft).build(&found.context()) {
+            Ok(order) => order,
+            Err(issues) => {
+                let text = issues.first().map_or_else(
+                    || "The order is not complete.".to_owned(),
+                    |i| i.text.clone(),
+                );
+                return Task::ready(Err(text));
+            }
+        };
+        let pending = runtime.submit(order);
+        Task::new(move || {
+            pending.poll().map(|answer| {
+                answer
+                    .map(|placed| Submitted {
+                        id: placed.order_id.as_str().to_owned(),
+                    })
+                    .map_err(|error| error.to_string())
+            })
+        })
+    }
+
+    fn cancel(&self, order_id: &str) -> Task<CancelResult> {
+        let Some(runtime) = self.host.runtime(self.id()) else {
+            return Task::ready(Err("The broker is not connected.".to_owned()));
+        };
+        let pending = runtime.cancel(vec![OrderId::new(order_id)]);
+        Task::new(move || {
+            pending.poll().map(|answer| match answer {
+                Ok(results) => results.into_iter().next().map_or(
+                    Err("The broker gave no answer for this order.".to_owned()),
+                    |result| cancel_text(result.outcome),
+                ),
+                Err(error) => Err(error.to_string()),
+            })
+        })
     }
 
     fn revision(&self) -> u64 {

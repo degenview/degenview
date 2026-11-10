@@ -5,8 +5,10 @@
 
 pub mod backend;
 pub mod broker_backend;
+pub mod draft;
 pub mod model;
 pub mod paper_backend;
+pub mod task;
 
 #[allow(unused_imports)]
 pub use backend::TradingBackend;

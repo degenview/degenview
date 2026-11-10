@@ -6,20 +6,15 @@ use std::time::{Duration, Instant};
 
 use degenview_brokers::coinbase::fake::{CoinbaseExchange, credentials, generate_key_pem};
 use degenview_brokers::testing::conformance::Exchange as _;
-use degenview_brokers::{
-    BrokerId, Decimal, Env, MarketRef, MemorySecretStore, OrderDraft, OrderKind, ProductId, Side,
-    Status, TimeInForce as CrateTif,
-};
+use degenview_brokers::{BrokerId, Decimal, Env, MarketRef, MemorySecretStore, Side, Status};
 
 use super::backend::TradingBackend;
+use super::draft::{DraftField, TradeDraft};
 use super::model::{BackendState, MarketAccess, OrderClass, UnavailableKind, VenueKind};
+use super::task::Task;
 use crate::host::broker_host::{BrokerHost, StoreJournal};
 use crate::host::paper_host::PaperHost;
 use crate::host::trading_hub::TradingHub;
-use crate::model::DataSource;
-use crate::model::paper::{
-    PaperInstrument, PaperOrderRequest, PaperOrderSide, PaperOrderType, PaperTimeInForce,
-};
 use crate::model::trading_venue::TradingVenue;
 use crate::store::{SharedStore, Store};
 
@@ -47,9 +42,27 @@ fn d(text: &str) -> Decimal {
     text.parse().unwrap()
 }
 
-/// What every venue must do. `buy` rests a limit buy of 0.001 at 90,000.00; `cancel` cancels
-/// every working order.
-fn check(backend: &dyn TradingBackend, kind: VenueKind, buy: &dyn Fn(), cancel: &dyn Fn()) {
+fn answer<T: Clone>(mut task: Task<T>) -> T {
+    let deadline = Instant::now() + Duration::from_secs(8);
+    loop {
+        if let Some(answer) = task.poll() {
+            return answer.clone();
+        }
+        assert!(Instant::now() < deadline, "the venue never answered");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
+fn limit_buy() -> TradeDraft {
+    let mut draft = TradeDraft::new(Side::Buy);
+    draft.size_text = "0.001".to_owned();
+    draft.price_text = "90000.00".to_owned();
+    draft
+}
+
+/// What every venue must do. `settle_cancel` is told which order was cancelled, for a venue whose
+/// confirmation arrives on its own stream (the test plays that part).
+fn check(backend: &dyn TradingBackend, kind: VenueKind, settle_cancel: &dyn Fn(&str)) {
     let info = backend.info();
     assert_eq!(info.kind, kind);
     assert!(!info.name.is_empty() && !info.summary.is_empty());
@@ -87,11 +100,46 @@ fn check(backend: &dyn TradingBackend, kind: VenueKind, buy: &dyn Fn(), cancel: 
         .expect("the account has funds");
     assert!(funds.value > Decimal::ZERO && !funds.asset.is_empty());
     assert!(backend.account().is_some());
+    let most = backend
+        .max_size(&market(), Side::Buy, Some(d("90000")))
+        .expect("the account can afford some");
+    assert!(most > Decimal::ZERO);
 
-    // An order appears, as the venue has it, and is cancellable.
+    // A fresh sheet is incomplete, not wrong; what is typed wrongly is wrong, field by field.
+    let fresh = backend.check(&market(), &TradeDraft::new(Side::Buy));
+    assert!(fresh.issues.is_empty(), "{:?}", fresh.issues);
+    assert_eq!(fresh.missing, vec![DraftField::Size, DraftField::Price]);
+    let mut typo = limit_buy();
+    typo.size_text = "abc".to_owned();
+    let found = backend.check(&market(), &typo);
+    assert!(
+        found.issue_for(DraftField::Size).is_some(),
+        "{:?}",
+        found.issues
+    );
+    let mut nothing = limit_buy();
+    nothing.size_text = "0".to_owned();
+    assert!(
+        backend
+            .check(&market(), &nothing)
+            .issue_for(DraftField::Size)
+            .is_some()
+    );
+
+    // A good order is complete and its cost is known before anything is asked.
+    let draft = limit_buy();
+    let good = backend.check(&market(), &draft);
+    assert!(good.is_complete(), "{:?} {:?}", good.issues, good.missing);
+    assert_eq!(good.estimate.notional, Some(d("90")));
+
+    // The venue is asked what it would do, and says it would take it.
+    let preview = answer(backend.preview(&market(), &draft)).expect("a preview");
+    assert!(preview.accepted, "{:?}", preview.problems);
+
+    // Sending it lists it, as the venue has it.
     assert!(backend.orders().iter().all(|row| !row.working));
     let before = backend.revision();
-    buy();
+    let sent = answer(backend.submit(&market(), &draft)).expect("the order was taken");
     wait_for("the order to be listed", || {
         backend.orders().iter().any(|row| row.working)
     });
@@ -100,18 +148,21 @@ fn check(backend: &dyn TradingBackend, kind: VenueKind, buy: &dyn Fn(), cancel: 
         .iter()
         .find(|row| row.working)
         .expect("a working order");
+    assert_eq!(row.id, sent.id);
     assert_eq!(row.side, Side::Buy);
     assert_eq!(row.price, Some(d("90000")));
     assert_eq!(row.size, Some(d("0.001")));
     assert_eq!(row.filled, Decimal::ZERO);
     assert_eq!(row.status.label, "Open");
-    assert!(row.can_cancel && !row.id.is_empty() && !row.market.is_empty());
+    assert!(row.can_cancel && !row.market.is_empty());
     assert!(
         backend.revision() > before,
         "a change is visible to a screen"
     );
 
-    cancel();
+    // And cancelling it ends it, leaving the finished order in the list.
+    answer(backend.cancel(&sent.id)).expect("the cancel was taken");
+    settle_cancel(&sent.id);
     wait_for("the order to be cancelled", || {
         backend.orders().iter().all(|row| !row.working)
     });
@@ -119,6 +170,9 @@ fn check(backend: &dyn TradingBackend, kind: VenueKind, buy: &dyn Fn(), cancel: 
     assert_eq!(rows.len(), 1, "the finished order stays in the list");
     assert_eq!(rows[0].status.label, "Cancelled");
     assert!(!rows[0].can_cancel);
+
+    // A cancel of an order that is not there is an answer, not a hang.
+    assert!(answer(backend.cancel("no-such-order")).is_err());
 }
 
 fn store() -> SharedStore {
@@ -129,51 +183,14 @@ fn store() -> SharedStore {
 fn the_paper_account_answers_as_a_venue() {
     let store = store();
     let paper = Arc::new(Mutex::new(PaperHost::load(store)));
-    let account = paper
+    paper
         .lock()
         .unwrap()
         .ensure_default_account()
         .unwrap()
         .expect("an account");
-    let backend = super::paper_backend::PaperBackend::new(paper.clone());
-    let instrument = PaperInstrument::chart("BTC-USD", "BTC-USD", DataSource::Coinbase);
-    let request = PaperOrderRequest {
-        account_id: account,
-        instrument,
-        side: PaperOrderSide::Buy,
-        kind: PaperOrderType::Limit,
-        quantity: 0.001,
-        limit_price: Some(90_000.0),
-        stop_price: None,
-        time_in_force: PaperTimeInForce::GoodTilCanceled,
-        take_profit: None,
-        stop_loss: None,
-    };
-    check(
-        &backend,
-        VenueKind::Simulated,
-        &|| {
-            paper
-                .lock()
-                .unwrap()
-                .submit(request.clone())
-                .expect("placed");
-        },
-        &|| {
-            let ids: Vec<u64> = paper
-                .lock()
-                .unwrap()
-                .snapshot()
-                .orders
-                .iter()
-                .filter(|order| order.status.is_working())
-                .map(|order| order.id)
-                .collect();
-            for id in ids {
-                paper.lock().unwrap().cancel(id).expect("cancelled");
-            }
-        },
-    );
+    let backend = super::paper_backend::PaperBackend::new(paper);
+    check(&backend, VenueKind::Simulated, &|_| {});
 }
 
 #[test]
@@ -201,39 +218,12 @@ fn a_connected_broker_answers_as_a_venue() {
             .is_some_and(|s| s.status == Status::Live)
     });
     let paper = Arc::new(Mutex::new(PaperHost::load(store.clone())));
-    let hub = TradingHub::new(brokers.clone(), paper, Some(store));
+    let hub = TradingHub::new(brokers, paper, Some(store));
     let backend = hub
         .backend(TradingVenue::Broker(COINBASE))
         .expect("the broker");
-    let runtime = brokers.runtime(COINBASE).expect("running");
-    let draft = OrderDraft {
-        product: ProductId::new("BTC-USD"),
-        side: Side::Buy,
-        kind: OrderKind::Limit {
-            base_size: d("0.001"),
-            price: d("90000.00"),
-            tif: CrateTif::GoodTilCancelled,
-            post_only: false,
-        },
-    };
-    check(
-        backend.as_ref(),
-        VenueKind::Live,
-        &|| {
-            runtime.submit(draft.clone()).wait().expect("placed");
-        },
-        &|| {
-            let ids: Vec<_> = brokers
-                .snapshot(COINBASE)
-                .unwrap()
-                .working_orders()
-                .map(|view| view.order.id.clone())
-                .collect();
-            runtime.cancel(ids.clone()).wait().expect("cancelled");
-            // The venue confirms on its own stream; this one is told to.
-            for id in ids {
-                exchange.change_order(id.as_str(), "CANCELLED", "0", false);
-            }
-        },
-    );
+    check(backend.as_ref(), VenueKind::Live, &|id| {
+        // The venue confirms on its own stream; this one is told to.
+        exchange.change_order(id, "CANCELLED", "0", false);
+    });
 }
