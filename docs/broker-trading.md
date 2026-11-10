@@ -77,10 +77,18 @@ refused with a sentence, never traded on a similar market. The ticket (`ui/broke
 chart, and says so. It offers only what the market allows. Text is parsed exactly (`0.001` stays
 `0.001`); a value off the market's increment is reported with the nearest valid value and **never
 rounded**. The broker's own preview (fees, total, warnings, refusals) replaces the estimate when it
-arrives, and a refusal blocks the order.
+arrives.
 
-Review opens a confirmation with the account, market, side, type, size, price, estimated value and
-fee. A **market order, an edit and Cancel all always ask**; confirming a limit or stop-limit order, or a
+**The broker's preview is required.** Review is enabled only on a *fresh, accepting* preview of the
+order exactly as it stands (`model/broker_ticket::preview_gate`): no answer yet, a failed preview, a
+preview that lists problems, or one older than a minute all leave it off. A failed preview says so
+and offers "Try again". The broker's create endpoint does not require a preview, so this is this
+application's rule, not Coinbase's. Orders are also paused while the record of unconfirmed orders
+cannot be read (below).
+
+Review opens a confirmation with the account, market, side, type, size, price and **the broker's
+estimated total, fee and average price and any note it attached**, taken from the preview of exactly
+this order (not from the best prices the app last saw). A **market order, an edit and Cancel all always ask**; confirming a limit or stop-limit order, or a
 single cancel, is a setting (Settings ▸ Brokers; the defaults ask for orders and do not ask for a
 single cancel). The dialog starts with no button focused, so a stray Enter sends nothing. The order
 is then handed to the runtime, which records it in the pending journal before it sends it, sends it
@@ -88,10 +96,23 @@ once, and shows it as *Sending* / *Unconfirmed* until the broker lists it.
 
 ## Editing and cancelling
 
-The pencil edits an open limit or stop-limit order's price and size **in place** (the broker's edit,
-previewed first). It is disabled, with the reason, for anything else. Cancel-and-replace is not
+The pencil edits an open limit or stop-limit order's price and size **in place** (the broker's edit).
+"Review change" follows the same rule as the ticket: only a fresh, accepting `edit_preview` of the
+exact change enables it, and the confirmation shows the broker's total and fee. The pencil is
+disabled, with the reason, for anything else. Cancel-and-replace is not
 offered anywhere. The confirmation says the order can still fill at its old terms until the change
 is applied and that a new price may lose its place in the queue.
+
+## When the record of unconfirmed orders cannot be read
+
+Orders sent and not yet confirmed are kept in the local `broker.pending` setting. If it cannot be
+read (damaged data, a locked store), orders that may be live could be missing from every list, so the
+runtime publishes `journal_error`, the panel shows it, and **no new order is accepted** (the ticket,
+the chart's buttons and the runtime all refuse, each with the reason). Reading, cancelling and editing
+keep working, so a user can always get out. The runtime tries to read the record again on every
+reconcile round and lifts the block by itself. An order the broker accepted stays on screen and on
+record even if the record cannot be closed, and is closed on a later round. A cancel whose answer was
+lost shows as "not confirmed" and the order is read again.
 
 ## Notifications
 
@@ -158,8 +179,8 @@ chart; the mock keeps its own state, so nothing leaves the machine.
 
 ## Verification
 
-Automated (all against the mock; none can place a real order): the crate's 119 tests including its
-conformance suite, and the app's tests of the host, the screens (confirm-then-send, edit, cancel,
+Automated (all against the mock; none can place a real order): the crate's 130 tests including its
+conformance suite (sixteen scenarios), and the app's tests of the host, the screens (confirm-then-send, edit, cancel,
 drag, Escape, the ✕), the workspace and the menu. Pictures for review are written by
 `DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib gallery_of_live_trading -- --ignored` (and
 `gallery_of_chart_trading`). Not done: the screens have not been driven in a real macOS window, and

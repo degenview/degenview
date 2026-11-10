@@ -408,6 +408,19 @@ impl BrokerHost {
         receiver
     }
 
+    /// Replaces the record of unconfirmed orders with something that is not one, as a damaged
+    /// database might.
+    #[cfg(test)]
+    pub(crate) fn corrupt_pending_record_for_test(&self) {
+        if let Some(store) = &self.store {
+            store
+                .lock()
+                .expect("the store")
+                .set_setting(PENDING_KEY, &"not a list of orders")
+                .expect("write the damaged record");
+        }
+    }
+
     /// Saves checked credentials and starts the connection. A save that fails still connects for
     /// this session; the error says the credentials were not kept.
     pub fn adopt(&self, id: BrokerId, credentials: Credentials) -> Result<(), String> {

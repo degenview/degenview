@@ -9,7 +9,9 @@
 
 use std::str::FromStr;
 
-use degenview_brokers::model::orders::FeeSummary;
+use std::time::Duration;
+
+use degenview_brokers::model::orders::{FeeSummary, OrderPreview};
 use degenview_brokers::model::reducer::{Notice, NoticeKind};
 use degenview_brokers::validate::{self, Field};
 use degenview_brokers::{
@@ -437,11 +439,60 @@ fn display_keep_zeros(value: Decimal) -> String {
     }
 }
 
+/// How long the broker's answer to a preview may be acted on. A preview is a statement about the
+/// market a moment ago; after this it is asked for again.
+pub const PREVIEW_FRESH: Duration = Duration::from_secs(60);
+
+/// What the broker has said about the order as it stands, from the ticket's or the edit sheet's
+/// point of view.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PreviewAnswer {
+    /// Not asked yet, or asked and not answered.
+    Waiting,
+    /// The question could not be answered (the connection, a refusal of the preview itself).
+    Failed(String),
+    /// The broker answered that it would refuse the order.
+    Problems,
+    /// The broker answered that it would accept the order.
+    Accepted,
+}
+
+/// Whether the order may be reviewed. **Only a fresh, accepting answer from the broker allows it**:
+/// no answer, a failed answer and an old answer do not. (The broker's create endpoint does not
+/// require a preview, so this is this application's rule, not the broker's.)
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PreviewGate {
+    Waiting,
+    Failed(String),
+    Blocked,
+    Stale,
+    Ready,
+}
+
+impl PreviewGate {
+    pub fn allows_review(&self) -> bool {
+        *self == Self::Ready
+    }
+}
+
+/// `age` is how long ago the accepting answer arrived.
+pub fn preview_gate(answer: PreviewAnswer, age: Option<Duration>) -> PreviewGate {
+    match answer {
+        PreviewAnswer::Waiting => PreviewGate::Waiting,
+        PreviewAnswer::Failed(text) => PreviewGate::Failed(text),
+        PreviewAnswer::Problems => PreviewGate::Blocked,
+        PreviewAnswer::Accepted => match age {
+            Some(age) if age <= PREVIEW_FRESH => PreviewGate::Ready,
+            _ => PreviewGate::Stale,
+        },
+    }
+}
+
 /// The lines of the confirmation: what is about to be sent, in the words of the ticket.
 pub fn confirmation_lines(
     draft: &OrderDraft,
     spec: &ProductSpec,
-    estimate: &Estimate,
+    preview: &OrderPreview,
     account: &str,
 ) -> Vec<(&'static str, String)> {
     let mut lines = vec![
@@ -517,25 +568,28 @@ pub fn confirmation_lines(
             ));
         }
     }
-    if let Some(notional) = estimate.notional {
+    // The figures are the broker's answer to a preview of exactly this order, never this
+    // application's own estimate from the best prices it last saw.
+    if let Some(total) = preview.order_total {
         lines.push((
-            "Estimated value",
-            format!("{} {}", display(notional.round_dp(8)), spec.quote),
+            "Total (broker's estimate)",
+            format!("{} {}", display(total.round_dp(8)), spec.quote),
         ));
     }
-    if let Some(fee) = estimate.fee {
+    if let Some(fee) = preview.fees {
         lines.push((
-            "Estimated fee",
-            format!(
-                "{} {}{}",
-                display(fee.round_dp(8)),
-                spec.quote,
-                estimate.fee_rate.map_or(String::new(), |rate| format!(
-                    " ({}%)",
-                    display((rate * Decimal::ONE_HUNDRED).round_dp(4))
-                ))
-            ),
+            "Fee (broker's estimate)",
+            format!("{} {}", display(fee.round_dp(8)), spec.quote),
         ));
+    }
+    if let Some(price) = preview.estimated_average_price {
+        lines.push((
+            "Estimated price",
+            format!("{} {}", price_display(price, spec), spec.quote),
+        ));
+    }
+    for warning in &preview.warnings {
+        lines.push(("Broker's note", warning.clone()));
     }
     lines
 }
@@ -891,13 +945,23 @@ mod tests {
         );
     }
 
+    fn broker_preview() -> OrderPreview {
+        OrderPreview {
+            order_total: Some(d("90.54")),
+            fees: Some(d("0.54")),
+            estimated_average_price: Some(d("90000")),
+            warnings: vec!["This order is larger than usual.".to_owned()],
+            ..OrderPreview::default()
+        }
+    }
+
     #[test]
     fn the_confirmation_says_everything_that_is_about_to_be_sent() {
         with(|ctx| {
             let ticket = limit("0.001", "90000.00");
             let draft = ticket.build(ctx).unwrap();
             let lines =
-                confirmation_lines(&draft, ctx.spec, &ticket.estimate(ctx), "Default portfolio");
+                confirmation_lines(&draft, ctx.spec, &broker_preview(), "Default portfolio");
             let text: Vec<String> = lines.iter().map(|(k, v)| format!("{k}: {v}")).collect();
             for expected in [
                 "Account: Default portfolio",
@@ -907,15 +971,68 @@ mod tests {
                 "Size: 0.001 BTC",
                 "Price: 90,000.00 USD",
                 "Time in force: Good til cancelled",
-                "Estimated value: 90 USD",
-                "Estimated fee: 0.54 USD (0.6%)",
+                "Total (broker's estimate): 90.54 USD",
+                "Fee (broker's estimate): 0.54 USD",
+                "Estimated price: 90,000.00 USD",
+                "Broker's note: This order is larger than usual.",
             ] {
                 assert!(
                     text.iter().any(|line| line == expected),
                     "missing {expected} in {text:?}"
                 );
             }
+            // Not this application's own estimate from the best prices it last saw.
+            assert!(
+                !text
+                    .iter()
+                    .any(|line| line.starts_with("Estimated value")
+                        || line.starts_with("Estimated fee")),
+                "{text:?}"
+            );
         });
+    }
+
+    #[test]
+    fn only_a_fresh_accepting_answer_from_the_broker_allows_a_review() {
+        let fresh = Some(Duration::from_secs(5));
+        assert_eq!(
+            preview_gate(PreviewAnswer::Waiting, None),
+            PreviewGate::Waiting
+        );
+        assert_eq!(
+            preview_gate(PreviewAnswer::Failed("down".to_owned()), None),
+            PreviewGate::Failed("down".to_owned())
+        );
+        assert_eq!(
+            preview_gate(PreviewAnswer::Problems, fresh),
+            PreviewGate::Blocked
+        );
+        assert_eq!(
+            preview_gate(PreviewAnswer::Accepted, fresh),
+            PreviewGate::Ready
+        );
+        assert_eq!(
+            preview_gate(
+                PreviewAnswer::Accepted,
+                Some(PREVIEW_FRESH + Duration::from_secs(1))
+            ),
+            PreviewGate::Stale,
+            "an old answer is not an answer"
+        );
+        assert_eq!(
+            preview_gate(PreviewAnswer::Accepted, None),
+            PreviewGate::Stale,
+            "an answer of unknown age is not fresh"
+        );
+        for gate in [
+            PreviewGate::Waiting,
+            PreviewGate::Failed("x".to_owned()),
+            PreviewGate::Blocked,
+            PreviewGate::Stale,
+        ] {
+            assert!(!gate.allows_review(), "{gate:?}");
+        }
+        assert!(PreviewGate::Ready.allows_review());
     }
 
     #[test]

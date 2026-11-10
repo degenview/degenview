@@ -126,7 +126,8 @@ struct CancelAsk {
 
 enum EditStage {
     Editing,
-    Confirming(OrderChange),
+    /// The change, and the broker's preview of exactly it.
+    Confirming(OrderChange, Box<EditPreview>),
     Sending(Pending<EditOutcome>),
 }
 
@@ -139,10 +140,27 @@ pub struct EditState {
     preview_for: Option<String>,
     preview_pending: Option<(String, Pending<EditPreview>)>,
     preview_error: Option<String>,
+    /// When the broker's answer arrived: an old answer is asked for again.
+    preview_at: Option<Instant>,
     seen: String,
     changed_at: Instant,
     stage: EditStage,
     error: Option<String>,
+    /// Whether the Review button was enabled in the last frame.
+    #[cfg(test)]
+    review_enabled: bool,
+}
+
+impl EditState {
+    /// Asks the broker again, at once. Reached by the "Try again" button.
+    fn retry_preview(&mut self) {
+        self.preview_error = None;
+        self.preview_for = None;
+        self.preview_at = None;
+        self.changed_at = Instant::now()
+            .checked_sub(Duration::from_millis(450))
+            .unwrap_or_else(Instant::now);
+    }
 }
 
 pub struct BrokerPanelState {
@@ -205,6 +223,10 @@ pub fn cancel_summary(results: &[CancelResult]) -> (String, bool) {
                 problems.push("one is being edited; try again in a moment".to_owned());
             }
             CancelOutcome::Rejected(text) => problems.push(text.clone()),
+            CancelOutcome::Unknown(_) => problems.push(
+                "one did not get an answer: it may or may not be cancelled, and is being read again"
+                    .to_owned(),
+            ),
         }
     }
     let asked = match requested {
@@ -426,15 +448,36 @@ impl BrokerPanelState {
     #[cfg(test)]
     pub(crate) fn edit_ready(&self) -> bool {
         self.edit.as_ref().is_some_and(|e| {
-            e.preview_for.is_some() && e.preview_for.as_deref() == Some(e.seen.as_str())
+            e.preview_for.is_some()
+                && e.preview_for.as_deref() == Some(e.seen.as_str())
+                && e.preview.as_ref().is_some_and(EditPreview::is_acceptable)
         })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn edit_review_enabled(&self) -> bool {
+        self.edit.as_ref().is_some_and(|e| e.review_enabled)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn edit_preview_failed(&self) -> bool {
+        self.edit
+            .as_ref()
+            .is_some_and(|e| e.preview_error.is_some())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn retry_edit_preview(&mut self) {
+        if let Some(edit) = self.edit.as_mut() {
+            edit.retry_preview();
+        }
     }
 
     #[cfg(test)]
     pub(crate) fn edit_confirming(&self) -> bool {
         self.edit
             .as_ref()
-            .is_some_and(|e| matches!(e.stage, EditStage::Confirming(_)))
+            .is_some_and(|e| matches!(e.stage, EditStage::Confirming(..)))
     }
 
     #[cfg(test)]
@@ -481,10 +524,13 @@ impl BrokerPanelState {
             preview_for: None,
             preview_pending: None,
             preview_error: None,
+            preview_at: None,
             seen: String::new(),
             changed_at: Instant::now(),
             stage: EditStage::Editing,
             error: None,
+            #[cfg(test)]
+            review_enabled: false,
         });
     }
 }
@@ -646,7 +692,8 @@ fn header(
                         actions.push(PanelAction::Close);
                     }
                     let can_trade = snapshot.is_some_and(|s| {
-                        s.is_live() && s.session.as_ref().is_some_and(|x| x.permissions.can_trade)
+                        s.can_send_orders()
+                            && s.session.as_ref().is_some_and(|x| x.permissions.can_trade)
                     });
                     if kit::sheet_button(ui, "New order", true, can_trade).clicked() {
                         new_order(state, host, broker, input);
@@ -722,6 +769,9 @@ fn banners(ui: &mut egui::Ui, snapshot: &BrokerSnapshot, actions: &mut Vec<Panel
                     "This key can view but not trade. Create a key with the Trade permission to place orders.",
                     false,
                 );
+            }
+            if let Some(error) = &snapshot.journal_error {
+                note(ui, &error.to_string(), true);
             }
             if let Some(error) = &snapshot.last_error {
                 note(ui, error, true);
@@ -1583,6 +1633,20 @@ fn edit_sheet(
         edit.preview_error = None;
         edit.preview_for = None;
         edit.preview_pending = None;
+        edit.preview_at = None;
+    }
+    // An answer older than a minute is a statement about an older market: it is asked for again.
+    if edit
+        .preview_at
+        .is_some_and(|at| at.elapsed() > rules::PREVIEW_FRESH)
+        && matches!(edit.stage, EditStage::Editing)
+    {
+        edit.preview = None;
+        edit.preview_for = None;
+        edit.preview_at = None;
+        edit.changed_at = Instant::now()
+            .checked_sub(Duration::from_millis(450))
+            .unwrap_or_else(Instant::now);
     }
     if let Some((sig, pending)) = &edit.preview_pending
         && let Some(answer) = pending.poll()
@@ -1591,8 +1655,14 @@ fn edit_sheet(
         edit.preview_pending = None;
         if sig == edit.seen {
             match answer {
-                Ok(preview) => edit.preview = Some(preview),
-                Err(error) => edit.preview_error = Some(error.to_string()),
+                Ok(preview) => {
+                    edit.preview = Some(preview);
+                    edit.preview_at = Some(Instant::now());
+                }
+                Err(error) => {
+                    edit.preview_error = Some(error.to_string());
+                    edit.preview_at = None;
+                }
             }
             edit.preview_for = Some(sig);
         }
@@ -1639,7 +1709,7 @@ fn edit_sheet(
     }
 
     // The approval.
-    if let EditStage::Confirming(change) = &edit.stage {
+    if let EditStage::Confirming(change, preview) = &edit.stage {
         let order = &edit.order;
         let message = "This changes the order at the broker. A new price may lose your place in the queue, and the order can fill at its old terms until the change is applied.";
         let mut dialog_spec = dialog::Dialog::new(
@@ -1703,6 +1773,13 @@ fn edit_sheet(
                     format!("{} → {}", size_text(order), rules::display(new)),
                 );
             }
+            // The broker's figures for the changed order, from a preview of exactly this change.
+            if let Some(total) = preview.order_total {
+                line("Total (broker's estimate)", rules::display(total));
+            }
+            if let Some(fee) = preview.fees {
+                line("Fee (broker's estimate)", rules::display(fee));
+            }
         });
         match outcome {
             Some(dialog::Outcome::Accepted) => {
@@ -1718,7 +1795,24 @@ fn edit_sheet(
 
     let mut close = false;
     let mut review = false;
-    let blocked = edit.preview.as_ref().is_some_and(|p| !p.is_acceptable());
+    // Review is possible only on the broker's fresh answer that it would accept this exact change.
+    let answer = if !valid || edit.preview_for.as_deref() != Some(signature.as_str()) {
+        rules::PreviewAnswer::Waiting
+    } else {
+        match (&edit.preview, &edit.preview_error) {
+            (Some(preview), _) if preview.is_acceptable() => rules::PreviewAnswer::Accepted,
+            (Some(_), _) => rules::PreviewAnswer::Problems,
+            (None, Some(error)) => rules::PreviewAnswer::Failed(error.clone()),
+            (None, None) => rules::PreviewAnswer::Waiting,
+        }
+    };
+    let gate = rules::preview_gate(answer, edit.preview_at.map(|at| at.elapsed()));
+    let can_review = valid && gate.allows_review();
+    #[cfg(test)]
+    {
+        edit.review_enabled = can_review;
+    }
+    let mut retry_preview = false;
     let sending = matches!(edit.stage, EditStage::Sending(_));
     sheet::show(ctx, Id::new("broker-edit"), 440.0, |ui| {
         broker_badge::rule(ui);
@@ -1805,9 +1899,22 @@ fn edit_sheet(
                     ));
                 }
             }
-            if let Some(error) = &edit.preview_error {
+            if let rules::PreviewGate::Failed(error) = &gate {
                 ui.label(kit::text(
-                    format!("The preview is unavailable: {error}"),
+                    format!(
+                        "The broker could not preview this change ({error}). It cannot be sent without that."
+                    ),
+                    kit::size::CAPTION + 0.5,
+                    kit::REGULAR,
+                    kit::RED,
+                ));
+                ui.add_space(4.0);
+                if kit::push_button(ui, None, "Try again", true).clicked() {
+                    retry_preview = true;
+                }
+            } else if gate == rules::PreviewGate::Waiting && valid {
+                ui.label(kit::text(
+                    "Asking the broker to check this change…",
                     kit::size::CAPTION + 0.5,
                     kit::REGULAR,
                     theme::text_tertiary(),
@@ -1829,9 +1936,7 @@ fn edit_sheet(
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if sending {
                         ui.spinner();
-                    } else if kit::sheet_button(ui, "Review change", true, valid && !blocked)
-                        .clicked()
-                    {
+                    } else if kit::sheet_button(ui, "Review change", true, can_review).clicked() {
                         review = true;
                     }
                     if kit::sheet_button(ui, "Cancel", false, !sending).clicked() {
@@ -1843,16 +1948,23 @@ fn edit_sheet(
         });
     });
     #[cfg(test)]
-    if std::mem::take(&mut state.force_edit_review) && valid && !blocked {
+    if std::mem::take(&mut state.force_edit_review) && can_review {
         review = true;
+    }
+    if retry_preview {
+        edit.retry_preview();
     }
     if ctx.input(|i| i.key_pressed(egui::Key::Escape)) && !sending {
         close = true;
     }
     if close {
         state.edit = None;
-    } else if review && let Ok(change) = typed {
-        edit.stage = EditStage::Confirming(change);
+    } else if review
+        && can_review
+        && let Ok(change) = typed
+        && let Some(preview) = edit.preview.clone()
+    {
+        edit.stage = EditStage::Confirming(change, Box::new(preview));
     }
 }
 

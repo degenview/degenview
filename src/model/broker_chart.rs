@@ -19,6 +19,9 @@ pub enum Unavailable {
     NotConnected,
     NotLive,
     NeedsAttention,
+    /// The record of orders waiting for confirmation cannot be read, so an order that may be live
+    /// could be missing from it.
+    JournalUnreadable,
     ViewOnly,
     RulesNotRead,
     MarketNotTradable,
@@ -38,6 +41,9 @@ impl Unavailable {
                 "Waiting for the broker's connection. Orders are paused until it is back."
             }
             Self::NeedsAttention => "The broker needs attention. Open Settings ▸ Brokers.",
+            Self::JournalUnreadable => {
+                "New orders are paused: the record of orders waiting for confirmation cannot be read. Cancelling still works."
+            }
             Self::ViewOnly => "This key can view but not trade.",
             Self::RulesNotRead => "Reading the market's rules…",
             Self::MarketNotTradable => "Trading is not available in this market right now.",
@@ -94,6 +100,9 @@ pub fn chart_trading(
         Status::Live => {}
         Status::Failed(_) => return ChartTrading::Unavailable(Unavailable::NeedsAttention),
         _ => return ChartTrading::Unavailable(Unavailable::NotLive),
+    }
+    if snapshot.journal_error.is_some() {
+        return ChartTrading::Unavailable(Unavailable::JournalUnreadable);
     }
     if !snapshot
         .session
@@ -263,6 +272,7 @@ mod tests {
             fees: None,
             last_sync_ms: None,
             last_error: None,
+            journal_error: None,
         }
     }
 
@@ -307,6 +317,14 @@ mod tests {
             check(Some(&failed), false).reason(),
             Some(Unavailable::NeedsAttention)
         );
+        // An unreadable record of unconfirmed orders pauses new orders, whatever else is true.
+        let mut unreadable = snapshot(Status::Live, true, Some("BTC-USD"), true);
+        unreadable.journal_error = Some(degenview_brokers::BrokerError::invalid("cannot be read"));
+        assert_eq!(
+            check(Some(&unreadable), false).reason(),
+            Some(Unavailable::JournalUnreadable)
+        );
+        assert!(!unreadable.can_send_orders());
         assert_eq!(
             check(
                 Some(&snapshot(Status::Live, false, Some("BTC-USD"), true)),
