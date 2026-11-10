@@ -18,8 +18,8 @@ use degenview_brokers::model::orders::{
     Page, PlacedOrder,
 };
 use degenview_brokers::{
-    BrokerId, BrokerSnapshot, ClientOrderId, Decimal, LiveFill, LiveOrder, OrderId, OrderKind,
-    OrderSize, OrderStatus, OrderType, Pending, PendingState, Side, Status,
+    BrokerId, BrokerSnapshot, ClientOrderId, Decimal, LiveFill, LiveOrder, OrderId, OrderSize,
+    OrderStatus, OrderType, Pending, Side, Status,
 };
 use eframe::egui::{self, Color32, Id};
 
@@ -28,10 +28,11 @@ use crate::model::broker_prefs::BrokerPrefs;
 use crate::model::broker_ticket::{self as rules, StatusTone};
 use crate::trading::model::{AccountStats, TabKind};
 use crate::ui::alert_center::Tone;
-use crate::ui::icons::{self, Icon};
+use crate::ui::icons::Icon;
 use crate::ui::paper_grid::{self as grid, Col, col};
 use crate::ui::paper_tables::empty;
 use crate::ui::trade::panel_header::{self, Chip, Header, HeaderEvent, PanelEvent, VenueBar};
+use crate::ui::trade::tables::{self, OrderAction};
 use crate::ui::trade::{notice, stats_strip};
 use crate::ui::{broker_badge, dialog, kit, sheet, theme};
 
@@ -280,16 +281,6 @@ fn time_text(ms: Option<i64>) -> String {
     let secs = ms.div_euclid(1000) + crate::service::timezone::local_utc_offset_secs(ms);
     let day = secs.rem_euclid(86_400);
     format!("{:02}:{:02}:{:02}", day / 3600, day % 3600 / 60, day % 60)
-}
-
-fn price_of(order: &LiveOrder, snapshot: &BrokerSnapshot) -> String {
-    let Some(price) = order.marker_price() else {
-        return "Market".to_owned();
-    };
-    snapshot.product(&order.product).map_or_else(
-        || rules::display(price),
-        |spec| rules::price_display(price, spec),
-    )
 }
 
 fn size_text(order: &LiveOrder) -> String {
@@ -670,166 +661,44 @@ fn orders_tab(
     snapshot: &BrokerSnapshot,
     prefs: &BrokerPrefs,
 ) {
-    enum Row<'a> {
-        Pending(&'a degenview_brokers::PendingView),
-        Order(&'a degenview_brokers::model::reducer::OrderView),
-    }
-    let rows: Vec<Row> = snapshot
-        .pending
+    let rows = crate::trading::broker_backend::order_rows(snapshot);
+    let mut selected: BTreeSet<String> = state
+        .selected
         .iter()
-        .map(Row::Pending)
-        .chain(snapshot.orders.iter().map(Row::Order))
+        .map(|id| id.as_str().to_owned())
         .collect();
-    if rows.is_empty() {
-        empty(
-            ui,
-            Icon::List,
-            "No orders",
-            "Working orders rest here until they fill or are cancelled.",
-        );
-        return;
-    }
-    const COLS: [Col; 9] = [
-        col("", 30.0, 0.0, false),
-        col("Market", 110.0, 1.2, false),
-        col("Side", 64.0, 0.0, false),
-        col("Type", 120.0, 1.0, false),
-        col("Price", 110.0, 1.0, true),
-        col("Filled / Size", 130.0, 1.0, true),
-        col("Status", 120.0, 0.0, false),
-        col("Time", 80.0, 0.0, true),
-        col("", 76.0, 0.0, true),
-    ];
-    let mut cancel_one: Option<OrderId> = None;
-    let mut edit_one: Option<LiveOrder> = None;
-    let mut retry: Option<ClientOrderId> = None;
-    let mut toggled: Option<OrderId> = None;
-    grid::show(ui, "broker-orders", &COLS, rows.len(), |ui, row, column| {
-        let weak = theme::text_secondary();
-        let primary = theme::text_primary();
-        match &rows[row] {
-            Row::Pending(pending) => match column {
-                1 => grid::text_cell(ui, pending.draft.product.as_str(), primary),
-                2 => grid::tag(
-                    ui,
-                    if pending.draft.side == Side::Buy {
-                        "BUY"
-                    } else {
-                        "SELL"
-                    },
-                    side_color(pending.draft.side),
-                ),
-                3 => grid::text_cell(ui, pending_type(&pending.draft.kind), weak),
-                4 => grid::figure(ui, &pending_price(&pending.draft.kind), primary),
-                5 => grid::figure(ui, &pending_size(&pending.draft.kind), primary),
-                6 => {
-                    let (label, tone) = match pending.state {
-                        PendingState::Sending => ("Sending…", Tone::Neutral),
-                        PendingState::Unknown => ("Unconfirmed", Tone::Warning),
-                    };
-                    kit::status_badge(ui, label, tone);
-                }
-                7 => grid::figure(ui, &time_text(Some(pending.created_ms)), weak),
-                8 if pending.state == PendingState::Unknown => {
-                    let clicked = kit::sheet_button(ui, "Check", false, true)
-                        .on_hover_text(
-                            "Look the order up at the broker; sends it again only if it is not there",
-                        )
-                        .clicked();
-                    if clicked {
-                        retry = Some(pending.client_id.clone());
-                    }
-                }
-                _ => {}
-            },
-            Row::Order(view) => {
-                let order = &view.order;
-                let working = order.status.is_working();
-                let dim = if working { primary } else { weak };
-                match column {
-                    0 if working => {
-                        let mut on = state.selected.contains(&order.id);
-                        if ui
-                            .add(egui::Checkbox::without_text(&mut on))
-                            .on_hover_text("Select to cancel several orders at once")
-                            .changed()
-                        {
-                            toggled = Some(order.id.clone());
-                        }
-                    }
-                    1 => grid::text_cell(ui, order.product.as_str(), dim),
-                    2 => grid::tag(
-                        ui,
-                        if order.side == Side::Buy {
-                            "BUY"
-                        } else {
-                            "SELL"
-                        },
-                        side_color(order.side),
-                    ),
-                    3 => grid::text_cell(ui, &type_label(order), weak),
-                    4 => grid::figure(ui, &price_of(order, snapshot), dim),
-                    5 => grid::figure(
-                        ui,
-                        &format!(
-                            "{} / {}",
-                            rules::display(order.filled_size),
-                            size_text(order)
-                        ),
-                        dim,
-                    ),
-                    6 => {
-                        let (label, status_tone) = if view.overlay.is_some() && working {
-                            match view.overlay.map(|o| o.kind) {
-                                Some(
-                                    degenview_brokers::model::reducer::OverlayKind::CancelRequested,
-                                ) => ("Cancel requested", StatusTone::Warning),
-                                _ => ("Edit requested", StatusTone::Warning),
-                            }
-                        } else {
-                            rules::status_label(order.status)
-                        };
-                        kit::status_badge(ui, label, tone(status_tone));
-                    }
-                    7 => grid::figure(ui, &time_text(order.created_ms), weak),
-                    8 if working => {
-                        let caps = snapshot.capabilities_of(&order.product);
-                        let blocker = edit_blocker(order, caps, view.overlay.is_some());
-                        let pencil = ui
-                            .add_enabled_ui(blocker.is_none(), |ui| {
-                                icons::button(
-                                    ui,
-                                    Icon::Pencil,
-                                    20.0,
-                                    theme::text_secondary(),
-                                    blocker.unwrap_or("Edit price or size"),
-                                )
-                            })
-                            .inner;
-                        if pencil.clicked() {
-                            edit_one = Some(order.clone());
-                        }
-                        let can_cancel = view.overlay.is_none();
-                        let cross = ui
-                            .add_enabled_ui(can_cancel, |ui| {
-                                icons::button(ui, Icon::Xmark, 20.0, kit::RED, "Cancel order")
-                            })
-                            .inner;
-                        if cross.clicked() {
-                            cancel_one = Some(order.id.clone());
-                        }
-                    }
-                    _ => {}
+    let actions = tables::orders(ui, "broker-orders", &rows, &mut selected, true);
+    state.selected = selected.into_iter().map(OrderId::new).collect();
+
+    for action in actions {
+        match action {
+            OrderAction::Check(id) => {
+                if let Some(runtime) = host.runtime(broker_id) {
+                    state
+                        .flights
+                        .push(Flight::Retry(runtime.retry(ClientOrderId(id))));
+                    state.say("Looking the order up at the broker…", false);
                 }
             }
+            OrderAction::Edit(id) => {
+                if let Some(view) = snapshot
+                    .orders
+                    .iter()
+                    .find(|view| view.order.id.as_str() == id)
+                {
+                    state.begin_edit(broker_id, view.order.clone(), None);
+                }
+            }
+            OrderAction::Cancel(id) => request_cancel(
+                state,
+                host,
+                broker_id,
+                vec![OrderId::new(id)],
+                prefs.confirm_single_cancel,
+            ),
         }
-    });
-
-    if let Some(id) = toggled
-        && !state.selected.remove(&id)
-    {
-        state.selected.insert(id);
     }
+
     // Selection only ever holds orders that are still working.
     let working_ids: BTreeSet<OrderId> = snapshot
         .orders
@@ -839,103 +708,15 @@ fn orders_tab(
         .collect();
     state.selected.retain(|id| working_ids.contains(id));
 
-    if let Some(client_id) = retry
-        && let Some(runtime) = host.runtime(broker_id)
-    {
-        state.flights.push(Flight::Retry(runtime.retry(client_id)));
-        state.say("Looking the order up at the broker…", false);
-    }
-    if let Some(order) = edit_one {
-        state.begin_edit(broker_id, order, None);
-    }
-    if let Some(id) = cancel_one {
-        request_cancel(
-            state,
-            host,
-            broker_id,
-            vec![id],
-            prefs.confirm_single_cancel,
-        );
-    }
-
-    // The bar under the table.
-    let selected = state.selected.len();
-    let open = working_ids.len();
-    let mut cancel_selected = false;
-    let mut cancel_all = false;
-    let (bar, _) = ui.allocate_exact_size(
-        egui::vec2(ui.available_width(), grid::FOOTER_HEIGHT),
-        egui::Sense::hover(),
-    );
-    ui.painter().rect_filled(bar, 0.0, kit::window());
-    ui.painter().hline(
-        bar.x_range(),
-        bar.top(),
-        egui::Stroke::new(1.0, theme::separator()),
-    );
-    let mut row = ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(bar.shrink2(egui::vec2(20.0, 0.0)))
-            .layout(egui::Layout::right_to_left(egui::Align::Center)),
-    );
-    row.spacing_mut().item_spacing.x = 10.0;
-    if kit::sheet_button(&mut row, &format!("Cancel all ({open})"), false, open > 0).clicked() {
-        cancel_all = true;
-    }
-    if kit::sheet_button(
-        &mut row,
-        &format!("Cancel selected ({selected})"),
-        false,
-        selected > 0,
-    )
-    .clicked()
-    {
-        cancel_selected = true;
-    }
-    row.label(kit::text(
-        format!("{open} working"),
-        kit::size::CAPTION + 0.5,
-        kit::REGULAR,
-        theme::text_secondary(),
-    ));
-    if cancel_selected {
+    let bar = tables::orders_bar(ui, working_ids.len(), state.selected.len());
+    if bar.cancel_selected {
         let ids: Vec<OrderId> = state.selected.iter().cloned().collect();
         request_cancel(state, host, broker_id, ids, true);
     }
-    if cancel_all {
+    if bar.cancel_all {
         // Always asks, and says which orders: what is cancelled is what is shown now.
         let ids: Vec<OrderId> = working_ids.into_iter().collect();
         request_cancel(state, host, broker_id, ids, true);
-    }
-}
-
-fn pending_type(kind: &OrderKind) -> &'static str {
-    match kind {
-        OrderKind::Market { .. } => "Market",
-        OrderKind::Limit { .. } => "Limit",
-        OrderKind::StopLimit { .. } => "Stop-limit",
-    }
-}
-
-fn pending_price(kind: &OrderKind) -> String {
-    match kind {
-        OrderKind::Market { .. } => "Market".to_owned(),
-        OrderKind::Limit { price, .. } => rules::display(*price),
-        OrderKind::StopLimit { stop_price, .. } => rules::display(*stop_price),
-    }
-}
-
-fn pending_size(kind: &OrderKind) -> String {
-    match kind {
-        OrderKind::Market {
-            size: OrderSize::Base(s),
-        } => rules::display(*s),
-        OrderKind::Market {
-            size: OrderSize::Quote(a),
-        } => format!("{} (spend)", rules::display(*a)),
-        OrderKind::Limit { base_size, .. } | OrderKind::StopLimit { base_size, .. } => {
-            rules::display(*base_size)
-        }
     }
 }
 
@@ -1940,12 +1721,6 @@ mod tests {
             "25 (spend)"
         );
         assert_eq!(time_text(None), "—");
-        assert_eq!(
-            pending_price(&OrderKind::Market {
-                size: OrderSize::Base(d("1"))
-            }),
-            "Market"
-        );
         assert_eq!(short_id("abcdefghijkl"), "abcdefgh");
     }
 }

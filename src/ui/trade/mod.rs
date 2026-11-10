@@ -7,6 +7,7 @@ pub mod notice;
 pub mod order_sheet;
 pub mod panel_header;
 pub mod stats_strip;
+pub mod tables;
 pub mod venue_pill;
 
 #[cfg(test)]

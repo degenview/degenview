@@ -10,7 +10,7 @@ use crate::ui::paper_header::{
     self, AccountChoice, PaperFooterState, PaperHeaderInput, PaperHeaderState,
 };
 use crate::ui::paper_tables::{
-    self, Context, FooterFacts, OrdersInput, PaperTab, PositionsInput, PositionsState,
+    self, Context, FooterFacts, PaperTab, PositionsInput, PositionsState,
 };
 use crate::ui::render_tests::Screen;
 use crate::ui::theme;
@@ -215,12 +215,16 @@ fn gallery_of_the_panel() {
                             divider(ui);
                             match tab {
                                 PaperTab::Orders => {
-                                    paper_tables::orders_table(
+                                    let rows: Vec<crate::trading::model::OrderRow> = shown_orders
+                                        .iter()
+                                        .map(crate::trading::paper_backend::order_row)
+                                        .collect();
+                                    crate::ui::trade::tables::orders(
                                         ui,
-                                        &OrdersInput {
-                                            orders: shown_orders,
-                                            ctx: context,
-                                        },
+                                        "paper-orders",
+                                        &rows,
+                                        &mut Default::default(),
+                                        false,
                                     );
                                 }
                                 _ => {
@@ -252,6 +256,7 @@ fn gallery_of_the_panel() {
                                     journal_entries: 0,
                                     currency: PaperCurrency::Usd,
                                 },
+                                0,
                             );
                         });
                 }));

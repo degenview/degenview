@@ -327,6 +327,12 @@ pub struct OrderRow {
     pub can_edit: bool,
     /// The venue's words when it refused or ended the order.
     pub note: Option<String>,
+    /// Why a working order cannot be edited, for the tooltip of the disabled pencil.
+    pub edit_hint: Option<String>,
+    /// The market's data source, for its logo; none when the venue does not say.
+    pub source: Option<crate::model::DataSource>,
+    /// A small chip beside the type: the role of a protective order ("TP", "SL").
+    pub tag: Option<RowStatus>,
     /// Sent, and the answer was lost: it may or may not be live. `id` is then the key to look it up.
     pub unconfirmed: bool,
 }

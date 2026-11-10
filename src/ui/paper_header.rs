@@ -187,6 +187,8 @@ pub fn header_parts(input: &PaperHeaderInput) -> HeaderParts {
 pub enum PaperFooterAction {
     CloseAllPositions,
     CancelAllOrders,
+    /// The orders ticked in the table; the panel knows which.
+    CancelSelectedOrders,
     Export,
 }
 
@@ -249,8 +251,22 @@ pub fn footer(
     state: &mut PaperFooterState,
     tab: PaperTab,
     facts: &FooterFacts,
+    selected_orders: usize,
 ) -> Vec<PaperFooterAction> {
     let mut actions = Vec::new();
+    if tab == PaperTab::Orders {
+        // The orders bar is the same for every venue: how many are working, and the two ways to
+        // cancel several.
+        let bar = crate::ui::trade::tables::orders_bar(ui, facts.working_orders, selected_orders);
+        if bar.cancel_all {
+            state.pending = Some(PaperFooterConfirm::CancelAll);
+        }
+        if bar.cancel_selected {
+            actions.push(PaperFooterAction::CancelSelectedOrders);
+        }
+        confirm_dialog(ui.ctx(), state, facts, &mut actions);
+        return actions;
+    }
     let export = matches!(
         tab,
         PaperTab::History | PaperTab::Trades | PaperTab::Journal

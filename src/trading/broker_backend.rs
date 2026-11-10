@@ -144,6 +144,14 @@ fn caps_of(caps: &Capabilities) -> TicketCaps {
     }
 }
 
+/// The data source whose logo the broker's markets wear.
+fn source_of(broker: degenview_brokers::BrokerId) -> Option<crate::model::DataSource> {
+    let slug = degenview_brokers::registry::by_id(broker)?
+        .descriptor()
+        .market_source;
+    crate::model::DataSource::from_watchlist_slug(slug)
+}
+
 fn order_row(view: &OrderView, snapshot: &BrokerSnapshot) -> OrderRow {
     let order = &view.order;
     let working = order.status.is_working();
@@ -181,11 +189,35 @@ fn order_row(view: &OrderView, snapshot: &BrokerSnapshot) -> OrderRow {
             && order.status != degenview_brokers::OrderStatus::CancelQueued,
         can_edit: rules::edit_blocker(order, caps, view.overlay.is_some()).is_none(),
         note: order.reason.clone(),
+        edit_hint: if working {
+            rules::edit_blocker(order, caps, view.overlay.is_some()).map(str::to_owned)
+        } else {
+            None
+        },
+        source: source_of(snapshot.broker),
+        tag: None,
         unconfirmed: false,
     }
 }
 
-fn pending_row(pending: &PendingView) -> OrderRow {
+/// Every order the broker knows of: those being sent first, then the rest newest first.
+pub(crate) fn order_rows(snapshot: &BrokerSnapshot) -> Vec<OrderRow> {
+    let mut rows: Vec<OrderRow> = snapshot
+        .pending
+        .iter()
+        .map(|pending| pending_row(pending, snapshot.broker))
+        .collect();
+    let mut orders: Vec<OrderRow> = snapshot
+        .orders
+        .iter()
+        .map(|view| order_row(view, snapshot))
+        .collect();
+    orders.sort_by_key(|row| std::cmp::Reverse(row.created_ms));
+    rows.extend(orders);
+    rows
+}
+
+fn pending_row(pending: &PendingView, broker: degenview_brokers::BrokerId) -> OrderRow {
     let draft = &pending.draft;
     let (kind, price, trigger, size, spend) = match &draft.kind {
         OrderKind::Market {
@@ -237,6 +269,9 @@ fn pending_row(pending: &PendingView) -> OrderRow {
         can_cancel: false,
         can_edit: false,
         note: None,
+        edit_hint: None,
+        source: source_of(broker),
+        tag: None,
         unconfirmed,
     }
 }
@@ -555,18 +590,8 @@ impl TradingBackend for BrokerBackend {
     }
 
     fn orders(&self) -> Vec<OrderRow> {
-        let Some(snapshot) = self.snapshot() else {
-            return Vec::new();
-        };
-        let mut rows: Vec<OrderRow> = snapshot.pending.iter().map(pending_row).collect();
-        let mut orders: Vec<OrderRow> = snapshot
-            .orders
-            .iter()
-            .map(|view| order_row(view, &snapshot))
-            .collect();
-        orders.sort_by_key(|row| std::cmp::Reverse(row.created_ms));
-        rows.extend(orders);
-        rows
+        self.snapshot()
+            .map_or_else(Vec::new, |snapshot| order_rows(&snapshot))
     }
 
     fn positions(&self) -> Vec<PositionRow> {

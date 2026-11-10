@@ -24,8 +24,8 @@ use crate::ui::paper_header::{
     PaperHeaderState,
 };
 use crate::ui::paper_tables::{
-    self, Context as TableContext, FooterFacts, OrdersInput, PaperTab, PaperTableAction,
-    PositionsInput, PositionsState,
+    self, Context as TableContext, FooterFacts, PaperTab, PaperTableAction, PositionsInput,
+    PositionsState,
 };
 use crate::ui::trade::panel_header::{self, ChipPick, Header, HeaderEvent, PanelEvent, VenueBar};
 use crate::ui::trade::stats_strip;
@@ -695,6 +695,8 @@ pub struct PaperPanel {
     header: PaperHeaderState,
     footer: PaperFooterState,
     positions: PositionsState,
+    /// The working orders ticked in the table, by id.
+    selected_orders: std::collections::BTreeSet<String>,
     account_sheet: Option<PaperAccountSheetState>,
     /// The account whose deletion is waiting for confirmation.
     pending_delete: Option<u64>,
@@ -715,6 +717,7 @@ impl Default for PaperPanel {
             header: PaperHeaderState::default(),
             footer: PaperFooterState::default(),
             positions: PositionsState::default(),
+            selected_orders: std::collections::BTreeSet::new(),
             account_sheet: None,
             pending_delete: None,
             show_trading_on_charts: true,
@@ -844,13 +847,26 @@ impl PaperPanel {
                     );
                 }
                 PaperTab::Orders => {
-                    table_actions = paper_tables::orders_table(
+                    let rows: Vec<crate::trading::model::OrderRow> = working_orders
+                        .iter()
+                        .map(crate::trading::paper_backend::order_row)
+                        .collect();
+                    let asked = crate::ui::trade::tables::orders(
                         ui,
-                        &OrdersInput {
-                            orders: working_orders,
-                            ctx: context,
-                        },
+                        "paper-orders",
+                        &rows,
+                        &mut self.selected_orders,
+                        false,
                     );
+                    table_actions = asked
+                        .into_iter()
+                        .filter_map(|action| match action {
+                            crate::ui::trade::tables::OrderAction::Cancel(id) => {
+                                id.parse().ok().map(PaperTableAction::CancelOrder)
+                            }
+                            _ => None,
+                        })
+                        .collect();
                 }
                 PaperTab::History => paper_tables::history_table(ui, events, context),
                 PaperTab::Trades => paper_tables::trades_table(ui, trades, context),
@@ -869,6 +885,7 @@ impl PaperPanel {
                     journal_entries: journal.len(),
                     currency,
                 },
+                self.selected_orders.len(),
             );
         }
 
@@ -1126,6 +1143,15 @@ impl PaperPanel {
                         self.notice = Some(PanelNotice::error(text));
                         host.clear_error();
                     }
+                }
+                (PaperFooterAction::CancelSelectedOrders, _) => {
+                    let ids = std::mem::take(&mut self.selected_orders);
+                    let failures: Vec<PaperHostError> = ids
+                        .iter()
+                        .filter_map(|id| id.parse::<u64>().ok())
+                        .filter_map(|id| host.cancel(id).err())
+                        .collect();
+                    self.report_failures(host, &failures);
                 }
                 (PaperFooterAction::Export, _) => self.export_requested = true,
                 _ => {}

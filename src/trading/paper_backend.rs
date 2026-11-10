@@ -23,8 +23,8 @@ use crate::host::paper_host::PaperHost;
 use crate::model::DataSource;
 use crate::model::broker_ticket::display;
 use crate::model::paper::{
-    PaperCurrency, PaperFill, PaperInstrument, PaperOrder, PaperOrderSide, PaperOrderStatus,
-    PaperOrderType, PaperPosition, PaperTimeInForce,
+    PaperCurrency, PaperFill, PaperInstrument, PaperOrder, PaperOrderRole, PaperOrderSide,
+    PaperOrderStatus, PaperOrderType, PaperPosition, PaperTimeInForce,
 };
 use crate::model::paper_ticket::{TicketDraft as PaperTicket, TicketField};
 use crate::model::trading_venue::TradingVenue;
@@ -98,7 +98,7 @@ fn kind_label(kind: PaperOrderType) -> &'static str {
     }
 }
 
-fn order_row(order: &PaperOrder) -> OrderRow {
+pub(crate) fn order_row(order: &PaperOrder) -> OrderRow {
     let working = order.status.is_working();
     OrderRow {
         id: order.id.to_string(),
@@ -116,6 +116,19 @@ fn order_row(order: &PaperOrder) -> OrderRow {
         can_cancel: working,
         can_edit: working,
         note: order.rejection_reason.clone(),
+        edit_hint: None,
+        source: Some(order.instrument.source),
+        tag: match order.role {
+            PaperOrderRole::Entry => None,
+            PaperOrderRole::TakeProfit => Some(RowStatus {
+                label: order.role.badge_text(),
+                tone: Tone::Good,
+            }),
+            PaperOrderRole::StopLoss => Some(RowStatus {
+                label: order.role.badge_text(),
+                tone: Tone::Bad,
+            }),
+        },
         unconfirmed: false,
     }
 }
