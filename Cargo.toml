@@ -65,6 +65,11 @@ tokio-rustls = { version = "0.26", default-features = false, features = ["ring",
 rcgen = { version = "0.14", default-features = false, features = ["ring", "pem"] }
 # Already in the tree through rustls: checks that a certificate really names the address it is kept for.
 rustls-webpki = { version = "0.103", default-features = false, features = ["ring", "std"] }
+# The Trading Journal's domain layer (executions, trades, statistics, reviews, import and export),
+# in its own repository (degenview/journal) and published to crates.io. Pinned to an exact version:
+# nothing reaches a release that was not reviewed (see AGENTS.md, Supply chain).
+degenview-journal = { version = "=0.1.0" }
+rust_decimal = { version = "1.43.0", default-features = false, features = ["std", "serde-str"] }
 
 # Secret storage on Linux (docs/flatpak.md): the Secret Service, or the Secret portal in a Flatpak.
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -149,3 +154,7 @@ opt-level = 2
 [profile.release]
 lto = "thin"
 strip = true
+
+[dev-dependencies]
+# Fixture builders of the journal crate, for the tests of the journal host, store and sync.
+degenview-journal = { version = "=0.1.0", features = ["testing"] }
