@@ -17,6 +17,7 @@ pub mod chart_template;
 pub mod drawing_template;
 pub mod editor_theme;
 pub mod identity;
+pub mod journal;
 pub mod mcp;
 pub mod mcp_audit;
 pub mod paper;
@@ -219,6 +220,8 @@ impl Store {
                 CREATE INDEX IF NOT EXISTS {table}_on_account ON {table} (account_id);"
             ))?;
         }
+
+        self.create_journal_schema()?;
 
         // Alerts: fired events (rewritten whole on each snapshot save) and the GUI -> runtime
         // command queue (deleted once applied).

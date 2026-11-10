@@ -31,6 +31,7 @@ pub mod image_content;
 pub mod indicator_catalog;
 mod indicators;
 mod instrument;
+pub mod journal_paper_source;
 mod kline;
 mod layout;
 pub mod link_card;

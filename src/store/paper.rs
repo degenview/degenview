@@ -61,6 +61,9 @@ impl Store {
                 self.set_setting(KEY_QUOTES, &snapshot.quotes)?;
             }
             self.track_paper(snapshot)?;
+            // Same transaction as the fills, so a fill and its journal row commit together. A
+            // journal failure is kept for the journal to report and never fails the save.
+            self.journal_ingest_paper(snapshot);
             Ok(())
         })
     }
