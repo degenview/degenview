@@ -17,6 +17,8 @@
 
 use std::collections::HashSet;
 
+use crate::store::asset_store::StoredAsset;
+use degenview_journal::backup::{Backup, BackupAsset, RestoreReport};
 use rusqlite::{OptionalExtension, params};
 
 use crate::model::journal_paper_source::PaperSource;
@@ -218,22 +220,7 @@ impl Store {
             .map(|existing| existing.created_ms);
         review.created_ms = created.filter(|created| *created > 0).unwrap_or(now_ms);
         review.updated_ms = now_ms;
-        self.connection.execute(
-            "INSERT INTO journal_review (trade_key, account_uid, playbook, status, updated_ms, payload)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-             ON CONFLICT(trade_key) DO UPDATE SET
-                account_uid = excluded.account_uid, playbook = excluded.playbook,
-                status = excluded.status, updated_ms = excluded.updated_ms,
-                payload = excluded.payload",
-            params![
-                review.trade_key,
-                review.account_uid,
-                review.playbook.clone().unwrap_or_default(),
-                review.status().label(),
-                review.updated_ms,
-                json(&review)?,
-            ],
-        )?;
+        self.write_review(&review)?;
         Ok(Some(review))
     }
 
@@ -648,6 +635,225 @@ impl Store {
             )?;
             self.bump_journal_revision()
         })
+    }
+}
+
+// MARK: Backup and restore
+
+impl Store {
+    /// Everything the journal keeps, for a portable file. Screenshots the reviews use are
+    /// included when they are in the store.
+    pub fn journal_backup(
+        &self,
+        exported_at: String,
+        app_version: &str,
+    ) -> rusqlite::Result<Backup> {
+        let mut backup = Backup::empty(exported_at, app_version);
+        backup.accounts = self.journal_accounts()?;
+        backup.executions = self.journal_executions()?;
+        backup.reviews = self.journal_reviews()?;
+        backup.playbooks = self.journal_playbooks()?;
+        backup.days = self.journal_days()?;
+        let mut wanted: Vec<&String> = backup
+            .reviews
+            .iter()
+            .flat_map(|review| review.images.iter())
+            .collect();
+        wanted.sort();
+        wanted.dedup();
+        let mut assets = Vec::new();
+        for hash in wanted {
+            if let Some(asset) = self.asset(hash)? {
+                assets.push(BackupAsset {
+                    id: asset.id,
+                    mime: asset.mime,
+                    width: asset.width,
+                    height: asset.height,
+                    data: asset.data,
+                });
+            }
+        }
+        backup.assets = assets;
+        Ok(backup)
+    }
+
+    /// Merges a backup in. Adds what is missing; a review, playbook or day the journal edited
+    /// after the backup was kept as it is. All or nothing: a failure rolls the whole restore back.
+    pub fn journal_restore(&self, backup: &Backup) -> rusqlite::Result<RestoreReport> {
+        self.in_savepoint("journal_restore", || {
+            let mut report = RestoreReport::default();
+            for account in &backup.accounts {
+                let known: Option<i64> = self
+                    .connection
+                    .query_row(
+                        "SELECT 1 FROM journal_account WHERE uid = ?1",
+                        params![account.uid],
+                        |row| row.get(0),
+                    )
+                    .optional()?;
+                if known.is_none() {
+                    self.upsert_account(account)?;
+                    self.connection.execute(
+                        "UPDATE journal_account SET archived = ?2 WHERE uid = ?1",
+                        params![account.uid, i64::from(account.archived)],
+                    )?;
+                    report.accounts_added += 1;
+                }
+            }
+            for execution in &backup.executions {
+                match normalize::validate(execution) {
+                    Ok(()) => {
+                        let account_known: Option<i64> = self
+                            .connection
+                            .query_row(
+                                "SELECT 1 FROM journal_account WHERE uid = ?1",
+                                params![execution.account_uid],
+                                |row| row.get(0),
+                            )
+                            .optional()?;
+                        if account_known.is_none() {
+                            report.rejected.push(format!(
+                                "execution {} belongs to an account the backup does not contain",
+                                execution.source_exec_id
+                            ));
+                        } else if self.insert_execution(execution)? {
+                            report.executions_added += 1;
+                        } else {
+                            report.executions_present += 1;
+                        }
+                    }
+                    Err(reason) => report
+                        .rejected
+                        .push(format!("execution {}: {reason}", execution.source_exec_id)),
+                }
+            }
+            for review in &backup.reviews {
+                let mut review = review.clone();
+                review.tidy();
+                if review.is_empty() || review.trade_key.is_empty() {
+                    continue;
+                }
+                let local: Option<String> = self
+                    .connection
+                    .query_row(
+                        "SELECT payload FROM journal_review WHERE trade_key = ?1",
+                        params![review.trade_key],
+                        |row| row.get(0),
+                    )
+                    .optional()?;
+                let local_updated = local
+                    .and_then(|payload| serde_json::from_str::<Review>(&payload).ok())
+                    .map(|existing| existing.updated_ms);
+                if local_updated.is_some_and(|local| local >= review.updated_ms) {
+                    report.kept_newer += 1;
+                    continue;
+                }
+                self.write_review(&review)?;
+                report.reviews_restored += 1;
+            }
+            for playbook in &backup.playbooks {
+                let mut playbook = playbook.clone();
+                playbook.tidy();
+                if !playbook.is_valid() {
+                    report
+                        .rejected
+                        .push(format!("playbook {:?} has no name", playbook.id));
+                    continue;
+                }
+                let local: Option<String> = self
+                    .connection
+                    .query_row(
+                        "SELECT payload FROM journal_playbook WHERE id = ?1",
+                        params![playbook.id],
+                        |row| row.get(0),
+                    )
+                    .optional()?;
+                let local_updated = local
+                    .and_then(|payload| serde_json::from_str::<Playbook>(&payload).ok())
+                    .map(|existing| existing.updated_ms);
+                if local_updated.is_some_and(|local| local >= playbook.updated_ms) {
+                    report.kept_newer += 1;
+                    continue;
+                }
+                self.connection.execute(
+                    "INSERT INTO journal_playbook (id, name, updated_ms, payload) VALUES (?1, ?2, ?3, ?4)
+                     ON CONFLICT(id) DO UPDATE SET name = excluded.name,
+                        updated_ms = excluded.updated_ms, payload = excluded.payload",
+                    params![playbook.id, playbook.name, playbook.updated_ms, json(&playbook)?],
+                )?;
+                report.playbooks_restored += 1;
+            }
+            for day in &backup.days {
+                let mut day = day.clone();
+                day.tidy();
+                if day.is_empty() {
+                    continue;
+                }
+                let local: Option<String> = self
+                    .connection
+                    .query_row(
+                        "SELECT payload FROM journal_day WHERE date = ?1",
+                        params![day.date],
+                        |row| row.get(0),
+                    )
+                    .optional()?;
+                let local_updated = local
+                    .and_then(|payload| serde_json::from_str::<DailyEntry>(&payload).ok())
+                    .map(|existing| existing.updated_ms);
+                if local_updated.is_some_and(|local| local >= day.updated_ms) {
+                    report.kept_newer += 1;
+                    continue;
+                }
+                self.connection.execute(
+                    "INSERT INTO journal_day (date, updated_ms, payload) VALUES (?1, ?2, ?3)
+                     ON CONFLICT(date) DO UPDATE SET updated_ms = excluded.updated_ms,
+                        payload = excluded.payload",
+                    params![day.date, day.updated_ms, json(&day)?],
+                )?;
+                report.days_restored += 1;
+            }
+            for asset in &backup.assets {
+                let stored = StoredAsset {
+                    id: asset.id.clone(),
+                    mime: asset.mime.clone(),
+                    width: asset.width,
+                    height: asset.height,
+                    data: asset.data.clone(),
+                };
+                if stored.verified_bytes().is_none() {
+                    report
+                        .rejected
+                        .push(format!("screenshot {} is not a valid picture", asset.id));
+                } else if self.put_asset(&stored)? {
+                    report.assets_added += 1;
+                }
+            }
+            if report.changed() {
+                self.bump_journal_revision()?;
+            }
+            Ok(report)
+        })
+    }
+
+    /// Writes a review as it is, times included.
+    fn write_review(&self, review: &Review) -> rusqlite::Result<()> {
+        self.connection.execute(
+            "INSERT INTO journal_review (trade_key, account_uid, playbook, status, updated_ms, payload)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT(trade_key) DO UPDATE SET
+                account_uid = excluded.account_uid, playbook = excluded.playbook,
+                status = excluded.status, updated_ms = excluded.updated_ms,
+                payload = excluded.payload",
+            params![
+                review.trade_key,
+                review.account_uid,
+                review.playbook.clone().unwrap_or_default(),
+                review.status().label(),
+                review.updated_ms,
+                json(review)?,
+            ],
+        )?;
+        Ok(())
     }
 }
 
@@ -1186,5 +1392,206 @@ mod tests {
         for suffix in ["", "-wal", "-shm"] {
             let _ = std::fs::remove_file(format!("{}{suffix}", path.display()));
         }
+    }
+
+    // MARK: Import, backup and restore
+
+    use degenview_journal::csv::{
+        ColumnMap, ImportOptions, ImportSource, interpret, plan, read_table,
+    };
+    use degenview_journal::model::CostBasis;
+    use degenview_journal::playbook::Playbook;
+    use degenview_journal::reconstruct::reconstruct;
+
+    const FILE: &str = "time,symbol,side,qty,price,fee,account\n\
+        2026-11-09T10:00:00Z,BTC,buy,1,100,0.5,Main\n\
+        2026-11-09T11:00:00Z,BTC,sell,1,110,0.5,Main\n\
+        2026-11-10T10:00:00Z,ETH,sell,2,50,,Side\n\
+        2026-11-10T12:00:00Z,ETH,buy,2,45,,Side\n";
+
+    fn import(store: &Store, text: &str, options: &ImportOptions) -> IngestReport {
+        let table = read_table(text).unwrap();
+        let outcomes = interpret(
+            &table,
+            &ColumnMap::detect(&table.headers),
+            options,
+            &degenview_journal::csv::NoMarkets,
+            &|_| 0,
+        );
+        let mut total = IngestReport::default();
+        for source in ImportSource::split(plan(
+            &outcomes,
+            options,
+            &degenview_journal::csv::NoMarkets,
+            1,
+        )) {
+            let report = store.journal_ingest(&source, true).unwrap();
+            total.inserted += report.inserted;
+            total.already_present += report.already_present;
+            total.rejected.extend(report.rejected);
+        }
+        total
+    }
+
+    fn png(seed: u8) -> StoredAsset {
+        let image =
+            image::RgbaImage::from_fn(16, 10, |x, y| image::Rgba([seed, x as u8, y as u8, 255]));
+        let mut png = Vec::new();
+        image::ImageEncoder::write_image(
+            image::codecs::png::PngEncoder::new(&mut png),
+            image.as_raw(),
+            16,
+            10,
+            image::ExtendedColorType::Rgba8,
+        )
+        .unwrap();
+        StoredAsset::from_ingested(&crate::service::image_ingest::ingest(&png).unwrap())
+    }
+
+    fn trades_of(store: &Store) -> Vec<(String, String)> {
+        let executions = store.journal_executions().unwrap();
+        let mut trades: Vec<_> = reconstruct(&executions, |_: &str| CostBasis::AverageCost)
+            .into_iter()
+            .map(|trade| (trade.key.clone(), trade.net_pnl().to_string()))
+            .collect();
+        trades.sort();
+        trades
+    }
+
+    #[test]
+    fn an_import_adds_accounts_and_executions_and_a_second_import_adds_nothing() {
+        let store = Store::open_in_memory().unwrap();
+        let first = import(&store, FILE, &ImportOptions::default());
+        assert_eq!((first.inserted, first.already_present), (4, 0));
+        assert_eq!(store.journal_accounts().unwrap().len(), 2);
+        let second = import(&store, FILE, &ImportOptions::default());
+        assert_eq!((second.inserted, second.already_present), (0, 4));
+        assert_eq!(store.journal_execution_count().unwrap(), 4);
+        // Another import never archives an earlier one's account.
+        assert!(
+            store
+                .journal_accounts()
+                .unwrap()
+                .iter()
+                .all(|a| !a.archived)
+        );
+        // The trades: Main made 9 net, Side (a short) made 10 with no known fee.
+        let trades = trades_of(&store);
+        assert_eq!(trades.len(), 2);
+    }
+
+    #[test]
+    fn a_backup_restores_everything_into_an_empty_journal_and_again_changes_nothing() {
+        let a = Store::open_in_memory().unwrap();
+        import(&a, FILE, &ImportOptions::default());
+        let trade_key = a.journal_executions().unwrap()[0].uid.clone();
+        let picture = png(7);
+        a.put_asset(&picture).unwrap();
+        let mut review = Review::new(&trade_key, "import:main");
+        review.notes = "Good patience.".into();
+        review.images = vec![picture.id.clone()];
+        review.updated_ms = 0;
+        a.journal_save_review(&review, 5_000).unwrap();
+        let mut playbook = Playbook::new("pb1".into(), "Breakout");
+        playbook.checklist = vec!["Volume".into()];
+        a.journal_save_playbook(&playbook, 5_000).unwrap();
+        let mut day = DailyEntry::new("2026-11-09");
+        day.plan = "Trade the open".into();
+        a.journal_save_day(&day, 5_000).unwrap();
+
+        let backup = a
+            .journal_backup("2026-11-10T00:00:00.000Z".into(), "test")
+            .unwrap();
+        let text = backup.to_json().unwrap();
+        let parsed = Backup::parse(&text).unwrap();
+        assert_eq!(parsed.assets.len(), 1);
+
+        let b = Store::open_in_memory().unwrap();
+        let report = b.journal_restore(&parsed).unwrap();
+        assert_eq!(report.executions_added, 4);
+        assert_eq!(report.reviews_restored, 1);
+        assert_eq!(report.playbooks_restored, 1);
+        assert_eq!(report.days_restored, 1);
+        assert_eq!(report.assets_added, 1);
+        assert!(report.rejected.is_empty(), "{:?}", report.rejected);
+        assert_eq!(trades_of(&a), trades_of(&b));
+        assert_eq!(b.journal_reviews().unwrap(), a.journal_reviews().unwrap());
+        assert_eq!(
+            b.journal_playbooks().unwrap(),
+            a.journal_playbooks().unwrap()
+        );
+        assert_eq!(b.journal_days().unwrap(), a.journal_days().unwrap());
+        assert!(b.asset(&picture.id).unwrap().is_some());
+        assert_eq!(b.journal_accounts().unwrap(), a.journal_accounts().unwrap());
+
+        // Again: nothing to add, nothing lost.
+        let again = b.journal_restore(&parsed).unwrap();
+        assert!(!again.changed(), "{again:?}");
+        assert_eq!(again.executions_present, 4);
+        assert_eq!(again.kept_newer, 3);
+    }
+
+    #[test]
+    fn a_backup_never_overwrites_an_edit_made_after_it() {
+        let a = Store::open_in_memory().unwrap();
+        import(&a, FILE, &ImportOptions::default());
+        let key = a.journal_executions().unwrap()[0].uid.clone();
+        let mut review = Review::new(&key, "import:main");
+        review.notes = "old".into();
+        a.journal_save_review(&review, 1_000).unwrap();
+        let backup = a.journal_backup("x".into(), "t").unwrap();
+        review.notes = "newer".into();
+        a.journal_save_review(&review, 9_000).unwrap();
+        let report = a.journal_restore(&backup).unwrap();
+        assert_eq!(report.reviews_restored, 0);
+        assert_eq!(a.journal_reviews().unwrap()[0].notes, "newer");
+        // An older local copy is replaced by the newer backup.
+        let b = Store::open_in_memory().unwrap();
+        b.journal_restore(&a.journal_backup("x".into(), "t").unwrap())
+            .unwrap();
+        let mut older_backup = backup.clone();
+        older_backup.reviews[0].updated_ms = 500;
+        assert_eq!(
+            b.journal_restore(&older_backup).unwrap().reviews_restored,
+            0
+        );
+        let mut newest = backup;
+        newest.reviews[0].notes = "from the backup".into();
+        newest.reviews[0].updated_ms = 99_000;
+        assert_eq!(b.journal_restore(&newest).unwrap().reviews_restored, 1);
+        assert_eq!(b.journal_reviews().unwrap()[0].notes, "from the backup");
+    }
+
+    #[test]
+    fn unusable_parts_of_a_backup_are_reported_and_the_rest_restored() {
+        let a = Store::open_in_memory().unwrap();
+        import(&a, FILE, &ImportOptions::default());
+        let mut backup = a.journal_backup("x".into(), "t").unwrap();
+        backup.executions[0].quantity = d("-1");
+        backup.executions[1].account_uid = "import:ghost".into();
+        backup.assets.push(degenview_journal::backup::BackupAsset {
+            id: "0".repeat(64),
+            mime: "image/png".into(),
+            width: 1,
+            height: 1,
+            data: "AAAA".into(),
+        });
+        let b = Store::open_in_memory().unwrap();
+        let report = b.journal_restore(&backup).unwrap();
+        assert_eq!(report.executions_added, 2);
+        assert_eq!(report.rejected.len(), 3, "{:?}", report.rejected);
+        assert!(report.rejected.iter().any(|r| r.contains("not positive")));
+        assert!(
+            report
+                .rejected
+                .iter()
+                .any(|r| r.contains("does not contain"))
+        );
+        assert!(
+            report
+                .rejected
+                .iter()
+                .any(|r| r.contains("not a valid picture"))
+        );
     }
 }

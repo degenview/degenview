@@ -458,6 +458,25 @@ impl JournalHost {
         marks
     }
 
+    /// Removes an account and everything the journal keeps for it (executions, reviews, cached
+    /// figures). For imported accounts; a paper account goes through the paper panel.
+    pub fn remove_account(&mut self, uid: &str) -> Result<(), String> {
+        {
+            let store = self
+                .store
+                .lock()
+                .map_err(|_| "The journal's store is unavailable.".to_owned())?;
+            store
+                .journal_purge_account(uid)
+                .map_err(|error| format!("The account could not be removed: {error}"))?;
+        }
+        if self.prefs.account.as_deref() == Some(uid) {
+            self.prefs.account = None;
+        }
+        self.dirty = true;
+        Ok(())
+    }
+
     /// The store, for work that runs off the UI thread (reading a picture).
     pub fn store(&self) -> SharedStore {
         self.store.clone()
