@@ -2,6 +2,7 @@ use super::catalog::Catalog;
 use super::search_rank::normalize;
 use super::{MarketSource, SearchResult, fold_calendar, rank_results};
 use crate::model::Kline;
+use crate::model::market_profile::flow::FlowKline;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -55,58 +56,11 @@ impl MarketSource for Binance {
         end_ms: i64,
         max: usize,
     ) -> Result<Vec<Kline>, String> {
-        const PAGE: usize = MAX_PER_REQUEST;
-        // Pages are fetched side by side: their start times follow from the interval alone.
-        const PARALLEL: usize = 8;
-        let (interval, fold) = native_interval(interval);
+        let (native, fold) = native_interval(interval);
         let output_max = max;
         let max = max * fold.map_or(1, |(_, months)| months);
-        let step = super::interval_seconds(interval)
-            .ok_or_else(|| format!("Unknown interval {interval}"))?
-            * 1_000;
-        let page_ms = step * PAGE as i64;
-        let first = (end_ms - step * max as i64).max(start_ms);
-        let starts: Vec<i64> = (0..)
-            .map(|index| first + index * page_ms)
-            .take_while(|start| *start < end_ms)
-            .collect();
-        let mut candles: Vec<Kline> = Vec::new();
-        for batch in starts.chunks(PARALLEL) {
-            let pages: Vec<Result<Vec<Kline>, String>> = std::thread::scope(|scope| {
-                let handles: Vec<_> = batch
-                    .iter()
-                    .map(|&from| {
-                        scope.spawn(move || {
-                            let to = (from + page_ms).min(end_ms) - 1;
-                            let url = format!(
-                                "{BASE_URL}?symbol={}&interval={interval}&startTime={from}&endTime={to}&limit={PAGE}",
-                                symbol.to_uppercase()
-                            );
-                            let body =
-                                super::http::get_text(&url, &[], super::http::Retry::Transient)
-                                    .map_err(|error| format!("Network error: {error}"))?;
-                            parse_klines(&body)
-                        })
-                    })
-                    .collect();
-                handles
-                    .into_iter()
-                    .map(|handle| {
-                        handle
-                            .join()
-                            .unwrap_or_else(|_| Err("The candle download stopped.".to_owned()))
-                    })
-                    .collect()
-            });
-            for page in pages {
-                candles.extend(page?);
-            }
-        }
-        candles.sort_by_key(|candle| candle.open_time);
-        candles.dedup_by_key(|candle| candle.open_time);
-        if candles.len() > max {
-            candles.drain(..candles.len() - max);
-        }
+        let flow = fetch_flow_pages(symbol, native, start_ms, end_ms, max)?;
+        let candles: Vec<Kline> = flow.into_iter().map(|candle| candle.kline).collect();
         if let Some((seconds, _)) = fold {
             let folded = fold_calendar(&candles, seconds, candles.len() >= max);
             let start = folded.len().saturating_sub(output_max);
@@ -125,6 +79,94 @@ impl MarketSource for Binance {
         let results = matching_pairs(&pairs, &needle);
         Ok(rank_results(results, query).into_iter().take(20).collect())
     }
+}
+
+/// Candles from `start_ms` to `end_ms` (the newest `max` of them), with the exchange's taker-buy
+/// volume. The one paging loop both the plain and the flow fetches use.
+fn fetch_flow_pages(
+    symbol: &str,
+    interval: &str,
+    start_ms: i64,
+    end_ms: i64,
+    max: usize,
+) -> Result<Vec<FlowKline>, String> {
+    const PAGE: usize = MAX_PER_REQUEST;
+    // Pages are fetched side by side: their start times follow from the interval alone.
+    const PARALLEL: usize = 8;
+    let step = super::interval_seconds(interval)
+        .ok_or_else(|| format!("Unknown interval {interval}"))?
+        * 1_000;
+    let page_ms = step * PAGE as i64;
+    let first = (end_ms - step * max as i64).max(start_ms);
+    let starts: Vec<i64> = (0..)
+        .map(|index| first + index * page_ms)
+        .take_while(|start| *start < end_ms)
+        .collect();
+    let mut candles: Vec<FlowKline> = Vec::new();
+    for batch in starts.chunks(PARALLEL) {
+        let pages: Vec<Result<Vec<FlowKline>, String>> = std::thread::scope(|scope| {
+            let handles: Vec<_> = batch
+                .iter()
+                .map(|&from| {
+                    scope.spawn(move || {
+                        let to = (from + page_ms).min(end_ms) - 1;
+                        let url = format!(
+                            "{BASE_URL}?symbol={}&interval={interval}&startTime={from}&endTime={to}&limit={PAGE}",
+                            symbol.to_uppercase()
+                        );
+                        let body = super::http::get_text(&url, &[], super::http::Retry::Transient)
+                            .map_err(|error| format!("Network error: {error}"))?;
+                        parse_flow_klines(&body)
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|handle| {
+                    handle
+                        .join()
+                        .unwrap_or_else(|_| Err("The candle download stopped.".to_owned()))
+                })
+                .collect()
+        });
+        for page in pages {
+            candles.extend(page?);
+        }
+    }
+    candles.sort_by_key(|candle| candle.kline.open_time);
+    candles.dedup_by_key(|candle| candle.kline.open_time);
+    if candles.len() > max {
+        candles.drain(..candles.len() - max);
+    }
+    Ok(candles)
+}
+
+/// Candles of a native interval with the exchange's own taker-buy volume (kline column 9), which
+/// gives an exact buy/sell split per candle. Quarters and years are not offered: they are folded
+/// from months and have no split to fold.
+pub fn fetch_flow_range(
+    symbol: &str,
+    interval: &str,
+    start_ms: i64,
+    end_ms: i64,
+    max: usize,
+) -> Result<Vec<FlowKline>, String> {
+    if native_interval(interval).1.is_some() {
+        return Err(format!("{interval} has no buy/sell split"));
+    }
+    fetch_flow_pages(symbol, interval, start_ms, end_ms, max)
+}
+
+/// The price step of a market (`PRICE_FILTER.tickSize`), from the catalog the symbol search keeps
+/// (downloaded at most once a day, so this can wait on the network: call it from a worker).
+pub fn tick_size(symbol: &str) -> Option<f64> {
+    let pairs = CATALOG.get(download_pairs).ok()?;
+    let symbol = symbol.to_uppercase();
+    pairs
+        .iter()
+        .find(|pair| pair.symbol == symbol)
+        .and_then(|pair| pair.tick_size)
+        .filter(|tick| tick.is_finite() && *tick > 0.0)
 }
 
 /// The listed markets whose name contains `needle` (letters and digits, upper case).
@@ -149,6 +191,9 @@ struct Pair {
     symbol: String,
     base: String,
     quote: String,
+    /// `PRICE_FILTER.tickSize`; absent in a catalog saved before it was kept.
+    #[serde(default)]
+    tick_size: Option<f64>,
 }
 
 /// Every market that is trading, downloaded at most once a day.
@@ -184,12 +229,33 @@ fn parse_pairs(body: &str) -> Result<Vec<Pair>, String> {
                 symbol: symbol.get("symbol")?.as_str()?.to_owned(),
                 base: symbol.get("baseAsset")?.as_str()?.to_owned(),
                 quote: symbol.get("quoteAsset")?.as_str()?.to_owned(),
+                tick_size: price_tick(symbol),
             })
         })
         .collect())
 }
 
+/// `PRICE_FILTER.tickSize` of an `exchangeInfo` symbol.
+fn price_tick(symbol: &Value) -> Option<f64> {
+    symbol
+        .get("filters")?
+        .as_array()?
+        .iter()
+        .find(|filter| filter.get("filterType").and_then(Value::as_str) == Some("PRICE_FILTER"))?
+        .get("tickSize")?
+        .as_str()?
+        .parse()
+        .ok()
+}
+
 fn parse_klines(body: &str) -> Result<Vec<Kline>, String> {
+    Ok(parse_flow_klines(body)?
+        .into_iter()
+        .map(|candle| candle.kline)
+        .collect())
+}
+
+fn parse_flow_klines(body: &str) -> Result<Vec<FlowKline>, String> {
     let value: Value =
         serde_json::from_str(body).map_err(|error| format!("Data error: {error}"))?;
     let rows = value
@@ -198,7 +264,9 @@ fn parse_klines(body: &str) -> Result<Vec<Kline>, String> {
     rows.iter().map(parse_row).collect()
 }
 
-fn parse_row(row: &Value) -> Result<Kline, String> {
+/// A kline row: `[openTime, o, h, l, c, volume, closeTime, quoteVolume, trades, takerBuyBase, …]`.
+/// The taker-buy volume is optional (older rows and other endpoints may not carry it).
+fn parse_row(row: &Value) -> Result<FlowKline, String> {
     let value = |index: usize| -> Result<f64, String> {
         row.get(index)
             .and_then(Value::as_str)
@@ -211,14 +279,17 @@ fn parse_row(row: &Value) -> Result<Kline, String> {
             .ok_or_else(|| format!("Data error: invalid timestamp {index}"))
     };
 
-    Ok(Kline {
-        open_time: time(0)?,
-        open: value(1)?,
-        high: value(2)?,
-        low: value(3)?,
-        close: value(4)?,
-        volume: value(5)?,
-        close_time: time(6)?,
+    Ok(FlowKline {
+        kline: Kline {
+            open_time: time(0)?,
+            open: value(1)?,
+            high: value(2)?,
+            low: value(3)?,
+            close: value(4)?,
+            volume: value(5)?,
+            close_time: time(6)?,
+        },
+        taker_buy: value(9).ok(),
     })
 }
 
@@ -233,11 +304,13 @@ mod tests {
                 symbol: "BTCUSDT".into(),
                 base: "BTC".into(),
                 quote: "USDT".into(),
+                tick_size: None,
             },
             Pair {
                 symbol: "ETHBTC".into(),
                 base: "ETH".into(),
                 quote: "BTC".into(),
+                tick_size: None,
             },
         ];
         for query in ["btcusdt", "BTC-USDT", "btc/usdt", "BTC USDT"] {
@@ -301,5 +374,44 @@ mod tests {
         );
         assert!(parse_pairs("not json").is_err());
         assert!(parse_pairs("{}").expect("no symbols").is_empty());
+    }
+
+    #[test]
+    fn a_kline_row_carries_the_taker_buy_volume_when_it_has_one() {
+        let row = r#"[[1700000000000,"10.0","12.0","9.0","11.0","42.5",1700003599999,"450.0",120,"17.25","190.0","0"]]"#;
+        let flow = parse_flow_klines(row).expect("valid response");
+        assert_eq!(flow[0].taker_buy, Some(17.25));
+        assert_eq!(flow[0].split(), Some((17.25, 25.25)));
+        // The plain parse is unchanged by the extra column.
+        assert_eq!(parse_klines(row).expect("valid")[0].volume, 42.5);
+        // A short row has no split but is still a candle.
+        let short = r#"[[1700000000000,"10.0","12.0","9.0","11.0","42.5",1700003599999]]"#;
+        assert_eq!(parse_flow_klines(short).expect("valid")[0].taker_buy, None);
+    }
+
+    #[test]
+    fn the_catalog_keeps_the_tick_size_of_each_market() {
+        let body = r#"{"symbols":[
+            {"symbol":"BTCUSDT","status":"TRADING","baseAsset":"BTC","quoteAsset":"USDT",
+             "filters":[{"filterType":"LOT_SIZE","stepSize":"0.00001"},
+                        {"filterType":"PRICE_FILTER","minPrice":"0.01","tickSize":"0.01"}]},
+            {"symbol":"ETHBTC","status":"TRADING","baseAsset":"ETH","quoteAsset":"BTC"}
+        ]}"#;
+        let pairs = parse_pairs(body).expect("pairs");
+        assert_eq!(pairs[0].tick_size, Some(0.01));
+        assert_eq!(pairs[1].tick_size, None);
+    }
+
+    #[test]
+    fn a_catalog_saved_before_tick_sizes_still_reads() {
+        let old = r#"{"symbol":"BTCUSDT","base":"BTC","quote":"USDT"}"#;
+        let pair: Pair = serde_json::from_str(old).expect("old row");
+        assert_eq!(pair.tick_size, None);
+    }
+
+    #[test]
+    fn quarters_and_years_have_no_flow_fetch() {
+        assert!(fetch_flow_range("BTCUSDT", "3M", 0, 1, 10).is_err());
+        assert!(fetch_flow_range("BTCUSDT", "1Y", 0, 1, 10).is_err());
     }
 }

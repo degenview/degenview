@@ -64,6 +64,8 @@ mod overlays;
 mod paper;
 mod pine;
 mod pine_logs;
+#[allow(dead_code)] // read by the order-flow chart types, which land on top of this
+mod profile_hub;
 mod replay;
 mod settings;
 mod snapshot;

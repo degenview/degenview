@@ -4,6 +4,7 @@ pub mod asset_auto_mapper;
 pub mod asset_host;
 pub mod background_service;
 mod binance;
+pub mod binance_trades;
 mod cache;
 pub mod cache_control;
 mod candles;
@@ -220,6 +221,48 @@ pub fn fetch_klines_range(
     for_source(source)
         .fetch_klines_range(symbol, interval, start_ms, end_ms, max)
         .map(normalize)
+}
+
+/// Candles for a profile: for Binance with the exchange's taker-buy volume (an exact buy/sell split
+/// per candle), for every other source plain candles. Same normalisation as
+/// [`fetch_klines_range`]; the split of a candle that normalisation drops goes with it.
+pub fn fetch_flow_range(
+    source: DataSource,
+    symbol: &str,
+    interval: &str,
+    start_ms: i64,
+    end_ms: i64,
+    max: usize,
+) -> Result<Vec<crate::model::market_profile::flow::FlowKline>, String> {
+    use crate::model::market_profile::flow::FlowKline;
+    if source != DataSource::Binance {
+        return fetch_klines_range(source, symbol, interval, start_ms, end_ms, max)
+            .map(|candles| candles.into_iter().map(FlowKline::plain).collect());
+    }
+    let flow = binance::fetch_flow_range(symbol, interval, start_ms, end_ms, max)?;
+    let splits: std::collections::HashMap<i64, Option<f64>> = flow
+        .iter()
+        .map(|candle| (candle.kline.open_time, candle.taker_buy))
+        .collect();
+    let candles = normalize(flow.into_iter().map(|candle| candle.kline).collect());
+    Ok(candles
+        .into_iter()
+        .map(|kline| FlowKline {
+            taker_buy: splits.get(&kline.open_time).copied().flatten(),
+            kline,
+        })
+        .collect())
+}
+
+/// The price step of a market where the exchange says it (Binance `tickSize`, Coinbase
+/// `quote_increment`), else `None`: the caller falls back to inferring one from the prices it holds
+/// and says it did. Can wait on a catalog download: call it from a worker.
+pub fn tick_size(source: DataSource, symbol: &str) -> Option<f64> {
+    match source {
+        DataSource::Binance => binance::tick_size(symbol),
+        DataSource::Coinbase => coinbase::tick_size(symbol),
+        _ => None,
+    }
 }
 
 /// How many choices of an event are fetched at once.

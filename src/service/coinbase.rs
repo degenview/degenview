@@ -196,6 +196,22 @@ struct Product {
     id: String,
     base: String,
     quote: String,
+    /// `quote_increment`, the price step; absent in a catalog saved before it was kept.
+    #[serde(default)]
+    tick_size: Option<f64>,
+}
+
+/// The price step of a product (`quote_increment`), from the catalog the symbol search keeps
+/// (downloaded at most once a day, so this can wait on the network: call it from a worker).
+pub fn tick_size(symbol: &str) -> Option<f64> {
+    let id = product_id(symbol);
+    CATALOG
+        .get(download_products)
+        .ok()?
+        .iter()
+        .find(|product| product.id == id)
+        .and_then(|product| product.tick_size)
+        .filter(|tick| tick.is_finite() && *tick > 0.0)
 }
 
 /// Every product that is online, downloaded at most once a day.
@@ -231,6 +247,10 @@ fn parse_products(body: &str) -> Result<Vec<Product>, String> {
                 id: product.get("id")?.as_str()?.to_owned(),
                 base: product.get("base_currency")?.as_str()?.to_owned(),
                 quote: product.get("quote_currency")?.as_str()?.to_owned(),
+                tick_size: product
+                    .get("quote_increment")
+                    .and_then(Value::as_str)
+                    .and_then(|text| text.parse().ok()),
             })
         })
         .collect())
@@ -381,6 +401,20 @@ mod tests {
         assert!(parse_products("{").is_err());
     }
 
+    #[test]
+    fn the_catalog_keeps_the_quote_increment_as_the_tick_size() {
+        let body = r#"[
+            {"id":"BTC-USD","base_currency":"BTC","quote_currency":"USD","status":"online","quote_increment":"0.01"},
+            {"id":"ETH-USD","base_currency":"ETH","quote_currency":"USD","status":"online"}
+        ]"#;
+        let products = parse_products(body).expect("products");
+        assert_eq!(products[0].tick_size, Some(0.01));
+        assert_eq!(products[1].tick_size, None);
+        let old: Product =
+            serde_json::from_str(r#"{"id":"BTC-USD","base":"BTC","quote":"USD"}"#).expect("old");
+        assert_eq!(old.tick_size, None);
+    }
+
     use super::*;
 
     #[test]
@@ -390,11 +424,13 @@ mod tests {
                 id: "BTC-USDT".into(),
                 base: "BTC".into(),
                 quote: "USDT".into(),
+                tick_size: None,
             },
             Product {
                 id: "ETH-BTC".into(),
                 base: "ETH".into(),
                 quote: "BTC".into(),
+                tick_size: None,
             },
         ];
         for query in ["btc-usdt", "BTCUSDT", "btc/usdt", "BTC USDT"] {
