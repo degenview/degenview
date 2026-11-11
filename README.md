@@ -245,6 +245,16 @@ launch.
   [MCP server](docs/architecture/mcp.md)
 - [MCP remaining work](docs/mcp-remaining-work.md): what is still planned for the MCP server
 
+## Star History
+
+<a href="https://www.star-history.com/?repos=degenview%2Fdegenview&type=date&legend=top-right">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=degenview/degenview&type=date&theme=dark&legend=bottom-right" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=degenview/degenview&type=date&legend=bottom-right" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=degenview/degenview&type=date&legend=bottom-right" />
+ </picture>
+</a>
+
 ## License
 
 DegenView is licensed under the [GNU General Public License v3.0 only](LICENSE)
