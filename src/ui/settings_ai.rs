@@ -364,7 +364,7 @@ pub fn body(
                 ))
                 .wrap(),
             );
-            if kit::sheet_button(ui, "Clear saved conversations", false, true).clicked() {
+            if destructive_button(ui, "Clear saved conversations").clicked() {
                 actions.push(AiAction::ClearHistory);
             }
         });
