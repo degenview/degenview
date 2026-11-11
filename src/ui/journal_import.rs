@@ -6,7 +6,8 @@ use eframe::egui::{self, Align, Layout, RichText, Ui, vec2};
 use rust_decimal::Decimal;
 
 use super::header_controls;
-use super::icons::Icon;
+use super::icons::{self, Icon};
+use super::journal_kit::Sign;
 use super::kit::{self, MEDIUM, REGULAR, SEMIBOLD, size};
 use super::sheet;
 use super::theme;
@@ -199,17 +200,30 @@ pub fn show(ctx: &egui::Context, sheet_state: &mut ImportSheet, offset: Offset<'
     );
     let (_, outside) =
         sheet::show_dismissable(ctx, egui::Id::new("journal-import-sheet"), WIDTH, |ui| {
-            sheet::header(
-                ui,
-                Icon::Download,
-                "Import executions",
-                &format!(
-                    "{} \u{b7} {} rows. Nothing is added until you confirm.",
-                    sheet_state.file_name,
-                    sheet_state.table.rows.len()
-                ),
-                theme::text_secondary(),
-            );
+            // The icon stands bare: no tile or colour behind it (the app's flat style).
+            ui.add_space(20.0);
+            sheet::inset(ui, |ui| {
+                sheet::header_with(
+                    ui,
+                    "Import executions",
+                    &format!(
+                        "{} \u{b7} {} rows. Nothing is added until you confirm.",
+                        sheet_state.file_name,
+                        sheet_state.table.rows.len()
+                    ),
+                    |ui| {
+                        let (badge, _) =
+                            ui.allocate_exact_size(vec2(30.0, 40.0), egui::Sense::hover());
+                        icons::paint(
+                            ui.painter(),
+                            egui::Rect::from_center_size(badge.center(), vec2(22.0, 22.0)),
+                            Icon::Download,
+                            theme::text_secondary(),
+                        );
+                    },
+                );
+            });
+            ui.add_space(4.0);
             egui::ScrollArea::vertical()
                 .max_height((ctx.content_rect().height() - 220.0).max(260.0))
                 .auto_shrink([false, true])
@@ -262,12 +276,12 @@ pub fn show(ctx: &egui::Context, sheet_state: &mut ImportSheet, offset: Offset<'
 }
 
 fn heading(ui: &mut Ui, text: &str) {
-    ui.add_space(14.0);
+    ui.add_space(16.0);
     ui.label(kit::text(
-        text.to_uppercase(),
-        size::CAPTION,
+        text,
+        size::HEADLINE,
         SEMIBOLD,
-        theme::text_tertiary(),
+        theme::text_primary(),
     ));
     ui.add_space(6.0);
 }
@@ -468,7 +482,7 @@ fn text_field(ui: &mut Ui, salt: &str, text: &mut String, hint: &str, error: boo
     let id = egui::Id::new(("journal-import-field", salt));
     let focused = ui.memory(|memory| memory.has_focus(id));
     let frame = if error {
-        kit::field_frame(focused).stroke(egui::Stroke::new(1.0, theme::LOSS))
+        kit::field_frame(focused).stroke(egui::Stroke::new(1.0, Sign::Loss.data()))
     } else {
         kit::field_frame(focused)
     };
@@ -558,8 +572,8 @@ fn preview(ui: &mut Ui, state: &ImportSheet) {
                         );
                         cell(ui, candidate.symbol.clone(), theme::text_primary());
                         let (side, color) = match candidate.side {
-                            degenview_journal::model::Side::Buy => ("Buy", theme::WIN),
-                            degenview_journal::model::Side::Sell => ("Sell", theme::LOSS),
+                            degenview_journal::model::Side::Buy => ("Buy", Sign::Gain.text()),
+                            degenview_journal::model::Side::Sell => ("Sell", Sign::Loss.text()),
                         };
                         cell(ui, side.to_owned(), color);
                         cell(
@@ -570,7 +584,7 @@ fn preview(ui: &mut Ui, state: &ImportSheet) {
                         cell(ui, format::price(candidate.price), theme::text_primary());
                     }
                     Err(reason) => {
-                        cell(ui, format!("Refused: {reason}"), theme::LOSS);
+                        cell(ui, format!("Refused: {reason}"), Sign::Loss.text());
                     }
                 }
                 ui.end_row();
@@ -590,7 +604,7 @@ fn preview(ui: &mut Ui, state: &ImportSheet) {
                 format!("Row {row}: {reason}"),
                 size::CAPTION + 1.0,
                 REGULAR,
-                theme::LOSS,
+                Sign::Loss.text(),
             ));
         }
         if preview.rejected.len() > REJECTED_SHOWN {

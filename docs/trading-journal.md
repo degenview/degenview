@@ -155,13 +155,15 @@ The tab has three pages (`Section`, remembered in `journal.prefs`): Overview, Ca
 The header (range, account, instrument, side, status, search) filters all of them; the Calendar
 ignores the range, because it has its own month navigation.
 
-**Overview** (`degenview_journal::overview` computes it, `ui/journal_overview.rs` draws it): five
-headline cards (net P&L, win rate, profit factor, average win/loss, day win rate, each with a
-tooltip definition and, where the range has a previous period, the change against it), twelve
-smaller figures (gross, fees, trades, expectancy, average R, max drawdown, trading, winning, best
-and worst day, duration, streak), the realised-equity curve with an optional previous-period
-overlay, the Edge Score radar, daily P&L bars, drawdown (amount or percentage, with the overlay),
-the distribution of results, long against short, and the latest closed trades (click opens one).
+**Overview** (`degenview_journal::overview` computes it, `ui/journal_overview.rs` draws it): six
+headline cards (net P&L with a sparkline, win rate, profit factor, average win/loss, expectancy,
+day win rate, each with a tooltip definition and, where the range has a previous period, the change
+against it), eleven smaller figures in a strip of chips (trades, gross, fees, trading and winning
+days, best and worst day, max drawdown, average R, duration, streak), the equity curve (realised
+equity or cumulative net P&L, with the last value on it and an optional previous-period overlay),
+the Edge Score with its change against the previous period and a radar, daily P&L bars, drawdown
+(USD or percentage, with the overlay), the distribution of results, long against short, and the
+latest closed trades (click opens one; View all goes to Trades).
 A figure that does not exist is a dash with the reason as its tooltip, never a zero.
 
 - **One currency at a time.** A selection that spans currencies (a USD and a USDT account) shows
@@ -179,6 +181,32 @@ A figure that does not exist is a dash with the reason as its tooltip, never a z
 arrow, the trade count and win rate; a week total at the end of each row (Sunday-first); month net,
 best and worst day and activity underneath; hover for the day's tally; click opens that day on the
 Trades page. Sign is always in the text and an arrow, so colour is never the only cue.
+
+## The look
+
+Every journal page is drawn with `ui/journal_kit.rs`, so they read as one product and follow the
+app's Flat style (`docs/agent-guides/ui-style.md` on main): a faint fill and a hairline at
+`kit::CARD_RADIUS`, bare icons, no gradient, no shadow, nothing blue.
+
+- **Cards** are `journal_kit::card` (a title, a subtitle, an optional definition behind a bare "i",
+  a right slot for toggles or a link). A state tint (the Net P&L hero when the result is a gain or a
+  loss) is the tone's own translucent wash and hairline, not a coloured fill. Figures sit in
+  `chip_strip` (bare icon, label, value; the rows are balanced and each fills the width) or, inside
+  a card, in quiet wells.
+- **Colour is a `Sign`** (gain, loss, flat): `theme::UP` / `DOWN` for marks (lines, bars, rings,
+  fills, the same pair the Portfolio uses) and the softened `Tone` for words and pills, so both are
+  legible on the light theme. Chart trade markers keep following the chart's own up and down colours.
+- **Charts are flat.** The area under a line is one plain 10% wash (`journal_kit::area_fill`);
+  bars, rings and the split bar are solid. Hovering a bar outlines it instead of changing its colour.
+  A test scans the journal's pages for a gradient mesh, the lit card edge and the accent colour.
+- **Pills** (`journal_kit::pill`) are a capsule with a hairline and no dot: LONG, SHORT, WIN, LOSS,
+  OPEN, THIN, SMALL, Saved. **Links** are gray and underlined.
+- **Header.** The page title, the section tabs (they scroll sideways when the window is too narrow
+  for them and the menus) and the account and Data menus on one row; the range, the three filters
+  and the search on a second row when the window is at least 1300 points wide, else two rows
+  (`header_layout`, tested). A custom range always takes two rows for its date fields.
+- **Narrow windows.** Below 980 points the Overview stacks one card per row (an earlier version
+  dropped the Edge, Drawdown, Long vs short and Recent cards there).
 
 ## Analytics and Compare pages
 

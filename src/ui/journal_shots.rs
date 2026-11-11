@@ -80,7 +80,12 @@ pub fn strip(ui: &mut Ui, shots: &[Shot], busy: bool, error: Option<&str>) -> Ac
     });
     if let Some(error) = error {
         ui.add_space(4.0);
-        ui.label(kit::text(error, size::CAPTION + 1.0, REGULAR, theme::LOSS));
+        ui.label(kit::text(
+            error,
+            size::CAPTION + 1.0,
+            REGULAR,
+            super::journal_kit::Sign::Loss.text(),
+        ));
     }
     action
 }

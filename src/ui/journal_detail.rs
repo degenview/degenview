@@ -8,9 +8,9 @@ use rust_decimal::prelude::ToPrimitive;
 
 use super::header_controls;
 use super::icons::{self, Icon};
+use super::journal_kit::{self as jk, Card, Sign};
 use super::journal_shots::{self as shots, Shot};
 use super::kit::{self, MEDIUM, REGULAR, SEMIBOLD, size};
-use super::paper_grid;
 use super::theme;
 use degenview_journal::calendar::Offset;
 use degenview_journal::cells::{self, Tone, status_label, status_tone, tone_of};
@@ -152,21 +152,25 @@ pub struct Output {
 fn tone_color(tone: Tone) -> Color32 {
     match tone {
         Tone::Normal => theme::text_primary(),
-        Tone::Positive => theme::WIN,
-        Tone::Negative => theme::LOSS,
+        Tone::Positive => Sign::Gain.text(),
+        Tone::Negative => Sign::Loss.text(),
         Tone::Muted => theme::text_secondary(),
     }
 }
 
-fn section(ui: &mut Ui, title: &str) {
-    ui.add_space(16.0);
-    ui.label(kit::text(
-        title.to_uppercase(),
-        size::CAPTION,
-        SEMIBOLD,
-        theme::text_tertiary(),
-    ));
-    ui.add_space(6.0);
+/// A pill's tint for a cell tone: green and red for a result, neutral for the rest.
+fn pill_tone(tone: Tone) -> kit::Tone {
+    match tone {
+        Tone::Positive => kit::Tone::Good,
+        Tone::Negative => kit::Tone::Bad,
+        Tone::Normal | Tone::Muted => kit::Tone::Neutral,
+    }
+}
+
+/// One section of the panel on its own card, with a gap above the next.
+fn section_card(ui: &mut Ui, title: &str, body: impl FnOnce(&mut Ui)) {
+    ui.add_space(jk::GAP);
+    jk::card(ui, &Card::new(title), |_| {}, body);
 }
 
 fn pair(ui: &mut Ui, label: &str, value: &str, tone: Tone) {
@@ -195,12 +199,12 @@ pub fn show(ui: &mut Ui, input: &Input<'_>, draft: &mut Draft) -> Output {
             SEMIBOLD,
             theme::text_primary(),
         ));
-        let (side, tint) = match trade.direction {
-            Direction::Long => ("LONG", theme::WIN),
-            Direction::Short => ("SHORT", theme::LOSS),
+        let (side, tone) = match trade.direction {
+            Direction::Long => ("LONG", kit::Tone::Good),
+            Direction::Short => ("SHORT", kit::Tone::Bad),
         };
-        paper_grid::tag(ui, side, tint);
-        paper_grid::tag(ui, status_label(outcome), tone_color(status_tone(outcome)));
+        jk::pill(ui, side, tone);
+        jk::pill(ui, status_label(outcome), pill_tone(status_tone(outcome)));
         ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
             if header_controls::icon_button(ui, Icon::Xmark, "Close trade", false).clicked() {
                 output.close = true;
@@ -237,16 +241,23 @@ pub fn show(ui: &mut Ui, input: &Input<'_>, draft: &mut Draft) -> Output {
             output.view_on_chart = true;
         }
     }
-    summary(ui, input, draft);
-    executions(ui, input);
-    excursion_block(ui, input, &mut output);
-    review(ui, input, draft, &mut output);
+    section_card(ui, "Summary", |ui| summary(ui, input, draft));
+    section_card(
+        ui,
+        &format!("Executions ({})", input.trade.legs.len()),
+        |ui| executions(ui, input),
+    );
+    if !matches!(input.excursion, ExcursionView::Hidden) {
+        section_card(ui, "Excursion", |ui| {
+            excursion_block(ui, input, &mut output)
+        });
+    }
+    section_card(ui, "Review", |ui| review(ui, input, draft, &mut output));
     output
 }
 
 fn summary(ui: &mut Ui, input: &Input<'_>, draft: &Draft) {
     let trade = input.trade;
-    section(ui, "Summary");
     let money_tone = |value: Decimal| tone_of(value);
     egui::Grid::new(("journal-summary", &trade.key))
         .num_columns(2)
@@ -370,7 +381,6 @@ fn summary(ui: &mut Ui, input: &Input<'_>, draft: &Draft) {
 
 fn executions(ui: &mut Ui, input: &Input<'_>) {
     let trade = input.trade;
-    section(ui, &format!("Executions ({})", trade.legs.len()));
     let heads = [
         "Time", "Side", "Qty", "Price", "Fee", "Position", "Realised",
     ];
@@ -398,9 +408,9 @@ fn executions(ui: &mut Ui, input: &Input<'_>) {
                     theme::text_primary(),
                 );
                 let side_color = if leg.side == Side::Buy {
-                    theme::WIN
+                    Sign::Gain.text()
                 } else {
-                    theme::LOSS
+                    Sign::Loss.text()
                 };
                 cell(
                     ui,
@@ -444,10 +454,6 @@ fn executions(ui: &mut Ui, input: &Input<'_>) {
 /// Best and worst the trade got to while open, and how much of the best the exit kept. Always
 /// labelled as an estimate, with the reason when there is no figure.
 fn excursion_block(ui: &mut Ui, input: &Input<'_>, output: &mut Output) {
-    if matches!(input.excursion, ExcursionView::Hidden) {
-        return;
-    }
-    section(ui, "Excursion");
     let note = |ui: &mut Ui, text: &str| {
         ui.label(kit::text(
             text,
@@ -505,7 +511,10 @@ fn field(ui: &mut Ui, id: egui::Id, text: &mut String, hint: &str, error: bool) 
     let focused = ui.memory(|memory| memory.has_focus(id));
     let mut frame = kit::field_frame(focused);
     if error {
-        frame = frame.stroke(egui::Stroke::new(1.5, theme::with_alpha(theme::LOSS, 0.8)));
+        frame = frame.stroke(egui::Stroke::new(
+            1.5,
+            theme::with_alpha(Sign::Loss.data(), 0.8),
+        ));
     }
     frame
         .inner_margin(egui::Margin::symmetric(10, 6))
@@ -581,7 +590,6 @@ fn rating_row(ui: &mut Ui, label: &str, value: &mut Option<u8>) {
 
 fn review(ui: &mut Ui, input: &Input<'_>, draft: &mut Draft, output: &mut Output) {
     let key = &input.trade.key;
-    section(ui, "Review");
     let before = (
         draft.review.clone(),
         draft.tags_text.clone(),
@@ -777,7 +785,7 @@ fn review(ui: &mut Ui, input: &Input<'_>, draft: &mut Draft, output: &mut Output
             "A price must be a number above zero.",
             size::CAPTION + 1.0,
             REGULAR,
-            theme::LOSS,
+            Sign::Loss.text(),
         ));
     }
     draft.sync_fields();
@@ -855,18 +863,12 @@ fn review(ui: &mut Ui, input: &Input<'_>, draft: &mut Draft, output: &mut Output
 
     ui.add_space(8.0);
     let now = ui.input(|input| input.time);
-    let status = if let Some(error) = &draft.error {
-        Some((error.clone(), theme::LOSS))
-    } else if draft.edited_at.is_some() && draft.is_dirty() {
-        Some(("Saving\u{2026}".to_owned(), theme::text_tertiary()))
-    } else if draft.saved_until.is_some_and(|until| until > now) {
-        Some(("Saved".to_owned(), theme::text_secondary()))
-    } else {
-        None
-    };
-    if let Some((text, color)) = status {
-        ui.label(kit::text(text, size::CAPTION + 1.0, REGULAR, color));
-    }
+    jk::save_status(
+        ui,
+        draft.error.as_deref(),
+        draft.edited_at.is_some() && draft.is_dirty(),
+        draft.saved_until.is_some_and(|until| until > now),
+    );
 }
 
 /// What the plan implies: reward to risk, and what the risk was as a share of the account.

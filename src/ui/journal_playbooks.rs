@@ -7,6 +7,7 @@ use rust_decimal::prelude::ToPrimitive;
 
 use super::icons::Icon;
 use super::journal_charts as charts;
+use super::journal_kit::{self as jk, Card, Sign};
 use super::kit::{self, MEDIUM, REGULAR, SEMIBOLD, size};
 use super::paper_grid;
 use super::theme;
@@ -114,38 +115,34 @@ pub fn show(
     currency: &str,
 ) -> Output {
     let mut output = Output::default();
-    kit::card_frame(false).show(ui, |ui| {
-        ui.set_width(ui.available_width());
-        ui.horizontal(|ui| {
-            ui.vertical(|ui| {
-                ui.label(kit::text("Playbooks", size::BODY + 1.0, SEMIBOLD, theme::text_primary()));
+    let list = Card::new("Playbooks").subtitle(
+        "The setups you repeat, with how their trades did and how closely you followed them.",
+    );
+    let mut create = false;
+    jk::card(
+        ui,
+        &list,
+        |ui| {
+            if super::header_controls::prominent_button(ui, Icon::Plus, "New playbook").clicked() {
+                create = true;
+            }
+        },
+        |ui| {
+            if rows.is_empty() {
                 ui.label(kit::text(
-                    "The setups you repeat, with how their trades did and how closely you followed them.",
-                    size::CAPTION + 1.0,
-                    REGULAR,
-                    theme::text_tertiary(),
-                ));
-            });
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
-                if super::header_controls::prominent_button(ui, Icon::Plus, "New playbook").clicked() {
-                    output.create = true;
-                }
-            });
-        });
-        ui.add_space(10.0);
-        if rows.is_empty() {
-            ui.label(kit::text(
                 "No playbooks yet. Create one, then choose it in a trade's review to see how that setup performs.",
                 size::BODY,
                 REGULAR,
                 theme::text_secondary(),
             ));
-            return;
-        }
-        comparison(ui, rows, selected, currency, &mut output);
-    });
+                return;
+            }
+            comparison(ui, rows, selected, currency, &mut output);
+        },
+    );
+    output.create |= create;
     if let Some(draft) = draft {
-        ui.add_space(12.0);
+        ui.add_space(jk::GAP);
         editor(ui, draft, &mut output);
     }
     output
@@ -188,11 +185,12 @@ fn comparison(
     });
     for row in rows {
         let (rect, response) = ui.allocate_exact_size(vec2(available, 30.0), egui::Sense::click());
-        if selected == Some(row.playbook.id.as_str()) {
-            ui.painter().rect_filled(rect, 6.0, kit::primary(0.09));
-        } else if response.hovered() {
-            ui.painter().rect_filled(rect, 6.0, kit::primary(0.05));
-        }
+        jk::paint_row(
+            ui,
+            rect,
+            selected == Some(row.playbook.id.as_str()),
+            response.hovered(),
+        );
         let mut line = ui.new_child(
             egui::UiBuilder::new()
                 .max_rect(rect)
@@ -230,8 +228,8 @@ fn comparison(
             charts::fixed_cell(&mut line, vec2(col(index), 30.0), |ui| {
                 let color = match (index, s) {
                     (6, Some(s)) => match s.net.to_f64().unwrap_or(0.0) {
-                        v if v > 0.0 => theme::WIN,
-                        v if v < 0.0 => theme::LOSS,
+                        v if v > 0.0 => Sign::Gain.text(),
+                        v if v < 0.0 => Sign::Loss.text(),
                         _ => theme::text_primary(),
                     },
                     _ => theme::text_primary(),
@@ -241,8 +239,12 @@ fn comparison(
         }
         charts::fixed_cell(&mut line, vec2(col(8), 30.0), |ui| {
             match s.map(|s| s.sample) {
-                Some(Sample::Thin) => paper_grid::tag(ui, "THIN", theme::LOSS),
-                Some(Sample::Low) => paper_grid::tag(ui, "SMALL", theme::text_secondary()),
+                Some(Sample::Thin) => {
+                    jk::pill(ui, "THIN", kit::Tone::Warning);
+                }
+                Some(Sample::Low) => {
+                    jk::pill(ui, "SMALL", kit::Tone::Neutral);
+                }
                 _ => {}
             }
         });
@@ -270,23 +272,22 @@ fn editor(ui: &mut Ui, draft: &mut Draft, output: &mut Output) {
     );
     let id = draft.playbook.id.clone();
     let mut blurred = false;
-    kit::card_frame(false).show(ui, |ui| {
-        ui.set_width(ui.available_width());
-        ui.horizontal(|ui| {
-            ui.label(kit::text(
-                "Edit playbook",
-                size::BODY + 1.0,
-                SEMIBOLD,
-                theme::text_primary(),
-            ));
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if kit::destructive_sheet_button(ui, Icon::Trash, "Delete").clicked() {
-                    output.delete = Some(id.clone());
-                }
-            });
-        });
-        let mut line =
-            |ui: &mut Ui, salt: &str, title: &str, text: &mut String, hint: &str, rows: usize| {
+    let mut delete = false;
+    jk::card(
+        ui,
+        &Card::new("Edit playbook"),
+        |ui| {
+            if kit::destructive_sheet_button(ui, Icon::Trash, "Delete").clicked() {
+                delete = true;
+            }
+        },
+        |ui| {
+            let mut line = |ui: &mut Ui,
+                            salt: &str,
+                            title: &str,
+                            text: &mut String,
+                            hint: &str,
+                            rows: usize| {
                 label(ui, title);
                 let response = field(
                     ui,
@@ -297,95 +298,83 @@ fn editor(ui: &mut Ui, draft: &mut Draft, output: &mut Output) {
                 );
                 blurred |= response.lost_focus();
             };
-        line(
-            ui,
-            "name",
-            "Name",
-            &mut draft.playbook.name,
-            "Breakout, mean reversion\u{2026}",
-            1,
-        );
-        line(
-            ui,
-            "description",
-            "Description",
-            &mut draft.playbook.description,
-            "What is this setup?",
-            2,
-        );
-        line(
-            ui,
-            "setup",
-            "Setup criteria",
-            &mut draft.playbook.setup_criteria,
-            "What has to be true before you look at it?",
-            3,
-        );
-        line(
-            ui,
-            "entry",
-            "Entry rules",
-            &mut draft.playbook.entry_rules,
-            "When and how you enter",
-            3,
-        );
-        line(
-            ui,
-            "exit",
-            "Exit rules",
-            &mut draft.playbook.exit_rules,
-            "Targets, stops, time exits",
-            3,
-        );
-        line(
-            ui,
-            "risk",
-            "Risk rules",
-            &mut draft.playbook.risk_rules,
-            "Size, maximum loss, number of attempts",
-            3,
-        );
-        line(
-            ui,
-            "checklist",
-            "Checklist (one rule per line)",
-            &mut draft.checklist_text,
-            "Volume spike\nAbove VWAP\nStop placed",
-            5,
-        );
-        line(
-            ui,
-            "tags",
-            "Tags",
-            &mut draft.tags_text,
-            "Comma separated",
-            1,
-        );
-        ui.add_space(8.0);
-        let now = ui.input(|input| input.time);
-        if let Some(error) = &draft.error {
-            ui.label(kit::text(
-                error.as_str(),
-                size::CAPTION + 1.0,
-                REGULAR,
-                theme::LOSS,
-            ));
-        } else if draft.edited_at.is_some() && draft.is_dirty() {
-            ui.label(kit::text(
-                "Saving\u{2026}",
-                size::CAPTION + 1.0,
-                REGULAR,
-                theme::text_tertiary(),
-            ));
-        } else if draft.saved_until.is_some_and(|until| until > now) {
-            ui.label(kit::text(
-                "Saved",
-                size::CAPTION + 1.0,
-                REGULAR,
-                theme::text_secondary(),
-            ));
-        }
-    });
+            line(
+                ui,
+                "name",
+                "Name",
+                &mut draft.playbook.name,
+                "Breakout, mean reversion\u{2026}",
+                1,
+            );
+            line(
+                ui,
+                "description",
+                "Description",
+                &mut draft.playbook.description,
+                "What is this setup?",
+                2,
+            );
+            line(
+                ui,
+                "setup",
+                "Setup criteria",
+                &mut draft.playbook.setup_criteria,
+                "What has to be true before you look at it?",
+                3,
+            );
+            line(
+                ui,
+                "entry",
+                "Entry rules",
+                &mut draft.playbook.entry_rules,
+                "When and how you enter",
+                3,
+            );
+            line(
+                ui,
+                "exit",
+                "Exit rules",
+                &mut draft.playbook.exit_rules,
+                "Targets, stops, time exits",
+                3,
+            );
+            line(
+                ui,
+                "risk",
+                "Risk rules",
+                &mut draft.playbook.risk_rules,
+                "Size, maximum loss, number of attempts",
+                3,
+            );
+            line(
+                ui,
+                "checklist",
+                "Checklist (one rule per line)",
+                &mut draft.checklist_text,
+                "Volume spike\nAbove VWAP\nStop placed",
+                5,
+            );
+            line(
+                ui,
+                "tags",
+                "Tags",
+                &mut draft.tags_text,
+                "Comma separated",
+                1,
+            );
+            ui.add_space(8.0);
+            let now = ui.input(|input| input.time);
+            jk::save_status(
+                ui,
+                draft.error.as_deref(),
+                draft.edited_at.is_some() && draft.is_dirty(),
+                draft.saved_until.is_some_and(|until| until > now),
+            );
+        },
+    );
+    if delete {
+        output.delete = Some(id.clone());
+    }
     draft.sync_fields();
     let after = (
         draft.playbook.clone(),
