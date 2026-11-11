@@ -37,12 +37,12 @@ against SQLite, and every sync problem leaves the app fully usable.
 | Price alert definitions | one per alert | arrive **switched off** on other Macs, see below |
 | Portfolios | one per portfolio, and one per transaction | valuation history is not synced; it is rebuilt on each Mac |
 | Paper trading | one record per account holding the account, its orders, fills, positions, events, closed trades and journal, and which Mac runs it | see [Portfolios and paper trading](#portfolios-and-paper-trading) |
-| Preferences | `appTheme`, `drawing.defaults`, `drawing.prefs`, `snapshot.prefs` (host, scale, include-trading only), `editor.prefs` (which editor theme, the editor font, size and line height) | |
+| Preferences | `appTheme`, `drawing.defaults`, `drawing.prefs`, `snapshot.prefs` (which provider is on, each provider's non-secret settings, scale, include-trading only), `editor.prefs` (which editor theme, the editor font, size and line height) | |
 
 Never synced: market and icon caches, portfolio valuation history, which paper account or
 portfolio is selected, live paper quotes, webhook endpoints and their Keychain secrets, API keys, **live trading** (broker credentials, orders sent and not yet confirmed, and how to trade: a Mac must never act on another Mac's live orders, and a trading credential never leaves the Mac it was entered on), MCP clients/tokens/port and the MCP activity log, Pine alert subscriptions
 (they bind device-local chart ids), the open tabs and windows, alert runtime state and history,
-snapshot consent and token, and `content.prefs` (whether a Post card may fetch a preview from X). Every document table and `setting` key is classified in
+snapshot consent and the snapshot providers' API keys and tokens, and `content.prefs` (whether a Post card may fetch a preview from X). Every document table and `setting` key is classified in
 `src/sync/policy.rs`, and a test fails when one is added without a decision; unclassified means
 local.
 

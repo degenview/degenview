@@ -215,8 +215,8 @@ Read [chart overlays](../chart-overlays.md) first. The short rules:
 - The frame is frozen on the UI thread in one pass; saving, rasterizing, PNG and upload run on
   `work_queue::SNAPSHOTS` and hand clipboard/browser work back as an `Outcome`. Never report a copy,
   save or open before it has happened.
-- Trading overlays are off by default (`snapshot.prefs`); uploads need a configured host and the
-  user's consent per host. See [chart snapshots](../snapshots.md).
+- Trading overlays are off by default (`snapshot.prefs`); uploads need a snapshot provider turned on and set up, and the
+  user's consent per destination. See [chart snapshots](../snapshots.md).
 
 ## Portfolio cards
 
