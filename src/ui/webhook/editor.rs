@@ -12,8 +12,8 @@ use crate::model::webhook::policy::{
 };
 use crate::model::webhook::{EndpointId, WebhookEndpoint, WebhookHeader, WebhookHttpMethod};
 use crate::ui::icons::{self, Icon};
+use crate::ui::kit::sheet;
 use crate::ui::kit::{self, BOLD, REGULAR, SEMIBOLD, size};
-use crate::ui::sheet;
 use crate::ui::theme;
 use eframe::egui::{self, Color32, FontId, Id, Pos2, Rect, RichText, Sense, Stroke, Vec2};
 

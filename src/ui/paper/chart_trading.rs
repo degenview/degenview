@@ -16,7 +16,7 @@ use crate::model::paper::{
     PaperCurrency, PaperOrder, PaperOrderRole, PaperOrderSide, PaperOrderType, PaperPosition,
 };
 use crate::ui::accessibility;
-use crate::ui::chart_card::PriceScale;
+use crate::ui::chart::card::PriceScale;
 use crate::ui::paper::tables::{pnl_color, position_tint, side_tint};
 use crate::ui::theme;
 use eframe::egui::{self, Align2, Color32, FontId, Pos2, Rect, Sense, Stroke, Vec2};

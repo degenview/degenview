@@ -8,8 +8,8 @@ use crate::format::{civil_from_days, days_from_civil};
 use crate::service::timezone::local_utc_offset_secs;
 use crate::ui::icons::Icon;
 use crate::ui::kit;
+use crate::ui::kit::sheet;
 use crate::ui::replay::bar::{date_text, time_text};
-use crate::ui::sheet;
 use crate::ui::theme;
 
 /// Owned by the workspace; `show` mutates it. `open` gates the modal, `draft_ms` is the

@@ -34,7 +34,11 @@ use crate::ui::paper::tables::empty;
 use crate::ui::trade::panel_header::{self, Chip, Header, HeaderEvent, PanelEvent, VenueBar};
 use crate::ui::trade::tables::{self, OrderAction};
 use crate::ui::trade::{notice, stats_strip};
-use crate::ui::{broker::badge, dialog, kit, sheet, theme};
+use crate::ui::{
+    broker::badge,
+    kit::{self, dialog, sheet},
+    theme,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BrokerTab {

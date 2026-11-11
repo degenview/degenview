@@ -8,9 +8,9 @@ use super::prompt::{self, Mode, Turn};
 use super::{Assistant, Entry, Notice, Proposal, ToolStep};
 use crate::pine_studio::editor::diff_view;
 use crate::service::llm::ProviderKind;
-use crate::ui::error_notice::{self, ErrorEvent, ErrorNotice};
 use crate::ui::icons::{self, Icon};
-use crate::ui::markdown_view;
+use crate::ui::kit::error_notice::{self, ErrorEvent, ErrorNotice};
+use crate::ui::kit::markdown_view;
 use crate::ui::{kit, theme};
 use eframe::egui::{
     self, Align, Align2, Color32, FontId, Id, Key, Layout, Margin, Modifiers, Rect, Sense, Ui,

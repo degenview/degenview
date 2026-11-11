@@ -14,7 +14,7 @@ use super::profiler::ui::{self, TabView};
 use super::profiler::{Profile, Status};
 use super::{Cmd, OpenScript, PineStudio};
 use crate::pine::syntax::token::Diagnostic;
-use crate::ui::split::{self, Axis, DefaultLength, SplitSpec, SplitState};
+use crate::ui::kit::split::{self, Axis, DefaultLength, SplitSpec, SplitState};
 use crate::ui::theme;
 use eframe::egui::{self, Align, Id, RichText, Ui, pos2};
 use std::cell::{Cell, RefCell};

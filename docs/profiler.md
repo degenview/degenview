@@ -113,7 +113,7 @@ Relevant areas may include:
     src/ui/pine/style_view.rs
 
     src/workspace.rs
-    src/ui/chart_card.rs
+    src/ui/chart/card/mod.rs
     src/ui/theme.rs
     src/ui/kit.rs
 

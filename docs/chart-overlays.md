@@ -19,12 +19,12 @@ id, and nothing a script, alert, drawing or paper order reads looks at them: tho
 | What the card is told about a market's data (`OverlayFeed`, `OverlayStatus`) | `src/model/overlay/feed.rs` |
 | Data: one fetch per market, shared, scheduled | `src/workspace/overlays.rs` (`OverlayHub`) |
 | Add, edit, remove as undo steps; Regular → Percent on the first add | `src/workspace/overlay_actions.rs` |
-| Resolve against the bars in view, lines, tags, crosshair rows | `src/ui/chart_card/overlays.rs` |
-| The overlay card: rows, eye / settings / remove, right-click menu | `src/ui/chart_card/overlay_card.rs` |
-| Settings of one market (shared body) and its popover | `src/ui/overlay_settings.rs`, `src/ui/overlay_settings_popover.rs`, `src/workspace/overlay_actions.rs` |
-| Settings page | `src/ui/chart_settings.rs` (`Tab::Overlays`, "Compare") |
+| Resolve against the bars in view, lines, tags, crosshair rows | `src/ui/chart/card/overlays.rs` |
+| The overlay card: rows, eye / settings / remove, right-click menu | `src/ui/chart/card/overlay_card.rs` |
+| Settings of one market (shared body) and its popover | `src/ui/chart/settings/overlay.rs`, `src/ui/chart/settings/overlay_popover.rs`, `src/workspace/overlay_actions.rs` |
+| Settings page | `src/ui/chart/settings/mod.rs` (`Tab::Overlays`, "Compare") |
 | Object tree section "Compared symbols" | `src/model/chart/object_tree.rs` (`Key::Overlay`), `src/workspace/context.rs` (`apply_tree_action`) |
-| Picker mode | `src/ui/symbol_picker/` (`PickMode`, `Output::Overlay`) |
+| Picker mode | `src/ui/chart/symbol_picker/` (`PickMode`, `Output::Overlay`) |
 
 ## Behaviour
 
@@ -82,7 +82,7 @@ later candle. Paging older history follows the chart's own oldest candle, never 
 ## Overlay card and settings
 
 There are no chips for compared markets next to the ticker. They live on the **overlay card**
-(`ui/chart_card/overlay_card.rs`), the box under the OHLC box that shows while the pointer is on the
+(`ui/chart/card/overlay_card.rs`), the box under the OHLC box that shows while the pointer is on the
 chart. One row per market on the chart, hidden and blocked ones included so they can be shown again
 or removed: colour dot, name, the value at the crosshair bar (the market's own change on the Percent
 and Indexed axes, its price otherwise; a dash where it has no candle or nothing in view; "hidden" for a
@@ -101,7 +101,7 @@ remembers, per chart, the bar and the place it was last drawn at (`Memo` in `ove
 temp memory), which keeps it up while a market's settings popover is open with the pointer elsewhere.
 Not verified: a touch screen, where there is no hover to keep.
 
-**Settings** open in a popover pointing at the row (`OverlaySettingsPopover`, on `ui/popover.rs` like
+**Settings** open in a popover pointing at the row (`OverlaySettingsPopover`, on `ui/kit/popover.rs` like
 the script settings popover), with the market's name and exchange, the same settings as the Compare
 page (colour: the palette or any; line width and style; the price of each candle the line follows:
 open, high, low, close, HL2, HLC3, OHLC4; scale with a sentence on what it does; the last-value tag),
@@ -110,7 +110,7 @@ each one an undo step, because the chart is the preview. The settings body is `o
 shared with the Compare page, which answers with the `OverlayCommand` that makes each change. Only one
 of the script and the market popovers is open at a time; opening the chart settings sheet closes it.
 
-The Compare page of the chart settings (`ui/chart_settings_compare.rs`) has one card per market. The
+The Compare page of the chart settings (`ui/chart/settings/compare.rs`) has one card per market. The
 header always shows the line as drawn (colour, width, dash), the name, the exchange and how the data is
 doing (last price, "Loading…", "Waiting to load", or an orange "Couldn't load: …" / "Same market as the
 chart" / "Not shown on price-based chart types"), with the eye, a menu (Bring to front / forward, Send
@@ -172,7 +172,7 @@ about 11 MB). Candles are paged back only as far as the chart's own oldest candl
 (100,000) caps. A layout with overlays stores about 200 bytes per overlay in its record; iCloud Sync's
 record limit (about 900 KB) is reached at some thousands, and a layout that large is refused by the
 sync validator, not by the app. The cost per frame as the count grows is measured by the ignored test `overlay_cost` in
-`ui/chart_card/overlay_tests.rs` (`cargo test --release overlay_cost -- --ignored --nocapture`); its numbers
+`ui/chart/card/overlay_tests.rs` (`cargo test --release overlay_cost -- --ignored --nocapture`); its numbers
 are not recorded here because it has not been run yet.
 
 ## Persistence

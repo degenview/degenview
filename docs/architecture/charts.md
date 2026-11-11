@@ -24,18 +24,18 @@ changes through `set_chart_type`.
 
 `Drawing` holds the brush and the ruler plus one `Shape` variant that
 carries a typed `Geometry` for every newer tool, all with time+price anchors. The interactive layer
-(`ui::drawing_layer`) is one controller driven by each tool's `Placement`; it reports
+(`ui::drawing::layer`) is one controller driven by each tool's `Placement`; it reports
 `DrawingCommand`s and never mutates drawings. Lines, channels and pitchforks are projected by
-`drawing_layer/line_shapes.rs` from the pure `ui::line_geometry` and `model::drawings::regression`, and a
+`drawing_layer/line_shapes.rs` from the pure `ui::drawing::geometry::line` and `model::drawings::regression`, and a
 line's text is edited in place by `drawing_layer/text_edit.rs`. The chart patterns, Elliott waves
 and cycles are projected by `drawing_layer/pattern_shapes.rs` from `model::{pattern, elliott,
-cycle}` (pivots, ratios, degrees, repeats) and the pure `ui::pattern_geometry` (apex, arcs, sine);
+cycle}` (pivots, ratios, degrees, repeats) and the pure `ui::drawing::geometry::pattern` (apex, arcs, sine);
 see [chart patterns, Elliott waves and cycles](../pattern-tools.md). Positions, forecasts, the
 bars pattern, ghost feed, sector, anchored VWAP, volume profiles and measurers are projected by
 `forecast_shapes.rs` and `volume_shapes.rs` from `model::{position, volume_profile, ghost,
 bars_pattern, measure}`; see [forecasting, volume and measurement tools](../forecast-tools.md). The
 Fibonacci and Gann tools are projected by `fib_shapes.rs` and `gann_shapes.rs` from `model::{fib, gann,
-fib_style}` and the pure `ui::fib_geometry` (sampled curves, annuli, fans); see [Fibonacci and Gann
+fib_style}` and the pure `ui::drawing::geometry::fib` (sampled curves, annuli, fans); see [Fibonacci and Gann
 tools](../fibonacci-gann-tools.md). See
 [drawing tools](../drawing-tools.md). Rulers and crosshairs are transient.
 
@@ -50,7 +50,7 @@ has the keyboard.
 
 A right-click on a chart is answered by the drawing's own menu or by the chart menu
 (`model::chart::context` builds it from a click snapshot and the chart's facts,
-`ui::chart_context_menu` draws it, `workspace/context.rs` owns the open menu and runs the chosen
+`ui::chart::context_menu` draws it, `workspace/context.rs` owns the open menu and runs the chosen
 command). The same module hosts Table view (`model::chart::table`, fed by the card from the bars it
 draws), the Object Tree (`model::chart::object_tree`), the drawing clipboard (`model::chart::clipboard`),
 the cursor time lock, and the alert lines (`model::alert::line`). See

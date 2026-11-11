@@ -14,8 +14,8 @@ use crate::model::paper::{
 };
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit;
+use crate::ui::kit::sheet;
 use crate::ui::paper::form::{dropdown_field, field_footer, field_label, text_field};
-use crate::ui::sheet;
 use crate::ui::theme;
 use eframe::egui::{self, Id};
 

@@ -11,8 +11,8 @@ use eframe::egui::{
     self, Color32, CornerRadius, Pos2, Rect, Shape, Stroke, StrokeKind, Ui, Vec2, pos2, vec2,
 };
 
-pub use crate::ui::art::SIZE;
-use crate::ui::art::{Art, CARD, ghost};
+pub use crate::ui::kit::art::SIZE;
+use crate::ui::kit::art::{Art, CARD, ghost};
 
 /// Draws `section`'s picture in `rect` (a [`SIZE`] box).
 pub fn paint(ui: &Ui, rect: Rect, section: SettingsSection) {

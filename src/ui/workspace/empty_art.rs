@@ -2,8 +2,8 @@
 //! market the search finds floating around it. Drawn in the style of the Settings pictures
 //! (`settings_art`), larger because it is the page's one image. Painter code only.
 
-use crate::ui::art::Art;
 use crate::ui::icons::Icon;
+use crate::ui::kit::art::Art;
 use crate::ui::{kit, theme};
 use eframe::egui::{Color32, Rect, Shape, Stroke, StrokeKind, Ui, Vec2, pos2, vec2};
 
@@ -138,7 +138,7 @@ impl Art<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ui::art::test_support;
+    use crate::ui::kit::art::test_support;
     use crate::ui::theme::AppTheme;
 
     #[test]

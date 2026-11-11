@@ -12,7 +12,7 @@ use crate::model::{DrawingCommand, Geometry, Tool};
 use crate::service::link_fetch::{self, FetchError};
 use crate::service::work_queue;
 use crate::ui::LinkRequest;
-use crate::ui::content_sheet::{self, ConsentAction, LinkSheet, LinkSheetAction};
+use crate::ui::drawing::content::sheet::{self, ConsentAction, LinkSheet, LinkSheetAction};
 use eframe::egui;
 use std::sync::mpsc::{self, Receiver};
 
@@ -78,7 +78,7 @@ impl ChartWorkspace {
     pub(super) fn tick_links(&mut self, ctx: &egui::Context) {
         self.take_fetched();
         if let Some(mut sheet) = self.content.links.sheet.take() {
-            let action = content_sheet::show_link(
+            let action = sheet::show_link(
                 ctx,
                 LinkSheet {
                     text: &mut sheet.text,
@@ -96,7 +96,7 @@ impl ChartWorkspace {
             }
         }
         if let Some(ask) = self.content.links.consent.take() {
-            match content_sheet::show_consent(ctx) {
+            match sheet::show_consent(ctx) {
                 ConsentAction::None => self.content.links.consent = Some(ask),
                 ConsentAction::Allow => {
                     self.allow_previews();

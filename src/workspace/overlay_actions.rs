@@ -5,7 +5,7 @@ use super::undo::{RESTYLE_WINDOW, Snapshot, UndoEntry};
 use crate::model::InstrumentId;
 use crate::model::chart::price_scale::PriceScaleMode;
 use crate::model::overlay::{AddOutcome, OverlayCommand, OverlayId, OverlayScale};
-use crate::ui::overlay_settings_popover::{self, OverlaySettingsPopover};
+use crate::ui::chart::settings::overlay_popover::{self, OverlaySettingsPopover};
 use eframe::egui;
 use std::time::Instant;
 
@@ -117,35 +117,35 @@ impl ChartWorkspace {
     /// market (or chart) does.
     pub(super) fn show_overlay_popover(&mut self, ctx: &egui::Context) {
         let Some(popover) = self.overlay_popover.take() else {
-            overlay_settings_popover::set_open(ctx, None);
+            overlay_popover::set_open(ctx, None);
             return;
         };
         let (chart_id, overlay_id) = (popover.chart_id(), popover.overlay_id());
         let Some(chart) = self.charts.iter().find(|chart| chart.id == chart_id) else {
-            overlay_settings_popover::set_open(ctx, None);
+            overlay_popover::set_open(ctx, None);
             return;
         };
         let Some(overlay) = chart.overlays.get(overlay_id) else {
-            overlay_settings_popover::set_open(ctx, None);
+            overlay_popover::set_open(ctx, None);
             return;
         };
-        let own_scales = overlay_settings_popover::own_scales(chart.overlays.iter());
+        let own_scales = overlay_popover::own_scales(chart.overlays.iter());
         let outcome = popover.show(ctx, overlay, &own_scales, chart.scale_mode);
         match outcome {
-            overlay_settings_popover::Outcome::Close => {
-                overlay_settings_popover::set_open(ctx, None);
+            overlay_popover::Outcome::Close => {
+                overlay_popover::set_open(ctx, None);
             }
-            overlay_settings_popover::Outcome::Open => {
-                overlay_settings_popover::set_open(ctx, Some((chart_id, overlay_id)));
+            overlay_popover::Outcome::Open => {
+                overlay_popover::set_open(ctx, Some((chart_id, overlay_id)));
                 self.overlay_popover = Some(popover);
             }
-            overlay_settings_popover::Outcome::Command(command) => {
+            overlay_popover::Outcome::Command(command) => {
                 let removed = matches!(command, OverlayCommand::Remove(_));
                 self.apply_overlay_command(chart_id, command);
                 if removed {
-                    overlay_settings_popover::set_open(ctx, None);
+                    overlay_popover::set_open(ctx, None);
                 } else {
-                    overlay_settings_popover::set_open(ctx, Some((chart_id, overlay_id)));
+                    overlay_popover::set_open(ctx, Some((chart_id, overlay_id)));
                     self.overlay_popover = Some(popover);
                 }
             }
@@ -240,7 +240,7 @@ mod tests {
 
     #[test]
     fn the_toolbars_plus_opens_the_compare_picker_on_a_chart_that_can_take_one() {
-        use crate::ui::symbol_picker::PickMode;
+        use crate::ui::chart::symbol_picker::PickMode;
         let mut workspace = empty_workspace(1);
         let a = chart_with_drawings(&mut workspace, "BTCUSDT", &[]);
         workspace.focus_chart(a);

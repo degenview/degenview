@@ -24,7 +24,7 @@ use crate::pine_studio::debug::{DebugPanel, PanelAction, PanelUi, Section};
 use crate::pine_studio::library::prefs::LayoutPrefs;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit;
-use crate::ui::split::{self, Axis, DefaultLength, SplitSpec, SplitState};
+use crate::ui::kit::split::{self, Axis, DefaultLength, SplitSpec, SplitState};
 use crate::ui::theme;
 
 pub use toolbar::panel_button;

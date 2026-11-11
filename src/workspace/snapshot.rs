@@ -421,7 +421,7 @@ impl ChartWorkspace {
         if let Some(text) = self.progress_notice() {
             // A result still on screen (an error that came with the start, say) keeps its place;
             // the progress sits over it instead of under it.
-            ui::chart_notice::show_progress(
+            ui::chart::notice::show_progress(
                 ctx,
                 Id::new(("snapshot-progress", self.id)),
                 &text,

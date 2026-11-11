@@ -4,7 +4,7 @@
 //! **Levels are worked from stored prices and bar indexes, never from pixels**, so a retracement is
 //! the same on a Regular, Percent, Indexed to 100 or Logarithmic axis and after any zoom. The
 //! tools that TradingView builds in screen space (circles, arcs, the spiral, the wedge) are worked
-//! in the projection (`ui::fib_geometry`), and only their ratios live here. Pure: no egui types.
+//! in the projection (`ui::drawing::geometry::fib`), and only their ratios live here. Pure: no egui types.
 
 pub mod gann;
 pub mod style;

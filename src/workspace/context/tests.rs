@@ -1054,7 +1054,7 @@ fn tree_rig() -> (Rig, u64) {
 #[test]
 fn the_tree_hides_and_shows_a_drawing_and_undo_reverts_it() {
     use crate::model::chart::object_tree::Key as TreeKey;
-    use crate::ui::object_tree::TreeAction;
+    use crate::ui::chart::object_tree::TreeAction;
     let (mut rig, chart) = tree_rig();
     rig.workspace
         .apply_tree_action(chart, TreeAction::ToggleShown(TreeKey::Drawing(1)));
@@ -1070,7 +1070,7 @@ fn the_tree_hides_and_shows_a_drawing_and_undo_reverts_it() {
 
 #[test]
 fn the_tree_locks_and_unlocks_a_drawing() {
-    use crate::ui::object_tree::TreeAction;
+    use crate::ui::chart::object_tree::TreeAction;
     let (mut rig, chart) = tree_rig();
     rig.workspace
         .apply_tree_action(chart, TreeAction::ToggleLocked(2));
@@ -1083,7 +1083,7 @@ fn the_tree_locks_and_unlocks_a_drawing() {
 #[test]
 fn the_tree_deletes_a_drawing_undoably_and_never_a_locked_one() {
     use crate::model::chart::object_tree::Key as TreeKey;
-    use crate::ui::object_tree::TreeAction;
+    use crate::ui::chart::object_tree::TreeAction;
     let (mut rig, chart) = tree_rig();
     rig.workspace.selected_drawing = Some((chart, vec![1, 2]));
     rig.workspace
@@ -1120,7 +1120,7 @@ fn compared(rig: &mut Rig, chart: u64) -> crate::model::overlay::OverlayId {
 #[test]
 fn the_tree_hides_and_removes_a_compared_market_and_undo_restores_it() {
     use crate::model::chart::object_tree::Key as TreeKey;
-    use crate::ui::object_tree::TreeAction;
+    use crate::ui::chart::object_tree::TreeAction;
     let (mut rig, chart) = tree_rig();
     let id = compared(&mut rig, chart);
     let visible = |rig: &mut Rig| {
@@ -1147,8 +1147,8 @@ fn the_tree_hides_and_removes_a_compared_market_and_undo_restores_it() {
 #[test]
 fn the_tree_opens_the_compare_page_for_a_compared_market_and_leaves_the_drawing_selection() {
     use crate::model::chart::object_tree::Key as TreeKey;
-    use crate::ui::chart_settings::Tab;
-    use crate::ui::object_tree::TreeAction;
+    use crate::ui::chart::object_tree::TreeAction;
+    use crate::ui::chart::settings::Tab;
     let (mut rig, chart) = tree_rig();
     let id = compared(&mut rig, chart);
     rig.workspace.selected_drawing = Some((chart, vec![2]));
@@ -1164,7 +1164,7 @@ fn the_tree_opens_the_compare_page_for_a_compared_market_and_leaves_the_drawing_
 #[test]
 fn the_tree_selects_a_drawing_as_the_charts_one_selection() {
     use crate::model::chart::object_tree::Key as TreeKey;
-    use crate::ui::object_tree::TreeAction;
+    use crate::ui::chart::object_tree::TreeAction;
     let (mut rig, chart) = tree_rig();
     rig.workspace
         .apply_tree_action(chart, TreeAction::Select(TreeKey::Drawing(2)));
@@ -1173,7 +1173,7 @@ fn the_tree_selects_a_drawing_as_the_charts_one_selection() {
 
 #[test]
 fn the_tree_reorders_drawings_in_the_stack() {
-    use crate::ui::object_tree::TreeAction;
+    use crate::ui::chart::object_tree::TreeAction;
     let (mut rig, chart) = tree_rig();
     rig.workspace
         .apply_tree_action(chart, TreeAction::Reorder(1, 1));
@@ -1185,7 +1185,7 @@ fn the_tree_reorders_drawings_in_the_stack() {
 #[test]
 fn the_tree_hides_and_removes_indicators_and_scripts() {
     use crate::model::chart::object_tree::{IndicatorKey, Key as TreeKey};
-    use crate::ui::object_tree::TreeAction;
+    use crate::ui::chart::object_tree::TreeAction;
     let (mut rig, chart) = tree_rig();
     {
         let card = rig.chart_mut(chart);
@@ -1223,7 +1223,7 @@ fn the_tree_hides_and_removes_indicators_and_scripts() {
 #[test]
 fn the_tree_can_delete_a_drawing_from_a_newer_version_and_nothing_else_touches_it() {
     use crate::model::chart::object_tree::Key as TreeKey;
-    use crate::ui::object_tree::TreeAction;
+    use crate::ui::chart::object_tree::TreeAction;
     let (mut rig, chart) = tree_rig();
     let future = Drawing::Unreadable(serde_json::json!({"Spiral": {"id": 40, "blob": [1, 2]}}));
     rig.chart_mut(chart).drawings.push(future.clone());
@@ -1262,7 +1262,7 @@ fn the_tree_can_delete_a_drawing_from_a_newer_version_and_nothing_else_touches_i
 #[test]
 fn a_tree_action_for_a_closed_chart_does_nothing() {
     use crate::model::chart::object_tree::Key as TreeKey;
-    use crate::ui::object_tree::TreeAction;
+    use crate::ui::chart::object_tree::TreeAction;
     let (mut rig, chart) = tree_rig();
     rig.workspace
         .charts

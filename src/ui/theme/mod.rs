@@ -1,3 +1,6 @@
+#[cfg(test)]
+mod fonts_tests;
+
 use eframe::egui::{self, Color32};
 use serde::{Deserialize, Serialize};
 

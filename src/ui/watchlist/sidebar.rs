@@ -16,9 +16,9 @@ use crate::model::watchlist::{
     WatchlistNotice, WatchlistSort, WatchlistSortKey,
 };
 use crate::ui::icons::{self, Icon};
+use crate::ui::kit::sheet;
+use crate::ui::kit::source_logo;
 use crate::ui::kit::{self, Confirm, ConfirmOutcome};
-use crate::ui::sheet;
-use crate::ui::source_logo;
 use crate::ui::theme;
 use crate::ui::watchlist::rows::{self, RowStyle};
 use crate::ui::watchlist::style::{self as style, LEADING_INSET, TRAILING_INSET};

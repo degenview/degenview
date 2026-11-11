@@ -13,7 +13,7 @@
 use crate::model::PriceFormat;
 use crate::model::alert::AlertId;
 use crate::model::alert::line::{AlertLine, above_after_drag, dropped_level};
-use crate::ui::chart_card::PriceScale;
+use crate::ui::chart::card::PriceScale;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::RED;
 use crate::ui::{accessibility, theme};

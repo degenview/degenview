@@ -178,7 +178,7 @@ with no levels still shows them. Nothing derived (a pixel, a radius, a ray) is s
 ## Performance
 
 A drawing's screen shape is cached until its anchors, its style or the view change. Every curve is
-sampled where it crosses the plot and to a quarter of a pixel (`ui::fib_geometry`), with a budget of
+sampled where it crosses the plot and to a quarter of a pixel (`ui::drawing::geometry::fib`), with a budget of
 6,000 points and at most 512 starting pieces whatever the anchors are, and a fill is made of convex
 pieces cut to the plot, so a circle a million pixels wide is as cheap and as smooth as one on screen. A
 list has at most 24 levels, so a set of time lines or levels is at most that many lines.
@@ -188,7 +188,7 @@ list has at most 24 levels, so a set of time lines or levels is at most that man
 - `model::fib`, `fib_style`, `gann`: the level arithmetic (retracement, extension, logarithm, bar
   lines), the lists (add, remove, reorder, restore, clamp, repeat), the angle and arc names, the
   scale; every number worked by hand.
-- `ui::fib_geometry`: a ring is one radius everywhere and flat to a quarter of a pixel, a circle far
+- `ui::drawing::geometry::fib`: a ring is one radius everywhere and flat to a quarter of a pixel, a circle far
   bigger than the plot is sampled only where it crosses, the spiral is φ wider a quarter turn on and
   bounded, the discs, annuli and fans have the right area and cover the right points.
 - `drawing_layer::fib_tests` and `gann_tests`: each tool on a plot of 100 px a bar and 10 px a price

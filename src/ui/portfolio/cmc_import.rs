@@ -10,13 +10,16 @@
 use crate::model::portfolio::csv::{CmcPreview, CmcRow, CsvPreview, Mint};
 use crate::model::portfolio::{PortfolioAsset, PortfolioCurrency, PortfolioTransaction};
 use crate::ui::icons::{self, Icon};
+use crate::ui::kit::sheet;
 use crate::ui::portfolio::grid;
 use crate::ui::portfolio::import_preview::{plural, warning_title};
 use crate::ui::portfolio::sheet_parts::{card_background, pill, problem_card, status_dot};
 use crate::ui::portfolio::table::paint_asset_icon;
-use crate::ui::sheet;
 use crate::ui::theme;
-use crate::ui::{add_chart_art, add_chart_sheet, kit, source_logo};
+use crate::ui::{
+    chart::add::{art, sheet as add_chart_sheet},
+    kit::{self, source_logo},
+};
 use eframe::egui::{
     self, Color32, CursorIcon, Id, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2,
 };
@@ -379,7 +382,7 @@ pub fn show(
         sheet::inset(ui, |ui| {
             add_chart_sheet::header(
                 ui,
-                add_chart_art::Scene::CoinMarketCap,
+                art::Scene::CoinMarketCap,
                 "Import from CoinMarketCap",
                 &subtitle(preview),
             );
