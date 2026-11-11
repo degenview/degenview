@@ -2124,12 +2124,73 @@ pub fn tinted_button(
     busy: bool,
     min_width: f32,
 ) -> egui::Response {
+    button_in_tint(
+        ui,
+        label,
+        ButtonLook {
+            tint,
+            label: Color32::WHITE,
+            height: 32.0,
+            size: size::BODY + 1.0,
+            radius: 8.0,
+        },
+        enabled,
+        busy,
+        min_width,
+    )
+}
+
+/// The call to action of a sheet: [`tinted_button`], taller and larger, with the label colour
+/// the caller chooses for the fill (dark on a light green).
+pub fn cta_button(
+    ui: &mut Ui,
+    label: &str,
+    tint: Color32,
+    label_color: Color32,
+    enabled: bool,
+    busy: bool,
+    min_width: f32,
+) -> egui::Response {
+    button_in_tint(
+        ui,
+        label,
+        ButtonLook {
+            tint,
+            label: label_color,
+            height: 46.0,
+            size: size::BODY + 3.0,
+            radius: 10.0,
+        },
+        enabled,
+        busy,
+        min_width,
+    )
+}
+
+struct ButtonLook {
+    tint: Color32,
+    /// The label's colour while the button can be pressed.
+    label: Color32,
+    height: f32,
+    size: f32,
+    radius: f32,
+}
+
+fn button_in_tint(
+    ui: &mut Ui,
+    label: &str,
+    look: ButtonLook,
+    enabled: bool,
+    busy: bool,
+    min_width: f32,
+) -> egui::Response {
+    let tint = look.tint;
     let color = if enabled || busy {
-        Color32::WHITE
+        look.label
     } else {
         primary(0.55)
     };
-    let text = galley(ui, label, size::BODY + 1.0, SEMIBOLD, color, f32::INFINITY);
+    let text = galley(ui, label, look.size, SEMIBOLD, color, f32::INFINITY);
     let spinner = if busy { 22.0 } else { 0.0 };
     let width = (text.size().x + 36.0 + spinner).max(min_width);
     let sense = if enabled {
@@ -2137,7 +2198,7 @@ pub fn tinted_button(
     } else {
         Sense::hover()
     };
-    let (rect, response) = ui.allocate_exact_size(vec2(width, 32.0), sense);
+    let (rect, response) = ui.allocate_exact_size(vec2(width, look.height), sense);
     let response = crate::ui::accessibility::label(response, label);
     let pressed = response.is_pointer_button_down_on() && enabled;
     let hovered = response.hovered() && enabled;
@@ -2150,17 +2211,14 @@ pub fn tinted_button(
     } else {
         tint
     };
-    ui.painter().rect_filled(rect, 8.0, fill);
+    ui.painter().rect_filled(rect, look.radius, fill);
     let content = text.size().x + spinner;
     let mut x = rect.center().x - content / 2.0;
     if busy {
-        egui::Spinner::new()
-            .size(14.0)
-            .color(Color32::WHITE)
-            .paint_at(
-                ui,
-                Rect::from_center_size(pos2(x + 7.0, rect.center().y), Vec2::splat(14.0)),
-            );
+        egui::Spinner::new().size(14.0).color(color).paint_at(
+            ui,
+            Rect::from_center_size(pos2(x + 7.0, rect.center().y), Vec2::splat(14.0)),
+        );
         x += spinner;
     }
     ui.painter()

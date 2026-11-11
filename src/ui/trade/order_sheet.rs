@@ -10,8 +10,10 @@ use std::time::{Duration, Instant};
 use degenview_brokers::{Decimal, MarketRef, Side};
 use eframe::egui::{self, Id, vec2};
 
-use super::fields::{self, Edit};
+use super::fields::{self, Edit, Hero};
+use super::figures;
 use super::venue_pill::{self, PillAction};
+use crate::model::DataSource;
 use crate::model::broker_ticket::{PreviewGate, parse_decimal};
 use crate::model::trading_venue::TradingVenue;
 use crate::trading::backend::TradingBackend;
@@ -50,6 +52,8 @@ pub struct SheetState {
     stage: Stage,
     notice: Option<(String, bool, Instant)>,
     cancels: Vec<Task<CancelResult>>,
+    /// Whether the open-orders list is unfolded; none until the user folds it either way.
+    orders_open: Option<bool>,
     /// Where the Buy/Sell button was drawn last frame, for the tests that press it.
     #[cfg(test)]
     pub(crate) button: Option<egui::Rect>,
@@ -68,6 +72,7 @@ impl Default for SheetState {
             stage: Stage::Editing,
             notice: None,
             cancels: Vec::new(),
+            orders_open: None,
             #[cfg(test)]
             button: None,
             #[cfg(test)]
@@ -148,6 +153,16 @@ impl SheetState {
     }
 }
 
+/// What the focused chart knows of its market, for the top of the sheet: where its logo comes
+/// from, the last price, and the move the chart's own header shows (price and percent over the
+/// candles on screen: not a 24-hour figure).
+#[derive(Clone, Debug)]
+pub struct MarketFace {
+    pub source: DataSource,
+    pub last: Option<f64>,
+    pub change: Option<(f64, f64)>,
+}
+
 pub struct SheetInput<'a> {
     /// The venues the user enabled, for the pill's menu.
     pub enabled: &'a [VenueInfo],
@@ -157,6 +172,8 @@ pub struct SheetInput<'a> {
     pub current: Option<(&'a VenueInfo, &'a dyn TradingBackend)>,
     /// The focused chart's market, if it is one.
     pub market: Option<MarketRef>,
+    /// The same chart's logo source, last price and move.
+    pub face: Option<MarketFace>,
     /// The user asked to confirm resting (limit and stop) orders too.
     pub confirm_resting: bool,
     /// A replay is running: no order may be started from its prices.
@@ -248,14 +265,16 @@ fn header(
             {
                 actions.push(SheetAction::Close);
             }
-            if let Some(market) = &input.market {
-                ui.add_space(4.0);
-                ui.label(kit::text(
-                    &market.symbol,
-                    kit::size::BODY,
-                    kit::SEMIBOLD,
-                    theme::text_primary(),
-                ));
+            if icons::button(
+                ui,
+                Icon::Gear,
+                22.0,
+                theme::text_secondary(),
+                "Trading settings",
+            )
+            .clicked()
+            {
+                actions.push(SheetAction::OpenSettings);
             }
         });
     });
@@ -381,7 +400,14 @@ fn body(
         state.prefilled = false;
         state.stage = Stage::Editing;
     }
-    let rules = match backend.market(&market) {
+    let access = backend.market(&market);
+    let ready_rules = match &access {
+        MarketAccess::Ready(rules) => Some(rules.as_ref()),
+        MarketAccess::Unavailable(_) => None,
+    };
+    hero(ui, &market, input.face.as_ref(), ready_rules, backend);
+    ui.add_space(14.0);
+    let rules = match access {
         MarketAccess::Ready(rules) => rules,
         MarketAccess::Unavailable(Unavailable { kind, text }) => {
             unavailable_card(ui, kind, &text);
@@ -389,6 +415,36 @@ fn body(
         }
     };
     form(ui, state, info, backend, bstate, &market, &rules, input);
+}
+
+/// The market in focus: logo, symbol and pair, last price and its move.
+fn hero(
+    ui: &mut egui::Ui,
+    market: &MarketRef,
+    face: Option<&MarketFace>,
+    rules: Option<&MarketRules>,
+    backend: &dyn TradingBackend,
+) {
+    let increment = rules.map(|rules| rules.price_increment);
+    let last = face
+        .and_then(|face| face.last)
+        .and_then(|last| Decimal::try_from(last).ok())
+        .or_else(|| backend.quote(market).and_then(|quote| quote.last));
+    fields::market_hero(
+        ui,
+        &Hero {
+            symbol: &market.symbol,
+            source: face.map(|face| face.source),
+            subtitle: rules.map(|rules| format!("{} / {}", rules.base_asset, rules.quote_asset)),
+            price: last.map(|last| figures::price_label(last, increment)),
+            change: face.and_then(|face| face.change).map(|(delta, percent)| {
+                (
+                    figures::price_move_text(delta, percent, increment),
+                    delta >= 0.0,
+                )
+            }),
+        },
+    );
 }
 
 /// Text for a price or size typed back into a field: no trailing zeros.
@@ -435,36 +491,42 @@ fn form(
     if state.draft.side != before_side {
         state.stage = Stage::Editing;
     }
-    ui.add_space(10.0);
+    ui.add_space(12.0);
+    let side_tint = match state.draft.side {
+        Side::Buy => theme::UP,
+        Side::Sell => theme::DOWN,
+    };
     let classes: Vec<(OrderClass, &str)> = rules
         .caps
         .order_classes
         .iter()
         .map(|class| (*class, class.label()))
         .collect();
-    let width = ui.available_width();
-    kit::segmented_filling(
-        ui,
-        Id::new("trade-class"),
-        &classes,
-        &mut state.draft.class,
-        width,
-    );
+    fields::class_tiles(ui, &classes, &mut state.draft.class, side_tint);
 
     let check = backend.check(market, &state.draft);
-    ui.add_space(10.0);
-    if let Some(quote) = &quote {
-        quote_strip(ui, quote, rules);
-        ui.add_space(8.0);
-    }
+    ui.add_space(14.0);
 
     let draft_class = state.draft.class;
     let side = state.draft.side;
     let quote_unit = rules.quote_asset.as_str();
     let start = quote.as_ref().and_then(|quote| quote.reference(side));
+    // The first price row says where the market is: the last price, else what an order meets.
+    let mut price_hint = quote.as_ref().and_then(|quote| {
+        let increment = Some(rules.price_increment);
+        match (quote.last, quote.reference(side)) {
+            (Some(last), _) => Some(format!("Last {}", figures::price_label(last, increment))),
+            (None, Some(reference)) => Some(format!(
+                "{} {}",
+                if side == Side::Buy { "Ask" } else { "Bid" },
+                figures::price_label(reference, increment)
+            )),
+            _ => None,
+        }
+    });
 
     if state.draft.uses_stop_price() {
-        paper_form::field_label(ui, &format!("Stop price ({quote_unit})"));
+        fields::label_row(ui, "Stop price", price_hint.take().as_deref());
         number(
             ui,
             "stop",
@@ -476,15 +538,10 @@ fn form(
             Some(rules.price_increment),
             start,
         );
-        ui.add_space(10.0);
+        ui.add_space(12.0);
     }
     if state.draft.uses_limit_price() {
-        let label = if draft_class == OrderClass::StopLimit {
-            format!("Limit price ({quote_unit})")
-        } else {
-            format!("Price ({quote_unit})")
-        };
-        paper_form::field_label(ui, &label);
+        fields::label_row(ui, "Limit price", price_hint.take().as_deref());
         number(
             ui,
             "price",
@@ -496,19 +553,36 @@ fn form(
             Some(rules.price_increment),
             start,
         );
-        ui.add_space(10.0);
+        ui.add_space(12.0);
     }
 
     let spends = state.draft.spend_in_quote;
     let (size_label, size_unit) = if spends {
-        (format!("Spend ({quote_unit})"), quote_unit)
+        ("Spend", quote_unit)
     } else {
-        (
-            format!("Amount ({})", rules.base_asset),
-            rules.base_asset.as_str(),
-        )
+        ("Amount", rules.base_asset.as_str())
     };
-    paper_form::field_label(ui, &size_label);
+    // The most the account could put into this order, as far as it is known.
+    let most = if spends {
+        None
+    } else {
+        let at = if state.draft.uses_limit_price() {
+            parse_decimal(&state.draft.price_text).ok().flatten()
+        } else {
+            None
+        };
+        backend.max_size(market, side, at).map(|most| {
+            format!(
+                "≈ {} {}",
+                crate::model::broker_ticket::display(floor_to_increment(
+                    most,
+                    rules.size_increment
+                )),
+                rules.base_asset
+            )
+        })
+    };
+    fields::label_row(ui, size_label, most.as_deref());
     let step = if spends {
         None
     } else {
@@ -530,7 +604,7 @@ fn form(
     }
     ui.add_space(8.0);
     presets(ui, state, backend, market, rules);
-    ui.add_space(10.0);
+    ui.add_space(14.0);
 
     if rules.caps.quote_sized_market && side == Side::Buy && draft_class == OrderClass::Market {
         ui.horizontal(|ui| {
@@ -543,17 +617,18 @@ fn form(
                 theme::text_primary(),
             ));
         });
-        ui.add_space(10.0);
+        ui.add_space(14.0);
     }
 
-    paper_form::field_label(ui, &format!("Total ({quote_unit})"));
-    let total = check
-        .estimate
-        .notional
-        .map_or_else(|| "—".to_owned(), crate::model::broker_ticket::display);
-    fields::figure_field(ui, &total, quote_unit);
-    cost_lines(ui, &check, state.preview.result());
-    ui.add_space(10.0);
+    let (venue_fee, venue_total) = {
+        let preview = state.preview.result();
+        (
+            preview.and_then(|preview| preview.fee),
+            preview.and_then(|preview| preview.total),
+        )
+    };
+    summary(ui, side, quote_unit, &check, venue_fee, venue_total);
+    ui.add_space(14.0);
 
     options(ui, state, rules, &check);
 
@@ -595,7 +670,15 @@ fn form(
         && !input.replay
         && matches!(state.stage, Stage::Editing);
     let width = ui.available_width();
-    let response = kit::tinted_button(ui, &label, tint, can_send, sending, width);
+    let response = kit::cta_button(
+        ui,
+        &label,
+        tint,
+        fields::on_tint(tint),
+        can_send,
+        sending,
+        width,
+    );
     #[cfg(test)]
     {
         state.button = Some(response.rect);
@@ -623,6 +706,8 @@ fn form(
     poll_cancels(state);
 
     ui.add_space(16.0);
+    super::notice::divider(ui);
+    ui.add_space(8.0);
     open_orders(ui, state, backend);
 }
 
@@ -653,24 +738,6 @@ fn number(
     edit
 }
 
-fn quote_strip(ui: &mut egui::Ui, quote: &crate::trading::model::QuoteView, rules: &MarketRules) {
-    let text = match (quote.bid, quote.ask, quote.last) {
-        (Some(bid), Some(ask), _) => format!(
-            "Bid {}   ·   Ask {}",
-            confirm::price_text(bid, rules.price_increment),
-            confirm::price_text(ask, rules.price_increment)
-        ),
-        (_, _, Some(last)) => format!("Last {}", confirm::price_text(last, rules.price_increment)),
-        _ => return,
-    };
-    ui.label(kit::text(
-        &text,
-        kit::size::CAPTION + 1.0,
-        kit::REGULAR,
-        theme::text_secondary(),
-    ));
-}
-
 /// 10%, 25%, 50%, 75% and 100% of what the account can afford.
 fn presets(
     ui: &mut egui::Ui,
@@ -679,15 +746,7 @@ fn presets(
     market: &MarketRef,
     rules: &MarketRules,
 ) {
-    let mut chosen = None;
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 6.0;
-        for percent in [10u32, 25, 50, 75, 100] {
-            if kit::value_chip(ui, &format!("{percent}%"), false).clicked() {
-                chosen = Some(percent);
-            }
-        }
-    });
+    let chosen = fields::percent_row(ui);
     let Some(percent) = chosen else { return };
     let side = state.draft.side;
     let fraction = Decimal::from(percent) / Decimal::from(100);
@@ -718,44 +777,56 @@ fn presets(
     }
 }
 
-fn cost_lines(
+/// What the order comes to: its value, the fee (with its share), the total.
+fn summary(
     ui: &mut egui::Ui,
+    side: Side,
+    unit: &str,
     check: &DraftCheck,
-    preview: Option<&crate::trading::draft::PreviewResult>,
+    venue_fee: Option<Decimal>,
+    venue_total: Option<Decimal>,
 ) {
     let display = crate::model::broker_ticket::display;
-    let mut rows: Vec<(&str, String)> = Vec::new();
-    if let Some(fee) = preview.and_then(|p| p.fee).or(check.estimate.fee) {
-        rows.push(("Fee ≈", display(fee)));
-    }
+    let amount = |value: Option<Decimal>| {
+        format!("{} {unit}", value.map_or_else(|| "—".to_owned(), display))
+    };
+    let value = check.estimate.notional;
+    let fee = venue_fee.or(check.estimate.fee);
+    let mut rows = vec![fields::SummaryRow {
+        label: "Order value".to_owned(),
+        value: amount(value),
+        strong: false,
+        info: None,
+    }];
+    rows.push(fields::SummaryRow {
+        label: match value.zip(fee).and_then(|(value, fee)| figures::fee_percent(fee, value)) {
+            Some(percent) => format!("Trading fee ({percent}%)"),
+            None => "Trading fee".to_owned(),
+        },
+        value: amount(fee),
+        strong: false,
+        info: Some(
+            "What trading this order is expected to cost. The venue's own check replaces the estimate once it has run.",
+        ),
+    });
     // Margin only says something when it is not simply the order's value (leverage).
     if let Some(margin) = check.estimate.margin
-        && check.estimate.notional != Some(margin)
+        && value != Some(margin)
     {
-        rows.push(("Margin", display(margin)));
-    }
-    if rows.is_empty() {
-        return;
-    }
-    ui.add_space(6.0);
-    for (label, value) in rows {
-        ui.horizontal(|ui| {
-            ui.label(kit::text(
-                label,
-                kit::size::CAPTION + 1.0,
-                kit::REGULAR,
-                theme::text_secondary(),
-            ));
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.label(kit::text(
-                    &value,
-                    kit::size::CAPTION + 1.0,
-                    kit::REGULAR,
-                    theme::text_secondary(),
-                ));
-            });
+        rows.push(fields::SummaryRow {
+            label: "Margin".to_owned(),
+            value: amount(Some(margin)),
+            strong: false,
+            info: None,
         });
     }
+    rows.push(fields::SummaryRow {
+        label: "Total".to_owned(),
+        value: amount(figures::order_total(side, value, fee, venue_total)),
+        strong: true,
+        info: None,
+    });
+    fields::summary_card(ui, &rows);
 }
 
 /// The venue-specific switches (post only, reduce only, take profit and stop loss) and the time in
@@ -763,7 +834,7 @@ fn cost_lines(
 fn options(ui: &mut egui::Ui, state: &mut SheetState, rules: &MarketRules, check: &DraftCheck) {
     let caps = &rules.caps;
     if caps.time_in_force.len() > 1 && state.draft.uses_limit_price() {
-        paper_form::field_label(ui, "Time in force");
+        fields::label_row(ui, "Time in force", None);
         let labels: Vec<String> = caps
             .time_in_force
             .iter()
@@ -774,10 +845,15 @@ fn options(ui: &mut egui::Ui, state: &mut SheetState, rules: &MarketRules, check
             .iter()
             .position(|tif| *tif == state.draft.tif)
             .unwrap_or(0);
-        if let Some(index) = paper_form::dropdown_field(ui, &labels, selected, true) {
+        let look = paper_form::DropdownLook {
+            leading: Some(Icon::Clock),
+            height: fields::FIELD_HEIGHT,
+            chevron: Icon::ChevronDown,
+        };
+        if let Some(index) = paper_form::dropdown_field_with(ui, &labels, selected, true, look) {
             state.draft.tif = caps.time_in_force[index];
         }
-        ui.add_space(10.0);
+        ui.add_space(14.0);
     }
     let mut switches: Vec<(&str, &mut bool)> = Vec::new();
     if caps.post_only && state.draft.class == OrderClass::Limit {
@@ -800,35 +876,40 @@ fn options(ui: &mut egui::Ui, state: &mut SheetState, rules: &MarketRules, check
                 theme::text_primary(),
             ));
         });
-        ui.add_space(8.0);
+        ui.add_space(10.0);
     }
     if caps.brackets && state.draft.bracket {
         let unit = rules.quote_asset.as_str();
-        paper_form::field_label(ui, &format!("Take profit ({unit})"));
-        number(
-            ui,
-            "take-profit",
-            &mut state.draft.take_profit_text,
-            "Optional",
-            unit,
-            check,
-            DraftField::TakeProfit,
-            Some(rules.price_increment),
-            None,
-        );
-        ui.add_space(8.0);
-        paper_form::field_label(ui, &format!("Stop loss ({unit})"));
-        number(
-            ui,
-            "stop-loss",
-            &mut state.draft.stop_loss_text,
-            "Optional",
-            unit,
-            check,
-            DraftField::StopLoss,
-            Some(rules.price_increment),
-            None,
-        );
+        ui.add_space(2.0);
+        ui.scope(|ui| {
+            ui.spacing_mut().item_spacing.x = 10.0;
+            ui.columns(2, |columns| {
+                fields::labelled_icon(&mut columns[0], Icon::Target, theme::UP, "Take profit");
+                number(
+                    &mut columns[0],
+                    "take-profit",
+                    &mut state.draft.take_profit_text,
+                    "Optional",
+                    unit,
+                    check,
+                    DraftField::TakeProfit,
+                    None,
+                    None,
+                );
+                fields::labelled_icon(&mut columns[1], Icon::Shield, theme::DOWN, "Stop loss");
+                number(
+                    &mut columns[1],
+                    "stop-loss",
+                    &mut state.draft.stop_loss_text,
+                    "Optional",
+                    unit,
+                    check,
+                    DraftField::StopLoss,
+                    None,
+                    None,
+                );
+            });
+        });
         ui.add_space(8.0);
     }
 }
@@ -926,19 +1007,53 @@ fn available_line(ui: &mut egui::Ui, backend: &dyn TradingBackend, market: &Mark
     let Some(funds) = backend.available(market, side) else {
         return;
     };
-    ui.add_space(8.0);
-    ui.vertical_centered(|ui| {
-        ui.label(kit::text(
-            format!(
-                "Available {} {}",
-                crate::model::broker_ticket::display(funds.value),
-                funds.asset
-            ),
-            kit::size::CAPTION + 1.0,
-            kit::REGULAR,
-            theme::text_secondary(),
-        ));
-    });
+    ui.add_space(12.0);
+    let label = kit::galley(
+        ui,
+        "Available",
+        kit::size::CAPTION + 2.0,
+        kit::REGULAR,
+        theme::text_secondary(),
+        f32::INFINITY,
+    );
+    let value = kit::galley(
+        ui,
+        &format!(
+            "{} {}",
+            crate::model::broker_ticket::display(funds.value),
+            funds.asset
+        ),
+        kit::size::CAPTION + 2.0,
+        kit::SEMIBOLD,
+        theme::text_primary(),
+        f32::INFINITY,
+    );
+    const ICON: f32 = 16.0;
+    let total = ICON + 8.0 + label.size().x + 6.0 + value.size().x;
+    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 22.0), egui::Sense::hover());
+    let mut x = rect.center().x - total / 2.0;
+    icons::paint(
+        ui.painter(),
+        egui::Rect::from_center_size(
+            egui::pos2(x + ICON / 2.0, rect.center().y),
+            vec2(ICON, ICON),
+        ),
+        Icon::Banknote,
+        theme::text_secondary(),
+    );
+    x += ICON + 8.0;
+    let label_width = label.size().x;
+    ui.painter().galley(
+        egui::pos2(x, rect.center().y - label.size().y / 2.0),
+        label,
+        theme::text_secondary(),
+    );
+    x += label_width + 6.0;
+    ui.painter().galley(
+        egui::pos2(x, rect.center().y - value.size().y / 2.0),
+        value,
+        theme::text_primary(),
+    );
 }
 
 fn notice(ui: &mut egui::Ui, state: &mut SheetState) {
@@ -1064,20 +1179,71 @@ fn open_orders(ui: &mut egui::Ui, state: &mut SheetState, backend: &dyn TradingB
         .into_iter()
         .filter(|row| row.working)
         .collect();
-    ui.horizontal(|ui| {
-        ui.label(kit::text(
-            "Open orders",
-            kit::size::BODY,
-            kit::SEMIBOLD,
-            theme::text_primary(),
-        ));
-        ui.label(kit::text(
-            format!(" {}", rows.len()),
-            kit::size::BODY,
-            kit::REGULAR,
-            theme::text_secondary(),
-        ));
-    });
+    // A header that folds the list: open while there is something working, shut when there is not,
+    // until the user says otherwise.
+    let open = state.orders_open.unwrap_or(!rows.is_empty());
+    let (head, response) =
+        ui.allocate_exact_size(vec2(ui.available_width(), 30.0), egui::Sense::click());
+    let response = crate::ui::accessibility::label(response, "Open orders")
+        .on_hover_cursor(egui::CursorIcon::PointingHand);
+    if response.clicked() {
+        state.orders_open = Some(!open);
+    }
+    icons::paint(
+        ui.painter(),
+        egui::Rect::from_center_size(
+            egui::pos2(head.left() + 9.0, head.center().y),
+            vec2(16.0, 16.0),
+        ),
+        Icon::DocText,
+        theme::text_secondary(),
+    );
+    let title = kit::galley(
+        ui,
+        "Open orders",
+        kit::size::BODY + 1.0,
+        kit::SEMIBOLD,
+        theme::text_primary(),
+        f32::INFINITY,
+    );
+    let title_width = title.size().x;
+    ui.painter().galley(
+        egui::pos2(head.left() + 26.0, head.center().y - title.size().y / 2.0),
+        title,
+        theme::text_primary(),
+    );
+    let count = kit::galley(
+        ui,
+        &rows.len().to_string(),
+        kit::size::BODY + 1.0,
+        kit::REGULAR,
+        theme::text_secondary(),
+        f32::INFINITY,
+    );
+    ui.painter().galley(
+        egui::pos2(
+            head.left() + 26.0 + title_width + 8.0,
+            head.center().y - count.size().y / 2.0,
+        ),
+        count,
+        theme::text_secondary(),
+    );
+    icons::paint(
+        ui.painter(),
+        egui::Rect::from_center_size(
+            egui::pos2(head.right() - 8.0, head.center().y),
+            vec2(12.0, 12.0),
+        ),
+        if open {
+            Icon::ChevronUp
+        } else {
+            Icon::ChevronDown
+        },
+        theme::text_secondary(),
+    );
+    if !open {
+        return;
+    }
     ui.add_space(6.0);
     if rows.is_empty() {
         ui.label(kit::text(

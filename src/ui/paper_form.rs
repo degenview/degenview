@@ -130,8 +130,38 @@ pub fn dropdown_field(
     selected: usize,
     enabled: bool,
 ) -> Option<usize> {
+    dropdown_field_with(
+        ui,
+        labels,
+        selected,
+        enabled,
+        DropdownLook {
+            leading: None,
+            height: FIELD_HEIGHT,
+            chevron: Icon::ChevronUpDown,
+        },
+    )
+}
+
+/// How a [`dropdown_field_with`] is dressed: an icon before the choice, the box's height and the
+/// glyph at its end.
+#[derive(Clone, Copy)]
+pub struct DropdownLook {
+    pub leading: Option<Icon>,
+    pub height: f32,
+    pub chevron: Icon,
+}
+
+/// [`dropdown_field`] with its look chosen by the caller.
+pub fn dropdown_field_with(
+    ui: &mut egui::Ui,
+    labels: &[String],
+    selected: usize,
+    enabled: bool,
+    look: DropdownLook,
+) -> Option<usize> {
     let (rect, response) = ui.allocate_exact_size(
-        Vec2::new(ui.available_width(), FIELD_HEIGHT),
+        Vec2::new(ui.available_width(), look.height),
         if enabled {
             egui::Sense::click()
         } else {
@@ -162,19 +192,39 @@ pub fn dropdown_field(
     } else {
         theme::text_tertiary()
     };
-    let text = kit::galley(ui, current, 14.0, kit::REGULAR, color, rect.width() - 40.0);
+    let mut left = rect.left() + 12.0;
+    if let Some(icon) = look.leading {
+        icons::paint(
+            ui.painter(),
+            egui::Rect::from_center_size(
+                egui::pos2(left + 8.0, rect.center().y),
+                Vec2::splat(16.0),
+            ),
+            icon,
+            theme::text_secondary(),
+        );
+        left += 26.0;
+    }
+    let text = kit::galley(
+        ui,
+        current,
+        14.0,
+        kit::REGULAR,
+        color,
+        rect.right() - left - 28.0,
+    );
     ui.painter().galley(
-        egui::pos2(rect.left() + 12.0, rect.center().y - text.size().y / 2.0),
+        egui::pos2(left, rect.center().y - text.size().y / 2.0),
         text,
         color,
     );
     icons::paint(
         ui.painter(),
         egui::Rect::from_center_size(
-            egui::pos2(rect.right() - 14.0, rect.center().y),
+            egui::pos2(rect.right() - 16.0, rect.center().y),
             Vec2::splat(11.0),
         ),
-        Icon::ChevronUpDown,
+        look.chevron,
         theme::text_secondary(),
     );
     let mut chosen = None;

@@ -29,6 +29,8 @@ struct Rig {
     brokers: Arc<BrokerHost>,
     /// The symbol of the focused chart; `BTC-USD` unless a test changes it.
     symbol: std::cell::RefCell<String>,
+    /// Whether the focused chart's logo source, price and move are given to the sheet.
+    with_face: std::cell::Cell<bool>,
 }
 
 fn wait(what: &str, mut ready: impl FnMut() -> bool) {
@@ -65,6 +67,7 @@ fn rig() -> Rig {
         paper,
         brokers,
         symbol: std::cell::RefCell::new("BTC-USD".to_owned()),
+        with_face: std::cell::Cell::new(true),
     }
 }
 
@@ -112,6 +115,11 @@ impl Rig {
             market: Some(MarketRef {
                 source: "coinbase".to_owned(),
                 symbol: self.symbol.borrow().clone(),
+            }),
+            face: self.with_face.get().then_some(order_sheet::MarketFace {
+                source: crate::model::DataSource::Coinbase,
+                last: Some(90_000.0),
+                change: Some((1_350.0, 1.52)),
             }),
             confirm_resting: true,
             replay: false,
@@ -523,4 +531,57 @@ fn a_market_the_broker_does_not_list_is_explained_in_a_card() {
     let output = rig.frames(&mut screen, &mut state, venue, 3);
     assert!(state.button.is_none(), "no order can be started");
     screen.save("sheet-market-not-offered", output);
+}
+
+/// A chart with no candles gives the sheet no face: the symbol is there, the price is not, and the
+/// order can still be typed and sent.
+#[test]
+fn the_sheet_draws_without_a_chart_face() {
+    let _restore = theme::RestoreDefaultTheme;
+    let rig = rig();
+    rig.enable_paper();
+    rig.with_face.set(false);
+    let venue = Some(TradingVenue::Paper);
+    let mut screen = Screen::new(Vec2::new(340.0, 900.0));
+    let mut state = SheetState::default();
+    limit_order(&mut state, "0.5", "90000");
+    rig.until_sendable(&mut screen, &mut state, venue);
+    assert!(state.button_enabled_for_test());
+}
+
+/// The sheet's other shapes, light and dark: a stop-limit with take profit and stop loss, and a
+/// market sell.
+#[test]
+fn the_sheet_in_other_shapes_light_and_dark() {
+    let _restore = theme::RestoreDefaultTheme;
+    let rig = rig();
+    rig.enable_paper();
+    let venue = Some(TradingVenue::Paper);
+    for light in [false, true] {
+        let tag = if light { "light" } else { "dark" };
+        let pref = if light {
+            egui::ThemePreference::Light
+        } else {
+            egui::ThemePreference::Dark
+        };
+        for (name, side, class) in [
+            ("stop-limit-bracket", Side::Buy, OrderClass::StopLimit),
+            ("market-sell", Side::Sell, OrderClass::Market),
+        ] {
+            let mut screen = Screen::new(Vec2::new(380.0, 1100.0));
+            screen.ctx.set_theme(pref);
+            let mut state = SheetState::default();
+            state.start(side, Some(class), None);
+            state.mark_prefilled_for_test();
+            state.draft.size_text = "0.5".to_owned();
+            if class == OrderClass::StopLimit {
+                state.draft.stop_text = "91000".to_owned();
+                state.draft.price_text = "91500".to_owned();
+                state.draft.bracket = true;
+                state.draft.take_profit_text = "95000".to_owned();
+            }
+            let output = rig.frames(&mut screen, &mut state, venue, 4);
+            screen.save(&format!("sheet-{name}-{tag}"), output);
+        }
+    }
 }

@@ -8,7 +8,7 @@ use super::{ChartWorkspace, WorkspaceAction};
 use crate::host::trading_hub::TradingHub;
 use crate::model::trading_venue::TradingVenue;
 use crate::trading::model::{OrderClass, VenueInfo};
-use crate::ui::trade::order_sheet::{self, SheetAction, SheetInput};
+use crate::ui::trade::order_sheet::{self, MarketFace, SheetAction, SheetInput};
 use crate::ui::trade::panel_header::{PanelEvent, VenueBar};
 use crate::ui::trade::venue_pill::PillAction;
 
@@ -56,9 +56,15 @@ impl ChartWorkspace {
         let current = venue
             .and_then(|venue| all.iter().find(|info| info.venue == venue))
             .zip(backend.as_deref());
-        let market = self.focused_market_chart().map(|chart| MarketRef {
+        let chart = self.focused_market_chart();
+        let market = chart.map(|chart| MarketRef {
             source: chart.source.watchlist_slug().to_lowercase(),
             symbol: chart.symbol.clone(),
+        });
+        let face = chart.map(|chart| MarketFace {
+            source: chart.source,
+            last: chart.candles.last().map(|candle| candle.close),
+            change: chart.chart.visible_move(&chart.candles),
         });
         let confirm_resting = match venue {
             Some(TradingVenue::Broker(id)) => hub.brokers().prefs(id).confirm_resting_orders,
@@ -69,6 +75,7 @@ impl ChartWorkspace {
             all: &all,
             current,
             market,
+            face,
             confirm_resting,
             replay: self.replay_blocks_trading(),
         };

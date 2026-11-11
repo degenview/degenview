@@ -3,6 +3,7 @@
 
 pub mod connect_list;
 pub mod fields;
+pub mod figures;
 pub mod notice;
 pub mod order_sheet;
 pub mod panel_header;
