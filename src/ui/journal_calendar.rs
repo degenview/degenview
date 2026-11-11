@@ -10,6 +10,7 @@ use rust_decimal::Decimal;
 
 use super::header_controls;
 use super::icons::{self, Icon};
+use super::journal_kit::{self as jk, Chip, Sign};
 use super::kit::{self, MEDIUM, REGULAR, SEMIBOLD, size};
 use super::theme;
 use degenview_journal::calendar::{Civil, DayCell, MonthView, WeekTotal};
@@ -27,14 +28,8 @@ pub struct Output {
     pub open_day: Option<Civil>,
 }
 
-fn tint_of(net: Decimal) -> egui::Color32 {
-    if net > Decimal::ZERO {
-        theme::WIN
-    } else if net < Decimal::ZERO {
-        theme::LOSS
-    } else {
-        theme::text_secondary()
-    }
+fn sign_of(net: Decimal) -> Sign {
+    Sign::of_decimal(net)
 }
 
 pub fn show(
@@ -144,17 +139,17 @@ fn tile(
     is_today: bool,
 ) -> bool {
     let painter = ui.painter();
-    let (fill, border) = match cell {
-        Some(cell) => {
-            let tint = tint_of(cell.net);
-            (theme::with_alpha(tint, 0.10), theme::with_alpha(tint, 0.55))
-        }
-        None => (
-            theme::quaternary(0.12),
-            theme::with_alpha(theme::separator(), 0.7),
+    // A day's result is a flat translucent wash and a hairline in the result's colour; a day with
+    // no trades is the plain card surface.
+    let (fill, border) = match cell.map(|cell| sign_of(cell.net)) {
+        Some(sign) if sign != Sign::Flat => (
+            theme::with_alpha(sign.data(), 0.10),
+            theme::with_alpha(sign.data(), 0.30),
         ),
+        Some(_) => (theme::card_fill(false), jk::border(false)),
+        None => (theme::ink(5), theme::ink(14)),
     };
-    painter.rect_filled(rect, 8.0, fill);
+    painter.rect_filled(rect, kit::CARD_RADIUS, fill);
     let border = if is_today {
         theme::text_primary()
     } else {
@@ -162,7 +157,7 @@ fn tile(
     };
     painter.rect_stroke(
         rect,
-        8.0,
+        kit::CARD_RADIUS,
         Stroke::new(if is_today { 1.5 } else { 1.0 }, border),
         egui::StrokeKind::Inside,
     );
@@ -178,7 +173,8 @@ fn tile(
         },
     );
     let Some(cell) = cell else { return false };
-    let tint = tint_of(cell.net);
+    let sign = sign_of(cell.net);
+    let tint = sign.text();
     let net = format::signed_money(cell.net);
     let center = rect.center() + vec2(0.0, 4.0);
     let galley = kit::galley(
@@ -260,22 +256,22 @@ fn tile(
 
 fn week_total(ui: &mut Ui, rect: Rect, week: Option<&WeekTotal>, currency: &str) {
     let painter = ui.painter();
+    painter.rect_filled(rect, kit::CARD_RADIUS, theme::card_fill(false));
     painter.rect_stroke(
         rect,
-        8.0,
-        Stroke::new(1.0, theme::with_alpha(theme::separator(), 0.5)),
+        kit::CARD_RADIUS,
+        Stroke::new(1.0, jk::border(false)),
         egui::StrokeKind::Inside,
     );
     let Some(week) = week.filter(|week| week.trading_days > 0) else {
         return;
     };
-    let tint = tint_of(week.net);
     painter.text(
         pos2(rect.center().x, rect.center().y - 6.0),
         Align2::CENTER_CENTER,
         format::signed_money(week.net),
         FontId::proportional(size::BODY),
-        tint,
+        sign_of(week.net).text(),
     );
     painter.text(
         pos2(rect.center().x, rect.center().y + 12.0),
@@ -294,42 +290,57 @@ fn footer(ui: &mut Ui, view: &MonthView, currency: &str) {
             .to_owned()
     };
     let day = |cell: &Option<DayCell>| match cell {
-        Some(cell) => format!(
-            "{} \u{00b7} {}",
-            format::short_civil(cell.date),
-            money(cell.net)
-        ),
-        None => "\u{2014}".to_owned(),
-    };
-    let stats = [
-        ("Month net P&L", money(view.net), tint_of(view.net)),
-        ("Best day", day(&view.best_day), theme::text_primary()),
-        ("Worst day", day(&view.worst_day), theme::text_primary()),
-        (
-            "Activity",
+        Some(cell) => (
             format!(
-                "{} trade{} \u{00b7} {}/{} green",
-                view.trades,
-                if view.trades == 1 { "" } else { "s" },
-                view.green_days,
-                view.trading_days
+                "{} \u{00b7} {}",
+                format::short_civil(cell.date),
+                money(cell.net)
             ),
-            theme::text_primary(),
+            sign_of(cell.net),
         ),
-    ];
-    kit::card_frame(false).show(ui, |ui| {
-        ui.columns(stats.len(), |columns| {
-            for (column, (label, value, color)) in columns.iter_mut().zip(stats) {
-                column.label(kit::text(
-                    label.to_uppercase(),
-                    size::CAPTION,
-                    SEMIBOLD,
-                    theme::text_tertiary(),
-                ));
-                column.label(kit::text(value, size::BODY + 1.0, MEDIUM, color));
-            }
-        });
-    });
+        None => ("\u{2014}".to_owned(), Sign::Flat),
+    };
+    let (best, best_sign) = day(&view.best_day);
+    let (worst, worst_sign) = day(&view.worst_day);
+    jk::chip_strip(
+        ui,
+        &[
+            Chip {
+                icon: Icon::ChartUptrend,
+                label: "Month net P&L",
+                value: money(view.net),
+                sign: sign_of(view.net),
+                tip: "Net P&L of the trades closed in this month.",
+            },
+            Chip {
+                icon: Icon::ArrowUpRight,
+                label: "Best day",
+                value: best,
+                sign: best_sign,
+                tip: "The month's day with the highest net P&L.",
+            },
+            Chip {
+                icon: Icon::ArrowDownRight,
+                label: "Worst day",
+                value: worst,
+                sign: worst_sign,
+                tip: "The month's day with the lowest net P&L.",
+            },
+            Chip {
+                icon: Icon::Calendar,
+                label: "Activity",
+                value: format!(
+                    "{} trade{} \u{00b7} {}/{} green",
+                    view.trades,
+                    if view.trades == 1 { "" } else { "s" },
+                    view.green_days,
+                    view.trading_days
+                ),
+                sign: Sign::Flat,
+                tip: "Closed trades, and the winning days out of the trading days.",
+            },
+        ],
+    );
 }
 
 /// The civil date of today, for the "today" outline and the Today button.

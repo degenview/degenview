@@ -4,6 +4,7 @@
 use eframe::egui::{self, Color32, Ui, vec2};
 
 use super::journal_charts::{self as charts, Line, LineChart};
+use super::journal_kit::{self as jk, Card, Sign};
 use super::kit::{self, MEDIUM, REGULAR, SEMIBOLD, size};
 use super::theme;
 use degenview_journal::calendar::Offset;
@@ -74,79 +75,109 @@ pub const ROWS: [&str; 9] = [
 ];
 
 pub fn show(ui: &mut Ui, columns: &[AccountColumn], currency: &str, offset: Offset<'_>) {
-    kit::card_frame(false).show(ui, |ui| {
-        ui.set_width(ui.available_width());
-        ui.label(kit::text("Cumulative net P&L", size::BODY + 1.0, SEMIBOLD, theme::text_primary()));
-        ui.label(kit::text(
-            "Every account starts at zero, so the lines compare what each earned, not how large it is.",
-            size::CAPTION + 1.0,
-            REGULAR,
-            theme::text_tertiary(),
-        ));
-        ui.add_space(8.0);
-        let lines: Vec<Line> = columns
-            .iter()
-            .enumerate()
-            .map(|(index, column)| Line {
-                name: column.name.clone(),
-                points: column.equity.iter().map(|(t, v)| (*t as f64, *v)).collect(),
-                color: SERIES[index % SERIES.len()],
-                fill: false,
-                dashed: false,
-            })
-            .collect();
-        let x_label = |x: f64| format::short_date(x as i64, offset);
-        let y_label = |y: f64| format::compact(y);
-        charts::line_chart(
-            ui,
-            egui::Id::new("journal-compare"),
-            &LineChart { lines: &lines, baseline: Some(0.0), x_label: &x_label, y_label: &y_label, empty: "No closed trades" },
-            220.0,
-        );
-    });
-    ui.add_space(12.0);
-    kit::card_frame(false).show(ui, |ui| {
-        ui.set_width(ui.available_width());
-        let label_width = 150.0;
-        let width = ((ui.available_width() - label_width) / columns.len().max(1) as f32).max(110.0);
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 0.0;
-            ui.allocate_space(vec2(label_width, 22.0));
-            for (index, column) in columns.iter().enumerate() {
-                charts::fixed_cell(ui, vec2(width, 22.0), |ui| {
-                        let (dot, _) = ui.allocate_exact_size(vec2(10.0, 10.0), egui::Sense::hover());
-                        ui.painter().circle_filled(dot.center(), 4.0, SERIES[index % SERIES.len()]);
-                        let name = if column.archived { format!("{} (archived)", column.name) } else { column.name.clone() };
-                        ui.label(kit::text(name, size::BODY, SEMIBOLD, theme::text_primary()));
-                    },
-                );
-            }
-        });
-        ui.add_space(6.0);
-        let values: Vec<Vec<String>> = columns.iter().map(|c| row_values(c, currency)).collect();
-        for (row, label) in ROWS.iter().enumerate() {
+    let overlay = Card::new("Cumulative net P&L").subtitle(
+        "Every account starts at zero, so the lines compare what each earned, not how large it is.",
+    );
+    jk::card(
+        ui,
+        &overlay,
+        |_| {},
+        |ui| {
+            let lines: Vec<Line> = columns
+                .iter()
+                .enumerate()
+                .map(|(index, column)| Line {
+                    name: column.name.clone(),
+                    points: column.equity.iter().map(|(t, v)| (*t as f64, *v)).collect(),
+                    color: SERIES[index % SERIES.len()],
+                    fill: false,
+                    dashed: false,
+                })
+                .collect();
+            let x_label = |x: f64| format::short_date(x as i64, offset);
+            let y_label = |y: f64| format::compact(y);
+            charts::line_chart(
+                ui,
+                egui::Id::new("journal-compare"),
+                &LineChart {
+                    lines: &lines,
+                    baseline: Some(0.0),
+                    x_label: &x_label,
+                    y_label: &y_label,
+                    empty: "No closed trades",
+                    badge: false,
+                },
+                220.0,
+            );
+        },
+    );
+    ui.add_space(jk::GAP);
+    let table = Card::new("Side by side").subtitle(
+        "Accounts in other currencies are left out, not converted. Percentages need an account's initial balance.",
+    );
+    jk::card(
+        ui,
+        &table,
+        |_| {},
+        |ui| {
+            let label_width = 150.0;
+            let width =
+                ((ui.available_width() - label_width) / columns.len().max(1) as f32).max(110.0);
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 0.0;
-                charts::fixed_cell(ui, vec2(label_width, 26.0), |ui| {
-                        ui.label(kit::text(*label, size::BODY, REGULAR, theme::text_secondary()));
-                    },
-                );
-                for column_values in &values {
-                    charts::fixed_cell(ui, vec2(width, 26.0), |ui| {
-                            ui.label(kit::text(column_values[row].as_str(), size::BODY, MEDIUM, theme::text_primary()));
-                        },
-                    );
+                ui.allocate_space(vec2(label_width, 22.0));
+                for (index, column) in columns.iter().enumerate() {
+                    charts::fixed_cell(ui, vec2(width, 22.0), |ui| {
+                        let (dot, _) =
+                            ui.allocate_exact_size(vec2(10.0, 10.0), egui::Sense::hover());
+                        ui.painter()
+                            .circle_filled(dot.center(), 4.0, SERIES[index % SERIES.len()]);
+                        let name = if column.archived {
+                            format!("{} (archived)", column.name)
+                        } else {
+                            column.name.clone()
+                        };
+                        ui.label(kit::text(name, size::BODY, SEMIBOLD, theme::text_primary()));
+                    });
                 }
             });
-        }
-        ui.add_space(6.0);
-        ui.label(kit::text(
-            "Accounts in other currencies are left out, not converted. Percentages need an account's initial balance.",
-            size::CAPTION,
-            REGULAR,
-            theme::text_tertiary(),
-        ));
-    });
+            ui.add_space(4.0);
+            jk::divider(ui);
+            let values: Vec<Vec<String>> =
+                columns.iter().map(|c| row_values(c, currency)).collect();
+            for (row, label) in ROWS.iter().enumerate() {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 0.0;
+                    charts::fixed_cell(ui, vec2(label_width, 28.0), |ui| {
+                        ui.label(kit::text(
+                            *label,
+                            size::BODY,
+                            REGULAR,
+                            theme::text_secondary(),
+                        ));
+                    });
+                    for (column, column_values) in columns.iter().zip(&values) {
+                        // Only Net P&L carries its sign's colour.
+                        let color = match row {
+                            1 => Sign::of_decimal(column.summary.net_pnl).text(),
+                            _ => theme::text_primary(),
+                        };
+                        charts::fixed_cell(ui, vec2(width, 28.0), |ui| {
+                            ui.label(kit::text(
+                                column_values[row].as_str(),
+                                size::BODY,
+                                MEDIUM,
+                                color,
+                            ));
+                        });
+                    }
+                });
+                if row + 1 < ROWS.len() {
+                    jk::divider(ui);
+                }
+            }
+        },
+    );
 }
 
 #[cfg(test)]

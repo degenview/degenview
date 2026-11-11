@@ -8,6 +8,7 @@ use eframe::egui::{
 };
 
 use super::icons::{self, Icon};
+use super::journal_kit as jk;
 use super::kit::{self, SEMIBOLD, size};
 use super::theme;
 use degenview_journal::table::{Column, Sort};
@@ -55,6 +56,9 @@ pub fn show(
         Sense::hover(),
     );
     let frame = area;
+    // The table sits on a card surface: the faint fill, then header band, rows and the hairline.
+    ui.painter()
+        .rect_filled(frame, RADIUS, theme::card_fill(false));
     let widths: Vec<f32> = spec.columns.iter().map(|c| (spec.width_of)(*c)).collect();
     let total: f32 = widths.iter().sum();
     let content_width = frame.width().max(total);
@@ -95,7 +99,7 @@ pub fn show(
     ui.painter().rect_stroke(
         frame,
         RADIUS,
-        Stroke::new(1.0, theme::separator()),
+        Stroke::new(1.0, jk::border(false)),
         egui::StrokeKind::Inside,
     );
     output
@@ -120,11 +124,11 @@ fn header(
     } else {
         CornerRadius::ZERO
     };
-    ui.painter().rect_filled(rect, top, theme::quaternary(0.5));
+    ui.painter().rect_filled(rect, top, theme::ink(9));
     ui.painter().hline(
         rect.x_range(),
         rect.bottom() - 0.5,
-        Stroke::new(1.0, theme::separator()),
+        Stroke::new(1.0, theme::ink(24)),
     );
     let mut left = rect.left();
     for (&column, &span) in spec.columns.iter().zip(widths) {
@@ -222,11 +226,11 @@ fn row(
     let selected = spec.selected == Some(index);
     let hovered = ui.rect_contains_pointer(rect.intersect(frame));
     let fill = if selected {
-        Some(kit::primary(0.10))
+        Some(theme::selected_tint(hovered))
     } else if hovered {
-        Some(kit::primary(0.05))
+        Some(theme::ink(9))
     } else if index % 2 == 1 {
-        Some(theme::quaternary(0.28))
+        Some(theme::ink(4))
     } else {
         None
     };
