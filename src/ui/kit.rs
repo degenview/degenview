@@ -574,7 +574,7 @@ impl Density {
     /// The track's corner radius; the plates inside sit 3 pt in, so theirs is that much less.
     fn track_radius(self) -> f32 {
         match self {
-            Self::Slim => 9.0,
+            Self::Slim => 6.0,
             Self::Compact | Self::Regular => 11.0,
         }
     }

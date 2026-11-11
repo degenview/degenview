@@ -261,6 +261,8 @@ fn header(
     });
 }
 
+/// A message between the sheet's fields: a glyph and wrapped text on a faint tint with a hairline
+/// edge. Red for what went wrong, orange for a warning, quiet for what is only worth knowing.
 fn note(ui: &mut egui::Ui, text: &str, error: bool) {
     let tint = if error {
         kit::RED
@@ -268,21 +270,41 @@ fn note(ui: &mut egui::Ui, text: &str, error: bool) {
         theme::text_secondary()
     };
     egui::Frame::new()
-        .fill(theme::with_alpha(tint, 0.1))
+        .fill(theme::with_alpha(tint, 0.08))
+        .stroke(egui::Stroke::new(1.0, theme::with_alpha(tint, 0.22)))
         .corner_radius(8.0)
-        .inner_margin(egui::Margin::symmetric(10, 7))
+        .inner_margin(egui::Margin::symmetric(10, 8))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            ui.add(
-                egui::Label::new(kit::text(
-                    text,
-                    kit::size::CAPTION + 1.0,
-                    kit::REGULAR,
-                    tint,
-                ))
-                .wrap(),
-            );
+            ui.horizontal_top(|ui| {
+                ui.spacing_mut().item_spacing.x = 8.0;
+                icons::inline(ui, Icon::InfoCircle, 13.0, tint);
+                ui.add(
+                    egui::Label::new(kit::text(
+                        text,
+                        kit::size::CAPTION + 1.0,
+                        kit::REGULAR,
+                        if error {
+                            theme::text_primary()
+                        } else {
+                            theme::text_secondary()
+                        },
+                    ))
+                    .wrap(),
+                );
+            });
         });
+}
+
+/// Why the chart's market cannot be traded here, as a card: a short title for the kind of reason
+/// and the venue's own sentence beneath it.
+fn unavailable_card(ui: &mut egui::Ui, kind: UnavailableKind, text: &str) {
+    let (title, tint) = match kind {
+        UnavailableKind::NotThisVenue => ("Can't trade this market here", theme::text_secondary()),
+        UnavailableKind::Waiting => ("Getting ready", theme::text_secondary()),
+        UnavailableKind::Blocked => ("Orders unavailable", kit::ORANGE),
+    };
+    kit::notice_card(ui, Icon::InfoCircle, tint, title, Some(text), None);
 }
 
 fn body(
@@ -309,7 +331,14 @@ fn body(
             return;
         }
         BackendState::Connecting => {
-            note(ui, &format!("Connecting to {}…", info.name), false);
+            kit::notice_card(
+                ui,
+                Icon::InfoCircle,
+                theme::text_secondary(),
+                &format!("Connecting to {}…", info.name),
+                Some("Orders are available as soon as it is connected."),
+                None,
+            );
             return;
         }
         BackendState::NeedsAttention(text) => {
@@ -328,10 +357,13 @@ fn body(
         BackendState::Paused(_) | BackendState::Ready => {}
     }
     let Some(market) = input.market.clone() else {
-        note(
+        kit::notice_card(
             ui,
-            "Focus a market chart: an order is for the chart's market.",
-            false,
+            Icon::InfoCircle,
+            theme::text_secondary(),
+            "No market in focus",
+            Some("Focus a market chart: an order is for the chart's market."),
+            None,
         );
         return;
     };
@@ -352,8 +384,7 @@ fn body(
     let rules = match backend.market(&market) {
         MarketAccess::Ready(rules) => rules,
         MarketAccess::Unavailable(Unavailable { kind, text }) => {
-            let waiting = kind == UnavailableKind::Waiting;
-            note(ui, &text, !waiting && kind == UnavailableKind::Blocked);
+            unavailable_card(ui, kind, &text);
             return;
         }
     };

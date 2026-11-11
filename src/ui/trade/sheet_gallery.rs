@@ -27,6 +27,8 @@ struct Rig {
     hub: Arc<TradingHub>,
     paper: Arc<Mutex<PaperHost>>,
     brokers: Arc<BrokerHost>,
+    /// The symbol of the focused chart; `BTC-USD` unless a test changes it.
+    symbol: std::cell::RefCell<String>,
 }
 
 fn wait(what: &str, mut ready: impl FnMut() -> bool) {
@@ -62,6 +64,7 @@ fn rig() -> Rig {
         hub,
         paper,
         brokers,
+        symbol: std::cell::RefCell::new("BTC-USD".to_owned()),
     }
 }
 
@@ -108,7 +111,7 @@ impl Rig {
             current,
             market: Some(MarketRef {
                 source: "coinbase".to_owned(),
-                symbol: "BTC-USD".to_owned(),
+                symbol: self.symbol.borrow().clone(),
             }),
             confirm_resting: true,
             replay: false,
@@ -504,4 +507,20 @@ fn an_order_can_be_placed_on_the_sandbox_without_prices() {
         rig.frames(&mut screen, &mut state, venue, 1);
         rig.exchange.order_posts() == 1
     });
+}
+
+/// A chart whose market the broker does not list is told so in a card, not trade-able and not
+/// not a bare line of red text.
+#[test]
+fn a_market_the_broker_does_not_list_is_explained_in_a_card() {
+    let _restore = theme::RestoreDefaultTheme;
+    let rig = rig();
+    rig.connect_broker();
+    *rig.symbol.borrow_mut() = "NOPE-USD".to_owned();
+    let venue = Some(TradingVenue::Broker(COINBASE));
+    let mut screen = Screen::new(Vec2::new(340.0, 420.0));
+    let mut state = SheetState::default();
+    let output = rig.frames(&mut screen, &mut state, venue, 3);
+    assert!(state.button.is_none(), "no order can be started");
+    screen.save("sheet-market-not-offered", output);
 }

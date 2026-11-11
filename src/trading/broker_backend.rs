@@ -103,7 +103,9 @@ fn state_of(snapshot: &BrokerSnapshot) -> BackendState {
 fn unavailable(reason: broker_chart::Unavailable) -> Unavailable {
     use broker_chart::Unavailable as Why;
     let kind = match reason {
-        Why::NotAMarket | Why::OtherSource | Why::UnknownMarket => UnavailableKind::NotThisVenue,
+        Why::NotAMarket | Why::OtherSource | Why::UnknownMarket | Why::MarketNotOffered => {
+            UnavailableKind::NotThisVenue
+        }
         Why::NotConnected | Why::NotLive | Why::RulesNotRead => UnavailableKind::Waiting,
         _ => UnavailableKind::Blocked,
     };

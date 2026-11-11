@@ -161,7 +161,7 @@ pub struct Unavailable {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UnavailableKind {
-    /// The chart is not a market of this venue at all (another data source, or no market):
+    /// The chart is not a market of this venue at all (another data source, no market, or one the venue does not list):
     /// nothing is offered and nothing is substituted.
     NotThisVenue,
     /// Will be possible shortly (connecting, reading the market's rules).

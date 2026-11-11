@@ -21,7 +21,7 @@ pub const COMPACT_WIDTH: f32 = 900.0;
 /// Every control in the header is this tall, so a row of them shares one top and bottom edge.
 pub const CONTROL_HEIGHT: f32 = 28.0;
 /// The corner radius they share. The tab bar's track is this too (`kit::tab_bar_slim`).
-pub const CONTROL_RADIUS: f32 = 9.0;
+pub const CONTROL_RADIUS: f32 = 6.0;
 
 /// What the panel says about the venue it is showing.
 #[derive(Clone, Debug)]

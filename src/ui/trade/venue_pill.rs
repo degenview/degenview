@@ -132,11 +132,16 @@ pub fn show(
     } else {
         alpha
     };
+    // The sheet's pill is a small label; the panel's sits in a row of controls and shares theirs.
+    let radius = match pill {
+        PillSize::Sheet => 6.0,
+        PillSize::Panel => crate::ui::trade::panel_header::CONTROL_RADIUS,
+    };
     ui.painter()
-        .rect_filled(rect, size.y / 2.0, theme::with_alpha(tint, alpha));
+        .rect_filled(rect, radius, theme::with_alpha(tint, alpha));
     ui.painter().rect_stroke(
         rect,
-        size.y / 2.0,
+        radius,
         egui::Stroke::new(1.0, theme::with_alpha(tint, 0.45)),
         egui::StrokeKind::Inside,
     );
