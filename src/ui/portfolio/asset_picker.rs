@@ -9,8 +9,8 @@
 use crate::model::DataSource;
 use crate::service::SearchResult;
 use crate::store::SharedStore;
-use crate::ui::add_chart_art;
-use crate::ui::add_chart_sheet::{
+use crate::ui::chart::add::art;
+use crate::ui::chart::add::sheet::{
     self, CRYPTO_SUGGESTIONS, Chip, PREDICTION_TOPICS, RecentMarket, STOCK_SUGGESTIONS,
 };
 use crate::ui::icons::Icon;
@@ -54,11 +54,11 @@ impl PickerTab {
     }
 
     /// The picture at the head of the sheet: the one Add Chart shows for the same section.
-    fn scene(self) -> add_chart_art::Scene {
+    fn scene(self) -> art::Scene {
         match self {
-            Self::Crypto => add_chart_art::Scene::Crypto,
-            Self::Stocks => add_chart_art::Scene::Stocks,
-            Self::Predictions => add_chart_art::Scene::Predictions,
+            Self::Crypto => art::Scene::Crypto,
+            Self::Stocks => art::Scene::Stocks,
+            Self::Predictions => art::Scene::Predictions,
         }
     }
 
@@ -322,7 +322,7 @@ pub fn show(
         state.recents = store
             .lock()
             .ok()
-            .map(|store| add_chart_sheet::load_recents(&store))
+            .map(|store| sheet::load_recents(&store))
             .unwrap_or_default();
     }
     state.receive();
@@ -334,14 +334,8 @@ pub fn show(
     }
     let screen = ctx.content_rect().size();
     let size = vec2(
-        add_chart_sheet::SHEET_SIZE
-            .x
-            .min(screen.x - 32.0)
-            .max(560.0),
-        add_chart_sheet::SHEET_SIZE
-            .y
-            .min(screen.y - 32.0)
-            .max(440.0),
+        sheet::SHEET_SIZE.x.min(screen.x - 32.0).max(560.0),
+        sheet::SHEET_SIZE.y.min(screen.y - 32.0).max(440.0),
     );
     let search_id = Id::new(SEARCH_ID);
     let field_focused = ctx.memory(|memory| memory.has_focus(search_id));
@@ -365,7 +359,7 @@ pub fn show(
             ui.set_width(size.x);
             ui.set_height(size.y);
             ui.spacing_mut().item_spacing = vec2(8.0, 0.0);
-            let padding = add_chart_sheet::PADDING;
+            let padding = sheet::PADDING;
             let body = Rect::from_min_size(ui.min_rect().min, vec2(size.x, size.y - FOOTER_HEIGHT))
                 .shrink(padding);
             let mut body_ui = ui.new_child(egui::UiBuilder::new().max_rect(body));
@@ -400,14 +394,14 @@ pub fn show(
         outcome = Some(AssetPickerOutcome::Choose(Box::new(selected)));
     }
     if let Some(AssetPickerOutcome::Choose(result)) = &outcome
-        && add_chart_sheet::record_recent(&mut state.recents, result)
+        && sheet::record_recent(&mut state.recents, result)
     {
         state.recents_dirty = true;
     }
     if std::mem::take(&mut state.recents_dirty)
         && let Ok(store) = store.lock()
     {
-        add_chart_sheet::store_recents(&store, &state.recents);
+        sheet::store_recents(&store, &state.recents);
     }
     outcome
 }
@@ -418,10 +412,10 @@ fn show_body(
     search_id: Id,
     outcome: &mut Option<AssetPickerOutcome>,
 ) {
-    add_chart_sheet::header(ui, state.tab.scene(), &state.title, &state.subtitle);
+    sheet::header(ui, state.tab.scene(), &state.title, &state.subtitle);
     ui.add_space(16.0);
     let items = PickerTab::ALL.map(|tab| (tab, tab.title(), tab.icon()));
-    if let Some(tab) = add_chart_sheet::segmented_tabs(ui, &items, state.tab) {
+    if let Some(tab) = sheet::segmented_tabs(ui, &items, state.tab) {
         state.select_tab(tab);
         state.focus = true;
     }
@@ -438,12 +432,12 @@ fn show_body(
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
         if state.tab == PickerTab::Predictions
-            && let Some(provider) = add_chart_sheet::provider_menu(ui, state.provider)
+            && let Some(provider) = sheet::provider_menu(ui, state.provider)
         {
             state.select_provider(provider);
         }
         let searching = state.is_loading() || state.debounce.is_some();
-        let event = add_chart_sheet::search_box(
+        let event = sheet::search_box(
             ui,
             &mut state.query,
             searching,
@@ -464,7 +458,7 @@ fn show_body(
                 if state
                     .selected
                     .as_ref()
-                    .is_some_and(|selected| add_chart_sheet::same_market(selected, &first))
+                    .is_some_and(|selected| sheet::same_market(selected, &first))
                 {
                     *outcome = Some(AssetPickerOutcome::Choose(Box::new(first)));
                 } else {
@@ -482,15 +476,15 @@ fn show_body(
     let searching = state.is_loading() || state.debounce.is_some();
     let sections = state.sections();
     if !sections.is_empty() {
-        if let Some(chosen) = add_chart_sheet::source_groups(ui, &sections, &mut state.selected) {
+        if let Some(chosen) = sheet::source_groups(ui, &sections, &mut state.selected) {
             *outcome = Some(AssetPickerOutcome::Choose(Box::new(chosen)));
         }
     } else if !searching && state.has_answer() {
         if let Some(error) = state.first_error() {
-            add_chart_sheet::no_results(ui, "Search Failed", &error);
+            sheet::no_results(ui, "Search Failed", &error);
         } else {
             let query = state.query.trim().to_owned();
-            add_chart_sheet::no_results(
+            sheet::no_results(
                 ui,
                 &format!("No Results for “{query}”"),
                 "Check the spelling or try a new search.",
@@ -510,15 +504,14 @@ fn idle(ui: &mut Ui, state: &mut AssetPickerState, outcome: &mut Option<AssetPic
                 PickerTab::Crypto => {
                     let items =
                         CRYPTO_SUGGESTIONS.map(|ticker| Chip::Logo(ticker, DataSource::Binance));
-                    if let Some(index) = add_chart_sheet::suggestion_grid(ui, "Suggestions", &items)
-                    {
+                    if let Some(index) = sheet::suggestion_grid(ui, "Suggestions", &items) {
                         search = Some(CRYPTO_SUGGESTIONS[index]);
                     }
                 }
                 PickerTab::Stocks => {
                     let items =
                         STOCK_SUGGESTIONS.map(|ticker| Chip::Logo(ticker, DataSource::Alpaca));
-                    if let Some(index) = add_chart_sheet::suggestion_grid(
+                    if let Some(index) = sheet::suggestion_grid(
                         ui,
                         "Popular US stocks and ETFs · free IEX feed",
                         &items,
@@ -528,17 +521,14 @@ fn idle(ui: &mut Ui, state: &mut AssetPickerState, outcome: &mut Option<AssetPic
                 }
                 PickerTab::Predictions => {
                     let items = PREDICTION_TOPICS.map(|(title, _, icon)| Chip::Symbol(title, icon));
-                    if let Some(index) =
-                        add_chart_sheet::suggestion_grid(ui, "Popular topics", &items)
-                    {
+                    if let Some(index) = sheet::suggestion_grid(ui, "Popular topics", &items) {
                         search = Some(PREDICTION_TOPICS[index].1);
                     }
                 }
             }
             if state.tab != PickerTab::Predictions && !state.recents.is_empty() {
                 ui.add_space(16.0);
-                let recents =
-                    add_chart_sheet::recents_card(ui, &mut state.recents, state.selected.as_ref());
+                let recents = sheet::recents_card(ui, &mut state.recents, state.selected.as_ref());
                 if let Some(result) = recents.commit {
                     *outcome = Some(AssetPickerOutcome::Choose(Box::new(result)));
                 } else if let Some(result) = recents.pick {
@@ -562,17 +552,17 @@ fn show_footer(
 ) {
     ui.spacing_mut().item_spacing.x = 12.0;
     if let Some(selected) = &state.selected {
-        add_chart_sheet::selected_banner(ui, selected, (ui.available_width() - 200.0).min(380.0));
+        sheet::selected_banner(ui, selected, (ui.available_width() - 200.0).min(380.0));
     }
     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
         ui.spacing_mut().item_spacing.x = 12.0;
         let label = state.action_label.clone();
-        if add_chart_sheet::sheet_button(ui, &label, true, state.selected.is_some()).clicked()
+        if sheet::sheet_button(ui, &label, true, state.selected.is_some()).clicked()
             && let Some(selected) = state.selected.clone()
         {
             *outcome = Some(AssetPickerOutcome::Choose(Box::new(selected)));
         }
-        if add_chart_sheet::sheet_button(ui, "Cancel", false, true).clicked() {
+        if sheet::sheet_button(ui, "Cancel", false, true).clicked() {
             *outcome = Some(AssetPickerOutcome::Cancel);
         }
     });
@@ -848,8 +838,8 @@ mod tests {
         let btc = hit(DataSource::Binance, "BTC/USDT", "BTCUSDT");
         state.recents_dirty = false;
         // What the sheet does when a row is chosen.
-        assert!(add_chart_sheet::record_recent(&mut state.recents, &btc));
-        add_chart_sheet::store_recents(&store.lock().unwrap(), &state.recents);
+        assert!(sheet::record_recent(&mut state.recents, &btc));
+        sheet::store_recents(&store.lock().unwrap(), &state.recents);
 
         let mut next = AssetPickerState::new("Add Asset", "", "Continue");
         draw_with(&mut next, &store);
@@ -875,7 +865,7 @@ mod tests {
     #[test]
     fn prediction_markets_are_not_kept_as_recents() {
         let mut recents = Vec::new();
-        assert!(!add_chart_sheet::record_recent(
+        assert!(!sheet::record_recent(
             &mut recents,
             &hit(DataSource::Polymarket, "Fed", "fed")
         ));

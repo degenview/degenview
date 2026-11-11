@@ -12,7 +12,7 @@ use crate::model::webhook::{EndpointId, WebhookEndpoint};
 use crate::pine::builtins::alert::call::AlertCallSite;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, REGULAR, SEMIBOLD, size};
-use crate::ui::{sheet, theme, webhook::picker};
+use crate::ui::{kit::sheet, theme, webhook::picker};
 use eframe::egui::{self, Id, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2};
 
 /// More call sites than this scroll instead of growing the sheet.

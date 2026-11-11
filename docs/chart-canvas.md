@@ -4,9 +4,9 @@ Reference for Chart Settings ▸ **Canvas**, the chart appearance templates, and
 built. Companion to [chart-types.md](chart-types.md) (Appearance ▸ chart types).
 
 The model is `src/model/chart/canvas/mod.rs` (`ChartCanvas`, kept in `ChartAppearance::canvas`), the
-painting is `src/ui/canvas_render.rs` and `ChartCard::body`, the page is
-`src/ui/chart_canvas_settings.rs`, and templates are `src/model/chart/template/mod.rs`,
-`src/store/chart_template.rs` and `src/ui/chart_templates.rs`.
+painting is `src/ui/chart/canvas.rs` and `ChartCard::body`, the page is
+`src/ui/chart/settings/canvas.rs`, and templates are `src/model/chart/template/mod.rs`,
+`src/store/chart_template.rs` and `src/ui/chart/settings/templates/mod.rs`.
 
 ## What is verified against TradingView, and what is not
 
@@ -118,7 +118,7 @@ inside the price plot, not in panes, so they have no pane buttons.
 
 ## The colour picker
 
-Every swatch (`kit::color_well`) opens `ui/color_picker.rs`, one picker drawn with the painter in
+Every swatch (`kit::color_well`) opens `ui/kit/color_picker/mod.rs`, one picker drawn with the painter in
 the app's own style, so it is identical on macOS, Windows and Linux (no egui stock picker, and no
 native `NSColorPanel`: no crate wraps the three platforms' dialogs, and Windows' has no opacity).
 It has a saturation/brightness square, hue and opacity sliders (opacity only where the setting

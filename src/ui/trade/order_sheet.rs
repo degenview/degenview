@@ -28,7 +28,12 @@ use crate::trading::model::{
 use crate::trading::preview::PreviewSlot;
 use crate::trading::task::Task;
 use crate::ui::icons::{self, Icon};
-use crate::ui::{broker::badge, dialog, kit, paper::form, theme};
+use crate::ui::{
+    broker::badge,
+    kit::{self, dialog},
+    paper::form,
+    theme,
+};
 
 /// How long what is typed must stay the same before the venue is asked about it.
 const DEBOUNCE: Duration = Duration::from_millis(450);

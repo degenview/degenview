@@ -106,7 +106,7 @@ button), and the glyphs are the app's own set. It is 332 pt wide to fit the cont
 ## Verified, and not
 
 - The model, hub, persistence, the workspace's apply and probation, the viewport path through real
-  pointer events (`ui/chart_card/tab_link_tests.rs`: two tabs, the four combinations of the
+  pointer events (`ui/chart/card/tab_link_tests.rs`: two tabs, the four combinations of the
   switches, different intervals, a chart that has no bars yet, no echo) and the menu section's
   clicks (`the_tab_menu_ends_with_the_tab_linking_section`) are covered by tests. `render_grid`'s
   own wiring of the same calls (`follow_sync` on the focused chart, `link_change` into the

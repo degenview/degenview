@@ -4,7 +4,7 @@
 
 use crate::model::DataSource;
 use crate::model::watchlist::WatchlistInstrument;
-use crate::ui::add_chart_sheet::RecentMarket;
+use crate::ui::chart::add::sheet::RecentMarket;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, MEDIUM, REGULAR, SEMIBOLD, size};
 use crate::ui::{theme, workspace::empty_art};

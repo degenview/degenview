@@ -16,12 +16,12 @@ use crate::service::asset_auto_mapper::{self, asset_from_search_result};
 use crate::service::file_dialog;
 use crate::service::portfolio_quotes::PortfolioFxRates;
 use crate::ui::icons::Icon;
+use crate::ui::kit::sheet;
 use crate::ui::portfolio::asset_picker::{self, AssetPickerOutcome, AssetPickerState};
 use crate::ui::portfolio::cmc_import::{self, CmcImportAction, CmcImportInput, CmcImportState};
 use crate::ui::portfolio::import_preview::{
     self, ImportPreviewInput, ImportPreviewOutcome, ImportPreviewState,
 };
-use crate::ui::sheet;
 use crate::ui::theme;
 use eframe::egui::{self, Align};
 use std::sync::Arc;

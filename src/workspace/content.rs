@@ -17,7 +17,7 @@ use crate::service::image_ingest::{self, IngestError};
 use crate::service::{file_dialog, work_queue};
 use crate::store::SharedStore;
 use crate::store::asset_store::StoredAsset;
-use crate::ui::content_sheet::{self, ImageSheet, ImageSheetAction};
+use crate::ui::drawing::content::sheet::{self, ImageSheet, ImageSheetAction};
 use eframe::egui::{self, ColorImage};
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver};
@@ -334,7 +334,7 @@ impl ChartWorkspace {
 
     fn show_image_sheet(&mut self, ctx: &egui::Context) {
         let dragging = ctx.input(|input| !input.raw.hovered_files.is_empty());
-        let action = content_sheet::show_image(
+        let action = sheet::show_image(
             ctx,
             &ImageSheet {
                 working: self.content.working(),

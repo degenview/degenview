@@ -7,8 +7,8 @@
 2. Implement `service::MarketSource`; `search_tickers` if supported; a parser for a new kline shape.
 3. Register in `service::for_source`. `supports_trending`/`trending` only if it can rank active
    markets (Kalshi cannot).
-4. Add to `ui::add_chart_sheet` via `is_prediction_market()`, not provider matching.
-5. `SourceLogo` under `assets/source_logos/`, the `ui::source_logo::source` arm, attribution in
+4. Add to `ui::chart::add::sheet` via `is_prediction_market()`, not provider matching.
+5. `SourceLogo` under `assets/source_logos/`, the `ui::kit::source_logo::source` arm, attribution in
    `docs/source-logos.md`.
 
 Prediction markets: lines under Predictions, REST refresh. Kalshi ids are `"SERIES/MARKET"`; cache

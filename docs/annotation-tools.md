@@ -64,7 +64,7 @@ dialog. A Price label's text is its price, formatted at paint time with the char
 * `model/drawings/style.rs`: the box style fields (`border`, `wrap`, `box_width`, `emoji`,
   `emoji_shown`, `emoji_fill`) are `Copy`, clamped in `sanitized()` and left out of a stored row while
   they hold their defaults, like the pitchfork levels.
-* Geometry is pure and tested in `ui/annotation_geometry.rs` (bubble with a tail, pin, flag,
+* Geometry is pure and tested in `ui/drawing/geometry/annotation.rs` (bubble with a tail, pin, flag,
   signpost, note rectangles); projection is `drawing_layer/note_shapes.rs` and
   `table_shapes.rs`. Boxes are sized with the context that paints (`TextMeasure`, in `Projection`),
   so hit shapes, handles, the toolbar and a snapshot agree on every box's size.
@@ -202,12 +202,12 @@ exposed.
 
 ## Tests
 
-Every `every_tool_…` loop in `ui/drawing_layer/tests.rs` runs over all 45 grouped tools, content tools
+Every `every_tool_…` loop in `ui/drawing/layer/tests.rs` runs over all 45 grouped tools, content tools
 included (through `Drawing::sample` and `sample_content`): placement in one gesture and one undo step,
 select, move, delete, every handle, save and reopen, the toolbar. Per-area suites:
 `drawing_layer/tests/{note,table,image,card}_tests.rs`, `service/image_ingest.rs`,
 `sync/asset_tests.rs` (on `MockCloud`), `service/link_fetch.rs` (parsers on fixtures),
-`ui/content_card.rs`, `workspace/context/tests.rs` (paste, consent, fetch results). Galleries that
+`ui/drawing/content/card.rs`, `workspace/context/tests.rs` (paste, consent, fetch results). Galleries that
 write PNGs for a person to look at:
 
 ```

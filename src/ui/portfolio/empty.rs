@@ -3,8 +3,8 @@
 //! a panel that is waiting on prices. Painter code over the shared [`Art`] helpers, so every
 //! picture follows the theme.
 
-use crate::ui::art::{Art, ghost};
 use crate::ui::icons::Icon;
+use crate::ui::kit::art::{Art, ghost};
 use crate::ui::pine::logs_view::{centered, intro, step};
 use crate::ui::{kit, theme};
 use eframe::egui::{
@@ -55,7 +55,7 @@ impl Scene {
     }
 }
 
-/// Draws `scene` in `rect` (an [`crate::ui::art::SIZE`] box).
+/// Draws `scene` in `rect` (an [`crate::ui::kit::art::SIZE`] box).
 pub fn paint(ui: &Ui, rect: Rect, scene: Scene) {
     let art = Art {
         ui,
@@ -226,7 +226,7 @@ impl Art<'_> {
     /// A donut drawn faintly: where the allocation will go.
     fn pf_allocation(&self) {
         self.disc(self.centre);
-        let card = egui::Rect::from_center_size(self.centre, crate::ui::art::CARD);
+        let card = egui::Rect::from_center_size(self.centre, crate::ui::kit::art::CARD);
         self.card_at(card, theme::chrome());
         self.pf_ring(card.center(), 15.0, 6.0, 0.55);
         self.line(
@@ -303,7 +303,7 @@ pub fn compact(ui: &Ui, area: Rect, scene: Scene, title: &str, detail: &str) {
         theme::text_secondary(),
         (area.width() - 32.0).min(320.0),
     );
-    let picture = crate::ui::art::SIZE;
+    let picture = crate::ui::kit::art::SIZE;
     let total = picture.y + 8.0 + heading.size().y + 4.0 + body.size().y;
     let top = area.center().y - total / 2.0;
     paint(
@@ -567,7 +567,7 @@ fn example(ui: &mut Ui, width: f32, scene: Scene) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ui::art::test_support;
+    use crate::ui::kit::art::test_support;
 
     #[test]
     fn every_picture_draws_inside_its_box_in_both_themes() {

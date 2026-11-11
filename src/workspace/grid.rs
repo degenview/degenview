@@ -9,7 +9,7 @@ use crate::model::{
     Tool,
 };
 use crate::ui::ViewMove;
-use crate::ui::chart_settings::ChartSettingsState;
+use crate::ui::chart::settings::ChartSettingsState;
 use crate::ui::{self, ChartCardAction, CrosshairInfo, DrawingFrame, PickKind, ReplayChartFrame};
 use eframe::egui;
 use std::collections::{HashMap, HashSet};
@@ -20,7 +20,7 @@ enum ChartCommand {
     Focus(u64),
     Settings(u64),
     Remove(u64),
-    Indicator(u64, crate::ui::chart_indicator_strip::Action),
+    Indicator(u64, crate::ui::chart::indicator_strip::Action),
     Move {
         chart_id: u64,
         to_column: u64,
@@ -790,7 +790,7 @@ impl ChartWorkspace {
                     self.settings_chart = Some(chart_id);
                 }
                 ChartCommand::Indicator(chart_id, action) => {
-                    use crate::ui::chart_indicator_strip::{Action, Kind};
+                    use crate::ui::chart::indicator_strip::{Action, Kind};
                     match action {
                         Action::OpenIndicatorSettings => {
                             self.settings_state = ChartSettingsState::default();

@@ -20,7 +20,7 @@ use crate::model::broker::chart::{Unavailable, snap_to_increment};
 use crate::model::broker::ticket::display;
 use crate::ui::accessibility;
 use crate::ui::broker::badge::LIVE;
-use crate::ui::chart_card::PriceScale;
+use crate::ui::chart::card::PriceScale;
 use crate::ui::paper::chart_trading::{Drag, Pill, marker};
 use crate::ui::theme;
 

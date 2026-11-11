@@ -219,13 +219,13 @@ impl ChartWorkspace {
 
     /// The chart the indicator picker adds to: the focused market chart, with what is already on
     /// it. `None` when the focused chart is a portfolio card.
-    pub fn indicator_target(&self) -> Option<ui::indicator_picker::Target> {
+    pub fn indicator_target(&self) -> Option<ui::chart::indicator_picker::Target> {
         let id = self.resolved_focused_id()?;
         let chart = self
             .charts
             .iter()
             .find(|chart| chart.id == id && chart.is_market())?;
-        Some(ui::indicator_picker::Target {
+        Some(ui::chart::indicator_picker::Target {
             config: chart.indicators,
             source: chart.source,
             on_chart: chart
@@ -243,9 +243,9 @@ impl ChartWorkspace {
     pub fn apply_indicator_action(
         &mut self,
         chart_id: u64,
-        action: &ui::chart_indicator_strip::Action,
+        action: &ui::chart::indicator_strip::Action,
     ) -> bool {
-        use ui::chart_indicator_strip::Action;
+        use ui::chart::indicator_strip::Action;
         // The chart's menus offer nothing a line chart (prediction markets, CoinMarketCap) cannot
         // draw: no scripts, no volume. The picker can name them, so they are refused here too.
         let on_line_chart = self
@@ -432,7 +432,7 @@ impl ChartWorkspace {
     /// Draws the script popover, if one is up, and applies what it returns.
     pub(super) fn show_script_popover(&mut self, ctx: &egui::Context) {
         let Some(mut popover) = self.script_popover.take() else {
-            ui::chart_indicator_strip::set_open_script_popover(ctx, None);
+            ui::chart::indicator_strip::set_open_script_popover(ctx, None);
             return;
         };
         let (chart_id, instance_id) = (popover.chart_id(), popover.instance_id());
@@ -448,22 +448,22 @@ impl ChartWorkspace {
                     .any(|instance| instance.id == instance_id)
             });
         if !applied {
-            ui::chart_indicator_strip::set_open_script_popover(ctx, None);
+            ui::chart::indicator_strip::set_open_script_popover(ctx, None);
             return;
         }
         match popover.show(ctx) {
             settings_popover::Outcome::Open => {
-                ui::chart_indicator_strip::set_open_script_popover(
+                ui::chart::indicator_strip::set_open_script_popover(
                     ctx,
                     Some((chart_id, instance_id)),
                 );
                 self.script_popover = Some(popover);
             }
             settings_popover::Outcome::Cancel => {
-                ui::chart_indicator_strip::set_open_script_popover(ctx, None);
+                ui::chart::indicator_strip::set_open_script_popover(ctx, None);
             }
             settings_popover::Outcome::Apply { inputs, style } => {
-                ui::chart_indicator_strip::set_open_script_popover(ctx, None);
+                ui::chart::indicator_strip::set_open_script_popover(ctx, None);
                 if let Some(chart) = self.charts.iter_mut().find(|chart| chart.id == chart_id) {
                     chart.chart.set_pine_instance_inputs(instance_id, &inputs);
                     chart.chart.set_pine_instance_style(instance_id, style);
@@ -732,7 +732,7 @@ mod tests {
 
     #[test]
     fn indicator_actions_apply_to_the_chart_they_name_only() {
-        use crate::ui::chart_indicator_strip::Action;
+        use crate::ui::chart::indicator_strip::Action;
         let ctx = egui::Context::default();
         let mut workspace = empty_workspace(9);
         let a = workspace

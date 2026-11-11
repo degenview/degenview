@@ -2,7 +2,7 @@
 
 use super::{ChartWorkspace, WorkspaceAction};
 use crate::model::DataSource;
-use crate::ui::chart_settings::{self, ChartSettingsAction, ChartSettingsContext};
+use crate::ui::chart::settings::{self, ChartSettingsAction, ChartSettingsContext};
 use eframe::egui;
 
 impl ChartWorkspace {
@@ -17,7 +17,7 @@ impl ChartWorkspace {
             return Vec::new();
         };
         let title = chart.display_title();
-        let outcome = chart_settings::show(
+        let outcome = settings::show(
             ctx,
             &mut self.settings_state,
             ChartSettingsContext {

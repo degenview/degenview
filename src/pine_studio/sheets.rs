@@ -5,8 +5,8 @@ use super::{AlertSheet, PineStudio, PineStudioAction, Sheet, library::unsaved};
 use crate::model::alert::pine::ArmingFacts;
 use crate::ui::alert::pine_editor::{self, PineAlertEditorInput, PineAlertEditorOutcome};
 use crate::ui::icons::{self, Icon};
+use crate::ui::kit::sheet;
 use crate::ui::kit::{self, Confirm, ConfirmOutcome};
-use crate::ui::sheet;
 use crate::ui::theme;
 use eframe::egui::{self, Key};
 

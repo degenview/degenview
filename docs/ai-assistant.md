@@ -296,7 +296,7 @@ summary (counts, whether it compiles, up to three changes) with **Review changes
   one; the composer holds the box, the Ask | Edit switch and Send in one frame; the line under it
   names what a request sends (`Sent to OpenAI · Ask never edits · Bollinger Squeeze · 42 lines ·
   No problems`). What leaves the Mac comes first, because a narrow panel cuts the end of the line.
-- **Errors** are a card (`ui::error_notice`, shared by the panel, the model menu and Settings) with **Try again**
+- **Errors** are a card (`ui::kit::error_notice`, shared by the panel, the model menu and Settings) with **Try again**
   (the message is back in the box), **Copy details** and a dismiss button. The card shows an
   `ErrorReport` (`service::llm::report`): a headline, up to 400 characters of the provider's message, and the
   request id. `LlmError::report()` builds it from the *structure* of the error (the variant, the HTTP status,
@@ -330,7 +330,7 @@ summary (counts, whether it compiles, up to three changes) with **Review changes
 
 ## Reply rendering
 
-`ui/markdown_view.rs` renders replies: paragraphs, headings, bullet and numbered items, quotes,
+`ui/kit/markdown_view.rs` renders replies: paragraphs, headings, bullet and numbered items, quotes,
 fenced code (pine code is syntax-coloured; each block has Copy) and inline bold, italic, `code`
 and http(s) links. It is a small parser, not CommonMark: it never fails and never waits, so a fence
 still open while streaming is an open code block, and a `**` with nothing to close it is two

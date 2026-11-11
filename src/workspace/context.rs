@@ -2,7 +2,7 @@
 //!
 //! A chart card reports a right-click (`ChartPointer::context`); this module turns it into a
 //! [`ChartContext`] snapshot, builds the menu from the chart's current state
-//! (`model::chart::context`), draws it (`ui::chart_context_menu`), and runs the chosen command.
+//! (`model::chart::context`), draws it (`ui::chart::context_menu`), and runs the chosen command.
 //! Every effect goes through the owners that already exist: the drawing undo stack, the paper
 //! panel's ticket, the alert editor, the settings sheet, the template dialogs. Opening the menu
 //! and choosing an entry never place an order, save an alert or touch another chart: the
@@ -24,11 +24,11 @@ use crate::model::overlay::OverlayCommand;
 use crate::model::paper::{PaperOrderSide, PaperOrderType};
 use crate::model::session_stats;
 use crate::ui::ContextRequest;
-use crate::ui::chart_context_menu::{self, MenuState, Outcome};
-use crate::ui::chart_table_view::{self, TableAction, TableViewState};
-use crate::ui::chart_templates::{self, TemplateState};
-use crate::ui::object_tree::{self as tree_view, TreeAction, TreeState};
-use crate::ui::session_stats_view::{self, StatsViewState};
+use crate::ui::chart::context_menu::{self, MenuState, Outcome};
+use crate::ui::chart::object_tree::{self as tree_view, TreeAction, TreeState};
+use crate::ui::chart::session_stats_view::{self, StatsViewState};
+use crate::ui::chart::settings::templates::{self, TemplateState};
+use crate::ui::chart::table_view::{self, TableAction, TableViewState};
 use eframe::egui::{Context, Id, Pos2};
 
 /// How long a message stays up.
@@ -180,7 +180,7 @@ impl ChartWorkspace {
             return;
         }
         ctx.request_repaint_after(Duration::from_millis(500));
-        ui::chart_notice::show(
+        ui::chart::notice::show(
             ctx,
             Id::new(("chart-notice", self.id)),
             &notice.text,
@@ -349,7 +349,7 @@ impl ChartWorkspace {
                 Some(facts) => {
                     let entries = chart::context::menu(&open.context, &facts);
                     let id = Id::new(("chart-context-menu", self.id, open.serial));
-                    let outcome = chart_context_menu::show(
+                    let outcome = context_menu::show(
                         ctx,
                         id,
                         open.at,
@@ -392,8 +392,7 @@ impl ChartWorkspace {
             self.context.templates_chart = None;
             return;
         };
-        let _ =
-            chart_templates::dialogs(ctx, &mut self.context.templates, &store, &mut chart.chart);
+        let _ = templates::dialogs(ctx, &mut self.context.templates, &store, &mut chart.chart);
     }
 
     // MARK: Running a command
@@ -969,8 +968,7 @@ impl ChartWorkspace {
         let title = format!("{} {}", chart.symbol, self.timeframe.label());
         let price = chart.chart.appearance().price_format();
         let feed = chart.chart.table_feed();
-        let action =
-            chart_table_view::show(ui, &mut self.context.table, &title, feed.as_deref(), price);
+        let action = table_view::show(ui, &mut self.context.table, &title, feed.as_deref(), price);
         if action == Some(TableAction::Close) {
             self.context.table_chart = None;
         }

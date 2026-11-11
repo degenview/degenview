@@ -45,12 +45,12 @@ Finder-launchable app: `./tools/bundle.sh`, then open `target/DegenView.app`. Bi
 ## Naming
 
 - Snake-case modules; one concern per file.
-- **Group modules in directories, never in prefixes.** `model/`, `pine/` and `pine_studio/` hold one
+- **Group modules in directories, never in prefixes.** `model/`, `pine/`, `pine_studio/` and `ui/` hold one
   directory per domain and only `mod.rs` at the root (`pine_studio/` also keeps a few single-purpose
-  files such as `workspace.rs`). A new module goes in its domain's directory; a new domain gets a
+  files such as `workspace.rs`; `ui/` keeps `icons`, `shortcut` and `accessibility`). A new module goes in its domain's directory; a new domain gets a
   directory. Name the child without the directory's name: `model/paper/engine.rs`
   (`model::paper::engine`), not `model/paper_engine.rs`. Three or more files sharing a prefix
-  (`alert_*`, `ai_*`, `ta_*`) belong in a directory.
+  (`alert_*`, `ai_*`, `ta_*`, `settings_*`) belong in a directory.
 - **`mod.rs`, not `foo.rs` + `foo/`.** A module with children or tests is `foo/mod.rs`, tests in
   `foo/tests.rs`. If the parent already has an inline `mod tests`, name end-to-end tests `studio_tests` or
   `integration_tests`. Never leave a `foo.rs` beside a `foo/`.

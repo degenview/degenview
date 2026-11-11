@@ -8,8 +8,10 @@
 
 use crate::model::portfolio::format::PortfolioValueFormatter;
 use crate::model::portfolio::{PortfolioAsset, PortfolioHolding, PortfolioTransaction};
+use crate::ui::chart::add::{art, sheet as add_chart_sheet};
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit;
+use crate::ui::kit::sheet;
 use crate::ui::portfolio::charts;
 use crate::ui::portfolio::grid::{self, Col, MENU_RESERVE, Navigation, RowContext, TableSpec};
 use crate::ui::portfolio::overview::{StatCard, tone_or};
@@ -17,9 +19,7 @@ use crate::ui::portfolio::sheet_parts::card_background;
 use crate::ui::portfolio::transactions::{
     paint_date_cell, paint_type_capsule, paint_type_tick, quantity_sign, type_name,
 };
-use crate::ui::sheet;
 use crate::ui::theme;
-use crate::ui::{add_chart_art, add_chart_sheet};
 use eframe::egui::{self, Color32, Id, Pos2, Rect, Sense, Stroke, Vec2};
 
 pub const SIZE: Vec2 = Vec2::new(880.0, 720.0);
@@ -307,7 +307,7 @@ fn header(ui: &mut egui::Ui, input: &AssetDetailInput) {
     };
     add_chart_sheet::header(
         ui,
-        add_chart_art::Scene::Portfolio,
+        art::Scene::Portfolio,
         &format!("{} Transactions", asset.display_ticker()),
         &header_subtitle(input.subtitle, asset, input.formatter.currency.code()),
     );

@@ -702,7 +702,7 @@ fn typing_a_base64_secret_never_stalls_a_frame() {
 #[test]
 fn the_live_pills_can_be_pressed_and_the_star_stays_at_the_right_edge() {
     use crate::model::{DataSource, IndicatorConfig};
-    use crate::ui::chart_card::{ChartCard, ChartCardAction};
+    use crate::ui::chart::card::{ChartCard, ChartCardAction};
 
     let _restore = theme::RestoreDefaultTheme;
     let width = 520.0;

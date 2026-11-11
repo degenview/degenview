@@ -4,7 +4,12 @@
 
 use super::diff::{ChangeKind, DiffHunk};
 use super::syntax;
-use crate::ui::{accessibility, editor_appearance, icons::Icon, kit, popover, theme};
+use crate::ui::{
+    accessibility, editor_appearance,
+    icons::Icon,
+    kit::{self, popover},
+    theme,
+};
 use eframe::egui::{self, Align, Color32, Id, Margin, Rect, RichText, Ui};
 
 const WIDTH: f32 = 500.0;

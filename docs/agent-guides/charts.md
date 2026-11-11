@@ -5,10 +5,10 @@ Details: [chart types](../chart-types.md), [chart canvas](../chart-canvas.md),
 
 ## Rendering and prices
 
-- `ui::chart_card::ChartCard` owns the painter loop, `ui::series_render` draws every main series,
-  `model::chart::look` decides bar appearance. No type-specific drawing in `chart_card.rs`.
+- `ui::chart::card::ChartCard` owns the painter loop, `ui::chart::series` draws every main series,
+  `model::chart::look` decides bar appearance. No type-specific drawing in `chart/card/mod.rs`.
 - State: `workspace::Chart`. Order: grid, main series, overlays/indicators, labels.
-- `ui::chart_card::PriceScale` is the only price<->y map (linear, or log while the frame can draw
+- `ui::chart::card::PriceScale` is the only price<->y map (linear, or log while the frame can draw
   one), carrying `PriceScaleMode` and reference. Percent and Indexed to 100 change only what axis,
   tags and crosshair say, never a stored price. Read [price scale modes](../price-scale.md) before
   touching axis labels, ticks, tags or the corner button. Axis-column tags: `PriceScale::tag_label`,
@@ -18,7 +18,7 @@ Details: [chart types](../chart-types.md), [chart canvas](../chart-canvas.md),
   screens). Watchlist uses `PriceFormat::AUTO`.
 - Automatic precision deliberately differs from Swift: no decimals from 1,000, two from 1, two
   significant digits below 1 (`0.12`, `0.056`, `0.0031`), leading-zero count below `0.001`
-  (`0.0₅278`). Axis ticks add places their spacing needs. Grid ticks: `format_tick`; `ui::price_text`
+  (`0.0₅278`). Axis ticks add places their spacing needs. Grid ticks: `format_tick`; `ui::chart::price_text`
   paints the subscript count.
 - `axis_decimals` (0–12) and `axis_small_prices` stay chart-local across template application.
 
@@ -39,7 +39,7 @@ Details: [chart types](../chart-types.md), [chart canvas](../chart-canvas.md),
 ## Navigation
 
 - `model::chart::viewport::ChartViewport` is the only view state (bars, fractional offset from
-  newest bar, manual price range), edited by gestures in `ui/chart_card/navigation.rs`. Never keep
+  newest bar, manual price range), edited by gestures in `ui/chart/card/navigation.rs`. Never keep
   another offset or range in a painter, the drawing layer or Pine rendering.
 - Continuous window, edge bars may be cut: clip to the plot, place bars with `Window::lead`, never
   an integer count of blank slots.
@@ -111,7 +111,7 @@ Read [chart overlays](../chart-overlays.md) first. Short rules:
   `FORECAST_MENU`, `FIB_MENU`. Over four anchors needs the fixtures' seven: every-tool loops slice a
   seven-point array by `Placement::Points(n)`.
 - Fibonacci/Gann (`fib_shapes`, `gann_shapes`; maths `model::{fib, gann, fib_style}`,
-  `ui::fib_geometry`): levels in `DrawingStyle.fib: Option<FibStyle>` (`None` = tool defaults, so
+  `ui::drawing::geometry::fib`): levels in `DrawingStyle.fib: Option<FibStyle>` (`None` = tool defaults, so
   projections read `fib_style(tool, style)`), fixed-size lists for the one level editor. Levels from
   stored prices and bar indexes. Curves sampled only where they cross the plot, hard budget
   (`fib_geometry::sample`); fills are convex pieces cut to the plot (`Screen.backdrop`: seen, never
@@ -121,7 +121,7 @@ Read [chart overlays](../chart-overlays.md) first. Short rules:
 - Names and ratios are `Screen.labels` (`PivotLabel`), laid out by `draw::draw_labels` at paint, not
   projection text. Ratios from stored prices (`model::pattern`), never pixels, so scale-independent.
   Cycles counted in bars (`model::pattern::cycle`, `TimeIndex::index_of`); curves sampled only over
-  the plot (`ui::pattern_geometry`). [Chart patterns, Elliott waves and cycles](../pattern-tools.md).
+  the plot (`ui::drawing::geometry::pattern`). [Chart patterns, Elliott waves and cycles](../pattern-tools.md).
 - Forecast/volume/measure (`forecast_shapes`, `volume_shapes`; maths
   `model::{position, volume_profile, ghost, bars_pattern, measure}`) add `Screen.boxes`, `candles`,
   `shade_meshes`. Read only the chart's drawn bars; never fetch or reach an order, alert or script.
@@ -130,7 +130,7 @@ Read [chart overlays](../chart-overlays.md) first. Short rules:
   [Forecasting, volume and measurement tools](../forecast-tools.md).
 - Anchor meaning only part of itself (a level's time, a regression's price): declare in
   `Geometry::reads`, restore what edits may not change in `Geometry::constrain`.
-- Geometry: pure `Pos2` functions with own tests in `ui/drawing_geometry.rs`, `ui/line_geometry.rs`.
+- Geometry: pure `Pos2` functions with own tests in `ui/drawing/geometry/mod.rs`, `ui/drawing/geometry/line/mod.rs`.
   Polygons fill even-odd; translucent freehand strokes paint from a coverage map
   (`rasterize_stroke`), never overlapping triangles. Endless lines cut to the plot with
   `line_in_rect`; never draw from an enormous coordinate.
@@ -160,8 +160,8 @@ Read [chart overlays](../chart-overlays.md) first. Short rules:
 
 ## Context menus
 
-- One menu per right-click: drawing's (`ui::drawing_layer::menu`), else chart's
-  (`model::chart::context` builds, `ui::chart_context_menu` draws, `workspace/context.rs` runs).
+- One menu per right-click: drawing's (`ui::drawing::layer::menu`), else chart's
+  (`model::chart::context` builds, `ui::chart::context_menu` draws, `workspace/context.rs` runs).
   New entry: a `Command`, a row in the model's `menu`, an arm in `run_context_command`. Menus never
   mutate.
 - Click captured once as `ChartContext` (chart, market, time, price, target) via the card's
@@ -187,7 +187,7 @@ Read [chart overlays](../chart-overlays.md) first. Short rules:
   - Chart settings Scripts page: a switch per saved script. First switch-on adds an instance; after
     that the switch is only `PineInstance::visible`, so inputs, style, order survive switching off.
     Removal is the row's separate x. No workspace handle, so edits aren't undoable.
-- Session statistics (`model::session_stats`, `ui::session_stats_view`): read the market's own held
+- Session statistics (`model::session_stats`, `ui::chart::session_stats_view`): read the market's own held
   candles cut at the replay position, never a constructed type's bars; answer once per change of
   bars or question (cached, never per frame). Panel state is card state, unsaved, in no template.
   Every answer carries sample size and a 95% interval and is a historical frequency, never a
@@ -199,7 +199,7 @@ Read [chart overlays](../chart-overlays.md) first. Short rules:
 ## Snapshots
 
 - A snapshot is the live frame: `ChartCard::paint_snapshot` uses the same
-  `frame_layout`/`paint_frame` as `body_inner` (`ui/chart_card/frame.rs`). Never a second chart
+  `frame_layout`/`paint_frame` as `body_inner` (`ui/chart/card/frame.rs`). Never a second chart
   painter: add to `paint_frame`, or the `Overlays` hook if live-only (anything pointer-reachable).
   `snapshot_tests.rs` compares both frames shape for shape and fails on drift.
 - `paint_snapshot` is `&self`, read-only: no Pine run, cache write, viewport/pane/replay change. New

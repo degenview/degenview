@@ -9,7 +9,11 @@ use crate::pine_studio::editor::diff::{ChangeKind, DiffHunk};
 use crate::pine_studio::editor::diff_view;
 use crate::pine_studio::editor::syntax;
 use crate::ui::icons::{self, Icon};
-use crate::ui::{editor_appearance, kit, sheet, theme};
+use crate::ui::{
+    editor_appearance,
+    kit::{self, sheet},
+    theme,
+};
 use eframe::egui::{
     self, Align, Align2, Color32, FontId, Id, Key, Layout, Rect, Sense, Stroke, Ui, UiBuilder,
     epaint::text::LayoutJob, pos2, vec2,

@@ -59,10 +59,10 @@ src/model/chart/layout.rs
 src/model/chart/persisted.rs
 src/model/market/instrument.rs
 src/model/indicators/mod.rs
-src/ui/chart_card.rs
-src/ui/chart_indicator_strip.rs
-src/ui/chart_settings.rs
-src/ui/add_chart_sheet.rs
+src/ui/chart/card/mod.rs
+src/ui/chart/indicator_strip.rs
+src/ui/chart/settings/mod.rs
+src/ui/chart/add/sheet.rs
 ```
 
 ### Alerts

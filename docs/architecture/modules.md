@@ -58,7 +58,7 @@ child sees the root's private fields, and anything another child calls is `pub(s
 | `host/` | The stateful seams: one host per feature, bridging engines, stores, workers, and views |
 | `service/` | Market providers, HTTP/WebSocket work, updater, caches, images/icons, FX, notifications, files, Keychain, quotes, webhooks, and login-item registration |
 | `store/` | Schema/helpers plus watchlist, layout/template, portfolio, paper, alert, Pine, and webhook persistence |
-| `ui/` | Shared chrome plus chart, drawing, watchlist, alert, replay, paper, portfolio, Pine, settings, and webhook renderers |
+| `ui/` | egui screens, one directory per domain (see `ui/` layout below), plus the shared `kit/`, `theme/` and `icons` |
 | `mcp/` | Loopback HTTP transport, auth, shared permission state, app bridge, tools, and wire types |
 | `sync/` | iCloud Sync: policy (what syncs), records, merge, outbox, id tagging and the CloudKit transport (bridge in `native/swift`); no UI |
 | `trading/` | Order entry for every venue (paper account and connected brokers) behind `TradingBackend`: drafts, previews, confirmation, valuation; no drawing code |
@@ -113,6 +113,28 @@ beside the code they exercise.
 | `library/` | Where scripts live: `store`, `registry`, `sidebar`, `prefs`, `name`, `demo` and `demos/`, `unsaved`, `external/` |
 | `drawer/` | The drawer under the preview: `problems/`, `logs/`, the intro, `bottom_bar`, `tab_chrome` |
 | root | `mod.rs` (the manager), `model`, `preview`, `inputs`, `workspace`, `sheets`, `indicators/`, `theme_preview/` |
+
+## `ui/` layout
+
+`ui/` follows the same rule as `model/`: one directory per domain, children named without the domain
+(`ui::broker::panel`, not `ui::broker_panel`), `foo/mod.rs` + `foo/tests.rs`. A screen's gallery or
+picture test sits beside it (`broker/panel_gallery.rs`). A helper used by several domains belongs in
+`kit/`, not in the domain that happened to write it first.
+
+| Directory | Holds |
+| --- | --- |
+| `chart/` | The chart card (`card/`), canvas and series rendering, chart menus, scale menu, indicator strip, table view, object tree, session stats, the Add Chart sheet (`add/`), chart settings with templates and overlays (`settings/`), and the symbol and indicator pickers |
+| `drawing/` | Drawings: pure geometry (`geometry/`, with `fib`, `line`, `annotation`, `pattern`), the interaction layer (`layer/`), the properties panel (`properties/`), `render`, and the text/note/table content tools (`content/`) |
+| `alert/`, `webhook/`, `mcp/` | Alert center, editors, banner and chart lines; webhook editor, picker and settings; MCP activity and confirmation |
+| `paper/`, `broker/`, `trade/` | Paper trading screens, live trading screens, and what both share (the order sheet and its fields) |
+| `portfolio/`, `watchlist/`, `replay/` | The Portfolio tab and its cards, the watchlist sidebar, the replay bar, date sheet and overlay |
+| `pine/` | Pine output on a chart, report, style view, settings popover, Pine Logs (`logs_view/`) and the script catalog |
+| `settings/` | The Settings window (`window`) and one file per page; the Pine Studio page owns the font picker and theme editor |
+| `workspace/`, `window/` | Workspace chrome (toolbar, tool rail, layouts, empty page, chart linking, snapshot menu) and window chrome (tab strip, tab-link menu, update indicator) |
+| `kit/`, `theme/` | Shared widgets (`kit`, with `dialog`, `sheet`, `popover`, `color_picker`, `date_picker`, `split`, `source_logo`, `art`, ...) and colours and fonts |
+| root | `mod.rs` and the three single-file foundations: `icons`, `shortcut`, `accessibility` (plus `editor_appearance/`) |
+
+A new screen goes in its domain's directory; a new domain gets a directory and a row here.
 
 ## Boundaries
 

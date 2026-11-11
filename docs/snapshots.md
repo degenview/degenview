@@ -29,7 +29,7 @@ click / shortcut ─► ChartWorkspace::begin_snapshot(chart_id, action)        
 ```
 
 - **One renderer.** `ChartCard::body_inner` and `paint_snapshot` both lay the chart out with
-  `frame_layout` and draw it with `paint_frame` (`ui/chart_card/frame.rs`). What only the live chart
+  `frame_layout` and draw it with `paint_frame` (`ui/chart/card/frame.rs`). What only the live chart
   has (drawing selection toolbar, pane buttons, interactive alert tags and paper markers, the
   navigation pill, replay picking) is the `Overlays` hook, called at the same points, so layering
   is unchanged. A snapshot is the live frame minus everything a pointer can reach.

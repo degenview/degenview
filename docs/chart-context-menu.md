@@ -10,7 +10,7 @@ A right-click is answered by exactly one menu, chosen by what is under the point
 
 | Under the pointer | Menu |
 | --- | --- |
-| A drawing (Cursor tool, no gesture in progress) | The drawing menu (`ui::drawing_layer::menu`): Settings, Copy, Duplicate, style copy/paste, lock, hide, stacking order, vertices, Delete. |
+| A drawing (Cursor tool, no gesture in progress) | The drawing menu (`ui::drawing::layer::menu`): Settings, Copy, Duplicate, style copy/paste, lock, hide, stacking order, vertices, Delete. |
 | A paper order or position tag | Cancel order / Close position, Show in Paper panel. |
 | A price alert's arrow or pill | Edit, Pause or Resume, Delete (the pause and play icons mark the toggle). |
 | A script's pane | Settings, Hide or Show, Visual order, Pine logs, Open Pine Studio, Remove from chart. |
@@ -33,9 +33,9 @@ before).
 | Sell limit / Buy stop / Buy limit / Sell stop @ *p* | Opens the order ticket on that side and type. | `PaperPanel::open_pending_ticket`, `TicketDraft::pending` |
 | Add order on *SYMBOL* at *p*… | Opens the full ticket with the price and the type the price suggests. | `PaperPanel::open_ticket` |
 | Lock / Unlock vertical cursor line by time | Pins a vertical line to the clicked time. | `ChartCard::time_lock` |
-| Table view | Docks the bars and indicator values as a table under the charts. | `model::chart::table`, `ui::chart_table_view` |
-| Object tree | Docks the symbol, compared symbols, indicators, scripts and drawings as a list on the right. | `model::chart::object_tree`, `ui::object_tree` |
-| Session statistics | Docks a panel on the right that counts how often something happened on the chart's days, with N and a 95% interval. See [Session statistics](session-stats.md). | `model::session_stats`, `ui::session_stats_view` |
+| Table view | Docks the bars and indicator values as a table under the charts. | `model::chart::table`, `ui::chart::table_view` |
+| Object tree | Docks the symbol, compared symbols, indicators, scripts and drawings as a list on the right. | `model::chart::object_tree`, `ui::chart::object_tree` |
+| Session statistics | Docks a panel on the right that counts how often something happened on the chart's days, with N and a 95% interval. See [Session statistics](session-stats.md). | `model::session_stats`, `ui::chart::session_stats_view` |
 | Chart template ▸ | Applies a preset or saved appearance template, saves the current look, manages templates, resets. | `ChartTemplateStore`, `ChartCard::apply_template`, the settings sheet's dialogs |
 | Remove *N* drawings | Asks, then removes the chart's drawings as one undo step. | `confirm_drawings_removal`, `apply_drawing_commands` |
 | Remove *N* indicators | Asks, then removes built-in indicators, scripts and the compared markets (counted in *N*) as one undoable step. | `remove_all_indicators`, `Snapshot::Indicators` + `Snapshot::Overlays` in a `Snapshot::All` |
@@ -112,7 +112,7 @@ and nothing else changes it.
 
 ## Pine logs
 
-A docked panel on the right (beside the Object tree, `workspace/pine_logs.rs`, `ui/pine_logs_view`),
+A docked panel on the right (beside the Object tree, `workspace/pine_logs.rs`, `ui/pine/logs_view`),
 opened from a script's chip menu or pane menu, "Pine logs". It reads the messages the chart card
 keeps for each script's run and owns none of them. Hovering a row offers Source code and Scroll to
 bar. See [Pine Logs](pine-logs.md).
