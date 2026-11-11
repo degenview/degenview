@@ -299,5 +299,4 @@ pub fn sweep(from: f64, to: f64) -> f64 {
 }
 
 #[cfg(test)]
-#[path = "fib_geometry_tests.rs"]
 mod tests;

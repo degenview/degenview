@@ -603,7 +603,8 @@ pub enum EditorFontSource {
 /// NL build has no ligatures, which the editor could not switch on or off.
 pub fn bundled_editor_font() -> std::sync::Arc<egui::FontData> {
     static FONT: std::sync::OnceLock<std::sync::Arc<egui::FontData>> = std::sync::OnceLock::new();
-    const JETBRAINS_MONO: &[u8] = include_bytes!("../../assets/fonts/JetBrainsMonoNL-Regular.ttf");
+    const JETBRAINS_MONO: &[u8] =
+        include_bytes!("../../../assets/fonts/JetBrainsMonoNL-Regular.ttf");
     FONT.get_or_init(|| std::sync::Arc::new(egui::FontData::from_static(JETBRAINS_MONO)))
         .clone()
 }
@@ -661,7 +662,7 @@ pub fn install_editor_font(ctx: &egui::Context, font: &EditorFontSource) {
 /// egui's bundled fonts nor a Linux or Windows install can be counted on to have "▲", "✔" or "★",
 /// which a Pine `plotchar`, a label or a text drawing may use.
 fn add_symbol_fallback(fonts: &mut egui::FontDefinitions) {
-    const SYMBOLS: &[u8] = include_bytes!("../../assets/fonts/NotoSansSymbols2-subset.ttf");
+    const SYMBOLS: &[u8] = include_bytes!("../../../assets/fonts/NotoSansSymbols2-subset.ttf");
     fonts.font_data.insert(
         "noto-symbols".to_owned(),
         std::sync::Arc::new(egui::FontData::from_static(SYMBOLS)),
