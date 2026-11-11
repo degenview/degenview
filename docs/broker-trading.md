@@ -31,10 +31,11 @@ price an order trades at) and [iCloud Sync](icloud-sync.md) (nothing here syncs)
 
 | Piece | Where |
 | --- | --- |
-| Credentials | Operating system secret store, app-only group `es.nico.degenview.broker`: `service/keychain_broker_secrets.rs` (the crate's `SecretStore`). Read when connecting, never at startup for a user who has none. Never SQLite, never iCloud, never a log. |
+| Credentials | Operating system secret store, app-only group `es.nico.degenview.broker`: `service/keychain_broker_secrets.rs` (the crate's `SecretStore`). Read when connecting, never at startup for a user who has none. **Every read, write and removal runs on one secrets thread owned by `BrokerHost`** (a queue, so a save followed by a removal cannot swap), never on the interface thread: the OS store may prompt or hang. `connection()` reads only what that thread last learned (a key shows as saved once the store has answered). A removal waits behind an unanswered Keychain prompt on the same queue; the connection itself stops at once. Never SQLite, never iCloud, never a log. |
 | Unconfirmed orders | Local-only setting `broker.pending` (`host/broker_host.rs::StoreJournal`): written **before** an order is sent, so a restart cannot lose an order that may be live. An unreadable record is an error, never "nothing pending". Every record carries the **account** (the portfolio) that sent it and is keyed by `(broker, account, client order id)`; only a session on that account shows, looks up, settles, retries or deletes it. Records of another account, and records from before they carried one, are left untouched and counted ("1 unconfirmed order belongs to a different account"); they are checked when that account connects again. |
 | Choices about trading | Local-only setting `broker.prefs`. |
 | Connections | `host/broker_host.rs::BrokerHost`: one per process, shared by every window, **outside the paper-trading lock**. Each connection's runtime runs on its own thread and publishes `Arc` snapshots; the UI never calls the network. Every request for a connection (a new key, the saved key at startup, Disconnect) takes a number, and a start may publish its runtime only if its number is still the broker's current one, so a Disconnect, or a newer key, always has the last word over a start that was still waiting on the Keychain prompt or the store. |
+| Which venues are on | `host/trading_hub.rs::TradingHub` is the **only owner of a venue's lifecycle**: `enable`, `connect(id, credentials)` (save the key, connect, remember the venue as enabled) and `disable` (forget the choice, stop the connection, remove the key). Settings calls these, not `BrokerHost`: disconnecting only the host left a key-less broker (the sandbox) in `trading.enabled`, so it reconnected at the next start. `connect` and `disable` return a polled `Operation` (the answer of the secret store), shown as "Saving the key…" / "Removing the key…". |
 | Redraws | `BrokerHost::revision()` is compared once a frame in `DegenViewApp::tick_tab_quotes`, which repaints every tab window. |
 | Settings | Settings ▸ Brokers (`ui/settings_brokers.rs`): connect (the key is checked with reads only, then saved), permissions, Disconnect. |
 
@@ -206,6 +207,14 @@ nothing has run against a real Coinbase account. Both are needed before this shi
 request descriptions for the checklist.
 
 ## Not done yet / not verified
+
+* **The venue layer is not the only path yet.** `TradingBackend` covers order entry (the order sheet): account,
+  rules, prices, check, preview, submit, cancel. The live orders panel (`ui/broker_panel.rs`: history and fills
+  paging, retry, the edit sheet and its fingerprint/preview state machine), the chart's order lines
+  (`workspace/broker.rs`) and the Settings cards still read `BrokerHost` snapshots and `BrokerRuntime`
+  directly, and `BrokerHost::global()` / `TradingHub::global()` are process-wide. Moving the edit sheet into a
+  state machine outside the drawing code, migrating the panel and chart onto the venue layer, and handing
+  `Arc<TradingHub>` to each window are separate changes. `trading/` does not import `ui` (a test checks).
 
 * Two Coinbase portfolios have not been tried together against the real service. The account id is
   the key's `portfolio_uuid`; a key without one is the account `default`, which two such keys would

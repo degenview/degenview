@@ -26,7 +26,7 @@ use eframe::egui::{self, Color32, Id};
 use crate::host::broker_host::BrokerHost;
 use crate::model::broker_prefs::BrokerPrefs;
 use crate::model::broker_ticket::{self as rules, StatusTone};
-use crate::trading::model::{AccountStats, TabKind};
+use crate::trading::model::AccountStats;
 use crate::ui::alert_center::Tone;
 use crate::ui::icons::Icon;
 use crate::ui::paper_grid::{self as grid, Col, col};
@@ -45,13 +45,22 @@ pub enum BrokerTab {
 }
 
 impl BrokerTab {
-    /// The tab's title and icon come from the kind, so they read the same in every venue.
-    fn kind(self) -> TabKind {
+    fn title(self) -> &'static str {
         match self {
-            Self::Orders => TabKind::Orders,
-            Self::History => TabKind::History,
-            Self::Fills => TabKind::Fills,
-            Self::Balances => TabKind::Balances,
+            Self::Orders => "Orders",
+            Self::History => "History",
+            Self::Fills => "Fills",
+            Self::Balances => "Balances",
+        }
+    }
+
+    fn icon(self) -> crate::ui::icons::Icon {
+        use crate::ui::icons::Icon;
+        match self {
+            Self::Orders => Icon::List,
+            Self::History => Icon::Clock,
+            Self::Fills => Icon::Exchange,
+            Self::Balances => Icon::Banknote,
         }
     }
 }
@@ -256,7 +265,7 @@ fn capitalise(text: &str) -> String {
     })
 }
 
-pub use crate::model::broker_ticket::{edit_blocker, type_label};
+pub use crate::model::broker_ticket::type_label;
 
 fn tone(tone: StatusTone) -> Tone {
     match tone {
@@ -554,8 +563,8 @@ fn header(
     .into_iter()
     .map(|tab| kit::TabItem {
         value: tab,
-        title: tab.kind().title(),
-        icon: tab.kind().icon(),
+        title: tab.title(),
+        icon: tab.icon(),
         count: if tab == BrokerTab::Orders { working } else { 0 },
     })
     .collect();
@@ -1610,6 +1619,7 @@ fn edit_sheet(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::broker_ticket::edit_blocker;
     use degenview_brokers::{Capabilities, OrderStatus, ProductId, TifKind, Tradability};
     use std::str::FromStr;
 

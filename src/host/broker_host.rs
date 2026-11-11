@@ -18,7 +18,7 @@
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -35,6 +35,7 @@ use degenview_brokers::{
 use crate::model::broker_prefs::{self, AllPrefs, BrokerPrefs};
 use crate::service::keychain_broker_secrets::BrokerSecrets;
 use crate::store::SharedStore;
+use crate::trading::task::Task;
 
 /// The setting that holds submissions sent and not yet confirmed.
 pub const PENDING_KEY: &str = "broker.pending";
@@ -208,6 +209,38 @@ struct Slots {
     wanted: BTreeMap<BrokerId, u64>,
 }
 
+/// What a question to the secret store needs, without the host.
+struct Prober {
+    secrets: Arc<dyn SecretStore>,
+    saved: Arc<Mutex<SavedKeys>>,
+    waker: Arc<AppWaker>,
+}
+
+impl Prober {
+    fn run(&self, id: BrokerId) {
+        let found = self.secrets.is_configured(id, PROFILE);
+        {
+            let mut saved = self.saved.lock().unwrap_or_else(|e| e.into_inner());
+            saved.known.insert(id, found);
+            saved.asked.remove(&id);
+        }
+        self.waker.wake();
+    }
+}
+
+/// Work for the secrets thread.
+type Job = Box<dyn FnOnce() + Send>;
+
+/// An operation on a connection that is answered later: polled from the frame loop.
+pub type Operation = Task<Result<(), String>>;
+
+/// What the secret store last said about each broker, and which questions are still on their way.
+#[derive(Default)]
+struct SavedKeys {
+    known: BTreeMap<BrokerId, bool>,
+    asked: std::collections::BTreeSet<BrokerId>,
+}
+
 /// The best prices of one market at one broker, read for the charts and tickets that show them.
 #[derive(Default)]
 struct QuoteEntry {
@@ -228,6 +261,10 @@ pub struct BrokerHost {
     slots: Mutex<Slots>,
     /// Numbers the connections the user asks for, so each is told apart from the one before it.
     epochs: AtomicU64,
+    /// Where every read, write and delete of a secret happens, in the order they were asked for.
+    jobs: Mutex<Sender<Job>>,
+    /// Whether a key is saved, as the secret store last said. `connection()` reads only this.
+    saved: Arc<Mutex<SavedKeys>>,
     quotes: Mutex<HashMap<(BrokerId, ProductId), QuoteEntry>>,
     waker: Arc<AppWaker>,
     notices: Arc<NoticeQueue>,
@@ -249,6 +286,18 @@ impl BrokerHost {
             .as_ref()
             .and_then(|store| store.lock().ok()?.setting::<AllPrefs>(broker_prefs::KEY))
             .unwrap_or_default();
+        // The secret store may prompt or hang. Everything that touches it runs here, one job at a
+        // time and in the order asked, so the interface thread never waits on it and a save
+        // followed by a removal cannot swap. The thread ends when the host is dropped.
+        let (jobs, queue) = mpsc::channel::<Job>();
+        std::thread::Builder::new()
+            .name("broker-secrets".to_owned())
+            .spawn(move || {
+                for job in queue {
+                    job();
+                }
+            })
+            .expect("the secrets thread");
         Arc::new(Self {
             secrets,
             journal,
@@ -258,6 +307,8 @@ impl BrokerHost {
             config,
             slots: Mutex::new(Slots::default()),
             epochs: AtomicU64::new(1),
+            jobs: Mutex::new(jobs),
+            saved: Arc::new(Mutex::new(SavedKeys::default())),
             quotes: Mutex::new(HashMap::new()),
             waker: Arc::new(AppWaker::default()),
             notices: Arc::new(NoticeQueue::default()),
@@ -299,7 +350,8 @@ impl BrokerHost {
         self.waker.wakes.load(Ordering::Acquire) + self.changes.load(Ordering::Acquire)
     }
 
-    fn changed(&self) {
+    /// Something a window draws changed (also called by the trading hub when the enabled venues do).
+    pub(super) fn changed(&self) {
         self.changes.fetch_add(1, Ordering::AcqRel);
         self.waker.wake();
     }
@@ -444,7 +496,7 @@ impl BrokerHost {
     pub fn connection(&self, id: BrokerId) -> Connection {
         if let Some(runtime) = self.runtime(id) {
             Connection::Running(runtime.snapshot())
-        } else if self.secrets.is_configured(id, PROFILE) {
+        } else if self.key_saved(id) {
             Connection::Saved
         } else {
             Connection::NotConfigured
@@ -486,28 +538,78 @@ impl BrokerHost {
         }
     }
 
-    /// Saves checked credentials and starts the connection. A save that fails still connects for
-    /// this session; the error says the credentials were not kept.
-    ///
-    /// Starting reads the record of unconfirmed orders, which takes the shared store's lock. The
-    /// Settings window is drawn while that lock is held, so starting on the interface thread would
-    /// wait for itself and freeze the application. It starts on its own thread instead.
-    pub fn adopt(self: &Arc<Self>, id: BrokerId, credentials: Credentials) -> Result<(), String> {
-        let saved = self
-            .secrets
-            .save(id, PROFILE, &credentials)
-            .map_err(|error| error.0);
-        // Taken before the thread exists: a disconnect that comes first makes this start stale.
-        let epoch = self.renew(id);
-        let host = Arc::clone(self);
-        std::thread::spawn(move || host.start(id, epoch, credentials));
-        saved
+    /// Queues `job` for the secrets thread.
+    fn on_secrets_thread(&self, job: impl FnOnce() + Send + 'static) {
+        let _ = self
+            .jobs
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .send(Box::new(job));
     }
 
-    /// Connects with the saved credentials, if there are any. Reads the secret store, which may
-    /// prompt, so it runs on its own thread.
+    /// Whether a key is saved, as far as the secret store has said. Never asks it from the caller's
+    /// thread: the first time it is wanted the question is queued and the answer is "no" until it
+    /// comes (the screens redraw when it does).
+    fn key_saved(&self, id: BrokerId) -> bool {
+        let first = {
+            let mut saved = self.saved.lock().unwrap_or_else(|e| e.into_inner());
+            match saved.known.get(&id) {
+                Some(known) => return *known,
+                None => saved.asked.insert(id),
+            }
+        };
+        if first {
+            let probe = self.prober();
+            self.on_secrets_thread(move || probe.run(id));
+        }
+        false
+    }
+
+    fn prober(&self) -> Prober {
+        Prober {
+            secrets: Arc::clone(&self.secrets),
+            saved: Arc::clone(&self.saved),
+            waker: Arc::clone(&self.waker),
+        }
+    }
+
+    /// Asks the secret store whether a key is saved and remembers the answer. Secrets thread only.
+    fn probe(&self, id: BrokerId) {
+        self.prober().run(id);
+        self.changed();
+    }
+
+    /// Saves checked credentials and starts the connection. A save that fails still connects for
+    /// this session; the answer says the credentials were not kept.
+    ///
+    /// Returns at once: the save runs on the secrets thread (the secret store may prompt or hang),
+    /// and the connection starts on a thread of its own after it. The answer is the save's.
+    pub fn adopt(self: &Arc<Self>, id: BrokerId, credentials: Credentials) -> Operation {
+        // Taken before anything is queued: a disconnect that comes first makes this start stale.
+        let epoch = self.renew(id);
+        let (answer, receiver) = mpsc::channel();
+        let host = Arc::clone(self);
+        self.on_secrets_thread(move || {
+            // Replaced or disconnected while it waited its turn: nothing to keep.
+            let saved = if host.wanted(id) == epoch {
+                host.secrets
+                    .save(id, PROFILE, &credentials)
+                    .map_err(|error| error.0)
+            } else {
+                Ok(())
+            };
+            host.probe(id);
+            let starter = Arc::clone(&host);
+            std::thread::spawn(move || starter.start(id, epoch, credentials));
+            let _ = answer.send(saved);
+        });
+        operation(receiver)
+    }
+
+    /// Connects with the saved credentials, if there are any. Everything that touches the secret
+    /// store (it may prompt) runs on the secrets thread.
     pub fn connect_saved(self: &Arc<Self>, id: BrokerId) {
-        if self.runtime(id).is_some() || !self.secrets.is_configured(id, PROFILE) {
+        if self.runtime(id).is_some() {
             return;
         }
         // What was wanted when this was asked for. Loading the key may sit on a Keychain prompt for
@@ -515,9 +617,14 @@ impl BrokerHost {
         // is out of date and publishes nothing.
         let epoch = self.wanted(id);
         let host = Arc::clone(self);
-        std::thread::spawn(move || {
+        self.on_secrets_thread(move || {
+            host.probe(id);
+            if !host.secrets.is_configured(id, PROFILE) {
+                return;
+            }
             if let Ok(Some(credentials)) = host.secrets.load(id, PROFILE) {
-                host.start(id, epoch, credentials);
+                let starter = Arc::clone(&host);
+                std::thread::spawn(move || starter.start(id, epoch, credentials));
             }
         });
     }
@@ -582,9 +689,12 @@ impl BrokerHost {
             .retain(|(broker, _), _| *broker != id);
     }
 
-    /// Stops the connection and removes the saved credentials from this Mac. It does **not**
+    /// Stops the connection now and removes the saved credentials from this Mac. It does **not**
     /// revoke the key at the broker; the user does that there.
-    pub fn disconnect(&self, id: BrokerId) -> Result<(), String> {
+    ///
+    /// The connection stops before this returns; the removal runs on the secrets thread, behind
+    /// anything asked earlier, and the answer is its result.
+    pub fn disconnect(self: &Arc<Self>, id: BrokerId) -> Operation {
         // Dropped, not joined: the interface thread never waits on a network request. The wanted
         // connection changes first, under the lock that publishes one, so a start that is still in
         // flight finds itself out of date instead of putting the connection back.
@@ -596,9 +706,15 @@ impl BrokerHost {
         };
         drop(stopped);
         self.forget_quotes(id);
-        let removed = self.secrets.delete(id, PROFILE).map_err(|error| error.0);
         self.changed();
-        removed
+        let (answer, receiver) = mpsc::channel();
+        let host = Arc::clone(self);
+        self.on_secrets_thread(move || {
+            let removed = host.secrets.delete(id, PROFILE).map_err(|error| error.0);
+            host.probe(id);
+            let _ = answer.send(removed);
+        });
+        operation(receiver)
     }
 
     /// Notices that arrived since the last call, oldest first.
@@ -611,6 +727,17 @@ impl BrokerHost {
             .drain(..)
             .collect()
     }
+}
+
+/// A task answered by whatever arrives on `receiver`; a sender dropped without answering says so.
+fn operation(receiver: Receiver<Result<(), String>>) -> Operation {
+    Task::new(move || match receiver.try_recv() {
+        Ok(answer) => Some(answer),
+        Err(mpsc::TryRecvError::Empty) => None,
+        Err(mpsc::TryRecvError::Disconnected) => {
+            Some(Err("The secret store stopped answering.".to_owned()))
+        }
+    })
 }
 
 /// The environment live trading runs in: the real brokers. A developer build with

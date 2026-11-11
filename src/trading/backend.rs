@@ -1,7 +1,7 @@
 //! The one interface every venue implements for the trading screens.
 //!
-//! The order sheet, the orders panel and the chart pills are written against this trait, so adding
-//! a broker adds an adapter and nothing in the screens. Reading is synchronous and cheap (an
+//! The order sheet is written against this trait, so adding a broker adds an adapter and nothing in
+//! the sheet. (The live orders panel and the chart's order lines are not on it yet.) Reading is synchronous and cheap (an
 //! `Arc` snapshot or a locked read); a screen calls these every frame. Anything that waits on a
 //! network is a command with a handle that is polled, and arrives with the order entry.
 
@@ -9,8 +9,8 @@ use degenview_brokers::{Decimal, MarketRef, Side};
 
 use super::draft::{CancelResult, DraftCheck, PreviewResult, SubmitResult, TradeDraft};
 use super::model::{
-    AccountStats, AccountStrip, Amount, BackendState, BalanceRow, Binding, FillRow, MarketAccess,
-    OrderRow, PositionRow, QuoteView, TabKind, VenueInfo,
+    AccountStats, AccountStrip, Amount, BackendState, Binding, MarketAccess, OrderRow, QuoteView,
+    VenueInfo,
 };
 use super::task::Task;
 
@@ -37,17 +37,8 @@ pub trait TradingBackend: Send + Sync {
     /// reads them on demand keeps doing so; call it every frame they are drawn.
     fn quote(&self, market: &MarketRef) -> Option<QuoteView>;
 
-    /// The tabs of the orders panel this venue has data for, in order.
-    fn tabs(&self) -> Vec<TabKind>;
-
     /// Every order the venue knows of, working and finished, newest first.
     fn orders(&self) -> Vec<OrderRow>;
-
-    fn positions(&self) -> Vec<PositionRow>;
-
-    fn fills(&self) -> Vec<FillRow>;
-
-    fn balances(&self) -> Vec<BalanceRow>;
 
     /// What is wrong with the order as typed, and what it would cost as far as can be known without
     /// asking the venue. Cheap: called every frame.
@@ -81,7 +72,4 @@ pub trait TradingBackend: Send + Sync {
 
     /// Cancels the working order with this id (an [`OrderRow::id`](super::model::OrderRow::id)).
     fn cancel(&self, order_id: &str) -> Task<CancelResult>;
-
-    /// Rises whenever anything above may have changed, so a screen can skip rebuilding rows.
-    fn revision(&self) -> u64;
 }

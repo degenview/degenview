@@ -14,17 +14,17 @@ use super::draft::{
     Submitted, TradeDraft,
 };
 use super::model::{
-    AccountStats, AccountStrip, Amount, BackendState, BalanceRow, Binding, FillRow, MarketAccess,
-    MarketRules, OrderClass, OrderRow, PositionRow, QuoteView, RowStatus, TabKind, TicketCaps,
-    TimeInForce, Tone, Unavailable, UnavailableKind, VenueInfo, VenueKind,
+    AccountStats, AccountStrip, Amount, BackendState, Binding, MarketAccess, MarketRules,
+    OrderClass, OrderRow, QuoteView, RowStatus, TicketCaps, TimeInForce, Tone, Unavailable,
+    UnavailableKind, VenueInfo, VenueKind,
 };
 use super::task::Task;
 use crate::host::paper_host::PaperHost;
 use crate::model::DataSource;
 use crate::model::broker_ticket::display;
 use crate::model::paper::{
-    PaperCurrency, PaperFill, PaperInstrument, PaperOrder, PaperOrderRole, PaperOrderSide,
-    PaperOrderStatus, PaperOrderType, PaperPosition, PaperTimeInForce,
+    PaperCurrency, PaperInstrument, PaperOrder, PaperOrderRole, PaperOrderSide, PaperOrderStatus,
+    PaperOrderType, PaperTimeInForce,
 };
 use crate::model::paper_ticket::{TicketDraft as PaperTicket, TicketField};
 use crate::model::trading_venue::TradingVenue;
@@ -130,30 +130,6 @@ pub(crate) fn order_row(order: &PaperOrder) -> OrderRow {
             }),
         },
         unconfirmed: false,
-    }
-}
-
-fn fill_row(fill: &PaperFill) -> FillRow {
-    FillRow {
-        id: fill.id.to_string(),
-        market: fill.instrument.symbol.clone(),
-        side: side(fill.side),
-        price: dec(fill.price),
-        size: dec(fill.quantity),
-        fee: dec(fill.commission),
-        time_ms: fill.timestamp,
-    }
-}
-
-fn position_row(host: &PaperHost, position: &PaperPosition) -> PositionRow {
-    PositionRow {
-        id: format!("{}:{}", position.account_id, position.instrument.key),
-        market: position.instrument.symbol.clone(),
-        size: dec(position.signed_quantity),
-        entry_price: dec(position.average_entry_price),
-        mark_price: host.mark(position).map(dec),
-        unrealized: Some(dec(host.unrealized_pnl(position))),
-        currency: code(position.instrument.quote_currency).to_owned(),
     }
 }
 
@@ -295,7 +271,7 @@ impl TradingBackend for PaperBackend {
             .and_then(|id| snapshot.accounts.iter().find(|a| a.id == id))
             .or_else(|| snapshot.accounts.first())?;
         let metrics = host.metrics(account.id);
-        Some(crate::ui::paper_tables::stats(
+        Some(super::paper_stats::stats(
             Some(&metrics),
             account.base_currency,
         ))
@@ -368,15 +344,6 @@ impl TradingBackend for PaperBackend {
         })
     }
 
-    fn tabs(&self) -> Vec<TabKind> {
-        vec![
-            TabKind::Positions,
-            TabKind::Orders,
-            TabKind::History,
-            TabKind::Fills,
-        ]
-    }
-
     fn orders(&self) -> Vec<OrderRow> {
         let host = self.host();
         let snapshot = host.snapshot();
@@ -394,46 +361,6 @@ impl TradingBackend for PaperBackend {
             .collect();
         rows.sort_by_key(|row| std::cmp::Reverse(row.created_ms));
         rows
-    }
-
-    fn positions(&self) -> Vec<PositionRow> {
-        let host = self.host();
-        let snapshot = host.snapshot();
-        let Some(account) = snapshot
-            .selected_account_id
-            .or_else(|| snapshot.accounts.first().map(|a| a.id))
-        else {
-            return Vec::new();
-        };
-        snapshot
-            .positions
-            .iter()
-            .filter(|position| position.account_id == account && position.signed_quantity != 0.0)
-            .map(|position| position_row(&host, position))
-            .collect()
-    }
-
-    fn fills(&self) -> Vec<FillRow> {
-        let host = self.host();
-        let snapshot = host.snapshot();
-        let Some(account) = snapshot
-            .selected_account_id
-            .or_else(|| snapshot.accounts.first().map(|a| a.id))
-        else {
-            return Vec::new();
-        };
-        let mut fills: Vec<FillRow> = snapshot
-            .fills
-            .iter()
-            .filter(|fill| fill.account_id == account)
-            .map(fill_row)
-            .collect();
-        fills.sort_by_key(|fill| std::cmp::Reverse(fill.time_ms));
-        fills
-    }
-
-    fn balances(&self) -> Vec<BalanceRow> {
-        Vec::new()
     }
 
     fn check(&self, market: &MarketRef, draft: &TradeDraft) -> DraftCheck {
@@ -569,9 +496,5 @@ impl TradingBackend for PaperBackend {
             return Task::ready(Err("That is not a paper order.".to_owned()));
         };
         Task::ready(self.host().cancel(id).map_err(|error| error.message()))
-    }
-
-    fn revision(&self) -> u64 {
-        self.host().revision()
     }
 }

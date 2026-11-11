@@ -177,17 +177,11 @@ pub enum MarketAccess {
 }
 
 impl MarketAccess {
+    #[cfg(test)]
     pub fn rules(&self) -> Option<&MarketRules> {
         match self {
             Self::Ready(rules) => Some(rules),
             Self::Unavailable(_) => None,
-        }
-    }
-
-    pub fn unavailable(&self) -> Option<&Unavailable> {
-        match self {
-            Self::Ready(_) => None,
-            Self::Unavailable(reason) => Some(reason),
         }
     }
 }
@@ -350,71 +344,6 @@ pub struct OrderRow {
     pub unconfirmed: bool,
 }
 
-/// An open position (a venue that nets orders into positions).
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PositionRow {
-    pub id: String,
-    pub market: String,
-    /// Positive long, negative short.
-    pub size: Decimal,
-    pub entry_price: Decimal,
-    pub mark_price: Option<Decimal>,
-    pub unrealized: Option<Decimal>,
-    pub currency: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct FillRow {
-    pub id: String,
-    pub market: String,
-    pub side: Side,
-    pub price: Decimal,
-    pub size: Decimal,
-    pub fee: Decimal,
-    pub time_ms: i64,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct BalanceRow {
-    pub asset: String,
-    pub available: Decimal,
-    pub held: Decimal,
-}
-
-/// The tabs of the orders panel a venue has data for.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum TabKind {
-    Positions,
-    Orders,
-    History,
-    Fills,
-    Balances,
-}
-
-impl TabKind {
-    /// The icon on the tab, the same wherever the tab appears.
-    pub fn icon(self) -> crate::ui::icons::Icon {
-        use crate::ui::icons::Icon;
-        match self {
-            Self::Positions => Icon::ChartUptrend,
-            Self::Orders => Icon::List,
-            Self::History => Icon::Clock,
-            Self::Fills => Icon::Exchange,
-            Self::Balances => Icon::Banknote,
-        }
-    }
-
-    pub fn title(self) -> &'static str {
-        match self {
-            Self::Positions => "Positions",
-            Self::Orders => "Orders",
-            Self::History => "History",
-            Self::Fills => "Fills",
-            Self::Balances => "Balances",
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -424,23 +353,6 @@ mod tests {
         assert!(VenueKind::Live.is_real_money());
         assert!(!VenueKind::Test.is_real_money());
         assert!(!VenueKind::Simulated.is_real_money());
-    }
-
-    #[test]
-    fn every_tab_has_its_own_icon_and_title() {
-        let tabs = [
-            TabKind::Positions,
-            TabKind::Orders,
-            TabKind::History,
-            TabKind::Fills,
-            TabKind::Balances,
-        ];
-        for (index, a) in tabs.iter().enumerate() {
-            for b in &tabs[index + 1..] {
-                assert_ne!(a.icon(), b.icon(), "{a:?} and {b:?}");
-                assert_ne!(a.title(), b.title());
-            }
-        }
     }
 
     #[test]

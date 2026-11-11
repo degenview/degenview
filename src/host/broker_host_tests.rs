@@ -97,14 +97,14 @@ fn a_key_is_checked_then_saved_then_connected_and_disconnect_removes_it() {
     );
     assert!(!secrets.is_configured(ID, PROFILE));
 
-    host.adopt(ID, credentials).expect("saved");
+    host.adopt(ID, credentials).wait().expect("saved");
     assert!(secrets.is_configured(ID, PROFILE));
     wait_for("the connection to go live", || is_live(&host));
     assert!(matches!(host.connection(ID), Connection::Running(_)));
     assert_eq!(host.connected(), vec![ID]);
     assert!(!host.snapshot(ID).unwrap().balances.is_empty());
 
-    host.disconnect(ID).expect("removed");
+    host.disconnect(ID).wait().expect("removed");
     assert!(host.snapshot(ID).is_none());
     assert!(
         !secrets.is_configured(ID, PROFILE),
@@ -124,7 +124,7 @@ fn connecting_while_the_caller_holds_the_store_does_not_wait_for_it() {
     let (sender, receiver) = std::sync::mpsc::channel();
     let ui_thread = Arc::clone(&host);
     std::thread::spawn(move || {
-        let saved = ui_thread.adopt(ID, credentials(&generate_key_pem()));
+        let saved = ui_thread.adopt(ID, credentials(&generate_key_pem())).wait();
         let _ = sender.send(saved);
     });
     receiver
@@ -232,7 +232,8 @@ fn saved_credentials_connect_at_startup_and_a_revoked_key_shows_as_needing_atten
     secrets
         .save(ID, PROFILE, &credentials(&generate_key_pem()))
         .unwrap();
-    assert!(matches!(host.connection(ID), Connection::Saved));
+    // The store answers on its own thread: the key shows as saved once it has.
+    wait_for("the saved key to show", || host.connection(ID).is_saved());
     host.connect_all_saved();
     wait_for("the saved key to connect", || is_live(&host));
 
@@ -278,7 +279,9 @@ fn choices_about_trading_default_to_asking_and_survive_a_restart() {
 fn prices_are_read_only_while_something_wants_them_and_a_stale_one_is_not_shown() {
     let exchange = CoinbaseExchange::start();
     let (host, _) = host(&exchange, &store());
-    host.adopt(ID, credentials(&generate_key_pem())).unwrap();
+    host.adopt(ID, credentials(&generate_key_pem()))
+        .wait()
+        .unwrap();
     wait_for("live", || is_live(&host));
     let product = ProductId::new("BTC-USD");
     let reads = |exchange: &CoinbaseExchange| {
@@ -310,7 +313,9 @@ fn the_revision_rises_when_a_connection_changes_state() {
     let exchange = CoinbaseExchange::start();
     let (host, _) = host(&exchange, &store());
     let start = host.revision();
-    host.adopt(ID, credentials(&generate_key_pem())).unwrap();
+    host.adopt(ID, credentials(&generate_key_pem()))
+        .wait()
+        .unwrap();
     wait_for("live", || is_live(&host));
     assert!(host.revision() > start, "windows are told to redraw");
 }
@@ -319,7 +324,9 @@ fn the_revision_rises_when_a_connection_changes_state() {
 fn a_placed_order_is_visible_to_everyone_sharing_the_host() {
     let exchange = CoinbaseExchange::start();
     let (host, _) = host(&exchange, &store());
-    host.adopt(ID, credentials(&generate_key_pem())).unwrap();
+    host.adopt(ID, credentials(&generate_key_pem()))
+        .wait()
+        .unwrap();
     wait_for("live", || is_live(&host));
     let window_a = host.runtime(ID).unwrap();
     let window_b = host.runtime(ID).unwrap();
@@ -546,12 +553,14 @@ fn a_disconnect_while_the_saved_key_is_still_being_read_is_not_undone() {
     host.connect_saved(ID);
     wait_for("the read to begin", || secrets.entered.load(SeqCst));
 
-    // The user disconnects meanwhile, and is told the key is gone.
-    host.disconnect(ID).expect("removed");
-    assert!(matches!(host.connection(ID), Connection::NotConfigured));
+    // The user disconnects meanwhile. The connection stops at once; the removal of the key waits
+    // its turn behind the prompt, and is reported when it has run.
+    let removed = host.disconnect(ID);
+    assert!(host.runtime(ID).is_none());
 
     // The prompt is answered. The start that was waiting must not bring the connection back.
     release.send(()).unwrap();
+    removed.wait().expect("removed");
     std::thread::sleep(Duration::from_millis(400));
     assert!(host.runtime(ID).is_none(), "a removed key is running");
     assert!(matches!(host.connection(ID), Connection::NotConfigured));
@@ -577,12 +586,14 @@ fn a_newer_key_is_not_replaced_by_a_start_that_began_before_it() {
     secrets.block_next_load.store(true, SeqCst);
     host.connect_saved(ID);
     wait_for("the read to begin", || secrets.entered.load(SeqCst));
-    host.adopt(ID, credentials(&generate_key_pem())).unwrap();
+    // Its save waits its turn behind the read (one queue, in the order asked).
+    let adopted = host.adopt(ID, credentials(&generate_key_pem()));
+
+    // The slow read finishes first and starts the older connection; the newer must win anyway.
+    release.send(()).unwrap();
+    adopted.wait().unwrap();
     wait_for("the new key to go live", || is_live(&host));
     let newer = host.runtime(ID).unwrap().generation();
-
-    // The slow read finishes last. The older start must lose.
-    release.send(()).unwrap();
     std::thread::sleep(Duration::from_millis(400));
     assert_eq!(
         host.runtime(ID).unwrap().generation(),
@@ -598,11 +609,13 @@ fn a_key_that_could_not_be_removed_says_so_and_comes_back_at_the_next_start() {
     let (secrets, _release) = Gated::new();
     let store = store();
     let host = host_over(&exchange, &store, secrets.clone());
-    host.adopt(ID, credentials(&generate_key_pem())).unwrap();
+    host.adopt(ID, credentials(&generate_key_pem()))
+        .wait()
+        .unwrap();
     wait_for("live", || is_live(&host));
 
     secrets.fail_delete.store(true, SeqCst);
-    let error = host.disconnect(ID).expect_err("the removal failed");
+    let error = host.disconnect(ID).wait().expect_err("the removal failed");
     assert!(error.contains("refused"), "{error}");
     // The connection is stopped, but the key is still stored, and the host says so.
     assert!(host.runtime(ID).is_none());
@@ -675,7 +688,9 @@ fn a_price_that_was_already_old_when_it_arrived_is_not_shown_as_new() {
         .rest
         .with_state(|s| s.quote_time = "2026-11-09T12:00:00Z".to_owned());
     let (host, _) = host(&exchange, &store());
-    host.adopt(ID, credentials(&generate_key_pem())).unwrap();
+    host.adopt(ID, credentials(&generate_key_pem()))
+        .wait()
+        .unwrap();
     wait_for("live", || is_live(&host));
     let product = ProductId::new("BTC-USD");
     host.want_quote(ID, &product);
@@ -723,7 +738,9 @@ fn an_unconfirmed_order_of_another_account_is_held_not_shown_or_settled() {
     StoreJournal::new(store.clone()).record(&theirs).unwrap();
 
     let (host, _) = host(&exchange, &store);
-    host.adopt(ID, credentials(&generate_key_pem())).unwrap();
+    host.adopt(ID, credentials(&generate_key_pem()))
+        .wait()
+        .unwrap();
     wait_for("live", || is_live(&host));
     std::thread::sleep(Duration::from_millis(500)); // several reconcile rounds
     let snapshot = host.snapshot(ID).unwrap();
@@ -737,4 +754,165 @@ fn an_unconfirmed_order_of_another_account_is_held_not_shown_or_settled() {
         vec![theirs],
         "and nothing deleted it"
     );
+}
+
+// ---- The interface thread never waits on the secret store ------------------------------------
+
+/// A secret store that does nothing until it is let go: a Keychain prompt nobody has answered.
+struct Stalled {
+    inner: MemorySecretStore,
+    stalled: std::sync::atomic::AtomicBool,
+}
+
+impl Stalled {
+    fn new() -> Arc<Self> {
+        Arc::new(Self {
+            inner: MemorySecretStore::new(),
+            stalled: true.into(),
+        })
+    }
+
+    fn release(&self) {
+        self.stalled
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    fn wait_turn(&self) {
+        while self.stalled.load(std::sync::atomic::Ordering::SeqCst) {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+}
+
+impl SecretStore for Stalled {
+    fn load(
+        &self,
+        broker: BrokerId,
+        profile: &str,
+    ) -> Result<Option<Credentials>, degenview_brokers::SecretStoreError> {
+        self.wait_turn();
+        self.inner.load(broker, profile)
+    }
+    fn save(
+        &self,
+        broker: BrokerId,
+        profile: &str,
+        credentials: &Credentials,
+    ) -> Result<(), degenview_brokers::SecretStoreError> {
+        self.wait_turn();
+        self.inner.save(broker, profile, credentials)
+    }
+    fn delete(
+        &self,
+        broker: BrokerId,
+        profile: &str,
+    ) -> Result<(), degenview_brokers::SecretStoreError> {
+        self.wait_turn();
+        self.inner.delete(broker, profile)
+    }
+    fn is_configured(&self, broker: BrokerId, profile: &str) -> bool {
+        self.wait_turn();
+        self.inner.is_configured(broker, profile)
+    }
+}
+
+/// Runs `work` on a thread of its own and fails, instead of hanging, if it takes more than a few
+/// seconds: that is what a call that waits on the secret store looks like from a test.
+fn returns_promptly<T: Send + 'static>(what: &str, work: impl FnOnce() -> T + Send + 'static) -> T {
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = sender.send(work());
+    });
+    receiver
+        .recv_timeout(Duration::from_secs(3))
+        .unwrap_or_else(|_| panic!("{what} waited on the secret store"))
+}
+
+#[test]
+fn saving_removing_and_asking_never_wait_on_the_secret_store() {
+    let exchange = CoinbaseExchange::start();
+    let secrets = Stalled::new();
+    let host = host_over(&exchange, &store(), secrets.clone());
+
+    let (adopted, removed) = {
+        let host = host.clone();
+        returns_promptly(
+            "adopt, disconnect, connect_saved and connection",
+            move || {
+                let adopted = host.adopt(ID, credentials(&generate_key_pem()));
+                host.connect_saved(ID);
+                let _ = host.connection(ID);
+                let removed = host.disconnect(ID);
+                (adopted, removed)
+            },
+        )
+    };
+    secrets.release();
+    adopted.wait().expect("saved");
+    removed.wait().expect("removed");
+    wait_for("the removal to be seen", || {
+        matches!(host.connection(ID), Connection::NotConfigured)
+    });
+}
+
+/// One queue, in the order asked: a removal asked after a save must not run before it, or the key
+/// that was just taken back is saved again and connects at the next start.
+#[test]
+fn a_key_saved_and_then_removed_while_the_store_was_busy_ends_up_removed() {
+    let exchange = CoinbaseExchange::start();
+    let secrets = Stalled::new();
+    let host = host_over(&exchange, &store(), secrets.clone());
+
+    let adopted = host.adopt(ID, credentials(&generate_key_pem()));
+    let removed = host.disconnect(ID);
+    secrets.release();
+    let _ = adopted.wait();
+    removed.wait().expect("removed");
+
+    assert!(
+        !secrets.inner.is_configured(ID, PROFILE),
+        "the key came back"
+    );
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(host.snapshot(ID).is_none(), "the connection came back");
+}
+
+/// What `connection()` says comes from what the store last answered, not from asking it now.
+#[test]
+fn a_saved_key_shows_once_the_store_has_answered_not_before() {
+    let exchange = CoinbaseExchange::start();
+    let secrets = Stalled::new();
+    secrets
+        .inner
+        .save(ID, PROFILE, &credentials(&generate_key_pem()))
+        .unwrap();
+    let host = host_over(&exchange, &store(), secrets.clone());
+
+    let first = {
+        let host = host.clone();
+        returns_promptly("connection", move || host.connection(ID))
+    };
+    assert!(matches!(first, Connection::NotConfigured), "not known yet");
+    secrets.release();
+    wait_for("the answer", || host.connection(ID).is_saved());
+}
+
+/// The trading layer is below the screens: it does not reach into `ui`, so the dependency runs one
+/// way (the icon of a tab and the words of the paper strip once lived on the wrong side).
+#[test]
+fn the_trading_layer_does_not_reach_into_the_screens() {
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/trading");
+    for entry in std::fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        if !name.ends_with(".rs") || name.ends_with("_tests.rs") {
+            continue;
+        }
+        let text = std::fs::read_to_string(&path).unwrap();
+        let production = text.split("#[cfg(test)]").next().unwrap();
+        assert!(
+            !production.contains("crate::ui") && !production.contains("egui"),
+            "trading/{name} reaches into the screens"
+        );
+    }
 }

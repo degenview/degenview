@@ -67,7 +67,6 @@ fn check(backend: &dyn TradingBackend, kind: VenueKind, settle_cancel: &dyn Fn(&
     assert_eq!(info.kind, kind);
     assert!(!info.name.is_empty() && !info.summary.is_empty());
     assert_eq!(backend.state(), BackendState::Ready);
-    assert!(backend.tabs().contains(&super::model::TabKind::Orders));
 
     // What can be asked of the market, in the venue's own increments.
     let access = backend.market(&market());
@@ -152,7 +151,6 @@ fn check(backend: &dyn TradingBackend, kind: VenueKind, settle_cancel: &dyn Fn(&
 
     // Sending it lists it, as the venue has it.
     assert!(backend.orders().iter().all(|row| !row.working));
-    let before = backend.revision();
     let sent =
         answer(backend.submit(&market(), &draft, &backend.binding())).expect("the order was taken");
     wait_for("the order to be listed", || {
@@ -170,10 +168,6 @@ fn check(backend: &dyn TradingBackend, kind: VenueKind, settle_cancel: &dyn Fn(&
     assert_eq!(row.filled, Decimal::ZERO);
     assert_eq!(row.status.label, "Open");
     assert!(row.can_cancel && !row.market.is_empty());
-    assert!(
-        backend.revision() > before,
-        "a change is visible to a screen"
-    );
 
     // And cancelling it ends it, leaving the finished order in the list.
     answer(backend.cancel(&sent.id)).expect("the cancel was taken");
@@ -226,6 +220,7 @@ fn a_connected_broker_answers_as_a_venue() {
     );
     brokers
         .adopt(COINBASE, credentials(&generate_key_pem()))
+        .wait()
         .unwrap();
     wait_for("live", || {
         brokers

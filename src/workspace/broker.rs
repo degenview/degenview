@@ -132,7 +132,7 @@ impl ChartWorkspace {
                     let price = order.marker_price()?;
                     let caps = snapshot.capabilities_of(&order.product);
                     let editable =
-                        broker_panel::edit_blocker(order, caps, view.overlay.is_some()).is_none();
+                        rules::edit_blocker(order, caps, view.overlay.is_some()).is_none();
                     let note = match (view.overlay.map(|o| o.kind), order.status) {
                         (
                             Some(degenview_brokers::model::reducer::OverlayKind::CancelRequested),
@@ -347,7 +347,9 @@ mod tests {
                 env,
                 |config| config.fast(),
             );
-            host.adopt(ID, credentials(&generate_key_pem())).unwrap();
+            host.adopt(ID, credentials(&generate_key_pem()))
+                .wait()
+                .unwrap();
             let host = BrokerHost::set_global_for_tests(host);
             (host, exchange)
         });

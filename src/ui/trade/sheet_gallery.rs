@@ -82,6 +82,7 @@ impl Rig {
     fn connect_broker(&self) {
         self.brokers
             .adopt(COINBASE, credentials(&generate_key_pem()))
+            .wait()
             .unwrap();
         wait("the broker to go live", || {
             self.brokers
@@ -341,6 +342,7 @@ fn a_review_is_never_sent_into_an_account_it_was_not_made_for() {
         .with_state(|s| s.portfolio_uuid = "pf-other".to_owned());
     rig.brokers
         .adopt(COINBASE, credentials(&generate_key_pem()))
+        .wait()
         .unwrap();
     wait("the new account to be connected", || {
         rig.brokers.snapshot(COINBASE).is_some_and(|s| {

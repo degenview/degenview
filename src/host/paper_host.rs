@@ -821,7 +821,7 @@ impl PaperPanel {
                 self.account_sheet = Some(PaperAccountSheetState::create());
             }
         } else {
-            let strip = paper_tables::stats(metrics.as_ref(), currency);
+            let strip = crate::trading::paper_stats::stats(metrics.as_ref(), currency);
             stats_strip::show(ui, Some(&strip));
             divider(ui);
             let context = TableContext {

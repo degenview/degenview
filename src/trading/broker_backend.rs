@@ -8,9 +8,9 @@ use std::sync::Arc;
 use degenview_brokers::model::orders::CancelOutcome;
 use degenview_brokers::model::reducer::{OrderView, OverlayKind};
 use degenview_brokers::{
-    AccountId, Broker, BrokerSnapshot, Capabilities, Decimal, LiveFill, MarketRef, OrderId,
-    OrderKind, OrderSize, OrderType, PendingState, PendingView, ProductId, ProductResolution,
-    ProductSpec, Quote, Side, Status, TifKind,
+    AccountId, Broker, BrokerSnapshot, Capabilities, Decimal, MarketRef, OrderId, OrderKind,
+    OrderSize, OrderType, PendingState, PendingView, ProductResolution, ProductSpec, Quote, Side,
+    Status, TifKind,
 };
 
 use super::backend::TradingBackend;
@@ -19,10 +19,9 @@ use super::draft::{
     Submitted, TradeDraft, floor_to_increment,
 };
 use super::model::{
-    AccountStats, AccountStrip, Amount, BackendState, BalanceRow, Binding, FillRow, Hero, HeroNote,
-    MarketAccess, MarketRules, OrderClass, OrderRow, PositionRow, QuoteView, RowStatus, StatCell,
-    StatTone, TabKind, TicketCaps, TimeInForce, Tone, Trend, Unavailable, UnavailableKind,
-    VenueInfo, VenueKind,
+    AccountStats, AccountStrip, Amount, BackendState, Binding, Hero, HeroNote, MarketAccess,
+    MarketRules, OrderClass, OrderRow, QuoteView, RowStatus, StatCell, StatTone, TicketCaps,
+    TimeInForce, Tone, Trend, Unavailable, UnavailableKind, VenueInfo, VenueKind,
 };
 use super::task::Task;
 use super::valuation::{self, Holding};
@@ -74,7 +73,6 @@ impl BrokerBackend {
         let quote = self.host.quote(self.id(), &product);
         Some(Market {
             snapshot,
-            product,
             spec,
             caps,
             quote,
@@ -293,22 +291,9 @@ fn pending_row(pending: &PendingView, broker: degenview_brokers::BrokerId) -> Or
     }
 }
 
-fn fill_row(fill: &LiveFill) -> FillRow {
-    FillRow {
-        id: fill.id.clone(),
-        market: fill.product.as_str().to_owned(),
-        side: fill.side,
-        price: fill.price,
-        size: fill.size,
-        fee: fill.fee,
-        time_ms: fill.time_ms,
-    }
-}
-
 /// What a draft needs to be read against one market at this broker.
 struct Market {
     snapshot: Arc<BrokerSnapshot>,
-    product: ProductId,
     spec: ProductSpec,
     caps: Capabilities,
     quote: Option<Quote>,
@@ -596,49 +581,9 @@ impl TradingBackend for BrokerBackend {
         })
     }
 
-    fn tabs(&self) -> Vec<TabKind> {
-        vec![
-            TabKind::Orders,
-            TabKind::History,
-            TabKind::Fills,
-            TabKind::Balances,
-        ]
-    }
-
     fn orders(&self) -> Vec<OrderRow> {
         self.snapshot()
             .map_or_else(Vec::new, |snapshot| order_rows(&snapshot))
-    }
-
-    fn positions(&self) -> Vec<PositionRow> {
-        Vec::new()
-    }
-
-    fn fills(&self) -> Vec<FillRow> {
-        let Some(snapshot) = self.snapshot() else {
-            return Vec::new();
-        };
-        let mut fills: Vec<FillRow> = snapshot.fills.iter().map(fill_row).collect();
-        fills.sort_by_key(|fill| std::cmp::Reverse(fill.time_ms));
-        fills
-    }
-
-    fn balances(&self) -> Vec<BalanceRow> {
-        let Some(snapshot) = self.snapshot() else {
-            return Vec::new();
-        };
-        let mut rows: Vec<BalanceRow> = snapshot
-            .balances
-            .iter()
-            .filter(|balance| !balance.total().is_zero())
-            .map(|balance| BalanceRow {
-                asset: balance.asset.clone(),
-                available: balance.available,
-                held: balance.held,
-            })
-            .collect();
-        rows.sort_by(|a, b| a.asset.cmp(&b.asset));
-        rows
     }
 
     fn check(&self, market: &MarketRef, draft: &TradeDraft) -> DraftCheck {
@@ -812,10 +757,6 @@ impl TradingBackend for BrokerBackend {
                 Err(error) => Err(error.to_string()),
             })
         })
-    }
-
-    fn revision(&self) -> u64 {
-        self.host.revision()
     }
 }
 

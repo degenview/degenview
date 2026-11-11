@@ -33,8 +33,27 @@ impl<T: Clone> Task<T> {
         self.done.as_ref()
     }
 
+    #[cfg(test)]
     pub fn is_done(&self) -> bool {
         self.done.is_some()
+    }
+}
+
+#[cfg(test)]
+impl<T: Clone> Task<T> {
+    /// Polls until the answer comes, for a test with no frame loop. Gives up after eight seconds.
+    pub fn wait(mut self) -> T {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(8);
+        loop {
+            if let Some(answer) = self.poll() {
+                return answer.clone();
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the task never answered"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
     }
 }
 

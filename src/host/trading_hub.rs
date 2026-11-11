@@ -11,13 +11,10 @@
 //!
 //! Nothing here names a particular venue: the brokers come from the crate's registry.
 
-// The order sheet and the orders panel read the rest of this from the next change on.
-#![allow(dead_code)]
-
 use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex, OnceLock};
 
-use super::broker_host::{BrokerHost, Connection};
+use super::broker_host::{BrokerHost, Connection, Operation};
 use super::paper_host::PaperHost;
 use crate::model::trading_venue::TradingVenue;
 use crate::store::SharedStore;
@@ -25,6 +22,7 @@ use crate::trading::backend::TradingBackend;
 use crate::trading::broker_backend::BrokerBackend;
 use crate::trading::model::VenueInfo;
 use crate::trading::paper_backend::PaperBackend;
+use crate::trading::task::Task;
 
 /// The venues the user enabled, as their ids (`paper`, or a broker's id).
 pub const ENABLED_KEY: &str = "trading.enabled";
@@ -55,7 +53,9 @@ pub struct TradingHub {
     paper: Arc<Mutex<PaperHost>>,
     store: Option<SharedStore>,
     choices: Mutex<Choices>,
-    changes: std::sync::atomic::AtomicU64,
+    /// One backend per venue, built once: they hold only handles, and the screens ask for one every
+    /// frame.
+    backends: Vec<(TradingVenue, Arc<dyn TradingBackend>)>,
 }
 
 static GLOBAL: OnceLock<Arc<TradingHub>> = OnceLock::new();
@@ -91,12 +91,22 @@ impl TradingHub {
         if first_run && paper_was_used(&paper.lock().unwrap_or_else(|e| e.into_inner())) {
             enabled.insert(PAPER_ID.to_owned());
         }
+        let mut backends: Vec<(TradingVenue, Arc<dyn TradingBackend>)> = vec![(
+            TradingVenue::Paper,
+            Arc::new(PaperBackend::new(Arc::clone(&paper))),
+        )];
+        for broker in brokers.brokers() {
+            backends.push((
+                TradingVenue::Broker(broker.descriptor().id),
+                Arc::new(BrokerBackend::new(Arc::clone(&brokers), broker)),
+            ));
+        }
         let hub = Arc::new(Self {
             brokers,
             paper,
             store,
             choices: Mutex::new(Choices { enabled, last_used }),
-            changes: std::sync::atomic::AtomicU64::new(0),
+            backends,
         });
         if first_run {
             // Remember the decision, so a later change in the paper data does not redo it.
@@ -136,28 +146,17 @@ impl TradingHub {
         self.choices.lock().unwrap_or_else(|e| e.into_inner())
     }
 
+    /// The enabled venues changed: every window redraws (the broker host owns the app's counter).
     fn changed(&self) {
-        self.changes
-            .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
-    }
-
-    /// Rises when the set of enabled venues or any venue's state may have changed.
-    pub fn revision(&self) -> u64 {
-        self.brokers.revision() + self.changes.load(std::sync::atomic::Ordering::Acquire)
+        self.brokers.changed();
     }
 
     /// The backend of a venue, whether or not it is enabled (Settings draws every one).
     pub fn backend(&self, venue: TradingVenue) -> Option<Arc<dyn TradingBackend>> {
-        match venue {
-            TradingVenue::Paper => Some(Arc::new(PaperBackend::new(Arc::clone(&self.paper)))),
-            TradingVenue::Broker(id) => {
-                let broker = degenview_brokers::registry::by_id(id)?;
-                Some(Arc::new(BrokerBackend::new(
-                    Arc::clone(&self.brokers),
-                    broker,
-                )))
-            }
-        }
+        self.backends
+            .iter()
+            .find(|(known, _)| *known == venue)
+            .map(|(_, backend)| Arc::clone(backend))
     }
 
     /// Every venue this build has, paper first, then the brokers in registry order.
@@ -238,14 +237,35 @@ impl TradingHub {
         }
     }
 
-    /// Stops using a venue. A broker is disconnected and its saved key removed from this Mac;
-    /// paper keeps its data and shows it again if it is enabled later.
-    pub fn disable(self: &Arc<Self>, venue: TradingVenue) {
+    /// Saves a checked key and connects with it, and remembers the venue as enabled. The answer
+    /// comes later: it is what the secret store said to the save (the connection starts either way).
+    pub fn connect(
+        self: &Arc<Self>,
+        id: degenview_brokers::BrokerId,
+        credentials: degenview_brokers::Credentials,
+    ) -> Operation {
+        let venue = TradingVenue::Broker(id);
+        let added = self.choices().enabled.insert(venue_id(venue));
+        if added {
+            self.changed();
+            self.save_enabled();
+        }
+        self.brokers.adopt(id, credentials)
+    }
+
+    /// Stops using a venue. A broker is disconnected now and its saved key removed from this Mac
+    /// (the answer says whether the secret store removed it); paper keeps its data and shows it
+    /// again if it is enabled later.
+    ///
+    /// This, not the broker host, is how a venue is turned off: the choice is remembered here, so a
+    /// broker that needs no key is not connected again at the next start.
+    pub fn disable(self: &Arc<Self>, venue: TradingVenue) -> Operation {
         self.choices().enabled.remove(&venue_id(venue));
         self.changed();
         self.save_enabled();
-        if let TradingVenue::Broker(id) = venue {
-            let _ = self.brokers.disconnect(id);
+        match venue {
+            TradingVenue::Broker(id) => self.brokers.disconnect(id),
+            TradingVenue::Paper => Task::ready(Ok(())),
         }
     }
 

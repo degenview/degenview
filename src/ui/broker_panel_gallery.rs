@@ -24,6 +24,7 @@ const ID: BrokerId = BrokerId::new("coinbase");
 struct Rig {
     exchange: CoinbaseExchange,
     host: Arc<BrokerHost>,
+    hub: Arc<crate::host::trading_hub::TradingHub>,
 }
 
 fn rig() -> Rig {
@@ -37,11 +38,19 @@ fn rig() -> Rig {
     let host = BrokerHost::new(
         Arc::new(MemorySecretStore::new()),
         Arc::new(StoreJournal::new(store.clone())),
-        Some(store),
+        Some(store.clone()),
         env,
         |config| config.fast(),
     );
-    Rig { exchange, host }
+    let paper = Arc::new(Mutex::new(crate::host::paper_host::PaperHost::load(
+        store.clone(),
+    )));
+    let hub = crate::host::trading_hub::TradingHub::new(host.clone(), paper, Some(store));
+    Rig {
+        exchange,
+        host,
+        hub,
+    }
 }
 
 fn wait(what: &str, mut ready: impl FnMut() -> bool) {
@@ -73,6 +82,7 @@ fn live_rig() -> Rig {
     let rig = rig();
     rig.host
         .adopt(ID, credentials(&generate_key_pem()))
+        .wait()
         .unwrap();
     wait("live", || {
         rig.host
@@ -182,7 +192,7 @@ fn every_live_trading_surface_draws() {
     let mut page = Screen::new(Vec2::new(600.0, 900.0));
     let output = frames(&mut page, 3, |ui| {
         egui::CentralPanel::default().show(ui, |ui| {
-            settings_brokers::body(ui, &mut page_state, Some(rig.host.clone()));
+            settings_brokers::body(ui, &mut page_state, Some(rig.hub.clone()));
         });
     });
     assert!(shapes(&output) > 20, "the settings page");
@@ -194,7 +204,7 @@ fn every_live_trading_surface_draws() {
             settings_brokers::body(
                 ui,
                 &mut settings_brokers::BrokersState::default(),
-                Some(idle.host.clone()),
+                Some(idle.hub.clone()),
             );
         });
     });
@@ -386,10 +396,10 @@ fn gallery_of_live_trading() {
             ("narrow", 300.0, 1500.0, true, true),
             ("narrow-idle", 300.0, 1500.0, false, true),
         ] {
-            let host = if connected {
-                rig.host.clone()
+            let hub = if connected {
+                rig.hub.clone()
             } else {
-                idle.host.clone()
+                idle.hub.clone()
             };
             let mut page_state = settings_brokers::BrokersState::default();
             if open {
@@ -403,7 +413,7 @@ fn gallery_of_live_trading() {
             let mut draw = |page: &mut Screen| {
                 frames(page, 3, |ui| {
                     egui::CentralPanel::default().show(ui, |ui| {
-                        settings_brokers::body(ui, &mut page_state, Some(host.clone()));
+                        settings_brokers::body(ui, &mut page_state, Some(hub.clone()));
                     });
                 })
             };
@@ -591,7 +601,7 @@ fn connecting_a_key_from_the_settings_page_never_stalls_a_frame() {
         let start = Instant::now();
         frames(&mut screen, 1, |ui| {
             egui::CentralPanel::default().show(ui, |ui| {
-                settings_brokers::body(ui, state, Some(rig.host.clone()));
+                settings_brokers::body(ui, state, Some(rig.hub.clone()));
             });
         });
         slowest = slowest.max(start.elapsed() - Duration::from_millis(15));
@@ -644,7 +654,7 @@ fn typing_a_base64_secret_never_stalls_a_frame() {
         screen.run(events, |ui| {
             theme::sync(ui.ctx());
             egui::CentralPanel::default().show(ui, |ui| {
-                settings_brokers::body(ui, state, Some(rig.host.clone()));
+                settings_brokers::body(ui, state, Some(rig.hub.clone()));
             });
         });
         slowest.set(slowest.get().max(start.elapsed()));
@@ -811,7 +821,7 @@ fn the_sandbox_connects_without_a_key_and_is_listed_beside_coinbase() {
     while Instant::now() < deadline {
         frames(&mut screen, 1, |ui| {
             egui::CentralPanel::default().show(ui, |ui| {
-                settings_brokers::body(ui, &mut state, Some(rig.host.clone()));
+                settings_brokers::body(ui, &mut state, Some(rig.hub.clone()));
             });
         });
         if rig
@@ -842,6 +852,7 @@ fn the_trading_panel_can_be_resized_on_every_tab_with_and_without_orders() {
         if name == "no orders" {
             rig.host
                 .adopt(ID, credentials(&generate_key_pem()))
+                .wait()
                 .unwrap();
             wait("live", || {
                 rig.host

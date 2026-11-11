@@ -201,6 +201,7 @@ fn a_broker_with_a_saved_key_is_enabled_without_being_chosen() {
     assert!(!hub.is_enabled(TradingVenue::Broker(COINBASE)));
     rig.brokers
         .adopt(COINBASE, credentials(&generate_key_pem()))
+        .wait()
         .expect("saved");
     assert!(hub.is_enabled(TradingVenue::Broker(COINBASE)));
     wait_for("the broker to go live", || {
@@ -226,7 +227,7 @@ fn a_broker_that_needs_no_key_is_enabled_by_choosing_it_and_connects_without_the
     });
     assert!(!rig.secrets.is_configured(SANDBOX, "default"));
     // Restart: it is enabled again and reconnects by itself.
-    rig.brokers.disconnect(SANDBOX).ok();
+    rig.brokers.disconnect(SANDBOX).wait().ok();
     let again = rig.hub();
     assert!(again.is_enabled(TradingVenue::Broker(SANDBOX)));
     again.connect_enabled();
@@ -242,15 +243,116 @@ fn a_broker_that_needs_no_key_is_enabled_by_choosing_it_and_connects_without_the
     let _ = &rig.exchange;
 }
 
+/// The sandbox needs no key, so what keeps it connected at the next start is the choice. Turning it
+/// off has to forget that choice, or the next start connects it again.
+#[test]
+fn disabling_a_broker_that_needs_no_key_is_remembered_across_a_restart() {
+    let rig = Rig::new();
+    let hub = rig.hub();
+    hub.enable(TradingVenue::Broker(SANDBOX));
+    wait_for("the sandbox to go live", || {
+        rig.brokers
+            .snapshot(SANDBOX)
+            .is_some_and(|s| s.status == Status::Live)
+    });
+    wait_for("the choice to be saved", || {
+        saved_enabled(&rig.store) == Some(vec!["coinbase-sandbox".to_owned()])
+    });
+
+    hub.disable(TradingVenue::Broker(SANDBOX))
+        .wait()
+        .expect("nothing to remove");
+    assert!(rig.brokers.snapshot(SANDBOX).is_none());
+    assert!(!hub.is_enabled(TradingVenue::Broker(SANDBOX)));
+    wait_for("the choice to be forgotten", || {
+        saved_enabled(&rig.store) == Some(Vec::new())
+    });
+
+    // The next start: nothing is enabled, so nothing connects.
+    let again = rig.hub();
+    assert!(!again.is_enabled(TradingVenue::Broker(SANDBOX)));
+    again.connect_enabled();
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(
+        rig.brokers.snapshot(SANDBOX).is_none(),
+        "a broker the user turned off came back"
+    );
+}
+
+#[test]
+fn saving_a_key_through_the_hub_enables_the_broker_and_a_failed_removal_is_reported() {
+    struct Refusing(MemorySecretStore);
+    impl SecretStore for Refusing {
+        fn load(
+            &self,
+            broker: BrokerId,
+            profile: &str,
+        ) -> Result<Option<degenview_brokers::Credentials>, degenview_brokers::SecretStoreError>
+        {
+            self.0.load(broker, profile)
+        }
+        fn save(
+            &self,
+            broker: BrokerId,
+            profile: &str,
+            credentials: &degenview_brokers::Credentials,
+        ) -> Result<(), degenview_brokers::SecretStoreError> {
+            self.0.save(broker, profile, credentials)
+        }
+        fn delete(&self, _: BrokerId, _: &str) -> Result<(), degenview_brokers::SecretStoreError> {
+            Err(degenview_brokers::SecretStoreError(
+                "the keychain refused".to_owned(),
+            ))
+        }
+        fn is_configured(&self, broker: BrokerId, profile: &str) -> bool {
+            self.0.is_configured(broker, profile)
+        }
+    }
+    let exchange = CoinbaseExchange::start();
+    let store = store();
+    let env = Env::default()
+        .with_loopback_base_url(exchange.rest.url())
+        .with_loopback_ws_url(exchange.stream.url.clone())
+        .with_stream_timing(degenview_brokers::StreamTiming::fast())
+        .with_request_gap(Duration::from_millis(2));
+    let brokers = BrokerHost::new(
+        Arc::new(Refusing(MemorySecretStore::new())),
+        Arc::new(StoreJournal::new(store.clone())),
+        Some(store.clone()),
+        env,
+        |config| config.fast(),
+    );
+    let paper = Arc::new(Mutex::new(PaperHost::load(store.clone())));
+    let hub = TradingHub::new(brokers.clone(), paper, Some(store.clone()));
+
+    hub.connect(COINBASE, credentials(&generate_key_pem()))
+        .wait()
+        .expect("saved");
+    assert!(hub.is_enabled(TradingVenue::Broker(COINBASE)));
+    wait_for("the choice to be saved", || {
+        saved_enabled(&store) == Some(vec!["coinbase".to_owned()])
+    });
+
+    let error = hub
+        .disable(TradingVenue::Broker(COINBASE))
+        .wait()
+        .expect_err("the keychain refused");
+    assert!(error.contains("refused"), "{error}");
+    // Stopped either way: the connection does not outlive the click.
+    assert!(brokers.snapshot(COINBASE).is_none());
+    let _ = &exchange;
+}
+
 #[test]
 fn disabling_a_broker_disconnects_it_and_removes_its_key() {
     let rig = Rig::new();
     let hub = rig.hub();
     rig.brokers
         .adopt(COINBASE, credentials(&generate_key_pem()))
+        .wait()
         .unwrap();
     wait_for("live", || rig.brokers.snapshot(COINBASE).is_some());
-    hub.disable(TradingVenue::Broker(COINBASE));
+    hub.disable(TradingVenue::Broker(COINBASE)).wait().unwrap();
     assert!(rig.brokers.snapshot(COINBASE).is_none());
     assert!(!hub.is_enabled(TradingVenue::Broker(COINBASE)));
     assert!(!rig.secrets.is_configured(COINBASE, "default"));

@@ -21,7 +21,8 @@ use degenview_brokers::{
 };
 use eframe::egui::{self, vec2};
 
-use crate::host::broker_host::{BrokerHost, Connection};
+use crate::host::broker_host::{BrokerHost, Connection, Operation};
+use crate::host::trading_hub::TradingHub;
 use crate::ui::alert_center::Tone;
 use crate::ui::icons::Icon;
 use crate::ui::settings_api_keys::{StatusMessage, destructive_button, field};
@@ -36,6 +37,12 @@ pub struct BrokersState {
     open: HashMap<&'static str, Option<bool>>,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum KeyOperation {
+    Saving,
+    Removing,
+}
+
 #[derive(Default)]
 struct BrokerForm {
     values: BTreeMap<String, String>,
@@ -43,6 +50,8 @@ struct BrokerForm {
     /// The key being checked, and the answer when it comes.
     checking: Option<(Credentials, Receiver<Result<Session, BrokerError>>)>,
     confirming_disconnect: bool,
+    /// A save or a removal of the key that has not answered yet (the secret store may prompt).
+    operation: Option<(KeyOperation, Operation)>,
     /// What the key may do, as last checked, shown until the connection reports its own.
     checked: Option<Permissions>,
 }
@@ -193,8 +202,8 @@ pub fn card_summary(descriptor: &Descriptor, connection: &Connection) -> String 
     }
 }
 
-pub fn body(ui: &mut egui::Ui, state: &mut BrokersState, host: Option<std::sync::Arc<BrokerHost>>) {
-    let Some(host) = host else {
+pub fn body(ui: &mut egui::Ui, state: &mut BrokersState, hub: Option<std::sync::Arc<TradingHub>>) {
+    let Some(hub) = hub else {
         kit::notice_card(
             ui,
             Icon::InfoCircle,
@@ -205,11 +214,11 @@ pub fn body(ui: &mut egui::Ui, state: &mut BrokersState, host: Option<std::sync:
         );
         return;
     };
-    for broker in host.brokers() {
+    for broker in hub.brokers().brokers() {
         let descriptor = broker.descriptor();
         let form = state.forms.entry(descriptor.id.as_str()).or_default();
         let open = state.open.entry(descriptor.id.as_str()).or_default();
-        broker_card(ui, &host, broker, form, open);
+        broker_card(ui, &hub, broker, form, open);
         ui.add_space(10.0);
     }
     ui.add_space(4.0);
@@ -233,16 +242,18 @@ pub fn body(ui: &mut egui::Ui, state: &mut BrokersState, host: Option<std::sync:
 /// folded, until the user says otherwise.
 fn broker_card(
     ui: &mut egui::Ui,
-    host: &std::sync::Arc<BrokerHost>,
+    hub: &std::sync::Arc<TradingHub>,
     broker: &'static dyn Broker,
     form: &mut BrokerForm,
     open: &mut Option<bool>,
 ) {
     let descriptor = broker.descriptor();
     let id = descriptor.id;
-    poll_check(host, descriptor, form);
+    let host = hub.brokers();
+    poll_check(hub, descriptor, form);
+    poll_operation(descriptor, form);
     let connection = host.connection(id);
-    if form.checking.is_some() {
+    if form.checking.is_some() || form.operation.is_some() {
         ui.ctx()
             .request_repaint_after(std::time::Duration::from_millis(150));
     }
@@ -301,14 +312,13 @@ fn broker_card(
                 form.confirming_disconnect = false;
                 form.checked = None;
                 form.values.clear();
-                form.status = Some(match host.disconnect(id) {
-                    Ok(()) => StatusMessage::ok("Disconnected. The key was removed from this Mac."),
-                    // The connection is stopped, but the key is still in the keychain: it connects
-                    // again at the next start unless it is removed there.
-                    Err(error) => StatusMessage::error(format!(
-                        "Disconnected, but the key could NOT be removed from this Mac and will connect again when DegenView starts. Remove it in your keychain, or try again: {error}"
-                    )),
-                });
+                form.status = None;
+                // Through the hub, which owns the venue's lifecycle: the venue also stops being
+                // enabled, so it is not connected again at the next start.
+                form.operation = Some((
+                    KeyOperation::Removing,
+                    hub.disable(crate::model::trading_venue::TradingVenue::Broker(id)),
+                ));
             }
             Some(kit::ConfirmOutcome::Cancelled) => form.confirming_disconnect = false,
             None => {}
@@ -523,7 +533,9 @@ fn connected_body(
     ui.horizontal(|ui| {
         ui.set_min_height(28.0);
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if destructive_button(ui, "Disconnect").clicked() {
+            if form.operation.is_some() {
+                muted(ui, "Removing the key…");
+            } else if destructive_button(ui, "Disconnect").clicked() {
                 form.confirming_disconnect = true;
             }
         });
@@ -619,17 +631,25 @@ fn setup_body(
         ui.set_min_height(28.0);
         ui.spacing_mut().item_spacing.x = 10.0;
         let checking = form.checking.is_some();
-        let enabled = !checking && can_connect(descriptor, &form.values);
+        let busy = form.operation.as_ref().map(|(kind, _)| *kind);
+        let enabled = !checking && busy.is_none() && can_connect(descriptor, &form.values);
         if kit::sheet_button(ui, "Connect", true, enabled).clicked() {
             start_check(host, descriptor, form);
         }
-        if checking {
+        if checking || busy.is_some() {
             ui.add(
                 egui::Spinner::new()
                     .size(14.0)
                     .color(theme::text_secondary()),
             );
-            muted(ui, "Checking the key…");
+            muted(
+                ui,
+                match busy {
+                    Some(KeyOperation::Saving) => "Saving the key…",
+                    Some(KeyOperation::Removing) => "Removing the key…",
+                    None => "Checking the key…",
+                },
+            );
         }
         if matches!(connection, Connection::Saved | Connection::Running(_)) {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -773,6 +793,41 @@ fn step_row(ui: &mut egui::Ui, number: usize, text: &str) {
     ui.add_space(8.0);
 }
 
+/// Takes the answer of a save or a removal of the key, and says what it came to.
+fn poll_operation(descriptor: &'static Descriptor, form: &mut BrokerForm) {
+    let Some((kind, task)) = &mut form.operation else {
+        return;
+    };
+    let kind = *kind;
+    let Some(answer) = task.poll().cloned() else {
+        return;
+    };
+    form.operation = None;
+    form.status = Some(match (kind, answer) {
+        // A broker that takes no key has nothing to keep: say so instead of "saved".
+        (KeyOperation::Saving, Ok(())) if descriptor.credential_fields.is_empty() => {
+            StatusMessage::ok(
+                "Connected. Nothing is saved: connect again after restarting DegenView.",
+            )
+        }
+        (KeyOperation::Saving, Ok(())) => StatusMessage::ok(crate::platform::saved_securely()),
+        (KeyOperation::Saving, Err(error)) => StatusMessage::error(format!(
+            "Connected, but the key could not be saved, so it will be forgotten when you quit. A key saved earlier may still be stored and connect again at the next start: {error}"
+        )),
+        (KeyOperation::Removing, Ok(())) if descriptor.credential_fields.is_empty() => {
+            StatusMessage::ok("Disconnected.")
+        }
+        (KeyOperation::Removing, Ok(())) => {
+            StatusMessage::ok("Disconnected. The key was removed from this Mac.")
+        }
+        // The connection is stopped, but the key is still in the keychain: it connects again at
+        // the next start unless it is removed there.
+        (KeyOperation::Removing, Err(error)) => StatusMessage::error(format!(
+            "Disconnected, but the key could NOT be removed from this Mac and will connect again when DegenView starts. Remove it in your keychain, or try again: {error}"
+        )),
+    });
+}
+
 /// Starts checking the typed key, off the interface thread.
 fn start_check(host: &BrokerHost, descriptor: &'static Descriptor, form: &mut BrokerForm) {
     let credentials = credentials_from(descriptor, &form.values);
@@ -813,7 +868,7 @@ impl BrokersState {
 /// Takes the check's answer. A key that works is saved and connected; the form is emptied so the
 /// private key is no longer held by the page.
 fn poll_check(
-    host: &std::sync::Arc<BrokerHost>,
+    hub: &std::sync::Arc<TradingHub>,
     descriptor: &'static Descriptor,
     form: &mut BrokerForm,
 ) {
@@ -833,16 +888,13 @@ fn poll_check(
     match answer {
         Ok(session) => {
             form.checked = Some(session.permissions);
-            form.status = Some(match host.adopt(descriptor.id, credentials) {
-                // A broker that takes no key has nothing to keep: say so instead of "saved".
-                Ok(()) if descriptor.credential_fields.is_empty() => StatusMessage::ok(
-                    "Connected. Nothing is saved: connect again after restarting DegenView.",
-                ),
-                Ok(()) => StatusMessage::ok(crate::platform::saved_securely()),
-                Err(error) => StatusMessage::error(format!(
-                    "Connected, but the key could not be saved, so it will be forgotten when you quit. A key saved earlier may still be stored and connect again at the next start: {error}"
-                )),
-            });
+            // The key is saved and the connection started through the hub; what the secret store
+            // answered arrives later (`poll_operation`).
+            form.status = None;
+            form.operation = Some((
+                KeyOperation::Saving,
+                hub.connect(descriptor.id, credentials),
+            ));
             form.values.clear();
         }
         Err(error) => {
@@ -957,6 +1009,7 @@ fn secret_block(ui: &mut egui::Ui, title: &str, hint: &str, text: &mut String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::trading::task::Task;
     use degenview_brokers::{BrokerId, ClientIdRules, CredentialField};
 
     const FIELDS: &[degenview_brokers::CredentialField] = &[
@@ -975,6 +1028,57 @@ mod tests {
             kind: FieldKind::Pem,
         },
     ];
+
+    fn answered(kind: KeyOperation, answer: Result<(), String>) -> BrokerForm {
+        BrokerForm {
+            operation: Some((kind, Task::ready(answer))),
+            ..BrokerForm::default()
+        }
+    }
+
+    #[test]
+    fn a_pending_operation_says_nothing_until_it_answers_and_then_says_what_came_of_it() {
+        let descriptor: &'static Descriptor = Box::leak(Box::new(descriptor()));
+        let mut waiting = BrokerForm {
+            operation: Some((KeyOperation::Removing, Task::new(|| None))),
+            ..BrokerForm::default()
+        };
+        poll_operation(descriptor, &mut waiting);
+        assert!(waiting.operation.is_some() && waiting.status.is_none());
+
+        let mut form = answered(KeyOperation::Removing, Ok(()));
+        poll_operation(descriptor, &mut form);
+        assert!(form.operation.is_none());
+        let status = form.status.expect("a message");
+        assert!(
+            !status.is_error && status.text.contains("removed"),
+            "{}",
+            status.text
+        );
+
+        // The store refused: the connection is stopped, and the message says the key is still there.
+        let mut form = answered(
+            KeyOperation::Removing,
+            Err("the keychain refused".to_owned()),
+        );
+        poll_operation(descriptor, &mut form);
+        let status = form.status.expect("a message");
+        assert!(
+            status.is_error && status.text.contains("NOT be removed"),
+            "{}",
+            status.text
+        );
+        assert!(status.text.contains("the keychain refused"));
+
+        let mut form = answered(KeyOperation::Saving, Err("no space".to_owned()));
+        poll_operation(descriptor, &mut form);
+        let status = form.status.expect("a message");
+        assert!(
+            status.is_error && status.text.contains("could not be saved"),
+            "{}",
+            status.text
+        );
+    }
 
     fn descriptor() -> Descriptor {
         Descriptor {
