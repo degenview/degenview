@@ -5,7 +5,9 @@
 
 use std::sync::Arc;
 
-use degenview_brokers::model::orders::CancelOutcome;
+use degenview_brokers::model::orders::{
+    CancelOutcome, EditOutcome, EditPreview, OrderChange, OrderFingerprint,
+};
 use degenview_brokers::model::reducer::{OrderView, OverlayKind};
 use degenview_brokers::{
     AccountId, Broker, BrokerSnapshot, Capabilities, Decimal, MarketRef, OrderId, OrderKind,
@@ -18,6 +20,7 @@ use super::draft::{
     CancelResult, DraftCheck, DraftField, DraftIssue, Estimate, PreviewResult, SubmitResult,
     Submitted, TradeDraft, floor_to_increment,
 };
+use super::edit::{EditAnswer, EditError, EditVenue};
 use super::model::{
     AccountStats, AccountStrip, Amount, BackendState, Binding, Hero, HeroNote, MarketAccess,
     MarketRules, OrderClass, OrderRow, QuoteView, RowStatus, StatCell, StatTone, TicketCaps,
@@ -32,6 +35,38 @@ use crate::model::broker::ticket::{
     self as rules, StatusTone, TicketContext, TicketDraft, TicketField, TicketKind, TicketTif,
 };
 use crate::model::broker::venue::TradingVenue;
+
+/// A connected broker edits its open orders in place.
+impl EditVenue for degenview_brokers::BrokerRuntime {
+    fn preview_edit(&self, order: OrderId, change: OrderChange) -> EditAnswer<EditPreview> {
+        answer(degenview_brokers::BrokerRuntime::preview_edit(
+            self, order, change,
+        ))
+    }
+
+    fn amend(
+        &self,
+        order: OrderId,
+        change: OrderChange,
+        base: OrderFingerprint,
+    ) -> EditAnswer<EditOutcome> {
+        answer(degenview_brokers::BrokerRuntime::amend(
+            self, order, change, base,
+        ))
+    }
+}
+
+/// A request to the broker's runtime, as a task the screens poll.
+fn answer<T: Clone + Send + 'static>(pending: degenview_brokers::Pending<T>) -> EditAnswer<T> {
+    Task::new(move || {
+        pending.poll().map(|answer| {
+            answer.map_err(|error| EditError {
+                outcome_unknown: error.kind == degenview_brokers::ErrorKind::OutcomeUnknown,
+                text: error.to_string(),
+            })
+        })
+    })
+}
 
 pub struct BrokerBackend {
     host: Arc<BrokerHost>,
