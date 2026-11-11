@@ -157,7 +157,7 @@ pub fn show(ui: &mut Ui, columns: &[AccountColumn], currency: &str, offset: Offs
                         ));
                     });
                     for (column, column_values) in columns.iter().zip(&values) {
-                        // Net P&L and expectancy carry their sign's colour.
+                        // Only Net P&L carries its sign's colour.
                         let color = match row {
                             1 => Sign::of_decimal(column.summary.net_pnl).text(),
                             _ => theme::text_primary(),

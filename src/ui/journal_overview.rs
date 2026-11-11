@@ -28,6 +28,8 @@ const CHART_HEIGHT: f32 = 200.0;
 const CHART_CARD: f32 = CHART_HEIGHT + 96.0;
 /// Below this width the page stacks its cards.
 const WIDE: f32 = 980.0;
+/// Six headline cards side by side need at least this width (each ring sits beside its figure).
+const KPI_SIX_MIN: f32 = 1240.0;
 
 #[derive(Default)]
 pub struct OverviewState {
@@ -152,13 +154,21 @@ pub fn show(
         &|ui| expectancy_card(ui, overview, currency),
         &|ui| day_win_card(ui, overview),
     ];
-    if wide {
+    // Six across need room for a ring beside its text; below that, three across, then two.
+    let per_row = if ui.available_width() >= KPI_SIX_MIN {
+        6
+    } else if wide {
+        3
+    } else {
+        2
+    };
+    if per_row == 6 {
         weighted_row(ui, &[1.55, 1.0, 1.0, 1.15, 1.0, 1.0], |ui, index| {
             cards[index](ui)
         });
     } else {
-        for pair in cards.chunks(2) {
-            weighted_row(ui, &[1.0, 1.0][..pair.len()], |ui, index| pair[index](ui));
+        for group in cards.chunks(per_row) {
+            weighted_row(ui, &[1.0; 3][..group.len()], |ui, index| group[index](ui));
         }
     }
 
@@ -174,7 +184,7 @@ pub fn show(
     // Daily P&L and drawdown.
     cards_row(ui, wide, &[1.0, 1.0], |ui, index| match index {
         0 => daily_card(ui, overview, currency),
-        _ => drawdown_card(ui, overview, state, offset),
+        _ => drawdown_card(ui, overview, state, offset, currency),
     });
 
     // Distribution, long against short, recent.
@@ -227,13 +237,13 @@ fn delta_note(ui: &mut Ui, current: Option<f64>, previous: Option<f64>, as_point
         return;
     };
     let (text, sign) = if as_points {
-        jk::delta_text((current - previous) * 100.0, 0.0, 1, " pts")
+        jk::delta_text(current * 100.0, previous * 100.0, 1, " pts")
     } else if previous.abs() > f64::EPSILON {
         jk::delta_text((current - previous) / previous.abs() * 100.0, 0.0, 1, "%")
     } else {
         return;
     };
-    jk::delta_line(ui, &text.replace("vs prior period", "vs prev"), sign);
+    jk::delta_line(ui, &text, sign);
 }
 
 fn net_card(ui: &mut Ui, overview: &Overview, currency: &str) {
@@ -805,7 +815,13 @@ fn daily_card(ui: &mut Ui, overview: &Overview, currency: &str) {
     );
 }
 
-fn drawdown_card(ui: &mut Ui, overview: &Overview, state: &mut OverviewState, offset: Offset<'_>) {
+fn drawdown_card(
+    ui: &mut Ui,
+    overview: &Overview,
+    state: &mut OverviewState,
+    offset: Offset<'_>,
+    currency: &str,
+) {
     let can_percent = overview.drawdown.iter().any(|p| p.pct.is_some());
     let has_previous = !overview.previous_drawdown.is_empty();
     let percent = state.drawdown_percent && can_percent;
@@ -819,10 +835,15 @@ fn drawdown_card(ui: &mut Ui, overview: &Overview, state: &mut OverviewState, of
         |ui| {
             if can_percent {
                 let mut flag = state.drawdown_percent;
+                let amount = if currency.is_empty() {
+                    "Amount"
+                } else {
+                    currency
+                };
                 jk::flag_segments(
                     ui,
                     egui::Id::new("journal-drawdown-unit"),
-                    "USD",
+                    amount,
                     "%",
                     &mut flag,
                 );
@@ -1173,8 +1194,9 @@ mod tests {
             breakeven_tolerance: Decimal::ZERO,
             offset: &utc,
         });
-        draw(&overview, &trades, 1400.0);
-        draw(&overview, &trades, 700.0);
+        for width in [1400.0, 1290.0, 1100.0, 700.0] {
+            draw(&overview, &trades, width);
+        }
         let empty = compute(&Input {
             trades: &[],
             previous: None,

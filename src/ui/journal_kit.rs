@@ -204,7 +204,8 @@ pub fn info_mark(ui: &mut Ui, text: &str) -> Response {
         theme::text_tertiary()
     };
     icons::paint(ui.painter(), rect, Icon::InfoCircle, color);
-    response.on_hover_text(text)
+    super::accessibility::label_as(response, egui::WidgetType::Label, text.to_owned())
+        .on_hover_text(text)
 }
 
 /// What an editor says about its autosave: the error (in red, with the retry implied), "Saving",
@@ -261,14 +262,17 @@ pub fn note(ui: &mut Ui, text: impl Into<String>, color: Color32) -> Response {
 
 // MARK: Delta
 
-/// "+5 vs prior period" with a bare arrow, in the colour of the change; nothing when either side
-/// is missing. `current` and `previous` are in the figure's own unit; `decimals` is the precision
-/// shown.
+/// "+5 pts vs prev": the change of `current` over `previous` rounded to `decimals`, `unit` after
+/// the number, and the sign it carries (a change that rounds to nothing is flat and reads "+0").
 pub fn delta_text(current: f64, previous: f64, decimals: usize, unit: &str) -> (String, Sign) {
-    let change = current - previous;
-    let rounded = (change * 10f64.powi(decimals as i32)).round() / 10f64.powi(decimals as i32);
-    let sign = Sign::of(rounded);
-    (format!("{rounded:+.decimals$}{unit} vs prior period"), sign)
+    let scale = 10f64.powi(decimals as i32);
+    let rounded = ((current - previous) * scale).round() / scale;
+    // `-0.0` would print as "-0.0".
+    let rounded = if rounded == 0.0 { 0.0 } else { rounded };
+    (
+        format!("{rounded:+.decimals$}{unit} vs prev"),
+        Sign::of(rounded),
+    )
 }
 
 /// A delta line: a bare arrow (none when flat) and the words.
@@ -335,7 +339,6 @@ pub fn chip_strip(ui: &mut Ui, chips: &[Chip]) {
         }
         ui.add_space(GAP / 2.0);
     }
-    ui.add_space(GAP / 2.0);
 }
 
 fn paint_chip(ui: &Ui, rect: Rect, chip: &Chip) {
@@ -375,8 +378,12 @@ fn paint_chip(ui: &Ui, rect: Rect, chip: &Chip) {
         value,
         chip.sign.text(),
     );
-    ui.interact(rect, ui.id().with(("chip", chip.label)), Sense::hover())
-        .on_hover_text(chip.tip);
+    let response = ui.interact(rect, ui.id().with(("chip", chip.label)), Sense::hover());
+    // The painted label and value are invisible to assistive technology: name the chip, and show
+    // the whole value (a long one is cut to the cell) with what the figure is.
+    let spoken = format!("{}: {}. {}", chip.label, chip.value, chip.tip);
+    super::accessibility::label_as(response, egui::WidgetType::Label, spoken.clone())
+        .on_hover_text(spoken);
 }
 
 // MARK: Pills, toggles, links
@@ -414,10 +421,10 @@ pub fn flag_segments(ui: &mut Ui, id: egui::Id, off: &str, on: &str, flag: &mut 
 const LINK_DROP: f32 = 3.0;
 
 /// A link: gray, underlined, a pointing hand. Never blue.
-pub fn link(ui: &mut Ui, text: &str) -> Response {
+pub fn link(ui: &mut Ui, label: &str) -> Response {
     let galley = kit::galley(
         ui,
-        text,
+        label,
         size::CAPTION + 1.0,
         MEDIUM,
         theme::text_secondary(),
@@ -438,7 +445,8 @@ pub fn link(ui: &mut Ui, text: &str) -> Response {
         Stroke::new(1.0, color),
     );
     painter.galley(text.min, galley, color);
-    response.on_hover_cursor(CursorIcon::PointingHand)
+    super::accessibility::label(response, label.to_owned())
+        .on_hover_cursor(CursorIcon::PointingHand)
 }
 
 /// The wash behind a list row: the selection tint, else a faint one under the pointer.
@@ -568,14 +576,18 @@ mod tests {
     #[test]
     fn a_delta_says_which_way_and_how_much() {
         let (text, sign) = delta_text(67.0, 62.0, 0, " pts");
-        assert_eq!(text, "+5 pts vs prior period");
+        assert_eq!(text, "+5 pts vs prev");
         assert_eq!(sign, Sign::Gain);
         let (text, sign) = delta_text(1.2, 1.5, 1, "");
-        assert_eq!(text, "-0.3 vs prior period");
+        assert_eq!(text, "-0.3 vs prev");
         assert_eq!(sign, Sign::Loss);
         // A change that rounds to nothing is flat, not a coloured "+0".
         let (text, sign) = delta_text(1.001, 1.0, 1, "");
-        assert_eq!(text, "+0.0 vs prior period");
+        assert_eq!(text, "+0.0 vs prev");
+        assert_eq!(sign, Sign::Flat);
+        // ... and a small fall rounds to "+0.0", never "-0.0".
+        let (text, sign) = delta_text(1.0, 1.04, 1, "");
+        assert_eq!(text, "+0.0 vs prev");
         assert_eq!(sign, Sign::Flat);
     }
 

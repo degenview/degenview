@@ -2250,7 +2250,7 @@ impl JournalTab {
             ui,
             egui::Id::new(("journal-search", self.id)),
             &mut self.search,
-            "Search symbol, tag\u{2026}",
+            "Search symbol\u{2026}",
             200.0,
         );
         if response.changed() {
@@ -2649,7 +2649,7 @@ struct HeaderLayout {
 /// Narrower than this the title would crowd the section tabs out.
 const TITLE_MIN_WIDTH: f32 = 1120.0;
 /// Narrower than this the range, the three filters and the search cannot share a row.
-const COMBINED_MIN_WIDTH: f32 = 1300.0;
+const COMBINED_MIN_WIDTH: f32 = 1400.0;
 
 /// The header for a content `width`: the title and tabs row, then the toolbar in one row when
 /// the range and the filters are both shown and fit together, else a row each. A custom range
@@ -2738,7 +2738,7 @@ mod tests {
     #[test]
     fn the_header_is_one_toolbar_row_when_it_fits_and_two_when_it_does_not() {
         // Wide: the title shows and the range and filters share a row.
-        let wide = header_layout(1400.0, true, true, false);
+        let wide = header_layout(1450.0, true, true, false);
         assert!(wide.title && wide.combined);
         assert_eq!(wide.height, 24.0 + 36.0 + 44.0);
         // Narrower: no combined row, a row each.
@@ -2746,7 +2746,7 @@ mod tests {
         assert!(!narrow.title && !narrow.combined);
         assert_eq!(narrow.height, 24.0 + 36.0 + 88.0);
         // A custom range needs the room for two date fields: two rows even when wide.
-        assert!(!header_layout(1400.0, true, true, true).combined);
+        assert!(!header_layout(1450.0, true, true, true).combined);
         // Calendar (filters only) and Daily (nothing) keep their reduced rows.
         assert_eq!(
             header_layout(1400.0, false, true, false).height,
@@ -3977,6 +3977,8 @@ mod tests {
                 for (section, name, width, height) in [
                     (Section::Overview, "overview-tall", 1400.0, 1750.0),
                     (Section::Overview, "overview-narrow", 720.0, 1900.0),
+                    (Section::Overview, "overview-1100", 1130.0, 1500.0),
+                    (Section::Overview, "overview-1290", 1290.0, 1500.0),
                     (Section::Trades, "table-narrow", 720.0, 800.0),
                     (Section::Calendar, "calendar-narrow", 720.0, 900.0),
                 ] {

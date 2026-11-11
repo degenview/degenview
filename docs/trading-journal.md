@@ -162,7 +162,7 @@ against it), eleven smaller figures in a strip of chips (trades, gross, fees, tr
 days, best and worst day, max drawdown, average R, duration, streak), the equity curve (realised
 equity or cumulative net P&L, with the last value on it and an optional previous-period overlay),
 the Edge Score with its change against the previous period and a radar, daily P&L bars, drawdown
-(USD or percentage, with the overlay), the distribution of results, long against short, and the
+(amount in the page's currency or percentage, with the overlay), the distribution of results, long against short, and the
 latest closed trades (click opens one; View all goes to Trades).
 A figure that does not exist is a dash with the reason as its tooltip, never a zero.
 
@@ -203,8 +203,10 @@ app's Flat style (`docs/agent-guides/ui-style.md` on main): a faint fill and a h
   OPEN, THIN, SMALL, Saved. **Links** are gray and underlined.
 - **Header.** The page title, the section tabs (they scroll sideways when the window is too narrow
   for them and the menus) and the account and Data menus on one row; the range, the three filters
-  and the search on a second row when the window is at least 1300 points wide, else two rows
+  and the search on a second row when the page content is at least 1400 points wide (a window of about 1430), else two rows
   (`header_layout`, tested). A custom range always takes two rows for its date fields.
+- **Headline cards.** Six across from 1240 points of content, three across from 980, two across
+  below that, so a ring never sits on its figure.
 - **Narrow windows.** Below 980 points the Overview stacks one card per row (an earlier version
   dropped the Edge, Drawdown, Long vs short and Recent cards there).
 
