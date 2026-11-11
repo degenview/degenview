@@ -578,7 +578,7 @@ pub fn alpaca_body(ui: &mut egui::Ui, state: &mut ApiKeysState, store: &AlpacaCr
             step(
                 ui,
                 3,
-                "Copy both values here — Alpaca only shows the secret once.",
+                "Copy both values here. Alpaca only shows the secret once.",
             );
             link(
                 ui,

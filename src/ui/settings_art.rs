@@ -1,6 +1,6 @@
 //! The picture at the head of each Settings page: a card and a few marks in the section's colour
 //! that say what the page is about, with no disc behind them (the flat style, `flat` on
-//! `Art`) — the same recipe as the Pine Studio's empty tabs (`drawer_intro`), one small scene per page. Painter code only, so it follows the theme.
+//! `Art`). It is the same recipe as the Pine Studio's empty tabs (`drawer_intro`), one small scene per page. Painter code only, so it follows the theme.
 //!
 //! The Swift app has a plain icon badge here; these pictures are an addition, not a port.
 

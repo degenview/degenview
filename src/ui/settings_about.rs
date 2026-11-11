@@ -183,7 +183,7 @@ pub fn show(ui: &mut Ui, updates: &UpdateHost) -> Outcome {
                                 egui::include_image!("../../assets/brand/buymeacoffee.png"),
                                 Color32::WHITE,
                                 "Support DegenView",
-                                "Buy me a coffee — it keeps development going",
+                                "Buy me a coffee. It keeps development going",
                                 DONATION_URL,
                             );
                         });
