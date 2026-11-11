@@ -372,6 +372,21 @@ so there is no signature check beyond those.
   (display, Secret Service) and the new build id in Settings > About. Builds before the first
   updater-capable release have to be replaced by hand once.
 
+### Panics on Windows
+
+The Windows exe is a GUI-subsystem build: no console, so a panic used to close the app with nothing
+shown. `src/crash_report.rs` installs a panic hook first thing in `main`:
+
+- `crash.log` in the data directory (`%APPDATA%\es.nico.degenview`), appended on every panic (message,
+  location, thread, backtrace), capped at 256 KiB.
+- A main-thread panic also shows a message box ("DegenView stopped unexpectedly") naming the file.
+  Worker-thread panics are logged but not announced: the MCP server and the Pine runners catch some
+  on purpose.
+- Release builds are stripped, so a backtrace is mostly addresses. The message and location carry it.
+
+Not verified on Windows: the `MessageBoxW` path is the one `main` already used for startup errors,
+with a new title.
+
 ### Windows installer
 
 `DegenView-<tag>-windows-x64-setup.exe` and `-windows-arm64-setup.exe`, built by
