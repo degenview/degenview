@@ -3,7 +3,7 @@
 use super::core_tests::{Mac, mac};
 use super::mock::MockCloud;
 use super::scripts::{ScriptSink, StoreScriptSink};
-use crate::pine_studio::store::ScriptStore;
+use crate::pine_studio::library::store::ScriptStore;
 use std::collections::HashSet;
 
 fn pair() -> (MockCloud, Mac, Mac) {
@@ -353,7 +353,7 @@ fn the_real_store_updates_renames_and_disambiguates() {
 #[test]
 fn the_real_sink_hides_unmodified_examples_and_knows_about_drafts() {
     let (mut store, root) = temp_store("demos");
-    crate::pine_studio::demo::add_missing(&mut store).unwrap();
+    crate::pine_studio::library::demo::add_missing(&mut store).unwrap();
     let own = ScriptStore::fresh_id();
     let mut sink = StoreScriptSink {
         store: &mut store,

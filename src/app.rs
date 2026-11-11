@@ -30,7 +30,7 @@ use crate::model::watchlist::{WatchlistInstrument, new_id};
 use crate::model::webhook::WebhookDeliveryState;
 use crate::native_bridge::{self, NativeCommand};
 use crate::pine_studio::editor::EditAction;
-use crate::pine_studio::store::hash_source;
+use crate::pine_studio::library::store::hash_source;
 use crate::pine_studio::{ExitReason, PineStudio, PineStudioAction};
 use crate::service::background_service::BackgroundAlertService;
 use crate::service::fx_rates::FxRateService;
@@ -1034,7 +1034,7 @@ impl DegenViewApp {
             crate::host::sync_host::SyncHost::new(
                 store.clone(),
                 sync_factory,
-                crate::pine_studio::store::ScriptStore::default_location(),
+                crate::pine_studio::library::store::ScriptStore::default_location(),
                 backups,
                 // The sync page lives in the Settings window, a viewport of its own: waking only the
                 // root one leaves that page showing stale state until the mouse moves.

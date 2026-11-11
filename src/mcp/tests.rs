@@ -349,8 +349,11 @@ impl Harness {
 }
 
 /// The script library a harness serves, so tests never read the user's own scripts.
-pub fn script_store_at(root: &std::path::Path) -> crate::pine_studio::store::ScriptStore {
-    crate::pine_studio::store::ScriptStore::new(root.join("Scripts"), root.join("ScriptMetadata"))
+pub fn script_store_at(root: &std::path::Path) -> crate::pine_studio::library::store::ScriptStore {
+    crate::pine_studio::library::store::ScriptStore::new(
+        root.join("Scripts"),
+        root.join("ScriptMetadata"),
+    )
 }
 
 impl Drop for Harness {
@@ -2687,7 +2690,7 @@ const EDIT_V2: &str = "//@version=6\nindicator(\"E\")\nplot(open)\n";
 const EDIT_V3: &str = "//@version=6\nindicator(\"E\")\nplot(high)\n";
 
 fn sha(text: &str) -> String {
-    crate::pine_studio::store::hash_source(text)
+    crate::pine_studio::library::store::hash_source(text)
 }
 
 #[test]

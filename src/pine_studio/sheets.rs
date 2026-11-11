@@ -1,7 +1,7 @@
 //! The modal sheets: New Script, the delete confirmation and the error alert. Ported from
 //! `ScriptNameSheet` and the `PineStudioView` dialogs.
 
-use super::{AlertSheet, PineStudio, PineStudioAction, Sheet, unsaved};
+use super::{AlertSheet, PineStudio, PineStudioAction, Sheet, library::unsaved};
 use crate::model::alert::pine::ArmingFacts;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, Confirm, ConfirmOutcome};
@@ -64,8 +64,9 @@ impl PineStudio {
         // A failed create explains itself until the name is edited.
         let entered = name.clone();
         let problem = self.name_problem(&name).or_else(|| error.clone());
-        let can_create =
-            !name.trim().is_empty() && problem.is_none() && super::name::validate(&name).is_ok();
+        let can_create = !name.trim().is_empty()
+            && problem.is_none()
+            && super::library::name::validate(&name).is_ok();
         let mut cancel = false;
         let mut create = false;
         let field_id = egui::Id::new("pine-studio-new-name");

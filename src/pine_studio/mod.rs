@@ -6,83 +6,18 @@
 //! drawer under the chart.
 #![allow(dead_code)] // transient: phase-2 pieces (completion, find bar) are not wired yet
 
-mod ai;
-mod ai_agent;
-#[cfg(test)]
-mod ai_gallery;
-pub mod ai_history;
-mod ai_host;
-mod ai_models;
-mod ai_panel;
-mod ai_plan;
-mod ai_profile;
-mod ai_prompt;
-mod ai_review;
-mod ai_review_view;
-#[cfg(test)]
-mod ai_tests;
-mod ai_tools;
-mod bottom_bar;
-mod call_sites;
-pub mod color_sites;
-mod completion;
+pub mod ai;
 pub mod debug;
-#[cfg(test)]
-mod debug_gallery;
-mod debug_host;
-pub mod debug_marks;
-mod debug_panel;
-pub mod debug_state;
-#[cfg(test)]
-mod debug_tests;
-pub mod demo;
-pub mod diff;
-mod diff_view;
-mod disk_banner;
 pub mod drawer;
-mod drawer_intro;
-#[cfg(test)]
-mod drawer_tabs_tests;
-pub mod edit_ops;
 pub mod editor;
-mod empty_library;
-mod external;
-#[cfg(test)]
-mod external_gallery;
-#[cfg(test)]
-mod external_tests;
-mod find;
 pub mod indicators;
 pub mod inputs;
-mod logs;
+pub mod library;
 pub mod model;
-pub mod multi_cursor;
-pub mod name;
-pub mod prefs;
 mod preview;
-mod problems;
-#[cfg(test)]
-mod problems_gallery;
-#[cfg(test)]
-mod problems_tests;
-mod profile_marks;
-mod profile_ui;
-mod profiler;
-#[cfg(test)]
-mod profiler_gallery;
-mod profiler_host;
-#[cfg(test)]
-mod profiler_tests;
-pub mod registry;
+pub mod profiler;
 mod sheets;
-mod sidebar;
-mod signature;
-pub mod store;
-pub mod symbols;
-pub mod syntax;
-mod tab_chrome;
 pub mod theme_preview;
-mod unsaved;
 mod workspace;
 
 use crate::model::pine::instance::{PineInstance, StoredInput};
@@ -95,17 +30,17 @@ use crate::ui::split::{self, Axis, DefaultLength, SplitSpec, SplitState};
 use crate::ui::theme;
 use editor::EditorState;
 use eframe::egui::{self, Align, Id, Layout, Margin, Ui};
+use library::prefs::{ChartPosition, DrawerTab, LayoutPrefs};
+use library::registry::LibraryRegistry;
+use library::sidebar::{Group, Rename, RowKey};
+use library::store::{COMPILER_VERSION, ScriptStore, hash_source};
+pub use library::unsaved::{ExitDecision, ExitReason};
+use library::unsaved::{ExitPrompt, UnsavedChoice, UnsavedScript};
 use model::{CompileStatus, LocalScript, ScriptId, ScriptType};
-use prefs::{ChartPosition, DrawerTab, LayoutPrefs};
-use registry::LibraryRegistry;
-use sidebar::{Group, Rename, RowKey};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver};
 use std::time::{Duration, Instant};
-use store::{COMPILER_VERSION, ScriptStore, hash_source};
-pub use unsaved::{ExitDecision, ExitReason};
-use unsaved::{ExitPrompt, UnsavedChoice, UnsavedScript};
 
 /// What the Pine Studio asks the app to do.
 #[derive(Clone, Debug, PartialEq)]
@@ -187,11 +122,11 @@ pub(crate) enum Cmd {
     /// Something the debug panel asked for.
     DebugPanel(debug::PanelAction),
     /// A click or menu choice in the editor's breakpoint column.
-    Gutter(debug_marks::GutterEvent),
+    Gutter(debug::marks::GutterEvent),
     ToggleDebugPanel,
     ToggleAiPanel,
     /// Something the assistant's panel asked for.
-    Ai(ai_panel::PanelAction),
+    Ai(ai::panel::PanelAction),
     /// The profiler's control: on or off, run (again), cancel.
     ProfilerToggle,
     ProfilerRun,
@@ -219,7 +154,7 @@ pub(crate) struct OpenScript {
     pub editor: EditorState,
     pub has_alerts: bool,
     /// Whether the file is being edited outside the app, and the question that raises.
-    pub watch: external::Watch,
+    pub watch: library::external::Watch,
 }
 
 pub(crate) enum Sheet {
@@ -272,7 +207,7 @@ pub struct PineStudio {
     pub(crate) cmds: Vec<Cmd>,
     pub(crate) preview: workspace::PreviewState,
     /// The Logs tab's state.
-    logs: logs::LogsPane,
+    logs: drawer::logs::LogsPane,
     /// Breakpoints, watches and the debugging session of the open script.
     pub(crate) debug: debug::DebugPanel,
     /// Whether the profiler is on, the run in flight and the profile it made.
@@ -301,7 +236,7 @@ impl PineStudio {
         Self {
             id,
             preview: workspace::PreviewState::load(&shared),
-            logs: logs::LogsPane::load(&shared),
+            logs: drawer::logs::LogsPane::load(&shared),
             debug: debug::DebugPanel::load(&shared),
             profiler: profiler::Profiler::default(),
             ai: ai::Assistant::default(),
@@ -409,7 +344,7 @@ impl PineStudio {
         let open_id = self.open.as_ref().map(|open| open.id.clone());
         if let Some(open) = self.open.as_ref().filter(|open| open.editor.is_dirty()) {
             let (added, removed) =
-                unsaved::lines_changed(open.editor.saved_source(), &open.editor.source);
+                library::unsaved::lines_changed(open.editor.saved_source(), &open.editor.source);
             found.push(UnsavedScript {
                 id: open.id.clone(),
                 name: open.name.clone(),
@@ -430,7 +365,8 @@ impl PineStudio {
                 .flatten()
                 .filter(|draft| draft.source != script.source);
             if let Some(draft) = draft {
-                let (added, removed) = unsaved::lines_changed(&script.source, &draft.source);
+                let (added, removed) =
+                    library::unsaved::lines_changed(&script.source, &draft.source);
                 found.push(UnsavedScript {
                     id: script.id,
                     name: script.name,
@@ -591,7 +527,7 @@ impl PineStudio {
         }
         // A script being open is a file to follow, a little more often than the full scan.
         ctx.request_repaint_after(if self.open.is_some() {
-            external::FAST_POLL
+            library::external::FAST_POLL
         } else {
             Duration::from_millis(1500)
         });
@@ -707,16 +643,16 @@ impl PineStudio {
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 ui.spacing_mut().item_spacing.x = 4.0;
                 // Added right to left, so they read AI, profiler, debugger from the left.
-                if self.open.is_some() && debug_panel::panel_button(ui, self.prefs.debug_open) {
+                if self.open.is_some() && debug::panel::panel_button(ui, self.prefs.debug_open) {
                     self.cmds.push(Cmd::ToggleDebugPanel);
                 }
                 if self.open.is_some() {
                     let status = self.profiler.status(self.profiler_now.as_ref());
-                    for action in profile_ui::toolbar(ui, &status) {
+                    for action in profiler::ui::toolbar(ui, &status) {
                         self.cmds.push(Cmd::from(action));
                     }
                 }
-                if self.open.is_some() && ai_panel::panel_button(ui, self.prefs.ai_open) {
+                if self.open.is_some() && ai::panel::panel_button(ui, self.prefs.ai_open) {
                     self.cmds.push(Cmd::ToggleAiPanel);
                 }
             });
@@ -755,7 +691,7 @@ impl PineStudio {
     /// Runs a store operation; a failure becomes the alert.
     fn with_store<T>(
         &mut self,
-        operation: impl FnOnce(&mut ScriptStore) -> Result<T, store::ScriptStoreError>,
+        operation: impl FnOnce(&mut ScriptStore) -> Result<T, library::store::ScriptStoreError>,
     ) -> Option<T> {
         let store = self.script_store.as_mut()?;
         match operation(store) {
@@ -773,7 +709,7 @@ impl PineStudio {
             .shared
             .lock()
             .ok()
-            .and_then(|s| s.setting(demo::SEEDED_KEY))
+            .and_then(|s| s.setting(library::demo::SEEDED_KEY))
             .unwrap_or(false);
         if !seeded
             && self
@@ -786,7 +722,7 @@ impl PineStudio {
                             _ => 0,
                         };
                         if brought == 0 {
-                            demo::add_missing(store)?;
+                            library::demo::add_missing(store)?;
                         }
                     }
                     Ok(())
@@ -794,7 +730,7 @@ impl PineStudio {
                 .is_some()
             && let Ok(shared) = self.shared.lock()
         {
-            let _ = shared.set_setting(demo::SEEDED_KEY, &true);
+            let _ = shared.set_setting(library::demo::SEEDED_KEY, &true);
         }
         self.refresh();
         self.import_swift_inputs();
@@ -878,9 +814,9 @@ impl PineStudio {
             &open.editor.source,
         );
         match verdict {
-            external::Verdict::Nothing | external::Verdict::Conflict => {}
-            external::Verdict::Baseline => open.editor.mark_saved(),
-            external::Verdict::Reload(text) => self.adopt_disk_text(ctx, &text),
+            library::external::Verdict::Nothing | library::external::Verdict::Conflict => {}
+            library::external::Verdict::Baseline => open.editor.mark_saved(),
+            library::external::Verdict::Reload(text) => self.adopt_disk_text(ctx, &text),
         }
     }
 
@@ -929,7 +865,7 @@ impl PineStudio {
             (None, Some(name)) => scripts.iter().find(|script| {
                 script.script_type == ScriptType::Library
                     && (&script.name == name
-                        || registry::title_of(&script.source).as_ref() == Some(name))
+                        || library::registry::title_of(&script.source).as_ref() == Some(name))
             }),
             (None, None) => None,
         };
@@ -1002,7 +938,7 @@ impl PineStudio {
             script_type: script.script_type,
             editor,
             has_alerts: false,
-            watch: external::Watch::default(),
+            watch: library::external::Watch::default(),
         });
         self.prefs.selected_script_id = Some(script.id);
         self.refresh_debug_map();
@@ -1161,7 +1097,7 @@ impl PineStudio {
                 });
             }
             Cmd::AddExamples => {
-                self.with_store(demo::add_missing);
+                self.with_store(library::demo::add_missing);
                 self.refresh();
             }
             Cmd::AddToChart(id) => {
@@ -1334,7 +1270,7 @@ impl PineStudio {
         }
         let id = open.id.clone();
         // The editor shows what lands on disk: a saved script always ends in a newline.
-        let source = store::with_trailing_newline(&open.editor.source);
+        let source = library::store::with_trailing_newline(&open.editor.source);
         // What the editor last read from the file. If the file is no longer that, someone else wrote
         // it and this save would overwrite their work.
         let expected = open.editor.saved_source().to_owned();
@@ -1352,7 +1288,7 @@ impl PineStudio {
                 }
                 self.refresh();
             }
-            Some(Err(store::ScriptStoreError::ChangedOnDisk)) => {
+            Some(Err(library::store::ScriptStoreError::ChangedOnDisk)) => {
                 // Not saved. Look at the file at once, without waiting for it to settle, so the
                 // question appears over the typing.
                 if let Some(open) = self.open.as_mut() {
@@ -1419,13 +1355,13 @@ impl PineStudio {
     }
 
     pub(crate) fn name_problem(&self, raw: &str) -> Option<String> {
-        match name::validate(raw) {
+        match library::name::validate(raw) {
             Err(error) => (!raw.trim().is_empty()).then(|| error.to_string()),
             Ok(clean) => self
                 .scripts
                 .iter()
                 .any(|s| s.name.to_lowercase() == clean.to_lowercase())
-                .then(|| store::ScriptStoreError::NameConflict.to_string()),
+                .then(|| library::store::ScriptStoreError::NameConflict.to_string()),
         }
     }
 }
@@ -1859,7 +1795,7 @@ mod tests {
         );
         // Revealing it puts the caret on the call, though the editor's text holds the CRs.
         editor.reveal(&problem);
-        let index = syntax::compiled_utf16_to_char_index(
+        let index = editor::syntax::compiled_utf16_to_char_index(
             &editor.source,
             editor.pending_jump().expect("a jump"),
         );

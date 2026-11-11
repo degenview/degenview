@@ -19,7 +19,7 @@ use crate::pine::program::ChartTheme;
 use crate::pine::program::{InputValue, SymbolInfo, VisualOutput};
 use crate::pine::style_overrides::{StyleOverrides, StyleRow, style_rows};
 use crate::pine::token::{Diagnostic, Limits};
-use crate::pine_studio::registry::LibraryRegistry;
+use crate::pine_studio::library::registry::LibraryRegistry;
 use crate::ui::alert_lines;
 use crate::ui::canvas_render::{self, CanvasStyle};
 use crate::ui::chart_buttons::{self, PaneAction};

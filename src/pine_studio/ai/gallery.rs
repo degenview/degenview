@@ -1,0 +1,539 @@
+//! Pictures of the assistant's panel in the whole window, in both themes, for a person to look at.
+//! Run by hand: `DEGENVIEW_GALLERY_DIR=… cargo test --lib pine_studio::ai_gallery -- --ignored`.
+
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
+
+use eframe::egui;
+
+use super::agent::AgentSetup;
+use super::panel::PanelAction;
+use super::prompt::Mode;
+use super::tools::ToolBox;
+use crate::pine_studio::debug::studio_tests::Rig;
+use crate::pine_studio::*;
+use crate::service::keychain_ai_keys::AiKeyStore;
+use crate::service::llm::mock::{MockProvider, Scripted};
+use crate::service::llm::{ChatMessage, ChatRequest, Done, LlmError, LlmProvider, ProviderKind};
+
+use crate::ui::render_tests::{Screen, gallery_dir};
+use crate::ui::theme::AppTheme;
+
+const PLAN_REPLY: &str = "The length is hard-coded in two places, so one input is the cleanest fix.\n\n## Plan\n1. Declare `length = input.int(14, \"Length\", minval = 2)` near the top.\n2. Replace the literal `14` in `ta.rsi(close, 14)` with **length**.\n3. Show it in the title so the chart reflects the setting.\n\nThe core of it is small:\n\n```pine\nlength = input.int(14, \"Length\", minval = 2)\nvalue = ta.rsi(close, length)\n```\n\n> Inputs appear in the drawer's Inputs tab with no extra work.\n\nSee [the Pine docs](https://www.tradingview.com/pine-script-docs/) for `input.int`.";
+
+/// Streams the start of a reply and then waits, so the "writing" state can be photographed.
+struct Stalled;
+
+impl LlmProvider for Stalled {
+    fn stream_chat(
+        &self,
+        _: &ChatRequest,
+        cancel: &AtomicBool,
+        on_text: &mut dyn FnMut(&str),
+    ) -> Result<Done, LlmError> {
+        on_text(
+            "Adding a length input and using it in the average.\n```pine\n//@version=6\nindicator(\"RSI Zones\")\nlength = input.int(14)\n",
+        );
+        while !cancel.load(Ordering::Relaxed) {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        Err(LlmError::Cancelled)
+    }
+
+    fn list_models(&self) -> Result<Vec<String>, LlmError> {
+        Ok(Vec::new())
+    }
+}
+
+struct Scene<'a> {
+    rig: &'a mut Rig,
+    screen: Screen,
+    last: Option<egui::FullOutput>,
+    name: String,
+}
+
+impl Scene<'_> {
+    fn frames(&mut self, count: usize) {
+        for _ in 0..count {
+            theme::sync(&self.screen.ctx);
+            let manager = &mut self.rig.manager;
+            self.last = Some(self.screen.run(Vec::new(), |ui| {
+                manager.ui(ui, None);
+            }));
+            std::thread::sleep(Duration::from_millis(15));
+        }
+    }
+
+    /// One frame with these input events.
+    fn frame_with(&mut self, events: Vec<egui::Event>) {
+        theme::sync(&self.screen.ctx);
+        let manager = &mut self.rig.manager;
+        self.last = Some(self.screen.run(events, |ui| {
+            manager.ui(ui, None);
+        }));
+    }
+
+    /// A click at `pos`: move, press, release.
+    fn click(&mut self, pos: egui::Pos2) {
+        let button = |pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        self.frame_with(vec![egui::Event::PointerMoved(pos)]);
+        self.frame_with(vec![button(true)]);
+        self.frame_with(vec![button(false)]);
+        self.frames(3);
+    }
+
+    fn save(&mut self, label: &str) {
+        let output = self.last.take().expect("a frame");
+        self.screen
+            .save(&format!("assistant-{label}-{}", self.name), output);
+    }
+}
+
+#[test]
+#[ignore = "writes images for a person to look at"]
+fn gallery_of_the_assistant() {
+    if gallery_dir().is_none() {
+        return;
+    }
+    for (theme_name, app_theme) in [("dark", AppTheme::Dark), ("light", AppTheme::Light)] {
+        for (layout, width) in [("wide", 1360.0), ("narrow", 760.0)] {
+            let mut rig = Rig::new(&format!("ai-gallery-{layout}-{theme_name}"));
+            rig.manager.prefs.ai_open = true;
+            rig.manager.prefs.debug_open = layout == "wide" && theme_name == "dark";
+            let screen = Screen::new(egui::vec2(width, 860.0));
+            theme::apply(&screen.ctx, app_theme);
+            let mut scene = Scene {
+                rig: &mut rig,
+                screen,
+                last: None,
+                name: format!("{layout}-{theme_name}"),
+            };
+
+            // No key yet: the panel says so and offers Settings.
+            AiKeyStore::shared().remove(ProviderKind::OpenAi);
+            scene.frames(3);
+            scene.save("no-key");
+
+            // Ready, nothing asked yet.
+            AiKeyStore::shared()
+                .save(ProviderKind::OpenAi, "sk-gallery")
+                .unwrap();
+            scene.frames(3);
+            scene.save("empty");
+
+            // A Plan reply: markdown, a snippet, a quote, a link, and the Implement button.
+            let base = scene
+                .rig
+                .manager
+                .open
+                .as_ref()
+                .unwrap()
+                .editor
+                .source
+                .clone();
+            scene.rig.manager.ai.start(
+                Box::new(crate::service::llm::mock::MockProvider::replying(vec![
+                    crate::service::llm::mock::MockProvider::text(&[PLAN_REPLY]),
+                ])),
+                ChatRequest {
+                    model: "m".into(),
+                    system: String::new(),
+                    messages: vec![ChatMessage::user("x")],
+                    max_tokens: 10,
+                    tools: Vec::new(),
+                },
+                "How would I add a length input?".to_owned(),
+                base,
+                Mode::Ask,
+                Arc::new(|| {}),
+            );
+            scene.frames(12);
+            scene.save("plan");
+            scene.rig.manager.ai.clear();
+
+            // A short exchange: the bubble, the reply, its actions, and Edit on the message.
+            let base = scene
+                .rig
+                .manager
+                .open
+                .as_ref()
+                .unwrap()
+                .editor
+                .source
+                .clone();
+            scene.rig.manager.ai.start(
+                Box::new(crate::service::llm::mock::MockProvider::replying(vec![
+                    crate::service::llm::mock::MockProvider::text(&[
+                        "It calls `calculate` once per bar and **plots** the result, so the line follows the close.",
+                    ]),
+                ])),
+                ChatRequest {
+                    model: "m".into(),
+                    system: String::new(),
+                    messages: vec![ChatMessage::user("x")],
+                    max_tokens: 10,
+                    tools: Vec::new(),
+                },
+                "What does this script do?".to_owned(),
+                base,
+                Mode::Ask,
+                Arc::new(|| {}),
+            );
+            scene.frames(12);
+            scene.save("chat");
+
+            // An error: the banner with Try again, the message waiting in the box.
+            scene.rig.manager.ai.notice = Some(super::Notice::error(
+                "Rate limited: you exceeded your current quota. Check your plan and billing.",
+            ));
+            scene.rig.manager.ai.input = "What does this script do?".to_owned();
+            scene.frames(4);
+            scene.save("error");
+
+            // The same, with a provider's whole paragraph.
+            scene.rig.manager.ai.notice = Some(super::Notice::failure(
+                crate::service::llm::sample::server_error().report(),
+            ));
+            scene.frames(4);
+            scene.save("error-long");
+            scene.rig.manager.ai.notice = None;
+            scene.rig.manager.ai.input.clear();
+            scene.rig.manager.ai.clear();
+
+            // Edit mode from here on.
+            scene.rig.manager.ai.set_mode(Mode::Edit);
+            scene.frames(3);
+            scene.save("empty-edit");
+
+            // Writing.
+            let base = scene
+                .rig
+                .manager
+                .open
+                .as_ref()
+                .unwrap()
+                .editor
+                .source
+                .clone();
+            scene.rig.manager.ai.start(
+                Box::new(Stalled),
+                ChatRequest {
+                    model: "m".into(),
+                    system: String::new(),
+                    messages: vec![ChatMessage::user("x")],
+                    max_tokens: 10,
+                    tools: Vec::new(),
+                },
+                "Add an input for the length".to_owned(),
+                base.clone(),
+                Mode::Edit,
+                Arc::new(|| {}),
+            );
+            scene.frames(12);
+            scene.save("writing");
+            scene.rig.manager.ai.stop(&|_| Vec::new());
+
+            // The assistant with tools: what it did on the way, and the change it made.
+            let tools_base = scene
+                .rig
+                .manager
+                .open
+                .as_ref()
+                .unwrap()
+                .editor
+                .source
+                .clone();
+            let edit = |id: &str, old: &str, new: &str| {
+                Scripted::call(
+                    id,
+                    "edit_script",
+                    serde_json::json!({"old": old, "new": new}),
+                )
+            };
+            for (label, turns) in [
+                (
+                    "tools",
+                    vec![
+                        Ok(Scripted::say("Let me read the function first.").then_call(
+                            "t1",
+                            "read_script",
+                            serde_json::json!({"start": 1, "end": 12}),
+                        )),
+                        Ok(Scripted::call("p1", "profile", serde_json::json!({}))),
+                        Ok(edit("t2", "offset = 9", "offset = 20")),
+                        Ok(edit("t3", "doubled + 10", "doubled + 20")),
+                        Ok(Scripted::say("The offset is now 20.")),
+                    ],
+                ),
+                (
+                    "tools-incomplete",
+                    vec![
+                        Ok(edit("t1", "doubled + 10", "doubled + 20")),
+                        Err(LlmError::rate_limited(
+                            "Too many requests. Try again in a minute.",
+                        )),
+                    ],
+                ),
+            ] {
+                let feed = scene
+                    .rig
+                    .manager
+                    .preview
+                    .debug_feed(crate::pine_studio::model::now_ms(), false);
+                let tools = ToolBox::new(Mode::Edit, &tools_base, super::host::diagnostics_of)
+                    .with_bars(feed);
+                let request = ChatRequest {
+                    model: "m".into(),
+                    system: String::new(),
+                    messages: vec![ChatMessage::user("x")],
+                    max_tokens: 10,
+                    tools: tools.specs(),
+                };
+                scene.rig.manager.ai.start_agent(
+                    Box::new(MockProvider::turns(turns)),
+                    request,
+                    Some(AgentSetup {
+                        tools,
+                        fallback_system: String::new(),
+                    }),
+                    "Make the offset 20".to_owned(),
+                    tools_base.clone(),
+                    Mode::Edit,
+                    Arc::new(|| {}),
+                );
+                for _ in 0..200 {
+                    scene.frames(1);
+                    if !scene.rig.manager.ai.is_running() {
+                        break;
+                    }
+                }
+                // The transcript eases down to the end of the conversation; wait for it.
+                scene.frames(30);
+                scene.save(label);
+            }
+            scene.rig.manager.ai.clear();
+
+            // Auto: a clean change is applied when the assistant finishes; anything else waits.
+            assert!(scene.rig.manager.ai.set_mode(Mode::Edit));
+            let ctx = scene.screen.ctx.clone();
+            scene
+                .rig
+                .manager
+                .ai_action(PanelAction::SetAuto(true), &ctx);
+            scene.frames(3);
+            scene.save("auto-on");
+            for (label, old, new) in [
+                ("auto-applied", "doubled + 10", "doubled + 20"),
+                ("auto-held", "plot(value)", "plot(value"),
+            ] {
+                scene.rig.set_source(&tools_base);
+                scene.frames(2);
+                let tools = ToolBox::new(Mode::Edit, &tools_base, super::host::diagnostics_of);
+                let request = ChatRequest {
+                    model: "m".into(),
+                    system: String::new(),
+                    messages: vec![ChatMessage::user("x")],
+                    max_tokens: 10,
+                    tools: tools.specs(),
+                };
+                let turns = vec![Ok(edit("e1", old, new)), Ok(Scripted::say("Changed it."))];
+                scene.rig.manager.ai.start_agent(
+                    Box::new(MockProvider::turns(turns)),
+                    request,
+                    Some(AgentSetup {
+                        tools,
+                        fallback_system: String::new(),
+                    }),
+                    "Make the offset 20".to_owned(),
+                    tools_base.clone(),
+                    Mode::Edit,
+                    Arc::new(|| {}),
+                );
+                for _ in 0..200 {
+                    scene.frames(1);
+                    if !scene.rig.manager.ai.is_running() {
+                        break;
+                    }
+                }
+                scene.frames(30);
+                scene.save(label);
+            }
+            scene.rig.set_source(&tools_base);
+            scene
+                .rig
+                .manager
+                .ai_action(PanelAction::SetAuto(false), &ctx);
+            scene.rig.manager.ai.clear();
+
+            // Plan mode: it looks, measures and hands over a plan to approve.
+            assert!(scene.rig.manager.ai.set_mode(Mode::Plan));
+            scene.frames(2);
+            scene.save("plan-empty");
+            let feed = scene
+                .rig
+                .manager
+                .preview
+                .debug_feed(crate::pine_studio::model::now_ms(), false);
+            let plan_tools =
+                ToolBox::new(Mode::Plan, &tools_base, super::host::diagnostics_of).with_bars(feed);
+            let plan_request = ChatRequest {
+                model: "m".into(),
+                system: String::new(),
+                messages: vec![ChatMessage::user("x")],
+                max_tokens: 10,
+                tools: plan_tools.specs(),
+            };
+            let plan_turns = vec![
+                Ok(Scripted::call("p1", "profile", serde_json::json!({}))),
+                Ok(Scripted::call(
+                    "p2",
+                    "submit_plan",
+                    serde_json::json!({
+                        "summary": "Line 4 and 5 do most of the work: the function runs once a bar, and its result is computed twice.",
+                        "steps": [
+                            {"title": "Compute it once", "detail": "Store `doubled + 10` in a variable and reuse it instead of calling the function twice.", "lines": "4-5"},
+                            {"title": "Keep the plot", "detail": "Leave `plot(value)` as it is so the chart does not change."},
+                        ],
+                        "expected_effect": "Fewer executions per bar (measured: the function ran 500 times). The time saved is a guess."
+                    }),
+                )),
+            ];
+            scene.rig.manager.ai.start_agent(
+                Box::new(MockProvider::turns(plan_turns)),
+                plan_request,
+                Some(AgentSetup {
+                    tools: plan_tools,
+                    fallback_system: String::new(),
+                }),
+                "Make this script faster".to_owned(),
+                tools_base.clone(),
+                Mode::Plan,
+                Arc::new(|| {}),
+            );
+            for _ in 0..200 {
+                scene.frames(1);
+                if !scene.rig.manager.ai.is_running() {
+                    break;
+                }
+            }
+            scene.frames(30);
+            scene.save("plan");
+            scene.rig.manager.ai.clear();
+            scene.rig.manager.ai.set_mode(Mode::Edit);
+
+            // A proposal with several kinds of change over a longer script.
+            let rsi = crate::pine_studio::library::demo::BUNDLED
+                .iter()
+                .find(|demo| demo.name == "RSI Zones")
+                .unwrap()
+                .source;
+            let padding: String = (1..=22).map(|n| format!("// note {n}\n")).collect();
+            let base = format!("{rsi}\n{padding}plot(close)\n");
+            scene.rig.set_source(&base);
+            let changed = base
+                .replace("input.int(14, \"Length\"", "input.int(21, \"Length\"")
+                .replace(
+                    "value = ta.rsi(source, length)\n",
+                    "value = ta.rsi(source, length)\nsmooth = ta.ema(value, 3)\n",
+                )
+                .replace(
+                    "color = color.purple, linewidth = 2",
+                    "color = color.orange, linewidth = 3",
+                )
+                .replace("hline(50, \"Midline\", color = color.gray)\n", "")
+                .replace(
+                    "plot(close)\n",
+                    "plot(close)\nalertcondition(value > overbought, \"Overbought\")\n",
+                );
+            let mock = crate::service::llm::mock::MockProvider::replying(vec![
+                crate::service::llm::mock::MockProvider::text(&[&format!(
+                    "I made the length 21, added a smoothed line, restyled the plot, dropped the midline and added an alert.\n```pine\n{changed}```\n"
+                )]),
+            ]);
+            scene.rig.manager.ai.start(
+                Box::new(mock),
+                ChatRequest {
+                    model: "m".into(),
+                    system: String::new(),
+                    messages: vec![ChatMessage::user("x")],
+                    max_tokens: 10,
+                    tools: Vec::new(),
+                },
+                "Use 21, smooth it, restyle the plot, drop the midline, add an alert".to_owned(),
+                base,
+                Mode::Edit,
+                Arc::new(|| {}),
+            );
+            scene.frames(12);
+            scene.save("proposal");
+
+            // The review sheet: everything accepted, then one rejected and another selected.
+            scene.rig.manager.cmds.push(Cmd::Ai(PanelAction::Review));
+            scene.frames(6);
+            scene.save("review");
+            let ctx = scene.screen.ctx.clone();
+            scene
+                .rig
+                .manager
+                .ai_review_action(super::review_view::ReviewAction::Toggle(2), &ctx);
+            scene
+                .rig
+                .manager
+                .ai_review_action(super::review_view::ReviewAction::Select(3), &ctx);
+            scene.frames(6);
+            scene.save("review-rejected");
+            scene
+                .rig
+                .manager
+                .ai_review_action(super::review_view::ReviewAction::Close, &ctx);
+            scene.frames(3);
+
+            // The result of Apply.
+            scene.rig.manager.cmds.push(Cmd::Ai(PanelAction::Accept));
+            scene.frames(4);
+            scene.save("applied");
+
+            // The model menu, open, over a loaded list.
+            scene.rig.manager.ai.models.insert(
+                ProviderKind::OpenAi,
+                super::models::ModelList::Ready(
+                    ["gpt-5", "gpt-5-mini", "gpt-5-nano", "o3", "o4-mini"]
+                        .iter()
+                        .map(|m| (*m).to_owned())
+                        .collect(),
+                ),
+            );
+            scene.frames(2);
+            let chip = scene
+                .screen
+                .ctx
+                .data(|data| data.get_temp::<egui::Rect>(egui::Id::new("ai-model-chip")));
+            if let Some(chip) = chip {
+                scene.click(chip.center());
+                scene.save("model-menu");
+                // The list failed with a provider's whole paragraph.
+                scene.rig.manager.ai.models.insert(
+                    ProviderKind::OpenAi,
+                    super::models::ModelList::Failed(
+                        crate::service::llm::sample::server_error().report(),
+                    ),
+                );
+                scene.frames(3);
+                scene.save("model-menu-failed");
+                scene.frame_with(vec![egui::Event::Key {
+                    key: egui::Key::Escape,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::NONE,
+                }]);
+            }
+        }
+    }
+}

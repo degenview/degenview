@@ -211,7 +211,7 @@ impl WebhookHost {
                     self.ai_prefs_read_at = Some(std::time::Instant::now());
                 }
                 SettingsAction::Ai(crate::ui::settings_ai::AiAction::ClearHistory) => {
-                    use crate::pine_studio::ai_history::History;
+                    use crate::pine_studio::ai::history::History;
                     let mut history = History::load(store);
                     history.clear();
                     self.state.ai.status = Some(match history.save(store) {

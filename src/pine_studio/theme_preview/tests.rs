@@ -1,8 +1,8 @@
 use super::*;
 use crate::model::editor_theme::{SurfaceColor, SyntaxRole};
 use crate::pine::token::DiagnosticSeverity;
-use crate::pine_studio::symbols;
-use crate::pine_studio::syntax;
+use crate::pine_studio::editor::symbols;
+use crate::pine_studio::editor::syntax;
 use crate::ui::editor_appearance;
 use crate::ui::theme::{self, AppTheme, RestoreDefaultTheme};
 use std::collections::HashSet;
@@ -80,11 +80,11 @@ fn underlined(preview: &ThemePreview, severity: DiagnosticSeverity) -> Vec<Strin
         .iter()
         .filter(|d| d.severity == severity)
         .map(|d| {
-            let from = crate::pine_studio::syntax::compiled_utf16_to_char_index(
+            let from = crate::pine_studio::editor::syntax::compiled_utf16_to_char_index(
                 &preview.state.source,
                 d.range.start.offset,
             );
-            let to = crate::pine_studio::syntax::compiled_utf16_to_char_index(
+            let to = crate::pine_studio::editor::syntax::compiled_utf16_to_char_index(
                 &preview.state.source,
                 d.range.end.offset,
             );

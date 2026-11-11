@@ -12,7 +12,7 @@
 
 use super::{EditorState, UndoGesture, apply_site_text, text_hash, with_range_shifted};
 use crate::model::editor_theme::{SurfaceColor, SyntaxRole};
-use crate::pine_studio::color_sites::{ColorMap, ColorSite, Picked, rewrite};
+use crate::pine_studio::editor::color_sites::{ColorMap, ColorSite, Picked, rewrite};
 use crate::ui::color_picker::inline::{self, Header, Style};
 use crate::ui::color_picker::{Hsv, paint_swatch_on};
 use crate::ui::editor_appearance::{Appearance, EditorFont};
@@ -108,7 +108,7 @@ impl EditorState {
         {
             return Arc::clone(map);
         }
-        let map = Arc::new(crate::pine_studio::color_sites::map(&self.source));
+        let map = Arc::new(crate::pine_studio::editor::color_sites::map(&self.source));
         self.swatches.map = Some((key, Arc::clone(&map)));
         map
     }

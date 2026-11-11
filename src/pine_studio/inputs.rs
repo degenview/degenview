@@ -238,7 +238,7 @@ fn swift_value(value: &serde_json::Value) -> Option<InputValue> {
 pub fn show(ui: &mut Ui, schema: &InputSchema, values: &InputValues) -> Vec<InputEdit> {
     let mut edits = Vec::new();
     if schema.inputs.is_empty() {
-        super::drawer_intro::inputs(ui);
+        super::drawer::intro::inputs(ui);
         return edits;
     }
     egui::ScrollArea::vertical()

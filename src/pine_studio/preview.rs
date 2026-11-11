@@ -7,8 +7,8 @@
 
 use super::Cmd;
 use super::inputs::{self, InputEdit, InputValues, InputsStore};
+use super::library::registry::LibraryRegistry;
 use super::model::ScriptType;
-use super::registry::LibraryRegistry;
 use super::workspace::PreviewInput;
 use crate::format;
 use crate::model::chart::price_scale::PriceScaleMode;
@@ -1102,8 +1102,9 @@ pub fn chart(
         let rect = stale_banner(ui, area);
         let response = ui.interact(rect, Id::new("preview-stale"), Sense::click());
         if response.clicked() {
-            cmds.borrow_mut()
-                .push(Cmd::SetDrawerTab(super::prefs::DrawerTab::Problems));
+            cmds.borrow_mut().push(Cmd::SetDrawerTab(
+                super::library::prefs::DrawerTab::Problems,
+            ));
         }
         response
             .on_hover_cursor(CursorIcon::PointingHand)

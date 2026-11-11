@@ -44,7 +44,7 @@ use crate::model::alert::{AlertCurrency, AlertFrequency};
 use crate::model::mcp::{McpAuditOutcome, Permission};
 use crate::model::watchlist::text::validate_market;
 use crate::model::{BuiltIn, DataSource, EMA_PERIODS};
-use crate::pine_studio::store::ScriptStore;
+use crate::pine_studio::library::store::ScriptStore;
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::tool::Extension;
 use rmcp::handler::server::wrapper::{Json, Parameters};

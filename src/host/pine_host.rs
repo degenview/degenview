@@ -12,7 +12,7 @@ use crate::pine::runtime_support::{
 };
 use crate::pine::session::{RunError, Session};
 use crate::pine::token::{Diagnostic, DiagnosticSeverity, Limits};
-use crate::pine_studio::registry::LibraryRegistry;
+use crate::pine_studio::library::registry::LibraryRegistry;
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};

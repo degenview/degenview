@@ -3,14 +3,14 @@
 //! `PineStudioView`.
 
 use super::ai::Assistant;
-use super::ai_panel::{self, Setup};
+use super::ai::panel::{self as ai_panel, Setup};
 use super::debug::DebugPanel;
-use super::debug_panel;
+use super::debug::panel as debug_panel;
 use super::drawer;
 use super::editor;
-use super::prefs::{ChartPosition, DrawerTab, LayoutPrefs};
-use super::profile_marks::ProfileColumn;
-use super::profile_ui::{self, TabView};
+use super::library::prefs::{ChartPosition, DrawerTab, LayoutPrefs};
+use super::profiler::marks::ProfileColumn;
+use super::profiler::ui::{self, TabView};
 use super::profiler::{Profile, Status};
 use super::{Cmd, OpenScript, PineStudio};
 use crate::pine::token::Diagnostic;
@@ -38,7 +38,7 @@ impl PineStudio {
     /// How the script of `source`, whose compile result is `compile`, failed when it ran: on the
     /// chart or in the profile, and only if that run was of this very text.
     pub(super) fn runtime_problems(&self, source: &str, compile: &[Diagnostic]) -> Vec<Diagnostic> {
-        super::problems::runtime_problems(
+        super::drawer::problems::runtime_problems(
             compile,
             self.preview.runtime_error_for(source),
             self.profiler.failure(self.profiler_now.as_ref()),
@@ -62,7 +62,7 @@ impl PineStudio {
     }
 
     fn empty_library(&mut self, ui: &mut Ui) {
-        super::empty_library::library(ui, &mut self.cmds);
+        super::library::empty_library::library(ui, &mut self.cmds);
     }
 
     fn workspace_ui(&mut self, ui: &mut Ui) {
@@ -109,7 +109,7 @@ impl PineStudio {
         // One list of problems for the tab, its count and the editor: what the compiler said plus
         // how the script failed when it ran, on the chart or in the profile.
         let runtime = self.runtime_problems(&input.source, &input.diagnostics);
-        input.problems = super::problems::combined(&input.diagnostics, &runtime);
+        input.problems = super::drawer::problems::combined(&input.diagnostics, &runtime);
         if let Some(open) = self.open.as_mut() {
             open.editor.set_runtime_problems(runtime);
         }
@@ -269,11 +269,11 @@ fn editor_and_debug(
         let question = open.borrow().watch.conflict.is_some();
         if question {
             let name = open.borrow().name.clone();
-            match super::disk_banner::show(ui, &name) {
-                Some(super::disk_banner::BannerAction::Reload) => {
+            match super::library::disk_banner::show(ui, &name) {
+                Some(super::library::disk_banner::BannerAction::Reload) => {
                     cmds.borrow_mut().push(Cmd::DiskReload);
                 }
-                Some(super::disk_banner::BannerAction::Keep) => {
+                Some(super::library::disk_banner::BannerAction::Keep) => {
                     cmds.borrow_mut().push(Cmd::DiskKeep);
                 }
                 None => {}
@@ -338,7 +338,7 @@ fn preview_pane(
     let (input, profile) = (side.input, side.profile);
     let full = ui.max_rect();
     ui.painter().rect_filled(full, 0.0, theme::background());
-    let bar_rect = super::bottom_bar::rect(full);
+    let bar_rect = super::drawer::bottom_bar::rect(full);
     let top = super::preview::header(ui, preview, full);
     let middle = egui::Rect::from_min_max(pos2(full.min.x, top), pos2(full.max.x, bar_rect.min.y));
 
@@ -397,7 +397,7 @@ fn preview_pane(
                 DrawerTab::Logs => {
                     let preview = preview.borrow();
                     let guard = shared.borrow();
-                    super::logs::tab(ui, &preview, guard.1, logs, &input.name, cmds);
+                    super::drawer::logs::tab(ui, &preview, guard.1, logs, &input.name, cmds);
                 }
                 DrawerTab::Profile => {
                     let view = TabView {
@@ -405,7 +405,7 @@ fn preview_pane(
                         profile: profile.profile,
                         lines_match: profile.lines_match,
                     };
-                    for action in profile_ui::tab(ui, &view) {
+                    for action in ui::tab(ui, &view) {
                         cmds.borrow_mut().push(Cmd::from(action));
                     }
                 }

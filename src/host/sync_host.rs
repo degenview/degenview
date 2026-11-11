@@ -6,7 +6,7 @@
 //! user sees on screen (applying remote data, reading script files) happens in `tick`, on the app
 //! thread, where those owners live.
 
-use crate::pine_studio::store::ScriptStore;
+use crate::pine_studio::library::store::ScriptStore;
 use crate::store::SharedStore;
 use crate::store::sync::ConflictSummary;
 use crate::sync::account::{self, AccountChoice};
