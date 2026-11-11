@@ -5,7 +5,7 @@ use crate::format::civil_from_days;
 use crate::host::update_host::{BUILD_ID, Phase, UpdateHost, UpdateView};
 use crate::service::update_check::Channel;
 use crate::ui::icons::{self, Icon};
-use crate::ui::{kit, theme, update_indicator};
+use crate::ui::{kit, theme, window::update_indicator};
 use eframe::egui::{self, Color32, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2};
 use std::time::{Duration, UNIX_EPOCH};
 
@@ -13,8 +13,8 @@ pub const NAME: &str = "DegenView";
 pub use crate::host::update_host::VERSION;
 pub const LICENSE: &str = "GPL-3.0-only";
 pub const REPOSITORY_URL: &str = "https://github.com/degenview/degenview";
-pub const DONATION_URL: &str = crate::ui::tab_bar::COFFEE_URL;
-pub const DOCS_URL: &str = crate::ui::tab_bar::DOCS_URL;
+pub const DONATION_URL: &str = crate::ui::window::tab_bar::COFFEE_URL;
+pub const DOCS_URL: &str = crate::ui::window::tab_bar::DOCS_URL;
 const COPYRIGHT: &str = "Copyright © 2026 Nico Oelgart. Licensed under GPL-3.0-only.";
 
 const MAX_WIDTH: f32 = 480.0;

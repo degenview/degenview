@@ -27,11 +27,11 @@ use crate::ui::chart_indicator_strip;
 use crate::ui::drawing_layer::{DrawingFrame, DrawingLayer, Projection, TextMeasure};
 use crate::ui::drawing_render::TimeIndex;
 use crate::ui::icons::{self, Icon};
-use crate::ui::paper_chart_trading::{self, PaperCardState};
+use crate::ui::paper::chart_trading::{self, PaperCardState};
 use crate::ui::pine_chart_render::{self, CandleStyle, HoverTarget, PineLayer};
 use crate::ui::pine_geometry::{OverlayExtent, overlay_extent};
 use crate::ui::price_text;
-use crate::ui::replay_overlay::{self, ReplayChartFrame};
+use crate::ui::replay::overlay::{self, ReplayChartFrame};
 use crate::ui::scale_menu;
 use crate::ui::series_render::{self, SeriesFrame};
 use crate::ui::theme;
@@ -360,7 +360,7 @@ pub struct ChartCard {
     /// Paper-trading inputs and outputs for this card; the workspace fills and drains it.
     pub paper: PaperCardState,
     /// Live trading at a broker: the header pills and the lines of working orders.
-    pub live: crate::ui::broker_chart_trading::BrokerCardState,
+    pub live: crate::ui::broker::chart_trading::BrokerCardState,
     /// The Pine scripts applied to this chart, in order. Overlay scripts draw over the candles;
     /// the others share a pane under them.
     instances: Vec<PineInstance>,
@@ -376,7 +376,7 @@ pub struct ChartCard {
     /// keeps running; only what it writes from now on is left out.
     logging_paused: HashSet<u64>,
     /// What a click on a candle is for while the chart is in "click a candle" mode.
-    pick_kind: replay_overlay::PickKind,
+    pick_kind: overlay::PickKind,
     /// The bars a price-based chart type constructed from the candles, kept until the candles or
     /// the construction change. Restyling never rebuilds it.
     constructed: Option<Arc<ConstructedSeries>>,
@@ -716,7 +716,7 @@ impl Default for ChartCard {
             runs: HashMap::new(),
             run_epochs: 0,
             logging_paused: HashSet::new(),
-            pick_kind: replay_overlay::PickKind::default(),
+            pick_kind: overlay::PickKind::default(),
             constructed: None,
             drawn_type: ChartType::Candles,
             timeframe: None,
@@ -842,7 +842,7 @@ impl ChartCard {
     }
 
     /// Says what the next click on a candle is for, while the chart is picking one.
-    pub fn set_pick_kind(&mut self, kind: replay_overlay::PickKind) {
+    pub fn set_pick_kind(&mut self, kind: overlay::PickKind) {
         self.pick_kind = kind;
     }
 
@@ -1906,7 +1906,7 @@ impl ChartCard {
                 0.0
             }
             + if self.live.pills_visible() {
-                crate::ui::broker_chart_trading::quick_trade_width(
+                crate::ui::broker::chart_trading::quick_trade_width(
                     ui,
                     self.live.bid.as_deref(),
                     self.live.ask.as_deref(),
@@ -2166,15 +2166,13 @@ impl ChartCard {
                         && let Some(last) = candles.last()
                     {
                         let price_text = self.appearance.price_format().format(last.close);
-                        if let Some(side) =
-                            paper_chart_trading::quick_trade_buttons(ui, &price_text)
-                        {
+                        if let Some(side) = chart_trading::quick_trade_buttons(ui, &price_text) {
                             action.quick_trade = Some(side);
                         }
                     }
                     if let Some(entry) = self.live.order_entry {
                         // Live pills: the broker's own bid and ask, never the chart's last price.
-                        if let Some(side) = crate::ui::broker_chart_trading::quick_trade_buttons(
+                        if let Some(side) = crate::ui::broker::chart_trading::quick_trade_buttons(
                             ui,
                             &self.live.broker_name,
                             self.live.bid.as_deref(),
@@ -2441,14 +2439,14 @@ impl ChartCard {
         view: &View,
         replay: &mut ReplayChartFrame,
     ) {
-        if self.pick_kind == replay_overlay::PickKind::LogsRange {
+        if self.pick_kind == overlay::PickKind::LogsRange {
             self.handle_range_pick(ui, response, painter, plot, time_of, view, replay);
             return;
         }
         let Some(position) = response.hover_pos().filter(|point| plot.contains(*point)) else {
             return;
         };
-        let Some(index) = replay_overlay::candle_at(
+        let Some(index) = overlay::candle_at(
             position.x,
             plot.left(),
             view.slot_width,
@@ -2462,7 +2460,7 @@ impl ChartCard {
         let x = plot.left()
             + view.slot_width * ((index - view.start) as f32 + 0.5)
             + view.slot_width * view.lead;
-        replay_overlay::paint_selection(
+        overlay::paint_selection(
             painter,
             self.below_header(plot),
             x,

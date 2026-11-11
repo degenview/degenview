@@ -138,12 +138,12 @@ impl ChartWorkspace {
         ctx: &egui::Context,
         dragged: Option<u64>,
         grid_rect: egui::Rect,
-        mut zones: ui::grid_drop::Zones,
+        mut zones: ui::workspace::grid_drop::Zones,
         can_add_column: bool,
         previewed: Option<u64>,
         commands: &mut Vec<ChartCommand>,
     ) {
-        use ui::grid_drop::{self, DropTarget};
+        use ui::workspace::grid_drop::{self, DropTarget};
         let Some(dragged) = dragged else {
             return;
         };
@@ -366,7 +366,7 @@ impl ChartWorkspace {
         } else {
             None
         };
-        let mut zones = ui::grid_drop::Zones::default();
+        let mut zones = ui::workspace::grid_drop::Zones::default();
         let grid_rect = ui.available_rect_before_wrap();
 
         ui.horizontal_top(|ui| {
@@ -383,7 +383,7 @@ impl ChartWorkspace {
                                     rect.min,
                                     egui::vec2(rect.width(), card_height),
                                 );
-                                ui::grid_drop::new_column_placeholder(column_ui, card);
+                                ui::workspace::grid_drop::new_column_placeholder(column_ui, card);
                                 zones.new_column = Some(egui::Rect::from_min_size(
                                     rect.min,
                                     egui::vec2(rect.width(), available.y),

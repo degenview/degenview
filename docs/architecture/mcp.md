@@ -38,7 +38,7 @@ client → 127.0.0.1:<port>/mcp → bearer/Host/Origin/size checks
   through `McpHost::shutdown`, so a quit loses nothing; a kill still loses the last second) and keeps
   the whole log (at most 1,000 rows, behind an `Arc`) for the Settings page, which never reads
   SQLite itself. The page previews the newest five rows; "View All Activity…" opens a sheet
-  (`ui::mcp_activity`) that searches the log by tool, id or error code, filters it by client,
+  (`ui::mcp::activity`) that searches the log by tool, id or error code, filters it by client,
   outcome (`McpActivityStatus`) and date (`McpActivityRange`: presets or a custom range with
   either end open), and pages it 25 rows at a time (`model::mcp::activity`, pure: the filter runs
   over the in-memory rows every frame, so there is no query and no cache to invalidate). The
@@ -48,7 +48,7 @@ client → 127.0.0.1:<port>/mcp → bearer/Host/Origin/size checks
   fixed list of argument names, kept only if they look like ids (digits or a hex hash). Never a
   token, a script, a note, a message or any other argument value. Rate-limited calls are counted into
   one row per client per minute; bad tokens and `tools/list` are not rows.
-- Confirmation (`mcp::confirm`, `host::mcp_confirmation`, `ui::mcp_confirmation`): with "Ask before
+- Confirmation (`mcp::confirm`, `host::mcp_confirmation`, `ui::mcp::confirmation`): with "Ask before
   high-impact requests" on (`McpSettings.require_confirmation`, default on, also for settings saved
   before it existed; published to `McpShared` so the app thread reads it without the host lock),
   these commands wait for the user: delete alert / watchlist / drawings, remove chart or script

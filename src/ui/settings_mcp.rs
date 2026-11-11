@@ -13,7 +13,7 @@ use crate::model::mcp::{
 };
 use crate::ui::alert_center::{Tone, relative_time};
 use crate::ui::icons::{self, Icon};
-use crate::ui::mcp_activity::{self, ActivityInput, ActivityState};
+use crate::ui::mcp::activity::{self, ActivityInput, ActivityState};
 use crate::ui::settings_window::{card, divider, section, status_badge, status_message};
 use crate::ui::{kit, settings_card, sheet, theme};
 use eframe::egui::{
@@ -460,9 +460,9 @@ pub fn body(
         now_ms: input.now_ms,
         utc_offset_secs: input.utc_offset_secs,
     };
-    mcp_activity::preview(ui, &mut state.activity, &activity);
+    activity::preview(ui, &mut state.activity, &activity);
     permissions_sheet(ui.ctx(), state, input, actions);
-    mcp_activity::sheet(ui.ctx(), &mut state.activity, &activity, actions);
+    activity::sheet(ui.ctx(), &mut state.activity, &activity, actions);
     turn_off_approvals_alert(ui.ctx(), state, actions);
 }
 

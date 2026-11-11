@@ -22,7 +22,7 @@ use crate::ui::kit::{self, MEDIUM, REGULAR, SEMIBOLD};
 use crate::ui::portfolio_charts::{self, HistoryInput};
 use crate::ui::portfolio_empty;
 use crate::ui::portfolio_table::{self, tone_color, tone_option};
-use crate::ui::replay_bar::date_text;
+use crate::ui::replay::bar::date_text;
 use crate::ui::theme;
 use eframe::egui::{
     self, Align2, Color32, CursorIcon, Galley, Margin, Pos2, Rect, Sense, Shape, Stroke, Ui,

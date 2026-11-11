@@ -10,8 +10,8 @@ use eframe::egui;
 use crate::trading::model::{OrderRow, RowStatus, Tone};
 use crate::ui::alert_center::Tone as BadgeTone;
 use crate::ui::icons::{self, Icon};
-use crate::ui::paper_grid::{self as grid, Col, col};
-use crate::ui::paper_tables::empty;
+use crate::ui::paper::grid::{self as grid, Col, col};
+use crate::ui::paper::tables::empty;
 use crate::ui::{kit, theme};
 
 /// What the user asked of an order, by the id the venue gave it.

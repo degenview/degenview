@@ -8,7 +8,7 @@ use eframe::egui::{self, Color32, Sense, Ui, vec2};
 
 use crate::model::broker::venue::TradingVenue;
 use crate::trading::model::{BackendState, VenueInfo, VenueKind};
-use crate::ui::broker_badge::LIVE;
+use crate::ui::broker::badge::LIVE;
 use crate::ui::icons::{self, Icon};
 use crate::ui::{kit, theme};
 

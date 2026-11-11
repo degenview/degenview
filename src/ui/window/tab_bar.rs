@@ -2,13 +2,9 @@
 //! window host turns into model edits. Dragging is only *reported* here (`DragStarted`); the host
 //! drives the rest from raw pointer state because a dragged tab leaves this strip.
 
-use super::icons::{self, Icon};
-use super::kit;
-use super::shortcut;
+use super::chrome::{self, Control};
 use super::tab_link_menu::{self, TabLinkEdit};
-use super::theme;
 use super::update_indicator;
-use super::window_chrome::{self, Control};
 use crate::host::update_host::UpdateView;
 use crate::model::InstrumentId;
 use crate::model::tab;
@@ -16,6 +12,10 @@ use crate::model::tab::title::{Detail, Segments, TabChart, TabTitleStyle};
 use crate::model::tab::windows::{TabId, WindowId};
 use crate::model::watchlist::quote::Direction;
 use crate::service::watchlist_quotes::WatchlistQuoteBook;
+use crate::ui::icons::{self, Icon};
+use crate::ui::kit;
+use crate::ui::shortcut;
+use crate::ui::theme;
 use eframe::egui::{
     self, Color32, CornerRadius, Id, Painter, Pos2, Rect, Sense, Shadow, Stroke, StrokeKind, Ui,
     Vec2, pos2, vec2,
@@ -158,7 +158,7 @@ pub enum TabBarEvent {
 /// Room the settings button takes left of the window buttons: only where the strip draws those
 /// buttons, because macOS reaches Settings from its menu.
 fn settings_button_width() -> f32 {
-    if window_chrome::trailing_inset() > 0.0 {
+    if chrome::trailing_inset() > 0.0 {
         SETTINGS_BUTTON_WIDTH
     } else {
         0.0
@@ -283,14 +283,11 @@ impl TabBar<'_> {
         // The settings button and the update mark sit left of the window buttons, and the tabs
         // end before them.
         let update = update_indicator::layout(ui, self.update);
-        let controls_left = full.right() - window_chrome::trailing_inset();
+        let controls_left = full.right() - chrome::trailing_inset();
         let links_left = controls_left - LINKS_WIDTH;
         let settings_left = links_left - settings_button_width();
         let strip = Rect::from_min_max(
-            pos2(
-                full.left() + window_chrome::leading_inset(fullscreen),
-                full.top(),
-            ),
+            pos2(full.left() + chrome::leading_inset(fullscreen), full.top()),
             pos2(
                 settings_left
                     - update
@@ -392,7 +389,7 @@ impl TabBar<'_> {
             vec2(NEW_BUTTON_WIDTH - 4.0, strip.height() - 8.0),
         );
         let new_tab = ui.interact(new_rect, self.id("new"), Sense::click());
-        let new_tab = super::accessibility::label(new_tab, "New tab").on_hover_text("New tab");
+        let new_tab = crate::ui::accessibility::label(new_tab, "New tab").on_hover_text("New tab");
         if new_tab.hovered() {
             painter.rect_filled(new_rect, 6.0, theme::ink(18));
         }
@@ -433,7 +430,7 @@ impl TabBar<'_> {
             );
             let label = shortcut::OPEN_SETTINGS.hint("Settings");
             let button = ui.interact(rect, self.id("settings"), Sense::click());
-            let button = super::accessibility::label(button, &label).on_hover_text(&label);
+            let button = crate::ui::accessibility::label(button, &label).on_hover_text(&label);
             if button.hovered() {
                 painter.rect_filled(rect, 6.0, theme::ink(18));
             }
@@ -453,13 +450,13 @@ impl TabBar<'_> {
             (
                 "View project on GitHub",
                 GITHUB_URL,
-                egui::include_image!("../../assets/brand/github.svg"),
+                egui::include_image!("../../../assets/brand/github.svg"),
                 14.0,
             ),
             (
                 "Support this project by buying me a coffee",
                 COFFEE_URL,
-                egui::include_image!("../../assets/brand/coffee.svg"),
+                egui::include_image!("../../../assets/brand/coffee.svg"),
                 // The cup fills about three quarters of its 24 grid, where the GitHub mark
                 // fills all of its box, so it is drawn larger to look the same size.
                 19.0,
@@ -474,7 +471,7 @@ impl TabBar<'_> {
                 vec2(LINK_BUTTON_WIDTH - 2.0, full.height() - 8.0),
             );
             let button = ui.interact(rect, self.id(name), Sense::click());
-            let button = super::accessibility::label(button, name)
+            let button = crate::ui::accessibility::label(button, name)
                 .on_hover_text(name)
                 .on_hover_cursor(egui::CursorIcon::PointingHand);
             let color = if button.hovered() {
@@ -496,7 +493,7 @@ impl TabBar<'_> {
             events.push(TabBarEvent::UpdateClicked);
         }
 
-        match window_chrome::window_controls(ui, full, maximized) {
+        match chrome::window_controls(ui, full, maximized) {
             Some(Control::Minimize) => {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
             }
@@ -594,12 +591,12 @@ impl TabBar<'_> {
         let close_rect = close_rect(rect);
         let response = ui.interact(rect, self.id("tab").with(tab.id), Sense::click_and_drag());
         let close = ui.interact(close_rect, self.id("close").with(tab.id), Sense::click());
-        let response = super::accessibility::label_as(
+        let response = crate::ui::accessibility::label_as(
             response,
             egui::WidgetType::SelectableLabel,
             tab.title.clone(),
         );
-        let close = super::accessibility::label(close, format!("Close {}", tab.title));
+        let close = crate::ui::accessibility::label(close, format!("Close {}", tab.title));
 
         let look = Look {
             active: tab.id == self.active,
@@ -980,7 +977,7 @@ impl TabBar<'_> {
             painter.rect_filled(
                 line,
                 UNDERLINE / 2.0,
-                fade(crate::ui::tab_link_menu::swatch(link)),
+                fade(crate::ui::window::tab_link_menu::swatch(link)),
             );
         }
 
@@ -1665,7 +1662,8 @@ mod tests {
 
     #[test]
     fn a_tab_has_no_underline_unless_it_is_linked_and_then_it_is_its_colour() {
-        let orange = crate::ui::tab_link_menu::swatch(crate::model::tab::link::LinkColor::Orange);
+        let orange =
+            crate::ui::window::tab_link_menu::swatch(crate::model::tab::link::LinkColor::Orange);
         for style in TabTitleStyle::ALL {
             for width in [1400.0, 700.0, 300.0] {
                 let plain = paint_strip(4, 1, width, style);

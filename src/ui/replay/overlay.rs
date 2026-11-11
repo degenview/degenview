@@ -1,7 +1,7 @@
 //! What a chart plot draws while a replay is open: the start-picker marker and the
 //! "this chart is time-travelled" border and badge.
 
-use crate::ui::{replay_bar, theme};
+use crate::ui::{replay::bar, theme};
 use eframe::egui::{Align2, Color32, FontId, Painter, Pos2, Rect, Stroke, Vec2};
 
 /// What a click on a candle while selecting is for: it decides the marker's words and colour.
@@ -36,7 +36,7 @@ pub fn range_accent() -> Color32 {
 }
 
 /// Index of the candle whose slot contains `x`, or `None` over blank space.
-pub(super) fn candle_at(
+pub(in crate::ui) fn candle_at(
     x: f32,
     plot_left: f32,
     slot_width: f32,
@@ -53,7 +53,7 @@ pub(super) fn candle_at(
 }
 
 /// Marker at `x`: a line, a "Start here" tag, and the hidden future dimmed.
-pub(super) fn paint_selection(
+pub(in crate::ui) fn paint_selection(
     painter: &Painter,
     plot: Rect,
     x: f32,
@@ -75,7 +75,7 @@ pub(super) fn paint_selection(
         [Pos2::new(x, plot.top()), Pos2::new(x, plot.bottom())],
         Stroke::new(1.5, accent),
     );
-    let text = format!("{words} · {}", replay_bar::compact_text(open_time_ms));
+    let text = format!("{words} · {}", bar::compact_text(open_time_ms));
     let font = FontId::monospace(10.5);
     let galley = painter.layout_no_wrap(text.clone(), font.clone(), Color32::WHITE);
     let size = galley.size() + Vec2::new(16.0, 6.0);
@@ -99,9 +99,9 @@ pub(super) fn paint_selection(
 
 /// The card itself has the replay border and header badge; show a plot badge only when
 /// the narrow header cannot fit its own.
-pub(super) fn paint_active(painter: &Painter, plot: Rect) {
+pub(in crate::ui) fn paint_active(painter: &Painter, plot: Rect) {
     if plot.width() < 430.0 {
-        replay_bar::badge(painter, Pos2::new(plot.right() - 8.0, plot.top() + 8.0));
+        bar::badge(painter, Pos2::new(plot.right() - 8.0, plot.top() + 8.0));
     }
 }
 

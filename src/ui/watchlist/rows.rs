@@ -13,7 +13,7 @@ use crate::model::watchlist::{
 use crate::model::{DataSource, InstrumentId};
 use crate::ui::accessibility;
 use crate::ui::theme;
-use crate::ui::watchlist_style::{
+use crate::ui::watchlist::style::{
     self as style, COLUMN_GAP, LEADING_INSET, LOGO_SIZE, ROW_HEIGHT_COMPACT,
     ROW_HEIGHT_WITH_SUBTITLE, TRAILING_INSET,
 };

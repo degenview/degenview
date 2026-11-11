@@ -15,7 +15,7 @@ use eframe::egui::{self, Vec2};
 
 use crate::host::broker_host::{BrokerHost, StoreJournal, account_of};
 use crate::store::Store;
-use crate::ui::broker_panel::{self, BrokerPanelState, BrokerTab};
+use crate::ui::broker::panel::{self, BrokerPanelState, BrokerTab};
 use crate::ui::render_tests::Screen;
 use crate::ui::{settings_brokers, theme};
 
@@ -151,7 +151,7 @@ fn draw(
         crate::trading::model::VenueKind::Live,
         "Coinbase",
     );
-    broker_panel::ui(ui, state, host, ID, &bar, stats.as_ref())
+    panel::ui(ui, state, host, ID, &bar, stats.as_ref())
 }
 
 fn show_panel(

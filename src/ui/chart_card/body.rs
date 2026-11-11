@@ -4,7 +4,7 @@
 
 use super::frame::FrameLayout;
 use super::*;
-use crate::ui::paper_chart_trading::{MarkerMenu, PaperOverlayAction};
+use crate::ui::paper::chart_trading::{MarkerMenu, PaperOverlayAction};
 
 /// What one call to [`ChartCard::body`] draws and reports on.
 pub(super) struct BodyArgs<'a> {
@@ -26,7 +26,7 @@ pub(super) struct OverlayResults {
     pub alert_toggled: Vec<crate::model::alert::AlertId>,
     pub alert_deleted: Vec<crate::model::alert::AlertId>,
     pub paper: (Vec<PaperOverlayAction>, Option<MarkerMenu>),
-    pub live: Vec<crate::ui::broker_chart_trading::BrokerOverlayAction>,
+    pub live: Vec<crate::ui::broker::chart_trading::BrokerOverlayAction>,
     pub navigation: Option<chart_buttons::NavAction>,
     pub scale_mode: Option<PriceScaleMode>,
 }
@@ -194,7 +194,7 @@ impl ChartCard {
             // Dragging over bars for the logs pane is not a pan.
             drawing_claims: self.layer.claims_drag()
                 || self.zoom_claims_drag()
-                || (replay.selecting && self.pick_kind == replay_overlay::PickKind::LogsRange),
+                || (replay.selecting && self.pick_kind == overlay::PickKind::LogsRange),
             response,
         };
         drawing.escape_consumed |= self.handle_input(ui, &navigation);

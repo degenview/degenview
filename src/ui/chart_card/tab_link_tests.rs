@@ -9,7 +9,7 @@ use crate::model::tab::link::{
     LinkColor, LinkHub, LinkSignal, LinkTable, LinkToggles, Member as LinkMember,
 };
 use crate::model::{IndicatorConfig, Tool};
-use crate::ui::replay_overlay::ReplayChartFrame;
+use crate::ui::replay::overlay::ReplayChartFrame;
 use eframe::egui::Modifiers;
 
 const HOUR: i64 = 3_600_000;

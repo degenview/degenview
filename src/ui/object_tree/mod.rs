@@ -10,7 +10,7 @@
 use crate::model::BuiltIn;
 use crate::model::chart::object_tree::{IndicatorKey, Key, Row, Section};
 use crate::ui::icons::{self, Icon};
-use crate::ui::tool_sidebar::tool_icon;
+use crate::ui::workspace::tool_sidebar::tool_icon;
 use crate::ui::{accessibility, kit, theme};
 use eframe::egui::{self, Align, Layout, Rect, Sense, Ui, pos2, vec2};
 use std::collections::HashSet;

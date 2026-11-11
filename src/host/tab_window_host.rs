@@ -8,8 +8,8 @@
 
 use crate::model::tab::window_frames::{Frame, FrameMemory, Layout, Sample};
 use crate::model::tab::windows::{TabId, TabWindow, TabWindows, WindowId};
-use crate::ui::tab_bar::{self, TabBarEvent};
-use crate::ui::window_chrome;
+use crate::ui::window::chrome;
+use crate::ui::window::tab_bar::{self, TabBarEvent};
 use eframe::egui::{self, Pos2, Rect, Vec2, ViewportCommand, ViewportId, vec2};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -763,7 +763,7 @@ impl TabWindowHost {
 /// the tab, which is the first one in its strip.
 fn float_offset(grab: Vec2, titlebar: f32) -> Vec2 {
     vec2(
-        window_chrome::leading_inset(false) + tab_bar::tab_left(0, 0.0) + grab.x,
+        chrome::leading_inset(false) + tab_bar::tab_left(0, 0.0) + grab.x,
         titlebar + 4.0 + grab.y,
     )
 }
@@ -938,7 +938,7 @@ mod tests {
         assert_eq!(
             offset,
             vec2(
-                window_chrome::leading_inset(false) + tab_bar::tab_left(0, 0.0) + 30.0,
+                chrome::leading_inset(false) + tab_bar::tab_left(0, 0.0) + 30.0,
                 28.0 + 4.0 + 8.0
             )
         );

@@ -4,8 +4,8 @@ use super::alerts::AlertRequest;
 use super::{ChartWorkspace, WorkspaceAction};
 use crate::model::{ChartType, DataSource};
 use crate::ui::chart_settings::ChartSettingsState;
-use crate::ui::layout_prompts::NamePrompt;
-use crate::ui::workspace_toolbar::{self, ToolbarAction};
+use crate::ui::workspace::layout_prompts::NamePrompt;
+use crate::ui::workspace::toolbar::{self, ToolbarAction};
 use eframe::egui;
 
 impl ChartWorkspace {
@@ -42,13 +42,13 @@ impl ChartWorkspace {
         };
         let snapshot_shortcut =
             |action| crate::ui::shortcut::snapshot(action).map(|shortcut| shortcut.label());
-        let input = workspace_toolbar::ToolbarInput {
+        let input = toolbar::ToolbarInput {
             timeframe: self.timeframe,
             layout_name: self.active_view_name.as_deref().unwrap_or("Unnamed"),
             // Autosave keeps a layout clean in the user's eyes: "(unsaved)" only shows while
             // nothing is going to save it.
             unsaved: dirty && !(autosave_on && !self.autosave.failed),
-            autosave: workspace_toolbar::AutosaveState {
+            autosave: toolbar::AutosaveState {
                 available: active_view_id.is_some(),
                 on: autosave_on,
                 failed: self.autosave.failed,
@@ -59,7 +59,7 @@ impl ChartWorkspace {
             symbol: symbol.as_deref(),
             chart: self
                 .focused_market_chart()
-                .map(|chart| workspace_toolbar::ToolbarChart {
+                .map(|chart| toolbar::ToolbarChart {
                     id: chart.id,
                     chart_type: chart.chart.effective_chart_type(chart.source),
                     source: chart.source,
@@ -74,14 +74,14 @@ impl ChartWorkspace {
                 .charts
                 .iter()
                 .any(|chart| chart.is_market() && chart.source != DataSource::CoinMarketCap),
-            snapshot: crate::ui::snapshot_menu::SnapshotMenu {
+            snapshot: crate::ui::workspace::snapshot_menu::SnapshotMenu {
                 busy: self.snapshot_busy(),
                 working: self.snapshot_working(),
                 hosting_unavailable: hosting_note.as_deref(),
                 shortcut: &snapshot_shortcut,
             },
         };
-        for action in workspace_toolbar::show(ui, &input) {
+        for action in toolbar::show(ui, &input) {
             match action {
                 ToolbarAction::SetTimeframe(timeframe) => {
                     let changed = self.timeframe != timeframe;

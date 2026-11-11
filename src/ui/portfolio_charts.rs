@@ -13,7 +13,7 @@ use crate::ui::alert_center::clock_time;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit;
 use crate::ui::portfolio_empty;
-use crate::ui::replay_bar::date_text;
+use crate::ui::replay::bar::date_text;
 use crate::ui::theme;
 use eframe::egui::{self, Align2, Color32, FontId, Mesh, Pos2, Rect, Sense, Shape, Stroke, Vec2};
 use std::f32::consts::{PI, TAU};

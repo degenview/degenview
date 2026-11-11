@@ -7,7 +7,7 @@ use crate::model::watchlist::WatchlistInstrument;
 use crate::ui::add_chart_sheet::RecentMarket;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, MEDIUM, REGULAR, SEMIBOLD, size};
-use crate::ui::{empty_art, theme};
+use crate::ui::{theme, workspace::empty_art};
 use eframe::egui::{self, Color32, Id, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2};
 
 const MAX_WIDTH: f32 = 720.0;

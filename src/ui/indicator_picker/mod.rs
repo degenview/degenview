@@ -736,7 +736,7 @@ impl IndicatorPicker {
         footer.spacing_mut().item_spacing.x = 6.0;
         let hint = |ui: &mut Ui, keys: &[&str], label: &str| {
             for key in keys {
-                super::replay_bar::keycap(ui, key);
+                super::replay::bar::keycap(ui, key);
             }
             ui.label(kit::text(
                 label,

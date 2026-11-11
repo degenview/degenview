@@ -5,7 +5,7 @@ use super::alerts::AlertRequest;
 use crate::model::InstrumentId;
 use crate::model::alert::AlertAsset;
 use crate::model::watchlist::{WatchlistError, WatchlistInstrument, WatchlistNotice};
-use crate::ui::watchlist_sidebar::{self, WatchlistAction, WatchlistSidebarInput};
+use crate::ui::watchlist::sidebar::{self, WatchlistAction, WatchlistSidebarInput};
 use eframe::egui;
 use std::sync::{Arc, mpsc};
 
@@ -56,7 +56,7 @@ impl ChartWorkspace {
                 error: self.watchlist_error.as_ref().or(store_notice.as_ref()),
                 import_report: self.import_report.as_ref(),
             };
-            watchlist_sidebar::show(ui, &mut self.watchlist_sidebar, &input)
+            sidebar::show(ui, &mut self.watchlist_sidebar, &input)
         };
         // Only the rows on screen ask for prices, not every list in the library.
         self.quote_coordinator.set_sidebar_demand(
@@ -101,7 +101,7 @@ impl ChartWorkspace {
                     WatchlistAction::CreateAlert(item) => {
                         self.new_alert_request = Some(AlertRequest::market(AlertAsset::new(
                             item.instrument.clone(),
-                            crate::ui::watchlist_rows::icon_base_symbol(&item),
+                            crate::ui::watchlist::rows::icon_base_symbol(&item),
                             item.name.clone(),
                         )));
                     }

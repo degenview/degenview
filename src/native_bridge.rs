@@ -396,7 +396,7 @@ mod platform {
             let delegate_object: &AnyObject = delegate_protocol.as_ref();
             install_delegate_actions(delegate_object.class());
             install_menus(&app, mtm, delegate_object);
-            // Tabs are drawn by the app (`ui::tab_bar`); keep AppKit from adding its own.
+            // Tabs are drawn by the app (`ui::window::tab_bar`); keep AppKit from adding its own.
             NSWindow::setAllowsAutomaticWindowTabbing(false, mtm);
         });
     }

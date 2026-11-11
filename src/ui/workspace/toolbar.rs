@@ -58,7 +58,7 @@ pub struct ToolbarInput<'a> {
     /// There is a market to replay (or a replay to close).
     pub can_replay: bool,
     /// What the camera menu needs: whether a snapshot is under way, and what the hosted rows lack.
-    pub snapshot: crate::ui::snapshot_menu::SnapshotMenu<'a>,
+    pub snapshot: crate::ui::workspace::snapshot_menu::SnapshotMenu<'a>,
 }
 
 /// What the toolbar needs of the focused chart.
@@ -588,11 +588,11 @@ fn paint_slot(
         }
         Some(Menu::Layout) => layout_popup(ui, &response, input, actions),
         Some(Menu::Snapshot) if button.enabled => {
-            match crate::ui::snapshot_menu::menu(ui, &response, &input.snapshot) {
-                Some(crate::ui::snapshot_menu::Pick::Take(picked)) => {
+            match crate::ui::workspace::snapshot_menu::menu(ui, &response, &input.snapshot) {
+                Some(crate::ui::workspace::snapshot_menu::Pick::Take(picked)) => {
                     actions.push(ToolbarAction::Snapshot(picked));
                 }
-                Some(crate::ui::snapshot_menu::Pick::Configure) => {
+                Some(crate::ui::workspace::snapshot_menu::Pick::Configure) => {
                     actions.push(ToolbarAction::SnapshotSettings);
                 }
                 None => {}
@@ -962,7 +962,7 @@ mod tests {
             can_redo: false,
             replay_open: false,
             can_replay: focused,
-            snapshot: crate::ui::snapshot_menu::SnapshotMenu {
+            snapshot: crate::ui::workspace::snapshot_menu::SnapshotMenu {
                 busy: false,
                 working: false,
                 hosting_unavailable: None,

@@ -4,7 +4,7 @@
 use super::*;
 use crate::model::chart::viewport::{DEFAULT_VISIBLE, MIN_VISIBLE};
 use crate::model::{Anchor, Drawing, IndicatorConfig, Tool};
-use crate::ui::replay_overlay::{PickKind, ReplayChartFrame};
+use crate::ui::replay::overlay::{PickKind, ReplayChartFrame};
 use eframe::egui::Modifiers;
 
 const HOUR: i64 = 3_600_000;
