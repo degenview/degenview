@@ -54,6 +54,20 @@ Build a Finder-launchable app with `./tools/bundle.sh`, then open `target/DegenV
 ## Naming
 
 - Snake-case modules; one concern per file.
+- **Group modules in directories, never in prefixes.** `model/`, `pine/` and `pine_studio/` hold one
+  directory per domain and nothing but `mod.rs` at the root (`pine_studio/` also keeps a few
+  single-purpose files such as `workspace.rs`). A new module goes into the directory of its domain, and a
+  new domain gets a directory. Name the child without the directory's name: `model/paper/engine.rs`
+  (`model::paper::engine`), not `model/paper_engine.rs`. When three or more files share a prefix
+  (`alert_*`, `ai_*`, `ta_*`), they belong in a directory.
+- **`mod.rs`, not `foo.rs` + `foo/`.** A module with children or tests is `foo/mod.rs`, with tests in
+  `foo/tests.rs`. If the parent already has an inline `mod tests`, name end-to-end tests `studio_tests` or
+  `integration_tests`. Do not leave a `foo.rs` next to a `foo/`.
+- **Moving a module.** Rewrite every call site to the new path; do not keep the old name alive with a
+  `pub use ... as old_name` alias. A moved file's `super::` now points one level lower: use `crate::...`
+  for items in the old parent, and `pub(in crate::<parent>)` where it was `pub(super)`. Update
+  `include_str!` paths, doc references (`docs/`, `AGENTS.md`, `tools/`) and the layout tables in
+  [Modules](../architecture/modules.md).
 - Services: `service/*service.rs`, except provider-named modules.
 - UI: `*_view.rs` or role suffixes such as `*_sheet.rs`, `*_editor.rs`.
 - Stores: `store/*_store.rs`; `Store` implementation in `store/mod.rs`.
