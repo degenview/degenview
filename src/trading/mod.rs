@@ -9,6 +9,7 @@
 
 pub mod backend;
 pub mod broker_backend;
+pub mod broker_commands;
 pub mod confirm;
 pub mod draft;
 pub mod edit;

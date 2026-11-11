@@ -7,6 +7,7 @@
 
 use degenview_brokers::{Decimal, MarketRef, Side};
 
+use super::broker_commands::BrokerCommands;
 use super::draft::{CancelResult, DraftCheck, PreviewResult, SubmitResult, TradeDraft};
 use super::model::{
     AccountStats, AccountStrip, Amount, BackendState, Binding, MarketAccess, OrderRow, QuoteView,
@@ -69,6 +70,12 @@ pub trait TradingBackend: Send + Sync {
         draft: &TradeDraft,
         binding: &Binding,
     ) -> Task<SubmitResult>;
+
+    /// What a connected broker can be asked beyond taking an order (cancel several, look one up,
+    /// read older orders and fills, edit one in place). A venue that has none answers `None`.
+    fn broker_commands(&self) -> Option<&dyn BrokerCommands> {
+        None
+    }
 
     /// Cancels the working order with this id (an [`OrderRow::id`](super::model::OrderRow::id)).
     fn cancel(&self, order_id: &str) -> Task<CancelResult>;
