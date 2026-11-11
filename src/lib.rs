@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod alloc_count;
 mod app;
+mod crash_report;
 mod format;
 mod host;
 mod mcp;
@@ -19,6 +20,7 @@ mod workspace;
 use app::DegenViewApp;
 use eframe::egui;
 
+pub use crash_report::install_panic_hook;
 pub use host::sync_host::{EventSink, TransportFactory};
 pub use sync::native::{CloudKitFactory, NativeApi};
 
