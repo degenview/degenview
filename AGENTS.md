@@ -12,6 +12,7 @@ scenario matches the work:
 | Providers, symbols, timeframes, prediction markets, caches, icons, live data, or watchlists | [Market data](docs/agent-guides/market-data.md) |
 | Live trading, brokers, broker credentials, or Settings ▸ Brokers | [Live trading](docs/broker-trading.md) |
 | The symbol picker (changing a chart's market), symbol search ranking, or how markets are named | [Symbol picker](docs/symbol-picker.md) |
+| A new window, sheet, panel, card, sidebar or icon, or restyling one | [Flat style](docs/agent-guides/ui-style.md) |
 | Chart rendering, price labels, chart types, canvas, templates, drawings, portfolio cards, or snapshots | [Charts](docs/agent-guides/charts.md) |
 | Markets compared on a chart (Compare, overlays), their data, scales, legend or the picker's compare mode | [Chart overlays](docs/chart-overlays.md) |
 | The Portfolio tab: Overview, Holdings, Transactions, Statistics, their empty states, or portfolio revaluation | [Portfolio page](docs/portfolio-page.md) |
@@ -46,6 +47,15 @@ not general background; do not skip a guide because the code looks self-explanat
 Links are always gray (`theme::text_secondary()`, underlined), and the blue accent is not used for
 new UI: not for links, buttons or decoration. Details and the existing exceptions are in
 [Core guidance](docs/agent-guides/core.md).
+
+## Flat style
+
+Surfaces are flat: a faint fill and a hairline, no gradients, no lit edges, no shadows (except for
+floating menus and dialogs). Icons stand bare, with no tile, disc or circle behind them. Colour is for
+state and data only. Settings pages have no bottom bar and no Save button: inputs save as they are
+entered. Secondary windows keep the platform's title bar and window controls. The
+Settings window is the reference; rules and helpers are in
+[Flat style](docs/agent-guides/ui-style.md).
 
 ## Menus fit their rows
 

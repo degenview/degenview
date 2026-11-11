@@ -375,7 +375,6 @@ fn clickable_card(ui: &mut Ui, id: Id, content: impl FnOnce(&mut Ui)) -> bool {
         });
     });
     let rect = inner.response.rect;
-    kit::paint_card_highlight(ui, rect);
     let response = ui.interact(rect, id, Sense::click());
     if response.hovered() {
         ui.painter().rect_filled(
@@ -405,7 +404,7 @@ fn clickable_card(ui: &mut Ui, id: Id, content: impl FnOnce(&mut Ui)) -> bool {
 /// a button. The row is given a fixed height, so it can never stretch the card to fill the page.
 fn action_card(ui: &mut Ui, icon: Icon, title: &str, hint: &str, controls: impl FnOnce(&mut Ui)) {
     let width = ui.available_width();
-    let card = kit::card_frame(false).show(ui, |ui| {
+    kit::card_frame(false).show(ui, |ui| {
         ui.set_width(width - 30.0);
         ui.spacing_mut().item_spacing.y = 12.0;
         ui.horizontal(|ui| {
@@ -429,7 +428,6 @@ fn action_card(ui: &mut Ui, icon: Icon, title: &str, hint: &str, controls: impl 
             },
         );
     });
-    kit::paint_card_highlight(ui, card.response.rect);
 }
 
 // MARK: Page
@@ -578,7 +576,9 @@ fn server_section(
                 );
             });
         });
-        if let Some(notice) = input.notice {
+        // A failure the Status row already gives (the port is in use) is said there only.
+        let said_in_status = matches!(input.status, McpStatus::Failed(reason) if Some(reason.as_str()) == input.notice);
+        if let Some(notice) = input.notice.filter(|_| !said_in_status) {
             ui.add_space(8.0);
             status_message(ui, notice, true);
         }

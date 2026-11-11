@@ -463,7 +463,7 @@ pub fn card_fill(hovered: bool) -> Color32 {
 
 /// The hairline around a settings card; it lifts a little under the pointer.
 pub fn card_border(hovered: bool) -> Color32 {
-    ink(if hovered { 24 } else { 14 })
+    ink(if hovered { 40 } else { 30 })
 }
 
 /// The 1px line along a card's top edge that reads as light falling on it from above.

@@ -24,9 +24,9 @@ use crate::ui::webhook_settings::{
 use crate::ui::{kit, settings_card, theme};
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 
-pub const SIDEBAR_WIDTH: f32 = 200.0;
-/// The window the Swift app gives Settings.
-pub const WINDOW_SIZE: Vec2 = Vec2::new(800.0, 580.0);
+pub const SIDEBAR_WIDTH: f32 = 224.0;
+/// The Settings window: the sidebar and a 616-point page.
+pub const WINDOW_SIZE: Vec2 = Vec2::new(840.0, 600.0);
 
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 pub enum SettingsSection {
@@ -97,9 +97,9 @@ impl SettingsSection {
             Self::Brokers => Color32::from_rgb(255, 112, 67),
             Self::CoinMarketCap => Color32::from_rgb(10, 132, 255),
             Self::Ai => Color32::from_rgb(255, 214, 10),
-            Self::Notifications => Color32::from_rgb(255, 69, 58),
+            Self::Notifications => Color32::from_rgb(48, 209, 88),
             Self::Webhooks => Color32::from_rgb(48, 176, 199),
-            Self::Snapshots => Color32::from_rgb(255, 55, 95),
+            Self::Snapshots => Color32::from_rgb(76, 201, 98),
             Self::Storage => Color32::from_rgb(52, 199, 89),
             Self::Mcp => Color32::from_rgb(191, 90, 242),
             Self::Sync => Color32::from_rgb(64, 156, 255),
@@ -330,7 +330,6 @@ impl NotificationSwitch {
 
 // MARK: View
 
-pub(super) const FOOTER_HEIGHT: f32 = 56.0;
 pub(super) const INSET: f32 = 24.0;
 
 impl SettingsSection {
@@ -395,68 +394,6 @@ pub(super) fn status_message(ui: &mut egui::Ui, text: &str, is_error: bool) {
     });
 }
 
-/// The bar under a page: `status` on the left and `buttons` on the right, laid out first so they
-/// always have their room. A status is one line that is cut with an ellipsis (its full text is
-/// the hover text), never a line that pushes the buttons out of the bar.
-pub(crate) fn footer_row(
-    ui: &mut egui::Ui,
-    status: Option<(String, bool)>,
-    buttons: impl FnOnce(&mut egui::Ui),
-) {
-    let bar = ui.max_rect();
-    let used = ui
-        .scope_builder(
-            egui::UiBuilder::new()
-                .max_rect(bar)
-                .layout(egui::Layout::right_to_left(egui::Align::Center)),
-            |ui| {
-                ui.spacing_mut().item_spacing.x = 10.0;
-                buttons(ui);
-            },
-        )
-        .response
-        .rect;
-    let Some((text, is_error)) = status else {
-        return;
-    };
-    let room = Rect::from_min_max(
-        bar.min,
-        Pos2::new((used.left() - 16.0).max(bar.left()), bar.max.y),
-    );
-    if room.width() < 48.0 {
-        return;
-    }
-    ui.scope_builder(
-        egui::UiBuilder::new()
-            .max_rect(room)
-            .layout(egui::Layout::left_to_right(egui::Align::Center)),
-        |ui| {
-            let color = if is_error { kit::RED } else { kit::GREEN };
-            ui.spacing_mut().item_spacing.x = 6.0;
-            icons::inline(
-                ui,
-                if is_error {
-                    Icon::TriangleFill
-                } else {
-                    Icon::CheckCircleFill
-                },
-                12.0,
-                color,
-            );
-            let galley = kit::galley(
-                ui,
-                &text,
-                kit::size::CAPTION + 0.5,
-                kit::REGULAR,
-                color,
-                ui.available_width(),
-            );
-            ui.add(egui::Label::new(galley).selectable(false))
-                .on_hover_text(&text);
-        },
-    );
-}
-
 pub fn show(
     ui: &mut egui::Ui,
     state: &mut SettingsState,
@@ -495,7 +432,6 @@ pub fn show(
                 &mut page,
                 section,
                 "Choose how DegenView looks across every window and chart.",
-                false,
                 |ui| {
                     if let Some(theme) =
                         crate::ui::settings_appearance::body(ui, crate::ui::theme::choice())
@@ -521,23 +457,18 @@ pub fn show(
         }
         SettingsSection::Alpaca => {
             let store = AlpacaCredentialsStore::shared();
-            let footer = page_shell(
+            page_shell(
                 &mut page,
                 section,
                 "Connect Alpaca to chart US stocks and ETFs in DegenView.",
-                true,
                 |ui| settings_api_keys::alpaca_body(ui, &mut state.api_keys, store),
             );
-            if let Some(mut footer) = footer {
-                settings_api_keys::alpaca_footer(&mut footer, &mut state.api_keys, store);
-            }
         }
         SettingsSection::Brokers => {
             page_shell(
                 &mut page,
                 section,
                 "Connect a broker to trade for real from your charts. Paper trading is separate.",
-                false,
                 |ui| {
                     crate::ui::settings_brokers::body(
                         ui,
@@ -549,29 +480,21 @@ pub fn show(
         }
         SettingsSection::CoinMarketCap => {
             let store = CoinMarketCapKeyStore::shared();
-            let footer = page_shell(
+            page_shell(
                 &mut page,
                 section,
                 "Market sentiment charts, with optional higher API rate limits.",
-                true,
                 |ui| settings_api_keys::coinmarketcap_body(ui, &mut state.api_keys, store),
             );
-            if let Some(mut footer) = footer {
-                settings_api_keys::coinmarketcap_footer(&mut footer, &mut state.api_keys, store);
-            }
         }
         SettingsSection::Ai => {
             let mut ai_actions = Vec::new();
-            let footer = page_shell(
+            page_shell(
                 &mut page,
                 section,
                 "Describe a change and an AI model edits your Pine script, using your own API key.",
-                true,
                 |ui| crate::ui::settings_ai::body(ui, &mut state.ai, &input.ai, &mut ai_actions),
             );
-            if let Some(mut footer) = footer {
-                crate::ui::settings_ai::footer(&mut footer, &mut state.ai, &mut ai_actions);
-            }
             actions.extend(ai_actions.into_iter().map(SettingsAction::Ai));
         }
         SettingsSection::Notifications => {
@@ -579,7 +502,6 @@ pub fn show(
                 &mut page,
                 section,
                 "Choose how DegenView delivers price alerts and check on background delivery.",
-                false,
                 |ui| notifications_page(ui, input, &mut actions),
             );
         }
@@ -589,7 +511,6 @@ pub fn show(
                 &mut page,
                 section,
                 "Logos and lookups saved on this computer so they appear instantly.",
-                false,
                 |ui| settings_storage::body(ui, &mut state.storage, &mut storage_actions),
             );
             actions.extend(storage_actions.into_iter().map(SettingsAction::Storage));
@@ -600,18 +521,16 @@ pub fn show(
                 &mut page,
                 section,
                 "Let AI assistants and automation on this Mac inspect DegenView, with permissions you control.",
-                false,
                 |ui| settings_mcp::body(ui, &mut state.mcp, &input.mcp, &mut mcp_actions),
             );
             actions.extend(mcp_actions.into_iter().map(SettingsAction::Mcp));
         }
         SettingsSection::Snapshots => {
             let mut snapshot_actions = Vec::new();
-            let footer = page_shell(
+            page_shell(
                 &mut page,
                 section,
                 "Share a picture of a chart, and choose what it shows.",
-                true,
                 |ui| {
                     crate::ui::settings_snapshots::body(
                         ui,
@@ -621,14 +540,6 @@ pub fn show(
                     )
                 },
             );
-            if let Some(mut footer) = footer {
-                crate::ui::settings_snapshots::footer(
-                    &mut footer,
-                    &mut state.snapshots,
-                    &input.snapshots,
-                    &mut snapshot_actions,
-                );
-            }
             actions.extend(snapshot_actions.into_iter().map(SettingsAction::Snapshots));
         }
         SettingsSection::About => {
@@ -645,32 +556,27 @@ pub fn show(
                 &mut page,
                 section,
                 "Keep your watchlists, layouts, drawings, templates, scripts, portfolios and paper trading the same on every Mac.",
-                false,
                 |ui| crate::ui::settings_sync::body(ui, input.sync, input.now_ms),
             );
         }
         SettingsSection::Webhooks => {
             let mut webhook_actions = Vec::new();
-            let footer = page_shell(
+            page_shell(
                 &mut page,
                 section,
                 "Send alert messages to external HTTP endpoints, such as a trading bot or a chat channel.",
-                true,
                 |ui| {
                     webhook_actions =
                         webhook_settings::body(ui, &mut state.webhooks, &input.webhooks)
                 },
             );
-            if let Some(mut footer) = footer {
-                webhook_settings::footer(&mut footer, &mut state.webhooks, &input.webhooks);
-            }
             actions.extend(webhook_actions.into_iter().map(SettingsAction::Webhook));
         }
     }
     actions
 }
 
-/// The rows of badge-and-title sections, as in the system Settings app.
+/// The rows of icon-and-title sections: flat, the selected one lightly filled.
 fn sidebar(ui: &mut egui::Ui, state: &mut SettingsState) {
     let area = ui.max_rect();
     let mut y = area.top() + 10.0;
@@ -695,38 +601,31 @@ fn sidebar(ui: &mut egui::Ui, state: &mut SettingsState) {
         } else if response.hovered() {
             painter.rect_filled(rect, 6.0, kit::primary(0.06));
         }
-        let badge = Rect::from_center_size(
-            Pos2::new(rect.left() + 8.0 + 12.0, rect.center().y),
-            Vec2::splat(24.0),
-        );
-        // The tint as a soft top-to-bottom gradient, like `.gradient`.
-        painter.rect_filled(badge, 6.0, section.tint());
-        painter.rect_filled(
-            Rect::from_min_max(badge.min, Pos2::new(badge.max.x, badge.center().y)),
-            egui::CornerRadius {
-                nw: 6,
-                ne: 6,
-                sw: 0,
-                se: 0,
-            },
-            Color32::from_white_alpha(28),
+        // A plain icon, no tile or colour behind it: the selected row says which page is open.
+        let icon = Rect::from_center_size(
+            Pos2::new(rect.left() + 12.0 + 8.0, rect.center().y),
+            Vec2::splat(16.0),
         );
         icons::paint(
             painter,
-            Rect::from_center_size(badge.center(), Vec2::splat(13.0)),
+            icon,
             section.icon(),
-            Color32::WHITE,
+            if selected {
+                theme::text_primary()
+            } else {
+                theme::text_secondary()
+            },
         );
         let title = kit::galley(
             ui,
             section.title(),
             kit::size::BODY,
-            kit::REGULAR,
+            if selected { kit::MEDIUM } else { kit::REGULAR },
             theme::text_primary(),
-            rect.width() - 44.0,
+            rect.width() - 52.0,
         );
         ui.painter().galley(
-            Pos2::new(badge.right() + 10.0, rect.center().y - title.size().y / 2.0),
+            Pos2::new(icon.right() + 12.0, rect.center().y - title.size().y / 2.0),
             title,
             Color32::WHITE,
         );
@@ -736,21 +635,16 @@ fn sidebar(ui: &mut egui::Ui, state: &mut SettingsState) {
     }
 }
 
-/// One page: the sheet-style header and the scrolling content. With `has_footer`, returns the
-/// bar pinned under it, for the page's actions.
+/// One page: the header (the picture, the title and a line about the page) and the scrolling
+/// content. A page has no bar under it: no Save button, because a setting is saved as it is
+/// changed, and its other actions sit in the content they act on.
 pub(super) fn page_shell(
     ui: &mut egui::Ui,
     section: SettingsSection,
     subtitle: &str,
-    has_footer: bool,
     body: impl FnOnce(&mut egui::Ui),
-) -> Option<egui::Ui> {
-    let area = ui.max_rect();
-    let footer_height = if has_footer { FOOTER_HEIGHT } else { 0.0 };
-    let body_rect = Rect::from_min_max(
-        area.min,
-        Pos2::new(area.right(), area.bottom() - footer_height),
-    );
+) {
+    let body_rect = ui.max_rect();
     let mut body_ui = ui.new_child(egui::UiBuilder::new().max_rect(body_rect));
     egui::ScrollArea::vertical()
         .id_salt(("settings-page", section.key()))
@@ -766,21 +660,6 @@ pub(super) fn page_shell(
                     body(ui);
                 });
         });
-    has_footer.then(|| {
-        let bar = Rect::from_min_max(Pos2::new(area.left(), body_rect.bottom()), area.max);
-        ui.painter().hline(
-            bar.x_range(),
-            bar.top(),
-            Stroke::new(1.0, theme::separator()),
-        );
-        let mut footer = ui.new_child(
-            egui::UiBuilder::new()
-                .max_rect(bar.shrink2(Vec2::new(INSET, 14.0)))
-                .layout(egui::Layout::left_to_right(egui::Align::Center)),
-        );
-        footer.spacing_mut().item_spacing.x = 10.0;
-        footer
-    })
 }
 
 /// `SheetHeader`, with the section's picture in place of an icon badge: the picture, the page
@@ -798,7 +677,7 @@ pub(super) fn page_header(ui: &mut egui::Ui, section: SettingsSection, subtitle:
     let title = kit::galley(
         ui,
         title,
-        kit::size::TITLE2 + 1.0,
+        kit::size::TITLE2 + 3.0,
         kit::SEMIBOLD,
         theme::text_primary(),
         width,
@@ -854,12 +733,11 @@ pub(super) fn section(
 
 /// The quiet rounded card settings content sits in.
 pub(super) fn card(ui: &mut egui::Ui, content: impl FnOnce(&mut egui::Ui)) {
-    let card = kit::card_frame(false).show(ui, |ui| {
+    kit::card_frame(false).show(ui, |ui| {
         ui.set_width(ui.available_width());
         ui.spacing_mut().item_spacing.y = 12.0;
         content(ui);
     });
-    kit::paint_card_highlight(ui, card.response.rect);
 }
 
 pub(super) fn divider(ui: &mut egui::Ui) {
@@ -1023,9 +901,9 @@ mod tests {
     use super::*;
 
     /// The AI page as the user saw it fail: a provider's paragraph as the Test Connection result.
-    /// Both Save and the paragraph's card must be reachable, in both themes.
+    /// The paragraph shows as a card, and the page has no bar under it, in both themes.
     #[test]
-    fn the_ai_page_keeps_its_save_button_and_shows_a_long_error_as_a_card() {
+    fn the_ai_page_shows_a_long_error_as_a_card_and_has_no_bar_under_it() {
         use crate::service::keychain_ai_keys::AiKeyStore;
         use crate::service::llm::prefs::AiPrefs;
         use crate::ui::render_tests::{Screen, gallery_dir};
@@ -1046,17 +924,9 @@ mod tests {
             for _ in 0..3 {
                 last = Some(screen.run(Vec::new(), |ui| {
                     let mut page = ui.new_child(egui::UiBuilder::new().max_rect(ui.max_rect()));
-                    let footer = page_shell(&mut page, SettingsSection::Ai, "Describe a change and an AI model edits your Pine script, using your own API key.", true, |ui| {
+                    page_shell(&mut page, SettingsSection::Ai, "Describe a change and an AI model edits your Pine script, using your own API key.", |ui| {
                         settings_ai::body(ui, &mut state, &AiSettingsInput { prefs: &prefs }, &mut actions)
                     });
-                    let mut footer = footer.expect("a footer");
-                    let bar = footer.max_rect();
-                    settings_ai::footer(&mut footer, &mut state, &mut actions);
-                    assert!(
-                        footer.min_rect().right() <= bar.right() + 0.5,
-                        "{name}: the footer ran past the page: {:?} of {bar:?}",
-                        footer.min_rect()
-                    );
                 }));
             }
             assert!(
@@ -1069,44 +939,56 @@ mod tests {
         }
     }
 
-    /// A footer whose status is a paragraph still keeps every button inside the bar.
+    /// The Appearance page (theme and tab tiles) and the headers of Notifications and Snapshots,
+    /// drawn in both themes; with `DEGENVIEW_GALLERY_DIR` set they are written out to look at.
     #[test]
-    fn a_long_status_never_pushes_the_footer_buttons_out_of_the_bar() {
+    fn the_appearance_page_and_the_green_headers_draw_in_both_themes() {
         use crate::ui::render_tests::{Screen, gallery_dir};
-        let long = crate::service::llm::sample::prose(60);
-        for width in [380.0_f32, 560.0, 900.0] {
-            let mut screen = Screen::new(Vec2::new(width, 80.0));
+        use crate::ui::theme::AppTheme;
+        let _theme = crate::ui::theme::RestoreDefaultTheme;
+        for (name, app_theme) in [("dark", AppTheme::Dark), ("light", AppTheme::Light)] {
+            let mut screen = Screen::new(WINDOW_SIZE - Vec2::new(SIDEBAR_WIDTH, 0.0));
+            theme::apply(&screen.ctx, app_theme);
             let mut last = None;
             for _ in 0..3 {
                 last = Some(screen.run(Vec::new(), |ui| {
-                    let bar =
-                        Rect::from_min_size(Pos2::new(24.0, 14.0), Vec2::new(width - 48.0, 28.0));
-                    let mut footer = ui.new_child(
-                        egui::UiBuilder::new()
-                            .max_rect(bar)
-                            .layout(egui::Layout::left_to_right(egui::Align::Center)),
-                    );
-                    let mut rects = Vec::new();
-                    footer_row(&mut footer, Some((long.to_owned(), true)), |ui| {
-                        for label in ["Save", "Test Connection", "Remove Key"] {
-                            rects.push(kit::sheet_button(ui, label, false, true).rect);
-                        }
-                    });
-                    for rect in rects {
-                        assert!(
-                            rect.left() >= bar.left() - 0.5 && rect.right() <= bar.right() + 0.5,
-                            "{width}: a button is outside the bar: {rect:?} of {bar:?}"
-                        );
-                    }
-                    assert!(
-                        footer.min_rect().right() <= bar.right() + 0.5,
-                        "{width}: the footer grew to {:?}",
-                        footer.min_rect()
+                    let mut page = ui.new_child(egui::UiBuilder::new().max_rect(ui.max_rect()));
+                    page_shell(
+                        &mut page,
+                        SettingsSection::Appearance,
+                        "Choose how DegenView looks.",
+                        |ui| {
+                            crate::ui::settings_appearance::body(ui, theme::choice());
+                            ui.add_space(22.0);
+                            crate::ui::settings_appearance::tabs(
+                                ui,
+                                crate::model::tab_title::TabTitleStyle::SymbolOnly,
+                            );
+                        },
                     );
                 }));
             }
             if gallery_dir().is_some() {
-                screen.save(&format!("settings-footer-{width}"), last.expect("a frame"));
+                screen.save(
+                    &format!("settings-appearance-{name}"),
+                    last.expect("a frame"),
+                );
+            }
+            for section in [SettingsSection::Notifications, SettingsSection::Snapshots] {
+                let mut screen = Screen::new(Vec2::new(420.0, 120.0));
+                theme::apply(&screen.ctx, app_theme);
+                let mut last = None;
+                for _ in 0..3 {
+                    last = Some(screen.run(Vec::new(), |ui| {
+                        page_header(ui, section, "How alerts are delivered.");
+                    }));
+                }
+                if gallery_dir().is_some() {
+                    screen.save(
+                        &format!("settings-header-{}-{name}", section.key()),
+                        last.expect("a frame"),
+                    );
+                }
             }
         }
     }

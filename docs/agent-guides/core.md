@@ -60,6 +60,8 @@ See [the architecture map](../architecture.md) before changing module boundaries
   `theme::SYSTEM_ACCENT`. More generally do not reach for the blue accent in new UI: it is not a
   link colour, a button colour or decoration. Existing uses (selection, focus, the intro step badges)
   are not a precedent; do not extend them, and do not recolour them unasked.
+- New UI is flat: faint fill plus hairline, no gradient, highlight or shadow, and no tile or circle
+  behind an icon. See [Flat style](ui-style.md).
 - Small modal dialogs (a confirmation, a question, a notice) are `kit::confirm`, `kit::alert` and
   `kit::notice`, all drawn by `ui::dialog::show`: a tinted badge with the title and message, a close
   button, and Cancel and the action side by side at the bottom right. Never hand-roll a modal frame or

@@ -1,6 +1,6 @@
-//! The picture at the head of each Settings page: a soft disc in the section's colour, a card, and
-//! a few marks that say what the page is about — the same recipe as the Pine Studio's empty
-//! tabs (`drawer_intro`), one small scene per page. Painter code only, so it follows the theme.
+//! The picture at the head of each Settings page: a card and a few marks in the section's colour
+//! that say what the page is about, with no disc behind them (the flat style, `flat` on
+//! `Art`). It is the same recipe as the Pine Studio's empty tabs (`drawer_intro`), one small scene per page. Painter code only, so it follows the theme.
 //!
 //! The Swift app has a plain icon badge here; these pictures are an addition, not a port.
 
@@ -21,6 +21,7 @@ pub fn paint(ui: &Ui, rect: Rect, section: SettingsSection) {
         painter: ui.painter(),
         tint: section.tint(),
         centre: rect.center(),
+        flat: true,
     };
     match section {
         SettingsSection::Appearance => art.appearance(),
@@ -362,7 +363,7 @@ impl Art<'_> {
         );
         self.line(banner.left_center() + vec2(18.0, 3.5), 12.0, ghost());
         let badge = banner.right_top() + vec2(-1.0, 1.0);
-        self.painter.circle_filled(badge, 5.6, kit::RED);
+        self.painter.circle_filled(badge, 5.6, kit::GREEN);
         self.painter
             .circle_stroke(badge, 5.6, Stroke::new(1.5, theme::chrome()));
         self.painter.circle_filled(badge, 1.6, Color32::WHITE);

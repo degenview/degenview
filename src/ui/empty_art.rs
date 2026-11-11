@@ -21,6 +21,7 @@ pub fn paint(ui: &Ui, rect: Rect) {
         painter: ui.painter(),
         tint: theme::text_secondary(),
         centre: rect.center(),
+        flat: false,
     };
     art.hero(rect);
 }

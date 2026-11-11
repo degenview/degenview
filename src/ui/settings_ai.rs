@@ -11,8 +11,10 @@ use crate::service::llm::{HttpProvider, LlmError, LlmProvider, ProviderKind, val
 use crate::ui::alert_center::Tone;
 use crate::ui::error_notice::{self, ErrorEvent, ErrorNotice};
 use crate::ui::icons::Icon;
-use crate::ui::settings_api_keys::{StatusMessage, destructive_button, field, footer_status, link};
-use crate::ui::settings_window::{card, footer_row, section, status_badge};
+use crate::ui::settings_api_keys::{
+    Autosave, StatusMessage, destructive_button, field, open_button,
+};
+use crate::ui::settings_window::{card, section, status_badge, status_message};
 use crate::ui::{kit, theme};
 use eframe::egui;
 use std::sync::mpsc::{Receiver, TryRecvError};
@@ -35,11 +37,12 @@ pub struct AiSettingsState {
     /// The saved prefs the draft was last read from. When they change under it (the assistant panel
     /// picked another model), the draft is read again, or Save here would put the old one back.
     seen: AiPrefs,
-    /// The provider, model and server being edited; applied on Save.
+    /// The provider, model and server being edited; saved as they are typed (`autosave`).
     pub draft: AiPrefs,
     pub key_input: String,
     pub status: Option<StatusMessage>,
     test: Option<Receiver<Result<usize, ErrorReport>>>,
+    autosave: Autosave,
 }
 
 impl AiSettingsState {
@@ -68,7 +71,7 @@ impl AiSettingsState {
         self.test.is_some()
     }
 
-    /// Why Save is refused, if it is.
+    /// Why the draft is not saved, if it is not.
     pub fn problem(&self) -> Option<String> {
         let kind = self.kind();
         if kind == ProviderKind::Compatible {
@@ -118,7 +121,8 @@ impl AiSettingsState {
         self.problem().is_none()
     }
 
-    /// Saves a typed key to the Keychain and returns the prefs for the host to store. A key the
+    /// Saves a typed key to the Keychain and returns the prefs for the host to store. Runs by
+    /// itself when typing stops (`autosave`). A key the
     /// Keychain refused is still usable until the app quits, and the message says so.
     pub fn save(&mut self, store: &AiKeyStore) -> Option<AiAction> {
         if let Some(problem) = self.problem() {
@@ -126,17 +130,16 @@ impl AiSettingsState {
             return None;
         }
         let kind = self.kind();
-        self.status = Some(if self.key_input.trim().is_empty() {
-            StatusMessage::ok("Saved.")
-        } else {
-            match store.save(kind, &self.key_input) {
+        // Saving the provider and model says nothing; only a key has a result worth showing.
+        if !self.key_input.trim().is_empty() {
+            self.status = Some(match store.save(kind, &self.key_input) {
                 Ok(()) => StatusMessage::ok(crate::platform::saved_securely()),
                 Err(error) => StatusMessage::error(format!(
                     "The key could not be saved for later ({}). It works until you quit DegenView.",
                     error.0
                 )),
-            }
-        });
+            });
+        }
         self.key_input.clear();
         self.draft.set_model(kind, &self.draft.model(kind));
         Some(AiAction::SavePrefs(self.draft.clone()))
@@ -217,14 +220,10 @@ impl AiSettingsState {
 
 fn key_page(kind: ProviderKind) -> Option<(&'static str, &'static str)> {
     match kind {
-        ProviderKind::OpenAi => Some((
-            "Get an OpenAI API key",
-            "https://platform.openai.com/api-keys",
-        )),
-        ProviderKind::Anthropic => Some((
-            "Get an Anthropic API key",
-            "https://console.anthropic.com/settings/keys",
-        )),
+        ProviderKind::OpenAi => Some(("Get API Key", "https://platform.openai.com/api-keys")),
+        ProviderKind::Anthropic => {
+            Some(("Get API Key", "https://console.anthropic.com/settings/keys"))
+        }
         ProviderKind::Compatible => None,
     }
 }
@@ -255,27 +254,42 @@ pub fn body(
                 .collect();
             let mut selected = state.kind();
             kit::segmented(ui, egui::Id::new("ai-provider"), &options, &mut selected);
-            state.select(selected);
+            if selected != state.kind() {
+                state.select(selected);
+                state.autosave.touch();
+            }
             let kind = state.kind();
             let mut model = state.draft.model(kind);
             let suggestion = kind.default_model();
             let hint = (!suggestion.is_empty())
                 .then(|| format!("Model names change often. Suggested: {suggestion}."));
-            ui.vertical(|ui| field(ui, "Model", hint.as_deref(), suggestion, &mut model, false));
+            let edit = ui
+                .vertical(|ui| field(ui, "Model", hint.as_deref(), suggestion, &mut model, false))
+                .inner;
+            state.autosave.watch(&edit, false);
             state.draft.set_model(kind, &model);
             if kind == ProviderKind::Compatible {
-                ui.vertical(|ui| {
-                    field(
-                        ui,
-                        "Server Base URL",
-                        Some(
-                            "OpenRouter, Ollama, LM Studio and similar. Use https://, or http:// for a server on this Mac.",
-                        ),
-                        "http://localhost:11434/v1",
-                        &mut state.draft.compatible_base_url,
-                        false,
-                    )
-                });
+                let edit = ui
+                    .vertical(|ui| {
+                        field(
+                            ui,
+                            "Server Base URL",
+                            Some(
+                                "OpenRouter, Ollama, LM Studio and similar. Use https://, or http:// for a server on this Mac.",
+                            ),
+                            "http://localhost:11434/v1",
+                            &mut state.draft.compatible_base_url,
+                            false,
+                        )
+                    })
+                    .inner;
+                state.autosave.watch(&edit, false);
+            }
+            // What stops it being saved, said where it is typed.
+            if let Some(problem) = state.problem()
+                && !state.draft.compatible_base_url.trim().is_empty()
+            {
+                status_message(ui, &problem, true);
             }
         });
     });
@@ -284,14 +298,54 @@ pub fn body(
     let (title, hint) = (state.field_title(store), state.field_hint(store));
     section(ui, "API access", None, |ui| {
         card(ui, |ui| {
-            ui.vertical(|ui| field(ui, title, Some(hint), "", &mut state.key_input, true));
+            let key = ui
+                .vertical(|ui| field(ui, title, Some(hint), "", &mut state.key_input, true))
+                .inner;
+            state.autosave.watch(&key, true);
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 10.0;
+                if state.is_testing() {
+                    ui.add(
+                        egui::Spinner::new()
+                            .size(14.0)
+                            .color(theme::text_secondary()),
+                    );
+                } else if kit::sheet_button(ui, "Test Connection", false, state.can_save())
+                    .clicked()
+                {
+                    let provider = state.provider_for_test(store, &|name| std::env::var(name).ok());
+                    state.start_test(provider);
+                }
+                if let Some((label, url)) = key_page(state.kind()) {
+                    open_button(ui, label, url);
+                }
+                if store.is_configured(state.kind())
+                    && destructive_button(ui, "Remove Key").clicked()
+                {
+                    state.remove_key(store);
+                }
+            });
         });
+        // A failure with more to say is a card at the top; the rest is one line here.
+        if let Some(status) = state.status.as_ref().filter(|status| !needs_card(status)) {
+            ui.add_space(8.0);
+            status_message(ui, &status.text, status.is_error);
+        }
     });
+    if state.autosave.due(ui.ctx()) {
+        if state.can_save() {
+            if let Some(action) = state.save(store) {
+                actions.push(action);
+            }
+        } else {
+            state.autosave.cancel();
+        }
+    }
     let provider = state.kind().title();
     kit::notice_card(
         ui,
         Icon::InfoCircle,
-        kit::ACCENT,
+        theme::text_secondary(),
         "Your script is sent to the provider",
         Some(&format!(
             "When you ask the assistant for a change, the open script and your message are sent to {provider} with your key. DegenView has no server in between, and you pay {provider} for the usage."
@@ -310,18 +364,14 @@ pub fn body(
                 ))
                 .wrap(),
             );
-            if kit::sheet_button(ui, "Clear saved conversations", false, true).clicked() {
+            if destructive_button(ui, "Clear saved conversations").clicked() {
                 actions.push(AiAction::ClearHistory);
             }
         });
     });
-    if let Some((label, url)) = key_page(state.kind()) {
-        ui.add_space(18.0);
-        link(ui, label, url);
-    }
 }
 
-/// Whether an error has more to say than the footer's one line: it also gets a card in the page,
+/// Whether an error has more to say than one line: it also gets a card in the page,
 /// with the provider's message, its request id and a button to copy them.
 pub(crate) fn needs_card(status: &StatusMessage) -> bool {
     status.is_error && status.report.is_some()
@@ -343,38 +393,6 @@ fn failure_card(ui: &mut egui::Ui, state: &mut AiSettingsState) {
         state.status = None;
     }
     ui.add_space(18.0);
-}
-
-pub fn footer(ui: &mut egui::Ui, state: &mut AiSettingsState, actions: &mut Vec<AiAction>) {
-    let store = AiKeyStore::shared();
-    // An error the page shows as a card is only pointed at here, not said twice.
-    let status = match &state.status {
-        Some(status) if needs_card(status) => Some((
-            "Failed. The details are at the top of the page.".to_owned(),
-            true,
-        )),
-        other => footer_status(other),
-    };
-    footer_row(ui, status, |ui| {
-        if kit::sheet_button(ui, "Save", true, state.can_save()).clicked()
-            && let Some(action) = state.save(store)
-        {
-            actions.push(action);
-        }
-        if state.is_testing() {
-            ui.add(
-                egui::Spinner::new()
-                    .size(14.0)
-                    .color(theme::text_secondary()),
-            );
-        } else if kit::sheet_button(ui, "Test Connection", false, state.can_save()).clicked() {
-            let provider = state.provider_for_test(store, &|name| std::env::var(name).ok());
-            state.start_test(provider);
-        }
-        if store.is_configured(state.kind()) && destructive_button(ui, "Remove Key").clicked() {
-            state.remove_key(store);
-        }
-    });
 }
 
 #[cfg(test)]

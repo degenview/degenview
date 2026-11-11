@@ -10,9 +10,9 @@ use crate::model::snapshot::{SnapshotHost, SnapshotPrefs, SnapshotScale};
 use crate::service::snapshot_upload::token_is_valid;
 use crate::ui::alert_center::Tone;
 use crate::ui::icons::Icon;
-use crate::ui::settings_api_keys::{StatusMessage, destructive_button, field, footer_status};
-use crate::ui::settings_window::{card, footer_row, section, status_badge};
-use crate::ui::{kit, settings_card};
+use crate::ui::settings_api_keys::{Autosave, StatusMessage, destructive_button, field};
+use crate::ui::settings_window::{card, section, status_badge, status_message};
+use crate::ui::{kit, settings_card, theme};
 use eframe::egui;
 
 /// What the page shows.
@@ -42,6 +42,7 @@ pub struct SnapshotsState {
     loaded: bool,
     /// What the last save said; the settings host sets it.
     pub status: Option<StatusMessage>,
+    autosave: Autosave,
 }
 
 impl SnapshotsState {
@@ -74,7 +75,7 @@ impl SnapshotsState {
                 || !self.token.trim().is_empty())
     }
 
-    /// The action Save means.
+    /// What saving the page means.
     pub fn save_action(&self) -> SnapshotsAction {
         let token = self.token.trim();
         SnapshotsAction::Save {
@@ -108,44 +109,67 @@ pub fn body(
         Some("Where Copy link, Open in new tab and Tweet image upload a snapshot."),
         |ui| {
             card(ui, |ui| {
-                ui.vertical(|ui| {
-                    field(
-                        ui,
-                        "Snapshot host",
-                        Some("An https:// address that takes the image and answers with a link."),
-                        "https://snapshots.example.com/v1/snapshots",
-                        &mut state.host,
-                        false,
-                    );
-                });
+                let host = ui
+                    .vertical(|ui| {
+                        field(
+                            ui,
+                            "Snapshot host",
+                            Some(
+                                "An https:// address that takes the image and answers with a link.",
+                            ),
+                            "https://snapshots.example.com/v1/snapshots",
+                            &mut state.host,
+                            false,
+                        )
+                    })
+                    .inner;
+                state.autosave.watch(&host, false);
                 if let Some(problem) = state.host_problem() {
                     problem_line(ui, problem);
                 }
-                ui.vertical(|ui| {
-                    let hint = if input.token_saved {
-                        "A token is saved. Type a new one to replace it."
-                    } else {
-                        "Sent as a bearer token, if the host asks for one."
-                    };
-                    field(
-                        ui,
-                        "Access token (optional)",
-                        Some(hint),
-                        "",
-                        &mut state.token,
-                        true,
-                    );
-                });
+                let token = ui
+                    .vertical(|ui| {
+                        let hint = if input.token_saved {
+                            "A token is saved. Type a new one to replace it."
+                        } else {
+                            "Sent as a bearer token, if the host asks for one."
+                        };
+                        field(
+                            ui,
+                            "Access token (optional)",
+                            Some(hint),
+                            "",
+                            &mut state.token,
+                            true,
+                        )
+                    })
+                    .inner;
+                state.autosave.watch(&token, true);
                 if let Some(problem) = state.token_problem() {
                     problem_line(ui, problem);
                 }
+                if input.token_saved && destructive_button(ui, "Remove Token").clicked() {
+                    actions.push(SnapshotsAction::RemoveToken);
+                }
             });
+            if let Some(status) = &state.status {
+                ui.add_space(8.0);
+                status_message(ui, &status.text, status.is_error);
+            }
         },
     );
+    // Saved as it is typed: the address when typing pauses, a token when its field is left.
+    if state.autosave.due(ui.ctx()) {
+        if state.can_save(input.prefs) {
+            actions.push(state.save_action());
+        } else {
+            state.autosave.cancel();
+        }
+    }
     kit::notice_card(
         ui,
         Icon::InfoCircle,
-        kit::ACCENT,
+        theme::text_secondary(),
         "DegenView does not host snapshots",
         Some(
             "Sharing uploads the image to the host above, which you run or trust. Saving or \
@@ -227,23 +251,6 @@ fn problem_line(ui: &mut egui::Ui, problem: &str) {
     ));
 }
 
-pub fn footer(
-    ui: &mut egui::Ui,
-    state: &mut SnapshotsState,
-    input: &SnapshotsInput,
-    actions: &mut Vec<SnapshotsAction>,
-) {
-    let status = footer_status(&state.status);
-    footer_row(ui, status, |ui| {
-        if kit::sheet_button(ui, "Save", true, state.can_save(input.prefs)).clicked() {
-            actions.push(state.save_action());
-        }
-        if input.token_saved && destructive_button(ui, "Remove Token").clicked() {
-            actions.push(SnapshotsAction::RemoveToken);
-        }
-    });
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -254,6 +261,7 @@ mod tests {
             token: token.to_owned(),
             loaded: true,
             status: None,
+            autosave: Autosave::default(),
         }
     }
 

@@ -1,6 +1,6 @@
 //! Shared drawing for the small scene pictures that head the Settings pages, the Alerts window and
-//! the Add Chart sheet: a soft disc in a section colour, a card, and marks that float over it.
-//! Painter code only, so every picture follows the theme.
+//! the Add Chart sheet: a card and marks that float over it, on a soft disc in a section colour
+//! (not on Settings: its pictures set `flat`). Painter code only, so every picture follows the theme.
 
 use crate::ui::icons::{self, Icon};
 use crate::ui::theme;
@@ -15,6 +15,8 @@ pub(crate) struct Art<'a> {
     pub(crate) painter: &'a Painter,
     pub(crate) tint: Color32,
     pub(crate) centre: Pos2,
+    /// Settings pictures: no coloured disc behind the card, as the app's flat style asks.
+    pub(crate) flat: bool,
 }
 
 /// The faint strokes that stand for text.
@@ -30,10 +32,14 @@ impl Art<'_> {
             painter: self.painter,
             tint,
             centre: self.centre,
+            flat: self.flat,
         }
     }
 
     pub(crate) fn disc(&self, centre: Pos2) {
+        if self.flat {
+            return;
+        }
         self.painter
             .circle_filled(centre, 40.0, self.tint.gamma_multiply(0.13));
     }

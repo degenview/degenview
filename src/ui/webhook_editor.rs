@@ -299,6 +299,8 @@ const SHEET_CHROME: f32 = 163.0 + 2.0 * 20.0;
 const SECTION_GAP: f32 = 18.0;
 /// A field's leading glyph, and the gap after it.
 const FIELD_ICON: f32 = 13.0;
+/// A field with its hairline: what a header row reserves for each of its two.
+const FIELD_OUTER: f32 = kit::FIELD_HEIGHT + 2.0;
 
 pub fn show(ctx: &egui::Context, state: &mut WebhookEditorState) -> Option<WebhookEditorOutcome> {
     let mut outcome = None;
@@ -310,12 +312,12 @@ pub fn show(ctx: &egui::Context, state: &mut WebhookEditorState) -> Option<Webho
     sheet::show(ctx, Id::new("webhook-editor"), FORM_WIDTH, |ui| {
         ui.add_space(24.0);
         sheet::inset(ui, |ui| {
-            sheet::header(
+            // No badge in the corner: the title leads.
+            sheet::header_with(
                 ui,
-                Icon::ArrowUpRightSquare,
                 title,
                 "Alerts post their message here over HTTP.",
-                theme::ACCENT,
+                |_| {},
             )
         });
         ui.add_space(SECTION_GAP);
@@ -461,8 +463,9 @@ fn optional_title(ui: &mut egui::Ui, text: &str, trailing: impl FnOnce(&mut egui
     });
 }
 
-/// The rounded well every input sits in. The ring turns accent while the input with `id` has
-/// focus (the field's own, or one of its children's) and red when `invalid`.
+/// The rounded well every input sits in, the same `kit::input_frame` the Settings pages use. The
+/// ring lightens while the input with `id` has focus (the field's own, or one of its children's)
+/// and turns red when `invalid`.
 fn field_with(
     ui: &mut egui::Ui,
     focus_ids: &[Id],
@@ -472,13 +475,14 @@ fn field_with(
     let focused = focus_ids
         .iter()
         .any(|id| ui.memory(|memory| memory.has_focus(*id)));
-    let mut frame = kit::field_frame(focused);
+    let mut frame = kit::input_frame(focused);
     if invalid {
         frame = frame.stroke(Stroke::new(1.0, theme::with_alpha(kit::RED, 0.7)));
     }
     frame.show(ui, |ui| {
         ui.set_width(ui.available_width());
-        ui.horizontal(|ui| {
+        ui.set_height(kit::FIELD_HEIGHT);
+        ui.horizontal_centered(|ui| {
             ui.spacing_mut().item_spacing.x = 8.0;
             contents(ui);
         });
@@ -540,10 +544,10 @@ fn status_line(ui: &mut egui::Ui, icon: Icon, color: Color32, message: &str) {
     });
 }
 
-/// A small accent action, like a borderless button with a glyph.
+/// A small borderless action with a glyph, neutral gray like every link.
 fn link_button(ui: &mut egui::Ui, icon: Icon, label: &str, enabled: bool) -> egui::Response {
     let color = if enabled {
-        kit::ACCENT
+        theme::text_secondary()
     } else {
         theme::text_tertiary()
     };
@@ -565,6 +569,8 @@ fn link_button(ui: &mut egui::Ui, icon: Icon, label: &str, enabled: bool) -> egu
     let response = crate::ui::accessibility::label(response, label);
     let color = if response.is_pointer_button_down_on() {
         theme::with_alpha(color, 0.7)
+    } else if enabled && response.hovered() {
+        theme::text_primary()
     } else {
         color
     };
@@ -641,7 +647,7 @@ fn method_menu(ui: &mut egui::Ui, method: &mut WebhookHttpMethod) {
     let label = ui.painter().layout_no_wrap(
         method.as_str().to_owned(),
         FontId::monospace(size::BODY - 1.0),
-        kit::ACCENT,
+        theme::text_primary(),
     );
     let size = Vec2::new(label.size().x + 5.0 + 9.0, 18.0);
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
@@ -649,9 +655,9 @@ fn method_menu(ui: &mut egui::Ui, method: &mut WebhookHttpMethod) {
         crate::ui::accessibility::label(response, format!("HTTP method, {}", method.as_str()))
             .on_hover_cursor(egui::CursorIcon::PointingHand);
     let color = if response.is_pointer_button_down_on() {
-        theme::with_alpha(kit::ACCENT, 0.7)
+        theme::with_alpha(theme::text_primary(), 0.7)
     } else {
-        kit::ACCENT
+        theme::text_primary()
     };
     ui.painter().galley(
         Pos2::new(rect.left(), rect.center().y - label.size().y / 2.0),
@@ -881,36 +887,46 @@ fn headers_section(ui: &mut egui::Ui, state: &mut WebhookEditorState) {
         let value_id = Id::new(("webhook-header-value", header.id));
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 8.0;
-            ui.allocate_ui(Vec2::new(150.0, 0.0), |ui| {
-                field(ui, name_id, name_error, |ui| {
-                    let width = ui.available_width();
-                    let response = input(ui, name_id, &mut header.name, "Header-Name", true, width);
-                    if focus_target == Some(header.id) {
-                        response.request_focus();
-                    }
-                });
-            });
+            // Both fields are one height and start at the row's top, the buttons centred on them.
+            ui.allocate_ui_with_layout(
+                Vec2::new(150.0, FIELD_OUTER),
+                egui::Layout::top_down(egui::Align::Min),
+                |ui| {
+                    field(ui, name_id, name_error, |ui| {
+                        let width = ui.available_width();
+                        let response =
+                            input(ui, name_id, &mut header.name, "Header-Name", true, width);
+                        if focus_target == Some(header.id) {
+                            response.request_focus();
+                        }
+                    });
+                },
+            );
             let width = ui.available_width() - 22.0 - 8.0;
-            ui.allocate_ui(Vec2::new(width.max(60.0), 0.0), |ui| {
-                field(ui, value_id, value_error, |ui| {
-                    let inner = ui.available_width() - 20.0 - 8.0;
-                    input(ui, value_id, &mut header.value, "Value", true, inner);
-                    let (slot, _) = ui.allocate_exact_size(Vec2::splat(20.0), Sense::hover());
-                    if kit::hover_button(
-                        ui,
-                        slot,
-                        value_id.with("secret"),
-                        Icon::Key,
-                        "Insert the secret",
-                        true,
-                        true,
-                    )
-                    .clicked()
-                    {
-                        header.value.push_str(SECRET_TOKEN);
-                    }
-                });
-            });
+            ui.allocate_ui_with_layout(
+                Vec2::new(width.max(60.0), FIELD_OUTER),
+                egui::Layout::top_down(egui::Align::Min),
+                |ui| {
+                    field(ui, value_id, value_error, |ui| {
+                        let inner = ui.available_width() - 20.0 - 8.0;
+                        input(ui, value_id, &mut header.value, "Value", true, inner);
+                        let (slot, _) = ui.allocate_exact_size(Vec2::splat(20.0), Sense::hover());
+                        if kit::hover_button(
+                            ui,
+                            slot,
+                            value_id.with("secret"),
+                            Icon::Key,
+                            "Insert the secret",
+                            true,
+                            true,
+                        )
+                        .clicked()
+                        {
+                            header.value.push_str(SECRET_TOKEN);
+                        }
+                    });
+                },
+            );
             let (slot, _) = ui.allocate_exact_size(Vec2::splat(22.0), Sense::hover());
             if kit::hover_button(
                 ui,

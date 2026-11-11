@@ -512,28 +512,35 @@ fn clicking_a_tile_wears_it() {
     rig.settle();
     let view = rig.host.view();
     let all = tiles(&view);
-    // Find the Dracula tile by laying the grid out the way the page does.
+    // The themes are one row that scrolls sideways: find a tile that is in view and not worn, by
+    // laying the row out the way the page does.
     let width = CONTENT.x - 2.0 * crate::ui::settings_window::INSET - 8.0;
-    let columns = (((width + TILE_GAP) / (TILE_MIN_WIDTH + TILE_GAP)).floor() as usize).max(2);
-    let tile_width = (width - TILE_GAP * (columns - 1) as f32) / columns as f32;
+    let tile_width = tile_width(width, all.len());
+    let target = (0..all.len())
+        .find(|index| {
+            let right = (*index as f32 + 1.0) * (tile_width + TILE_GAP) - TILE_GAP;
+            right <= width && all[*index].selection != view.selected
+        })
+        .expect("a tile in view is not the worn one");
+    let target = all[target].selection;
     let index = all
         .iter()
-        .position(|tile| tile.selection == ThemeSelection::BuiltIn(BuiltInTheme::Dracula))
+        .position(|tile| tile.selection == target)
         .unwrap();
     // The tiles start below the header, the sections' first heading, and the page's inset: ask
     // the page where they are by trying the row's cells down the first screen.
     let x = crate::ui::settings_window::INSET
-        + (index % columns) as f32 * (tile_width + TILE_GAP)
+        + index as f32 * (tile_width + TILE_GAP)
         + tile_width / 2.0;
     let mut y = 120.0;
     let mut picked = false;
     while y < CONTENT.y && !picked {
         rig.frame(click_at(egui::pos2(x, y)));
         rig.frame(Vec::new());
-        picked = rig.host.view().selected == ThemeSelection::BuiltIn(BuiltInTheme::Dracula);
+        picked = rig.host.view().selected == target;
         y += 12.0;
     }
-    assert!(picked, "a click in the Dracula tile's column found it");
+    assert!(picked, "a click in a visible tile found it");
 }
 
 #[test]

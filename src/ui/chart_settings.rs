@@ -455,7 +455,7 @@ fn price_preview(ui: &mut Ui, format: PriceFormat) {
     const TILE_HEIGHT: f32 = 58.0;
     const TILE_GAP: f32 = 10.0;
     let width = ui.available_width();
-    let card = kit::card_frame(false).show(ui, |ui| {
+    kit::card_frame(false).show(ui, |ui| {
         ui.set_width(width - 28.0 - 2.0);
         // The header is a card's own: a tile, a title and a hint.
         ui.horizontal(|ui| {
@@ -507,7 +507,6 @@ fn price_preview(ui: &mut Ui, format: PriceFormat) {
             }
         });
     });
-    kit::paint_card_highlight(ui, card.response.rect);
 }
 
 /// The colours of a market drawn as a line (prediction markets, CoinMarketCap): where it rises
@@ -542,7 +541,7 @@ fn preview_row(
 ) {
     let appearance = card.appearance();
     let width = ui.available_width();
-    let card = kit::card_frame(false).show(ui, |ui| {
+    kit::card_frame(false).show(ui, |ui| {
         ui.set_width(width - 28.0 - 2.0);
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 16.0;
@@ -592,7 +591,6 @@ fn preview_row(
             });
         });
     });
-    kit::paint_card_highlight(ui, card.response.rect);
 }
 
 /// `ColorPicker` as the macOS well, for a colour with no opacity. Edits the colour in place.
@@ -1095,7 +1093,7 @@ fn dashed_rounded_rect(painter: &egui::Painter, rect: Rect, radius: f32, stroke:
 
 /// A card of `count` rows with an inset hairline between them.
 fn row_card(ui: &mut Ui, count: usize, mut row: impl FnMut(&mut Ui, usize)) {
-    let list = kit::card_frame(false)
+    kit::card_frame(false)
         .inner_margin(Margin::ZERO)
         .show(ui, |ui| {
             ui.spacing_mut().item_spacing.y = 0.0;
@@ -1111,7 +1109,6 @@ fn row_card(ui: &mut Ui, count: usize, mut row: impl FnMut(&mut Ui, usize)) {
                 row(ui, index);
             }
         });
-    kit::paint_card_highlight(ui, list.response.rect);
 }
 
 /// A wash under the pointer. The first and last rows round the corners they share with the card,

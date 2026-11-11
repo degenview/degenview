@@ -183,7 +183,7 @@ pub fn show(ui: &mut Ui, updates: &UpdateHost) -> Outcome {
                                 egui::include_image!("../../assets/brand/buymeacoffee.png"),
                                 Color32::WHITE,
                                 "Support DegenView",
-                                "Buy me a coffee — it keeps development going",
+                                "Buy me a coffee. It keeps development going",
                                 DONATION_URL,
                             );
                         });
@@ -700,14 +700,13 @@ fn header(ui: &mut Ui, build: Option<i64>) {
 
 /// A rounded, inset-list card holding rows separated by dividers.
 fn group(ui: &mut Ui, content: impl FnOnce(&mut Ui)) {
-    let group = kit::card_frame(false)
+    kit::card_frame(false)
         .inner_margin(egui::Margin::ZERO)
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.spacing_mut().item_spacing = Vec2::ZERO;
             content(ui);
         });
-    kit::paint_card_highlight(ui, group.response.rect);
 }
 
 /// The hairline between rows, inset to where their text begins.

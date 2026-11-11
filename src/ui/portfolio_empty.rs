@@ -62,6 +62,7 @@ pub fn paint(ui: &Ui, rect: Rect, scene: Scene) {
         painter: ui.painter(),
         tint: scene.tint(),
         centre: rect.center(),
+        flat: false,
     };
     match scene {
         Scene::Portfolios => art.pf_portfolios(),

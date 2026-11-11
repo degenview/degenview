@@ -132,10 +132,12 @@ pub fn url_message(error: WebhookDeliveryError) -> &'static str {
     }
 }
 
-/// Webhook URLs are credentials. Anything shown in a row, a log line or a description goes
-/// through here first: `https://example.com/•••`. The scheme and host stay so the user can
-/// tell endpoints apart; path, query, fragment and userinfo never appear. Unparseable
-/// input yields a bare marker.
+/// Webhook URLs can be credentials. A log line goes through here first: `https://example.com/•••`.
+/// The scheme and host stay so endpoints can be told apart; path, query, fragment and userinfo
+/// never appear. Unparseable input yields a bare marker. The Settings row shows the address in
+/// full, as the user typed it: a secret in it is a `{{secret}}` placeholder, its value is in
+/// the secret store.
+#[allow(dead_code)]
 pub fn redact(url: &str) -> String {
     let Some(parsed) = parse_url(url).filter(|parsed| !parsed.host.is_empty()) else {
         return "•••".to_owned();
