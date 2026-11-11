@@ -14,7 +14,7 @@ use super::draft::{
     Submitted, TradeDraft,
 };
 use super::model::{
-    AccountStats, AccountStrip, Amount, BackendState, BalanceRow, FillRow, MarketAccess,
+    AccountStats, AccountStrip, Amount, BackendState, BalanceRow, Binding, FillRow, MarketAccess,
     MarketRules, OrderClass, OrderRow, PositionRow, QuoteView, RowStatus, TabKind, TicketCaps,
     TimeInForce, Tone, Unavailable, UnavailableKind, VenueInfo, VenueKind,
 };
@@ -242,6 +242,8 @@ fn field_of(field: TicketField) -> DraftField {
 }
 
 const NO_ACCOUNT: &str = "There is no paper account yet.";
+const ACCOUNT_CHANGED: &str =
+    "The account changed since the order was set up. Nothing was sent. Check the order again.";
 
 impl TradingBackend for PaperBackend {
     fn info(&self) -> VenueInfo {
@@ -490,15 +492,32 @@ impl TradingBackend for PaperBackend {
         ticket.quantity_for_funds_fraction(1.0).map(dec)
     }
 
+    fn binding(&self) -> Binding {
+        let host = self.host();
+        let snapshot = host.snapshot();
+        let account = snapshot
+            .selected_account_id
+            .and_then(|id| snapshot.accounts.iter().find(|a| a.id == id))
+            .or_else(|| snapshot.accounts.first());
+        Binding {
+            account: account.map(|a| a.id.to_string()).unwrap_or_default(),
+            generation: 0,
+        }
+    }
+
     fn preview(
         &self,
         market: &MarketRef,
         draft: &TradeDraft,
+        binding: &Binding,
     ) -> Task<Result<PreviewResult, String>> {
         let host = self.host();
         let Some((ticket, account)) = paper_ticket(&host, market, draft) else {
             return Task::ready(Err(NO_ACCOUNT.to_owned()));
         };
+        if binding.account != account.to_string() {
+            return Task::ready(Err(ACCOUNT_CHANGED.to_owned()));
+        }
         let Some(request) = ticket.request(account) else {
             return Task::ready(Err("The order is not complete.".to_owned()));
         };
@@ -521,11 +540,20 @@ impl TradingBackend for PaperBackend {
         Task::ready(Ok(answer))
     }
 
-    fn submit(&self, market: &MarketRef, draft: &TradeDraft) -> Task<SubmitResult> {
+    fn submit(
+        &self,
+        market: &MarketRef,
+        draft: &TradeDraft,
+        binding: &Binding,
+    ) -> Task<SubmitResult> {
         let mut host = self.host();
         let Some((ticket, account)) = paper_ticket(&host, market, draft) else {
             return Task::ready(Err(NO_ACCOUNT.to_owned()));
         };
+        // Another paper account was chosen since the order was reviewed: not sent to that one.
+        if binding.account != account.to_string() {
+            return Task::ready(Err(ACCOUNT_CHANGED.to_owned()));
+        }
         let Some(request) = ticket.request(account) else {
             return Task::ready(Err("The order is not complete.".to_owned()));
         };

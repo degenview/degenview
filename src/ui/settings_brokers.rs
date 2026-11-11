@@ -303,8 +303,10 @@ fn broker_card(
                 form.values.clear();
                 form.status = Some(match host.disconnect(id) {
                     Ok(()) => StatusMessage::ok("Disconnected. The key was removed from this Mac."),
+                    // The connection is stopped, but the key is still in the keychain: it connects
+                    // again at the next start unless it is removed there.
                     Err(error) => StatusMessage::error(format!(
-                        "Disconnected, but the key could not be removed: {error}"
+                        "Disconnected, but the key could NOT be removed from this Mac and will connect again when DegenView starts. Remove it in your keychain, or try again: {error}"
                     )),
                 });
             }
@@ -838,7 +840,7 @@ fn poll_check(
                 ),
                 Ok(()) => StatusMessage::ok(crate::platform::saved_securely()),
                 Err(error) => StatusMessage::error(format!(
-                    "Connected, but the key could not be saved, so it will be forgotten when you quit: {error}"
+                    "Connected, but the key could not be saved, so it will be forgotten when you quit. A key saved earlier may still be stored and connect again at the next start: {error}"
                 )),
             });
             form.values.clear();

@@ -226,6 +226,19 @@ impl Amount {
     }
 }
 
+/// Which account, and which connection to it, an order was reviewed against. The sheet keeps the
+/// one it showed the figures for and sends the order only against that same one: if the account or
+/// the connection changed in between (another key was entered, another paper account chosen), the
+/// review no longer describes where the order would go, and the venue refuses to send it.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct Binding {
+    /// The venue's own id of the account. Empty when there is none (not connected).
+    pub account: String,
+    /// Distinguishes one connection to the same account from the next. 0 when the venue has no such
+    /// thing.
+    pub generation: u64,
+}
+
 /// The account line at the top of the sheet.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AccountStrip {

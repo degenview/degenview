@@ -407,10 +407,12 @@ mod tests {
         );
 
         workspace.trading_venue = TradingVenue::Broker(ID);
-        let placed = host
-            .runtime(ID)
-            .unwrap()
-            .submit(limit(Side::Buy, "87654.32"))
+        let runtime = host.runtime(ID).unwrap();
+        let placed = runtime
+            .submit(
+                limit(Side::Buy, "87654.32"),
+                crate::host::broker_host::account_of(&runtime),
+            )
             .wait()
             .unwrap();
         wait("the order in the snapshot", || {
@@ -488,10 +490,12 @@ mod tests {
     fn a_line_cancelled_or_dragged_asks_first_and_the_line_stays_until_the_broker_answers() {
         let ((host, exchange), _turn) = shared();
         let mut workspace = workspace();
-        let placed = host
-            .runtime(ID)
-            .unwrap()
-            .submit(limit(Side::Sell, "99999.00"))
+        let runtime = host.runtime(ID).unwrap();
+        let placed = runtime
+            .submit(
+                limit(Side::Sell, "99999.00"),
+                crate::host::broker_host::account_of(&runtime),
+            )
             .wait()
             .unwrap();
         wait("the order", || {

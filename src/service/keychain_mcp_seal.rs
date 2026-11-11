@@ -96,7 +96,7 @@ impl SealKeyStore {
     /// Removes the key, to put a test in the "key lost" state.
     #[cfg(test)]
     pub fn delete(&self) {
-        self.backend.delete(SCOPE, ACCOUNT);
+        let _ = self.backend.delete(SCOPE, ACCOUNT);
     }
 }
 
@@ -162,7 +162,7 @@ mod tests {
             fn write(&self, _: Scope, _: &str, _: &str) -> Result<(), SecretStoreError> {
                 Err(SecretStoreError("denied".into()))
             }
-            fn delete(&self, scope: Scope, account: &str) {
+            fn delete(&self, scope: Scope, account: &str) -> Result<(), SecretStoreError> {
                 self.0.delete(scope, account)
             }
         }

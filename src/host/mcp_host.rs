@@ -5217,7 +5217,7 @@ mod tests {
             }
             self.items.write(scope, account, value)
         }
-        fn delete(&self, scope: Scope, account: &str) {
+        fn delete(&self, scope: Scope, account: &str) -> Result<(), SecretStoreError> {
             self.items.delete(scope, account)
         }
     }
@@ -5578,7 +5578,7 @@ mod tests {
 
         // Once the Keychain cooperates, the same state recovers by restarting it.
         keychain.refuse_writes.store(false, Ordering::Relaxed);
-        keychain.items.delete(scope, "seal-key-v1");
+        keychain.items.delete(scope, "seal-key-v1").unwrap();
         drop(host);
         let mut host = sealed_host(&store, &keychain);
         host.apply(McpAction::ResetAccess);

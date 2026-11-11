@@ -8,8 +8,8 @@ use std::time::{Duration, Instant};
 use degenview_brokers::coinbase::fake::{CoinbaseExchange, credentials, generate_key_pem};
 use degenview_brokers::model::pending::{PendingJournal, PendingSubmission, SubmissionOutcome};
 use degenview_brokers::{
-    BrokerId, ClientOrderId, Credentials, Env, MemorySecretStore, OrderDraft, OrderKind, ProductId,
-    SecretStore, Side, Status, TimeInForce,
+    AccountId, BrokerId, ClientOrderId, Credentials, Env, MemorySecretStore, OrderDraft, OrderKind,
+    ProductId, SecretStore, Side, Status, TimeInForce,
 };
 
 use super::broker_host::{BrokerHost, Connection, PENDING_KEY, PROFILE, StoreJournal};
@@ -28,19 +28,26 @@ fn host(
     store: &SharedStore,
 ) -> (Arc<BrokerHost>, Arc<MemorySecretStore>) {
     let secrets = Arc::new(MemorySecretStore::new());
+    (host_over(exchange, store, secrets.clone()), secrets)
+}
+
+fn host_over(
+    exchange: &CoinbaseExchange,
+    store: &SharedStore,
+    secrets: Arc<dyn SecretStore>,
+) -> Arc<BrokerHost> {
     let env = Env::default()
         .with_loopback_base_url(exchange.rest.url())
         .with_loopback_ws_url(exchange.stream.url.clone())
         .with_stream_timing(degenview_brokers::StreamTiming::fast())
         .with_request_gap(Duration::from_millis(2));
-    let host = BrokerHost::new(
-        secrets.clone(),
+    BrokerHost::new(
+        secrets,
         Arc::new(StoreJournal::new(store.clone())),
         Some(store.clone()),
         env,
         |config| config.fast(),
-    );
-    (host, secrets)
+    )
 }
 
 fn wait_for(what: &str, mut ready: impl FnMut() -> bool) {
@@ -316,7 +323,10 @@ fn a_placed_order_is_visible_to_everyone_sharing_the_host() {
     wait_for("live", || is_live(&host));
     let window_a = host.runtime(ID).unwrap();
     let window_b = host.runtime(ID).unwrap();
-    window_a.submit(draft()).wait().expect("placed");
+    window_a
+        .submit(draft(), super::broker_host::account_of(&window_a))
+        .wait()
+        .expect("placed");
     // The other window reads the same snapshot: the order is there, once.
     assert_eq!(window_b.snapshot().working_orders().count(), 1);
     assert_eq!(exchange.rest.with_state(|s| s.orders.len()), 1);
@@ -328,6 +338,7 @@ fn the_pending_journal_survives_a_restart_and_never_forgets_on_a_bad_record() {
     let first = StoreJournal::new(store.clone());
     let entry = PendingSubmission {
         broker: ID,
+        account: AccountId::new("pf-1"),
         client_id: ClientOrderId::new("c-1"),
         draft: draft(),
         created_ms: 1_000,
@@ -344,7 +355,12 @@ fn the_pending_journal_survives_a_restart_and_never_forgets_on_a_bad_record() {
             .is_empty()
     );
     second
-        .resolve(ID, &entry.client_id, &SubmissionOutcome::NotPlaced)
+        .resolve(
+            ID,
+            &entry.account,
+            &entry.client_id,
+            &SubmissionOutcome::NotPlaced,
+        )
         .unwrap();
     assert!(second.unresolved(ID).unwrap().is_empty());
 
@@ -444,4 +460,281 @@ fn the_applications_broker_layers_name_no_broker() {
             assert!(!text.contains(name), "{file} names {name}");
         }
     }
+}
+
+// ---- The user's last word on a connection stands -----------------------------------------------
+
+/// A secret store that can be made to sit on a read (a Keychain prompt that nobody has answered
+/// yet) and to fail a removal.
+struct Gated {
+    inner: MemorySecretStore,
+    block_next_load: std::sync::atomic::AtomicBool,
+    entered: std::sync::atomic::AtomicBool,
+    release: Mutex<std::sync::mpsc::Receiver<()>>,
+    fail_delete: std::sync::atomic::AtomicBool,
+}
+
+impl Gated {
+    fn new() -> (Arc<Self>, std::sync::mpsc::Sender<()>) {
+        let (sender, receiver) = std::sync::mpsc::channel();
+        (
+            Arc::new(Self {
+                inner: MemorySecretStore::new(),
+                block_next_load: false.into(),
+                entered: false.into(),
+                release: Mutex::new(receiver),
+                fail_delete: false.into(),
+            }),
+            sender,
+        )
+    }
+}
+
+impl SecretStore for Gated {
+    fn load(
+        &self,
+        broker: BrokerId,
+        profile: &str,
+    ) -> Result<Option<Credentials>, degenview_brokers::SecretStoreError> {
+        use std::sync::atomic::Ordering::SeqCst;
+        // The key is read, then the answer waits for the person at the prompt.
+        let found = self.inner.load(broker, profile)?;
+        if self.block_next_load.swap(false, SeqCst) {
+            self.entered.store(true, SeqCst);
+            let _ = self.release.lock().unwrap().recv();
+        }
+        Ok(found)
+    }
+    fn save(
+        &self,
+        broker: BrokerId,
+        profile: &str,
+        credentials: &Credentials,
+    ) -> Result<(), degenview_brokers::SecretStoreError> {
+        self.inner.save(broker, profile, credentials)
+    }
+    fn delete(
+        &self,
+        broker: BrokerId,
+        profile: &str,
+    ) -> Result<(), degenview_brokers::SecretStoreError> {
+        if self.fail_delete.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(degenview_brokers::SecretStoreError(
+                "the keychain refused".to_owned(),
+            ));
+        }
+        self.inner.delete(broker, profile)
+    }
+    fn is_configured(&self, broker: BrokerId, profile: &str) -> bool {
+        self.inner.is_configured(broker, profile)
+    }
+}
+
+#[test]
+fn a_disconnect_while_the_saved_key_is_still_being_read_is_not_undone() {
+    use std::sync::atomic::Ordering::SeqCst;
+    let exchange = CoinbaseExchange::start();
+    let (secrets, release) = Gated::new();
+    secrets
+        .inner
+        .save(ID, PROFILE, &credentials(&generate_key_pem()))
+        .unwrap();
+    let host = host_over(&exchange, &store(), secrets.clone());
+
+    // The start is waiting on the Keychain prompt.
+    secrets.block_next_load.store(true, SeqCst);
+    host.connect_saved(ID);
+    wait_for("the read to begin", || secrets.entered.load(SeqCst));
+
+    // The user disconnects meanwhile, and is told the key is gone.
+    host.disconnect(ID).expect("removed");
+    assert!(matches!(host.connection(ID), Connection::NotConfigured));
+
+    // The prompt is answered. The start that was waiting must not bring the connection back.
+    release.send(()).unwrap();
+    std::thread::sleep(Duration::from_millis(400));
+    assert!(host.runtime(ID).is_none(), "a removed key is running");
+    assert!(matches!(host.connection(ID), Connection::NotConfigured));
+    assert_eq!(
+        exchange.rest.with_state(|s| s.requests_seen.len()),
+        0,
+        "the removed key was never even used"
+    );
+}
+
+#[test]
+fn a_newer_key_is_not_replaced_by_a_start_that_began_before_it() {
+    use std::sync::atomic::Ordering::SeqCst;
+    let exchange = CoinbaseExchange::start();
+    let (secrets, release) = Gated::new();
+    secrets
+        .inner
+        .save(ID, PROFILE, &credentials(&generate_key_pem()))
+        .unwrap();
+    let host = host_over(&exchange, &store(), secrets.clone());
+
+    // The saved key is being read (slowly) when the user enters another.
+    secrets.block_next_load.store(true, SeqCst);
+    host.connect_saved(ID);
+    wait_for("the read to begin", || secrets.entered.load(SeqCst));
+    host.adopt(ID, credentials(&generate_key_pem())).unwrap();
+    wait_for("the new key to go live", || is_live(&host));
+    let newer = host.runtime(ID).unwrap().generation();
+
+    // The slow read finishes last. The older start must lose.
+    release.send(()).unwrap();
+    std::thread::sleep(Duration::from_millis(400));
+    assert_eq!(
+        host.runtime(ID).unwrap().generation(),
+        newer,
+        "the older key took over from the newer"
+    );
+}
+
+#[test]
+fn a_key_that_could_not_be_removed_says_so_and_comes_back_at_the_next_start() {
+    use std::sync::atomic::Ordering::SeqCst;
+    let exchange = CoinbaseExchange::start();
+    let (secrets, _release) = Gated::new();
+    let store = store();
+    let host = host_over(&exchange, &store, secrets.clone());
+    host.adopt(ID, credentials(&generate_key_pem())).unwrap();
+    wait_for("live", || is_live(&host));
+
+    secrets.fail_delete.store(true, SeqCst);
+    let error = host.disconnect(ID).expect_err("the removal failed");
+    assert!(error.contains("refused"), "{error}");
+    // The connection is stopped, but the key is still stored, and the host says so.
+    assert!(host.runtime(ID).is_none());
+    assert!(matches!(host.connection(ID), Connection::Saved));
+
+    // The next start finds it and connects with it: the error was the only warning.
+    let next = host_over(&exchange, &store, secrets);
+    next.connect_all_saved();
+    wait_for("the key that was left to come back", || is_live(&next));
+}
+
+#[test]
+fn the_same_client_id_in_two_accounts_is_two_records_in_the_store() {
+    let journal = StoreJournal::new(store());
+    let mut mine = PendingSubmission {
+        broker: ID,
+        account: AccountId::new("portfolio-a"),
+        client_id: ClientOrderId::new("same"),
+        draft: draft(),
+        created_ms: 1,
+    };
+    journal.record(&mine).unwrap();
+    mine.account = AccountId::new("portfolio-b");
+    journal.record(&mine).unwrap();
+    assert_eq!(journal.unresolved(ID).unwrap().len(), 2);
+
+    journal
+        .resolve(
+            ID,
+            &AccountId::new("portfolio-a"),
+            &mine.client_id,
+            &SubmissionOutcome::NotPlaced,
+        )
+        .unwrap();
+    let left = journal.unresolved(ID).unwrap();
+    assert_eq!(left.len(), 1);
+    assert_eq!(left[0].account, AccountId::new("portfolio-b"));
+
+    // A record from before accounts existed reads back with none, and an account cannot close it.
+    let legacy = serde_json::json!([{
+        "broker": "coinbase", "client_id": "old", "created_ms": 2,
+        "draft": serde_json::to_value(draft()).unwrap(),
+    }]);
+    let store = store();
+    store
+        .lock()
+        .unwrap()
+        .set_setting(PENDING_KEY, &legacy)
+        .unwrap();
+    let journal = StoreJournal::new(store);
+    let records = journal.unresolved(ID).unwrap();
+    assert_eq!(records.len(), 1);
+    assert!(records[0].account.as_str().is_empty());
+    journal
+        .resolve(
+            ID,
+            &AccountId::new("portfolio-a"),
+            &ClientOrderId::new("old"),
+            &SubmissionOutcome::NotPlaced,
+        )
+        .unwrap();
+    assert_eq!(journal.unresolved(ID).unwrap().len(), 1, "still held");
+}
+
+#[test]
+fn a_price_that_was_already_old_when_it_arrived_is_not_shown_as_new() {
+    let exchange = CoinbaseExchange::start();
+    // The exchange's own time on the price is days back: it sat on the way.
+    exchange
+        .rest
+        .with_state(|s| s.quote_time = "2026-11-09T12:00:00Z".to_owned());
+    let (host, _) = host(&exchange, &store());
+    host.adopt(ID, credentials(&generate_key_pem())).unwrap();
+    wait_for("live", || is_live(&host));
+    let product = ProductId::new("BTC-USD");
+    host.want_quote(ID, &product);
+    let reads = || {
+        exchange.rest.with_state(|s| {
+            s.requests_seen
+                .iter()
+                .filter(|r| r.ends_with("/best_bid_ask"))
+                .count()
+        })
+    };
+    wait_for("the price to have been read", || {
+        host.want_quote(ID, &product);
+        host.tick_quotes();
+        reads() >= 1
+    });
+    std::thread::sleep(Duration::from_millis(100));
+    host.tick_quotes();
+    assert!(
+        host.quote(ID, &product).is_none(),
+        "a price the exchange stamped long ago was shown as fresh"
+    );
+
+    // A current one is shown.
+    exchange.rest.with_state(|s| s.quote_time = String::new());
+    wait_for("a current price", || {
+        host.want_quote(ID, &product);
+        host.tick_quotes();
+        host.quote(ID, &product).is_some()
+    });
+}
+
+#[test]
+fn an_unconfirmed_order_of_another_account_is_held_not_shown_or_settled() {
+    let exchange = CoinbaseExchange::start();
+    let store = store();
+    // Written by a session on another portfolio, long ago.
+    let theirs = PendingSubmission {
+        broker: ID,
+        account: AccountId::new("portfolio-elsewhere"),
+        client_id: ClientOrderId::new("theirs"),
+        draft: draft(),
+        created_ms: 1_000,
+    };
+    StoreJournal::new(store.clone()).record(&theirs).unwrap();
+
+    let (host, _) = host(&exchange, &store);
+    host.adopt(ID, credentials(&generate_key_pem())).unwrap();
+    wait_for("live", || is_live(&host));
+    std::thread::sleep(Duration::from_millis(500)); // several reconcile rounds
+    let snapshot = host.snapshot(ID).unwrap();
+    assert_eq!(snapshot.held_elsewhere, 1);
+    assert!(
+        snapshot.pending.is_empty(),
+        "it is not this account's order"
+    );
+    assert_eq!(
+        StoreJournal::new(store).unresolved(ID).unwrap(),
+        vec![theirs],
+        "and nothing deleted it"
+    );
 }

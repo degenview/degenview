@@ -29,7 +29,9 @@ pub trait KeyBackend: Send + Sync {
     fn read(&self, scope: Scope, account: &str) -> Option<String>;
     fn exists(&self, scope: Scope, account: &str) -> bool;
     fn write(&self, scope: Scope, account: &str, value: &str) -> Result<(), SecretStoreError>;
-    fn delete(&self, scope: Scope, account: &str);
+    /// Removes the item. An item that is not there counts as removed; any other failure is an error:
+    /// a secret that could not be removed is still stored.
+    fn delete(&self, scope: Scope, account: &str) -> Result<(), SecretStoreError>;
 }
 
 pub struct KeychainBackend;
@@ -44,7 +46,7 @@ impl KeyBackend for KeychainBackend {
     fn write(&self, scope: Scope, account: &str, value: &str) -> Result<(), SecretStoreError> {
         platform::write(scope, account, value)
     }
-    fn delete(&self, scope: Scope, account: &str) {
+    fn delete(&self, scope: Scope, account: &str) -> Result<(), SecretStoreError> {
         platform::delete(scope, account)
     }
 }
@@ -81,10 +83,11 @@ impl KeyBackend for MemoryBackend {
         }
         Ok(())
     }
-    fn delete(&self, scope: Scope, account: &str) {
+    fn delete(&self, scope: Scope, account: &str) -> Result<(), SecretStoreError> {
         if let Ok(mut items) = self.items.lock() {
             items.remove(&Self::key(scope, account));
         }
+        Ok(())
     }
 }
 
@@ -210,8 +213,10 @@ impl AlpacaCredentialsStore {
                 .map_err(|error| SecretStoreError(error.to_string()))?;
             self.backend.write(ALPACA_SHARED, ALPACA_ACCOUNT, &text)?;
         } else {
-            self.backend.delete(ALPACA_SHARED, ALPACA_ACCOUNT);
-            self.backend.delete(ALPACA_OWN, ALPACA_ACCOUNT);
+            // Both are tried; the cache below is changed only if both are gone.
+            let shared = self.backend.delete(ALPACA_SHARED, ALPACA_ACCOUNT);
+            let own = self.backend.delete(ALPACA_OWN, ALPACA_ACCOUNT);
+            shared.and(own)?;
         }
         let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
         cache.credentials = Some(normalized);
@@ -306,7 +311,7 @@ impl CoinMarketCapKeyStore {
     }
 
     pub fn remove(&self) -> Result<(), SecretStoreError> {
-        self.backend.delete(CMC, CMC_ACCOUNT);
+        self.backend.delete(CMC, CMC_ACCOUNT)?;
         let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
         *cache = CmcCache {
             loaded: true,
@@ -394,7 +399,7 @@ mod tests {
         fn write(&self, scope: Scope, account: &str, value: &str) -> Result<(), SecretStoreError> {
             self.0.write(scope, account, value)
         }
-        fn delete(&self, scope: Scope, account: &str) {
+        fn delete(&self, scope: Scope, account: &str) -> Result<(), SecretStoreError> {
             self.0.delete(scope, account)
         }
     }

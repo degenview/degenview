@@ -22,8 +22,8 @@ use crate::trading::draft::{
     CancelResult, DraftCheck, DraftField, SubmitResult, TradeDraft, floor_to_increment,
 };
 use crate::trading::model::{
-    BackendState, MarketAccess, MarketRules, OrderClass, OrderRow, Unavailable, UnavailableKind,
-    VenueInfo,
+    BackendState, Binding, MarketAccess, MarketRules, OrderClass, OrderRow, Unavailable,
+    UnavailableKind, VenueInfo,
 };
 use crate::trading::preview::PreviewSlot;
 use crate::trading::task::Task;
@@ -37,8 +37,9 @@ const NOTICE_FOR: Duration = Duration::from_secs(10);
 
 enum Stage {
     Editing,
-    /// The review dialog is open.
-    Confirming,
+    /// The review dialog is open, for the account and connection the figures in it were worked
+    /// out against. The order goes only there.
+    Confirming(Binding),
     Sending(Task<SubmitResult>),
 }
 
@@ -130,7 +131,7 @@ impl SheetState {
     /// Whether the review dialog is open.
     #[cfg(test)]
     pub(crate) fn is_reviewing(&self) -> bool {
-        matches!(self.stage, Stage::Confirming)
+        matches!(self.stage, Stage::Confirming(_))
     }
 
     /// Whether an order is on its way to the venue.
@@ -146,11 +147,18 @@ impl SheetState {
 
     /// Closes the review dialog without sending (a replay began). True when one was open.
     pub fn close_review(&mut self) -> bool {
-        let open = matches!(self.stage, Stage::Confirming);
+        let open = matches!(self.stage, Stage::Confirming(_));
         if open {
             self.stage = Stage::Editing;
         }
         open
+    }
+
+    /// Closes the review dialog because what it describes is no longer there (not connected).
+    fn drop_review(&mut self) {
+        if matches!(self.stage, Stage::Confirming(_)) {
+            self.stage = Stage::Editing;
+        }
     }
 
     fn say(&mut self, text: impl Into<String>, error: bool) {
@@ -340,6 +348,10 @@ fn body(
     input: &SheetInput,
     actions: &mut Vec<SheetAction>,
 ) {
+    if !matches!(bstate, BackendState::Paused(_) | BackendState::Ready) {
+        // A review of an order for a connection that is gone cannot be answered with "Place".
+        state.drop_review();
+    }
     match bstate {
         BackendState::NotConnected => {
             if kit::notice_card(
@@ -646,7 +658,16 @@ fn form(
     options(ui, state, rules, &check);
 
     // Ask the venue what it would do, once the order is complete and has settled.
-    let key = format!("{:?}|{}|{}", info.venue, market.symbol, state.draft.key());
+    // The account and connection this order would go to, read once and used for the question, the
+    // key and the review: a preview is for one account, and a different one starts over.
+    let binding = backend.binding();
+    let key = format!(
+        "{:?}|{:?}|{}|{}",
+        info.venue,
+        binding,
+        market.symbol,
+        state.draft.key()
+    );
     let debounce = if info.kind == crate::trading::model::VenueKind::Simulated {
         Duration::ZERO
     } else {
@@ -658,7 +679,7 @@ fn form(
         state
             .preview
             .sync(&key, check.is_complete() && ready, now, debounce, || {
-                backend.preview(market, draft)
+                backend.preview(market, draft, &binding)
             })
     };
     if waiting {
@@ -705,15 +726,16 @@ fn form(
     }
     if response.clicked() && can_send {
         if confirm::needs_review(info.kind, state.draft.class, input.confirm_resting) {
-            state.stage = Stage::Confirming;
+            state.stage = Stage::Confirming(binding.clone());
         } else {
-            state.stage = Stage::Sending(backend.submit(market, &state.draft));
+            state.stage = Stage::Sending(backend.submit(market, &state.draft, &binding));
         }
     }
 
     available_line(ui, backend, market, side);
     notice(ui, state);
 
+    expire_review(state, backend, &gate);
     review_dialog(ui, state, info, backend, market, rules, &check);
     sending_result(state, now);
     poll_cancels(state);
@@ -1081,6 +1103,25 @@ fn notice(ui: &mut egui::Ui, state: &mut SheetState) {
     note(ui, text, *error);
 }
 
+/// Ends a review that no longer describes the order. It stands only while the order would still go
+/// where it was reviewed (if the account or the connection changed, the figures are for somewhere
+/// else), and on an answer that is still good (one that went stale while the dialog was open is
+/// not).
+fn expire_review(state: &mut SheetState, backend: &dyn TradingBackend, gate: &PreviewGate) {
+    let Stage::Confirming(reviewed) = &state.stage else {
+        return;
+    };
+    let text = if backend.binding() != *reviewed {
+        "The account changed since you set this order up. Nothing was sent. Check the order again."
+    } else if !gate.allows_review() {
+        "The check of this order is out of date. Nothing was sent. Check the order again."
+    } else {
+        return;
+    };
+    state.stage = Stage::Editing;
+    state.say(text, true);
+}
+
 fn review_dialog(
     ui: &mut egui::Ui,
     state: &mut SheetState,
@@ -1090,9 +1131,11 @@ fn review_dialog(
     rules: &MarketRules,
     check: &DraftCheck,
 ) {
-    if !matches!(state.stage, Stage::Confirming) {
+    let Stage::Confirming(reviewed) = &state.stage else {
         return;
-    }
+    };
+    let reviewed = reviewed.clone();
+
     let account = backend.account().map(|account| account.label);
     let lines = confirm::lines(
         &state.draft,
@@ -1142,7 +1185,7 @@ fn review_dialog(
     });
     match outcome {
         Some(dialog::Outcome::Accepted) => {
-            state.stage = Stage::Sending(backend.submit(market, &state.draft));
+            state.stage = Stage::Sending(backend.submit(market, &state.draft, &reviewed));
         }
         Some(_) => state.stage = Stage::Editing,
         None => {}

@@ -146,13 +146,15 @@ fn check(backend: &dyn TradingBackend, kind: VenueKind, settle_cancel: &dyn Fn(&
     assert_eq!(good.estimate.notional, Some(d("90")));
 
     // The venue is asked what it would do, and says it would take it.
-    let preview = answer(backend.preview(&market(), &draft)).expect("a preview");
+    let preview =
+        answer(backend.preview(&market(), &draft, &backend.binding())).expect("a preview");
     assert!(preview.accepted, "{:?}", preview.problems);
 
     // Sending it lists it, as the venue has it.
     assert!(backend.orders().iter().all(|row| !row.working));
     let before = backend.revision();
-    let sent = answer(backend.submit(&market(), &draft)).expect("the order was taken");
+    let sent =
+        answer(backend.submit(&market(), &draft, &backend.binding())).expect("the order was taken");
     wait_for("the order to be listed", || {
         backend.orders().iter().any(|row| row.working)
     });

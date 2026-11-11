@@ -311,6 +311,71 @@ fn a_live_order_is_reviewed_before_it_is_sent_and_nothing_goes_without_it() {
     assert!(!state.is_sending());
 }
 
+/// The figures in the review are for the account they were worked out against. If the key is
+/// replaced by one of another portfolio while the dialog is open, the order does not go there: the
+/// sheet drops the review and says why, and the venue itself refuses the old review.
+#[test]
+fn a_review_is_never_sent_into_an_account_it_was_not_made_for() {
+    let _restore = theme::RestoreDefaultTheme;
+    let rig = rig();
+    rig.connect_broker();
+    let venue = Some(TradingVenue::Broker(COINBASE));
+    let mut screen = Screen::new(Vec2::new(900.0, 900.0));
+    let mut state = SheetState::default();
+    limit_order(&mut state, "0.001", "90000.00");
+    rig.until_sendable(&mut screen, &mut state, venue);
+    let button = state.button.expect("the button was drawn");
+    rig.press(&mut screen, &mut state, venue, button.center());
+    rig.frames(&mut screen, &mut state, venue, 2);
+    assert!(state.is_reviewing(), "the review opens");
+    let backend = rig
+        .hub
+        .backend(TradingVenue::Broker(COINBASE))
+        .expect("the broker");
+    let reviewed = backend.binding();
+    assert_eq!(reviewed.account, "pf-1");
+
+    // Another key, of another portfolio, replaces the connection while the dialog is open.
+    rig.exchange
+        .rest
+        .with_state(|s| s.portfolio_uuid = "pf-other".to_owned());
+    rig.brokers
+        .adopt(COINBASE, credentials(&generate_key_pem()))
+        .unwrap();
+    wait("the new account to be connected", || {
+        rig.brokers.snapshot(COINBASE).is_some_and(|s| {
+            s.status == Status::Live
+                && s.account
+                    .as_ref()
+                    .is_some_and(|a| a.id.as_str() == "pf-other")
+        })
+    });
+    rig.frames(&mut screen, &mut state, venue, 3);
+    assert!(
+        !state.is_reviewing(),
+        "the review of the old account closed"
+    );
+    assert!(
+        state
+            .notice_text()
+            .is_some_and(|text| text.contains("account changed")),
+        "{:?}",
+        state.notice_text()
+    );
+    assert_eq!(rig.exchange.order_posts(), 0, "nothing was sent");
+
+    // Were anything to try to send the old review, the venue refuses it.
+    let market = MarketRef {
+        source: "coinbase".to_owned(),
+        symbol: "BTC-USD".to_owned(),
+    };
+    let mut task = backend.submit(&market, &state.draft, &reviewed);
+    let answer = task.poll().cloned().expect("refused at once");
+    let error = answer.expect_err("the old review went through");
+    assert!(error.contains("changed"), "{error}");
+    assert_eq!(rig.exchange.order_posts(), 0);
+}
+
 #[test]
 fn a_broker_that_is_not_connected_says_so_instead_of_offering_a_form() {
     let _restore = theme::RestoreDefaultTheme;
@@ -470,16 +535,19 @@ fn an_unreadable_record_of_unconfirmed_orders_stops_new_orders_at_the_sheet() {
     // And the runtime itself refuses, should anything get past the screen.
     let runtime = rig.brokers.runtime(COINBASE).unwrap();
     let error = runtime
-        .submit(degenview_brokers::OrderDraft {
-            product: degenview_brokers::ProductId::new("BTC-USD"),
-            side: Side::Buy,
-            kind: degenview_brokers::OrderKind::Limit {
-                base_size: "0.001".parse().unwrap(),
-                price: "90000.00".parse().unwrap(),
-                tif: degenview_brokers::TimeInForce::GoodTilCancelled,
-                post_only: false,
+        .submit(
+            degenview_brokers::OrderDraft {
+                product: degenview_brokers::ProductId::new("BTC-USD"),
+                side: Side::Buy,
+                kind: degenview_brokers::OrderKind::Limit {
+                    base_size: "0.001".parse().unwrap(),
+                    price: "90000.00".parse().unwrap(),
+                    tif: degenview_brokers::TimeInForce::GoodTilCancelled,
+                    post_only: false,
+                },
             },
-        })
+            crate::host::broker_host::account_of(&runtime),
+        )
         .wait()
         .unwrap_err();
     assert!(error.to_string().contains("No order was sent"), "{error}");

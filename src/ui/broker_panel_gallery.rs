@@ -13,7 +13,7 @@ use degenview_brokers::{
 };
 use eframe::egui::{self, Vec2};
 
-use crate::host::broker_host::{BrokerHost, StoreJournal};
+use crate::host::broker_host::{BrokerHost, StoreJournal, account_of};
 use crate::store::Store;
 use crate::ui::broker_panel::{self, BrokerPanelState, BrokerTab};
 use crate::ui::render_tests::Screen;
@@ -81,15 +81,18 @@ fn live_rig() -> Rig {
     });
     let runtime = rig.host.runtime(ID).unwrap();
     runtime
-        .submit(limit(Side::Buy, "0.002", "89000.00"))
+        .submit(limit(Side::Buy, "0.002", "89000.00"), account_of(&runtime))
         .wait()
         .unwrap();
     runtime
-        .submit(limit(Side::Sell, "0.0015", "93000.00"))
+        .submit(
+            limit(Side::Sell, "0.0015", "93000.00"),
+            account_of(&runtime),
+        )
         .wait()
         .unwrap();
     let third = runtime
-        .submit(limit(Side::Buy, "0.001", "88000.00"))
+        .submit(limit(Side::Buy, "0.001", "88000.00"), account_of(&runtime))
         .wait()
         .unwrap();
     rig.exchange
@@ -508,6 +511,70 @@ fn an_edit_cannot_be_reviewed_before_or_without_the_brokers_preview() {
     run(vec![], &mut state);
     assert!(state.edit_confirming());
     assert_eq!(posts(&rig, "/orders/edit"), 0, "approval is still to come");
+}
+
+/// The change the user approved was worked out for the order as it was. A partial fill that lands
+/// while the dialog is open means those figures describe another order: the review is dropped,
+/// nothing is sent, and the sheet shows the order as it is now.
+#[test]
+fn a_review_of_an_edit_does_not_survive_the_order_changing_under_it() {
+    let _restore = theme::RestoreDefaultTheme;
+    let rig = live_rig();
+    let snapshot = rig.host.snapshot(ID).unwrap();
+    let order = snapshot
+        .working_orders()
+        .find(|v| v.order.side == Side::Sell)
+        .map(|v| v.order.clone())
+        .unwrap();
+    let mut state = BrokerPanelState::default();
+    state.begin_edit(ID, order.clone(), Some("92500.00".parse().unwrap()));
+    let mut screen = Screen::new(Vec2::new(900.0, 700.0));
+    let mut run = |events: Vec<egui::Event>, state: &mut BrokerPanelState| {
+        screen.run(events, |ui| {
+            theme::sync(ui.ctx());
+            egui::Panel::bottom(egui::Id::new("edit-changes"))
+                .exact_size(300.0)
+                .show(ui, |ui| {
+                    draw(ui, state, &rig.host);
+                });
+        })
+    };
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while !state.edit_ready() {
+        assert!(Instant::now() < deadline, "the preview should arrive");
+        run(vec![], &mut state);
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    state.press_edit_review();
+    run(vec![], &mut state);
+    run(vec![], &mut state);
+    assert!(state.edit_confirming(), "the change is shown for approval");
+    assert_eq!(
+        state.edit_filled_size(),
+        Some(degenview_brokers::Decimal::ZERO)
+    );
+
+    // A partial fill arrives while the dialog is open.
+    rig.exchange
+        .change_order(order.id.as_str(), "OPEN", "0.0004", true);
+    wait("the review to be dropped", || {
+        run(vec![], &mut state);
+        !state.edit_confirming()
+    });
+    assert!(state.edit_open(), "the sheet stays, for a new review");
+    assert_eq!(
+        state.edit_filled_size(),
+        Some("0.0004".parse().unwrap()),
+        "it shows the order as it is now"
+    );
+    assert!(
+        state
+            .edit_error_text()
+            .is_some_and(|text| text.contains("order changed")),
+        "{:?}",
+        state.edit_error_text()
+    );
+    assert_eq!(posts(&rig, "/orders/edit"), 0, "nothing was sent");
 }
 
 /// Typing a key and pressing Connect must never stall a frame: the check and the save happen off

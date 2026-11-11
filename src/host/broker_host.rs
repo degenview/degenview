@@ -27,8 +27,9 @@ use degenview_brokers::model::pending::{
 };
 use degenview_brokers::model::reducer::Notice;
 use degenview_brokers::{
-    Broker, BrokerError, BrokerId, BrokerRuntime, BrokerSnapshot, ClientOrderId, Credentials, Env,
-    NoticeSink, Pending, ProductId, Quote, RuntimeConfig, SecretStore, Session, Waker,
+    AccountId, Broker, BrokerError, BrokerId, BrokerRuntime, BrokerSnapshot, ClientOrderId,
+    Credentials, Env, NoticeSink, Pending, ProductId, Quote, RuntimeConfig, SecretStore, Session,
+    Waker,
 };
 
 use crate::model::broker_prefs::{self, AllPrefs, BrokerPrefs};
@@ -82,7 +83,12 @@ impl PendingJournal for StoreJournal {
     fn record(&self, entry: &PendingSubmission) -> Result<(), JournalError> {
         let _gate = self.gate.lock().unwrap_or_else(|e| e.into_inner());
         let mut entries = self.read()?;
-        entries.retain(|e| !(e.broker == entry.broker && e.client_id == entry.client_id));
+        // Keyed by account too: the same client id in two portfolios is two orders.
+        entries.retain(|e| {
+            !(e.broker == entry.broker
+                && e.account == entry.account
+                && e.client_id == entry.client_id)
+        });
         entries.push(entry.clone());
         self.write(&entries)
     }
@@ -90,13 +96,16 @@ impl PendingJournal for StoreJournal {
     fn resolve(
         &self,
         broker: BrokerId,
+        account: &AccountId,
         client_id: &ClientOrderId,
         _outcome: &SubmissionOutcome,
     ) -> Result<(), JournalError> {
         let _gate = self.gate.lock().unwrap_or_else(|e| e.into_inner());
         let mut entries = self.read()?;
         let before = entries.len();
-        entries.retain(|e| !(e.broker == broker && &e.client_id == client_id));
+        entries.retain(|e| {
+            !(e.broker == broker && &e.account == account && &e.client_id == client_id)
+        });
         if entries.len() == before {
             return Ok(());
         }
@@ -110,6 +119,17 @@ impl PendingJournal for StoreJournal {
             .filter(|entry| entry.broker == broker)
             .collect())
     }
+}
+
+/// The account a connected runtime trades in, for tests that place orders through it.
+#[cfg(test)]
+pub(crate) fn account_of(runtime: &BrokerRuntime) -> AccountId {
+    runtime
+        .snapshot()
+        .account
+        .as_ref()
+        .map(|account| account.id.clone())
+        .expect("a connected runtime names its account")
 }
 
 /// Asks the interface for a frame whenever a runtime changes something.
@@ -174,6 +194,20 @@ const QUOTE_WANTED_FOR: Duration = Duration::from_secs(4);
 /// A price older than this is not shown as a price.
 const QUOTE_FRESH_FOR: Duration = Duration::from_secs(10);
 
+/// The running connections, and which connection the user currently wants of each broker.
+///
+/// Starting a connection takes time (a Keychain prompt, the store's lock, the network), and the user
+/// can disconnect or replace the key meanwhile. Every request for a connection takes a number from
+/// `wanted`; a start may publish its runtime only if the number it holds is still the broker's
+/// current one, checked under the same lock that publishes it. Disconnecting changes the number, so
+/// a start that was in flight can never bring back a connection (and a key) that was removed, and of
+/// two keys entered in a row only the newer can end up running.
+#[derive(Default)]
+struct Slots {
+    running: BTreeMap<BrokerId, Arc<BrokerRuntime>>,
+    wanted: BTreeMap<BrokerId, u64>,
+}
+
 /// The best prices of one market at one broker, read for the charts and tickets that show them.
 #[derive(Default)]
 struct QuoteEntry {
@@ -191,7 +225,9 @@ pub struct BrokerHost {
     prefs: Mutex<AllPrefs>,
     env: Env,
     config: fn(RuntimeConfig) -> RuntimeConfig,
-    runtimes: Mutex<BTreeMap<BrokerId, Arc<BrokerRuntime>>>,
+    slots: Mutex<Slots>,
+    /// Numbers the connections the user asks for, so each is told apart from the one before it.
+    epochs: AtomicU64,
     quotes: Mutex<HashMap<(BrokerId, ProductId), QuoteEntry>>,
     waker: Arc<AppWaker>,
     notices: Arc<NoticeQueue>,
@@ -220,7 +256,8 @@ impl BrokerHost {
             prefs: Mutex::new(prefs),
             env,
             config,
-            runtimes: Mutex::new(BTreeMap::new()),
+            slots: Mutex::new(Slots::default()),
+            epochs: AtomicU64::new(1),
             quotes: Mutex::new(HashMap::new()),
             waker: Arc::new(AppWaker::default()),
             notices: Arc::new(NoticeQueue::default()),
@@ -311,7 +348,16 @@ impl BrokerHost {
     pub fn quote(&self, id: BrokerId, product: &ProductId) -> Option<Quote> {
         let quotes = self.quotes.lock().unwrap_or_else(|e| e.into_inner());
         let (quote, at) = quotes.get(&(id, product.clone()))?.quote.as_ref()?;
-        (at.elapsed() < QUOTE_FRESH_FOR).then(|| quote.clone())
+        // Both clocks must agree it is fresh: how long it has sat here, and how old the exchange
+        // says it already was when it arrived. A price delayed on the way is not new.
+        (at.elapsed() < QUOTE_FRESH_FOR && !self.quote_is_old(quote)).then(|| quote.clone())
+    }
+
+    /// Whether the exchange's own time on `quote` is further back than a price may be. A time in
+    /// the future (this computer's clock is behind) is not old: skew must not hide every price.
+    fn quote_is_old(&self, quote: &Quote) -> bool {
+        let age_ms = self.env.clock.now_ms().saturating_sub(quote.time_ms);
+        age_ms > i64::try_from(QUOTE_FRESH_FOR.as_millis()).unwrap_or(i64::MAX)
     }
 
     /// Takes the prices that arrived and asks for the ones wanted, once a frame, from the app.
@@ -324,7 +370,10 @@ impl BrokerHost {
                 && let Some(answer) = pending.poll()
             {
                 entry.pending = None;
-                if let Ok(quote) = answer {
+                // An answer that was already old when it came is dropped, not stamped as new.
+                if let Ok(quote) = answer
+                    && !self.quote_is_old(&quote)
+                {
                     entry.quote = Some((quote, Instant::now()));
                     changed = true;
                 }
@@ -359,12 +408,25 @@ impl BrokerHost {
         degenview_brokers::registry::all()
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, BTreeMap<BrokerId, Arc<BrokerRuntime>>> {
-        self.runtimes.lock().unwrap_or_else(|e| e.into_inner())
+    fn lock(&self) -> std::sync::MutexGuard<'_, Slots> {
+        self.slots.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// The connection the user wants of this broker right now.
+    fn wanted(&self, id: BrokerId) -> u64 {
+        self.lock().wanted.get(&id).copied().unwrap_or(0)
+    }
+
+    /// Makes every connection that is still starting for this broker out of date, and returns the
+    /// number of the next one.
+    fn renew(&self, id: BrokerId) -> u64 {
+        let next = self.epochs.fetch_add(1, Ordering::AcqRel);
+        self.lock().wanted.insert(id, next);
+        next
     }
 
     pub fn runtime(&self, id: BrokerId) -> Option<Arc<BrokerRuntime>> {
-        self.lock().get(&id).cloned()
+        self.lock().running.get(&id).cloned()
     }
 
     /// The latest snapshot of a connected broker.
@@ -376,7 +438,7 @@ impl BrokerHost {
     /// The brokers with a running connection.
     #[allow(dead_code)] // The trading panel lists them next.
     pub fn connected(&self) -> Vec<BrokerId> {
-        self.lock().keys().copied().collect()
+        self.lock().running.keys().copied().collect()
     }
 
     pub fn connection(&self, id: BrokerId) -> Connection {
@@ -435,8 +497,10 @@ impl BrokerHost {
             .secrets
             .save(id, PROFILE, &credentials)
             .map_err(|error| error.0);
+        // Taken before the thread exists: a disconnect that comes first makes this start stale.
+        let epoch = self.renew(id);
         let host = Arc::clone(self);
-        std::thread::spawn(move || host.start(id, credentials));
+        std::thread::spawn(move || host.start(id, epoch, credentials));
         saved
     }
 
@@ -446,10 +510,14 @@ impl BrokerHost {
         if self.runtime(id).is_some() || !self.secrets.is_configured(id, PROFILE) {
             return;
         }
+        // What was wanted when this was asked for. Loading the key may sit on a Keychain prompt for
+        // as long as the user takes; if they disconnect or enter another key meanwhile, this start
+        // is out of date and publishes nothing.
+        let epoch = self.wanted(id);
         let host = Arc::clone(self);
         std::thread::spawn(move || {
             if let Ok(Some(credentials)) = host.secrets.load(id, PROFILE) {
-                host.start(id, credentials);
+                host.start(id, epoch, credentials);
             }
         });
     }
@@ -462,8 +530,9 @@ impl BrokerHost {
         if !takes_none || self.runtime(id).is_some() {
             return;
         }
+        let epoch = self.wanted(id);
         let host = Arc::clone(self);
-        std::thread::spawn(move || host.start(id, Credentials::new()));
+        std::thread::spawn(move || host.start(id, epoch, Credentials::new()));
     }
 
     /// Connects every broker that has saved credentials.
@@ -473,10 +542,14 @@ impl BrokerHost {
         }
     }
 
-    fn start(&self, id: BrokerId, credentials: Credentials) {
+    fn start(&self, id: BrokerId, epoch: u64, credentials: Credentials) {
         let Some(broker) = degenview_brokers::registry::by_id(id) else {
             return;
         };
+        // Out of date before it began: do not even connect with a key that was taken back.
+        if self.wanted(id) != epoch {
+            return;
+        }
         let config = (self.config)(RuntimeConfig::new(
             self.env.clone(),
             Arc::clone(&self.journal),
@@ -487,16 +560,42 @@ impl BrokerHost {
             }),
         ));
         let runtime = Arc::new(BrokerRuntime::start(broker, credentials, config));
-        // Replacing a running connection drops the old one, which stops it without waiting.
-        self.lock().insert(id, runtime);
+        {
+            let mut slots = self.lock();
+            if slots.wanted.get(&id).copied().unwrap_or(0) != epoch {
+                // Disconnected, or another key entered, while this was starting: dropping the
+                // runtime stops it, and nothing is published.
+                return;
+            }
+            // Replacing a running connection drops the old one, which stops it without waiting.
+            slots.running.insert(id, runtime);
+        }
+        self.forget_quotes(id);
         self.changed();
+    }
+
+    /// Prices read through a connection that is gone say nothing about the next one.
+    fn forget_quotes(&self, id: BrokerId) {
+        self.quotes
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .retain(|(broker, _), _| *broker != id);
     }
 
     /// Stops the connection and removes the saved credentials from this Mac. It does **not**
     /// revoke the key at the broker; the user does that there.
     pub fn disconnect(&self, id: BrokerId) -> Result<(), String> {
-        // Dropped, not joined: the interface thread never waits on a network request.
-        self.lock().remove(&id);
+        // Dropped, not joined: the interface thread never waits on a network request. The wanted
+        // connection changes first, under the lock that publishes one, so a start that is still in
+        // flight finds itself out of date instead of putting the connection back.
+        let stopped = {
+            let next = self.epochs.fetch_add(1, Ordering::AcqRel);
+            let mut slots = self.lock();
+            slots.wanted.insert(id, next);
+            slots.running.remove(&id)
+        };
+        drop(stopped);
+        self.forget_quotes(id);
         let removed = self.secrets.delete(id, PROFILE).map_err(|error| error.0);
         self.changed();
         removed

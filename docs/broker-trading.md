@@ -32,9 +32,9 @@ price an order trades at) and [iCloud Sync](icloud-sync.md) (nothing here syncs)
 | Piece | Where |
 | --- | --- |
 | Credentials | Operating system secret store, app-only group `es.nico.degenview.broker`: `service/keychain_broker_secrets.rs` (the crate's `SecretStore`). Read when connecting, never at startup for a user who has none. Never SQLite, never iCloud, never a log. |
-| Unconfirmed orders | Local-only setting `broker.pending` (`host/broker_host.rs::StoreJournal`): written **before** an order is sent, so a restart cannot lose an order that may be live. An unreadable record is an error, never "nothing pending". |
+| Unconfirmed orders | Local-only setting `broker.pending` (`host/broker_host.rs::StoreJournal`): written **before** an order is sent, so a restart cannot lose an order that may be live. An unreadable record is an error, never "nothing pending". Every record carries the **account** (the portfolio) that sent it and is keyed by `(broker, account, client order id)`; only a session on that account shows, looks up, settles, retries or deletes it. Records of another account, and records from before they carried one, are left untouched and counted ("1 unconfirmed order belongs to a different account"); they are checked when that account connects again. |
 | Choices about trading | Local-only setting `broker.prefs`. |
-| Connections | `host/broker_host.rs::BrokerHost`: one per process, shared by every window, **outside the paper-trading lock**. Each connection's runtime runs on its own thread and publishes `Arc` snapshots; the UI never calls the network. |
+| Connections | `host/broker_host.rs::BrokerHost`: one per process, shared by every window, **outside the paper-trading lock**. Each connection's runtime runs on its own thread and publishes `Arc` snapshots; the UI never calls the network. Every request for a connection (a new key, the saved key at startup, Disconnect) takes a number, and a start may publish its runtime only if its number is still the broker's current one, so a Disconnect, or a newer key, always has the last word over a start that was still waiting on the Keychain prompt or the store. |
 | Redraws | `BrokerHost::revision()` is compared once a frame in `DegenViewApp::tick_tab_quotes`, which repaints every tab window. |
 | Settings | Settings ▸ Brokers (`ui/settings_brokers.rs`): connect (the key is checked with reads only, then saved), permissions, Disconnect. |
 
@@ -46,7 +46,10 @@ placed or changed. If it works, the key is saved to the secret store, the connec
 fields are emptied; a pasted private key is never left on screen (the field shows only its length).
 A key that can move funds gets a warning; a key that can only view says so, and orders are not
 offered. **Disconnect** removes the key from this Mac and stops the connection. It does not revoke
-the key at the broker, and orders already placed stay live there; the dialog says both.
+the key at the broker, and orders already placed stay live there; the dialog says both. If the
+operating system refuses to remove the key, Disconnect still stops the connection but says plainly
+that the key is **still stored** and will connect again when the app starts (it is never reported as
+removed). Removing a key that is not stored counts as removed.
 
 ## The panel
 
@@ -72,7 +75,7 @@ It draws `BrokerHost::snapshot()` and nothing else, so every window shows the sa
 
 **New order** opens the ticket for the focused chart's market, if the chart's data source is the
 broker's: `Broker::resolve_market` maps it, and a chart whose data comes from anywhere else is
-refused with a sentence, never traded on a similar market. The ticket (`ui/broker_ticket.rs`, rules in
+refused with a sentence, never traded on a similar market. The order sheet (`ui/trade/order_sheet.rs`, rules in
 `model/broker_ticket.rs`) takes the market's rules and the best bid and ask from the broker, not the
 chart, and says so. It offers only what the market allows. Text is parsed exactly (`0.001` stays
 `0.001`); a value off the market's increment is reported with the nearest valid value and **never
@@ -86,6 +89,15 @@ and offers "Try again". The broker's create endpoint does not require a preview,
 application's rule, not Coinbase's. Orders are also paused while the record of unconfirmed orders
 cannot be read (below).
 
+**An order goes to the account it was reviewed against.** The sheet reads the account and the
+connection once (`TradingBackend::binding`: the portfolio id and the runtime's generation) and uses it for
+the preview, the review and the send. If either changes while the dialog is open (another key, another
+portfolio) the review closes, "The account changed... Nothing was sent", and the venue refuses the old
+review should anything still send it; the crate's runtime checks the account again on its own thread
+before recording or sending anything. The account is shown with the last characters of its id, so two
+"Default portfolio" accounts read differently. A review whose preview has aged past a minute while
+the dialog was open is dropped too.
+
 Review opens a confirmation with the account, market, side, type, size, price and **the broker's
 estimated total, fee and average price and any note it attached**, taken from the preview of exactly
 this order (not from the best prices the app last saw). A **market order, an edit and Cancel all always ask**; confirming a limit or stop-limit order, or a
@@ -98,7 +110,10 @@ once, and shows it as *Sending* / *Unconfirmed* until the broker lists it.
 
 The pencil edits an open limit or stop-limit order's price and size **in place** (the broker's edit).
 "Review change" follows the same rule as the ticket: only a fresh, accepting `edit_preview` of the
-exact change enables it, and the confirmation shows the broker's total and fee. The pencil is
+exact change enables it, and the confirmation shows the broker's total and fee. The sheet always
+shows the order as it is **now** (a fill or an edit made elsewhere while it is open updates it), the
+preview is asked for again when the order changes, and the amend carries the fingerprint of the order
+that was reviewed: if the order changed in between, nothing is sent and the order is read again. The pencil is
 disabled, with the reason, for anything else. Cancel-and-replace is not
 offered anywhere. The confirmation says the order can still fill at its old terms until the change
 is applied and that a new price may lose its place in the queue.
@@ -130,7 +145,10 @@ left alone, and the menu says why instead of trading a similar market. The rules
 
 * **Header SELL / BUY** show the broker's own best bid and ask (read for as long as a card shows them,
   every two seconds, never for a chart nobody is looking at: `BrokerHost::want_quote`), never the
-  chart's last price, which is another feed's. They open the ticket; nothing is placed from them.
+  chart's last price, which is another feed's. A price is shown only if it is fresh both here (ten
+  seconds since it arrived) and by the exchange's own time on it: a price that sat on the way is not
+  stamped as new (a time in the future, from a clock that is behind, is not hidden; a price with no
+  time at all is an error). A clock more than ten seconds ahead of the exchange's hides prices. They open the ticket; nothing is placed from them.
   Greyed, with the reason as the tooltip, when orders are not possible (reconnecting, view-only key,
   market not tradable, replay).
 * **Order lines**: one per working order, on the chart's price scale, tagged `LIVE`. A line is the
@@ -179,8 +197,8 @@ chart; the mock keeps its own state, so nothing leaves the machine.
 
 ## Verification
 
-Automated (all against the mock; none can place a real order): the crate's 130 tests including its
-conformance suite (sixteen scenarios), and the app's tests of the host, the screens (confirm-then-send, edit, cancel,
+Automated (all against the mock; none can place a real order): the crate's tests (including its
+conformance suite and the two-account tests), and the app's tests of the host, the screens (confirm-then-send, edit, cancel,
 drag, Escape, the ✕), the workspace and the menu. Pictures for review are written by
 `DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib gallery_of_live_trading -- --ignored` (and
 `gallery_of_chart_trading`). Not done: the screens have not been driven in a real macOS window, and
@@ -189,6 +207,12 @@ request descriptions for the checklist.
 
 ## Not done yet / not verified
 
+* Two Coinbase portfolios have not been tried together against the real service. The account id is
+  the key's `portfolio_uuid`; a key without one is the account `default`, which two such keys would
+  share. The two-account behaviour is tested against two fake exchanges sharing one journal.
+* A key the operating system would not let go of (a failed Keychain, Credential Manager or Secret
+  Service removal) is reported, not worked around; the real failures could not be provoked here.
+* The AI-key, snapshot-token and webhook stores still remove their secrets best-effort.
 * Nothing here has been run against a real account by the author of the change. The mock
   exchange is built from Coinbase's published specification; see the crate's `docs/coinbase.md` for
   what could not be verified.

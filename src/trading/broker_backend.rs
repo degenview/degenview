@@ -8,9 +8,9 @@ use std::sync::Arc;
 use degenview_brokers::model::orders::CancelOutcome;
 use degenview_brokers::model::reducer::{OrderView, OverlayKind};
 use degenview_brokers::{
-    Broker, BrokerSnapshot, Capabilities, Decimal, LiveFill, MarketRef, OrderId, OrderKind,
-    OrderSize, OrderType, PendingState, PendingView, ProductId, ProductResolution, ProductSpec,
-    Quote, Side, Status, TifKind,
+    AccountId, Broker, BrokerSnapshot, Capabilities, Decimal, LiveFill, MarketRef, OrderId,
+    OrderKind, OrderSize, OrderType, PendingState, PendingView, ProductId, ProductResolution,
+    ProductSpec, Quote, Side, Status, TifKind,
 };
 
 use super::backend::TradingBackend;
@@ -19,7 +19,7 @@ use super::draft::{
     Submitted, TradeDraft, floor_to_increment,
 };
 use super::model::{
-    AccountStats, AccountStrip, Amount, BackendState, BalanceRow, FillRow, Hero, HeroNote,
+    AccountStats, AccountStrip, Amount, BackendState, BalanceRow, Binding, FillRow, Hero, HeroNote,
     MarketAccess, MarketRules, OrderClass, OrderRow, PositionRow, QuoteView, RowStatus, StatCell,
     StatTone, TabKind, TicketCaps, TimeInForce, Tone, Trend, Unavailable, UnavailableKind,
     VenueInfo, VenueKind,
@@ -49,6 +49,21 @@ impl BrokerBackend {
 
     fn snapshot(&self) -> Option<Arc<BrokerSnapshot>> {
         self.host.snapshot(self.id())
+    }
+
+    /// The connection `binding` names, if it is still the one running. The crate's worker checks
+    /// the account again on its own thread: this refuses early and says why.
+    fn runtime_for(
+        &self,
+        binding: &Binding,
+    ) -> Result<Arc<degenview_brokers::BrokerRuntime>, String> {
+        let Some(runtime) = self.host.runtime(self.id()) else {
+            return Err("The broker is not connected.".to_owned());
+        };
+        if binding.account.is_empty() || runtime.generation() != binding.generation {
+            return Err("The connection changed since the order was set up. Nothing was sent. Check the order again.".to_owned());
+        }
+        Ok(runtime)
     }
 
     fn market_of(&self, market: &MarketRef) -> Option<Market> {
@@ -393,13 +408,12 @@ impl TradingBackend for BrokerBackend {
 
     fn account(&self) -> Option<AccountStrip> {
         let snapshot = self.snapshot()?;
-        let label = snapshot
+        let account = snapshot
             .session
             .as_ref()
-            .and_then(|session| session.accounts.first())
-            .map(|account| account.label.clone())?;
+            .and_then(|session| session.accounts.first())?;
         Some(AccountStrip {
-            label,
+            label: account_label(&account.label, account.id.as_str()),
             equity: None,
         })
     }
@@ -697,16 +711,29 @@ impl TradingBackend for BrokerBackend {
         (size >= found.spec.base_min && size > Decimal::ZERO).then_some(size)
     }
 
+    fn binding(&self) -> Binding {
+        self.snapshot()
+            .and_then(|snapshot| {
+                snapshot.account.as_ref().map(|account| Binding {
+                    account: account.id.as_str().to_owned(),
+                    generation: snapshot.generation,
+                })
+            })
+            .unwrap_or_default()
+    }
+
     fn preview(
         &self,
         market: &MarketRef,
         draft: &TradeDraft,
+        binding: &Binding,
     ) -> Task<Result<PreviewResult, String>> {
         let Some(found) = self.market_of(market) else {
             return Task::ready(Err("The market's rules have not been read yet.".to_owned()));
         };
-        let Some(runtime) = self.host.runtime(self.id()) else {
-            return Task::ready(Err("The broker is not connected.".to_owned()));
+        let runtime = match self.runtime_for(binding) {
+            Ok(runtime) => runtime,
+            Err(text) => return Task::ready(Err(text)),
         };
         let order = match ticket_of(draft).build(&found.context()) {
             Ok(order) => order,
@@ -718,7 +745,7 @@ impl TradingBackend for BrokerBackend {
                 return Task::ready(Err(text));
             }
         };
-        let pending = runtime.preview(order);
+        let pending = runtime.preview(order, AccountId::new(binding.account.as_str()));
         Task::new(move || {
             pending.poll().map(|answer| {
                 answer
@@ -735,12 +762,19 @@ impl TradingBackend for BrokerBackend {
         })
     }
 
-    fn submit(&self, market: &MarketRef, draft: &TradeDraft) -> Task<SubmitResult> {
+    fn submit(
+        &self,
+        market: &MarketRef,
+        draft: &TradeDraft,
+        binding: &Binding,
+    ) -> Task<SubmitResult> {
         let Some(found) = self.market_of(market) else {
             return Task::ready(Err("The market's rules have not been read yet.".to_owned()));
         };
-        let Some(runtime) = self.host.runtime(self.id()) else {
-            return Task::ready(Err("The broker is not connected.".to_owned()));
+        // The runtime the order was reviewed against, or none: never "whatever is connected now".
+        let runtime = match self.runtime_for(binding) {
+            Ok(runtime) => runtime,
+            Err(text) => return Task::ready(Err(text)),
         };
         let order = match ticket_of(draft).build(&found.context()) {
             Ok(order) => order,
@@ -752,7 +786,7 @@ impl TradingBackend for BrokerBackend {
                 return Task::ready(Err(text));
             }
         };
-        let pending = runtime.submit(order);
+        let pending = runtime.submit(order, AccountId::new(binding.account.as_str()));
         Task::new(move || {
             pending.poll().map(|answer| {
                 answer
@@ -782,5 +816,24 @@ impl TradingBackend for BrokerBackend {
 
     fn revision(&self) -> u64 {
         self.host.revision()
+    }
+}
+
+/// How an account is named: the venue's label, and for an id long enough to be an opaque uuid its
+/// last characters, so two accounts with the same label (two default portfolios) read differently.
+fn account_label(label: &str, id: &str) -> String {
+    const SHOWN: usize = 6;
+    if id.chars().count() > 12 {
+        let tail: String = id
+            .chars()
+            .rev()
+            .take(SHOWN)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect();
+        format!("{label} · …{tail}")
+    } else {
+        label.to_owned()
     }
 }

@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 
 use degenview_brokers::model::orders::{
     CancelOutcome, CancelResult, EditOutcome, EditPreview, FillFilter, HistoryFilter, OrderChange,
-    Page, PlacedOrder,
+    OrderFingerprint, Page, PlacedOrder,
 };
 use degenview_brokers::{
     BrokerId, BrokerSnapshot, ClientOrderId, Decimal, LiveFill, LiveOrder, OrderId, OrderSize,
@@ -397,6 +397,17 @@ impl BrokerPanelState {
         self.edit.is_some()
     }
 
+    /// The filled size of the order the sheet shows, as it shows it.
+    #[cfg(test)]
+    pub(crate) fn edit_filled_size(&self) -> Option<Decimal> {
+        self.edit.as_ref().map(|e| e.order.filled_size)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn edit_error_text(&self) -> Option<&str> {
+        self.edit.as_ref().and_then(|e| e.error.as_deref())
+    }
+
     #[cfg(test)]
     pub(crate) fn press_edit_review(&mut self) {
         self.force_edit_review = true;
@@ -612,10 +623,25 @@ fn banners(ui: &mut egui::Ui, snapshot: &BrokerSnapshot, actions: &mut Vec<Panel
             if let Some(error) = &snapshot.journal_error {
                 note(ui, &error.to_string(), true);
             }
+            if snapshot.held_elsewhere > 0 {
+                note(ui, &held_elsewhere_text(snapshot.held_elsewhere), false);
+            }
             if let Some(error) = &snapshot.last_error {
                 note(ui, error, true);
             }
         }
+    }
+}
+
+/// Said when the journal holds unconfirmed orders that are not this account's.
+fn held_elsewhere_text(count: usize) -> String {
+    if count == 1 {
+        "1 unconfirmed order belongs to a different account. It is left untouched here and checked when that account is connected."
+            .to_owned()
+    } else {
+        format!(
+            "{count} unconfirmed orders belong to a different account. They are left untouched here and checked when that account is connected."
+        )
     }
 }
 
@@ -673,10 +699,12 @@ fn orders_tab(
     for action in actions {
         match action {
             OrderAction::Check(id) => {
-                if let Some(runtime) = host.runtime(broker_id) {
-                    state
-                        .flights
-                        .push(Flight::Retry(runtime.retry(ClientOrderId(id))));
+                // For the account on screen: a record of another account is not this one's to look up.
+                if let (Some(runtime), Some(account)) = (host.runtime(broker_id), &snapshot.account)
+                {
+                    state.flights.push(Flight::Retry(
+                        runtime.retry(ClientOrderId(id), account.id.clone()),
+                    ));
                     state.say("Looking the order up at the broker…", false);
                 }
             }
@@ -1130,6 +1158,21 @@ fn edit_sheet(
         state.say("The order is no longer open, so it was not edited.", true);
         return;
     }
+    let Some(account) = snapshot.account.as_ref().map(|account| account.id.clone()) else {
+        state.edit = None;
+        state.say(
+            "The broker is not connected, so the order was not edited.",
+            true,
+        );
+        return;
+    };
+    // Every figure below (what changed, the filled size, the old values in the question) is the
+    // order as it is now, not as it was when the sheet opened: a fill or an edit made elsewhere
+    // meanwhile must show, and must not leave a review standing that describes the old order.
+    if let Some(order) = &live {
+        edit.order = order.clone();
+    }
+    let fingerprint = OrderFingerprint::of(&account, &edit.order);
     let change = |edit: &EditState| -> Result<OrderChange, String> {
         let price = rules::parse_decimal(&edit.price_text)
             .map_err(|()| "The price is not a number.".to_owned())?;
@@ -1186,7 +1229,12 @@ fn edit_sheet(
     let valid = typed.is_ok() && problems.is_empty();
     // Preview the exact change once typing pauses.
     let signature = if valid {
-        format!("{:?}", typed.as_ref().ok())
+        // The order's own state and the connection are part of what was asked about.
+        format!(
+            "{:?}|{fingerprint:?}|{}",
+            typed.as_ref().ok(),
+            snapshot.generation
+        )
     } else {
         String::new()
     };
@@ -1272,6 +1320,24 @@ fn edit_sheet(
         }
     }
 
+    // A review stands only while the order is the one it was worked out for, and the answer is
+    // recent: otherwise the sheet goes back to editing, and asks again.
+    if let EditStage::Confirming(_, preview) = &edit.stage {
+        let same_order = preview.base.as_ref() == Some(&fingerprint);
+        let recent = edit
+            .preview_at
+            .is_some_and(|at| at.elapsed() <= rules::PREVIEW_FRESH);
+        if !same_order || !recent {
+            edit.stage = EditStage::Editing;
+            edit.error = Some(if same_order {
+                "The broker's check of this change is out of date. Review it again.".to_owned()
+            } else {
+                "The order changed while you were reviewing it. Nothing was sent. Review it again."
+                    .to_owned()
+            });
+        }
+    }
+
     // The approval.
     if let EditStage::Confirming(change, preview) = &edit.stage {
         let order = &edit.order;
@@ -1286,6 +1352,7 @@ fn edit_sheet(
         dialog_spec.dismiss = "Back";
         dialog_spec.cautious = true;
         let change = *change;
+        let base = preview.base.clone();
         let outcome = dialog::show(ctx, Id::new("broker-edit-confirm"), &dialog_spec, |ui| {
             ui.add_space(12.0);
             let mut line = |name: &str, value: String| {
@@ -1349,7 +1416,15 @@ fn edit_sheet(
             Some(dialog::Outcome::Accepted) => {
                 edit.error = None;
                 let id = edit.order.id.clone();
-                edit.stage = EditStage::Sending(runtime.amend(id, change));
+                match base {
+                    // Sent against the order that was reviewed, which the broker's worker checks
+                    // again before anything leaves.
+                    Some(base) => edit.stage = EditStage::Sending(runtime.amend(id, change, base)),
+                    None => {
+                        edit.error = Some("This change has not been checked.".to_owned());
+                        edit.stage = EditStage::Editing;
+                    }
+                }
             }
             Some(_) => edit.stage = EditStage::Editing,
             None => {}

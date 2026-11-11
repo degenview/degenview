@@ -9,8 +9,8 @@ use degenview_brokers::{Decimal, MarketRef, Side};
 
 use super::draft::{CancelResult, DraftCheck, PreviewResult, SubmitResult, TradeDraft};
 use super::model::{
-    AccountStats, AccountStrip, Amount, BackendState, BalanceRow, FillRow, MarketAccess, OrderRow,
-    PositionRow, QuoteView, TabKind, VenueInfo,
+    AccountStats, AccountStrip, Amount, BackendState, BalanceRow, Binding, FillRow, MarketAccess,
+    OrderRow, PositionRow, QuoteView, TabKind, VenueInfo,
 };
 use super::task::Task;
 
@@ -57,15 +57,27 @@ pub trait TradingBackend: Send + Sync {
     /// when `None`), a whole number of the market's size increments.
     fn max_size(&self, market: &MarketRef, side: Side, price: Option<Decimal>) -> Option<Decimal>;
 
+    /// The account and connection an order made now would go to. Read once, when a preview is
+    /// asked for, and handed back to `preview` and `submit`.
+    fn binding(&self) -> Binding;
+
     /// Asks the venue what the order would do, without placing it. The draft must be complete.
+    /// Refused if `binding` is no longer the account and connection the venue is using.
     fn preview(
         &self,
         market: &MarketRef,
         draft: &TradeDraft,
+        binding: &Binding,
     ) -> Task<Result<PreviewResult, String>>;
 
-    /// Sends the order. The draft must be complete.
-    fn submit(&self, market: &MarketRef, draft: &TradeDraft) -> Task<SubmitResult>;
+    /// Sends the order. The draft must be complete. Refused, with nothing sent, unless `binding` is
+    /// still the account and connection the venue is using: the one the order was reviewed against.
+    fn submit(
+        &self,
+        market: &MarketRef,
+        draft: &TradeDraft,
+        binding: &Binding,
+    ) -> Task<SubmitResult>;
 
     /// Cancels the working order with this id (an [`OrderRow::id`](super::model::OrderRow::id)).
     fn cancel(&self, order_id: &str) -> Task<CancelResult>;

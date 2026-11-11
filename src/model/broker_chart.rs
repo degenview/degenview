@@ -265,8 +265,14 @@ mod tests {
                 },
             );
         }
+        let account = AccountRef {
+            id: AccountId::new("a"),
+            label: "Main".to_owned(),
+            kind: AccountKind::Spot,
+        };
         BrokerSnapshot {
             revision: 1,
+            generation: 1,
             broker: registry::all()[0].descriptor().id,
             status,
             session: Some(Session {
@@ -275,12 +281,10 @@ mod tests {
                     can_trade,
                     can_transfer: false,
                 },
-                accounts: vec![AccountRef {
-                    id: AccountId::new("a"),
-                    label: "Main".to_owned(),
-                    kind: AccountKind::Spot,
-                }],
+                accounts: vec![account.clone()],
             }),
+            account: Some(account),
+            held_elsewhere: 0,
             balances: Vec::new(),
             balances_ms: None,
             orders: Vec::new(),
