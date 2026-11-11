@@ -378,8 +378,10 @@ The Windows exe is a GUI-subsystem build: no console, so a panic used to close t
 shown. `src/crash_report.rs` installs a panic hook first thing in `main`:
 
 - `crash.log` in the data directory (`%APPDATA%\es.nico.degenview`), appended on every panic (message,
-  location, thread, backtrace), capped at 256 KiB.
-- A main-thread panic also shows a message box ("DegenView stopped unexpectedly") naming the file.
+  location, thread, backtrace). The file never passes 256 KiB (an entry that would not fit starts it
+  afresh) and one entry is cut to 64 KiB.
+- A main-thread panic also shows a message box ("DegenView stopped unexpectedly") naming the file,
+  only when the entry was written: a full or unwritable data directory gets the message without a path.
   Worker-thread panics are logged but not announced: the MCP server and the Pine runners catch some
   on purpose.
 - Release builds are stripped, so a backtrace is mostly addresses. The message and location carry it.
