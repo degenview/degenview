@@ -814,13 +814,14 @@ impl ChartWorkspace {
                     };
                     match (venue.broker(), &broker_host) {
                         (Some(id), Some(host)) => {
-                            let stats = crate::host::trading_hub::TradingHub::global()
-                                .and_then(|hub| hub.backend(venue))
-                                .and_then(|backend| backend.stats());
+                            let backend = crate::host::trading_hub::TradingHub::global()
+                                .and_then(|hub| hub.backend(venue));
+                            let stats = backend.as_deref().and_then(|backend| backend.stats());
                             crate::ui::broker::panel::ui(
                                 ui,
                                 &mut self.broker_panel,
                                 host,
+                                backend.as_deref().and_then(|b| b.broker_commands()),
                                 id,
                                 &bar,
                                 stats.as_ref(),

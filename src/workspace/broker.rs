@@ -20,6 +20,8 @@ use crate::model::broker::chart::{ChartTrading, Unavailable, chart_trading};
 use crate::model::broker::ticket::{self as rules, TicketKind};
 use crate::model::chart::context::{LiveFacts, LiveOrderRequest};
 use crate::model::chart::kind::ChartType;
+use crate::trading::backend::TradingBackend;
+use crate::trading::broker_backend::BrokerBackend;
 use crate::trading::model::OrderClass;
 use crate::ui::broker::chart_trading::{BrokerOverlayAction, OrderLine};
 use crate::ui::broker::panel;
@@ -31,6 +33,12 @@ impl ChartWorkspace {
         let id = self.trading_venue.broker()?;
         let broker = degenview_brokers::registry::by_id(id)?;
         Some((id, broker, BrokerHost::global()?))
+    }
+
+    /// The venue backend of the broker this tab trades at.
+    fn broker_backend(&self) -> Option<BrokerBackend> {
+        let (_, broker, host) = self.active_broker()?;
+        Some(BrokerBackend::new(host, broker))
     }
 
     /// A replay's prices are history: no live order may be started, changed or sent from one.
@@ -252,21 +260,23 @@ impl ChartWorkspace {
         for action in actions {
             match action {
                 BrokerOverlayAction::Cancel(order) => {
-                    self.broker_panel.cancel_one(&host, id, order)
+                    let backend = self.broker_backend();
+                    self.broker_panel.cancel_one(
+                        backend.as_ref().and_then(|b| b.broker_commands()),
+                        host.prefs(id).confirm_single_cancel,
+                        order,
+                    );
                 }
                 BrokerOverlayAction::ProposeEdit { id: order, price } => {
-                    self.begin_broker_edit(id, &snapshot, &order, Some(price));
+                    self.begin_broker_edit(&snapshot, &order, Some(price));
                 }
-                BrokerOverlayAction::Open(order) => {
-                    self.begin_broker_edit(id, &snapshot, &order, None)
-                }
+                BrokerOverlayAction::Open(order) => self.begin_broker_edit(&snapshot, &order, None),
             }
         }
     }
 
     fn begin_broker_edit(
         &mut self,
-        broker: BrokerId,
         snapshot: &BrokerSnapshot,
         order: &degenview_brokers::OrderId,
         price: Option<Decimal>,
@@ -276,9 +286,7 @@ impl ChartWorkspace {
             return;
         }
         match snapshot.orders.iter().find(|view| &view.order.id == order) {
-            Some(view) => self
-                .broker_panel
-                .begin_edit(broker, view.order.clone(), price),
+            Some(view) => self.broker_panel.begin_edit(view.order.clone(), price),
             None => self.say("That order is no longer working.", true),
         }
     }
@@ -293,7 +301,14 @@ impl ChartWorkspace {
             return;
         };
         if !self.paper_panel_visible && self.broker_panel.has_dialog() {
-            panel::dialogs_only(ctx, &mut self.broker_panel, &host, id);
+            let backend = self.broker_backend();
+            panel::dialogs_only(
+                ctx,
+                &mut self.broker_panel,
+                &host,
+                backend.as_ref().and_then(|b| b.broker_commands()),
+                id,
+            );
         }
         // The panel shows its own message; with it closed the tab's notice does.
         if !self.paper_panel_visible
