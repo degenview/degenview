@@ -61,6 +61,7 @@ pub struct AlpacaForm {
     loaded: bool,
     pub is_saved: bool,
     pub status: Option<StatusMessage>,
+    test: Option<Receiver<Result<(), String>>>,
     autosave: Autosave,
 }
 
@@ -120,6 +121,46 @@ impl AlpacaForm {
                 StatusMessage::ok(crate::platform::saved_securely())
             }
             Err(error) => StatusMessage::error(format!("Could not save: {}", error.0)),
+        });
+    }
+
+    pub fn is_testing(&self) -> bool {
+        self.test.is_some()
+    }
+
+    /// Asks Alpaca for a bar with the typed keys, off the UI thread; `poll_test` picks up the answer.
+    pub fn start_test(
+        &mut self,
+        test: impl FnOnce(String, String) -> Result<(), String> + Send + 'static,
+    ) {
+        if self.test.is_some() {
+            return;
+        }
+        self.status = None;
+        let (key_id, secret_key) = (self.key_id.clone(), self.secret_key.clone());
+        let (sender, receiver) = std::sync::mpsc::channel();
+        self.test = Some(receiver);
+        std::thread::spawn(move || {
+            let _ = sender.send(test(key_id, secret_key));
+        });
+    }
+
+    /// Takes the connection test's answer when it has arrived.
+    pub fn poll_test(&mut self) {
+        let Some(receiver) = &self.test else {
+            return;
+        };
+        let outcome = match receiver.try_recv() {
+            Ok(outcome) => outcome,
+            Err(TryRecvError::Empty) => return,
+            Err(TryRecvError::Disconnected) => {
+                Err("The connection test stopped unexpectedly.".to_owned())
+            }
+        };
+        self.test = None;
+        self.status = Some(match outcome {
+            Ok(()) => StatusMessage::ok("Connection successful."),
+            Err(message) => StatusMessage::error(message),
         });
     }
 
@@ -429,6 +470,16 @@ pub(crate) fn link(ui: &mut egui::Ui, label: &str, url: &str) {
     }
 }
 
+/// A button that opens `url` in the browser, beside the page's other buttons (Get API Key).
+pub(crate) fn open_button(ui: &mut egui::Ui, label: &str, url: &str) {
+    if kit::sheet_button(ui, label, false, true)
+        .on_hover_text(url)
+        .clicked()
+    {
+        ui.ctx().open_url(egui::OpenUrl::new_tab(url));
+    }
+}
+
 /// A destructive button: the regular button with red text.
 pub(crate) fn destructive_button(ui: &mut egui::Ui, label: &str) -> egui::Response {
     let galley = kit::galley(
@@ -463,6 +514,11 @@ pub(crate) fn destructive_button(ui: &mut egui::Ui, label: &str) -> egui::Respon
 pub fn alpaca_body(ui: &mut egui::Ui, state: &mut ApiKeysState, store: &AlpacaCredentialsStore) {
     let form = &mut state.alpaca;
     form.load(store);
+    form.poll_test();
+    if form.is_testing() {
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_millis(150));
+    }
     let (text, tone) = form.badge();
     status_badge(ui, text, tone);
     ui.add_space(18.0);
@@ -482,10 +538,25 @@ pub fn alpaca_body(ui: &mut egui::Ui, state: &mut ApiKeysState, store: &AlpacaCr
                 );
                 form.autosave.watch(&secret, true);
             });
-            if form.is_saved && destructive_button(ui, "Remove Keys").clicked() {
-                form.remove(store);
-                form.autosave.cancel();
-            }
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 10.0;
+                if form.is_testing() {
+                    ui.add(
+                        egui::Spinner::new()
+                            .size(14.0)
+                            .color(theme::text_secondary()),
+                    );
+                } else if kit::sheet_button(ui, "Test Connection", false, form.can_save()).clicked()
+                {
+                    form.start_test(|key_id, secret| {
+                        crate::service::alpaca_test_connection(&key_id, &secret)
+                    });
+                }
+                if form.is_saved && destructive_button(ui, "Remove Keys").clicked() {
+                    form.remove(store);
+                    form.autosave.cancel();
+                }
+            });
         });
         if let Some(status) = &form.status {
             ui.add_space(8.0);
@@ -551,6 +622,7 @@ pub fn coinmarketcap_body(
                 } else if kit::sheet_button(ui, "Test Connection", false, true).clicked() {
                     form.start_test(crate::service::cmc::test_connection);
                 }
+                open_button(ui, "Get API Key", "https://pro.coinmarketcap.com/signup/");
                 if form.configured && destructive_button(ui, "Remove Key").clicked() {
                     form.remove(store);
                     form.autosave.cancel();
@@ -574,12 +646,6 @@ pub fn coinmarketcap_body(
             "CoinMarketCap works without an API key. Adding one gives DegenView higher API rate limits.",
         ),
         None,
-    );
-    ui.add_space(18.0);
-    link(
-        ui,
-        "Get an API key",
-        "https://pro.coinmarketcap.com/signup/",
     );
 }
 

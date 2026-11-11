@@ -17,6 +17,22 @@ fn credentials() -> Result<(String, String), String> {
     crate::service::keychain_api_keys::alpaca_credentials().ok_or_else(|| MISSING_KEY.to_owned())
 }
 
+/// Settings ▸ Alpaca ▸ Test Connection: one bar of one stock, asked for with the given keys (the
+/// ones typed in the fields, saved or not), which is what stock charts need the keys for.
+pub fn test_connection(key_id: &str, secret_key: &str) -> Result<(), String> {
+    let url = format!("{BARS_URL}/AAPL/bars?timeframe=1Day&limit=1&feed=iex");
+    super::http::get_text(
+        &url,
+        &[
+            ("APCA-API-KEY-ID", key_id.trim()),
+            ("APCA-API-SECRET-KEY", secret_key.trim()),
+        ],
+        super::http::Retry::Never,
+    )
+    .map(|_| ())
+    .map_err(|error| format!("Alpaca error: {error}"))
+}
+
 /// Quarterly and yearly bars don't exist on Alpaca; they fold monthly ones.
 fn monthly_fold(interval: &str) -> Option<i64> {
     match interval {

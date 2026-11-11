@@ -363,7 +363,7 @@ impl Art<'_> {
         );
         self.line(banner.left_center() + vec2(18.0, 3.5), 12.0, ghost());
         let badge = banner.right_top() + vec2(-1.0, 1.0);
-        self.painter.circle_filled(badge, 5.6, kit::RED);
+        self.painter.circle_filled(badge, 5.6, kit::GREEN);
         self.painter
             .circle_stroke(badge, 5.6, Stroke::new(1.5, theme::chrome()));
         self.painter.circle_filled(badge, 1.6, Color32::WHITE);

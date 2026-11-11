@@ -27,7 +27,12 @@ use std::sync::mpsc::{Receiver, TryRecvError, channel};
 /// The largest theme file the page reads (`codec::MAX_FILE_BYTES`).
 const MAX_IMPORT_BYTES: usize = crate::model::editor_theme::codec::MAX_FILE_BYTES;
 const TILE_GAP: f32 = 12.0;
+/// A tile's width when the row has room for them all; otherwise they are sized so the last one
+/// visible is cut off by the edge, which says the row goes on.
+const TILE_WIDTH: f32 = 150.0;
 const TILE_MIN_WIDTH: f32 = 124.0;
+/// The round arrow over each end of a row that goes on.
+const ARROW_SIZE: f32 = 28.0;
 const PREVIEW_HEIGHT: f32 = 66.0;
 const TILE_HEIGHT: f32 = 10.0 + PREVIEW_HEIGHT + 9.0 + 34.0 + 8.0;
 const DIALOG_WIDTH: f32 = 420.0;
@@ -265,41 +270,173 @@ fn overview(ui: &mut Ui, state: &mut PineStudioState, host: &EditorThemeHost, vi
     );
 }
 
+/// The width of a theme tile in a row `width` wide holding `count` of them.
+fn tile_width(width: f32, count: usize) -> f32 {
+    let all = count as f32 * TILE_WIDTH + count.saturating_sub(1) as f32 * TILE_GAP;
+    if all <= width {
+        return TILE_WIDTH;
+    }
+    // Whole tiles that fit, and a part of the next one.
+    let whole = (width / (TILE_WIDTH + TILE_GAP)).floor().max(1.0);
+    ((width - whole * TILE_GAP) / (whole + 0.4)).max(TILE_MIN_WIDTH)
+}
+
+/// The themes as one row of tiles that scrolls sideways. It is made obvious that it does: the
+/// scroll bar stays visible under it, the tile at the edge is cut off, and a round arrow over
+/// each end that has more beyond it moves the row.
 fn theme_tiles(ui: &mut Ui, state: &mut PineStudioState, host: &EditorThemeHost, view: &View) {
     let tiles = tiles(view);
     let width = ui.available_width();
-    let columns = (((width + TILE_GAP) / (TILE_MIN_WIDTH + TILE_GAP)).floor() as usize).max(2);
-    let tile_width = (width - TILE_GAP * (columns - 1) as f32) / columns as f32;
-    let rows = tiles.len().div_ceil(columns);
-    let (area, _) = ui.allocate_exact_size(
-        vec2(
-            width,
-            rows as f32 * TILE_HEIGHT + rows.saturating_sub(1) as f32 * TILE_GAP,
-        ),
-        Sense::hover(),
-    );
+    let tile_width = tile_width(width, tiles.len());
+    let content = tiles.len() as f32 * tile_width + tiles.len().saturating_sub(1) as f32 * TILE_GAP;
+    let reach = (content - width).max(0.0);
+    let row_id = Id::new("editor-theme-row");
     let ids: Vec<Id> = tiles
         .iter()
         .map(|tile| Id::new(("editor-theme-tile", tile.selection.as_text())))
         .collect();
     let mut action = None;
-    for (index, tile) in tiles.iter().enumerate() {
-        let rect = Rect::from_min_size(
-            pos2(
-                area.left() + (index % columns) as f32 * (tile_width + TILE_GAP),
-                area.top() + (index / columns) as f32 * (TILE_HEIGHT + TILE_GAP),
-            ),
-            vec2(tile_width, TILE_HEIGHT),
-        );
-        if let Some(chosen) = draw_tile(ui, rect, tile, tile.selection == view.selected, ids[index])
-        {
-            action = Some(chosen);
-        }
+
+    let mut scroll = egui::ScrollArea::horizontal()
+        .id_salt(row_id)
+        .auto_shrink([false, true]);
+    // An arrow asked for a new place last frame; the first time, the worn theme is brought in view.
+    let target: Option<f32> = ui.data_mut(|data| data.remove_temp(row_id.with("target")));
+    if let Some(x) = target {
+        scroll = scroll.horizontal_scroll_offset(x);
+    } else if ui.data(|data| data.get_temp::<bool>(row_id.with("seen")).is_none()) {
+        ui.data_mut(|data| data.insert_temp(row_id.with("seen"), true));
+        let worn = tiles
+            .iter()
+            .position(|tile| tile.selection == view.selected)
+            .unwrap_or(0);
+        let at = worn as f32 * (tile_width + TILE_GAP) - (width - tile_width) / 2.0;
+        scroll = scroll.horizontal_scroll_offset(at.clamp(0.0, reach));
     }
-    arrow_focus(ui, &ids, columns);
+    let output = ui
+        .scope(|ui| {
+            // A bar that stays, with room of its own under the row, not one that floats in on hover.
+            ui.spacing_mut().scroll = egui::style::ScrollStyle::solid();
+            scroll.show(ui, |ui| {
+                let (area, _) = ui.allocate_exact_size(vec2(content, TILE_HEIGHT), Sense::hover());
+                for (index, tile) in tiles.iter().enumerate() {
+                    let rect = Rect::from_min_size(
+                        pos2(
+                            area.left() + index as f32 * (tile_width + TILE_GAP),
+                            area.top(),
+                        ),
+                        vec2(tile_width, TILE_HEIGHT),
+                    );
+                    if let Some(chosen) =
+                        draw_tile(ui, rect, tile, tile.selection == view.selected, ids[index])
+                    {
+                        action = Some(chosen);
+                    }
+                }
+            })
+        })
+        .inner;
+    let offset = output.state.offset.x;
+    let viewport = output.inner_rect;
+    let step = (tile_width + TILE_GAP) * 2.0;
+    let mut go = None;
+    if offset > 1.0 {
+        go = row_arrow(ui, viewport, false, row_id).then(|| (offset - step).max(0.0));
+    }
+    if offset < reach - 1.0 {
+        let right = row_arrow(ui, viewport, true, row_id).then(|| (offset + step).min(reach));
+        go = go.or(right);
+    }
+    if let Some(x) = go {
+        ui.data_mut(|data| data.insert_temp(row_id.with("target"), x));
+        ui.ctx().request_repaint();
+    }
+    // One row: left and right move between tiles, up and down have nowhere to go.
+    arrow_focus(ui, &ids, ids.len());
     if let Some(action) = action {
         apply(action, state, host, view);
     }
+}
+
+/// A fade and a round arrow over one end of the row; whether it was clicked.
+fn row_arrow(ui: &mut Ui, viewport: Rect, right: bool, row_id: Id) -> bool {
+    let fade_width = ARROW_SIZE + 24.0;
+    let edge = if right {
+        viewport.right()
+    } else {
+        viewport.left()
+    };
+    let fade = Rect::from_x_y_ranges(
+        if right {
+            edge - fade_width..=edge
+        } else {
+            edge..=edge + fade_width
+        },
+        viewport.top()..=viewport.top() + TILE_HEIGHT,
+    );
+    let solid = kit::window();
+    let clear = solid.gamma_multiply(0.0);
+    let (near, far) = if right {
+        (clear, solid)
+    } else {
+        (solid, clear)
+    };
+    let mut mesh = egui::Mesh::default();
+    let (a, b, c, d) = (
+        fade.left_top(),
+        fade.right_top(),
+        fade.right_bottom(),
+        fade.left_bottom(),
+    );
+    for (point, color) in [(a, near), (b, far), (c, far), (d, near)] {
+        mesh.colored_vertex(point, color);
+    }
+    mesh.add_triangle(0, 1, 2);
+    mesh.add_triangle(0, 2, 3);
+    ui.painter().add(mesh);
+
+    let centre = pos2(
+        if right {
+            edge - ARROW_SIZE / 2.0 - 4.0
+        } else {
+            edge + ARROW_SIZE / 2.0 + 4.0
+        },
+        viewport.top() + TILE_HEIGHT / 2.0,
+    );
+    let rect = Rect::from_center_size(centre, Vec2::splat(ARROW_SIZE));
+    let response = ui
+        .interact(rect, row_id.with(("arrow", right)), Sense::click())
+        .on_hover_cursor(egui::CursorIcon::PointingHand);
+    let response = crate::ui::accessibility::label(
+        response,
+        if right {
+            "Show more themes"
+        } else {
+            "Show earlier themes"
+        },
+    );
+    let painter = ui.painter();
+    painter.circle_filled(
+        centre,
+        ARROW_SIZE / 2.0,
+        solid.blend(theme::card_fill(response.hovered())),
+    );
+    painter.circle_stroke(
+        centre,
+        ARROW_SIZE / 2.0,
+        Stroke::new(1.0, theme::card_border(response.hovered())),
+    );
+    icons::paint(
+        painter,
+        Rect::from_center_size(centre, vec2(10.0, 12.0)),
+        if right {
+            Icon::ChevronRight
+        } else {
+            Icon::ChevronLeft
+        },
+        theme::text_primary(),
+    );
+    response.clicked()
 }
 
 /// Moves the focus between tiles with the arrow keys, as radio buttons do.
@@ -412,6 +549,10 @@ fn draw_tile(ui: &mut Ui, rect: Rect, tile: &Tile, selected: bool, id: Id) -> Op
         format!("{} editor theme", tile.name),
     );
     let focused = response.has_focus();
+    if response.gained_focus() {
+        // Arrow keys can reach a tile that is scrolled out of sight.
+        response.scroll_to_me(None);
+    }
     if focused {
         // The arrows move between tiles (see `arrow_focus`), not to whatever egui finds nearest.
         ui.memory_mut(|memory| {

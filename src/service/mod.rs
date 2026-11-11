@@ -1,5 +1,6 @@
 mod alpaca;
 pub use alpaca::MISSING_KEY as ALPACA_MISSING_KEY;
+pub use alpaca::test_connection as alpaca_test_connection;
 pub mod asset_auto_mapper;
 pub mod asset_host;
 pub mod background_service;

@@ -11,7 +11,9 @@ use crate::service::llm::{HttpProvider, LlmError, LlmProvider, ProviderKind, val
 use crate::ui::alert_center::Tone;
 use crate::ui::error_notice::{self, ErrorEvent, ErrorNotice};
 use crate::ui::icons::Icon;
-use crate::ui::settings_api_keys::{Autosave, StatusMessage, destructive_button, field, link};
+use crate::ui::settings_api_keys::{
+    Autosave, StatusMessage, destructive_button, field, open_button,
+};
 use crate::ui::settings_window::{card, section, status_badge, status_message};
 use crate::ui::{kit, theme};
 use eframe::egui;
@@ -218,14 +220,10 @@ impl AiSettingsState {
 
 fn key_page(kind: ProviderKind) -> Option<(&'static str, &'static str)> {
     match kind {
-        ProviderKind::OpenAi => Some((
-            "Get an OpenAI API key",
-            "https://platform.openai.com/api-keys",
-        )),
-        ProviderKind::Anthropic => Some((
-            "Get an Anthropic API key",
-            "https://console.anthropic.com/settings/keys",
-        )),
+        ProviderKind::OpenAi => Some(("Get API Key", "https://platform.openai.com/api-keys")),
+        ProviderKind::Anthropic => {
+            Some(("Get API Key", "https://console.anthropic.com/settings/keys"))
+        }
         ProviderKind::Compatible => None,
     }
 }
@@ -318,6 +316,9 @@ pub fn body(
                     let provider = state.provider_for_test(store, &|name| std::env::var(name).ok());
                     state.start_test(provider);
                 }
+                if let Some((label, url)) = key_page(state.kind()) {
+                    open_button(ui, label, url);
+                }
                 if store.is_configured(state.kind())
                     && destructive_button(ui, "Remove Key").clicked()
                 {
@@ -368,10 +369,6 @@ pub fn body(
             }
         });
     });
-    if let Some((label, url)) = key_page(state.kind()) {
-        ui.add_space(18.0);
-        link(ui, label, url);
-    }
 }
 
 /// Whether an error has more to say than one line: it also gets a card in the page,

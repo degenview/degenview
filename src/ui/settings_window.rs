@@ -97,9 +97,9 @@ impl SettingsSection {
             Self::Brokers => Color32::from_rgb(255, 112, 67),
             Self::CoinMarketCap => Color32::from_rgb(10, 132, 255),
             Self::Ai => Color32::from_rgb(255, 214, 10),
-            Self::Notifications => Color32::from_rgb(255, 69, 58),
+            Self::Notifications => Color32::from_rgb(48, 209, 88),
             Self::Webhooks => Color32::from_rgb(48, 176, 199),
-            Self::Snapshots => Color32::from_rgb(255, 55, 95),
+            Self::Snapshots => Color32::from_rgb(76, 201, 98),
             Self::Storage => Color32::from_rgb(52, 199, 89),
             Self::Mcp => Color32::from_rgb(191, 90, 242),
             Self::Sync => Color32::from_rgb(64, 156, 255),
@@ -935,6 +935,60 @@ mod tests {
             );
             if gallery_dir().is_some() {
                 screen.save(&format!("settings-ai-{name}"), last.expect("a frame"));
+            }
+        }
+    }
+
+    /// The Appearance page (theme and tab tiles) and the headers of Notifications and Snapshots,
+    /// drawn in both themes; with `DEGENVIEW_GALLERY_DIR` set they are written out to look at.
+    #[test]
+    fn the_appearance_page_and_the_green_headers_draw_in_both_themes() {
+        use crate::ui::render_tests::{Screen, gallery_dir};
+        use crate::ui::theme::AppTheme;
+        let _theme = crate::ui::theme::RestoreDefaultTheme;
+        for (name, app_theme) in [("dark", AppTheme::Dark), ("light", AppTheme::Light)] {
+            let mut screen = Screen::new(WINDOW_SIZE - Vec2::new(SIDEBAR_WIDTH, 0.0));
+            theme::apply(&screen.ctx, app_theme);
+            let mut last = None;
+            for _ in 0..3 {
+                last = Some(screen.run(Vec::new(), |ui| {
+                    let mut page = ui.new_child(egui::UiBuilder::new().max_rect(ui.max_rect()));
+                    page_shell(
+                        &mut page,
+                        SettingsSection::Appearance,
+                        "Choose how DegenView looks.",
+                        |ui| {
+                            crate::ui::settings_appearance::body(ui, theme::choice());
+                            ui.add_space(22.0);
+                            crate::ui::settings_appearance::tabs(
+                                ui,
+                                crate::model::tab_title::TabTitleStyle::SymbolOnly,
+                            );
+                        },
+                    );
+                }));
+            }
+            if gallery_dir().is_some() {
+                screen.save(
+                    &format!("settings-appearance-{name}"),
+                    last.expect("a frame"),
+                );
+            }
+            for section in [SettingsSection::Notifications, SettingsSection::Snapshots] {
+                let mut screen = Screen::new(Vec2::new(420.0, 120.0));
+                theme::apply(&screen.ctx, app_theme);
+                let mut last = None;
+                for _ in 0..3 {
+                    last = Some(screen.run(Vec::new(), |ui| {
+                        page_header(ui, section, "How alerts are delivered.");
+                    }));
+                }
+                if gallery_dir().is_some() {
+                    screen.save(
+                        &format!("settings-header-{}-{name}", section.key()),
+                        last.expect("a frame"),
+                    );
+                }
             }
         }
     }
