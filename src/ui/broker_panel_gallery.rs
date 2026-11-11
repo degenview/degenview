@@ -375,23 +375,33 @@ fn gallery_of_live_trading() {
             screen.save(&format!("live-panel-{name}-{suffix}"), output);
         }
 
-        let mut page_state = settings_brokers::BrokersState::default();
-        let mut page = Screen::new(Vec2::new(620.0, 980.0));
-        page.ctx.set_theme(theme_pref);
-        let output = frames(&mut page, 3, |ui| {
-            egui::CentralPanel::default().show(ui, |ui| {
-                settings_brokers::body(ui, &mut page_state, Some(rig.host.clone()));
-            });
-        });
-        page.save(&format!("live-settings-connected-{suffix}"), output);
         let idle = self::rig();
-        let mut idle_state = settings_brokers::BrokersState::default();
-        let output = frames(&mut page, 3, |ui| {
-            egui::CentralPanel::default().show(ui, |ui| {
-                settings_brokers::body(ui, &mut idle_state, Some(idle.host.clone()));
+        for (name, width, height, connected, open) in [
+            ("connected", 620.0, 980.0, true, true),
+            ("idle", 620.0, 980.0, false, true),
+            ("folded", 620.0, 300.0, true, false),
+            ("narrow", 300.0, 1500.0, true, true),
+            ("narrow-idle", 300.0, 1500.0, false, true),
+        ] {
+            let host = if connected {
+                rig.host.clone()
+            } else {
+                idle.host.clone()
+            };
+            let mut page_state = settings_brokers::BrokersState::default();
+            if open {
+                page_state.open_for_test("coinbase");
+                page_state.open_for_test("coinbase-sandbox");
+            }
+            let mut page = Screen::new(Vec2::new(width, height));
+            page.ctx.set_theme(theme_pref);
+            let output = frames(&mut page, 3, |ui| {
+                egui::CentralPanel::default().show(ui, |ui| {
+                    settings_brokers::body(ui, &mut page_state, Some(host.clone()));
+                });
             });
-        });
-        page.save(&format!("live-settings-idle-{suffix}"), output);
+            page.save(&format!("live-settings-{name}-{suffix}"), output);
+        }
     }
 
     // The record of unconfirmed orders cannot be read: the panel says so and orders are paused.
@@ -551,6 +561,7 @@ fn typing_a_base64_secret_never_stalls_a_frame() {
     let label = broker.descriptor().credential_fields[1].label;
     let secret = "M".repeat(86) + "==";
     let mut state = settings_brokers::BrokersState::default();
+    state.open_for_test("coinbase");
     let mut screen = Screen::new(Vec2::new(600.0, 900.0));
     let ctx = screen.ctx.clone();
     let slowest = std::cell::Cell::new(Duration::ZERO);
@@ -588,6 +599,7 @@ fn typing_a_base64_secret_never_stalls_a_frame() {
     );
     // And all at once.
     let mut state = settings_brokers::BrokersState::default();
+    state.open_for_test("coinbase");
     step(vec![], &mut state);
     ctx.memory_mut(|m| m.request_focus(id));
     step(vec![egui::Event::Paste(secret.clone())], &mut state);

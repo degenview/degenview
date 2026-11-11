@@ -19,19 +19,21 @@ use degenview_brokers::{
     Broker, BrokerError, BrokerSnapshot, Credentials, Descriptor, FieldKind, Permissions, Session,
     Status,
 };
-use eframe::egui;
+use eframe::egui::{self, vec2};
 
 use crate::host::broker_host::{BrokerHost, Connection};
 use crate::ui::alert_center::Tone;
 use crate::ui::icons::Icon;
 use crate::ui::settings_api_keys::{StatusMessage, destructive_button, field};
-use crate::ui::settings_window::{card, section, status_badge};
+use crate::ui::settings_window::{divider, status_message};
 use crate::ui::{kit, theme};
 
 /// What the Brokers page remembers between frames.
 #[derive(Default)]
 pub struct BrokersState {
     forms: HashMap<&'static str, BrokerForm>,
+    /// Which broker cards are unfolded; none until the user folds one either way.
+    open: HashMap<&'static str, Option<bool>>,
 }
 
 #[derive(Default)]
@@ -144,6 +146,53 @@ pub const DISCONNECT_MESSAGE: &str = "This removes the key from this Mac and sto
 
 // ---- View ----------------------------------------------------------------------------------------
 
+/// The height of a card's header row.
+const HEADER_HEIGHT: f32 = 36.0;
+/// The height of one row of a grouped list.
+const ROW_HEIGHT: f32 = 34.0;
+/// Under this much room beside the title, the header shows the state as a dot instead of a badge.
+const COMPACT_ROOM: f32 = 240.0;
+
+/// The line under a broker's name in its header: the account and what the key may do while it is
+/// connected, otherwise what there is to do next.
+pub fn card_summary(descriptor: &Descriptor, connection: &Connection) -> String {
+    match connection {
+        Connection::NotConfigured if !descriptor.real_money => {
+            "Test environment, no real money".to_owned()
+        }
+        Connection::NotConfigured => "Add an API key to trade".to_owned(),
+        Connection::Saved => "Connecting with the saved key…".to_owned(),
+        Connection::Running(snapshot) => match &snapshot.status {
+            Status::Live => {
+                let mut parts = Vec::new();
+                if let Some(session) = &snapshot.session {
+                    if let Some(account) = session.accounts.first() {
+                        parts.push(account.label.to_string());
+                    }
+                    parts.push(
+                        if session.permissions.can_trade {
+                            "Can place orders"
+                        } else {
+                            "View only"
+                        }
+                        .to_owned(),
+                    );
+                }
+                if parts.is_empty() {
+                    "Ready".to_owned()
+                } else {
+                    parts.join(" · ")
+                }
+            }
+            Status::Connecting => "Connecting…".to_owned(),
+            Status::Syncing => "Reading your account…".to_owned(),
+            Status::Reconnecting { .. } => "The connection dropped, trying again".to_owned(),
+            Status::Failed(_) => "Check the key, then try again".to_owned(),
+            Status::Stopped => "Disconnected".to_owned(),
+        },
+    }
+}
+
 pub fn body(ui: &mut egui::Ui, state: &mut BrokersState, host: Option<std::sync::Arc<BrokerHost>>) {
     let Some(host) = host else {
         kit::notice_card(
@@ -159,23 +208,35 @@ pub fn body(ui: &mut egui::Ui, state: &mut BrokersState, host: Option<std::sync:
     for broker in host.brokers() {
         let descriptor = broker.descriptor();
         let form = state.forms.entry(descriptor.id.as_str()).or_default();
-        broker_card(ui, &host, broker, form);
-        ui.add_space(8.0);
+        let open = state.open.entry(descriptor.id.as_str()).or_default();
+        broker_card(ui, &host, broker, form, open);
+        ui.add_space(10.0);
     }
-    ui.add_space(6.0);
-    ui.label(kit::text(
-        "Credentials are stored in your system's secure storage and never leave this Mac. They are not synced, and no script, alert or other program can use them to trade.",
-        kit::size::CAPTION + 0.5,
-        kit::REGULAR,
-        theme::text_secondary(),
-    ));
+    ui.add_space(4.0);
+    ui.horizontal_top(|ui| {
+        ui.spacing_mut().item_spacing.x = 8.0;
+        ui.add_space(2.0);
+        crate::ui::icons::inline(ui, Icon::LockFill, 12.0, theme::text_tertiary());
+        ui.add(
+            egui::Label::new(kit::text(
+                "Credentials are stored in your system's secure storage and never leave this Mac. They are not synced, and no script, alert or other program can use them to trade.",
+                kit::size::CAPTION + 0.5,
+                kit::REGULAR,
+                theme::text_secondary(),
+            ))
+            .wrap(),
+        );
+    });
 }
 
+/// One broker: a header that folds the rest. A broker with a problem starts unfolded, the others
+/// folded, until the user says otherwise.
 fn broker_card(
     ui: &mut egui::Ui,
     host: &std::sync::Arc<BrokerHost>,
     broker: &'static dyn Broker,
     form: &mut BrokerForm,
+    open: &mut Option<bool>,
 ) {
     let descriptor = broker.descriptor();
     let id = descriptor.id;
@@ -185,63 +246,45 @@ fn broker_card(
         ui.ctx()
             .request_repaint_after(std::time::Duration::from_millis(150));
     }
-    section(ui, descriptor.display_name, None, |ui| {
-        card(ui, |ui| {
-            ui.vertical(|ui| {
-                let (text, tone) = connection_badge(&connection);
-                status_badge(ui, &text, tone);
-                let snapshot = match &connection {
-                    Connection::Running(snapshot) => Some(snapshot.clone()),
-                    _ => None,
-                };
-                if let Some(detail) = snapshot.as_deref().and_then(status_detail) {
-                    ui.add_space(8.0);
-                    muted(ui, &detail);
-                }
-                let failed = snapshot
-                    .as_ref()
-                    .is_some_and(|s| matches!(s.status, Status::Failed(_)));
-                let connected = snapshot.is_some() && !failed;
-                if connected {
-                    if let Some(snapshot) = &snapshot {
-                        connected_details(ui, snapshot, form.checked);
-                    }
-                    ui.add_space(12.0);
-                    trading_choices(ui, host, id);
-                    ui.add_space(12.0);
-                    if destructive_button(ui, "Disconnect").clicked() {
-                        form.confirming_disconnect = true;
-                    }
-                } else {
-                    ui.add_space(12.0);
-                    connect_form(ui, host, broker, form);
-                    if matches!(connection, Connection::Saved | Connection::Running(_)) {
-                        ui.add_space(10.0);
-                        if destructive_button(ui, "Remove saved key").clicked() {
-                            form.confirming_disconnect = true;
-                        }
-                    }
-                }
-                if let Some(status) = &form.status {
-                    ui.add_space(10.0);
-                    let color = if status.is_error {
-                        kit::RED
-                    } else {
-                        kit::GREEN
-                    };
-                    ui.add(
-                        egui::Label::new(kit::text(
-                            &status.text,
-                            kit::size::CAPTION + 0.5,
-                            kit::REGULAR,
-                            color,
-                        ))
-                        .wrap(),
-                    );
-                }
-            });
-        });
-    });
+    let snapshot = match &connection {
+        Connection::Running(snapshot) => Some(snapshot.clone()),
+        _ => None,
+    };
+    let failed = snapshot
+        .as_ref()
+        .is_some_and(|s| matches!(s.status, Status::Failed(_)));
+    let is_open = open.unwrap_or(failed);
+
+    let width = ui.available_width();
+    let mut prepared = kit::card_frame(false).begin(ui);
+    let inner = &mut prepared.content_ui;
+    inner.set_width(width - 28.0 - 2.0);
+    let head = header(inner, descriptor, &connection, is_open);
+    if head.clicked() {
+        *open = Some(!is_open);
+    }
+    if is_open {
+        inner.add_space(12.0);
+        divider(inner);
+        inner.add_space(14.0);
+        inner.spacing_mut().item_spacing.y = 10.0;
+        if let Some(detail) = snapshot.as_deref().and_then(status_detail) {
+            let (title, _) = connection_badge(&connection);
+            let tint = if failed { kit::RED } else { kit::ORANGE };
+            kit::notice_card(inner, Icon::TriangleFill, tint, &title, Some(&detail), None);
+        }
+        match (&snapshot, failed) {
+            (Some(snapshot), false) => connected_body(inner, host, id, snapshot, form),
+            _ => setup_body(inner, host, broker, &connection, form),
+        }
+        if let Some(status) = &form.status {
+            status_message(inner, &status.text, status.is_error);
+        }
+    }
+    prepared.frame = kit::card_frame(head.hovered());
+    let response = prepared.end(ui);
+    kit::paint_card_highlight(ui, response.rect);
+
     if form.confirming_disconnect {
         let dialog_id = egui::Id::new(("broker-disconnect", id.as_str()));
         match kit::confirm(
@@ -271,53 +314,181 @@ fn broker_card(
     }
 }
 
-fn connected_details(ui: &mut egui::Ui, snapshot: &BrokerSnapshot, checked: Option<Permissions>) {
+/// The row that stays when the card is folded: the broker, how it is doing, and the chevron.
+fn header(
+    ui: &mut egui::Ui,
+    descriptor: &Descriptor,
+    connection: &Connection,
+    open: bool,
+) -> egui::Response {
+    let (rect, response) = ui.allocate_exact_size(
+        vec2(ui.available_width(), HEADER_HEIGHT),
+        egui::Sense::click(),
+    );
+    let response = crate::ui::accessibility::label(
+        response,
+        format!(
+            "{}, {}",
+            descriptor.display_name,
+            if open { "expanded" } else { "collapsed" }
+        ),
+    )
+    .on_hover_cursor(egui::CursorIcon::PointingHand);
+
+    let tile = egui::Rect::from_min_size(
+        egui::pos2(rect.left(), rect.center().y - 15.0),
+        vec2(30.0, 30.0),
+    );
+    kit::paint_card_badge(ui, tile, Icon::ArrowLeftRight);
+    let chevron = egui::Rect::from_center_size(
+        egui::pos2(rect.right() - 8.0, rect.center().y),
+        vec2(16.0, 16.0),
+    );
+    crate::ui::icons::paint(
+        ui.painter(),
+        chevron,
+        if open {
+            Icon::ChevronDown
+        } else {
+            Icon::ChevronRight
+        },
+        theme::text_secondary(),
+    );
+
+    let left = tile.right() + 12.0;
+    let (label, tone) = connection_badge(connection);
+    let right = chevron.left() - 10.0;
+    // A narrow page gives the words the room and leaves the state to a dot.
+    let compact = right - left < COMPACT_ROOM;
+    let state_left = if compact {
+        let dot = egui::pos2(right - 4.0, rect.center().y);
+        ui.painter().circle_filled(dot, 4.0, tone.dot());
+        right - 8.0
+    } else {
+        kit::paint_status_badge(ui, right, rect.center().y, &label, tone).left()
+    };
+    let room = state_left - 12.0 - left;
+    let name = fitted(
+        ui,
+        descriptor.display_name,
+        kit::size::HEADLINE,
+        kit::SEMIBOLD,
+        theme::text_primary(),
+        room,
+    );
+    let summary = fitted(
+        ui,
+        &card_summary(descriptor, connection),
+        kit::size::SUBHEADLINE,
+        kit::REGULAR,
+        theme::text_secondary(),
+        room,
+    );
+    let top = rect.center().y - (name.size().y + 2.0 + summary.size().y) / 2.0;
+    let name_height = name.size().y;
+    ui.painter()
+        .galley(egui::pos2(left, top), name, theme::text_primary());
+    ui.painter().galley(
+        egui::pos2(left, top + name_height + 2.0),
+        summary,
+        theme::text_secondary(),
+    );
+    response
+}
+
+/// `text` as one line no wider than `max`, cut with an ellipsis where it does not fit.
+fn fitted(
+    ui: &egui::Ui,
+    text: &str,
+    size: f32,
+    weight: f32,
+    color: egui::Color32,
+    max: f32,
+) -> std::sync::Arc<egui::Galley> {
+    let whole = kit::galley(ui, text, size, weight, color, f32::INFINITY);
+    if whole.size().x <= max {
+        return whole;
+    }
+    let chars: Vec<char> = text.chars().collect();
+    let cut = |count: usize| {
+        let mut shown: String = chars[..count].iter().collect();
+        shown = shown.trim_end().to_owned();
+        shown.push('…');
+        shown
+    };
+    let (mut low, mut high) = (0, chars.len());
+    while low < high {
+        let middle = (low + high).div_ceil(2);
+        if kit::galley(ui, &cut(middle), size, weight, color, f32::INFINITY)
+            .size()
+            .x
+            <= max
+        {
+            low = middle;
+        } else {
+            high = middle - 1;
+        }
+    }
+    kit::galley(ui, &cut(low), size, weight, color, f32::INFINITY)
+}
+
+// ---- A connected broker --------------------------------------------------------------------------
+
+fn connected_body(
+    ui: &mut egui::Ui,
+    host: &std::sync::Arc<BrokerHost>,
+    id: degenview_brokers::BrokerId,
+    snapshot: &BrokerSnapshot,
+    form: &mut BrokerForm,
+) {
     let permissions = snapshot
         .session
         .as_ref()
         .map(|session| session.permissions)
-        .or(checked);
-    if let Some(session) = &snapshot.session {
-        for account in &session.accounts {
-            ui.add_space(8.0);
-            muted(ui, &format!("Account: {}", account.label));
+        .or(form.checked);
+    titled_group(ui, "Access", |ui| {
+        let mut first = true;
+        if let Some(session) = &snapshot.session {
+            for account in &session.accounts {
+                first = false;
+                value_row(ui, "Account", &account.label, theme::text_secondary(), None);
+            }
         }
-    }
-    if let Some(permissions) = permissions {
-        ui.add_space(10.0);
-        for row in permission_rows(&permissions) {
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 8.0;
-                let (icon, color) = match (row.granted, row.warn) {
-                    (true, true) => (Icon::TriangleFill, kit::ORANGE),
-                    (true, false) => (Icon::CheckCircleFill, kit::GREEN),
-                    (false, _) => (Icon::XmarkCircleFill, theme::text_tertiary()),
+        if let Some(permissions) = permissions {
+            for row in permission_rows(&permissions) {
+                if !first {
+                    divider(ui);
+                }
+                first = false;
+                let (icon, color, word) = match (row.granted, row.warn) {
+                    (true, true) => (Some(Icon::TriangleFill), kit::ORANGE, "Allowed"),
+                    (true, false) => (Some(Icon::CheckCircleFill), kit::GREEN, "Allowed"),
+                    (false, _) => (None, theme::text_tertiary(), "Not allowed"),
                 };
-                crate::ui::icons::inline(ui, icon, 13.0, color);
-                ui.label(kit::text(
-                    row.label,
-                    kit::size::BODY,
-                    kit::REGULAR,
-                    if row.granted {
-                        theme::text_primary()
-                    } else {
-                        theme::text_tertiary()
-                    },
-                ));
-            });
+                value_row(ui, row.label, word, color, icon);
+            }
         }
-        if let Some(advice) = permission_advice(&permissions) {
-            ui.add_space(10.0);
-            kit::notice_card(
-                ui,
-                Icon::TriangleFill,
-                kit::ORANGE,
-                "About this key",
-                Some(advice),
-                None,
-            );
-        }
+    });
+    if let Some(advice) = permissions.as_ref().and_then(permission_advice) {
+        kit::notice_card(
+            ui,
+            Icon::TriangleFill,
+            kit::ORANGE,
+            "About this key",
+            Some(advice),
+            None,
+        );
     }
+    trading_choices(ui, host, id);
+    ui.add_space(2.0);
+    ui.horizontal(|ui| {
+        ui.set_min_height(28.0);
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if destructive_button(ui, "Disconnect").clicked() {
+                form.confirming_disconnect = true;
+            }
+        });
+    });
 }
 
 /// How the user trades at this broker. Saved to this Mac only; the questions that guard real money
@@ -329,39 +500,33 @@ fn trading_choices(
 ) {
     let mut prefs = host.prefs(id);
     let before = prefs.clone();
-    ui.label(kit::text(
-        "Trading",
-        kit::size::SUBHEADLINE + 1.0,
-        kit::SEMIBOLD,
-        theme::text_primary(),
-    ));
-    ui.add_space(6.0);
-    pref_row(
-        ui,
-        "Ask before sending a limit or stop-limit order",
-        &mut prefs.confirm_resting_orders,
-    );
-    pref_row(
-        ui,
-        "Ask before cancelling a single order",
-        &mut prefs.confirm_single_cancel,
-    );
-    pref_row(
-        ui,
-        "Tell me when orders are placed, fill, cancel or are rejected",
-        &mut prefs.notify,
-    );
-    pref_row(
-        ui,
-        "Show working orders on charts",
-        &mut prefs.show_on_charts,
-    );
-    pref_row(
-        ui,
-        "Start a market buy as an amount to spend",
-        &mut prefs.spend_in_quote_by_default,
-    );
-    ui.add_space(4.0);
+    titled_group(ui, "Trading", |ui| {
+        let rows: [(&str, &mut bool); 5] = [
+            (
+                "Ask before sending a limit or stop-limit order",
+                &mut prefs.confirm_resting_orders,
+            ),
+            (
+                "Ask before cancelling a single order",
+                &mut prefs.confirm_single_cancel,
+            ),
+            (
+                "Tell me when orders are placed, fill, cancel or are rejected",
+                &mut prefs.notify,
+            ),
+            ("Show working orders on charts", &mut prefs.show_on_charts),
+            (
+                "Start a market buy as an amount to spend",
+                &mut prefs.spend_in_quote_by_default,
+            ),
+        ];
+        for (index, (label, value)) in rows.into_iter().enumerate() {
+            if index > 0 {
+                divider(ui);
+            }
+            switch_row(ui, label, value);
+        }
+    });
     muted(
         ui,
         "Market orders, changing an order and Cancel all always ask.",
@@ -371,48 +536,34 @@ fn trading_choices(
     }
 }
 
-fn pref_row(ui: &mut egui::Ui, label: &str, value: &mut bool) {
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 10.0;
-        kit::switch(ui, value, label);
-        ui.label(kit::text(
-            label,
-            kit::size::BODY,
-            kit::REGULAR,
-            theme::text_primary(),
-        ));
-    });
-    ui.add_space(4.0);
-}
+// ---- A broker that is not connected --------------------------------------------------------------
 
-fn connect_form(
+fn setup_body(
     ui: &mut egui::Ui,
     host: &BrokerHost,
     broker: &'static dyn Broker,
+    connection: &Connection,
     form: &mut BrokerForm,
 ) {
     let descriptor = broker.descriptor();
-    ui.label(kit::text(
-        "Create a key",
-        kit::size::SUBHEADLINE + 1.0,
-        kit::SEMIBOLD,
-        theme::text_primary(),
-    ));
-    ui.add_space(6.0);
-    for (index, step) in descriptor.setup_steps.iter().enumerate() {
-        numbered_step(ui, index + 1, step);
-    }
-    ui.add_space(4.0);
+    titled_group(ui, "Set up", |ui| {
+        for (index, step) in descriptor.setup_steps.iter().enumerate() {
+            step_row(ui, index + 1, step);
+        }
+    });
     muted(ui, descriptor.permission_note);
     gray_link(
         ui,
         &format!("Read {}'s instructions", descriptor.display_name),
         descriptor.docs_url,
     );
-    ui.add_space(12.0);
+    if !descriptor.credential_fields.is_empty() {
+        ui.add_space(4.0);
+    }
     for credential in descriptor.credential_fields {
         let value = form.values.entry(credential.key.to_owned()).or_default();
-        match credential.kind {
+        // Scoped: a field squeezes the spacing it is drawn in.
+        ui.scope(|ui| match credential.kind {
             FieldKind::Pem => secret_block(ui, credential.label, credential.hint, value),
             _ => field(
                 ui,
@@ -422,10 +573,11 @@ fn connect_form(
                 value,
                 credential.secret,
             ),
-        }
-        ui.add_space(12.0);
+        });
     }
+    ui.add_space(4.0);
     ui.horizontal(|ui| {
+        ui.set_min_height(28.0);
         ui.spacing_mut().item_spacing.x = 10.0;
         let checking = form.checking.is_some();
         let enabled = !checking && can_connect(descriptor, &form.values);
@@ -440,7 +592,146 @@ fn connect_form(
             );
             muted(ui, "Checking the key…");
         }
+        if matches!(connection, Connection::Saved | Connection::Running(_)) {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if destructive_button(ui, "Remove saved key").clicked() {
+                    form.confirming_disconnect = true;
+                }
+            });
+        }
     });
+}
+
+// ---- Rows ----------------------------------------------------------------------------------------
+
+/// A small heading over a recessed list.
+fn titled_group(ui: &mut egui::Ui, title: &str, content: impl FnOnce(&mut egui::Ui)) {
+    ui.vertical(|ui| {
+        ui.spacing_mut().item_spacing.y = 6.0;
+        ui.label(kit::text(
+            title,
+            kit::size::CAPTION + 0.5,
+            kit::SEMIBOLD,
+            theme::text_secondary(),
+        ));
+        egui::Frame::new()
+            .fill(theme::ink(6))
+            .stroke(egui::Stroke::new(1.0, theme::ink(10)))
+            .corner_radius(8.0)
+            .inner_margin(egui::Margin::symmetric(12, 0))
+            .show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                ui.spacing_mut().item_spacing.y = 0.0;
+                content(ui);
+            });
+    });
+}
+
+/// `label` on the left, a value at the right edge (with a mark before it).
+fn value_row(
+    ui: &mut egui::Ui,
+    label: &str,
+    value: &str,
+    color: egui::Color32,
+    icon: Option<Icon>,
+) {
+    let width = ui.available_width();
+    let value = fitted(
+        ui,
+        value,
+        kit::size::BODY,
+        kit::REGULAR,
+        color,
+        width * 0.55,
+    );
+    let mark = if icon.is_some() { 13.0 + 6.0 } else { 0.0 };
+    let label_room = width - value.size().x - mark - 16.0;
+    let label = fitted(
+        ui,
+        label,
+        kit::size::BODY,
+        kit::REGULAR,
+        theme::text_primary(),
+        label_room,
+    );
+    let (rect, _) = ui.allocate_exact_size(vec2(width, ROW_HEIGHT), egui::Sense::hover());
+    let center = rect.center().y;
+    let value_pos = egui::pos2(rect.right() - value.size().x, center - value.size().y / 2.0);
+    if let Some(icon) = icon {
+        crate::ui::icons::paint(
+            ui.painter(),
+            egui::Rect::from_center_size(
+                egui::pos2(value_pos.x - 6.0 - 6.5, center),
+                vec2(13.0, 13.0),
+            ),
+            icon,
+            color,
+        );
+    }
+    ui.painter().galley(value_pos, value, color);
+    ui.painter().galley(
+        egui::pos2(rect.left(), center - label.size().y / 2.0),
+        label,
+        theme::text_primary(),
+    );
+}
+
+/// A setting with its switch at the right edge. A long label wraps and the row grows.
+fn switch_row(ui: &mut egui::Ui, label: &str, value: &mut bool) {
+    let width = ui.available_width();
+    let words = ui.allocate_ui_with_layout(
+        vec2(width - 32.0 - 16.0, ROW_HEIGHT),
+        egui::Layout::left_to_right(egui::Align::Center),
+        |ui| {
+            ui.set_min_height(ROW_HEIGHT);
+            ui.add(
+                egui::Label::new(kit::text(
+                    label,
+                    kit::size::BODY,
+                    kit::REGULAR,
+                    theme::text_primary(),
+                ))
+                .wrap(),
+            );
+        },
+    );
+    let slot = egui::Rect::from_center_size(
+        egui::pos2(
+            words.response.rect.left() + width - 16.0,
+            words.response.rect.center().y,
+        ),
+        vec2(32.0, 18.0),
+    );
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(slot));
+    kit::switch(&mut child, value, label);
+}
+
+/// One numbered line of the setup steps; a long one wraps under itself.
+fn step_row(ui: &mut egui::Ui, number: usize, text: &str) {
+    ui.add_space(8.0);
+    ui.horizontal_top(|ui| {
+        ui.spacing_mut().item_spacing.x = 10.0;
+        let (slot, _) = ui.allocate_exact_size(vec2(18.0, 18.0), egui::Sense::hover());
+        let dot = egui::pos2(slot.center().x, slot.top() + 8.0);
+        ui.painter().circle_filled(dot, 9.0, theme::ink(10));
+        ui.painter().text(
+            dot,
+            egui::Align2::CENTER_CENTER,
+            number.to_string(),
+            egui::FontId::proportional(10.0),
+            theme::text_secondary(),
+        );
+        ui.add(
+            egui::Label::new(kit::text(
+                text,
+                kit::size::SUBHEADLINE + 1.0,
+                kit::REGULAR,
+                theme::text_secondary(),
+            ))
+            .wrap(),
+        );
+    });
+    ui.add_space(8.0);
 }
 
 /// Starts checking the typed key, off the interface thread.
@@ -456,6 +747,11 @@ fn start_check(host: &BrokerHost, descriptor: &'static Descriptor, form: &mut Br
 /// What a click on Connect does, for a test that has no pointer.
 #[cfg(test)]
 impl BrokersState {
+    /// Unfolds a broker's card, as a click on its header would.
+    pub(crate) fn open_for_test(&mut self, broker: &'static str) {
+        self.open.insert(broker, Some(true));
+    }
+
     pub(crate) fn typed_for_test(&self, broker: &'static str, field: &str) -> Option<String> {
         self.forms.get(broker)?.values.get(field).cloned()
     }
@@ -531,23 +827,6 @@ fn muted(ui: &mut egui::Ui, text: &str) {
     );
 }
 
-fn numbered_step(ui: &mut egui::Ui, number: usize, text: &str) {
-    ui.horizontal_top(|ui| {
-        ui.spacing_mut().item_spacing.x = 8.0;
-        let (slot, _) = ui.allocate_exact_size(egui::vec2(18.0, 14.0), egui::Sense::hover());
-        ui.painter().text(
-            slot.right_top(),
-            egui::Align2::RIGHT_TOP,
-            format!("{number}."),
-            egui::FontId::proportional(12.0),
-            theme::text_tertiary(),
-        );
-        ui.add(
-            egui::Label::new(kit::text(text, 12.0, kit::REGULAR, theme::text_secondary())).wrap(),
-        );
-    });
-}
-
 /// A link, always gray and underlined.
 fn gray_link(ui: &mut egui::Ui, label: &str, url: &str) {
     let response = ui
@@ -617,10 +896,10 @@ fn secret_block(ui: &mut egui::Ui, title: &str, hint: &str, text: &mut String) {
                 ));
             }
         });
-    ui.add_space(6.0);
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 12.0;
-        if !text.is_empty() {
+    if !text.is_empty() {
+        ui.add_space(6.0);
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 12.0;
             if kit::sheet_button(ui, if revealed { "Hide" } else { "Show" }, false, true).clicked()
             {
                 revealed = !revealed;
@@ -630,8 +909,9 @@ fn secret_block(ui: &mut egui::Ui, title: &str, hint: &str, text: &mut String) {
                 text.clear();
                 ui.data_mut(|data| data.insert_temp(revealed_id, false));
             }
-        }
-    });
+        });
+    }
+    ui.add_space(6.0);
     muted(ui, crate::platform::credential_stored_hint());
 }
 
@@ -763,5 +1043,51 @@ mod tests {
     fn disconnecting_is_honest_about_what_it_does_not_do() {
         assert!(DISCONNECT_MESSAGE.contains("does not revoke"));
         assert!(DISCONNECT_MESSAGE.contains("stay live"));
+    }
+
+    #[test]
+    fn a_folded_card_says_what_there_is_to_do() {
+        let mut live = descriptor();
+        assert_eq!(
+            card_summary(&live, &Connection::NotConfigured),
+            "Add an API key to trade"
+        );
+        assert_eq!(
+            card_summary(&live, &Connection::Saved),
+            "Connecting with the saved key…"
+        );
+        // A test environment says so, so nobody takes it for the real account.
+        live.real_money = false;
+        assert_eq!(
+            card_summary(&live, &Connection::NotConfigured),
+            "Test environment, no real money"
+        );
+    }
+
+    #[test]
+    fn a_long_line_is_cut_to_the_room_it_has() {
+        let ctx = egui::Context::default();
+        crate::ui::theme::install_offscreen(&ctx);
+        let mut widths = Vec::new();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            for max in [400.0, 60.0, 0.0] {
+                let galley = fitted(
+                    ui,
+                    "Default portfolio · Can place orders",
+                    11.0,
+                    kit::REGULAR,
+                    egui::Color32::WHITE,
+                    max,
+                );
+                widths.push((max, galley.size().x, galley.text().to_owned()));
+            }
+        });
+        output.textures_delta.clear();
+        assert_eq!(widths[0].2, "Default portfolio · Can place orders");
+        assert!(
+            widths[1].1 <= 60.0 && widths[1].2.ends_with('…'),
+            "{widths:?}"
+        );
+        assert_eq!(widths[2].2, "…");
     }
 }
