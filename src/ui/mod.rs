@@ -113,6 +113,7 @@ pub mod settings_card;
 pub mod settings_font_picker;
 pub mod settings_mcp;
 pub mod settings_pine_studio;
+pub mod settings_provider_card;
 pub mod settings_snapshots;
 pub mod settings_storage;
 pub mod settings_sync;

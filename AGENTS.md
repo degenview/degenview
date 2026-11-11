@@ -156,5 +156,5 @@ because cargo never deletes old output. Finished worktrees are where the disk go
 - [AI assistant](docs/ai-assistant.md) — prompting an LLM to edit the open Pine script: bring-your-own key, providers and streaming, what is verified.
 - [Portfolio cards](docs/portfolio-cards.md) — card design and known gaps.
 - [Portfolio page](docs/portfolio-page.md) — the Portfolio tab: throttled revaluation, centred column and wide layout, empty-state pictures.
-- [Chart snapshots](docs/snapshots.md) — the camera menu, one shared renderer, hosted sharing protocol, privacy.
+- [Chart snapshots](docs/snapshots.md) — the camera menu, one shared renderer, hosted sharing through providers (ImgBB, a host of your own, how to add one), privacy.
 - [MCP implementation](docs/mcp-implementation.md) and [remaining work](docs/mcp-remaining-work.md).

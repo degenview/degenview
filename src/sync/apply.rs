@@ -1809,16 +1809,30 @@ fn compose_setting(key: &str, synced: &Value, existing: Option<&Value>) -> Value
     if key != "snapshot.prefs" {
         return synced.clone();
     }
-    // Take where to upload and how; keep the hosts this Mac has agreed to send images to.
+    // Take which provider to upload to and how it is set up; keep the destinations this Mac has
+    // agreed to send images to. A Mac from before providers sends its one `host` instead: it is
+    // taken too, and only read if this Mac has not chosen a provider yet.
     let mut prefs = existing
         .and_then(Value::as_object)
         .cloned()
         .unwrap_or_default();
     if let Some(remote) = synced.as_object() {
-        for field in ["host", "include_trading", "scale"] {
-            if let Some(value) = remote.get(field) {
-                prefs.insert(field.into(), value.clone());
+        for field in ["host", "provider", "providers", "include_trading", "scale"] {
+            let Some(value) = remote.get(field) else {
+                continue;
+            };
+            // Each provider's settings are taken by provider: a Mac that never set one up must not
+            // erase what this Mac has for it by sending a map without it.
+            if field == "providers"
+                && let (Some(theirs), Some(Value::Object(ours))) =
+                    (value.as_object(), prefs.get_mut(field))
+            {
+                for (id, settings) in theirs {
+                    ours.insert(id.clone(), settings.clone());
+                }
+                continue;
             }
+            prefs.insert(field.into(), value.clone());
         }
     }
     prefs

@@ -2,12 +2,13 @@
 
 A camera in the toolbar, right of the chart settings button, takes a picture of the focused chart and does one of five things with it,
 as TradingView's does: **Download image**, **Copy image**, **Copy link**, **Open in new tab**,
-**Tweet image**. The first two work offline. The other three upload the image to a host the user
-sets in Settings ▸ Snapshots; DegenView hosts nothing.
+**Tweet image**. The first two work offline. The other three upload the image to a **provider**
+the user turns on in Settings ▸ Snapshots (ImgBB, or a host of their own); DegenView hosts nothing,
+and nothing is uploaded until a provider is on.
 
 The menu ends with a separator and **Configure Snapshots…**, which opens Settings on the Snapshots
 page (`Pick::Configure` → `WorkspaceAction::OpenSnapshotSettings` → `WebhookHost::open_snapshots`).
-It is never disabled: it is where a missing host is set.
+It is never disabled: it is where a provider is turned on.
 
 ## Pipeline
 
@@ -78,6 +79,80 @@ drawn on charts anywhere in the app today, so there is nothing to include.
 
 ## Hosted sharing
 
+Hosted actions go to one **provider** at a time, chosen on Settings ▸ Snapshots, where each provider
+is a row like the ones on Settings ▸ Brokers: a header (mark, name, how it is doing, a switch, a
+chevron) that folds its setup. **None is on by default**; turning one on turns the other off, and a
+provider that is on but not set up (no key yet) says what is missing in the camera menu and opens
+unfolded. Turning a provider off keeps what was entered for it.
+
+Two providers ship (`src/service/snapshot_providers/`, listed in that order):
+
+| Provider | Id | What it needs | Notes |
+| --- | --- | --- | --- |
+| ImgBB | `imgbb` | The user's own ImgBB API key (secret), and how long ImgBB keeps an image (1 day to 180 days, or never; default **30 days**) | The link is the image's direct URL. Has a **Test** button |
+| Host your own | `self_hosted` | The upload address, and an optional access token (secret) | Speaks the protocol below. <https://github.com/degenview/snapshots> is a server that does |
+
+### A provider is data and two pure functions
+
+Everything else (the upload job, the consent question, the camera menu, the Settings rows, iCloud
+Sync, the secret store) works from `ProviderDescriptor` and the `SnapshotProvider` trait, so
+**adding a provider is one file and one line in `registry()`**, with no change to the page or the
+flow:
+
+1. A `ProviderDescriptor`: `id` (saved, never changes), `name`, `summary`, `logo`, the numbered
+   `setup_steps`, `links`, a `notice` (what the user should know before an image goes there), and
+   the `fields`. A `FieldSpec` is a `Text`, a `Secret` or a `Choice`, with its hint, whether it is
+   required, an environment variable that stands in for a secret, and a `validate` function. The
+   row is drawn from this alone. Field titles must be unique across providers (they identify the
+   widget); a test enforces it, and the other rules of a consistent descriptor.
+2. `impl SnapshotProvider`: `consent_key` (what the user agrees to upload to), `request` (builds the
+   HTTP request for a PNG; a `Purpose::Test` upload is a tiny image the provider should not keep),
+   `parse` (reads a 200/201 answer), and optionally `readiness`, `label`, `status_line` and
+   `classify_failure` (a provider's own error body; the default maps what every host says).
+3. Add it to `registry()`.
+
+`service::multipart::Form` builds a `multipart/form-data` body for hosts that want one. The
+transport (`snapshot_upload`) knows nothing of providers: it checks the size and that the bytes are
+a PNG, sends the provider's request once with no redirects, and hands the answer back.
+
+Saved shape (`snapshot.prefs`): `provider` (the id that is on, or an explicit `null` for off),
+`providers` (each provider's non-secret settings by id), `include_trading`, `scale`, `consented`.
+A save from before providers has one top-level `host`: if it is still a valid address it reads as
+`provider = self_hosted` with that address, so nobody loses their setup, and the next change writes
+the new shape (an address the page would not have accepted is not carried over). A `host` that
+arrives later (an older Mac syncing) is ignored once a provider has been written, so it cannot turn
+a provider off or back on. An id this build does not know is kept, inactive; the camera menu says
+to choose another, and so does a badge on the page.
+
+**Sync.** `provider` and `providers` sync; consent and secrets never do. A record is applied per
+provider (a Mac that never set a provider up cannot erase this Mac's settings for it), and a value
+nobody has rewritten since the update still goes out in the shape an older Mac wrote, a top-level
+`host`, exactly as stored: reading it as this version does would make a Mac that merely received
+it send it back as a new edit. The running window holds the choices in memory, so every change is
+made on what is stored (a change synced in meanwhile is not undone by it) and the Settings page
+reads them again each second; the camera menu of a window that has not opened Settings or changed a
+setting shows a synced provider after the next launch.
+
+### ImgBB
+
+The call is the one ImgBB documents (<https://api.imgbb.com>): a `POST` of the PNG as a binary file
+in a multipart form to `https://api.imgbb.com/1/upload`, with the `key` and `expiration` (seconds,
+60 to 15552000; left out for "never") **in the query string, as the documentation shows them**. The
+key is therefore in the URL: it travels over TLS, and the app never prints, logs or shows a request
+URL (transport errors are an enum, not text). The answer's `data.url` is shared (its direct image
+link), with `data.delete_url` and, when ImgBB reports a lifetime, when it expires. **Test** uploads a
+one-pixel image asking for `expiration=60`, the shortest life ImgBB allows (whether ImgBB then
+forgets it is not verified; the image is public until it does). It asks nothing first, and works
+while the provider is off: the click is the request.
+
+Verified against ImgBB's documentation: the endpoint, the parameters and their ranges, the success
+answer's fields. **Not stated by it and so assumed**: the error answer's shape (read as
+`{"error": {"message": …}}`, where a message about the key becomes "refused the credentials";
+anything else is read by its HTTP status), and rate limits. Not run against ImgBB with a real key
+by the author of this change.
+
+### The protocol of a host of your own
+
 The host is any HTTPS service that implements this protocol (`http://` is accepted for a host on
 this computer only, for development).
 
@@ -90,7 +165,8 @@ User-Agent: DegenView/<version>
 <PNG bytes, at most 24 MiB>
 ```
 
-Answer `200` or `201` with at most 16 KiB of JSON:
+Answer `200` or `201` with at most 16 KiB of JSON (a longer answer is no link; a failure page of any
+size is still the failure its status names):
 
 ```json
 { "url": "https://…", "delete_url": "https://…", "expires_at": "2027-01-01T00:00:00Z" }
@@ -113,14 +189,27 @@ ships no server; its tests use a mock server on this computer.
 ### Consent and privacy
 
 - Download and Copy image never touch the network.
-- The first upload to a host asks ("To share this chart, DegenView uploads its image to <host>…").
-  The answer is remembered per `host[:port]` in the `snapshot.prefs` setting and can be forgotten.
-- Hosted rows are disabled, with the reason, until a host is set. Nothing is uploaded to any
-  default.
-- The token is in the Keychain (`es.nico.degenview.snapshots`), read only when an upload needs it,
-  or `DEGENVIEW_SNAPSHOT_TOKEN`. On Linux it is in the Secret Service (see [Flatpak](flatpak.md)), on Windows in Credential
-  Manager (see [Windows secret storage](flatpak.md#windows-secret-storage)). Where the store is
-  unavailable it cannot be saved: use the environment variable or a token-less host.
+- The first upload to a destination asks ("To share this chart, DegenView uploads its image to
+  {label}. {the provider's notice}"). The answer is remembered per **consent key** (`api.imgbb.com`,
+  or `host[:port]` for a host of the user's own) in the `snapshot.prefs` setting, never synced, and
+  can be forgotten. Agreeing to one destination is not agreeing to another. A host of the user's
+  own with a saved access token says that the token goes with the image, because the token is not
+  tied to the address and a changed address would send it somewhere new.
+- Hosted rows are disabled, with the reason, until a provider is on and set up. Nothing is uploaded
+  to any default. The one upload that is not a chart is a provider's **Test** button, which sends a
+  one-pixel image when the user clicks it.
+- A provider's secrets are in the system's secure storage (`es.nico.degenview.snapshots`, account
+  `"{provider}.{field}-v1"`; the self-hosted token keeps its older `host-token-v1`), read only on
+  the upload's worker thread, or the field's environment variable (`DEGENVIEW_IMGBB_KEY`,
+  `DEGENVIEW_SNAPSHOT_TOKEN`). The window never waits for the storage: whether a secret is saved is
+  asked on a thread of its own the first time and cached, the camera menu says "Checking your saved
+  key" until the answer is in, and the cache is never locked while the storage is. They are never in
+  the settings, in SQLite or synced; on Linux they are
+  in the Secret Service (see [Flatpak](flatpak.md)), on Windows in Credential Manager (see
+  [Windows secret storage](flatpak.md#windows-secret-storage)). Where the store is unavailable one
+  cannot be saved: use the environment variable.
+- ImgBB links are public to anyone who has them, and ImgBB's terms and privacy policy apply; the row
+  says so and links both. Orders and positions stay off the image unless the user includes them.
 - Tweet image opens X's composer (`https://x.com/intent/post?text=…&url=<snapshot link>`) in the
   browser. **The image is not attached to the post**, only its link: attaching needs an authorised
   X API integration, which this is not. No X account or credentials are requested.
@@ -173,3 +262,12 @@ themes and window edges, Windows and Linux. To repeat: the camera menu in both t
 window edge, each action on a real chart with
 several indicators, a script pane and drawings, with replay, in a second window, and against a
 host.
+
+The Settings page and its provider rows are drawn headless by
+`DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib gallery_of_the_snapshots_page -- --ignored`, which
+writes the page in both themes at the Settings window's width and at its narrowest, with nothing on,
+ImgBB needing a key, ImgBB active, a host of your own, and both rows unfolded. The upload client is
+tested against a mock server for both providers (the self-hosted wire format is unchanged, asserted
+byte for byte; ImgBB's request line, multipart body and error answers). Not checked: ImgBB itself
+with a real key, the rows in a real window, and a real Keychain/Secret Service/Credential Manager
+round trip of an ImgBB key.

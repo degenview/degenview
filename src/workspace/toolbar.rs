@@ -38,9 +38,7 @@ impl ChartWorkspace {
             .map(super::chart::Chart::display_title);
         let hosting_note = match self.snapshot_hosting() {
             crate::host::snapshot_host::Hosting::Ready(_) => None,
-            crate::host::snapshot_host::Hosting::NotConfigured => {
-                Some("Set a snapshot host in Settings ▸ Snapshots to share.")
-            }
+            crate::host::snapshot_host::Hosting::Unavailable(reason) => Some(reason),
         };
         let snapshot_shortcut =
             |action| crate::ui::shortcut::snapshot(action).map(|shortcut| shortcut.label());
@@ -78,7 +76,8 @@ impl ChartWorkspace {
                 .any(|chart| chart.is_market() && chart.source != DataSource::CoinMarketCap),
             snapshot: crate::ui::snapshot_menu::SnapshotMenu {
                 busy: self.snapshot_busy(),
-                hosting_unavailable: hosting_note,
+                working: self.snapshot_working(),
+                hosting_unavailable: hosting_note.as_deref(),
                 shortcut: &snapshot_shortcut,
             },
         };

@@ -96,7 +96,7 @@ onto `beta` with `flatpak build-commit-from`, an install and a `flatpak update` 
 
 ## Secret storage
 
-API keys (Alpaca, CoinMarketCap, AI providers), the snapshot token and webhook secrets all go
+API keys (Alpaca, CoinMarketCap, AI providers), the snapshot providers' keys and tokens and webhook secrets all go
 through `keychain_webhook_secrets::platform`. On Linux that is `service::secret_service`, built on
 the `oo7` crate: the desktop's Secret Service (GNOME Keyring, KWallet) outside a sandbox, and inside
 a Flatpak an app-private keyring file opened with a key from the Secret portal (no extra

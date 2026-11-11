@@ -445,7 +445,7 @@ fn header(
 }
 
 /// `text` as one line no wider than `max`, cut with an ellipsis where it does not fit.
-fn fitted(
+pub(super) fn fitted(
     ui: &egui::Ui,
     text: &str,
     size: f32,
@@ -665,7 +665,7 @@ fn setup_body(
 // ---- Rows ----------------------------------------------------------------------------------------
 
 /// A small heading over a recessed list.
-fn titled_group(ui: &mut egui::Ui, title: &str, content: impl FnOnce(&mut egui::Ui)) {
+pub(super) fn titled_group(ui: &mut egui::Ui, title: &str, content: impl FnOnce(&mut egui::Ui)) {
     ui.vertical(|ui| {
         ui.spacing_mut().item_spacing.y = 6.0;
         ui.label(kit::text(
@@ -767,7 +767,7 @@ fn switch_row(ui: &mut egui::Ui, label: &str, value: &mut bool) {
 }
 
 /// One numbered line of the setup steps; a long one wraps under itself.
-fn step_row(ui: &mut egui::Ui, number: usize, text: &str) {
+pub(super) fn step_row(ui: &mut egui::Ui, number: usize, text: &str) {
     ui.add_space(8.0);
     ui.horizontal_top(|ui| {
         ui.spacing_mut().item_spacing.x = 10.0;
@@ -907,7 +907,7 @@ fn poll_check(
 
 // ---- Small pieces --------------------------------------------------------------------------------
 
-fn muted(ui: &mut egui::Ui, text: &str) {
+pub(super) fn muted(ui: &mut egui::Ui, text: &str) {
     ui.add(
         egui::Label::new(kit::text(
             text,
@@ -920,7 +920,7 @@ fn muted(ui: &mut egui::Ui, text: &str) {
 }
 
 /// A link, always gray and underlined.
-fn gray_link(ui: &mut egui::Ui, label: &str, url: &str) {
+pub(super) fn gray_link(ui: &mut egui::Ui, label: &str, url: &str) {
     let response = ui
         .add(
             egui::Label::new(

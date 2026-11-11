@@ -11,8 +11,10 @@ use eframe::egui::{self, Vec2};
 
 /// What the menu needs to know besides the chart.
 pub struct SnapshotMenu<'a> {
-    /// A snapshot is already being made.
+    /// A snapshot is already being made (or waits for the user's answer to a question about it).
     pub busy: bool,
+    /// Something is being done for it right now, not only waited for: the camera turns.
+    pub working: bool,
     /// Why the rows that upload cannot be used, if they cannot.
     pub hosting_unavailable: Option<&'a str>,
     /// The shortcut each row shows, if it has one that works.
@@ -156,6 +158,7 @@ mod tests {
     fn only_the_hosted_rows_wait_for_a_host() {
         let menu = SnapshotMenu {
             busy: false,
+            working: false,
             hosting_unavailable: Some("Set a host"),
             shortcut: &none,
         };
@@ -179,6 +182,7 @@ mod tests {
     fn every_row_waits_while_a_snapshot_is_made() {
         let menu = SnapshotMenu {
             busy: true,
+            working: false,
             hosting_unavailable: None,
             shortcut: &none,
         };
@@ -244,6 +248,7 @@ mod tests {
             |action: SnapshotAction| (action == SnapshotAction::Download).then(|| "⌥⌘S".to_owned());
         let menu = SnapshotMenu {
             busy: false,
+            working: false,
             hosting_unavailable: None,
             shortcut: &shortcut,
         };
@@ -269,6 +274,7 @@ mod tests {
         let ctx = egui::Context::default();
         let menu = SnapshotMenu {
             busy: true,
+            working: false,
             hosting_unavailable: Some("Set a host"),
             shortcut: &none,
         };

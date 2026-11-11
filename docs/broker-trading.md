@@ -222,7 +222,7 @@ request descriptions for the checklist.
   share. The two-account behaviour is tested against two fake exchanges sharing one journal.
 * A key the operating system would not let go of (a failed Keychain, Credential Manager or Secret
   Service removal) is reported, not worked around; the real failures could not be provoked here.
-* The AI-key, snapshot-token and webhook stores still remove their secrets best-effort.
+* The AI-key, snapshot-secret and webhook stores still remove their secrets best-effort.
 * Nothing here has been run against a real account by the author of the change. The mock
   exchange is built from Coinbase's published specification; see the crate's `docs/coinbase.md` for
   what could not be verified.

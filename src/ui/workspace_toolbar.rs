@@ -158,6 +158,8 @@ struct Button {
     enabled: bool,
     /// Lit: the thing it toggles is on.
     active: bool,
+    /// Work is going on behind it: a spinner turns where its icon is.
+    busy: bool,
     /// The colour of its content while lit.
     tint: Option<Color32>,
     /// The label stays when the bar is too narrow for labels: it is what the button says.
@@ -182,6 +184,7 @@ impl Button {
             access: None,
             enabled: true,
             active: false,
+            busy: false,
             tint: None,
             keep_label: false,
             quiet: false,
@@ -216,6 +219,11 @@ impl Button {
 
     fn active(mut self, active: bool) -> Self {
         self.active = active;
+        self
+    }
+
+    fn busy(mut self, busy: bool) -> Self {
+        self.busy = busy;
         self
     }
 }
@@ -494,7 +502,8 @@ fn right_items(input: &ToolbarInput) -> Vec<Item> {
 
     let mut snapshot = Button::new("snapshot", "Take a snapshot")
         .icon(Icon::Camera)
-        .enabled(input.chart.is_some());
+        .enabled(input.chart.is_some())
+        .busy(input.snapshot.working);
     snapshot.menu = Some(Menu::Snapshot);
 
     let watchlist_tip = if input.watchlist_visible {
@@ -650,9 +659,18 @@ fn paint_button(ui: &mut Ui, measured: &Measured, x: f32, y: f32) -> Response {
     let middle = rect.center().y;
     if let Some(glyph) = button.glyph {
         let glyph_rect = Rect::from_min_size(pos2(at, middle - ICON / 2.0), Vec2::splat(ICON));
-        match glyph {
-            Glyph::Icon(icon) => icons::paint(painter, glyph_rect, icon, color),
-            Glyph::ChartType(kind) => chart_type_menu::glyph(painter, glyph_rect, kind, color),
+        if button.busy {
+            // The icon gives way to a turning spinner; asking for the next frame keeps it turning.
+            egui::Spinner::new().size(ICON - 3.0).color(color).paint_at(
+                ui,
+                Rect::from_center_size(glyph_rect.center(), Vec2::splat(ICON - 3.0)),
+            );
+            ui.ctx().request_repaint();
+        } else {
+            match glyph {
+                Glyph::Icon(icon) => icons::paint(painter, glyph_rect, icon, color),
+                Glyph::ChartType(kind) => chart_type_menu::glyph(painter, glyph_rect, kind, color),
+            }
         }
         at += ICON
             + if measured.label.is_some() {
@@ -946,6 +964,7 @@ mod tests {
             can_replay: focused,
             snapshot: crate::ui::snapshot_menu::SnapshotMenu {
                 busy: false,
+                working: false,
                 hosting_unavailable: None,
                 shortcut: &|_| None,
             },
@@ -974,6 +993,45 @@ mod tests {
             });
             output.textures_delta.clear();
         }
+    }
+
+    /// How soon the toolbar, once it has settled, asks for the next frame.
+    fn settled_repaint(input: &ToolbarInput) -> std::time::Duration {
+        let ctx = egui::Context::default();
+        let mut out = None;
+        for step in 0..6 {
+            let raw = egui::RawInput {
+                time: Some(f64::from(step) * 0.1),
+                ..screen(1400.0)
+            };
+            let mut frame = ctx.run_ui(raw, |ui| {
+                show(ui, input);
+            });
+            frame.textures_delta.clear();
+            out = Some(frame);
+        }
+        out.expect("frames")
+            .viewport_output
+            .values()
+            .map(|viewport| viewport.repaint_delay)
+            .min()
+            .expect("a viewport")
+    }
+
+    #[test]
+    fn the_camera_turns_while_a_snapshot_is_made_and_the_bar_is_quiet_otherwise() {
+        let layouts = vec![(1, "Morning".to_owned())];
+        let mut busy = input(&layouts, true);
+        busy.snapshot.working = true;
+        assert!(
+            settled_repaint(&busy) < std::time::Duration::from_millis(100),
+            "a spinner only turns if the window keeps painting"
+        );
+        let idle = input(&layouts, true);
+        assert!(
+            settled_repaint(&idle) >= std::time::Duration::from_millis(100),
+            "an idle bar asks for nothing"
+        );
     }
 
     fn screen(width: f32) -> egui::RawInput {
@@ -1160,7 +1218,7 @@ mod tests {
             pos2((from + to) / 2.0, HEIGHT / 2.0)
         };
         type Tweak = fn(&mut ToolbarInput);
-        let cases: [(&str, f32, Tweak, Option<ToolbarAction>); 6] = [
+        let cases: [(&str, f32, Tweak, Option<ToolbarAction>); 7] = [
             ("toolbar-wide", 1400.0, |_| {}, None),
             (
                 "toolbar-hover",
@@ -1190,6 +1248,12 @@ mod tests {
                 None,
             ),
             ("toolbar-tiny", 900.0, |input| input.unsaved = true, None),
+            (
+                "toolbar-snapshot-busy",
+                1400.0,
+                |input| input.snapshot.working = true,
+                None,
+            ),
         ];
         for (name, width, tweak, hover) in cases {
             let mut input = input(&layouts, true);

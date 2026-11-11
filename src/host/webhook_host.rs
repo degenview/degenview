@@ -64,6 +64,8 @@ pub struct WebhookHost {
     /// The saved assistant settings, read from the store when Settings first needs them.
     ai_prefs: Option<AiPrefs>,
     ai_prefs_read_at: Option<std::time::Instant>,
+    /// When the snapshot choices were last read again, for what iCloud Sync applied meanwhile.
+    snapshots_read_at: Option<std::time::Instant>,
     state: SettingsState,
     storage_events: StorageEvents,
     /// Shared with the threads that run Test, so a slow endpoint never blocks the UI.
@@ -151,6 +153,14 @@ impl WebhookHost {
         // The page fills the native Settings window itself: no egui window inside it, which
         // drew a second title bar and let the page be dragged around within its own window.
         let endpoints = store.webhook_endpoints();
+        // Read again every second, like the assistant's: a change another Mac made reaches the page.
+        if self
+            .snapshots_read_at
+            .is_none_or(|at| at.elapsed() > Duration::from_secs(1))
+        {
+            self.snapshots.refresh(Some(store));
+            self.snapshots_read_at = Some(std::time::Instant::now());
+        }
         let snapshot_prefs = self.snapshots.prefs();
         // Read again every second: the assistant panel changes these too, in another window.
         if self.ai_prefs.is_none()
@@ -175,8 +185,7 @@ impl WebhookHost {
             mcp,
             snapshots: crate::ui::settings_snapshots::SnapshotsInput {
                 prefs: &snapshot_prefs,
-                token_saved: crate::service::keychain_snapshot_token::SnapshotTokenStore::shared()
-                    .is_configured(),
+                secrets: self.snapshots.secrets(),
             },
             ai: crate::ui::settings_ai::AiSettingsInput { prefs: &ai_prefs },
             updates,
@@ -274,53 +283,79 @@ impl WebhookHost {
         }
     }
 
-    /// Applies what the Snapshots page changed. A failure is said on the page.
+    /// Applies what the Snapshots page changed. A failure is said on the page, on the row it is
+    /// about.
     fn apply_snapshots(&mut self, action: SnapshotsAction, store: &Store) {
-        use crate::service::keychain_snapshot_token::SnapshotTokenStore;
-        let result = match action {
-            SnapshotsAction::Save { host, token } => self
-                .snapshots
-                .set_host(Some(store), &host)
-                .and_then(|()| match token {
-                    Some(token) => SnapshotTokenStore::shared()
-                        .save(&token)
-                        .map_err(|error| error.to_string()),
-                    None => Ok(()),
-                })
-                .map(|()| {
-                    self.state.snapshots.saved_token();
-                    "Saved".to_owned()
-                }),
-            SnapshotsAction::RemoveToken => {
-                SnapshotTokenStore::shared().remove();
-                Ok("Token removed".to_owned())
+        let held = Some(store);
+        // The row a result is about, if it is about one, and what to say.
+        let (row, result): (Option<&'static str>, Result<String, String>) = match action {
+            SnapshotsAction::SetProvider(provider) => (
+                None,
+                self.snapshots
+                    .set_provider(held, provider)
+                    .map(|()| String::new()),
+            ),
+            SnapshotsAction::Save {
+                provider,
+                fields,
+                secrets,
+            } => {
+                let result = self
+                    .snapshots
+                    .set_fields(held, provider, &fields)
+                    .and_then(|()| {
+                        secrets.iter().try_for_each(|(key, value)| {
+                            self.snapshots.save_secret(provider, key, value)
+                        })
+                    });
+                if result.is_ok() {
+                    self.state.snapshots.saved(provider);
+                }
+                (
+                    Some(provider),
+                    result.map(|()| {
+                        if secrets.is_empty() {
+                            "Saved".to_owned()
+                        } else {
+                            crate::platform::saved_securely().to_string()
+                        }
+                    }),
+                )
             }
-            SnapshotsAction::IncludeTrading(include) => self
-                .snapshots
-                .set_include_trading(Some(store), include)
-                .map(|()| String::new()),
-            SnapshotsAction::Scale(scale) => self
-                .snapshots
-                .set_scale(Some(store), scale)
-                .map(|()| String::new()),
-            SnapshotsAction::ForgetConsent => self
-                .snapshots
-                .forget_consent(Some(store))
-                .map(|()| "Approved hosts forgotten".to_owned()),
+            SnapshotsAction::RemoveSecret { provider, field } => (
+                Some(provider),
+                self.snapshots
+                    .remove_secret(provider, field)
+                    .map(|()| "Removed".to_owned()),
+            ),
+            SnapshotsAction::IncludeTrading(include) => (
+                None,
+                self.snapshots
+                    .set_include_trading(held, include)
+                    .map(|()| String::new()),
+            ),
+            SnapshotsAction::Scale(scale) => (
+                None,
+                self.snapshots
+                    .set_scale(held, scale)
+                    .map(|()| String::new()),
+            ),
+            SnapshotsAction::ForgetConsent => (
+                None,
+                self.snapshots.forget_consent(held).map(|()| String::new()),
+            ),
         };
-        self.state.snapshots.status = match result {
+        let status = match result {
             Ok(text) if text.is_empty() => None,
             Ok(text) => Some(StatusMessage::ok(text)),
             Err(error) => Some(StatusMessage::error(error)),
         };
-        if self
-            .state
-            .snapshots
-            .status
-            .as_ref()
-            .is_some_and(|status| !status.is_error)
-        {
-            self.state.snapshots.saved_token();
+        match row {
+            Some(provider) => {
+                self.state.snapshots.say_for(provider, status);
+                self.state.snapshots.status = None;
+            }
+            None => self.state.snapshots.status = status,
         }
     }
 
@@ -575,7 +610,7 @@ mod tests {
     /// is saved from there: saving must use that lock, not wait for it (which never ends).
     #[test]
     fn a_snapshot_setting_changed_in_settings_is_saved_without_locking_the_store_twice() {
-        use crate::model::snapshot::{SnapshotPrefs, SnapshotScale};
+        use crate::model::snapshot::{SELF_HOSTED, SnapshotPrefs, SnapshotScale};
         let shared: crate::store::SharedStore = Arc::new(std::sync::Mutex::new(
             Store::open_in_memory().expect("a store"),
         ));
@@ -588,9 +623,14 @@ mod tests {
             for action in [
                 SnapshotsAction::IncludeTrading(true),
                 SnapshotsAction::Scale(SnapshotScale::X1),
+                SnapshotsAction::SetProvider(Some(SELF_HOSTED)),
                 SnapshotsAction::Save {
-                    host: "https://snap.example.com/up".into(),
-                    token: None,
+                    provider: SELF_HOSTED,
+                    fields: std::collections::BTreeMap::from([(
+                        "host".to_owned(),
+                        "https://snap.example.com/up".to_owned(),
+                    )]),
+                    secrets: Default::default(),
                 },
                 SnapshotsAction::ForgetConsent,
             ] {
@@ -605,7 +645,14 @@ mod tests {
         let prefs = snapshots.prefs();
         assert!(prefs.include_trading);
         assert_eq!(prefs.scale, SnapshotScale::X1);
-        assert_eq!(prefs.host.as_deref(), Some("https://snap.example.com/up"));
+        assert_eq!(prefs.provider.as_deref(), Some(SELF_HOSTED));
+        assert_eq!(
+            prefs
+                .settings_of(SELF_HOSTED)
+                .get("host")
+                .map(String::as_str),
+            Some("https://snap.example.com/up")
+        );
         // It reached the database too, not only the host's memory.
         let saved: SnapshotPrefs = shared
             .lock()
