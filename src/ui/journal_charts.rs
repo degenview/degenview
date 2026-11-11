@@ -3,9 +3,10 @@
 //! app's charts. The geometry (ticks, nearest point, radar vertices) is pure and tested.
 
 use eframe::egui::{
-    self, Align2, Color32, FontId, Mesh, Pos2, Rect, Sense, Shape, Stroke, Ui, pos2, vec2,
+    self, Align2, Color32, FontId, Pos2, Rect, Sense, Shape, Stroke, Ui, pos2, vec2,
 };
 
+use super::journal_kit::{self, Sign};
 use super::kit::size;
 use super::theme;
 use degenview_journal::overview::nice_step;
@@ -93,6 +94,8 @@ pub struct LineChart<'a> {
     pub x_label: &'a dyn Fn(f64) -> String,
     pub y_label: &'a dyn Fn(f64) -> String,
     pub empty: &'a str,
+    /// A solid pill with the first line's last value at the end of the line.
+    pub badge: bool,
 }
 
 fn bounds(lines: &[Line], baseline: Option<f64>) -> Option<((f64, f64), (f64, f64))> {
@@ -187,19 +190,12 @@ pub fn line_chart(ui: &mut Ui, id: egui::Id, chart: &LineChart<'_>, height: f32)
                 .baseline
                 .map_or(plot.bottom(), to_y)
                 .clamp(plot.top(), plot.bottom());
-            let mut mesh = Mesh::default();
-            let top = theme::with_alpha(line.color, 0.22);
-            let bottom = theme::with_alpha(line.color, 0.0);
-            for point in &points {
-                mesh.colored_vertex(*point, top);
-                mesh.colored_vertex(pos2(point.x, floor), bottom);
-            }
-            for index in 0..points.len() as u32 - 1 {
-                let base = index * 2;
-                mesh.add_triangle(base, base + 1, base + 2);
-                mesh.add_triangle(base + 1, base + 3, base + 2);
-            }
-            painter.add(Shape::mesh(mesh));
+            journal_kit::area_fill(
+                &painter,
+                &points,
+                floor,
+                theme::with_alpha(line.color, 0.10),
+            );
         }
         let stroke = Stroke::new(1.6, line.color);
         if line.dashed {
@@ -209,6 +205,24 @@ pub fn line_chart(ui: &mut Ui, id: egui::Id, chart: &LineChart<'_>, height: f32)
         } else {
             painter.add(Shape::line(points, stroke));
         }
+    }
+
+    if chart.badge
+        && let Some(&(x, y)) = chart.lines.first().and_then(|line| line.points.last())
+    {
+        let end = pos2(to_x(x), to_y(y));
+        painter.circle_filled(end, 3.0, chart.lines[0].color);
+        let anchor = pos2(
+            plot.right(),
+            (end.y - 14.0).clamp(plot.top() + 8.0, plot.bottom() - 8.0),
+        );
+        journal_kit::paint_value_badge(
+            ui,
+            &painter,
+            anchor,
+            &(chart.y_label)(y),
+            chart.lines[0].color,
+        );
     }
 
     // Hover read-out on the first line's nearest point.
@@ -370,12 +384,15 @@ pub fn bar_chart(
             pos2(center - bar_width / 2.0, top),
             pos2(center + bar_width / 2.0, bottom.max(top + 1.0)),
         );
-        let color = if hovered == Some(index) {
-            bar.color
-        } else {
-            theme::with_alpha(bar.color, 0.85)
-        };
-        painter.rect_filled(body, 2.0, color);
+        painter.rect_filled(body, 2.0, bar.color);
+        if hovered == Some(index) {
+            painter.rect_stroke(
+                body.expand(1.0),
+                3.0,
+                Stroke::new(1.0, theme::text_primary()),
+                egui::StrokeKind::Outside,
+            );
+        }
         if index % label_every == 0 {
             painter.text(
                 pos2(center, plot.bottom() + 6.0),
@@ -407,12 +424,8 @@ pub fn ring(ui: &mut Ui, fraction: Option<f64>, color: Color32, diameter: f32) {
     let (rect, _) = ui.allocate_exact_size(vec2(diameter, diameter), Sense::hover());
     let painter = ui.painter_at(rect);
     let center = rect.center();
-    let radius = diameter / 2.0 - 3.0;
-    painter.circle_stroke(
-        center,
-        radius,
-        Stroke::new(4.0, theme::with_alpha(theme::text_tertiary(), 0.25)),
-    );
+    let radius = diameter / 2.0 - 3.5;
+    painter.circle_stroke(center, radius, Stroke::new(5.0, theme::ink(16)));
     if let Some(fraction) = fraction.filter(|f| f.is_finite()) {
         let sweep = (fraction.clamp(0.0, 1.0) as f32) * std::f32::consts::TAU;
         if sweep > 0.001 {
@@ -423,7 +436,7 @@ pub fn ring(ui: &mut Ui, fraction: Option<f64>, color: Color32, diameter: f32) {
                     center + vec2(angle.cos(), angle.sin()) * radius
                 })
                 .collect();
-            painter.add(Shape::line(points, Stroke::new(4.0, color)));
+            painter.add(Shape::line(points, Stroke::new(5.0, color)));
         }
     }
 }
@@ -432,19 +445,19 @@ pub fn ring(ui: &mut Ui, fraction: Option<f64>, color: Color32, diameter: f32) {
 pub fn split_bar(ui: &mut Ui, win: f64, loss: f64, width: f32) {
     let (rect, _) = ui.allocate_exact_size(vec2(width, 6.0), Sense::hover());
     let painter = ui.painter_at(rect);
-    painter.rect_filled(rect, 3.0, theme::with_alpha(theme::text_tertiary(), 0.25));
+    painter.rect_filled(rect, 3.0, theme::ink(16));
     let total = win + loss;
     if total > 0.0 && total.is_finite() {
         let split = rect.left() + rect.width() * (win / total) as f32;
         painter.rect_filled(
             Rect::from_min_max(rect.min, pos2((split - 1.0).max(rect.left()), rect.max.y)),
             3.0,
-            theme::WIN,
+            Sign::Gain.data(),
         );
         painter.rect_filled(
             Rect::from_min_max(pos2((split + 1.0).min(rect.right()), rect.min.y), rect.max),
             3.0,
-            theme::LOSS,
+            Sign::Loss.data(),
         );
     }
 }
@@ -495,6 +508,9 @@ pub fn radar(ui: &mut Ui, axes: &[(&str, f64)], height: f32, accent: Color32) {
             theme::with_alpha(accent, 0.18),
             Stroke::new(1.5, accent),
         ));
+        for vertex in &polygon {
+            painter.circle_filled(*vertex, 2.5, accent);
+        }
     }
     if let Some(pos) = response.hover_pos() {
         for (index, vertex) in polygon.iter().enumerate() {
@@ -583,6 +599,7 @@ mod tests {
                         x_label: &fmt,
                         y_label: &fmt,
                         empty: "none",
+                        badge: true,
                     },
                     140.0,
                 );
@@ -595,6 +612,7 @@ mod tests {
                         x_label: &fmt,
                         y_label: &fmt,
                         empty: "none",
+                        badge: true,
                     },
                     140.0,
                 );
@@ -614,6 +632,7 @@ mod tests {
                         x_label: &fmt,
                         y_label: &fmt,
                         empty: "none",
+                        badge: true,
                     },
                     140.0,
                 );

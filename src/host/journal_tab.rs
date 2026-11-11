@@ -23,6 +23,7 @@ use crate::ui::journal_compare;
 use crate::ui::journal_daily;
 use crate::ui::journal_detail::{self, Draft};
 use crate::ui::journal_import::{self, ImportSheet};
+use crate::ui::journal_kit as jk;
 use crate::ui::journal_overview::{self, OverviewState};
 use crate::ui::journal_playbooks;
 use crate::ui::journal_shots as shots_ui;
@@ -283,16 +284,22 @@ impl JournalTab {
         }
 
         let (range_row, filter_row) = Self::header_rows(host.prefs().section);
-        let header_height =
-            24.0 + 36.0 + 44.0 * f32::from(u8::from(range_row) + u8::from(filter_row));
+        let layout = header_layout(
+            content_width(ui.available_width()),
+            range_row,
+            filter_row,
+            self.range_choice(host) == RangeKind::Custom,
+        );
         egui::Panel::top(egui::Id::new(("journal-header", self.id)))
-            .exact_size(header_height)
+            .exact_size(layout.height)
             .frame(
                 egui::Frame::new()
                     .fill(theme::background())
                     .inner_margin(egui::Margin::symmetric(0, 12)),
             )
-            .show(ui, |ui| aligned(ui, |ui| self.header(ui, host, &data)));
+            .show(ui, |ui| {
+                aligned(ui, |ui| self.header(ui, host, &data, layout))
+            });
 
         if let Some(error) = data.ingest_error.clone() {
             egui::Panel::top(egui::Id::new(("journal-error", self.id)))
@@ -1094,6 +1101,7 @@ impl JournalTab {
         self.ensure_overview(host, data, key);
         let mut currency = None;
         let mut open_trade = None;
+        let mut view_all = false;
         egui::CentralPanel::default()
             .frame(egui::Frame::new().fill(theme::background()))
             .show(ui, |ui| {
@@ -1126,11 +1134,15 @@ impl JournalTab {
                             );
                             currency = output.currency;
                             open_trade = output.open_trade;
+                            view_all = output.view_all;
                         });
                 })
             });
         if let Some(chosen) = currency {
             self.currency = Some(chosen);
+        }
+        if view_all {
+            host.prefs_mut().section = Section::Trades;
         }
         if let Some(key) = open_trade {
             host.prefs_mut().section = Section::Trades;
@@ -1550,10 +1562,25 @@ impl JournalTab {
         }
     }
 
-    fn header(&mut self, ui: &mut egui::Ui, host: &mut JournalHost, data: &Arc<JournalData>) {
+    fn header(
+        &mut self,
+        ui: &mut egui::Ui,
+        host: &mut JournalHost,
+        data: &Arc<JournalData>,
+        layout: HeaderLayout,
+    ) {
         let (show_range, show_filters) = Self::header_rows(host.prefs().section);
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 10.0;
+            if layout.title {
+                ui.label(kit::text(
+                    "Trade Journal",
+                    size::TITLE2 + 3.0,
+                    SEMIBOLD,
+                    theme::text_primary(),
+                ));
+                ui.add_space(8.0);
+            }
             let mut section = host.prefs().section;
             let items = [
                 (Section::Overview, "Overview", Icon::PieChart),
@@ -1570,12 +1597,26 @@ impl JournalTab {
                 icon,
                 count: 0,
             });
-            kit::tab_bar_slim(
-                ui,
-                egui::Id::new(("journal-sections", self.id)),
-                &items,
-                &mut section,
-            );
+            // The tabs scroll sideways when the window is too narrow for them and the menus.
+            let menus = if section == Section::Daily {
+                110.0
+            } else {
+                270.0
+            };
+            let room = (ui.available_width() - menus - ui.spacing().item_spacing.x).max(160.0);
+            egui::ScrollArea::horizontal()
+                .id_salt(("journal-sections-scroll", self.id))
+                .max_width(room)
+                .auto_shrink([true, false])
+                .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
+                .show(ui, |ui| {
+                    kit::tab_bar_slim(
+                        ui,
+                        egui::Id::new(("journal-sections", self.id)),
+                        &items,
+                        &mut section,
+                    );
+                });
             if section != host.prefs().section {
                 host.prefs_mut().section = section;
             }
@@ -1590,36 +1631,29 @@ impl JournalTab {
                 });
             }
         });
+        if layout.combined {
+            // Range, filters and search share one row.
+            ui.add_space(8.0);
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 8.0;
+                self.range_controls(ui, host);
+                ui.add_space(6.0);
+                self.filter_menus(ui, host, data);
+                self.reset_button(ui, host);
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    self.search_box(ui);
+                    self.count_and_columns(ui, host, data);
+                });
+            });
+            return;
+        }
         if show_range {
             ui.add_space(8.0);
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 10.0;
                 self.range_controls(ui, host);
-                let section = host.prefs().section;
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if section == Section::Trades {
-                        self.columns_menu(ui, host);
-                    }
-                    let open = self
-                        .rows
-                        .iter()
-                        .filter(|&&index| data.trades[index].is_open())
-                        .count();
-                    let mut text = format!(
-                        "{} trade{}",
-                        self.rows.len(),
-                        if self.rows.len() == 1 { "" } else { "s" }
-                    );
-                    if open > 0 {
-                        text.push_str(&format!(" \u{00b7} {open} open"));
-                    }
-                    ui.label(kit::text(
-                        text,
-                        size::BODY,
-                        REGULAR,
-                        theme::text_secondary(),
-                    ))
-                    .on_hover_text(format!("Built from {} executions", data.executions));
+                    self.count_and_columns(ui, host, data);
                 });
             });
         }
@@ -1628,14 +1662,52 @@ impl JournalTab {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
                 self.filter_menus(ui, host, data);
-                let active = self.filter.is_active()
-                    || host.prefs().account.is_some()
-                    || host.prefs().range != RangeChoice::Preset(RangePreset::All);
-                if active && kit::sheet_button(ui, "Reset", false, true).clicked() {
-                    self.reset_filters(host);
-                }
+                self.search_box(ui);
+                self.reset_button(ui, host);
             });
         }
+    }
+
+    /// "Reset", only while something is filtered.
+    fn reset_button(&mut self, ui: &mut egui::Ui, host: &mut JournalHost) {
+        let active = self.filter.is_active()
+            || host.prefs().account.is_some()
+            || host.prefs().range != RangeChoice::Preset(RangePreset::All);
+        if active && kit::sheet_button(ui, "Reset", false, true).clicked() {
+            self.reset_filters(host);
+        }
+    }
+
+    /// The trade count (and the Columns menu on the Trades page), laid out right to left.
+    fn count_and_columns(
+        &mut self,
+        ui: &mut egui::Ui,
+        host: &mut JournalHost,
+        data: &Arc<JournalData>,
+    ) {
+        if host.prefs().section == Section::Trades {
+            self.columns_menu(ui, host);
+        }
+        let open = self
+            .rows
+            .iter()
+            .filter(|&&index| data.trades[index].is_open())
+            .count();
+        let mut text = format!(
+            "{} trade{}",
+            self.rows.len(),
+            if self.rows.len() == 1 { "" } else { "s" }
+        );
+        if open > 0 {
+            text.push_str(&format!(" \u{00b7} {open} open"));
+        }
+        ui.label(kit::text(
+            text,
+            size::BODY,
+            REGULAR,
+            theme::text_secondary(),
+        ))
+        .on_hover_text(format!("Built from {} executions", data.executions));
     }
 
     fn range_controls(&mut self, ui: &mut egui::Ui, host: &mut JournalHost) {
@@ -1673,7 +1745,11 @@ impl JournalTab {
                     .inner_margin(egui::Margin::symmetric(8, 4))
                     .stroke(egui::Stroke::new(
                         1.0,
-                        if bad { theme::LOSS } else { kit::primary(0.12) },
+                        if bad {
+                            jk::Sign::Loss.data()
+                        } else {
+                            kit::primary(0.12)
+                        },
                     ))
                     .show(ui, |ui| {
                         kit::plain_field(
@@ -2026,7 +2102,11 @@ impl JournalTab {
                     } else {
                         Icon::CheckCircleFill
                     },
-                    tint: if *error { theme::LOSS } else { theme::WIN },
+                    tint: if *error {
+                        jk::Sign::Loss.data()
+                    } else {
+                        jk::Sign::Gain.data()
+                    },
                     title: if *error { "That did not work" } else { "Done" },
                     message: text,
                 },
@@ -2162,13 +2242,16 @@ impl JournalTab {
                 }
             },
         );
-        // Search.
+    }
+
+    /// The symbol search.
+    fn search_box(&mut self, ui: &mut egui::Ui) {
         let response = kit::search_field(
             ui,
             egui::Id::new(("journal-search", self.id)),
             &mut self.search,
-            "Search symbol",
-            180.0,
+            "Search symbol, tag\u{2026}",
+            200.0,
         );
         if response.changed() {
             self.filter.search = self.search.clone();
@@ -2430,7 +2513,7 @@ impl JournalTab {
                 let cell = cells::cell(column, trade, &context);
                 let color = tone_color(cell.tone);
                 if cell.pill {
-                    paper_grid::tag(ui, &cell.text, color);
+                    jk::pill(ui, &cell.text, pill_tone(cell.tone));
                 } else if matches!(column, Column::Net | Column::Gross) {
                     paper_grid::figure_bold(ui, &cell.text, color);
                 } else {
@@ -2514,9 +2597,18 @@ fn account_label(account: &degenview_journal::model::JournalAccount) -> String {
 fn tone_color(tone: Tone) -> egui::Color32 {
     match tone {
         Tone::Normal => theme::text_primary(),
-        Tone::Positive => theme::WIN,
-        Tone::Negative => theme::LOSS,
+        Tone::Positive => jk::Sign::Gain.text(),
+        Tone::Negative => jk::Sign::Loss.text(),
         Tone::Muted => theme::text_secondary(),
+    }
+}
+
+/// A pill cell's tint: green and red for a result, neutral for the rest.
+fn pill_tone(tone: Tone) -> kit::Tone {
+    match tone {
+        Tone::Positive => kit::Tone::Good,
+        Tone::Negative => kit::Tone::Bad,
+        Tone::Normal | Tone::Muted => kit::Tone::Neutral,
     }
 }
 
@@ -2537,6 +2629,44 @@ fn aligned<R>(ui: &mut egui::Ui, content: impl FnOnce(&mut egui::Ui) -> R) -> R 
         ui.scope_builder(egui::UiBuilder::new().max_rect(inset), content)
             .inner
     })
+}
+
+/// The width the header's content gets: the window's, capped like the page and inset by its margin.
+fn content_width(full: f32) -> f32 {
+    full.min(CONTENT_MAX_WIDTH) - 2.0 * PAGE_MARGIN
+}
+
+/// What the header draws at a width, and how tall its panel is.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct HeaderLayout {
+    /// The page title ("Trade Journal") fits before the section tabs.
+    title: bool,
+    /// Range, filters and search share one row instead of two.
+    combined: bool,
+    height: f32,
+}
+
+/// Narrower than this the title would crowd the section tabs out.
+const TITLE_MIN_WIDTH: f32 = 1120.0;
+/// Narrower than this the range, the three filters and the search cannot share a row.
+const COMBINED_MIN_WIDTH: f32 = 1300.0;
+
+/// The header for a content `width`: the title and tabs row, then the toolbar in one row when
+/// the range and the filters are both shown and fit together, else a row each. A custom range
+/// adds two date fields, so it always takes the two-row form. Row heights are what `header`
+/// draws: change them together.
+fn header_layout(width: f32, range: bool, filters: bool, custom_range: bool) -> HeaderLayout {
+    let combined = range && filters && !custom_range && width >= COMBINED_MIN_WIDTH;
+    let extra_rows = if combined {
+        1
+    } else {
+        u8::from(range) + u8::from(filters)
+    };
+    HeaderLayout {
+        title: width >= TITLE_MIN_WIDTH,
+        combined,
+        height: 24.0 + 36.0 + 44.0 * f32::from(extra_rows),
+    }
 }
 
 fn loading_page(ui: &mut egui::Ui) {
@@ -2563,31 +2693,73 @@ fn message_page(
 ) -> bool {
     let mut pressed = false;
     ui.vertical_centered(|ui| {
-        ui.add_space((ui.available_height() / 2.0 - 90.0).max(30.0));
-        let (rect, _) = ui.allocate_exact_size(egui::vec2(36.0, 36.0), egui::Sense::hover());
-        crate::ui::icons::paint(ui.painter(), rect, icon, theme::text_tertiary());
-        ui.add_space(14.0);
-        ui.label(kit::text(title, 18.0, SEMIBOLD, theme::text_primary()));
-        ui.add_space(6.0);
-        ui.scope(|ui| {
-            ui.set_max_width(440.0);
-            ui.label(kit::text(
-                message,
-                size::BODY,
-                REGULAR,
-                theme::text_secondary(),
-            ));
+        ui.add_space((ui.available_height() / 2.0 - 110.0).max(30.0));
+        // One card, a bare icon, the words and (when there is a way out) a button.
+        ui.allocate_ui(egui::vec2(460.0_f32.min(ui.available_width()), 0.0), |ui| {
+            jk::card(
+                ui,
+                &jk::Card::new(""),
+                |_| {},
+                |ui| {
+                    ui.vertical_centered(|ui| {
+                        ui.add_space(10.0);
+                        let (rect, _) =
+                            ui.allocate_exact_size(egui::vec2(32.0, 32.0), egui::Sense::hover());
+                        crate::ui::icons::paint(ui.painter(), rect, icon, theme::text_tertiary());
+                        ui.add_space(12.0);
+                        ui.label(kit::text(title, 18.0, SEMIBOLD, theme::text_primary()));
+                        ui.add_space(6.0);
+                        ui.add(
+                            egui::Label::new(kit::text(
+                                message,
+                                size::BODY,
+                                REGULAR,
+                                theme::text_secondary(),
+                            ))
+                            .wrap(),
+                        );
+                        if let Some(label) = button {
+                            ui.add_space(16.0);
+                            pressed =
+                                header_controls::prominent_button(ui, Icon::Check, label).clicked();
+                        }
+                        ui.add_space(10.0);
+                    });
+                },
+            );
         });
-        if let Some(label) = button {
-            ui.add_space(16.0);
-            pressed = header_controls::prominent_button(ui, Icon::Check, label).clicked();
-        }
     });
     pressed
 }
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn the_header_is_one_toolbar_row_when_it_fits_and_two_when_it_does_not() {
+        // Wide: the title shows and the range and filters share a row.
+        let wide = header_layout(1400.0, true, true, false);
+        assert!(wide.title && wide.combined);
+        assert_eq!(wide.height, 24.0 + 36.0 + 44.0);
+        // Narrower: no combined row, a row each.
+        let narrow = header_layout(1000.0, true, true, false);
+        assert!(!narrow.title && !narrow.combined);
+        assert_eq!(narrow.height, 24.0 + 36.0 + 88.0);
+        // A custom range needs the room for two date fields: two rows even when wide.
+        assert!(!header_layout(1400.0, true, true, true).combined);
+        // Calendar (filters only) and Daily (nothing) keep their reduced rows.
+        assert_eq!(
+            header_layout(1400.0, false, true, false).height,
+            24.0 + 36.0 + 44.0
+        );
+        assert_eq!(
+            header_layout(1400.0, false, false, false).height,
+            24.0 + 36.0
+        );
+        // The content width is capped like the page and inset by its margin.
+        assert_eq!(content_width(3000.0), CONTENT_MAX_WIDTH - 2.0 * PAGE_MARGIN);
+        assert_eq!(content_width(800.0), 800.0 - 2.0 * PAGE_MARGIN);
+    }
     use super::*;
     use crate::model::DataSource;
     use crate::model::paper::{
@@ -3796,6 +3968,32 @@ mod tests {
                     &format!("journal-{name}-{suffix}"),
                     last.take().expect("ran"),
                 );
+            }
+            if !light {
+                // Pictures the page's other shapes: the whole Overview, a narrow window, and a
+                // range with a previous period (the deltas and the Edge Score change).
+                tab.close_trade(&mut host);
+                host.prefs_mut().range = RangeChoice::Preset(RangePreset::Month);
+                for (section, name, width, height) in [
+                    (Section::Overview, "overview-tall", 1400.0, 1750.0),
+                    (Section::Overview, "overview-narrow", 720.0, 1900.0),
+                    (Section::Trades, "table-narrow", 720.0, 800.0),
+                    (Section::Calendar, "calendar-narrow", 720.0, 900.0),
+                ] {
+                    host.prefs_mut().section = section;
+                    let mut sized = Screen::new(egui::vec2(width, height));
+                    for _ in 0..4 {
+                        last = Some(sized.run(vec![], |ui| {
+                            crate::ui::theme::sync(ui.ctx());
+                            tab.ui(ui, &mut host, 1);
+                        }));
+                    }
+                    sized.save(
+                        &format!("journal-{name}-{suffix}"),
+                        last.take().expect("ran"),
+                    );
+                }
+                host.prefs_mut().range = RangeChoice::Preset(RangePreset::All);
             }
             host.prefs_mut().section = Section::Trades;
             tab.filter.direction = Some(Direction::Short);
