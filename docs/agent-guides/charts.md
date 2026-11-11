@@ -1,236 +1,227 @@
 # Chart guidance
 
-Use [chart types](../chart-types.md), [chart canvas](../chart-canvas.md),
-[drawing tools](../drawing-tools.md), and [portfolio cards](../portfolio-cards.md) for detailed
-behavior.
+Details: [chart types](../chart-types.md), [chart canvas](../chart-canvas.md),
+[drawing tools](../drawing-tools.md), [portfolio cards](../portfolio-cards.md).
 
 ## Rendering and prices
 
-- `ui::chart_card::ChartCard` owns the painter loop. `ui::series_render` draws every main series;
-  `model::chart::look` decides bar appearance. Do not add type-specific drawing to `chart_card.rs`.
-- Chart state lives in `workspace::Chart`. Draw grid, main series, overlays/indicators, then labels.
-  `ui::chart_card::PriceScale` is the only price<->y map (linear, or log while the frame can draw
-  one) and carries the chart's `PriceScaleMode` and reference. Percent and Indexed to 100 change only
-  what the axis, its tags and the crosshair say, never a stored price. Read
-  [price scale modes](../price-scale.md) before touching axis labels, ticks, tags or the corner
-  button, and write an axis-column tag with `PriceScale::tag_label`, not the bare `PriceFormat`.
-- Every chart price uses `ChartAppearance::price_format()` and `PriceFormat`, never
-  `format::price`. This includes axes, tags, crosshair/OHLC, ruler/Fibonacci, and high/low markers.
-- Automatic precision is deliberately not the Swift app's: no decimals from 1,000, two from 1,
-  then two significant digits below 1 (`0.12`, `0.056`, `0.0031`); it counts leading zeros below
-  `0.001` (`0.0₅278`). Axis ticks still add the places their spacing needs. It also drives the
-  watchlist, which uses `PriceFormat::AUTO`.
-  `axis_decimals` (0–12) and `axis_small_prices` stay chart-local across template application.
-  Grid ticks use `format_tick`; `ui::price_text` paints the Unicode subscript count. Other screens
-  may use `format::price`; watchlist prices use `PriceFormat::AUTO`.
+- `ui::chart_card::ChartCard` owns the painter loop, `ui::series_render` draws every main series,
+  `model::chart::look` decides bar appearance. No type-specific drawing in `chart_card.rs`.
+- State: `workspace::Chart`. Order: grid, main series, overlays/indicators, labels.
+- `ui::chart_card::PriceScale` is the only price<->y map (linear, or log while the frame can draw
+  one), carrying `PriceScaleMode` and reference. Percent and Indexed to 100 change only what axis,
+  tags and crosshair say, never a stored price. Read [price scale modes](../price-scale.md) before
+  touching axis labels, ticks, tags or the corner button. Axis-column tags: `PriceScale::tag_label`,
+  not bare `PriceFormat`.
+- Every chart price (axes, tags, crosshair/OHLC, ruler/Fibonacci, high/low markers):
+  `ChartAppearance::price_format()` and `PriceFormat`, never `format::price` (fine on other
+  screens). Watchlist uses `PriceFormat::AUTO`.
+- Automatic precision deliberately differs from Swift: no decimals from 1,000, two from 1, two
+  significant digits below 1 (`0.12`, `0.056`, `0.0031`), leading-zero count below `0.001`
+  (`0.0₅278`). Axis ticks add places their spacing needs. Grid ticks: `format_tick`; `ui::price_text`
+  paints the subscript count.
+- `axis_decimals` (0–12) and `axis_small_prices` stay chart-local across template application.
 
 ## The header over the plot
 
-- The plot reaches the card's top edge and the header (logo, symbol, compare pills, indicators,
-  price) is drawn over it, after the body, in `workspace/grid.rs`. The workspace tells the card with
-  `ChartCard::set_top_inset(HEADER_HEIGHT)`. `PriceScale.top`/`height` start below the header
-  (`view`'s `top_inset`), so the bars clear it by default but may be panned under it; the plot, grid,
-  clip and pointer areas are the whole card.
-- Anything anchored to the plot's top (the OHLC and compare readouts, the replay pick tag and badge,
-  the logs-range tag, paper-trading pills) uses `ChartCard::below_header(plot)` or `top_inset`, never
-  `plot.top()`. Vertical pan converts pixels through `scale.height`, not `plot.height()`.
-- A snapshot has no header: it lays out with a zero inset and `snapshot_size()` drops the strip, so
-  its geometry is the plot's below the header. Do not hang interaction on the header's empty space: it
-  has no widget, so a drag there pans the chart. Portfolio cards keep the old header-above-body layout.
+- Plot reaches the card's top edge; header (logo, symbol, compare pills, indicators, price) is drawn
+  over it after the body in `workspace/grid.rs`, via `ChartCard::set_top_inset(HEADER_HEIGHT)`.
+  `PriceScale.top`/`height` start below it (`view`'s `top_inset`): bars clear it by default, may be
+  panned under. Plot, grid, clip and pointer areas are the whole card.
+- Top-anchored items (OHLC/compare readouts, replay pick tag and badge, logs-range tag,
+  paper-trading pills) use `ChartCard::below_header(plot)` or `top_inset`, never `plot.top()`.
+  Vertical pan converts pixels via `scale.height`, not `plot.height()`.
+- Snapshot: no header, zero inset, `snapshot_size()` drops the strip; geometry is the plot below the
+  header.
+- No interaction on the header's empty space: no widget there, a drag pans. Portfolio cards keep
+  header-above-body.
 
 ## Navigation
 
-- `model::chart::viewport::ChartViewport` is the only chart view state (bars, fractional offset from the
-  newest bar, manual price range). Gestures live in `ui/chart_card/navigation.rs` and edit it;
-  never keep another offset or range in a painter, the drawing layer or Pine rendering.
-- The window is continuous, so bars at the plot's edge may be cut: clip what you draw to the plot
-  and place bars with `Window::lead`, never an integer count of blank slots.
-- A pan must not rewrite drawings, emit `DrawingCommand`s, rerun scripts (only a script reading
-  `chart.*_visible_bar_time` depends on the range) or write the Canvas. Viewport state is
-  chart/layout state and is not part of a template.
-- See [chart navigation](../chart-navigation.md) for gestures, history paging and what is unverified.
-- Zoom In is a workspace mode, not a `Tool`: the rectangle is transient `ChartCard` state, its maths is
-  `model::chart::viewport::zoom`, and it edits the same `ChartViewport` inside the frame so linked charts follow.
-  Do not add a second viewport, and do not store the rectangle as a drawing (see
-  [chart navigation](../chart-navigation.md#zoom-in)).
-- Linked charts ([design](../chart-sync.md)) translate a viewport to a time range and back; they
-  never copy an offset, a bar index, or anything vertical. Followers are edited through
-  `ChartCard::follow_sync` before they draw, and only the user's own navigation is published, never
-  a follower's change or a live bar. The `SyncHub` belongs to one `ChartWorkspace`; do not make it
-  global. Price-based chart types do not take part.
+- `model::chart::viewport::ChartViewport` is the only view state (bars, fractional offset from
+  newest bar, manual price range), edited by gestures in `ui/chart_card/navigation.rs`. Never keep
+  another offset or range in a painter, the drawing layer or Pine rendering.
+- Continuous window, edge bars may be cut: clip to the plot, place bars with `Window::lead`, never
+  an integer count of blank slots.
+- A pan never rewrites drawings, emits `DrawingCommand`s, reruns scripts (only
+  `chart.*_visible_bar_time` readers depend on range) or writes the Canvas. Viewport is
+  chart/layout state, not template.
+- Gestures, history paging, unverified items: [chart navigation](../chart-navigation.md).
+- Zoom In is a workspace mode, not a `Tool`: transient `ChartCard` rectangle, maths in
+  `model::chart::viewport::zoom`, edits the same `ChartViewport` in-frame so linked charts follow.
+  No second viewport; never store the rectangle as a drawing
+  ([chart navigation](../chart-navigation.md#zoom-in)).
+- Linked charts ([design](../chart-sync.md)) map viewport to time range and back; never copy an
+  offset, bar index, or anything vertical. Followers are edited via `ChartCard::follow_sync` before
+  drawing; publish only the user's own navigation, never a follower's change or a live bar.
+  `SyncHub` belongs to one `ChartWorkspace`, never global. Price-based chart types excluded.
 
 ## Compared markets (overlays)
 
-Read [chart overlays](../chart-overlays.md) first. The short rules:
+Read [chart overlays](../chart-overlays.md) first. Short rules:
 
-- Overlays are configuration on `Chart::overlays` (`OverlayList`) and data in the workspace's
-  `OverlayHub`; the card gets both through `ChartCard::set_overlays` and fetches nothing. A script, alert,
-  drawing, order or MCP tool must keep reading `Chart::symbol`/`source`/`candles` only; a test pins it.
-- Candles go onto the chart's bars by `model::overlay::align::align` (span midpoint, only the bars in view),
-  never by index or open time, and a missing bar is `None`: no forward fill.
-- Rebasing and fitting are `model::overlay::scale`; a painter must not repeat that arithmetic. The lines are
-  painted in `paint_frame` so snapshots get them; do not add them to `Overlays`.
-- Edits are `OverlayCommand`s applied by `apply_overlay_command` (one undo step, none when nothing changed).
-- Compared markets have no chips in the header strip: their controls are the overlay card's
-  (`chart_card/overlay_card.rs`) and their settings are `overlay_settings::body`, shared by the Compare page
-  and the popover. Edit that one body, not copies.
-- Nothing caps the count; bound the *work* (in-flight requests, refresh rate, bars in view), never the list.
+- Config: `Chart::overlays` (`OverlayList`); data: workspace's `OverlayHub`. Card gets both via
+  `ChartCard::set_overlays`, fetches nothing. Scripts, alerts, drawings, orders, MCP tools read only
+  `Chart::symbol`/`source`/`candles`; a test pins it.
+- Candles map to chart bars via `model::overlay::align::align` (span midpoint, bars in view only),
+  never by index or open time. Missing bar is `None`: no forward fill.
+- Rebasing/fitting: `model::overlay::scale`; painters never repeat it. Lines painted in
+  `paint_frame` (so snapshots get them), not in `Overlays`.
+- Edits: `OverlayCommand`s via `apply_overlay_command` (one undo step, none if unchanged).
+- No header-strip chips: controls are the overlay card's (`chart_card/overlay_card.rs`), settings
+  `overlay_settings::body`, shared by Compare page and popover. Edit that one body, not copies.
+- Nothing caps the count; bound the *work* (in-flight requests, refresh rate, bars in view), never
+  the list.
 
 ## Types, canvas, and templates
 
-- Never modify canonical candles. `model::chart::synthetic` builds price-based types; the cached
-  `constructed_series` feeds scale, indicators, Pine, alerts, drawings, and replay. Standard types
-  keep real OHLC for scripts.
-- Type and settings have one persistence path: `ChartAppearance::style`. New fields need
-  `#[serde(default)]`. Cosmetic restyling must not change `synthetic::Construction`.
-- Builders are pure and prefix-preserving because replay depends on it. Add a fixture for changed
-  construction rules and document anything unverified against TradingView.
-- Pine's `plotcandle`, `plotbar`, and `barcolor` remain independent layers ordered by
+- Never modify canonical candles. `model::chart::synthetic` builds price-based types; cached
+  `constructed_series` feeds scale, indicators, Pine, alerts, drawings, replay. Standard types keep
+  real OHLC for scripts.
+- Type and settings persist only via `ChartAppearance::style`; new fields need `#[serde(default)]`.
+  Cosmetic restyling must not change `synthetic::Construction`.
+- Builders are pure and prefix-preserving (replay depends on it). Changed construction rules need a
+  fixture; document anything unverified against TradingView.
+- Pine's `plotcandle`, `plotbar`, `barcolor` stay independent layers ordered by
   `PineInstance::visual_order`.
-- `ChartAppearance::canvas` is presentation-only. Canvas changes must not alter candles, rebuild
-  constructed bars, or rerun indicators/Pine. New colors are `Option<Rgba>` so `None` follows the
-  theme.
-- Resolve canvas/theme once per frame with `CanvasStyle::resolve`; painters must not fetch canvas
-  colors from `theme::*`. Grid and axis labels share `canvas::{price_ticks,time_ticks}`. Keep price
-  range, visible-window, and pane-split geometry pure in `model/chart/canvas/mod.rs`.
-- Pane order and collapse live on `PineInstance`; maximize is card view state. Buttons report
-  clicks and `ChartCard` applies them.
-- Templates snapshot `ChartAppearance`. Apply with `ChartCard::apply_template`, and plan all
-  apply-to-all changes before applying any, so type changes pass through `set_chart_type`.
-  `ChartTemplateStore` re-reads before writes and refuses to overwrite undecodable rows.
+- `ChartAppearance::canvas` is presentation-only: never alters candles, rebuilds constructed bars,
+  or reruns indicators/Pine. New colors: `Option<Rgba>` (`None` follows theme).
+- Resolve canvas/theme once per frame with `CanvasStyle::resolve`; painters never read canvas colors
+  from `theme::*`. Grid and axis labels share `canvas::{price_ticks,time_ticks}`. Price range,
+  visible-window, pane-split geometry stay pure in `model/chart/canvas/mod.rs`.
+- Pane order/collapse live on `PineInstance`; maximize is card view state. Buttons report clicks,
+  `ChartCard` applies them.
+- Templates snapshot `ChartAppearance`. Apply with `ChartCard::apply_template`; plan all
+  apply-to-all changes before applying any, so type changes go through `set_chart_type`.
+  `ChartTemplateStore` re-reads before writes, refuses to overwrite undecodable rows.
 
 ## Drawings
 
-- A drawing is pinned to time+price. The brush and the ruler have variants of their
-  own; every other tool, the trend line and the Fibonacci tools included, is
-  `Drawing::Shape { geometry: Geometry, style, text, locked, hidden, visibility }`. New fields
-  need `#[serde(default)]`. Nothing stores a pixel or a derived corner. The app has not shipped
-  an older stored form that must keep reading, so do not add compatibility readers.
-- A style field only some tools use is left out of the stored row while it holds its default
-  (`skip_serializing_if`): `DrawingStyle` is written whole, and every drawing and every synced
-  record would otherwise carry the levels of a pitchfork.
-- A tool is one row of `Tool::spec()` (`Placement`, `Caps`) and `Tool::default_style()`. Add a
-  tool there, a `Geometry` variant, its projection (`shape::shape`, `line_shapes::project` for
-  the lines, channels and pitchforks, or `pattern_shapes::project` for the patterns, Elliott waves
-  and cycles) and an icon; the controller, toolbar, dialog and tests
-  (`every_tool_…` loops over `Tool::GROUPED`) pick it up. Do not add `match tool` to pointer
-  handling. The flyouts are `ToolGroup::MENU`, `LINE_MENU`, `NOTE_MENU`, `PATTERN_MENU`, `FORECAST_MENU`
-  and `FIB_MENU`. A tool of more than four anchors needs the test fixtures' seven: the
-  every-tool loops slice a seven-point array by `Placement::Points(n)`.
-- The Fibonacci and Gann tools (`fib_shapes`, `gann_shapes`; maths in `model::{fib, gann, fib_style}`
-  and `ui::fib_geometry`) keep their levels in `DrawingStyle.fib: Option<FibStyle>` (`None` is the
-  tool's defaults, so every projection reads `fib_style(tool, style)`), as fixed-size lists the one
-  level editor edits. Levels are worked from stored prices and bar indexes; curves are sampled only
-  where they cross the plot with a hard budget (`fib_geometry::sample`), and a fill is convex pieces
-  cut to the plot (`Screen.backdrop`: seen, never picked). A Gann angle is a ratio of price to time
-  taken from the second anchor, never a fixed screen angle. A control a tool does not honour is not in
-  `Features`, so it is not offered. See [Fibonacci and Gann tools](../fibonacci-gann-tools.md).
-- A shape's names and ratios are `Screen.labels` (`PivotLabel`), laid out by `draw::draw_labels` when
-  painted, not text drawn in the projection. Ratios are worked from stored prices
-  (`model::pattern`), never from pixels, so they do not change with the price scale. A cycle is
-  counted in bars (`model::pattern::cycle`, `TimeIndex::index_of`); curves are sampled only over the plot
-  (`ui::pattern_geometry`). See [Chart patterns, Elliott waves and cycles](../pattern-tools.md).
-- The forecasting, volume and measurement tools (`forecast_shapes`, `volume_shapes`; maths in
-  `model::{position, volume_profile, ghost, bars_pattern, measure}`) add `Screen.boxes`, `candles`
-  and `shade_meshes`. They read only the bars the chart draws, never fetch, and never reach an
-  order, alert or script: a position is hypothetical (a test pins that the trading and alert
-  engines do not mention drawings). `ProjectionKey` includes the newest bar's volume. See
+- Pinned to time+price. Brush and ruler have own variants; every other tool (trend line, Fibonacci
+  included) is `Drawing::Shape { geometry: Geometry, style, text, locked, hidden, visibility }`. New
+  fields need `#[serde(default)]`. Never store a pixel or derived corner. No older stored form has
+  shipped: no compatibility readers.
+- Style fields only some tools use are omitted at default (`skip_serializing_if`): `DrawingStyle` is
+  written whole, else every drawing and synced record carries a pitchfork's levels.
+- A tool = one row of `Tool::spec()` (`Placement`, `Caps`) and `Tool::default_style()`, a `Geometry`
+  variant, a projection (`shape::shape`; `line_shapes::project` for lines/channels/pitchforks;
+  `pattern_shapes::project` for patterns/Elliott waves/cycles) and an icon. Controller, toolbar,
+  dialog and tests (`every_tool_…` loops over `Tool::GROUPED`) pick it up. No `match tool` in
+  pointer handling. Flyouts: `ToolGroup::MENU`, `LINE_MENU`, `NOTE_MENU`, `PATTERN_MENU`,
+  `FORECAST_MENU`, `FIB_MENU`. Over four anchors needs the fixtures' seven: every-tool loops slice a
+  seven-point array by `Placement::Points(n)`.
+- Fibonacci/Gann (`fib_shapes`, `gann_shapes`; maths `model::{fib, gann, fib_style}`,
+  `ui::fib_geometry`): levels in `DrawingStyle.fib: Option<FibStyle>` (`None` = tool defaults, so
+  projections read `fib_style(tool, style)`), fixed-size lists for the one level editor. Levels from
+  stored prices and bar indexes. Curves sampled only where they cross the plot, hard budget
+  (`fib_geometry::sample`); fills are convex pieces cut to the plot (`Screen.backdrop`: seen, never
+  picked). Gann angle = price/time ratio from the second anchor, never a fixed screen angle.
+  Unhonoured controls are absent from `Features`, so not offered.
+  [Fibonacci and Gann tools](../fibonacci-gann-tools.md).
+- Names and ratios are `Screen.labels` (`PivotLabel`), laid out by `draw::draw_labels` at paint, not
+  projection text. Ratios from stored prices (`model::pattern`), never pixels, so scale-independent.
+  Cycles counted in bars (`model::pattern::cycle`, `TimeIndex::index_of`); curves sampled only over
+  the plot (`ui::pattern_geometry`). [Chart patterns, Elliott waves and cycles](../pattern-tools.md).
+- Forecast/volume/measure (`forecast_shapes`, `volume_shapes`; maths
+  `model::{position, volume_profile, ghost, bars_pattern, measure}`) add `Screen.boxes`, `candles`,
+  `shade_meshes`. Read only the chart's drawn bars; never fetch or reach an order, alert or script.
+  Positions are hypothetical (a test pins that trading and alert engines don't mention drawings).
+  `ProjectionKey` includes newest bar's volume.
   [Forecasting, volume and measurement tools](../forecast-tools.md).
-- A tool whose anchor means only part of itself (a level's time, a regression's price) says so in
-  `Geometry::reads` and restores what an edit may not change in `Geometry::constrain`.
-- Geometry lives in `ui/drawing_geometry.rs` and `ui/line_geometry.rs` as pure functions on `Pos2`
-  with their own tests. Polygons fill by the even-odd rule; translucent freehand strokes are
-  painted from a coverage map (`rasterize_stroke`), never overlapping triangles. A line with no end
-  is cut to the plot with `line_in_rect`; never draw from an enormous coordinate.
-- A drawing's text is part of it: `Drawing::set_text`, the inline editor in
-  `drawing_layer/text_edit.rs`, and `TextPlace` for where the painter puts it. Axis tags are painted by `paint_frame`'s label pass, never by the drawing
-  painter (it is clipped to the plot).
-- The layer never mutates drawings: it returns `DrawingCommand`s in the `DrawingFrame`, and
-  `drawings::apply_commands` applies them. One batch is one undo step; use `Style` for restyles
-  (merged in bursts), never one command per pointer move. Previews and cancelled drafts are not
-  commands.
-- `PersistedChart.drawings` decodes leniently: a row this version cannot read stays as
-  `Drawing::Unreadable` and is written back untouched. Skip it in anything that draws, picks or
-  edits (the Object tree lists it, deletable only, by `Drawing::stored_id`).
-- **Older builds meet your changes through iCloud.** A new tool is a new `Geometry` variant and needs
-  nothing more. A new field on an existing tool that an older build would silently drop on re-save
-  needs `"since": N` in the drawing body and `DRAWING_FORMAT` raised to N (`model/drawings/mod.rs`); without
-  it the older build strips the field and syncs the stripped copy over yours. The full table is in
+- Anchor meaning only part of itself (a level's time, a regression's price): declare in
+  `Geometry::reads`, restore what edits may not change in `Geometry::constrain`.
+- Geometry: pure `Pos2` functions with own tests in `ui/drawing_geometry.rs`, `ui/line_geometry.rs`.
+  Polygons fill even-odd; translucent freehand strokes paint from a coverage map
+  (`rasterize_stroke`), never overlapping triangles. Endless lines cut to the plot with
+  `line_in_rect`; never draw from an enormous coordinate.
+- Text belongs to the drawing: `Drawing::set_text`, inline editor `drawing_layer/text_edit.rs`,
+  placement `TextPlace`. Axis tags painted by `paint_frame`'s label pass, never the drawing painter
+  (clipped to plot).
+- Layer never mutates drawings: returns `DrawingCommand`s in the `DrawingFrame`, applied by
+  `drawings::apply_commands`. One batch = one undo step; restyles use `Style` (merged in bursts),
+  never one command per pointer move. Previews and cancelled drafts aren't commands.
+- `PersistedChart.drawings` decodes leniently: unreadable rows stay `Drawing::Unreadable`, written
+  back untouched. Skip them when drawing, picking, editing (Object tree lists them, deletable only,
+  by `Drawing::stored_id`).
+- **Older builds meet your changes through iCloud.** New tool (new `Geometry` variant): nothing
+  more. New field on an existing tool that an older build would silently drop on re-save: add
+  `"since": N` in the drawing body and raise `DRAWING_FORMAT` to N (`model/drawings/mod.rs`), or the
+  older build strips it and syncs the stripped copy over yours. Table:
   [iCloud Sync](../icloud-sync.md#newer-versions).
-- Drawings are main-pane only and use the bars the chart draws (constructed and replay-cut); never
-  index candles directly.
-- The text, note and content tools ([Annotation tools](../annotation-tools.md)) add rules to the
-  above. A box is sized with `Projection.measure` (the context that paints), never a guess. A shape with
-  nothing painted where it is to be clicked needs `Screen.hit`. A tool that moves with the screen
-  (a pinned table) has no anchors and moves through `edit::translate`. Content is named, never carried:
-  a drawing holds a picture's hash or a link, and a new picture goes through
-  `service::image_ingest` on a worker, never the UI thread. Nothing contacts a service except the
-  Preview button on a Post card, after a one-time allow.
-- `Drawing::sample` and `sample_content` (tests) make a drawing of any tool; the every-tool loops must
-  keep covering the content tools rather than skip them.
+- Main pane only; use the chart's drawn bars (constructed, replay-cut), never index candles directly.
+- Text/note/content tools ([Annotation tools](../annotation-tools.md)) add: size boxes with
+  `Projection.measure` (painting context), never guess. Nothing painted at the click spot → needs
+  `Screen.hit`. Screen-fixed tools (pinned table) have no anchors, move via `edit::translate`.
+  Content is named, never carried: a picture's hash or a link; new pictures go through
+  `service::image_ingest` on a worker, never the UI thread. Only a Post card's Preview button
+  contacts a service, after a one-time allow.
+- `Drawing::sample`, `sample_content` (tests) build any tool; every-tool loops must cover content
+  tools, not skip them.
 
 ## Context menus
 
-- A right-click is answered by one menu: a drawing's (`ui::drawing_layer::menu`), else the chart's
-  (`model::chart::context` builds the entries, `ui::chart_context_menu` draws them,
-  `workspace/context.rs` runs them). Add an entry as a `Command`, a row in the model's `menu`, and
-  an arm in `run_context_command`; the menu never mutates anything itself.
-- The click is captured once as a `ChartContext` (chart, market, time, price, target) through the
-  card's `Projection` and `PriceScale`. Never recompute a menu price from the live pointer, never
-  add another price-to-pixel formula, and always `chart_context::check` the snapshot before
-  acting.
-- Opening a menu, an order entry or Add alert never places an order or saves an alert: they open
-  the paper ticket and the alert editor for the user to review.
-- Drags and clicks that move the chart or draw are primary-button only.
-- An alert's tag is draggable to a new level. The card only reports an `AlertMove`; the workspace
-  turns it into `WorkspaceAction::MoveAlert` (`workspace/context.rs`), so the card never edits a
-  `PriceAlert`, and a percentage alert or a replay is never draggable.
-- Cursor time lock, the Table view feed and the alert lines are card state that is never saved and
-  never part of a template or linked navigation. Table and Object Tree read the bars and state the
-  chart already draws; the tree is a view over the drawings, indicators and scripts, not a store.
-- The Pine logs pane is the same kind of view: it reads `ChartCard::pine_logs` (the run's messages,
-  never saved, never in a template) and is dropped with its chart. Only its level and search
-  options persist, as the local `pineLogs.prefs` setting.
-- Saved scripts reach a chart from two places, both reading `ui::script_catalog` (saved indicators and
-  strategies by name, re-read at most every 2 s, only while a menu or the Scripts page is open: never
-  call `ScriptStore::all_scripts` per frame). The toolbar's Indicators picker (the card header has no "+") reports `Action::AddScript`, which the workspace applies with `add_pine_instance_to` so it is one undo
-  step. The chart settings Scripts page lists every saved script with a switch: the first switch-on adds
-  an instance, and after that the switch is only `PineInstance::visible`, so inputs, style and order
-  survive turning a script off. Removing an instance is the separate x on its row. The sheet has no
-  workspace handle, so its edits are not undoable.
-- Session statistics (`model::session_stats`, `ui::session_stats_view`) read the market's own candles the chart holds, cut at the replay position, never a constructed chart type's bars, and answer once per change of bars or question (cached, never per frame). The panel state is card state: not saved, in no template. Every answer carries its sample size and a 95% interval and is a historical frequency, never a forecast. See [Session statistics](../session-stats.md).
-- Undo is one typed stack (`Snapshot`): drawings, or indicators and scripts. Bulk changes are one
-  `apply_drawing_commands` batch or one `remember_indicators` entry. See
-  [chart context menus](../chart-context-menu.md).
+- One menu per right-click: drawing's (`ui::drawing_layer::menu`), else chart's
+  (`model::chart::context` builds, `ui::chart_context_menu` draws, `workspace/context.rs` runs).
+  New entry: a `Command`, a row in the model's `menu`, an arm in `run_context_command`. Menus never
+  mutate.
+- Click captured once as `ChartContext` (chart, market, time, price, target) via the card's
+  `Projection` and `PriceScale`. Never recompute a menu price from the live pointer or add another
+  price-to-pixel formula; always `chart_context::check` the snapshot before acting.
+- Menus, order entry and Add alert never place orders or save alerts: they open the paper ticket or
+  alert editor for review.
+- Chart-moving and drawing drags/clicks are primary-button only.
+- Alert tags drag to a new level: the card only reports `AlertMove`, the workspace makes
+  `WorkspaceAction::MoveAlert` (`workspace/context.rs`); the card never edits a `PriceAlert`.
+  Percentage alerts and replays never drag.
+- Cursor time lock, Table view feed, alert lines: card state, never saved, never in a template or
+  linked navigation. Table and Object Tree read what the chart already draws; the tree is a view
+  over drawings, indicators, scripts, not a store.
+- Pine logs pane: also a view, reads `ChartCard::pine_logs` (run's messages, never saved or
+  templated), dropped with its chart. Only level and search options persist (local
+  `pineLogs.prefs`).
+- Saved scripts reach a chart two ways, both via `ui::script_catalog` (saved indicators/strategies
+  by name, re-read at most every 2 s, only while a menu or the Scripts page is open; never call
+  `ScriptStore::all_scripts` per frame):
+  - Toolbar Indicators picker (card header has no "+") reports `Action::AddScript`; workspace
+    applies it with `add_pine_instance_to`, one undo step.
+  - Chart settings Scripts page: a switch per saved script. First switch-on adds an instance; after
+    that the switch is only `PineInstance::visible`, so inputs, style, order survive switching off.
+    Removal is the row's separate x. No workspace handle, so edits aren't undoable.
+- Session statistics (`model::session_stats`, `ui::session_stats_view`): read the market's own held
+  candles cut at the replay position, never a constructed type's bars; answer once per change of
+  bars or question (cached, never per frame). Panel state is card state, unsaved, in no template.
+  Every answer carries sample size and a 95% interval and is a historical frequency, never a
+  forecast. [Session statistics](../session-stats.md).
+- Undo: one typed stack (`Snapshot`) of drawings, or indicators and scripts. Bulk changes = one
+  `apply_drawing_commands` batch or one `remember_indicators` entry.
+  [Chart context menus](../chart-context-menu.md).
 
 ## Snapshots
 
-- A snapshot is the live frame drawn by `ChartCard::paint_snapshot` through the same
-  `frame_layout`/`paint_frame` as `body_inner` (`ui/chart_card/frame.rs`). Never add a second chart
-  painter; add to `paint_frame`, or to the `Overlays` hook if only the live chart has it (anything
-  a pointer can reach). `snapshot_tests.rs` compares both frames shape for shape and will fail if
-  they drift.
-- `paint_snapshot` is `&self` and read-only: no Pine run, no cache write, no viewport, pane or
-  replay change. Keep new chart state it reads cloneable or `Arc`.
-- The frame is frozen on the UI thread in one pass; saving, rasterizing, PNG and upload run on
-  `work_queue::SNAPSHOTS` and hand clipboard/browser work back as an `Outcome`. Never report a copy,
-  save or open before it has happened.
-- Trading overlays are off by default (`snapshot.prefs`); uploads need a snapshot provider turned on and set up, and the
-  user's consent per destination. See [chart snapshots](../snapshots.md).
+- A snapshot is the live frame: `ChartCard::paint_snapshot` uses the same
+  `frame_layout`/`paint_frame` as `body_inner` (`ui/chart_card/frame.rs`). Never a second chart
+  painter: add to `paint_frame`, or the `Overlays` hook if live-only (anything pointer-reachable).
+  `snapshot_tests.rs` compares both frames shape for shape and fails on drift.
+- `paint_snapshot` is `&self`, read-only: no Pine run, cache write, viewport/pane/replay change. New
+  chart state it reads must be cloneable or `Arc`.
+- Frame frozen on the UI thread in one pass; saving, rasterizing, PNG, upload run on
+  `work_queue::SNAPSHOTS`, handing clipboard/browser work back as an `Outcome`. Never report a copy,
+  save or open before it happened.
+- Trading overlays off by default (`snapshot.prefs`). Uploads need a snapshot provider on and set
+  up, plus user consent per destination. [Chart snapshots](../snapshots.md).
 
 ## Portfolio cards
 
-- A portfolio card is a `workspace::Chart` with `card: Some(...)`; its symbol is a key and source is
-  an unread placeholder. `portfolio_card::CardKind` is not Pine's `ChartKind`. Every market-data
-  loop must skip non-market cards via `Chart::is_market()`: fetching, live feeds, paper,
-  scripts/alerts, replay, MCP, apply-to-all, and layout previews. `Chart::fetch` is a no-op for cards.
-- `PortfolioCardEnv::view` alone reads ledgers, quotes, and history. Painters accept `CardData` and
-  never access hosts/network. Each `CardRuntime` owns and drops a sibling quote feed demand.
-- Favorites use `WatchlistInstrument.card` and `PortfolioCard::instrument_id()`. The card field,
-  not provider, controls display/open/export behavior. Opening focuses or adds the card; it never
-  replaces a market in the focused chart.
-- A card's `portfolio_id` and the key derived from it are translated to shared ids when a layout or
-  watchlist syncs (`sync::ids::map_card`); a new place that stores a portfolio id must be added to
-  that translation.
-- Top Performers ranks each market's candles without FX and scales today's value by return,
-  assuming unchanged quantity.
+- A `workspace::Chart` with `card: Some(...)`; symbol is a key, source an unread placeholder.
+  `portfolio_card::CardKind` ≠ Pine's `ChartKind`. Every market-data loop skips non-market cards
+  via `Chart::is_market()`: fetching, live feeds, paper, scripts/alerts, replay, MCP, apply-to-all,
+  layout previews. `Chart::fetch` is a no-op for cards.
+- Only `PortfolioCardEnv::view` reads ledgers, quotes, history. Painters take `CardData`, never
+  access hosts/network. Each `CardRuntime` owns and drops a sibling quote feed demand.
+- Favorites: `WatchlistInstrument.card`, `PortfolioCard::instrument_id()`. The card field, not
+  provider, controls display/open/export. Opening focuses or adds the card, never replaces the
+  focused chart's market.
+- `portfolio_id` and its derived key are translated to shared ids on layout/watchlist sync
+  (`sync::ids::map_card`); any new place storing a portfolio id must join that translation.
+- Top Performers ranks each market's candles without FX, scales today's value by return, assuming
+  unchanged quantity.

@@ -1,52 +1,49 @@
 # Flat style
 
-The default look of every window, sheet, panel and card in DegenView. The reference is the Settings
-window (`src/ui/settings_window.rs`) next to the main window. New UI follows this; existing UI has not
-been audited for it, so do not restyle a screen you were not asked to touch, but do not copy its older
-habits either.
+Default look of every window, sheet, panel and card. Reference: the Settings window
+(`src/ui/settings_window.rs`) beside the main window. New UI follows it. Existing UI is not audited:
+do not restyle screens you were not asked to touch, and do not copy their older habits.
 
 ## Rules
 
-- **Flat surfaces.** A surface is a faint fill (`theme::card_fill`) and a 1px hairline
-  (`theme::card_border`, a clearly visible lighter-gray line, not a faint one), radius `kit::CARD_RADIUS` (10). Build cards with `kit::card_frame`. No
-  gradients, no lit top edge, no drop shadows. Shadows exist only for things that float above the app
-  (menus, popovers, dialogs). `theme::card_highlight` is not for cards.
-- **Icons stand alone.** A row's icon is drawn bare, in `theme::text_secondary()` (`text_primary()` when
-  its row is selected): no tile, disc, circle, rounded square or colour behind it. Cards use
-  `kit::paint_card_badge` (18px, no tile). Sidebars use 16px icons. A brand logo (a broker, a data
-  source) is the one exception and keeps its own mark, with a hairline.
-- **Picture headers** (`ui::art`, `settings_art`, `alert_art`) may colour the marks inside the picture,
-  but Settings pictures set `Art::flat` so no coloured disc sits behind them.
-- **Colour means state or data.** A selected row is `theme::selected_tint`, a status is a
-  `kit::status_badge`, a series or price is its own colour. Chrome, icons and controls are neutral.
-  Never blue; see [Core guidance](core.md).
-- **Native window controls.** A secondary window (Settings, Alerts) keeps the platform's title bar and
-  its close / minimise / zoom controls. Only tab windows draw their own strip (`ui::window_chrome`).
-  Do not draw an in-window title bar, a gear-and-title header or a close button inside a window that
-  already has one.
+- **Flat surfaces.** Faint fill (`theme::card_fill`), 1px hairline (`theme::card_border`, a clearly
+  visible lighter gray, not faint), radius `kit::CARD_RADIUS` (10). Build cards with `kit::card_frame`.
+  No gradients, lit top edge or drop shadows; shadows only for things floating above the app (menus,
+  popovers, dialogs). `theme::card_highlight` is not for cards.
+- **Icons stand alone.** Bare, in `theme::text_secondary()` (`text_primary()` when the row is
+  selected): no tile, disc, circle, rounded square or colour behind. Cards use `kit::paint_card_badge`
+  (18px, no tile); sidebars 16px icons. Exception: a brand logo (broker, data source) keeps its own
+  mark, with a hairline.
+- **Picture headers** (`ui::art`, `settings_art`, `alert_art`) may colour marks inside the picture;
+  Settings pictures set `Art::flat` so no coloured disc sits behind them.
+- **Colour means state or data.** Selected row `theme::selected_tint`, status `kit::status_badge`,
+  a series or price its own colour. Chrome, icons, controls neutral. Never blue; see
+  [Core guidance](core.md).
+- **Native window controls.** Secondary windows (Settings, Alerts) keep the platform title bar and
+  close / minimise / zoom. Only tab windows draw their own strip (`ui::window_chrome`). Never draw an
+  in-window title bar, gear-and-title header or close button in a window that has one.
 - **One scale of text.** Page title `kit::size::TITLE2 + 3`, section heading `HEADLINE` bold, body
-  `BODY`, hints `CAPTION` in `text_secondary`. Take sizes from `kit::size`, do not invent them.
+  `BODY`, hints `CAPTION` in `text_secondary`. Sizes only from `kit::size`.
 
 ## Pages have no bar and no Save button
 
-A Settings page has nothing pinned under it: no footer bar, no Save, no Apply. Every input is saved
-as it is entered, and the other actions sit in the content they act on.
+No footer bar, Save or Apply under a Settings page. Inputs save as entered; other actions sit in the
+content they act on.
 
-- Use `settings_api_keys::Autosave` with `field`'s returned response: `watch(&response, secret)`,
-  then `due(ctx)` and save. A plain field is saved when typing pauses (700 ms) or the field is left;
-  a secret (a key, a token) only when its field is left, so half a key is never stored. A choice
-  (a switch, a segment, a picked provider) is saved at once, with `touch()`.
-- A value that cannot be saved yet (a half-filled pair of keys, an invalid URL) is not saved and says
-  why inline, under the field, with `status_message`. It never needs a button to find out.
-- Test, Remove and similar buttons go in the card of the thing they act on, under its fields.
-  An "Add ..." button goes under the list it adds to. A result or failure is a `status_message`
-  line beside or under them.
-- A secondary view of a page (the Pine theme editor) leaves with its own back button in the
-  header; reset actions live in a menu beside the name, not in a bar.
+- `settings_api_keys::Autosave` with `field`'s response: `watch(&response, secret)`, then `due(ctx)`
+  and save. Plain fields save when typing pauses (700 ms) or the field is left; secrets (key, token)
+  only on leaving, so half a key is never stored. Choices (switch, segment, picked provider) save at
+  once with `touch()`.
+- A value that cannot be saved yet (half a key pair, invalid URL) is not saved; say why inline under
+  the field with `status_message`, never behind a button.
+- Test, Remove and similar buttons go in the card of their target, under its fields; "Add ..." under
+  the list it adds to. Results/failures: a `status_message` line beside or under them.
+- A secondary view (the Pine theme editor) leaves via its own back button in the header; reset
+  actions live in a menu beside the name, not a bar.
 
 ## Sidebar and page layout
 
-Use the helpers in `settings_window.rs` instead of building a page by hand:
+Use the `settings_window.rs` helpers, not hand-built pages:
 
 | Need | Use |
 | --- | --- |
@@ -56,13 +53,13 @@ Use the helpers in `settings_window.rs` instead of building a page by hand:
 | A card for one setting (icon, title, hint, control right) | `settings_card::card` / `card_reserving` |
 | A status pill | `status_badge`; a status line `status_message` |
 
-The sidebar is `SIDEBAR_WIDTH` wide on `theme::background()`, with `theme::separator()` as its only
-edge. Rows are 30 points: a bare icon, a title, `selected_tint` when open, a faint tint on hover. Pages
-must work at the window's minimum size; the Pine Studio page tests read `WINDOW_SIZE` and
-`SIDEBAR_WIDTH`, so change them only together.
+Sidebar: `SIDEBAR_WIDTH` wide on `theme::background()`, `theme::separator()` its only edge. Rows 30
+points: bare icon, title, `selected_tint` when open, faint tint on hover. Pages must work at the
+window's minimum size; Pine Studio page tests read `WINDOW_SIZE` and `SIDEBAR_WIDTH`, so change them
+together.
 
 ## Checking it
 
-Look at the page, in both themes, at the default and the narrowest window size, before shipping:
-a gallery test or a screenshot of the window (see the gallery tests in `ui/` for the recipe). Compare
-the card edges and icon alignment against a neighbouring Settings page, not against memory.
+Before shipping, look at the page in both themes at default and narrowest window size: a gallery test
+or window screenshot (recipe in the gallery tests in `ui/`). Compare card edges and icon alignment
+with a neighbouring Settings page, not memory.

@@ -2,331 +2,311 @@
 
 ## Runtime
 
-- Everything for the Pine engine stays under `src/pine/`; it and Pine domain types in `model/` are
-  pure and contain no egui types. Alerts and subscriptions compile the same modules.
-- Unsupported behavior is never silent. Stand-ins emit `ignored_features` warnings
-  (`PINE7001`–`PINE7006`) and live in `misc_builtins`; object results or feeds without a stand-in
-  remain `PINE9003` errors.
-- `log.*()` messages go to `Session.logs`, never into `RuntimeState` (rollback would discard them).
-  Capture is opt-in (`ExecutionController::with_logs`); a reader applies `LogBatch`es in order
-  through `LogHistory`. Keep the limits in `pine::logs` and read [Pine Logs](../pine-logs.md) before
-  changing them.
-- The debugger (`pine/debug/`, [Pine debugger](../pine-debugger.md)) is opt-in: `Session::debug` is
-  `None` unless `attach_debugger` ran, and the hooks (statement loop, `invoke`, `execute_bar`, the
-  `request.security` evaluator) test it and call `#[cold] #[inline(never)]` helpers. Do not add a
-  hook to `eval`, `budget` or any per-expression path, and do not add work to the statement loop that
-  runs without a debugger. Check a change to `session.rs` with `tools/pine-bench.sh <base-rev>`
-  (interleaved A/B, checksums prove both builds ran the same program). A watch or condition may
-  only be an expression `pine::debug::parse_expression` accepts: add to its allow-list only a call
-  that neither writes state nor allocates a handle, and test it against a clean run.
-- The profiler (`pine/profile/`, [Pine profiler](../pine-profiler.md)) shares the debugger's gate:
-  `Session::hooks` is `None` unless `attach_debugger` or `attach_profiler` ran (one or the other), the
-  statement loop, `invoke` and `execute` test it and call `#[cold] #[inline(never)]` helpers. Keep the
-  statement loop's shape: an earlier version with a block-level test and a second loop measured 1–2%
-  slower in layout alone. Every `hook_before` needs its `hook_after`/`hook_failed`, every
-  `hook_enter_function` its `hook_leave_function`. A region is a statement or a user function,
-  identified by the offset the parser anchored it at; library code (`context.scope`) is never timed.
-  A change to timing must keep `Σ line time + not attributed = total` exactly (the tests run on a
-  stepping clock and assert it). What a profile is "of" (`ProfileKey`: text plus
-  `PreviewState::run_identity`) must cover everything a script can see in the preview run; when the
-  chart's run gains an input (`run_revision`, `ChartCard::pine_outputs`), add it to the identity and
-  to `DebugFeed` too. Check a change to `session.rs` with `tools/pine-bench.sh <base-rev>
-  <head-rev>` (head must be a commit; the `profiled_*` workloads are the recorder's cost).
-- `request.footprint()` handles are stateless (a footprint is a bar index, a `volume_row` a bar index
-  plus a row number) and the data lives in `Session::footprints`, outside `RuntimeState`; keep it
-  there so rollback does not copy it. Read [Pine volume footprints](../pine-footprint.md) before
-  changing its algorithm: most of it is inferred.
-- Known gaps against TradingView's execution model are in
-  [the audit](../reviews/pine-execution-model-audit.md); read it before relying on rollback exceptions.
-  Still open: a broker order does not survive a rolled-back tick; a runtime error does not halt the script.
-- `varip` (`Session::intrabar`): a global is kept under its name, a local of a user function under the call
-  site's stash key (`invoke_with`'s `stash_key`, via `intrabar_key`). After an unconfirmed tick
-  `capture_intrabar_objects` keeps what every `varip` variable points at and every `varip` UDT field, plus every array, map, matrix
-  and object reachable from them (the objects live in the rolled-back `RuntimeState`; the `varip` fields of
-  imported types are indexed too); the next tick of the bar gets them back. Cleared with
-  `intrabar` at a new bar and at the close. Do not add fields to `RuntimeState` for this: it is cloned per
-  tick and four sessions at once measured 11% slower with one extra set.
-- A builtin variable read with `[]` (`hlcc4[1]`, `ta.tr[1]`) is recorded by `read_history_builtins` at the end
-  of each confirmed bar; the names are found once by `history_builtin_names`. Not inside `request.security`.
-- Breakpoints and watches live in the local `scriptDebug.state` setting (never synced; listed in
-  `sync::policy`'s local keys).
-- A `once` structure's finished flag is `RuntimeState::once_finished` (by site key), in the working
-  state on purpose: an unconfirmed realtime tick that ran the block is rolled back, so the structure
-  stays active until the block runs on a closing tick, as TradingView documents. Its condition is
-  evaluated every bar (like an `if`'s) so `ta.*` calls in it keep their history.
-- `matrix.*` lives in `matrix_builtins` (names in `MEMBERS`, which the editor offers directly). Element
-  arithmetic (`sum`, `diff`, `mult`) goes through `operators::apply` so ints stay ints and `na`
-  propagates like the operators; anything numerical that returns floats (`pow`, `kron`, linear algebra)
-  converts to `pine::builtins::matrix::linalg::Dense` (NaN stands for `na`) and back. A shape or operand a function cannot
-  use is `PINE4037`; an index or range outside the matrix is `PINE4010`. `Bound` holds six arguments
-  (`matrix.fill`), so a new builtin with more needs `BOUND_CAPACITY` raised and `tools/pine-bench.sh` run.
-  Linear algebra (`det`, `inv`, `pinv`, `rank`, `eigenvalues`, `eigenvectors`) is `linalg::Dense`: LU for
-  `det`/`inv`, one-sided Jacobi SVD for `rank`/`pinv`, EISPACK `tred2`/`tql2` for the eigen-decomposition.
-  A `na` cell gives `na` (a matrix or array of `na` for the others) and a singular `inv` is a matrix of
-  `na`, so a script is never stopped by data. The eigen-decomposition only exists for a symmetric matrix;
-  anything else is `PINE4037` (TradingView names the same QL algorithm and does not say what it does
-  for other matrices).
-- Drawing functions are the exact lists `drawings::{LINE,LABEL,BOX,LINEFILL,TABLE,POLYLINE}_MEMBERS` and
-  `CHART_POINT_NAMES`: `handles` no longer takes any `set_*`/`get_*`, so a misspelt member is a compile
-  error and the editor offers each name from these tables. A drawing stores bar indexes and remembers
-  whether it was placed by time (`time_anchored`); `set_xloc` re-reads the new coordinates and flips the
-  flag. A label's `yloc` is stored with its price, which is ignored (and may be `na`) above or below the
-  bar; `PineLayer::label_y` resolves it against the candle, so the price scale is not affected.
-- `table.cell_set_*` creates a blank cell when the cell was never defined (inferred; the reference does not
-  say). A text size is `Size::Points(n)` when a script gives a number (`font_size` scales TradingView's 14
-  points to this app's 12). Properties the chart cannot draw (font family, bold/italic) are
-  accepted and warned about through `ignored_features`, never silently dropped.
-- Label and table-cell tooltips (`tooltip=`, `label.set_tooltip`, `table.cell_set_tooltip`) show on hover.
-  `hover_targets_in_order` returns each one's drawn rectangle in paint order across scripts (behind-chart
-  labels, other labels, then every script's tables; a filled bubble includes its pointer). It shares
-  `label_geometry` and `table_placements` with the painters, so the hover and the picture agree; keep it
-  that way. `pine_chart_render::target_at` picks the topmost. Only `LiveOverlays` looks (`Overlays::pointer` is
-  `None` for a snapshot, which therefore never measures or shows one) and shows it through egui's own
-  tooltip on a copy of the canvas response covering the target, so egui's delay and "only when still" apply.
-  A repeated `table.cell` resets the cell's tooltip like every other property. Not verified against
-  TradingView: the delay, the wrap width (320 pt here) and whether it hides the crosshair.
-- `plotarrow()` is `ArrowOutput` (per-bar value and both colours; `offset`/`show_last` applied by
-  `ArrowOutput::finished` when the output is read, like a plot's offset). The arrow length is `min_height` to
-  `max_height` in proportion to the value against the series' largest absolute value (inferred: the reference
-  only says larger values draw longer arrows), up arrows sit under the bar's low and down arrows over its
-  high. `plot.style_stepline_diamond` is `PlotStyle::SteplineDiamond`: a step line with a diamond where the
-  value changes. Shapes are in `pine_geometry` (`arrow_shape`, `diamond_points`), which is where to test them.
-  `ignored_features::ignored_values` (PINE7004) has no entry today but stays for the next unsupported constant.
-- `ta.pivot_point_levels` keeps the running period's OHLC in `ta::State::pivot` (`ta_extra::PivotPeriod`): a
-  period starts at each anchor bar, the levels set when one ends hold until the next ends, and
-  `developing` recomputes from the running period instead. The type formulas are the classic published
-  ones (the reference lists none) and Woodie's uses the open of the bar that sets the levels, so none of it
-  is checked against TradingView's output. `ta.rci` is Spearman's coefficient (Pearson on mid-ranks) x 100.
-- `session.*` reads `trading_session::MarketSessions` for the symbol's `syminfo.type`: crypto is 24x7 on UTC (a
-  session is a UTC day), a `stock` keeps New York's 09:30-16:00 weekdays with pre- (04:00) and post-market
-  (to 20:00) around it. The app's charts show the regular session, so `isfirstbar`/`islastbar` equal their
-  `_regular` forms, and a bar of a day or more is a whole session (`ismarket` true, pre/post false). The
-  first/last bar is worked out from the neighbouring bar's open time (`histories["time"]`), so it needs no
-  state. Known gap: `hour`, `dayofweek`, `time(..., session)` and the other calendar parts still default to UTC
-  where TradingView uses the exchange zone, so on a stock they differ from TradingView's; `syminfo.timezone`
-  and `session.*` use the exchange zone.
-- `runtime.calculation.mode` is `Session::alert_mode`, set by `ExecutionController::with_alert_mode` for the
-  alert subscriptions. `timeframe.main_period` uses `Session::chart_bar_seconds`, which the security
-  evaluator sets while `bar_seconds` is a requested timeframe's. `weekofyear` weeks run Sunday to Saturday and
-  week 1 holds January 1 (inferred; the reference only says "week number of the year").
-- `strategy.*` statistics are `strategy_builtins::statistic`, computed from the broker on each read (the
-  trade lists) except the equity extremes, which `Broker` keeps as bars arrive (`EquityExtremes`, rolled back
-  with the rest of the state) and merges with the bar being run. Losses are negative in the averages
-  (`avg_losing_trade`) but positive in `grossloss`; a drawdown is measured from the running peak (starting at
-  the initial capital) and a run-up from the running trough; the percentages are against that peak / trough.
-  `margin_liquidation_price` stays a warned `na`: there is no margin model.
-- A trade carries its orders' comments (`OpenTrade::entry_comment`, `Trade::{entry,exit}_comment`; an exit's
-  `comment_profit` / `comment_loss` replace `comment` when its limit / stop fills it) and the highest and
-  lowest price it has seen, from which `strategy.{closed,open}trades.max_runup/max_drawdown(_percent)` follow
-  (positive amounts, before commission, sized to the quantity that closed). `Broker::process` touches the
-  open trades at the bar's open, at every price a trigger fires at and at each vertex of the intrabar path, so
-  a trade closed at the next open does not count that bar's range; a bar with no orders pending touches its
-  high and low. Comments show in the trade list's hover text (`Trade::comments`) and over MCP.
-- `strategy.risk.*` calls state rules on `Broker::risk` (the latest call wins; an invalid call changes nothing).
-  `Broker::process` rolls the trading day (in the exchange zone, `Broker::zone`) and `check_risk`, called after
-  each bar's equity is recorded, compares it with the limits. A reached limit cancels every pending order and
-  closes every open trade at the bar's close, then `place` ignores orders: `max_drawdown` (from the peak
-  equity, cash or % of it) and `max_cons_loss_days` stop for good, `max_intraday_loss` (from the day's best
-  equity) and `max_intraday_filled_orders` (one per filled order, a reversal counting once) until the next
-  day. `allow_entry_in` and `max_position_size` act on `strategy.entry` only. Rules are checked at bars'
-  closes, so a limit can be passed within a bar before it is seen. OCA groups (`oca_name` with `oca_type`
-  cancel or reduce) apply to entries and orders; an exit's own `oca_name` is still ignored.
-- An `input.*` call's arguments are matched to parameters by name or by position in
-  `pine::inputs::arguments` (each function has its own order; `input.int`/`float` take a range or, when the
-  third place holds a list, `options`). `InputDefinition::control` says what edits it beyond its value type:
-  `input.price` is a float, `symbol`/`session`/`text_area` and a `timeframe` without `options` are strings
-  with their own controls (`pine_studio::inputs`), and the stored value of each is the plain
-  `InputValue` it always was, so saved inputs are unchanged. `display` is warned about.
-- `active` is compiled by `pine::inputs::activity` into `InputDefinition::active`: an expression over inputs
-  declared above it (kept by name) and the script's constants (folded to literals), evaluated by
-  `InputSchema::is_active` against the values being edited with `compiler::constant_value`, which also
-  folds comparisons, `and`/`or`/`not` and `?:`. The form draws a card whose condition fails disabled; the
-  input keeps its value and the script reads it. Anything else (a series, a call, a later input, a
-  non-bool) is warned (`PINE7001`) and leaves the input editable. The MCP input tools do not honour it.
-- Declaring a name a builtin variable has (`open = 1`, a local `float hl2 = ...`, a loop counter) is the
-  `PINE7006` warning unless the script read the builtin above the declaration, then `CE10190`
-  (`structure_validator::check_name`). The manual calls it a warning that becomes an error once the script uses
-  the builtin "anywhere"; the corpus shows that a read below a local shadow, outside its block, is accepted
-  (`aVFtPnUh`), and that scripts shadow `low`, `hl2` and `second` with no read of the builtin
-  (`mwTRA4dO`, `aVFtPnUh`, `5YEHyvSL`), so the rule is not "always an error" nor "any read anywhere". A
-  parameter may reuse the name inside its function with a warning. TradingView's own message text is not
-  documented.
+- Pine engine stays under `src/pine/`; it and Pine domain types in `model/` are pure (no egui
+  types). Alerts and subscriptions compile the same modules.
+- Unsupported behavior is never silent: stand-ins emit `ignored_features` warnings
+  (`PINE7001`–`PINE7006`) and live in `misc_builtins`; object results or feeds without one stay
+  `PINE9003` errors.
+- `log.*()` goes to `Session.logs`, never `RuntimeState` (rollback would discard it). Opt-in
+  (`ExecutionController::with_logs`); readers apply `LogBatch`es in order via `LogHistory`. Limits in
+  `pine::logs`; read [Pine Logs](../pine-logs.md) before changing them.
+- Debugger (`pine/debug/`, [Pine debugger](../pine-debugger.md)) is opt-in: `Session::debug` is
+  `None` unless `attach_debugger` ran; hooks (statement loop, `invoke`, `execute_bar`,
+  `request.security` evaluator) test it and call `#[cold] #[inline(never)]` helpers. Never hook
+  `eval`, `budget` or any per-expression path, or add debugger-less work to the statement loop.
+  Check `session.rs` changes with `tools/pine-bench.sh <base-rev>` (interleaved A/B; checksums prove
+  both builds ran the same program). Watches/conditions must parse with
+  `pine::debug::parse_expression`; its allow-list takes only calls that neither write state nor
+  allocate a handle, tested against a clean run.
+- Profiler (`pine/profile/`, [Pine profiler](../pine-profiler.md)) shares the gate: `Session::hooks`
+  is `None` unless `attach_debugger` or `attach_profiler` ran (one or the other); statement loop,
+  `invoke` and `execute` test it and call `#[cold] #[inline(never)]` helpers.
+  - Keep the statement loop's shape (block-level test plus second loop measured 1–2% slower in
+    layout alone).
+  - Every `hook_before` needs `hook_after`/`hook_failed`; every `hook_enter_function` needs
+    `hook_leave_function`.
+  - Region = statement or user function, keyed by its parser anchor offset; library code
+    (`context.scope`) is never timed.
+  - Keep `Σ line time + not attributed = total` exact (tests assert it on a stepping clock).
+  - `ProfileKey` (text plus `PreviewState::run_identity`) must cover all a script sees in the preview
+    run; a new chart-run input (`run_revision`, `ChartCard::pine_outputs`) goes into the identity and
+    `DebugFeed`.
+  - Bench: `tools/pine-bench.sh <base-rev> <head-rev>` (head must be a commit; `profiled_*`
+    workloads = recorder cost).
+- `request.footprint()` handles are stateless (footprint = bar index; `volume_row` = bar index +
+  row); data in `Session::footprints`, outside `RuntimeState` so rollback does not copy it. Read
+  [Pine volume footprints](../pine-footprint.md) before changing the algorithm: mostly inferred.
+- Execution-model gaps: [the audit](../reviews/pine-execution-model-audit.md); read it before relying
+  on rollback exceptions. Still open: broker orders do not survive a rolled-back tick; runtime errors
+  do not halt the script.
+- `varip` (`Session::intrabar`): globals kept by name, user-function locals by call-site stash key
+  (`invoke_with`'s `stash_key`, via `intrabar_key`). After an unconfirmed tick
+  `capture_intrabar_objects` keeps what each `varip` variable and `varip` UDT field points at plus
+  every reachable array, map, matrix and object (they live in the rolled-back `RuntimeState`;
+  imported types' `varip` fields indexed too); the bar's next tick gets them back. `intrabar`
+  cleared at a new bar and at the close. Never add `RuntimeState` fields for this: cloned per tick,
+  one extra set measured 11% slower with four sessions.
+- Builtin variables read with `[]` (`hlcc4[1]`, `ta.tr[1]`) are recorded by `read_history_builtins`
+  at each confirmed bar's end; names found once by `history_builtin_names`. Not inside
+  `request.security`.
+- Breakpoints and watches: local `scriptDebug.state` setting (never synced; in `sync::policy`'s local
+  keys).
+- `once` finished flag: `RuntimeState::once_finished` (by site key), deliberately in working state:
+  a rolled-back unconfirmed realtime tick keeps the structure active until the block runs on a
+  closing tick (as TradingView documents). Condition evaluated every bar (like `if`) so `ta.*` keeps
+  history.
+- `matrix.*`: `matrix_builtins` (names in `MEMBERS`, offered directly by the editor).
+  - Element arithmetic (`sum`, `diff`, `mult`) via `operators::apply` (ints stay ints, `na`
+    propagates); float numerics (`pow`, `kron`, linear algebra) convert to
+    `pine::builtins::matrix::linalg::Dense` (NaN = `na`) and back.
+  - Bad shape/operand `PINE4037`; index/range outside `PINE4010`.
+  - `Bound` holds six arguments (`matrix.fill`); more needs `BOUND_CAPACITY` raised and
+    `tools/pine-bench.sh` run.
+  - `det`, `inv`, `pinv`, `rank`, `eigenvalues`, `eigenvectors` in `linalg::Dense`: LU for
+    `det`/`inv`, one-sided Jacobi SVD for `rank`/`pinv`, EISPACK `tred2`/`tql2` for eigen. `na` cell
+    gives `na` (matrix/array of `na` for the others); singular `inv` is a matrix of `na`: data never
+    stops a script. Eigen only for symmetric matrices, else `PINE4037` (TradingView names the same QL
+    algorithm, silent on others).
+- Drawing functions are exactly `drawings::{LINE,LABEL,BOX,LINEFILL,TABLE,POLYLINE}_MEMBERS` and
+  `CHART_POINT_NAMES` (`handles` takes no `set_*`/`get_*`): misspelt members are compile errors;
+  editor offers these names. Drawings store bar indexes and `time_anchored`; `set_xloc` re-reads
+  coordinates and flips it. Label `yloc` stored with its price, ignored (may be `na`) above/below the
+  bar; `PineLayer::label_y` resolves it against the candle, price scale unaffected.
+- `table.cell_set_*` creates a blank cell if undefined (inferred). Numeric text size is
+  `Size::Points(n)` (`font_size` scales TradingView's 14 points to our 12). Undrawable properties
+  (font family, bold/italic) warned via `ignored_features`, never silently dropped.
+- Hover tooltips (`tooltip=`, `label.set_tooltip`, `table.cell_set_tooltip`):
+  `hover_targets_in_order` gives drawn rectangles in paint order across scripts (behind-chart labels,
+  other labels, then all tables; filled bubble includes pointer) and must keep sharing
+  `label_geometry` and `table_placements` with the painters. `pine_chart_render::target_at` picks the
+  topmost. Only `LiveOverlays` looks (`Overlays::pointer` is `None` for snapshots), showing egui's
+  tooltip on a copy of the canvas response over the target (egui's delay and "only when still"
+  apply). Repeated `table.cell` resets it. Unverified vs TradingView: delay, wrap width (320 pt
+  here), crosshair hiding.
+- `plotarrow()` = `ArrowOutput` (per-bar value, both colours; `offset`/`show_last` applied by
+  `ArrowOutput::finished` on read). Length `min_height`–`max_height` proportional to value vs the
+  series' largest absolute value (inferred); up arrows under the low, down over the high.
+  `plot.style_stepline_diamond` = `PlotStyle::SteplineDiamond` (diamond where value changes). Shapes
+  in `pine_geometry` (`arrow_shape`, `diamond_points`); test there.
+  `ignored_features::ignored_values` (PINE7004) is empty but kept for the next unsupported constant.
+- `ta.pivot_point_levels`: running period OHLC in `ta::State::pivot` (`ta_extra::PivotPeriod`),
+  starting at each anchor bar; levels set at a period's end hold until the next ends; `developing`
+  uses the running period. Classic published formulas (reference lists none); Woodie's uses the
+  setting bar's open. Unchecked against TradingView output. `ta.rci` = Spearman
+  (Pearson on mid-ranks) x 100.
+- `session.*` reads `trading_session::MarketSessions` by `syminfo.type`: crypto 24x7 UTC (session =
+  UTC day); `stock` New York 09:30-16:00 weekdays, pre- from 04:00, post- to 20:00. Charts show the
+  regular session, so `isfirstbar`/`islastbar` equal their `_regular` forms; a bar of a day or more
+  is a whole session (`ismarket` true, pre/post false). First/last bar from the neighbouring bar's
+  open time (`histories["time"]`), stateless. Known gap: `hour`, `dayofweek`, `time(..., session)` and
+  other calendar parts default to UTC, not the exchange zone, so stocks differ from TradingView;
+  `syminfo.timezone` and `session.*` use the exchange zone.
+- `runtime.calculation.mode` = `Session::alert_mode` (set by `ExecutionController::with_alert_mode`
+  for alert subscriptions). `timeframe.main_period` uses `Session::chart_bar_seconds`, set by the
+  security evaluator while `bar_seconds` is the requested timeframe's. `weekofyear`: Sunday–Saturday,
+  week 1 holds January 1 (inferred; reference only says "week number of the year").
+- `strategy.*` statistics: `strategy_builtins::statistic`, computed from the broker per read (trade
+  lists) except equity extremes, kept by `Broker` as bars arrive (`EquityExtremes`, rolled back with
+  state) and merged with the running bar. Losses negative in averages (`avg_losing_trade`), positive
+  in `grossloss`; drawdown from running peak (starting at initial capital), run-up from running
+  trough; percentages against those. `margin_liquidation_price` stays a warned `na` (no margin model).
+- Trades carry order comments (`OpenTrade::entry_comment`, `Trade::{entry,exit}_comment`; exit
+  `comment_profit` / `comment_loss` replace `comment` on limit / stop fill), shown in trade-list hover
+  (`Trade::comments`) and MCP, and highest/lowest seen price for
+  `strategy.{closed,open}trades.max_runup/max_drawdown(_percent)` (positive, pre-commission, closed
+  quantity). `Broker::process` touches open trades at the open, each trigger price and intrabar path
+  vertex (a trade closed at the next open skips that bar's range); with no pending orders, high and
+  low.
+- `strategy.risk.*` sets rules on `Broker::risk` (latest wins; invalid call changes nothing).
+  `Broker::process` rolls the trading day (exchange zone, `Broker::zone`); `check_risk` runs after
+  each bar's equity is recorded. A hit limit cancels pending orders, closes trades at the bar's
+  close, then `place` ignores orders: `max_drawdown` (from peak equity, cash or %) and
+  `max_cons_loss_days` for good; `max_intraday_loss` (from the day's best equity) and
+  `max_intraday_filled_orders` (per filled order, reversal counts once) until next day.
+  `allow_entry_in` and `max_position_size` act on `strategy.entry` only. Checked at bar closes, so a
+  limit can be passed intrabar unseen. OCA (`oca_name` with `oca_type` cancel or reduce) applies to
+  entries and orders; an exit's own `oca_name` is still ignored.
+- `input.*` arguments matched by name or position in `pine::inputs::arguments` (per-function order;
+  `input.int`/`float` take a range, or `options` when the third place is a list).
+  `InputDefinition::control` gives the editor beyond the value type: `input.price` is a float;
+  `symbol`/`session`/`text_area` and `timeframe` without `options` are strings with own controls
+  (`pine_studio::inputs`). Stored values stay plain `InputValue`, so saved inputs are unchanged.
+  `display` is warned.
+- `active`: compiled by `pine::inputs::activity` into `InputDefinition::active`, an expression over
+  inputs declared above (by name) and script constants (folded to literals), evaluated by
+  `InputSchema::is_active` on edited values with `compiler::constant_value` (also folds comparisons,
+  `and`/`or`/`not`, `?:`). Failing → card disabled; input keeps its value, script reads it. Anything
+  else (series, call, later input, non-bool) warns `PINE7001` and leaves it editable. MCP input tools
+  ignore it.
+- Declaring a builtin variable's name (`open = 1`, local `float hl2 = ...`, loop counter):
+  `PINE7006` warning; `CE10190` if the builtin was read above it (`structure_validator::check_name`).
+  Neither "always an error" nor the manual's "any read anywhere": the corpus accepts a read below a
+  local shadow outside its block (`aVFtPnUh`) and unread shadows of `low`, `hl2`, `second`
+  (`mwTRA4dO`, `aVFtPnUh`, `5YEHyvSL`). Parameters may reuse the name with a warning. TradingView's
+  message text is undocumented.
 - Keep execution linear in bars: continue historical bars in working state
-  (`Session::working_is_committed`), move `request.security` site state in/out, and share function
-  bodies with `Arc`. Benchmark with `PINE_CORPUS_BARS=5000 PINE_CORPUS_REPORT=1`.
+  (`Session::working_is_committed`), move `request.security` site state in/out, share function bodies
+  with `Arc`. Benchmark: `PINE_CORPUS_BARS=5000 PINE_CORPUS_REPORT=1`.
 
 ## Editor
 
-- Editing assistance belongs in pure `pine_studio::editor::edit_ops`, not `editor.rs`. Operations take
-  text plus selection and return one `Edit` or `None`. Indices are character offsets. Indentation is
-  four spaces; Pine braces are not paired.
-- `pine_studio::editor::syntax` is the sole per-text classification. Strings come from the lexer;
-  comment scanning respects strings; names match whole tokens. Do not use lexer indent/dedent to
-  decide editor indentation because incomplete parentheses erase them. It produces `SyntaxRole`s,
-  never colours: `classify(source, Some(&table))` takes the cached `EditorState::symbols()` (scope-aware,
-  authoritative for names), `classify(source, None)` is the lexical fallback for snippets outside the
-  editor. Colours come from `ui::editor_appearance` (`current()` for the editor, `chrome()` for code on
-  the app's own background): never call `theme::syntax` or a hard-coded colour from editor code. A new
-  role or surface goes in `model/editor_theme/roles.rs` and every built-in theme. The editor's font
-  comes from `editor_appearance::editor_font()` (size, line height, the `editor-code` family, whose default is
-  the built-in JetBrains Mono: `theme::bundled_editor_font`, licensed OFL, see `assets/fonts/README.md`) and its
-  layout constants follow it (`gutter_width`, `chrome_scale`): do not add a 13-point assumption. The
-  theme and font are kept by `host::editor_theme_host` (saved after a pause, never while Settings draws);
-  change them through it so every window repaints. See [Editor themes](../editor-themes.md).
-- Completion does not compile, run, re-lex, or access network/storage. Builtins come from the symbol
-  catalog and signatures from `pine_studio::editor::signature`. Add new builtins to both tables.
-  `array.*` and `map.*` names are offered straight from `array_builtins::KNOWN` / `map_builtins::NAMES`
-  (and their signatures from `parameters()`), so a new one needs no editor edit.
-  The suggestion list shows `COMPLETION_ROWS` (10) rows and scrolls to the highlight on ↑/↓: the key
-  events are consumed by `completion_keys` before the list is drawn, so it sets
-  `CompletionView::scroll_to_selected` instead of reading `key_pressed`. Accepting an `Item` with
-  `callable` set (builtin functions, user `name(args) =>` definitions) writes `name()` with the caret
-  between the parentheses, unless a `(` already follows.
-- `pine_studio::editor::diff` is the sole saved-vs-source comparison. Cache `EditorState::changes()` for
-  gutter, status, popover, and revert; never diff while painting. Hunks use zero-based half-open
-  ranges and preserve terminators. Deleted hunks sit at `new_lines.start`, without fake rows;
-  `is_dirty()` remains a string comparison.
-- `revert_edit` must reject stale text. Apply through `apply_hunk_edit` so revert is one undo step.
-  Only `mark_saved`/`replace_source(saved)` move the baseline. Use `theme::editor_diff_*` colors.
-- `pine_studio::editor::symbols` resolves names for go-to-definition and rename. It reads lexer tokens, not
-  the AST (which has no span for parameters, loop variables, tuple names or aliases and drops every
-  statement it cannot parse), so it works on a script mid-edit. Scopes come from each statement's raw
-  leading whitespace; a declaration is visible from the end of its statement and block; values and
-  callables are separate namespaces; members, fields and `lib.fn` are not resolved. Cache
-  `EditorState::symbols()` by text hash. A rename is never reasoned about: `SymbolTable::rename` applies
-  it, analyses the result again and refuses unless every name still resolves to the same declaration.
-  Test it with CRLF and astral characters; every range is a char index.
-- Multiple carets: egui's text field keeps the *primary* caret (it draws and moves it);
-  `editor/carets.rs` holds the others in `CaretState::extra`. While extras exist, `carets::apply` takes
-  the editing and moving keys before egui and runs them through pure `pine_studio::editor::multi_cursor`,
-  which reuses `edit_ops` per caret against one shared scan and lays the edits down together (an edit
-  overlapping an earlier one drops its caret). Extras belong to the text they were made in: any other
-  change (egui typing, undo, find/replace, rename, sync) fails the `hash` check and drops them, which is
-  also how undo collapses them. Do not give extras their own undo history. Escape blurs an egui text
-  field before any editor code runs, so `apply` reads it through `had_focus_last_frame` and re-takes the
-  focus. Clicks are seen before egui moves the caret for them (`note_pointer`) and finished against the
-  laid-out text afterwards (`resolve`); ⌘/Ctrl-click is a jump when the click is on a name with a
-  definition and a new caret otherwise, ⌥-click always a new caret.
-- The suggestion list and the signature panel are `egui::Area`s on their own layer, which the editor's clip
-  rect does not reach, and they follow `caret_rect` as the text scrolls. `EditorState::caret_hidden` (the caret
-  is outside the visible text area, set in `show`) hides both, and drops the list so Enter/Tab cannot accept an
-  invisible row. Do not use `Area::constrain_to`: it pins the popup to the edge instead of hiding it.
-- A jump's flash is `Flash`: the character it landed on, or (`show_line`: profile hot lines, debugger frames)
-  the whole line as a band behind the text that holds, then fades over 700ms.
-- Constant colours get a swatch (`editor/swatches.rs`, [Pine colour picker](../pine-color-picker.md)). The room
-  for it is a section's `leading_space` from `syntax::layout_job_with_gaps`, so text and offsets are untouched but
-  a row with a colour is wider than `columns * char_width`: take positions from the galley, never from a column.
-  Detection reads lexer tokens in `pine_studio::editor::color_sites`; a picker edit is rewritten from the text the
-  gesture began with and is one undo step through `UndoGesture`, never a second undo stack.
-- The right-click menu, the ⌘-hover cue and the inline rename box are `editor/navigation.rs`. An egui
-  `Area` takes no focus on its first frame (it only measures), so the rename field asks for it on the
-  second.
+- Editing assistance: pure `pine_studio::editor::edit_ops`, not `editor.rs`; text + selection in,
+  one `Edit` or `None` out. Character-offset indices; four-space indent; Pine braces unpaired.
+- `pine_studio::editor::syntax` is the sole per-text classification: strings from the lexer, comment
+  scanning respects strings, names match whole tokens. Never use lexer indent/dedent for editor
+  indentation (incomplete parentheses erase them). Outputs `SyntaxRole`s, never colours;
+  `classify(source, Some(&table))` takes cached `EditorState::symbols()` (scope-aware, authoritative
+  for names), `classify(source, None)` is the lexical fallback for snippets outside the editor.
+  - Colours: `ui::editor_appearance` (`current()` editor, `chrome()` code on app background); never
+    `theme::syntax` or hard-coded colours in editor code. New role/surface → `model/editor_theme/roles.rs`
+    and every built-in theme.
+  - Font: `editor_appearance::editor_font()` (size, line height, `editor-code` family, default
+    built-in JetBrains Mono: `theme::bundled_editor_font`, OFL, see `assets/fonts/README.md`); layout
+    constants follow it (`gutter_width`, `chrome_scale`). No 13-point assumption.
+  - Theme and font owned by `host::editor_theme_host` (saved after a pause, never while Settings
+    draws); change through it so all windows repaint. See [Editor themes](../editor-themes.md).
+- Completion never compiles, runs, re-lexes or touches network/storage. Builtins from the symbol
+  catalog, signatures from `pine_studio::editor::signature`: add new builtins to both. `array.*`/`map.*`
+  come from `array_builtins::KNOWN` / `map_builtins::NAMES` (signatures `parameters()`), no editor
+  edit needed. List shows `COMPLETION_ROWS` (10) and scrolls to the highlight on ↑/↓;
+  `completion_keys` consumes keys before drawing, so set `CompletionView::scroll_to_selected`, don't
+  read `key_pressed`. Accepting an `Item` with `callable` (builtin functions, user `name(args) =>`)
+  writes `name()` with caret inside, unless `(` follows.
+- `pine_studio::editor::diff` is the sole saved-vs-source comparison. Cache `EditorState::changes()`
+  for gutter, status, popover, revert; never diff while painting. Hunks: zero-based half-open ranges,
+  terminators preserved; deleted hunks at `new_lines.start`, no fake rows. `is_dirty()` stays a string
+  comparison.
+- `revert_edit` rejects stale text; apply via `apply_hunk_edit` (one undo step). Only
+  `mark_saved`/`replace_source(saved)` move the baseline. Colors: `theme::editor_diff_*`.
+- `pine_studio::editor::symbols` (go-to-definition, rename) reads lexer tokens, not the AST (no spans
+  for parameters, loop variables, tuple names, aliases; drops unparsable statements), so it works
+  mid-edit. Scopes from each statement's raw leading whitespace; declarations visible from the end of
+  their statement and block; values and callables separate namespaces; members, fields, `lib.fn`
+  unresolved. Cache `EditorState::symbols()` by text hash. Renames are never reasoned about:
+  `SymbolTable::rename` applies, re-analyses, refuses unless every name resolves to the same
+  declaration. Test with CRLF and astral characters; ranges are char indexes.
+- Multiple carets: egui owns the *primary* caret; `editor/carets.rs` keeps others in
+  `CaretState::extra`. With extras, `carets::apply` takes editing/moving keys before egui into pure
+  `pine_studio::editor::multi_cursor` (`edit_ops` per caret, one shared scan, edits applied together;
+  overlap drops the later caret). Any other text change (egui typing, undo, find/replace, rename,
+  sync) fails the `hash` check and drops extras (so undo collapses them); never give extras their own
+  undo history. Escape blurs egui's field before editor code, so `apply` reads
+  `had_focus_last_frame` and re-takes focus. Clicks: `note_pointer` before egui moves the caret,
+  `resolve` on laid-out text after; ⌘/Ctrl-click jumps on a defined name, else adds a caret; ⌥-click
+  always adds one.
+- Suggestion list and signature panel: `egui::Area`s on their own layer (outside the editor's clip
+  rect) following `caret_rect`. `EditorState::caret_hidden` (caret outside visible text, set in
+  `show`) hides both and drops the list so Enter/Tab cannot accept an invisible row. Never
+  `Area::constrain_to` (pins to the edge instead of hiding).
+- Jump flash: `Flash`, the landed character or (`show_line`: profile hot lines, debugger frames) a
+  whole-line band behind text that holds, then fades over 700ms.
+- Constant colours get a swatch (`editor/swatches.rs`, [Pine colour picker](../pine-color-picker.md)),
+  its room a section's `leading_space` from `syntax::layout_job_with_gaps`: text and offsets
+  untouched, but such rows are wider than `columns * char_width`; take positions from the galley,
+  never a column. Detection: lexer tokens in `pine_studio::editor::color_sites`. Picker edits rewrite
+  from the gesture's starting text, one undo step via `UndoGesture`, never a second undo stack.
+- Right-click menu, ⌘-hover cue, inline rename box: `editor/navigation.rs`. An egui `Area` takes no
+  focus on its first frame (only measures), so the rename field asks on the second.
 
 ## Drawer tabs
 
-- The preview drawer's Report, Problems and Profile tabs share `pine_studio::drawer::tab_chrome`: a 46px
-  toolbar with a `state_field`, a hairline, then cards of rows. The Logs tab (`ui::pine_logs_view`,
-  shared with the chart workspace) mirrors its constants; keep `TOOLBAR_HEIGHT`, `MARGIN` and
-  `BUTTON` equal.
-- Spend width before height: `chrome::wide` (520pt of room) puts parts in `chrome::columns`, and
-  `pine_logs_view::intro` puts a picture beside its steps. Nothing outside a scroll area may be
-  taller than the drawer (minimum 90pt): bodies use `chrome::scroll`, empty states use `centered`
-  (which scrolls), and scroll areas set `min_scrolled_height(0.0)` (egui's default of 64 pushes a
-  tab past a short drawer). `drawer_tabs_tests` asserts every tab uses no more than the room at five
-  sizes; set `DEGENVIEW_GALLERY_DIR` to get pictures.
-- A tab with nothing to show says so with `centered` + `pine_logs_view::intro` (picture, three steps,
-  an example; see `drawer_intro`), never a bare text placeholder. That covers Inputs too
-  (`drawer_intro::inputs`); `drawer_tabs_tests::inputs_fit_the_drawer` checks it at the five sizes.
-- The Pine Studio with no scripts at all uses the same pieces (`pine_studio::library::empty_library`): the detail
-  area is `centered` + `intro` with the two ways to begin as its footer, the sidebar list a short form with the
-  same picture. A search with no match stays the small "No matches" tile. Pictures: `cargo test --lib
-  empty_library -- --ignored` with `DEGENVIEW_GALLERY_DIR` set.
-- The Problems tab's copy button copies every problem (errors first); a right-click on a row copies that
-  problem or only its message.
+- Report, Problems, Profile share `pine_studio::drawer::tab_chrome`: 46px toolbar with a
+  `state_field`, hairline, cards of rows. Logs (`ui::pine_logs_view`, shared with the chart
+  workspace) mirrors it; keep `TOOLBAR_HEIGHT`, `MARGIN`, `BUTTON` equal.
+- Width before height: `chrome::wide` (520pt) puts parts in `chrome::columns`;
+  `pine_logs_view::intro` puts a picture beside its steps. Nothing outside a scroll area may exceed
+  the drawer (minimum 90pt): bodies `chrome::scroll`, empty states `centered` (scrolls), scroll areas
+  `min_scrolled_height(0.0)` (egui's default 64 overflows a short drawer). `drawer_tabs_tests` asserts
+  fit at five sizes; `DEGENVIEW_GALLERY_DIR` for pictures.
+- Empty tabs: `centered` + `pine_logs_view::intro` (picture, three steps, example; see
+  `drawer_intro`), never a bare text placeholder. Inputs too (`drawer_intro::inputs`,
+  `drawer_tabs_tests::inputs_fit_the_drawer` at five sizes).
+- Pine Studio with no scripts (`pine_studio::library::empty_library`): detail area `centered` +
+  `intro`, the two ways to begin as footer; sidebar list a short form with the same picture. No-match
+  search stays the small "No matches" tile. Pictures: `cargo test --lib empty_library -- --ignored`
+  with `DEGENVIEW_GALLERY_DIR` set.
+- Problems copy button copies all problems (errors first); right-click a row copies it or just its
+  message.
 - `pine_report::show` / `report_content` (chart settings) keep the compact look; the drawer lays out
-  the same pieces (`metric_grid`, `equity_curve`) itself.
+  `metric_grid`, `equity_curve` itself.
 
 ## Manager lifecycle
 
-- **Scripts edited outside the app** (a person's editor, a coding agent working in the Scripts folder)
-  reach the open editor through `pine_studio::library::external` (a pure state machine; `mod.rs` does the
-  I/O, `disk_banner` draws the question). The sidebar already followed the folder (1.5 s rescan); the
-  open script's *text* now does too: every ~400 ms only the file's metadata is read
-  (`ScriptStore::file_stamp`), and a moved file, or one still settling, triggers a rescan and
-  `reconcile_open`. A change is acted on only after the same text has been seen twice, 300 ms apart (a
-  file another tool is still writing is never loaded half-written). A **clean editor** shows the file's
-  text through `editor::apply_script` (one undo step) and `mark_saved`, with a "Reloaded" note in the
-  status strip. An editor with **unsaved typing is never overwritten**: a banner asks *Reload from disk*
-  (undoable) or *Keep my version* (`rebase_saved`: the typing stays and the file's text becomes the saved
-  baseline, so a later Save overwrites on purpose), and Save is held while the question is open.
-  **Saving is checked at the store**: `save_open` uses `ScriptStore::save_if_unchanged(id, source,
-  saved_source)`, so a file rewritten after the last look is never overwritten silently (the next look
-  then asks at once, `Watch::force`). Equality ignores a missing final newline (`external::same_text`).
-  Not covered: chart instances keep the source they were added with (as after any Save), an outside edit
-  makes no revision, and a draft of a script that is not open is not protected from an outside edit.
-- `PineStudio` owns its window. `workspace::PreviewState` drives one crypto/stock preview with
-  debounced apply and stale output; it has no alert coordinator. `pine_studio::inputs` renders a
-  precompiled `InputSchema` and is shared with chart settings.
-- A script can fail at run time after it compiles (the compiler judges some names only when they run).
-  `pine_studio::drawer::problems` is the one list of what is wrong: the compile diagnostics plus the chart's
-  and the profile's failure, each only if its run was of the text now in the editor and never beside a
-  compile error. The Problems tab and its badge, the editor's chip and the red underline all read it, so
-  a failure must not be handled in one place only. `ExecutionController` remembers its last failure
-  (`last_error`) and an update that changes nothing repeats it: it used to report a failure once and then
-  read as a success.
-- **A new builtin is registered in `pine::compiler::registry`.** The registry gathers the per-module name lists
-  (`array_builtins::KNOWN`, `math::SUPPORTED`, `drawings::NAMESPACES`, `strategy_builtins::NAMES`, …) plus
-  the few names the session evaluates inline (`TA_INLINE`, `STR_INLINE`, `OTHER_FUNCTIONS`), and the
-  compiler and the editor's completion read it. The module tables stay what the interpreter dispatches
-  from; add the name there **and**, if it is evaluated inline, to the registry. Two guards fail until you
-  do: every registered function runs and is not `PINE4007` (registry ⊆ runtime), and every `"ns.member"`
-  literal under `src/pine` in a closed namespace is registered or a known value (runtime ⊆ registry).
-- In a **closed** namespace (`registry::CLOSED`) an unregistered call is `PINE3053`, an error, with a "Did
-  you mean". In a **value-closed** one (`CLOSED_VALUES`) an unknown variable read is `PINE3050`. A
-  namespace is added only when both guards pass and the Pine corpus is unchanged: `request` stays open
-  (it has its own `PINE9003`); `syminfo`, `strategy` and `runtime` stay open for values because Pine adds
-  variables there over time (`syminfo.cftc_code` failed the corpus). A false error on a script that runs is
-  worse than a missed typo.
-- **A call to the script's own function or method is bound too.** The type checker resolves it to a callable
-  (`callables.rs`; an id is the function's position among the top-level functions) and `call_binding::bind`
-  writes it on the call as `Expression::Call::target`; `Session::call_target` runs `Session::callables[target]`
-  and passes a dotted call's receiver as the first parameter (`Supplied`). A call the checker cannot type
-  keeps the by-name path in `user_methods.rs`. `Session::ignore_routes` turns off both `route` and `target`.
-  Read [User-defined methods](../pine-user-methods.md) before changing either side; check with
-  `tools/pine-bench.sh` (the `user_functions*` / `user_methods*` twins must stay equal).
-- **Builtin calls are routed, not searched for.** `Session::call` used to find a builtin by asking each
-  family in turn on every execution (about 100 string tests before `ta.sma`, 180 before `plot`). When the
-  session is built, `call_binding::bind` sets `Expression::Call::route` on every call that nothing in the
-  program can capture (no function, method, type or import alias of that name or head), and `call_routed`
-  (`call_routes.rs`) goes straight to the family. The chain stays for everything else (user functions and
-  methods, variable receivers like `levels.push`, `request.*`, `log.*`, `ticker.*`, debugger watch
-  expressions, which are parsed separately and never bound) and as the backstop that raises `PINE4007`.
-  It is one implementation with two entrances: each family is a method both the chain and the route call.
-  **A new builtin goes in a family; a new family needs a `Route`, an arm in `route_of` in the chain's
-  order, and an arm in `call_routed`.** Fail-safe: a family that returns `None` hands the call back to the
-  chain, so a wrong route costs time, not correctness. The tests that guard it: `call_binding_tests`
-  (every registered function run both ways with four argument shapes, the workloads both ways, user
-  methods/types/aliases that must stay on the chain) and `PINE_CORPUS_DUAL=1` on the corpus (every
-  community script both ways). A change here is checked with `tools/pine-bench.sh`; the workloads that
-  show it are `many_ta`, `many_math`, `many_str`, `plots_and_drawings`, `containers`, `map_counting`.
-- A script that fails when it runs has no profile (`Profiler::finish`), only the failure, which the
-  Problems list also shows.
+- **Scripts edited outside the app** (a person's editor, a coding agent in the Scripts folder) reach
+  the open editor via `pine_studio::library::external` (pure state machine; `mod.rs` does I/O,
+  `disk_banner` asks). Sidebar rescans every 1.5 s; the open script's metadata is read every
+  ~400 ms (`ScriptStore::file_stamp`); a moved or settling file triggers a rescan and
+  `reconcile_open`. Act only on the same text seen twice, 300 ms apart (never load half-written
+  files).
+  - **Clean editor**: show file text via `editor::apply_script` (one undo step) + `mark_saved`;
+    "Reloaded" note in the status strip.
+  - **Unsaved typing is never overwritten**: banner offers *Reload from disk* (undoable) or *Keep my
+    version* (`rebase_saved`: typing stays, file text becomes the saved baseline, so a later Save
+    overwrites on purpose); Save held while open.
+  - **Saving checked at the store**: `save_open` uses `ScriptStore::save_if_unchanged(id, source,
+    saved_source)`; a file rewritten since the last look is never silently overwritten (next look
+    asks at once, `Watch::force`). Equality ignores a missing final newline (`external::same_text`).
+  - Not covered: chart instances keep their added source (as after any Save); outside edits make no
+    revision; drafts of non-open scripts are unprotected from outside edits.
+- `PineStudio` owns its window. `workspace::PreviewState` drives one crypto/stock preview (debounced
+  apply, stale output, no alert coordinator). `pine_studio::inputs` renders a precompiled
+  `InputSchema`, shared with chart settings.
+- Scripts can fail at run time after compiling (some names judged only when run).
+  `pine_studio::drawer::problems` is the one problem list: compile diagnostics plus chart and profile
+  failures, each only if its run was of the editor's current text, never beside a compile error.
+  Problems tab, badge, editor chip and red underline all read it; never handle a failure in one place
+  only. `ExecutionController` keeps `last_error`; a no-change update repeats it (else it reads as
+  success).
+- **New builtins are registered in `pine::compiler::registry`**, which gathers module name lists
+  (`array_builtins::KNOWN`, `math::SUPPORTED`, `drawings::NAMESPACES`, `strategy_builtins::NAMES`, …)
+  plus inline-evaluated names (`TA_INLINE`, `STR_INLINE`, `OTHER_FUNCTIONS`); compiler and completion
+  read it. Module tables remain the interpreter's dispatch: add there **and**, if inline, to the
+  registry. Two guards: every registered function runs and is not `PINE4007` (registry ⊆ runtime);
+  every `"ns.member"` literal under `src/pine` in a closed namespace is registered or a known value
+  (runtime ⊆ registry).
+- **Closed** namespace (`registry::CLOSED`): unregistered call is `PINE3053` error with "Did you
+  mean". **Value-closed** (`CLOSED_VALUES`): unknown variable read is `PINE3050`. Add a namespace only
+  when both guards pass and the Pine corpus is unchanged. `request` stays open (own `PINE9003`);
+  `syminfo`, `strategy`, `runtime` stay open for values (Pine adds variables; `syminfo.cftc_code`
+  failed the corpus). A false error on a working script is worse than a missed typo.
+- **Own functions and methods are bound too.** The type checker resolves a callable (`callables.rs`;
+  id = position among top-level functions); `call_binding::bind` writes `Expression::Call::target`;
+  `Session::call_target` runs `Session::callables[target]`, a dotted call's receiver as first
+  parameter (`Supplied`). Untypeable calls keep the by-name path in `user_methods.rs`.
+  `Session::ignore_routes` disables both `route` and `target`. Read
+  [User-defined methods](../pine-user-methods.md) before changing either side; check with
+  `tools/pine-bench.sh` (`user_functions*` / `user_methods*` twins must stay equal).
+- **Builtin calls are routed, not searched** (a per-execution search of `Session::call`'s families
+  cost ~100 string tests before `ta.sma`, 180 before `plot`). At session build `call_binding::bind`
+  sets `Expression::Call::route` on every call nothing in the program can capture (no function,
+  method, type or import alias of that name or head); `call_routed` (`call_routes.rs`) goes straight
+  to the family. The chain handles the rest (user functions/methods, variable receivers like
+  `levels.push`, `request.*`, `log.*`, `ticker.*`, debugger watch expressions, parsed separately and
+  never bound) and is the backstop raising `PINE4007`. Each family is one method both entrances call.
+  - **New builtin → a family. New family → a `Route`, an arm in `route_of` in chain order, an arm in
+    `call_routed`.**
+  - Fail-safe: a family returning `None` hands back to the chain (wrong route costs time, not
+    correctness).
+  - Guards: `call_binding_tests` (every registered function both ways, four argument shapes;
+    workloads both ways; user methods/types/aliases that must stay on the chain) and
+    `PINE_CORPUS_DUAL=1` (every community script both ways). Bench with `tools/pine-bench.sh`:
+    `many_ta`, `many_math`, `many_str`, `plots_and_drawings`, `containers`, `map_counting`.
+- A run-time failure has no profile (`Profiler::finish`), only the failure, also in Problems.
 - Never close a Pine Studio tab or quit over unsaved editor text or retained drafts without the
-  `unsaved` flow. Tab close starts `begin_exit(CloseTab)` and cancels close; app quit/update restart
-  use `DegenViewApp::request_quit` plus the native termination intercept. A failed save cancels exit.
+  `unsaved` flow. Tab close starts `begin_exit(CloseTab)` and cancels close; quit/update restart use
+  `DegenViewApp::request_quit` plus the native termination intercept. Failed save cancels exit.
   Don't Save restores saved text and calls `ScriptStore::discard_draft`.
-- `pine_studio::library::demo` seeds examples once and on demand from an empty state. Deleted demos stay
-  deleted. Names equal filenames without a “Demo” prefix. Examples must be original GPL-compatible
-  work and compile with zero diagnostics, including warnings.
+- `pine_studio::library::demo` seeds examples once and on demand from an empty state; deleted demos
+  stay deleted. Names = filenames, no “Demo” prefix. Examples: original GPL-compatible work, zero
+  diagnostics including warnings.
 
 `src/pine/tests/corpus.rs` uses the optional cached community corpus in `tools/pine-corpus/`. Reduce
 failures with original code; never copy corpus scripts into the repository.
 
 ## iCloud Sync
 
-User scripts sync as files through `sync::scripts::ScriptSink` (`StoreScriptSink` over `ScriptStore`).
-Drafts and revisions never sync, unmodified bundled examples are neither uploaded nor kept over an
-incoming script of the same name, and text being typed is never overwritten (the incoming version
-waits in the sync inbox). Two edits to one script keep both: the loser becomes a conflict-copy
-script. Never write script files from sync code except through the sink. See
-[iCloud Sync](../icloud-sync.md).
+User scripts sync as files via `sync::scripts::ScriptSink` (`StoreScriptSink` over `ScriptStore`).
+Drafts and revisions never sync; unmodified bundled examples are neither uploaded nor kept over an
+incoming same-name script; text being typed is never overwritten (incoming waits in the sync inbox).
+Two edits to one script keep both; the loser becomes a conflict-copy script. Sync code writes script
+files only through the sink. See [iCloud Sync](../icloud-sync.md).
