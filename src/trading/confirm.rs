@@ -6,7 +6,7 @@ use degenview_brokers::Decimal;
 
 use super::draft::{Estimate, PreviewResult, TradeDraft};
 use super::model::{MarketRules, OrderClass, VenueKind};
-use crate::model::broker_ticket::display;
+use crate::model::broker::ticket::display;
 
 /// A price with at least the market's precision (`90,000.00`, not `90,000`).
 pub fn price_text(value: Decimal, increment: Decimal) -> String {
@@ -57,7 +57,7 @@ pub fn lines(
         rows.push(("Size".to_owned(), format!("{size} {}", rules.base_asset)));
     }
     let price = |text: &str| {
-        crate::model::broker_ticket::parse_decimal(text)
+        crate::model::broker::ticket::parse_decimal(text)
             .ok()
             .flatten()
             .map_or_else(

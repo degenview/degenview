@@ -3,11 +3,11 @@
 //! the canvas never touches the data, the bars or a script's run.
 
 use super::*;
-use crate::model::canvas::{
+use crate::model::chart::canvas::{
     BackgroundMode, ButtonVisibility, ChartMargins, ScaleTextSize, WatermarkMode,
 };
-use crate::model::chart_type::LineDash;
-use crate::model::viewport::MIN_VISIBLE as MIN_VISIBLE_CANDLES;
+use crate::model::chart::kind::LineDash;
+use crate::model::chart::viewport::MIN_VISIBLE as MIN_VISIBLE_CANDLES;
 use crate::model::{ChartCanvas, IndicatorConfig, SmallPrices};
 use crate::ui::chart_buttons::NavAction;
 use crate::ui::replay_overlay::ReplayChartFrame;
@@ -1092,7 +1092,7 @@ fn navigation_stays_inside_the_data_and_the_zoom_limits() {
             tiny.viewport.horizontal.visible,
             tiny.viewport.horizontal.right_offset
         ),
-        (crate::model::viewport::DEFAULT_VISIBLE, 0.0)
+        (crate::model::chart::viewport::DEFAULT_VISIBLE, 0.0)
     );
 }
 
@@ -1482,7 +1482,7 @@ fn applying_a_template_restyles_the_chart_and_keeps_everything_else() {
     harness.card.viewport.horizontal.right_offset = 7.0;
     harness.card.apply_template(
         &template,
-        crate::model::chart_template::ApplyScope::AppearanceAndCanvas,
+        crate::model::chart::template::ApplyScope::AppearanceAndCanvas,
     );
     let after = harness.card.appearance();
     assert_eq!(after.bullish, [1, 2, 3]);
@@ -1509,7 +1509,7 @@ fn colours_only_keeps_the_type_and_the_scroll() {
     template.canvas.horizontal_grid.visible = false;
     harness.card.apply_template(
         &template,
-        crate::model::chart_template::ApplyScope::ColorsAndCanvas,
+        crate::model::chart::template::ApplyScope::ColorsAndCanvas,
     );
     assert_eq!(harness.card.appearance().style.chart_type, ChartType::Kagi);
     assert!(!harness.card.appearance().canvas.horizontal_grid.visible);

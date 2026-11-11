@@ -4,7 +4,7 @@
 //! handed back as an [`Outcome`] for the window to carry out, so the app never reports a copy or
 //! an open that did not happen.
 
-use crate::model::snapshot::{SharedSnapshot, SnapshotAction, UploadError};
+use crate::model::chart::snapshot::{SharedSnapshot, SnapshotAction, UploadError};
 use crate::service::keychain_snapshot_secrets::SnapshotSecrets;
 use crate::service::snapshot_export::{self, ExportError};
 use crate::service::snapshot_providers::{Destination, Purpose};

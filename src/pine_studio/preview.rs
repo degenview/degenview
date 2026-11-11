@@ -11,7 +11,7 @@ use super::model::ScriptType;
 use super::registry::LibraryRegistry;
 use super::workspace::PreviewInput;
 use crate::format;
-use crate::model::price_scale::PriceScaleMode;
+use crate::model::chart::price_scale::PriceScaleMode;
 use crate::model::{DataSource, IndicatorConfig, Kline, Timeframe};
 use crate::pine::compiler;
 use crate::pine::program::{InputSchema, InputValue, VisualOutput};

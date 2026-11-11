@@ -163,7 +163,7 @@ impl ArrowReadout {
     /// The text lines for the enabled statistics, price and percent first.
     pub fn lines(
         &self,
-        stats: &crate::model::drawing_style::ArrowStats,
+        stats: &crate::model::drawings::style::ArrowStats,
         format: PriceFormat,
     ) -> Vec<String> {
         let mut lines = Vec::new();
@@ -455,7 +455,7 @@ mod tests {
 
     #[test]
     fn an_arrow_reads_out_only_the_statistics_that_are_on() {
-        use crate::model::drawing_style::ArrowStats;
+        use crate::model::drawings::style::ArrowStats;
         let up = ArrowReadout::new(
             100.0,
             110.0,

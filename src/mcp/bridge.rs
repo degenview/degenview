@@ -217,7 +217,7 @@ pub enum McpCommand {
     BeginSnapshot {
         workspace_id: u64,
         chart_id: u64,
-        scale: crate::model::snapshot::SnapshotScale,
+        scale: crate::model::chart::snapshot::SnapshotScale,
     },
     /// Whether the picture a job is making is ready, and takes it if so.
     PollSnapshot {

@@ -12,7 +12,7 @@ use super::book::WatchlistQuoteBook;
 use super::coinbase_ws::CoinbaseTick;
 use super::provider::{QuoteFailure, QuoteProvider, QuoteRequest, chunk_size};
 use crate::model::alert::AlertProviderHealth;
-use crate::model::watchlist_quote::{
+use crate::model::watchlist::quote::{
     Freshness, SourceQuote, WatchlistQuote, evaluate_freshness, refresh_interval_secs,
 };
 use crate::model::{DataSource, InstrumentId};
@@ -904,7 +904,7 @@ pub fn poll(engine: &Mutex<Engine>, provider: &dyn QuoteProvider, now: &dyn Fn()
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::watchlist_quote::Freshness;
+    use crate::model::watchlist::quote::Freshness;
     use std::sync::Arc;
 
     /// Answers from a table and records every call.

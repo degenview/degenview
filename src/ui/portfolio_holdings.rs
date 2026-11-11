@@ -7,8 +7,8 @@
 // Transient: the Portfolio window hosts this once the portfolio store is wired.
 #![allow(dead_code)]
 
+use crate::model::portfolio::format::PortfolioValueFormatter;
 use crate::model::portfolio::{PortfolioAsset, PortfolioHolding, PortfolioHoldingsSort};
-use crate::model::portfolio_format::PortfolioValueFormatter;
 use crate::ui::accessibility;
 use crate::ui::icons::Icon;
 use crate::ui::kit::{self, MEDIUM, REGULAR, SEMIBOLD};

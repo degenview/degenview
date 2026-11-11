@@ -10,8 +10,8 @@
 
 use super::overlays::{LineState, OverlayFrame, OverlayLine};
 use super::{ChartCard, READOUT_MARGIN, READOUT_PAD, READOUT_ROW_GAP, View, truncated};
+use crate::model::overlay::feed::OverlayStatus;
 use crate::model::overlay::{Move, OverlayCommand, OverlayId, OverlayScale, ScaleChoice};
-use crate::model::overlay_feed::OverlayStatus;
 use crate::ui::chart_indicator_strip::{self, Action};
 use crate::ui::icons::{self, Icon};
 use crate::ui::{kit, overlay_settings_popover, theme};

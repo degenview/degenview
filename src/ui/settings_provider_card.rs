@@ -6,7 +6,7 @@
 //! per field of the descriptor. Nothing here knows which provider it is drawing, so a new provider
 //! needs no code on this page.
 
-use crate::model::snapshot::{FieldValues, SnapshotPrefs};
+use crate::model::chart::snapshot::{FieldValues, SnapshotPrefs};
 use crate::service::keychain_snapshot_secrets::{SecretState, SnapshotSecrets};
 use crate::service::snapshot_providers::{
     Destination, FieldKind, FieldSpec, Glyph, Logo, ProviderDescriptor, Readiness, SecretPresence,
@@ -665,7 +665,7 @@ fn paint_logo(ui: &egui::Ui, logo: Logo, tile: egui::Rect) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::snapshot::SELF_HOSTED;
+    use crate::model::chart::snapshot::SELF_HOSTED;
     use crate::service::snapshot_providers::{imgbb, self_hosted};
 
     fn imgbb_descriptor() -> &'static ProviderDescriptor {

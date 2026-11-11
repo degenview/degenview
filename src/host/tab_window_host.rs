@@ -6,8 +6,8 @@
 //! tab contents (new tab, close with an unsaved-script prompt) is queued as a [`TabRequest`] for
 //! `DegenViewApp::process_commands`.
 
-use crate::model::tab_windows::{TabId, TabWindow, TabWindows, WindowId};
-use crate::model::window_frames::{Frame, FrameMemory, Layout, Sample};
+use crate::model::tab::window_frames::{Frame, FrameMemory, Layout, Sample};
+use crate::model::tab::windows::{TabId, TabWindow, TabWindows, WindowId};
 use crate::ui::tab_bar::{self, TabBarEvent};
 use crate::ui::window_chrome;
 use eframe::egui::{self, Pos2, Rect, Vec2, ViewportCommand, ViewportId, vec2};

@@ -3,7 +3,7 @@
 //! generated chart each, and a detail panel with the add button. A pick is reported as an
 //! [`Output`]; the workspace applies it to the focused chart.
 //!
-//! The list comes from `model::indicator_catalog`; see `docs/indicator-picker.md`.
+//! The list comes from `model::indicators::catalog`; see `docs/indicator-picker.md`.
 
 mod preview;
 mod sections;
@@ -13,7 +13,7 @@ use super::icons::{self, Icon};
 use super::kit::{self, MEDIUM, SEMIBOLD, size};
 use super::script_catalog;
 use super::theme;
-use crate::model::indicator_catalog::{self, CatalogEntry, EntryKey, Family, Origin};
+use crate::model::indicators::catalog::{self, CatalogEntry, EntryKey, Family, Origin};
 use crate::model::{DataSource, IndicatorConfig};
 use crate::pine_studio::indicators;
 use crate::store::SharedStore;
@@ -201,7 +201,7 @@ impl IndicatorPicker {
             Some(target) if target.source.is_line_chart() => &[],
             _ => &scripts[..],
         };
-        let all = indicator_catalog::all(scripts);
+        let all = catalog::all(scripts);
         let favorites = self.favorite_set();
         let searching = !self.query.trim().is_empty();
         let blocks = if searching {

@@ -5,7 +5,7 @@ use super::list::{related_row, subtitle};
 use super::search::{market_kind, trading_kind};
 use crate::format;
 use crate::model::DataSource;
-use crate::model::watchlist_quote::{Freshness, WatchlistQuote};
+use crate::model::watchlist::quote::{Freshness, WatchlistQuote};
 use crate::service::SearchResult;
 use crate::ui::add_chart_sheet::result_icon;
 use crate::ui::kit::{self, BOLD, MEDIUM, REGULAR, SEMIBOLD};

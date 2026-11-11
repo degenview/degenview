@@ -15,7 +15,7 @@ use super::task::Task;
 use crate::host::broker_host::{BrokerHost, StoreJournal};
 use crate::host::paper_host::PaperHost;
 use crate::host::trading_hub::TradingHub;
-use crate::model::trading_venue::TradingVenue;
+use crate::model::broker::venue::TradingVenue;
 use crate::store::{SharedStore, Store};
 
 const COINBASE: BrokerId = BrokerId::new("coinbase");

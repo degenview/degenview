@@ -316,7 +316,7 @@ fn broker_card(
                 // enabled, so it is not connected again at the next start.
                 form.operation = Some((
                     KeyOperation::Removing,
-                    hub.disable(crate::model::trading_venue::TradingVenue::Broker(id)),
+                    hub.disable(crate::model::broker::venue::TradingVenue::Broker(id)),
                 ));
             }
             Some(kit::ConfirmOutcome::Cancelled) => form.confirming_disconnect = false,

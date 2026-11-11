@@ -10,7 +10,7 @@ use super::accessibility;
 use super::canvas_render::CanvasStyle;
 use super::icons::{self, Icon};
 use super::theme;
-use crate::model::canvas::ButtonVisibility;
+use crate::model::chart::canvas::ButtonVisibility;
 use eframe::egui::{self, CursorIcon, Id, Pos2, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, vec2};
 
 const BUTTON: f32 = 20.0;
@@ -372,7 +372,7 @@ mod tests {
         // A collapsed pane's strip is just tall enough.
         let strip = Rect::from_min_size(
             Pos2::new(20.0, 400.0),
-            vec2(600.0, crate::model::canvas::COLLAPSED_PANE_HEIGHT),
+            vec2(600.0, crate::model::chart::canvas::COLLAPSED_PANE_HEIGHT),
         );
         assert!(pane_fits(strip, right));
         let (strip_pill, _) = pane_rects(strip, right);
@@ -450,7 +450,7 @@ mod tests {
 
     #[test]
     fn a_visible_group_reports_the_button_that_was_clicked_and_a_hidden_one_nothing() {
-        use crate::model::canvas::ChartCanvas;
+        use crate::model::chart::canvas::ChartCanvas;
         for (visibility, expected) in [
             (ButtonVisibility::Always, Some(NavAction::ZoomOut)),
             (ButtonVisibility::OnHover, Some(NavAction::ZoomOut)),
@@ -474,7 +474,7 @@ mod tests {
 
     #[test]
     fn a_group_that_is_hover_only_stays_hidden_while_the_pointer_is_away() {
-        use crate::model::canvas::ChartCanvas;
+        use crate::model::chart::canvas::ChartCanvas;
         let style = CanvasStyle::resolve(&ChartCanvas::default());
         let (_, buttons) = navigation_rects(plot());
         let ctx = egui::Context::default();

@@ -2,7 +2,7 @@
 //!
 //! The tool is a mode the workspace arms (`ChartCard::set_zoom_armed`), not a drawing: the
 //! rectangle is transient card state that is never stored, never in the Object tree, the undo
-//! stack, a template or linked navigation. The maths is `model::viewport::zoom`; this file owns the
+//! stack, a template or linked navigation. The maths is `model::chart::viewport::zoom`; this file owns the
 //! pointer, the preview and the viewport edit. The edit is made inside the frame, so linked charts
 //! follow through the usual `end_sync_frame` diff and the price range stays local.
 
@@ -10,8 +10,8 @@ use eframe::egui::{self, CursorIcon, Painter, Pos2, Rect, Response, Stroke, Stro
 
 use super::navigation::{Region, Regions};
 use super::{ChartCard, View};
-use crate::model::viewport::ChartViewport;
-use crate::model::viewport::zoom::{self, MAX_BACK, Selection, Slots};
+use crate::model::chart::viewport::ChartViewport;
+use crate::model::chart::viewport::zoom::{self, MAX_BACK, Selection, Slots};
 use crate::ui::kit;
 
 /// The rectangle being dragged.
@@ -294,8 +294,8 @@ impl ChartCard {
     /// Applies a zoom: the view it leaves is Zoom out's newest entry and the workspace's undo step.
     fn commit_zoom(
         &mut self,
-        horizontal: crate::model::viewport::HorizontalViewport,
-        prices: Option<crate::model::viewport::PriceRange>,
+        horizontal: crate::model::chart::viewport::HorizontalViewport,
+        prices: Option<crate::model::chart::viewport::PriceRange>,
     ) {
         let before = self.view_step();
         self.remember_back(before);
@@ -315,7 +315,7 @@ impl ChartCard {
     /// A zoom made without a pointer, for tests that need a stored view.
     #[cfg(test)]
     pub(crate) fn zoom_to_for_test(&mut self, visible: usize, right_offset: f64) {
-        let horizontal = crate::model::viewport::HorizontalViewport {
+        let horizontal = crate::model::chart::viewport::HorizontalViewport {
             visible,
             right_offset,
         };

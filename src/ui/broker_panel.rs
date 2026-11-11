@@ -24,8 +24,8 @@ use degenview_brokers::{
 use eframe::egui::{self, Color32, Id};
 
 use crate::host::broker_host::BrokerHost;
-use crate::model::broker_prefs::BrokerPrefs;
-use crate::model::broker_ticket::{self as rules, StatusTone};
+use crate::model::broker::prefs::BrokerPrefs;
+use crate::model::broker::ticket::{self as rules, StatusTone};
 use crate::trading::model::AccountStats;
 use crate::ui::alert_center::Tone;
 use crate::ui::icons::Icon;
@@ -265,7 +265,7 @@ fn capitalise(text: &str) -> String {
     })
 }
 
-pub use crate::model::broker_ticket::type_label;
+pub use crate::model::broker::ticket::type_label;
 
 fn tone(tone: StatusTone) -> Tone {
     match tone {
@@ -1619,7 +1619,7 @@ fn edit_sheet(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::broker_ticket::edit_blocker;
+    use crate::model::broker::ticket::edit_blocker;
     use degenview_brokers::{Capabilities, OrderStatus, ProductId, TifKind, Tradability};
     use std::str::FromStr;
 

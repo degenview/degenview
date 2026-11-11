@@ -21,13 +21,13 @@ use super::model::{
 use super::task::Task;
 use crate::host::paper_host::PaperHost;
 use crate::model::DataSource;
-use crate::model::broker_ticket::display;
+use crate::model::broker::ticket::display;
+use crate::model::broker::venue::TradingVenue;
+use crate::model::paper::ticket::{TicketDraft as PaperTicket, TicketField};
 use crate::model::paper::{
     PaperCurrency, PaperInstrument, PaperOrder, PaperOrderRole, PaperOrderSide, PaperOrderStatus,
     PaperOrderType, PaperTimeInForce,
 };
-use crate::model::paper_ticket::{TicketDraft as PaperTicket, TicketField};
-use crate::model::trading_venue::TradingVenue;
 
 pub struct PaperBackend {
     host: Arc<Mutex<PaperHost>>,
@@ -304,7 +304,7 @@ impl TradingBackend for PaperBackend {
         }
         MarketAccess::Ready(Box::new(MarketRules {
             name: instrument.display_name.clone(),
-            base_asset: crate::model::paper_ticket::base_symbol(&instrument),
+            base_asset: crate::model::paper::ticket::base_symbol(&instrument),
             // What the chart's pair says, so a euro market reads in euros; the engine itself
             // still settles every chart in the account's currency.
             quote_asset: instrument

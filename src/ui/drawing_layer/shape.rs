@@ -12,8 +12,8 @@ use super::note_shapes;
 use super::pattern_shapes;
 use super::table_shapes;
 use super::volume_shapes;
-use crate::model::chart_type::{LineDash, Rgba};
-use crate::model::drawing_style::{DrawingStyle, LineEnd, MiddleLine};
+use crate::model::chart::kind::{LineDash, Rgba};
+use crate::model::drawings::style::{DrawingStyle, LineEnd, MiddleLine};
 use crate::model::{ArrowDirection, Drawing, Geometry};
 use crate::ui::drawing_geometry as geo;
 use crate::ui::series_render;
@@ -66,7 +66,7 @@ pub(super) struct PictureDraw {
 #[derive(Clone, Debug)]
 pub(super) struct CardDraw {
     pub rect: Rect,
-    pub card: crate::model::link_card::LinkCard,
+    pub card: crate::model::annotation::link_card::LinkCard,
 }
 
 /// A line of a table that is dragged to resize the row or column beside it.

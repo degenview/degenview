@@ -20,9 +20,9 @@ use crate::mcp::confirm::{
 };
 use crate::mcp::state::McpShared;
 use crate::model::alert::AlertId;
+use crate::model::alert::pine::PineAlertSubscription;
 use crate::model::mcp::{McpAuditEntry, McpAuditKind, McpAuditOutcome};
 use crate::model::paper::{PaperOrderChanges, PaperOrderRequest, PaperOrderSide, PaperOrderType};
-use crate::model::pine_alert::PineAlertSubscription;
 use crate::model::watchlist::{new_id, now_ms};
 use crate::store::watchlist::WatchlistStore;
 use crate::workspace::ChartWorkspace;

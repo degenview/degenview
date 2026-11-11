@@ -8,7 +8,7 @@
 
 use super::icons::{self, Icon};
 use super::{accessibility, kit, shortcut, theme};
-use crate::model::price_scale::PriceScaleMode;
+use crate::model::chart::price_scale::PriceScaleMode;
 use eframe::egui::{
     self, Color32, CursorIcon, Id, Key, Modifiers, Pos2, Rect, RectAlign, Sense, Ui, Vec2,
 };

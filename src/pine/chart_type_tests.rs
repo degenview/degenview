@@ -8,9 +8,9 @@ use super::program::{BarEvent, BarPhase, SymbolInfo, VisualOutput};
 use super::runtime_support::{SecurityDataProvider, SecurityKey};
 use super::session::Session;
 use super::token::Limits;
-use crate::model::chart_type::{ConstructionSource, SizeMethod, SizeRule};
-use crate::model::synthetic::ticker::{self, TickerModifier};
-use crate::model::synthetic::{Construction, build_with};
+use crate::model::chart::kind::{ConstructionSource, SizeMethod, SizeRule};
+use crate::model::chart::synthetic::ticker::{self, TickerModifier};
+use crate::model::chart::synthetic::{Construction, build_with};
 use crate::model::{ChartKind, Kline};
 use std::collections::HashMap;
 

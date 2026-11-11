@@ -736,7 +736,7 @@ pub fn main_work_area() -> Option<[f32; 4]> {
 }
 
 /// The displays as `[x, y, width, height]` in whole points, sorted: which arrangement the windows
-/// sit in (`model::window_frames`). Empty off macOS, and off the main thread.
+/// sit in (`model::tab::window_frames`). Empty off macOS, and off the main thread.
 pub fn screen_layout() -> Vec<[i32; 4]> {
     platform::screen_layout()
 }

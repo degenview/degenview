@@ -61,6 +61,27 @@ child sees the root's private fields, and anything another child calls is `pub(s
 | `ui/` | Shared chrome plus chart, drawing, watchlist, alert, replay, paper, portfolio, Pine, settings, and webhook renderers |
 | `mcp/` | Loopback HTTP transport, auth, shared permission state, app bridge, tools, and wire types |
 
+## `model/` layout
+
+`model/` holds one directory per domain, and nothing but `mod.rs` at its root. A module sits in the
+directory of the domain it belongs to, one concern per file, with the domain left out of the file's
+name: `model::paper::engine`, not `model::paper_engine`. The domain's own types live in its
+`mod.rs` (`model::paper::PaperOrderSide`); a file with tests keeps them in a `tests.rs` beside it
+(`foo/mod.rs` + `foo/tests.rs`, never `foo.rs` + `foo/`).
+
+| Directory | Holds |
+| --- | --- |
+| `alert/`, `webhook/` | Price and Pine alerts (engine, feed, line, messages, notifications) and webhook endpoints and policy |
+| `paper/`, `portfolio/`, `watchlist/`, `broker/` | Paper trading, the portfolio ledger and its statistics, watchlists, and the shared live-trading values |
+| `chart/` | One chart: appearance, canvas, viewport, price scale, kind, layout, templates, context menu, linked-chart sync, snapshots, replay, constructed bars (`synthetic/`) |
+| `market/` | Instruments, sources, timeframes, candles, history paging, prediction-market series |
+| `drawings/`, `annotation/`, `pattern/`, `fib/`, `forecast/` | Drawings and their tools: the shared model and styles, text/image/post/table content, patterns and Elliott waves, Fibonacci and Gann, positions and measurers |
+| `indicators/`, `overlay/`, `pine/` | Built-in indicators and the catalog, markets compared on a chart, Pine instances and logs on a chart |
+| `mcp/`, `tab/`, `session_stats/`, `editor_theme/` | MCP activity, tabs, windows and Tab Linking, session statistics, editor themes |
+
+Flat re-exports for the most used types are in `model/mod.rs` (`model::Kline`, `model::ChartType`).
+A new module goes in the matching directory; a new domain gets its own directory and a row here.
+
 ## Boundaries
 
 - `model/` and `pine/` stay pure and egui-free.

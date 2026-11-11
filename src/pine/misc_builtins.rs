@@ -148,8 +148,8 @@ impl Session {
         arguments: &[Argument],
         context: &mut RuntimeContext,
     ) -> Result<RuntimeValue, Diagnostic> {
-        use crate::model::chart_type::{ConstructionSource, SizeRule};
-        use crate::model::synthetic::ticker::{self, TickerModifier};
+        use crate::model::chart::kind::{ConstructionSource, SizeRule};
+        use crate::model::chart::synthetic::ticker::{self, TickerModifier};
 
         let symbol = match self.arg_value(arguments, 0, Some("symbol"), context)? {
             RuntimeValue::String(symbol) => symbol,

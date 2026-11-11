@@ -1,6 +1,6 @@
 //! Candle fetching behind the Top Performers card: how each holding's market moved since a
 //! starting time. Holdings only carry today's and yesterday's price, so a longer range needs the
-//! market's own candles. The ranking is `model::portfolio_card::performance`; this is the
+//! market's own candles. The ranking is `model::portfolio::card::performance`; this is the
 //! blocking provider boundary, a small cache, and the worker bookkeeping around them.
 //!
 //! Fetches run on `service::work_queue` threads and land in the cache, which the UI reads each
@@ -8,8 +8,8 @@
 
 use crate::model::Kline;
 use crate::model::portfolio::PortfolioAsset;
-use crate::model::portfolio_card::AssetMove;
-use crate::model::portfolio_history::DAY_MS;
+use crate::model::portfolio::card::AssetMove;
+use crate::model::portfolio::history::DAY_MS;
 use crate::service::portfolio_history::{daily_bars, fetch_all, market_symbol};
 use eframe::egui;
 use std::collections::{HashMap, HashSet};

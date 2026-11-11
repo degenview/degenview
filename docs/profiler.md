@@ -102,7 +102,7 @@ Relevant areas may include:
 
     src/pine_host.rs
     src/pine_subscription_host.rs
-    src/model/pine_instance.rs
+    src/model/pine/instance.rs
 
     src/pine_studio/
     src/pine_studio/model.rs

@@ -1,14 +1,14 @@
 //! The Object Tree: the chart's symbol, indicators, scripts and drawings as a list you can
 //! select, show or hide, lock, reorder and delete from.
 //!
-//! A docked panel over `model::object_tree`'s rows: a toolbar, a filter field, and collapsible
+//! A docked panel over `model::chart::object_tree`'s rows: a toolbar, a filter field, and collapsible
 //! sections whose rows carry the glyph of what they are. It owns nothing: selecting a drawing
 //! here is selecting it on the chart (the workspace's one selection), and every change is
 //! returned as a [`TreeAction`] for the workspace to apply through the same paths the chart's own
 //! controls use. Only the rows on screen are laid out.
 
 use crate::model::BuiltIn;
-use crate::model::object_tree::{IndicatorKey, Key, Row, Section};
+use crate::model::chart::object_tree::{IndicatorKey, Key, Row, Section};
 use crate::ui::icons::{self, Icon};
 use crate::ui::tool_sidebar::tool_icon;
 use crate::ui::{accessibility, kit, theme};

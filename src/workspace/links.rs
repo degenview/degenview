@@ -6,8 +6,8 @@
 //! its answer is written to the card as one undoable change, so it syncs like any edit.
 
 use super::ChartWorkspace;
-use crate::model::image_content::Content;
-use crate::model::link_card::{ContentPrefs, Link, LinkCard, LinkMeta};
+use crate::model::annotation::image_content::Content;
+use crate::model::annotation::link_card::{ContentPrefs, Link, LinkCard, LinkMeta};
 use crate::model::{DrawingCommand, Geometry, Tool};
 use crate::service::link_fetch::{self, FetchError};
 use crate::service::work_queue;

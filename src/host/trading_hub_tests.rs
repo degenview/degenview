@@ -11,8 +11,8 @@ use degenview_brokers::{BrokerId, Env, MemorySecretStore, SecretStore, Status};
 use super::broker_host::{BrokerHost, StoreJournal};
 use super::paper_host::PaperHost;
 use super::trading_hub::{ENABLED_KEY, TradingHub};
+use crate::model::broker::venue::TradingVenue;
 use crate::model::paper::{PaperAccountSettings, PaperCurrency};
-use crate::model::trading_venue::TradingVenue;
 use crate::store::{SharedStore, Store};
 use crate::trading::model::{BackendState, VenueKind};
 

@@ -4,7 +4,7 @@
 
 use super::engine::Outcome;
 use crate::model::DataSource;
-use crate::model::watchlist_quote::{SourceQuote, VolumeKind};
+use crate::model::watchlist::quote::{SourceQuote, VolumeKind};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::time::Duration;

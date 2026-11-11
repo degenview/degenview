@@ -1,7 +1,7 @@
 //! The anchored VWAP and the volume profiles projected onto the plot.
 //!
 //! Both are worked from the bars the chart draws (constructed bars on a Renko chart, and only what
-//! a replay has shown), by `model::volume_profile`. A shape is built once per drawing and
+//! a replay has shown), by `model::forecast::volume_profile`. A shape is built once per drawing and
 //! projection and reused, so the arithmetic is not redone while the pointer moves; a bar whose
 //! volume changes rebuilds it (the projection key reads the newest bar's volume). A market with no
 //! volume has none to show, and the shape says so instead of drawing a line it made up.
@@ -10,10 +10,11 @@ use super::Projection;
 use super::shape::{
     Band, ColorBox, LabelLook, LabelPlace, PivotLabel, Screen, Styled, vertex_handles,
 };
-use crate::model::chart_type::{LineDash, Rgba};
-use crate::model::drawing_style::DrawingStyle;
-use crate::model::forecast_style::{ProfileOptions, ProfileVolume, RowsLayout};
-use crate::model::volume_profile::{self, RowSize};
+use crate::model::chart::kind::{LineDash, Rgba};
+use crate::model::drawings::style::DrawingStyle;
+use crate::model::forecast;
+use crate::model::forecast::style::{ProfileOptions, ProfileVolume, RowsLayout};
+use crate::model::forecast::volume_profile::RowSize;
 use crate::model::{Anchor, Geometry};
 use crate::ui::line_geometry as lines;
 use eframe::egui::{Pos2, Rect, pos2, vec2};
@@ -91,7 +92,7 @@ fn vwap(
     let options = &style.vwap;
     let bars = proj.times.bars();
     let first = bar_at(proj, anchor.time_ms);
-    let series = volume_profile::anchored_vwap(bars, first, options.source);
+    let series = forecast::volume_profile::anchored_vwap(bars, first, options.source);
     let mut screen = Screen::empty();
 
     // Only the stretch the plot can see (with a bar of margin) is made into a path.
@@ -99,7 +100,7 @@ fn vwap(
         proj.plot.left() - proj.slot_width,
         proj.plot.right() + proj.slot_width,
     );
-    let visible: Vec<&volume_profile::VwapPoint> = series
+    let visible: Vec<&forecast::volume_profile::VwapPoint> = series
         .iter()
         .filter(|point| {
             let x = proj.x_at_index(point.index as f64);
@@ -208,7 +209,7 @@ fn profile(
     };
     let left = proj.x_at_index(first as f64) - proj.slot_width / 2.0;
     let right = proj.x_at_index(last as f64) + proj.slot_width / 2.0;
-    let Some(built) = volume_profile::profile(
+    let Some(built) = forecast::volume_profile::profile(
         bars,
         first,
         last,
@@ -287,7 +288,7 @@ fn profile(
 /// longest bar is allowed, each in its mode's colours, those outside the value area faded.
 fn histogram(
     screen: &mut Screen,
-    built: &volume_profile::Profile,
+    built: &forecast::volume_profile::Profile,
     options: &ProfileOptions,
     proj: &Projection,
     left: f32,

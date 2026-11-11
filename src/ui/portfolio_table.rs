@@ -7,7 +7,7 @@
 
 use crate::model::DataSource;
 use crate::model::portfolio::PortfolioAsset;
-use crate::model::portfolio_format::Tone;
+use crate::model::portfolio::format::Tone;
 use crate::service;
 use crate::ui::icons::{self, Icon};
 use crate::ui::theme;

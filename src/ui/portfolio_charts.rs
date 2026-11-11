@@ -5,9 +5,9 @@
 // Transient: the Portfolio window hosts these once the portfolio store is wired.
 #![allow(dead_code)]
 
+use crate::model::portfolio::format::PortfolioValueFormatter;
+use crate::model::portfolio::statistics::PortfolioHistoryRange;
 use crate::model::portfolio::{PortfolioCurrency, PortfolioHolding, PortfolioSnapshot};
-use crate::model::portfolio_format::PortfolioValueFormatter;
-use crate::model::portfolio_statistics::PortfolioHistoryRange;
 use crate::ui::accessibility;
 use crate::ui::alert_center::clock_time;
 use crate::ui::icons::{self, Icon};

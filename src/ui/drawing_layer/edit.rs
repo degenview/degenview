@@ -3,7 +3,8 @@
 //! drawing and a projection, so every tool is tested without a window.
 
 use super::Projection;
-use crate::model::gann::{self, GannKind};
+use crate::model::fib;
+use crate::model::fib::gann::GannKind;
 use crate::model::{Anchor, Drawing, Geometry};
 use crate::ui::drawing_geometry as geo;
 use crate::ui::drawing_render::{self, RulerCorner};
@@ -137,7 +138,7 @@ pub(super) fn keep_ratio(
     }
     let bars =
         |a: &Anchor, b: &Anchor| proj.times.index_of(b.time_ms) - proj.times.index_of(a.time_ms);
-    let Some(rate) = gann::price_per_bar(
+    let Some(rate) = fib::gann::price_per_bar(
         points[0].price,
         points[1].price,
         bars(&points[0], &points[1]),
@@ -275,8 +276,8 @@ fn dragged_width(original: &Drawing, proj: &Projection, press: Pos2, now: Pos2) 
         return None;
     };
     Some((rect.width() + (now.x - press.x)).clamp(
-        crate::model::drawing_style::MIN_BOX_WIDTH,
-        crate::model::drawing_style::MAX_BOX_WIDTH,
+        crate::model::drawings::style::MIN_BOX_WIDTH,
+        crate::model::drawings::style::MAX_BOX_WIDTH,
     ))
 }
 
@@ -312,7 +313,7 @@ const MIN_PICTURE: f32 = 16.0;
 
 /// Where a picture is on screen: its top-left corner at its chart point, and its own size.
 pub(super) fn picture_rect(
-    image: &crate::model::image_content::ImageData,
+    image: &crate::model::annotation::image_content::ImageData,
     proj: &Projection,
 ) -> eframe::egui::Rect {
     eframe::egui::Rect::from_min_size(
@@ -327,7 +328,7 @@ pub(super) fn picture_rect(
 /// about its middle. Worked in screen space; the caller stores its corner as a chart point and its
 /// size in pixels.
 pub(super) fn resize_image(
-    image: &crate::model::image_content::ImageData,
+    image: &crate::model::annotation::image_content::ImageData,
     handle: BoxHandle,
     pointer: Pos2,
     proj: &Projection,

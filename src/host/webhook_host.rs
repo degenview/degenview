@@ -610,7 +610,7 @@ mod tests {
     /// is saved from there: saving must use that lock, not wait for it (which never ends).
     #[test]
     fn a_snapshot_setting_changed_in_settings_is_saved_without_locking_the_store_twice() {
-        use crate::model::snapshot::{SELF_HOSTED, SnapshotPrefs, SnapshotScale};
+        use crate::model::chart::snapshot::{SELF_HOSTED, SnapshotPrefs, SnapshotScale};
         let shared: crate::store::SharedStore = Arc::new(std::sync::Mutex::new(
             Store::open_in_memory().expect("a store"),
         ));

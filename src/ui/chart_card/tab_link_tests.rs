@@ -3,11 +3,11 @@
 //! to the other. The workspace's own wiring (`render_grid`) is the same calls in the same order.
 
 use super::*;
-use crate::model::chart_sync::{SyncHub, TimeAxis, TimeRange};
-use crate::model::tab_link::{
+use crate::model::chart::sync::{SyncHub, TimeAxis, TimeRange};
+use crate::model::chart::viewport::HorizontalViewport;
+use crate::model::tab::link::{
     LinkColor, LinkHub, LinkSignal, LinkTable, LinkToggles, Member as LinkMember,
 };
-use crate::model::viewport::HorizontalViewport;
 use crate::model::{IndicatorConfig, Tool};
 use crate::ui::replay_overlay::ReplayChartFrame;
 use eframe::egui::Modifiers;
@@ -366,7 +366,7 @@ fn a_zoom_made_while_the_other_tab_is_loading_reaches_it_when_its_bars_arrive() 
     let leader_zoom = tabs.view(0).visible;
     assert_ne!(
         leader_zoom,
-        crate::model::viewport::DEFAULT_VISIBLE,
+        crate::model::chart::viewport::DEFAULT_VISIBLE,
         "the leader zoomed"
     );
     // Many frames pass with the other tab still empty.
@@ -375,7 +375,7 @@ fn a_zoom_made_while_the_other_tab_is_loading_reaches_it_when_its_bars_arrive() 
     tabs.frames(4);
     assert_ne!(
         tabs.view(1).visible,
-        crate::model::viewport::DEFAULT_VISIBLE,
+        crate::model::chart::viewport::DEFAULT_VISIBLE,
         "the follower took the zoom"
     );
 }

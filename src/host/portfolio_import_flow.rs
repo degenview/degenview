@@ -2,14 +2,15 @@
 //! match tickers and fetch historical fee rates, preview, and commit to the ledger — plus saving
 //! exports. All slow work (file dialogs, auto-matching exchanges, FX lookups) runs on worker
 //! threads and reports back over channels; `show` drains them each frame and draws whichever
-//! sheet is open. The pure rules live in `model::portfolio_csv` and the sheets' state types.
+//! sheet is open. The pure rules live in `model::portfolio::csv` and the sheets' state types.
 
 // Transient: reached through the Portfolio tab's Import or Export menu.
 #![allow(dead_code)]
 
 use crate::host::portfolio_host::PortfolioHost;
+use crate::model::portfolio;
+use crate::model::portfolio::csv::{CmcPreview, CsvPreview, Mint};
 use crate::model::portfolio::{PortfolioAsset, PortfolioCurrency, PortfolioTransaction};
-use crate::model::portfolio_csv::{self, CmcPreview, CsvPreview, Mint};
 use crate::model::watchlist::new_id;
 use crate::service::asset_auto_mapper::{self, asset_from_search_result};
 use crate::service::file_dialog;
@@ -311,7 +312,7 @@ impl PortfolioImportFlow {
                             next_id: &mut next,
                         };
                         let preview =
-                            portfolio_csv::preview(&text, &host.snapshot().portfolios, &mut mint);
+                            portfolio::csv::preview(&text, &host.snapshot().portfolios, &mut mint);
                         self.csv = Some((preview, ImportPreviewState::default()));
                     }
                     Ok(Ok(None)) => {}
@@ -325,7 +326,7 @@ impl PortfolioImportFlow {
                     currency,
                 } => match inbox.try_recv() {
                     Ok(Ok(Some(text))) => {
-                        let preview = portfolio_csv::preview_coinmarketcap(&text);
+                        let preview = portfolio::csv::preview_coinmarketcap(&text);
                         let repaint_ctx = ctx.clone();
                         self.cmc = Some(CmcFlow::start(
                             preview,
@@ -561,7 +562,7 @@ mod tests {
 
     fn start(csv: &str) -> CmcFlow {
         CmcFlow::start(
-            portfolio_csv::preview_coinmarketcap(csv),
+            portfolio::csv::preview_coinmarketcap(csv),
             &[],
             4,
             PortfolioCurrency::Usd,

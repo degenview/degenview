@@ -1,7 +1,7 @@
 //! Paints the main price series of a chart in whichever way its chart type asks.
 //!
 //! What a bar looks like (hollow or filled, which colour, how wide a volume candle is, where a
-//! step turns, where a baseline line crosses) is decided in `model::chart_look` and tested there;
+//! step turns, where a baseline line crosses) is decided in `model::chart::look` and tested there;
 //! this module turns those decisions into painter calls. The chart card owns the coordinate
 //! system and hands it in as `x_for` and the price scale, so every type shares one set of axes:
 //! one slot per bar, left to right. Price-based types have no time axis of their own: their
@@ -12,14 +12,14 @@
 
 use super::chart_card::PriceScale;
 use super::theme;
-use crate::model::chart_look::{
-    self, CandleLook, Fill, Palette, drawn_extremes, split_at_level, step_points,
-    volume_width_fraction,
-};
-use crate::model::chart_type::{
+use crate::model::chart;
+use crate::model::chart::kind::{
     ChartStyle, ChartType, LineDash, LineSettings, PriceSource, RangeLook, Rgba,
 };
-use crate::model::synthetic::{BarShape, SyntheticBar};
+use crate::model::chart::look::{
+    CandleLook, Fill, Palette, drawn_extremes, split_at_level, step_points, volume_width_fraction,
+};
+use crate::model::chart::synthetic::{BarShape, SyntheticBar};
 use crate::model::{Kline, PriceFormat};
 use eframe::egui::{
     Align2, Color32, FontId, Painter, Pos2, Rect, Shape, Stroke, StrokeKind, Vec2,
@@ -220,9 +220,9 @@ fn candles(frame: &SeriesFrame) {
         let previous = frame.previous_close_of(index);
         let recolor = frame.recolor_of(index);
         let look = if frame.chart_type == ChartType::HollowCandles {
-            chart_look::hollow_look(&settings, frame.palette, bar, previous, recolor)
+            chart::look::hollow_look(&settings, frame.palette, bar, previous, recolor)
         } else {
-            chart_look::candle_look(&settings, frame.palette, bar, previous, recolor)
+            chart::look::candle_look(&settings, frame.palette, bar, previous, recolor)
         };
         let half = match frame.chart_type {
             ChartType::VolumeCandles => {
@@ -304,7 +304,7 @@ fn ohlc_bars(frame: &SeriesFrame, high_low_only: bool) {
     };
     for (index, bar) in frame.bars.iter().enumerate() {
         let previous = frame.previous_close_of(index);
-        let tint = color(chart_look::bar_color(
+        let tint = color(chart::look::bar_color(
             &settings,
             frame.palette,
             bar,
@@ -762,8 +762,8 @@ fn point_figure(frame: &SeriesFrame) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::chart_type::CandleSettings;
-    use crate::model::synthetic::{Construction, build_with};
+    use crate::model::chart::kind::CandleSettings;
+    use crate::model::chart::synthetic::{Construction, build_with};
     use eframe::egui::{self, pos2};
 
     fn bar(index: usize, open: f64, high: f64, low: f64, close: f64, volume: f64) -> Kline {
@@ -897,7 +897,7 @@ mod tests {
         );
         // Both draw two wick halves and the body's border; only the filled one paints the body.
         assert_eq!(filled, hollow + 1);
-        let look = chart_look::hollow_look(
+        let look = chart::look::hollow_look(
             &CandleSettings::default(),
             Palette::new([0, 200, 0], [200, 0, 0]),
             &rising[0],
@@ -956,7 +956,7 @@ mod tests {
     fn a_dense_point_and_figure_falls_back_to_a_bar_instead_of_unreadable_symbols() {
         let candles = market();
         let mut style = styled(ChartType::PointAndFigure);
-        style.point_figure.size.method = crate::model::chart_type::SizeMethod::Traditional;
+        style.point_figure.size.method = crate::model::chart::kind::SizeMethod::Traditional;
         style.point_figure.size.amount = 0.01;
         let constructed = build_with(Construction::of(&style).unwrap(), &candles, i64::MAX / 2);
         let bars = constructed.klines();

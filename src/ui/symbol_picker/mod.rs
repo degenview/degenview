@@ -16,7 +16,7 @@ use super::add_chart_sheet::{self, RecentMarket};
 use super::icons::{self, Icon};
 use super::kit::{self, MEDIUM, REGULAR, SEMIBOLD};
 use super::theme;
-use crate::model::watchlist_quote::WatchlistQuote;
+use crate::model::watchlist::quote::WatchlistQuote;
 use crate::model::{DataSource, InstrumentId};
 use crate::service::{self, SearchResult};
 use crate::store::SharedStore;

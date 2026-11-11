@@ -2,7 +2,7 @@
 //! workspace.
 
 use super::*;
-use crate::model::link_card::{CARD_SIZE_RANGE, DEFAULT_CARD_SIZE, Link, LinkCard};
+use crate::model::annotation::link_card::{CARD_SIZE_RANGE, DEFAULT_CARD_SIZE, Link, LinkCard};
 use crate::ui::LinkRequest;
 use menu::Action;
 
@@ -221,7 +221,7 @@ fn open_copy_replace_and_fetch_are_asked_of_the_workspace_and_change_nothing_her
 
 #[test]
 fn the_preview_chip_is_offered_only_while_the_card_has_no_preview() {
-    use crate::model::link_card::LinkMeta;
+    use crate::model::annotation::link_card::LinkMeta;
     let (mut rig, _) = placed_card(Tool::Post);
     let labels = |rig: &Rig| -> Vec<&'static str> {
         menu::link_chips(&rig.drawings[0])

@@ -1181,7 +1181,7 @@ mod tests {
 
     fn card_comparing(symbols: &[&str]) -> ChartCard {
         use crate::model::overlay::OverlayList;
-        use crate::model::overlay_feed::{OverlayFeed, OverlayStatus};
+        use crate::model::overlay::feed::{OverlayFeed, OverlayStatus};
         let main = crate::model::InstrumentId::new(DataSource::Binance, "BTCUSDT");
         let mut list = OverlayList::new();
         for symbol in symbols {

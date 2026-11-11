@@ -1,7 +1,7 @@
 //! Pine alert-subscription persistence. Each row is one applied `PineAlertSubscription` document,
 //! keyed by its id, stored under `pine_alert_subscription` like the other ordered document tables.
 
-use crate::model::pine_alert::PineAlertSubscription;
+use crate::model::alert::pine::PineAlertSubscription;
 use crate::model::watchlist::new_id;
 use crate::store::{Document, Store};
 use rusqlite::params;
@@ -65,7 +65,7 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::pine_alert::PineAlertState;
+    use crate::model::alert::pine::PineAlertState;
 
     fn subscription(id: u64) -> PineAlertSubscription {
         PineAlertSubscription {

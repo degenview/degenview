@@ -6,8 +6,8 @@
 // Transient: the portfolio host opens this once it is wired.
 #![allow(dead_code)]
 
+use crate::model::portfolio::format::PortfolioValueFormatter;
 use crate::model::portfolio::{PortfolioAsset, PortfolioHolding, PortfolioTransaction};
-use crate::model::portfolio_format::PortfolioValueFormatter;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit;
 use crate::ui::portfolio_charts;

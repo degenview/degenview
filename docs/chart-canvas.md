@@ -3,9 +3,9 @@
 Reference for Chart Settings ▸ **Canvas**, the chart appearance templates, and how they are
 built. Companion to [chart-types.md](chart-types.md) (Appearance ▸ chart types).
 
-The model is `src/model/canvas.rs` (`ChartCanvas`, kept in `ChartAppearance::canvas`), the
+The model is `src/model/chart/canvas/mod.rs` (`ChartCanvas`, kept in `ChartAppearance::canvas`), the
 painting is `src/ui/canvas_render.rs` and `ChartCard::body`, the page is
-`src/ui/chart_canvas_settings.rs`, and templates are `src/model/chart_template.rs`,
+`src/ui/chart_canvas_settings.rs`, and templates are `src/model/chart/template/mod.rs`,
 `src/store/chart_template.rs` and `src/ui/chart_templates.rs`.
 
 ## What is verified against TradingView, and what is not
@@ -53,7 +53,7 @@ opacity. Every row writes straight into the chart, which repaints at once.
   `chart.bg_color` still reads the theme's, not the custom backdrop.
 - **Vertical / horizontal grid lines.** On/off, colour (with opacity) and solid/dashed/dotted.
   The horizontal lines stand on the price axis' labels and the vertical lines on the time axis'
-  labels: one tick list each, from `model::canvas::price_ticks` and `time_ticks`. Prices are
+  labels: one tick list each, from `model::chart::canvas::price_ticks` and `time_ticks`. Prices are
   1/2/2.5/5 × 10ⁿ on a linear scale and 1/2/3/5/7 × 10ⁿ decades on a log scale (thinned to fit).
   Time labels are on every n-th bar counted from the start of the series, so a label stays on its
   bar while the chart pans. The grid is drawn from the scale and never feeds back into it.
@@ -97,7 +97,7 @@ opacity. Every row writes straight into the chart, which repaints at once.
 
 ### The right margin
 
-The plot always has `visible + reserved` equal slots (`model::canvas::visible_window`), where
+The plot always has `visible + reserved` equal slots (`model::chart::canvas::visible_window`), where
 `reserved` is the larger of the right margin and what an overlay script reserves. At rest the
 newest bar is `reserved` slots from the right edge. Scrolling back by `n` bars fills those slots
 with the bars that follow, so the bar spacing never changes as you scroll or at the moment the
@@ -111,7 +111,7 @@ Pane order is the order of the scripts on the chart (`PineInstance` list), so mo
 reorders that list and there is no second representation. Collapse is stored on the instance
 (`pane_collapsed`, saved with the chart; the script still runs). Maximize is view state and is
 not saved. Remove is the same removal as Scripts ▸ Remove from Chart. Layout is
-`model::canvas::split_panes`: expanded panes share 30 % of the height, a collapsed one is a 24 pt
+`model::chart::canvas::split_panes`: expanded panes share 30 % of the height, a collapsed one is a 24 pt
 strip, and a maximized pane takes everything but the strips and the time axis; the price chart
 then draws nothing but its time axis. Built-in indicators (volume, RSI, Bollinger) are drawn
 inside the price plot, not in panes, so they have no pane buttons.

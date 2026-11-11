@@ -18,8 +18,8 @@ use eframe::egui::{self, Color32, FontId, Pos2, Rect, Sense, Vec2};
 
 use super::chart_card::PriceScale;
 use super::paper_chart_trading::{Drag, Pill, marker};
-use crate::model::broker_chart::{Unavailable, snap_to_increment};
-use crate::model::broker_ticket::display;
+use crate::model::broker::chart::{Unavailable, snap_to_increment};
+use crate::model::broker::ticket::display;
 use crate::ui::accessibility;
 use crate::ui::broker_badge::LIVE;
 use crate::ui::theme;

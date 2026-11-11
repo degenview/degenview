@@ -22,7 +22,7 @@
 pub mod imgbb;
 pub mod self_hosted;
 
-use crate::model::snapshot::{FieldValues, SharedSnapshot, UploadError};
+use crate::model::chart::snapshot::{FieldValues, SharedSnapshot, UploadError};
 use crate::service::snapshot_upload::HostResponse;
 use eframe::egui;
 use std::borrow::Cow;
@@ -462,7 +462,7 @@ mod tests {
     #[test]
     fn a_provider_is_found_by_its_id() {
         assert!(provider("imgbb").is_some());
-        assert!(provider(crate::model::snapshot::SELF_HOSTED).is_some());
+        assert!(provider(crate::model::chart::snapshot::SELF_HOSTED).is_some());
         assert!(provider("nope").is_none());
         assert_eq!(
             registry().first().map(|p| p.descriptor().id),

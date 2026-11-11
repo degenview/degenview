@@ -14,7 +14,7 @@ use super::runtime_value::RuntimeValue;
 use super::state::{AlertEvent, RuntimeState};
 use super::token::{Diagnostic, DiagnosticCategory, SourceRange};
 use crate::model::Kline;
-use crate::model::alert_message::{AlertMessageContext, render};
+use crate::model::alert::message::{AlertMessageContext, render};
 
 const ALERT_LIMIT: usize = 200;
 

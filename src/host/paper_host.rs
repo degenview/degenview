@@ -5,14 +5,14 @@
 //! result, while still refusing all writes after an initial load failure.
 #![allow(dead_code)]
 
+use crate::model::paper;
+use crate::model::paper::engine::PaperTradingEngine;
 use crate::model::paper::{
     PaperAccount, PaperAccountMetrics, PaperAccountSettings, PaperClosedTrade, PaperCurrency,
     PaperJournalEntry, PaperOrder, PaperOrderChanges, PaperOrderEvent, PaperOrderRequest,
     PaperOrderSide, PaperOrderType, PaperPosition, PaperQuote, PaperTimeInForce, PaperTradingError,
     PaperTradingSnapshot,
 };
-use crate::model::paper_engine::PaperTradingEngine;
-use crate::model::paper_export;
 use crate::store::SharedStore;
 use crate::store::sync::Elsewhere;
 use crate::ui::icons::{self, Icon};
@@ -912,7 +912,7 @@ impl PaperPanel {
             ));
             return;
         };
-        let export = paper_export::export_account(host.snapshot(), account_id);
+        let export = paper::export::export_account(host.snapshot(), account_id);
         if export.is_empty() {
             self.notice = Some(PanelNotice::info(
                 "Nothing to export yet. Orders, fills and closed trades show up here once you trade.",
@@ -1884,7 +1884,7 @@ mod tests {
                                     ui,
                                     &mut host,
                                     &crate::ui::trade::panel_header::sample_bar(
-                                        crate::model::trading_venue::TradingVenue::Paper,
+                                        crate::model::broker::venue::TradingVenue::Paper,
                                         crate::trading::model::VenueKind::Simulated,
                                         "Paper",
                                     ),

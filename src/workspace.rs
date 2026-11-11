@@ -1,11 +1,11 @@
 use crate::host::paper_host::{PaperHost, PaperPanel};
 use crate::host::portfolio_card_host::PortfolioCardEnv;
 use crate::model::alert::{AlertCurrency, PriceAlert};
-use crate::model::chart_sync::SyncHub;
-use crate::model::tab_link::LinkColor;
-use crate::model::tab_title::TabChart;
+use crate::model::chart::sync::SyncHub;
+use crate::model::tab::link::LinkColor;
+use crate::model::tab::title::TabChart;
+use crate::model::watchlist::text::ImportReport;
 use crate::model::watchlist::{EntryId, WatchlistInstrument, now_ms};
-use crate::model::watchlist_text::ImportReport;
 use crate::model::{
     BuiltIn, ChartColumn, ChartSyncSettings, DataSource, Drawing, DrawingCommand, DrawingStyle,
     InstrumentId, LayoutSnapshot, MagnetMode, ReplayEngine, ReplayStatus, Timeframe, Tool,
@@ -93,7 +93,7 @@ pub enum WorkspaceAction {
     /// Open the Pine Studio tab.
     OpenPineScripts,
     /// Open the Pine Studio on the source of a Pine logs message.
-    OpenPineSource(crate::model::pine_logs_view::SourceTarget),
+    OpenPineSource(crate::model::pine::logs_view::SourceTarget),
     OpenAlerts,
     /// The price-alert sheet's Save: queue the alert for the runtime. `baseline` is the price
     /// the sheet last showed.
@@ -263,7 +263,7 @@ pub struct ChartWorkspace {
     trade_sheet: crate::ui::trade::order_sheet::SheetState,
     /// Where this tab's trading happens: paper, or a connected broker with real money. Not
     /// saved: a tab always starts on paper.
-    trading_venue: crate::model::trading_venue::TradingVenue,
+    trading_venue: crate::model::broker::venue::TradingVenue,
     broker_panel: crate::ui::broker_panel::BrokerPanelState,
     /// A chart's bell (or a watchlist row's menu) asked for a price alert this frame; `ui`
     /// opens the sheet on it.
@@ -441,7 +441,7 @@ impl ChartWorkspace {
             paper_panel_visible: false,
             trade_sheet_visible: false,
             trade_sheet: crate::ui::trade::order_sheet::SheetState::default(),
-            trading_venue: crate::model::trading_venue::TradingVenue::default(),
+            trading_venue: crate::model::broker::venue::TradingVenue::default(),
             broker_panel: crate::ui::broker_panel::BrokerPanelState::default(),
             new_alert_request: None,
             context: ContextState::default(),
@@ -1133,7 +1133,7 @@ mod tests {
                             ..crate::model::ChartStyle::default()
                         },
                         canvas: crate::model::ChartCanvas {
-                            margins: crate::model::canvas::ChartMargins {
+                            margins: crate::model::chart::canvas::ChartMargins {
                                 top: 20,
                                 bottom: 15,
                                 right: 7,
@@ -1142,7 +1142,7 @@ mod tests {
                         },
                     },
                     drawings: Vec::new(),
-                    pine_instances: vec![crate::model::pine_instance::PineInstance::new(
+                    pine_instances: vec![crate::model::pine::instance::PineInstance::new(
                         1,
                         Some("s".into()),
                         "RSI",
@@ -1399,7 +1399,7 @@ mod tests {
         for chart in &mut workspace.charts {
             chart
                 .chart
-                .restore_viewport(crate::model::viewport::SavedViewport {
+                .restore_viewport(crate::model::chart::viewport::SavedViewport {
                     right_offset: 12.0,
                     price_range: None,
                 });

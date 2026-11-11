@@ -542,7 +542,7 @@ fn altcoin(ui: &Ui, painter: &Painter, rect: Rect, reading: &LatestReading) {
             "Altcoin Market Cap",
             reading.altcoin_market_cap.map_or_else(
                 || "—".to_owned(),
-                |cap| format!("${}", crate::model::watchlist_quote::compact_number(cap)),
+                |cap| format!("${}", crate::model::watchlist::quote::compact_number(cap)),
             ),
             String::new(),
         )),

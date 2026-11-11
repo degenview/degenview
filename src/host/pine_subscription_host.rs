@@ -6,9 +6,9 @@
 
 use crate::host::pine_host::KlineSecurityDataProvider;
 use crate::model::Kline;
-use crate::model::pine_alert::{PineAlertState, PineAlertSubscription};
-use crate::model::pine_instance::PineInstance;
-use crate::model::synthetic::Construction;
+use crate::model::alert::pine::{PineAlertState, PineAlertSubscription};
+use crate::model::chart::synthetic::Construction;
+use crate::model::pine::instance::PineInstance;
 use crate::pine::execution::ExecutionController;
 use crate::pine::program::SymbolInfo;
 use crate::pine::state::AlertEvent;
@@ -26,7 +26,7 @@ struct RunKey {
     symbol_key: String,
     timeframe: String,
     source_hash: String,
-    inputs: HashMap<String, crate::model::pine_instance::StoredInput>,
+    inputs: HashMap<String, crate::model::pine::instance::StoredInput>,
     /// The chart's constructed bars the script runs over, if it is price-based: a change of
     /// chart type or of its construction starts the script over (silently), like any other change
     /// of what it runs on.
@@ -264,7 +264,7 @@ pub fn symbol_info(symbol_key: &str) -> SymbolInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::pine_alert::PineAlertState;
+    use crate::model::alert::pine::PineAlertState;
 
     fn bars() -> Vec<Kline> {
         (0..5)
@@ -391,7 +391,7 @@ mod tests {
 
     #[test]
     fn reconciliation_persists_inputs_and_silences_changed_or_removed_instances() {
-        use crate::model::pine_instance::StoredInput;
+        use crate::model::pine::instance::StoredInput;
 
         let source = "//@version=6\nindicator(\"S\")\nlen = input.int(2)\nplot(len)";
         let store = Store::open_in_memory().expect("open");
@@ -417,8 +417,8 @@ mod tests {
 
     #[test]
     fn script_alerts_follow_the_constructed_bars_and_a_chart_type_change_starts_over_silently() {
-        use crate::model::chart_type::{ConstructionSource, SizeMethod, SizeRule};
-        use crate::model::synthetic::{Construction, build_with};
+        use crate::model::chart::kind::{ConstructionSource, SizeMethod, SizeRule};
+        use crate::model::chart::synthetic::{Construction, build_with};
 
         let source = "//@version=6\nindicator(\"S\")\nif high - low > 1.5\n    alert(\"wide\", alert.freq_all)";
         let store = Store::open_in_memory().expect("open");

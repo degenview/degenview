@@ -4,7 +4,7 @@
 //! started and where it stands.
 
 use super::{chip, loading_pill, tone_color, tooltip};
-use crate::model::portfolio_card::{CardData, PortfolioCard};
+use crate::model::portfolio::card::{CardData, PortfolioCard};
 use crate::ui::icons::Icon;
 use crate::ui::kit;
 use crate::ui::portfolio_charts::empty_message;
@@ -79,9 +79,9 @@ pub(super) fn paint_summary(ui: &Ui, row: Rect, card: &PortfolioCard, data: &Car
         return;
     };
     let color = tone_color(Some(if best.change >= 0.0 {
-        crate::model::portfolio_format::Tone::Gain
+        crate::model::portfolio::format::Tone::Gain
     } else {
-        crate::model::portfolio_format::Tone::Loss
+        crate::model::portfolio::format::Tone::Loss
     }));
     let label = kit::galley(
         ui,

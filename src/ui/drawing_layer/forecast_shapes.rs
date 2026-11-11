@@ -13,14 +13,15 @@ use super::shape::{
     with_heads,
 };
 use crate::format::group_thousands;
-use crate::model::bars_pattern::{BarsMode, BarsPattern};
-use crate::model::chart_type::Rgba;
-use crate::model::drawing_style::{DrawingStyle, LineEnd};
-use crate::model::forecast_style::{GhostOptions, PositionOptions};
-use crate::model::measure::{self, MeasureKind};
-use crate::model::position::{self, ForecastResult, Outcome, Side, Sizing};
-use crate::model::watchlist_quote::compact_number;
-use crate::model::{Anchor, Geometry, PriceFormat, Tool, ghost};
+use crate::model::chart::kind::Rgba;
+use crate::model::drawings::style::{DrawingStyle, LineEnd};
+use crate::model::forecast;
+use crate::model::forecast::measure::MeasureKind;
+use crate::model::forecast::position::{ForecastResult, Outcome, Side, Sizing};
+use crate::model::forecast::style::{GhostOptions, PositionOptions};
+use crate::model::pattern::bars::{BarsMode, BarsPattern};
+use crate::model::watchlist::quote::compact_number;
+use crate::model::{Anchor, Geometry, PriceFormat, Tool};
 use crate::ui::drawing_geometry as geo;
 use crate::ui::drawing_render::RulerReadout;
 use eframe::egui::{Pos2, Rect, pos2, vec2};
@@ -267,7 +268,7 @@ fn position(
     }
 
     // What the trade works out to.
-    let stats = position::stats(
+    let stats = forecast::position::stats(
         side,
         entry.price,
         stop.price,
@@ -275,9 +276,9 @@ fn position(
         &sizing(options),
     );
     let tick = proj.format.tick_size(entry.price);
-    let ticks = |distance: f64| measure::ticks_between(0.0, distance, tick);
+    let ticks = |distance: f64| forecast::measure::ticks_between(0.0, distance, tick);
     let bars = proj.times.bars();
-    let outcome = position::outcome(
+    let outcome = forecast::position::outcome(
         side,
         stop.price,
         target.price,
@@ -349,7 +350,13 @@ fn position(
             stats
                 .quantity
                 .and_then(|quantity| {
-                    position::profit_at(side, entry.price, last, quantity, &sizing(options))
+                    forecast::position::profit_at(
+                        side,
+                        entry.price,
+                        last,
+                        quantity,
+                        &sizing(options),
+                    )
                 })
                 .map(|open| format!("Open P&L: {}", signed_money(open))),
             options.label,
@@ -462,7 +469,7 @@ fn forecast(
         if upward { -1.0 } else { 1.0 },
     ));
     // Whether it came true, once the bars say.
-    let result = position::forecast_result(
+    let result = forecast::position::forecast_result(
         source.price,
         target.price,
         proj.times.bars(),
@@ -573,7 +580,7 @@ fn ghost_feed(
         proj.times.index_of(earlier.time_ms).round(),
         proj.times.index_of(later.time_ms).round(),
     );
-    let count = ((to - from).max(1.0) as usize).min(ghost::MAX_CANDLES);
+    let count = ((to - from).max(1.0) as usize).min(forecast::ghost::MAX_CANDLES);
     let base = if earlier.price != 0.0 {
         earlier.price.abs()
     } else {
@@ -583,14 +590,14 @@ fn ghost_feed(
     let average = if options.average > 0.0 {
         f64::from(options.average) / 100.0 * base
     } else {
-        ghost::recent_range(
+        forecast::ghost::recent_range(
             proj.times.bars(),
             from.max(0.0) as usize,
-            ghost::RANGE_WINDOW,
+            forecast::ghost::RANGE_WINDOW,
         )
         .unwrap_or(0.005 * base)
     };
-    let candles = ghost::candles(
+    let candles = forecast::ghost::candles(
         earlier.price,
         later.price,
         count,
@@ -748,11 +755,11 @@ fn measurement(
         if options.price {
             parts.push(readout.price_text(proj.format));
         }
-        if options.percent && measure::percent_change(a.price, b.price).is_some() {
+        if options.percent && forecast::measure::percent_change(a.price, b.price).is_some() {
             parts.push(format!("({})", readout.percent_text()));
         }
         if options.ticks
-            && let Some(ticks) = measure::ticks_between(a.price, b.price, tick)
+            && let Some(ticks) = forecast::measure::ticks_between(a.price, b.price, tick)
         {
             let ticks = ticks.round();
             parts.push(format!(
@@ -778,7 +785,7 @@ fn measurement(
             lines.push(parts.join(", "));
         }
         if options.volume
-            && let Some(volume) = measure::volume_over(
+            && let Some(volume) = forecast::measure::volume_over(
                 proj.times.bars(),
                 proj.times.index_of(a.time_ms),
                 proj.times.index_of(b.time_ms),

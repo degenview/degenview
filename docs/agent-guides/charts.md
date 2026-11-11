@@ -7,7 +7,7 @@ behavior.
 ## Rendering and prices
 
 - `ui::chart_card::ChartCard` owns the painter loop. `ui::series_render` draws every main series;
-  `model::chart_look` decides bar appearance. Do not add type-specific drawing to `chart_card.rs`.
+  `model::chart::look` decides bar appearance. Do not add type-specific drawing to `chart_card.rs`.
 - Chart state lives in `workspace::Chart`. Draw grid, main series, overlays/indicators, then labels.
   `ui::chart_card::PriceScale` is the only price<->y map (linear, or log while the frame can draw
   one) and carries the chart's `PriceScaleMode` and reference. Percent and Indexed to 100 change only
@@ -40,7 +40,7 @@ behavior.
 
 ## Navigation
 
-- `model::viewport::ChartViewport` is the only chart view state (bars, fractional offset from the
+- `model::chart::viewport::ChartViewport` is the only chart view state (bars, fractional offset from the
   newest bar, manual price range). Gestures live in `ui/chart_card/navigation.rs` and edit it;
   never keep another offset or range in a painter, the drawing layer or Pine rendering.
 - The window is continuous, so bars at the plot's edge may be cut: clip what you draw to the plot
@@ -50,7 +50,7 @@ behavior.
   chart/layout state and is not part of a template.
 - See [chart navigation](../chart-navigation.md) for gestures, history paging and what is unverified.
 - Zoom In is a workspace mode, not a `Tool`: the rectangle is transient `ChartCard` state, its maths is
-  `model::viewport::zoom`, and it edits the same `ChartViewport` inside the frame so linked charts follow.
+  `model::chart::viewport::zoom`, and it edits the same `ChartViewport` inside the frame so linked charts follow.
   Do not add a second viewport, and do not store the rectangle as a drawing (see
   [chart navigation](../chart-navigation.md#zoom-in)).
 - Linked charts ([design](../chart-sync.md)) translate a viewport to a time range and back; they
@@ -66,9 +66,9 @@ Read [chart overlays](../chart-overlays.md) first. The short rules:
 - Overlays are configuration on `Chart::overlays` (`OverlayList`) and data in the workspace's
   `OverlayHub`; the card gets both through `ChartCard::set_overlays` and fetches nothing. A script, alert,
   drawing, order or MCP tool must keep reading `Chart::symbol`/`source`/`candles` only; a test pins it.
-- Candles go onto the chart's bars by `model::overlay_align::align` (span midpoint, only the bars in view),
+- Candles go onto the chart's bars by `model::overlay::align::align` (span midpoint, only the bars in view),
   never by index or open time, and a missing bar is `None`: no forward fill.
-- Rebasing and fitting are `model::overlay_scale`; a painter must not repeat that arithmetic. The lines are
+- Rebasing and fitting are `model::overlay::scale`; a painter must not repeat that arithmetic. The lines are
   painted in `paint_frame` so snapshots get them; do not add them to `Overlays`.
 - Edits are `OverlayCommand`s applied by `apply_overlay_command` (one undo step, none when nothing changed).
 - Compared markets have no chips in the header strip: their controls are the overlay card's
@@ -78,7 +78,7 @@ Read [chart overlays](../chart-overlays.md) first. The short rules:
 
 ## Types, canvas, and templates
 
-- Never modify canonical candles. `model::synthetic` builds price-based types; the cached
+- Never modify canonical candles. `model::chart::synthetic` builds price-based types; the cached
   `constructed_series` feeds scale, indicators, Pine, alerts, drawings, and replay. Standard types
   keep real OHLC for scripts.
 - Type and settings have one persistence path: `ChartAppearance::style`. New fields need
@@ -92,7 +92,7 @@ Read [chart overlays](../chart-overlays.md) first. The short rules:
   theme.
 - Resolve canvas/theme once per frame with `CanvasStyle::resolve`; painters must not fetch canvas
   colors from `theme::*`. Grid and axis labels share `canvas::{price_ticks,time_ticks}`. Keep price
-  range, visible-window, and pane-split geometry pure in `model/canvas.rs`.
+  range, visible-window, and pane-split geometry pure in `model/chart/canvas/mod.rs`.
 - Pane order and collapse live on `PineInstance`; maximize is card view state. Buttons report
   clicks and `ChartCard` applies them.
 - Templates snapshot `ChartAppearance`. Apply with `ChartCard::apply_template`, and plan all
@@ -128,7 +128,7 @@ Read [chart overlays](../chart-overlays.md) first. The short rules:
 - A shape's names and ratios are `Screen.labels` (`PivotLabel`), laid out by `draw::draw_labels` when
   painted, not text drawn in the projection. Ratios are worked from stored prices
   (`model::pattern`), never from pixels, so they do not change with the price scale. A cycle is
-  counted in bars (`model::cycle`, `TimeIndex::index_of`); curves are sampled only over the plot
+  counted in bars (`model::pattern::cycle`, `TimeIndex::index_of`); curves are sampled only over the plot
   (`ui::pattern_geometry`). See [Chart patterns, Elliott waves and cycles](../pattern-tools.md).
 - The forecasting, volume and measurement tools (`forecast_shapes`, `volume_shapes`; maths in
   `model::{position, volume_profile, ghost, bars_pattern, measure}`) add `Screen.boxes`, `candles`
@@ -154,7 +154,7 @@ Read [chart overlays](../chart-overlays.md) first. The short rules:
   edits (the Object tree lists it, deletable only, by `Drawing::stored_id`).
 - **Older builds meet your changes through iCloud.** A new tool is a new `Geometry` variant and needs
   nothing more. A new field on an existing tool that an older build would silently drop on re-save
-  needs `"since": N` in the drawing body and `DRAWING_FORMAT` raised to N (`model/drawings.rs`); without
+  needs `"since": N` in the drawing body and `DRAWING_FORMAT` raised to N (`model/drawings/mod.rs`); without
   it the older build strips the field and syncs the stripped copy over yours. The full table is in
   [iCloud Sync](../icloud-sync.md#newer-versions).
 - Drawings are main-pane only and use the bars the chart draws (constructed and replay-cut); never
@@ -172,7 +172,7 @@ Read [chart overlays](../chart-overlays.md) first. The short rules:
 ## Context menus
 
 - A right-click is answered by one menu: a drawing's (`ui::drawing_layer::menu`), else the chart's
-  (`model::chart_context` builds the entries, `ui::chart_context_menu` draws them,
+  (`model::chart::context` builds the entries, `ui::chart_context_menu` draws them,
   `workspace/context.rs` runs them). Add an entry as a `Command`, a row in the model's `menu`, and
   an arm in `run_context_command`; the menu never mutates anything itself.
 - The click is captured once as a `ChartContext` (chart, market, time, price, target) through the

@@ -6,7 +6,7 @@ use super::icons::{self, Icon};
 use super::kit;
 use super::theme;
 use crate::model::DataSource;
-use crate::model::chart_type::{ChartGroup, ChartType};
+use crate::model::chart::kind::{ChartGroup, ChartType};
 use eframe::egui::{
     self, Align2, Color32, Id, Key, Rect, Sense, Shape, Stroke, StrokeKind, Vec2, pos2, vec2,
 };

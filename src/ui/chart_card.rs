@@ -1,13 +1,14 @@
 use crate::format;
 use crate::host::pine_host::KlineSecurityDataProvider;
-use crate::model::canvas::{self, PaneSpec, Window};
-use crate::model::chart_look::Palette;
-use crate::model::chart_type::{ChartStyle, ChartType, DataClass};
+use crate::model::chart;
+use crate::model::chart::canvas::{PaneSpec, Window};
+use crate::model::chart::kind::{ChartStyle, ChartType, DataClass};
+use crate::model::chart::look::Palette;
+use crate::model::chart::price_scale::PriceScaleMode;
+use crate::model::chart::synthetic::{BarShape, Construction, SyntheticBar, SyntheticSeries};
+use crate::model::chart::viewport::{ChartViewport, PriceRange, SavedViewport};
 use crate::model::paper::PaperOrderSide;
-use crate::model::pine_instance::{PineInstance, StoredInput, VisualOrder};
-use crate::model::price_scale::{self, PriceScaleMode};
-use crate::model::synthetic::{self, BarShape, Construction, SyntheticBar, SyntheticSeries};
-use crate::model::viewport::{ChartViewport, PriceRange, SavedViewport};
+use crate::model::pine::instance::{PineInstance, StoredInput, VisualOrder};
 use crate::model::{
     Anchor, BollingerSeries, ChartAppearance, DataSource, IndicatorConfig, IndicatorSeries, Kline,
     PmSeries, PriceFormat, Timeframe,
@@ -107,7 +108,8 @@ fn visible_price_move(
     right_offset: f64,
     reserved: usize,
 ) -> Option<(f64, f64)> {
-    let window = canvas::visible_window(candles.len(), visible_count, right_offset, reserved);
+    let window =
+        chart::canvas::visible_window(candles.len(), visible_count, right_offset, reserved);
     let visible = candles.get(window.start..window.end)?;
     let (Some(first), Some(last)) = (visible.first(), visible.last()) else {
         return None;
@@ -345,9 +347,9 @@ pub struct ChartCard {
     /// scrolled-back view has to move to stay on the same bars.
     newest_bar: Option<i64>,
     /// The horizontal viewport as this frame's input found it, to tell what the user changed.
-    sync_baseline: Option<crate::model::viewport::HorizontalViewport>,
+    sync_baseline: Option<crate::model::chart::viewport::HorizontalViewport>,
     /// What the user's navigation changed this frame, for the workspace to hand to linked charts.
-    sync_change: Option<crate::model::chart_sync::HorizontalChange>,
+    sync_change: Option<crate::model::chart::sync::HorizontalChange>,
     /// What the last frame drew, for the tests that drive the chart by pointer.
     #[cfg(test)]
     probe: Option<Probe>,
@@ -396,7 +398,7 @@ pub struct ChartCard {
     bar_marker: Option<(i64, std::time::Instant)>,
     /// Where the view was before a scroll the workspace made outside a frame, until the next frame
     /// measures the change for linked charts.
-    scroll_from: Option<crate::model::viewport::HorizontalViewport>,
+    scroll_from: Option<crate::model::chart::viewport::HorizontalViewport>,
     /// The Zoom In tool: armed state, the rectangle being dragged, the views to zoom out to.
     /// View state, never saved.
     zoom: zoom_rect::ZoomTool,
@@ -409,12 +411,12 @@ pub struct ChartCard {
     drawn_series: Option<Construction>,
     /// Table view is open on this chart: build its feed each frame something changes.
     table_wanted: bool,
-    table_feed: Option<Arc<crate::model::chart_table::TableFeed>>,
+    table_feed: Option<Arc<crate::model::chart::table::TableFeed>>,
     /// Fingerprint of what `table_feed` was built from.
     table_stamp: u64,
     /// The price alerts to draw as lines (the workspace fills them each frame), and the tag
     /// right-clicked since the last request was read.
-    alert_lines: Vec<crate::model::alert_line::AlertLine>,
+    alert_lines: Vec<crate::model::alert::line::AlertLine>,
     alert_menu: Option<alert_lines::LineMenu>,
     /// The market the alert tags are dragged on, and the tags dropped on a new level since the
     /// workspace last took them.
@@ -431,7 +433,7 @@ pub struct ChartCard {
 }
 
 /// A saved bullish/bearish colour as an opaque `Rgba`.
-fn opaque_rgba([r, g, b]: [u8; 3]) -> crate::model::chart_type::Rgba {
+fn opaque_rgba([r, g, b]: [u8; 3]) -> crate::model::chart::kind::Rgba {
     [r, g, b, 255]
 }
 
@@ -769,7 +771,7 @@ impl ChartCard {
     pub fn apply_template(
         &mut self,
         template: &ChartAppearance,
-        scope: crate::model::chart_template::ApplyScope,
+        scope: crate::model::chart::template::ApplyScope,
     ) {
         let merged = scope.merge(&self.appearance, template);
         let chart_type = merged.style.chart_type;
@@ -864,7 +866,7 @@ impl ChartCard {
         style.chart_type = self.effective_chart_type(source);
         match Construction::of(&style) {
             Some(construction) => {
-                let bars = synthetic::build_with(construction, candles, now_ms).klines();
+                let bars = chart::synthetic::build_with(construction, candles, now_ms).klines();
                 let bar_seconds = candles
                     .last()
                     .map(|last| ((last.close_time - last.open_time + 1) as f64 / 1000.0).round())
@@ -925,7 +927,7 @@ impl ChartCard {
         {
             return Some(Arc::clone(built));
         }
-        let series = synthetic::build_with(construction, candles, now_ms);
+        let series = chart::synthetic::build_with(construction, candles, now_ms);
         let klines = series.klines();
         Some(Arc::new(ConstructedSeries {
             construction,
@@ -1017,7 +1019,7 @@ impl ChartCard {
     pub fn set_visible_candles(&mut self, count: usize) {
         if count > 0 {
             self.viewport.horizontal.visible =
-                count.clamp(5, crate::model::viewport::MAX_RESTORED_VISIBLE);
+                count.clamp(5, crate::model::chart::viewport::MAX_RESTORED_VISIBLE);
         }
     }
 
@@ -1362,8 +1364,8 @@ fn pane_labels(
 ) -> Vec<(f64, String)> {
     let (low, high) = crate::ui::pine_geometry::pane_value_range(pine, shown, 0.1);
     // A pane is short: its labels sit closer than the price chart's, and it keeps at least two.
-    let budget = canvas::tick_budget(plot_height, style.pane_tick_spacing()).max(2);
-    let ticks = canvas::price_ticks(low, high, false, budget);
+    let budget = chart::canvas::tick_budget(plot_height, style.pane_tick_spacing()).max(2);
+    let ticks = chart::canvas::price_ticks(low, high, false, budget);
     let step = tick_step(&ticks);
     ticks
         .into_iter()
@@ -1475,7 +1477,7 @@ pub(super) struct PriceScale {
     pub(super) top: f32,
     pub(super) height: f32,
     /// Whether this frame is drawn on a logarithmic map: the mode asks for it and the view has
-    /// no price a logarithm cannot take ([`price_scale::can_draw_logarithmic`]).
+    /// no price a logarithm cannot take ([`chart::price_scale::can_draw_logarithmic`]).
     pub(super) logarithmic: bool,
     pub(super) mode: PriceScaleMode,
     /// What Percent and Indexed measure from: the close of the first bar shown.
@@ -1522,22 +1524,23 @@ impl PriceScale {
     /// the reference, and maps them back to prices.
     pub(super) fn axis_ticks(&self, budget: usize) -> AxisTicks {
         let Some((mode, reference)) = self.reading() else {
-            let prices = canvas::price_ticks(self.minimum, self.maximum, self.logarithmic, budget);
+            let prices =
+                chart::canvas::price_ticks(self.minimum, self.maximum, self.logarithmic, budget);
             let step = tick_step(&prices);
             return AxisTicks { prices, step };
         };
-        let shown = |price| price_scale::display(mode, Some(reference), price);
+        let shown = |price| chart::price_scale::display(mode, Some(reference), price);
         let (Some(low), Some(high)) = (shown(self.minimum), shown(self.maximum)) else {
             return AxisTicks {
                 prices: Vec::new(),
                 step: 0.0,
             };
         };
-        let values = canvas::price_ticks(low, high, false, budget);
+        let values = chart::canvas::price_ticks(low, high, false, budget);
         let step = tick_step(&values);
         let prices = values
             .into_iter()
-            .filter_map(|value| price_scale::from_display(mode, Some(reference), value))
+            .filter_map(|value| chart::price_scale::from_display(mode, Some(reference), value))
             .collect();
         AxisTicks { prices, step }
     }
@@ -1546,10 +1549,10 @@ impl PriceScale {
     /// gives it.
     pub(super) fn tick_label(&self, format: PriceFormat, price: f64, step: f64) -> String {
         match self.reading() {
-            Some((mode, reference)) => price_scale::display(mode, Some(reference), price)
+            Some((mode, reference)) => chart::price_scale::display(mode, Some(reference), price)
                 .map_or_else(
                     || "—".to_owned(),
-                    |value| price_scale::format_relative(mode, value, Some(step)),
+                    |value| chart::price_scale::format_relative(mode, value, Some(step)),
                 ),
             None => format.format_tick(price, step),
         }
@@ -1558,10 +1561,10 @@ impl PriceScale {
     /// A tag on the axis (the last price, the crosshair, a line's level) as the axis reads.
     pub(super) fn tag_label(&self, format: PriceFormat, price: f64) -> String {
         match self.reading() {
-            Some((mode, reference)) => price_scale::display(mode, Some(reference), price)
+            Some((mode, reference)) => chart::price_scale::display(mode, Some(reference), price)
                 .map_or_else(
                     || "—".to_owned(),
-                    |value| price_scale::format_relative(mode, value, None),
+                    |value| chart::price_scale::format_relative(mode, value, None),
                 ),
             None => format.format(price),
         }
@@ -1690,7 +1693,7 @@ impl ChartCard {
             }
         }
         // So does every comparison line drawn on the chart's own scale, rebased as it will be drawn.
-        let reference = price_scale::reference_from(shown[0].close);
+        let reference = chart::price_scale::reference_from(shown[0].close);
         if let Some((from, to)) = self
             .overlay_frame(candles, start, end, chart_type, reference)
             .extent()
@@ -1705,9 +1708,9 @@ impl ChartCard {
         }
         // A logarithm takes no price at or below zero. Such a view is drawn linear, the mode
         // staying chosen so the log scale comes back with the data.
-        let logarithmic = mode.is_logarithmic() && price_scale::can_draw_logarithmic(low);
+        let logarithmic = mode.is_logarithmic() && chart::price_scale::can_draw_logarithmic(low);
         let (minimum, maximum) =
-            canvas::price_range(low, high, self.appearance.canvas.margins, logarithmic);
+            chart::canvas::price_range(low, high, self.appearance.canvas.margins, logarithmic);
         let PriceRange { minimum, maximum } = self
             .viewport
             .vertical
@@ -1743,7 +1746,7 @@ impl ChartCard {
 
     /// The bars the plot shows out of `len`, and where they sit in its slots.
     fn window(&self, len: usize) -> Window {
-        canvas::visible_window(
+        chart::canvas::visible_window(
             len,
             self.viewport.horizontal.visible,
             self.viewport.horizontal.right_offset,
@@ -1867,8 +1870,9 @@ impl ChartCard {
     /// Places the price range as a drag of the chart would.
     #[cfg(test)]
     pub(crate) fn place_prices_for_test(&mut self, minimum: f64, maximum: f64) {
-        self.viewport.vertical.manual =
-            Some(crate::model::viewport::PriceRange::new(minimum, maximum));
+        self.viewport.vertical.manual = Some(crate::model::chart::viewport::PriceRange::new(
+            minimum, maximum,
+        ));
     }
 
     /// Price scale back to autoscale at the natural zoom, leaving the time window where it is.
@@ -2483,7 +2487,7 @@ impl ChartCard {
         style: &CanvasStyle,
         tick_xs: &[f32],
     ) {
-        let budget = canvas::tick_budget(plot.height(), style.price_tick_spacing());
+        let budget = chart::canvas::tick_budget(plot.height(), style.price_tick_spacing());
         let AxisTicks { prices, step } = scale.axis_ticks(budget);
         let half = style.tag_half_height();
         for price in prices {
@@ -2890,7 +2894,7 @@ impl ChartCard {
             y,
             canvas_render::LineStyle {
                 stroke: Stroke::new(1.0, color.gamma_multiply(0.65)),
-                dash: crate::model::chart_type::LineDash::Dotted,
+                dash: crate::model::chart::kind::LineDash::Dotted,
             },
         );
         let tag = Rect::from_min_max(
@@ -2967,7 +2971,7 @@ impl ChartCard {
             canvas_render::vertical(painter, x, (plot.top(), plot.bottom()), line);
         }
         for pane in pane_rects.iter().filter(|_| !crosshair.frozen) {
-            if pane.height() > crate::model::canvas::COLLAPSED_PANE_HEIGHT {
+            if pane.height() > crate::model::chart::canvas::COLLAPSED_PANE_HEIGHT {
                 canvas_render::vertical(painter, x, (pane.top(), pane.bottom()), line);
             }
         }
@@ -3079,7 +3083,7 @@ impl ChartCard {
         if show_volume {
             items.push((
                 "Vol".to_owned(),
-                crate::model::watchlist_quote::compact_number(candle.volume),
+                crate::model::watchlist::quote::compact_number(candle.volume),
             ));
         }
         // The market's own price, apart from the constructed bar's.
@@ -3676,8 +3680,8 @@ mod tests {
         let mut card = ChartCard::default();
         let style = card.chart_style_mut();
         style.chart_type = ChartType::Renko;
-        style.renko.size = crate::model::chart_type::SizeRule {
-            method: crate::model::chart_type::SizeMethod::Traditional,
+        style.renko.size = crate::model::chart::kind::SizeRule {
+            method: crate::model::chart::kind::SizeMethod::Traditional,
             amount,
             ..Default::default()
         };

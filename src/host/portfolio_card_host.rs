@@ -6,13 +6,13 @@
 //! `CardRuntime` per card. A runtime releases its demand when the card goes away.
 
 use crate::host::portfolio_host::{PortfolioHost, local_offset, now_ms};
-use crate::model::portfolio::{Portfolio, PortfolioAsset, PortfolioLedgerSnapshot};
-use crate::model::portfolio_accounting::{holdings, net_contributions};
-use crate::model::portfolio_card::{CardData, CardKind, Performance, PortfolioCard, performance};
-use crate::model::portfolio_format::PortfolioValueFormatter;
-use crate::model::portfolio_statistics::{
+use crate::model::portfolio::accounting::{holdings, net_contributions};
+use crate::model::portfolio::card::{CardData, CardKind, Performance, PortfolioCard, performance};
+use crate::model::portfolio::format::PortfolioValueFormatter;
+use crate::model::portfolio::statistics::{
     PortfolioHistoryRange, PortfolioPeriodChange, PortfolioStatistics,
 };
+use crate::model::portfolio::{Portfolio, PortfolioAsset, PortfolioLedgerSnapshot};
 use crate::service::portfolio_history::{IntradayFeed, IntradayRequest};
 use crate::service::portfolio_performers::{MoveRequest, PerformerFeed};
 use crate::service::portfolio_quotes::PortfolioQuoteFeed;

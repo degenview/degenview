@@ -4,7 +4,7 @@
 
 use super::prefs::DrawerTab;
 use super::tab_chrome::{self as chrome, BUTTON, card, hairline};
-use crate::model::pine_alert::frequency_name;
+use crate::model::alert::pine::frequency_name;
 use crate::pine::program::VisualOutput;
 use crate::pine::state::AlertEvent;
 use crate::pine::strategy::{StrategyReport, Trade};

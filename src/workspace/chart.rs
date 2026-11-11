@@ -2,10 +2,11 @@
 
 use super::PersistedChart;
 use crate::host::portfolio_card_host::CardRuntime;
-use crate::model::history::{self, OlderHistory};
+use crate::model::chart::price_scale::PriceScaleMode;
+use crate::model::market;
+use crate::model::market::history::OlderHistory;
 use crate::model::overlay::OverlayList;
-use crate::model::portfolio_card::PortfolioCard;
-use crate::model::price_scale::PriceScaleMode;
+use crate::model::portfolio::card::PortfolioCard;
 use crate::model::watchlist::WatchlistInstrument;
 use crate::model::{DataSource, Drawing, IndicatorConfig, Kline, PmSeries, Timeframe};
 use crate::service;
@@ -297,7 +298,7 @@ impl Chart {
         if !self.is_market() || !self.pm_series.is_empty() {
             return;
         }
-        let Some(end) = history::page_end(&self.candles) else {
+        let Some(end) = market::history::page_end(&self.candles) else {
             return;
         };
         let wanted = self.older.should_request(
@@ -315,7 +316,14 @@ impl Chart {
         let repaint = ctx.clone();
         let asked = symbol.clone();
         service::work_queue::submit_for(source, move || {
-            let page = service::fetch_klines_range(source, &asked, interval, 0, end, history::PAGE);
+            let page = service::fetch_klines_range(
+                source,
+                &asked,
+                interval,
+                0,
+                end,
+                market::history::PAGE,
+            );
             let _ = sender.send(page);
             repaint.request_repaint();
         });
@@ -349,7 +357,7 @@ impl Chart {
         }
         match result {
             Ok(page) => {
-                let added = history::prepend(&mut self.candles, page);
+                let added = market::history::prepend(&mut self.candles, page);
                 self.older.arrived(added);
             }
             Err(_) => self.older.failed(Instant::now()),
@@ -374,7 +382,8 @@ impl Chart {
             Ok(fetched) => {
                 let fresh =
                     merge_fetched_candles(fetched.candles, &self.candles, self.last_live_open_time);
-                self.candles = history::with_older(&self.candles, fresh, self.older.keeps_older());
+                self.candles =
+                    market::history::with_older(&self.candles, fresh, self.older.keeps_older());
                 if !self.pm_series.is_empty() {
                     self.chart
                         .set_series(SeriesLine::build(&self.pm_series, fetched.series));

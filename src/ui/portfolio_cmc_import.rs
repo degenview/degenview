@@ -7,8 +7,8 @@
 // Transient: the portfolio host opens this once the importers are wired.
 #![allow(dead_code)]
 
+use crate::model::portfolio::csv::{CmcPreview, CmcRow, CsvPreview, Mint};
 use crate::model::portfolio::{PortfolioAsset, PortfolioCurrency, PortfolioTransaction};
-use crate::model::portfolio_csv::{CmcPreview, CmcRow, CsvPreview, Mint};
 use crate::ui::icons::{self, Icon};
 use crate::ui::portfolio_grid;
 use crate::ui::portfolio_import_preview::{plural, warning_title};
@@ -1160,7 +1160,7 @@ fn summary(ui: &mut Ui, state: &CmcImportState, preview: &CmcPreview) {
 mod tests {
     use super::*;
     use crate::model::DataSource;
-    use crate::model::portfolio_csv::preview_coinmarketcap;
+    use crate::model::portfolio::csv::preview_coinmarketcap;
 
     const CMC: &str = "Date (UTC),Token,Type,Price,Amount,Total value,Fee,Fee currency,Notes\n\
         2024-03-05 14:30:00,BTC,Buy,60000,0.5,30000,--,,\n\
@@ -1272,10 +1272,10 @@ mod tests {
         let (preview, mut state) = ready();
         let held =
             |key: &str, symbol: &str| {
-                let mut transaction = crate::model::portfolio_csv::preview(
+                let mut transaction = crate::model::portfolio::csv::preview(
                 &format!(
                     "{}\nMain,{key},{symbol},,Binance,Buy,1,1,USD,0,USD,2024-01-01T00:00:00Z,,x",
-                    crate::model::portfolio_csv::HEADER
+                    crate::model::portfolio::csv::HEADER
                 ),
                 &[crate::model::portfolio::Portfolio::new(1, "Main", 0)],
                 &mut Mint { now_ms: 0, next_id: &mut || 1 },

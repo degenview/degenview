@@ -1,12 +1,12 @@
 //! Draws the chart's right-click menu and reports what was chosen.
 //!
-//! The entries come from `model::chart_context` (what to offer and whether it is allowed); this
+//! The entries come from `model::chart::context` (what to offer and whether it is allowed); this
 //! file only places the menu, handles the pointer and keyboard, and hands back the [`Command`].
 //! It owns no chart state: the workspace keeps the snapshot and applies the command.
 //!
 //! Placement and the submenu's safe triangle are pure functions below, with tests.
 
-use crate::model::chart_context::{Command, Entry, Glyph, Hint, Item};
+use crate::model::chart::context::{Command, Entry, Glyph, Hint, Item};
 use crate::model::paper::PaperOrderSide;
 use crate::ui::icons::Icon;
 use crate::ui::{kit, shortcut};
@@ -566,7 +566,7 @@ pub fn show(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::chart_context::{Command, Entry, Item};
+    use crate::model::chart::context::{Command, Entry, Item};
 
     fn bounds() -> Rect {
         Rect::from_min_size(pos2(0.0, 0.0), vec2(1000.0, 700.0))
@@ -773,7 +773,7 @@ mod tests {
         assert_eq!(icon(Command::ResetTemplate), Some(Icon::Undo));
         assert_eq!(
             icon(Command::QuickOrder(
-                crate::model::chart_context::QuickOrder {
+                crate::model::chart::context::QuickOrder {
                     side: PaperOrderSide::Sell,
                     kind: crate::model::paper::PaperOrderType::Limit,
                 }
@@ -782,7 +782,7 @@ mod tests {
         );
         assert_eq!(
             icon(Command::QuickOrder(
-                crate::model::chart_context::QuickOrder {
+                crate::model::chart::context::QuickOrder {
                     side: PaperOrderSide::Buy,
                     kind: crate::model::paper::PaperOrderType::Stop,
                 }

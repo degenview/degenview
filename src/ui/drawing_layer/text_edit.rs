@@ -14,8 +14,8 @@
 
 use super::shape::TextPlace;
 use super::{DrawingFrame, DrawingLayer, Projection, text};
-use crate::model::drawing_style::{HorizontalAlign, TextStyle};
-use crate::model::table::MAX_CELL_CHARS;
+use crate::model::annotation::table::MAX_CELL_CHARS;
+use crate::model::drawings::style::{HorizontalAlign, TextStyle};
 use crate::model::{Caps, Drawing, DrawingCommand, Geometry};
 use crate::ui::{kit, series_render, theme};
 use eframe::egui::{
@@ -394,7 +394,7 @@ impl DrawingLayer {
         &mut self,
         frame: &mut DrawingFrame,
         id: u64,
-        change: impl FnOnce(&mut crate::model::table::TableData) -> bool,
+        change: impl FnOnce(&mut crate::model::annotation::table::TableData) -> bool,
     ) {
         let Some(drawing) = frame
             .drawings

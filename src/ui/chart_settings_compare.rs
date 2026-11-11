@@ -12,10 +12,10 @@ use super::chart_settings::ChartSettingsAction;
 use super::icons::{self, Icon};
 use super::overlay_settings::{self, rgb};
 use super::{kit, settings_card, theme};
-use crate::model::chart_type::LineDash;
+use crate::model::chart::kind::LineDash;
+use crate::model::chart::price_scale::PriceScaleMode;
+use crate::model::overlay::feed::OverlayStatus;
 use crate::model::overlay::{ChartOverlay, Move, OverlayCommand, OverlayId, OverlayScale};
-use crate::model::overlay_feed::OverlayStatus;
-use crate::model::price_scale::PriceScaleMode;
 use eframe::egui::{self, Align, Color32, Id, Layout, Rect, Sense, Stroke, Ui, Vec2, pos2, vec2};
 use std::collections::HashMap;
 
@@ -630,7 +630,7 @@ mod tests {
     use crate::model::InstrumentId;
     use crate::model::overlay::OverlayList;
     use crate::model::overlay::ScaleChoice;
-    use crate::model::overlay_feed::OverlayFeed;
+    use crate::model::overlay::feed::OverlayFeed;
     use crate::ui::overlay_settings::scale_hint;
 
     fn list_of(symbols: &[&str]) -> OverlayList {

@@ -4,12 +4,12 @@
 //! A docked panel under the charts: a toolbar (what is shown, the order, close), a sticky header
 //! and the rows. The columns share the panel's width and scroll sideways together with the header
 //! when there are more than fit. Only the rows on screen are laid out, so a long history costs no
-//! more than a short one; the numbers are written by `model::chart_table`, the way the chart
+//! more than a short one; the numbers are written by `model::chart::table`, the way the chart
 //! writes them.
 
 use crate::format::group_thousands;
 use crate::model::PriceFormat;
-use crate::model::chart_table::{Column as Field, Order, TableFeed, ValueKind};
+use crate::model::chart::table::{Column as Field, Order, TableFeed, ValueKind};
 use crate::ui::icons::{self, Icon};
 use crate::ui::{kit, theme};
 use eframe::egui::{self, Align, Align2, Color32, Layout, Rect, Sense, Ui, pos2, vec2};
@@ -443,7 +443,7 @@ fn value_color(feed: &TableFeed, up: bool, column: Field, text: &str) -> Color32
 mod tests {
     use super::*;
     use crate::model::Kline;
-    use crate::model::chart_table::Extra;
+    use crate::model::chart::table::Extra;
 
     fn feed(extras: usize) -> TableFeed {
         TableFeed {

@@ -1,5 +1,5 @@
 use crate::model::InstrumentId;
-use crate::model::watchlist_quote::WatchlistQuote;
+use crate::model::watchlist::quote::WatchlistQuote;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
@@ -71,7 +71,7 @@ impl WatchlistQuoteBook {
 mod tests {
     use super::*;
     use crate::model::DataSource;
-    use crate::model::watchlist_quote::Freshness;
+    use crate::model::watchlist::quote::Freshness;
 
     fn quote(last: f64) -> WatchlistQuote {
         WatchlistQuote {

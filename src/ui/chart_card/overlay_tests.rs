@@ -4,9 +4,9 @@
 
 use super::canvas_tests::{HOUR, Harness, SIZE, axis_texts, series};
 use super::*;
-use crate::model::chart_type::{ChartType, PriceSource};
+use crate::model::chart::kind::{ChartType, PriceSource};
+use crate::model::overlay::feed::{OverlayFeed, OverlayStatus};
 use crate::model::overlay::{OverlayId, OverlayList, OverlayScale, ScaleChoice};
-use crate::model::overlay_feed::{OverlayFeed, OverlayStatus};
 use crate::model::{ChartCanvas, InstrumentId};
 use eframe::egui::epaint::{ClippedShape, PathShape};
 

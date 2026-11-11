@@ -7,7 +7,7 @@
 //! once per destination before the first upload. The providers are rows drawn from their
 //! descriptors (`service::snapshot_providers`), so this page does not change for a new one.
 
-use crate::model::snapshot::{SnapshotPrefs, SnapshotScale};
+use crate::model::chart::snapshot::{SnapshotPrefs, SnapshotScale};
 use crate::service::keychain_snapshot_secrets::SnapshotSecrets;
 use crate::service::snapshot_providers::{self, Readiness};
 use crate::ui::alert_center::Tone;
@@ -234,7 +234,7 @@ fn approved_hint(consented: &[String]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::snapshot::SELF_HOSTED;
+    use crate::model::chart::snapshot::SELF_HOSTED;
     use crate::service::keychain_api_keys::MemoryBackend;
 
     pub(crate) fn secrets() -> Arc<SnapshotSecrets> {

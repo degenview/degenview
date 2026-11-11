@@ -2,7 +2,7 @@
 //! under it. Native indicators are computed on the spot; Pine ones run once on a worker thread
 //! (the first time the picker opens) and are cached, so a frame never waits for a script.
 
-use crate::model::indicator_catalog::{CatalogEntry, EntryKey};
+use crate::model::indicators::catalog::{CatalogEntry, EntryKey};
 use crate::model::{BuiltIn, Kline, bollinger, ema, rsi, supertrend_flips};
 use crate::pine::outputs::{MarkerLocation, PlotStyle};
 use crate::pine::program::SymbolInfo;
@@ -453,7 +453,7 @@ mod tests {
     fn previews_arrive_from_the_worker_and_natives_are_immediate() {
         let ctx = egui::Context::default();
         let mut previews = Previews::default();
-        let catalog = crate::model::indicator_catalog::all(&[]);
+        let catalog = crate::model::indicators::catalog::all(&[]);
         let rsi = catalog
             .iter()
             .find(|entry| entry.key == EntryKey::Native(BuiltIn::Rsi))

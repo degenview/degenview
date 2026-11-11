@@ -7,8 +7,8 @@
 
 use crate::mcp::bridge::{McpCommand, McpError, McpReply, REQUEST_TIMEOUT};
 use crate::mcp::tools::{DegenViewMcp, client_of, failure, parse_chart_id, parse_id, unexpected};
+use crate::model::chart::snapshot::SnapshotScale;
 use crate::model::mcp::Permission;
-use crate::model::snapshot::SnapshotScale;
 use rmcp::handler::server::tool::Extension;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{CallToolResult, ContentBlock};

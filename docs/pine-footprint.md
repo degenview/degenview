@@ -68,7 +68,7 @@ is ever observed.
   between. TradingView says only that rows "cover the bar's price range".
 - **Spreading volume.** An intrabar's volume is spread evenly over its low-to-high, each row
   taking the share of the range it overlaps (a candle with no range goes into one row). The
-  volume profile tools do the same (`model/volume_profile.rs`).
+  volume profile tools do the same (`model/forecast/volume_profile.rs`).
 - **First doji.** The first intrabar of a bar compares with the last intrabar before it; with
   nothing before it, it is buy.
 - **POC and value area.** The row of most volume; a tie goes to the row nearest the middle of the

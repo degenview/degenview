@@ -7,7 +7,7 @@ See [chart types](../chart-types.md), [chart canvas](../chart-canvas.md), and
 
 ```text
 Canvas controls → ChartAppearance.canvas → CanvasStyle::resolve → painters
-                                      └→ model::canvas geometry/ticks
+                                      └→ model::chart::canvas geometry/ticks
 Templates → ChartTemplateStore → ChartCard::apply_template
 Apply to all → plan_apply_to_all → each chart's ChartCard
 ```
@@ -26,7 +26,7 @@ changes through `set_chart_type`.
 carries a typed `Geometry` for every newer tool, all with time+price anchors. The interactive layer
 (`ui::drawing_layer`) is one controller driven by each tool's `Placement`; it reports
 `DrawingCommand`s and never mutates drawings. Lines, channels and pitchforks are projected by
-`drawing_layer/line_shapes.rs` from the pure `ui::line_geometry` and `model::regression`, and a
+`drawing_layer/line_shapes.rs` from the pure `ui::line_geometry` and `model::drawings::regression`, and a
 line's text is edited in place by `drawing_layer/text_edit.rs`. The chart patterns, Elliott waves
 and cycles are projected by `drawing_layer/pattern_shapes.rs` from `model::{pattern, elliott,
 cycle}` (pivots, ratios, degrees, repeats) and the pure `ui::pattern_geometry` (apex, arcs, sine);
@@ -49,11 +49,11 @@ has the keyboard.
 ## Context menus
 
 A right-click on a chart is answered by the drawing's own menu or by the chart menu
-(`model::chart_context` builds it from a click snapshot and the chart's facts,
+(`model::chart::context` builds it from a click snapshot and the chart's facts,
 `ui::chart_context_menu` draws it, `workspace/context.rs` owns the open menu and runs the chosen
-command). The same module hosts Table view (`model::chart_table`, fed by the card from the bars it
-draws), the Object Tree (`model::object_tree`), the drawing clipboard (`model::chart_clipboard`),
-the cursor time lock, and the alert lines (`model::alert_line`). See
+command). The same module hosts Table view (`model::chart::table`, fed by the card from the bars it
+draws), the Object Tree (`model::chart::object_tree`), the drawing clipboard (`model::chart::clipboard`),
+the cursor time lock, and the alert lines (`model::alert::line`). See
 [chart context menus](../chart-context-menu.md).
 
 ## Replay

@@ -1,11 +1,11 @@
-//! A chart's side of linked navigation (see [`crate::model::chart_sync`]).
+//! A chart's side of linked navigation (see [`crate::model::chart::sync`]).
 //!
 //! The card never keeps a second viewport: it reports what the user's navigation did to the one
 //! it has, and applies what the workspace's hub hands it by editing that same viewport before the
 //! frame reads it.
 
 use super::ChartCard;
-use crate::model::chart_sync::{ChartSyncSettings, HorizontalChange, SyncHub, TimeAxis};
+use crate::model::chart::sync::{ChartSyncSettings, HorizontalChange, SyncHub, TimeAxis};
 use crate::model::{DataSource, Kline};
 
 impl ChartCard {
@@ -93,7 +93,7 @@ impl ChartCard {
 
     /// The horizontal viewport, for tests and diagnostics.
     #[cfg(test)]
-    pub fn horizontal(&self) -> crate::model::viewport::HorizontalViewport {
+    pub fn horizontal(&self) -> crate::model::chart::viewport::HorizontalViewport {
         self.viewport.horizontal
     }
 }

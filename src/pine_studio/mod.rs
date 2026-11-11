@@ -85,7 +85,7 @@ pub mod theme_preview;
 mod unsaved;
 mod workspace;
 
-use crate::model::pine_instance::{PineInstance, StoredInput};
+use crate::model::pine::instance::{PineInstance, StoredInput};
 use crate::pine::compiler;
 use crate::pine::token::Limits;
 use crate::store::SharedStore;
@@ -920,7 +920,7 @@ impl PineStudio {
     /// Opens the script (or library) a Pine logs message was written by and puts the caret on the
     /// call. A script that was edited since the message was written is opened all the same, with a
     /// note that the line may have moved; one that is gone is told so and nothing else changes.
-    pub(crate) fn reveal_source(&mut self, target: &crate::model::pine_logs_view::SourceTarget) {
+    pub(crate) fn reveal_source(&mut self, target: &crate::model::pine::logs_view::SourceTarget) {
         let Some(scripts) = self.with_store(|store| store.all_scripts()) else {
             return;
         };
@@ -1832,8 +1832,8 @@ mod tests {
         script_id: Option<&str>,
         library: Option<&str>,
         ran_source: Option<&str>,
-    ) -> crate::model::pine_logs_view::SourceTarget {
-        crate::model::pine_logs_view::SourceTarget {
+    ) -> crate::model::pine::logs_view::SourceTarget {
+        crate::model::pine::logs_view::SourceTarget {
             script_id: script_id.map(str::to_owned),
             library: library.map(str::to_owned),
             offset: 17,

@@ -4,7 +4,7 @@
 //! script id is [`script_id`]. Every one is original work from the published definition of the
 //! study, under the app's own license.
 
-use crate::model::indicator_catalog::Family;
+use crate::model::indicators::catalog::Family;
 
 /// One bundled indicator: its catalog text and its Pine source.
 #[derive(Debug, PartialEq)]

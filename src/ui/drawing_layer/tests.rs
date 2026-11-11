@@ -304,30 +304,34 @@ struct Rig {
     keys_blocked: bool,
     reveal_all: bool,
     /// What is waiting to be placed by a click (a picture).
-    pending: Option<crate::model::image_content::Content>,
+    pending: Option<crate::model::annotation::image_content::Content>,
     /// The picture that waits arrived by a drop or a paste: place it without a click.
     place_now: bool,
     /// A picture to put in place of a drawing's.
-    replace: Option<(u64, crate::model::image_content::ImageContent)>,
+    replace: Option<(u64, crate::model::annotation::image_content::ImageContent)>,
 }
 
 /// A picture to place, as the Image tool would have it once one is chosen.
 /// What a content tool is waiting to place: a card for the link tools, a picture for the rest.
-fn sample_content(tool: Tool) -> crate::model::image_content::Content {
-    use crate::model::link_card::{Link, LinkCard};
+fn sample_content(tool: Tool) -> crate::model::annotation::image_content::Content {
+    use crate::model::annotation::link_card::{Link, LinkCard};
     let link = match tool {
         Tool::Post => "https://x.com/degenview/status/1750000000000000000",
         _ => return sample_picture(),
     };
-    crate::model::image_content::Content::Link(LinkCard::new(Link::parse(link).unwrap()))
+    crate::model::annotation::image_content::Content::Link(LinkCard::new(
+        Link::parse(link).unwrap(),
+    ))
 }
 
-fn sample_picture() -> crate::model::image_content::Content {
-    crate::model::image_content::Content::Image(crate::model::image_content::ImageContent::new(
-        "a".repeat(64),
-        "levels.png",
-        [320, 200],
-    ))
+fn sample_picture() -> crate::model::annotation::image_content::Content {
+    crate::model::annotation::image_content::Content::Image(
+        crate::model::annotation::image_content::ImageContent::new(
+            "a".repeat(64),
+            "levels.png",
+            [320, 200],
+        ),
+    )
 }
 
 impl Rig {
@@ -1455,7 +1459,7 @@ fn an_extended_trend_line_is_hit_beyond_its_anchors_and_a_plain_one_is_not() {
 
 #[test]
 fn styled_trend_lines_paint_in_every_dash_and_extension() {
-    use crate::model::chart_type::LineDash;
+    use crate::model::chart::kind::LineDash;
     let ctx = egui::Context::default();
     let data = candles();
     let scale = scale(false);

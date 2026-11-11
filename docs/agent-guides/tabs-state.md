@@ -18,7 +18,7 @@
   baseline is the restored state, so changes left unsaved at quit show as clean after a restart.
 - `ChartWorkspace::title()` (focused-chart title, then active-layout name, then “New tab”) names the
   OS window, the accessibility label and the Move Tab to Window rows. The strip itself paints a chart
-  tab from `ChartWorkspace::tab_chart()` through `model::tab_title`: logo, symbol, `▲`/`▼`, price and
+  tab from `ChartWorkspace::tab_chart()` through `model::tab::title`: logo, symbol, `▲`/`▼`, price and
   change, then `/ <layout name>`. The market is the **focused chart's** (first chart when none is
   focused; a portfolio card gives none) and the layout is `active_view_name`, so the layout name
   follows the layout, not the symbol; an unnamed layout has no `/` segment. Session persistence is
@@ -105,7 +105,7 @@
   fixed `Placement::DEFAULT_SIZE`. A torn-off window keeps its source's size. Window frames are not
   saved across restarts. The share and limits are a taste choice, not measured.
 - Sleep and display changes: macOS moves and clamps windows when displays drop out on sleep and
-  does not put them all back. `model::window_frames::FrameMemory` saves each window's frame per
+  does not put them all back. `model::tab::window_frames::FrameMemory` saves each window's frame per
   display arrangement (`native_bridge::screen_layout`, macOS only; empty elsewhere, which turns it
   off), only after the arrangement has been steady, so a frame the OS forced is never saved. When
   an arrangement with saved frames returns, or a gap in the 250 ms root tick shows the Mac slept,

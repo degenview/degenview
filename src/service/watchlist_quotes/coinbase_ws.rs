@@ -2,7 +2,7 @@
 //! Coinbase has no candle channel, but its ticker carries the last trade plus the 24h
 //! open and volume, which is all a row needs.
 
-use crate::model::watchlist_quote::SourceQuote;
+use crate::model::watchlist::quote::SourceQuote;
 use serde_json::{Value, json};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -131,7 +131,7 @@ pub fn parse_tick(text: &str) -> Option<CoinbaseTick> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::watchlist_quote::VolumeKind;
+    use crate::model::watchlist::quote::VolumeKind;
 
     #[test]
     fn parses_a_ticker_message_and_ignores_the_rest() {

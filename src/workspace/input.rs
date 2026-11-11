@@ -2,8 +2,8 @@
 
 use super::ChartWorkspace;
 use crate::model::Tool;
-use crate::model::price_scale::PriceScaleMode;
-use crate::model::snapshot::SnapshotAction;
+use crate::model::chart::price_scale::PriceScaleMode;
+use crate::model::chart::snapshot::SnapshotAction;
 use crate::ui::shortcut;
 use eframe::egui;
 

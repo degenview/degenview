@@ -40,7 +40,7 @@ use super::drawing_geometry as geo;
 use super::drawing_render::{
     self, HANDLE_RADIUS, HIT_TOLERANCE, RulerCorner, RulerPart, RulerReadout, TimeIndex,
 };
-use crate::model::drawing_style::DrawingStyle;
+use crate::model::drawings::style::DrawingStyle;
 use crate::model::{
     Anchor, Caps, Drawing, DrawingCommand, Geometry, MAX_POINTS, MagnetMode, Placement,
     PriceFormat, Timeframe, Tool,
@@ -116,14 +116,14 @@ pub struct DrawingFrame<'a> {
     /// A drawing was placed while every drawing was hidden: show them again, or it would vanish.
     pub reveal_all: bool,
     /// What was chosen and waits for a click to place it (a picture), while its tool is armed.
-    pub pending_content: Option<crate::model::image_content::Content>,
+    pub pending_content: Option<crate::model::annotation::image_content::Content>,
     /// The content was placed: the workspace forgets it, and the tool disarms.
     pub content_used: bool,
     /// Place the waiting content now, in the middle of the plot, without a click: set on the
     /// focused chart when a picture arrives by a drop or a paste.
     pub place_pending: bool,
     /// A picture to put in place of the one drawing `id` shows, from the workspace's pick.
-    pub replace_with: Option<(u64, crate::model::image_content::ImageContent)>,
+    pub replace_with: Option<(u64, crate::model::annotation::image_content::ImageContent)>,
     /// The user asked to replace the picture of this drawing: the workspace asks for a new one.
     pub replace_request: Option<u64>,
     /// The user asked to copy the picture with this name.
@@ -217,7 +217,7 @@ impl<'a> DrawingFrame<'a> {
 
     pub fn with_pending_content(
         mut self,
-        content: Option<crate::model::image_content::Content>,
+        content: Option<crate::model::annotation::image_content::Content>,
     ) -> Self {
         self.pending_content = content;
         self
@@ -226,7 +226,7 @@ impl<'a> DrawingFrame<'a> {
     pub fn with_picture_work(
         mut self,
         place_pending: bool,
-        replace_with: Option<(u64, crate::model::image_content::ImageContent)>,
+        replace_with: Option<(u64, crate::model::annotation::image_content::ImageContent)>,
     ) -> Self {
         self.place_pending = place_pending;
         self.replace_with = replace_with;
@@ -1227,19 +1227,19 @@ impl DrawingLayer {
             };
             // Where its top-left corner goes, and (for a picture) the size the plot allows it.
             let (corner, content) = match content {
-                crate::model::image_content::Content::Image(mut picture) => {
+                crate::model::annotation::image_content::Content::Image(mut picture) => {
                     let rect = placed_rect(&picture, first, proj.plot);
                     picture.size = [rect.width(), rect.height()];
                     (
                         proj.anchor(rect.left_top()),
-                        crate::model::image_content::Content::Image(picture),
+                        crate::model::annotation::image_content::Content::Image(picture),
                     )
                 }
-                crate::model::image_content::Content::Link(card) => {
+                crate::model::annotation::image_content::Content::Link(card) => {
                     let rect = placed_card_rect(&card, first, proj.plot);
                     (
                         proj.anchor(rect.left_top()),
-                        crate::model::image_content::Content::Link(card),
+                        crate::model::annotation::image_content::Content::Link(card),
                     )
                 }
             };
@@ -1374,7 +1374,7 @@ impl DrawingLayer {
             && let Some(point) = self.pointer
         {
             match content {
-                crate::model::image_content::Content::Image(picture) => {
+                crate::model::annotation::image_content::Content::Image(picture) => {
                     let rect = placed_rect(picture, point, proj.plot);
                     draw::draw_picture(
                         &clipped,
@@ -1385,7 +1385,7 @@ impl DrawingLayer {
                         0.55,
                     );
                 }
-                crate::model::image_content::Content::Link(card) => {
+                crate::model::annotation::image_content::Content::Link(card) => {
                     let rect = placed_card_rect(card, point, proj.plot);
                     crate::ui::content_card::paint(&clipped, rect, card, 0.55, None);
                 }
@@ -1601,11 +1601,11 @@ impl DrawingLayer {
         }
         frame.place_pending = false;
         let (tool, size) = match frame.pending_content.clone().expect("checked above") {
-            crate::model::image_content::Content::Image(picture) => (
+            crate::model::annotation::image_content::Content::Image(picture) => (
                 Tool::Image,
                 placed_rect(&picture, proj.plot.center(), proj.plot).size(),
             ),
-            crate::model::image_content::Content::Link(card) => (
+            crate::model::annotation::image_content::Content::Link(card) => (
                 Tool::Post,
                 placed_card_rect(&card, proj.plot.center(), proj.plot).size(),
             ),
@@ -1651,7 +1651,11 @@ impl DrawingLayer {
 /// The rectangle a picture takes when it is dropped with its top-left corner at `at`: the size it
 /// starts at, scaled down to at most 40 % of the plot's width and half its height, and moved back
 /// onto the plot if that would put it over an edge.
-fn placed_rect(picture: &crate::model::image_content::ImageContent, at: Pos2, plot: Rect) -> Rect {
+fn placed_rect(
+    picture: &crate::model::annotation::image_content::ImageContent,
+    at: Pos2,
+    plot: Rect,
+) -> Rect {
     let (width, height) = (picture.size[0].max(1.0), picture.size[1].max(1.0));
     let scale = (plot.width() * 0.4 / width)
         .min(plot.height() * 0.5 / height)
@@ -1664,7 +1668,11 @@ fn placed_rect(picture: &crate::model::image_content::ImageContent, at: Pos2, pl
 
 /// The rectangle a card takes when it is dropped with its top-left corner at `at`: its own size,
 /// moved back onto the plot if that would put it over an edge.
-fn placed_card_rect(card: &crate::model::link_card::LinkCard, at: Pos2, plot: Rect) -> Rect {
+fn placed_card_rect(
+    card: &crate::model::annotation::link_card::LinkCard,
+    at: Pos2,
+    plot: Rect,
+) -> Rect {
     let size = egui::vec2(
         card.size[0].min(plot.width()),
         card.size[1].min(plot.height()),

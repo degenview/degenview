@@ -3,12 +3,13 @@
 //! line up exactly (see `watchlist_style`), and each returns the `Response` the
 //! sidebar uses for clicks, drags and menus.
 
+use crate::model::watchlist;
+use crate::model::watchlist::layout::Flags;
+use crate::model::watchlist::quote::{Direction, WatchlistQuote};
 use crate::model::watchlist::{
     WatchlistColumn, WatchlistDisplaySettings, WatchlistInstrument, WatchlistSection,
     WatchlistSortKey,
 };
-use crate::model::watchlist_layout::Flags;
-use crate::model::watchlist_quote::{self, Direction, WatchlistQuote};
 use crate::model::{DataSource, InstrumentId};
 use crate::ui::accessibility;
 use crate::ui::theme;
@@ -252,7 +253,7 @@ pub fn instrument_row(ui: &mut egui::Ui, item: &WatchlistInstrument, row: &RowSt
     let text_color = ui.visuals().text_color().gamma_multiply(alpha);
     // A portfolio card has no price, so it shows dashes, not the "no quote" warning.
     let quote = quote.filter(|_| item.card.is_none());
-    let direction = watchlist_quote::direction(quote);
+    let direction = watchlist::quote::direction(quote);
     let source = Some(item.instrument.source);
     let mut x = rect.right() - TRAILING_INSET;
     let mut warning = None;
@@ -267,18 +268,18 @@ pub fn instrument_row(ui: &mut egui::Ui, item: &WatchlistInstrument, row: &RowSt
                     )
                 } else {
                     (
-                        watchlist_quote::last_text(quote, source),
+                        watchlist::quote::last_text(quote, source),
                         direction_color(direction, ui.visuals().text_color()).gamma_multiply(alpha),
                     )
                 }
             }
             WatchlistColumn::Change => (
-                watchlist_quote::change_text(quote, source),
+                watchlist::quote::change_text(quote, source),
                 direction_color(direction, ui.visuals().weak_text_color()).gamma_multiply(alpha),
             ),
             WatchlistColumn::ChangePercent => {
                 let glyph = direction.glyph();
-                let percent = watchlist_quote::percent_text(quote, source);
+                let percent = watchlist::quote::percent_text(quote, source);
                 (
                     if glyph.is_empty() {
                         percent
@@ -289,11 +290,11 @@ pub fn instrument_row(ui: &mut egui::Ui, item: &WatchlistInstrument, row: &RowSt
                         .gamma_multiply(alpha),
                 )
             }
-            WatchlistColumn::Volume => (watchlist_quote::volume_text(quote), weak),
+            WatchlistColumn::Volume => (watchlist::quote::volume_text(quote), weak),
             WatchlistColumn::Exchange => (item.instrument.source.display_name().to_owned(), weak),
             WatchlistColumn::Status => (
                 quote
-                    .map_or(watchlist_quote::Freshness::Unavailable, |quote| {
+                    .map_or(watchlist::quote::Freshness::Unavailable, |quote| {
                         quote.freshness
                     })
                     .label()

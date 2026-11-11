@@ -1,12 +1,12 @@
 //! The Pine logs pane: the messages a script wrote with `log.info()`, `log.warning()` and
 //! `log.error()`, newest at the bottom, with the filters TradingView's pane has.
 //!
-//! A docked panel over `model::pine_logs_view`: a title, a toolbar (search, a bar range, the
+//! A docked panel over `model::pine::logs_view`: a title, a toolbar (search, a bar range, the
 //! logging switch and the levels filter), the list, and states for the times there is
 //! nothing to list. It owns nothing of the messages: they are lent for the frame, and what the
 //! person asks for is returned as a [`LogsAction`]. Only the rows on screen are laid out.
 
-use crate::model::pine_logs_view::{
+use crate::model::pine::logs_view::{
     BarRange, FilteredLogs, LogFilter, LogsPrefs, MAX_HIGHLIGHTS, RowHeights, estimated_height,
     iso_utc,
 };

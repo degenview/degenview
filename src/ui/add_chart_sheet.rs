@@ -6,7 +6,7 @@
 use crate::model::DataSource;
 use crate::model::PmSeries;
 use crate::model::portfolio::Portfolio;
-use crate::model::portfolio_card::{CardKind, PortfolioCard};
+use crate::model::portfolio::card::{CardKind, PortfolioCard};
 use crate::service::{self, EventInfo, SearchResult};
 use crate::store::SharedStore;
 use crate::ui::icons::{self, Icon};

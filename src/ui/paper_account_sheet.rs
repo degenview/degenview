@@ -6,12 +6,12 @@
 // Transient: the paper-trading host opens this once it is wired.
 #![allow(dead_code)]
 
+use crate::model::paper::format as fmt;
+use crate::model::paper::ticket::{decimal_text, parse_decimal};
 use crate::model::paper::{
     PaperAccount, PaperAccountSettings, PaperCommissionConfiguration, PaperCurrency,
     PaperLeverageConfiguration,
 };
-use crate::model::paper_format as fmt;
-use crate::model::paper_ticket::{decimal_text, parse_decimal};
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit;
 use crate::ui::paper_form::{dropdown_field, field_footer, field_label, text_field};

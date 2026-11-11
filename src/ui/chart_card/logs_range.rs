@@ -9,7 +9,7 @@
 //! [`ChartCard::set_logs_range`].
 
 use super::{ChartCard, Projection, View};
-use crate::model::canvas::COLLAPSED_PANE_HEIGHT;
+use crate::model::chart::canvas::COLLAPSED_PANE_HEIGHT;
 use crate::ui::canvas_render::CanvasStyle;
 use crate::ui::replay_bar;
 use crate::ui::replay_overlay::{self, ReplayChartFrame};

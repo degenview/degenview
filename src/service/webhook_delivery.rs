@@ -8,11 +8,12 @@
 //! somewhere the policy never saw.
 
 use crate::model::watchlist::now_ms;
+use crate::model::webhook;
+use crate::model::webhook::policy::WebhookPayload;
 use crate::model::webhook::{
     EndpointId, WebhookDeliveryError, WebhookDeliveryResult, WebhookEndpoint, WebhookHeader,
     WebhookHttpMethod,
 };
-use crate::model::webhook_policy::{self, WebhookPayload};
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -187,10 +188,10 @@ pub fn deliver(
         .collect();
     // The Keychain is read per attempt, and only when something uses the secret, so an
     // edit applies at once and an endpoint without one never touches it.
-    let secret = webhook_policy::references_secret(&endpoint.url, &custom)
+    let secret = webhook::policy::references_secret(&endpoint.url, &custom)
         .then(|| secrets.secret(endpoint.id))
         .flatten();
-    let resolved = match webhook_policy::resolve(&endpoint.url, &custom, secret.as_deref()) {
+    let resolved = match webhook::policy::resolve(&endpoint.url, &custom, secret.as_deref()) {
         Ok(resolved) => resolved,
         Err(error) => return result(Some(error), None),
     };

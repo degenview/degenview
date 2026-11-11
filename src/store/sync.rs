@@ -1763,10 +1763,10 @@ pub fn row_decodes(table: &str, payload: &str) -> bool {
         "watchlist" => serde_json::from_str::<model::watchlist::Watchlist>(payload).is_ok(),
         "saved_view" => serde_json::from_str::<model::SavedView>(payload).is_ok(),
         "chart_template" => {
-            serde_json::from_str::<model::chart_template::ChartAppearanceTemplate>(payload).is_ok()
+            serde_json::from_str::<model::chart::template::ChartAppearanceTemplate>(payload).is_ok()
         }
         "drawing_template" => {
-            serde_json::from_str::<model::drawing_template::DrawingTemplate>(payload).is_ok()
+            serde_json::from_str::<model::drawings::template::DrawingTemplate>(payload).is_ok()
         }
         "editor_theme" => serde_json::from_str::<model::editor_theme::EditorTheme>(payload).is_ok(),
         "price_alert" => serde_json::from_str::<model::alert::PriceAlert>(payload).is_ok(),

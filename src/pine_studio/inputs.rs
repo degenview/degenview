@@ -2,7 +2,7 @@
 //! tried in the preview. Ported from `PineInputsView`, `SettingsCardRow` and
 //! `ScriptPreviewInputsStore`.
 
-use crate::model::pine_instance::StoredInput as Stored;
+use crate::model::pine::instance::StoredInput as Stored;
 use crate::pine::program::{InputControl, InputDefinition, InputSchema, InputValue};
 use crate::pine::token::ValueType;
 use crate::ui::icons::Icon;

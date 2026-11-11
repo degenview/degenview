@@ -9,7 +9,7 @@
 
 use degenview_brokers::{Decimal, Side};
 
-use crate::model::trading_venue::TradingVenue;
+use crate::model::broker::venue::TradingVenue;
 
 /// How a venue treats the orders sent to it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

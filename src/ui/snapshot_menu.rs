@@ -6,7 +6,7 @@
 
 use super::icons::Icon;
 use super::kit;
-use crate::model::snapshot::SnapshotAction;
+use crate::model::chart::snapshot::SnapshotAction;
 use eframe::egui::{self, Vec2};
 
 /// What the menu needs to know besides the chart.

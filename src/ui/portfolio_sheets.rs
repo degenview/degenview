@@ -5,10 +5,10 @@
 // Transient: the Portfolio window hosts these once the portfolio store is wired.
 #![allow(dead_code)]
 
+use crate::model::portfolio::format::PORTFOLIO_CURRENCIES;
 use crate::model::portfolio::{
     MAX_NAME_LENGTH, Portfolio, PortfolioCurrency, is_duplicate_name, is_valid_name, normalize_name,
 };
-use crate::model::portfolio_format::PORTFOLIO_CURRENCIES;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, Confirm, ConfirmOutcome};
 use crate::ui::portfolio_empty;

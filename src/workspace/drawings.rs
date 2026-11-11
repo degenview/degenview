@@ -282,7 +282,7 @@ mod tests {
     #[test]
     fn drawings_planned_for_mcp_are_one_undo_step_and_keep_their_style_on_save() {
         use crate::mcp::drawings::{AnchorSpec, McpDrawingTool, NewDrawing, PriceField, PriceSpec};
-        use crate::model::chart_type::LineDash;
+        use crate::model::chart::kind::LineDash;
         let mut workspace = empty_workspace(9);
         assert!(workspace.chart_data(404).is_none());
         let chart_id = chart_with_drawings(&mut workspace, "BTCUSDT", &[1]);

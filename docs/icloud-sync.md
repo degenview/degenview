@@ -187,7 +187,7 @@ stays safe. (Read from the code; it has not been tried between two real builds.)
 
 The rule: **a new tool is a new `Geometry` variant. A change to an existing tool's stored form that an
 older build would lose (a new field it ignores) must write `"since": N` in the drawing's body, with
-`DRAWING_FORMAT` in `model/drawings.rs` raised to N.** A field that only some drawings use can be left
+`DRAWING_FORMAT` in `model/drawings/mod.rs` raised to N.** A field that only some drawings use can be left
 out of the row while it holds its default (as the style fields are) and needs no marker until it is
 set. Nothing tells a person on the older build that a drawing is hidden except the Object tree row;
 a count elsewhere would be easy to add.

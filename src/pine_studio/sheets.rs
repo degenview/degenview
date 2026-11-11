@@ -2,7 +2,7 @@
 //! `ScriptNameSheet` and the `PineStudioView` dialogs.
 
 use super::{AlertSheet, PineStudio, PineStudioAction, Sheet, unsaved};
-use crate::model::pine_alert::ArmingFacts;
+use crate::model::alert::pine::ArmingFacts;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, Confirm, ConfirmOutcome};
 use crate::ui::pine_alert_editor::{self, PineAlertEditorInput, PineAlertEditorOutcome};

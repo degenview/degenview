@@ -10,7 +10,7 @@
 //! exchange.
 
 use crate::model::Kline;
-use crate::model::volume_profile::point_of_control_and_value_area;
+use crate::model::forecast::volume_profile::point_of_control_and_value_area;
 
 /// The most rows one footprint may have. A bar whose range holds more (a wide bar and a tiny row
 /// height) has no footprint, as a bar with no data has none: a script that asks for one row per tick

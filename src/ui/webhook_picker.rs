@@ -2,11 +2,11 @@
 //! `WebhookMessageEditor`): a toggle card that reveals selectable endpoint cards and, for price
 //! alerts, the message with one-tap placeholders and an example of what is sent.
 
-use crate::model::alert_message::{
+use crate::model::alert::message::{
     AlertMessageContext, DEFAULT_PRICE_ALERT_TEMPLATE, SUPPORTED_PLACEHOLDERS, render,
 };
+use crate::model::webhook;
 use crate::model::webhook::{EndpointId, WebhookEndpoint};
-use crate::model::webhook_policy;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, MEDIUM, REGULAR, SEMIBOLD, size};
 use crate::ui::theme;
@@ -41,8 +41,8 @@ pub fn summary(selection: &[EndpointId], endpoints: &[WebhookEndpoint]) -> Summa
 /// The host (and port) of a webhook URL and nothing else, so never anything that could hold a
 /// token. Works on templates that contain `{{secret}}`.
 pub fn host(url: &str) -> Option<String> {
-    let neutral = webhook_policy::replace_secret(url.trim(), "x");
-    let parsed = webhook_policy::parse_url(&neutral)?;
+    let neutral = webhook::policy::replace_secret(url.trim(), "x");
+    let parsed = webhook::policy::parse_url(&neutral)?;
     if parsed.host.is_empty() {
         return None;
     }
@@ -80,7 +80,7 @@ pub fn example_preview(template: &str, context: &AlertMessageContext) -> (String
         template
     };
     let text = render(source, context);
-    let json = webhook_policy::is_json(&text);
+    let json = webhook::policy::is_json(&text);
     (text, json)
 }
 

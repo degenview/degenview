@@ -55,10 +55,10 @@ src/app.rs
 src/workspace.rs
 src/workspace/
 src/native_bridge.rs
-src/model/layout.rs
-src/model/persisted.rs
-src/model/instrument.rs
-src/model/indicators.rs
+src/model/chart/layout.rs
+src/model/chart/persisted.rs
+src/model/market/instrument.rs
+src/model/indicators/mod.rs
 src/ui/chart_card.rs
 src/ui/chart_indicator_strip.rs
 src/ui/chart_settings.rs
@@ -69,8 +69,8 @@ src/ui/add_chart_sheet.rs
 
 ```text
 src/host/alert_host.rs
-src/model/alert.rs
-src/model/alert_engine.rs
+src/model/alert/mod.rs
+src/model/alert/engine.rs
 src/store/alert.rs
 src/ui/alert_center.rs
 src/ui/alert_editor.rs
@@ -81,8 +81,8 @@ src/ui/alert_editor.rs
 ```text
 src/host/pine_host.rs
 src/host/pine_subscription_host.rs
-src/model/pine_instance.rs
-src/model/pine_alert.rs
+src/model/pine/instance.rs
+src/model/alert/pine.rs
 src/pine/compiler.rs
 src/pine/lexer.rs
 src/pine/parser.rs
@@ -593,7 +593,7 @@ src/
 │   │   └── pine.rs
 │   └── resources.rs
 ├── host/mcp_host.rs
-├── model/mcp.rs
+├── model/mcp/mod.rs
 ├── store/mcp.rs
 ├── service/keychain_mcp.rs
 └── ui/settings_mcp.rs
@@ -1484,7 +1484,7 @@ DegenView supports Pine alert subscriptions through:
 
 ```text
 pine_subscription_host
-model::pine_alert
+model::alert::pine
 store::pine
 ```
 

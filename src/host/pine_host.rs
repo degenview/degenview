@@ -3,7 +3,7 @@
 //! incrementally; the session itself owns the per-bar state machine.
 #![allow(dead_code)] // transient until the chart wires this
 
-use crate::model::synthetic::ticker;
+use crate::model::chart::synthetic::ticker;
 use crate::model::{DataSource, Kline};
 use crate::pine::compiler;
 use crate::pine::program::{InputValue, SymbolInfo, VisualOutput};

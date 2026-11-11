@@ -1,5 +1,5 @@
 //! Candle fetching behind the portfolio value chart: the daily history rebuild and the 1D
-//! chart's intraday replay. The arithmetic is `model::portfolio_history`; this is the
+//! chart's intraday replay. The arithmetic is `model::portfolio::history`; this is the
 //! blocking provider boundary and the worker bookkeeping around it.
 //!
 //! Both run on `service::work_queue` threads and report over `mpsc` channels the UI drains each
@@ -7,13 +7,13 @@
 
 use crate::model::DataSource;
 use crate::model::Kline;
-use crate::model::portfolio::{
-    Portfolio, PortfolioAsset, PortfolioCurrency, PortfolioSnapshot, PortfolioTransaction,
-};
-use crate::model::portfolio_accounting::{holdings, unique_assets};
-use crate::model::portfolio_history::{
+use crate::model::portfolio::accounting::{holdings, unique_assets};
+use crate::model::portfolio::history::{
     DAY_MS, IntradayBars, LOOKBACK_MS, build_snapshots, intraday_snapshots, sum_intraday,
     transactions_fingerprint,
+};
+use crate::model::portfolio::{
+    Portfolio, PortfolioAsset, PortfolioCurrency, PortfolioSnapshot, PortfolioTransaction,
 };
 use crate::service::portfolio_quotes::PortfolioFxRates;
 use eframe::egui;
@@ -396,7 +396,7 @@ impl IntradayFeed {
         fx: &Arc<dyn PortfolioFxRates>,
         now_ms: i64,
     ) -> Vec<PortfolioSnapshot> {
-        let bucket = now_ms.div_euclid(crate::model::portfolio_history::INTRADAY_STEP_MS);
+        let bucket = now_ms.div_euclid(crate::model::portfolio::history::INTRADAY_STEP_MS);
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         let up_to_date = state
             .computed_for

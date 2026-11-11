@@ -1,7 +1,7 @@
 use super::*;
-use crate::model::canvas::BackgroundMode;
-use crate::model::chart_template::BUILT_INS;
-use crate::model::chart_type::ChartType;
+use crate::model::chart::canvas::BackgroundMode;
+use crate::model::chart::kind::ChartType;
+use crate::model::chart::template::BUILT_INS;
 use crate::store::Store;
 use eframe::egui::Rect;
 use std::sync::{Arc, Mutex};

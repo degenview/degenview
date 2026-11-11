@@ -7,11 +7,11 @@
 // and the sheet's webhook preview being wired.
 #![allow(dead_code)]
 
+use crate::model::alert::message::{AlertMessageContext, DEFAULT_PRICE_ALERT_TEMPLATE, render};
 use crate::model::alert::{
     AlertAsset, AlertCondition, AlertCurrency, AlertFrequency, AlertState, PriceAlert,
 };
-use crate::model::alert_message::{AlertMessageContext, DEFAULT_PRICE_ALERT_TEMPLATE, render};
-use crate::model::watchlist_quote::{Freshness, WatchlistQuote};
+use crate::model::watchlist::quote::{Freshness, WatchlistQuote};
 use crate::model::webhook::{EndpointId, WebhookEndpoint};
 use crate::service::watchlist_quotes::WatchlistQuoteBook;
 use crate::ui::icons::{self, Icon};

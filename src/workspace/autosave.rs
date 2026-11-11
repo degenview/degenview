@@ -106,7 +106,7 @@ impl ChartWorkspace {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::price_scale::PriceScaleMode;
+    use crate::model::chart::price_scale::PriceScaleMode;
     use crate::model::{DataSource, Timeframe};
 
     fn snapshot(logarithmic: bool) -> LayoutSnapshot {

@@ -11,9 +11,10 @@ use super::update_indicator;
 use super::window_chrome::{self, Control};
 use crate::host::update_host::UpdateView;
 use crate::model::InstrumentId;
-use crate::model::tab_title::{self, Detail, Segments, TabChart, TabTitleStyle};
-use crate::model::tab_windows::{TabId, WindowId};
-use crate::model::watchlist_quote::Direction;
+use crate::model::tab;
+use crate::model::tab::title::{Detail, Segments, TabChart, TabTitleStyle};
+use crate::model::tab::windows::{TabId, WindowId};
+use crate::model::watchlist::quote::Direction;
 use crate::service::watchlist_quotes::WatchlistQuoteBook;
 use eframe::egui::{
     self, Color32, CornerRadius, Id, Painter, Pos2, Rect, Sense, Shadow, Stroke, StrokeKind, Ui,
@@ -66,11 +67,11 @@ pub struct TabView {
     /// The timeframe shown in the hover text.
     pub timeframe: &'static str,
     /// The Tab Linking colour the tab is tagged with, shown as a dot on its logo.
-    pub link: Option<crate::model::tab_link::LinkColor>,
+    pub link: Option<crate::model::tab::link::LinkColor>,
     /// A chart tab can be linked (the portfolio and Pine Studio cannot): its menu has the section.
     pub linkable: bool,
     /// What the tab's colour group keeps in step, for the menu's switches.
-    pub link_toggles: crate::model::tab_link::LinkToggles,
+    pub link_toggles: crate::model::tab::link::LinkToggles,
 }
 
 /// A window a tab can be sent to from the context menu.
@@ -140,12 +141,12 @@ pub enum TabBarEvent {
     /// chart is left as it is.
     SetLink {
         tab: TabId,
-        color: Option<crate::model::tab_link::LinkColor>,
+        color: Option<crate::model::tab::link::LinkColor>,
     },
     /// The switches of a Tab Linking colour changed.
     SetLinkToggles {
-        color: crate::model::tab_link::LinkColor,
-        toggles: crate::model::tab_link::LinkToggles,
+        color: crate::model::tab::link::LinkColor,
+        toggles: crate::model::tab::link::LinkToggles,
     },
     MoveToNewWindow(TabId),
     MoveToWindow {
@@ -615,7 +616,7 @@ impl TabBar<'_> {
                 let quote = self
                     .quotes
                     .get(&InstrumentId::new(chart.source, &chart.symbol));
-                ui.label(tab_title::tooltip(chart, quote.as_ref(), tab.timeframe));
+                ui.label(tab::title::tooltip(chart, quote.as_ref(), tab.timeframe));
                 if let Some(link) = tab.link {
                     // Said in words too: a dot's colour alone is not enough.
                     ui.label(format!(
@@ -884,7 +885,7 @@ impl TabBar<'_> {
                     .get(&InstrumentId::new(chart.source, &chart.symbol))
             })
             .flatten();
-        let segments = Arc::new(tab_title::compose(
+        let segments = Arc::new(tab::title::compose(
             self.style,
             chart,
             quote.as_ref(),
@@ -1124,7 +1125,7 @@ impl TabBar<'_> {
         painter: &Painter,
         (x, cy, right): (f32, f32, f32),
         (tab, chart, detail): (TabId, &TabChart, Detail),
-        block: &tab_title::PriceBlock,
+        block: &tab::title::PriceBlock,
         (ink, weight, opacity): (Color32, f32, f32),
     ) -> f32 {
         let dim = if block.stale { 0.55 } else { 1.0 };
@@ -1317,7 +1318,7 @@ mod tests {
     /// (after a separator), and its swatches and switches say what changed for that tab.
     #[test]
     fn the_tab_menu_ends_with_the_tab_linking_section() {
-        use crate::model::tab_link::{LinkColor, LinkToggles};
+        use crate::model::tab::link::{LinkColor, LinkToggles};
         let ctx = egui::Context::default();
         let quotes = WatchlistQuoteBook::default();
         let tabs = [
@@ -1420,7 +1421,7 @@ mod tests {
     #[test]
     #[ignore = "writes images for a person to look at"]
     fn gallery_of_the_tab_menu() {
-        use crate::model::tab_link::{LinkColor, LinkToggles};
+        use crate::model::tab::link::{LinkColor, LinkToggles};
         use crate::ui::render_tests::{Screen, gallery_dir};
         if gallery_dir().is_none() {
             return;
@@ -1500,7 +1501,7 @@ mod tests {
     /// A tab that cannot be linked (the portfolio, Pine Studio) has no such section.
     #[test]
     fn a_tab_that_cannot_be_linked_has_no_section() {
-        use crate::model::tab_link::LinkColor;
+        use crate::model::tab::link::LinkColor;
         let ctx = egui::Context::default();
         let quotes = WatchlistQuoteBook::default();
         let tabs = [TabView {
@@ -1625,7 +1626,7 @@ mod tests {
                     custom_title: None,
                 }),
                 timeframe: "1D",
-                link: (linked == Some(index)).then_some(crate::model::tab_link::LinkColor::Orange),
+                link: (linked == Some(index)).then_some(crate::model::tab::link::LinkColor::Orange),
                 linkable: false,
                 link_toggles: Default::default(),
             })
@@ -1664,7 +1665,7 @@ mod tests {
 
     #[test]
     fn a_tab_has_no_underline_unless_it_is_linked_and_then_it_is_its_colour() {
-        let orange = crate::ui::tab_link_menu::swatch(crate::model::tab_link::LinkColor::Orange);
+        let orange = crate::ui::tab_link_menu::swatch(crate::model::tab::link::LinkColor::Orange);
         for style in TabTitleStyle::ALL {
             for width in [1400.0, 700.0, 300.0] {
                 let plain = paint_strip(4, 1, width, style);

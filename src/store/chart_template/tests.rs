@@ -1,6 +1,6 @@
 use super::*;
-use crate::model::canvas::BackgroundMode;
-use crate::model::chart_template::BUILT_INS;
+use crate::model::chart::canvas::BackgroundMode;
+use crate::model::chart::template::BUILT_INS;
 use std::sync::{Arc, Mutex};
 
 fn shared() -> SharedStore {

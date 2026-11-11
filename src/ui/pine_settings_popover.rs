@@ -7,7 +7,7 @@ use super::kit::{self, SEMIBOLD};
 use super::pine_style_view;
 use super::popover;
 use super::theme;
-use crate::model::pine_instance::PineInstance;
+use crate::model::pine::instance::PineInstance;
 use crate::pine::compiler;
 use crate::pine::program::InputSchema;
 use crate::pine::style_overrides::{StyleOverrides, StyleRow};

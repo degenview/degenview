@@ -89,7 +89,7 @@ impl ChartWorkspace {
         &mut self,
         source_chart: u64,
         appearance: &crate::model::ChartAppearance,
-        scope: crate::model::chart_template::ApplyScope,
+        scope: crate::model::chart::template::ApplyScope,
     ) -> String {
         let markets: Vec<(u64, DataSource)> = self
             .charts
@@ -97,7 +97,7 @@ impl ChartWorkspace {
             .filter(|chart| chart.is_market())
             .map(|chart| (chart.id, chart.source))
             .collect();
-        let plan = crate::model::chart_template::plan_apply_to_all(
+        let plan = crate::model::chart::template::plan_apply_to_all(
             &markets,
             appearance,
             scope,
@@ -121,8 +121,8 @@ mod tests {
     #[test]
     #[allow(clippy::field_reassign_with_default)]
     fn apply_to_all_restyles_the_other_charts_of_this_workspace_only() {
-        use crate::model::canvas::BackgroundMode;
-        use crate::model::chart_template::ApplyScope;
+        use crate::model::chart::canvas::BackgroundMode;
+        use crate::model::chart::template::ApplyScope;
         let ctx = egui::Context::default();
         let mut workspace = empty_workspace(3);
         let mut control = empty_workspace(4);

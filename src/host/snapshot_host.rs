@@ -4,7 +4,7 @@
 //! a mutex, written to the `setting` table on every change. The secrets a provider asks for are
 //! not here: they are in the secure storage (`keychain_snapshot_secrets`).
 
-use crate::model::snapshot::{SnapshotPrefs, SnapshotScale};
+use crate::model::chart::snapshot::{SnapshotPrefs, SnapshotScale};
 use crate::service::keychain_snapshot_secrets::SnapshotSecrets;
 use crate::service::snapshot_providers::{self, Destination, FieldKind, Readiness};
 use crate::store::{SharedStore, Store};
@@ -265,7 +265,7 @@ impl SnapshotHost {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::snapshot::SELF_HOSTED;
+    use crate::model::chart::snapshot::SELF_HOSTED;
     use crate::service::keychain_api_keys::MemoryBackend;
     use crate::store::Store;
 

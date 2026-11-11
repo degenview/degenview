@@ -37,7 +37,7 @@ Pictures: `DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib indicator_picker::tests:
 
 ## The catalog
 
-`model::indicator_catalog` is pure data and search. A `CatalogEntry` is one row: a native built-in
+`model::indicators::catalog` is pure data and search. A `CatalogEntry` is one row: a native built-in
 (`BuiltIn`), a bundled Pine indicator (`pine_studio::indicators`) or a saved script. Its `EntryKey`
 (`Native`, `Bundled`, `Script`) is the stable identity that tells one row from another;
 `EntryKey::stored`/`parse` is the text the favorites keep.

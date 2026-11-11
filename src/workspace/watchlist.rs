@@ -219,7 +219,7 @@ impl ChartWorkspace {
                             std::thread::spawn(move || {
                                 let result = crate::service::file_dialog::choose_save_path(
                                     "Export watchlist",
-                                    &crate::model::watchlist_text::export_file_name(&name),
+                                    &crate::model::watchlist::text::export_file_name(&name),
                                 )
                                 .and_then(|path| {
                                     path.map(|path| {

@@ -77,7 +77,7 @@ It draws `BrokerHost::snapshot()` and nothing else, so every window shows the sa
 **New order** opens the ticket for the focused chart's market, if the chart's data source is the
 broker's: `Broker::resolve_market` maps it, and a chart whose data comes from anywhere else is
 refused with a sentence, never traded on a similar market. The order sheet (`ui/trade/order_sheet.rs`, rules in
-`model/broker_ticket.rs`) takes the market's rules and the best bid and ask from the broker, not the
+`model/broker/ticket.rs`) takes the market's rules and the best bid and ask from the broker, not the
 chart, and says so. It offers only what the market allows. Text is parsed exactly (`0.001` stays
 `0.001`); a value off the market's increment is reported with the nearest valid value and **never
 rounded**. The broker's own preview (fees, total, warnings, refusals) replaces the estimate when it
@@ -142,7 +142,7 @@ orders already open when a connection starts are not announced). Settings ▸ Br
 With a broker as the tab's venue, a chart whose data comes from **that broker's own source** (the
 descriptor's `market_source`: a Coinbase chart for Coinbase) gets live controls; every other chart is
 left alone, and the menu says why instead of trading a similar market. The rules are pure
-(`model/broker_chart.rs`); `workspace/broker.rs` fills each card each frame.
+(`model/broker/chart.rs`); `workspace/broker.rs` fills each card each frame.
 
 * **Header SELL / BUY** show the broker's own best bid and ask (read for as long as a card shows them,
   every two seconds, never for a chart nobody is looking at: `BrokerHost::want_quote`), never the

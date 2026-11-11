@@ -3,12 +3,12 @@
 //! answered with the [`OverlayCommand`] that makes the change.
 
 use super::{kit, settings_card, theme};
-use crate::model::chart_type::{LineDash, PriceSource};
+use crate::model::chart::kind::{LineDash, PriceSource};
+use crate::model::chart::price_scale::PriceScaleMode;
 use crate::model::editor_theme::Rgba;
 use crate::model::overlay::{
     ChartOverlay, OverlayCommand, OverlayId, OverlayScale, PALETTE, ScaleChoice,
 };
-use crate::model::price_scale::PriceScaleMode;
 use eframe::egui::{self, Align, Color32, Layout, Sense, Stroke, Ui, Vec2, vec2};
 
 const WIDTHS: [f32; 6] = [0.5, 1.0, 1.5, 2.0, 3.0, 4.0];

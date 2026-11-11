@@ -5,13 +5,13 @@
 
 use super::{body, header};
 use crate::model::DataSource;
+use crate::model::portfolio::card::{AssetMove, CardData, CardKind, PortfolioCard, performance};
+use crate::model::portfolio::format::PortfolioValueFormatter;
+use crate::model::portfolio::statistics::{
+    PortfolioHistoryRange, PortfolioPeriodChange, PortfolioValueChange,
+};
 use crate::model::portfolio::{
     PortfolioAsset, PortfolioCurrency, PortfolioHolding, PortfolioSnapshot,
-};
-use crate::model::portfolio_card::{AssetMove, CardData, CardKind, PortfolioCard, performance};
-use crate::model::portfolio_format::PortfolioValueFormatter;
-use crate::model::portfolio_statistics::{
-    PortfolioHistoryRange, PortfolioPeriodChange, PortfolioValueChange,
 };
 use crate::ui::render_tests::{Screen, gallery_dir};
 use crate::ui::{ChartCardAction, theme};

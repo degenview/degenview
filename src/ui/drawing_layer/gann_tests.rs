@@ -7,8 +7,8 @@ use super::line_tests::{at, bars, near, projection, scale};
 use super::shape::{LabelLook, Screen, Styled};
 use super::*;
 use crate::model::DrawingStyle;
-use crate::model::drawing_style::MiddleLine;
-use crate::model::fib_style::FibStyle;
+use crate::model::drawings::style::MiddleLine;
+use crate::model::fib::style::FibStyle;
 use eframe::egui::{pos2, vec2};
 
 fn built_on(tool: Tool, anchors: &[Anchor], style: DrawingStyle, slot_width: f32) -> Screen {

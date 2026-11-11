@@ -498,8 +498,8 @@ pub const SNAPSHOT_COPY_LINK: Shortcut =
     Shortcut::new(&[Chord::new(Key::S).alt()], &[Chord::new(Key::S).alt()]);
 
 /// The shortcut that takes `action`'s snapshot, for the rows that have one.
-pub fn snapshot(action: crate::model::snapshot::SnapshotAction) -> Option<Shortcut> {
-    use crate::model::snapshot::SnapshotAction;
+pub fn snapshot(action: crate::model::chart::snapshot::SnapshotAction) -> Option<Shortcut> {
+    use crate::model::chart::snapshot::SnapshotAction;
     match action {
         SnapshotAction::Download => Some(SNAPSHOT_DOWNLOAD),
         SnapshotAction::CopyImage => Some(SNAPSHOT_COPY_IMAGE),
@@ -520,8 +520,8 @@ pub const SCALE_LOGARITHMIC: Shortcut =
 
 /// The shortcut that switches to `mode`, for the modes that have one. TradingView documents none
 /// for Indexed to 100, so none is invented.
-pub fn scale_mode(mode: crate::model::price_scale::PriceScaleMode) -> Option<Shortcut> {
-    use crate::model::price_scale::PriceScaleMode;
+pub fn scale_mode(mode: crate::model::chart::price_scale::PriceScaleMode) -> Option<Shortcut> {
+    use crate::model::chart::price_scale::PriceScaleMode;
     match mode {
         PriceScaleMode::Percent => Some(SCALE_PERCENT),
         PriceScaleMode::Logarithmic => Some(SCALE_LOGARITHMIC),
@@ -727,7 +727,7 @@ mod tests {
 
     #[test]
     fn the_snapshot_shortcuts_are_their_own_and_leave_save_alone() {
-        use crate::model::snapshot::SnapshotAction;
+        use crate::model::chart::snapshot::SnapshotAction;
         assert_eq!(SNAPSHOT_DOWNLOAD.label_for(true), "⌥⌘S");
         assert_eq!(SNAPSHOT_COPY_IMAGE.label_for(true), "⇧⌘S");
         assert_eq!(SNAPSHOT_COPY_LINK.label_for(true), "⌥S");

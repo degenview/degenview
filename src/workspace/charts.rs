@@ -3,8 +3,8 @@
 use super::ChartWorkspace;
 use super::chart::{Chart, displayed_candles};
 use crate::host::portfolio_card_host::PortfolioCardEnv;
-use crate::model::portfolio_card::PortfolioCard;
-use crate::model::price_scale::PriceScaleMode;
+use crate::model::chart::price_scale::PriceScaleMode;
+use crate::model::portfolio::card::PortfolioCard;
 use crate::model::watchlist::WatchlistInstrument;
 use crate::model::{
     ChartType, DataSource, Drawing, IndicatorConfig, InstrumentId, Kline, Timeframe,
@@ -484,7 +484,7 @@ mod tests {
 
     #[test]
     fn a_portfolio_card_is_added_once_and_is_not_a_market() {
-        use crate::model::portfolio_card::{CardKind, PortfolioCard};
+        use crate::model::portfolio::card::{CardKind, PortfolioCard};
         let ctx = egui::Context::default();
         let mut workspace = empty_workspace(9);
         let btc = workspace.add_chart_for(&InstrumentId::new(DataSource::Binance, "BTCUSDT"), &ctx);
@@ -522,8 +522,8 @@ mod tests {
 
     #[test]
     fn a_card_survives_a_save_and_changing_its_range_marks_the_layout() {
-        use crate::model::portfolio_card::{CardKind, PortfolioCard};
-        use crate::model::portfolio_statistics::PortfolioHistoryRange;
+        use crate::model::portfolio::card::{CardKind, PortfolioCard};
+        use crate::model::portfolio::statistics::PortfolioHistoryRange;
         let ctx = egui::Context::default();
         let mut workspace = empty_workspace(10);
         workspace.add_card(PortfolioCard::new(CardKind::TopPerformers, Some(2)));
@@ -726,7 +726,7 @@ mod tests {
             .add_chart_for(&InstrumentId::new(DataSource::Binance, "BTCUSDT"), &ctx)
             .chart_id;
         workspace.charts[0].card = Some(PortfolioCard::new(
-            crate::model::portfolio_card::CardKind::Allocation,
+            crate::model::portfolio::card::CardKind::Allocation,
             None,
         ));
         workspace.set_scale_mode(id, PriceScaleMode::Percent);

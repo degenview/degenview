@@ -2,7 +2,7 @@
 
 ## Adding a provider
 
-1. Add `model::source::DataSource` metadata: display name, watchlist slug, prediction-market flag,
+1. Add `model::market::source::DataSource` metadata: display name, watchlist slug, prediction-market flag,
    volume support, and line/candle mode.
 2. Implement `service::MarketSource`; add `search_tickers` when supported and a parser when the
    kline shape is new.

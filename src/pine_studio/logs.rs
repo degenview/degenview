@@ -6,7 +6,7 @@
 //! bar" moves the preview chart, which only holds the candles it fetched.
 
 use super::{Cmd, PineStudio};
-use crate::model::pine_logs_view::{LogsPrefs, SourceTarget};
+use crate::model::pine::logs_view::{LogsPrefs, SourceTarget};
 use crate::pine::logs::LogHistory;
 use crate::store::SharedStore;
 use crate::ui::pine_logs_view::{self as view, Feed, LogsAction, LogsState, ScriptEntry};

@@ -1,15 +1,16 @@
 //! The "Add Webhook" / "Edit Webhook" sheet: a name, where to post, an optional secret
 //! and headers, and whether it is on. A pure view: it edits a `WebhookEditorState` the
 //! host owns and reports `Save` or `Cancel`. All validation lives in `WebhookEditorState`
-//! (and in `webhook_policy`), so the sheet cannot disagree with the store.
+//! (and in `webhook::policy`), so the sheet cannot disagree with the store.
 
 // Transient: the Settings window hosts this once the webhook store is wired.
 #![allow(dead_code)]
 
-use crate::model::webhook::{EndpointId, WebhookEndpoint, WebhookHeader, WebhookHttpMethod};
-use crate::model::webhook_policy::{
-    self, MAXIMUM_HEADERS, SECRET_TOKEN, SecretPlacement, WebhookHeaderError, WebhookSecretError,
+use crate::model::webhook;
+use crate::model::webhook::policy::{
+    MAXIMUM_HEADERS, SECRET_TOKEN, SecretPlacement, WebhookHeaderError, WebhookSecretError,
 };
+use crate::model::webhook::{EndpointId, WebhookEndpoint, WebhookHeader, WebhookHttpMethod};
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, BOLD, REGULAR, SEMIBOLD, size};
 use crate::ui::sheet;
@@ -135,7 +136,7 @@ impl WebhookEditorState {
         if url.is_empty() {
             return None;
         }
-        webhook_policy::validate_templates(url, &[]).map(webhook_policy::url_message)
+        webhook::policy::validate_templates(url, &[]).map(webhook::policy::url_message)
     }
 
     pub fn url_is_valid(&self) -> bool {
@@ -151,14 +152,14 @@ impl WebhookEditorState {
     }
 
     pub fn uses_secret(&self) -> bool {
-        webhook_policy::references_secret(self.trimmed_url(), &self.filled_headers())
+        webhook::policy::references_secret(self.trimmed_url(), &self.filled_headers())
     }
 
     pub fn secret_problem(&self) -> Option<WebhookSecretError> {
         if self.secret.is_empty() {
             None
         } else {
-            webhook_policy::validate_secret(&self.secret)
+            webhook::policy::validate_secret(&self.secret)
         }
     }
 
@@ -173,24 +174,24 @@ impl WebhookEditorState {
     pub fn can_save(&self) -> bool {
         self.name_is_valid()
             && self.url_is_valid()
-            && webhook_policy::headers_are_valid(&self.filled_headers())
+            && webhook::policy::headers_are_valid(&self.filled_headers())
             && self.secret_is_valid()
     }
 
     /// The first problem with each filled header row, by id.
     pub fn header_errors(&self) -> Vec<(u64, WebhookHeaderError)> {
-        webhook_policy::header_errors(&self.filled_headers())
+        webhook::policy::header_errors(&self.filled_headers())
     }
 
     pub fn secret_status(&self) -> SecretStatus {
         if let Some(problem) = self.secret_problem() {
             return SecretStatus::Problem(problem);
         }
-        let url_uses = webhook_policy::contains_secret(&self.url);
+        let url_uses = webhook::policy::contains_secret(&self.url);
         let header_uses = self
             .headers
             .iter()
-            .filter(|header| webhook_policy::contains_secret(&header.value))
+            .filter(|header| webhook::policy::contains_secret(&header.value))
             .count();
         if url_uses || header_uses > 0 {
             if self.secret.is_empty() {
@@ -222,7 +223,7 @@ impl WebhookEditorState {
             return None;
         }
         let filled = self.filled_headers();
-        webhook_policy::plain_credential_header(&filled).cloned()
+        webhook::policy::plain_credential_header(&filled).cloned()
     }
 
     // MARK: Edits
@@ -235,14 +236,14 @@ impl WebhookEditorState {
         else {
             return;
         };
-        let (secret, value) = webhook_policy::moving_to_secret(header);
+        let (secret, value) = webhook::policy::moving_to_secret(header);
         header.value = value;
         self.secret = secret;
     }
 
     /// The "Use secret…" shortcuts.
     pub fn apply_placement(&mut self, choice: &SecretPlacement) {
-        let edit = webhook_policy::apply_placement(choice, &self.url, &self.headers);
+        let edit = webhook::policy::apply_placement(choice, &self.url, &self.headers);
         let had = self.headers.len();
         self.url = edit.url;
         self.headers = edit.headers;
@@ -623,7 +624,7 @@ fn url_section(ui: &mut egui::Ui, state: &mut WebhookEditorState) {
     });
     if let Some(problem) = state.visible_url_problem() {
         status_line(ui, Icon::TriangleFill, kit::RED, problem);
-    } else if state.url_is_valid() && webhook_policy::contains_secret(state.trimmed_url()) {
+    } else if state.url_is_valid() && webhook::policy::contains_secret(state.trimmed_url()) {
         // What will actually be requested, with the secret hidden.
         ui.add_space(7.0);
         ui.horizontal(|ui| {
@@ -631,7 +632,7 @@ fn url_section(ui: &mut egui::Ui, state: &mut WebhookEditorState) {
             icons::inline(ui, Icon::ArrowDownRight, 11.0, theme::text_tertiary());
             ui.add(
                 egui::Label::new(
-                    RichText::new(webhook_policy::masked_url(state.trimmed_url()))
+                    RichText::new(webhook::policy::masked_url(state.trimmed_url()))
                         .font(FontId::monospace(size::CAPTION + 0.5))
                         .color(theme::text_secondary()),
                 )
@@ -770,7 +771,7 @@ fn secret_section(ui: &mut egui::Ui, state: &mut WebhookEditorState) {
             ui,
             Icon::TriangleFill,
             kit::RED,
-            &webhook_policy::secret_message(problem),
+            &webhook::policy::secret_message(problem),
         ),
         SecretStatus::MissingValue => status_line(
             ui,
@@ -947,7 +948,7 @@ fn headers_section(ui: &mut egui::Ui, state: &mut WebhookEditorState) {
                 ui,
                 Icon::TriangleFill,
                 kit::RED,
-                &webhook_policy::header_message(error),
+                &webhook::policy::header_message(error),
             );
         }
         ui.add_space(8.0);

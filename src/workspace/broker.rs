@@ -2,7 +2,7 @@
 //! the charts' live lines and pills ask for.
 //!
 //! The rules (which chart is a broker's market, when orders are refused and why) are pure
-//! (`model::broker_chart`); this file reads the broker's snapshot and fills each chart card with what
+//! (`model::broker::chart`); this file reads the broker's snapshot and fills each chart card with what
 //! it should draw, then acts on what the card reports. Nothing here places or changes an order: it
 //! opens the ticket, the edit sheet or the cancel question, each of which shows what will be sent.
 
@@ -16,10 +16,10 @@ use eframe::egui;
 use super::ChartWorkspace;
 use super::chart::Chart;
 use crate::host::broker_host::BrokerHost;
-use crate::model::broker_chart::{ChartTrading, Unavailable, chart_trading};
-use crate::model::broker_ticket::{self as rules, TicketKind};
-use crate::model::chart_context::{LiveFacts, LiveOrderRequest};
-use crate::model::chart_type::ChartType;
+use crate::model::broker::chart::{ChartTrading, Unavailable, chart_trading};
+use crate::model::broker::ticket::{self as rules, TicketKind};
+use crate::model::chart::context::{LiveFacts, LiveOrderRequest};
+use crate::model::chart::kind::ChartType;
 use crate::trading::model::OrderClass;
 use crate::ui::broker_chart_trading::{BrokerOverlayAction, OrderLine};
 use crate::ui::broker_panel;
@@ -317,7 +317,7 @@ mod tests {
 
     use super::*;
     use crate::host::broker_host::StoreJournal;
-    use crate::model::trading_venue::TradingVenue;
+    use crate::model::broker::venue::TradingVenue;
     use crate::model::{DataSource, InstrumentId};
     use crate::workspace::test_support::empty_workspace;
 

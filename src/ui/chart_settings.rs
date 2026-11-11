@@ -10,9 +10,9 @@ use super::script_catalog;
 use super::settings_card;
 use super::sheet;
 use super::theme;
-use crate::model::pine_instance::{PineInstance, VisualOrder};
-use crate::model::price_format::MAX_DECIMALS;
-use crate::model::price_scale::PriceScaleMode;
+use crate::model::chart::price_format::MAX_DECIMALS;
+use crate::model::chart::price_scale::PriceScaleMode;
+use crate::model::pine::instance::{PineInstance, VisualOrder};
 use crate::model::{
     BOLLINGER_MULTIPLIER, BOLLINGER_PERIOD, ChartAppearance, DataSource, EMA_PERIODS,
     IndicatorConfig, PriceFormat, RSI_OVERBOUGHT, RSI_OVERSOLD, RSI_PERIOD, SUPERTREND_MULTIPLIER,
@@ -132,7 +132,7 @@ pub enum ChartSettingsAction {
     /// Open (or put away) the Inputs and Style popover of an applied script, pointing at `Rect`.
     ConfigureScript(u64, Rect),
     /// Give every chart of the workspace this look.
-    ApplyToAll(crate::model::chart_template::ApplyScope),
+    ApplyToAll(crate::model::chart::template::ApplyScope),
     /// Read the price axis in this mode.
     SetScaleMode(PriceScaleMode),
     /// Change a compared market.
@@ -1530,7 +1530,7 @@ mod tests {
     #[test]
     fn the_compare_page_lists_every_market_however_many_and_says_what_is_wrong_with_one() {
         use crate::model::overlay::OverlayList;
-        use crate::model::overlay_feed::{OverlayFeed, OverlayStatus};
+        use crate::model::overlay::feed::{OverlayFeed, OverlayStatus};
         let main = crate::model::InstrumentId::new(DataSource::Binance, "BTCUSDT");
         let mut list = OverlayList::new();
         let mut feeds = Vec::new();
@@ -1899,8 +1899,8 @@ mod tests {
 
     /// A card comparing `count` markets, a few of them in trouble, for the Compare page's pictures.
     fn card_with_overlays(count: usize) -> ChartCard {
+        use crate::model::overlay::feed::{OverlayFeed, OverlayStatus};
         use crate::model::overlay::{OverlayCommand, OverlayList, ScaleChoice};
-        use crate::model::overlay_feed::{OverlayFeed, OverlayStatus};
         let main = crate::model::InstrumentId::new(DataSource::Binance, "BTCUSDT");
         let names = [
             "ETHUSDT",

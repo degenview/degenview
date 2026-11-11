@@ -10,9 +10,9 @@ use super::chart_card::PriceScale;
 use super::kit;
 use super::series_render::{self, SeriesFrame};
 use super::theme;
-use crate::model::chart_look::Palette;
-use crate::model::chart_type::{ChartType, SizeMethod, SizeRule};
-use crate::model::synthetic::{Construction, SyntheticSeries, build_with};
+use crate::model::chart::kind::{ChartType, SizeMethod, SizeRule};
+use crate::model::chart::look::Palette;
+use crate::model::chart::synthetic::{Construction, SyntheticSeries, build_with};
 use crate::model::{ChartAppearance, Kline};
 use eframe::egui::{Rect, Sense, Ui, vec2};
 
@@ -140,7 +140,7 @@ fn paint(ui: &Ui, plot: Rect, appearance: &ChartAppearance, chart_type: ChartTyp
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::chart_type::{ChartStyle, ConstructionSource};
+    use crate::model::chart::kind::{ChartStyle, ConstructionSource};
     use eframe::egui;
 
     fn appearance(style: ChartStyle) -> ChartAppearance {

@@ -12,7 +12,7 @@ use super::{
     remote_from_inbox, row_decodes, sha256_hex,
 };
 use crate::model::portfolio::PortfolioTransaction;
-use crate::model::portfolio_accounting::holdings;
+use crate::model::portfolio::accounting::holdings;
 use crate::store::sync::OutboxOp;
 use crate::sync::ids::{Direction, map_fields};
 use crate::sync::project::canonical_json;

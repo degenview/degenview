@@ -3,7 +3,7 @@
 
 use super::canvas_tests::{HOUR, Harness, SIZE, wait_for_run, with_panes};
 use super::*;
-use crate::model::snapshot::{SnapshotDimensions, SnapshotScale};
+use crate::model::chart::snapshot::{SnapshotDimensions, SnapshotScale};
 use crate::model::{ChartCanvas, Drawing, Tool};
 use eframe::egui::ColorImage;
 use eframe::egui::epaint::ClippedShape;
@@ -388,7 +388,7 @@ fn with_account(harness: &mut Harness) {
     )];
     harness
         .card
-        .set_alert_lines(vec![crate::model::alert_line::AlertLine {
+        .set_alert_lines(vec![crate::model::alert::line::AlertLine {
             id: 7,
             price: 230.0,
             paused: false,
@@ -454,7 +454,7 @@ fn the_crosshair_a_hover_and_the_replay_badge_never_reach_a_snapshot() {
 
     // A replay names itself in the watermark; its badge and pick marker are the live chart's.
     let mut canvas = ChartCanvas::default();
-    canvas.watermark.mode = crate::model::canvas::WatermarkMode::Replay;
+    canvas.watermark.mode = crate::model::chart::canvas::WatermarkMode::Replay;
     let mut replaying = Harness::new(canvas);
     replaying.replay_active = true;
     let (live, rect) = settled(&mut replaying);
@@ -550,7 +550,7 @@ fn a_snapshot_is_an_image_of_the_chart_at_the_scale_asked_for() {
 #[test]
 fn the_backdrop_is_the_canvas() {
     let mut canvas = ChartCanvas::default();
-    canvas.background.mode = crate::model::canvas::BackgroundMode::Gradient;
+    canvas.background.mode = crate::model::chart::canvas::BackgroundMode::Gradient;
     canvas.background.top = Some([255, 0, 0, 255]);
     canvas.background.bottom = Some([0, 0, 255, 255]);
     let mut harness = Harness::new(canvas);
@@ -1117,7 +1117,7 @@ fn gallery_of_the_fibonacci_and_gann_tools() {
 /// One drawing of every forecasting, volume and measurement tool, in the last stretch of
 /// `series(300)` (bars 215..290, prices around 200..275; the chart ends at bar 299).
 fn forecast_drawings() -> Vec<(&'static str, Drawing)> {
-    use crate::model::bars_pattern::BarsPattern;
+    use crate::model::pattern::bars::BarsPattern;
     use crate::model::{Anchor, Geometry};
     let at = |bar: i64, price: f64| Anchor {
         time_ms: bar * HOUR,
@@ -1343,7 +1343,7 @@ fn gallery_of_the_text_and_note_tools() {
 #[test]
 #[ignore = "writes images for a person to look at"]
 fn gallery_of_the_two_point_notes() {
-    use crate::model::drawing_style::Emoji;
+    use crate::model::drawings::style::Emoji;
     use crate::model::{Anchor, DrawingStyle};
     use crate::ui::theme::{self, AppTheme};
     let Some(dir) = std::env::var_os("DEGENVIEW_GALLERY_DIR") else {
@@ -1465,7 +1465,7 @@ fn gallery_of_the_two_point_notes() {
 #[test]
 #[ignore = "writes images for a person to look at"]
 fn gallery_of_the_table() {
-    use crate::model::table::ScreenAnchor;
+    use crate::model::annotation::table::ScreenAnchor;
     use crate::model::{Anchor, DrawingStyle, Geometry};
     use crate::ui::theme::{self, AppTheme};
     let Some(dir) = std::env::var_os("DEGENVIEW_GALLERY_DIR") else {
@@ -1492,7 +1492,7 @@ fn gallery_of_the_table() {
         &["Pinned", "to the", "screen"],
         |style| {
             style.text.bold = true;
-            style.text.align = crate::model::drawing_style::HorizontalAlign::Center;
+            style.text.align = crate::model::drawings::style::HorizontalAlign::Center;
         },
     );
     if let Some(Geometry::Table(data)) = pinned.geometry_mut() {
@@ -1568,7 +1568,7 @@ fn gallery_of_the_table() {
 #[test]
 #[ignore = "writes images for a person to look at"]
 fn gallery_of_the_image() {
-    use crate::model::image_content::{Content, ImageContent};
+    use crate::model::annotation::image_content::{Content, ImageContent};
     use crate::model::{Anchor, Geometry};
     use crate::ui::theme::{self, AppTheme};
     use std::collections::HashMap;
@@ -1640,8 +1640,8 @@ fn gallery_of_the_image() {
 #[ignore = "writes images for a person to look at"]
 fn gallery_of_the_cards() {
     use crate::model::Anchor;
-    use crate::model::image_content::Content;
-    use crate::model::link_card::{Link, LinkCard, LinkMeta};
+    use crate::model::annotation::image_content::Content;
+    use crate::model::annotation::link_card::{Link, LinkCard, LinkMeta};
     use crate::ui::theme::{self, AppTheme};
     let Some(dir) = std::env::var_os("DEGENVIEW_GALLERY_DIR") else {
         return;

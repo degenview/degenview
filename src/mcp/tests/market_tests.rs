@@ -5,7 +5,7 @@ use super::{Harness, call, error_code, rpc, tool_names};
 use crate::mcp::state::QuoteAccess;
 use crate::model::DataSource;
 use crate::model::mcp::Permission;
-use crate::model::watchlist_quote::SourceQuote;
+use crate::model::watchlist::quote::SourceQuote;
 use crate::service::SearchResult;
 use crate::service::watchlist_quotes::{
     Config, Outcome, QuoteFailure, QuoteProvider, QuoteRequest, WatchlistQuoteBook,
@@ -37,7 +37,9 @@ impl QuoteProvider for OneMarket {
                         price: 64_250.5,
                         previous_day_price: Some(63_000.0),
                         volume_24h: Some(1.5e9),
-                        volume_kind: Some(crate::model::watchlist_quote::VolumeKind::QuoteCurrency),
+                        volume_kind: Some(
+                            crate::model::watchlist::quote::VolumeKind::QuoteCurrency,
+                        ),
                         timestamp_ms: None,
                     },
                 )

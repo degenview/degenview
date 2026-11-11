@@ -12,7 +12,7 @@ pub struct PineChartTarget {
     pub chart_id: u64,
     pub instrument: InstrumentId,
     pub timeframe: Timeframe,
-    pub instances: Vec<crate::model::pine_instance::PineInstance>,
+    pub instances: Vec<crate::model::pine::instance::PineInstance>,
 }
 
 /// What a chart's run of one applied Pine script has produced so far. A script runs only while its
@@ -35,7 +35,7 @@ pub struct PineInstanceView {
     pub chart_id: u64,
     pub instrument: InstrumentId,
     pub timeframe: Timeframe,
-    pub instance: crate::model::pine_instance::PineInstance,
+    pub instance: crate::model::pine::instance::PineInstance,
     pub run: Option<PineRunView>,
 }
 
@@ -76,7 +76,7 @@ pub struct ChartFeed {
     pub timeframe: String,
     pub bars: Vec<Kline>,
     pub run: crate::host::pine_subscription_host::ChartRun,
-    pub instances: Vec<crate::model::pine_instance::PineInstance>,
+    pub instances: Vec<crate::model::pine::instance::PineInstance>,
 }
 
 impl ChartWorkspace {

@@ -3,7 +3,7 @@
 //! total until a slice is hovered. The geometry is pure and tested; the painting follows it.
 
 use super::{fitted, loading_pill, reveal};
-use crate::model::portfolio_card::CardData;
+use crate::model::portfolio::card::CardData;
 use crate::ui::icons::Icon;
 use crate::ui::kit;
 use crate::ui::portfolio_charts::{Slice, arc, empty_message, slice_at, slices};

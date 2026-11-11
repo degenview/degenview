@@ -35,7 +35,7 @@ time, 43000518159 circles, 43000791611 spiral, 43000518157 speed arcs, 430005181
 | Fib speed resistance arcs | 2 (**doc**) | arcs about P2 at ratio × the trend line's length, the half facing P1 unless "full circles" (**doc**) | same | same |
 | Fib wedge | 3 (**inferred**: the help page says two points, but a sector needs a third): apex, radius arm, angle arm | arcs about the apex at ratio × the first arm, between the two arms; both arms drawn | same | same |
 | Pitchfan | 3: P1 apex, P2, P3 (**doc**) | rays from P1 through the median's midpoint ± ratio × half the P2-P3 span; median is the ray through the midpoint | same | same |
-| Gann box | 2 (**doc**) | rectangle P1-P2 divided at price levels and time levels; optional corner angles | `Geometry::Gann{GannBox}` | `model::gann`, `gann_tests` |
+| Gann box | 2 (**doc**) | rectangle P1-P2 divided at price levels and time levels; optional corner angles | `Geometry::Gann{GannBox}` | `model::fib::gann`, `gann_tests` |
 | Gann square fixed | 2 (**doc**) | levels, fan lines and arcs in a square the user sees as square when placing (**inferred**) | same | same |
 | Gann square | 2 (**doc**) | the same in a free rectangle; optional price-per-bar override and a ranges readout (**doc**) | same | same |
 | Gann fan | 2: origin, a point on the 1×1 line (**doc**) | rays from P1 at ratio × the slope of P1-P2 in screen space; 1×1 passes P2 | same | same |
@@ -124,7 +124,7 @@ angles) it is built there, from the anchors' screen positions.
 
 ### Gann scaling
 
-**A Gann angle is a ratio of price to time, never a screen angle** (`model/gann.rs`). The 1×1 passes
+**A Gann angle is a ratio of price to time, never a screen angle** (`model/fib/gann.rs`). The 1×1 passes
 through the second anchor, whatever the chart's scales are; 2×1 climbs twice as fast and 1×2 half as
 fast, on the screen positions of the two anchors, so a zoom or a different price scale moves the
 anchors and the rays follow. 8×1 is eight units of price to one of time. The ratio a custom angle is

@@ -35,7 +35,7 @@
   look like ids, a code, never an argument value or `McpError::message()`. The log is written by
   `McpHost::tick`, not from request threads; the Settings page and the activity sheet read
   `McpHost::activity()`, never SQLite. The sheet's filtering and paging live in
-  `model::mcp_activity` (pure, tested); a new outcome or row kind needs a `McpActivityStatus`
+  `model::mcp::activity` (pure, tested); a new outcome or row kind needs a `McpActivityStatus`
   there so it can be filtered. `mcp_audit` is local-only in `sync::policy`.
 - A new mutating `McpCommand` must be classified in `mcp::confirm::gate` (an exhaustive match: it
   fails to compile until it is). If it asks, also describe it in

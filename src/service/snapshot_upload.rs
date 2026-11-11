@@ -5,7 +5,9 @@
 //! redirects (so the address the user agreed to is the only one the image is sent to; trying
 //! again is the caller's choice), a time limit, and what the common HTTP statuses mean.
 
-use crate::model::snapshot::{MAX_RESPONSE_BYTES, MAX_UPLOAD_BYTES, SharedSnapshot, UploadError};
+use crate::model::chart::snapshot::{
+    MAX_RESPONSE_BYTES, MAX_UPLOAD_BYTES, SharedSnapshot, UploadError,
+};
 use crate::service::snapshot_providers::{Destination, Purpose, Request, Secrets};
 use std::time::Duration;
 
@@ -163,7 +165,7 @@ pub fn test(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::snapshot::{FieldValues, SnapshotHost};
+    use crate::model::chart::snapshot::{FieldValues, SnapshotHost};
     use crate::service::snapshot_providers::imgbb::ImgBb;
     use crate::service::snapshot_providers::self_hosted::SELF_HOSTED_PROVIDER;
     use std::io::{Read, Write};

@@ -28,13 +28,13 @@ before).
 | Entry | Does | Backend it reuses |
 | --- | --- | --- |
 | Copy price *p* | Copies `p` as a bare number to the system clipboard. | `PriceFormat::plain` |
-| Paste ⌘V / Ctrl+V | Pastes copied drawings at the click. | `model::chart_clipboard`, `apply_drawing_commands` |
+| Paste ⌘V / Ctrl+V | Pastes copied drawings at the click. | `model::chart::clipboard`, `apply_drawing_commands` |
 | Add alert on *SYMBOL* at *p*… | Opens the price-alert editor with the level and direction filled in. | `PriceAlertEditorState`, `SavePriceAlert` |
 | Sell limit / Buy stop / Buy limit / Sell stop @ *p* | Opens the order ticket on that side and type. | `PaperPanel::open_pending_ticket`, `TicketDraft::pending` |
 | Add order on *SYMBOL* at *p*… | Opens the full ticket with the price and the type the price suggests. | `PaperPanel::open_ticket` |
 | Lock / Unlock vertical cursor line by time | Pins a vertical line to the clicked time. | `ChartCard::time_lock` |
-| Table view | Docks the bars and indicator values as a table under the charts. | `model::chart_table`, `ui::chart_table_view` |
-| Object tree | Docks the symbol, compared symbols, indicators, scripts and drawings as a list on the right. | `model::object_tree`, `ui::object_tree` |
+| Table view | Docks the bars and indicator values as a table under the charts. | `model::chart::table`, `ui::chart_table_view` |
+| Object tree | Docks the symbol, compared symbols, indicators, scripts and drawings as a list on the right. | `model::chart::object_tree`, `ui::object_tree` |
 | Session statistics | Docks a panel on the right that counts how often something happened on the chart's days, with N and a 95% interval. See [Session statistics](session-stats.md). | `model::session_stats`, `ui::session_stats_view` |
 | Chart template ▸ | Applies a preset or saved appearance template, saves the current look, manages templates, resets. | `ChartTemplateStore`, `ChartCard::apply_template`, the settings sheet's dialogs |
 | Remove *N* drawings | Asks, then removes the chart's drawings as one undo step. | `confirm_drawings_removal`, `apply_drawing_commands` |

@@ -1,10 +1,10 @@
 //! The paper account's numbers in the words every venue's strip uses: the account strip's hero,
 //! its cells, and the metric strings the paper panel shares. Pure: plain values in, text out.
 
-use crate::model::paper::{PaperAccountMetrics, PaperCurrency};
-use crate::model::paper_format::{
+use crate::model::paper::format::{
     self as fmt, BufferLevel, PnlTone, margin_buffer_level, pnl_tone,
 };
+use crate::model::paper::{PaperAccountMetrics, PaperCurrency};
 use crate::trading::model::{AccountStats, Hero, HeroNote, StatCell, StatTone, Trend};
 
 /// "Unrealized +$12.00 (+1.20%) open" and the other account figures, as plain strings.

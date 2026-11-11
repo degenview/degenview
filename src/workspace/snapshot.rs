@@ -11,7 +11,7 @@
 use super::content::snapshot_images;
 use super::*;
 use crate::host::snapshot_host::{Hosting, SnapshotHost, TURN_ON_A_HOST};
-use crate::model::snapshot::{self, SnapshotAction, SnapshotDimensions, SnapshotRequest};
+use crate::model::chart::snapshot::{self, SnapshotAction, SnapshotDimensions, SnapshotRequest};
 use crate::service::snapshot_job::{self, Outcome, Retry, SystemBackend};
 use crate::service::snapshot_providers::Destination;
 use crate::service::snapshot_raster;
@@ -85,7 +85,7 @@ impl ChartWorkspace {
         }
     }
 
-    fn snapshot_prefs(&self) -> crate::model::snapshot::SnapshotPrefs {
+    fn snapshot_prefs(&self) -> crate::model::chart::snapshot::SnapshotPrefs {
         self.snapshots
             .as_ref()
             .map(SnapshotHost::prefs)
@@ -495,8 +495,8 @@ fn system_backend(destination: Option<Destination>) -> Arc<dyn snapshot_job::Bac
 mod tests {
     use super::*;
     use crate::model::Kline;
-    use crate::model::snapshot::SELF_HOSTED;
-    use crate::model::snapshot::{SharedSnapshot, UploadError};
+    use crate::model::chart::snapshot::SELF_HOSTED;
+    use crate::model::chart::snapshot::{SharedSnapshot, UploadError};
     use crate::service::keychain_api_keys::MemoryBackend;
     use crate::service::keychain_snapshot_secrets::SnapshotSecrets;
     use crate::service::snapshot_export::ExportError;
@@ -669,7 +669,7 @@ mod tests {
     fn the_scale_chosen_in_settings_is_the_scale_drawn() {
         let mut rig = rig();
         rig.host
-            .set_scale(None, crate::model::snapshot::SnapshotScale::X1)
+            .set_scale(None, crate::model::chart::snapshot::SnapshotScale::X1)
             .unwrap();
         rig.workspace
             .begin_snapshot(&rig.ctx, rig.chart_id, SnapshotAction::CopyImage);
@@ -1152,7 +1152,7 @@ mod tests {
 
     #[test]
     fn a_portfolio_card_is_not_a_chart_to_photograph() {
-        use crate::model::portfolio_card::{CardKind, PortfolioCard};
+        use crate::model::portfolio::card::{CardKind, PortfolioCard};
         let mut rig = rig();
         let card = rig
             .workspace
@@ -1278,7 +1278,7 @@ mod tests {
 
     #[test]
     fn a_png_for_an_agent_is_a_real_picture_made_without_any_effect_on_the_window() {
-        use crate::model::snapshot::SnapshotScale;
+        use crate::model::chart::snapshot::SnapshotScale;
         let rig = rig();
         let png_of = |scale| {
             let (receiver, dimensions) = rig

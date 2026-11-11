@@ -81,7 +81,7 @@ moves. Nothing derived is stored: a drawing holds its anchors and its style.
   starts and ends; level `r` is the median shifted by `r` half-bases on both sides, so level 1
   passes through P2 and P3 (P1 and P2 for Inside). The variant is part of the geometry, so the
   dialog switches it without redrawing and the pivots are kept.
-- **Regression** (`model::regression`): ordinary least squares of the chosen source over the bars
+- **Regression** (`model::drawings::regression`): ordinary least squares of the chosen source over the bars
   the two anchor times fall on, both ends included, with the bar position as x (so gaps follow
   what the chart shows). It reads the bars the chart draws, so a constructed chart type and a
   replay cut work and nothing after the replay cursor is read. The fit is cached in the cached
@@ -229,12 +229,12 @@ a drawing; off returns to the crosshair. Magnet, keep drawing and the grouped ti
 
 ## Styles, text, templates
 
-`DrawingStyle` (`model/drawing_style.rs`) holds stroke, fill, text style, extension, middle line,
+`DrawingStyle` (`model/drawings/style.rs`) holds stroke, fill, text style, extension, middle line,
 heads, middle point, price labels and statistics, every field with a serde default and
 `sanitized()` on every write. `Tool::spec().caps` lists what a tool offers; the toolbar and the
 dialog read it, so a control a tool cannot honour is never shown.
 
-Templates (`model/drawing_template.rs`, `store/drawing_template.rs`) save a tool's style, never its
+Templates (`model/drawings/template.rs`, `store/drawing_template.rs`) save a tool's style, never its
 coordinates, text or visibility, and apply to the same tool only. A tool's default style is kept in
 the `drawing.defaults` setting. They are separate from chart appearance templates and share only
 the naming rules. Like the chart templates, the store re-reads the table before every write and

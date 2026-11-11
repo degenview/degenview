@@ -10,12 +10,12 @@
 #![allow(dead_code)]
 
 use super::chart_card::PriceScale;
-use crate::model::chart_context::Target;
+use crate::model::chart::context::Target;
+use crate::model::paper::format::{self as fmt, pnl_tone};
+use crate::model::paper::ticket::rounded_to_tick;
 use crate::model::paper::{
     PaperCurrency, PaperOrder, PaperOrderRole, PaperOrderSide, PaperOrderType, PaperPosition,
 };
-use crate::model::paper_format::{self as fmt, pnl_tone};
-use crate::model::paper_ticket::rounded_to_tick;
 use crate::ui::accessibility;
 use crate::ui::paper_tables::{pnl_color, position_tint, side_tint};
 use crate::ui::theme;
