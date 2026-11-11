@@ -33,6 +33,21 @@ struct Running {
     timeframe: String,
     /// Where the image went: only a hosted action has one.
     destination: Option<Destination>,
+    /// When the work began (or began again, for a retry): a slow upload says so.
+    started: Instant,
+}
+
+/// After this long an upload says it is still going, so a slow connection is not taken for a
+/// hang.
+const SLOW_AFTER: Duration = Duration::from_secs(8);
+
+/// What the progress notice says of an upload to `label` that began `elapsed` ago.
+fn progress_text(label: &str, elapsed: Duration) -> String {
+    if elapsed >= SLOW_AFTER {
+        format!("Still uploading to {label}… a slow connection can take a while")
+    } else {
+        format!("Uploading to {label}…")
+    }
 }
 
 /// A hosted action that waits for the user to agree to the upload.
@@ -254,12 +269,17 @@ impl ChartWorkspace {
             let _ = sender.send(outcome);
             worker_ctx.request_repaint();
         });
+        if destination.is_some() {
+            // The last result ("Link copied") would sit over the progress notice, at the same place.
+            self.context.notice = None;
+        }
         self.snapshot.running = Some(Running {
             action,
             receiver,
             title,
             timeframe,
             destination,
+            started: Instant::now(),
         });
     }
 
@@ -275,12 +295,14 @@ impl ChartWorkspace {
             let _ = sender.send(snapshot_job::retry(retry, &*backend));
             worker_ctx.request_repaint();
         });
+        self.context.notice = None;
         self.snapshot.running = Some(Running {
             action,
             receiver,
             title: waiting.title,
             timeframe: waiting.timeframe,
             destination: Some(waiting.destination),
+            started: Instant::now(),
         });
     }
 
@@ -356,17 +378,25 @@ impl ChartWorkspace {
         }
     }
 
+    /// What the progress notice says while an image is being uploaded; nothing for the rest (a
+    /// save or a copy has no network to wait for).
+    fn progress_notice(&self) -> Option<String> {
+        let running = self
+            .snapshot
+            .running
+            .as_ref()
+            .filter(|running| running.action.is_hosted())?;
+        let label = running
+            .destination
+            .as_ref()
+            .map_or_else(|| "the snapshot host".to_owned(), Destination::label);
+        Some(progress_text(&label, running.started.elapsed()))
+    }
+
     /// The upload's progress, and the questions it may stop to ask.
     pub(super) fn show_snapshot_sheets(&mut self, ctx: &Context) {
-        if let Some(running) = &self.snapshot.running
-            && running.action.is_hosted()
-        {
-            ui::chart_notice::show(
-                ctx,
-                Id::new(("snapshot-progress", self.id)),
-                "Uploading snapshot…",
-                false,
-            );
+        if let Some(text) = self.progress_notice() {
+            ui::chart_notice::show_progress(ctx, Id::new(("snapshot-progress", self.id)), &text);
         }
         if let Some(waiting) = &self.snapshot.consent {
             let message = format!(
@@ -669,6 +699,123 @@ mod tests {
             assert!(error && text.contains("Settings"), "{text}");
         }
         assert_eq!(*rig.fake.uploads.lock().unwrap(), 0);
+    }
+
+    #[test]
+    fn a_slow_upload_says_it_is_still_going() {
+        assert_eq!(
+            progress_text("ImgBB", Duration::from_secs(1)),
+            "Uploading to ImgBB…"
+        );
+        assert_eq!(
+            progress_text("ImgBB", SLOW_AFTER - Duration::from_millis(1)),
+            "Uploading to ImgBB…"
+        );
+        let slow = progress_text("snap.example.com", SLOW_AFTER);
+        assert!(
+            slow.starts_with("Still uploading to snap.example.com"),
+            "{slow}"
+        );
+    }
+
+    #[test]
+    fn an_upload_in_progress_says_where_the_image_is_going_until_it_is_done() {
+        let mut rig = rig();
+        rig.share_to("https://snap.example.com/up", true);
+        assert_eq!(rig.workspace.progress_notice(), None, "nothing yet");
+        rig.fake
+            .answers
+            .lock()
+            .unwrap()
+            .push(link("https://s.example/a.png"));
+        rig.workspace
+            .begin_snapshot(&rig.ctx, rig.chart_id, SnapshotAction::CopyLink);
+        assert_eq!(
+            rig.workspace.progress_notice().as_deref(),
+            Some("Uploading to snap.example.com…")
+        );
+        // Long enough, and it says it is still going; the clock is the upload's own.
+        let running = rig.workspace.snapshot.running.as_mut().expect("running");
+        running.started = Instant::now()
+            .checked_sub(SLOW_AFTER + Duration::from_secs(1))
+            .expect("a clock that has run for nine seconds");
+        assert!(
+            rig.workspace
+                .progress_notice()
+                .is_some_and(|text| text.starts_with("Still uploading to snap.example.com"))
+        );
+        rig.finish();
+        assert_eq!(
+            rig.workspace.progress_notice(),
+            None,
+            "gone with the upload"
+        );
+    }
+
+    #[test]
+    fn imgbb_is_named_in_the_progress_notice() {
+        let mut rig = rig();
+        rig.share_to_imgbb(true);
+        rig.fake
+            .answers
+            .lock()
+            .unwrap()
+            .push(link("https://i.ibb.co/a/b.png"));
+        rig.workspace
+            .begin_snapshot(&rig.ctx, rig.chart_id, SnapshotAction::OpenInTab);
+        assert_eq!(
+            rig.workspace.progress_notice().as_deref(),
+            Some("Uploading to ImgBB…")
+        );
+        rig.finish();
+    }
+
+    #[test]
+    fn saving_and_copying_the_image_show_no_upload_progress() {
+        let mut rig = rig();
+        rig.fake
+            .destination
+            .lock()
+            .unwrap()
+            .push(Ok(Some(PathBuf::from("/tmp/btc.png"))));
+        for action in [SnapshotAction::Download, SnapshotAction::CopyImage] {
+            rig.workspace.begin_snapshot(&rig.ctx, rig.chart_id, action);
+            assert!(rig.workspace.snapshot_busy());
+            assert_eq!(rig.workspace.progress_notice(), None, "{action:?}");
+            rig.finish();
+        }
+    }
+
+    #[test]
+    fn an_old_result_does_not_sit_over_the_progress_of_a_new_upload() {
+        let mut rig = rig();
+        rig.share_to("https://snap.example.com/up", true);
+        rig.workspace.say("Link copied", false);
+        rig.fake
+            .answers
+            .lock()
+            .unwrap()
+            .push(link("https://s.example/a.png"));
+        rig.workspace
+            .begin_snapshot(&rig.ctx, rig.chart_id, SnapshotAction::CopyLink);
+        assert_eq!(
+            rig.notice(),
+            None,
+            "the old notice made way for the progress"
+        );
+        rig.finish();
+        assert_eq!(
+            rig.notice(),
+            Some(("Link copied".into(), false)),
+            "and the result says its own"
+        );
+
+        // A save or a copy keeps what was said: it has no progress to show.
+        rig.workspace.say("Something else", false);
+        rig.workspace
+            .begin_snapshot(&rig.ctx, rig.chart_id, SnapshotAction::CopyImage);
+        assert_eq!(rig.notice(), Some(("Something else".into(), false)));
+        rig.finish();
     }
 
     #[test]
