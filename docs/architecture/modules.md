@@ -60,6 +60,9 @@ child sees the root's private fields, and anything another child calls is `pub(s
 | `store/` | Schema/helpers plus watchlist, layout/template, portfolio, paper, alert, Pine, and webhook persistence |
 | `ui/` | Shared chrome plus chart, drawing, watchlist, alert, replay, paper, portfolio, Pine, settings, and webhook renderers |
 | `mcp/` | Loopback HTTP transport, auth, shared permission state, app bridge, tools, and wire types |
+| `sync/` | iCloud Sync: policy (what syncs), records, merge, outbox, id tagging and the CloudKit transport (bridge in `native/swift`); no UI |
+| `trading/` | Order entry for every venue (paper account and connected brokers) behind `TradingBackend`: drafts, previews, confirmation, valuation; no drawing code |
+| `bin/` | `degenview-alert-agent`, the login-item alert agent |
 
 ## `model/` layout
 

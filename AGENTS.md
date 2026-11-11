@@ -11,7 +11,7 @@ Always read [Core guidance](docs/agent-guides/core.md), then every guide whose s
 | Providers, symbols, timeframes, prediction markets, caches, icons, live data, or watchlists | [Market data](docs/agent-guides/market-data.md) |
 | Live trading, brokers, broker credentials, or Settings ▸ Brokers | [Live trading](docs/broker-trading.md) |
 | The symbol picker (changing a chart's market), symbol search ranking, or how markets are named | [Symbol picker](docs/symbol-picker.md) |
-| A new window, sheet, panel, card, sidebar or icon, or restyling one | [Flat style](docs/agent-guides/ui-style.md) |
+| Any UI: a new or restyled window, sheet, panel, card, sidebar, icon, menu, button, link or dialog | [UI style](docs/agent-guides/ui-style.md) |
 | Chart rendering, price labels, chart types, canvas, templates, drawings, portfolio cards, or snapshots | [Charts](docs/agent-guides/charts.md) |
 | Markets compared on a chart (Compare, overlays), their data, scales, legend or the picker's compare mode | [Chart overlays](docs/chart-overlays.md) |
 | The Portfolio tab: Overview, Holdings, Transactions, Statistics, their empty states, or portfolio revaluation | [Portfolio page](docs/portfolio-page.md) |
@@ -36,7 +36,8 @@ Always read [Core guidance](docs/agent-guides/core.md), then every guide whose s
 | MCP server, tools, permissions, or clients | [MCP](docs/agent-guides/mcp.md) |
 | Releases, signing, packaging, self-update, or update UI | [Releases and updates](docs/agent-guides/releases-updates.md) |
 | The Flatpak, Linux packaging, or the sandbox | [Flatpak](docs/flatpak.md) |
-| iCloud Sync, the sync outbox, CloudKit, or anything that persists user data | [iCloud Sync](docs/icloud-sync.md) |
+| Persisting user data: SQLite tables, `setting` keys, saved state, per-Mac IDs | [Storage and sync](docs/agent-guides/storage.md) |
+| iCloud Sync, the sync outbox, or CloudKit | [iCloud Sync](docs/icloud-sync.md) |
 
 For cross-cutting work, load all matching guides. They hold implementation constraints, not
 background; never skip one because the code looks self-explanatory.
@@ -45,7 +46,7 @@ background; never skip one because the code looks self-explanatory.
 
 Links are always gray (`theme::text_secondary()`, underlined); the blue accent is not used for new
 UI: no links, buttons or decoration. Details and existing exceptions:
-[Core guidance](docs/agent-guides/core.md).
+[UI style](docs/agent-guides/ui-style.md).
 
 ## Flat style
 
@@ -53,13 +54,13 @@ Flat surfaces: faint fill and hairline; no gradients, lit edges or shadows (exce
 dialogs). Icons bare, no tile, disc or circle. Colour only for state and data. Settings pages have no
 bottom bar or Save button: inputs save as entered. Secondary windows keep the platform title bar and
 window controls. Reference: the Settings window; rules and helpers in
-[Flat style](docs/agent-guides/ui-style.md).
+[UI style](docs/agent-guides/ui-style.md).
 
 ## Menus fit their rows
 
 A pull-down is exactly as wide as its longest row. Never guess a width (`set_min_width(180.0)`): use
 `kit::fitted_menu` (or `kit::menu_fit`), and look at the opened menu in a picture before shipping.
-Details: [Core guidance](docs/agent-guides/core.md).
+Details: [UI style](docs/agent-guides/ui-style.md).
 
 ## Supply chain
 
