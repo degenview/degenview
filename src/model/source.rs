@@ -119,6 +119,24 @@ impl DataSource {
     }
 }
 
+impl DataSource {
+    /// The quote asset of a pair the exchange itself spells out: `EUR` of Coinbase's `ADA-EUR`, of
+    /// Binance's `ADAEUR`. None for anything that does not name one (a stock, a prediction market,
+    /// an aggregator's coin id): a pair's parts are never guessed.
+    pub fn quote_asset(self, symbol: &str) -> Option<String> {
+        let upper = symbol.trim().to_uppercase();
+        match self {
+            Self::Binance => split_binance_pair(&upper).map(|(_, quote)| quote.to_owned()),
+            Self::Coinbase => {
+                let (base, quote) = upper.split_once('-')?;
+                (!base.is_empty() && !quote.is_empty() && !quote.contains(['-', '/', ' ']))
+                    .then(|| quote.to_owned())
+            }
+            _ => None,
+        }
+    }
+}
+
 /// Quote assets Binance pairs end in, longest first so BTCFDUSD is BTC/FDUSD instead of
 /// BTCFD/USD. Matches Swift's MarketSymbol quote list.
 const BINANCE_QUOTES: [&str; 16] = [
@@ -139,6 +157,17 @@ pub fn split_binance_pair(symbol: &str) -> Option<(&str, &'static str)> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_pair_the_exchange_spells_out_has_a_quote_and_nothing_else_does() {
+        use super::DataSource::*;
+        assert_eq!(Coinbase.quote_asset("ADA-EUR").as_deref(), Some("EUR"));
+        assert_eq!(Binance.quote_asset("adaeur").as_deref(), Some("EUR"));
+        assert_eq!(Binance.quote_asset("SOL"), None);
+        assert_eq!(Coinbase.quote_asset("BTC"), None);
+        assert_eq!(Alpaca.quote_asset("BRK-B"), None);
+        assert_eq!(Kalshi.quote_asset("KXFED-23DEC"), None);
+    }
+
     use super::*;
 
     #[test]

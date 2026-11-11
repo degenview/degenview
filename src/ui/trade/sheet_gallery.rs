@@ -585,3 +585,31 @@ fn the_sheet_in_other_shapes_light_and_dark() {
         }
     }
 }
+
+/// A euro market reads in euros wherever the sheet names its unit, not in the account's dollars.
+#[test]
+fn a_euro_market_is_counted_in_euros() {
+    use crate::trading::model::MarketAccess;
+    let _restore = theme::RestoreDefaultTheme;
+    let rig = rig();
+    rig.enable_paper();
+    *rig.symbol.borrow_mut() = "ADA-EUR".to_owned();
+    let venue = Some(TradingVenue::Paper);
+    let backend = rig.hub.backend(TradingVenue::Paper).expect("paper backend");
+    let market = MarketRef {
+        source: "coinbase".to_owned(),
+        symbol: "ADA-EUR".to_owned(),
+    };
+    let MarketAccess::Ready(rules) = backend.market(&market) else {
+        panic!("the market is offered");
+    };
+    assert_eq!(
+        (rules.base_asset.as_str(), rules.quote_asset.as_str()),
+        ("ADA", "EUR")
+    );
+    let mut screen = Screen::new(Vec2::new(340.0, 900.0));
+    let mut state = SheetState::default();
+    limit_order(&mut state, "100", "0.1567");
+    let output = rig.frames(&mut screen, &mut state, venue, 3);
+    screen.save("sheet-euro-market", output);
+}

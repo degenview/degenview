@@ -327,7 +327,12 @@ impl TradingBackend for PaperBackend {
         MarketAccess::Ready(Box::new(MarketRules {
             name: instrument.display_name.clone(),
             base_asset: crate::model::paper_ticket::base_symbol(&instrument),
-            quote_asset: code(instrument.quote_currency).to_owned(),
+            // What the chart's pair says, so a euro market reads in euros; the engine itself
+            // still settles every chart in the account's currency.
+            quote_asset: instrument
+                .source
+                .quote_asset(&instrument.symbol)
+                .unwrap_or_else(|| code(instrument.quote_currency).to_owned()),
             price_increment: dec(instrument.tick_size),
             size_increment: dec(instrument.quantity_increment),
             min_size: dec(instrument.minimum_quantity),

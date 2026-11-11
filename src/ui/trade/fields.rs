@@ -24,6 +24,13 @@ pub enum Edit {
     Stepped,
 }
 
+/// A side's colour toned down for a large solid fill, where the chart's full-strength green and
+/// red are too loud.
+pub fn muted(tint: Color32) -> Color32 {
+    let scale = |channel: u8| (f32::from(channel) * 0.82).round() as u8;
+    Color32::from_rgb(scale(tint.r()), scale(tint.g()), scale(tint.b()))
+}
+
 /// The label colour on a solid fill of `tint`: dark on a light green, white on red.
 pub fn on_tint(tint: Color32) -> Color32 {
     let luminance =
@@ -49,13 +56,14 @@ pub struct Hero<'a> {
 
 /// Logo, symbol and pair on the left; last price and its move on the right.
 pub fn market_hero(ui: &mut Ui, hero: &Hero) {
-    const HEIGHT: f32 = 46.0;
+    const HEIGHT: f32 = 38.0;
+    const LOGO: f32 = 32.0;
     let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), HEIGHT), Sense::hover());
     let mut left = rect.left();
     if let Some(source) = hero.source {
-        let icon = Rect::from_min_size(pos2(left, rect.center().y - 22.0), Vec2::splat(44.0));
+        let icon = Rect::from_min_size(pos2(left, rect.center().y - LOGO / 2.0), Vec2::splat(LOGO));
         kit::chart_icon(ui, icon, hero.symbol, source, false);
-        left += 54.0;
+        left += LOGO + 10.0;
     }
     // The right column first: the symbol gives way to it, not the other way round.
     let mut right_width = 0.0;
@@ -64,7 +72,7 @@ pub fn market_hero(ui: &mut Ui, hero: &Hero) {
         let price = kit::galley(
             ui,
             price,
-            22.0,
+            18.0,
             kit::SEMIBOLD,
             theme::text_primary(),
             f32::INFINITY,
@@ -72,7 +80,7 @@ pub fn market_hero(ui: &mut Ui, hero: &Hero) {
         let change = hero.change.as_ref().map(|(text, up)| {
             let tint = if *up { theme::UP } else { theme::DOWN };
             (
-                kit::galley(ui, text, 13.0, kit::MEDIUM, tint, f32::INFINITY),
+                kit::galley(ui, text, 12.0, kit::MEDIUM, tint, f32::INFINITY),
                 tint,
             )
         });
@@ -98,7 +106,7 @@ pub fn market_hero(ui: &mut Ui, hero: &Hero) {
     let symbol = kit::galley(
         ui,
         hero.symbol,
-        20.0,
+        16.0,
         kit::SEMIBOLD,
         theme::text_primary(),
         room,
@@ -106,7 +114,7 @@ pub fn market_hero(ui: &mut Ui, hero: &Hero) {
     let subtitle = hero
         .subtitle
         .as_ref()
-        .map(|text| kit::galley(ui, text, 13.0, kit::REGULAR, theme::text_secondary(), room));
+        .map(|text| kit::galley(ui, text, 12.0, kit::REGULAR, theme::text_secondary(), room));
     let block = symbol.size().y + subtitle.as_ref().map_or(0.0, |g| g.size().y + 1.0);
     let mut y = rect.center().y - block / 2.0;
     let symbol_height = symbol.size().y;
@@ -335,7 +343,8 @@ pub fn side_tabs(ui: &mut Ui, side: &mut Side) {
         let response = crate::ui::accessibility::label(response, label);
         let chosen = *side == value;
         if chosen {
-            ui.painter().rect_filled(tab, FIELD_RADIUS + 1.0, tint);
+            ui.painter()
+                .rect_filled(tab, FIELD_RADIUS + 1.0, muted(tint));
         } else if response.hovered() {
             ui.painter()
                 .rect_filled(tab.shrink(2.0), FIELD_RADIUS, kit::primary(0.05));
@@ -372,7 +381,7 @@ pub fn class_tiles(
     class: &mut OrderClass,
     tint: Color32,
 ) {
-    const HEIGHT: f32 = 56.0;
+    const HEIGHT: f32 = 46.0;
     const GAP: f32 = 6.0;
     if classes.is_empty() {
         return;
@@ -403,7 +412,7 @@ pub fn class_tiles(
             ui.painter().rect_stroke(
                 tile,
                 FIELD_RADIUS,
-                egui::Stroke::new(1.5, tint),
+                egui::Stroke::new(1.5, muted(tint)),
                 egui::StrokeKind::Inside,
             );
         }
@@ -414,13 +423,13 @@ pub fn class_tiles(
         };
         icons::paint(
             ui.painter(),
-            Rect::from_center_size(pos2(tile.center().x, tile.top() + 19.0), Vec2::splat(17.0)),
+            Rect::from_center_size(pos2(tile.center().x, tile.top() + 15.0), Vec2::splat(16.0)),
             class_icon(*value),
             color,
         );
         let galley = kit::galley(ui, label, 13.0, kit::MEDIUM, color, tile.width() - 6.0);
         ui.painter().galley(
-            pos2(tile.center().x - galley.size().x / 2.0, tile.top() + 33.0),
+            pos2(tile.center().x - galley.size().x / 2.0, tile.top() + 26.0),
             galley,
             color,
         );

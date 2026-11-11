@@ -673,7 +673,7 @@ fn form(
     let response = kit::cta_button(
         ui,
         &label,
-        tint,
+        fields::muted(tint),
         fields::on_tint(tint),
         can_send,
         sending,
