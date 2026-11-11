@@ -410,6 +410,9 @@ fn display_keep_zeros(value: Decimal) -> String {
 /// market a moment ago; after this it is asked for again.
 pub const PREVIEW_FRESH: Duration = Duration::from_secs(60);
 
+/// How long typing must pause before the broker is asked to preview what is typed.
+pub const PREVIEW_DEBOUNCE: Duration = Duration::from_millis(450);
+
 /// What the broker has said about the order as it stands, from the ticket's or the edit sheet's
 /// point of view.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -565,6 +568,15 @@ pub fn edit_blocker(
         Some(caps) if caps.native_edit => None,
         Some(_) => Some("This broker does not support editing this market's orders."),
         None => Some("The market's rules have not been read yet."),
+    }
+}
+
+/// An order's size as the lists show it: the base amount, or the amount to spend.
+pub fn size_text(order: &LiveOrder) -> String {
+    match order.size {
+        Some(OrderSize::Base(size)) => display(size),
+        Some(OrderSize::Quote(amount)) => format!("{} (spend)", display(amount)),
+        None => "—".to_owned(),
     }
 }
 
