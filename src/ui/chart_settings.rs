@@ -6,8 +6,8 @@ use super::chart_settings_compare::{self, CompareInput};
 use super::chart_templates::{self, TemplateAction, TemplateState};
 use super::icons::{self, Icon};
 use super::kit::{self, TabItem};
-use super::script_catalog;
-use super::settings_card;
+use super::pine::script_catalog;
+use super::settings::card;
 use super::sheet;
 use super::theme;
 use crate::model::chart::price_format::MAX_DECIMALS;
@@ -360,7 +360,7 @@ const PRICE_SAMPLES: [(&str, f64); 3] = [
 fn price_axis(ui: &mut Ui, card: &mut ChartCard, mode: PriceScaleMode) -> Option<PriceScaleMode> {
     let appearance = card.appearance();
     let (decimals, small) = (appearance.axis_decimals, appearance.axis_small_prices);
-    settings_card::section_title(
+    card::section_title(
         ui,
         "Price axis",
         Some("How prices are written on the axis, the crosshair and the readouts."),
@@ -368,7 +368,7 @@ fn price_axis(ui: &mut Ui, card: &mut ChartCard, mode: PriceScaleMode) -> Option
     // The section title tightens the spacing for its own subtitle; the cards keep the page's.
     ui.spacing_mut().item_spacing.y = 8.0;
     let mut picked = None;
-    settings_card::card(
+    card::card(
         ui,
         Icon::PriceScale,
         "Scale",
@@ -387,7 +387,7 @@ fn price_axis(ui: &mut Ui, card: &mut ChartCard, mode: PriceScaleMode) -> Option
             }
         },
     );
-    settings_card::card(
+    card::card(
         ui,
         Icon::Hash,
         "Decimal places",
@@ -404,7 +404,7 @@ fn price_axis(ui: &mut Ui, card: &mut ChartCard, mode: PriceScaleMode) -> Option
             }
         },
     );
-    settings_card::card_reserving(
+    card::card_reserving(
         ui,
         Icon::Sliders,
         "Small prices",
@@ -512,16 +512,16 @@ fn price_preview(ui: &mut Ui, format: PriceFormat) {
 /// The colours of a market drawn as a line (prediction markets, CoinMarketCap): where it rises
 /// and where it falls, with a preview and "Reset Colors".
 fn line_colors(ui: &mut Ui, c: &mut ChartSettingsContext, templates: &mut TemplateState) {
-    settings_card::section_title(ui, "Colors", Some("Used for rising and falling prices."));
+    card::section_title(ui, "Colors", Some("Used for rising and falling prices."));
     ui.spacing_mut().item_spacing.y = 8.0;
-    settings_card::card(
+    card::card(
         ui,
         Icon::ArrowUpRight,
         "Line up",
         Some("Stretches where the price rises."),
         |ui| color_well(ui, "bullish", &mut c.card.appearance_mut().bullish),
     );
-    settings_card::card(
+    card::card(
         ui,
         Icon::ArrowDownRight,
         "Line down",
@@ -644,7 +644,7 @@ fn paint_preview(ui: &Ui, rect: Rect, up: Color32, down: Color32) {
 // MARK: Indicators
 
 fn indicators_page(ui: &mut Ui, c: &mut ChartSettingsContext) {
-    settings_card::section_title(
+    card::section_title(
         ui,
         "Indicators",
         Some("Add context to the chart without changing its underlying data."),
@@ -663,10 +663,10 @@ fn indicators_page(ui: &mut Ui, c: &mut ChartSettingsContext) {
                 source.display_name()
             )
         };
-        settings_card::card(ui, Icon::BarChart, "Volume Bars", Some(&hint), |ui| {
+        card::card(ui, Icon::BarChart, "Volume Bars", Some(&hint), |ui| {
             // Left visible rather than hidden: a greyed-out switch with a reason reads better
             // than a setting that silently does nothing.
-            settings_card::switch_enabled(ui, &mut config.show_volume, source.provides_volume());
+            card::switch_enabled(ui, &mut config.show_volume, source.provides_volume());
         });
     }
     // RSI has no value for its first `period` candles, so a short range draws a stub of a
@@ -681,22 +681,22 @@ fn indicators_page(ui: &mut Ui, c: &mut ChartSettingsContext) {
             RSI_OVERSOLD as i64, RSI_OVERBOUGHT as i64
         )
     };
-    settings_card::card(
+    card::card(
         ui,
         Icon::Waveform,
         &format!("RSI ({RSI_PERIOD})"),
         Some(&rsi_hint),
         |ui| {
-            settings_card::switch(ui, &mut config.show_rsi);
+            card::switch(ui, &mut config.show_rsi);
         },
     );
-    settings_card::card(
+    card::card(
         ui,
         Icon::ChartLine,
         "EMA",
         Some("Exponential moving average over the closes, drawn on the price scale."),
         |ui| {
-            settings_card::switch(ui, &mut config.show_ema);
+            card::switch(ui, &mut config.show_ema);
             ui.add_space(4.0);
             let labels: Vec<String> = EMA_PERIODS.iter().map(usize::to_string).collect();
             let selected = EMA_PERIODS
@@ -708,7 +708,7 @@ fn indicators_page(ui: &mut Ui, c: &mut ChartSettingsContext) {
             }
         },
     );
-    settings_card::card(
+    card::card(
         ui,
         Icon::Bands,
         "Bollinger Bands",
@@ -717,10 +717,10 @@ fn indicators_page(ui: &mut Ui, c: &mut ChartSettingsContext) {
             BOLLINGER_MULTIPLIER as i64
         )),
         |ui| {
-            settings_card::switch(ui, &mut config.show_bollinger);
+            card::switch(ui, &mut config.show_bollinger);
         },
     );
-    settings_card::card(
+    card::card(
         ui,
         Icon::Cycle,
         "Trend Flips",
@@ -729,7 +729,7 @@ fn indicators_page(ui: &mut Ui, c: &mut ChartSettingsContext) {
             SUPERTREND_MULTIPLIER as i64
         )),
         |ui| {
-            settings_card::switch(ui, &mut config.show_trend_flips);
+            card::switch(ui, &mut config.show_trend_flips);
         },
     );
 }
@@ -779,13 +779,13 @@ fn scripts_page(
     let saved = script_catalog::scripts(ui.ctx());
     let instances: Vec<PineInstance> = c.card.pine_instances().to_vec();
     if instances.is_empty() && saved.is_empty() {
-        settings_card::section_title(ui, "Scripts", Some("Pine scripts running on this chart."));
+        card::section_title(ui, "Scripts", Some("Pine scripts running on this chart."));
         empty_state(ui, &mut action);
         return action;
     }
     ui.horizontal(|ui| {
         ui.vertical(|ui| {
-            settings_card::section_title(
+            card::section_title(
                 ui,
                 "Scripts",
                 Some("Switch a script on to run it on this chart."),
@@ -929,7 +929,7 @@ fn scripts_page(
         .collect();
     if !strategies.is_empty() {
         ui.add_space(20.0);
-        settings_card::section_title(ui, "Backtest", None);
+        card::section_title(ui, "Backtest", None);
         for instance in &strategies {
             if strategies.len() > 1 {
                 ui.label(kit::text(
@@ -1595,7 +1595,7 @@ mod tests {
     }
 
     fn library() -> Vec<LocalScript> {
-        use crate::ui::script_catalog::sample;
+        use crate::ui::pine::script_catalog::sample;
         (0..9)
             .map(|i| {
                 sample(
@@ -1638,7 +1638,7 @@ mod tests {
     #[test]
     fn switching_a_script_on_applies_it_and_off_keeps_its_settings() {
         use crate::pine::compiler::program::InputValue;
-        let script = Arc::new(crate::ui::script_catalog::sample(
+        let script = Arc::new(crate::ui::pine::script_catalog::sample(
             "abc",
             "Squeeze",
             ScriptType::Indicator,

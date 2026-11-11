@@ -21,7 +21,7 @@ use crate::pine_studio::drawer::tab_chrome::{
 };
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit;
-use crate::ui::pine_logs_view::{centered, intro, step};
+use crate::ui::pine::logs_view::{centered, intro, step};
 use crate::ui::shortcut;
 use crate::ui::theme;
 

@@ -16,9 +16,9 @@ use crate::service::asset_auto_mapper::{self, asset_from_search_result};
 use crate::service::file_dialog;
 use crate::service::portfolio_quotes::PortfolioFxRates;
 use crate::ui::icons::Icon;
-use crate::ui::portfolio_asset_picker::{self, AssetPickerOutcome, AssetPickerState};
-use crate::ui::portfolio_cmc_import::{self, CmcImportAction, CmcImportInput, CmcImportState};
-use crate::ui::portfolio_import_preview::{
+use crate::ui::portfolio::asset_picker::{self, AssetPickerOutcome, AssetPickerState};
+use crate::ui::portfolio::cmc_import::{self, CmcImportAction, CmcImportInput, CmcImportState};
+use crate::ui::portfolio::import_preview::{
     self, ImportPreviewInput, ImportPreviewOutcome, ImportPreviewState,
 };
 use crate::ui::sheet;
@@ -382,7 +382,7 @@ impl PortfolioImportFlow {
         flow.poll();
         // The "Match…" picker sits on top of the sheet.
         if let Some((symbol, picker)) = &mut flow.picking {
-            match portfolio_asset_picker::show(ctx, picker, host.store()) {
+            match asset_picker::show(ctx, picker, host.store()) {
                 Some(AssetPickerOutcome::Choose(result)) => {
                     let symbol = symbol.clone();
                     flow.state
@@ -394,7 +394,7 @@ impl PortfolioImportFlow {
             }
             return;
         }
-        let actions = portfolio_cmc_import::show(
+        let actions = cmc_import::show(
             ctx,
             &mut flow.state,
             &CmcImportInput {
@@ -443,7 +443,7 @@ impl PortfolioImportFlow {
         utc_offset_secs: i64,
     ) -> Option<FlowEvent> {
         let (preview, state) = self.csv.as_mut()?;
-        let outcome = portfolio_import_preview::show(
+        let outcome = import_preview::show(
             ctx,
             state,
             &ImportPreviewInput {

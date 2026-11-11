@@ -6,8 +6,8 @@
 //! arithmetic ignores.
 
 use super::{
-    DrawingProperties, Icon, Id, Page, Ui, color_card, color_well, number_field, picker_row,
-    settings_card, toggle_row,
+    DrawingProperties, Icon, Id, Page, Ui, card, color_card, color_well, number_field, picker_row,
+    toggle_row,
 };
 use crate::model::chart::kind::PriceSource;
 use crate::model::forecast::style::{
@@ -36,7 +36,7 @@ fn number_card(
     range: std::ops::RangeInclusive<f64>,
     decimals: usize,
 ) -> Option<f64> {
-    settings_card::card(ui, icon, title, hint, |ui| {
+    card::card(ui, icon, title, hint, |ui| {
         number_field(ui, Id::new(id), value, step, range, decimals)
     })
 }
@@ -250,7 +250,7 @@ impl DrawingProperties {
             &mut edited.flipped,
         );
         page.section(ui, "Copied from", None);
-        settings_card::card(
+        card::card(
             ui,
             Icon::Clock,
             &format!("{} bars", edited.bars.len()),
@@ -331,7 +331,7 @@ impl DrawingProperties {
         }
         // Another run: the same inputs and a different seed draw different candles.
         page.section(ui, "Run", None);
-        let clicked = settings_card::card(
+        let clicked = card::card(
             ui,
             Icon::Switch,
             "Draw another run",
@@ -376,9 +376,9 @@ impl DrawingProperties {
         );
         for (index, band) in options.bands.iter_mut().enumerate() {
             page.titled_section(ui, &format!("Band {}", index + 1), None);
-            settings_card::card(ui, Icon::Eye, "Show", None, |ui| {
+            card::card(ui, Icon::Eye, "Show", None, |ui| {
                 color_well(ui, "Band color", &mut band.color);
-                settings_card::switch(ui, &mut band.enabled);
+                card::switch(ui, &mut band.enabled);
             });
             if band.enabled {
                 let id = ["vwap-band-1", "vwap-band-2", "vwap-band-3"][index];

@@ -17,7 +17,7 @@ use crate::host::broker_host::{BrokerHost, StoreJournal, account_of};
 use crate::store::Store;
 use crate::ui::broker::panel::{self, BrokerPanelState, BrokerTab};
 use crate::ui::render_tests::Screen;
-use crate::ui::{settings_brokers, theme};
+use crate::ui::{settings::brokers, theme};
 
 const ID: BrokerId = BrokerId::new("coinbase");
 
@@ -188,11 +188,11 @@ fn every_live_trading_surface_draws() {
     }
 
     // The Brokers settings page, with a connected card.
-    let mut page_state = settings_brokers::BrokersState::default();
+    let mut page_state = brokers::BrokersState::default();
     let mut page = Screen::new(Vec2::new(600.0, 900.0));
     let output = frames(&mut page, 3, |ui| {
         egui::CentralPanel::default().show(ui, |ui| {
-            settings_brokers::body(ui, &mut page_state, Some(rig.hub.clone()));
+            brokers::body(ui, &mut page_state, Some(rig.hub.clone()));
         });
     });
     assert!(shapes(&output) > 20, "the settings page");
@@ -201,9 +201,9 @@ fn every_live_trading_surface_draws() {
     let idle = self::rig();
     let output = frames(&mut page, 3, |ui| {
         egui::CentralPanel::default().show(ui, |ui| {
-            settings_brokers::body(
+            brokers::body(
                 ui,
-                &mut settings_brokers::BrokersState::default(),
+                &mut brokers::BrokersState::default(),
                 Some(idle.hub.clone()),
             );
         });
@@ -401,7 +401,7 @@ fn gallery_of_live_trading() {
             } else {
                 idle.hub.clone()
             };
-            let mut page_state = settings_brokers::BrokersState::default();
+            let mut page_state = brokers::BrokersState::default();
             if open {
                 page_state.open_for_test("coinbase");
                 page_state.open_for_test("coinbase-sandbox");
@@ -413,7 +413,7 @@ fn gallery_of_live_trading() {
             let mut draw = |page: &mut Screen| {
                 frames(page, 3, |ui| {
                     egui::CentralPanel::default().show(ui, |ui| {
-                        settings_brokers::body(ui, &mut page_state, Some(hub.clone()));
+                        brokers::body(ui, &mut page_state, Some(hub.clone()));
                     });
                 })
             };
@@ -594,14 +594,14 @@ fn connecting_a_key_from_the_settings_page_never_stalls_a_frame() {
     let rig = rig();
     let broker = degenview_brokers::registry::by_id(ID).expect("coinbase");
     let key = credentials(&generate_key_pem());
-    let mut state = settings_brokers::BrokersState::default();
+    let mut state = brokers::BrokersState::default();
     let mut screen = Screen::new(Vec2::new(600.0, 900.0));
     let mut slowest = Duration::ZERO;
-    let mut draw = |state: &mut settings_brokers::BrokersState| {
+    let mut draw = |state: &mut brokers::BrokersState| {
         let start = Instant::now();
         frames(&mut screen, 1, |ui| {
             egui::CentralPanel::default().show(ui, |ui| {
-                settings_brokers::body(ui, state, Some(rig.hub.clone()));
+                brokers::body(ui, state, Some(rig.hub.clone()));
             });
         });
         slowest = slowest.max(start.elapsed() - Duration::from_millis(15));
@@ -644,17 +644,17 @@ fn typing_a_base64_secret_never_stalls_a_frame() {
     let broker = degenview_brokers::registry::by_id(ID).expect("coinbase");
     let label = broker.descriptor().credential_fields[1].label;
     let secret = "M".repeat(86) + "==";
-    let mut state = settings_brokers::BrokersState::default();
+    let mut state = brokers::BrokersState::default();
     state.open_for_test("coinbase");
     let mut screen = Screen::new(Vec2::new(600.0, 900.0));
     let ctx = screen.ctx.clone();
     let slowest = std::cell::Cell::new(Duration::ZERO);
-    let mut step = |events: Vec<egui::Event>, state: &mut settings_brokers::BrokersState| {
+    let mut step = |events: Vec<egui::Event>, state: &mut brokers::BrokersState| {
         let start = Instant::now();
         screen.run(events, |ui| {
             theme::sync(ui.ctx());
             egui::CentralPanel::default().show(ui, |ui| {
-                settings_brokers::body(ui, state, Some(rig.hub.clone()));
+                brokers::body(ui, state, Some(rig.hub.clone()));
             });
         });
         slowest.set(slowest.get().max(start.elapsed()));
@@ -682,7 +682,7 @@ fn typing_a_base64_secret_never_stalls_a_frame() {
         slowest.get()
     );
     // And all at once.
-    let mut state = settings_brokers::BrokersState::default();
+    let mut state = brokers::BrokersState::default();
     state.open_for_test("coinbase");
     step(vec![], &mut state);
     ctx.memory_mut(|m| m.request_focus(id));
@@ -814,14 +814,14 @@ fn the_sandbox_connects_without_a_key_and_is_listed_beside_coinbase() {
     let sandbox = degenview_brokers::registry::by_id(SANDBOX_ID).expect("the sandbox");
     assert!(sandbox.descriptor().credential_fields.is_empty());
 
-    let mut state = settings_brokers::BrokersState::default();
+    let mut state = brokers::BrokersState::default();
     let mut screen = Screen::new(Vec2::new(600.0, 1200.0));
     state.connect_for_test(&rig.host, sandbox, &[]);
     let deadline = Instant::now() + Duration::from_secs(8);
     while Instant::now() < deadline {
         frames(&mut screen, 1, |ui| {
             egui::CentralPanel::default().show(ui, |ui| {
-                settings_brokers::body(ui, &mut state, Some(rig.hub.clone()));
+                brokers::body(ui, &mut state, Some(rig.hub.clone()));
             });
         });
         if rig

@@ -7,7 +7,7 @@ use crate::pine::compiler::program::{InputControl, InputDefinition, InputSchema,
 use crate::pine::syntax::token::ValueType;
 use crate::ui::icons::Icon;
 use crate::ui::kit::StepDirection as Direction;
-use crate::ui::settings_card;
+use crate::ui::settings::card;
 use crate::ui::theme;
 use eframe::egui::{self, Align, Align2, Color32, FontId, Id, Layout, Margin, Ui, vec2};
 use std::collections::HashMap;
@@ -310,7 +310,7 @@ fn card(
     };
     // A greyed-out card still shows the value the script reads; it just cannot be changed.
     ui.add_enabled_ui(active, |ui| {
-        settings_card::card(ui, icon, &title, input.tooltip.as_deref(), |ui| {
+        card::card(ui, icon, &title, input.tooltip.as_deref(), |ui| {
             control(ui, input, &title, &current)
         })
     })
@@ -326,7 +326,7 @@ fn control(
     match (&input.kind, current) {
         (_, InputValue::Bool(value)) => {
             let mut on = *value;
-            settings_card::switch(ui, &mut on).then_some(InputValue::Bool(on))
+            card::switch(ui, &mut on).then_some(InputValue::Bool(on))
         }
         (ValueType::Time, InputValue::Int(ms)) => time_field(ui, input, *ms),
         (_, InputValue::Int(value)) => int_field(ui, input, title, *value),

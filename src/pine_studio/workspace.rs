@@ -332,7 +332,7 @@ fn preview_pane(
     shared: &Shared<'_>,
     copied_at: &mut Option<Instant>,
     side: &Side<'_>,
-    logs: &mut crate::ui::pine_logs_view::LogsState,
+    logs: &mut crate::ui::pine::logs_view::LogsState,
     cmds: &RefCell<Vec<Cmd>>,
 ) {
     let (input, profile) = (side.input, side.profile);

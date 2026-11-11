@@ -16,8 +16,8 @@ pub(super) struct LiveOverlays<'a> {
     pub chart_id: u64,
     pub chart_hovered: bool,
     pub pane_actions: Vec<(u64, PaneAction)>,
-    pub alert_menu: Option<alert_lines::LineMenu>,
-    pub alert_moves: Vec<alert_lines::AlertMove>,
+    pub alert_menu: Option<lines::LineMenu>,
+    pub alert_moves: Vec<lines::AlertMove>,
     pub alert_toggled: Vec<crate::model::alert::AlertId>,
     pub alert_deleted: Vec<crate::model::alert::AlertId>,
     pub paper: (Vec<PaperOverlayAction>, Option<MarkerMenu>),
@@ -129,7 +129,7 @@ impl Overlays for LiveOverlays<'_> {
         overlays: &OverlayFrame,
     ) {
         let (plot, scale) = (layout.plot, &view.scale);
-        let alerts = alert_lines::show(
+        let alerts = lines::show(
             self.ui,
             plot,
             scale,

@@ -9,10 +9,10 @@ cards are a separate surface: see [portfolio cards](portfolio-cards.md).
 - `host/portfolio_host.rs`: the tab (`PortfolioTab::ui`), the header, the section bar, the centred
   column (`capped`), and the figures handed to the views.
 - `service/portfolio_quotes.rs`: `PortfolioQuoteFeed`, the valuation the views read.
-- `ui/portfolio_overview.rs`: Overview (hero, key figures, charts, lists) and Statistics.
-- `ui/portfolio_holdings.rs`, `ui/portfolio_transactions.rs`, `ui/portfolio_grid.rs`: the tables.
-- `ui/portfolio_empty.rs`: the pictures and introductions for a page or panel with nothing in it.
-- `ui/portfolio_gallery_tests.rs`: hand-run galleries of the pages (see "Looking at it").
+- `ui/portfolio/overview.rs`: Overview (hero, key figures, charts, lists) and Statistics.
+- `ui/portfolio/holdings.rs`, `ui/portfolio/transactions.rs`, `ui/portfolio/grid.rs`: the tables.
+- `ui/portfolio/empty.rs`: the pictures and introductions for a page or panel with nothing in it.
+- `ui/portfolio/gallery_tests.rs`: hand-run galleries of the pages (see "Looking at it").
 
 ## Revaluation is throttled
 

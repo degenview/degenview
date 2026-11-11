@@ -458,7 +458,7 @@ fn the_applications_broker_layers_name_no_broker() {
         "trading/broker_backend.rs",
         "trading/model.rs",
         "trading/paper_backend.rs",
-        "ui/settings_brokers.rs",
+        "ui/settings/brokers.rs",
     ] {
         let text = std::fs::read_to_string(root.join(file))
             .unwrap()

@@ -11,7 +11,7 @@ use super::chart_card::ChartCard;
 use super::chart_style_settings::{color_control, int_row, number_field};
 use super::icons::Icon;
 use super::kit;
-use super::settings_card;
+use super::settings::card;
 use crate::model::ChartCanvas;
 use crate::model::chart::canvas::{
     BackgroundMode, ButtonVisibility, ChartMargins, LINE_WIDTHS, LineAppearance, ScaleTextSize,
@@ -39,7 +39,7 @@ fn swatch(color: egui::Color32) -> Rgba {
 /// below it. Appearance restores this spacing after its heading, so Canvas does the same for each
 /// of its sections.
 fn section_title(ui: &mut Ui, title: &str, subtitle: Option<&str>) {
-    settings_card::section_title(ui, title, subtitle);
+    card::section_title(ui, title, subtitle);
     ui.spacing_mut().item_spacing.y = CARD_SPACING;
 }
 
@@ -160,7 +160,7 @@ fn background_row(ui: &mut Ui, canvas: &mut ChartCanvas, defaults: &CanvasStyle)
         .iter()
         .map(|mode| mode.label().to_owned())
         .collect();
-    settings_card::card_reserving(
+    card::card_reserving(
         ui,
         Icon::Palette,
         "Background",
@@ -270,8 +270,8 @@ fn grid_row(
     line: &mut LineAppearance,
     default: Rgba,
 ) {
-    settings_card::card_reserving(ui, icon, title, Some(hint), WIDE - 90.0, |ui| {
-        settings_card::switch(ui, &mut line.visible);
+    card::card_reserving(ui, icon, title, Some(hint), WIDE - 90.0, |ui| {
+        card::switch(ui, &mut line.visible);
         if line.visible {
             dash_picker(ui, &mut line.dash);
             color_control(ui, title, &mut line.color, default);
@@ -281,7 +281,7 @@ fn grid_row(
 
 fn separator_row(ui: &mut Ui, id: Id, line: &mut LineAppearance, default: Rgba, has_panes: bool) {
     if !has_panes {
-        settings_card::card(
+        card::card(
             ui,
             Icon::Layers,
             "Pane separators",
@@ -302,14 +302,14 @@ fn separator_row(ui: &mut Ui, id: Id, line: &mut LineAppearance, default: Rgba, 
         );
         return;
     }
-    settings_card::card_reserving(
+    card::card_reserving(
         ui,
         Icon::Layers,
         "Pane separators",
         Some("The line between the price chart and each script pane."),
         WIDE + 80.0,
         |ui| {
-            settings_card::switch(ui, &mut line.visible);
+            card::switch(ui, &mut line.visible);
             if line.visible {
                 width_stepper(ui, id.with("separator-width"), &mut line.width);
                 dash_picker(ui, &mut line.dash);
@@ -320,7 +320,7 @@ fn separator_row(ui: &mut Ui, id: Id, line: &mut LineAppearance, default: Rgba, 
 }
 
 fn crosshair_row(ui: &mut Ui, id: Id, line: &mut LineAppearance, default: Rgba) {
-    settings_card::card_reserving(
+    card::card_reserving(
         ui,
         Icon::Plus,
         "Crosshair",
@@ -366,7 +366,7 @@ fn watermark_row(ui: &mut Ui, canvas: &mut ChartCanvas, default: Rgba) {
             "The market and its timeframe, behind the candles while a replay is running."
         }
     };
-    settings_card::card_reserving(ui, Icon::Tag, "Watermark", Some(hint), 250.0, |ui| {
+    card::card_reserving(ui, Icon::Tag, "Watermark", Some(hint), 250.0, |ui| {
         ui.add_space(SWITCH_COLUMN + ui.spacing().item_spacing.x);
         if watermark.mode != WatermarkMode::Hidden {
             color_control(ui, "Watermark", &mut watermark.color, default);
@@ -386,8 +386,8 @@ fn readout_row(ui: &mut Ui, on: &mut bool) {
     } else {
         "The values box under the crosshair is hidden. The crosshair itself stays."
     };
-    settings_card::card(ui, Icon::Eye, "OHLC values", Some(hint), |ui| {
-        settings_card::switch(ui, on);
+    card::card(ui, Icon::Eye, "OHLC values", Some(hint), |ui| {
+        card::switch(ui, on);
     });
 }
 
@@ -400,7 +400,7 @@ fn scales_rows(ui: &mut Ui, canvas: &mut ChartCanvas, defaults: &CanvasStyle) {
         .iter()
         .position(|size| *size == scales.text_size)
         .unwrap_or(0);
-    settings_card::card_reserving(
+    card::card_reserving(
         ui,
         Icon::TextFormat,
         "Text",
@@ -418,7 +418,7 @@ fn scales_rows(ui: &mut Ui, canvas: &mut ChartCanvas, defaults: &CanvasStyle) {
             }
         },
     );
-    settings_card::card(
+    card::card(
         ui,
         Icon::LineDiagonal,
         "Lines",
@@ -466,7 +466,7 @@ fn visibility_row(ui: &mut Ui, icon: Icon, title: &str, hint: &str, value: &mut 
         .iter()
         .position(|(option, _)| option == value)
         .unwrap_or(0);
-    if let Some(index) = settings_card::card_reserving(ui, icon, title, Some(hint), 190.0, |ui| {
+    if let Some(index) = card::card_reserving(ui, icon, title, Some(hint), 190.0, |ui| {
         kit::menu_picker(ui, 170.0, &labels, selected, true)
     }) {
         *value = options[index].0;

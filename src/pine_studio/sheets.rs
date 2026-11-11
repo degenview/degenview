@@ -3,9 +3,9 @@
 
 use super::{AlertSheet, PineStudio, PineStudioAction, Sheet, library::unsaved};
 use crate::model::alert::pine::ArmingFacts;
+use crate::ui::alert::pine_editor::{self, PineAlertEditorInput, PineAlertEditorOutcome};
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, Confirm, ConfirmOutcome};
-use crate::ui::pine_alert_editor::{self, PineAlertEditorInput, PineAlertEditorOutcome};
 use crate::ui::sheet;
 use crate::ui::theme;
 use eframe::egui::{self, Key};
@@ -172,7 +172,7 @@ impl PineStudio {
             call_sites: &sheet.call_sites,
             endpoints: &sheet.endpoints,
         };
-        match pine_alert_editor::show(ctx, &mut sheet.state, &input) {
+        match pine_editor::show(ctx, &mut sheet.state, &input) {
             Some(PineAlertEditorOutcome::Create {
                 note,
                 webhook_endpoint_ids,

@@ -17,7 +17,7 @@ price an order trades at) and [iCloud Sync](icloud-sync.md) (nothing here syncs)
   said. Nothing in the app invents or removes one: a cancel is a *request*, an order leaves the
   working set only when the broker reports it finished.
 * **No broker is named in the app's broker layers.** `host/broker_host.rs`,
-  `service/keychain_broker_secrets.rs` and `ui/settings_brokers.rs` draw everything from the
+  `service/keychain_broker_secrets.rs` and `ui/settings/brokers.rs` draw everything from the
   crate's registry and each broker's descriptor; a test fails if one names an exchange. Adding a
   broker is a change to the crate (see its `docs/adding-a-broker.md`), plus enabling its Cargo
   feature here.
@@ -37,7 +37,7 @@ price an order trades at) and [iCloud Sync](icloud-sync.md) (nothing here syncs)
 | Connections | `host/broker_host.rs::BrokerHost`: one per process, shared by every window, **outside the paper-trading lock**. Each connection's runtime runs on its own thread and publishes `Arc` snapshots; the UI never calls the network. Every request for a connection (a new key, the saved key at startup, Disconnect) takes a number, and a start may publish its runtime only if its number is still the broker's current one, so a Disconnect, or a newer key, always has the last word over a start that was still waiting on the Keychain prompt or the store. |
 | Which venues are on | `host/trading_hub.rs::TradingHub` is the **only owner of a venue's lifecycle**: `enable`, `connect(id, credentials)` (save the key, connect, remember the venue as enabled) and `disable` (forget the choice, stop the connection, remove the key). Settings calls these, not `BrokerHost`: disconnecting only the host left a key-less broker (the sandbox) in `trading.enabled`, so it reconnected at the next start. `connect` and `disable` return a polled `Operation` (the answer of the secret store), shown as "Saving the key…" / "Removing the key…". |
 | Redraws | `BrokerHost::revision()` is compared once a frame in `DegenViewApp::tick_tab_quotes`, which repaints every tab window. |
-| Settings | Settings ▸ Brokers (`ui/settings_brokers.rs`): connect (the key is checked with reads only, then saved), permissions, Disconnect. |
+| Settings | Settings ▸ Brokers (`ui/settings/brokers.rs`): connect (the key is checked with reads only, then saved), permissions, Disconnect. |
 
 ## Connecting
 

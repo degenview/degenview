@@ -1,7 +1,7 @@
 //! Portfolio cards: grid cards that show a portfolio instead of a market. They share the chart
 //! grid with market charts but have no candles, indicators, alerts, drawings or scripts, so
 //! nothing here knows about `DataSource`. Pure values and arithmetic; the data feeds and the
-//! painters live in `service/` and `ui/portfolio_cards/`.
+//! painters live in `service/` and `ui/portfolio/cards/`.
 //!
 //! Not to be confused with `chart_type::ChartKind`, which tells a Pine script what chart it runs on.
 

@@ -80,7 +80,7 @@ impl Overlays for SnapshotOverlays<'_> {
         _overlays: &OverlayFrame,
     ) {
         let painter = self.painter.with_clip_rect(layout.plot);
-        alert_lines::paint(
+        lines::paint(
             &painter,
             layout.plot,
             &view.scale,

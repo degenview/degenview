@@ -20,7 +20,7 @@ use crate::pine::outputs::style_overrides::{StyleOverrides, StyleRow, style_rows
 use crate::pine::runtime::execution::ExecutionController;
 use crate::pine::syntax::token::{Diagnostic, Limits};
 use crate::pine_studio::library::registry::LibraryRegistry;
-use crate::ui::alert_lines;
+use crate::ui::alert::lines;
 use crate::ui::canvas_render::{self, CanvasStyle};
 use crate::ui::chart_buttons::{self, PaneAction};
 use crate::ui::chart_indicator_strip;
@@ -28,8 +28,8 @@ use crate::ui::drawing_layer::{DrawingFrame, DrawingLayer, Projection, TextMeasu
 use crate::ui::drawing_render::TimeIndex;
 use crate::ui::icons::{self, Icon};
 use crate::ui::paper::chart_trading::{self, PaperCardState};
-use crate::ui::pine_chart_render::{self, CandleStyle, HoverTarget, PineLayer};
-use crate::ui::pine_geometry::{OverlayExtent, overlay_extent};
+use crate::ui::pine::chart_render::{self, CandleStyle, HoverTarget, PineLayer};
+use crate::ui::pine::geometry::{OverlayExtent, overlay_extent};
 use crate::ui::price_text;
 use crate::ui::replay::overlay::{self, ReplayChartFrame};
 use crate::ui::scale_menu;
@@ -417,11 +417,11 @@ pub struct ChartCard {
     /// The price alerts to draw as lines (the workspace fills them each frame), and the tag
     /// right-clicked since the last request was read.
     alert_lines: Vec<crate::model::alert::line::AlertLine>,
-    alert_menu: Option<alert_lines::LineMenu>,
+    alert_menu: Option<lines::LineMenu>,
     /// The market the alert tags are dragged on, and the tags dropped on a new level since the
     /// workspace last took them.
-    alert_market: alert_lines::Market,
-    alert_moves: Vec<alert_lines::AlertMove>,
+    alert_market: lines::Market,
+    alert_moves: Vec<lines::AlertMove>,
     /// The alerts whose pill is open (the rest show only their arrow), and the ones deleted from
     /// their pill since the workspace last took them. Never saved.
     alert_open: std::collections::HashSet<crate::model::alert::AlertId>,
@@ -735,7 +735,7 @@ impl Default for ChartCard {
             table_stamp: 0,
             alert_lines: Vec::new(),
             alert_menu: None,
-            alert_market: alert_lines::Market::default(),
+            alert_market: lines::Market::default(),
             alert_moves: Vec::new(),
             alert_open: std::collections::HashSet::new(),
             alert_deletes: Vec::new(),
@@ -1362,7 +1362,7 @@ fn pane_labels(
     plot_height: f32,
     style: &CanvasStyle,
 ) -> Vec<(f64, String)> {
-    let (low, high) = crate::ui::pine_geometry::pane_value_range(pine, shown, 0.1);
+    let (low, high) = crate::ui::pine::geometry::pane_value_range(pine, shown, 0.1);
     // A pane is short: its labels sit closer than the price chart's, and it keeps at least two.
     let budget = chart::canvas::tick_budget(plot_height, style.pane_tick_spacing()).max(2);
     let ticks = chart::canvas::price_ticks(low, high, false, budget);
@@ -1407,7 +1407,7 @@ fn draw_script_pane(
     if plot.height() <= 1.0 {
         return None;
     }
-    let (low, high) = crate::ui::pine_geometry::pane_value_range(pine, shown.len(), 0.1);
+    let (low, high) = crate::ui::pine::geometry::pane_value_range(pine, shown.len(), 0.1);
     let span = (high - low).max(f64::EPSILON);
     let y_for = |value: f64| plot.bottom() - ((value - low) / span) as f32 * plot.height();
     let labels = pane_labels(pine, shown.len(), plot.height(), style);
@@ -1458,7 +1458,7 @@ fn draw_script_pane(
     layer.draw_tables(painter);
     // The tooltip of a label or cell under the pointer, measured only while it is over the pane.
     let pointer = pointer.filter(|pointer| plot.contains(*pointer) && layer.has_tooltips())?;
-    pine_chart_render::target_at(&layer.hover_targets(painter), pointer).cloned()
+    chart_render::target_at(&layer.hover_targets(painter), pointer).cloned()
 }
 
 /// Whether a chart on `source` can raise price alerts: markets with a price quote feed.
@@ -3098,7 +3098,7 @@ impl ChartCard {
                 .iter()
                 .filter(|output| output.display & crate::pine::outputs::DISPLAY_PANE != 0)
             {
-                let Some(bar) = crate::ui::pine_geometry::series_index(
+                let Some(bar) = crate::ui::pine::geometry::series_index(
                     output.bars.len(),
                     hovered_from_end,
                     index,

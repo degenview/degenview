@@ -39,17 +39,17 @@ use crate::service::portfolio_quotes::PortfolioQuoteFeed;
 use crate::service::watchlist_quotes::{WatchlistQuoteBook, WatchlistQuoteCoordinator};
 use crate::store::SharedStore;
 use crate::store::watchlist::WatchlistStore;
-use crate::ui::alert_banner::{self, AlertBannerState};
-use crate::ui::alert_center::{
+use crate::ui::alert::banner::{self, AlertBannerState};
+use crate::ui::alert::center::{
     self, AlertCenterAction, AlertCenterInput, AlertCenterState, QuoteSummary,
 };
-use crate::ui::alert_editor::{self, PriceAlertEditorOutcome, PriceAlertEditorState};
+use crate::ui::alert::editor::{self, PriceAlertEditorOutcome, PriceAlertEditorState};
+use crate::ui::alert::pine_editor::{self, PineAlertWebhooksOutcome, PineAlertWebhooksState};
+use crate::ui::alert::script_list::ScriptAlertRow;
 use crate::ui::icons::Icon;
 use crate::ui::kit;
-use crate::ui::pine_alert_editor::{self, PineAlertWebhooksOutcome, PineAlertWebhooksState};
-use crate::ui::script_alert_list::ScriptAlertRow;
-use crate::ui::settings_mcp::McpSettingsInput;
-use crate::ui::settings_window;
+use crate::ui::settings::mcp::McpSettingsInput;
+use crate::ui::settings::window;
 use crate::ui::shortcut;
 use crate::ui::window::tab_bar::{self, TabBar, TabView, WindowChoice};
 use crate::workspace::{ChartWorkspace, PersistedWorkspace, WorkspaceAction};
@@ -3080,7 +3080,7 @@ impl DegenViewApp {
         let builder = crate::ui::window::chrome::branded(
             egui::ViewportBuilder::default()
                 .with_title("Settings")
-                .with_inner_size(settings_window::WINDOW_SIZE)
+                .with_inner_size(window::WINDOW_SIZE)
                 .with_min_inner_size([520.0, 400.0]),
         );
         ctx.show_viewport_deferred(settings_viewport_id(), builder, move |ui, _class| {
@@ -3334,7 +3334,7 @@ impl DegenViewApp {
                     now_ms: now_ms(),
                     utc_offset_secs: crate::service::timezone::local_utc_offset_secs(now_ms()),
                 };
-                alert_center::show(ui, &mut state, &input)
+                center::show(ui, &mut state, &input)
             } else {
                 Vec::new()
             };
@@ -3490,7 +3490,7 @@ impl DegenViewApp {
                     .iter()
                     .find(|subscription| subscription.id == *id)
                     .and_then(|subscription| {
-                        pine_alert_editor::show_webhooks(
+                        pine_editor::show_webhooks(
                             ui.ctx(),
                             sheet,
                             subscription,
@@ -3530,14 +3530,14 @@ impl DegenViewApp {
                         .map(|rates| rates.clone())
                         .unwrap_or_default();
                     quote_coordinator.set_demand(
-                        alert_editor::ALERTS_WINDOW_QUOTE_OWNER,
+                        editor::ALERTS_WINDOW_QUOTE_OWNER,
                         vec![state.asset().instrument.clone()],
                         true,
                     );
                     state.feed_from_book(&quote_book, &rates);
                     let endpoints = store.webhook_endpoints();
                     let now = now_ms();
-                    match alert_editor::show(ui.ctx(), state, &endpoints, now) {
+                    match editor::show(ui.ctx(), state, &endpoints, now) {
                         Some(PriceAlertEditorOutcome::Save(alert)) => {
                             let baseline = state.current_price();
                             commit_price_alert(
@@ -3564,7 +3564,7 @@ impl DegenViewApp {
                     *slot = None;
                 }
                 if slot.is_none() {
-                    quote_coordinator.release(alert_editor::ALERTS_WINDOW_QUOTE_OWNER);
+                    quote_coordinator.release(editor::ALERTS_WINDOW_QUOTE_OWNER);
                 }
             }
         });
@@ -3668,7 +3668,7 @@ impl eframe::App for DegenViewApp {
         }
         let now = now_ms();
         self.banner.expire(now);
-        alert_banner::show(ctx, &mut self.banner, now);
+        banner::show(ctx, &mut self.banner, now);
         ctx.request_repaint_after(Duration::from_millis(250));
     }
 
@@ -3681,7 +3681,7 @@ impl eframe::App for DegenViewApp {
         self.tick_alerts();
         let now = now_ms();
         self.banner.expire(now);
-        alert_banner::show(&ctx, &mut self.banner, now);
+        banner::show(&ctx, &mut self.banner, now);
         if !std::mem::replace(&mut self.root_hidden, true) {
             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
         }

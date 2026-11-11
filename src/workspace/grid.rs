@@ -452,7 +452,7 @@ impl ChartWorkspace {
                                                     || shown.scope_name(&[]),
                                                     |data| data.scope_name.clone(),
                                                 );
-                                                ui::portfolio_cards::header(
+                                                ui::portfolio::cards::header(
                                                     ui,
                                                     &shown,
                                                     &scope,
@@ -461,7 +461,7 @@ impl ChartWorkspace {
                                                     &memberships,
                                                     &mut action,
                                                 );
-                                                if ui::portfolio_cards::body(
+                                                if ui::portfolio::cards::body(
                                                     ui,
                                                     &mut shown,
                                                     data.as_ref(),

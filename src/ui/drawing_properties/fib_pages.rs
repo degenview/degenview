@@ -6,8 +6,7 @@
 //! [`Features`](crate::model::fib::Features) list.
 
 use super::{
-    DrawingProperties, Icon, Id, Page, Ui, color_well, number_field, picker_row, settings_card,
-    toggle_row,
+    DrawingProperties, Icon, Id, Page, Ui, card, color_well, number_field, picker_row, toggle_row,
 };
 use crate::model::Tool;
 use crate::model::chart::kind::LineDash;
@@ -124,14 +123,14 @@ impl DrawingProperties {
             );
         }
         if !features.grid.is_empty() {
-            settings_card::card(ui, Icon::Hash, features.grid, None, |ui| {
+            card::card(ui, Icon::Hash, features.grid, None, |ui| {
                 color_well(ui, "Grid color", &mut fib.grid.color);
-                settings_card::switch(ui, &mut fib.grid.enabled);
+                card::switch(ui, &mut fib.grid.enabled);
             });
         }
         if features.scale {
             let max = f64::from(crate::model::fib::style::MAX_SCALE);
-            if let Some(scale) = settings_card::card(
+            if let Some(scale) = card::card(
                 ui,
                 Icon::Ruler,
                 "Price per bar",
@@ -223,7 +222,7 @@ impl DrawingProperties {
                     toggle_row(ui, Icon::Tag, title, "", value);
                 }
             }
-            if let Some(size) = settings_card::card(ui, Icon::TextFormat, "Font size", None, |ui| {
+            if let Some(size) = card::card(ui, Icon::TextFormat, "Font size", None, |ui| {
                 number_field(
                     ui,
                     Id::new("fib-font-size"),
@@ -333,7 +332,7 @@ fn level_row(ui: &mut Ui, row: Row, level: &mut FibLevel) -> Option<RowAction> {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
-                settings_card::switch(ui, &mut level.enabled);
+                card::switch(ui, &mut level.enabled);
                 let name = match row.caption {
                     Caption::None => None,
                     Caption::Angle => Some(fib::gann::angle_label(level.ratio)),
