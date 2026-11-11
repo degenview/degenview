@@ -214,7 +214,8 @@ request descriptions for the checklist.
   (`workspace/broker.rs`) and the Settings cards still read `BrokerHost` snapshots and `BrokerRuntime`
   directly, and `BrokerHost::global()` / `TradingHub::global()` are process-wide. Moving the edit sheet into a
   state machine outside the drawing code, migrating the panel and chart onto the venue layer, and handing
-  `Arc<TradingHub>` to each window are separate changes. `trading/` does not import `ui` (a test checks).
+  `Arc<TradingHub>` to each window are separate changes. `trading/` does not import `ui` (a test checks). The findings, evidence and proposed fixes are in
+  [reviews/broker-architecture-follow-ups.md](reviews/broker-architecture-follow-ups.md).
 
 * Two Coinbase portfolios have not been tried together against the real service. The account id is
   the key's `portfolio_uuid`; a key without one is the account `default`, which two such keys would
