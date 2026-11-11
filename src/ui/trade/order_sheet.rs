@@ -48,6 +48,8 @@ pub struct SheetState {
     market: Option<MarketRef>,
     venue: Option<TradingVenue>,
     prefilled: bool,
+    /// The prices in the draft came from a click and have not been put on the tick yet.
+    snap_prices: bool,
     preview: PreviewSlot,
     stage: Stage,
     notice: Option<(String, bool, Instant)>,
@@ -68,6 +70,7 @@ impl Default for SheetState {
             market: None,
             venue: None,
             prefilled: false,
+            snap_prices: false,
             preview: PreviewSlot::default(),
             stage: Stage::Editing,
             notice: None,
@@ -95,6 +98,8 @@ impl SheetState {
             }
         };
         self.prefilled = price.is_some();
+        // A clicked price is a raw float: it goes onto the market's tick once the market is known.
+        self.snap_prices = price.is_some();
         self.stage = Stage::Editing;
     }
 
@@ -465,6 +470,14 @@ fn form(
 ) {
     let now = Instant::now();
     state.draft.fit_to(&rules.caps);
+    if state.snap_prices {
+        state.snap_prices = false;
+        for text in [&mut state.draft.price_text, &mut state.draft.stop_text] {
+            if let Some(price) = parse_decimal(text).ok().flatten() {
+                *text = plain(figures::snap_price(price, rules.price_increment));
+            }
+        }
+    }
     let quote = backend.quote(market);
     if !state.prefilled
         && let Some(reference) = quote

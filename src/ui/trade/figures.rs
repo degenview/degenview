@@ -19,6 +19,22 @@ fn places_for(value: Decimal) -> u32 {
     }
 }
 
+/// A price clicked on the chart, moved onto the market's tick: the nearest multiple of
+/// `increment`. A market counted in powers of ten (1e-8) also drops the places a price of this
+/// size does not need, so a click on a bitcoin chart reads `90,123.45`, not eight decimals.
+pub fn snap_price(value: Decimal, increment: Decimal) -> Decimal {
+    if increment <= Decimal::ZERO {
+        return value;
+    }
+    let snapped = (value / increment).round() * increment;
+    let tick = increment.normalize();
+    if tick.mantissa() == 1 {
+        snapped.round_dp(tick.scale().min(places_for(snapped)))
+    } else {
+        snapped.normalize()
+    }
+}
+
 /// A price at the market's own number of places (`1,234.50`), but never more than a price of its
 /// size needs: a market that counts in 1e-8 does not make `90,000.00000000` of a bitcoin. Without
 /// an increment, what it is.
@@ -111,6 +127,21 @@ mod tests {
     fn a_move_with_no_increment_is_rounded_and_one_that_is_not_a_number_is_only_a_percent() {
         assert_eq!(price_move_text(0.123456, 1.0, None), "+0.1235 (+1.00%)");
         assert_eq!(price_move_text(f64::NAN, 1.0, Some(dec("0.01"))), "+1.00%");
+    }
+
+    #[test]
+    fn a_clicked_price_lands_on_the_tick() {
+        // The raw float a chart click gives: far more places than any tick.
+        assert_eq!(
+            snap_price(dec("0.15671234567891234"), dec("0.00000001")),
+            dec("0.156712")
+        );
+        assert_eq!(snap_price(dec("90123.4567"), dec("0.01")), dec("90123.46"));
+        // A tick that is not a power of ten: the nearest multiple.
+        assert_eq!(snap_price(dec("10.12"), dec("0.05")), dec("10.10"));
+        assert_eq!(snap_price(dec("10.13"), dec("0.05")), dec("10.15"));
+        // No tick known: left alone.
+        assert_eq!(snap_price(dec("1.234"), Decimal::ZERO), dec("1.234"));
     }
 
     #[test]

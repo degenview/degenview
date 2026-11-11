@@ -613,3 +613,32 @@ fn a_euro_market_is_counted_in_euros() {
     let output = rig.frames(&mut screen, &mut state, venue, 3);
     screen.save("sheet-euro-market", output);
 }
+
+/// A price clicked on the chart is a float with a dozen places; the sheet puts it on the market's
+/// tick, so the field does not open with "Must be a multiple of 0.00000001."
+#[test]
+fn a_price_clicked_on_the_chart_lands_on_the_tick() {
+    let _restore = theme::RestoreDefaultTheme;
+    let rig = rig();
+    rig.enable_paper();
+    *rig.symbol.borrow_mut() = "ADA-EUR".to_owned();
+    let venue = Some(TradingVenue::Paper);
+    let mut screen = Screen::new(Vec2::new(340.0, 900.0));
+    let mut state = SheetState::default();
+    state.start(
+        Side::Buy,
+        Some(OrderClass::Limit),
+        Some("0.15671234567891234".parse().unwrap()),
+    );
+    let output = rig.frames(&mut screen, &mut state, venue, 3);
+    assert_eq!(state.draft.price_text, "0.156712");
+    screen.save("sheet-clicked-price", output);
+    // A stop clicked on the chart is put on the tick the same way.
+    state.start(
+        Side::Sell,
+        Some(OrderClass::Stop),
+        Some("90123.456789012".parse().unwrap()),
+    );
+    rig.frames(&mut screen, &mut state, venue, 3);
+    assert_eq!(state.draft.stop_text, "90123.46");
+}
