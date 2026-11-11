@@ -74,7 +74,7 @@ pub fn table_height(ui: &Ui) -> f32 {
 /// the column's alignment and clipped to the cell.
 pub fn show(
     ui: &mut Ui,
-    salt: &str,
+    scope: &str,
     cols: &[Col],
     rows: usize,
     mut cell: impl FnMut(&mut Ui, usize, usize),
@@ -95,7 +95,7 @@ pub fn show(
     body.set_clip_rect(frame.intersect(ui.clip_rect()));
     body.spacing_mut().item_spacing = vec2(0.0, 0.0);
     ScrollArea::horizontal()
-        .id_salt((salt, "x"))
+        .id_salt((scope, "x"))
         .auto_shrink([false, false])
         .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded)
         .show(&mut body, |ui| {
@@ -103,7 +103,7 @@ pub fn show(
             ui.spacing_mut().item_spacing = vec2(0.0, 0.0);
             header(ui, cols, &spans, content_width, frame.top());
             ScrollArea::vertical()
-                .id_salt((salt, "y"))
+                .id_salt((scope, "y"))
                 .auto_shrink([false, false])
                 .show_rows(ui, ROW_HEIGHT, rows, |ui, range| {
                     ui.spacing_mut().item_spacing = vec2(0.0, 0.0);

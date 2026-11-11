@@ -749,7 +749,7 @@ fn form(
 #[allow(clippy::too_many_arguments)]
 fn number(
     ui: &mut egui::Ui,
-    salt: &str,
+    scope: &str,
     text: &mut String,
     placeholder: &str,
     unit: &str,
@@ -761,7 +761,7 @@ fn number(
     let error = check.issue_for(field).map(str::to_owned);
     let edit = fields::number_field(
         ui,
-        salt,
+        scope,
         text,
         placeholder,
         unit,

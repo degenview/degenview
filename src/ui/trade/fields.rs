@@ -191,7 +191,7 @@ fn step_button(ui: &mut Ui, icon: Icon, hint: &str) -> bool {
 #[allow(clippy::too_many_arguments)]
 pub fn number_field(
     ui: &mut Ui,
-    salt: &str,
+    scope: &str,
     text: &mut String,
     placeholder: &str,
     unit: &str,
@@ -200,7 +200,7 @@ pub fn number_field(
     start: Option<Decimal>,
 ) -> Edit {
     const SIZE: f32 = 14.0;
-    let id = Id::new(("trade-number-field", salt));
+    let id = Id::new(("trade-number-field", scope));
     let focused = ui.memory(|memory| memory.has_focus(id));
     let (rect, background) =
         ui.allocate_exact_size(vec2(ui.available_width(), FIELD_HEIGHT), Sense::click());

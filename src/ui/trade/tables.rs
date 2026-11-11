@@ -136,7 +136,7 @@ pub fn empty_orders(ui: &mut egui::Ui) {
 /// working are dropped from it. Editing is offered only when `allow_edit`.
 pub fn orders(
     ui: &mut egui::Ui,
-    salt: &str,
+    scope: &str,
     rows: &[OrderRow],
     selected: &mut BTreeSet<String>,
     allow_edit: bool,
@@ -154,7 +154,7 @@ pub fn orders(
     };
     let mut actions = Vec::new();
     let mut toggled = None;
-    grid::show(ui, salt, cols, rows.len(), |ui, index, column| {
+    grid::show(ui, scope, cols, rows.len(), |ui, index, column| {
         let row = &rows[index];
         let weak = theme::text_secondary();
         let primary = theme::text_primary();
