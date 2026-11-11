@@ -310,12 +310,12 @@ pub fn show(ctx: &egui::Context, state: &mut WebhookEditorState) -> Option<Webho
     sheet::show(ctx, Id::new("webhook-editor"), FORM_WIDTH, |ui| {
         ui.add_space(24.0);
         sheet::inset(ui, |ui| {
-            sheet::header(
+            // No badge in the corner: the title leads.
+            sheet::header_with(
                 ui,
-                Icon::ArrowUpRightSquare,
                 title,
                 "Alerts post their message here over HTTP.",
-                theme::ACCENT,
+                |_| {},
             )
         });
         ui.add_space(SECTION_GAP);
@@ -540,10 +540,10 @@ fn status_line(ui: &mut egui::Ui, icon: Icon, color: Color32, message: &str) {
     });
 }
 
-/// A small accent action, like a borderless button with a glyph.
+/// A small borderless action with a glyph, neutral gray like every link.
 fn link_button(ui: &mut egui::Ui, icon: Icon, label: &str, enabled: bool) -> egui::Response {
     let color = if enabled {
-        kit::ACCENT
+        theme::text_secondary()
     } else {
         theme::text_tertiary()
     };
@@ -565,6 +565,8 @@ fn link_button(ui: &mut egui::Ui, icon: Icon, label: &str, enabled: bool) -> egu
     let response = crate::ui::accessibility::label(response, label);
     let color = if response.is_pointer_button_down_on() {
         theme::with_alpha(color, 0.7)
+    } else if enabled && response.hovered() {
+        theme::text_primary()
     } else {
         color
     };
@@ -641,7 +643,7 @@ fn method_menu(ui: &mut egui::Ui, method: &mut WebhookHttpMethod) {
     let label = ui.painter().layout_no_wrap(
         method.as_str().to_owned(),
         FontId::monospace(size::BODY - 1.0),
-        kit::ACCENT,
+        theme::text_primary(),
     );
     let size = Vec2::new(label.size().x + 5.0 + 9.0, 18.0);
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
@@ -649,9 +651,9 @@ fn method_menu(ui: &mut egui::Ui, method: &mut WebhookHttpMethod) {
         crate::ui::accessibility::label(response, format!("HTTP method, {}", method.as_str()))
             .on_hover_cursor(egui::CursorIcon::PointingHand);
     let color = if response.is_pointer_button_down_on() {
-        theme::with_alpha(kit::ACCENT, 0.7)
+        theme::with_alpha(theme::text_primary(), 0.7)
     } else {
-        kit::ACCENT
+        theme::text_primary()
     };
     ui.painter().galley(
         Pos2::new(rect.left(), rect.center().y - label.size().y / 2.0),

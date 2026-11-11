@@ -25,8 +25,10 @@
 
 ## Webhooks
 
-- Endpoints are global `store::webhook` documents. URLs and headers are plaintext templates; show
-  them only through `webhook_policy::redact`.
+- Endpoints are global `store::webhook` documents. URLs and headers are plaintext templates with a
+  `{{secret}}` placeholder, never the secret. Settings ▸ Webhooks shows the address in full, as the
+  user typed it. Logs and any text that is not the user's own configuration go through
+  `webhook_policy::redact`.
 - The single Keychain secret enters only at `{{secret}}`: percent-encoded in URLs, raw in headers,
   never in hostnames or bodies. Never log or persist resolved URLs or headers.
 - `service::webhook_delivery` is the only transport. Claim the delivery row before sending so each
