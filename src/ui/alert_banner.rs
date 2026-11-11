@@ -5,8 +5,8 @@
 // Transient: the app shell hosts this when the alert runtime is wired.
 #![allow(dead_code)]
 
+use crate::model::alert::notification::banners_enabled;
 use crate::model::alert::{AlertNotificationSettings, AlertTriggerEvent};
-use crate::model::alert_notification::banners_enabled;
 use crate::ui::icons::{self, Icon};
 use crate::ui::{kit, theme};
 use eframe::egui::{self, Align2, Color32, Id, Vec2};

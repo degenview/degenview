@@ -7,12 +7,12 @@
 #![allow(dead_code)]
 
 use crate::model::alert::AlertNotificationPermission;
+use crate::model::alert::feed::day_sections;
 use crate::model::alert::{
     AlertAsset, AlertCondition, AlertCurrency, AlertDeliveryState, AlertEventOrigin,
     AlertFrequency, AlertId, AlertRuntimeHealth, AlertServiceState, AlertState, AlertTriggerEvent,
     PriceAlert,
 };
-use crate::model::alert_feed::day_sections;
 use crate::ui::icons::{self, Icon};
 use crate::ui::script_alert_list::{self, ScriptAlertRow};
 use crate::ui::{accessibility, kit, theme};

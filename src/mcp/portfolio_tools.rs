@@ -130,7 +130,7 @@ impl DegenViewMcp {
             Ok(_) => return Err(unexpected()),
             Err(error) => return Err(failure(&error)),
         };
-        let mut quotes: HashMap<String, crate::model::watchlist_quote::WatchlistQuote> =
+        let mut quotes: HashMap<String, crate::model::watchlist::quote::WatchlistQuote> =
             HashMap::new();
         let mut capped = false;
         if priced && !base.holdings.is_empty() {

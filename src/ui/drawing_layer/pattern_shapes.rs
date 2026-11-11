@@ -8,11 +8,12 @@
 
 use super::Projection;
 use super::shape::{Band, LabelLook, LabelPlace, PivotLabel, Screen, Styled, vertex_handles};
-use crate::model::chart_type::{LineDash, Rgba};
-use crate::model::cycle::{self, CycleKind};
-use crate::model::drawing_style::DrawingStyle;
-use crate::model::elliott::WaveKind;
-use crate::model::pattern::{self, PatternKind};
+use crate::model::chart::kind::{LineDash, Rgba};
+use crate::model::drawings::style::DrawingStyle;
+use crate::model::pattern;
+use crate::model::pattern::PatternKind;
+use crate::model::pattern::cycle::CycleKind;
+use crate::model::pattern::elliott::WaveKind;
 use crate::model::{Anchor, Geometry};
 use crate::ui::line_geometry as lines;
 use crate::ui::pattern_geometry as curves;
@@ -234,7 +235,7 @@ fn cycle_shape(
         proj.times.index_of(a.time_ms),
         proj.times.index_of(b.time_ms),
     );
-    let period = cycle::period(first, second);
+    let period = pattern::cycle::period(first, second);
     let (lo, hi) = (
         proj.index_at(plot.left() - 1.0),
         proj.index_at(plot.right() + 1.0),
@@ -250,7 +251,7 @@ fn cycle_shape(
                 dash: LineDash::Dashed,
             });
             if let Some(period) = period.filter(|_| span >= MIN_LINE_SPACING)
-                && let Some(found) = cycle::positions(first, period, lo, hi)
+                && let Some(found) = pattern::cycle::positions(first, period, lo, hi)
             {
                 for index in found {
                     let x = proj.x_at_index(index);
@@ -266,7 +267,9 @@ fn cycle_shape(
                 // anchor is below the first.
                 let up = pb.y <= pa.y;
                 let reach = period.abs();
-                if let Some(found) = cycle::positions(first, period, lo - reach, hi + reach) {
+                if let Some(found) =
+                    pattern::cycle::positions(first, period, lo - reach, hi + reach)
+                {
                     for start in found {
                         let (left, right) =
                             (proj.x_at_index(start), proj.x_at_index(start + period));

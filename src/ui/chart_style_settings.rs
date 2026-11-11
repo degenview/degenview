@@ -8,7 +8,7 @@ use super::kit;
 use super::series_render::{color as paint_color, line_default};
 use super::settings_card;
 use crate::model::DataSource;
-use crate::model::chart_type::{
+use crate::model::chart::kind::{
     AreaSettings, BarSettings, BaselineSettings, CandleSettings, ChartGroup, ChartType,
     ColumnSettings, ConstructionSource, HlcAreaSettings, LineDash, LineSettings, PriceSource,
     RangeLook, Rgba, SizeMethod, SizeRule,

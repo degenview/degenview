@@ -7,8 +7,8 @@
 #![allow(dead_code)]
 
 use crate::model::DataSource;
+use crate::model::portfolio::format::{PortfolioValueFormatter, QuantitySign};
 use crate::model::portfolio::{PortfolioAsset, PortfolioTransaction, PortfolioTransactionType};
-use crate::model::portfolio_format::{PortfolioValueFormatter, QuantitySign};
 use crate::ui::accessibility;
 use crate::ui::alert_center::clock_time;
 use crate::ui::icons::Icon;

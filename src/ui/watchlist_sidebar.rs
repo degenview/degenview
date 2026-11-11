@@ -6,14 +6,15 @@
 //! shows, its filter and its highlighted row live in `WatchlistSidebarState`.
 
 use crate::model::InstrumentId;
+use crate::model::watchlist;
+use crate::model::watchlist::layout::{Filter, Flags, Row};
+use crate::model::watchlist::quote::WatchlistQuote;
+use crate::model::watchlist::quote::{Direction, Freshness};
+use crate::model::watchlist::text::ImportReport;
 use crate::model::watchlist::{
     EntryId, Watchlist, WatchlistColumn, WatchlistError, WatchlistFlag, WatchlistInstrument,
     WatchlistNotice, WatchlistSort, WatchlistSortKey,
 };
-use crate::model::watchlist_layout::{self, Filter, Flags, Row};
-use crate::model::watchlist_quote::WatchlistQuote;
-use crate::model::watchlist_quote::{self, Direction, Freshness};
-use crate::model::watchlist_text::ImportReport;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, Confirm, ConfirmOutcome};
 use crate::ui::sheet;
@@ -72,11 +73,11 @@ pub enum WatchlistAction {
     },
     Move {
         list: EntryId,
-        mv: watchlist_layout::Move,
+        mv: watchlist::layout::Move,
     },
     MoveToSectionByDrop {
         list: EntryId,
-        mv: watchlist_layout::SectionMove,
+        mv: watchlist::layout::SectionMove,
     },
     AddSection {
         list: EntryId,
@@ -369,7 +370,7 @@ pub fn show(
         );
     } else if let Some(list) = list {
         state.sync_selection(list, input.focused_market);
-        let rows = watchlist_layout::rows(
+        let rows = watchlist::layout::rows(
             list,
             &state.filter,
             input.flags,
@@ -880,7 +881,7 @@ fn options_menu(
         }
         if kit::menu_item(ui, Icon::CopyDoc, "Copy as Text", true, false) {
             actions.push(WatchlistAction::CopyText(
-                crate::model::watchlist_text::export(list),
+                crate::model::watchlist::text::export(list),
             ));
             ui.close();
         }
@@ -1101,12 +1102,12 @@ fn content(
                 let dragged_is_symbol = matches!(rows.get(source), Some(Row::Instrument { .. }));
                 if derived_order && dragged_is_symbol {
                     if let Some(mv) =
-                        watchlist_layout::resolve_section_move(rows, &[source], destination)
+                        watchlist::layout::resolve_section_move(rows, &[source], destination)
                     {
                         actions.push(WatchlistAction::MoveToSectionByDrop { list: list.id, mv });
                     }
                 } else if let Some(mv) =
-                    watchlist_layout::resolve_move(rows, &[source], destination)
+                    watchlist::layout::resolve_move(rows, &[source], destination)
                 {
                     actions.push(WatchlistAction::Move { list: list.id, mv });
                 }
@@ -1282,7 +1283,7 @@ fn detail_tile(
         theme::text_tertiary(),
     );
     let lead = if dot.is_some() { 12.0 } else { 0.0 };
-    let color = if value == watchlist_quote::MISSING {
+    let color = if value == watchlist::quote::MISSING {
         theme::text_tertiary()
     } else {
         theme::text_primary()
@@ -1396,14 +1397,14 @@ fn detail_panel(
     y += DETAIL_HEADER + DETAIL_GAP;
 
     // What it is worth: the price large, how it moved beside it.
-    let direction = watchlist_quote::direction(quote);
+    let direction = watchlist::quote::direction(quote);
     let move_color = match direction {
         Direction::Up => theme::UP,
         Direction::Down => theme::DOWN,
         Direction::Flat => theme::text_secondary(),
     };
-    let last = watchlist_quote::last_text(quote, Some(source));
-    let percent = watchlist_quote::percent_text(quote, Some(source));
+    let last = watchlist::quote::last_text(quote, Some(source));
+    let percent = watchlist::quote::percent_text(quote, Some(source));
     let pill_text = if direction == Direction::Flat {
         percent
     } else {
@@ -1432,7 +1433,7 @@ fn detail_panel(
         price.clone(),
         theme::text_primary(),
     );
-    let change = watchlist_quote::change_text(quote, Some(source));
+    let change = watchlist::quote::change_text(quote, Some(source));
     let change_galley = kit::galley(ui, &change, 12.0, kit::MEDIUM, move_color, width);
     let change_at = Pos2::new(left, hero_top + DETAIL_HERO - 18.0);
     let after = change_at.x + change_galley.size().x;
@@ -1457,16 +1458,16 @@ fn detail_panel(
     // The facts, two to a row.
     let freshness = quote.map_or(Freshness::Unavailable, |quote| quote.freshness);
     let updated = quote.and_then(|quote| quote.timestamp_ms).map_or_else(
-        || watchlist_quote::MISSING.to_owned(),
+        || watchlist::quote::MISSING.to_owned(),
         |timestamp| {
-            crate::model::paper_format::timestamp(
+            crate::model::paper::format::timestamp(
                 timestamp,
                 crate::service::timezone::local_utc_offset_secs(timestamp),
             )
         },
     );
     let symbol = format!("{}:{}", source.watchlist_slug(), item.instrument.symbol);
-    let volume = watchlist_quote::volume_text(quote);
+    let volume = watchlist::quote::volume_text(quote);
     let tile_width = (width - DETAIL_TILE_GAP) / 2.0;
     let tiles = [
         ("Volume", volume.as_str(), None),
@@ -1526,7 +1527,7 @@ fn detail_panel(
     if names.is_empty() {
         let none = kit::galley(
             ui,
-            watchlist_quote::MISSING,
+            watchlist::quote::MISSING,
             12.0,
             kit::REGULAR,
             theme::text_tertiary(),
@@ -2074,7 +2075,7 @@ fn import_window(
                 ui.add_sized(
                     [ui.available_width(), 155.0],
                     egui::TextEdit::multiline(text)
-                        .char_limit(crate::model::watchlist_text::MAX_IMPORT_BYTES)
+                        .char_limit(crate::model::watchlist::text::MAX_IMPORT_BYTES)
                         .font(egui::TextStyle::Monospace)
                         .hint_text("BINANCE:BTCUSDT\nCOINBASE:ETH-USD"),
                 );
@@ -2105,7 +2106,7 @@ fn import_window(
                                     path.map(|path| {
                                         crate::service::file_dialog::read_text_up_to(
                                             &path,
-                                            crate::model::watchlist_text::MAX_IMPORT_BYTES,
+                                            crate::model::watchlist::text::MAX_IMPORT_BYTES,
                                         )
                                     })
                                     .transpose()
@@ -2536,7 +2537,7 @@ mod tests {
 
     #[test]
     fn only_drawn_market_rows_ask_for_quotes() {
-        use crate::model::portfolio_card::{CardKind, PortfolioCard};
+        use crate::model::portfolio::card::{CardKind, PortfolioCard};
         let (mut shown, _, section) = sample_list();
         shown
             .add(

@@ -4,10 +4,10 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use crate::pine::bench_tests::{self, run_script};
 use crate::pine::compiler::{self, NoLibraries};
-use crate::pine::session::{RunError, Session};
-use crate::pine::token::Limits;
+use crate::pine::runtime::session::{RunError, Session};
+use crate::pine::syntax::token::Limits;
+use crate::pine::tests::bench::{self, run_script};
 
 use super::tests::{Probe, Seen, Why, bars, runtime_with, with_header};
 use super::*;
@@ -123,9 +123,9 @@ plot(x)
     let mut session = Session::new(
         compiler::compile(&source, Limits::default(), &NoLibraries),
         std::collections::HashMap::new(),
-        bench_tests::limits(),
+        bench::limits(),
         Some(0.01),
-        bench_tests::symbol(),
+        bench::symbol(),
         None,
         None,
     );
@@ -197,7 +197,7 @@ fn a_request_appears_as_a_boundary_frame_between_the_expression_and_the_chart() 
     );
     run_script(
         &source,
-        &bench_tests::bars(30, bench_tests::MINUTE_MS),
+        &bench::bars(30, bench::MINUTE_MS),
         true,
         |session| {
             session.attach_debugger(runtime);
@@ -255,7 +255,7 @@ fn stepping_out_of_a_function_in_a_request_returns_into_the_request_and_on() {
     );
     run_script(
         &source,
-        &bench_tests::bars(30, bench_tests::MINUTE_MS),
+        &bench::bars(30, bench::MINUTE_MS),
         true,
         |session| {
             session.attach_debugger(runtime);
@@ -270,7 +270,7 @@ fn stepping_out_of_a_function_in_a_request_returns_into_the_request_and_on() {
 
 #[test]
 fn debugging_a_script_with_requests_changes_none_of_its_outputs() {
-    let data = bench_tests::bars(120, bench_tests::MINUTE_MS);
+    let data = bench::bars(120, bench::MINUTE_MS);
     let source = with_header(REQUEST);
     let plain = format!("{:?}", run_script(&source, &data, true, |_| {}).output());
     let probe: Probe = Box::new(|_, view| {

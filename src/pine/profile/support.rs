@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use crate::pine::bench_tests::{bars, run_script};
+use crate::pine::tests::bench::{bars, run_script};
 
 use super::{Completeness, ProfileReport, ProfileRuntime, RegionTable, SteppingClock};
 

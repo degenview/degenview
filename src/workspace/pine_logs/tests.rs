@@ -1,5 +1,5 @@
 use super::*;
-use crate::model::pine_logs_view::{Levels, SearchOptions};
+use crate::model::pine::logs_view::{Levels, SearchOptions};
 use crate::pine::logs::LogLevel;
 use crate::store::watchlist::WatchlistStore;
 use crate::ui::ChartCard;

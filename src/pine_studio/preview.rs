@@ -7,15 +7,15 @@
 
 use super::Cmd;
 use super::inputs::{self, InputEdit, InputValues, InputsStore};
+use super::library::registry::LibraryRegistry;
 use super::model::ScriptType;
-use super::registry::LibraryRegistry;
 use super::workspace::PreviewInput;
 use crate::format;
-use crate::model::price_scale::PriceScaleMode;
+use crate::model::chart::price_scale::PriceScaleMode;
 use crate::model::{DataSource, IndicatorConfig, Kline, Timeframe};
 use crate::pine::compiler;
-use crate::pine::program::{InputSchema, InputValue, VisualOutput};
-use crate::pine::token::{DiagnosticSeverity, Limits};
+use crate::pine::compiler::program::{InputSchema, InputValue, VisualOutput};
+use crate::pine::syntax::token::{DiagnosticSeverity, Limits};
 use crate::service::{self, SearchResult};
 use crate::store::SharedStore;
 use crate::ui::icons::{self, Icon};
@@ -449,9 +449,9 @@ impl PreviewState {
             now_ms,
             visible_range: self.card.visible_open_range(&self.candles),
             theme: if light {
-                crate::pine::program::ChartTheme::LIGHT
+                crate::pine::compiler::program::ChartTheme::LIGHT
             } else {
-                crate::pine::program::ChartTheme::DARK
+                crate::pine::compiler::program::ChartTheme::DARK
             },
             label: format!("{} · {}", self.market.ticker, self.timeframe.label()),
         })
@@ -625,7 +625,7 @@ impl PreviewState {
     }
 
     /// The runtime failure of the script on the chart, if its last run stopped early.
-    pub(super) fn runtime_error(&self) -> Option<&crate::pine::token::Diagnostic> {
+    pub(super) fn runtime_error(&self) -> Option<&crate::pine::syntax::token::Diagnostic> {
         self.card.pine_error()
     }
 
@@ -634,7 +634,7 @@ impl PreviewState {
     pub(super) fn runtime_error_for(
         &self,
         source: &str,
-    ) -> Option<&crate::pine::token::Diagnostic> {
+    ) -> Option<&crate::pine::syntax::token::Diagnostic> {
         if self.applied_source.as_deref() == Some(source) {
             self.runtime_error()
         } else {
@@ -1102,8 +1102,9 @@ pub fn chart(
         let rect = stale_banner(ui, area);
         let response = ui.interact(rect, Id::new("preview-stale"), Sense::click());
         if response.clicked() {
-            cmds.borrow_mut()
-                .push(Cmd::SetDrawerTab(super::prefs::DrawerTab::Problems));
+            cmds.borrow_mut().push(Cmd::SetDrawerTab(
+                super::library::prefs::DrawerTab::Problems,
+            ));
         }
         response
             .on_hover_cursor(CursorIcon::PointingHand)
@@ -1631,7 +1632,7 @@ fn drive_search(picker: &mut Picker, ctx: &egui::Context) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pine::token::{Diagnostic, DiagnosticCategory, SourcePosition, SourceRange};
+    use crate::pine::syntax::token::{Diagnostic, DiagnosticCategory, SourcePosition, SourceRange};
     use crate::store::Store;
     use std::sync::{Arc, Mutex};
 

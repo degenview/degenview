@@ -166,7 +166,7 @@ fn every_text_note_and_content_tool_reaches_the_other_mac_exactly_as_drawn() {
                 drawing.set_table_cell(1, 2, "a cell");
             }
             Some(Geometry::Card { card, .. }) => {
-                card.meta = Some(crate::model::link_card::LinkMeta {
+                card.meta = Some(crate::model::annotation::link_card::LinkMeta {
                     title: "A title".into(),
                     author: "@someone".into(),
                     excerpt: "A few words.".into(),
@@ -204,7 +204,7 @@ fn every_text_note_and_content_tool_reaches_the_other_mac_exactly_as_drawn() {
 
 #[test]
 fn a_drawing_that_arrives_before_its_picture_is_kept_and_the_picture_follows() {
-    use crate::model::image_content::{Content, ImageContent};
+    use crate::model::annotation::image_content::{Content, ImageContent};
     use crate::model::{Anchor, Drawing, Tool};
     let (_cloud, mut a, mut b) = pair();
     a.core.start();

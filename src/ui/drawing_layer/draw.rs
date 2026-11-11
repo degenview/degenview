@@ -5,8 +5,8 @@
 use super::Projection;
 use super::shape::{HandleSpot, LabelLook, LabelPlace, Screen, Tag, TextPlace};
 use crate::model::Drawing;
-use crate::model::chart_type::LineDash;
-use crate::model::drawing_style::{
+use crate::model::chart::kind::LineDash;
+use crate::model::drawings::style::{
     DrawingStyle, HorizontalAlign, TextOrientation, TextStyle, VerticalAlign,
 };
 use crate::ui::canvas_render::CanvasStyle;
@@ -376,9 +376,9 @@ fn draw_arrow_extras(
         );
         let lines = readout.lines(&style.stats, proj.format);
         let at = match style.stats.position {
-            crate::model::drawing_style::StatsPosition::Left => start,
-            crate::model::drawing_style::StatsPosition::Center => start.lerp(end, 0.5),
-            crate::model::drawing_style::StatsPosition::Right => end,
+            crate::model::drawings::style::StatsPosition::Left => start,
+            crate::model::drawings::style::StatsPosition::Center => start.lerp(end, 0.5),
+            crate::model::drawings::style::StatsPosition::Right => end,
         };
         // Beside the line, on the side away from the text, so the two never collide.
         let offset = if end.y <= start.y {

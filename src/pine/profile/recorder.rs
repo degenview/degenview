@@ -13,7 +13,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-use crate::pine::fast_hash::FastMap;
+use crate::pine::runtime::fast_hash::FastMap;
 
 use super::clock::{Clock, MonotonicClock, resolution_ns};
 use super::regions::RegionTable;

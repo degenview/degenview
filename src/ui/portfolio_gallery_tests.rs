@@ -2,10 +2,10 @@
 //! `DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib portfolio_gallery -- --ignored`.
 
 use crate::model::DataSource;
+use crate::model::portfolio::format::PortfolioValueFormatter;
 use crate::model::portfolio::{
     PortfolioAsset, PortfolioCurrency, PortfolioHolding, PortfolioSnapshot,
 };
-use crate::model::portfolio_format::PortfolioValueFormatter;
 use crate::ui::portfolio_empty::{self, Scene};
 use crate::ui::portfolio_holdings::{self, HoldingsInput, HoldingsState};
 use crate::ui::portfolio_overview::{
@@ -586,7 +586,7 @@ const CMC_SMALL: &str = "Date (UTC),Token,Type,Price,Amount,Total value,Fee,Fee 
 #[test]
 #[ignore = "writes PNGs for a person to look at"]
 fn portfolio_gallery_cmc_import() {
-    use crate::model::portfolio_csv::preview_coinmarketcap;
+    use crate::model::portfolio::csv::preview_coinmarketcap;
     use crate::ui::portfolio_cmc_import::{CmcImportInput, CmcImportState, show};
     if crate::ui::render_tests::gallery_dir().is_none() {
         return;
@@ -609,7 +609,7 @@ fn portfolio_gallery_cmc_import() {
         state
     };
     // Mixed: every kind of row, a fee rate that failed and one still loading.
-    let mixed = |preview: &crate::model::portfolio_csv::CmcPreview| {
+    let mixed = |preview: &crate::model::portfolio::csv::CmcPreview| {
         let mut state = CmcImportState {
             did_auto_map: true,
             ..CmcImportState::default()
@@ -624,7 +624,7 @@ fn portfolio_gallery_cmc_import() {
         state
     };
     // Ready: everything matched, the fee rates loaded.
-    let ready = |preview: &crate::model::portfolio_csv::CmcPreview| {
+    let ready = |preview: &crate::model::portfolio::csv::CmcPreview| {
         let mut state = CmcImportState {
             did_auto_map: true,
             ..CmcImportState::default()
@@ -646,7 +646,7 @@ fn portfolio_gallery_cmc_import() {
         }
         state
     };
-    let loading_fees = |preview: &crate::model::portfolio_csv::CmcPreview| {
+    let loading_fees = |preview: &crate::model::portfolio::csv::CmcPreview| {
         let mut state = mixed(preview);
         state.fee_fx_errors.clear();
         state.is_resolving_fee_fx = true;
@@ -778,7 +778,7 @@ fn portfolio_gallery_header_menus() {
 #[test]
 #[ignore = "writes PNGs for a person to look at"]
 fn portfolio_gallery_import_preview() {
-    use crate::model::portfolio_csv::CsvPreview;
+    use crate::model::portfolio::csv::CsvPreview;
     use crate::ui::portfolio_import_preview::{ImportPreviewInput, ImportPreviewState, show};
     if crate::ui::render_tests::gallery_dir().is_none() {
         return;

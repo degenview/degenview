@@ -7,9 +7,9 @@
 
 use crate::format::parse_timestamp;
 use crate::mcp::bridge::McpError;
-use crate::model::chart_type::{LineDash, Rgba};
-use crate::model::drawing_style::MAX_STROKE_WIDTH;
+use crate::model::chart::kind::{LineDash, Rgba};
 use crate::model::drawings::MAX_TEXT_CHARS;
+use crate::model::drawings::style::MAX_STROKE_WIDTH;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -707,7 +707,7 @@ mod tests {
 
     #[test]
     fn every_tool_takes_only_the_style_fields_that_show() {
-        use crate::model::chart_type::LineDash;
+        use crate::model::chart::kind::LineDash;
         let one = |patch: StylePatch| patch;
         for tool in McpDrawingTool::ALL {
             let fields = [

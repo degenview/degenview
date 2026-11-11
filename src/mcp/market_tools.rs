@@ -17,8 +17,8 @@ use crate::mcp::tools::{
 };
 use crate::model::mcp::Permission;
 use crate::model::watchlist::WatchlistInstrument;
-use crate::model::watchlist_quote::{Freshness, WatchlistQuote};
-use crate::model::watchlist_text::market_item;
+use crate::model::watchlist::quote::{Freshness, WatchlistQuote};
+use crate::model::watchlist::text::market_item;
 use crate::model::{DataSource, InstrumentId};
 use crate::store::watchlist::{ListChanges, Place};
 use rmcp::handler::server::tool::Extension;
@@ -953,7 +953,7 @@ impl DegenViewMcp {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::watchlist_quote::SourceQuote;
+    use crate::model::watchlist::quote::SourceQuote;
 
     fn market(source: McpSource, symbol: &str) -> MarketRef {
         MarketRef {

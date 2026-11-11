@@ -4,9 +4,9 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use crate::pine::bench_tests;
+use crate::pine::compiler::program::SymbolInfo;
 use crate::pine::logs::LogHistory;
-use crate::pine::program::SymbolInfo;
+use crate::pine::tests::bench;
 
 use super::tests::with_header;
 use super::*;
@@ -18,7 +18,7 @@ fn wake() -> Arc<dyn Fn() + Send + Sync> {
 }
 
 fn config(body: &str, bar_count: usize) -> DebugConfig {
-    let bars = bench_tests::bars(bar_count, bench_tests::MINUTE_MS);
+    let bars = bench::bars(bar_count, bench::MINUTE_MS);
     let now = bars.last().map_or(0, |bar| bar.close_time + 1);
     DebugConfig::new(with_header(body), SymbolInfo::default(), bars, now)
 }
@@ -176,7 +176,7 @@ fn step_bar_advances_one_bar_at_a_time() {
 #[test]
 fn a_running_script_pauses_when_asked_and_can_then_be_stopped() {
     let mut config = config(
-        bench_tests::SIMPLE.trim_start_matches("//@version=6\nindicator(\"Simple\")\n"),
+        bench::SIMPLE.trim_start_matches("//@version=6\nindicator(\"Simple\")\n"),
         60_000,
     );
     config.stop_on_entry = false;
@@ -514,7 +514,7 @@ fn starting_refuses_a_script_with_errors_or_no_bars_with_the_reason() {
     let broken = DebugConfig::new(
         "//@version=6\nindicator(\"T\")\nx = (\n",
         SymbolInfo::default(),
-        bench_tests::bars(2, bench_tests::MINUTE_MS),
+        bench::bars(2, bench::MINUTE_MS),
         0,
     );
     match DebugSession::start(broken, wake()) {

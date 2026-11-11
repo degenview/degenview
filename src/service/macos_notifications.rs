@@ -2,7 +2,7 @@
 //! tests, unbundled development binaries and other platforms use a no-op implementation.
 
 use crate::model::alert::AlertNotificationPermission;
-use crate::model::alert_notification::NotificationContent;
+use crate::model::alert::notification::NotificationContent;
 use std::sync::Arc;
 
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]

@@ -1,15 +1,15 @@
 //! The lines, channels and pitchforks projected onto the plot: the visible pieces of every line
 //! (those with no end are cut to the plot here, never drawn from a far-away coordinate), their
 //! fills, handles, tags and text. Each function turns one geometry and the projection into a
-//! [`Screen`]; the construction itself lives in `ui::line_geometry` and `model::regression`.
+//! [`Screen`]; the construction itself lives in `ui::line_geometry` and `model::drawings::regression`.
 
 use super::Projection;
 use super::edit::Part;
 use super::shape::{
     AngleMark, Band, EndLabel, HandleSpot, Readout, Screen, Styled, Tag, TextPlace, with_heads,
 };
-use crate::model::drawing_style::{DrawingStyle, LineEnd};
-use crate::model::regression;
+use crate::model::drawings;
+use crate::model::drawings::style::{DrawingStyle, LineEnd};
 use crate::model::{Anchor, Geometry};
 use crate::ui::line_geometry::{self as lines, FORK_LENGTH};
 use eframe::egui::{Pos2, Vec2, pos2, vec2};
@@ -258,7 +258,7 @@ fn parallel(style: &DrawingStyle, proj: &Projection, anchors: &[Pos2]) -> Screen
             lines::line_in_rect(from, to, plot, before, after),
         );
     }
-    let mut level = |ratio: f32, line: &crate::model::drawing_style::MiddleLine| {
+    let mut level = |ratio: f32, line: &crate::model::drawings::style::MiddleLine| {
         let (from, to) = at(ratio);
         if let Some((from, to)) = lines::line_in_rect(from, to, plot, before, after) {
             screen.styled.push(Styled::new(vec![from, to], line));
@@ -422,12 +422,13 @@ fn regression_trend(
     let bars = proj.times.bars();
     let mut screen = Screen::empty();
     let (first, second) = (&stored[0], &stored[1]);
-    let span = regression::bar_span(bars, first.time_ms, second.time_ms);
+    let span = drawings::regression::bar_span(bars, first.time_ms, second.time_ms);
     // A logarithmic scale is fitted in logs; a price that cannot be (zero, negative) is fitted
     // as it is, which is the honest answer.
     let fitted = span.and_then(|_| {
-        let fit =
-            |log| regression::fit_bars(bars, first.time_ms, second.time_ms, options.source, log);
+        let fit = |log| {
+            drawings::regression::fit_bars(bars, first.time_ms, second.time_ms, options.source, log)
+        };
         if proj.scale.logarithmic {
             fit(true).or_else(|| fit(false))
         } else {
@@ -500,7 +501,7 @@ fn regression_trend(
         });
     }
     let handle_at = |time_ms: i64| {
-        let (bar, _) = regression::bar_span(bars, time_ms, time_ms).unwrap_or((lo, hi));
+        let (bar, _) = drawings::regression::bar_span(bars, time_ms, time_ms).unwrap_or((lo, hi));
         let index = bar as f64;
         pos2(
             proj.x_at_index(index),
@@ -527,9 +528,9 @@ struct Prong {
     key: f32,
     start: Pos2,
     end: Pos2,
-    color: crate::model::chart_type::Rgba,
+    color: crate::model::chart::kind::Rgba,
     width: f32,
-    dash: crate::model::chart_type::LineDash,
+    dash: crate::model::chart::kind::LineDash,
     median: bool,
 }
 

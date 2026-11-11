@@ -13,8 +13,8 @@ use super::{
     Choice, FieldKind, FieldSpec, Link, Logo, ProviderDescriptor, Purpose, Request, Secrets,
     SnapshotProvider, common_failure,
 };
-use crate::model::snapshot::{FieldValues, SharedSnapshot, UploadError, checked_link};
-use crate::model::webhook_policy::url_encode;
+use crate::model::chart::snapshot::{FieldValues, SharedSnapshot, UploadError, checked_link};
+use crate::model::webhook::policy::url_encode;
 use crate::service::multipart::Form;
 use crate::service::snapshot_upload::HostResponse;
 use eframe::egui;

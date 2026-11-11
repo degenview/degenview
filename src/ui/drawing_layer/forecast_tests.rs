@@ -6,9 +6,9 @@
 use super::line_tests::{PLOT, at, bars, near, projection, scale};
 use super::shape::{CandleLook, LabelLook, Screen, Tag};
 use super::*;
-use crate::model::bars_pattern::{BarsMode, BarsPattern};
-use crate::model::chart_type::{LineDash, Rgba};
-use crate::model::forecast_style::ProfileVolume;
+use crate::model::chart::kind::{LineDash, Rgba};
+use crate::model::forecast::style::ProfileVolume;
+use crate::model::pattern::bars::{BarsMode, BarsPattern};
 use crate::model::{DrawingStyle, Kline};
 use eframe::egui::pos2;
 

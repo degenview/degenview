@@ -8,13 +8,13 @@
 // Transient: the Portfolio window hosts these once the portfolio store is wired.
 #![allow(dead_code)]
 
+use crate::model::portfolio::accounting::ClosedPosition;
+use crate::model::portfolio::format::{PortfolioValueFormatter, Tone};
+use crate::model::portfolio::statistics::{
+    AssetResult, PortfolioHistoryRange, PortfolioPeriodChange, PortfolioStatistics, pnl_bars,
+};
 use crate::model::portfolio::{
     PortfolioAsset, PortfolioHolding, PortfolioSnapshot, PortfolioTransaction,
-};
-use crate::model::portfolio_accounting::ClosedPosition;
-use crate::model::portfolio_format::{PortfolioValueFormatter, Tone};
-use crate::model::portfolio_statistics::{
-    AssetResult, PortfolioHistoryRange, PortfolioPeriodChange, PortfolioStatistics, pnl_bars,
 };
 use crate::ui::accessibility;
 use crate::ui::icons::{self, Icon};

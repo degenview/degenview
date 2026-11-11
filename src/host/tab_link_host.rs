@@ -5,7 +5,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use crate::model::tab_link::{LinkColor, LinkTable, LinkToggles};
+use crate::model::tab::link::{LinkColor, LinkTable, LinkToggles};
 use crate::store::{SharedStore, Store};
 
 #[derive(Clone, Default)]

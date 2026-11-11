@@ -2,468 +2,393 @@
 
 ## Release procedure
 
-`Cargo.toml` is the only app-version source; About, update checks, and `tools/bundle.sh` read it.
+`Cargo.toml` is the only app-version source (read by About, update checks, `tools/bundle.sh`).
 Never edit the version or create a release tag by hand. Pick the version with
 [Choosing the release type](../../AGENTS.md#choosing-the-release-type).
 
 ## Versions and channels
 
 SemVer 2.0: `MAJOR.MINOR.PATCH` or `MAJOR.MINOR.PATCH-rc.N` (`tools/release.sh` also accepts
-`-alpha.N` and `-beta.N`, but no channel offers those yet). Pre-1.0, MINOR is a feature or format
-change and PATCH is a fix. Always the dotted `rc.N`, never `rc1`: SemVer compares numeric parts as
-numbers (`rc.10` after `rc.2`). The final `0.6.0` is a new tag rebuilt from the last commit, never
-a promoted RC binary.
+`-alpha.N`/`-beta.N`; no channel offers them). Pre-1.0: MINOR = feature or format change, PATCH =
+fix. Always dotted `rc.N`, never `rc1` (numeric parts compare as numbers: `rc.10` after `rc.2`). The
+final `0.6.0` is a new tag rebuilt from the last commit, never a promoted RC binary.
 
 ```
 0.5.1  <  0.6.0-rc.1  <  0.6.0-rc.2  <  0.6.0-rc.10  <  0.6.0
 ```
 
-- Two update channels, chosen in Settings ▸ About and saved per Mac in the local-only
-  `update.channel` setting (never in `sync::policy`). **Stable** offers tags with no prerelease
-  part. **Release Candidate** offers those plus `rc` tags, so it moves on to `0.6.0` once it ships.
-  With nothing saved, a build starts on its own channel (an RC keeps getting RCs).
-- `update_check::check` reads `releases?per_page=30`, up to three pages (the list includes
-  prereleases; `/releases/latest` does not, and the list is ordered by creation, so a run of release
-  candidates can push the newest stable past page one). It stops after the first page that holds a
-  release the channel accepts that is not newer than the running build, skips drafts and tags no
-  channel accepts or it cannot parse, and takes the highest version. Tags are parsed as strict
-  SemVer; only the dotted `rc.N` is a release candidate (`rc1` and `RC.1` are offered nowhere). It never offers anything not newer than the running build, so
-  switching channel cannot downgrade. Every trust rule below applies to RCs unchanged.
-- Add a channel by adding a `Channel` variant, its `accepts` rule and a label; the version
-  classification (`Kind`) already knows `rc`, everything else is "other" and offered nowhere.
-- Every build carries a build id: `dev` for a debug build (so a commit or branch switch does not
-  recompile the library before tests), otherwise the short commit hash, `-dirty` for a build with uncommitted
-  changes, `unknown` without git (`DEGENVIEW_BUILD_ID` overrides it). `build.rs` sets it; Settings ▸
-  About shows it and puts it in the copied build info. It is informational: nothing reads it back
-  and it is never sent anywhere. A release is built from its tag's commit, so each has its own.
+- Channels: chosen in Settings ▸ About, saved per Mac in local-only `update.channel` (never in
+  `sync::policy`). **Stable** = tags with no prerelease part; **Release Candidate** = those plus `rc`
+  tags (so it moves on to `0.6.0`). Nothing saved: a build starts on its own channel.
+- `update_check::check` reads `releases?per_page=30`, up to three pages (`/releases/latest` omits
+  prereleases; the list is ordered by creation, so RCs can push the newest stable past page one).
+  Stops after the first page holding an accepted release not newer than the running build; skips
+  drafts and unaccepted/unparseable tags; takes the highest version. Strict SemVer: only dotted `rc.N`
+  is an RC (`rc1`, `RC.1` offered nowhere). Never offers anything not newer than the running build, so
+  a channel switch cannot downgrade. Every trust rule below applies to RCs.
+- New channel: a `Channel` variant, its `accepts` rule, a label. `Kind` knows `rc`; anything else is
+  "other", offered nowhere.
+- Build id (`build.rs`): `dev` for debug builds (so a commit/branch switch does not recompile the
+  library before tests), else the short commit hash, `-dirty` with uncommitted changes, `unknown`
+  without git; `DEGENVIEW_BUILD_ID` overrides. Shown in Settings ▸ About and the copied build info.
+  Informational: nothing reads it back, never sent anywhere. Each release has its tag commit's id.
 
 1. Land on `main`; require a clean tree plus test, clippy, and fmt checks.
 2. Preview with `tools/release.sh <version> --dry-run`.
-3. Run `tools/release.sh <version>` (`--yes` skips confirmation). It creates
-   `release/v<version>`, bumps Cargo files, opens a PR, merge-commits it, then creates and pushes a
-   signed tag on merged `main`. Hyphenated versions are published as GitHub prereleases and only
-   the Release Candidate channel offers `-rc.N` ones.
-4. The tag-triggered Release workflow verifies tag identity/version, builds macOS arm64/x64 (a zip
-   and a disk image each), Windows x64 and ARM64 (a zip and a per-user installer each), Linux (x64
-   and arm64 tarballs) and a Flatpak per Linux CPU, then publishes. Watch with `gh run watch` and
-   confirm all twelve assets.
+3. Run `tools/release.sh <version>` (`--yes` skips confirmation): creates `release/v<version>`,
+   bumps Cargo files, opens a PR, merge-commits it, then creates and pushes a signed tag on merged
+   `main`. Hyphenated versions publish as GitHub prereleases; only Release Candidate offers `-rc.N`.
+4. The tag-triggered Release workflow verifies tag identity/version, builds macOS arm64/x64 (zip +
+   disk image each), Windows x64/ARM64 (zip + per-user installer each), Linux x64/arm64 tarballs and a
+   Flatpak per Linux CPU, then publishes. Watch with `gh run watch`; confirm all twelve assets.
 
-Release notes are generated by the workflow from `git log --no-merges` (no changelog file). A stable
-release lists everything since the previous stable tag, so `0.6.0` repeats what `0.6.0-rc.1` carried;
-a release candidate lists only what is new since the previous tag. The workflow file runs from the
-tag's own commit, so a change to the notes step must be on `main` before the tag is cut.
+Release notes: generated from `git log --no-merges` (no changelog file). Stable lists everything
+since the previous stable tag (`0.6.0` repeats `0.6.0-rc.1`); an RC only what is new since the
+previous tag. The workflow runs from the tag's commit, so a notes-step change must be on `main` first.
 
-Release builds restore **no build cache**. A release is signed and notarized from what the job
-compiles, so it must not start from compiled output saved by some earlier run: whatever could write
-that cache would be in the next release. (There used to be a `release-cache.yml` that warmed one
-from `main`; it is gone, and so is its weekly glibc check, which `release.yml` still runs on every
-Linux build.) A clean release build is slower; that is intended. `ci.yml` and the check workflows
-still use `rust-cache`, on pull requests only, where nothing is signed.
+Release builds restore **no build cache**: whatever could write one would end up signed in the next
+release. (`release-cache.yml` and its weekly glibc check are gone; `release.yml` runs that check on
+every Linux build.) Slower is intended. `ci.yml` and check workflows use `rust-cache` on PRs only.
 
-The Flatpak is built by the reusable `flatpak.yml` (`release.yml` calls it as the `flatpak` job, and
-the `release` job needs it, so the bundle exists before the immutable release is published).
-It builds from source in the Flatpak SDK, for x86_64 and aarch64, and shares no cache with the
-other jobs. The same workflow
-runs on pull requests that touch `packaging/flatpak/**`, weekly on `main`, and on demand
-(`flatpak-check.yml`, x86_64 only: a release builds arm64 too), which is the only check that the manifest builds before a tag.
-Dependency changes do not trigger it (see [Flatpak](../flatpak.md)). Details, and
-what is unverified: [Flatpak](../flatpak.md). The updater never looks at the Flatpak asset: it only
-picks the macOS and Windows zip suffixes.
+Flatpak: reusable `flatpak.yml`, called by `release.yml` as the `flatpak` job, which the `release`
+job needs (bundle exists before the immutable release publishes). Builds from source in the Flatpak
+SDK for x86_64 and aarch64, no shared cache. Also runs on PRs touching `packaging/flatpak/**`, weekly
+on `main`, and on demand (`flatpak-check.yml`, x86_64 only; releases build arm64 too): the only
+pre-tag manifest check. Dependency changes do not trigger it. Details and what is unverified:
+[Flatpak](../flatpak.md). The updater ignores the Flatpak asset; it picks only macOS/Windows zip
+suffixes.
 
-The macOS jobs staple the notarization ticket, which fetches it from Apple's CloudKit; that
-connection drops now and then (worst on `macos-x64`, the Intel runner: "network connection was
-lost", `stapler` exit 68). `stapler staple` and `stapler validate` are retried separately for about
-ten minutes in total, and if only `validate` cannot reach Apple the build goes on to the offline
-`codesign --verify` and `spctl --assess` checks. If a tagged build still fails there, re-run the
-failed job; the tag stays. The retry is `retry` in `tools/retry.sh`, sourced by both the app step and
-the disk-image step (steps do not share shell state, so a shared file is the only way to keep them from
-drifting); `tools/test-retry.sh` exercises it and runs in `macos-dmg-check.yml`.
+Stapling fetches the ticket from Apple's CloudKit, which drops now and then (worst on `macos-x64`,
+the Intel runner: "network connection was lost", `stapler` exit 68). `stapler staple` and
+`stapler validate` retry separately, ~ten minutes total; if only `validate` cannot reach Apple, the
+offline `codesign --verify` and `spctl --assess` checks still run. Still failing on a tag: re-run the
+failed job; the tag stays. Retry is `retry` in `tools/retry.sh`, sourced by the app and disk-image
+steps (steps share no shell state; a shared file prevents drift); `tools/test-retry.sh` runs in
+`macos-dmg-check.yml`.
 
 Never squash/rebase the release PR or reuse/move a published tag. Fix a bad release with a new
 version. Re-run a failed tagged build through the Release workflow dispatch.
 
 ## Trust and packaging
 
-- Installable updates require an annotated signed tag that GitHub reports `verified: valid`, with
-  a tagger email in `tag_signature::MAINTAINER_EMAILS`. Rotate keys on the maintainer account; to
-  change email, first release a version trusting both. Failed verification, including no GitHub
-  access, offers **View Release** instead; the workflow rejects the same failure before building.
-- Nothing but GitHub binds the Windows and Linux asset bytes to the signed tag (macOS has the
-  Developer ID check on top). Immutability locks a published release, but a token that can create
-  releases could publish its own assets for a signed tag that has no release yet: the minutes the
-  workflow takes to build, or after a failed run (the tag stays). A signed manifest or Authenticode
-  is the follow-up; until then do not leave a signed tag without its release. Only the workflow's
-  bot is an accepted author (`RELEASE_AUTHORS`), so the maintainer's own token cannot do this
-  through the API either, but a token that can add a signing key to the account still can forge the
-  tag itself: keep `admin:ssh_signing_key` off every token on a developer machine.
-- The release must be immutable and authored by `github-actions[bot]`; a release made by hand (the
-  maintainer's account included) is a manual download. Keep Immutable releases enabled. Assets must be uploaded before publication; never upload to an
-  immutable release afterward. Old mutable releases are manual-download only.
-- Keep macOS suffixes `-macos-arm64.zip`/`-macos-x64.zip` and the `DegenView.app` layout, and the
-  Windows suffix `-windows-x64.zip` with `degenview.exe` at the zip root (see Windows below). The updater
-  takes only the asset named exactly `DegenView-<tag><suffix>` and checks GitHub's digest. The
-  release job checks that `dist/` holds exactly the twelve expected names before publishing. `gh release create "$TAG" dist/*` handles draft, upload, and publish; the
-  workflow verifies the release and assets last.
-- The Release workflow imports a Developer ID Application certificate into a throwaway keychain,
-  signs through `tools/bundle.sh`, notarizes with `notarytool` (App Store Connect API key), staples
-  the `.app`, and only then zips it. Secrets are listed in the README. Each bundle embeds its own
-  Developer ID provisioning profile (`embedded.provisionprofile`); without one, macOS kills the
-  signed app at launch because `keychain-access-groups` is restricted. Profiles expire in 2044 or
-  with the certificate. The keychain access group
-  is `<TEAMID>.es.nico.degenview.shared`; `keychain_webhook_secrets::ACCESS_GROUP_SUFFIX` must keep
-  matching it. After unpacking, the updater runs `codesign --verify --deep --strict` with a Developer
-  ID Application requirement pinned to the running app's own Team ID (app and login item), then
-  `spctl --assess` for notarization (`code_signature`). A running app with no Team ID (unsigned or
-  ad-hoc) is not installable and offers **View Release**. Verification happens in the staging folder
-  next to the app, so it is not re-run at swap time.
-- Downloads follow only HTTPS redirects on GitHub/githubusercontent hosts, bound archive entries
-  and size, reject unsafe paths, limit `ditto`, and validate both app/login-item bundle ids, the
-  executable set, and links. Update `update_archive` constants when bundle layout changes.
-- The helper clears its environment. `self_update::FORWARDED_ENV` may contain only non-secrets:
-  `HOME`, `DEGENVIEW_CACHE_DIR`, `DEGENVIEW_NO_KEYCHAIN`, and `DEGENVIEW_NO_NOTIFICATIONS`. Never
-  forward credentials; helper argv is visible to other users.
+- Installable updates need an annotated signed tag GitHub reports `verified: valid`, tagger email in
+  `tag_signature::MAINTAINER_EMAILS`. Rotate keys on the maintainer account; to change email, first
+  release a version trusting both. Failed verification (incl. no GitHub access) offers **View
+  Release**; the workflow rejects the same failure before building.
+- Only GitHub binds Windows/Linux asset bytes to the signed tag (macOS adds Developer ID). A token that
+  can create releases could publish its own assets for a signed tag with no release yet (during the
+  build, or after a failed run). Follow-up: signed manifest or Authenticode; until then never leave a
+  signed tag without its release. Only the workflow bot is an accepted author (`RELEASE_AUTHORS`), so
+  the maintainer's token cannot do it via the API either; but a token that can add a signing key can
+  forge the tag: keep `admin:ssh_signing_key` off every token on a developer machine.
+- Release must be immutable and authored by `github-actions[bot]`; a hand-made one (maintainer
+  included) is manual-download only, as are old mutable releases. Keep Immutable releases enabled.
+  Upload assets before publication, never afterward.
+- Keep suffixes `-macos-arm64.zip`/`-macos-x64.zip` with the `DegenView.app` layout, and
+  `-windows-x64.zip` with `degenview.exe` at the zip root. The updater takes only the asset named
+  exactly `DegenView-<tag><suffix>` and checks GitHub's digest. The release job requires `dist/` to
+  hold exactly the twelve expected names; `gh release create "$TAG" dist/*` drafts, uploads and
+  publishes; the workflow verifies release and assets last.
+- macOS signing: Developer ID Application certificate in a throwaway keychain, sign via
+  `tools/bundle.sh`, notarize with `notarytool` (App Store Connect API key), staple the `.app`, then
+  zip. Secrets: README. Each bundle embeds its own Developer ID provisioning profile
+  (`embedded.provisionprofile`); without it macOS kills the app at launch (`keychain-access-groups` is
+  restricted). Profiles expire in 2044 or with the certificate. Access group
+  `<TEAMID>.es.nico.degenview.shared`; `keychain_webhook_secrets::ACCESS_GROUP_SUFFIX` must match.
+- After unpacking: `codesign --verify --deep --strict` with a Developer ID Application requirement
+  pinned to the running app's Team ID (app and login item), then `spctl --assess` (`code_signature`).
+  No Team ID (unsigned/ad-hoc) = not installable, **View Release**. Verified in the staging folder next
+  to the app, not re-run at swap time.
+- Downloads: only HTTPS redirects on GitHub/githubusercontent hosts; bounded archive entries and size;
+  unsafe paths rejected; `ditto` limited; both app/login-item bundle ids, the executable set and links
+  validated. Update `update_archive` constants when bundle layout changes.
+- The helper clears its environment. `self_update::FORWARDED_ENV` holds only non-secrets: `HOME`,
+  `DEGENVIEW_CACHE_DIR`, `DEGENVIEW_NO_KEYCHAIN`, `DEGENVIEW_NO_NOTIFICATIONS`. Never forward
+  credentials; helper argv is visible to other users.
 
 ## Build hardening
 
-What keeps a hostile change out of a signed release, and what to do when you touch it. The point of
-each rule is in `release.yml`; this is the list.
+Keeps a hostile change out of a signed release; each rule's reason is in `release.yml`.
 
-- **Every `uses:` is pinned to a commit hash**, with the version in a trailing comment
-  (`actions/checkout@<40 hex> # v7`). Dependabot (`.github/dependabot.yml`) proposes new hashes;
-  `zizmor` (`supply-chain.yml`) fails a pull request that adds an unpinned one. Never add a
-  third-party action to a job that has secrets, or to the release path, without a reason.
-- **Permissions are per job.** The workflow default is `contents: read`; only the `release` job
-  gets `contents: write` (plus `id-token` and `attestations` for the provenance). Checkouts use
-  `persist-credentials: false`.
-- **One commit.** `verify` resolves the signed tag to a commit, checks it is in `main`'s history,
-  and every later job checks out that hash, not the tag name. `release` checks the tag still names
-  it.
-- **Signing material arrives last.** On macOS the dependency graph is compiled
-  (`Build macOS release binaries`) and `dmgbuild` installed before the certificate is imported, so
-  no build script or proc-macro runs with the Developer ID or the notarization key available.
-  `tools/bundle.sh` skips its own build when `DEGENVIEW_SKIP_BUILD` is set. If you add a step that
-  runs third-party code to the macOS job, put it before the import.
-- **`--locked` everywhere** a release or the Flatpak is built, so `Cargo.lock` as committed is
-  what ships.
-- **No build cache** in release jobs (see above), and the compiler is `RUST_TOOLCHAIN` in the
-  workflows (an exact version, bumped by its own pull request), not whatever `stable` is that day.
-- **pip installs are hash-locked**: `tools/requirements/dmgbuild.txt` and
-  `flatpak-generator.txt`, installed with `--require-hashes`. Regenerate one by resolving the
-  versions with `pip download`, then taking each release file's sha256 from PyPI; review the diff.
-  The Flatpak container image is pinned by digest in `flatpak.yml` (update the tag and digest
-  together); the Flatpak `prepare` job runs on `ubuntu-24.04`, not `-latest`, to match the Python
-  the generator file is locked for.
-- **Provenance.** `release` attests every asset (`actions/attest-build-provenance`); anyone can run
-  `gh attestation verify <file> --repo degenview/degenview`. This does not replace a signature
-  checked by the app (the follow-up in "Trust and packaging").
+- **Every `uses:` pinned to a commit hash**, version in a trailing comment
+  (`actions/checkout@<40 hex> # v7`). Dependabot (`.github/dependabot.yml`) proposes hashes; `zizmor`
+  (`supply-chain.yml`) fails a PR adding an unpinned one. No third-party action in a job with secrets
+  or on the release path without a reason.
+- **Permissions per job.** Default `contents: read`; only `release` gets `contents: write` (plus
+  `id-token`, `attestations` for provenance). Checkouts use `persist-credentials: false`.
+- **One commit.** `verify` resolves the signed tag to a commit in `main`'s history; later jobs check
+  out that hash, not the tag name; `release` checks the tag still names it.
+- **Signing material last.** macOS compiles the dependency graph (`Build macOS release binaries`) and
+  installs `dmgbuild` before importing the certificate, so no build script or proc-macro sees the
+  Developer ID or notarization key. `tools/bundle.sh` skips its build when `DEGENVIEW_SKIP_BUILD` is
+  set. New macOS steps running third-party code go before the import.
+- **`--locked` everywhere** a release or the Flatpak is built.
+- **No build cache** in release jobs; compiler is `RUST_TOOLCHAIN` (exact version, bumped by its own
+  PR), not the day's `stable`.
+- **pip hash-locked**: `tools/requirements/dmgbuild.txt`, `flatpak-generator.txt`, with
+  `--require-hashes`. Regenerate: resolve with `pip download`, take each file's sha256 from PyPI,
+  review the diff. Flatpak container image pinned by digest in `flatpak.yml` (update tag and digest
+  together); Flatpak `prepare` runs on `ubuntu-24.04`, not `-latest`, matching the generator file's
+  Python.
+- **Provenance.** `release` attests every asset (`actions/attest-build-provenance`); verify with
+  `gh attestation verify <file> --repo degenview/degenview`. Not a substitute for an app-checked
+  signature (follow-up in "Trust and packaging").
 - **Dependencies.** `supply-chain.yml` runs `cargo deny` (`deny.toml`: RustSec advisories, yanked
-  crates, crates.io as the only source, a license allow list, banned TLS stacks) on every pull
-  request and weekly. An `ignore` in `deny.toml` needs a reason. Run it locally with
-  `cargo install cargo-deny --locked && cargo deny check`.
-- **Repository settings** the workflows rely on but cannot set: a `release` environment that
-  holds the signing secrets and only deploys from `v*` tags, a ruleset that blocks creating or
-  moving `v*` tags except by the maintainer, required status checks on `main`, and "Require actions
-  to be pinned to a full-length commit SHA". See `SECURITY.md` for the public side.
+  crates, crates.io only, license allow list, banned TLS stacks) on every PR and weekly. An `ignore`
+  needs a reason. Locally: `cargo install cargo-deny --locked && cargo deny check`.
+- **Repository settings** (not settable by workflows): a `release` environment with the signing
+  secrets, deploying only from `v*` tags; a ruleset blocking creating/moving `v*` tags except by the
+  maintainer; required status checks on `main`; "Require actions to be pinned to a full-length commit
+  SHA". Public side: `SECURITY.md`.
 
 ## macOS disk image
 
-`DegenView-<tag>-macos-<arch>.dmg` is what a person downloads to install: opening it shows
-`DegenView.app` beside an Applications shortcut and an arrow between them. The zip next to it holds
-the same app and is what the in-app updater downloads; the updater never reads the image, and the
-`.dmg` name can never match its `-macos-<arch>.zip` suffix (a test pins that). Keep both assets.
+`DegenView-<tag>-macos-<arch>.dmg` is the install download (`DegenView.app`, Applications shortcut,
+arrow). The zip holds the same app and is what the updater downloads; the updater never reads the
+image, and the `.dmg` name can never match `-macos-<arch>.zip` (test-pinned). Keep both.
 
-- **Build**: `tools/make-dmg.sh <app> <out.dmg>` with dmgbuild (pinned, with every dependency's
-  hash, in `tools/requirements/dmgbuild.txt`, installed with `--require-hashes` by `release.yml` and
-  `macos-dmg-check.yml`; 1.6.5 because later ones need Python 3.10 and Xcode's is 3.9), settings in `packaging/macos/dmg-settings.py`. dmgbuild writes the Finder layout
-  itself, which runs headless; `create-dmg` drives Finder through AppleScript and is flaky on CI.
-  `make-dmg.sh` signs nothing, so it also works on the unsigned `target/DegenView.app` that
-  `tools/bundle.sh` builds.
-- **Release**: the release workflow builds the image from the app that is already signed, notarized
-  and **stapled**, then signs the image with the Developer ID, notarizes it, staples it, and checks
-  `spctl` on the image and on the app inside after attaching it. The App Store Connect key the app's
-  notarize step wrote is reused, and removed with the other signing material.
+- **Build**: `tools/make-dmg.sh <app> <out.dmg>`, dmgbuild pinned with all dependency hashes in
+  `tools/requirements/dmgbuild.txt` (`--require-hashes` in `release.yml` and `macos-dmg-check.yml`;
+  1.6.5 because later needs Python 3.10, Xcode's is 3.9); settings `packaging/macos/dmg-settings.py`.
+  dmgbuild writes the Finder layout headless; `create-dmg` scripts Finder and is flaky on CI.
+  `make-dmg.sh` signs nothing, so works on unsigned `target/DegenView.app` from `tools/bundle.sh`.
+- **Release**: built from the already signed, notarized, **stapled** app; the image is then signed
+  (Developer ID), notarized, stapled, and `spctl`-checked along with the app inside after attaching.
+  Reuses the App Store Connect key from the app's notarize step, removed with other signing material.
 - **Art**: `tools/make-dmg-background.py` (Pillow) writes `packaging/macos/dmg-background.png` and
-  `@2x`; both are committed and only regenerated when the art changes. `make-dmg.sh` joins them
-  into one Retina-aware TIFF with `tiffutil -cathidpicheck`, which is why the PNGs carry 72/144 dpi.
-  The icon positions in the settings file and the arrow in the art must change together.
-- **Layout and Finder's own chrome**: Finder ignores an image's wish to hide the status bar, path bar
-  and tab bar (they are the user's global settings; the sidebar and toolbar flags are honoured), so
-  with all of them on only about 256 of the window's 380 points show. The icons, their labels and the
-  hint therefore sit in the top 256. Looked at by hand on macOS 27 with those bars on: everything
-  visible and the 2x art sharp.
-- **Mid-tone background** on purpose: Finder draws the icon labels black or white by the user's
-  appearance and an image cannot choose. Checked in the light appearance only.
-- **Running from the image**: the volume is read-only, so the updater cannot install there; it says
-  "Drag DegenView from the disk image to the Applications folder first." (`not_writable_message`).
-- **CI**: `macos-dmg-check.yml` builds the image around a stub app on PRs that touch it and checks
-  the app, the Applications link, the background (both sizes), the layout file and the volume icon,
-  and that an ad-hoc seal on the stub app still verifies inside the image and after a `ditto` out of
-  it. It cannot judge how the window looks. By hand, the same check passed on a real Developer ID
-  signed bundle with its login item and provisioning profile (identical file modes after the copy).
-- **Verified on CI**: `macos-dmg-check` builds the image with dmgbuild 1.6.5 on the `macos-latest`
-  (arm64) runner's Python and passes (PR #247).
-- **Not verified**: signing, notarization and stapling of the image, Gatekeeper on a quarantined
-  download of it, the Intel leg (`macos-15-intel`), until a release candidate has gone through the
-  workflow. Dark appearance not looked at.
+  `@2x`, both committed, regenerated only when art changes. `make-dmg.sh` joins them into a
+  Retina-aware TIFF (`tiffutil -cathidpicheck`), hence 72/144 dpi. Settings-file icon positions and
+  the art's arrow change together.
+- **Layout and Finder's own chrome**: Finder ignores hiding status/path/tab bars (user's global
+  settings; sidebar/toolbar flags honoured), so with all on only ~256 of 380 points show: icons,
+  labels and hint sit in the top 256. Looked at by hand on macOS 27 with bars on: all visible, 2x
+  sharp.
+- **Mid-tone background** on purpose: label colour follows the user's appearance. Light appearance
+  checked only.
+- **Running from the image**: read-only volume, updater says "Drag DegenView from the disk image to
+  the Applications folder first." (`not_writable_message`).
+- **CI**: `macos-dmg-check.yml` builds around a stub app on PRs touching it; checks app, Applications
+  link, background (both sizes), layout file, volume icon, and that an ad-hoc seal verifies inside the
+  image and after a `ditto` out. Cannot judge looks. By hand, the same check passed on a real Developer
+  ID bundle with login item and profile (identical file modes after copy).
+- **Verified on CI**: `macos-dmg-check` passes with dmgbuild 1.6.5 on `macos-latest` (arm64) Python
+  (PR #247).
+- **Not verified**: image signing/notarization/stapling, Gatekeeper on a quarantined download, the
+  Intel leg (`macos-15-intel`), until an RC goes through the workflow. Dark appearance not looked at.
 
 ## Homebrew
 
-`brew install --cask degenview/degenview/degenview` (final) and `.../degenview@rc` (Homebrew 7 trusts a fully named cask as it installs; a short name after `brew tap` needs `brew trust`), (final or `-rc.N`,
-the Release Candidate channel's set) come from the separate tap `degenview/homebrew-degenview`
-(local checkout `~/Developer/homebrew-degenview`), built like the Flatpak repo: it **pulls** on a
-six-hourly workflow and nothing here holds a token for it. Do not add a "bump the tap" step to
-`release.yml`.
+`brew install --cask degenview/degenview/degenview` (final) and `.../degenview@rc` (final or `-rc.N`,
+the Release Candidate set), from tap `degenview/homebrew-degenview` (checkout
+`~/Developer/homebrew-degenview`). Homebrew 7 trusts a fully named cask as it installs; a short name
+after `brew tap` needs `brew trust`. Like the Flatpak repo the tap **pulls** (six-hourly workflow);
+nothing here holds a token for it. Never add a "bump the tap" step to `release.yml`.
 
-- The casks install the `-macos-<arm64|x64>.zip` (not the `.dmg`), so the zip name is a contract with
-  the tap as well as the updater. `DegenView.app` at the zip root is too.
-- The tap's `scripts/bump.sh` verifies each zip (`gh release verify`, `verify-asset`,
-  `gh attestation verify --signer-workflow .../release.yml`) and writes the sha256 of the bytes it
-  downloaded. Releases the workflow bot did not author, and tags other than a final or `-rc.N`, are
-  ignored.
-- `auto_updates true`: the in-app updater replaces the app, so `brew upgrade` skips it. A brew install
-  must stay updatable in place: `/Applications` is user-writable for an admin user, so the updater's
-  `install_target` check passes.
-- The cask's `depends_on macos: :sonoma` mirrors `LSMinimumSystemVersion` (14.0) in `tools/bundle.sh`;
-  change both together. `zap` lists `es.nico.degenview` under Application Support, Caches, Preferences
-  and Saved Application State (`APP_DIR` in `store/mod.rs`); update it if those move.
-- **Verified**: `scripts/bump.sh` against v0.6.0-rc.15 (all verification steps pass, hashes equal the
-  API digests); `brew style`, `brew audit --cask --strict --online` (only "is a GitHub pre-release"
-  for the rc cask) and `brew fetch --cask` (hash checked) on a local copy of the tap with Homebrew
-  7.0.12 on macOS.
-- **Not verified**: `brew install` itself, `brew uninstall --zap`, an in-app update of a brew-installed
-  copy, the Intel cask, the tap's GitHub workflows (not run on GitHub yet), and the stable cask against
-  a real final release (none exists; its text was audited with the rc file's contents).
+- Casks install the `-macos-<arm64|x64>.zip` (not `.dmg`): zip name and root `DegenView.app` are a
+  tap contract too.
+- Tap's `scripts/bump.sh` verifies each zip (`gh release verify`, `verify-asset`,
+  `gh attestation verify --signer-workflow .../release.yml`) and writes the downloaded bytes' sha256.
+  Ignores releases not by the workflow bot and tags other than final or `-rc.N`.
+- `auto_updates true`: the in-app updater replaces the app; `brew upgrade` skips it. `/Applications`
+  is user-writable for an admin, so `install_target` passes.
+- `depends_on macos: :sonoma` mirrors `LSMinimumSystemVersion` (14.0) in `tools/bundle.sh`; change
+  together. `zap` lists `es.nico.degenview` under Application Support, Caches, Preferences, Saved
+  Application State (`APP_DIR` in `store/mod.rs`); update if those move.
+- **Verified**: `scripts/bump.sh` against v0.6.0-rc.15 (all steps pass, hashes equal API digests);
+  `brew style`, `brew audit --cask --strict --online` (only "is a GitHub pre-release" for rc) and
+  `brew fetch --cask` (hash checked) on a local tap copy, Homebrew 7.0.12, macOS.
+- **Not verified**: `brew install`, `brew uninstall --zap`, in-app update of a brew install, the
+  Intel cask, the tap's GitHub workflows (never run on GitHub), the stable cask against a real final
+  release (none exists; text audited with the rc file's contents).
 
 ## Linux glibc baseline
 
-The Linux release binaries must start on **glibc 2.35** (Ubuntu 22.04, Debian 12, Fedora 36 and
-newer), so the Linux release legs run on `ubuntu-22.04` and `ubuntu-22.04-arm`, the oldest
-runner images, not `ubuntu-latest`. A binary needs the glibc it was linked against, and building on
-a newer distro silently raises that floor. Older distros (RHEL 9 and clones, glibc 2.34) use the
-Flatpak, which brings its own runtime.
+Linux binaries must start on **glibc 2.35** (Ubuntu 22.04, Debian 12, Fedora 36+), so Linux release
+legs run on `ubuntu-22.04` and `ubuntu-22.04-arm`, not `ubuntu-latest`: a newer build host silently
+raises the floor. Older distros (RHEL 9 and clones, glibc 2.34) use the Flatpak.
 
-- **What went wrong**: the rc.11 tarballs were built on Ubuntu 24.04. Reading their ELF version tables
-  (`.gnu.version_r`): the **arm64** binary requires `GLIBC_2.39` outright, so the loader refuses to
-  start it on 22.04. The **x64** binary only *weakly* references `GLIBC_2.39` (Rust's std treats
-  `pidfd_spawnp` as optional and the linker marks the version `VER_FLG_WEAK`, which the loader
-  tolerates); its hard floor was already `GLIBC_2.35` (`libm`). Not run on a 22.04 machine: read from the
-  files.
-- **The gate**: `tools/check-glibc.py <binary> [max]` (default 2.35) parses that table and fails when
-  a *required* version exceeds the baseline; weak-only versions are reported, not failed. It is not
-  `strings | grep GLIBC_`, which cannot tell weak from required and would call the x64 binary too new.
-  `release.yml` runs it on each Linux build (a failing check fails the release before anything is
-  published). On a 22.04 builder the link itself already refuses
-  a symbol newer than 2.35, so the check mostly guards against the build host drifting (someone writing
-  `ubuntu-latest` again) and states the promise in CI. `linux-glibc-check.yml` builds the release on both
-  22.04 runners for any pull request that changes `Cargo.toml`/`Cargo.lock`, the check, or those
-  workflows: its build step catches a dependency that no longer builds or links on 22.04 (`Test linux`
-  builds on 24.04 and would not see it), and it also proves the check can fail. It also runs
-  `tools/test-check-glibc.py`, which builds small ELF files to test weak versus required versions and that
-  a damaged file gives an error message rather than a traceback.
-- **No cache on release builds**, so a build script or C object (`ring`, bundled SQLite) compiled on
-  a newer image can never carry its glibc requirement into the release.
-- **Changing the baseline** is a decision: edit `tools/check-glibc.py`, the release workflow's runners,
-  `linux-glibc-check.yml`, and the README. When GitHub retires the 22.04 runner, build
-  in an `ubuntu:22.04` container on the new runner (or `cargo-zigbuild` with a glibc suffix) rather than
-  moving the baseline by accident.
-- **Not verified**: the first build on 22.04 (this PR's `linux-glibc-check` run is it), whether arm64
-  then passes, and any real start on an old distro.
+- **What went wrong**: rc.11 tarballs built on Ubuntu 24.04. Per `.gnu.version_r`: **arm64** requires
+  `GLIBC_2.39` outright (refused on 22.04); **x64** only *weakly* references it (std treats
+  `pidfd_spawnp` as optional; `VER_FLG_WEAK`, tolerated), hard floor already `GLIBC_2.35` (`libm`).
+  Read from the files, not run on 22.04.
+- **The gate**: `tools/check-glibc.py <binary> [max]` (default 2.35) fails when a *required* version
+  exceeds the baseline; weak-only are reported. Not `strings | grep GLIBC_` (cannot tell weak from
+  required). `release.yml` runs it on each Linux build before publishing; the 22.04 link already
+  refuses newer symbols, so it mainly guards against host drift. `linux-glibc-check.yml` builds on both 22.04 runners for PRs changing
+  `Cargo.toml`/`Cargo.lock`, the check, or those workflows: catches a dependency that no longer
+  builds/links on 22.04 (`Test linux` uses 24.04), proves the check can fail, and runs
+  `tools/test-check-glibc.py` (small ELF files: weak vs required; damaged file gives an error, not a
+  traceback).
+- **No cache on release builds**, so no build script or C object (`ring`, bundled SQLite) from a
+  newer image leaks its glibc requirement.
+- **Changing the baseline** is a decision: edit `tools/check-glibc.py`, release runners,
+  `linux-glibc-check.yml`, README. When 22.04 runners retire, build in an `ubuntu:22.04` container (or
+  `cargo-zigbuild` with a glibc suffix), never move the baseline by accident.
+- **Not verified**: first build on 22.04 (this PR's `linux-glibc-check` run), whether arm64 then
+  passes, a real start on an old distro.
 
 ## Windows and Linux updates
 
-The updater also runs on Windows x64 and ARM64 (the portable zips, `DegenView-<tag>-windows-x64.zip`
-and `-windows-arm64.zip`) and on Linux x64/arm64 (the tarball, `DegenView-<tag>-linux-<arch>.tar.gz`). Both use one strategy,
-`service/self_update/portable_binary.rs`: replace the one executable, which is the only thing that
-differs from macOS's `.app` swap. Per OS only the unpacking (`update_archive::{extract_exe,
-check_exe}` for the zip, `{extract_tar_gz_binary, check_elf}` for the tarball), the relaunch and the
-wait differ. The check, tag verification, download, digest and `UpdateHost` are shared with macOS. A
-build takes the asset for its own CPU, and `check_exe` compares the PE machine with the running CPU,
-so an x64 zip is refused by a native ARM64 build and the reverse. An **x64 build running emulated on
-Windows on ARM** is still x86-64 to itself: it keeps taking the x64 zip and stays x64 until the user
-installs the ARM64 installer over it (same `AppId`) or unzips the ARM64 zip. The asset names and the
-`degenview.exe` / `./degenview` at the archive root are contracts with the updater, like macOS's.
+Windows x64/ARM64 (`DegenView-<tag>-windows-x64.zip`, `-windows-arm64.zip`) and Linux x64/arm64
+(`DegenView-<tag>-linux-<arch>.tar.gz`) share `service/self_update/portable_binary.rs`: replace the
+one executable instead of macOS's `.app` swap. Per OS only unpacking
+(`update_archive::{extract_exe, check_exe}` zip, `{extract_tar_gz_binary, check_elf}` tarball),
+relaunch and wait differ; check, tag verification, download, digest and `UpdateHost` are shared. A
+build takes its own CPU's asset; `check_exe` matches PE machine to the running CPU (native ARM64
+refuses x64 and vice versa). An **x64 build emulated on Windows on ARM** stays x64 until the user
+installs the ARM64 installer over it (same `AppId`) or unzips the ARM64 zip. Asset names and root
+`degenview.exe` / `./degenview` are updater contracts.
 
 ### Windows
 
-- **Trust**: the signed tag, the immutable release and the GitHub SHA-256, exactly the root of trust
-  macOS already depends on. There is **no** Authenticode check because the Windows build is not
-  signed (no certificate, no CI step). A signer pin like macOS's Team ID is the follow-up that
-  would add one; until then nothing proves the exe beyond those three.
-- **Unpack**: in-process with the `zip` crate (inflate only), no `ditto`. `precheck` bounds the
-  directory first; `extract_exe` takes only the entry named `degenview.exe` at the root, under a
-  fixed output name and the `MAX_UNPACKED_BYTES` cap; licence files and anything else are ignored.
-  `check_exe` requires a PE image for the running CPU.
-- **Installable**: the running exe's folder must be writable (`Program Files` is not: **View
-  Release**), and a build under the source tree (`cargo run`) never replaces itself (the paths are compared without
-  the `\\?\` prefix `canonicalize` adds).
-- **Swap**: Windows cannot overwrite a running exe but can rename it, so the swap moves the running
-  exe into `.DegenView-update\old\` and renames the new one into its place, rolling back if the
-  second rename fails. If the roll-back fails too, the error says where the old copy is and
-  how to put it back (`self_update::swap_paths`, shared by every strategy), and the next `prepare`
-  refuses to clear the staging folder while the app is missing and `old/` is in it
-  (`keep_only_copy`): clearing it would delete the only copy. Zip entries named alike are refused
-  (`has_duplicate_names`), and an unpacked tree or extraction that cannot be fully read is an error,
-  not a small size. The next start deletes the staging folder (a file still in use waits for
-  the start after).
-- **Relaunch**: no helper. The new exe is started detached with `--relaunch-after <pid>` and a
-  cleared environment (`FORWARDED_ENV` in `portable_binary`: data/cache folders, the standard Windows
-  variables a child process expects, and non-secret `DEGENVIEW_*` switches, names matched
-  case-insensitively; never credentials).
-  `wait_for_predecessor` runs first in `run_gui_with`, before the database opens, and waits up to
-  60 s (as long as the macOS helper) for that pid to exit so two instances never share the store.
-  **If the pid is still there when the wait ends it fails** (`WAIT_TIMEOUT`), `run_gui_with` returns the
-  error ("The previous DegenView is still running. Close it, then open DegenView again.", shown by
-  `report_fatal`) and the database is never opened.
-- Inferred, not observed: our own download carries no Mark-of-the-Web, so an updated exe should not
-  meet SmartScreen again; only the first manual download does.
-- **Not verified**: written and unit-tested on macOS only. The `cfg(windows)` code (spawn, wait) and
-  the real-process rename test run on the `test-windows` CI job. No update has been taken in a real
-  Windows session: release the next candidate, install the previous candidate's zip in a folder you
-  own, and update from it. Builds before the first updater-capable release have to be replaced by
-  hand once.
-- **Windows ARM64**: built natively on the `windows-11-arm` runner (free for public repositories) as
-  matrix leg `windows-arm64` in `release.yml`; the `test-windows` job in `ci.yml`
-  runs on it too, so `ring` (rustls), the bundled SQLite (`cc`), `winresource` and the windowing stack
-  are built for `aarch64-pc-windows-msvc` on every PR. If `ring` ever needs a tool the image lacks, fix
-  it in the workflow (install LLVM, set `CC`), not in the code.
-- **Not done**: Authenticode signing, winget/Scoop manifests (Homebrew for macOS is done: see Homebrew above).
+- **Trust**: signed tag, immutable release, GitHub SHA-256 (macOS's root). **No** Authenticode: the
+  build is unsigned (no certificate, no CI step). Follow-up: a signer pin like macOS's Team ID.
+- **Unpack**: `zip` crate in-process (inflate only), no `ditto`. `precheck` bounds the directory;
+  `extract_exe` takes only root `degenview.exe`, fixed output name, `MAX_UNPACKED_BYTES` cap; all else
+  ignored. `check_exe` requires a PE image for the running CPU.
+- **Installable**: exe folder writable (`Program Files` is not: **View Release**); a source-tree build
+  (`cargo run`) never replaces itself (paths compared without the `\\?\` prefix `canonicalize` adds).
+- **Swap**: rename the running exe into `.DegenView-update\old\`, rename the new one in, roll back if
+  that fails. If roll-back fails, the error says where the old copy is and how to restore it
+  (`self_update::swap_paths`, shared); the next `prepare` won't clear staging while the app is missing
+  and `old/` exists (`keep_only_copy`): it is the only copy. Same-named zip entries are refused
+  (`has_duplicate_names`); an unreadable tree or extraction is an error, not a small size. Next start
+  deletes staging (files in use wait one more start).
+- **Relaunch**: no helper. New exe starts detached with `--relaunch-after <pid>` and a cleared
+  environment (`FORWARDED_ENV` in `portable_binary`: data/cache folders, standard Windows child
+  variables, non-secret `DEGENVIEW_*` switches, case-insensitive; never credentials).
+  `wait_for_predecessor` runs first in `run_gui_with`, before the database opens, up to 60 s (as the
+  macOS helper) so two instances never share the store. **Pid still alive at the end: fails**
+  (`WAIT_TIMEOUT`); `run_gui_with` returns "The previous DegenView is still running. Close it, then
+  open DegenView again." (`report_fatal`), database never opened.
+- Inferred, not observed: our download has no Mark-of-the-Web, so SmartScreen should only hit the
+  first manual download.
+- **Not verified**: written/unit-tested on macOS only; `cfg(windows)` code (spawn, wait) and the
+  real-process rename test run on CI `test-windows`. No real Windows update yet: release the next
+  candidate, install the previous candidate's zip in a folder you own, update. Pre-updater builds must
+  be replaced by hand once.
+- **Windows ARM64**: native on `windows-11-arm` (free for public repos), matrix leg `windows-arm64` in
+  `release.yml`; `ci.yml`'s `test-windows` runs there too, so `ring` (rustls), bundled SQLite (`cc`),
+  `winresource` and the windowing stack build for `aarch64-pc-windows-msvc` on every PR. If `ring`
+  needs a missing tool, fix the workflow (install LLVM, set `CC`), not the code.
+- **Not done**: Authenticode signing, winget/Scoop manifests (Homebrew: see above).
 
 ### Linux
 
-For the tarball a user installed by hand (the README says `~/.local/bin/degenview`). Same trust as
-Windows: the signed tag, the immutable release and the GitHub SHA-256; Linux binaries are not signed,
-so there is no signature check beyond those.
+Hand-installed tarball (README: `~/.local/bin/degenview`). Trust as Windows; binaries unsigned.
 
-- **Unpack**: `extract_tar_gz_binary` (the `tar` crate, no default features, over `flate2`). The whole
-  decompressed stream is capped at `MAX_UNPACKED_BYTES`, at most `MAX_ENTRIES` entries, an unsafe
-  name (absolute, `..`, non-UTF-8) anywhere refuses the archive, and only the regular file named
-  `degenview` (the release tarball's entries start `./`; that is stripped) is written, as `0755`
-  under a fixed name. A symlink or hardlink of that name, or two of them, refuses it. The icon,
-  `degenview.desktop` and `licenses/` are **not** updated: only the binary is. `check_elf` requires a
-  64-bit little-endian ELF executable or PIE whose machine matches the running CPU.
-- **Installable**: the canonicalised binary's folder must be writable (a distro-packaged `/usr/bin`
-  install or a read-only mount is not: **View Release**, with a hint to use `~/.local/bin`), never a
-  development build, and never a Flatpak (`sandbox::is_flatpak()` is checked first, so a bundle-installed Flatpak keeps
-  its "download the new .flatpak" message even though it is also Linux x86-64 and the tarball asset
-  exists).
-- **Swap**: the running binary is renamed into `.DegenView-update/old/`, the new one renamed in, with
-  rollback. A running binary can be replaced this way because the old process keeps its open inode.
-- **Relaunch**: the new binary is started in its own process group with `--relaunch-after <pid>` and
-  the **whole environment inherited**, unlike Windows (cleared, allowlisted) and macOS (`open --env`
-  puts values on argv, hence its allowlist). A child's environment is not visible to other users, and it
-  has to carry `DISPLAY`/`WAYLAND_DISPLAY`/`XDG_RUNTIME_DIR`/`DBUS_SESSION_BUS_ADDRESS` (the Secret
-  Service) or the new process starts broken; an allowlist would be the riskier choice. Nothing goes
-  on the command line. A test observes both behaviours with a script.
-- **Wait**: `wait_for_predecessor` polls `/proc/<pid>/stat` every 100 ms for up to 60 s and treats a
-  zombie (`Z`) as exited. No `libc` is needed; with no `/proc` it does not wait.
-- **Flatpak**: the app cannot replace itself and cannot tell where it was installed from (Flatpak
-  records no remote in `/.flatpak-info`), so the update note is `sandbox::FLATPAK_UPDATE_NOTE`: run
-  `flatpak update` (hosted repo `degenview/flatpak`, served at `flatpak.degenview.app`) or download
-  the bundle. Each release builds one Flatpak branch from the tag (`stable` for a final, `beta` for `-rc.N`, `dev` for
-  alpha/beta tags, which nothing publishes); the repo also
-  copies a final release onto `beta`. See [Flatpak](../flatpak.md#hosted-repo).
-- **Checked against real artifacts**: the rc.11 tarballs for both CPUs unpack through
-  `extract_tar_gz_binary` and carry the expected ELF machine (`0x3E`, `0xB7`): ignored test
-  `a_real_linux_release_tarball_unpacks` with `DEGENVIEW_TEST_LINUX_TARBALL=<path>`.
-- **Not verified**: written on macOS; the unit tests (extraction, ELF check, environment, `/proc`
-  wait, swapping a binary that is held open) run on the Linux CI job (x86-64) and nothing has run on arm64. No update
-  has been taken in a real session: release the next candidate, install the previous candidate's
-  tarball binary into `~/.local/bin`, run it under X11 and Wayland, update, and check the relaunch
-  (display, Secret Service) and the new build id in Settings > About. Builds before the first
-  updater-capable release have to be replaced by hand once.
+- **Unpack**: `extract_tar_gz_binary` (`tar` crate, no default features, over `flate2`). Decompressed
+  stream capped at `MAX_UNPACKED_BYTES`, at most `MAX_ENTRIES`; any unsafe name (absolute, `..`,
+  non-UTF-8) refuses the archive; only regular file `degenview` (leading `./` stripped) is written,
+  `0755`, fixed name. A symlink/hardlink of that name, or two, refuses it. Icon, `degenview.desktop`,
+  `licenses/` are **not** updated. `check_elf`: 64-bit little-endian ELF executable or PIE for the
+  running CPU.
+- **Installable**: canonicalised binary's folder writable (`/usr/bin` distro install or read-only
+  mount: **View Release**, hint `~/.local/bin`); never a development build; never a Flatpak
+  (`sandbox::is_flatpak()` checked first, so a bundle Flatpak keeps its "download the new .flatpak"
+  message although it is Linux x86-64 and a tarball exists).
+- **Swap**: rename into `.DegenView-update/old/`, rename new in, with rollback (old process keeps its
+  open inode).
+- **Relaunch**: own process group, `--relaunch-after <pid>`, **whole environment inherited** (unlike
+  Windows: cleared/allowlisted; macOS: `open --env` puts values on argv, hence its allowlist). A child's
+  environment is invisible to other users and must carry `DISPLAY`/`WAYLAND_DISPLAY`/
+  `XDG_RUNTIME_DIR`/`DBUS_SESSION_BUS_ADDRESS` (Secret Service), so an allowlist is riskier. Nothing on
+  the command line. A script-based test observes both behaviours.
+- **Wait**: `wait_for_predecessor` polls `/proc/<pid>/stat` every 100 ms up to 60 s; zombie (`Z`) =
+  exited. No `libc`; no `/proc` = no wait.
+- **Flatpak**: cannot self-replace or know its source (no remote in `/.flatpak-info`), so the note is
+  `sandbox::FLATPAK_UPDATE_NOTE`: `flatpak update` (repo `degenview/flatpak` at
+  `flatpak.degenview.app`) or download the bundle. Each release builds one branch from the tag
+  (`stable` final, `beta` `-rc.N`, `dev` alpha/beta, unpublished); the repo also copies finals onto
+  `beta`. See [Flatpak](../flatpak.md#hosted-repo).
+- **Checked against real artifacts**: rc.11 tarballs (both CPUs) unpack via `extract_tar_gz_binary`
+  with ELF machine `0x3E`, `0xB7`: ignored test `a_real_linux_release_tarball_unpacks` with
+  `DEGENVIEW_TEST_LINUX_TARBALL=<path>`.
+- **Not verified**: written on macOS; unit tests (extraction, ELF check, environment, `/proc` wait,
+  swapping a held-open binary) run on Linux CI (x86-64), nothing on arm64. No real update yet: release
+  the next candidate, install the previous candidate's binary into `~/.local/bin`, run under X11 and
+  Wayland, update, check relaunch (display, Secret Service) and new build id in Settings > About.
+  Pre-updater builds must be replaced by hand once.
 
 ### Panics on Windows
 
-The Windows exe is a GUI-subsystem build: no console, so a panic used to close the app with nothing
-shown. `src/crash_report.rs` installs a panic hook first thing in `main`:
+GUI-subsystem exe, no console: a panic would vanish silently. `src/crash_report.rs` installs a panic
+hook first thing in `main`:
 
-- `crash.log` in the data directory (`%APPDATA%\es.nico.degenview`), appended on every panic (message,
-  location, thread, backtrace). The file never passes 256 KiB (an entry that would not fit starts it
-  afresh) and one entry is cut to 64 KiB.
-- A main-thread panic also shows a message box ("DegenView stopped unexpectedly") naming the file,
-  only when the entry was written: a full or unwritable data directory gets the message without a path.
-  Worker-thread panics are logged but not announced: the MCP server and the Pine runners catch some
-  on purpose.
-- Release builds are stripped, so a backtrace is mostly addresses. The message and location carry it.
+- `crash.log` in the data directory (`%APPDATA%\es.nico.degenview`), appended per panic (message,
+  location, thread, backtrace); capped at 256 KiB (an entry that won't fit restarts it), entries cut
+  to 64 KiB.
+- Main-thread panics also show a message box ("DegenView stopped unexpectedly") naming the file only
+  if written (full/unwritable directory: no path). Worker-thread panics are logged, not announced (MCP
+  server and Pine runners catch some on purpose).
+- Release builds are stripped: backtraces are mostly addresses; message and location carry it.
 
-Not verified on Windows: the `MessageBoxW` path is the one `main` already used for startup errors,
-with a new title.
+Not verified on Windows: the `MessageBoxW` path is `main`'s existing startup-error one, new title.
 
 ### Windows installer
 
-`DegenView-<tag>-windows-x64-setup.exe` and `-windows-arm64-setup.exe`, built by
-`tools/windows-installer.sh <tag> <exe> [x64|arm64]` from
-`packaging/windows/degenview.iss` (its `Arch` define) with Inno Setup (pinned in `release.yml` and
-`windows-installer-check.yml`; change both). It is unsigned, like the exe. The zip stays: it is the
-asset the updater downloads (`-windows-x64.zip` / `-windows-arm64.zip`); the installer names end
-`-setup.exe` so they can never match, and a test pins that for both CPUs.
+`DegenView-<tag>-windows-x64-setup.exe` / `-windows-arm64-setup.exe` via
+`tools/windows-installer.sh <tag> <exe> [x64|arm64]` from `packaging/windows/degenview.iss` (`Arch`
+define), Inno Setup pinned in `release.yml` and `windows-installer-check.yml` (change both).
+Unsigned. The zip (`-windows-x64.zip` / `-windows-arm64.zip`) stays as the updater asset; `-setup.exe`
+names never match it (test-pinned, both CPUs).
 
-- **Two installers, one product.** The x64 installer is `x64os` (x64 Windows only, **not** Windows on
-  ARM: `x64compatible` would admit it and install the emulated build); the ARM64 one is `arm64`. Both
-  carry the same `AppId`, so installing the ARM64 installer over an x64 install replaces it in place
-  and Installed apps keeps one entry. `windows-installer-check.yml` runs on both runners (on ARM it
-  installs the ARM64 installer for real) and checks that the x64 installer installs nothing and
-  fails on Windows on ARM.
-- **Per-user only, on purpose.** `PrivilegesRequired=lowest` installs to
-  `%LOCALAPPDATA%\Programs\DegenView`, a folder the app can write to, which the self-updater needs.
-  An all-users install under `Program Files` could not update itself, so the installer does not offer
-  it. Do not add `PrivilegesRequiredOverridesAllowed`.
-- **`AppId` is permanent.** It names the installer's identity and its Settings > Installed apps entry
-  (`HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\{id}_is1`). Change it and the next
-  installer installs beside the old one. `INSTALLER_APP_ID` in `installed_version.rs` must equal it; a test
-  reads the `.iss` and fails otherwise.
-- **Installed apps version.** A self-update swaps the exe but not the installer's entry, so
-  `sync_installed_version` (run at startup beside `cleanup_stale`) rewrites `DisplayVersion` to the
-  running version, only when Inno's recorded `App Path` is this exe's folder (a portable copy elsewhere
-  never edits an installed one's entry). A missing key is the portable case and is ignored.
-- **Installs** `degenview.exe` (always, `ignoreversion`: the exe has no version resource) and the OFL
-  font licences under `licenses\`; a Start menu shortcut, an optional desktop one (off by default), a
-  GPL licence page, and a launch-after-install box (not in a silent install). `CloseApplications`
-  asks a running DegenView to close first.
-- **Uninstall** removes the app folder, including the updater's `.DegenView-update`, and the
-  shortcuts. It **keeps** the user's data (`%APPDATA%\es.nico.degenview`) and cache.
-- **CI.** `windows-installer-check.yml` builds the installer around a stub exe on every PR touching
-  it, installs silently, checks files, shortcut and uninstall entry, uninstalls, and checks the user's
-  data survived. The registry sync has a Windows-only unit test on the `test-windows` job.
-- **Not verified**: the wizard pages, the shortcuts in a real session, closing a running app during an
-  upgrade, SmartScreen on the unsigned installer, and the whole loop (install rc.N with the installer,
-  self-update to rc.N+1, see rc.N+1 in Installed apps, uninstall). The silent install/uninstall in CI
-  is the only run so far.
+- **Two installers, one product.** x64 is `x64os` (**not** Windows on ARM; `x64compatible` would
+  install the emulated build there); ARM64 is `arm64`. Same `AppId`: ARM64 over x64 replaces in place,
+  one Installed apps entry. `windows-installer-check.yml` runs on both runners (ARM installs ARM64 for
+  real) and checks the x64 installer installs nothing and fails on ARM.
+- **Per-user only, on purpose.** `PrivilegesRequired=lowest` → `%LOCALAPPDATA%\Programs\DegenView`,
+  app-writable as the self-updater needs; `Program Files` could not self-update. Do not add
+  `PrivilegesRequiredOverridesAllowed`.
+- **`AppId` is permanent**: installer identity and Installed apps entry
+  (`HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall\{id}_is1`); changing it installs beside the
+  old one. `INSTALLER_APP_ID` in `installed_version.rs` must equal it (a test reads the `.iss`).
+- **Installed apps version.** Self-update swaps the exe, not the entry, so `sync_installed_version`
+  (startup, beside `cleanup_stale`) rewrites `DisplayVersion`, only when Inno's `App Path` is this
+  exe's folder (portable copies never touch an install's entry). Missing key = portable, ignored.
+- **Installs** `degenview.exe` (always, `ignoreversion`: no version resource), OFL font licences in
+  `licenses\`, Start menu shortcut, optional desktop one (off), GPL licence page, launch-after-install
+  box (not in silent installs). `CloseApplications` asks a running DegenView to close.
+- **Uninstall** removes the app folder (incl. `.DegenView-update`) and shortcuts; **keeps** user data
+  (`%APPDATA%\es.nico.degenview`) and cache.
+- **CI.** `windows-installer-check.yml` builds around a stub exe on PRs touching it, silent install,
+  checks files/shortcut/uninstall entry, uninstalls, checks user data survived. Registry sync has a
+  Windows-only unit test on `test-windows`.
+- **Not verified**: wizard pages, shortcuts in a real session, closing a running app on upgrade,
+  SmartScreen on the unsigned installer, the full loop (install rc.N, self-update to rc.N+1, see
+  rc.N+1 in Installed apps, uninstall). CI's silent install/uninstall is the only run.
 
 ## iCloud entitlements
 
-`DEGENVIEW_ICLOUD=1` (release workflow: repository variable `DEGENVIEW_ICLOUD`) builds with
-`--features icloud` and signs only the app with `tools/entitlements-app.plist`; the login item never
-gets iCloud entitlements. The app profile must grant them or macOS kills the app at launch, so ship
-the first iCloud build as a hyphenated prerelease and run `tools/verify-icloud.sh`. The Swift bridge
-is linked into the `degenview` binary; do not add a library or framework to the bundle (the
-updater's bundle check only accepts the two known executables). Production's CloudKit schema must
-be deployed before a release that changes records. Details: [iCloud Sync](../icloud-sync.md).
+`DEGENVIEW_ICLOUD=1` (release: repository variable `DEGENVIEW_ICLOUD`) builds `--features icloud` and
+signs only the app with `tools/entitlements-app.plist`; the login item never gets iCloud entitlements.
+The app profile must grant them or macOS kills the app at launch: ship the first iCloud build as a
+hyphenated prerelease and run `tools/verify-icloud.sh`. The Swift bridge links into the `degenview`
+binary; add no library or framework to the bundle (the updater accepts only the two known
+executables). Deploy Production's CloudKit schema before a release that changes records. Details:
+[iCloud Sync](../icloud-sync.md).
 
 ## In-app update state
 
-- `UpdateHost` is the sole check/install/restart state. The app owns it and exposes a cloned
-  `UpdateView` to windows and Settings; no other code calls check/prepare directly. State is
-  memory-only. Check about 15 seconds after launch, every six hours, or 30 minutes after the latest
-  attempt failed (also while a known update stays on offer). Do not check while installing or
-  awaiting restart, and never discard a known update after a failed check. A failed install does
-  not stop the schedule: its error belongs to that release, a scheduled check keeps it while the
-  same release is still offered and drops it for a different one, and only a person's check or a
-  channel switch clears it directly. Where the running copy can be replaced (`install_target`,
-  which runs `codesign` on macOS) is looked up on the update worker by the first tick, not while
-  the app starts; until it answers an available update says so and is not installable.
-- The tab-bar indicator and About card render `UpdateView::Phase`; UI never reads host internals.
-  The indicator reserves strip space. Progress is 0–5% signature, 5–90% byte download, and
-  90–100% unpack. Workers repaint only viewports that drew the state.
+- `UpdateHost` is the sole check/install/restart state, app-owned, exposing a cloned `UpdateView` to
+  windows and Settings; nothing else calls check/prepare. Memory-only.
+- Check ~15 seconds after launch, every six hours, or 30 minutes after a failed attempt (also while a
+  known update is on offer). Not while installing or awaiting restart; never discard a known update
+  after a failed check. A failed install keeps the schedule: its error belongs to that release, kept
+  by scheduled checks while the same release is offered, dropped for a different one; only a person's
+  check or a channel switch clears it directly.
+- `install_target` (runs `codesign` on macOS) is looked up on the update worker by the first tick, not
+  at app start; until then an available update says so and is not installable.
+- Tab-bar indicator and About card render `UpdateView::Phase`; UI never reads host internals. The
+  indicator reserves strip space. Progress: 0–5% signature, 5–90% download, 90–100% unpack. Workers
+  repaint only viewports that drew the state.
 - Prompt the focused window once when ready. “Later” leaves the Restart indicator; restart uses
-  `AppAction::Quit` so unsaved-script checks still run.
-- **Order of a restart**: "Restart Now" only *swaps* the new version in (`self_update::apply`, once; a
-  failure still shows on the tab bar) and arms the relaunch. The new version is *started* from
-  `eframe::App::on_exit` (`UpdateHost::relaunch_if_armed`, `self_update::relaunch`), when exit is
-  certain. Starting it earlier (as the first version did) put a second process beside the old one
-  whenever the unsaved-script question was slow or answered Cancel. `call_off_quit` disarms it, so a
-  cancelled quit followed by an ordinary quit days later starts nothing, and a second "Restart Now"
-  after a cancel skips the swap (swapping again would move the new version over the kept copy). The
-  macOS helper likewise starts the app only if the old process is really gone when its 60 s wait ends.
-  A spawn failure in `on_exit` cannot be shown: it is logged and the user reopens the app. Not run
-  end-to-end on any OS yet.
+  `AppAction::Quit` so unsaved-script checks run.
+- **Order of a restart**: "Restart Now" only *swaps* (`self_update::apply`, once; failure shows on the
+  tab bar) and arms the relaunch. The new version *starts* from `eframe::App::on_exit`
+  (`UpdateHost::relaunch_if_armed`, `self_update::relaunch`) when exit is certain. Never earlier: that
+  put a second process beside the old one when the unsaved-script question was slow or cancelled.
+  `call_off_quit` disarms it (a later ordinary quit starts nothing); a second "Restart Now" after a
+  cancel skips the swap (swapping again would move the new version over the kept copy). The macOS
+  helper also starts the app only if the old process is gone when its 60 s wait ends. A spawn failure
+  in `on_exit` is only logged; the user reopens the app. Not run end-to-end on any OS yet.

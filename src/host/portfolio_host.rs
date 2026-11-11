@@ -6,17 +6,17 @@
 #![allow(dead_code)]
 
 use crate::host::portfolio_import_flow::PortfolioImportFlow;
+use crate::model::portfolio;
+use crate::model::portfolio::accounting::{holdings_and_closed, net_contributions};
+use crate::model::portfolio::format::{PORTFOLIO_CURRENCIES, PortfolioValueFormatter};
+use crate::model::portfolio::history::{rebuild_start, transactions_fingerprint};
+use crate::model::portfolio::ledger::PortfolioLedger;
+use crate::model::portfolio::statistics::PortfolioHistoryRange;
 use crate::model::portfolio::{
     Portfolio, PortfolioAsset, PortfolioCurrency, PortfolioError, PortfolioHoldingsSort,
     PortfolioLedgerSnapshot, PortfolioSnapshot, PortfolioSource, PortfolioTransaction,
     PortfolioTransactionType,
 };
-use crate::model::portfolio_accounting::{holdings_and_closed, net_contributions};
-use crate::model::portfolio_csv;
-use crate::model::portfolio_format::{PORTFOLIO_CURRENCIES, PortfolioValueFormatter};
-use crate::model::portfolio_history::{rebuild_start, transactions_fingerprint};
-use crate::model::portfolio_ledger::PortfolioLedger;
-use crate::model::portfolio_statistics::PortfolioHistoryRange;
 use crate::model::watchlist::new_id;
 use crate::service::asset_auto_mapper::asset_from_search_result;
 use crate::service::portfolio_history::{
@@ -900,7 +900,7 @@ impl PortfolioTab {
                 }
                 header_controls::separator(ui);
                 if header_controls::action(ui, Icon::ShareUp, "Export Transactions\u{2026}") {
-                    let text = portfolio_csv::export_transactions(
+                    let text = portfolio::csv::export_transactions(
                         &snapshot.transactions,
                         &snapshot.portfolios,
                     );
@@ -1005,7 +1005,7 @@ impl PortfolioTab {
         if let Some(export) = self.pending_export.take() {
             let (text, name) = match export {
                 PendingExport::Holdings => (
-                    portfolio_csv::export_holdings(
+                    portfolio::csv::export_holdings(
                         &holding_values,
                         selected
                             .and_then(|id| {
@@ -1020,7 +1020,7 @@ impl PortfolioTab {
                     crate::host::portfolio_import_flow::HOLDINGS_FILENAME,
                 ),
                 PendingExport::History => (
-                    portfolio_csv::export_history(history),
+                    portfolio::csv::export_history(history),
                     crate::host::portfolio_import_flow::HISTORY_FILENAME,
                 ),
             };

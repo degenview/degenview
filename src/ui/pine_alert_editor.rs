@@ -6,9 +6,10 @@
 //! being armed, cards for the rows, the shared webhook picker, and a footer that says what will
 //! happen.
 
-use crate::model::pine_alert::{self, ArmingFacts, Blocker, CallRow, PineAlertSubscription};
+use crate::model::alert;
+use crate::model::alert::pine::{ArmingFacts, Blocker, CallRow, PineAlertSubscription};
 use crate::model::webhook::{EndpointId, WebhookEndpoint};
-use crate::pine::alert_call::AlertCallSite;
+use crate::pine::builtins::alert::call::AlertCallSite;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, REGULAR, SEMIBOLD, size};
 use crate::ui::{sheet, theme, webhook_picker};
@@ -82,7 +83,7 @@ impl PineAlertEditorState {
 // MARK: Pure text
 
 pub fn can_create(facts: ArmingFacts) -> bool {
-    facts.loaded && pine_alert::blocker(facts).is_none()
+    facts.loaded && alert::pine::blocker(facts).is_none()
 }
 
 /// The script name shown in the card: its own, else a placeholder while loading or untitled.
@@ -109,7 +110,7 @@ pub fn summary(facts: ArmingFacts, chart_title: &str, timeframe: &str) -> String
 pub fn status_badge(facts: ArmingFacts) -> (&'static str, kit::Tone) {
     if !facts.loaded {
         ("Checking…", kit::Tone::Neutral)
-    } else if pine_alert::blocker(facts).is_none() {
+    } else if alert::pine::blocker(facts).is_none() {
         ("Ready", kit::Tone::Good)
     } else {
         ("Can't arm", kit::Tone::Warning)
@@ -201,7 +202,7 @@ fn form(ui: &mut Ui, state: &mut PineAlertEditorState, input: &PineAlertEditorIn
     );
     ui.add_space(GAP);
     script_card(ui, input);
-    if let Some(Blocker { title, detail }) = pine_alert::blocker(input.facts) {
+    if let Some(Blocker { title, detail }) = alert::pine::blocker(input.facts) {
         ui.add_space(12.0);
         kit::notice_card(
             ui,
@@ -315,7 +316,7 @@ fn triggers(ui: &mut Ui, input: &PineAlertEditorInput) {
             if index > 0 {
                 ui.add_space(ROW_GAP);
             }
-            call_row(ui, &pine_alert::call_row(site));
+            call_row(ui, &alert::pine::call_row(site));
         }
     };
     if input.call_sites.len() > INLINE_CALL_LIMIT {
@@ -628,9 +629,9 @@ pub fn show_webhooks(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::pine_alert::PineAlertState;
-    use crate::pine::alert_frequency::AlertFrequency;
-    use crate::pine::token::{SourcePosition, SourceRange};
+    use crate::model::alert::pine::PineAlertState;
+    use crate::pine::builtins::alert::frequency::AlertFrequency;
+    use crate::pine::syntax::token::{SourcePosition, SourceRange};
 
     fn facts() -> ArmingFacts {
         ArmingFacts {
@@ -913,7 +914,7 @@ mod tests {
                 timeframe: "1h".into(),
                 source_hash: "h".into(),
                 note: String::new(),
-                state: crate::model::pine_alert::PineAlertState::Active,
+                state: crate::model::alert::pine::PineAlertState::Active,
                 created_at_ms: 0,
                 webhook_endpoint_ids: vec![endpoints[0].id],
             };

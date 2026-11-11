@@ -6,8 +6,8 @@ use super::Projection;
 use super::draw::TEXT_PAD;
 use super::edit::{BoxHandle, Part};
 use super::shape::{Divider, Grid, HandleSpot, Screen};
-use crate::model::drawing_style::DrawingStyle;
-use crate::model::table::{ScreenAnchor, TableData};
+use crate::model::annotation::table::{ScreenAnchor, TableData};
+use crate::model::drawings::style::DrawingStyle;
 use eframe::egui::{Pos2, Rect, pos2};
 
 /// Where a table's top-left corner is on screen: at its chart point, or at the place on the plot

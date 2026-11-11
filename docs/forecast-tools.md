@@ -49,7 +49,7 @@ first two, a click for each more; Backspace takes the last back, Esc or a right-
 ## Positions
 
 The formulas are TradingView's published ones ("How to use long and short position drawing tools",
-**doc**), in `model/position.rs`. Entry, stop and target are prices; `Side` carries the direction.
+**doc**), in `model/forecast/position.rs`. Entry, stop and target are prices; `Side` carries the direction.
 
 - Risk size: the risk percentage of the account, or the amount typed.
 - Quantity (in lots): the smaller of the **risk quantity** `risk size / (stop distance x point value) / lot`
@@ -152,7 +152,7 @@ of drawing a line it made up. A bar that is not a number is skipped.
 
 ## Volume profiles
 
-`model/volume_profile.rs`, and one engine for both tools: they differ only in which bars they cover (two
+`model/forecast/volume_profile.rs`, and one engine for both tools: they differ only in which bars they cover (two
 anchors, or an anchor to the latest bar).
 
 - The rows span the lowest low to the highest high of the bars, as a number of rows (default 24, at

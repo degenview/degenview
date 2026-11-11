@@ -739,7 +739,7 @@ fn the_portfolios_switch_holds_records_until_it_is_back_on() {
 #[test]
 fn a_portfolio_card_in_a_watchlist_follows_the_portfolio_to_the_other_mac() {
     use crate::model::InstrumentId;
-    use crate::model::portfolio_card::{CardKind, PortfolioCard};
+    use crate::model::portfolio::card::{CardKind, PortfolioCard};
     use crate::model::watchlist::{Watchlist, WatchlistEntry, WatchlistInstrument};
 
     let (_cloud, mut a, mut b) = pair();

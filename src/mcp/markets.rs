@@ -3,8 +3,8 @@
 //! need the store live in `host::mcp_host`.
 
 use crate::mcp::chart_data::iso;
+use crate::model::watchlist::quote::{ChangeBasis, Freshness, VolumeKind, WatchlistQuote};
 use crate::model::watchlist::{Watchlist, WatchlistEntry, WatchlistInstrument};
-use crate::model::watchlist_quote::{ChangeBasis, Freshness, VolumeKind, WatchlistQuote};
 use crate::model::{DataSource, InstrumentId};
 use crate::service::SearchResult;
 use schemars::JsonSchema;

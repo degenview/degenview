@@ -10,11 +10,13 @@ use super::{
     toggle_row,
 };
 use crate::model::Tool;
-use crate::model::chart_type::LineDash;
-use crate::model::drawing_style::{DrawingStyle, HorizontalAlign, MAX_LEVEL_RATIO, VerticalAlign};
+use crate::model::chart::kind::LineDash;
+use crate::model::drawings::style::{
+    DrawingStyle, HorizontalAlign, MAX_LEVEL_RATIO, VerticalAlign,
+};
+use crate::model::fib;
 use crate::model::fib::Caption;
-use crate::model::fib_style::{FibLevel, FibStyle, LevelSet};
-use crate::model::gann;
+use crate::model::fib::style::{FibLevel, FibStyle, LevelSet};
 use crate::ui::{icons, kit, theme};
 use eframe::egui::{self, Align, Layout};
 
@@ -128,7 +130,7 @@ impl DrawingProperties {
             });
         }
         if features.scale {
-            let max = f64::from(crate::model::fib_style::MAX_SCALE);
+            let max = f64::from(crate::model::fib::style::MAX_SCALE);
             if let Some(scale) = settings_card::card(
                 ui,
                 Icon::Ruler,
@@ -334,8 +336,8 @@ fn level_row(ui: &mut Ui, row: Row, level: &mut FibLevel) -> Option<RowAction> {
                 settings_card::switch(ui, &mut level.enabled);
                 let name = match row.caption {
                     Caption::None => None,
-                    Caption::Angle => Some(gann::angle_label(level.ratio)),
-                    Caption::Arc => Some(gann::arc_label(level)),
+                    Caption::Angle => Some(fib::gann::angle_label(level.ratio)),
+                    Caption::Arc => Some(fib::gann::arc_label(level)),
                 };
                 if let Some(name) = name {
                     ui.add_sized(
@@ -421,7 +423,7 @@ fn look_chip(
             kit::menu_heading(ui, "Thickness");
             ui.horizontal(|ui| {
                 ui.add_space(14.0);
-                let max = f64::from(crate::model::drawing_style::MAX_STROKE_WIDTH);
+                let max = f64::from(crate::model::drawings::style::MAX_STROKE_WIDTH);
                 if let Some(width) = number_field(
                     ui,
                     id.with("width"),

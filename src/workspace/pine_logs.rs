@@ -6,8 +6,8 @@
 //! setting, local to the machine; the messages themselves are never stored or synced.
 
 use super::*;
-use crate::model::pine_instance::PineInstance;
-use crate::model::pine_logs_view::{LogsPrefs, SourceTarget};
+use crate::model::pine::instance::PineInstance;
+use crate::model::pine::logs_view::{LogsPrefs, SourceTarget};
 use crate::pine::logs::{LogEvent, LogHistory};
 use crate::ui::Scrolled;
 use crate::ui::pine_logs_view::{self as logs_view, Feed, LogsAction, ScriptEntry};

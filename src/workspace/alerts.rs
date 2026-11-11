@@ -58,8 +58,8 @@ impl ChartWorkspace {
             if let Some(price) = request.price {
                 editor.target = AlertCurrency::Usd.plain_price_text(price);
                 editor.direction =
-                    match crate::model::chart_context::alert_side(price, request.last) {
-                        Some(crate::model::chart_context::AlertSide::Below) => {
+                    match crate::model::chart::context::alert_side(price, request.last) {
+                        Some(crate::model::chart::context::AlertSide::Below) => {
                             alert_editor::Direction::Below
                         }
                         _ => alert_editor::Direction::Above,

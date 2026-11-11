@@ -11,8 +11,8 @@ use super::kit::{self, SEMIBOLD};
 use super::overlay_settings;
 use super::popover::{self, Placement};
 use super::theme;
+use crate::model::chart::price_scale::PriceScaleMode;
 use crate::model::overlay::{ChartOverlay, OverlayCommand, OverlayId, OverlayScale};
-use crate::model::price_scale::PriceScaleMode;
 use eframe::egui::{Align, Context, Id, Layout, Rect, Sense, vec2};
 
 /// The name column, the controls and the panel's padding.

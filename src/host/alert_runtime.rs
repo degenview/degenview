@@ -259,7 +259,7 @@ mod tests {
         AlertRuntimeCommandPayload, AlertRuntimeOwner, PriceAlert,
     };
     use crate::model::watchlist::new_id;
-    use crate::model::watchlist_quote::{Freshness, WatchlistQuote};
+    use crate::model::watchlist::quote::{Freshness, WatchlistQuote};
     use crate::model::{DataSource, InstrumentId};
     use crate::service::macos_notifications::Notifier;
     use crate::service::watchlist_quotes::{
@@ -287,7 +287,7 @@ mod tests {
     impl Notifier for RecordingNotifier {
         fn deliver(
             &self,
-            _: &crate::model::alert_notification::NotificationContent,
+            _: &crate::model::alert::notification::NotificationContent,
         ) -> Result<(), String> {
             self.0.fetch_add(1, Ordering::SeqCst);
             Ok(())

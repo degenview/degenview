@@ -3,7 +3,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use crate::pine::bench_tests::{self, run_script};
+use crate::pine::tests::bench::{self, run_script};
 
 use super::tests::{Probe, bars, runtime_with, with_header};
 use super::*;
@@ -61,7 +61,7 @@ fn at_lines(
     count: usize,
     lines: &[usize],
     probe: Probe,
-) -> crate::pine::session::Session {
+) -> crate::pine::runtime::session::Session {
     let source = with_header(body);
     let specs = lines
         .iter()
@@ -691,21 +691,21 @@ plot(array.size(arr))
 
 // MARK: Debugging changes nothing
 
-fn observed(session: &crate::pine::session::Session) -> String {
+fn observed(session: &crate::pine::runtime::session::Session) -> String {
     format!("{:?}", session.output())
 }
 
 /// One script of the "inspecting changes no output" check. Each script is its own test so the
 /// suite runs them in parallel instead of one long serial loop.
 fn inspecting_and_evaluating_changes_no_output(which: usize) {
-    let data = bench_tests::bars(80, bench_tests::MINUTE_MS);
+    let data = bench::bars(80, bench::MINUTE_MS);
     let scripts = [
-        ("simple", bench_tests::SIMPLE.to_owned(), false),
-        ("containers", bench_tests::CONTAINERS.to_owned(), false),
-        ("functions", bench_tests::NESTED_FUNCTIONS.to_owned(), false),
-        ("strategy", bench_tests::STRATEGY.to_owned(), false),
-        ("history", bench_tests::LONG_HISTORY.to_owned(), false),
-        ("straight", bench_tests::straight_line(30), false),
+        ("simple", bench::SIMPLE.to_owned(), false),
+        ("containers", bench::CONTAINERS.to_owned(), false),
+        ("functions", bench::NESTED_FUNCTIONS.to_owned(), false),
+        ("strategy", bench::STRATEGY.to_owned(), false),
+        ("history", bench::LONG_HISTORY.to_owned(), false),
+        ("straight", bench::straight_line(30), false),
     ];
     let texts = [
         "close - open",
@@ -788,9 +788,9 @@ fn evaluating_a_watch_leaves_the_interpreters_state_exactly_as_it_was() {
     );
     let mut session = run_script(&source, &bars(10), false, |_| {});
     let before = format!("{:?}", session.working);
-    let context = crate::pine::runtime_types::RuntimeContext::new(
+    let context = crate::pine::runtime::types::RuntimeContext::new(
         bars(1).remove(0),
-        crate::pine::runtime_types::BarFlags::default(),
+        crate::pine::runtime::types::BarFlags::default(),
     );
     for text in [
         "close[1] + 1",

@@ -5,11 +5,11 @@
 // Transient: the paper-trading panel hosts these once the host is wired.
 #![allow(dead_code)]
 
+use crate::model::paper::format::{self as fmt, BadgeTone, BufferLevel, PnlTone, pnl_tone};
 use crate::model::paper::{
     PaperClosedTrade, PaperCurrency, PaperInstrument, PaperJournalEntry, PaperOrder,
     PaperOrderEvent, PaperOrderRole, PaperOrderSide, PaperPosition, PaperPositionSide,
 };
-use crate::model::paper_format::{self as fmt, BadgeTone, BufferLevel, PnlTone, pnl_tone};
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, Confirm, ConfirmOutcome};
 use crate::ui::paper_grid::{self as grid, Col, col};

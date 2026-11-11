@@ -5,8 +5,8 @@
 
 use super::*;
 use crate::native_bridge::EditMenu;
-use crate::pine_studio::call_sites::{self, CallSite};
-use crate::pine_studio::symbols::{self, SymbolId, SymbolTable};
+use crate::pine_studio::editor::call_sites::{self, CallSite};
+use crate::pine_studio::editor::symbols::{self, SymbolId, SymbolTable};
 use eframe::egui::Galley;
 use std::ops::Range;
 

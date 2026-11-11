@@ -6,7 +6,7 @@
 
 use super::{ChartCard, Projection};
 use crate::format;
-use crate::model::canvas::COLLAPSED_PANE_HEIGHT;
+use crate::model::chart::canvas::COLLAPSED_PANE_HEIGHT;
 use crate::ui::canvas_render::{self, CanvasStyle};
 use eframe::egui::{Align2, Color32, Painter, Pos2, Rect, Vec2};
 

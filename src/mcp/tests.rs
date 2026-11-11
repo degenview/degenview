@@ -349,8 +349,11 @@ impl Harness {
 }
 
 /// The script library a harness serves, so tests never read the user's own scripts.
-pub fn script_store_at(root: &std::path::Path) -> crate::pine_studio::store::ScriptStore {
-    crate::pine_studio::store::ScriptStore::new(root.join("Scripts"), root.join("ScriptMetadata"))
+pub fn script_store_at(root: &std::path::Path) -> crate::pine_studio::library::store::ScriptStore {
+    crate::pine_studio::library::store::ScriptStore::new(
+        root.join("Scripts"),
+        root.join("ScriptMetadata"),
+    )
 }
 
 impl Drop for Harness {
@@ -2687,7 +2690,7 @@ const EDIT_V2: &str = "//@version=6\nindicator(\"E\")\nplot(open)\n";
 const EDIT_V3: &str = "//@version=6\nindicator(\"E\")\nplot(high)\n";
 
 fn sha(text: &str) -> String {
-    crate::pine_studio::store::hash_source(text)
+    crate::pine_studio::library::store::hash_source(text)
 }
 
 #[test]
@@ -3085,7 +3088,7 @@ fn applying_scripts_has_its_own_permission() {
 
 #[test]
 fn a_saved_script_reaches_the_app_with_checked_inputs() {
-    use crate::pine::program::InputValue;
+    use crate::pine::compiler::program::InputValue;
     let harness = Harness::start(&[("c1", "tok", APPLY_ONLY)]);
     let url = harness.url();
     let id = seed_script(&harness, "Good", GOOD_SCRIPT);

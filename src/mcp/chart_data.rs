@@ -14,8 +14,8 @@ use crate::mcp::types::{
     CandleRange, CandleRow, CandleSummary, CandlesResult, DrawingAnchorInfo, DrawingInfo,
     DrawingStyleInfo, DrawingsResult,
 };
-use crate::model::chart_type::{LineDash, Rgba};
-use crate::model::drawing_style::DrawingStyle;
+use crate::model::chart::kind::{LineDash, Rgba};
+use crate::model::drawings::style::DrawingStyle;
 use crate::model::{Anchor, ChartType, Drawing, DrawingCommand, InstrumentId, Kline, Tool};
 
 /// Bars returned when the caller does not say.

@@ -2,7 +2,7 @@
 //! editor, so the box a note is sized to, the glyphs painted in it and the field the text is typed
 //! in all agree to the pixel.
 
-use crate::model::drawing_style::{HorizontalAlign, TextStyle};
+use crate::model::drawings::style::{HorizontalAlign, TextStyle};
 use crate::ui::series_render;
 use eframe::egui::epaint::text::VariationCoords;
 use eframe::egui::{self, FontId, TextFormat, Vec2, text::LayoutJob};

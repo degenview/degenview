@@ -1,4 +1,4 @@
-//! A tab's side of Tab Linking (see [`crate::model::tab_link`]).
+//! A tab's side of Tab Linking (see [`crate::model::tab::link`]).
 //!
 //! What the user does in a linked tab is queued in an outbox at the places the user acts (the
 //! symbol picker, the watchlist, the timeframe buttons). What the group tells the tab is applied
@@ -9,8 +9,8 @@
 use super::ChartWorkspace;
 use crate::host::tab_link_host::TabLinkHost;
 use crate::model::InstrumentId;
-use crate::model::chart_sync::{ChartSyncSettings, SyncHub};
-use crate::model::tab_link::{LinkKind, LinkOutbox, LinkSignal, Member};
+use crate::model::chart::sync::{ChartSyncSettings, SyncHub};
+use crate::model::tab::link::{LinkKind, LinkOutbox, LinkSignal, Member};
 use crate::model::watchlist::WatchlistInstrument;
 use eframe::egui;
 

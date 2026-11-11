@@ -14,8 +14,8 @@ use super::fields::{self, Edit, Hero};
 use super::figures;
 use super::venue_pill::{self, PillAction};
 use crate::model::DataSource;
-use crate::model::broker_ticket::{PreviewGate, parse_decimal};
-use crate::model::trading_venue::TradingVenue;
+use crate::model::broker::ticket::{PreviewGate, parse_decimal};
+use crate::model::broker::venue::TradingVenue;
 use crate::trading::backend::TradingBackend;
 use crate::trading::confirm;
 use crate::trading::draft::{
@@ -599,7 +599,7 @@ fn form(
         backend.max_size(market, side, at).map(|most| {
             format!(
                 "≈ {} {}",
-                crate::model::broker_ticket::display(floor_to_increment(
+                crate::model::broker::ticket::display(floor_to_increment(
                     most,
                     rules.size_increment
                 )),
@@ -821,7 +821,7 @@ fn summary(
     venue_fee: Option<Decimal>,
     venue_total: Option<Decimal>,
 ) {
-    let display = crate::model::broker_ticket::display;
+    let display = crate::model::broker::ticket::display;
     let amount = |value: Option<Decimal>| {
         format!("{} {unit}", value.map_or_else(|| "—".to_owned(), display))
     };
@@ -1055,7 +1055,7 @@ fn available_line(ui: &mut egui::Ui, backend: &dyn TradingBackend, market: &Mark
         ui,
         &format!(
             "{} {}",
-            crate::model::broker_ticket::display(funds.value),
+            crate::model::broker::ticket::display(funds.value),
             funds.asset
         ),
         kit::size::CAPTION + 1.0,
@@ -1327,12 +1327,13 @@ fn open_orders(ui: &mut egui::Ui, state: &mut SheetState, backend: &dyn TradingB
                 kit::SEMIBOLD,
                 color,
             ));
-            let price = row
-                .price
-                .map_or_else(|| "market".to_owned(), crate::model::broker_ticket::display);
+            let price = row.price.map_or_else(
+                || "market".to_owned(),
+                crate::model::broker::ticket::display,
+            );
             let size = row
                 .size
-                .map_or_else(|| "—".to_owned(), crate::model::broker_ticket::display);
+                .map_or_else(|| "—".to_owned(), crate::model::broker::ticket::display);
             ui.add(
                 egui::Label::new(kit::text(
                     format!("{size} @ {price}"),

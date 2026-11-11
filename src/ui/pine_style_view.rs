@@ -6,7 +6,7 @@
 use super::icons::{self, Icon};
 use super::kit::{self, MEDIUM, REGULAR, size};
 use super::theme;
-use crate::pine::style_overrides::{StyleAttribute, StyleKind, StyleOverrides, StyleRow};
+use crate::pine::outputs::style_overrides::{StyleAttribute, StyleKind, StyleOverrides, StyleRow};
 use crate::pine_studio::inputs::{color_from_rgba, rgba_from_color};
 use eframe::egui::{self, Align, Id, Layout, Margin, Rect, Sense, Ui, UiBuilder, vec2};
 use std::collections::HashMap;

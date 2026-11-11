@@ -4,15 +4,14 @@ Guidance for AI coding agents working in this repository.
 
 ## Required reading
 
-Read [Core guidance](docs/agent-guides/core.md) for every task. Then read every guide whose
-scenario matches the work:
+Always read [Core guidance](docs/agent-guides/core.md), then every guide whose scenario matches:
 
 | Scenario | Read |
 | --- | --- |
 | Providers, symbols, timeframes, prediction markets, caches, icons, live data, or watchlists | [Market data](docs/agent-guides/market-data.md) |
 | Live trading, brokers, broker credentials, or Settings ▸ Brokers | [Live trading](docs/broker-trading.md) |
 | The symbol picker (changing a chart's market), symbol search ranking, or how markets are named | [Symbol picker](docs/symbol-picker.md) |
-| A new window, sheet, panel, card, sidebar or icon, or restyling one | [Flat style](docs/agent-guides/ui-style.md) |
+| Any UI: a new or restyled window, sheet, panel, card, sidebar, icon, menu, button, link or dialog | [UI style](docs/agent-guides/ui-style.md) |
 | Chart rendering, price labels, chart types, canvas, templates, drawings, portfolio cards, or snapshots | [Charts](docs/agent-guides/charts.md) |
 | Markets compared on a chart (Compare, overlays), their data, scales, legend or the picker's compare mode | [Chart overlays](docs/chart-overlays.md) |
 | The Portfolio tab: Overview, Holdings, Transactions, Statistics, their empty states, or portfolio revaluation | [Portfolio page](docs/portfolio-page.md) |
@@ -37,49 +36,49 @@ scenario matches the work:
 | MCP server, tools, permissions, or clients | [MCP](docs/agent-guides/mcp.md) |
 | Releases, signing, packaging, self-update, or update UI | [Releases and updates](docs/agent-guides/releases-updates.md) |
 | The Flatpak, Linux packaging, or the sandbox | [Flatpak](docs/flatpak.md) |
-| iCloud Sync, the sync outbox, CloudKit, or anything that persists user data | [iCloud Sync](docs/icloud-sync.md) |
+| Persisting user data: SQLite tables, `setting` keys, saved state, per-Mac IDs | [Storage and sync](docs/agent-guides/storage.md) |
+| iCloud Sync, the sync outbox, or CloudKit | [iCloud Sync](docs/icloud-sync.md) |
 
-For cross-cutting work, load all matching guides. These files contain implementation constraints,
-not general background; do not skip a guide because the code looks self-explanatory.
+For cross-cutting work, load all matching guides. They hold implementation constraints, not
+background; never skip one because the code looks self-explanatory.
 
 ## Never blue
 
-Links are always gray (`theme::text_secondary()`, underlined), and the blue accent is not used for
-new UI: not for links, buttons or decoration. Details and the existing exceptions are in
-[Core guidance](docs/agent-guides/core.md).
+Links are always gray (`theme::text_secondary()`, underlined); the blue accent is not used for new
+UI: no links, buttons or decoration. Details and existing exceptions:
+[UI style](docs/agent-guides/ui-style.md).
 
 ## Flat style
 
-Surfaces are flat: a faint fill and a hairline, no gradients, no lit edges, no shadows (except for
-floating menus and dialogs). Icons stand bare, with no tile, disc or circle behind them. Colour is for
-state and data only. Settings pages have no bottom bar and no Save button: inputs save as they are
-entered. Secondary windows keep the platform's title bar and window controls. The
-Settings window is the reference; rules and helpers are in
-[Flat style](docs/agent-guides/ui-style.md).
+Flat surfaces: faint fill and hairline; no gradients, lit edges or shadows (except floating menus and
+dialogs). Icons bare, no tile, disc or circle. Colour only for state and data. Settings pages have no
+bottom bar or Save button: inputs save as entered. Secondary windows keep the platform title bar and
+window controls. Reference: the Settings window; rules and helpers in
+[UI style](docs/agent-guides/ui-style.md).
 
 ## Menus fit their rows
 
-A pull-down is as wide as its longest row and no wider. Never guess a width (`set_min_width(180.0)`):
-use `kit::fitted_menu` (or `kit::menu_fit`), and look at the opened menu in a picture before shipping
-it. Details in [Core guidance](docs/agent-guides/core.md).
+A pull-down is exactly as wide as its longest row. Never guess a width (`set_min_width(180.0)`): use
+`kit::fitted_menu` (or `kit::menu_fit`), and look at the opened menu in a picture before shipping.
+Details: [UI style](docs/agent-guides/ui-style.md).
 
 ## Supply chain
 
 Nothing reaches a release that was not reviewed, pinned and built from a signed tag on `main`.
 When touching `.github/`, `tools/`, `packaging/`, `build.rs`, `Cargo.toml`/`Cargo.lock` or the
 updater (`src/service/update_*`, `tag_signature`, `self_update`): pin every `uses:` to a commit,
-keep job permissions minimal, never run third-party code on a macOS release job after the
-signing certificate is imported, use `--locked`, add no git or non-crates.io dependency, and keep
+keep job permissions minimal, never run third-party code on a macOS release job after the signing
+certificate is imported, use `--locked`, add no git or non-crates.io dependency, keep
 `cargo deny check` clean. Never ask for, store or use a GitHub token with `admin:ssh_signing_key`,
-`admin:*` or `delete_repo` scope; never push a tag. Details in
+`admin:*` or `delete_repo` scope; never push a tag. Details:
 [Releases and updates](docs/agent-guides/releases-updates.md#build-hardening).
 
 ## Choosing the release type
 
-When a task ends with "should we release this?", or the user asks what to release, look at what
-changed since the last tag (`git tag --sort=-v:refname | head -3`, then `git log v<last>..HEAD`) and
-suggest one row below, with the resulting version. Never run `tools/release.sh` unless the user has
-picked the version. Procedure, channels and scheme:
+When a task ends with "should we release this?", or the user asks what to release, check changes
+since the last tag (`git tag --sort=-v:refname | head -3`, then `git log v<last>..HEAD`) and suggest
+one row below with the resulting version. Never run `tools/release.sh` unless the user picked the
+version. Procedure, channels and scheme:
 [Releases and updates](docs/agent-guides/releases-updates.md).
 
 | Changes since the last release | Suggest |
@@ -92,69 +91,61 @@ picked the version. Procedure, channels and scheme:
 | A fix needed on stable while a candidate is open | PATCH off stable (`0.5.2`), but `tools/release.sh` only cuts from `main`, which already holds the candidate's changes: tell the user, who needs a hotfix branch |
 | Only docs, tests or tooling that no user build contains | No release |
 
-Say which rows matched and why, and prefer the safer row when two match. Tags are `v` plus the
-version, prereleases are `-rc.N` (dotted, numbered from 1), and a release candidate is never
-promoted: the final version is a fresh tag.
+Say which rows matched and why; when two match, prefer the safer. Tags are `v` plus the version;
+prereleases are `-rc.N` (dotted, numbered from 1). A release candidate is never promoted: the final
+version is a fresh tag.
 
 ## Running tests
 
-The Pine corpus test (`src/pine/corpus_tests.rs`) runs ~295 community scripts and accounts for most
-of the ~5 min unit-test wall-clock. It is gated behind the `corpus` cargo feature, off by default:
+The Pine corpus test (`src/pine/tests/corpus.rs`, ~295 community scripts) is most of the ~5 min
+unit-test wall-clock, so it sits behind the `corpus` cargo feature, off by default:
 
 - `cargo test` — fast suite, corpus excluded.
 - `cargo test --features corpus` — full suite including the Pine corpus.
 
 ## Worktrees and build space
 
-Every worktree builds into its own `target/`, which is 5 GB fresh and grows with each rebuild
-because cargo never deletes old output. Finished worktrees are where the disk goes.
+Each worktree builds into its own `target/` (5 GB fresh, growing every rebuild; cargo never deletes
+old output). Finished worktrees are where the disk goes.
 
-- One worktree per branch, beside the main checkout. Keep its build output in `target/` or a
-  `target-*` directory (both are ignored). Do not share one `CARGO_TARGET_DIR` between worktrees:
-  concurrent builds would block on its lock and overwrite each other's `target/debug/degenview`.
-- When a pull request merges, remove its worktree. `tools/clean-worktrees.sh` lists every worktree and
-  whether it can go; `--remove-merged` removes the finished ones, and never one with uncommitted
-  changes, newer commits, no pull request, or a process running from it. `--clean-idle DAYS` deletes
-  only the `target/debug` of worktrees not built for that long.
-- `[profile.dev]` keeps line tables but drops variable-level debug info, about a third of a fresh
-  `target/` (the incremental cache is the rest of what grows). To inspect your own code's variables in lldb, build with `CARGO_PROFILE_DEV_DEBUG=true`
-  into a separate `CARGO_TARGET_DIR`.
+- One worktree per branch, beside the main checkout, building into `target/` or a `target-*`
+  directory (both ignored). Never share one `CARGO_TARGET_DIR` between worktrees: concurrent builds
+  block on its lock and overwrite each other's `target/debug/degenview`.
+- Remove a worktree when its pull request merges. `tools/clean-worktrees.sh` lists every worktree and
+  whether it can go; `--remove-merged` removes finished ones, never one with uncommitted changes,
+  newer commits, no pull request, or a process running from it. `--clean-idle DAYS` deletes only the
+  `target/debug` of worktrees not built for that long.
+- `[profile.dev]` keeps line tables but drops variable-level debug info (about a third of a fresh
+  `target/`; the incremental cache is the rest of the growth). To inspect your code's variables in
+  lldb, build with `CARGO_PROFILE_DEV_DEBUG=true` into a separate `CARGO_TARGET_DIR`.
 - A full disk shows as `rustc-LLVM ERROR: IO failure on output stream: No space left on device`.
-  Check `df -h` and run the script before anything else.
+  Check `df -h` and run the script first.
 
 ## Deeper references
 
-- [Architecture](docs/architecture.md) — module map and data flow.
-- [Live trading](docs/broker-trading.md) — brokers through the `degenview-brokers` crate: credentials, the pending-order journal, the host, what never reaches scripts or MCP.
-- [iCloud Sync](docs/icloud-sync.md) — what syncs, merge rules, account safety, Apple setup, what is unverified.
-- [Flatpak](docs/flatpak.md) — the manifest and reusable workflow, sandbox permissions, why the update check stays on, what is unverified.
-- [Chart types](docs/chart-types.md) — construction rules and Pine semantics.
-- [Chart navigation](docs/chart-navigation.md) — viewport, pan/axis gestures, older history, what is unverified.
+- [Architecture](docs/architecture.md) — module map, data flow.
+- [Chart types](docs/chart-types.md) — construction rules, Pine semantics.
+- [Chart navigation](docs/chart-navigation.md) — viewport, pan/axis gestures, older history, unverified items.
 - [Price scale modes](docs/price-scale.md) — Regular, Percent, Indexed to 100, Logarithmic; reference price, ticks, corner menu, persistence.
-- [Chart overlays](docs/chart-overlays.md) — markets compared on one chart: the midpoint alignment, rebased and own scales, the hub that fetches each market once, what is bounded instead of the count, verified versus decided, differences from TradingView.
 - [Linked charts](docs/chart-sync.md) — position/zoom sync between a workspace's charts.
-- [Tab Linking](docs/tab-linking.md) — colour-tagged tabs sharing symbol, interval, time and date range across windows: the hub, the apply rules, persistence, what TradingView states and what is decided here.
-- [Chart canvas](docs/chart-canvas.md) — settings, geometry, layering, and templates.
+- [Chart canvas](docs/chart-canvas.md) — settings, geometry, layering, templates.
 - [Chart context menus](docs/chart-context-menu.md) — right-click menus, Table view, Object tree, what is verified.
-- [Drawing tools](docs/drawing-tools.md) — tools, geometry, verified versus inferred behavior, limits.
-- [Annotation tools](docs/annotation-tools.md) — text, notes, tables, images and posts; assets and previews.
-- [Chart patterns, Elliott waves and cycles](docs/pattern-tools.md) — the Patterns tile: ratios, labels and degrees, cycles counted in bars, provenance.
-- [Forecasting, volume and measurement tools](docs/forecast-tools.md) — the Forecast tile: hypothetical positions, ghost feed, VWAP and volume profiles from the chart's own bars, measurers, provenance.
-- [Session statistics](docs/session-stats.md) — `P(outcome | conditions)` over the chart's own days with N and a 95% interval: sessions, outcomes, filters, the panel and the MCP tool, what the missing sub-hourly bars cost, provenance.
-- [Fibonacci and Gann tools](docs/fibonacci-gann-tools.md) — the Fibonacci and Gann tile: editable level lists, bar-counted time lines, curves sampled where they show, Gann angles as ratios of price to time, provenance.
-- [Symbol picker](docs/symbol-picker.md) — the modal that changes the focused chart's market: scopes, ranking of search hits, exchange names, detail panel, what is verified.
-- [Workspace toolbar](docs/workspace-toolbar.md) — the flat top bar: groups, the focused chart, label collapse, what is verified.
-- [Indicator catalog](docs/indicator-picker.md) — the one list the add-indicator surfaces draw from, the 20 bundled Pine indicators and their rules, why LuxAlgo's scripts are not included.
-- [Pine colour picker](docs/pine-color-picker.md) — inline swatches and picker: token-based detection, the rewrite table, room opened in the layout, one undo step per gesture, what is verified.
-- [Pine debugger](docs/pine-debugger.md) — the opt-in interpreter hooks, sessions on their own thread, source map and stepping, breakpoints, the read-only expression service, what is measured.
-- [Pine profiler](docs/pine-profiler.md) — the timing model (regions, inclusive and exclusive time, what is not attributed), the opt-in recorder, profile sessions and staleness, the editor column and drawer tab, what is measured.
-- [Editor themes](docs/editor-themes.md) — syntax roles and surfaces, how a name gets its role, the built-in and custom themes and their one-level inheritance, typography and fonts, saving, the file format, the Settings page, what is verified and measured.
-- [User-defined methods](docs/pine-user-methods.md) — declaration rules, `Ty` and the callable table, compile-time resolution and direct dispatch, diagnostics, what is verified against TradingView and what is not, benchmarks.
-- [Pine execution-model audit](docs/reviews/pine-execution-model-audit.md) — the engine against TradingView's execution model: findings, what matches, the stacked fixes and what is deferred.
-- [Pine volume footprints](docs/pine-footprint.md) — `request.footprint()`: built from intrabar candles, stateless handles, what is inferred and what is not verified.
-- [Pine Logs](docs/pine-logs.md) — `log.*()` messages: the sink, limits, batches, what is verified against TradingView.
-- [AI assistant](docs/ai-assistant.md) — prompting an LLM to edit the open Pine script: bring-your-own key, providers and streaming, what is verified.
-- [Portfolio cards](docs/portfolio-cards.md) — card design and known gaps.
-- [Portfolio page](docs/portfolio-page.md) — the Portfolio tab: throttled revaluation, centred column and wide layout, empty-state pictures.
-- [Chart snapshots](docs/snapshots.md) — the camera menu, one shared renderer, hosted sharing through providers (ImgBB, a host of your own, how to add one), privacy.
+- [Drawing tools](docs/drawing-tools.md) — tools, geometry, verified vs inferred behavior, limits.
+- [Pine execution-model audit](docs/reviews/pine-execution-model-audit.md) — engine vs TradingView's execution model: findings, stacked fixes, what is deferred.
+- [Pine Logs](docs/pine-logs.md) — `log.*()` messages: sink, limits, batches, TradingView verification.
+- [Portfolio cards](docs/portfolio-cards.md) — card design, known gaps.
+- [Chart snapshots](docs/snapshots.md) — camera menu, shared renderer, hosted sharing via providers (ImgBB, your own host, adding one), privacy.
 - [MCP implementation](docs/mcp-implementation.md) and [remaining work](docs/mcp-remaining-work.md).
+- Also in Required reading, with details and what is verified versus decided:
+  [Live trading](docs/broker-trading.md), [iCloud Sync](docs/icloud-sync.md),
+  [Flatpak](docs/flatpak.md), [Chart overlays](docs/chart-overlays.md),
+  [Tab Linking](docs/tab-linking.md), [Annotation tools](docs/annotation-tools.md),
+  [Chart patterns, Elliott waves and cycles](docs/pattern-tools.md),
+  [Forecasting, volume and measurement tools](docs/forecast-tools.md),
+  [Session statistics](docs/session-stats.md), [Fibonacci and Gann tools](docs/fibonacci-gann-tools.md),
+  [Symbol picker](docs/symbol-picker.md), [Workspace toolbar](docs/workspace-toolbar.md),
+  [Indicator catalog](docs/indicator-picker.md), [Pine colour picker](docs/pine-color-picker.md),
+  [Pine debugger](docs/pine-debugger.md), [Pine profiler](docs/pine-profiler.md),
+  [Editor themes](docs/editor-themes.md), [User-defined methods](docs/pine-user-methods.md),
+  [Pine volume footprints](docs/pine-footprint.md), [AI assistant](docs/ai-assistant.md),
+  [Portfolio page](docs/portfolio-page.md).

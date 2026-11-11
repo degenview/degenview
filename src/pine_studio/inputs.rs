@@ -2,9 +2,9 @@
 //! tried in the preview. Ported from `PineInputsView`, `SettingsCardRow` and
 //! `ScriptPreviewInputsStore`.
 
-use crate::model::pine_instance::StoredInput as Stored;
-use crate::pine::program::{InputControl, InputDefinition, InputSchema, InputValue};
-use crate::pine::token::ValueType;
+use crate::model::pine::instance::StoredInput as Stored;
+use crate::pine::compiler::program::{InputControl, InputDefinition, InputSchema, InputValue};
+use crate::pine::syntax::token::ValueType;
 use crate::ui::icons::Icon;
 use crate::ui::kit::StepDirection as Direction;
 use crate::ui::settings_card;
@@ -238,7 +238,7 @@ fn swift_value(value: &serde_json::Value) -> Option<InputValue> {
 pub fn show(ui: &mut Ui, schema: &InputSchema, values: &InputValues) -> Vec<InputEdit> {
     let mut edits = Vec::new();
     if schema.inputs.is_empty() {
-        super::drawer_intro::inputs(ui);
+        super::drawer::intro::inputs(ui);
         return edits;
     }
     egui::ScrollArea::vertical()
@@ -435,7 +435,7 @@ const TIMEFRAMES: [(&str, &str); 15] = [
 
 /// Whether a session input holds a session Pine can read (an empty one is the chart's own).
 fn session_is_valid(text: &str) -> bool {
-    text.is_empty() || crate::pine::trading_session::TradingSession::parse(text).is_some()
+    text.is_empty() || crate::pine::time::trading_session::TradingSession::parse(text).is_some()
 }
 
 /// `labels`, plus `current` when it matches none of them, so the picker has something to show.
@@ -1295,7 +1295,7 @@ mod tests {
     fn every_source_input_offers_resolves_as_a_series() {
         for name in SOURCES {
             assert!(
-                crate::pine::builtin_types::identifier(name)
+                crate::pine::check::builtin_types::identifier(name)
                     .kind()
                     .is_some(),
                 "{name}"
@@ -1387,15 +1387,15 @@ mod tests {
 
     #[test]
     fn a_greyed_out_input_cannot_be_changed_and_an_active_one_can() {
-        let switch = |active: Option<crate::pine::ast::Expression>| InputSchema {
+        let switch = |active: Option<crate::pine::syntax::ast::Expression>| InputSchema {
             inputs: vec![InputDefinition {
                 active,
                 ..def("flag", ValueType::Bool, InputValue::Bool(true), None)
             }],
         };
-        let locked = crate::pine::ast::Expression::Literal(
-            crate::pine::ast::Literal::Bool(false),
-            crate::pine::token::SourceRange::ZERO,
+        let locked = crate::pine::syntax::ast::Expression::Literal(
+            crate::pine::syntax::ast::Literal::Bool(false),
+            crate::pine::syntax::token::SourceRange::ZERO,
         );
         let values = InputValues::default();
         assert_eq!(

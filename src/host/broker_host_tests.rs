@@ -197,14 +197,14 @@ fn quick_changes_round() {
         store
             .lock()
             .unwrap()
-            .setting::<crate::model::broker_prefs::AllPrefs>(crate::model::broker_prefs::KEY)
+            .setting::<crate::model::broker::prefs::AllPrefs>(crate::model::broker::prefs::KEY)
             .is_some_and(|saved| saved.of(ID.as_str()) == newest)
     });
     std::thread::sleep(Duration::from_millis(150));
     let saved = store
         .lock()
         .unwrap()
-        .setting::<crate::model::broker_prefs::AllPrefs>(crate::model::broker_prefs::KEY)
+        .setting::<crate::model::broker::prefs::AllPrefs>(crate::model::broker::prefs::KEY)
         .expect("saved");
     assert_eq!(saved.of(ID.as_str()), newest, "no older save landed last");
 }
@@ -263,7 +263,7 @@ fn choices_about_trading_default_to_asking_and_survive_a_restart() {
         store
             .lock()
             .expect("the store")
-            .setting_strict::<serde_json::Value>(crate::model::broker_prefs::KEY)
+            .setting_strict::<serde_json::Value>(crate::model::broker::prefs::KEY)
             .ok()
             .flatten()
             .is_some()
@@ -413,7 +413,7 @@ fn rust_files(dir: &Path, out: &mut Vec<(String, String)>) {
 #[test]
 fn nothing_that_scripts_or_agents_reach_can_touch_a_broker() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
-    for area in ["mcp", "pine", "pine_studio", "model/alert.rs"] {
+    for area in ["mcp", "pine", "pine_studio", "model/alert"] {
         let mut files = Vec::new();
         let path = root.join(area);
         if path.is_dir() {

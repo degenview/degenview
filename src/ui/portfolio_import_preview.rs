@@ -5,10 +5,10 @@
 // Transient: the portfolio host opens this once the importers are wired.
 #![allow(dead_code)]
 
+use crate::model::portfolio::accounting::unique_assets;
+use crate::model::portfolio::csv::CsvPreview;
+use crate::model::portfolio::format::{PortfolioValueFormatter, QuantitySign};
 use crate::model::portfolio::{PortfolioCurrency, PortfolioTransaction};
-use crate::model::portfolio_accounting::unique_assets;
-use crate::model::portfolio_csv::CsvPreview;
-use crate::model::portfolio_format::{PortfolioValueFormatter, QuantitySign};
 use crate::ui::icons::Icon;
 use crate::ui::portfolio_empty;
 use crate::ui::portfolio_grid::{self, Col, Navigation, RowContext, TableSpec};

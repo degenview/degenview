@@ -126,11 +126,11 @@ mod tests {
 
     // MARK: Sync tracking
 
+    use crate::model::paper::engine::PaperTradingEngine;
     use crate::model::paper::{
         PaperCurrency, PaperInstrument, PaperOrderRequest, PaperOrderSide, PaperOrderType,
         PaperTimeInForce,
     };
-    use crate::model::paper_engine::PaperTradingEngine;
     use crate::store::sync::{Load, OutboxOp, OutboxState};
     use crate::sync::policy::EntityKind;
 

@@ -1,6 +1,6 @@
 //! Settings ▸ Appearance: the app theme, picked from small previews of a window in each theme.
 
-use crate::model::tab_title::TabTitleStyle;
+use crate::model::tab::title::TabTitleStyle;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit;
 use crate::ui::theme::{self, AppTheme};

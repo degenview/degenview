@@ -10,7 +10,7 @@
 //! Unlike the mock-up this follows, nothing here is blue: a card that is on is marked by a lighter
 //! fill and a neutral outline.
 
-use crate::model::tab_link::{LinkColor, LinkKind, LinkToggles};
+use crate::model::tab::link::{LinkColor, LinkKind, LinkToggles};
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, REGULAR, SEMIBOLD, size};
 use crate::ui::theme;

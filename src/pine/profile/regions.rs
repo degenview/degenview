@@ -6,9 +6,9 @@
 //! shown. Statement ranges are start-anchored, so where a region *ends* comes from the parser's
 //! record of statement ends (`CompiledProgram::statement_ends`).
 
-use crate::pine::ast::{Expression, Statement};
-use crate::pine::program::{CompiledProgram, StatementEnd};
-use crate::pine::{SourcePosition, traversal};
+use crate::pine::compiler::program::{CompiledProgram, StatementEnd};
+use crate::pine::syntax::ast::{Expression, Statement};
+use crate::pine::{SourcePosition, syntax::traversal};
 
 /// What a region is, for how it is described and which derived numbers it has.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

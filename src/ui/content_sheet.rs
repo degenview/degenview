@@ -3,7 +3,7 @@
 //! only asks: the workspace reads the picture, checks it and stores it (off the UI thread), and the
 //! sheet shows what it is doing and why a picture was refused.
 
-use crate::model::link_card::{FETCH_HOST, Link, LinkError, SERVICE};
+use crate::model::annotation::link_card::{FETCH_HOST, Link, LinkError, SERVICE};
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, REGULAR, size};
 use crate::ui::{sheet, theme};
@@ -142,7 +142,7 @@ pub fn show_link(ctx: &egui::Context, view: LinkSheet) -> LinkSheetAction {
                         .id(field)
                         .frame(egui::Frame::NONE)
                         .hint_text(hint)
-                        .char_limit(crate::model::link_card::MAX_URL_BYTES)
+                        .char_limit(crate::model::annotation::link_card::MAX_URL_BYTES)
                         .desired_width(f32::INFINITY),
                 );
                 if !response.has_focus() && !ui.memory(|memory| memory.has_focus(field)) {

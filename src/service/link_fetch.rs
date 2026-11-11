@@ -9,7 +9,7 @@
 //! other. What X does not say stays empty; nothing is filled in. The picture is best effort: the
 //! text is the preview, and a missing picture is not a failure.
 
-use crate::model::link_card::{FETCH_HOST, Link, LinkMeta};
+use crate::model::annotation::link_card::{FETCH_HOST, Link, LinkMeta};
 use crate::service::image_ingest::{self, Ingested};
 use std::io::Read;
 use std::time::Duration;
@@ -363,7 +363,7 @@ mod tests {
         let meta = parse_oembed(&body, &post()).unwrap();
         assert_eq!(
             meta.excerpt.chars().count(),
-            crate::model::link_card::MAX_EXCERPT_CHARS
+            crate::model::annotation::link_card::MAX_EXCERPT_CHARS
         );
     }
 

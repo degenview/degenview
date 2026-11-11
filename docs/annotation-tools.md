@@ -56,12 +56,12 @@ dialog. A Price label's text is its price, formatted at paint time with the char
 
 ## How it is built
 
-* `model/drawings.rs`: `Geometry::{Annotation, Leader, Signpost, Table, Image, Card}`.
+* `model/drawings/mod.rs`: `Geometry::{Annotation, Leader, Signpost, Table, Image, Card}`.
   `Annotation` covers Text, Comment, Price label, Flag mark and Pin (`AnnotationKind`); `Leader`
   covers Note, Callout and Price note (`LeaderKind`). `Drawing::edits_text_in_place` (the
   `Caps::INLINE_TEXT` capability) replaced the old "text on a line" test. `Tool::max_text` is 2000
   characters for Pin, Note and Callout and 500 for the rest; a table cell holds 500.
-* `model/drawing_style.rs`: the box style fields (`border`, `wrap`, `box_width`, `emoji`,
+* `model/drawings/style.rs`: the box style fields (`border`, `wrap`, `box_width`, `emoji`,
   `emoji_shown`, `emoji_fill`) are `Copy`, clamped in `sanitized()` and left out of a stored row while
   they hold their defaults, like the pitchfork levels.
 * Geometry is pure and tested in `ui/annotation_geometry.rs` (bubble with a tail, pin, flag,
@@ -89,7 +89,7 @@ IME composition in a real window was not exercised.
 
 ### Tables
 
-`model/table.rs` holds the pure operations (`insert_row`, `insert_column`, `delete_row`,
+`model/annotation/table.rs` holds the pure operations (`insert_row`, `insert_column`, `delete_row`,
 `delete_column`, `set_cell`, `resize_*`, `scale_to`, tab-separated paste) with the limits
 `MAX_ROWS` 30, `MAX_COLUMNS` 12 and `MAX_CELL_CHARS` 500, enforced in `is_valid` and in every
 operation. A table keeps its chart anchor *and* an optional `ScreenAnchor` (fractions of the plot).
@@ -137,7 +137,7 @@ into cells within the limits and never grows the grid past them.
 
 ### Post
 
-`model/link_card.rs` is pure. It accepts `https` (and upgrades `http`), no user name or port, and only
+`model/annotation/link_card.rs` is pure. It accepts `https` (and upgrades `http`), no user name or port, and only
 `x.com`, `twitter.com` and their `www`/`mobile` forms (`/{handle}/status/{id}` and `/i/status/{id}`),
 and writes every accepted link one canonical way. A card keeps the link, its size and, if the user fetched one, a
 `LinkMeta` of title, author and text, each cut to a cap.

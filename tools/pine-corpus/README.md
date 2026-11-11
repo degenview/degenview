@@ -27,7 +27,7 @@ manifest lists (and rewrites it). Use `--append` to widen the corpus without los
 - `src/pine/corpus/manifest.json` is committed and holds metadata only.
 - `src/pine/corpus/expectations.json` records, per script, the diagnostics the engine is
   currently expected to report.
-- Without the cache, the `pine::corpus_tests::corpus_matches_expectations` test skips. Point at another
+- Without the cache, the `pine::tests::corpus::corpus_matches_expectations` test skips. Point at another
   location with `PINE_CORPUS_DIR=/path cargo test`. Run just a few scripts with
   `PINE_CORPUS_ONLY=slug,slug cargo test`.
 - The test reports every script that differs from `expectations.json` at once, with the first error's

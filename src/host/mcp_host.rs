@@ -41,6 +41,7 @@ use crate::mcp::types::{
     PineTradeInfo, WorkspaceInfo,
 };
 use crate::mcp::{Listen, McpServer};
+use crate::model::alert::pine::PineAlertSubscription;
 use crate::model::alert::{
     AlertCondition, AlertCurrency, AlertFrequency, AlertId, AlertState, PriceAlert,
 };
@@ -49,7 +50,6 @@ use crate::model::mcp::{
     McpAuditKind, McpClient, McpSettings, Permission, PermissionSet, clean_client_name,
     is_valid_port,
 };
-use crate::model::pine_alert::PineAlertSubscription;
 use crate::model::watchlist::{Watchlist, WatchlistError, WatchlistInstrument, new_id, now_ms};
 use crate::model::{
     BuiltIn, ChartType, DataSource, Drawing, DrawingCommand, IndicatorConfig, InstrumentId,
@@ -1003,7 +1003,7 @@ fn applied_info(view: &PineInstanceView) -> AppliedPineInfo {
         script_id: instance.script_id.clone(),
         script_name: instance.name.clone(),
         visible: instance.visible,
-        source_hash: crate::pine_studio::store::hash_source(&instance.source),
+        source_hash: crate::pine_studio::library::store::hash_source(&instance.source),
         run_status: run_status.to_owned(),
         error,
         is_strategy,
@@ -1504,7 +1504,7 @@ fn report_of(
             kind: "chart_instance".into(),
             script_id: view.instance.script_id.clone(),
             script_name: view.instance.name.clone(),
-            source_hash: crate::pine_studio::store::hash_source(&view.instance.source),
+            source_hash: crate::pine_studio::library::store::hash_source(&view.instance.source),
             script_status: String::new(),
             instrument: view.instrument.key(),
             timeframe: view.timeframe.label().to_owned(),
@@ -1604,9 +1604,9 @@ fn report_of(
 /// The scripts' alert subscriptions as stored. DegenView keeps no log of what they fired, so no
 /// history is invented: reading never runs a script or sends anything.
 pub fn pine_alerts(
-    subscriptions: &[crate::model::pine_alert::PineAlertSubscription],
+    subscriptions: &[crate::model::alert::pine::PineAlertSubscription],
 ) -> PineAlertsResult {
-    use crate::model::pine_alert::PineAlertState;
+    use crate::model::alert::pine::PineAlertState;
     PineAlertsResult {
         total: subscriptions.len(),
         subscriptions: subscriptions
@@ -2124,7 +2124,7 @@ impl SnapshotJobs {
         &mut self,
         workspace: &ChartWorkspace,
         chart_id: u64,
-        scale: crate::model::snapshot::SnapshotScale,
+        scale: crate::model::chart::snapshot::SnapshotScale,
         ctx: &eframe::egui::Context,
     ) -> Result<SnapshotStarted, McpError> {
         self.expire();
@@ -2171,12 +2171,12 @@ impl SnapshotJobs {
             Ok(Ok(png)) => {
                 let (width, height) = (job.width, job.height);
                 self.jobs.remove(&job_id);
-                if png.len() > crate::model::snapshot::MAX_MCP_PNG_BYTES {
+                if png.len() > crate::model::chart::snapshot::MAX_MCP_PNG_BYTES {
                     return Err(McpError::ResourceLimit(format!(
                         "The picture is {} MiB, over the {} MiB an MCP reply carries; ask for \
                          scale 1x or a chart with fewer or smaller images",
                         png.len().div_ceil(1024 * 1024),
-                        crate::model::snapshot::MAX_MCP_PNG_BYTES / (1024 * 1024)
+                        crate::model::chart::snapshot::MAX_MCP_PNG_BYTES / (1024 * 1024)
                     )));
                 }
                 Ok(SnapshotProgress::Ready {
@@ -2724,7 +2724,7 @@ pub fn portfolio_holdings_base(
 ) -> Result<HoldingsBase, McpError> {
     let ledger = readable_ledger(host)?;
     let (info, ids) = portfolio_scope(ledger, portfolio_id)?;
-    let (holdings, closed) = crate::model::portfolio_accounting::holdings_and_closed(
+    let (holdings, closed) = crate::model::portfolio::accounting::holdings_and_closed(
         &ledger.transactions,
         &ids,
         None,
@@ -3025,14 +3025,20 @@ mod tests {
         let (big, sender) = job(Instant::now());
         jobs.jobs.insert(1, big);
         sender
-            .send(Ok(vec![0; crate::model::snapshot::MAX_MCP_PNG_BYTES + 1]))
+            .send(Ok(vec![
+                0;
+                crate::model::chart::snapshot::MAX_MCP_PNG_BYTES + 1
+            ]))
             .unwrap();
         assert!(matches!(jobs.poll(1), Err(McpError::ResourceLimit(_))));
         assert!(jobs.jobs.is_empty(), "the oversized PNG is not kept");
         let (fits, sender) = job(Instant::now());
         jobs.jobs.insert(2, fits);
         sender
-            .send(Ok(vec![0; crate::model::snapshot::MAX_MCP_PNG_BYTES]))
+            .send(Ok(vec![
+                0;
+                crate::model::chart::snapshot::MAX_MCP_PNG_BYTES
+            ]))
             .unwrap();
         assert!(matches!(jobs.poll(2), Ok(SnapshotProgress::Ready { .. })));
     }
@@ -3796,7 +3802,7 @@ mod tests {
     use crate::model::alert::{
         AlertAsset, AlertPrecondition, AlertRuntimeCommand, AlertRuntimeCommandPayload,
     };
-    use crate::model::watchlist_quote::{Freshness, WatchlistQuote};
+    use crate::model::watchlist::quote::{Freshness, WatchlistQuote};
     use std::collections::HashMap;
 
     const NOW: i64 = 1_760_000_000_000;
@@ -4446,11 +4452,13 @@ mod tests {
 
     // MARK: Pine scripts applied to charts
 
-    use crate::model::pine_alert::{PineAlertState, PineAlertSubscription};
-    use crate::model::pine_instance::{PineInstance, StoredInput};
+    use crate::model::alert::pine::{PineAlertState, PineAlertSubscription};
+    use crate::model::pine::instance::{PineInstance, StoredInput};
+    use crate::pine::outputs::style_overrides::{StyleKind, StyleRow};
     use crate::pine::strategy::{OpenTrade, StrategyReport, StrategySettings, Trade};
-    use crate::pine::style_overrides::{StyleKind, StyleRow};
-    use crate::pine::token::{Diagnostic, DiagnosticCategory, DiagnosticSeverity, SourceRange};
+    use crate::pine::syntax::token::{
+        Diagnostic, DiagnosticCategory, DiagnosticSeverity, SourceRange,
+    };
     use crate::workspace::PineRunView;
 
     fn empty_workspace(id: u64) -> ChartWorkspace {
@@ -4647,7 +4655,7 @@ mod tests {
         assert_eq!(context.script_id.as_deref(), Some("script-1"));
         assert_eq!(
             context.source_hash,
-            crate::pine_studio::store::hash_source(STRATEGY_SOURCE)
+            crate::pine_studio::library::store::hash_source(STRATEGY_SOURCE)
         );
         assert_eq!(
             context.inputs["len"],
@@ -4775,7 +4783,7 @@ mod tests {
         assert_eq!(info.script_id.as_deref(), Some("script-1"));
         assert_eq!(
             info.source_hash,
-            crate::pine_studio::store::hash_source(STRATEGY_SOURCE)
+            crate::pine_studio::library::store::hash_source(STRATEGY_SOURCE)
         );
 
         assert_eq!(applied_info(&view(Some(run(None, None)))).run_status, "ok");

@@ -1,92 +1,31 @@
-# Core agent guidance
+# Core Agent Guidance
 
-Read this file for every task. Load the matching topic guides listed in the root `AGENTS.md` too.
+Read for every task, plus the matching topic guides from the root `AGENTS.md` (UI work: [UI style](ui-style.md); persisted data: [Storage and sync](storage.md)).
 
 ## Project
 
-DegenView is a GPL-3.0-only market dashboard written in Rust with `eframe`/`egui`. A small `objc2`
-AppKit boundary handles native macOS windows, menus, Keychain, and accessibility. Non-macOS builds
-keep the coordinator/workspace model and gate AppKit code with `#[cfg(target_os = "macos")]`.
-Secrets go through `keychain_webhook_secrets::platform`: the Keychain on macOS, the Secret Service
-on Linux, Credential Manager on Windows. Never store a secret in SQLite, a file or a log.
+DegenView is a GPL-3.0-only Rust market dashboard on `eframe`/`egui`. A small `objc2` AppKit bridge handles native macOS windows, menus, Keychain and accessibility. Keep the coordinator/workspace architecture on other platforms; gate AppKit code with `#[cfg(target_os = "macos")]`.
 
-See [the architecture map](../architecture.md) before changing module boundaries or data flow.
+Store secrets only through `keychain_webhook_secrets::platform` (macOS Keychain, Linux Secret Service, Windows Credential Manager). Never in SQLite, files or logs.
 
-## Architecture rules
+Read [Architecture](../architecture.md) before changing module boundaries or data flow.
 
-- Use modules, not MVVM: `model/` is pure domain logic, `service/` owns providers and network
-  boundaries, `ui/` contains egui renderers, `store/` owns SQLite, `host/*_host.rs` files bridge
-  stateful engines/stores/views, `workspace.rs` owns one chart workspace, and `app.rs` coordinates.
-- egui is immediate-mode. Pass state into views; do not add observed view models. Charts use
-  `egui::Painter`, not a chart library.
-- Docked panel edges use egui's panel separator only (`theme::border()`). Do not add `Frame::stroke`
-  or hand-painted edge lines to a docked `egui::Panel`: they stack with the separator and make
-  borders look thicker where panels meet. Use `show_separator_line(false)` only when the panel paints
-  a deliberate replacement.
-- Pop-up menus are built from `kit::menu_row`, `menu_item`, `menu_heading`, `menu_separator` and
-  `menu_submenu`, inside `kit::menu_popup` (or `kit::context_popup` for a right-click) with
-  `kit::menu_scope` first in the body. Do not put bare `ui.button`, `radio`, `checkbox` or
-  `menu_button` in a menu: egui frames those itself, so they miss the menu style. Menus stay open
-  on a click, so a row that ends the menu calls `ui.close()` and a toggle does not.
-- Pull-down menus are as wide as their longest row, never wider. Menu rows fill
-  `ui.available_width()`, so a menu with no width of its own grows to egui's default popup width and
-  a short list ("New Account…", "Export…") ends up half blank. Use `kit::fitted_menu` for a menu on
-  a button (it measures the labels, pads for the icon gutter, caps at `MENU_MAX_WIDTH`; rows with
-  a shortcut hint use `fitted_menu_rows`), `kit::fitted_context_menu` for a right-click, or
-  `kit::menu_fit` / `kit::menu_fit_rows` inside `menu_popup` / `context_popup`. A menu hanging off a
-  row or card drawn every frame is only measured while it is open (the helpers do this). When the
-  rows are fixed and the popup width must be a constant, keep a test that measures the rows with
-  `kit::menu_width_for_rows` and fails when the constant is narrower or more than a few points
-  wider (see `menu_widths_fit_their_rows` in `watchlist_sidebar.rs`). Do not guess a width with
-  `set_min_width(180.0)` / `set_width(200.0)`: a guess is always too wide for some menu, and a
-  minimum is the usual cause of blank space. Look at the opened menu in a picture before shipping
-  it: the right edge of the longest label should sit one row inset from the menu's edge.
-- Code that runs every frame (anything reached from `update`/`ui`) must not touch SQLite beyond a
-  cheap change check, parse JSON, or make a blocking system call (XPC, `SMAppService`). Cache the
-  result keyed on a change signal (`Store::layout_index`) or query on a thread and poll the channel
-  (`AlertRuntimeControl::poll_service_status`). A 4-day-old session spent about 20% of its UI thread
-  in the two that were left in.
-- Buttons are never blue. Do not fill, tint, outline or colour the label of a button with
-  `theme::SYSTEM_ACCENT`, `theme::ACCENT` or any other blue accent, in sheets, panels, sidebars or
-  menus. A primary action is neutral: `kit::sheet_button` with `prominent`, `kit::push_button`, the
-  footer's Primary button, or the card style of `theme::card_fill` / `card_border` /
-  `card_highlight` with `text_primary` for its label. A destructive action is `kit::destructive_sheet_button`.
-  Colour belongs to state and data (a selected row or tab, a link, a chart series), never to the
-  control you press. Check a new button against the neighbouring sheets before adding colour.
-  A sheet's large primary action is `kit::large_prominent_button`. The app has not been audited
-  for buttons that still use the accent.
-- Links are always gray. A hyperlink or link-like text (documentation, community scripts, "learn more")
-  is `theme::text_secondary()` with an underline, never `kit::ACCENT`, `theme::ACCENT` or
-  `theme::SYSTEM_ACCENT`. More generally do not reach for the blue accent in new UI: it is not a
-  link colour, a button colour or decoration. Existing uses (selection, focus, the intro step badges)
-  are not a precedent; do not extend them, and do not recolour them unasked.
-- New UI is flat: faint fill plus hairline, no gradient, highlight or shadow, and no tile or circle
-  behind an icon. See [Flat style](ui-style.md).
-- Small modal dialogs (a confirmation, a question, a notice) are `kit::confirm`, `kit::alert` and
-  `kit::notice`, all drawn by `ui::dialog::show`: a tinted badge with the title and message, a close
-  button, and Cancel and the action side by side at the bottom right. Never hand-roll a modal frame or
-  stack full-width buttons. A destructive action is `Dialog::destructive` (solid red, and the dialog
-  starts on Cancel); an approval that a stray Enter must not give (a request from a program, an
-  upload) is `cautious` (no button focused). A dialog with more to say passes a `body` (a list, a
-  field); a third button on the left is `leading`. The tint colours the badge only, never blue. Big
-  forms are sheets (`ui::sheet`), not dialogs. Look at it in `gallery_of_the_dialogs` before shipping.
-- Outside `src/mcp/`, use background threads and `std::sync::mpsc`, not an async runtime. Shared
-  state is `Arc<Mutex<...>>`; keep store locks short.
-- User data lives in bundled-rusqlite SQLite through `store::Store`. Document tables are ordered
-  `id/position/payload` JSON rows; `setting` and `window_group` are keyed values.
-- `Store::create_schema` is one idempotent schema; there are no versioned migrations or legacy
-  readers. Never replace a collection with empty data when any row is undecodable.
-- Every document table and `setting` key must be classified for iCloud Sync in
-  `sync::policy` (a test fails otherwise); unclassified means local-only. Writes go through
-  `replace_documents` / `set_setting`, which queue the upload in the same transaction when sync is
-  on, so do not write those tables with raw SQL. See [iCloud Sync](../icloud-sync.md).
-- Portfolio and paper-trading ids are per-Mac counters that sync under a per-database tag
-  (`sync::ids`). Engines and ledgers must keep minting from ids below 2^24 only, writes go through
-  `save_portfolio_ledger` / `save_paper_trading` (or the hosts) so they are tracked, and a paper
-  account another Mac runs must never be filled here (`PaperHost` skips it until the user acts on
-  it).
+## Quality bar
 
-## Build and test
+- **Ship finished work.** Code and design are polished and production-ready when you hand them over: no stubs, TODOs, debug output, dead code or placeholder UI, and every state of a screen (empty, loading, error, long text) looks intended. "Works for now" is not done.
+- **Decouple, even when it costs a bigger change.** Keep modules independent behind narrow interfaces: pure logic in `model/`, side effects behind hosts and services, no reaching across layers. If the clean design needs a larger change or a refactor of existing code, make it instead of a shortcut that couples more; when it is large, say so first.
+- **Clean code is a priority.** Clear names, one concern per file and function, no copy-pasted logic (extract and reuse), comments only for the why, unused code deleted. Match the surrounding style.
+
+## Architecture
+
+- **Modules, not MVVM.** `model/` pure domain logic; `service/` providers/networking; `ui/` egui rendering; `store/` SQLite; `host/*_host.rs` bridges stateful components; `workspace.rs` chart workspaces; `app.rs` coordinates.
+- **Immediate-mode UI.** Pass state into views; never add observed view models. Render charts with `egui::Painter`, not a chart library.
+- **Background work.** Outside `src/mcp/`, threads and `std::sync::mpsc`, no async runtimes. Shared state `Arc<Mutex<...>>`; keep locks short.
+- **Frame performance.** Code reached from `update`/`ui` must never parse JSON, make blocking system calls (XPC, `SMAppService`), or query SQLite beyond cheap change checks. Cache by change signal (e.g. `Store::layout_index`) or run on a thread and poll (e.g. `AlertRuntimeControl::poll_service_status`).
+
+## Build and Test
+
+**Review before you push.** Read your own full diff once more as a reviewer would (naming, leftovers, edge cases, tests, docs), run the commands below, and fix what you find. Then push.
 
 ```bash
 cargo test
@@ -95,20 +34,30 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo fmt --all -- --check
 ```
 
-Build a Finder-launchable app with `./tools/bundle.sh`, then open `target/DegenView.app`. The binary
-is `degenview`.
+Finder-launchable app: `./tools/bundle.sh`, then open `target/DegenView.app`. Binary: `degenview`.
 
-CI runs `cargo test --locked` on macOS and Linux for every pull request, but not clippy or fmt.
-Unit tests cover pure engines, parsing, layout, storage, and policy. Manually verify affected UI;
-outside the Pine Studio, the app has not had a complete manual GUI pass.
-
-Tests disable Keychain. For development launches set `DEGENVIEW_NO_KEYCHAIN=1` to avoid signing-based
-Keychain prompts (the MCP credential seal is always off in debug builds, and ignores the variable in release builds), and optionally `DEGENVIEW_CACHE_DIR=<scratch-dir>`. Live provider checks require
-their `DEGENVIEW_ALPACA_KEY_ID`, `DEGENVIEW_ALPACA_SECRET_KEY`, or `DEGENVIEW_CMC_API_KEY` variables.
+- CI runs `cargo test --locked` on macOS and Linux for every PR; no Clippy or format checks.
+- Unit tests cover engines, parsing, layout, storage and policy. Manually verify affected UI; outside Pine Studio no complete GUI pass has been done.
+- Tests disable Keychain. Launch dev builds with `DEGENVIEW_NO_KEYCHAIN=1` to avoid signing prompts. The MCP credential seal is always off in debug and ignores this variable in release.
+- Optional cache override: `DEGENVIEW_CACHE_DIR=<scratch-dir>`.
+- Live provider tests need `DEGENVIEW_ALPACA_KEY_ID`, `DEGENVIEW_ALPACA_SECRET_KEY`, or `DEGENVIEW_CMC_API_KEY`.
 
 ## Naming
 
-- Use snake-case modules and one concern per file.
-- Services are `*service.rs` under `service/`, except provider-named modules.
-- UI files use `*_view.rs` or a role suffix such as `*_sheet.rs` or `*_editor.rs`.
-- Stores use `*_store.rs` under `store/`, with the `Store` implementation in `store/mod.rs`.
+- Snake-case modules; one concern per file.
+- **Group modules in directories, never in prefixes.** `model/`, `pine/` and `pine_studio/` hold one
+  directory per domain and only `mod.rs` at the root (`pine_studio/` also keeps a few single-purpose
+  files such as `workspace.rs`). A new module goes in its domain's directory; a new domain gets a
+  directory. Name the child without the directory's name: `model/paper/engine.rs`
+  (`model::paper::engine`), not `model/paper_engine.rs`. Three or more files sharing a prefix
+  (`alert_*`, `ai_*`, `ta_*`) belong in a directory.
+- **`mod.rs`, not `foo.rs` + `foo/`.** A module with children or tests is `foo/mod.rs`, tests in
+  `foo/tests.rs`. If the parent already has an inline `mod tests`, name end-to-end tests `studio_tests` or
+  `integration_tests`. Never leave a `foo.rs` beside a `foo/`.
+- **Moving a module.** Rewrite every call site to the new path; no `pub use ... as old_name` alias. A
+  moved file's `super::` now points one level lower: use `crate::...` for items in the old parent and
+  `pub(in crate::<parent>)` where it was `pub(super)`. Update `include_str!` paths, doc references
+  (`docs/`, `AGENTS.md`, `tools/`) and the layout tables in [Modules](../architecture/modules.md).
+- Services: `service/*service.rs`, except provider-named modules.
+- UI: `*_view.rs` or role suffixes such as `*_sheet.rs`, `*_editor.rs`.
+- Stores: `store/*_store.rs`; `Store` implementation in `store/mod.rs`.

@@ -271,7 +271,7 @@ it, two calls into `#[cold] #[inline(never)]` functions; `invoke`, the `request.
 The `Option<Box<_>>` is a pointer-sized null test the CPU predicts perfectly. The alternative that was
 considered and not needed is moving the test into `budget()`'s existing counter path.
 
-**Debug mode** (the same run; twins are named in `src/pine/bench_tests.rs`):
+**Debug mode** (the same run; twins are named in `src/pine/tests/bench.rs`):
 
 | mode | ms | against |
 |---|---:|---|
@@ -296,9 +296,9 @@ prints the time from a Pause request to the stop and from a step to the next sto
 `cargo test --lib pine::debug` (engine: stepping matrix, breakpoints, inspection, watches, Pine
 specifics, realtime, sessions, stress) and `pine_studio::debug_*` (through the window).
 `tools/pine-bench.sh <base> [head]` is the A/B benchmark; `cargo test --release --lib
-pine::bench_tests -- --ignored --nocapture` prints one workload per line, with
+pine::tests::bench -- --ignored --nocapture` prints one workload per line, with
 `--features alloc-count` adding allocations and peak memory. Pictures: `DEGENVIEW_GALLERY_DIR=… cargo
-test --lib pine_studio::debug_gallery -- --ignored`.
+test --lib pine_studio::debug::gallery -- --ignored`.
 
 ## Not verified / limitations
 

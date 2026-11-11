@@ -7,8 +7,8 @@ use super::Projection;
 use super::draw::TEXT_PAD;
 use super::edit::Part;
 use super::shape::{HandleSpot, Popup, Screen, Styled, TextPlace};
-use crate::model::chart_type::LineDash;
-use crate::model::drawing_style::DrawingStyle;
+use crate::model::chart::kind::LineDash;
+use crate::model::drawings::style::DrawingStyle;
 use crate::model::{Anchor, AnnotationKind, Geometry, LeaderKind};
 use crate::ui::annotation_geometry as shapes;
 use eframe::egui::{Pos2, Vec2, pos2, vec2};
@@ -276,7 +276,7 @@ fn signpost(style: &DrawingStyle, text: &str, proj: &Projection, at: Pos2, label
 /// rectangle is clickable whether or not the picture has arrived, and has the eight handles of a
 /// box.
 pub(super) fn picture(
-    image: &crate::model::image_content::ImageData,
+    image: &crate::model::annotation::image_content::ImageData,
     anchors: &[Pos2],
 ) -> Option<Screen> {
     let rect = eframe::egui::Rect::from_min_size(
@@ -299,7 +299,7 @@ pub(super) fn picture(
 /// and has the anchor and its bottom-right corner to grab. A line joins it to the candle of the
 /// time the post was written, wherever the card is dragged to.
 pub(super) fn card(
-    card: &crate::model::link_card::LinkCard,
+    card: &crate::model::annotation::link_card::LinkCard,
     style: &DrawingStyle,
     proj: &Projection,
     anchors: &[Pos2],
@@ -345,7 +345,7 @@ pub(super) fn card(
 /// from 1H to 1D), on its high when the card is above the candle's middle and on its low when
 /// below. `None` for a post with no time, or one older than the candles the chart has loaded.
 pub(super) fn post_candle(
-    card: &crate::model::link_card::LinkCard,
+    card: &crate::model::annotation::link_card::LinkCard,
     rect: eframe::egui::Rect,
     proj: &Projection,
 ) -> Option<Pos2> {

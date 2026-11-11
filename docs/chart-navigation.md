@@ -2,7 +2,7 @@
 
 ## One viewport
 
-`model::viewport::ChartViewport` is the only description of what part of a chart is on screen. It
+`model::chart::viewport::ChartViewport` is the only description of what part of a chart is on screen. It
 lives in `ChartCard::viewport`; every gesture edits it and every painter reads what it resolves to.
 Nothing else keeps an offset, a bar count or a price range.
 
@@ -83,7 +83,7 @@ Escape) puts it down; a finished zoom does too, whatever the Keep drawing settin
 | Axes, script panes | Behave as before (the price axis still stretches, panes still pan). Only the main plot is a zoom surface. |
 | Cursor | `ZoomIn` over the plot and while a rectangle is dragged. |
 
-The maths is `model::viewport::zoom`, over the geometry the card already draws with:
+The maths is `model::chart::viewport::zoom`, over the geometry the card already draws with:
 
 - **Time.** The rectangle's sides are slot coordinates (`first + (x - left) / slot_width`, `first` being
   the first drawn bar minus its `lead`). `visible` is the width in slots minus the reserved right
@@ -139,7 +139,7 @@ cursor glyph; clamping a release to the plot; the rectangle's colour (TradingVie
 neutral by the app's no-blue rule); that Keep drawing does not apply; no keyboard shortcut; that Zoom out is itself an undo step (TradingView's
 undo button turned on after a zoom, nothing more was checked); behaviour on log scales and in indicator panes.
 
-Tests: `model/viewport/tests.rs` (`zoom_to_a_rectangle`), `chart_card/navigation_tests.rs` (`zoom_in`),
+Tests: `model/chart/viewport/tests.rs` (`zoom_to_a_rectangle`), `chart_card/navigation_tests.rs` (`zoom_in`),
 `sync_tests.rs`, `workspace/tool_rail.rs`, `tool_sidebar.rs`. Pictures: `gallery_of_zoom_in` (strip and chart)
 and `gallery_of_the_zoom_icons`, run by hand with `DEGENVIEW_GALLERY_DIR`.
 
@@ -168,7 +168,7 @@ in bars, not pixels); a symbol or timeframe change resets it as before (`reset_v
 
 ## Older history
 
-`model::history` holds the pure rules; `workspace::Chart::{request_older, receive_older}` own the
+`model::market::history` holds the pure rules; `workspace::Chart::{request_older, receive_older}` own the
 request. When the view is within two screens of the oldest candle held (`ChartCard::near_oldest_bar`),
 or right after the first fetch (`OlderHistory::untouched`, so the first page is already there when
 the user scrolls), the chart asks `service::fetch_klines_range` for the 1,000 candles before it,
@@ -224,7 +224,7 @@ of its run revision. A chart with no scripts no longer hashes the series every f
 
 ## Verified and not verified
 
-Verified by tests (`model/viewport/tests.rs`, `ui/chart_card/navigation_tests.rs`, `model/history`,
+Verified by tests (`model/chart/viewport/tests.rs`, `ui/chart_card/navigation_tests.rs`, `model/history`,
 `workspace`): the pan maths, fractional offsets, bounded whitespace, vertical pan on linear and log
 scales, autoscale versus manual range, axis drags and double-clicks, Escape, release outside the
 chart, drawing ownership (handle, locked drawing, tool), a drawing's anchors unchanged and no

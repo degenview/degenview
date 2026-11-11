@@ -14,7 +14,7 @@ use super::order_sheet::{self, SheetAction, SheetInput, SheetState};
 use crate::host::broker_host::{BrokerHost, StoreJournal};
 use crate::host::paper_host::PaperHost;
 use crate::host::trading_hub::TradingHub;
-use crate::model::trading_venue::TradingVenue;
+use crate::model::broker::venue::TradingVenue;
 use crate::store::{SharedStore, Store};
 use crate::trading::model::{OrderClass, VenueInfo};
 use crate::ui::render_tests::Screen;

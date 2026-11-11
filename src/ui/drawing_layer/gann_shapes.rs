@@ -1,6 +1,6 @@
 //! The Gann drawings projected onto the plot: the fan, the box and the two squares. Each function
 //! turns one geometry and the projection into a [`Screen`]; the names and the arithmetic of the
-//! angles are `model::gann`, the curves `ui::fib_geometry`.
+//! angles are `model::fib::gann`, the curves `ui::fib_geometry`.
 //!
 //! **A Gann angle is a ratio of price to time, taken from the second anchor.** The 1×1 line passes
 //! through it and every other angle is that line's slope times the ratio, worked on the screen
@@ -10,11 +10,12 @@
 use super::Projection;
 use super::fib_shapes::{LABEL_GAP, OFF_PLOT, fan_labels, fib_style, look, styled};
 use super::shape::{Band, LabelLook, LabelPlace, PivotLabel, Screen, Styled, vertex_handles};
-use crate::model::chart_type::Rgba;
-use crate::model::drawing_style::DrawingStyle;
-use crate::model::fib_style::FibLevel;
-use crate::model::fib_style::FibStyle;
-use crate::model::gann::{self, GannKind};
+use crate::model::chart::kind::Rgba;
+use crate::model::drawings::style::DrawingStyle;
+use crate::model::fib;
+use crate::model::fib::gann::GannKind;
+use crate::model::fib::style::FibLevel;
+use crate::model::fib::style::FibStyle;
 use crate::model::pattern::format_ratio;
 use crate::model::{Anchor, Geometry};
 use crate::ui::fib_geometry;
@@ -121,7 +122,7 @@ fn fan(style: &DrawingStyle, fib: &FibStyle, proj: &Projection, anchors: &[Pos2]
         if let Some((from, to)) = lines::line_in_rect(origin, through, plot, false, true) {
             screen.styled.push(styled(vec![from, to], &level, color));
             if fib.show_labels
-                && let Some(label) = ray_label(gann::angle_label(level.ratio), color, to, plot)
+                && let Some(label) = ray_label(fib::gann::angle_label(level.ratio), color, to, plot)
             {
                 screen.labels.push(label);
             }
@@ -294,7 +295,9 @@ fn square(
     // apart, and that many times the scale up.
     let mut price_range = (points[1].price - points[0].price).abs();
     let scaled = (standard && fib.scale > 0.0)
-        .then(|| gann::scaled_price(points[0].price, points[1].price, bars, f64::from(fib.scale)))
+        .then(|| {
+            fib::gann::scaled_price(points[0].price, points[1].price, bars, f64::from(fib.scale))
+        })
         .flatten()
         .filter(|price| proj.scale.y(*price).is_finite());
     if let Some(price) = scaled {
@@ -358,7 +361,7 @@ fn square(
         };
         screen.styled.push(styled(vec![from, to], &level, color));
         if fib.show_labels
-            && let Some(label) = ray_label(gann::angle_label(level.ratio), color, to, clip)
+            && let Some(label) = ray_label(fib::gann::angle_label(level.ratio), color, to, clip)
         {
             screen.labels.push(label);
         }
@@ -452,7 +455,7 @@ fn readout(
             vec2(-1.0, 0.0),
         ),
     ];
-    if let Some(rate) = gann::price_per_bar(0.0, price_range, bars) {
+    if let Some(rate) = fib::gann::price_per_bar(0.0, price_range, bars) {
         let corner = pos2(
             if delta.x > 0.0 {
                 boxed.right()

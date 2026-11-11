@@ -92,21 +92,21 @@ The existing architecture includes a custom Rust Pine compiler and runtime, a Pi
 Relevant areas may include:
 
     src/pine/
-    src/pine/compiler.rs
-    src/pine/lexer.rs
-    src/pine/parser.rs
-    src/pine/type_checker.rs
-    src/pine/program.rs
-    src/pine/outputs.rs
-    src/pine/broker.rs
+    src/pine/compiler/mod.rs
+    src/pine/syntax/lexer.rs
+    src/pine/syntax/parser.rs
+    src/pine/check/type_checker.rs
+    src/pine/compiler/program.rs
+    src/pine/outputs/mod.rs
+    src/pine/strategy/broker.rs
 
     src/pine_host.rs
     src/pine_subscription_host.rs
-    src/model/pine_instance.rs
+    src/model/pine/instance.rs
 
     src/pine_studio/
     src/pine_studio/model.rs
-    src/pine_studio/store.rs
+    src/pine_studio/library/store.rs
 
     src/ui/pine_report.rs
     src/ui/pine_settings_popover.rs

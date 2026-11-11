@@ -4,7 +4,7 @@
 
 use super::shape::{Screen, Tag, TextPlace};
 use super::*;
-use crate::model::chart_type::PriceSource;
+use crate::model::chart::kind::PriceSource;
 use crate::model::{DrawingStyle, Kline, PitchforkVariant};
 use eframe::egui::{Rect, Vec2, pos2};
 

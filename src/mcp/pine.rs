@@ -12,13 +12,15 @@ use crate::mcp::types::{
     PineInputOption, PineInputsResult, PineScriptInfo, PineScriptSource, PineScriptsResult,
 };
 use crate::pine::compiler;
-use crate::pine::program::{
+use crate::pine::compiler::program::{
     CompiledProgram, InputDefinition, InputSchema, InputValue, ScriptType as DeclaredType,
 };
-use crate::pine::token::{Diagnostic, DiagnosticCategory, DiagnosticSeverity, Limits};
+use crate::pine::syntax::token::{Diagnostic, DiagnosticCategory, DiagnosticSeverity, Limits};
+use crate::pine_studio::library::registry::LibraryRegistry;
+use crate::pine_studio::library::store::{
+    COMPILER_VERSION, ScriptStore, ScriptStoreError, hash_source,
+};
 use crate::pine_studio::model::{CompileStatus, LocalScript, ScriptDraft, ScriptId, ScriptType};
-use crate::pine_studio::registry::LibraryRegistry;
-use crate::pine_studio::store::{COMPILER_VERSION, ScriptStore, ScriptStoreError, hash_source};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashMap};

@@ -9,7 +9,7 @@
 //! its options ask. Paint callbacks (custom GPU drawing) cannot run here and are skipped; the
 //! chart uses none.
 
-use crate::model::snapshot::MAX_PIXELS;
+use crate::model::chart::snapshot::MAX_PIXELS;
 use eframe::egui::epaint::{ClippedPrimitive, ImageData, ImageDelta, Mesh, Primitive, Vertex};
 use eframe::egui::{Color32, ColorImage, Pos2, TextureFilter, TextureId, TexturesDelta};
 use std::collections::HashMap;

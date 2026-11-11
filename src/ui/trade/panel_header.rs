@@ -381,7 +381,7 @@ fn buttons<T>(ui: &mut egui::Ui, header: &Header<T>, events: &mut Vec<HeaderEven
 /// A bar for a test or a gallery picture, for a venue of `kind` called `name`.
 #[cfg(test)]
 pub(crate) fn sample_bar(
-    venue: crate::model::trading_venue::TradingVenue,
+    venue: crate::model::broker::venue::TradingVenue,
     kind: crate::trading::model::VenueKind,
     name: &str,
 ) -> VenueBar {
@@ -402,7 +402,7 @@ pub(crate) fn sample_bar(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::trading_venue::TradingVenue;
+    use crate::model::broker::venue::TradingVenue;
     use crate::trading::model::VenueKind;
 
     fn height_at(width: f32, kind: VenueKind) -> f32 {

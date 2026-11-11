@@ -9,7 +9,7 @@ use super::{ChartCard, Projection};
 use crate::format;
 use crate::model::Kline;
 use crate::model::Timeframe;
-use crate::model::canvas::COLLAPSED_PANE_HEIGHT;
+use crate::model::chart::canvas::COLLAPSED_PANE_HEIGHT;
 use crate::ui::canvas_render::{self, CanvasStyle};
 use crate::ui::theme;
 use eframe::egui::{Align2, Color32, Painter, Pos2, Rect, Stroke, Vec2};
@@ -110,7 +110,7 @@ impl ChartCard {
         let accent = theme::SYSTEM_ACCENT;
         let line = canvas_render::LineStyle {
             stroke: Stroke::new(1.5, accent),
-            dash: crate::model::chart_type::LineDash::Solid,
+            dash: crate::model::chart::kind::LineDash::Solid,
         };
         if main_visible {
             canvas_render::vertical(painter, x, (plot.top(), plot.bottom()), line);
@@ -212,7 +212,7 @@ mod tests {
 
     #[test]
     fn a_price_based_chart_scrolls_over_the_bars_it_draws() {
-        use crate::model::chart_type::{ChartType, SizeMethod, SizeRule};
+        use crate::model::chart::kind::{ChartType, SizeMethod, SizeRule};
         let mut bars = candles(300);
         for (index, bar) in bars.iter_mut().enumerate() {
             let close = 100.0 + ((index * 7) % 23) as f64 * 3.0;

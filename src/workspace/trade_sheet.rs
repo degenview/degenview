@@ -6,7 +6,7 @@ use eframe::egui;
 
 use super::{ChartWorkspace, WorkspaceAction};
 use crate::host::trading_hub::TradingHub;
-use crate::model::trading_venue::TradingVenue;
+use crate::model::broker::venue::TradingVenue;
 use crate::trading::model::{OrderClass, VenueInfo};
 use crate::ui::trade::order_sheet::{self, MarketFace, SheetAction, SheetInput};
 use crate::ui::trade::panel_header::{PanelEvent, VenueBar};
@@ -222,7 +222,7 @@ mod tests {
     use crate::host::broker_host::{BrokerHost, StoreJournal};
     use crate::host::paper_host::PaperHost;
     use crate::host::trading_hub::TradingHub;
-    use crate::model::trading_venue::TradingVenue;
+    use crate::model::broker::venue::TradingVenue;
     use crate::store::{SharedStore, Store};
     use crate::workspace::test_support::empty_workspace;
 

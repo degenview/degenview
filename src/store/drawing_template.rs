@@ -7,8 +7,8 @@
 //! writes in one transaction and only then shows the result, and a table that cannot be read is
 //! never written. None of it holds a drawing's coordinates.
 
-use crate::model::chart_template::{TemplateError, TemplateId, new_user_id};
-use crate::model::drawing_template::{DrawingTemplate, TemplateBook};
+use crate::model::chart::template::{TemplateError, TemplateId, new_user_id};
+use crate::model::drawings::template::{DrawingTemplate, TemplateBook};
 use crate::model::watchlist::now_ms;
 use crate::model::{DrawingStyle, Tool};
 use crate::store::{Document, SharedStore, Store};

@@ -7,7 +7,7 @@
 //! tested; only `show` paints.
 
 use crate::format::{civil_from_days, days_from_civil};
-use crate::model::portfolio_editor::{date_text, parse_date_text};
+use crate::model::portfolio::editor::{date_text, parse_date_text};
 use crate::ui::accessibility;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, MEDIUM, REGULAR, SEMIBOLD};

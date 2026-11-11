@@ -1,6 +1,6 @@
 //! What the portfolio tools return: portfolios, holdings valued at live prices, and the ledger.
 //! Read-only. Holdings come from the app's own weighted-average accounting
-//! (`model::portfolio_accounting`); this module only values them from quotes and describes them.
+//! (`model::portfolio::accounting`); this module only values them from quotes and describes them.
 //!
 //! The accounting is unit-naive: a holding's cost basis is in the currency its transactions were
 //! priced in. The app's Portfolio tab converts between currencies with an FX service; this
@@ -12,7 +12,7 @@ use crate::mcp::chart_data::iso;
 use crate::model::portfolio::{
     Portfolio, PortfolioCurrency, PortfolioHolding, PortfolioTransaction, PortfolioTransactionType,
 };
-use crate::model::watchlist_quote::WatchlistQuote;
+use crate::model::watchlist::quote::WatchlistQuote;
 use crate::model::{DataSource, InstrumentId};
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -165,7 +165,7 @@ fn finite(value: f64) -> Option<f64> {
 }
 
 fn price_status(quote: Option<&WatchlistQuote>) -> &'static str {
-    use crate::model::watchlist_quote::Freshness;
+    use crate::model::watchlist::quote::Freshness;
     match quote.map(|quote| quote.freshness) {
         None | Some(Freshness::Unavailable) => "unavailable",
         Some(Freshness::Live) => "live",
@@ -384,7 +384,7 @@ pub fn instrument_of(source: DataSource, key: &str, symbol: &str) -> InstrumentI
 mod tests {
     use super::*;
     use crate::model::portfolio::PortfolioAsset;
-    use crate::model::watchlist_quote::Freshness;
+    use crate::model::watchlist::quote::Freshness;
     use std::collections::HashMap;
 
     fn holding(key: &str, quantity: f64, cost: f64, quote: PortfolioCurrency) -> PortfolioHolding {

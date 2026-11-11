@@ -2,22 +2,22 @@
 //! queue, and exposes the evaluated snapshot. The exclusive runtime owner may be either the GUI
 //! fallback or the embedded login-item agent.
 
+use crate::model::alert::engine::AlertEngine;
+use crate::model::alert::feed::UnseenAlerts;
+use crate::model::alert::message::render_for_event;
+use crate::model::alert::notification::{
+    begin_attempt, delivered, failed, notifications_enabled, pending_deliveries,
+    price_alert_content, script_alert_content, suppressed,
+};
+use crate::model::alert::pine::PineAlertSubscription;
 use crate::model::alert::{
     AlertCurrency, AlertNotificationSettings, AlertPersistenceSnapshot, AlertRuntimeHealth,
     AlertTriggerEvent, MarketQuote,
 };
-use crate::model::alert_engine::AlertEngine;
-use crate::model::alert_feed::UnseenAlerts;
-use crate::model::alert_message::render_for_event;
-use crate::model::alert_notification::{
-    begin_attempt, delivered, failed, notifications_enabled, pending_deliveries,
-    price_alert_content, script_alert_content, suppressed,
-};
-use crate::model::pine_alert::PineAlertSubscription;
-use crate::model::watchlist_quote::maximum_age_secs;
+use crate::model::watchlist::quote::maximum_age_secs;
 use crate::model::webhook::WebhookDeliverySource;
-use crate::model::webhook_policy::price_event_is_sendable;
-use crate::pine::state::AlertEvent;
+use crate::model::webhook::policy::price_event_is_sendable;
+use crate::pine::runtime::state::AlertEvent;
 use crate::service::keychain_webhook_secrets::KeychainWebhookSecretStore;
 use crate::service::macos_notifications::Notifier;
 use crate::service::watchlist_quotes::WatchlistQuoteBook;
@@ -443,7 +443,7 @@ fn pine_alert_dedupe_key(
     subscription: &PineAlertSubscription,
     alert: &AlertEvent,
 ) -> Option<String> {
-    (alert.frequency != crate::pine::alert_frequency::AlertFrequency::All).then(|| {
+    (alert.frequency != crate::pine::builtins::alert::frequency::AlertFrequency::All).then(|| {
         format!(
             "{}|{}|{}|{}",
             subscription.id,

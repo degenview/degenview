@@ -2,7 +2,7 @@
 //! chart answers its own gesture, and that moving the view never edits a drawing or the data.
 
 use super::*;
-use crate::model::viewport::{DEFAULT_VISIBLE, MIN_VISIBLE};
+use crate::model::chart::viewport::{DEFAULT_VISIBLE, MIN_VISIBLE};
 use crate::model::{Anchor, Drawing, IndicatorConfig, Tool};
 use crate::ui::replay_overlay::{PickKind, ReplayChartFrame};
 use eframe::egui::Modifiers;
@@ -1573,7 +1573,7 @@ mod zoom_in {
 
     #[test]
     fn editing_a_construction_makes_earlier_views_stale_too() {
-        use crate::model::chart_type::{SizeMethod, SizeRule};
+        use crate::model::chart::kind::{SizeMethod, SizeRule};
         let rule = |amount| SizeRule {
             method: SizeMethod::Traditional,
             amount,
@@ -1623,7 +1623,7 @@ mod zoom_in {
             rig.card.zoom_out();
             steps += 1;
         }
-        assert_eq!(steps, crate::model::viewport::zoom::MAX_BACK);
+        assert_eq!(steps, crate::model::chart::viewport::zoom::MAX_BACK);
     }
 
     #[test]

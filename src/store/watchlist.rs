@@ -2,12 +2,12 @@
 //! document table; per-market flags live in the `watchlist.flags` setting.
 
 use crate::model::InstrumentId;
+use crate::model::watchlist::layout::Flags;
+use crate::model::watchlist::text::ImportReport;
 use crate::model::watchlist::{
     EntryId, MAX_LISTS, Watchlist, WatchlistColumn, WatchlistError, WatchlistFlag,
     WatchlistInstrument, WatchlistSort,
 };
-use crate::model::watchlist_layout::Flags;
-use crate::model::watchlist_text::ImportReport;
 use crate::store::{Document, SharedStore};
 
 impl Document for Watchlist {
@@ -595,10 +595,10 @@ impl WatchlistStore {
         list: EntryId,
         text: &str,
     ) -> Result<ImportReport, WatchlistError> {
-        let parsed = crate::model::watchlist_text::parse(text);
+        let parsed = crate::model::watchlist::text::parse(text);
         let mut report = None;
         self.modify(list, true, |target| {
-            report = Some(crate::model::watchlist_text::import_into(target, &parsed)?);
+            report = Some(crate::model::watchlist::text::import_into(target, &parsed)?);
             Ok(())
         })?;
         Ok(report.unwrap_or_default())
@@ -608,7 +608,7 @@ impl WatchlistStore {
         self.lists
             .iter()
             .find(|target| target.id == list)
-            .map(crate::model::watchlist_text::export)
+            .map(crate::model::watchlist::text::export)
     }
 }
 

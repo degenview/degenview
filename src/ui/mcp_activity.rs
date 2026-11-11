@@ -5,12 +5,12 @@
 //! the store: the only thing it asks of the host is [`McpAction::ClearActivity`], and only after
 //! the sheet's own "Clear the log?" question has been answered.
 
-use crate::model::mcp::{McpAction, McpAuditEntry, McpAuditKind};
-use crate::model::mcp_activity::{
+use crate::model::mcp::activity::{
     ACTIVITY_PAGE_SIZE, McpActivityClient, McpActivityFilter, McpActivityRange, McpActivityStatus,
     Paging, clients_in,
 };
-use crate::model::portfolio_editor::{date_text, parse_date_text};
+use crate::model::mcp::{McpAction, McpAuditEntry, McpAuditKind};
+use crate::model::portfolio::editor::{date_text, parse_date_text};
 use crate::ui::alert_center::{Tone, relative_time};
 use crate::ui::icons::{self, Icon};
 use crate::ui::settings_mcp::capsule;

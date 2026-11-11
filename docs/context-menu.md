@@ -102,7 +102,7 @@ Relevant files:
 
 - `src/ui/chart_card.rs`
 - `src/workspace.rs`
-- `src/model/canvas.rs`
+- `src/model/chart/canvas/mod.rs`
 - `src/ui/canvas_render.rs`
 - `src/ui/chart_buttons.rs`
 - `src/ui/chart_settings.rs`
@@ -114,43 +114,43 @@ Relevant files:
 
 ### Drawings
 
-- `src/model/drawings.rs`
+- `src/model/drawings/mod.rs`
 - `src/ui/drawing_layer.rs`
 - `src/ui/drawing_render.rs`
 - `src/ui/tool_sidebar.rs`
 
 ### Indicators and Pine
 
-- `src/model/indicators.rs`
+- `src/model/indicators/mod.rs`
 - `src/ui/chart_indicator_strip.rs`
 - `src/pine_host.rs`
 - `src/ui/pine_chart_render.rs`
-- `src/model/pine_instance.rs`
+- `src/model/pine/instance.rs`
 
 ### Alerts
 
-- `src/model/alert.rs`
+- `src/model/alert/mod.rs`
 - `src/alert_host.rs`
 - `src/ui/alert_editor.rs`
 - `src/ui/alert_center.rs`
 
 ### Paper trading
 
-- `src/model/paper.rs`
-- `src/model/paper_ticket.rs`
-- `src/model/paper_engine.rs`
+- `src/model/paper/mod.rs`
+- `src/model/paper/ticket.rs`
+- `src/model/paper/engine.rs`
 - `src/paper_host.rs`
 - `src/ui/paper_order_ticket.rs`
 - `src/ui/paper_chart_trading.rs`
 
 ### Chart templates and layouts
 
-- `src/model/chart_template.rs`
+- `src/model/chart/template/mod.rs`
 - `src/store/chart_template.rs`
 - `src/ui/chart_templates.rs`
-- `src/model/layout.rs`
-- `src/model/persisted.rs`
-- `src/model/saved_view.rs`
+- `src/model/chart/layout.rs`
+- `src/model/chart/persisted.rs`
+- `src/model/chart/saved_view.rs`
 
 ### Persistence and application
 
@@ -864,7 +864,7 @@ DegenView already has a chart appearance/template system.
 
 Reuse:
 
-- `model/chart_template.rs`
+- `model/chart/template/mod.rs`
 - `store/chart_template.rs`
 - `ui/chart_templates.rs`
 - Existing `ChartCard::apply_template` behavior

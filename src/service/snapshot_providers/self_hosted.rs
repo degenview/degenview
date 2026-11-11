@@ -6,7 +6,7 @@ use super::{
     FieldKind, FieldSpec, Glyph, Link, Logo, ProviderDescriptor, Purpose, Readiness, Request,
     SecretPresence, Secrets, SnapshotProvider,
 };
-use crate::model::snapshot::{
+use crate::model::chart::snapshot::{
     FieldValues, SELF_HOSTED, SharedSnapshot, SnapshotHost, UploadError, parse_upload_response,
 };
 use crate::service::snapshot_upload::token_is_valid;

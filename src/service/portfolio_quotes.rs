@@ -6,13 +6,13 @@
 //! snapshot when every historical/current conversion is ready.
 
 use crate::model::InstrumentId;
+use crate::model::portfolio::accounting::{holdings, unique_assets};
+use crate::model::portfolio::history::DAY_MS;
 use crate::model::portfolio::{
     PortfolioAsset, PortfolioCurrency, PortfolioLedgerSnapshot, PortfolioQuote, PortfolioSnapshot,
     PortfolioTransaction,
 };
-use crate::model::portfolio_accounting::{holdings, unique_assets};
-use crate::model::portfolio_history::DAY_MS;
-use crate::model::watchlist_quote::Freshness;
+use crate::model::watchlist::quote::Freshness;
 use crate::service::fx_rates::{Conversion, FxRateService};
 use crate::service::watchlist_quotes::{WatchlistQuoteBook, WatchlistQuoteCoordinator};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -611,7 +611,7 @@ mod tests {
     use super::*;
     use crate::model::DataSource;
     use crate::model::portfolio::{Portfolio, PortfolioSource, PortfolioTransactionType};
-    use crate::model::watchlist_quote::WatchlistQuote;
+    use crate::model::watchlist::quote::WatchlistQuote;
 
     struct FakeFx;
 

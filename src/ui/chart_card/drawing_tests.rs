@@ -3,7 +3,7 @@
 //! own changes never touch the data or a script's run.
 
 use super::*;
-use crate::model::drawing_style::Visibility;
+use crate::model::drawings::style::Visibility;
 use crate::model::{Anchor, ChartType, Drawing, IndicatorConfig, Placement, Tool};
 use crate::ui::replay_overlay::ReplayChartFrame;
 use eframe::egui::epaint::ClippedShape;
@@ -221,9 +221,10 @@ fn post_shapes(base: i64) -> usize {
 
 #[test]
 fn a_post_card_is_joined_to_its_candle_by_a_painted_line() {
-    let sample =
-        crate::model::link_card::Link::parse("https://x.com/degenview/status/1750000000000000000")
-            .expect("a link");
+    let sample = crate::model::annotation::link_card::Link::parse(
+        "https://x.com/degenview/status/1750000000000000000",
+    )
+    .expect("a link");
     let time = sample.time_ms().expect("a snowflake id has a time");
     // The post's hour is among the candles, 280 of 300 in: the card, its line and its dot.
     let joined = post_shapes(time - 280 * HOUR);

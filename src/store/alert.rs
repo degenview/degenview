@@ -2,11 +2,11 @@
 //! sidebar bell's "seen" timestamp. Ported from `AlertRuntimePersistence.swift` +
 //! `UnseenAlertsStore.swift`.
 
+use crate::model::alert::feed::LAST_SEEN_KEY;
 use crate::model::alert::{
     AlertCommandRejection, AlertNotificationSettings, AlertPersistenceSnapshot,
     AlertRuntimeCommand, AlertRuntimeHealth, AlertTriggerEvent, PriceAlert,
 };
-use crate::model::alert_feed::LAST_SEEN_KEY;
 use crate::store::{Document, Store};
 use rusqlite::params;
 use serde::Serialize;

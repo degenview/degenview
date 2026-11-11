@@ -10,12 +10,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-use crate::pine::ast::Statement;
-use crate::pine::fast_hash::FastMap;
 use crate::pine::logs::LogLevel;
-use crate::pine::runtime_types::RuntimeContext;
-use crate::pine::runtime_value::RuntimeValue;
-use crate::pine::session::Session;
+use crate::pine::runtime::fast_hash::FastMap;
+use crate::pine::runtime::session::Session;
+use crate::pine::runtime::types::RuntimeContext;
+use crate::pine::runtime::value::RuntimeValue;
+use crate::pine::syntax::ast::Statement;
 use crate::pine::{Diagnostic, DiagnosticCategory, SourceRange};
 
 use super::breakpoints::{self, BreakpointSpec, CompiledBreakpoint};

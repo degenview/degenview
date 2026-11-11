@@ -1,7 +1,7 @@
 //! A snapshot as a file: PNG encoding, where it is saved and writing it so a failure never
 //! leaves half a file behind.
 
-use crate::model::snapshot;
+use crate::model::chart;
 use eframe::egui::ColorImage;
 use image::ImageEncoder;
 use image::codecs::png::{CompressionType, FilterType, PngEncoder};
@@ -98,7 +98,7 @@ pub fn downloads_path(name: &str) -> Result<PathBuf, ExportError> {
         .ok_or(ExportError::NoFolder)?;
     std::fs::create_dir_all(&folder)
         .map_err(|error| ExportError::Write(describe(&error, &folder)))?;
-    Ok(folder.join(snapshot::unused_name(name, |candidate| {
+    Ok(folder.join(chart::snapshot::unused_name(name, |candidate| {
         folder.join(candidate).exists()
     })))
 }
@@ -111,7 +111,7 @@ pub fn choose_destination(name: &str) -> Result<Option<PathBuf>, ExportError> {
             .map_err(ExportError::Dialog)?;
         Ok(
             chosen.map(|path| match path.file_name().and_then(|n| n.to_str()) {
-                Some(file) => path.with_file_name(snapshot::with_png_extension(file)),
+                Some(file) => path.with_file_name(chart::snapshot::with_png_extension(file)),
                 None => path,
             }),
         )

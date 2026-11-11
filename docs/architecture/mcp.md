@@ -40,7 +40,7 @@ client → 127.0.0.1:<port>/mcp → bearer/Host/Origin/size checks
   SQLite itself. The page previews the newest five rows; "View All Activity…" opens a sheet
   (`ui::mcp_activity`) that searches the log by tool, id or error code, filters it by client,
   outcome (`McpActivityStatus`) and date (`McpActivityRange`: presets or a custom range with
-  either end open), and pages it 25 rows at a time (`model::mcp_activity`, pure: the filter runs
+  either end open), and pages it 25 rows at a time (`model::mcp::activity`, pure: the filter runs
   over the in-memory rows every frame, so there is no query and no cache to invalidate). The
   table keeps 1,000 rows,
   is local to this Mac (`sync::policy`), and Clear writes one "cleared" row. A row holds the tool,
@@ -161,7 +161,7 @@ Delete and saved-source writes require their own grants.
   (a label needs it), extension flags for trend lines and rectangles. Every other tool is listed
   read-only and deletable. The Fibonacci retracement is drawn with the app's default levels.
 - Portfolio tools (`mcp::portfolio`, `mcp::portfolio_tools`) are read-only. Holdings come from
-  `model::portfolio_accounting::holdings_and_closed` on the app thread (the app's own weighted-average
+  `model::portfolio::accounting::holdings_and_closed` on the app thread (the app's own weighted-average
   accounting, so a sale realizes profit against the average cost and a position sold to nothing still
   counts in `closed_positions_realized_pnl`). They are then valued on the tool thread from the quote
   feed with `wait_for_quotes`, the same lease as `get_quotes`. That accounting is unit-naive: cost

@@ -147,7 +147,7 @@ fn draw(
     let broker = degenview_brokers::registry::by_id(ID).expect("coinbase");
     let stats = crate::trading::broker_backend::BrokerBackend::new(host.clone(), broker).stats();
     let bar = crate::ui::trade::panel_header::sample_bar(
-        crate::model::trading_venue::TradingVenue::Broker(ID),
+        crate::model::broker::venue::TradingVenue::Broker(ID),
         crate::trading::model::VenueKind::Live,
         "Coinbase",
     );

@@ -293,7 +293,7 @@ impl SnapshotSecrets {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::snapshot::SELF_HOSTED;
+    use crate::model::chart::snapshot::SELF_HOSTED;
     use crate::service::keychain_api_keys::MemoryBackend;
     use crate::service::snapshot_providers::{imgbb, self_hosted};
 

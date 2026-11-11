@@ -2,7 +2,7 @@
 //! pinning it to the screen.
 
 use super::*;
-use crate::model::table::{DEFAULT_COLUMN_WIDTH, DEFAULT_ROW_HEIGHT, TableData};
+use crate::model::annotation::table::{DEFAULT_COLUMN_WIDTH, DEFAULT_ROW_HEIGHT, TableData};
 use menu::TableOp;
 
 fn table_of(rig: &Rig) -> TableData {
@@ -310,7 +310,7 @@ fn dragging_a_border_resizes_that_column_or_row_alone() {
     rig.drag(grab, grab - vec2(400.0, 0.0));
     assert_eq!(
         table_of(&rig).columns[1],
-        crate::model::table::COLUMN_WIDTH_RANGE.0
+        crate::model::annotation::table::COLUMN_WIDTH_RANGE.0
     );
 }
 
@@ -455,8 +455,8 @@ fn the_last_row_and_column_stay_and_the_grid_stops_at_its_limits() {
     assert_eq!(
         (table.row_count(), table.column_count()),
         (
-            crate::model::table::MAX_ROWS,
-            crate::model::table::MAX_COLUMNS
+            crate::model::annotation::table::MAX_ROWS,
+            crate::model::annotation::table::MAX_COLUMNS
         )
     );
     assert!(table.is_valid());

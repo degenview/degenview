@@ -372,7 +372,7 @@ mod tests {
 
     #[test]
     fn a_webhook_secret_at_its_longest_fits() {
-        use crate::model::webhook_policy::MAXIMUM_SECRET_LENGTH;
+        use crate::model::webhook::policy::MAXIMUM_SECRET_LENGTH;
         assert!(encode_blob(&"k".repeat(MAXIMUM_SECRET_LENGTH)).is_ok());
     }
 

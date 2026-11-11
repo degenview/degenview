@@ -4,7 +4,7 @@ Tabs tagged with the same colour keep chosen parts of their chart in step, in an
 not [Link charts](chart-sync.md), which carries a pan or zoom between the charts of one layout;
 Tab Linking is between tabs and only ever touches the chart the user is working in.
 
-Code: `model::tab_link` (pure model, hub and tests), `host::tab_link_host` (the switches, saved),
+Code: `model::tab::link` (pure model, hub and tests), `host::tab_link_host` (the switches, saved),
 `workspace/tab_link.rs` (a tab's side), `DegenViewApp::tick_tab_links` in `app.rs` (the tick),
 `ui/tab_link_menu.rs` (the menu section), and the underline and the right-click menu in `ui/tab_bar.rs`.
 

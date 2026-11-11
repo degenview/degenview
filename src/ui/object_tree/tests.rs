@@ -1,6 +1,6 @@
 use super::*;
 use crate::model::Tool;
-use crate::model::object_tree::IndicatorKey;
+use crate::model::chart::object_tree::IndicatorKey;
 use eframe::egui::{Event, Modifiers, PointerButton, Pos2, RawInput};
 
 fn row(key: Key, label: &str, shown: Option<bool>, locked: Option<bool>) -> Row {

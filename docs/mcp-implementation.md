@@ -55,10 +55,10 @@ src/app.rs
 src/workspace.rs
 src/workspace/
 src/native_bridge.rs
-src/model/layout.rs
-src/model/persisted.rs
-src/model/instrument.rs
-src/model/indicators.rs
+src/model/chart/layout.rs
+src/model/chart/persisted.rs
+src/model/market/instrument.rs
+src/model/indicators/mod.rs
 src/ui/chart_card.rs
 src/ui/chart_indicator_strip.rs
 src/ui/chart_settings.rs
@@ -69,8 +69,8 @@ src/ui/add_chart_sheet.rs
 
 ```text
 src/host/alert_host.rs
-src/model/alert.rs
-src/model/alert_engine.rs
+src/model/alert/mod.rs
+src/model/alert/engine.rs
 src/store/alert.rs
 src/ui/alert_center.rs
 src/ui/alert_editor.rs
@@ -81,15 +81,15 @@ src/ui/alert_editor.rs
 ```text
 src/host/pine_host.rs
 src/host/pine_subscription_host.rs
-src/model/pine_instance.rs
-src/model/pine_alert.rs
-src/pine/compiler.rs
-src/pine/lexer.rs
-src/pine/parser.rs
-src/pine/type_checker.rs
-src/pine/program.rs
-src/pine/outputs.rs
-src/pine/broker.rs
+src/model/pine/instance.rs
+src/model/alert/pine.rs
+src/pine/compiler/mod.rs
+src/pine/syntax/lexer.rs
+src/pine/syntax/parser.rs
+src/pine/check/type_checker.rs
+src/pine/compiler/program.rs
+src/pine/outputs/mod.rs
+src/pine/strategy/broker.rs
 src/pine_studio/
 src/ui/pine_report.rs
 src/ui/pine_settings_popover.rs
@@ -101,7 +101,7 @@ src/ui/pine_style_view.rs
 ```text
 src/store/mod.rs
 src/store/pine.rs
-src/pine_studio/store.rs
+src/pine_studio/library/store.rs
 src/pine_studio/model.rs
 src/ui/settings_window.rs
 src/ui/settings_card.rs
@@ -593,7 +593,7 @@ src/
 │   │   └── pine.rs
 │   └── resources.rs
 ├── host/mcp_host.rs
-├── model/mcp.rs
+├── model/mcp/mod.rs
 ├── store/mcp.rs
 ├── service/keychain_mcp.rs
 └── ui/settings_mcp.rs
@@ -1095,19 +1095,19 @@ DegenView implements its own TradingView-compatible Pine Script language and run
 The MCP server must use this implementation:
 
 ```text
-pine::lexer
-pine::parser
+pine::syntax::lexer
+pine::syntax::parser
 pine::compiler
-pine::type_checker
-pine::session
-pine::broker
+pine::check::type_checker
+pine::runtime::session
+pine::strategy::broker
 ```
 
 Scripts are managed through:
 
 ```text
-pine_studio::store::ScriptStore
-pine_studio::registry::LibraryRegistry
+pine_studio::library::store::ScriptStore
+pine_studio::library::registry::LibraryRegistry
 ```
 
 The Pine Studio supports:
@@ -1436,9 +1436,9 @@ They may include:
 Inspect:
 
 ```text
-pine::program
-pine::visuals
-pine::style_overrides
+pine::compiler::program
+pine::outputs::visuals
+pine::outputs::style_overrides
 ui::pine_style_view
 ui::pine_settings_popover
 ```
@@ -1484,7 +1484,7 @@ DegenView supports Pine alert subscriptions through:
 
 ```text
 pine_subscription_host
-model::pine_alert
+model::alert::pine
 store::pine
 ```
 
@@ -1549,7 +1549,7 @@ Only return fields the existing report implementation actually calculates.
 Inspect:
 
 ```text
-pine::broker
+pine::strategy::broker
 pine::strategy
 pine::outputs
 ui::pine_report

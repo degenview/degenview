@@ -4,8 +4,8 @@
 
 use super::edit::{self, Part};
 use super::{DrawingFrame, DrawingLayer, Projection};
-use crate::model::chart_type::LineDash;
-use crate::model::drawing_style::DrawingStyle;
+use crate::model::chart::kind::LineDash;
+use crate::model::drawings::style::DrawingStyle;
 use crate::model::{Caps, Drawing, DrawingCommand, Geometry, Tool};
 use crate::ui::drawing_geometry as geo;
 use crate::ui::icons::{self, Icon};
@@ -343,14 +343,14 @@ impl DrawingLayer {
             ui,
             "+ Row",
             false,
-            table.row_count() < crate::model::table::MAX_ROWS,
+            table.row_count() < crate::model::annotation::table::MAX_ROWS,
             TableOp::AddRow,
         );
         chip(
             ui,
             "+ Column",
             false,
-            table.column_count() < crate::model::table::MAX_COLUMNS,
+            table.column_count() < crate::model::annotation::table::MAX_COLUMNS,
             TableOp::AddColumn,
         );
         chip(
@@ -662,7 +662,7 @@ impl DrawingLayer {
                     Icon::Plus,
                     "Add row",
                     None,
-                    unlocked && table.row_count() < crate::model::table::MAX_ROWS,
+                    unlocked && table.row_count() < crate::model::annotation::table::MAX_ROWS,
                     false,
                     Action::Table(TableOp::AddRow),
                 );
@@ -671,7 +671,7 @@ impl DrawingLayer {
                     Icon::Plus,
                     "Add column",
                     None,
-                    unlocked && table.column_count() < crate::model::table::MAX_COLUMNS,
+                    unlocked && table.column_count() < crate::model::annotation::table::MAX_COLUMNS,
                     false,
                     Action::Table(TableOp::AddColumn),
                 );
@@ -1287,7 +1287,7 @@ fn style_controls(ui: &mut Ui, drawing: &Drawing) -> Option<Drawing> {
         }
     }
     if caps.has(Caps::WAVE) {
-        use crate::model::elliott::Degree;
+        use crate::model::pattern::elliott::Degree;
         let labels: Vec<String> = Degree::ALL
             .iter()
             .map(|degree| format!("{}  {}", degree.label(), degree.sample()))
@@ -1320,7 +1320,7 @@ fn style_controls(ui: &mut Ui, drawing: &Drawing) -> Option<Drawing> {
         }
     }
     if caps.has(Caps::VWAP) {
-        use crate::model::chart_type::PriceSource;
+        use crate::model::chart::kind::PriceSource;
         let labels: Vec<String> = PriceSource::ALL
             .iter()
             .map(|source| source.label().to_owned())
@@ -1334,7 +1334,7 @@ fn style_controls(ui: &mut Ui, drawing: &Drawing) -> Option<Drawing> {
         }
     }
     if caps.has(Caps::PROFILE) {
-        use crate::model::forecast_style::ProfileVolume;
+        use crate::model::forecast::style::ProfileVolume;
         let labels: Vec<String> = ProfileVolume::ALL
             .iter()
             .map(|volume| volume.label().to_owned())
@@ -1352,7 +1352,7 @@ fn style_controls(ui: &mut Ui, drawing: &Drawing) -> Option<Drawing> {
     if caps.has(Caps::BARS)
         && let Some(Geometry::Bars(current)) = drawing.geometry()
     {
-        use crate::model::bars_pattern::BarsMode;
+        use crate::model::pattern::bars::BarsMode;
         let mut edited = current.clone();
         let labels: Vec<String> = BarsMode::ALL
             .iter()

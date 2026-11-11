@@ -2,7 +2,7 @@
 //! a month of history faint behind it when the card is tall enough to carry it.
 
 use super::{area_under, chip, fitted, loading_pill, reveal, tone_color};
-use crate::model::portfolio_card::CardData;
+use crate::model::portfolio::card::CardData;
 use crate::ui::kit;
 use crate::ui::theme;
 use eframe::egui::{Color32, Id, Pos2, Rect, Stroke, Ui, Vec2};

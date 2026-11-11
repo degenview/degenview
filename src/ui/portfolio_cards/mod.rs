@@ -14,9 +14,9 @@ mod top_performers;
 mod value;
 mod value_chart;
 
-use crate::model::portfolio_card::{CardData, CardKind, PortfolioCard};
-use crate::model::portfolio_format::Tone;
-use crate::model::portfolio_statistics::PortfolioHistoryRange;
+use crate::model::portfolio::card::{CardData, CardKind, PortfolioCard};
+use crate::model::portfolio::format::Tone;
+use crate::model::portfolio::statistics::PortfolioHistoryRange;
 use crate::ui::accessibility;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit;

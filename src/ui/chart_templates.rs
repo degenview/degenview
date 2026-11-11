@@ -13,7 +13,7 @@ use super::kit::{self, REGULAR, SEMIBOLD, size};
 use super::sheet;
 use super::theme;
 use crate::model::ChartAppearance;
-use crate::model::chart_template::{
+use crate::model::chart::template::{
     ApplyScope, MAX_DESCRIPTION_CHARS, MAX_NAME_CHARS, TemplateEntry, TemplateId, clean_name,
 };
 use crate::store::SharedStore;

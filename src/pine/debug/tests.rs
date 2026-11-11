@@ -5,10 +5,10 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
 use crate::model::Kline;
-use crate::pine::bench_tests::{self, run_script};
 use crate::pine::compiler::{self, NoLibraries};
-use crate::pine::session::Session;
-use crate::pine::token::Limits;
+use crate::pine::runtime::session::Session;
+use crate::pine::syntax::token::Limits;
+use crate::pine::tests::bench::{self, run_script};
 
 use super::*;
 
@@ -464,14 +464,14 @@ plot(f(arr))
 
 fn scripts() -> Vec<(&'static str, String, bool)> {
     vec![
-        ("simple", bench_tests::SIMPLE.to_owned(), false),
-        ("many_ta", bench_tests::MANY_TA.to_owned(), false),
-        ("history", bench_tests::LONG_HISTORY.to_owned(), false),
-        ("containers", bench_tests::CONTAINERS.to_owned(), false),
-        ("functions", bench_tests::NESTED_FUNCTIONS.to_owned(), false),
-        ("security", bench_tests::SECURITY.to_owned(), true),
-        ("strategy", bench_tests::STRATEGY.to_owned(), false),
-        ("straight", bench_tests::straight_line(40), false),
+        ("simple", bench::SIMPLE.to_owned(), false),
+        ("many_ta", bench::MANY_TA.to_owned(), false),
+        ("history", bench::LONG_HISTORY.to_owned(), false),
+        ("containers", bench::CONTAINERS.to_owned(), false),
+        ("functions", bench::NESTED_FUNCTIONS.to_owned(), false),
+        ("security", bench::SECURITY.to_owned(), true),
+        ("strategy", bench::STRATEGY.to_owned(), false),
+        ("straight", bench::straight_line(40), false),
     ]
 }
 
@@ -482,7 +482,7 @@ fn observed(session: &Session) -> String {
 
 #[test]
 fn attaching_a_debugger_that_never_stops_changes_nothing() {
-    let data = bench_tests::bars(300, bench_tests::MINUTE_MS);
+    let data = bench::bars(300, bench::MINUTE_MS);
     for (name, source, security) in scripts() {
         let plain = observed(&run_script(&source, &data, security, |_| {}));
         let (runtime, seen) = runtime(&source, &[], false, &[], DebugControl::default());
@@ -496,7 +496,7 @@ fn attaching_a_debugger_that_never_stops_changes_nothing() {
 
 #[test]
 fn stepping_through_every_statement_changes_nothing() {
-    let data = bench_tests::bars(60, bench_tests::MINUTE_MS);
+    let data = bench::bars(60, bench::MINUTE_MS);
     for (name, source, security) in scripts() {
         let plain = observed(&run_script(&source, &data, security, |_| {}));
         let (runtime, seen) = runtime(

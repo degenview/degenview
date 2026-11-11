@@ -251,7 +251,7 @@ fn build(spec: &BreakpointSpec, map: &SourceMap) -> Result<CompiledBreakpoint, B
 mod tests {
     use super::*;
     use crate::pine::compiler::{self, NoLibraries};
-    use crate::pine::token::Limits;
+    use crate::pine::syntax::token::Limits;
 
     fn map(body: &str) -> SourceMap {
         let source = format!("//@version=6\nindicator(\"T\")\n{body}");

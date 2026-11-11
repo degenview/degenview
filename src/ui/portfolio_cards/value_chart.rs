@@ -3,7 +3,7 @@
 //! crosshair. The range switch and the headline figures are the card's controls row.
 
 use super::{area_under, axis_text, dashed_h, dashed_v, loading_pill, reveal, tone_color, tooltip};
-use crate::model::portfolio_card::{CardData, PortfolioCard};
+use crate::model::portfolio::card::{CardData, PortfolioCard};
 use crate::ui::alert_center::clock_time;
 use crate::ui::icons::Icon;
 use crate::ui::kit;

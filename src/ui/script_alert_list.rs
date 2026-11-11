@@ -4,7 +4,7 @@
 
 use super::alert_center::{self, AlertCenterAction, Tone};
 use crate::model::DataSource;
-use crate::model::pine_alert::{PineAlertState, PineAlertSubscription};
+use crate::model::alert::pine::{PineAlertState, PineAlertSubscription};
 use crate::ui::icons::{self, Icon};
 use crate::ui::{kit, theme};
 use eframe::egui::{self, Id, Pos2, Rect, Sense, Vec2};

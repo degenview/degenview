@@ -7,18 +7,19 @@
 //! price range, the lines, the tags and the readout, so they cannot disagree.
 //!
 //! The chart's bars are the time axis: an overlay has a value on a bar or it has none (see
-//! `model::overlay_align`), and a bar without one breaks the line. Replay needs nothing of its
+//! `model::overlay::align`), and a bar without one breaks the line. Replay needs nothing of its
 //! own: the bars the card is given are already cut at the replay cursor, and an overlay candle
 //! can only land on one of them.
 
 use super::{ChartCard, View};
-use crate::model::chart_type::{ChartType, PriceSource};
+use crate::model::chart;
+use crate::model::chart::kind::{ChartType, PriceSource};
+use crate::model::chart::price_scale::PriceScaleMode;
 use crate::model::editor_theme::Rgba;
+use crate::model::overlay::align::{Aligned, align};
+use crate::model::overlay::feed::{OverlayFeed, OverlayStatus};
+use crate::model::overlay::scale::{Mapping, legend_value, mappings};
 use crate::model::overlay::{ChartOverlay, OverlayId, OverlayList};
-use crate::model::overlay_align::{Aligned, align};
-use crate::model::overlay_feed::{OverlayFeed, OverlayStatus};
-use crate::model::overlay_scale::{Mapping, legend_value, mappings};
-use crate::model::price_scale::{self, PriceScaleMode};
 use crate::model::{DataSource, Kline, PriceFormat, Timeframe};
 use crate::ui::canvas_render::CanvasStyle;
 use crate::ui::{price_text, series_render, theme};
@@ -125,9 +126,11 @@ impl OverlayLine<'_> {
             (
                 Mapping::Main { baseline, .. },
                 PriceScaleMode::Percent | PriceScaleMode::IndexedTo100,
-            ) => {
-                price_scale::format_relative(mode, legend_value(mode, Some(baseline), value), None)
-            }
+            ) => chart::price_scale::format_relative(
+                mode,
+                legend_value(mode, Some(baseline), value),
+                None,
+            ),
             _ => format.format(value),
         }
     }

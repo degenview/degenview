@@ -16,7 +16,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use super::broker_host::{BrokerHost, Connection, Operation};
 use super::paper_host::PaperHost;
-use crate::model::trading_venue::TradingVenue;
+use crate::model::broker::venue::TradingVenue;
 use crate::store::SharedStore;
 use crate::trading::backend::TradingBackend;
 use crate::trading::broker_backend::BrokerBackend;

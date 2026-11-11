@@ -6,7 +6,7 @@ use super::line_tests::{PLOT, at, bars, near, projection, scale};
 use super::shape::{LabelLook, Screen};
 use super::*;
 use crate::model::DrawingStyle;
-use crate::model::elliott::Degree;
+use crate::model::pattern::elliott::Degree;
 use eframe::egui::{pos2, vec2};
 
 fn built_on(tool: Tool, anchors: &[Anchor], style: DrawingStyle, logarithmic: bool) -> Screen {
@@ -64,7 +64,7 @@ fn xabcd_draws_its_legs_its_fills_and_its_four_ratios() {
     // Four dashed lines to measure along: X-B, A-C, B-D and X-D.
     assert_eq!(screen.styled.len(), 4);
     assert!(screen.styled.iter().all(
-        |line| line.path.len() == 2 && line.dash == crate::model::chart_type::LineDash::Dashed
+        |line| line.path.len() == 2 && line.dash == crate::model::chart::kind::LineDash::Dashed
     ));
     // The ratios first (AB/XA, BC/AB, CD/BC, AD/XA), then the pivots' names.
     assert_eq!(

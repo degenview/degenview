@@ -4,7 +4,7 @@ use super::core::Phase;
 use super::core_tests::{Mac, Raw, mac, raw};
 use super::mock::MockCloud;
 use super::policy::EntityKind;
-use crate::model::chart_template::ChartAppearanceTemplate;
+use crate::model::chart::template::ChartAppearanceTemplate;
 use crate::model::watchlist::{Watchlist, WatchlistEntry, WatchlistInstrument};
 use crate::model::{ChartAppearance, DataSource, InstrumentId};
 use serde_json::{Value, json};
@@ -581,7 +581,7 @@ fn a_mac_from_before_providers_does_not_turn_this_macs_provider_off() {
         prefs["provider"], "imgbb",
         "the provider chosen here is kept"
     );
-    let read: crate::model::snapshot::SnapshotPrefs = serde_json::from_value(prefs).unwrap();
+    let read: crate::model::chart::snapshot::SnapshotPrefs = serde_json::from_value(prefs).unwrap();
     assert_eq!(read.provider.as_deref(), Some("imgbb"));
     assert_eq!(
         read.settings_of("imgbb").get("expiry").map(String::as_str),
@@ -612,7 +612,7 @@ fn a_mac_from_before_providers_gives_a_new_mac_its_host() {
         .raw_setting("snapshot.prefs")
         .unwrap()
         .unwrap();
-    let read: crate::model::snapshot::SnapshotPrefs = serde_json::from_value(prefs).unwrap();
+    let read: crate::model::chart::snapshot::SnapshotPrefs = serde_json::from_value(prefs).unwrap();
     assert_eq!(read.provider.as_deref(), Some("self_hosted"));
     assert_eq!(
         read.settings_of("self_hosted")
@@ -1465,7 +1465,7 @@ fn every_line_tool() -> Vec<crate::model::Drawing> {
             style.regression.upper_dev = 1.5;
             style.use_one_color = true;
             style.time_label = true;
-            style.text.orientation = crate::model::drawing_style::TextOrientation::Vertical;
+            style.text.orientation = crate::model::drawings::style::TextOrientation::Vertical;
             let mut drawing =
                 Drawing::build(tool, index as u64 + 1, &anchors[..count], style).unwrap();
             drawing.set_text("a note\non two lines");
@@ -1534,7 +1534,7 @@ fn every_line_channel_and_pitchfork_reaches_the_other_mac_exactly_as_drawn() {
 /// One drawing of every pattern, Elliott wave and cycle tool, with a style that uses every option
 /// they have.
 fn every_pattern_tool() -> Vec<crate::model::Drawing> {
-    use crate::model::elliott::Degree;
+    use crate::model::pattern::elliott::Degree;
     use crate::model::{Anchor, Drawing, Placement, Tool};
     let anchors: Vec<Anchor> = (0..7)
         .map(|index| Anchor {
@@ -1648,7 +1648,7 @@ fn every_forecast_volume_and_measurement_tool_reaches_the_other_mac_exactly_as_d
 /// One drawing of every Fibonacci and Gann tool, with levels and switches that are not the
 /// defaults.
 fn every_fib_tool() -> Vec<crate::model::Drawing> {
-    use crate::model::fib_style::FibLevel;
+    use crate::model::fib::style::FibLevel;
     use crate::model::{Anchor, Drawing, Placement, Tool};
     let anchors: Vec<Anchor> = (0..4)
         .map(|index| Anchor {
@@ -1773,7 +1773,7 @@ fn every_pattern_wave_and_cycle_reaches_the_other_mac_exactly_as_drawn() {
         .find(|drawing| drawing.tool() == Some(crate::model::Tool::ElliottTripleCombo))
         .unwrap();
     let mut style = *wave.style().unwrap();
-    style.pattern.degree = crate::model::elliott::Degree::Minute;
+    style.pattern.degree = crate::model::pattern::elliott::Degree::Minute;
     wave.set_style(style);
     put_layouts(&a, &[layout_of(10, "Patterns", &edited)]);
     settle(&mut a, &mut b);
@@ -1898,11 +1898,11 @@ fn deleting_a_line_tool_drawing_propagates_and_an_unrelated_one_stays() {
 
 // MARK: Alerts
 
+use crate::model::alert::engine::AlertEngine;
 use crate::model::alert::{
     AlertAsset, AlertCondition, AlertRuntimeCommand, AlertRuntimeCommandPayload, AlertState,
     MarketQuote, PriceAlert,
 };
-use crate::model::alert_engine::AlertEngine;
 
 const T0: i64 = 1_700_000_000_000;
 

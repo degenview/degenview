@@ -11,7 +11,7 @@
 
 use super::ChartWorkspace;
 use crate::model::Tool;
-use crate::model::image_content::{Content, ImageContent, MAX_NAME_CHARS};
+use crate::model::annotation::image_content::{Content, ImageContent, MAX_NAME_CHARS};
 use crate::service::asset_host;
 use crate::service::image_ingest::{self, IngestError};
 use crate::service::{file_dialog, work_queue};

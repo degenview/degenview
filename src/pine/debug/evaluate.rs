@@ -6,9 +6,9 @@
 //! interpreter its own copy of the bar context, and gives back the instruction budget and any
 //! handle the evaluation allocated, so the script goes on exactly as if nothing had been asked.
 
-use crate::pine::runtime_types::RuntimeContext;
-use crate::pine::runtime_value::RuntimeValue;
-use crate::pine::session::Session;
+use crate::pine::runtime::session::Session;
+use crate::pine::runtime::types::RuntimeContext;
+use crate::pine::runtime::value::RuntimeValue;
 
 use super::expression::DebugExpression;
 use super::frames::Frame;

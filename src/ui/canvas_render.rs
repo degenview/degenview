@@ -8,8 +8,8 @@
 
 use super::theme;
 use crate::model::ChartCanvas;
-use crate::model::canvas::{BackgroundMode, ButtonVisibility, LineAppearance};
-use crate::model::chart_type::{LineDash, Rgba};
+use crate::model::chart::canvas::{BackgroundMode, ButtonVisibility, LineAppearance};
+use crate::model::chart::kind::{LineDash, Rgba};
 use eframe::egui::{Color32, FontId, Mesh, Painter, Pos2, Rect, Shape, Stroke};
 
 /// How the chart's backdrop is filled.
@@ -362,7 +362,7 @@ pub fn paint_watermark(painter: &Painter, plot: Rect, title: &str, subtitle: &st
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::canvas::WatermarkMode;
+    use crate::model::chart::canvas::WatermarkMode;
     use eframe::egui::{self, Vec2};
 
     fn ctx_with<R>(run: impl FnOnce(&Painter) -> R) -> (R, Vec<egui::epaint::ClippedShape>) {
@@ -462,7 +462,7 @@ mod tests {
             Fill::Solid(Color32::from_rgb(9, 9, 9))
         );
         // Unset stops default to the surface and a tint of it.
-        canvas.background = crate::model::canvas::BackgroundAppearance {
+        canvas.background = crate::model::chart::canvas::BackgroundAppearance {
             mode: BackgroundMode::Gradient,
             ..Default::default()
         };
@@ -494,7 +494,7 @@ mod tests {
         assert_eq!(base.tag_half_height(), 9.0);
         assert_eq!(base.time_axis_height(), 24.0);
         assert_eq!(base.min_axis_width(82.0), 82.0);
-        canvas.scales.text_size = crate::model::canvas::ScaleTextSize::Pt18;
+        canvas.scales.text_size = crate::model::chart::canvas::ScaleTextSize::Pt18;
         let large = CanvasStyle::resolve(&canvas);
         assert!(large.tag_half_height() > base.tag_half_height());
         assert!(large.time_axis_height() > base.time_axis_height());

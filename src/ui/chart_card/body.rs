@@ -106,7 +106,7 @@ impl ChartCard {
         line: bool,
         bars: usize,
     ) {
-        let shown_count = canvas::visible_window(
+        let shown_count = chart::canvas::visible_window(
             bars,
             self.viewport.horizontal.visible,
             self.viewport.horizontal.right_offset,

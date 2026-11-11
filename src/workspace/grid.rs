@@ -613,7 +613,7 @@ impl ChartWorkspace {
                                                 && let Some(change) = chart.chart.link_change()
                                             {
                                                 self.link_state.outbox.push(
-                                                    crate::model::tab_link::LinkSignal::View(
+                                                    crate::model::tab::link::LinkSignal::View(
                                                         change,
                                                     ),
                                                 );
@@ -881,9 +881,9 @@ impl ChartWorkspace {
         {
             self.open_live_ticket(
                 index,
-                crate::model::chart_context::LiveOrderRequest {
+                crate::model::chart::context::LiveOrderRequest {
                     side,
-                    kind: crate::model::broker_ticket::TicketKind::Market,
+                    kind: crate::model::broker::ticket::TicketKind::Market,
                     price: None,
                 },
             );

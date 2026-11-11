@@ -6,7 +6,7 @@ use degenview_brokers::{Decimal, Side};
 use eframe::egui::{self, Color32, Id, Rect, Sense, Ui, Vec2, pos2, vec2};
 
 use crate::model::DataSource;
-use crate::model::broker_ticket::parse_decimal;
+use crate::model::broker::ticket::parse_decimal;
 use crate::trading::model::OrderClass;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit;

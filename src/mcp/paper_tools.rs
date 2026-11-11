@@ -21,7 +21,7 @@ use crate::model::paper::{
     PaperInstrument, PaperOrderChanges, PaperOrderRequest, PaperOrderSide, PaperOrderType,
     PaperTimeInForce,
 };
-use crate::model::watchlist_text::market_item;
+use crate::model::watchlist::text::market_item;
 use rmcp::handler::server::tool::Extension;
 use rmcp::handler::server::wrapper::{Json, Parameters};
 use rmcp::model::CallToolResult;

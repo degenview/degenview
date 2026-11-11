@@ -1,13 +1,13 @@
 //! Add, edit or duplicate one portfolio transaction. A pure view over a `TransactionDraft`
 //! (parsing, the price/total link, validation and the summary live in
-//! `model::portfolio_editor`) that returns an outcome; the host saves it to the ledger and
+//! `model::portfolio::editor`) that returns an outcome; the host saves it to the ledger and
 //! reports a rejection back through `TransactionEditorState::failed`.
 
 // Transient: the portfolio host opens the editor once it is wired.
 #![allow(dead_code)]
 
+use crate::model::portfolio::editor::{Category, EditorField, Summary, TransactionDraft};
 use crate::model::portfolio::{PortfolioCurrency, PortfolioTransaction};
-use crate::model::portfolio_editor::{Category, EditorField, Summary, TransactionDraft};
 use crate::ui::date_picker;
 use crate::ui::icons::Icon;
 use crate::ui::kit::{self, TabItem};

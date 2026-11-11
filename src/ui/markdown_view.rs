@@ -7,7 +7,7 @@
 //! stars. Underscores are never emphasis, because `plot_color` in prose must stay `plot_color`.
 //! `parse` is pure and tested; `show` draws it.
 
-use crate::pine_studio::syntax;
+use crate::pine_studio::editor::syntax;
 use crate::ui::icons::{self, Icon};
 use crate::ui::{editor_appearance, kit, theme};
 use eframe::egui::{

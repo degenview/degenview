@@ -1,7 +1,7 @@
 //! Pine Studio value types, ported from `Model/Script/*.swift`.
 
-use crate::pine::program::ScriptType as PineScriptType;
-use crate::pine::token::{Diagnostic, DiagnosticSeverity};
+use crate::pine::compiler::program::ScriptType as PineScriptType;
+use crate::pine::syntax::token::{Diagnostic, DiagnosticSeverity};
 use serde::{Deserialize, Serialize};
 
 /// A script's stable identity: 32 hex digits, minted once and kept in the file's extended

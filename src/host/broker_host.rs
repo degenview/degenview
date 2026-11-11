@@ -32,7 +32,8 @@ use degenview_brokers::{
     Waker,
 };
 
-use crate::model::broker_prefs::{self, AllPrefs, BrokerPrefs};
+use crate::model::broker;
+use crate::model::broker::prefs::{AllPrefs, BrokerPrefs};
 use crate::service::keychain_broker_secrets::BrokerSecrets;
 use crate::store::SharedStore;
 use crate::trading::task::Task;
@@ -284,7 +285,7 @@ impl BrokerHost {
     ) -> Arc<Self> {
         let prefs = store
             .as_ref()
-            .and_then(|store| store.lock().ok()?.setting::<AllPrefs>(broker_prefs::KEY))
+            .and_then(|store| store.lock().ok()?.setting::<AllPrefs>(broker::prefs::KEY))
             .unwrap_or_default();
         // The secret store may prompt or hang. Everything that touches it runs here, one job at a
         // time and in the order asked, so the interface thread never waits on it and a save
@@ -382,7 +383,7 @@ impl BrokerHost {
             // waiting for it would write older choices after newer ones.
             if let Ok(store) = store.lock() {
                 let all = host.prefs.lock().unwrap_or_else(|e| e.into_inner()).clone();
-                let _ = store.set_setting(broker_prefs::KEY, &all);
+                let _ = store.set_setting(broker::prefs::KEY, &all);
             }
         });
     }

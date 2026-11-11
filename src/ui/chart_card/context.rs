@@ -8,8 +8,8 @@
 use super::navigation::{Region, Regions};
 use super::{ChartCard, PriceScale};
 use crate::model::Anchor;
-use crate::model::chart_context::Target;
-use crate::model::price_scale::PriceScaleMode;
+use crate::model::chart::context::Target;
+use crate::model::chart::price_scale::PriceScaleMode;
 use crate::ui::alert_lines;
 use crate::ui::drawing_layer::DrawingFrame;
 use crate::ui::drawing_layer::Projection;
@@ -182,7 +182,7 @@ impl ChartCard {
     }
 
     /// Sets the price alerts this chart draws as lines.
-    pub fn set_alert_lines(&mut self, lines: Vec<crate::model::alert_line::AlertLine>) {
+    pub fn set_alert_lines(&mut self, lines: Vec<crate::model::alert::line::AlertLine>) {
         if self.alert_lines != lines {
             self.alert_lines = lines;
         }

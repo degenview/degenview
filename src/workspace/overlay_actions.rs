@@ -3,8 +3,8 @@
 use super::ChartWorkspace;
 use super::undo::{RESTYLE_WINDOW, Snapshot, UndoEntry};
 use crate::model::InstrumentId;
+use crate::model::chart::price_scale::PriceScaleMode;
 use crate::model::overlay::{AddOutcome, OverlayCommand, OverlayId, OverlayScale};
-use crate::model::price_scale::PriceScaleMode;
 use crate::ui::overlay_settings_popover::{self, OverlaySettingsPopover};
 use eframe::egui;
 use std::time::Instant;
@@ -208,8 +208,8 @@ mod tests {
     use super::super::overlays::{OverlayBackend, OverlayHub};
     use super::super::test_support::{candle, chart_with_drawings, empty_workspace};
     use super::*;
+    use crate::model::overlay::feed::OverlayStatus;
     use crate::model::overlay::{OverlayScale, ScaleChoice};
-    use crate::model::overlay_feed::OverlayStatus;
     use crate::model::{DataSource, Kline, Timeframe};
     use eframe::egui;
     use std::sync::Arc;
@@ -417,7 +417,7 @@ mod tests {
         let id = chart(&workspace, a).overlays.as_slice()[0].id;
         workspace.apply_overlay_command(
             a,
-            OverlayCommand::SetDash(id, crate::model::chart_type::LineDash::Dotted),
+            OverlayCommand::SetDash(id, crate::model::chart::kind::LineDash::Dotted),
         );
         assert!(workspace.is_dirty(), "a restyle of an overlay counts");
     }

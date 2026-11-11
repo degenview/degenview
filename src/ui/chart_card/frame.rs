@@ -9,7 +9,7 @@
 
 use super::overlays::OverlayFrame;
 use super::*;
-use crate::model::canvas::PaneHeights;
+use crate::model::chart::canvas::PaneHeights;
 use crate::ui::pine_chart_render::{hover_targets_in_order, target_at};
 
 /// A script's output, how it is ordered against the chart, and the instance it belongs to.
@@ -211,7 +211,7 @@ impl ChartCard {
         let maximized = self
             .maximized_pane
             .filter(|id| pane_specs.iter().any(|pane| pane.id == *id));
-        let heights = canvas::split_panes(
+        let heights = chart::canvas::split_panes(
             rect.height(),
             &pane_specs,
             maximized,
@@ -248,7 +248,8 @@ impl ChartCard {
             let mut widest = 0.0f32;
             if let Some(view) = self.view(bars, (provisional, top_inset), scale_mode, chart_type) {
                 let scale = &view.scale;
-                let budget = canvas::tick_budget(provisional.height(), style.price_tick_spacing());
+                let budget =
+                    chart::canvas::tick_budget(provisional.height(), style.price_tick_spacing());
                 let AxisTicks { prices, step } = scale.axis_ticks(budget);
                 let format = self.appearance.price_format();
                 for price in &prices {
@@ -276,7 +277,7 @@ impl ChartCard {
                     }
                 }
             }
-            canvas::axis_width(
+            chart::canvas::axis_width(
                 widest,
                 style.min_axis_width(PRICE_AXIS_WIDTH),
                 148.0 * (style.price_size / 10.0).max(1.0),
@@ -364,7 +365,7 @@ impl ChartCard {
             })
             .collect();
 
-        let ticks = canvas::time_ticks(view.start, shown.len(), slot_width);
+        let ticks = chart::canvas::time_ticks(view.start, shown.len(), slot_width);
         let tick_xs: Vec<f32> = ticks.iter().map(|index| x_for(*index)).collect();
         self.draw_grid(&main_painter, plot, rect, scale, style, &tick_xs);
         canvas_render::paint_scale_lines(
@@ -411,7 +412,7 @@ impl ChartCard {
             view.start,
             view.end,
             chart_type,
-            price_scale::reference_from(shown[0].close),
+            chart::price_scale::reference_from(shown[0].close),
         );
         self.paint_overlay_lines(&clipped, &overlay_frame, view, &x_for);
         if line && self.series.is_empty() {

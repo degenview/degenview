@@ -44,7 +44,7 @@ pub fn price_label(value: Decimal, increment: Option<Decimal>) -> String {
             let places = increment.normalize().scale().min(places_for(value));
             confirm::price_text(value.round_dp(places), Decimal::new(1, places))
         }
-        None => crate::model::broker_ticket::display(value.normalize()),
+        None => crate::model::broker::ticket::display(value.normalize()),
     }
 }
 

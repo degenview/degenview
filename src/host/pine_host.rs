@@ -3,16 +3,16 @@
 //! incrementally; the session itself owns the per-bar state machine.
 #![allow(dead_code)] // transient until the chart wires this
 
-use crate::model::synthetic::ticker;
+use crate::model::chart::synthetic::ticker;
 use crate::model::{DataSource, Kline};
 use crate::pine::compiler;
-use crate::pine::program::{InputValue, SymbolInfo, VisualOutput};
-use crate::pine::runtime_support::{
+use crate::pine::compiler::program::{InputValue, SymbolInfo, VisualOutput};
+use crate::pine::runtime::session::{RunError, Session};
+use crate::pine::runtime::support::{
     ChartSpan, MAX_INTRABAR_CANDLES, SecurityDataProvider, SecurityKey,
 };
-use crate::pine::session::{RunError, Session};
-use crate::pine::token::{Diagnostic, DiagnosticSeverity, Limits};
-use crate::pine_studio::registry::LibraryRegistry;
+use crate::pine::syntax::token::{Diagnostic, DiagnosticSeverity, Limits};
+use crate::pine_studio::library::registry::LibraryRegistry;
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};

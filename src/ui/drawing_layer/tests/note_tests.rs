@@ -139,7 +139,10 @@ fn a_boxs_right_edge_sets_the_width_the_text_wraps_at() {
     let from = handle.pos;
     rig.drag(from, from - vec2(600.0, 0.0));
     let style = *rig.last().style().unwrap();
-    assert_eq!(style.box_width, crate::model::drawing_style::MIN_BOX_WIDTH);
+    assert_eq!(
+        style.box_width,
+        crate::model::drawings::style::MIN_BOX_WIDTH
+    );
 }
 
 #[test]
@@ -619,13 +622,13 @@ fn a_signposts_emoji_pin_is_shown_on_a_disc_of_its_own_colour_only_when_asked() 
     let mut with = rig.last().clone();
     let mut style = *with.style().unwrap();
     style.emoji_shown = true;
-    style.emoji = crate::model::drawing_style::Emoji::Crown;
+    style.emoji = crate::model::drawings::style::Emoji::Crown;
     style.emoji_fill = [200, 20, 20, 255];
     with.set_style(style);
     rig.drawings = vec![with];
     let screen = rig.screen_of(id);
     let (_, glyph, _) = screen.glyph.expect("the emoji");
-    assert_eq!(glyph, crate::model::drawing_style::Emoji::Crown.glyph());
+    assert_eq!(glyph, crate::model::drawings::style::Emoji::Crown.glyph());
     assert_eq!(screen.discs[0].2, [200, 20, 20, 255]);
     assert!(screen.discs[0].1 > small);
 }
@@ -676,7 +679,7 @@ fn the_two_point_notes_move_together_and_keep_their_look_through_a_round_trip() 
 
 #[test]
 fn every_emoji_a_signpost_offers_is_one_the_apps_fonts_can_draw() {
-    use crate::model::drawing_style::Emoji;
+    use crate::model::drawings::style::Emoji;
     // Only the fonts egui bundles: they are all a Linux build has, and the macOS system fonts the
     // app puts before them would hide a symbol that is missing everywhere else.
     let ctx = egui::Context::default();

@@ -19,18 +19,18 @@ use crate::mcp::bridge::{McpCommand, McpError, McpReply};
 use crate::mcp::types::{AlertChangeResult, CreateAlertResult, UpdateAlertResult};
 use crate::model::InstrumentId;
 use crate::model::Timeframe;
+use crate::model::alert::pine::{PineAlertState, PineAlertSubscription};
 use crate::model::alert::{
     AlertCurrency, AlertPrecondition, AlertRuntimeCommand, AlertRuntimeCommandPayload,
     AlertRuntimeOwner, AlertServiceState, AlertState,
 };
-use crate::model::pine_alert::{PineAlertState, PineAlertSubscription};
-use crate::model::tab_windows::WindowId;
+use crate::model::tab::windows::WindowId;
+use crate::model::watchlist::quote::Freshness;
 use crate::model::watchlist::{WatchlistInstrument, new_id};
-use crate::model::watchlist_quote::Freshness;
 use crate::model::webhook::WebhookDeliveryState;
 use crate::native_bridge::{self, NativeCommand};
 use crate::pine_studio::editor::EditAction;
-use crate::pine_studio::store::hash_source;
+use crate::pine_studio::library::store::hash_source;
 use crate::pine_studio::{ExitReason, PineStudio, PineStudioAction};
 use crate::service::background_service::BackgroundAlertService;
 use crate::service::fx_rates::FxRateService;
@@ -237,7 +237,7 @@ enum AppAction {
     OpenPortfolio,
     OpenPine,
     /// Open the Pine Studio on the source of a Pine logs message.
-    OpenPineSource(crate::model::pine_logs_view::SourceTarget),
+    OpenPineSource(crate::model::pine::logs_view::SourceTarget),
     /// Open Settings on the Alpaca page.
     OpenAlpacaSettings,
     OpenBrokerSettings,
@@ -279,7 +279,7 @@ enum AppAction {
         script_id: Option<String>,
         script_name: String,
         source: String,
-        inputs: std::collections::HashMap<String, crate::model::pine_instance::StoredInput>,
+        inputs: std::collections::HashMap<String, crate::model::pine::instance::StoredInput>,
         symbol_key: String,
         timeframe: String,
         note: String,
@@ -309,7 +309,7 @@ pub struct DegenViewApp {
     tab_title_host: TabTitleHost,
     /// Tab Linking: the switches of every colour, and who is in which group.
     tab_link_host: TabLinkHost,
-    link_hub: crate::model::tab_link::LinkHub,
+    link_hub: crate::model::tab::link::LinkHub,
     tab_link_revision: u64,
     /// The markets the tab strips asked quotes for last time (their keys), so the demand is only
     /// re-issued when a tab's focused chart changes.
@@ -518,7 +518,7 @@ impl WindowEnv {
 
     /// Tags a chart tab with a Tab Linking colour, or takes it out of its group. The chart is left
     /// as it is; the hub aligns a tab that joined a group on the next frame.
-    fn set_tab_link(&self, tab: u64, color: Option<crate::model::tab_link::LinkColor>) {
+    fn set_tab_link(&self, tab: u64, color: Option<crate::model::tab::link::LinkColor>) {
         let Some(content) = self.content(tab) else {
             return;
         };
@@ -1034,7 +1034,7 @@ impl DegenViewApp {
             crate::host::sync_host::SyncHost::new(
                 store.clone(),
                 sync_factory,
-                crate::pine_studio::store::ScriptStore::default_location(),
+                crate::pine_studio::library::store::ScriptStore::default_location(),
                 backups,
                 // The sync page lives in the Settings window, a viewport of its own: waking only the
                 // root one leaves that page showing stale state until the mouse moves.
@@ -1522,7 +1522,7 @@ impl DegenViewApp {
                 .broker_host
                 .snapshot(broker)
                 .and_then(|snapshot| snapshot.product(&notice.order.product).cloned());
-            let text = crate::model::broker_ticket::notice_text(&notice, name, spec.as_ref());
+            let text = crate::model::broker::ticket::notice_text(&notice, name, spec.as_ref());
             for slot in &self.tabs {
                 if slot.id() != focused {
                     continue;
@@ -1535,7 +1535,7 @@ impl DegenViewApp {
             }
             macos_notifications::notify_async(
                 Arc::clone(&self.notifier),
-                crate::model::alert_notification::NotificationContent {
+                crate::model::alert::notification::NotificationContent {
                     title: text.title,
                     body: text.body,
                     identifier: text.identifier,
@@ -1555,7 +1555,7 @@ impl DegenViewApp {
             };
             if let TabContent::Chart(workspace) = &*content
                 && let Some(instrument) = workspace.focused_instrument()
-                && crate::model::tab_title::wants_quote(instrument.source)
+                && crate::model::tab::title::wants_quote(instrument.source)
             {
                 wanted.push(instrument);
             }
@@ -1797,7 +1797,7 @@ impl DegenViewApp {
     fn open_pine_source(
         &mut self,
         ctx: &egui::Context,
-        target: &crate::model::pine_logs_view::SourceTarget,
+        target: &crate::model::pine::logs_view::SourceTarget,
     ) {
         self.open_pine(ctx);
         for tab in &self.tabs {
@@ -1999,7 +1999,7 @@ impl DegenViewApp {
             ctx.request_repaint_of(Self::viewport_id(window.id));
         }
         let enabled = self.alert_host.lock().is_ok_and(|host| {
-            crate::model::alert_notification::notifications_enabled(host.settings())
+            crate::model::alert::notification::notifications_enabled(host.settings())
         });
         if !enabled {
             return;
@@ -2007,7 +2007,7 @@ impl DegenViewApp {
         for view in fresh {
             macos_notifications::notify_async(
                 Arc::clone(&self.notifier),
-                crate::model::alert_notification::NotificationContent {
+                crate::model::alert::notification::NotificationContent {
                     title: format!("“{}” is asking permission", view.client_name),
                     body: view.summary.line(),
                     identifier: format!("mcp-confirmation-{}", view.id),
@@ -2563,7 +2563,7 @@ impl DegenViewApp {
     /// The stored script alert subscriptions, for checks that must not disturb a live alert.
     fn pine_subscriptions_for_mcp(
         &self,
-    ) -> Result<Vec<crate::model::pine_alert::PineAlertSubscription>, McpError> {
+    ) -> Result<Vec<crate::model::alert::pine::PineAlertSubscription>, McpError> {
         let store = self.store.lock().map_err(|_| alerts_unavailable())?;
         Ok(store.pine_subscriptions())
     }
@@ -3757,7 +3757,7 @@ mod tests {
     impl Notifier for CountingNotifier {
         fn deliver(
             &self,
-            _: &crate::model::alert_notification::NotificationContent,
+            _: &crate::model::alert::notification::NotificationContent,
         ) -> Result<(), String> {
             Ok(())
         }

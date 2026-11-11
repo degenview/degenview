@@ -11,7 +11,7 @@ use super::frame::{
 };
 use super::overlays::OverlayFrame;
 use super::*;
-use crate::model::snapshot::SnapshotDimensions;
+use crate::model::chart::snapshot::SnapshotDimensions;
 use crate::model::{Drawing, Tool};
 use crate::service::snapshot_raster::Scene;
 

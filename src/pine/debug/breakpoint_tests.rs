@@ -2,9 +2,9 @@
 
 use std::sync::{Arc, Mutex};
 
-use crate::pine::bench_tests::run_script;
 use crate::pine::logs::LogLevel;
-use crate::pine::session::Session;
+use crate::pine::runtime::session::Session;
+use crate::pine::tests::bench::run_script;
 
 use super::tests::{Probe, Seen, Why, bars, runtime_with, with_header};
 use super::*;

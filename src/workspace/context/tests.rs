@@ -1,5 +1,6 @@
 use super::*;
-use crate::model::chart_context::{self, QuickOrder, Target};
+use crate::model::chart;
+use crate::model::chart::context::{QuickOrder, Target};
 use crate::model::paper::{PaperOrderSide, PaperOrderType};
 use crate::model::{Anchor, Kline, Tool};
 use eframe::egui::{OutputCommand, pos2};
@@ -703,7 +704,7 @@ fn facts_count_what_the_menu_will_remove() {
     assert_eq!(facts.drawings, 2, "the ruler is not a drawing");
     assert_eq!(facts.indicators, 2, "one built-in and one script");
     assert_eq!(facts.last_price, Some(100.0));
-    assert_eq!(facts.paper, chart_context::PaperAccess::Available);
+    assert_eq!(facts.paper, chart::context::PaperAccess::Available);
     assert!(!facts.replay);
 }
 
@@ -985,12 +986,12 @@ fn the_menu_built_for_a_snapshot_matches_its_chart() {
         .workspace
         .context_facts(&rig.ctx, &context, &[])
         .unwrap();
-    let entries = chart_context::menu(&context, &facts);
+    let entries = chart::context::menu(&context, &facts);
     let labels: Vec<String> = entries
         .iter()
         .filter_map(|entry| match entry {
-            chart_context::Entry::Item(item) => Some(item.label.clone()),
-            chart_context::Entry::Separator | chart_context::Entry::Heading(_) => None,
+            chart::context::Entry::Item(item) => Some(item.label.clone()),
+            chart::context::Entry::Separator | chart::context::Entry::Heading(_) => None,
         })
         .collect();
     assert_eq!(labels[0], "Copy price 120.00");
@@ -1052,7 +1053,7 @@ fn tree_rig() -> (Rig, u64) {
 
 #[test]
 fn the_tree_hides_and_shows_a_drawing_and_undo_reverts_it() {
-    use crate::model::object_tree::Key as TreeKey;
+    use crate::model::chart::object_tree::Key as TreeKey;
     use crate::ui::object_tree::TreeAction;
     let (mut rig, chart) = tree_rig();
     rig.workspace
@@ -1081,7 +1082,7 @@ fn the_tree_locks_and_unlocks_a_drawing() {
 
 #[test]
 fn the_tree_deletes_a_drawing_undoably_and_never_a_locked_one() {
-    use crate::model::object_tree::Key as TreeKey;
+    use crate::model::chart::object_tree::Key as TreeKey;
     use crate::ui::object_tree::TreeAction;
     let (mut rig, chart) = tree_rig();
     rig.workspace.selected_drawing = Some((chart, vec![1, 2]));
@@ -1118,7 +1119,7 @@ fn compared(rig: &mut Rig, chart: u64) -> crate::model::overlay::OverlayId {
 
 #[test]
 fn the_tree_hides_and_removes_a_compared_market_and_undo_restores_it() {
-    use crate::model::object_tree::Key as TreeKey;
+    use crate::model::chart::object_tree::Key as TreeKey;
     use crate::ui::object_tree::TreeAction;
     let (mut rig, chart) = tree_rig();
     let id = compared(&mut rig, chart);
@@ -1145,7 +1146,7 @@ fn the_tree_hides_and_removes_a_compared_market_and_undo_restores_it() {
 
 #[test]
 fn the_tree_opens_the_compare_page_for_a_compared_market_and_leaves_the_drawing_selection() {
-    use crate::model::object_tree::Key as TreeKey;
+    use crate::model::chart::object_tree::Key as TreeKey;
     use crate::ui::chart_settings::Tab;
     use crate::ui::object_tree::TreeAction;
     let (mut rig, chart) = tree_rig();
@@ -1162,7 +1163,7 @@ fn the_tree_opens_the_compare_page_for_a_compared_market_and_leaves_the_drawing_
 
 #[test]
 fn the_tree_selects_a_drawing_as_the_charts_one_selection() {
-    use crate::model::object_tree::Key as TreeKey;
+    use crate::model::chart::object_tree::Key as TreeKey;
     use crate::ui::object_tree::TreeAction;
     let (mut rig, chart) = tree_rig();
     rig.workspace
@@ -1183,7 +1184,7 @@ fn the_tree_reorders_drawings_in_the_stack() {
 
 #[test]
 fn the_tree_hides_and_removes_indicators_and_scripts() {
-    use crate::model::object_tree::{IndicatorKey, Key as TreeKey};
+    use crate::model::chart::object_tree::{IndicatorKey, Key as TreeKey};
     use crate::ui::object_tree::TreeAction;
     let (mut rig, chart) = tree_rig();
     {
@@ -1221,7 +1222,7 @@ fn the_tree_hides_and_removes_indicators_and_scripts() {
 
 #[test]
 fn the_tree_can_delete_a_drawing_from_a_newer_version_and_nothing_else_touches_it() {
-    use crate::model::object_tree::Key as TreeKey;
+    use crate::model::chart::object_tree::Key as TreeKey;
     use crate::ui::object_tree::TreeAction;
     let (mut rig, chart) = tree_rig();
     let future = Drawing::Unreadable(serde_json::json!({"Spiral": {"id": 40, "blob": [1, 2]}}));
@@ -1260,7 +1261,7 @@ fn the_tree_can_delete_a_drawing_from_a_newer_version_and_nothing_else_touches_i
 
 #[test]
 fn a_tree_action_for_a_closed_chart_does_nothing() {
-    use crate::model::object_tree::Key as TreeKey;
+    use crate::model::chart::object_tree::Key as TreeKey;
     use crate::ui::object_tree::TreeAction;
     let (mut rig, chart) = tree_rig();
     rig.workspace
@@ -1277,11 +1278,11 @@ fn menu_items(rig: &Rig, context: &ChartContext) -> Vec<(String, bool)> {
         .workspace
         .context_facts(&rig.ctx, context, &[])
         .expect("facts");
-    chart_context::menu(context, &facts)
+    chart::context::menu(context, &facts)
         .into_iter()
         .filter_map(|entry| match entry {
-            chart_context::Entry::Item(item) => Some((item.label.clone(), item.is_enabled())),
-            chart_context::Entry::Separator | chart_context::Entry::Heading(_) => None,
+            chart::context::Entry::Item(item) => Some((item.label.clone(), item.is_enabled())),
+            chart::context::Entry::Separator | chart::context::Entry::Heading(_) => None,
         })
         .collect()
 }
@@ -1394,8 +1395,8 @@ const OTHER_LINK: &str = "https://x.com/other/status/1750000000000000001";
 const TRADINGVIEW_LINK: &str = "https://www.tradingview.com/chart/BTCUSD/AbCdEf12-A-sample-idea/";
 
 fn card(tool: Tool, id: u64, link: &str) -> Drawing {
-    let card = crate::model::link_card::LinkCard::new(
-        crate::model::link_card::Link::parse(link).expect("a link"),
+    let card = crate::model::annotation::link_card::LinkCard::new(
+        crate::model::annotation::link_card::Link::parse(link).expect("a link"),
     );
     Drawing::build_with(
         tool,
@@ -1405,12 +1406,12 @@ fn card(tool: Tool, id: u64, link: &str) -> Drawing {
             price: 100.0,
         }],
         tool.default_style(),
-        &crate::model::image_content::Content::Link(card),
+        &crate::model::annotation::image_content::Content::Link(card),
     )
     .expect("a card")
 }
 
-fn card_of(rig: &mut Rig, chart: u64, id: u64) -> crate::model::link_card::LinkCard {
+fn card_of(rig: &mut Rig, chart: u64, id: u64) -> crate::model::annotation::link_card::LinkCard {
     match rig
         .chart_mut(chart)
         .drawings
@@ -1423,8 +1424,8 @@ fn card_of(rig: &mut Rig, chart: u64, id: u64) -> crate::model::link_card::LinkC
     }
 }
 
-fn fetched_meta(title: &str) -> crate::model::link_card::LinkMeta {
-    crate::model::link_card::LinkMeta {
+fn fetched_meta(title: &str) -> crate::model::annotation::link_card::LinkMeta {
+    crate::model::annotation::link_card::LinkMeta {
         title: title.into(),
         author: "@degenview".into(),
         excerpt: "words".into(),
@@ -1435,7 +1436,7 @@ fn fetched_meta(title: &str) -> crate::model::link_card::LinkMeta {
 
 #[test]
 fn a_pasted_link_waits_to_be_placed_in_the_middle_of_the_focused_chart() {
-    use crate::model::image_content::Content;
+    use crate::model::annotation::image_content::Content;
     let mut rig = Rig::new();
     rig.chart("BTCUSDT", 100.0);
     rig.workspace.paste_text(&rig.ctx, "just some words");
@@ -1520,9 +1521,10 @@ fn a_replaced_link_clears_the_old_preview_and_keeps_the_card() {
         card.meta = Some(fetched_meta("Old"));
     }
     rig.chart_mut(chart).drawings = vec![fetched];
-    let other =
-        crate::model::link_card::Link::parse("https://x.com/other/status/1750000000000000001")
-            .unwrap();
+    let other = crate::model::annotation::link_card::Link::parse(
+        "https://x.com/other/status/1750000000000000001",
+    )
+    .unwrap();
     rig.workspace.link_chosen(other.clone(), Some((chart, 1)));
     let after = card_of(&mut rig, chart, 1);
     assert_eq!(after.link, other);
@@ -1585,7 +1587,7 @@ fn a_card_that_already_has_its_preview_or_is_not_a_card_is_left_alone() {
 fn the_choice_to_allow_previews_stays_on_this_mac() {
     use crate::sync::policy::{SettingPolicy, setting_policy};
     assert_eq!(
-        setting_policy(crate::model::link_card::ContentPrefs::KEY),
+        setting_policy(crate::model::annotation::link_card::ContentPrefs::KEY),
         SettingPolicy::Local
     );
 }
@@ -1601,7 +1603,7 @@ fn a_fetched_preview_is_written_to_its_card_as_one_undo_step() {
         .send(links::Fetched {
             chart_id: chart,
             drawing_id: 1,
-            link: crate::model::link_card::Link::parse(POST_LINK).unwrap(),
+            link: crate::model::annotation::link_card::Link::parse(POST_LINK).unwrap(),
             result: Ok(fetched_meta("Developers")),
         })
         .unwrap();
@@ -1627,7 +1629,7 @@ fn a_preview_for_a_link_the_card_no_longer_has_is_dropped() {
         .send(links::Fetched {
             chart_id: chart,
             drawing_id: 1,
-            link: crate::model::link_card::Link::parse(
+            link: crate::model::annotation::link_card::Link::parse(
                 "https://x.com/other/status/1750000000000000001",
             )
             .unwrap(),
@@ -1651,7 +1653,7 @@ fn a_failed_fetch_says_why_and_leaves_the_card_alone() {
         .send(links::Fetched {
             chart_id: chart,
             drawing_id: 1,
-            link: crate::model::link_card::Link::parse(POST_LINK).unwrap(),
+            link: crate::model::annotation::link_card::Link::parse(POST_LINK).unwrap(),
             result: Err(FetchError::Unavailable),
         })
         .unwrap();
@@ -1674,9 +1676,10 @@ fn replacing_the_link_of_a_card_drops_the_preview_of_the_old_one() {
         card.size = [400.0, 200.0];
     }
     rig.chart_mut(chart).drawings = vec![drawing];
-    let other =
-        crate::model::link_card::Link::parse("https://x.com/other/status/1750000000000000001")
-            .unwrap();
+    let other = crate::model::annotation::link_card::Link::parse(
+        "https://x.com/other/status/1750000000000000001",
+    )
+    .unwrap();
     rig.workspace.link_chosen(other.clone(), Some((chart, 1)));
     let replaced = card_of(&mut rig, chart, 1);
     assert_eq!(replaced.link, other);
@@ -1687,10 +1690,10 @@ fn replacing_the_link_of_a_card_drops_the_preview_of_the_old_one() {
 
 #[test]
 fn a_new_link_waits_for_a_click_and_arms_its_tool() {
-    use crate::model::image_content::Content;
+    use crate::model::annotation::image_content::Content;
     let mut rig = Rig::new();
     rig.chart("BTCUSDT", 100.0);
-    let link = crate::model::link_card::Link::parse(OTHER_LINK).unwrap();
+    let link = crate::model::annotation::link_card::Link::parse(OTHER_LINK).unwrap();
     rig.workspace.link_chosen(link, None);
     assert!(matches!(
         rig.workspace.content.pending,

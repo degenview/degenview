@@ -4,7 +4,7 @@
 //! is ever shown: no avatar, counts or text are made up to fill the card.
 
 use crate::format;
-use crate::model::link_card::{LinkCard, SERVICE};
+use crate::model::annotation::link_card::{LinkCard, SERVICE};
 use crate::ui::icons::{self, Icon};
 use crate::ui::theme;
 use eframe::egui::{
@@ -198,7 +198,7 @@ pub fn paint(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::link_card::{Link, LinkMeta};
+    use crate::model::annotation::link_card::{Link, LinkMeta};
 
     fn post() -> LinkCard {
         LinkCard::new(Link::parse("https://x.com/degenview/status/1750000000000000000").unwrap())

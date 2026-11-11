@@ -190,7 +190,7 @@ fn gallery_of_the_panel() {
                             };
                             let parts = paper_header::header_parts(&input);
                             let bar = crate::ui::trade::panel_header::sample_bar(
-                                crate::model::trading_venue::TradingVenue::Paper,
+                                crate::model::broker::venue::TradingVenue::Paper,
                                 crate::trading::model::VenueKind::Simulated,
                                 "Paper",
                             );

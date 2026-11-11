@@ -21,7 +21,7 @@ pub(super) enum Snapshot {
     /// The applied built-in indicators and the scripts on the chart.
     Indicators {
         config: IndicatorConfig,
-        scripts: Vec<crate::model::pine_instance::PineInstance>,
+        scripts: Vec<crate::model::pine::instance::PineInstance>,
     },
     /// The markets compared on the chart, with their looks: configuration only, never candles.
     /// `scale_mode` is set only by the add that switched the axis to Percent and by the removal of
@@ -29,7 +29,7 @@ pub(super) enum Snapshot {
     /// (and redo switches it again); any other step leaves the mode alone.
     Overlays {
         list: crate::model::overlay::OverlayList,
-        scale_mode: Option<crate::model::price_scale::PriceScaleMode>,
+        scale_mode: Option<crate::model::chart::price_scale::PriceScaleMode>,
     },
     /// What part of the chart was on screen before a Zoom In or Zoom out, and which way applying it
     /// takes Zoom out's history (a zoom is undone by going back; its inverse goes forward).
@@ -507,7 +507,7 @@ mod tests {
     fn undoing_past_the_history_cap_never_offers_a_forward_zoom_out() {
         let mut workspace = empty_workspace(9);
         let chart = chart_with_drawings(&mut workspace, "BTCUSDT", &[1]);
-        let cap = crate::model::viewport::zoom::MAX_BACK;
+        let cap = crate::model::chart::viewport::zoom::MAX_BACK;
         let zooms = cap + 2;
         for i in 1..=zooms {
             zoomed(&mut workspace, chart, 120 - 10 * i, 10.0 * i as f64);

@@ -1,147 +1,152 @@
 # MCP guidance
 
-- `src/mcp/` alone may use async: one current-thread Tokio runtime on the `mcp-server` thread for
+## Threads and authorization
+
+- Only `src/mcp/` may use async: one current-thread Tokio runtime on the `mcp-server` thread for
   rmcp/axum. Keep it egui-free; `host/mcp_host.rs` bridges stateful workspace access.
-- Tools validate and enqueue `mcp::bridge::Request`; `DegenViewApp::tick_mcp` executes through
-  workspace methods on the app thread. Tool/HTTP threads never lock `TabSlot`/`ChartWorkspace` or
-  write SQLite.
-- Authorization is per call from fresh `McpShared` state. Add a `Permission`, map it in
-  `tools::required_permission`, and test direct-call denial. A routed tool with no mapping is never
-  run (`call_tool` fails closed; `every_routed_tool_has_a_permission_and_an_unmapped_name_is_not_run`
-  fails the build). Persist before publishing shared state. Store/log only SHA-256 token verifiers,
-  never tokens. `McpShared::authenticate` carries a match across its lock gap as the client id and
-  re-checks the verifier; never carry a list index.
-- The trust state (`mcp.settings`, `mcp.permissions`, every `mcp_client` row) is sealed with an
-  HMAC under a Keychain key (`mcp::seal`, `keychain_mcp_seal`), because a SHA-256 verifier alone
-  lets anyone who can write the SQLite file add a credential. Write all of it with
-  `McpHost::persist` (`Store::save_mcp_state`: the three values and `mcp.seal` in one savepoint,
-  rewritten from memory, never patched); never call `set_mcp_settings`, `set_mcp_global_permissions`
-  or `replace_mcp_clients` for a trust change. `last_used_ms` is outside the seal on purpose, so
-  the usage save may use `replace_mcp_clients`. A new field that decides access goes into
-  `mcp::seal::Sealed`, with a case in `every_trust_field_is_covered`. Sealing is off in tests and
-  in every debug build (each rebuild has a new code identity, so the Keychain would prompt every
-  launch), and in `--release --features dev-unsealed-mcp` builds started with
-  `DEGENVIEW_NO_KEYCHAIN`; any other release build ignores that variable, so never rely on it there; use `McpHost::load_with_keys` with a shared
-  `MemoryBackend` to test it. See [Sealed credentials](../mcp-implementation.md#sealed-credentials).
-- A bridge call that is dropped (client closed the stream, request cancelled) cancels its queued
-  `Request` (`CancelOnDrop`); keep it that way when changing `BridgeClient::call`. rmcp does not
-  drop a handler when the client leaves, so `call_tool` races the tool against `context.ct`: keep
-  that race, and never spawn work from a tool that outlives its future without a drop guard.
-  A `notifications/cancelled` is a separate POST in stateless mode: `call_tool` registers each call
-  in `McpShared::calls()` and `cancel::honour_cancellations` cancels it. Keep that layer outside the
-  concurrency cap and inside the bearer check.
-- Every `tools/call` is recorded by `AuditGuard` in `call_tool` (`mcp/audit.rs`). A new way for a
-  call to end must end through that guard, and a row may only hold what `audit.rs` lets in: ids that
-  look like ids, a code, never an argument value or `McpError::message()`. The log is written by
-  `McpHost::tick`, not from request threads; the Settings page and the activity sheet read
-  `McpHost::activity()`, never SQLite. The sheet's filtering and paging live in
-  `model::mcp_activity` (pure, tested); a new outcome or row kind needs a `McpActivityStatus`
-  there so it can be filtered. `mcp_audit` is local-only in `sync::policy`.
-- A new mutating `McpCommand` must be classified in `mcp::confirm::gate` (an exhaustive match: it
-  fails to compile until it is). If it asks, also describe it in
-  `App::confirmation_summary` / `host::mcp_confirmation` (from what the app knows of the target,
-  never from agent text; a target that does not exist is refused with its own error, unasked), add
-  its tool to `confirm::GATED_TOOLS` and say so in the tool's description. The gate runs on the app
-  thread before dispatch and must never wait for the user: it answers `CONFIRMATION_REQUIRED` and
-  the agent repeats the call. Approvals are used up by the call that runs them; never widen one
-  beyond the exact command and client. A command that reaches "everything of a kind" (an "all")
-  must put what it resolved to in `Summary::with_scope`, so an approval cannot cover things that
-  appeared after it. Only `Summary::client_line` (the action) may go into a client's response:
-  the target text can name things the credential may not read.
-- Rate limits live in `mcp/limits.rs` and are applied in `require_bearer`. Bad tokens may be
-  refused with 429; a valid token must never be refused because of other callers' failures.
-  Connections are accepted by `transport::serve` (not `axum::serve`) so header, time and
-  connection limits hold; keep new limits there.
-- Price-alert tools plan against `AlertHost` in `host/mcp_host.rs`, then enqueue
-  `AlertRuntimeCommand`; they never write alert tables or reimplement `PriceAlertEditorState`.
-  A plan is made from a snapshot that is up to a second old and shared by every request of the
-  frame, so the command carries an `AlertPrecondition` (`Create`: id free, below the cap, no
-  identical alert; `Unchanged`: the alert still matches the planned base) that `AlertEngine::apply`
-  checks. A refused command is recorded in `rejected_commands` and surfaces as `CONFLICT` through
-  `McpCommand::AlertCommandOutcome`. Do not use the snapshot `revision` as a precondition: it moves
-  on every quote and delivery. A save that cannot be queued is an error, never "queued".
-- Read-only script tools use `mcp/pine.rs` with `ScriptStore` and compiler on a worker. Chart-private
-  Pine state goes through `ChartWorkspace::pine_instance_views` on the app thread. Do not invent
-  reports or alert history.
-- Applying/changing/removing a script on a chart goes through `ChartWorkspace::{add_pine_instance_to,
-  change_pine_instance,remove_pine_instance_from}`, which take the undo step; validate scripts and
-  inputs with `mcp::pine` before queuing, and apply only the saved text, never the draft.
-- Pine edits use revision-checked `mcp::pine::{update_draft,save_script}` on the app thread, followed
-  by `PineStudio::adopt_external_text`. Never bypass the live editor revision or write script
-  files from a worker. A save compares the file with what the open editor last read
-  (`PineStudio::open_disk_state`, `ScriptStore::save_if_unchanged`) and refuses while the editor has
-  an unresolved external-change conflict; never call `ScriptStore::save` from the MCP path.
-- Drawings from MCP are planned from `ChartWorkspace::chart_data` with `mcp::chart_data` and
-  committed through `apply_planned_drawings` (the pointer's path, one undo step); tool threads never
-  read `Chart.drawings` or `Chart.candles`. Candles returned are the market's own, not constructed
-  bars. Validate arguments in `mcp::drawings` before queueing, and never edit a locked drawing.
-- Symbol search and quotes (`mcp/market_tools.rs`) run on tool threads without the bridge: search
-  through `McpShared::market_search`, quotes through a `QuoteLease` on the app's quote feed
-  (`attach_quotes`), released on drop. Watchlist tools go through the bridge and
-  `WatchlistStore::edit_list`; never write watchlist rows from a tool thread. A tool that needs a
-  second permission (`get_watchlist` with `include_quotes`) checks it with `McpShared::allows`.
-- Live trading is not reachable from MCP. Nothing under `src/mcp/` may mention `degenview_brokers`
-  or `broker_host` (`host::broker_host_tests` fails the build otherwise); a future tool that could
-  reach a real broker needs its own design, permission and confirmation, not a new arm here.
-  See [Live trading](../broker-trading.md).
-- Paper-trading writes (`mcp/paper_tools.rs`, `mcp_host::place_paper_order` and friends) go through
-  `PaperHost::{submit,modify,cancel,close_position}` only, always check
-  `tradable_account` first (an account another Mac runs is never changed over MCP), and keep every
-  new write behind its own off-by-default permission. No tool may reach a real broker.
-- A write tool never returns data that sits behind a read grant the caller lacks: paper writes
-  drop the account unless the credential also holds `paper.read` (re-checked after the write).
-  Anything a tool waits on is re-checked after the wait, for every permission covering the final
-  payload.
-- Indicator readings use the bars the chart draws (`ChartWorkspace::constructed_bars` for Heikin
-  Ashi, Renko and the other built types), never the raw candles; `degenview_get_candles` stays the
-  market's own. A paper `request_id` is bound to its order (another order under it is `CONFLICT`).
-- Listening beyond loopback is `BindMode::Interface(ip)`: one named address (never `0.0.0.0` or
-  `::`, which `BindMode::interface` rejects and a stored one fails the load), TLS only. The only
-  gate is `Listen::check` in `McpServer::start_listening`: an address `BindMode::interface` would
-  refuse (the variant can be built directly), no certificate, or one made for another address, is
-  refused before a socket opens. Do not add a path that binds without it. `bind` is
-  sealed, but only written when it is not loopback, so existing seals keep verifying. The
-  certificate is `mcp::tls` (`mcp-tls.pem` in the data directory, owner-only on Unix and DPAPI-encrypted on Windows through
-  `mcp::tls_protect`, so write and read the file only through `AtRest`: repaired on load, written
-  through a fresh temporary file, held to naming the address it records, and made under the
-  `mcp-tls.lock` lock so concurrent processes share one identity; keep any new step of that flow inside
-  `load_or_create_locked`); the `Host` list comes
-  from `BindMode::allowed_hosts`, not the port. See "Remote access" in
-  [implementation](../mcp-implementation.md).
-- Where a request may come from is decided in `McpShared::authenticate_from(token, peer)`, from the
-  socket peer `transport::serve_with` records as `PeerAddr`, never from a header. A credential works
-  from this machine unless `McpClient::remote_allowed`. "This machine" is `Peer.local`: loopback or the
-  address the connection arrived on (a client on this Mac using the LAN address the server is bound to
-  is local; use `Peer::of_connection`, never `is_loopback()`, to decide it). Otherwise from anywhere, or only from
-  `allowed_cidrs` if it has any. A refused address looks like an unknown token (401, and it draws on
-  the failed-auth bucket) and records no use. No peer means remote. Do not add a second way to
-  authenticate. `McpClient::effective(global, remote_ceiling)` also caps a `remote_allowed` client by
-  `McpSettings::remote_ceiling` (default: every read-only permission), wherever it calls from. The new
-  client, settings and ceiling fields are sealed, and left out of the stored form while they are the
-  default, so old rows and seals read back unchanged.
-- Approval is decided by `confirm::needs_approval(shared, client_id, command)`, never by `gate`
-  alone: a credential with `remote_allowed` is asked about every command that changes anything
-  (`Gate::Ask` and `Gate::AskRemote`) and the "ask before high-impact requests" setting does not apply
-  to it; a local one is asked about `Gate::Ask` only, and not at all when the setting is off. A new
-  `McpCommand` is decided in `gate` (exhaustive), and an `AskRemote` one also needs a `tool_of` name and
-  a `confirm::remote_summary`, or the app refuses it rather than run it unasked. Turning the setting
-  off drains only local credentials' questions (`ConfirmationBook::drain_where`).
-- A queued `Request` carries its `Origin` (peer and `remote`, from `ClientIdentity`): pass the identity
-  to `BridgeClient::call`, never a bare client id; `Request::run` re-checks the address
-  (`accepts_origin`) and hands the origin to the gate (`needs_approval(.., remote_origin, ..)`). Do not
-  decide "remote" from the credential's current state alone at execution.
-- Failed sign-ins from another machine draw on that address's own bucket first
-  (`RateLimiter::failed_auth(peer, now)`, bounded table), then the shared one; a refusal from another
-  machine is counted into one `AuthRefused` row per address per minute. Audit rows carry `peer` (empty
-  for this machine); a row never holds a token or anything the request said.
-- The "Remote connections" rows of the Security card (`ui/settings_mcp.rs`) save nothing until `SetBind` is sent with an
-  address `parse_interface` accepted; keep the fingerprint it shows coming from the host
-  (`McpHost::tls_fingerprint`), never computed in the page. `detect_local_address` makes a system call,
-  so it runs on a click only, never per frame.
-- Settings holds the store lock, so its MCP UI returns `McpAction`s for `McpHost::queue`; never call
+- Tools validate and enqueue `mcp::bridge::Request`; `DegenViewApp::tick_mcp` runs it via workspace
+  methods on the app thread. Tool/HTTP threads never lock `TabSlot`/`ChartWorkspace` or write SQLite.
+- Authorize each call from fresh `McpShared` state. New tool: add a `Permission`, map it in
+  `tools::required_permission`, test direct-call denial. Unmapped routed tools never run (`call_tool`
+  fails closed; `every_routed_tool_has_a_permission_and_an_unmapped_name_is_not_run` fails the
+  build).
+- Persist before publishing shared state. Store/log only SHA-256 token verifiers, never tokens.
+  `McpShared::authenticate` carries a match across its lock gap as the client id, re-checking the
+  verifier; never a list index.
+- Settings holds the store lock: its MCP UI returns `McpAction`s for `McpHost::queue`; never call
   `McpHost::apply` inside the Settings closure.
-- Verify against `127.0.0.1:<port>/mcp` with seeded `mcp.settings`/`mcp_client` rows, a throwaway
-  `HOME`, `DEGENVIEW_NO_KEYCHAIN=1` (seeded rows are only accepted unsealed, which needs a debug
-  build or `cargo build --release --features dev-unsealed-mcp`), and `Authorization: Bearer ...`.
+
+## Sealed trust state
+
+- `mcp.settings`, `mcp.permissions` and every `mcp_client` row are HMAC-sealed under a Keychain key
+  (`mcp::seal`, `keychain_mcp_seal`); a bare verifier would let anyone who can write the SQLite file
+  add a credential.
+- Write them only via `McpHost::persist` (`Store::save_mcp_state`: all three plus `mcp.seal` in one
+  savepoint, rewritten from memory, never patched). Never `set_mcp_settings`,
+  `set_mcp_global_permissions` or `replace_mcp_clients` for a trust change. `last_used_ms` is
+  unsealed on purpose, so the usage save may use `replace_mcp_clients`.
+- New access-deciding field: add to `mcp::seal::Sealed` plus a case in `every_trust_field_is_covered`.
+- Sealing is off in tests, every debug build (new code identity per rebuild = Keychain prompt every
+  launch), and `--release --features dev-unsealed-mcp` builds started with `DEGENVIEW_NO_KEYCHAIN`;
+  other release builds ignore that variable, never rely on it there. Test with
+  `McpHost::load_with_keys` and a shared `MemoryBackend`. See
+  [Sealed credentials](../mcp-implementation.md#sealed-credentials).
+
+## Cancellation, audit, limits
+
+- A dropped bridge call cancels its queued `Request` (`CancelOnDrop`); keep it in
+  `BridgeClient::call`. rmcp keeps a handler alive after the client leaves, so keep `call_tool`'s
+  race against `context.ct`; never spawn work outliving the tool's future without a drop guard.
+  Stateless `notifications/cancelled` arrives as a separate POST: `call_tool` registers calls in
+  `McpShared::calls()`, `cancel::honour_cancellations` cancels them. That layer sits outside the
+  concurrency cap, inside the bearer check.
+- `AuditGuard` in `call_tool` (`mcp/audit.rs`) records every `tools/call`; any new way to end a call
+  goes through it. Rows hold only what `audit.rs` allows (id-shaped ids, a code), never an argument
+  value or `McpError::message()`. `McpHost::tick` writes the log, not request threads; Settings and
+  the activity sheet read `McpHost::activity()`, never SQLite. Filtering/paging: `model::mcp::activity`
+  (pure, tested); a new outcome or row kind needs a `McpActivityStatus` there. `mcp_audit` is
+  local-only in `sync::policy`.
+- Rate limits: `mcp/limits.rs`, applied in `require_bearer`. Bad tokens may get 429; a valid token
+  is never refused for others' failures. `transport::serve` (not `axum::serve`) accepts connections
+  so header, time and connection limits hold; add limits there.
+
+## Confirmation
+
+- Classify each new mutating `McpCommand` in `mcp::confirm::gate` (exhaustive match). If it asks:
+  describe it in `App::confirmation_summary` / `host::mcp_confirmation` from what the app knows of
+  the target, never agent text (missing target: own error, unasked); add its tool to
+  `confirm::GATED_TOOLS`; say so in the tool description.
+- The gate runs on the app thread before dispatch, never waits: it answers `CONFIRMATION_REQUIRED`
+  and the agent repeats the call. An approval is consumed by its call; never widen it beyond the
+  exact command and client. An "all" command records what it resolved to in `Summary::with_scope`,
+  so approval never covers later additions. Only `Summary::client_line` (the action) may reach a
+  client's response; target text can name things the credential may not read.
+- Approval is decided by `confirm::needs_approval(shared, client_id, command)`, never `gate` alone.
+  `remote_allowed` credential: asked about every change (`Gate::Ask`, `Gate::AskRemote`), "ask before
+  high-impact requests" setting ignored. Local: `Gate::Ask` only, never with the setting off. An
+  `AskRemote` command also needs a `tool_of` name and `confirm::remote_summary`, else it is refused,
+  not run unasked. Turning the setting off drains only local questions
+  (`ConfirmationBook::drain_where`).
+
+## Tools
+
+- Price alerts: plan against `AlertHost` in `host/mcp_host.rs`, enqueue `AlertRuntimeCommand`; never
+  write alert tables or reimplement `PriceAlertEditorState`. The snapshot is up to 1 s old and
+  shared per frame, so commands carry an `AlertPrecondition` (`Create`: id free, below the cap, no
+  identical alert; `Unchanged`: alert still matches the planned base) checked by
+  `AlertEngine::apply`. Refusals land in `rejected_commands` and surface as `CONFLICT` via
+  `McpCommand::AlertCommandOutcome`. Never use snapshot `revision` as a precondition (moves on every
+  quote and delivery). An unqueueable save is an error, never "queued".
+- Read-only script tools: `mcp/pine.rs` with `ScriptStore` and compiler on a worker; chart-private
+  Pine state via `ChartWorkspace::pine_instance_views` on the app thread. Never invent reports or
+  alert history.
+- Scripts on charts: `ChartWorkspace::{add_pine_instance_to,
+  change_pine_instance,remove_pine_instance_from}` (take the undo step); validate scripts and inputs
+  with `mcp::pine` before queuing; apply only saved text, never the draft.
+- Pine edits: revision-checked `mcp::pine::{update_draft,save_script}` on the app thread, then
+  `PineStudio::adopt_external_text`. Never bypass the live editor revision or write script files
+  from a worker. Saves compare the file with what the editor last read
+  (`PineStudio::open_disk_state`, `ScriptStore::save_if_unchanged`) and are refused during an
+  unresolved external-change conflict; never `ScriptStore::save` from MCP.
+- Drawings: plan from `ChartWorkspace::chart_data` with `mcp::chart_data`, commit via
+  `apply_planned_drawings` (pointer's path, one undo step); tool threads never read `Chart.drawings`
+  or `Chart.candles`. Validate in `mcp::drawings` before queueing; never edit a locked drawing.
+- `degenview_get_candles` returns the market's own candles, not constructed bars. Indicator readings
+  use the drawn bars (`ChartWorkspace::constructed_bars` for Heikin Ashi, Renko etc.), never raw
+  candles.
+- Search/quotes (`mcp/market_tools.rs`) run on tool threads, no bridge: `McpShared::market_search`;
+  a `QuoteLease` on the app's quote feed (`attach_quotes`), released on drop. Watchlist tools use the
+  bridge and `WatchlistStore::edit_list`; never write watchlist rows from a tool thread. Second
+  permissions (`get_watchlist` with `include_quotes`): `McpShared::allows`.
+- Live trading is unreachable: nothing under `src/mcp/` may mention `degenview_brokers` or
+  `broker_host` (`host::broker_host_tests` fails the build). A tool reaching a real broker needs its
+  own design, permission and confirmation, not a new arm here. See [Live trading](../broker-trading.md).
+- Paper writes (`mcp/paper_tools.rs`, `mcp_host::place_paper_order` and friends): only via
+  `PaperHost::{submit,modify,cancel,close_position}`, `tradable_account` checked first (another
+  Mac's account is never changed over MCP), each new write behind its own off-by-default permission.
+  A paper `request_id` is bound to its order (another order under it: `CONFLICT`).
+- Write tools never return data behind a read grant the caller lacks: paper writes drop the account
+  without `paper.read` (re-checked after the write). Anything waited on is re-checked afterwards for
+  every permission covering the final payload.
+
+## Remote access
+
+- Non-loopback: `BindMode::Interface(ip)`, one named address, TLS only, never `0.0.0.0` or `::`
+  (`BindMode::interface` rejects them; a stored one fails the load). Sole gate: `Listen::check` in
+  `McpServer::start_listening`, refusing before a socket opens any address `BindMode::interface`
+  would refuse (the variant can be built directly), a missing certificate, or one for another
+  address. Never add a bind path around it. `bind` is sealed but written only when not loopback, so
+  old seals keep verifying.
+- Certificate: `mcp::tls` (`mcp-tls.pem` in the data directory; owner-only on Unix, DPAPI on Windows
+  via `mcp::tls_protect`). Only through `AtRest`: repaired on load, written via a fresh temp file,
+  held to naming its recorded address, created under the `mcp-tls.lock` lock so processes share one
+  identity; new steps go inside `load_or_create_locked`. `Host` list: `BindMode::allowed_hosts`, not
+  the port. See "Remote access" in [implementation](../mcp-implementation.md).
+- Origin: `McpShared::authenticate_from(token, peer)`, from the socket peer `transport::serve_with`
+  records as `PeerAddr`, never a header. Credentials are local-only unless `McpClient::remote_allowed`
+  (then anywhere, or only `allowed_cidrs` if set). Local = `Peer.local`: loopback or the address the
+  connection arrived on (this Mac via the bound LAN address counts); use `Peer::of_connection`, never
+  `is_loopback()`. A refused address looks like an unknown token (401, failed-auth bucket), records
+  no use. No peer = remote. Never add a second way to authenticate.
+- `McpClient::effective(global, remote_ceiling)` caps a `remote_allowed` client by
+  `McpSettings::remote_ceiling` (default: every read-only permission), wherever it calls from. These
+  client, settings and ceiling fields are sealed and omitted from the stored form while default, so
+  old rows and seals read back unchanged.
+- A queued `Request` carries its `Origin` (peer, `remote`, from `ClientIdentity`): pass the identity
+  to `BridgeClient::call`, never a bare client id. `Request::run` re-checks the address
+  (`accepts_origin`) and gives the origin to the gate (`needs_approval(.., remote_origin, ..)`);
+  never decide "remote" at execution from the credential's current state alone.
+- Remote failed sign-ins hit the address's own bucket first (`RateLimiter::failed_auth(peer, now)`,
+  bounded table), then the shared one; one `AuthRefused` row per address per minute. Audit rows
+  carry `peer` (empty for this machine), never a token or request content.
+- Security card "Remote connections" (`ui/settings_mcp.rs`) saves nothing until `SetBind` is sent
+  with an address `parse_interface` accepted. Fingerprint from `McpHost::tls_fingerprint`, never
+  computed in the page. `detect_local_address` is a system call: on click only, never per frame.
+
+## Verifying
+
+`127.0.0.1:<port>/mcp` with seeded `mcp.settings`/`mcp_client` rows, throwaway `HOME`,
+`DEGENVIEW_NO_KEYCHAIN=1` (seeded rows only load unsealed: debug build or
+`cargo build --release --features dev-unsealed-mcp`), `Authorization: Bearer ...`.
 
 See [implementation](../mcp-implementation.md) and [remaining work](../mcp-remaining-work.md).

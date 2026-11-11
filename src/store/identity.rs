@@ -202,11 +202,11 @@ impl Store {
 mod tests {
     use super::*;
     use crate::model::DataSource;
+    use crate::model::paper::engine::PaperTradingEngine;
     use crate::model::paper::{
         PaperCurrency, PaperInstrument, PaperOrderRequest, PaperOrderSide, PaperOrderType,
         PaperQuote, PaperTimeInForce, PaperTradingSnapshot,
     };
-    use crate::model::paper_engine::PaperTradingEngine;
     use crate::model::portfolio::{
         Portfolio, PortfolioAsset, PortfolioCurrency, PortfolioLedgerSnapshot, PortfolioSnapshot,
         PortfolioSource, PortfolioTransaction, PortfolioTransactionType,

@@ -9,12 +9,12 @@ use super::{
     DrawingProperties, Icon, Id, Page, Ui, color_card, color_well, number_field, picker_row,
     settings_card, toggle_row,
 };
-use crate::model::bars_pattern::BarsMode;
-use crate::model::chart_type::PriceSource;
-use crate::model::forecast_style::{
+use crate::model::chart::kind::PriceSource;
+use crate::model::forecast::style::{
     MAX_ACCOUNT, MAX_BAND_MULTIPLIER, MAX_QTY_PRECISION, MAX_ROW_TICKS, ProfileVolume, RowsLayout,
 };
-use crate::model::volume_profile::MAX_ROWS;
+use crate::model::forecast::volume_profile::MAX_ROWS;
+use crate::model::pattern::bars::BarsMode;
 use crate::model::{Caps, Geometry};
 
 /// The names of the places a quantity can be rounded to.

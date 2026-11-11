@@ -5,7 +5,7 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use crate::model::tab_title::TabTitleStyle;
+use crate::model::tab::title::TabTitleStyle;
 use crate::store::{SharedStore, Store};
 
 #[derive(Clone, Default)]

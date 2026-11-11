@@ -8,7 +8,7 @@ use super::line_tests::{PLOT, at, bars, near, projection, scale};
 use super::shape::{LabelLook, Screen};
 use super::*;
 use crate::model::DrawingStyle;
-use crate::model::fib_style::FibStyle;
+use crate::model::fib::style::FibStyle;
 use eframe::egui::{pos2, vec2};
 
 fn built_on(tool: Tool, anchors: &[Anchor], style: DrawingStyle, logarithmic: bool) -> Screen {
@@ -222,8 +222,8 @@ fn labels_follow_the_styles_switches() {
     assert!(none.labels.is_empty());
     // Centred, under the line.
     let placed = with(|fib| {
-        fib.label_h = crate::model::drawing_style::HorizontalAlign::Center;
-        fib.label_v = crate::model::drawing_style::VerticalAlign::Top;
+        fib.label_h = crate::model::drawings::style::HorizontalAlign::Center;
+        fib.label_v = crate::model::drawings::style::VerticalAlign::Top;
     });
     let label = placed
         .labels

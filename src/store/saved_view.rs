@@ -199,7 +199,7 @@ mod tests {
 
     #[test]
     fn every_pattern_wave_and_cycle_survives_the_database_exactly() {
-        use crate::model::elliott::Degree;
+        use crate::model::pattern::elliott::Degree;
         use crate::model::{Anchor, Drawing, Placement, Tool};
         let anchors: Vec<Anchor> = (0..7)
             .map(|index| Anchor {
@@ -242,7 +242,7 @@ mod tests {
 
     #[test]
     fn every_fibonacci_and_gann_tool_survives_the_database_exactly() {
-        use crate::model::fib_style::FibLevel;
+        use crate::model::fib::style::FibLevel;
         use crate::model::{Anchor, Drawing, Placement, Tool};
         let anchors: Vec<Anchor> = (0..4)
             .map(|index| Anchor {

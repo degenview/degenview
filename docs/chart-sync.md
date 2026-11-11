@@ -4,9 +4,9 @@ How panning and zooming one chart of a workspace carries over to the others. The
 implements is the "Linked Chart Zoom and Horizontal Position" document; this file records what was
 built, what is verified, and what is not.
 
-Code: `model::chart_sync` (pure model and tests), `ui/chart_card/sync.rs` (a chart's side),
+Code: `model::chart::sync` (pure model and tests), `ui/chart_card/sync.rs` (a chart's side),
 `ui/link_charts.rs` (the popover), the tool-strip tile in `ui/tool_sidebar.rs`, and the loop in
-`workspace::ChartWorkspace::render_grid`. Tests: `model/chart_sync/tests.rs` and
+`workspace::ChartWorkspace::render_grid`. Tests: `model/chart/sync/tests.rs` and
 `ui/chart_card/sync_tests.rs` (several charts through egui's real pointer pipeline).
 
 ## What TradingView does, and what is ours

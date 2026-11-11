@@ -569,7 +569,7 @@ fn alerts_arriving_in_the_join_are_not_deleted_before_the_alert_owner_runs() {
     }
     {
         let store = a.store.lock().unwrap();
-        let mut engine = crate::model::alert_engine::AlertEngine::new(None);
+        let mut engine = crate::model::alert::engine::AlertEngine::new(None);
         let commands = store.pending_alert_commands();
         for c in &commands {
             engine.apply(c, 1);

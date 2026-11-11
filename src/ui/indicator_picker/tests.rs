@@ -103,7 +103,7 @@ fn the_picker_opens_with_the_search_field_focused() {
 
 #[test]
 fn availability_follows_the_chart_and_the_indicator() {
-    let catalog = indicator_catalog::all(&[]);
+    let catalog = catalog::all(&[]);
     let find = |key: EntryKey| catalog.iter().find(|entry| entry.key == key).unwrap();
     let rsi = find(EntryKey::Native(BuiltIn::Rsi));
     let macd = find(EntryKey::Bundled("macd"));
@@ -134,7 +134,7 @@ fn availability_follows_the_chart_and_the_indicator() {
 
 #[test]
 fn actions_follow_what_the_entry_is() {
-    let catalog = indicator_catalog::all(&[]);
+    let catalog = catalog::all(&[]);
     let find = |key: EntryKey| catalog.iter().find(|entry| entry.key == key).unwrap();
     let rsi = find(EntryKey::Native(BuiltIn::Rsi));
     let macd = find(EntryKey::Bundled("macd"));
@@ -175,7 +175,7 @@ fn down_moves_one_row_and_up_moves_back() {
     let mut rig = Rig::new(1100.0);
     let columns = columns_for(1040.0 - SIDEBAR - DETAIL);
     rig.key(Key::ArrowDown, Modifiers::NONE);
-    let catalog = indicator_catalog::all(&[]);
+    let catalog = catalog::all(&[]);
     let blocks = sections::blocks(Section::Discover, &catalog, &HashSet::new(), 1);
     let expected = blocks[0].entries[columns].clone();
     assert_eq!(rig.picker.selected, Some(expected.key.clone()));
@@ -299,7 +299,7 @@ fn a_narrow_window_drops_the_detail_panel_and_still_draws() {
 #[test]
 fn a_click_on_a_card_selects_it_and_asks_for_another_frame() {
     let mut rig = Rig::new(1100.0);
-    let catalog = indicator_catalog::all(&[]);
+    let catalog = catalog::all(&[]);
     let blocks = sections::blocks(Section::Discover, &catalog, &HashSet::new(), 1);
     let second = blocks[0].entries[1].key.clone();
     assert_ne!(rig.picker.selected.as_ref(), Some(&second));

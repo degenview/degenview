@@ -5,13 +5,13 @@
 
 use crate::format;
 use crate::model::Timeframe;
-use crate::model::chart_template::TemplateId;
-use crate::model::chart_type::{LineDash, Rgba};
-use crate::model::drawing_style::{
+use crate::model::chart::kind::{LineDash, Rgba};
+use crate::model::chart::template::TemplateId;
+use crate::model::drawings::style::{
     DrawingStyle, Emoji, HorizontalAlign, Level, LineEnd, MiddleLine, StatsPosition,
     TextOrientation, VerticalAlign,
 };
-use crate::model::drawing_template::style_for;
+use crate::model::drawings::template::style_for;
 use crate::model::{Anchor, Caps, Drawing, Geometry, PitchforkVariant, Tool, Visibility};
 use crate::store::drawing_template::DrawingTemplateStore;
 use crate::ui::chart_style_settings::{number_field, number_field_sized, picker_row};
@@ -352,7 +352,10 @@ impl DrawingProperties {
 
     /// Hands the dialog the picture a replacement stored, so the draft shows it and keeps the
     /// drawing's own size, opacity and name when the user has set one.
-    pub fn replace_picture(&mut self, content: &crate::model::image_content::ImageContent) {
+    pub fn replace_picture(
+        &mut self,
+        content: &crate::model::annotation::image_content::ImageContent,
+    ) {
         if let Some(Geometry::Image(image)) = self.draft.geometry_mut() {
             image.swap_picture(content);
         }
@@ -877,7 +880,7 @@ impl DrawingProperties {
             }
         }
         if caps.has(Caps::WIDTH) {
-            let max = crate::model::drawing_style::MAX_STROKE_WIDTH as f64;
+            let max = crate::model::drawings::style::MAX_STROKE_WIDTH as f64;
             if let Some(width) = settings_card::card(ui, Icon::Sliders, "Thickness", None, |ui| {
                 number_field(
                     ui,
@@ -938,7 +941,7 @@ impl DrawingProperties {
                 settings_card::switch(ui, &mut style.border.enabled);
             });
             if style.border.enabled {
-                let max = crate::model::drawing_style::MAX_STROKE_WIDTH as f64;
+                let max = crate::model::drawings::style::MAX_STROKE_WIDTH as f64;
                 if let Some(width) =
                     settings_card::card(ui, Icon::Sliders, "Border thickness", None, |ui| {
                         number_field(
@@ -1191,7 +1194,7 @@ impl DrawingProperties {
 
     /// The regression trend's source, the deviations its bands sit at, and its three lines.
     fn inputs_page(&mut self, ui: &mut Ui) {
-        use crate::model::chart_type::PriceSource;
+        use crate::model::chart::kind::PriceSource;
         let caps = self.tool.caps();
         if caps.has(Caps::PATTERN) || caps.has(Caps::WAVE) {
             return self.pattern_inputs_page(ui);
@@ -1215,7 +1218,7 @@ impl DrawingProperties {
             &options,
             &mut style.regression.source,
         );
-        let max = f64::from(crate::model::drawing_style::MAX_DEVIATION);
+        let max = f64::from(crate::model::drawings::style::MAX_DEVIATION);
         let regression = &mut style.regression;
         for (title, hint, id, value) in [
             (
@@ -1258,8 +1261,8 @@ impl DrawingProperties {
     /// What a chart pattern or an Elliott wave prints on itself: the names of its pivots, the
     /// ratios between a pattern's legs and how many places they have, a wave's degree.
     fn pattern_inputs_page(&mut self, ui: &mut Ui) {
-        use crate::model::drawing_style::MAX_RATIO_PRECISION;
-        use crate::model::elliott::Degree;
+        use crate::model::drawings::style::MAX_RATIO_PRECISION;
+        use crate::model::pattern::elliott::Degree;
         let caps = self.tool.caps();
         let mut style = self.style();
         let before = style;
@@ -1360,8 +1363,8 @@ impl DrawingProperties {
                 Id::new("drawing-text-size"),
                 f64::from(style.text.size),
                 1.0,
-                f64::from(crate::model::drawing_style::TEXT_SIZE_RANGE.0)
-                    ..=f64::from(crate::model::drawing_style::TEXT_SIZE_RANGE.1),
+                f64::from(crate::model::drawings::style::TEXT_SIZE_RANGE.0)
+                    ..=f64::from(crate::model::drawings::style::TEXT_SIZE_RANGE.1),
                 0,
             )
         }) {
@@ -1433,7 +1436,7 @@ impl DrawingProperties {
                 &mut style.wrap,
             );
             if style.wrap {
-                use crate::model::drawing_style::{MAX_BOX_WIDTH, MIN_BOX_WIDTH};
+                use crate::model::drawings::style::{MAX_BOX_WIDTH, MIN_BOX_WIDTH};
                 if let Some(width) =
                     settings_card::card(ui, Icon::ArrowLeftRight, "Width", None, |ui| {
                         number_field(
@@ -1608,7 +1611,7 @@ impl DrawingProperties {
                     .id(focused_id)
                     .frame(egui::Frame::NONE)
                     .hint_text("Name this image")
-                    .char_limit(crate::model::image_content::MAX_NAME_CHARS)
+                    .char_limit(crate::model::annotation::image_content::MAX_NAME_CHARS)
                     .desired_width(f32::INFINITY),
             );
         });
@@ -1616,7 +1619,7 @@ impl DrawingProperties {
         page.section(ui, "Appearance", None);
         let mut opacity = image.opacity;
         let mut keep_aspect = image.keep_aspect;
-        let (low, high) = crate::model::image_content::OPACITY_RANGE;
+        let (low, high) = crate::model::annotation::image_content::OPACITY_RANGE;
         if let Some(percent) = settings_card::card(ui, Icon::Sliders, "Opacity (%)", None, |ui| {
             number_field(
                 ui,
@@ -1653,7 +1656,7 @@ impl DrawingProperties {
         let mut page = Page::new(true);
         page.section(
             ui,
-            crate::model::link_card::SERVICE,
+            crate::model::annotation::link_card::SERVICE,
             Some("The card shows what the link says, and a preview only when you fetch one."),
         );
         let url = card.link.url();
@@ -1695,7 +1698,7 @@ impl DrawingProperties {
         ));
 
         page.section(ui, "Size", None);
-        let (low, high) = crate::model::link_card::CARD_SIZE_RANGE;
+        let (low, high) = crate::model::annotation::link_card::CARD_SIZE_RANGE;
         let mut size = card.size;
         for (axis, title, id) in [
             (0, "Width", "drawing-card-width"),
@@ -1854,7 +1857,7 @@ fn line_cards_with_ratio(ui: &mut Ui, id: (&'static str, usize), level: &mut Lev
     if !level.line.enabled {
         return;
     }
-    let max = f64::from(crate::model::drawing_style::MAX_LEVEL_RATIO);
+    let max = f64::from(crate::model::drawings::style::MAX_LEVEL_RATIO);
     if let Some(ratio) = settings_card::card(ui, Icon::Hash, "Ratio", None, |ui| {
         number_field(
             ui,
@@ -1882,7 +1885,7 @@ fn line_cards(ui: &mut Ui, id: &'static str, line: &mut MiddleLine) {
 }
 
 fn thickness_and_style(ui: &mut Ui, id: Id, line: &mut MiddleLine) {
-    let max = f64::from(crate::model::drawing_style::MAX_STROKE_WIDTH);
+    let max = f64::from(crate::model::drawings::style::MAX_STROKE_WIDTH);
     if let Some(width) = settings_card::card(ui, Icon::Sliders, "Thickness", None, |ui| {
         number_field(ui, id, f64::from(line.width), 1.0, 1.0..=max, 0)
     }) {
@@ -2024,7 +2027,7 @@ fn time_row(ui: &mut Ui, id: Id, state: &mut CoordinateText) -> Option<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::drawing_style::MAX_STROKE_WIDTH;
+    use crate::model::drawings::style::MAX_STROKE_WIDTH;
     use crate::model::{Anchor, Placement};
     use std::sync::{Arc, Mutex};
 
@@ -2155,7 +2158,7 @@ mod tests {
 
     #[test]
     fn an_image_has_a_picture_page_and_replacing_the_picture_changes_only_the_picture() {
-        use crate::model::image_content::ImageContent;
+        use crate::model::annotation::image_content::ImageContent;
         let mut dialog = DrawingProperties::new(1, &drawing(Tool::Image)).expect("dialog");
         assert_eq!(dialog.tabs()[0], Tab::Content, "it opens on the picture");
         assert!(!dialog.tabs().contains(&Tab::Text));
@@ -2303,7 +2306,7 @@ mod tests {
         assert_eq!(kept.regression.upper_dev, 2.0);
         assert_eq!(
             kept.regression.lower_dev,
-            -crate::model::drawing_style::MAX_DEVIATION
+            -crate::model::drawings::style::MAX_DEVIATION
         );
         assert!(kept.pitchfork_levels[0].ratio.is_finite());
     }
@@ -2365,7 +2368,7 @@ mod tests {
 
     #[test]
     fn a_picked_time_reads_back_as_the_same_utc_minute() {
-        use crate::model::portfolio_editor::date_text;
+        use crate::model::portfolio::editor::date_text;
         // The picker writes `date_text(.., 0)`; the dialog reads it with `parse_timestamp`.
         let picked = 1_800_000_060_000;
         assert_eq!(format::parse_timestamp(&date_text(picked, 0)), Some(picked));
@@ -2423,7 +2426,7 @@ mod tests {
         // Making it the default changes what a new rectangle starts with, nothing already drawn.
         store.set_default(Tool::Rectangle, &dialog.style()).unwrap();
         assert_eq!(
-            crate::model::drawing_template::style_for(Tool::Rectangle, store.defaults())
+            crate::model::drawings::template::style_for(Tool::Rectangle, store.defaults())
                 .stroke
                 .width,
             9.0

@@ -16,7 +16,7 @@ same card when kind and portfolio match; adding one that exists focuses it. The 
 
 ## Where things live
 
-- `model/portfolio_card.rs`: `CardKind`, `PortfolioCard`, `CardData` (everything a card paints),
+- `model/portfolio/card.rs`: `CardKind`, `PortfolioCard`, `CardData` (everything a card paints),
   `performance()` (the ranking). Pure.
 - `host/portfolio_card_host.rs`: `PortfolioCardEnv::view` builds a `CardData` the way the Portfolio tab
   does; each card has a `CardRuntime` (its own quote feed and demand owner).

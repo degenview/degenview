@@ -2,7 +2,7 @@
 //!
 //! A chart card reports a right-click (`ChartPointer::context`); this module turns it into a
 //! [`ChartContext`] snapshot, builds the menu from the chart's current state
-//! (`model::chart_context`), draws it (`ui::chart_context_menu`), and runs the chosen command.
+//! (`model::chart::context`), draws it (`ui::chart_context_menu`), and runs the chosen command.
 //! Every effect goes through the owners that already exist: the drawing undo stack, the paper
 //! panel's ticket, the alert editor, the settings sheet, the template dialogs. Opening the menu
 //! and choosing an entry never place an order, save an alert or touch another chart: the
@@ -12,15 +12,16 @@
 use super::overlay_actions::reverts_to_regular;
 use super::*;
 use crate::model::alert::AlertCondition;
-use crate::model::chart_clipboard::DrawingClip;
-use crate::model::chart_context::{
-    self, ChartContext, Command, Facts, Live, OrderFacts, PaneFacts, PaperAccess, TemplateRow,
+use crate::model::chart;
+use crate::model::chart::clipboard::DrawingClip;
+use crate::model::chart::context::{
+    ChartContext, Command, Facts, Live, OrderFacts, PaneFacts, PaperAccess, TemplateRow,
 };
-use crate::model::chart_template::ApplyScope;
-use crate::model::object_tree::{self, IndicatorKey, Key as TreeKey};
+use crate::model::chart::object_tree::{IndicatorKey, Key as TreeKey};
+use crate::model::chart::price_scale::PriceScaleMode;
+use crate::model::chart::template::ApplyScope;
 use crate::model::overlay::OverlayCommand;
 use crate::model::paper::{PaperOrderSide, PaperOrderType};
-use crate::model::price_scale::PriceScaleMode;
 use crate::model::session_stats;
 use crate::ui::ContextRequest;
 use crate::ui::chart_context_menu::{self, MenuState, Outcome};
@@ -106,7 +107,7 @@ impl ChartWorkspace {
         };
         self.focus_chart(chart_id);
         self.context.serial += 1;
-        let templates = if matches!(context.target, chart_context::Target::Background) {
+        let templates = if matches!(context.target, chart::context::Target::Background) {
             self.context
                 .templates
                 .entries(&self.store)
@@ -234,7 +235,7 @@ impl ChartWorkspace {
         let quantity = if paper == PaperAccess::Unsupported {
             String::new()
         } else {
-            crate::model::paper_ticket::TicketDraft::opening(
+            crate::model::paper::ticket::TicketDraft::opening(
                 instrument.clone(),
                 last_price,
                 PaperOrderSide::Buy,
@@ -266,7 +267,7 @@ impl ChartWorkspace {
             ..Facts::default()
         };
         match &context.target {
-            chart_context::Target::Pane { instance } => {
+            chart::context::Target::Pane { instance } => {
                 facts.pane = chart
                     .chart
                     .pine_instances()
@@ -278,7 +279,7 @@ impl ChartWorkspace {
                         order: instance.visual_order,
                     });
             }
-            chart_context::Target::Alert { id } => {
+            chart::context::Target::Alert { id } => {
                 facts.alert = self
                     .context
                     .alerts
@@ -286,7 +287,7 @@ impl ChartWorkspace {
                     .find(|alert| alert.id == *id)
                     .map(|alert| alert.state);
             }
-            chart_context::Target::Order { id } => {
+            chart::context::Target::Order { id } => {
                 facts.order = chart
                     .chart
                     .paper
@@ -346,7 +347,7 @@ impl ChartWorkspace {
                 // The chart closed while the menu was up: it goes with it.
                 None => {}
                 Some(facts) => {
-                    let entries = chart_context::menu(&open.context, &facts);
+                    let entries = chart::context::menu(&open.context, &facts);
                     let id = Id::new(("chart-context-menu", self.id, open.serial));
                     let outcome = chart_context_menu::show(
                         ctx,
@@ -406,7 +407,7 @@ impl ChartWorkspace {
     ) -> Vec<WorkspaceAction> {
         let mut actions = Vec::new();
         // The menu may have been open while the chart or its target changed.
-        if let Err(stale) = chart_context::check(&context, &self.live_state(&context)) {
+        if let Err(stale) = chart::context::check(&context, &self.live_state(&context)) {
             self.say(stale.message(), true);
             return actions;
         }
@@ -440,7 +441,7 @@ impl ChartWorkspace {
                         .map(|candle| candle.close);
                     let tick = Self::paper_instrument(&self.charts[index]).tick_size;
                     let suggestion = last
-                        .and_then(|last| chart_context::suggest_orders(price, last, tick))
+                        .and_then(|last| chart::context::suggest_orders(price, last, tick))
                         .map(|[first, _]| (first.side, first.kind));
                     self.open_ticket(host, index, suggestion, price);
                 }
@@ -717,13 +718,13 @@ impl ChartWorkspace {
     /// A paste from the keyboard: DegenView's own copy lands under the pointer on the chart it
     /// was last over; anything else on the clipboard is not ours and is ignored.
     fn paste_text(&mut self, ctx: &Context, text: &str) {
-        use crate::model::chart_clipboard::ClipError;
+        use crate::model::chart::clipboard::ClipError;
         let clip = match DrawingClip::decode(text) {
             Ok(clip) => clip,
             // Not DegenView's own copy: a link to an X post becomes a card;
             // anything else on the clipboard is not ours.
             Err(ClipError::NotDrawings) => {
-                if let Ok(link) = crate::model::link_card::Link::parse(text) {
+                if let Ok(link) = crate::model::annotation::link_card::Link::parse(text) {
                     self.place_pasted_link(link);
                 }
                 return;
@@ -835,7 +836,7 @@ impl ChartWorkspace {
         for chart in &mut self.charts {
             chart.chart.set_table_wanted(table == Some(chart.id));
             let mut lines = if chart.is_market() {
-                crate::model::alert_line::lines_for(
+                crate::model::alert::line::lines_for(
                     &self.context.alerts,
                     &InstrumentId::new(chart.source, &chart.symbol),
                     &self.alert_fx_rates,
@@ -926,7 +927,7 @@ impl ChartWorkspace {
             );
             return None;
         };
-        let above = crate::model::alert_line::above_after_drag(
+        let above = crate::model::alert::line::above_after_drag(
             alert.condition.crosses_above(),
             moved.price,
             last,
@@ -1015,8 +1016,8 @@ impl ChartWorkspace {
         };
         let chart = &self.charts[index];
         let title = format!("{} · {}", chart.symbol, chart.source.display_name());
-        let rows = object_tree::rows(
-            &object_tree::Inputs {
+        let rows = chart::object_tree::rows(
+            &chart::object_tree::Inputs {
                 title: &chart.symbol,
                 source: chart.source.display_name(),
                 indicators: &chart.indicators,
@@ -1227,7 +1228,7 @@ impl ChartWorkspace {
         };
         let message = format!(
             "{}{including} will be removed from this chart. Saved scripts are kept, and you can undo it.",
-            chart_context::remove_indicators_label(count).trim_start_matches("Remove ")
+            chart::context::remove_indicators_label(count).trim_start_matches("Remove ")
         );
         let result = ui::kit::confirm(
             ctx,

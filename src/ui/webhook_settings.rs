@@ -706,7 +706,7 @@ mod tests {
 
     #[test]
     fn the_default_test_message_is_json() {
-        assert!(crate::model::webhook_policy::is_json(DEFAULT_TEST_PAYLOAD));
+        assert!(crate::model::webhook::policy::is_json(DEFAULT_TEST_PAYLOAD));
         assert_eq!(
             WebhookSettingsState::default().test_payload,
             DEFAULT_TEST_PAYLOAD

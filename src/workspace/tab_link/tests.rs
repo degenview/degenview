@@ -1,5 +1,5 @@
 use super::super::test_support::{chart_with_drawings, drawing_ids, empty_workspace};
-use crate::model::tab_link::{LinkColor, LinkSignal};
+use crate::model::tab::link::{LinkColor, LinkSignal};
 use crate::model::watchlist::WatchlistInstrument;
 use crate::model::{DataSource, InstrumentId, Timeframe};
 use crate::workspace::ReplayStatus;
@@ -210,8 +210,8 @@ fn a_symbol_that_loads_is_accepted_and_one_the_user_left_is_forgotten() {
 
 /// One app tick over a few workspaces: what `DegenViewApp::tick_tab_links` does.
 fn tick(
-    hub: &mut crate::model::tab_link::LinkHub,
-    table: &crate::model::tab_link::LinkTable,
+    hub: &mut crate::model::tab::link::LinkHub,
+    table: &crate::model::tab::link::LinkTable,
     tabs: &mut [&mut super::ChartWorkspace],
     ctx: &egui::Context,
 ) -> usize {
@@ -239,8 +239,8 @@ fn tick(
 #[test]
 fn two_linked_tabs_follow_each_other_both_ways_and_settle() {
     let ctx = egui::Context::default();
-    let mut hub = crate::model::tab_link::LinkHub::default();
-    let table = crate::model::tab_link::LinkTable::default();
+    let mut hub = crate::model::tab::link::LinkHub::default();
+    let table = crate::model::tab::link::LinkTable::default();
     let mut a = empty_workspace(1);
     let mut b = empty_workspace(2);
     let (chart_a, chart_b) = (
@@ -279,8 +279,8 @@ fn two_linked_tabs_follow_each_other_both_ways_and_settle() {
 #[test]
 fn symbol_and_interval_are_independent_switches_across_tabs() {
     let ctx = egui::Context::default();
-    let mut hub = crate::model::tab_link::LinkHub::default();
-    let mut table = crate::model::tab_link::LinkTable::default();
+    let mut hub = crate::model::tab::link::LinkHub::default();
+    let mut table = crate::model::tab::link::LinkTable::default();
     let mut a = empty_workspace(1);
     let mut b = empty_workspace(2);
     let mut c = empty_workspace(3);
@@ -307,7 +307,7 @@ fn symbol_and_interval_are_independent_switches_across_tabs() {
     // Symbol off, Interval on.
     table.set(
         LinkColor::Blue,
-        crate::model::tab_link::LinkToggles {
+        crate::model::tab::link::LinkToggles {
             symbol: false,
             interval: true,
             time: false,
@@ -326,8 +326,8 @@ fn symbol_and_interval_are_independent_switches_across_tabs() {
 #[test]
 fn unlinking_stops_a_tab_at_once_and_leaves_its_chart_alone() {
     let ctx = egui::Context::default();
-    let mut hub = crate::model::tab_link::LinkHub::default();
-    let table = crate::model::tab_link::LinkTable::default();
+    let mut hub = crate::model::tab::link::LinkHub::default();
+    let table = crate::model::tab::link::LinkTable::default();
     let mut a = empty_workspace(1);
     let mut b = empty_workspace(2);
     let chart_a = chart_with_drawings(&mut a, "BTCUSDT", &[1]);
@@ -359,8 +359,8 @@ fn unlinking_stops_a_tab_at_once_and_leaves_its_chart_alone() {
 #[test]
 fn a_tab_joining_a_group_adopts_its_symbol_without_touching_the_others() {
     let ctx = egui::Context::default();
-    let mut hub = crate::model::tab_link::LinkHub::default();
-    let table = crate::model::tab_link::LinkTable::default();
+    let mut hub = crate::model::tab::link::LinkHub::default();
+    let table = crate::model::tab::link::LinkTable::default();
     let mut a = empty_workspace(1);
     let mut b = empty_workspace(2);
     let mut c = empty_workspace(3);
@@ -382,8 +382,8 @@ fn a_tab_joining_a_group_adopts_its_symbol_without_touching_the_others() {
 
 #[test]
 fn a_view_delivered_while_the_tab_is_hidden_waits_for_its_next_draw_even_if_the_switches_changed() {
-    use crate::model::chart_sync::{HorizontalChange, TimeRange};
-    use crate::model::tab_link::LinkToggles;
+    use crate::model::chart::sync::{HorizontalChange, TimeRange};
+    use crate::model::tab::link::LinkToggles;
     let ctx = egui::Context::default();
     let mut workspace = empty_workspace(1);
     chart_with_drawings(&mut workspace, "BTCUSDT", &[]);
@@ -470,9 +470,9 @@ fn a_symbol_the_user_chose_over_a_pending_link_is_not_reverted_when_it_fails() {
     assert!(workspace.link_state.probation.is_none());
 }
 
-fn pan_to(right: f64) -> crate::model::chart_sync::HorizontalChange {
-    crate::model::chart_sync::HorizontalChange {
-        range: crate::model::chart_sync::TimeRange {
+fn pan_to(right: f64) -> crate::model::chart::sync::HorizontalChange {
+    crate::model::chart::sync::HorizontalChange {
+        range: crate::model::chart::sync::TimeRange {
             left: right - 1_000.0,
             right,
         },
@@ -544,8 +544,8 @@ fn a_switch_to_the_market_already_shown_keeps_a_pending_view() {
 
 #[test]
 fn a_zoom_waits_for_a_chart_that_has_no_bars_yet() {
-    use crate::model::chart_sync::{ChartSyncSettings, HorizontalChange, TimeAxis, TimeRange};
-    use crate::model::viewport::HorizontalViewport;
+    use crate::model::chart::sync::{ChartSyncSettings, HorizontalChange, TimeAxis, TimeRange};
+    use crate::model::chart::viewport::HorizontalViewport;
     let zoom_only = ChartSyncSettings {
         horizontal_position: false,
         horizontal_zoom: true,
@@ -560,7 +560,7 @@ fn a_zoom_waits_for_a_chart_that_has_no_bars_yet() {
         },
         latest: true,
         moved: false,
-        zoom: Some(crate::model::chart_sync::Zoom { from: 120, to: 95 }),
+        zoom: Some(crate::model::chart::sync::Zoom { from: 120, to: 95 }),
     };
     let run = |waiting_frames: usize, waiting: bool| {
         let mut state = super::LinkState::default();

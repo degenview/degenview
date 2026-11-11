@@ -6,8 +6,8 @@
 //! never uploaded either, or every Mac would upload its own copy of the same nine examples.
 
 use super::project::{Projected, ScriptSnapshot, project_script};
-use crate::pine_studio::demo::BUNDLED;
-use crate::pine_studio::store::{ScriptStore, with_trailing_newline};
+use crate::pine_studio::library::demo::BUNDLED;
+use crate::pine_studio::library::store::{ScriptStore, with_trailing_newline};
 use crate::store::Store;
 use crate::store::sync::Reconciled;
 use std::collections::{HashMap, HashSet};

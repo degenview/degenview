@@ -4,8 +4,8 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use crate::pine::bench_tests;
-use crate::pine::program::SymbolInfo;
+use crate::pine::compiler::program::SymbolInfo;
+use crate::pine::tests::bench;
 
 use super::tests::with_header;
 use super::*;
@@ -25,7 +25,7 @@ plot(value)
 ";
 
 fn config(body: &str, bars: usize) -> DebugConfig {
-    let bars = bench_tests::bars(bars, bench_tests::MINUTE_MS);
+    let bars = bench::bars(bars, bench::MINUTE_MS);
     let now = bars.last().map_or(0, |bar| bar.close_time + 1);
     let mut config = DebugConfig::new(with_header(body), SymbolInfo::default(), bars, now);
     config.limits.deadline_seconds = 300.0;
@@ -180,7 +180,7 @@ if bar_index % 5 == 3
 alert(\"tick\", alert.freq_once_per_bar)
 plot(close)
 ";
-    let bars = bench_tests::bars(60, bench_tests::MINUTE_MS);
+    let bars = bench::bars(60, bench::MINUTE_MS);
     let now = bars.last().map_or(0, |bar| bar.close_time + 1);
     let source = format!("//@version=6\n{body}");
     let mut config = DebugConfig::new(source, SymbolInfo::default(), bars, now);

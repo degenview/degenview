@@ -26,11 +26,12 @@ use super::model::{
 use super::task::Task;
 use super::valuation::{self, Holding};
 use crate::host::broker_host::{BrokerHost, Connection};
-use crate::model::broker_chart::{self, ChartTrading};
-use crate::model::broker_ticket::{
+use crate::model::broker;
+use crate::model::broker::chart::ChartTrading;
+use crate::model::broker::ticket::{
     self as rules, StatusTone, TicketContext, TicketDraft, TicketField, TicketKind, TicketTif,
 };
-use crate::model::trading_venue::TradingVenue;
+use crate::model::broker::venue::TradingVenue;
 
 pub struct BrokerBackend {
     host: Arc<BrokerHost>,
@@ -100,7 +101,7 @@ fn state_of(snapshot: &BrokerSnapshot) -> BackendState {
     match &snapshot.status {
         Status::Connecting | Status::Syncing => BackendState::Connecting,
         Status::Live if snapshot.journal_error.is_some() => BackendState::Paused(
-            broker_chart::Unavailable::JournalUnreadable
+            broker::chart::Unavailable::JournalUnreadable
                 .text()
                 .to_owned(),
         ),
@@ -113,8 +114,8 @@ fn state_of(snapshot: &BrokerSnapshot) -> BackendState {
     }
 }
 
-fn unavailable(reason: broker_chart::Unavailable) -> Unavailable {
-    use broker_chart::Unavailable as Why;
+fn unavailable(reason: broker::chart::Unavailable) -> Unavailable {
+    use broker::chart::Unavailable as Why;
     let kind = match reason {
         Why::NotAMarket | Why::OtherSource | Why::UnknownMarket | Why::MarketNotOffered => {
             UnavailableKind::NotThisVenue
@@ -543,7 +544,7 @@ impl TradingBackend for BrokerBackend {
 
     fn market(&self, market: &MarketRef) -> MarketAccess {
         let snapshot = self.snapshot();
-        match broker_chart::chart_trading(self.broker, Some(market), snapshot.as_deref(), false) {
+        match broker::chart::chart_trading(self.broker, Some(market), snapshot.as_deref(), false) {
             ChartTrading::Unavailable(reason) => MarketAccess::Unavailable(unavailable(reason)),
             ChartTrading::Ready { product } => {
                 let ready = snapshot.as_deref().and_then(|snapshot| {
@@ -563,7 +564,7 @@ impl TradingBackend for BrokerBackend {
                 match ready {
                     Some(rules) => MarketAccess::Ready(Box::new(rules)),
                     None => MarketAccess::Unavailable(unavailable(
-                        broker_chart::Unavailable::RulesNotRead,
+                        broker::chart::Unavailable::RulesNotRead,
                     )),
                 }
             }

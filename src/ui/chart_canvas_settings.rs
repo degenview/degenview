@@ -13,11 +13,11 @@ use super::icons::Icon;
 use super::kit;
 use super::settings_card;
 use crate::model::ChartCanvas;
-use crate::model::canvas::{
+use crate::model::chart::canvas::{
     BackgroundMode, ButtonVisibility, ChartMargins, LINE_WIDTHS, LineAppearance, ScaleTextSize,
     WatermarkMode,
 };
-use crate::model::chart_type::{LineDash, Rgba};
+use crate::model::chart::kind::{LineDash, Rgba};
 use eframe::egui::{self, Id, Sense, Stroke, StrokeKind, Ui, vec2};
 
 /// The width of a switch: the column rows without one keep free (or put a preview in), so the

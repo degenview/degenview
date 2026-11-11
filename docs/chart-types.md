@@ -2,7 +2,7 @@
 
 How a chart draws its price data, how the price-based types construct their own bars, and what
 Pine scripts, indicators, alerts, strategies, replay and drawings see on each. This is the
-reference for `model::chart_type`, `model::synthetic`, `model::chart_look`, `ui::series_render` and
+reference for `model::chart::kind`, `model::chart::synthetic`, `model::chart::look`, `ui::series_render` and
 the chart-type parts of the Pine engine.
 
 ## Real data, chart bars, script visuals
@@ -12,7 +12,7 @@ Provider candles (canonical, never modified)
         │
         ├── standard types ───────────────────────────────▶ drawn as they are
         │                                                    (scripts read the real OHLC)
-        └── price-based types ── model::synthetic ──▶ chart bars ──▶ renderer
+        └── price-based types ── model::chart::synthetic ──▶ chart bars ──▶ renderer
                                                             │
                                                             └──▶ indicators, Pine scripts,
                                                                  script alerts, request.security
@@ -72,7 +72,7 @@ source cannot show falls back to candles on screen and is kept for when it can.
 
 ## Construction rules
 
-Builders live in `model/synthetic/` and are pure and deterministic. They read the candles oldest
+Builders live in `model/chart/synthetic/` and are pure and deterministic. They read the candles oldest
 first and return bars with their own indexing; one candle can make several bars or none. Each bar
 records the source candles it came from (`first_source`..`last_source`), the open time of the first
 and close time of the last, whether it is confirmed, and its shape (`Ohlc`, `Kagi`, `Column`).
@@ -205,7 +205,7 @@ never for a restyle. Rendering is limited to the visible bars.
 
 ## Testing and visual checks
 
-Builders, look rules, geometry, the Pine semantics (`pine/chart_type_tests.rs`), alerts, replay
+Builders, look rules, geometry, the Pine semantics (`pine/tests/chart_type.rs`), alerts, replay
 prefixes, persistence and the headless painters are unit-tested. Every type was drawn by eye in a
 release build, in light and dark, over live Binance candles with a throwaway data folder, including
 indicators, a `barcolor()` pane script and a `plotcandle()` overlay on Renko and Heikin Ashi. The

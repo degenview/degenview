@@ -16,9 +16,10 @@
 //! rules for a live bar, the same `OlderHistory` paging gate.
 
 use super::chart::{CANDLE_LIMIT, merge_fetched_candles};
-use crate::model::history::{self, OlderHistory};
+use crate::model::market;
+use crate::model::market::history::OlderHistory;
+use crate::model::overlay::feed::{OverlayFeed, OverlayStatus};
 use crate::model::overlay::{OverlayId, OverlayList};
-use crate::model::overlay_feed::{OverlayFeed, OverlayStatus};
 use crate::model::{DataSource, InstrumentId, Kline, Timeframe};
 use crate::service;
 use eframe::egui;
@@ -85,7 +86,7 @@ impl OverlayBackend for ServiceBackend {
         interval: &str,
         end_ms: i64,
     ) -> Result<Vec<Kline>, String> {
-        service::fetch_klines_range(source, symbol, interval, 0, end_ms, history::PAGE)
+        service::fetch_klines_range(source, symbol, interval, 0, end_ms, market::history::PAGE)
     }
 }
 
@@ -550,7 +551,7 @@ fn request_older(
     timeframe: Timeframe,
     ctx: &egui::Context,
 ) {
-    let Some(end) = history::page_end(&series.candles) else {
+    let Some(end) = market::history::page_end(&series.candles) else {
         return;
     };
     let (sender, receiver) = mpsc::channel();
@@ -588,7 +589,8 @@ fn receive_fetch(series: &mut Series, now: Instant) -> bool {
     match result {
         Ok(fresh) => {
             let merged = merge_fetched_candles(fresh, &series.candles, series.last_live_open_time);
-            let candles = history::with_older(&series.candles, merged, series.older.keeps_older());
+            let candles =
+                market::history::with_older(&series.candles, merged, series.older.keeps_older());
             series.set_candles(candles);
             series.status = OverlayStatus::Ready;
             series.retry_at = None;
@@ -614,7 +616,7 @@ fn receive_older(series: &mut Series, now: Instant) -> bool {
     match result {
         Ok(page) => {
             let mut candles = (*series.candles).clone();
-            let added = history::prepend(&mut candles, page);
+            let added = market::history::prepend(&mut candles, page);
             series.older.arrived(added);
             if added > 0 {
                 series.candles = Arc::new(candles);

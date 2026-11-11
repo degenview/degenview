@@ -227,7 +227,7 @@ handles.
 
 ## Tests
 
-`model/pattern.rs`, `elliott.rs` and `cycle.rs` have hand-worked fixtures (a Gartley, a Cypher, an
+`model/pattern/mod.rs`, `elliott.rs` and `cycle.rs` have hand-worked fixtures (a Gartley, a Cypher, an
 ABCD and a Three drives with ratios worked on paper, bullish and mirrored, degenerate legs, negative
 and huge prices, every degree against the wiki table, repeats at fractional and negative periods and
 at the limit). `ui/pattern_geometry.rs` checks the apex, arcs and sine against the algebra, their

@@ -60,6 +60,59 @@ child sees the root's private fields, and anything another child calls is `pub(s
 | `store/` | Schema/helpers plus watchlist, layout/template, portfolio, paper, alert, Pine, and webhook persistence |
 | `ui/` | Shared chrome plus chart, drawing, watchlist, alert, replay, paper, portfolio, Pine, settings, and webhook renderers |
 | `mcp/` | Loopback HTTP transport, auth, shared permission state, app bridge, tools, and wire types |
+| `sync/` | iCloud Sync: policy (what syncs), records, merge, outbox, id tagging and the CloudKit transport (bridge in `native/swift`); no UI |
+| `trading/` | Order entry for every venue (paper account and connected brokers) behind `TradingBackend`: drafts, previews, confirmation, valuation; no drawing code |
+| `bin/` | `degenview-alert-agent`, the login-item alert agent |
+
+## `model/` layout
+
+`model/` holds one directory per domain, and nothing but `mod.rs` at its root. A module sits in the
+directory of the domain it belongs to, one concern per file, with the domain left out of the file's
+name: `model::paper::engine`, not `model::paper_engine`. The domain's own types live in its
+`mod.rs` (`model::paper::PaperOrderSide`); a file with tests keeps them in a `tests.rs` beside it
+(`foo/mod.rs` + `foo/tests.rs`, never `foo.rs` + `foo/`).
+
+| Directory | Holds |
+| --- | --- |
+| `alert/`, `webhook/` | Price and Pine alerts (engine, feed, line, messages, notifications) and webhook endpoints and policy |
+| `paper/`, `portfolio/`, `watchlist/`, `broker/` | Paper trading, the portfolio ledger and its statistics, watchlists, and the shared live-trading values |
+| `chart/` | One chart: appearance, canvas, viewport, price scale, kind, layout, templates, context menu, linked-chart sync, snapshots, replay, constructed bars (`synthetic/`) |
+| `market/` | Instruments, sources, timeframes, candles, history paging, prediction-market series |
+| `drawings/`, `annotation/`, `pattern/`, `fib/`, `forecast/` | Drawings and their tools: the shared model and styles, text/image/post/table content, patterns and Elliott waves, Fibonacci and Gann, positions and measurers |
+| `indicators/`, `overlay/`, `pine/` | Built-in indicators and the catalog, markets compared on a chart, Pine instances and logs on a chart |
+| `mcp/`, `tab/`, `session_stats/`, `editor_theme/` | MCP activity, tabs, windows and Tab Linking, session statistics, editor themes |
+
+Flat re-exports for the most used types are in `model/mod.rs` (`model::Kline`, `model::ChartType`).
+A new module goes in the matching directory; a new domain gets its own directory and a row here.
+
+## `pine/` and `pine_studio/` layout
+
+Both follow the rule `model/` does: one directory per concern, children named without the directory's
+name, `foo/mod.rs` + `foo/tests.rs` rather than `foo.rs` + `foo/`, whole-window or end-to-end tests
+beside the code they exercise.
+
+`pine/` (the engine, pure and egui-free):
+
+| Directory | Holds |
+| --- | --- |
+| `syntax/` | `token`, `lexer`, `parser`, `ast`, `traversal` |
+| `check/` | The type checker and the rules that need no types: names, structure, declarations, identifiers, ignored features, `callables` |
+| `compiler/` | `compiler` (source → `CompiledProgram`), `program`, the builtin `registry`, `symbol_catalog` |
+| `runtime/` | The interpreter: `session`, `state`, `value`, `support`, `containers`, `execution`, call routing and binding, user methods, `request.security` |
+| `builtins/` | Constants and colour math (`mod.rs`), then one child per namespace: `alert`, `array`, `map`, `matrix`, `math`, `strings`, `number_format`, `regex_lite`, `ta`, `misc`, `scalar`, `market_values` |
+| `outputs/`, `inputs/` | Chart output types with `visuals`, `drawings`, `style_overrides`; how an `input.*` call is read |
+| `strategy/`, `footprint/`, `logs/`, `time/` | The strategy model, `broker` and `strategy.*`; `request.footprint()`; Pine Logs; calendar, time zones, sessions |
+| `debug/`, `profile/`, `tests/`, `corpus/` | The debugger, the profiler, end-to-end and benchmark tests, the corpus data |
+
+`pine_studio/`:
+
+| Directory | Holds |
+| --- | --- |
+| `ai/`, `debug/`, `profiler/` | The assistant, the debugger and the profiler: their state, host, panel, gallery pictures and `studio_tests` |
+| `editor/` | The text editor and everything that edits or reads text: `edit_ops`, `multi_cursor`, `completion`, `signature`, `symbols`, `find`, `syntax/`, `diff`, `call_sites`, `color_sites` |
+| `library/` | Where scripts live: `store`, `registry`, `sidebar`, `prefs`, `name`, `demo` and `demos/`, `unsaved`, `external/` |
+| `drawer/` | The drawer under the preview: `problems/`, `logs/`, the intro, `bottom_bar`, `tab_chrome` |
+| root | `mod.rs` (the manager), `model`, `preview`, `inputs`, `workspace`, `sheets`, `indicators/`, `theme_preview/` |
 
 ## Boundaries
 

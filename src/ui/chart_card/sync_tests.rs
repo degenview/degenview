@@ -2,8 +2,8 @@
 //! workspace draws them, with the user dragging, scrolling and zooming one of them.
 
 use super::*;
-use crate::model::chart_sync::{ChartSyncSettings, SyncHub, TimeAxis};
-use crate::model::viewport::{DEFAULT_VISIBLE, HorizontalViewport};
+use crate::model::chart::sync::{ChartSyncSettings, SyncHub, TimeAxis};
+use crate::model::chart::viewport::{DEFAULT_VISIBLE, HorizontalViewport};
 use crate::model::{ChartType, IndicatorConfig, Tool};
 use crate::ui::replay_overlay::ReplayChartFrame;
 use eframe::egui::Modifiers;
@@ -219,7 +219,7 @@ impl Linked {
         };
     }
 
-    fn range(&self, chart: usize) -> crate::model::chart_sync::TimeRange {
+    fn range(&self, chart: usize) -> crate::model::chart::sync::TimeRange {
         let member = &self.members[chart];
         TimeAxis::new(&member.candles)
             .range_of(&member.card.horizontal())

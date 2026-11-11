@@ -9,7 +9,7 @@
 //! and any other change (egui typing, undo, find and replace, rename, a sync) drops the extras.
 
 use super::*;
-use crate::pine_studio::multi_cursor::{self, Cell, Motion, Sel, Selections};
+use crate::pine_studio::editor::multi_cursor::{self, Cell, Motion, Sel, Selections};
 use eframe::egui::{Galley, PointerButton, Pos2};
 
 /// A modifier-click, seen before egui moved the caret for it.

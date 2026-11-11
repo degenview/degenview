@@ -1,6 +1,6 @@
 //! Pointer and button navigation of one chart.
 //!
-//! Every gesture edits `ChartCard::viewport` (see [`crate::model::viewport`]) and nothing else, so
+//! Every gesture edits `ChartCard::viewport` (see [`crate::model::chart::viewport`]) and nothing else, so
 //! the series, grid, indicators, Pine visuals, drawings and crosshair all follow from the same
 //! numbers. Which gesture a press starts is decided by where it lands: the plot pans the chart,
 //! the price axis stretches the price range, the time axis stretches the bars, and a script pane
@@ -8,7 +8,7 @@
 
 use super::ChartCard;
 use crate::model::Kline;
-use crate::model::viewport::{
+use crate::model::chart::viewport::{
     ChartViewport, MIN_VISIBLE, PanGesture, PriceRange, VerticalViewport,
 };
 use crate::ui::chart_buttons::NavAction;
@@ -352,7 +352,7 @@ impl ChartCard {
         let next = if wanted == visible { forced } else { wanted };
         self.viewport.horizontal.visible = next.clamp(
             MIN_VISIBLE,
-            crate::model::viewport::HorizontalViewport::max_visible(total_candles),
+            crate::model::chart::viewport::HorizontalViewport::max_visible(total_candles),
         );
     }
 }

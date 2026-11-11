@@ -1,5 +1,5 @@
 use super::*;
-use crate::model::watchlist_quote::Freshness;
+use crate::model::watchlist::quote::Freshness;
 use crate::ui::render_tests::{Screen, gallery_dir};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;

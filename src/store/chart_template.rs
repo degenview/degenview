@@ -7,7 +7,7 @@
 //! never written: the sheet says so and the presets keep working.
 
 use crate::model::ChartAppearance;
-use crate::model::chart_template::{
+use crate::model::chart::template::{
     ChartAppearanceTemplate, TemplateBook, TemplateError, TemplateId, new_user_id,
 };
 use crate::model::watchlist::now_ms;

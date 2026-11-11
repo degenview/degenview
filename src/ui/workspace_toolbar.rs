@@ -112,7 +112,7 @@ pub enum ToolbarAction {
     /// Start a price alert on the focused chart's market.
     CreateAlert,
     /// Take this snapshot of the focused chart.
-    Snapshot(crate::model::snapshot::SnapshotAction),
+    Snapshot(crate::model::chart::snapshot::SnapshotAction),
     /// Open the Snapshots page of Settings.
     SnapshotSettings,
     Undo,

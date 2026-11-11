@@ -1,7 +1,7 @@
 //! The Image tool: dropping a chosen picture, resizing it, replacing it and painting it.
 
 use super::*;
-use crate::model::image_content::{Content, ImageContent, ImageData};
+use crate::model::annotation::image_content::{Content, ImageContent, ImageData};
 use crate::service::asset_host::{FrozenAssets, freeze};
 use menu::ImageOp;
 

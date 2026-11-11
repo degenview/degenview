@@ -1,6 +1,6 @@
 //! What the picker lists for a sidebar choice. Pure: entries in, blocks of entries out.
 
-use crate::model::indicator_catalog::{CatalogEntry, EntryKey, Family, Origin};
+use crate::model::indicators::catalog::{CatalogEntry, EntryKey, Family, Origin};
 use crate::ui::icons::Icon;
 use std::collections::HashSet;
 
@@ -151,7 +151,7 @@ pub fn blocks(
 pub fn search_blocks(all: &[CatalogEntry], query: &str) -> Vec<Block> {
     vec![Block {
         heading: Some("Results"),
-        entries: crate::model::indicator_catalog::search(all, query),
+        entries: crate::model::indicators::catalog::search(all, query),
     }]
 }
 
@@ -172,7 +172,7 @@ pub fn flatten(blocks: &[Block]) -> Vec<&CatalogEntry> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::indicator_catalog::all;
+    use crate::model::indicators::catalog::all;
     use crate::pine_studio::model::{LocalScript, ScriptType};
     use crate::ui::script_catalog::sample;
     use std::sync::Arc;
