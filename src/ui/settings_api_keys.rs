@@ -12,7 +12,7 @@ use crate::service::keychain_api_keys::{
 use crate::service::llm::report::ErrorReport;
 use crate::ui::alert_center::Tone;
 use crate::ui::icons::{self, Icon};
-use crate::ui::settings_window::{card, footer_row, section, status_badge};
+use crate::ui::settings_window::{card, section, status_badge, status_message};
 use crate::ui::{kit, theme};
 use eframe::egui;
 use std::sync::mpsc::{Receiver, TryRecvError};
@@ -61,6 +61,7 @@ pub struct AlpacaForm {
     loaded: bool,
     pub is_saved: bool,
     pub status: Option<StatusMessage>,
+    autosave: Autosave,
 }
 
 #[derive(Default)]
@@ -70,6 +71,7 @@ pub struct CmcForm {
     pub configured: bool,
     pub status: Option<StatusMessage>,
     test: Option<Receiver<Result<(), String>>>,
+    autosave: Autosave,
 }
 
 #[derive(Default)]
@@ -242,7 +244,7 @@ pub(crate) fn field(
     prompt: &str,
     text: &mut String,
     secret: bool,
-) {
+) -> egui::Response {
     let id = egui::Id::new(("settings-field", title));
     let revealed_id = id.with("revealed");
     let mut revealed: bool = ui.data(|data| data.get_temp(revealed_id)).unwrap_or(false);
@@ -255,6 +257,7 @@ pub(crate) fn field(
     ));
     ui.add_space(6.0);
     let focused = ui.memory(|memory| memory.has_focus(id));
+    let mut edit = None;
     egui::Frame::new()
         .fill(theme::with_alpha(theme::editor_background(), 0.7))
         .corner_radius(8.0)
@@ -276,20 +279,22 @@ pub(crate) fn field(
                 } else {
                     0.0
                 };
-                ui.add(
-                    egui::TextEdit::singleline(text)
-                        .id(id)
-                        .frame(egui::Frame::NONE)
-                        .font(egui::FontId::proportional(kit::size::BODY))
-                        .text_color(theme::text_primary())
-                        .hint_text(kit::text(
-                            prompt,
-                            kit::size::BODY,
-                            kit::REGULAR,
-                            theme::text_tertiary(),
-                        ))
-                        .password(secret && !revealed)
-                        .desired_width(ui.available_width() - eye),
+                edit = Some(
+                    ui.add(
+                        egui::TextEdit::singleline(text)
+                            .id(id)
+                            .frame(egui::Frame::NONE)
+                            .font(egui::FontId::proportional(kit::size::BODY))
+                            .text_color(theme::text_primary())
+                            .hint_text(kit::text(
+                                prompt,
+                                kit::size::BODY,
+                                kit::REGULAR,
+                                theme::text_tertiary(),
+                            ))
+                            .password(secret && !revealed)
+                            .desired_width(ui.available_width() - eye),
+                    ),
                 );
                 if secret {
                     let (icon, tip) = if revealed {
@@ -312,6 +317,64 @@ pub(crate) fn field(
             kit::REGULAR,
             theme::text_secondary(),
         ));
+    }
+    edit.expect("the field's text edit ran")
+}
+
+/// Saves what was typed once the typing stops, so a page needs no Save button. A text edit is due
+/// when its field lost focus (Enter included) or the typing paused for [`Autosave::PAUSE`]. A
+/// secret waits for the field to lose focus only: a pause in the middle of a key must not save half
+/// of it.
+#[derive(Default)]
+pub struct Autosave {
+    since: Option<std::time::Instant>,
+    on_blur: bool,
+}
+
+impl Autosave {
+    pub const PAUSE: std::time::Duration = std::time::Duration::from_millis(700);
+
+    /// Notes the field's response: an edit starts (or restarts) the wait.
+    pub fn watch(&mut self, response: &egui::Response, secret: bool) {
+        if response.changed() {
+            self.since = Some(std::time::Instant::now());
+            self.on_blur = secret;
+        }
+        if response.lost_focus() && self.since.is_some() {
+            self.touch();
+        }
+    }
+
+    /// Makes the change due now: a picked provider, a left field.
+    pub fn touch(&mut self) {
+        self.since = Some(std::time::Instant::now() - Self::PAUSE);
+        self.on_blur = false;
+    }
+
+    pub fn is_pending(&self) -> bool {
+        self.since.is_some()
+    }
+
+    /// Whether the change is due to be saved now. True once; asks for a repaint while waiting.
+    pub fn due(&mut self, ctx: &egui::Context) -> bool {
+        let Some(since) = self.since else {
+            return false;
+        };
+        if self.on_blur {
+            return false;
+        }
+        let waited = since.elapsed();
+        if waited >= Self::PAUSE {
+            self.since = None;
+            return true;
+        }
+        ctx.request_repaint_after(Self::PAUSE - waited);
+        false
+    }
+
+    /// Forgets a pending change (the save was refused, or there is nothing to save).
+    pub fn cancel(&mut self) {
+        self.since = None;
     }
 }
 
@@ -355,13 +418,7 @@ pub(crate) fn link(ui: &mut egui::Ui, label: &str, url: &str) {
     }
 }
 
-/// What a footer says about `status`. `footer_row` cuts it to one line.
-pub(crate) fn footer_status(status: &Option<StatusMessage>) -> Option<(String, bool)> {
-    let status = status.as_ref()?;
-    Some((status.text.clone(), status.is_error))
-}
-
-/// A destructive footer button: the regular button with red text.
+/// A destructive button: the regular button with red text.
 pub(crate) fn destructive_button(ui: &mut egui::Ui, label: &str) -> egui::Response {
     let galley = kit::galley(
         ui,
@@ -401,9 +458,10 @@ pub fn alpaca_body(ui: &mut egui::Ui, state: &mut ApiKeysState, store: &AlpacaCr
     section(ui, "API credentials", None, |ui| {
         card(ui, |ui| {
             ui.vertical(|ui| {
-                field(ui, "API Key ID", None, "PK…", &mut form.key_id, false);
+                let key_id = field(ui, "API Key ID", None, "PK…", &mut form.key_id, false);
+                form.autosave.watch(&key_id, false);
                 ui.add_space(12.0);
-                field(
+                let secret = field(
                     ui,
                     "Secret Key",
                     Some(crate::platform::credential_stored_hint()),
@@ -411,9 +469,22 @@ pub fn alpaca_body(ui: &mut egui::Ui, state: &mut ApiKeysState, store: &AlpacaCr
                     &mut form.secret_key,
                     true,
                 );
+                form.autosave.watch(&secret, true);
             });
+            if form.is_saved && destructive_button(ui, "Remove Keys").clicked() {
+                form.remove(store);
+                form.autosave.cancel();
+            }
         });
+        if let Some(status) = &form.status {
+            ui.add_space(8.0);
+            status_message(ui, &status.text, status.is_error);
+        }
     });
+    // Both keys are needed, so nothing is saved until both are there.
+    if form.autosave.due(ui.ctx()) && form.can_save() {
+        form.save(store);
+    }
     section(ui, "Getting your keys", None, |ui| {
         card(ui, |ui| {
             step(ui, 1, "Create a free Alpaca account.");
@@ -436,18 +507,6 @@ pub fn alpaca_body(ui: &mut egui::Ui, state: &mut ApiKeysState, store: &AlpacaCr
     });
 }
 
-pub fn alpaca_footer(ui: &mut egui::Ui, state: &mut ApiKeysState, store: &AlpacaCredentialsStore) {
-    let form = &mut state.alpaca;
-    footer_row(ui, footer_status(&form.status), |ui| {
-        if kit::sheet_button(ui, "Save", true, form.can_save()).clicked() {
-            form.save(store);
-        }
-        if form.is_saved && destructive_button(ui, "Remove Keys").clicked() {
-            form.remove(store);
-        }
-    });
-}
-
 pub fn coinmarketcap_body(
     ui: &mut egui::Ui,
     state: &mut ApiKeysState,
@@ -466,9 +525,35 @@ pub fn coinmarketcap_body(
     let (title, hint) = (form.field_title(), form.field_hint());
     section(ui, "API access", None, |ui| {
         card(ui, |ui| {
-            ui.vertical(|ui| field(ui, title, Some(hint), "", &mut form.api_key, true));
+            ui.vertical(|ui| {
+                let key = field(ui, title, Some(hint), "", &mut form.api_key, true);
+                form.autosave.watch(&key, true);
+            });
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 10.0;
+                if form.is_testing() {
+                    ui.add(
+                        egui::Spinner::new()
+                            .size(14.0)
+                            .color(theme::text_secondary()),
+                    );
+                } else if kit::sheet_button(ui, "Test Connection", false, true).clicked() {
+                    form.start_test(crate::service::cmc::test_connection);
+                }
+                if form.configured && destructive_button(ui, "Remove Key").clicked() {
+                    form.remove(store);
+                    form.autosave.cancel();
+                }
+            });
         });
+        if let Some(status) = &form.status {
+            ui.add_space(8.0);
+            status_message(ui, &status.text, status.is_error);
+        }
     });
+    if form.autosave.due(ui.ctx()) && form.can_save() {
+        form.save(store);
+    }
     kit::notice_card(
         ui,
         Icon::InfoCircle,
@@ -485,32 +570,6 @@ pub fn coinmarketcap_body(
         "Get an API key",
         "https://pro.coinmarketcap.com/signup/",
     );
-}
-
-pub fn coinmarketcap_footer(
-    ui: &mut egui::Ui,
-    state: &mut ApiKeysState,
-    store: &CoinMarketCapKeyStore,
-) {
-    let form = &mut state.cmc;
-    footer_row(ui, footer_status(&form.status), |ui| {
-        if kit::sheet_button(ui, "Save", true, form.can_save()).clicked() {
-            form.save(store);
-        }
-        let testing = form.is_testing();
-        if testing {
-            ui.add(
-                egui::Spinner::new()
-                    .size(14.0)
-                    .color(theme::text_secondary()),
-            );
-        } else if kit::sheet_button(ui, "Test Connection", false, true).clicked() {
-            form.start_test(crate::service::cmc::test_connection);
-        }
-        if form.configured && destructive_button(ui, "Remove Key").clicked() {
-            form.remove(store);
-        }
-    });
 }
 
 #[cfg(test)]
@@ -635,5 +694,26 @@ mod tests {
         form.start_test(|| Err("Invalid API key".into()));
         wait_for_test(&mut form);
         assert_eq!(form.status, Some(StatusMessage::error("Invalid API key")));
+    }
+
+    #[test]
+    fn typing_is_saved_after_a_pause_and_a_secret_only_when_its_field_is_left() {
+        let ctx = egui::Context::default();
+        let mut text = Autosave::default();
+        assert!(!text.due(&ctx), "nothing was typed");
+        text.since = Some(std::time::Instant::now());
+        assert!(!text.due(&ctx), "still typing");
+        text.since = Some(std::time::Instant::now() - Autosave::PAUSE);
+        assert!(text.due(&ctx), "the typing paused");
+        assert!(!text.due(&ctx), "due once");
+
+        let mut secret = Autosave {
+            since: Some(std::time::Instant::now() - Autosave::PAUSE * 10),
+            on_blur: true,
+        };
+        assert!(!secret.due(&ctx), "half a key is never saved on a pause");
+        assert!(secret.is_pending());
+        secret.touch();
+        assert!(secret.due(&ctx), "leaving the field saves it");
     }
 }

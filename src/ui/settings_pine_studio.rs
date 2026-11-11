@@ -174,7 +174,6 @@ pub fn page(
             ui,
             section,
             "Choose how your Pine Script editor looks.",
-            false,
             |ui| overview(ui, state, host, &view),
         );
     } else if let Mode::Editing(editing) = &mut state.mode {

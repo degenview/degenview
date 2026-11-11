@@ -52,7 +52,8 @@ new UI: not for links, buttons or decoration. Details and the existing exception
 
 Surfaces are flat: a faint fill and a hairline, no gradients, no lit edges, no shadows (except for
 floating menus and dialogs). Icons stand bare, with no tile, disc or circle behind them. Colour is for
-state and data only. Secondary windows keep the platform's title bar and window controls. The
+state and data only. Settings pages have no bottom bar and no Save button: inputs save as they are
+entered. Secondary windows keep the platform's title bar and window controls. The
 Settings window is the reference; rules and helpers are in
 [Flat style](docs/agent-guides/ui-style.md).
 

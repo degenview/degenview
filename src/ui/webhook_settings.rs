@@ -10,7 +10,7 @@ use crate::model::webhook::{
 };
 use crate::model::webhook_policy;
 use crate::ui::icons::{self, Icon};
-use crate::ui::settings_window::{card, footer_row, section};
+use crate::ui::settings_window::{card, section};
 use crate::ui::webhook_editor::{
     self, WebhookEditorOutcome, WebhookEditorResult, WebhookEditorState,
 };
@@ -277,6 +277,19 @@ pub fn body(
                 }
                 endpoint_row(ui, state, input, endpoint, &mut actions);
             }
+            // Under the list it adds to, with a failure beside it.
+            ui.add_space(10.0);
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 12.0;
+                if kit::push_button(ui, Some(Icon::Plus), "Add Webhook", !input.load_failed)
+                    .clicked()
+                {
+                    state.editor = Some(WebhookEditorState::new_blank());
+                }
+                if let Some(failure) = &state.failure {
+                    super::settings_window::status_message(ui, failure, true);
+                }
+            });
         },
     );
 
@@ -329,16 +342,6 @@ pub fn body(
     }
     delete_dialog(ui.ctx(), state, input, &mut actions);
     actions
-}
-
-/// The bar under the page: a failure on the left, Add Webhook on the right.
-pub fn footer(ui: &mut egui::Ui, state: &mut WebhookSettingsState, input: &WebhookSettingsInput) {
-    let status = state.failure.clone().map(|failure| (failure, true));
-    footer_row(ui, status, |ui| {
-        if kit::push_button(ui, Some(Icon::Plus), "Add Webhook", !input.load_failed).clicked() {
-            state.editor = Some(WebhookEditorState::new_blank());
-        }
-    });
 }
 
 fn endpoint_row(

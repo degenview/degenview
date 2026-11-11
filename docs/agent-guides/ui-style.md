@@ -27,18 +27,34 @@ habits either.
 - **One scale of text.** Page title `kit::size::TITLE2 + 3`, section heading `HEADLINE` bold, body
   `BODY`, hints `CAPTION` in `text_secondary`. Take sizes from `kit::size`, do not invent them.
 
+## Pages have no bar and no Save button
+
+A Settings page has nothing pinned under it: no footer bar, no Save, no Apply. Every input is saved
+as it is entered, and the other actions sit in the content they act on.
+
+- Use `settings_api_keys::Autosave` with `field`'s returned response: `watch(&response, secret)`,
+  then `due(ctx)` and save. A plain field is saved when typing pauses (700 ms) or the field is left;
+  a secret (a key, a token) only when its field is left, so half a key is never stored. A choice
+  (a switch, a segment, a picked provider) is saved at once, with `touch()`.
+- A value that cannot be saved yet (a half-filled pair of keys, an invalid URL) is not saved and says
+  why inline, under the field, with `status_message`. It never needs a button to find out.
+- Test, Remove and similar buttons go in the card of the thing they act on, under its fields.
+  An "Add ..." button goes under the list it adds to. A result or failure is a `status_message`
+  line beside or under them.
+- A secondary view of a page (the Pine theme editor) leaves with its own back button in the
+  header; reset actions live in a menu beside the name, not in a bar.
+
 ## Sidebar and page layout
 
 Use the helpers in `settings_window.rs` instead of building a page by hand:
 
 | Need | Use |
 | --- | --- |
-| A page with header, scrolling body and an optional footer | `page_shell` (header is `page_header`: picture, title, one-line description) |
+| A page with header and scrolling body (no footer) | `page_shell` (header is `page_header`: picture, title, one-line description) |
 | A titled group inside a page | `section` |
 | A card of rows | `card`, separated by `divider`, one row as `row` |
 | A card for one setting (icon, title, hint, control right) | `settings_card::card` / `card_reserving` |
 | A status pill | `status_badge`; a status line `status_message` |
-| Actions pinned under a page | `footer_row` |
 
 The sidebar is `SIDEBAR_WIDTH` wide on `theme::background()`, with `theme::separator()` as its only
 edge. Rows are 30 points: a bare icon, a title, `selected_tint` when open, a faint tint on hover. Pages

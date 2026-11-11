@@ -2,8 +2,9 @@
 //! the real editor pinned above so each change is seen where it lands.
 //!
 //! Changes apply as they are made (the host publishes them and saves a moment later), so there is
-//! no Apply: *Reset Changes* puts the theme back as it was when the editor was opened, *Reset Theme*
-//! puts it back to the theme it started from (after asking), and *Done* just leaves. A colour's own
+//! no Apply: *Reset Changes* puts the theme back as it was when the editor was opened and *Reset Theme*
+//! puts it back to the theme it started from (after asking), both in the menu beside the name; the
+//! *Themes* button leaves. There is no bar under the page. A colour's own
 //! reset gives back its base theme's colour, not a fixed default.
 
 use crate::host::editor_theme_host::{EditorThemeHost, View};
@@ -15,7 +16,7 @@ use crate::model::editor_theme::{
 use crate::pine_studio::theme_preview::ThemePreview;
 use crate::ui::icons::{self, Icon};
 use crate::ui::settings_pine_studio::{Controls, Dialog, TypographyShown, typography_controls};
-use crate::ui::settings_window::{FOOTER_HEIGHT, INSET, card, divider, footer_row};
+use crate::ui::settings_window::{INSET, card, divider};
 use crate::ui::{kit, theme};
 use eframe::egui::{self, Color32, Id, Rect, Sense, Stroke, Ui, pos2, vec2};
 
@@ -123,77 +124,20 @@ pub(super) fn show(
     };
     let mut done = false;
     let area = ui.max_rect();
-    let bar = Rect::from_min_max(pos2(area.left(), area.bottom() - FOOTER_HEIGHT), area.max);
-    ui.painter().hline(
-        bar.x_range(),
-        bar.top(),
-        Stroke::new(1.0, theme::separator()),
-    );
-    let mut footer = ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(bar.shrink2(vec2(INSET, 14.0)))
-            .layout(egui::Layout::left_to_right(egui::Align::Center)),
-    );
-    let changed = editing.changed(&theme);
-    let has_overrides = !theme.overrides.is_empty() || !theme.typography.is_empty();
-    let mut reset_changes = false;
-    let mut reset_theme = false;
-    footer_row(&mut footer, None, |ui| {
-        if kit::footer_button(ui, "Done", kit::FooterButton::Primary, true, 84.0).clicked() {
-            done = true;
-        }
-        if bar.width() >= COMPACT_FOOTER {
-            reset_changes = kit::footer_button(
-                ui,
-                "Reset Changes",
-                kit::FooterButton::Secondary,
-                changed,
-                0.0,
-            )
-            .on_hover_text("Put the theme back as it was when you opened it.")
-            .clicked();
-            reset_theme = kit::footer_button(
-                ui,
-                "Reset Theme…",
-                kit::FooterButton::Secondary,
-                has_overrides,
-                0.0,
-            )
-            .on_hover_text("Put every color back to the theme it started from.")
-            .clicked();
-        } else {
-            // Room for one button: the two resets share a menu.
-            let more = icons::button(ui, Icon::Ellipsis, 28.0, theme::text_primary(), "Reset");
-            kit::menu_popup(&more).show(|ui| {
-                kit::menu_scope(ui, 0.0);
-                kit::menu_fit(ui, &["Reset Changes", "Reset Theme…"]);
-                if kit::menu_item(ui, Icon::Undo, "Reset Changes", changed, false) {
-                    reset_changes = true;
-                    ui.close();
-                }
-                if kit::menu_item(ui, Icon::Trash, "Reset Theme…", has_overrides, true) {
-                    reset_theme = true;
-                    ui.close();
-                }
-            });
-        }
-    });
-    if reset_changes {
-        // Only fails if the theme went away, which the next frame notices.
-        let _ = host.restore(editing.entry.clone());
-    }
-    if reset_theme {
-        *dialog = Some(Dialog::ResetAll(editing.id));
-    }
-
     let body_rect = Rect::from_min_max(
         pos2(area.left() + INSET, area.top() + 18.0),
-        pos2(area.right() - INSET, bar.top() - 10.0),
+        pos2(area.right() - INSET, area.bottom() - 18.0),
     );
     let mut body = ui.new_child(egui::UiBuilder::new().max_rect(body_rect));
     body.spacing_mut().item_spacing = vec2(8.0, 0.0);
-    if header(&mut body, editing, &theme, dialog) {
-        done = true;
+    let top = header(&mut body, editing, &theme, dialog);
+    done |= top.back;
+    if top.reset_changes {
+        // Only fails if the theme went away, which the next frame notices.
+        let _ = host.restore(editing.entry.clone());
+    }
+    if top.reset_theme {
+        *dialog = Some(Dialog::ResetAll(editing.id));
     }
     body.add_space(10.0);
 
@@ -229,8 +173,6 @@ pub(super) fn show(
 
 /// The width from which the editor sits beside the colours instead of above them.
 const WIDE: f32 = 700.0;
-/// The footer width from which both reset buttons are shown rather than a menu of them.
-const COMPACT_FOOTER: f32 = 500.0;
 /// The width from which the tabs show icons beside their titles.
 const ICON_TABS: f32 = 360.0;
 
@@ -379,13 +321,23 @@ fn count(theme: &EditorTheme, wanted: impl Fn(ColorKey) -> bool) -> usize {
 }
 
 /// The back button with what the theme is based on, and the theme's name with a rename button.
+/// What the editor's top row asked for.
+#[derive(Default)]
+struct HeaderOut {
+    back: bool,
+    reset_changes: bool,
+    reset_theme: bool,
+}
+
 fn header(
     ui: &mut Ui,
     editing: &Editing,
     theme: &EditorTheme,
     dialog: &mut Option<Dialog>,
-) -> bool {
-    let mut back = false;
+) -> HeaderOut {
+    let mut out = HeaderOut::default();
+    let changed = editing.changed(theme);
+    let has_overrides = !theme.overrides.is_empty() || !theme.typography.is_empty();
     let changes = theme.override_count();
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 6.0;
@@ -411,7 +363,7 @@ fn header(
             text,
             Color32::PLACEHOLDER,
         );
-        back = response.clicked();
+        out.back = response.clicked();
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.label(kit::text(
                 format!(
@@ -432,7 +384,7 @@ fn header(
     ui.add_space(2.0);
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 8.0;
-        let width = ui.available_width() - 34.0;
+        let width = ui.available_width() - 34.0 - 34.0;
         let title = kit::galley(
             ui,
             &format!("Edit Theme: {}", theme.name),
@@ -462,8 +414,34 @@ fn header(
                 error: None,
             });
         }
+        // The resets live beside the name they act on, in a menu: nothing sits under the page.
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            let more = icons::button(
+                ui,
+                Icon::Ellipsis,
+                26.0,
+                theme::text_secondary(),
+                "Reset colors",
+            );
+            kit::fitted_menu(
+                ui,
+                &more,
+                egui::RectAlign::BOTTOM_END,
+                &["Reset Changes", "Reset Theme…"],
+                |ui| {
+                    if kit::menu_item(ui, Icon::Undo, "Reset Changes", changed, false) {
+                        out.reset_changes = true;
+                        ui.close();
+                    }
+                    if kit::menu_item(ui, Icon::Trash, "Reset Theme…", has_overrides, true) {
+                        out.reset_theme = true;
+                        ui.close();
+                    }
+                },
+            );
+        });
     });
-    back
+    out
 }
 
 /// A quiet warning, never a block, when colours sit close to the background they are drawn on.

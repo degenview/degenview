@@ -615,14 +615,16 @@ fn setup_body(
         // Scoped: a field squeezes the spacing it is drawn in.
         ui.scope(|ui| match credential.kind {
             FieldKind::Pem => secret_block(ui, credential.label, credential.hint, value),
-            _ => field(
-                ui,
-                credential.label,
-                None,
-                credential.hint,
-                value,
-                credential.secret,
-            ),
+            _ => {
+                field(
+                    ui,
+                    credential.label,
+                    None,
+                    credential.hint,
+                    value,
+                    credential.secret,
+                );
+            }
         });
     }
     ui.add_space(4.0);
