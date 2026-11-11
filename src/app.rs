@@ -969,6 +969,14 @@ impl DegenViewApp {
         );
         trading_hub.connect_enabled();
         let snapshots = SnapshotHost::load(store.clone());
+        {
+            // The secure storage is asked off the window's thread; a window that showed "checking"
+            // is drawn again when it answers.
+            let repaint = creation.egui_ctx.clone();
+            snapshots
+                .secrets()
+                .set_on_ready(Arc::new(move || repaint.request_repaint()));
+        }
         let tab_title_host = TabTitleHost::load(store.clone());
         let tab_link_host = TabLinkHost::load(store.clone());
         let editor_themes = {

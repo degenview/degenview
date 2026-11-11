@@ -87,6 +87,12 @@ impl SnapshotHost {
         };
         let settings = prefs.settings_of(id);
         let present = self.secrets.presence(provider);
+        if present.is_pending() {
+            // The secure storage is being asked, off this thread: "no key" would be a guess.
+            return Hosting::Unavailable(
+                "Checking your saved key. Try again in a moment.".to_owned(),
+            );
+        }
         match provider.readiness(&settings, &present) {
             Readiness::Ready => {
                 let note = provider.consent_note(&settings, &present);
@@ -545,6 +551,53 @@ mod tests {
             host.refresh(Some(&store));
         }
         assert_eq!(host.prefs().scale, SnapshotScale::X1);
+    }
+
+    #[test]
+    fn while_the_secure_storage_has_not_answered_the_menu_says_so_instead_of_guessing() {
+        use crate::service::keychain_api_keys::KeyBackend;
+        use crate::service::keychain_webhook_secrets::Scope;
+        use crate::service::webhook_delivery::SecretStoreError;
+        struct Slow(Mutex<std::sync::mpsc::Receiver<()>>);
+        impl KeyBackend for Slow {
+            fn read(&self, _: Scope, _: &str) -> Option<String> {
+                Some("k".to_owned())
+            }
+            fn exists(&self, _: Scope, _: &str) -> bool {
+                let _ = self.0.lock().unwrap().recv();
+                true
+            }
+            fn write(&self, _: Scope, _: &str, _: &str) -> Result<(), SecretStoreError> {
+                Ok(())
+            }
+            fn delete(&self, _: Scope, _: &str) -> Result<(), SecretStoreError> {
+                Ok(())
+            }
+        }
+        let (release, released) = std::sync::mpsc::channel();
+        let (ready, answered) = std::sync::mpsc::channel();
+        let secrets = Arc::new(SnapshotSecrets::asynchronous(
+            Box::new(Slow(Mutex::new(released))),
+            Box::new(|_| None),
+        ));
+        secrets.set_on_ready(Arc::new(move || {
+            let _ = ready.send(());
+        }));
+        let host = SnapshotHost::load_with(store(), secrets);
+        host.set_provider(None, Some("imgbb")).unwrap();
+        let Hosting::Unavailable(waiting) = host.hosting() else {
+            panic!("nothing is known yet");
+        };
+        assert!(waiting.contains("Checking"), "{waiting}");
+        assert!(
+            !waiting.contains("Add your"),
+            "not a guess that the key is missing"
+        );
+        release.send(()).unwrap();
+        answered
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("the answer arrives");
+        assert!(matches!(host.hosting(), Hosting::Ready(_)));
     }
 
     #[test]

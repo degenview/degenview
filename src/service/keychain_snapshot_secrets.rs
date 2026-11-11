@@ -2,9 +2,14 @@
 //! secure storage beside the data providers' keys. One store serves every provider: a secret is
 //! addressed by the provider and the field, so a new provider needs nothing here.
 //!
-//! A secret is read only when an upload needs it, so a user who never shares a snapshot is never
-//! prompted. Under `DEGENVIEW_NO_KEYCHAIN` (and on platforms with no secure storage) it lives in
-//! memory for the session; a field's environment variable stands in when nothing is saved.
+//! The window never waits for the secure storage. Whether a secret is saved is asked on a thread
+//! of its own the first time (the answer is then cached, and the window is asked to repaint), so
+//! the camera menu, which asks every frame, reads cached state; until the answer is in a secret is
+//! [`SecretState::Checking`]. A secret's value is read only when an upload needs it, on the
+//! upload's worker, so a user who never shares a snapshot is never prompted, and the cache is
+//! never locked while the storage is. Under `DEGENVIEW_NO_KEYCHAIN` (and on platforms with no
+//! secure storage) it lives in memory for the session; a field's environment variable stands in
+//! when nothing is saved.
 
 use crate::service::keychain_api_keys::{KeyBackend, default_backend};
 use crate::service::keychain_webhook_secrets::Scope;
@@ -27,11 +32,13 @@ pub enum SecretState {
     /// Not saved, but the field's environment variable gives one.
     FromEnvironment,
     Missing,
+    /// The secure storage has not answered yet (it is being asked, off the window's thread).
+    Checking,
 }
 
 impl SecretState {
     pub fn is_present(self) -> bool {
-        self != Self::Missing
+        matches!(self, Self::Saved | Self::FromEnvironment)
     }
 }
 
@@ -40,14 +47,23 @@ struct Slot {
     loaded: bool,
     value: Option<String>,
     exists: Option<bool>,
+    /// A thread is asking the storage whether it is saved.
+    checking: bool,
 }
 
+type Slots = Arc<Mutex<HashMap<String, Slot>>>;
 type Env = dyn Fn(&str) -> Option<String> + Send + Sync;
+type OnReady = Arc<dyn Fn() + Send + Sync>;
 
 pub struct SnapshotSecrets {
-    backend: Box<dyn KeyBackend>,
+    backend: Arc<dyn KeyBackend>,
     env: Box<Env>,
-    slots: Mutex<HashMap<String, Slot>>,
+    slots: Slots,
+    /// Whether "is it saved" is asked on a thread of its own. The app's store does; a test's may
+    /// answer on the spot.
+    asynchronous: bool,
+    /// What to call when an answer arrives, so a window that showed "checking" is drawn again.
+    on_ready: Arc<Mutex<Option<OnReady>>>,
 }
 
 /// The account a field's secret is saved under.
@@ -62,17 +78,41 @@ fn clean(text: Option<String>) -> Option<String> {
         .filter(|text| !text.is_empty())
 }
 
+/// Records what the storage said about `account`, unless something more certain arrived first.
+fn settle(slots: &Slots, account: String, found: bool) {
+    let mut slots = slots.lock().unwrap_or_else(|e| e.into_inner());
+    let slot = slots.entry(account).or_default();
+    slot.checking = false;
+    if !slot.loaded {
+        slot.exists = Some(found);
+    }
+}
+
 impl SnapshotSecrets {
+    /// The real thing: the storage is asked off the window's thread.
     pub fn with_backend(backend: Box<dyn KeyBackend>) -> Self {
-        Self::with(backend, Box::new(|name| std::env::var(name).ok()))
+        Self::build(backend, Box::new(|name| std::env::var(name).ok()), true)
     }
 
-    /// For a test: the secure storage and the environment it sees.
+    /// For a test: the storage and the environment it sees, answering on the spot.
+    #[cfg(test)]
     pub fn with(backend: Box<dyn KeyBackend>, env: Box<Env>) -> Self {
+        Self::build(backend, env, false)
+    }
+
+    /// For a test of the thread: like [`Self::with`], but asked the way the app asks.
+    #[cfg(test)]
+    pub fn asynchronous(backend: Box<dyn KeyBackend>, env: Box<Env>) -> Self {
+        Self::build(backend, env, true)
+    }
+
+    fn build(backend: Box<dyn KeyBackend>, env: Box<Env>, asynchronous: bool) -> Self {
         Self {
-            backend,
+            backend: Arc::from(backend),
             env,
-            slots: Mutex::new(HashMap::new()),
+            slots: Slots::default(),
+            asynchronous,
+            on_ready: Arc::default(),
         }
     }
 
@@ -84,6 +124,11 @@ impl SnapshotSecrets {
             .clone()
     }
 
+    /// Calls `ready` whenever an answer from the storage arrives (from the thread that asked).
+    pub fn set_on_ready(&self, ready: OnReady) {
+        *self.on_ready.lock().unwrap_or_else(|e| e.into_inner()) = Some(ready);
+    }
+
     fn slots(&self) -> std::sync::MutexGuard<'_, HashMap<String, Slot>> {
         self.slots.lock().unwrap_or_else(|e| e.into_inner())
     }
@@ -93,8 +138,8 @@ impl SnapshotSecrets {
     }
 
     /// The saved secret, else the environment's. The first read may prompt for access: the lock on
-    /// the cache is never held while it does, because the window asks which secrets exist on
-    /// every frame and must not wait for the user to answer a prompt for an upload.
+    /// the cache is never held while it does, because the window asks the cache every frame and
+    /// must not wait for the user to answer a prompt for an upload. Call it on a worker.
     pub fn value(&self, provider: &str, field: &FieldSpec) -> Option<String> {
         let account = account(provider, field);
         let cached = self
@@ -121,48 +166,73 @@ impl SnapshotSecrets {
         saved.or_else(|| self.environment(field))
     }
 
-    /// Whether a secret is saved, without reading it (so without a prompt). Asks the storage only
-    /// once per secret, and never with the cache locked.
-    fn is_saved(&self, provider: &str, field: &FieldSpec) -> bool {
+    /// Whether a secret is saved, without reading it (so without a prompt), if that is known. The
+    /// first time it is not: the storage is asked on a thread of its own, never with the cache
+    /// locked, and the answer is there on a later frame.
+    fn is_saved(&self, provider: &str, field: &FieldSpec) -> Option<bool> {
         let account = account(provider, field);
         {
-            let slots = self.slots();
-            if let Some(slot) = slots.get(&account) {
-                if slot.loaded {
-                    return slot.value.is_some();
-                }
-                if let Some(exists) = slot.exists {
-                    return exists;
-                }
+            let mut slots = self.slots();
+            let slot = slots.entry(account.clone()).or_default();
+            if slot.loaded {
+                return Some(slot.value.is_some());
             }
+            if let Some(exists) = slot.exists {
+                return Some(exists);
+            }
+            if slot.checking {
+                return None;
+            }
+            slot.checking = self.asynchronous;
         }
-        let found = self.backend.exists(SCOPE, &account);
-        let mut slots = self.slots();
-        let slot = slots.entry(account).or_default();
-        if slot.loaded {
-            return slot.value.is_some();
+        if !self.asynchronous {
+            let found = self.backend.exists(SCOPE, &account);
+            settle(&self.slots, account.clone(), found);
+            return self.slots().get(&account).and_then(|slot| {
+                if slot.loaded {
+                    Some(slot.value.is_some())
+                } else {
+                    slot.exists
+                }
+            });
         }
-        slot.exists = Some(found);
-        found
+        let (backend, slots, on_ready) = (
+            Arc::clone(&self.backend),
+            Arc::clone(&self.slots),
+            Arc::clone(&self.on_ready),
+        );
+        std::thread::spawn(move || {
+            let found = backend.exists(SCOPE, &account);
+            settle(&slots, account, found);
+            let ready = on_ready.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            if let Some(ready) = ready {
+                ready();
+            }
+        });
+        None
     }
 
     pub fn state(&self, provider: &str, field: &FieldSpec) -> SecretState {
-        if self.is_saved(provider, field) {
-            SecretState::Saved
-        } else if self.environment(field).is_some() {
-            SecretState::FromEnvironment
-        } else {
-            SecretState::Missing
+        let environment = self.environment(field).is_some();
+        match self.is_saved(provider, field) {
+            Some(true) => SecretState::Saved,
+            Some(false) if environment => SecretState::FromEnvironment,
+            Some(false) => SecretState::Missing,
+            None if environment => SecretState::FromEnvironment,
+            None => SecretState::Checking,
         }
     }
 
-    /// Which of a provider's secrets have a value. Never prompts.
+    /// Which of a provider's secrets have a value, and whether any is still being asked after.
+    /// Never prompts and never waits.
     pub fn presence(&self, provider: &dyn SnapshotProvider) -> SecretPresence {
         let descriptor = provider.descriptor();
         let mut present = SecretPresence::default();
         for field in descriptor.secret_fields() {
-            if self.state(descriptor.id, field).is_present() {
-                present.insert(field.key);
+            match self.state(descriptor.id, field) {
+                SecretState::Checking => present.mark_pending(),
+                state if state.is_present() => present.insert(field.key),
+                _ => {}
             }
         }
         present
@@ -199,7 +269,7 @@ impl SnapshotSecrets {
             Slot {
                 loaded: true,
                 value: Some(value.to_owned()),
-                exists: None,
+                ..Slot::default()
             },
         );
         Ok(())
@@ -214,7 +284,7 @@ impl SnapshotSecrets {
             Slot {
                 loaded: true,
                 value: None,
-                exists: None,
+                ..Slot::default()
             },
         );
     }
@@ -322,6 +392,90 @@ mod tests {
             !store
                 .presence(&self_hosted::SELF_HOSTED_PROVIDER)
                 .has("token")
+        );
+    }
+
+    /// A secure storage whose `exists` (not only its read) waits to be let go, and counts asks.
+    struct Slow {
+        release: Mutex<std::sync::mpsc::Receiver<()>>,
+        asked: Arc<std::sync::atomic::AtomicUsize>,
+    }
+
+    impl KeyBackend for Slow {
+        fn read(&self, _: Scope, _: &str) -> Option<String> {
+            Some("secret".to_owned())
+        }
+        fn exists(&self, _: Scope, _: &str) -> bool {
+            self.asked.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let _ = self.release.lock().unwrap().recv();
+            true
+        }
+        fn write(&self, _: Scope, _: &str, _: &str) -> Result<(), SecretStoreError> {
+            Ok(())
+        }
+        fn delete(&self, _: Scope, _: &str) -> Result<(), SecretStoreError> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn asking_whether_a_secret_is_saved_never_makes_the_window_wait() {
+        // A secure storage that takes ten seconds to answer (a keyring service starting up) is
+        // asked on a thread of its own; the window, which asks every frame, gets "checking".
+        let (release, released) = std::sync::mpsc::channel();
+        let asked = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let store = SnapshotSecrets::asynchronous(
+            Box::new(Slow {
+                release: Mutex::new(released),
+                asked: Arc::clone(&asked),
+            }),
+            Box::new(|_| None),
+        );
+        let (ready, answered) = std::sync::mpsc::channel();
+        store.set_on_ready(Arc::new(move || {
+            let _ = ready.send(());
+        }));
+        let key = imgbb_key();
+        let started = std::time::Instant::now();
+        for _ in 0..50 {
+            assert_eq!(store.state("imgbb", key), SecretState::Checking);
+        }
+        let presence = store.presence(&imgbb::IMGBB);
+        assert!(presence.is_pending() && !presence.has("key"));
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(2),
+            "the window did not wait for the storage"
+        );
+        assert_eq!(
+            asked.load(std::sync::atomic::Ordering::SeqCst).min(1),
+            asked.load(std::sync::atomic::Ordering::SeqCst),
+            "asked once, however many frames asked meanwhile"
+        );
+        // The answer arrives: the window is told to draw again, and then it reads the answer.
+        release.send(()).unwrap();
+        answered
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("told when the answer arrived");
+        assert_eq!(store.state("imgbb", key), SecretState::Saved);
+        let presence = store.presence(&imgbb::IMGBB);
+        assert!(!presence.is_pending() && presence.has("key"));
+        assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn an_environment_variable_needs_no_answer_from_the_storage() {
+        let (_release, released) = std::sync::mpsc::channel();
+        let store = SnapshotSecrets::asynchronous(
+            Box::new(Slow {
+                release: Mutex::new(released),
+                asked: Arc::default(),
+            }),
+            Box::new(|name| (name == imgbb::KEY_ENV).then(|| "from-env".to_owned())),
+        );
+        assert_eq!(
+            store.state("imgbb", imgbb_key()),
+            SecretState::FromEnvironment,
+            "known at once, though the storage has not answered"
         );
     }
 

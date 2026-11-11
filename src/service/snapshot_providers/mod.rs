@@ -190,15 +190,28 @@ impl std::fmt::Debug for Secrets {
 
 /// Which of a provider's secret fields have a value (saved, or given by the environment).
 #[derive(Clone, Debug, Default)]
-pub struct SecretPresence(BTreeSet<String>);
+pub struct SecretPresence {
+    present: BTreeSet<String>,
+    /// The secure storage has not said yet whether some secret is saved.
+    pending: bool,
+}
 
 impl SecretPresence {
     pub fn has(&self, key: &str) -> bool {
-        self.0.contains(key)
+        self.present.contains(key)
     }
 
     pub fn insert(&mut self, key: &str) {
-        self.0.insert(key.to_owned());
+        self.present.insert(key.to_owned());
+    }
+
+    /// Whether some answer is still to come, so "no key" may only mean "not known yet".
+    pub fn is_pending(&self) -> bool {
+        self.pending
+    }
+
+    pub fn mark_pending(&mut self) {
+        self.pending = true;
     }
 }
 

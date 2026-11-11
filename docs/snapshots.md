@@ -201,7 +201,10 @@ ships no server; its tests use a mock server on this computer.
 - A provider's secrets are in the system's secure storage (`es.nico.degenview.snapshots`, account
   `"{provider}.{field}-v1"`; the self-hosted token keeps its older `host-token-v1`), read only on
   the upload's worker thread, or the field's environment variable (`DEGENVIEW_IMGBB_KEY`,
-  `DEGENVIEW_SNAPSHOT_TOKEN`). They are never in the settings, in SQLite or synced; on Linux they are
+  `DEGENVIEW_SNAPSHOT_TOKEN`). The window never waits for the storage: whether a secret is saved is
+  asked on a thread of its own the first time and cached, the camera menu says "Checking your saved
+  key" until the answer is in, and the cache is never locked while the storage is. They are never in
+  the settings, in SQLite or synced; on Linux they are
   in the Secret Service (see [Flatpak](flatpak.md)), on Windows in Credential Manager (see
   [Windows secret storage](flatpak.md#windows-secret-storage)). Where the store is unavailable one
   cannot be saved: use the environment variable.

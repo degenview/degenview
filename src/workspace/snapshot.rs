@@ -399,6 +399,23 @@ impl ChartWorkspace {
         Some(progress_text(&label, running.started.elapsed()))
     }
 
+    /// The user agreed to upload to the destination asked about: remember it, and go on.
+    fn confirm_consent(&mut self, ctx: &Context) {
+        let Some(waiting) = self.snapshot.consent.take() else {
+            return;
+        };
+        let consented = self
+            .snapshots
+            .as_ref()
+            .map(|host| host.consent(None, &waiting.destination.consent_key()));
+        self.start_snapshot(ctx, waiting.request, Some(waiting.destination));
+        // After the start, which clears the last result: this is news about the answer just given
+        // (it is asked again after a restart), so it must show.
+        if let Some(Err(error)) = consented {
+            self.say(error, true);
+        }
+    }
+
     /// The upload's progress, and the questions it may stop to ask.
     pub(super) fn show_snapshot_sheets(&mut self, ctx: &Context) {
         if let Some(text) = self.progress_notice() {
@@ -436,20 +453,7 @@ impl ChartWorkspace {
                 },
             );
             match outcome {
-                Some(kit::ConfirmOutcome::Confirmed) => {
-                    if let Some(waiting) = self.snapshot.consent.take() {
-                        let consented = self
-                            .snapshots
-                            .as_ref()
-                            .map(|host| host.consent(None, &waiting.destination.consent_key()));
-                        self.start_snapshot(ctx, waiting.request, Some(waiting.destination));
-                        // After the start, which clears the last result: this is news about the
-                        // answer just given (it is asked again next time), so it must show.
-                        if let Some(Err(error)) = consented {
-                            self.say(error, true);
-                        }
-                    }
-                }
+                Some(kit::ConfirmOutcome::Confirmed) => self.confirm_consent(ctx),
                 Some(kit::ConfirmOutcome::Cancelled) => self.snapshot.consent = None,
                 None => {}
             }
@@ -769,6 +773,33 @@ mod tests {
                 .note()
                 .is_some_and(|note| note.contains("access token"))
         );
+    }
+
+    #[test]
+    fn a_consent_that_could_not_be_saved_is_still_said_when_the_upload_goes_ahead() {
+        let mut rig = rig();
+        rig.share_to("https://snap.example.com/up", false);
+        rig.workspace.say("Link copied", false);
+        rig.workspace
+            .begin_snapshot(&rig.ctx, rig.chart_id, SnapshotAction::CopyLink);
+        assert!(rig.workspace.snapshot.consent.is_some(), "asks first");
+        // The settings database stops answering between the question and the answer.
+        let store = rig.workspace.store.clone();
+        let _ = std::thread::spawn(move || {
+            let _held = store.lock().unwrap();
+            panic!("poisons the lock, as a crash while it is held would");
+        })
+        .join();
+        rig.fake
+            .answers
+            .lock()
+            .unwrap()
+            .push(link("https://s.example/a.png"));
+        rig.workspace.confirm_consent(&rig.ctx);
+        assert!(rig.workspace.snapshot_working(), "the upload goes ahead");
+        let (text, error) = rig.notice().expect("what went wrong is said");
+        assert!(error && text.contains("settings database"), "{text}");
+        rig.finish();
     }
 
     #[test]

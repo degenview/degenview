@@ -200,7 +200,12 @@ fn sharing_badge(ui: &mut egui::Ui, input: &SnapshotsInput) {
     };
     let id = provider.descriptor().id;
     let settings = input.prefs.settings_of(id);
-    match provider.readiness(&settings, &input.secrets.presence(provider)) {
+    let present = input.secrets.presence(provider);
+    if present.is_pending() {
+        status_badge(ui, "Checking the saved key", Tone::Neutral);
+        return;
+    }
+    match provider.readiness(&settings, &present) {
         Readiness::Ready => status_badge(
             ui,
             &format!("Sharing to {}", provider.label(&settings)),

@@ -237,10 +237,16 @@ impl ProviderForm {
     }
 }
 
-/// How a provider is doing, for the header.
-fn state_badge(enabled: bool, readiness: &Readiness) -> Option<(&'static str, Tone)> {
+/// How a provider is doing, for the header. `checking`: the secure storage has not said yet
+/// whether its key is saved, so "setup needed" would only be a guess.
+fn state_badge(
+    enabled: bool,
+    readiness: &Readiness,
+    checking: bool,
+) -> Option<(&'static str, Tone)> {
     match (enabled, readiness) {
         (false, _) => None,
+        (true, _) if checking => Some(("Checking", Tone::Neutral)),
         (true, Readiness::Ready) => Some(("Active", Tone::Good)),
         (true, Readiness::Needs(_)) => Some(("Setup needed", Tone::Warning)),
     }
@@ -267,14 +273,21 @@ pub fn provider_card(
     let enabled = input.prefs.provider.as_deref() == Some(descriptor.id);
     let present = input.secrets.presence(provider);
     let readiness = provider.readiness(&settings, &present);
-    let needs_setup = enabled && matches!(readiness, Readiness::Needs(_));
+    let checking = present.is_pending();
+    let needs_setup = enabled && !checking && matches!(readiness, Readiness::Needs(_));
     let is_open = open.unwrap_or(needs_setup);
 
     let width = ui.available_width();
     let mut prepared = kit::card_frame(false).begin(ui);
     let inner = &mut prepared.content_ui;
     inner.set_width(width - 28.0 - 2.0);
-    let (head, toggled) = header(inner, provider, &settings, enabled, &readiness, is_open);
+    let (head, toggled) = header(
+        inner,
+        provider,
+        &settings,
+        (enabled, &readiness, checking),
+        is_open,
+    );
     if toggled {
         // Turning one on turns the other off. It opens, so what it needs is in front of the user.
         actions.push(SnapshotsAction::SetProvider(
@@ -522,8 +535,7 @@ fn header(
     ui: &mut egui::Ui,
     provider: &dyn SnapshotProvider,
     settings: &FieldValues,
-    enabled: bool,
-    readiness: &Readiness,
+    (enabled, readiness, checking): (bool, &Readiness, bool),
     open: bool,
 ) -> (egui::Response, bool) {
     let descriptor = provider.descriptor();
@@ -532,15 +544,16 @@ fn header(
         egui::Sense::click(),
     );
     // Said in words as well: at a narrow width the state is only a coloured dot.
-    let state = match (enabled, readiness) {
+    let word = match (enabled, readiness) {
         (false, _) => "off",
+        (true, _) if checking => "on, checking",
         (true, Readiness::Ready) => "on",
         (true, Readiness::Needs(_)) => "on, setup needed",
     };
     let response = crate::ui::accessibility::label(
         response,
         format!(
-            "{}, {state}, {}",
+            "{}, {word}, {}",
             descriptor.name,
             if open { "expanded" } else { "collapsed" }
         ),
@@ -577,7 +590,7 @@ fn header(
 
     let left = tile.right() + 12.0;
     let right = slot.left() - 12.0;
-    let badge = state_badge(enabled, readiness);
+    let badge = state_badge(enabled, readiness, checking);
     // A narrow page gives the words the room and leaves the state to a dot.
     let compact = right - left < COMPACT_ROOM;
     let state_left = match badge {
@@ -592,7 +605,7 @@ fn header(
         None => right + 4.0,
     };
     let room = state_left - 12.0 - left;
-    let summary_text = if enabled && matches!(readiness, Readiness::Ready) {
+    let summary_text = if enabled && !checking && matches!(readiness, Readiness::Ready) {
         provider.status_line(settings)
     } else {
         descriptor.summary.to_owned()
@@ -870,19 +883,24 @@ mod tests {
 
     #[test]
     fn the_header_says_how_a_provider_is_doing() {
-        assert_eq!(state_badge(false, &Readiness::Ready), None);
+        assert_eq!(state_badge(false, &Readiness::Ready, false), None);
         assert_eq!(
-            state_badge(false, &Readiness::Needs("x".into())),
+            state_badge(false, &Readiness::Needs("x".into()), false),
             None,
             "an off provider has nothing to report"
         );
         assert_eq!(
-            state_badge(true, &Readiness::Ready),
+            state_badge(true, &Readiness::Ready, false),
             Some(("Active", Tone::Good))
         );
         assert_eq!(
-            state_badge(true, &Readiness::Needs("x".into())),
+            state_badge(true, &Readiness::Needs("x".into()), false),
             Some(("Setup needed", Tone::Warning))
+        );
+        assert_eq!(
+            state_badge(true, &Readiness::Needs("x".into()), true),
+            Some(("Checking", Tone::Neutral)),
+            "while the key is being looked for, no guess"
         );
     }
 
