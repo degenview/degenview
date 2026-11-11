@@ -299,57 +299,45 @@ pub(crate) fn field(
     ui.add_space(6.0);
     let focused = ui.memory(|memory| memory.has_focus(id));
     let mut edit = None;
-    egui::Frame::new()
-        .fill(theme::with_alpha(theme::editor_background(), 0.7))
-        .corner_radius(8.0)
-        .stroke(egui::Stroke::new(
-            1.0,
-            if focused {
-                theme::with_alpha(theme::text_secondary(), 0.7)
+    kit::input_frame(focused).show(ui, |ui| {
+        ui.set_width(ui.available_width());
+        ui.set_height(kit::FIELD_HEIGHT);
+        ui.horizontal_centered(|ui| {
+            let eye = if secret {
+                22.0 + ui.spacing().item_spacing.x
             } else {
-                kit::primary(0.15)
-            },
-        ))
-        .inner_margin(egui::Margin::symmetric(10, 0))
-        .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.set_height(36.0);
-            ui.horizontal_centered(|ui| {
-                let eye = if secret {
-                    22.0 + ui.spacing().item_spacing.x
+                0.0
+            };
+            edit = Some(
+                ui.add(
+                    egui::TextEdit::singleline(text)
+                        .id(id)
+                        .frame(egui::Frame::NONE)
+                        .font(egui::FontId::proportional(kit::size::BODY))
+                        .text_color(theme::text_primary())
+                        .hint_text(kit::text(
+                            prompt,
+                            kit::size::BODY,
+                            kit::REGULAR,
+                            theme::text_tertiary(),
+                        ))
+                        .password(secret && !revealed)
+                        .desired_width(ui.available_width() - eye),
+                ),
+            );
+            if secret {
+                let (icon, tip) = if revealed {
+                    (Icon::EyeSlash, format!("Hide {title}"))
                 } else {
-                    0.0
+                    (Icon::Eye, format!("Show {title}"))
                 };
-                edit = Some(
-                    ui.add(
-                        egui::TextEdit::singleline(text)
-                            .id(id)
-                            .frame(egui::Frame::NONE)
-                            .font(egui::FontId::proportional(kit::size::BODY))
-                            .text_color(theme::text_primary())
-                            .hint_text(kit::text(
-                                prompt,
-                                kit::size::BODY,
-                                kit::REGULAR,
-                                theme::text_tertiary(),
-                            ))
-                            .password(secret && !revealed)
-                            .desired_width(ui.available_width() - eye),
-                    ),
-                );
-                if secret {
-                    let (icon, tip) = if revealed {
-                        (Icon::EyeSlash, format!("Hide {title}"))
-                    } else {
-                        (Icon::Eye, format!("Show {title}"))
-                    };
-                    if icons::button(ui, icon, 22.0, theme::text_secondary(), &tip).clicked() {
-                        revealed = !revealed;
-                        ui.data_mut(|data| data.insert_temp(revealed_id, revealed));
-                    }
+                if icons::button(ui, icon, 22.0, theme::text_secondary(), &tip).clicked() {
+                    revealed = !revealed;
+                    ui.data_mut(|data| data.insert_temp(revealed_id, revealed));
                 }
-            });
+            }
         });
+    });
     if let Some(hint) = hint {
         ui.add_space(6.0);
         ui.label(kit::text(

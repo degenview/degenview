@@ -2376,6 +2376,28 @@ pub fn paint_switch(painter: &egui::Painter, rect: Rect, progress: f32, dimmed: 
     );
 }
 
+/// The height of a text field in a Settings page and in a sheet: one size, so a form never
+/// mixes tall and short inputs. The frame's hairline is outside it.
+pub const FIELD_HEIGHT: f32 = 36.0;
+
+/// The well of a text field of [`FIELD_HEIGHT`]: fill the field's own content to that height
+/// (`ui.set_height(FIELD_HEIGHT)`) with the content centred. Settings pages and the webhook sheet
+/// use it; `focused` lightens the hairline.
+pub fn input_frame(focused: bool) -> egui::Frame {
+    egui::Frame::new()
+        .fill(theme::with_alpha(theme::editor_background(), 0.7))
+        .corner_radius(8.0)
+        .stroke(Stroke::new(
+            1.0,
+            if focused {
+                theme::with_alpha(theme::text_secondary(), 0.7)
+            } else {
+                primary(0.15)
+            },
+        ))
+        .inner_margin(egui::Margin::symmetric(10, 0))
+}
+
 /// The rounded well a form input sits in; `focused` rings it in the accent colour.
 pub fn field_frame(focused: bool) -> egui::Frame {
     egui::Frame::new()

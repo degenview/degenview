@@ -772,6 +772,11 @@ mod tests {
             name: "X-Source".into(),
             value: "degenview".into(),
         });
+        first.headers.push(crate::model::webhook::WebhookHeader {
+            id: 2,
+            name: String::new(),
+            value: String::new(),
+        });
         let endpoints = vec![
             first,
             endpoint(
@@ -805,7 +810,7 @@ mod tests {
                     error: Some(WebhookDeliveryError::NetworkFailure),
                 });
                 if sheet {
-                    state.editor = Some(WebhookEditorState::new_blank());
+                    state.editor = Some(WebhookEditorState::editing(&endpoints[0], None));
                 }
                 let mut last = None;
                 for _ in 0..3 {
