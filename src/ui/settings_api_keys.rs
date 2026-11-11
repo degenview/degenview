@@ -384,30 +384,41 @@ fn step(ui: &mut egui::Ui, number: usize, text: &str) {
         ui.spacing_mut().item_spacing.x = 10.0;
         let (badge, _) = ui.allocate_exact_size(egui::Vec2::splat(20.0), egui::Sense::hover());
         ui.painter()
-            .circle_filled(badge.center(), 10.0, theme::with_alpha(kit::ACCENT, 0.14));
+            .circle_filled(badge.center(), 10.0, theme::ink(14));
         let digit = kit::galley(
             ui,
             &number.to_string(),
             kit::size::CAPTION + 0.5,
             kit::BOLD,
-            kit::ACCENT,
+            theme::text_secondary(),
             20.0,
         );
-        ui.painter()
-            .galley(badge.center() - digit.size() / 2.0, digit, kit::ACCENT);
+        ui.painter().galley(
+            badge.center() - digit.size() / 2.0,
+            digit,
+            theme::text_secondary(),
+        );
         ui.label(kit::text(text, 12.0, kit::REGULAR, theme::text_secondary()));
     });
 }
 
-/// A link with a leading "open" glyph, in the accent colour.
+/// A link with a leading "open" glyph: gray and underlined, as every link is.
 pub(crate) fn link(ui: &mut egui::Ui, label: &str, url: &str) {
     let response = ui
         .horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 5.0;
-            icons::inline(ui, Icon::ArrowUpRightSquare, 12.0, kit::ACCENT);
+            icons::inline(ui, Icon::ArrowUpRightSquare, 12.0, theme::text_secondary());
             ui.add(
-                egui::Label::new(kit::text(label, kit::size::BODY, kit::REGULAR, kit::ACCENT))
-                    .sense(egui::Sense::click()),
+                egui::Label::new(
+                    kit::text(
+                        label,
+                        kit::size::BODY,
+                        kit::REGULAR,
+                        theme::text_secondary(),
+                    )
+                    .underline(),
+                )
+                .sense(egui::Sense::click()),
             )
         })
         .inner
@@ -557,7 +568,7 @@ pub fn coinmarketcap_body(
     kit::notice_card(
         ui,
         Icon::InfoCircle,
-        kit::ACCENT,
+        theme::text_secondary(),
         "A key is optional",
         Some(
             "CoinMarketCap works without an API key. Adding one gives DegenView higher API rate limits.",

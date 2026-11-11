@@ -344,7 +344,7 @@ pub fn body(
     kit::notice_card(
         ui,
         Icon::InfoCircle,
-        kit::ACCENT,
+        theme::text_secondary(),
         "Your script is sent to the provider",
         Some(&format!(
             "When you ask the assistant for a change, the open script and your message are sent to {provider} with your key. DegenView has no server in between, and you pay {provider} for the usage."

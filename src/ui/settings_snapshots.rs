@@ -12,7 +12,7 @@ use crate::ui::alert_center::Tone;
 use crate::ui::icons::Icon;
 use crate::ui::settings_api_keys::{Autosave, StatusMessage, destructive_button, field};
 use crate::ui::settings_window::{card, section, status_badge, status_message};
-use crate::ui::{kit, settings_card};
+use crate::ui::{kit, settings_card, theme};
 use eframe::egui;
 
 /// What the page shows.
@@ -169,7 +169,7 @@ pub fn body(
     kit::notice_card(
         ui,
         Icon::InfoCircle,
-        kit::ACCENT,
+        theme::text_secondary(),
         "DegenView does not host snapshots",
         Some(
             "Sharing uploads the image to the host above, which you run or trust. Saving or \

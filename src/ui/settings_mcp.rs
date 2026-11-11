@@ -576,7 +576,9 @@ fn server_section(
                 );
             });
         });
-        if let Some(notice) = input.notice {
+        // A failure the Status row already gives (the port is in use) is said there only.
+        let said_in_status = matches!(input.status, McpStatus::Failed(reason) if Some(reason.as_str()) == input.notice);
+        if let Some(notice) = input.notice.filter(|_| !said_in_status) {
             ui.add_space(8.0);
             status_message(ui, notice, true);
         }
