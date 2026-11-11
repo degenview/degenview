@@ -205,7 +205,7 @@ never for a restyle. Rendering is limited to the visible bars.
 
 ## Testing and visual checks
 
-Builders, look rules, geometry, the Pine semantics (`pine/chart_type_tests.rs`), alerts, replay
+Builders, look rules, geometry, the Pine semantics (`pine/tests/chart_type.rs`), alerts, replay
 prefixes, persistence and the headless painters are unit-tested. Every type was drawn by eye in a
 release build, in light and dark, over live Binance candles with a throwaway data folder, including
 indicators, a `barcolor()` pane script and a `plotcandle()` overlay on Renko and Heikin Ashi. The

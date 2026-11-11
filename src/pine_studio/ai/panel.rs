@@ -1,6 +1,6 @@
 //! The assistant's panel under the editor: the conversation, the change it proposes as a diff, and
 //! the box to ask for the next one. A view only: it reads the [`Assistant`] and reports what was
-//! pressed; `ai_host` acts on it.
+//! pressed; `ai::host` acts on it.
 
 use super::models::{self, ModelList};
 use super::plan::Plan;

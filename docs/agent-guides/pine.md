@@ -57,7 +57,7 @@
 - `matrix.*` lives in `matrix_builtins` (names in `MEMBERS`, which the editor offers directly). Element
   arithmetic (`sum`, `diff`, `mult`) goes through `operators::apply` so ints stay ints and `na`
   propagates like the operators; anything numerical that returns floats (`pow`, `kron`, linear algebra)
-  converts to `pine::linalg::Dense` (NaN stands for `na`) and back. A shape or operand a function cannot
+  converts to `pine::builtins::matrix::linalg::Dense` (NaN stands for `na`) and back. A shape or operand a function cannot
   use is `PINE4037`; an index or range outside the matrix is `PINE4010`. `Bound` holds six arguments
   (`matrix.fill`), so a new builtin with more needs `BOUND_CAPACITY` raised and `tools/pine-bench.sh` run.
   Linear algebra (`det`, `inv`, `pinv`, `rank`, `eigenvalues`, `eigenvectors`) is `linalg::Dense`: LU for
@@ -132,12 +132,12 @@
   closes, so a limit can be passed within a bar before it is seen. OCA groups (`oca_name` with `oca_type`
   cancel or reduce) apply to entries and orders; an exit's own `oca_name` is still ignored.
 - An `input.*` call's arguments are matched to parameters by name or by position in
-  `pine::input_arguments` (each function has its own order; `input.int`/`float` take a range or, when the
+  `pine::inputs::arguments` (each function has its own order; `input.int`/`float` take a range or, when the
   third place holds a list, `options`). `InputDefinition::control` says what edits it beyond its value type:
   `input.price` is a float, `symbol`/`session`/`text_area` and a `timeframe` without `options` are strings
   with their own controls (`pine_studio::inputs`), and the stored value of each is the plain
   `InputValue` it always was, so saved inputs are unchanged. `display` is warned about.
-- `active` is compiled by `pine::input_activity` into `InputDefinition::active`: an expression over inputs
+- `active` is compiled by `pine::inputs::activity` into `InputDefinition::active`: an expression over inputs
   declared above it (kept by name) and the script's constants (folded to literals), evaluated by
   `InputSchema::is_active` against the values being edited with `compiler::constant_value`, which also
   folds comparisons, `and`/`or`/`not` and `?:`. The form draws a card whose condition fails disabled; the
@@ -157,10 +157,10 @@
 
 ## Editor
 
-- Editing assistance belongs in pure `pine_studio::edit_ops`, not `editor.rs`. Operations take
+- Editing assistance belongs in pure `pine_studio::editor::edit_ops`, not `editor.rs`. Operations take
   text plus selection and return one `Edit` or `None`. Indices are character offsets. Indentation is
   four spaces; Pine braces are not paired.
-- `pine_studio::syntax` is the sole per-text classification. Strings come from the lexer;
+- `pine_studio::editor::syntax` is the sole per-text classification. Strings come from the lexer;
   comment scanning respects strings; names match whole tokens. Do not use lexer indent/dedent to
   decide editor indentation because incomplete parentheses erase them. It produces `SyntaxRole`s,
   never colours: `classify(source, Some(&table))` takes the cached `EditorState::symbols()` (scope-aware,
@@ -174,7 +174,7 @@
   theme and font are kept by `host::editor_theme_host` (saved after a pause, never while Settings draws);
   change them through it so every window repaints. See [Editor themes](../editor-themes.md).
 - Completion does not compile, run, re-lex, or access network/storage. Builtins come from the symbol
-  catalog and signatures from `pine_studio::signature`. Add new builtins to both tables.
+  catalog and signatures from `pine_studio::editor::signature`. Add new builtins to both tables.
   `array.*` and `map.*` names are offered straight from `array_builtins::KNOWN` / `map_builtins::NAMES`
   (and their signatures from `parameters()`), so a new one needs no editor edit.
   The suggestion list shows `COMPLETION_ROWS` (10) rows and scrolls to the highlight on ↑/↓: the key
@@ -182,13 +182,13 @@
   `CompletionView::scroll_to_selected` instead of reading `key_pressed`. Accepting an `Item` with
   `callable` set (builtin functions, user `name(args) =>` definitions) writes `name()` with the caret
   between the parentheses, unless a `(` already follows.
-- `pine_studio::diff` is the sole saved-vs-source comparison. Cache `EditorState::changes()` for
+- `pine_studio::editor::diff` is the sole saved-vs-source comparison. Cache `EditorState::changes()` for
   gutter, status, popover, and revert; never diff while painting. Hunks use zero-based half-open
   ranges and preserve terminators. Deleted hunks sit at `new_lines.start`, without fake rows;
   `is_dirty()` remains a string comparison.
 - `revert_edit` must reject stale text. Apply through `apply_hunk_edit` so revert is one undo step.
   Only `mark_saved`/`replace_source(saved)` move the baseline. Use `theme::editor_diff_*` colors.
-- `pine_studio::symbols` resolves names for go-to-definition and rename. It reads lexer tokens, not
+- `pine_studio::editor::symbols` resolves names for go-to-definition and rename. It reads lexer tokens, not
   the AST (which has no span for parameters, loop variables, tuple names or aliases and drops every
   statement it cannot parse), so it works on a script mid-edit. Scopes come from each statement's raw
   leading whitespace; a declaration is visible from the end of its statement and block; values and
@@ -198,7 +198,7 @@
   Test it with CRLF and astral characters; every range is a char index.
 - Multiple carets: egui's text field keeps the *primary* caret (it draws and moves it);
   `editor/carets.rs` holds the others in `CaretState::extra`. While extras exist, `carets::apply` takes
-  the editing and moving keys before egui and runs them through pure `pine_studio::multi_cursor`,
+  the editing and moving keys before egui and runs them through pure `pine_studio::editor::multi_cursor`,
   which reuses `edit_ops` per caret against one shared scan and lays the edits down together (an edit
   overlapping an earlier one drops its caret). Extras belong to the text they were made in: any other
   change (egui typing, undo, find/replace, rename, sync) fails the `hash` check and drops them, which is
@@ -216,7 +216,7 @@
 - Constant colours get a swatch (`editor/swatches.rs`, [Pine colour picker](../pine-color-picker.md)). The room
   for it is a section's `leading_space` from `syntax::layout_job_with_gaps`, so text and offsets are untouched but
   a row with a colour is wider than `columns * char_width`: take positions from the galley, never from a column.
-  Detection reads lexer tokens in `pine_studio::color_sites`; a picker edit is rewritten from the text the
+  Detection reads lexer tokens in `pine_studio::editor::color_sites`; a picker edit is rewritten from the text the
   gesture began with and is one undo step through `UndoGesture`, never a second undo stack.
 - The right-click menu, the ⌘-hover cue and the inline rename box are `editor/navigation.rs`. An egui
   `Area` takes no focus on its first frame (it only measures), so the rename field asks for it on the
@@ -224,7 +224,7 @@
 
 ## Drawer tabs
 
-- The preview drawer's Report, Problems and Profile tabs share `pine_studio::tab_chrome`: a 46px
+- The preview drawer's Report, Problems and Profile tabs share `pine_studio::drawer::tab_chrome`: a 46px
   toolbar with a `state_field`, a hairline, then cards of rows. The Logs tab (`ui::pine_logs_view`,
   shared with the chart workspace) mirrors its constants; keep `TOOLBAR_HEIGHT`, `MARGIN` and
   `BUTTON` equal.
@@ -237,7 +237,7 @@
 - A tab with nothing to show says so with `centered` + `pine_logs_view::intro` (picture, three steps,
   an example; see `drawer_intro`), never a bare text placeholder. That covers Inputs too
   (`drawer_intro::inputs`); `drawer_tabs_tests::inputs_fit_the_drawer` checks it at the five sizes.
-- The Pine Studio with no scripts at all uses the same pieces (`pine_studio::empty_library`): the detail
+- The Pine Studio with no scripts at all uses the same pieces (`pine_studio::library::empty_library`): the detail
   area is `centered` + `intro` with the two ways to begin as its footer, the sidebar list a short form with the
   same picture. A search with no match stays the small "No matches" tile. Pictures: `cargo test --lib
   empty_library -- --ignored` with `DEGENVIEW_GALLERY_DIR` set.
@@ -249,7 +249,7 @@
 ## Manager lifecycle
 
 - **Scripts edited outside the app** (a person's editor, a coding agent working in the Scripts folder)
-  reach the open editor through `pine_studio::external` (a pure state machine; `mod.rs` does the
+  reach the open editor through `pine_studio::library::external` (a pure state machine; `mod.rs` does the
   I/O, `disk_banner` draws the question). The sidebar already followed the folder (1.5 s rescan); the
   open script's *text* now does too: every ~400 ms only the file's metadata is read
   (`ScriptStore::file_stamp`), and a moved file, or one still settling, triggers a rescan and
@@ -268,13 +268,13 @@
   debounced apply and stale output; it has no alert coordinator. `pine_studio::inputs` renders a
   precompiled `InputSchema` and is shared with chart settings.
 - A script can fail at run time after it compiles (the compiler judges some names only when they run).
-  `pine_studio::problems` is the one list of what is wrong: the compile diagnostics plus the chart's
+  `pine_studio::drawer::problems` is the one list of what is wrong: the compile diagnostics plus the chart's
   and the profile's failure, each only if its run was of the text now in the editor and never beside a
   compile error. The Problems tab and its badge, the editor's chip and the red underline all read it, so
   a failure must not be handled in one place only. `ExecutionController` remembers its last failure
   (`last_error`) and an update that changes nothing repeats it: it used to report a failure once and then
   read as a success.
-- **A new builtin is registered in `pine::registry`.** The registry gathers the per-module name lists
+- **A new builtin is registered in `pine::compiler::registry`.** The registry gathers the per-module name lists
   (`array_builtins::KNOWN`, `math::SUPPORTED`, `drawings::NAMESPACES`, `strategy_builtins::NAMES`, …) plus
   the few names the session evaluates inline (`TA_INLINE`, `STR_INLINE`, `OTHER_FUNCTIONS`), and the
   compiler and the editor's completion read it. The module tables stay what the interpreter dispatches
@@ -315,11 +315,11 @@
   `unsaved` flow. Tab close starts `begin_exit(CloseTab)` and cancels close; app quit/update restart
   use `DegenViewApp::request_quit` plus the native termination intercept. A failed save cancels exit.
   Don't Save restores saved text and calls `ScriptStore::discard_draft`.
-- `pine_studio::demo` seeds examples once and on demand from an empty state. Deleted demos stay
+- `pine_studio::library::demo` seeds examples once and on demand from an empty state. Deleted demos stay
   deleted. Names equal filenames without a “Demo” prefix. Examples must be original GPL-compatible
   work and compile with zero diagnostics, including warnings.
 
-`src/pine/corpus_tests.rs` uses the optional cached community corpus in `tools/pine-corpus/`. Reduce
+`src/pine/tests/corpus.rs` uses the optional cached community corpus in `tools/pine-corpus/`. Reduce
 failures with original code; never copy corpus scripts into the repository.
 
 ## iCloud Sync

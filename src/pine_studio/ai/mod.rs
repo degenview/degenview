@@ -1,6 +1,6 @@
 //! The assistant's state: the conversation about the open script, the request in flight, and the
-//! change it proposed. No egui and no store; `ai_host` connects it to the Pine Studio and
-//! `ai_panel` draws it.
+//! change it proposed. No egui and no store; `ai::host` connects it to the Pine Studio and
+//! `ai::panel` draws it.
 //!
 //! A reply streams on its own thread and arrives over a channel, so the UI never waits on the
 //! network. Nothing here changes the script: a finished reply becomes a [`Proposal`] that the user
@@ -30,7 +30,7 @@ use self::review::Review;
 use self::tools::Draft;
 use super::editor::diff::DiffSnapshot;
 use super::model::ScriptId;
-use crate::pine::token::{Diagnostic, DiagnosticSeverity};
+use crate::pine::syntax::token::{Diagnostic, DiagnosticSeverity};
 use crate::service::llm::prefs::AiPrefs;
 use crate::service::llm::report::ErrorReport;
 use crate::service::llm::{ChatRequest, LlmError, LlmProvider, ProviderKind};
@@ -711,7 +711,7 @@ mod tests {
         let diagnostic = |severity| Diagnostic {
             code: "X".into(),
             severity,
-            category: crate::pine::token::DiagnosticCategory::Semantic,
+            category: crate::pine::syntax::token::DiagnosticCategory::Semantic,
             message: "m".into(),
             range: Default::default(),
         };

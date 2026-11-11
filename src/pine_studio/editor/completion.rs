@@ -7,8 +7,8 @@
 use super::edit_ops;
 use super::symbols::{self, SymbolTable};
 use super::syntax;
-use crate::pine::symbol_catalog as catalog;
-use crate::pine::{misc_builtins, registry, ta_extra};
+use crate::pine::compiler::symbol_catalog as catalog;
+use crate::pine::{builtins::misc, builtins::ta::extra, compiler::registry};
 use std::collections::BTreeSet;
 use std::ops::Range;
 use std::sync::OnceLock;
@@ -167,7 +167,7 @@ pub fn builtins() -> &'static [Item] {
         for name in catalog::FUNCTIONS {
             add(name, Kind::Function);
         }
-        for name in ta_extra::VARIABLES
+        for name in extra::VARIABLES
             .iter()
             .chain(&registry::DRAWING_COLLECTIONS)
         {
@@ -180,8 +180,8 @@ pub fn builtins() -> &'static [Item] {
         // feed, which are registered so the compiler knows them but are not worth suggesting.
         for name in registry::all_functions().iter().filter(|name| {
             let name = name.as_str();
-            (!misc_builtins::UNAVAILABLE_FEEDS.contains(&name) || name == "request.currency_rate")
-                && !misc_builtins::CURRENCY_CONVERSIONS.contains(&name)
+            (!misc::UNAVAILABLE_FEEDS.contains(&name) || name == "request.currency_rate")
+                && !misc::CURRENCY_CONVERSIONS.contains(&name)
                 && name != "chart.point"
         }) {
             add(name, Kind::Function);
@@ -391,7 +391,7 @@ fn member_items(table: &SymbolTable, caret: usize, prefix: &str) -> Option<Vec<I
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pine::{array_builtins, drawings, map_builtins, matrix_builtins};
+    use crate::pine::{builtins::array, builtins::map, builtins::matrix, outputs::drawings};
 
     fn labels(completion: &Completion) -> Vec<&str> {
         completion.items.iter().map(|i| i.label.as_str()).collect()
@@ -401,8 +401,8 @@ mod tests {
     /// computed by the session and missing from the `str` table the check reads.
     #[test]
     fn no_offered_function_is_reported_as_unknown() {
+        use crate::pine::check::name_check::UNKNOWN_MEMBER;
         use crate::pine::compiler::{NoLibraries, compile};
-        use crate::pine::name_check::UNKNOWN_MEMBER;
         let prefixes = ["array.", "map.", "matrix.", "math.", "str.", "ta."];
         let mut wrongly_unknown = Vec::new();
         for item in builtins() {
@@ -456,11 +456,11 @@ mod tests {
         for name in drawings::CHART_POINT_NAMES {
             assert!(offered.contains(name), "{name}");
         }
-        for member in matrix_builtins::MEMBERS {
+        for member in matrix::MEMBERS {
             let name = format!("matrix.{member}");
             assert!(offered.contains(&name.as_str()), "{name}");
         }
-        for name in array_builtins::KNOWN.iter().chain(&map_builtins::NAMES) {
+        for name in array::KNOWN.iter().chain(&map::NAMES) {
             assert!(offered.contains(name), "{name}");
         }
         for name in [

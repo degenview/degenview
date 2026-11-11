@@ -13,10 +13,10 @@ pub(in crate::pine_studio) mod tabs_tests;
 use self::tab_chrome::{self as chrome, BUTTON, card, hairline};
 use super::library::prefs::DrawerTab;
 use crate::model::alert::pine::frequency_name;
-use crate::pine::program::VisualOutput;
-use crate::pine::state::AlertEvent;
+use crate::pine::compiler::program::VisualOutput;
+use crate::pine::runtime::state::AlertEvent;
 use crate::pine::strategy::{StrategyReport, Trade};
-use crate::pine::token::{Diagnostic, DiagnosticSeverity};
+use crate::pine::syntax::token::{Diagnostic, DiagnosticSeverity};
 use crate::ui::icons::{self, Icon};
 use crate::ui::pine_report::{self, PineReportFormat};
 use crate::ui::{kit, theme};
@@ -466,7 +466,7 @@ fn list_row(ui: &mut Ui, row: &ListRow<'_>) -> egui::Response {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pine::token::{DiagnosticCategory, SourcePosition, SourceRange};
+    use crate::pine::syntax::token::{DiagnosticCategory, SourcePosition, SourceRange};
 
     fn diag(code: &str, severity: DiagnosticSeverity, line: usize, offset: usize) -> Diagnostic {
         Diagnostic {
@@ -950,7 +950,7 @@ fn alert_row(ui: &mut Ui, alert: &AlertEvent) {
 #[cfg(test)]
 mod report_tests {
     use super::*;
-    use crate::pine::alert_frequency::AlertFrequency;
+    use crate::pine::builtins::alert::frequency::AlertFrequency;
 
     fn alert(id: usize, live: bool) -> AlertEvent {
         AlertEvent {

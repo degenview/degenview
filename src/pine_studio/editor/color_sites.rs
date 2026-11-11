@@ -13,8 +13,8 @@
 //! draws. Every range is in characters (what egui's cursor counts), not bytes or UTF-16 units.
 
 use crate::pine::builtins;
-use crate::pine::lexer::Lexer;
-use crate::pine::token::{Token, TokenKind, ValueType};
+use crate::pine::syntax::lexer::Lexer;
+use crate::pine::syntax::token::{Token, TokenKind, ValueType};
 use std::ops::Range;
 
 /// Deep enough for any real expression; stops `((((…` from running the parser out of stack.

@@ -1,7 +1,7 @@
 # Pine colour swatches and picker
 
 A small square in front of every constant colour in the Pine editor; a click opens a picker that
-rewrites the colour in the source. Code: `pine_studio/color_sites.rs` (detection, values, rewriting;
+rewrites the colour in the source. Code: `pine_studio/editor/color_sites.rs` (detection, values, rewriting;
 no egui), `pine_studio/editor/swatches.rs` (swatches, the picker's life, applying edits),
 `ui/color_picker/inline.rs` (the picker's widgets, shared painting and HSV maths with
 `ui/color_picker.rs`).

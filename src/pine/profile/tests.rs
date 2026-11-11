@@ -5,10 +5,10 @@
 use std::sync::Arc;
 
 use crate::model::Kline;
-use crate::pine::bench_tests::{self, bars, run_script};
 use crate::pine::compiler::{self, NoLibraries};
-use crate::pine::session::Session;
-use crate::pine::token::Limits;
+use crate::pine::runtime::session::Session;
+use crate::pine::syntax::token::Limits;
+use crate::pine::tests::bench::{self, bars, run_script};
 
 use super::*;
 
@@ -312,7 +312,7 @@ fn a_call_is_charged_to_the_statement_that_made_it_without_its_body() {
 #[test]
 fn nested_functions_do_not_double_count() {
     let data = bars(15, 60_000);
-    let report = profile(bench_tests::NESTED_FUNCTIONS, &data);
+    let report = profile(bench::NESTED_FUNCTIONS, &data);
     assert_consistent(&report);
     let (hottest, stats) = report.hottest_function().expect("a function ran");
     let name = report.table.get(hottest).unwrap().name.clone();
@@ -520,8 +520,8 @@ fn calibration_reports_what_measuring_costs_and_never_subtracts_it() {
 // MARK: Equivalence
 
 fn plain_and_profiled(source: &str, data: &[Kline], security: bool) -> (u64, u64) {
-    let plain = bench_tests::checksum(&run_script(source, data, security, |_| {}).output());
-    let profiled = bench_tests::checksum(
+    let plain = bench::checksum(&run_script(source, data, security, |_| {}).output());
+    let profiled = bench::checksum(
         &run_script(source, data, security, |session| {
             let runtime = recorder(session, 7);
             session.attach_profiler(runtime);
@@ -535,13 +535,13 @@ fn plain_and_profiled(source: &str, data: &[Kline], security: bool) -> (u64, u64
 fn profiling_changes_no_output() {
     let data = bars(600, 60_000);
     let cases: [(&str, String, bool); 7] = [
-        ("simple", bench_tests::SIMPLE.to_owned(), false),
-        ("many ta", bench_tests::MANY_TA.to_owned(), false),
-        ("containers", bench_tests::CONTAINERS.to_owned(), false),
-        ("functions", bench_tests::NESTED_FUNCTIONS.to_owned(), false),
-        ("history", bench_tests::LONG_HISTORY.to_owned(), false),
-        ("strategy", bench_tests::STRATEGY.to_owned(), false),
-        ("security", bench_tests::SECURITY.to_owned(), true),
+        ("simple", bench::SIMPLE.to_owned(), false),
+        ("many ta", bench::MANY_TA.to_owned(), false),
+        ("containers", bench::CONTAINERS.to_owned(), false),
+        ("functions", bench::NESTED_FUNCTIONS.to_owned(), false),
+        ("history", bench::LONG_HISTORY.to_owned(), false),
+        ("strategy", bench::STRATEGY.to_owned(), false),
+        ("security", bench::SECURITY.to_owned(), true),
     ];
     for (name, source, security) in cases {
         let (plain, profiled) = plain_and_profiled(&source, &data, security);
@@ -555,8 +555,8 @@ fn profiling_changes_no_output() {
 #[test]
 fn profiling_a_strategy_leaves_its_trades_and_alerts_as_they_were() {
     let data = bars(600, 60_000);
-    let plain = run_script(bench_tests::STRATEGY, &data, false, |_| {});
-    let mut profiled = run_script(bench_tests::STRATEGY, &data, false, |session| {
+    let plain = run_script(bench::STRATEGY, &data, false, |_| {});
+    let mut profiled = run_script(bench::STRATEGY, &data, false, |session| {
         let runtime = recorder(session, 7);
         session.attach_profiler(runtime);
     });
@@ -951,7 +951,7 @@ fn time_spent_waiting_for_data_is_in_no_region_and_not_in_the_total() {
 
 #[test]
 fn the_meter_forwards_every_request_and_counts_the_time() {
-    use crate::pine::runtime_support::{ChartSpan, SecurityDataProvider, SecurityKey};
+    use crate::pine::runtime::support::{ChartSpan, SecurityDataProvider, SecurityKey};
 
     struct Slow;
     impl SecurityDataProvider for Slow {
@@ -980,7 +980,7 @@ fn the_meter_forwards_every_request_and_counts_the_time() {
 
 #[test]
 fn a_slow_fetch_is_not_charged_to_the_line_that_asked_for_it() {
-    use crate::pine::runtime_support::{SecurityDataProvider, SecurityKey};
+    use crate::pine::runtime::support::{SecurityDataProvider, SecurityKey};
 
     struct Slow;
     impl SecurityDataProvider for Slow {
@@ -1026,7 +1026,7 @@ fn controller_run(
     cancel: &Arc<std::sync::atomic::AtomicBool>,
     steps: &[usize],
 ) -> (ProfileReport, u64) {
-    use crate::pine::execution::ExecutionController;
+    use crate::pine::runtime::execution::ExecutionController;
     use std::sync::atomic::{AtomicU64, Ordering};
 
     let progress = Arc::new(AtomicU64::new(0));
@@ -1170,7 +1170,7 @@ fn a_bar_that_never_ended_still_adds_up() {
 
 #[test]
 fn a_panic_inside_a_security_fetch_leaves_a_consistent_failed_report() {
-    use crate::pine::runtime_support::{SecurityDataProvider, SecurityKey};
+    use crate::pine::runtime::support::{SecurityDataProvider, SecurityKey};
 
     struct Panics;
     impl SecurityDataProvider for Panics {

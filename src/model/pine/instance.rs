@@ -3,7 +3,7 @@
 //! `ChartScriptInstance`; the source is stored with the instance (as `PineAlertSubscription` does),
 //! so a restored chart needs no script store to run it.
 
-use crate::pine::program::InputValue;
+use crate::pine::compiler::program::InputValue;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 

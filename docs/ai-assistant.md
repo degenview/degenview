@@ -171,7 +171,7 @@ the editor's Profile column or tab and a profile the user made is not disturbed.
   turn; a failed call; Ask refused; step cap; repeat guard; cancel; refused tools; no tools = one request),
   the draft becoming a proposal (CRLF kept, nothing changed, failure and Stop and step limit keep the work),
   and the whole window (an edit through tools, Apply, the trail drawing at a small size).
-  Pictures: `pine_studio::ai_gallery` (scenes "tools", "tools-incomplete").
+  Pictures: `pine_studio::ai::gallery` (scenes "tools", "tools-incomplete").
 
 ## The panel (phase 2)
 
@@ -200,7 +200,7 @@ the editor's Profile column or tab and a profile the user made is not disturbed.
 - The panel says what it sends ("Sent to OpenAI: this script and your message") above the Send
   button, and a missing key shows a setup card with Open Settings.
 - Pictures for a person to look at: `DEGENVIEW_GALLERY_DIR=… cargo test --lib
-  pine_studio::ai_gallery -- --ignored` (both themes, wide and narrow).
+  pine_studio::ai::gallery -- --ignored` (both themes, wide and narrow).
 
 ## Manual and Auto
 

@@ -10,8 +10,8 @@
 //! The interpreter's variable table is flat and keeps names after their block ends, so what a
 //! stopped script may show is decided here, from the syntax, never from what the table holds.
 
-use crate::pine::ast::{DeclarationMode, Expression, Statement};
-use crate::pine::traversal;
+use crate::pine::syntax::ast::{DeclarationMode, Expression, Statement};
+use crate::pine::syntax::traversal;
 
 /// A statement the interpreter runs, in source order.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -330,7 +330,7 @@ impl SourceMap {
 mod tests {
     use super::*;
     use crate::pine::compiler::{self, NoLibraries};
-    use crate::pine::token::Limits;
+    use crate::pine::syntax::token::Limits;
 
     fn map(body: &str) -> SourceMap {
         let source = format!("//@version=6\nindicator(\"T\")\n{body}");

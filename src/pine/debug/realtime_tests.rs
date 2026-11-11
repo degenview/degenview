@@ -3,10 +3,10 @@
 
 use std::sync::{Arc, Mutex};
 
-use crate::pine::bench_tests;
 use crate::pine::compiler::NoLibraries;
-use crate::pine::execution::ExecutionController;
-use crate::pine::token::Limits;
+use crate::pine::runtime::execution::ExecutionController;
+use crate::pine::syntax::token::Limits;
+use crate::pine::tests::bench;
 
 use super::tests::{Probe, runtime_with, with_header};
 use super::*;
@@ -37,8 +37,8 @@ fn controller(source: &str) -> ExecutionController {
 /// A rebuild over history, then for each new bar: a tick, a changed tick and the close. Returns the
 /// output after every update.
 fn drive(mut controller: ExecutionController) -> Vec<String> {
-    const MINUTE: i64 = bench_tests::MINUTE_MS;
-    let all = bench_tests::bars(60, MINUTE);
+    const MINUTE: i64 = bench::MINUTE_MS;
+    let all = bench::bars(60, MINUTE);
     let (history, future) = all.split_at(40);
     let mut candles = history.to_vec();
     let mut outputs = vec![format!(

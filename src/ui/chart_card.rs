@@ -13,12 +13,12 @@ use crate::model::{
     Anchor, BollingerSeries, ChartAppearance, DataSource, IndicatorConfig, IndicatorSeries, Kline,
     PmSeries, PriceFormat, Timeframe,
 };
-use crate::pine::execution::ExecutionController;
+use crate::pine::compiler::program::ChartTheme;
+use crate::pine::compiler::program::{InputValue, SymbolInfo, VisualOutput};
 use crate::pine::logs::{LogBatch, LogHistory};
-use crate::pine::program::ChartTheme;
-use crate::pine::program::{InputValue, SymbolInfo, VisualOutput};
-use crate::pine::style_overrides::{StyleOverrides, StyleRow, style_rows};
-use crate::pine::token::{Diagnostic, Limits};
+use crate::pine::outputs::style_overrides::{StyleOverrides, StyleRow, style_rows};
+use crate::pine::runtime::execution::ExecutionController;
+use crate::pine::syntax::token::{Diagnostic, Limits};
 use crate::pine_studio::library::registry::LibraryRegistry;
 use crate::ui::alert_lines;
 use crate::ui::canvas_render::{self, CanvasStyle};
@@ -850,7 +850,7 @@ impl ChartCard {
     pub(crate) fn pine_symbol_info(
         symbol: &str,
         source: DataSource,
-    ) -> crate::pine::program::SymbolInfo {
+    ) -> crate::pine::compiler::program::SymbolInfo {
         body::symbol_info(symbol, source, ChartType::Candles)
     }
 

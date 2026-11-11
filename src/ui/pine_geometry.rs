@@ -7,12 +7,12 @@
 // Transient: the chart card hosts the painter once the Pine session produces output.
 #![allow(dead_code)]
 
+use crate::pine::compiler::program::VisualOutput;
 use crate::pine::outputs::{
     BoxOutput, DISPLAY_PANE, Horizontal, LabelOutput, LabelStyle, LineExtend, LineOutput,
     LineStyle, MISSING_INDEX, PlotStyle, PolylineOutput, Size, TableCell, TableOutput,
     TablePosition, TextAlign, Vertical, YLocation, index_is_known,
 };
-use crate::pine::program::VisualOutput;
 use eframe::egui::{self, Align2, Color32, Pos2, Rect, Vec2};
 
 // MARK: Colour and size

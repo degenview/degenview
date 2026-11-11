@@ -10,7 +10,7 @@
 
 use std::collections::HashSet;
 
-use crate::pine::ast::{Argument, Expression, Statement};
+use crate::pine::syntax::ast::{Argument, Expression, Statement};
 use crate::pine::{Lexer, Limits, Parser};
 
 /// Call sites of debugger expressions are numbered from here, far above any script's.
@@ -337,7 +337,7 @@ mod tests {
             if let Expression::Call { site, .. } = expression {
                 sites.push(*site);
             }
-            for child in crate::pine::traversal::children(expression) {
+            for child in crate::pine::syntax::traversal::children(expression) {
                 collect(child, sites);
             }
         }

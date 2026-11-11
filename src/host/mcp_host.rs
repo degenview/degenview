@@ -4454,9 +4454,11 @@ mod tests {
 
     use crate::model::alert::pine::{PineAlertState, PineAlertSubscription};
     use crate::model::pine::instance::{PineInstance, StoredInput};
+    use crate::pine::outputs::style_overrides::{StyleKind, StyleRow};
     use crate::pine::strategy::{OpenTrade, StrategyReport, StrategySettings, Trade};
-    use crate::pine::style_overrides::{StyleKind, StyleRow};
-    use crate::pine::token::{Diagnostic, DiagnosticCategory, DiagnosticSeverity, SourceRange};
+    use crate::pine::syntax::token::{
+        Diagnostic, DiagnosticCategory, DiagnosticSeverity, SourceRange,
+    };
     use crate::workspace::PineRunView;
 
     fn empty_workspace(id: u64) -> ChartWorkspace {

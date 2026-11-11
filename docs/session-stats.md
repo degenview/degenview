@@ -64,8 +64,8 @@ condition about the gap or the previous day leaves out a day that has no previou
 ## What a day is
 
 - **A US stock** (source Alpaca): the regular session in New York. An hourly bar belongs to a day
-  when it overlaps 09:30–16:00 on a weekday (`pine::trading_session::MarketSessions`, with
-  `pine::timezone` for daylight saving). A daily bar is its UTC date, which is the date of its
+  when it overlaps 09:30–16:00 on a weekday (`pine::time::trading_session::MarketSessions`, with
+  `pine::time::timezone` for daylight saving). A daily bar is its UTC date, which is the date of its
   04:00/05:00 UTC stamp.
 - **Everything else**: the UTC date.
 - A previous day more than five calendar days earlier is a hole in the data, so nothing is compared

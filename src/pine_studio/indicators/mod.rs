@@ -255,8 +255,8 @@ mod tests {
     use super::*;
     use crate::model::Kline;
     use crate::pine::compiler;
-    use crate::pine::program::SymbolInfo;
-    use crate::pine::token::{DiagnosticSeverity, Limits};
+    use crate::pine::compiler::program::SymbolInfo;
+    use crate::pine::syntax::token::{DiagnosticSeverity, Limits};
     use crate::pine_studio::library::registry::LibraryRegistry;
     use std::collections::HashSet;
 

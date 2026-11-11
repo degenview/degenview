@@ -21,7 +21,7 @@ use std::time::Duration;
 use crate::pine::profile::{
     Completeness, Interruption, ProfileConfig, ProfileOutcome, ProfileReport, ProfileSession,
 };
-use crate::pine::token::Diagnostic;
+use crate::pine::syntax::token::Diagnostic;
 
 use self::marks::{ProfileColumn, ProfileMarks};
 use super::preview::RunIdentity;

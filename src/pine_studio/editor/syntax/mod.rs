@@ -15,9 +15,9 @@
 use super::symbols::{Kind, SymbolTable};
 use crate::model::editor_theme::SyntaxRole;
 use crate::pine::compiler::is_named_constant;
-use crate::pine::lexer::Lexer;
-use crate::pine::symbol_catalog as catalog;
-use crate::pine::token::{Token, TokenKind};
+use crate::pine::compiler::symbol_catalog as catalog;
+use crate::pine::syntax::lexer::Lexer;
+use crate::pine::syntax::token::{Token, TokenKind};
 use crate::ui::editor_appearance::Appearance;
 use eframe::egui::{Color32, FontId, TextFormat, text::LayoutJob};
 use std::collections::{HashMap, HashSet};

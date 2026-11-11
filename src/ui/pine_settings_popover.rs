@@ -9,9 +9,9 @@ use super::popover;
 use super::theme;
 use crate::model::pine::instance::PineInstance;
 use crate::pine::compiler;
-use crate::pine::program::InputSchema;
-use crate::pine::style_overrides::{StyleOverrides, StyleRow};
-use crate::pine::token::Limits;
+use crate::pine::compiler::program::InputSchema;
+use crate::pine::outputs::style_overrides::{StyleOverrides, StyleRow};
+use crate::pine::syntax::token::Limits;
 use crate::pine_studio::inputs::{self, InputValues};
 use crate::pine_studio::library::registry::LibraryRegistry;
 use eframe::egui::{Align, Context, Id, Layout, Rect, ScrollArea, Ui};
@@ -225,7 +225,7 @@ impl PineSettingsPopover {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pine::style_overrides::StyleKind;
+    use crate::pine::outputs::style_overrides::StyleKind;
     use eframe::egui::{self, pos2, vec2};
 
     fn instance(source: &str) -> PineInstance {

@@ -1,5 +1,5 @@
 //! The state and the rows of the review sheet that opens over an assistant proposal. Pure: no
-//! egui and no store. `ai_review_view` draws these rows; `ai_host` applies what was chosen.
+//! egui and no store. `ai::review_view` draws these rows; `ai::host` applies what was chosen.
 //!
 //! A proposal is a whole new script, but the user reviews it as separate changes: each can be
 //! accepted or rejected, and only the accepted ones are applied (`diff::merge_selected`). The diff

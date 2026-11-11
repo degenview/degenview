@@ -5,7 +5,7 @@
 use std::time::{Duration, Instant};
 
 use super::combined;
-use crate::pine::token::DiagnosticSeverity;
+use crate::pine::syntax::token::DiagnosticSeverity;
 use crate::pine_studio::debug::studio_tests::Rig;
 use crate::pine_studio::editor::status_chip_with_runtime;
 use crate::pine_studio::editor::syntax;
@@ -47,7 +47,7 @@ fn source(rig: &Rig) -> String {
     editor(rig).source.clone()
 }
 
-fn runtime(rig: &Rig) -> Vec<crate::pine::token::Diagnostic> {
+fn runtime(rig: &Rig) -> Vec<crate::pine::syntax::token::Diagnostic> {
     rig.manager
         .runtime_problems(&source(rig), &editor(rig).diagnostics)
 }

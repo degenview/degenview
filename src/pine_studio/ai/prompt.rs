@@ -6,8 +6,8 @@
 //! wrong often enough that applying one blindly would corrupt the user's code, whereas a whole
 //! script can be compiled and diffed against the buffer before anything changes.
 
-use crate::pine::symbol_catalog;
-use crate::pine::token::Diagnostic;
+use crate::pine::compiler::symbol_catalog;
+use crate::pine::syntax::token::Diagnostic;
 use crate::pine_studio::drawer;
 use crate::pine_studio::library::demo::BUNDLED;
 use crate::service::llm::ChatMessage;
@@ -391,7 +391,7 @@ fn without_script(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pine::token::{Diagnostic, DiagnosticCategory, SourceRange};
+    use crate::pine::syntax::token::{Diagnostic, DiagnosticCategory, SourceRange};
     use crate::service::llm::Role;
 
     fn error(message: &str) -> Diagnostic {

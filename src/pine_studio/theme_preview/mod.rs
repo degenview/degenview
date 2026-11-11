@@ -11,7 +11,7 @@
 use super::editor::{EditorState, show};
 use super::model::CompileStatus;
 use crate::pine::compiler::{NoLibraries, compile};
-use crate::pine::token::Limits;
+use crate::pine::syntax::token::Limits;
 use eframe::egui::{self, Ui, Vec2};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};

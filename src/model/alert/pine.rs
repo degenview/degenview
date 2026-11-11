@@ -6,9 +6,9 @@
 //! so a different script or a chart showing another market never fires it by accident.
 
 use crate::model::pine::instance::StoredInput;
-use crate::pine::alert_call::AlertCallSite;
-use crate::pine::alert_frequency::AlertFrequency;
-use crate::pine::program::InputValue;
+use crate::pine::builtins::alert::call::AlertCallSite;
+use crate::pine::builtins::alert::frequency::AlertFrequency;
+use crate::pine::compiler::program::InputValue;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -174,7 +174,7 @@ pub fn blocker(facts: ArmingFacts) -> Option<Blocker> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pine::token::{SourcePosition, SourceRange};
+    use crate::pine::syntax::token::{SourcePosition, SourceRange};
 
     fn site(is_condition: bool, title: Option<&str>, message: Option<&str>) -> AlertCallSite {
         AlertCallSite {

@@ -437,7 +437,7 @@ fn the_same_ticker_on_another_source_is_another_profile() {
 
 #[test]
 fn changing_an_input_makes_the_profile_stale() {
-    use crate::pine::program::InputValue;
+    use crate::pine::compiler::program::InputValue;
     let mut rig = ready_on(
         "profiler-input",
         crate::pine_studio::debug::studio_tests::bars(45),
@@ -542,7 +542,7 @@ plot(close + x)
 
 #[test]
 fn a_failure_is_not_a_problem_once_an_input_or_the_data_has_changed() {
-    use crate::pine::program::InputValue;
+    use crate::pine::compiler::program::InputValue;
     let mut rig = Rig::new("profiler-failure-fresh");
     rig.set_source(INPUT_FAILS);
     rig.manager.cmds.push(Cmd::ProfilerToggle);

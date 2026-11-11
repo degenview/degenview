@@ -12,7 +12,7 @@
 use super::plan::Plan;
 use super::profile::ProfileTool;
 use super::prompt::Mode;
-use crate::pine::token::{Diagnostic, DiagnosticSeverity};
+use crate::pine::syntax::token::{Diagnostic, DiagnosticSeverity};
 use crate::pine_studio::debug::DebugFeed;
 use crate::pine_studio::drawer;
 use crate::service::llm::{ToolCall, ToolSpec};

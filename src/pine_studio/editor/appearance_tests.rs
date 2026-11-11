@@ -1,7 +1,7 @@
 //! The editor paints what its theme says, and a theme change touches nothing but paint.
 
 use super::*;
-use crate::pine::token::{DiagnosticCategory, SourcePosition, SourceRange};
+use crate::pine::syntax::token::{DiagnosticCategory, SourcePosition, SourceRange};
 use crate::ui::editor_appearance::RestorePublished;
 use crate::ui::theme::{self, AppTheme, RestoreDefaultTheme};
 use eframe::egui::epaint::ClippedShape;

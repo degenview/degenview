@@ -9,7 +9,7 @@
 use crate::model::alert;
 use crate::model::alert::pine::{ArmingFacts, Blocker, CallRow, PineAlertSubscription};
 use crate::model::webhook::{EndpointId, WebhookEndpoint};
-use crate::pine::alert_call::AlertCallSite;
+use crate::pine::builtins::alert::call::AlertCallSite;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, REGULAR, SEMIBOLD, size};
 use crate::ui::{sheet, theme, webhook_picker};
@@ -630,8 +630,8 @@ pub fn show_webhooks(
 mod tests {
     use super::*;
     use crate::model::alert::pine::PineAlertState;
-    use crate::pine::alert_frequency::AlertFrequency;
-    use crate::pine::token::{SourcePosition, SourceRange};
+    use crate::pine::builtins::alert::frequency::AlertFrequency;
+    use crate::pine::syntax::token::{SourcePosition, SourceRange};
 
     fn facts() -> ArmingFacts {
         ArmingFacts {

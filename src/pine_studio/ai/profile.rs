@@ -260,7 +260,7 @@ fn describe(
 mod tests {
     use super::*;
     use crate::model::Kline;
-    use crate::pine::program::{ChartTheme, SymbolInfo};
+    use crate::pine::compiler::program::{ChartTheme, SymbolInfo};
     use std::collections::HashMap;
 
     const LOOP: &str = "//@version=6\nindicator(\"T\")\ntotal = 0.0\nfor i = 0 to 49\n    total += math.sin(i)\nplot(total)\n";

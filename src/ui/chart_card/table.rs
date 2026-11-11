@@ -10,7 +10,7 @@ use crate::model::chart::kind::ChartType;
 use crate::model::chart::table::{Extra, TableFeed, ValueKind, align_right};
 use crate::model::pine::instance::VisualOrder;
 use crate::model::{IndicatorConfig, IndicatorSeries, Kline};
-use crate::pine::program::VisualOutput;
+use crate::pine::compiler::program::VisualOutput;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 

@@ -10,7 +10,7 @@ use super::marks::GutterEvent;
 use super::{Notice, PanelAction, StartMode};
 use crate::pine::compiler;
 use crate::pine::debug::{DebugCommand, SourceMap};
-use crate::pine::token::Limits;
+use crate::pine::syntax::token::Limits;
 use crate::pine_studio::library::registry::LibraryRegistry;
 use crate::pine_studio::model::{CompileStatus, ScriptType};
 use crate::pine_studio::{Cmd, PineStudio};

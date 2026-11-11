@@ -83,13 +83,13 @@ src/host/pine_host.rs
 src/host/pine_subscription_host.rs
 src/model/pine/instance.rs
 src/model/alert/pine.rs
-src/pine/compiler.rs
-src/pine/lexer.rs
-src/pine/parser.rs
-src/pine/type_checker.rs
-src/pine/program.rs
-src/pine/outputs.rs
-src/pine/broker.rs
+src/pine/compiler/mod.rs
+src/pine/syntax/lexer.rs
+src/pine/syntax/parser.rs
+src/pine/check/type_checker.rs
+src/pine/compiler/program.rs
+src/pine/outputs/mod.rs
+src/pine/strategy/broker.rs
 src/pine_studio/
 src/ui/pine_report.rs
 src/ui/pine_settings_popover.rs
@@ -101,7 +101,7 @@ src/ui/pine_style_view.rs
 ```text
 src/store/mod.rs
 src/store/pine.rs
-src/pine_studio/store.rs
+src/pine_studio/library/store.rs
 src/pine_studio/model.rs
 src/ui/settings_window.rs
 src/ui/settings_card.rs
@@ -1095,19 +1095,19 @@ DegenView implements its own TradingView-compatible Pine Script language and run
 The MCP server must use this implementation:
 
 ```text
-pine::lexer
-pine::parser
+pine::syntax::lexer
+pine::syntax::parser
 pine::compiler
-pine::type_checker
-pine::session
-pine::broker
+pine::check::type_checker
+pine::runtime::session
+pine::strategy::broker
 ```
 
 Scripts are managed through:
 
 ```text
-pine_studio::store::ScriptStore
-pine_studio::registry::LibraryRegistry
+pine_studio::library::store::ScriptStore
+pine_studio::library::registry::LibraryRegistry
 ```
 
 The Pine Studio supports:
@@ -1436,9 +1436,9 @@ They may include:
 Inspect:
 
 ```text
-pine::program
-pine::visuals
-pine::style_overrides
+pine::compiler::program
+pine::outputs::visuals
+pine::outputs::style_overrides
 ui::pine_style_view
 ui::pine_settings_popover
 ```
@@ -1549,7 +1549,7 @@ Only return fields the existing report implementation actually calculates.
 Inspect:
 
 ```text
-pine::broker
+pine::strategy::broker
 pine::strategy
 pine::outputs
 ui::pine_report

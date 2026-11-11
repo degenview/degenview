@@ -1,8 +1,8 @@
 # Pine volume footprints
 
 `request.footprint()` and the `footprint` / `volume_row` types, as a script sees them. The pure
-computation is `src/pine/footprint.rs`; the script-facing side (arguments, intrabar candles,
-handles, dispatch) is `src/pine/footprint_call.rs`; end-to-end tests are `src/pine/footprint_tests.rs`.
+computation is `src/pine/footprint/mod.rs`; the script-facing side (arguments, intrabar candles,
+handles, dispatch) is `src/pine/footprint/call.rs`; end-to-end tests are `src/pine/footprint/tests.rs`.
 
 ## What TradingView documents
 

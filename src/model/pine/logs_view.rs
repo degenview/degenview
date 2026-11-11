@@ -4,8 +4,8 @@
 //! Pure data, no egui. The pane owns the widgets; this owns the questions about the messages, so
 //! each can be answered once per change instead of once per frame.
 
+use crate::pine::builtins::regex_lite::Regex;
 use crate::pine::logs::{LogBuffer, LogEvent, LogLevel};
-use crate::pine::regex_lite::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::collections::hash_map::DefaultHasher;

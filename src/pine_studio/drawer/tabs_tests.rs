@@ -6,13 +6,13 @@ use std::time::Instant;
 
 use eframe::egui::{Ui, vec2};
 
-use crate::pine::alert_frequency::AlertFrequency;
+use crate::pine::builtins::alert::frequency::AlertFrequency;
+use crate::pine::compiler::program::VisualOutput;
+use crate::pine::compiler::program::{InputControl, InputDefinition, InputSchema, InputValue};
 use crate::pine::logs::{LogBatch, LogEvent, LogHistory, LogLevel};
-use crate::pine::program::VisualOutput;
-use crate::pine::program::{InputControl, InputDefinition, InputSchema, InputValue};
-use crate::pine::state::AlertEvent;
+use crate::pine::runtime::state::AlertEvent;
 use crate::pine::strategy::{StrategyReport, Trade};
-use crate::pine::token::{
+use crate::pine::syntax::token::{
     Diagnostic, DiagnosticCategory, DiagnosticSeverity, SourcePosition, SourceRange,
 };
 use crate::pine_studio::drawer;
@@ -119,7 +119,7 @@ fn strategy(trades: usize) -> StrategyReport {
 
 #[test]
 fn inputs_fit_the_drawer() {
-    use crate::pine::token::ValueType;
+    use crate::pine::syntax::token::ValueType;
     let definition = |id: &str, kind, default| InputDefinition {
         id: id.into(),
         kind,

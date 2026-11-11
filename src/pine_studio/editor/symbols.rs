@@ -24,10 +24,10 @@
 //!   `array.new_float()`); a `type` records its fields the same way. That is enough for member
 //!   completion, and a name it cannot type is left untyped, never guessed.
 
-use crate::pine::identifier_rules;
-use crate::pine::lexer::Lexer;
-use crate::pine::symbol_catalog;
-use crate::pine::token::{Token, TokenKind};
+use crate::pine::check::identifier_rules;
+use crate::pine::compiler::symbol_catalog;
+use crate::pine::syntax::lexer::Lexer;
+use crate::pine::syntax::token::{Token, TokenKind};
 use std::ops::Range;
 
 pub type SymbolId = usize;

@@ -3088,7 +3088,7 @@ fn applying_scripts_has_its_own_permission() {
 
 #[test]
 fn a_saved_script_reaches_the_app_with_checked_inputs() {
-    use crate::pine::program::InputValue;
+    use crate::pine::compiler::program::InputValue;
     let harness = Harness::start(&[("c1", "tok", APPLY_ONLY)]);
     let url = harness.url();
     let id = seed_script(&harness, "Good", GOOD_SCRIPT);

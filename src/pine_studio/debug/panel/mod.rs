@@ -397,8 +397,8 @@ fn bar_strip(ui: &mut Ui, rect: Rect, bar: &BarContext, label: &str, stopped: bo
 }
 
 fn number(value: f64) -> String {
-    crate::pine::number_format::format(
-        &crate::pine::runtime_value::RuntimeValue::Float(value),
+    crate::pine::builtins::number_format::format(
+        &crate::pine::runtime::value::RuntimeValue::Float(value),
         None,
         0.01,
     )

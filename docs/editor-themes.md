@@ -45,7 +45,7 @@ scheme. `theme::syntax` still exists for the few non-editor uses of a code-like 
 
 ## How a name gets its role
 
-`pine_studio::syntax::classify(source, table)` is the only classification of Pine text. With the
+`pine_studio::editor::syntax::classify(source, table)` is the only classification of Pine text. With the
 script's `SymbolTable` its answer for a name is final: a name the table resolves is the script's (a
 variable, parameter, function or type), a name it does not place is looked up in the catalog. So a
 local `hl2` is the script's inside its function and the builtin outside it, and a read of `close`

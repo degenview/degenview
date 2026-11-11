@@ -4,8 +4,8 @@
 
 use crate::model::indicators::catalog::{CatalogEntry, EntryKey};
 use crate::model::{BuiltIn, Kline, bollinger, ema, rsi, supertrend_flips};
+use crate::pine::compiler::program::SymbolInfo;
 use crate::pine::outputs::{MarkerLocation, PlotStyle};
-use crate::pine::program::SymbolInfo;
 use crate::pine_studio::indicators;
 use crate::ui::pine_geometry::rgba;
 use crate::ui::theme;

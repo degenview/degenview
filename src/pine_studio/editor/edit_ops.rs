@@ -3,8 +3,8 @@
 //! (in `char` indices, what egui's cursor counts) and returns one contiguous [`Edit`], or `None`
 //! to let the text field handle the input normally.
 
-use crate::pine::lexer::Lexer;
-use crate::pine::token::TokenKind;
+use crate::pine::syntax::lexer::Lexer;
+use crate::pine::syntax::token::TokenKind;
 use std::ops::Range;
 
 pub const UNIT: &str = "    ";

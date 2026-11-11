@@ -3,7 +3,7 @@
 #
 #   tools/pine-bench.sh <base-rev> [head-rev]
 #
-# Builds the `pine::bench_tests` harness (src/pine/bench_tests.rs) at both revisions, then runs the
+# Builds the `pine::tests::bench` harness (src/pine/tests/bench.rs) at both revisions, then runs the
 # two test binaries alternately for PINE_BENCH_ROUNDS rounds (default 6) so drift in machine load
 # hits both equally, and prints the median per workload, the spread between rounds and the change.
 # Without `head-rev` the current working tree is the second build. Both revisions must contain the
@@ -67,7 +67,7 @@ for round in $(seq 1 "$rounds"); do
   for side in base head; do
     bin=$base_bin
     if [[ $side == head ]]; then bin=$head_bin; fi
-    "$bin" pine::bench_tests --ignored --nocapture --test-threads=1 |
+    "$bin" pine::bench_tests pine::tests::bench --ignored --nocapture --test-threads=1 |
       grep 'BENCH ' | sed "s/^.*BENCH /$side /" >>"$work/results.txt"
   done
 done
@@ -100,7 +100,7 @@ for name, sides in medians.items():
     )
 if head_only:
     print()
-    print("only in the second build (compare with the twin named in src/pine/bench_tests.rs):")
+    print("only in the second build (compare with the twin named in src/pine/tests/bench.rs):")
     for name in head_only:
         values = medians[name]["head"]
         print(f"  {name:<30}{statistics.median(values) / 1e6:>10.2f} ms   rounds {min(values) / 1e6:.2f}-{max(values) / 1e6:.2f}")

@@ -61,8 +61,8 @@ summary and aliases in `CatalogEntry::native`.
 
 ## Bundled indicators
 
-`pine_studio/indicators.rs` lists 20 Pine indicators, each a `.pine` file in `pine_studio/indicators/`
-included with `include_str!`. They are not the demo scripts (`pine_studio::demo`, which are copied
+`pine_studio/indicators/mod.rs` lists 20 Pine indicators, each a `.pine` file in `pine_studio/indicators/`
+included with `include_str!`. They are not the demo scripts (`pine_studio::library::demo`, which are copied
 once into the user's library and then belong to the user): a bundled indicator is always available
 and is never written to the Scripts folder.
 

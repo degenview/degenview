@@ -82,6 +82,35 @@ name: `model::paper::engine`, not `model::paper_engine`. The domain's own types 
 Flat re-exports for the most used types are in `model/mod.rs` (`model::Kline`, `model::ChartType`).
 A new module goes in the matching directory; a new domain gets its own directory and a row here.
 
+## `pine/` and `pine_studio/` layout
+
+Both follow the rule `model/` does: one directory per concern, children named without the directory's
+name, `foo/mod.rs` + `foo/tests.rs` rather than `foo.rs` + `foo/`, whole-window or end-to-end tests
+beside the code they exercise.
+
+`pine/` (the engine, pure and egui-free):
+
+| Directory | Holds |
+| --- | --- |
+| `syntax/` | `token`, `lexer`, `parser`, `ast`, `traversal` |
+| `check/` | The type checker and the rules that need no types: names, structure, declarations, identifiers, ignored features, `callables` |
+| `compiler/` | `compiler` (source → `CompiledProgram`), `program`, the builtin `registry`, `symbol_catalog` |
+| `runtime/` | The interpreter: `session`, `state`, `value`, `support`, `containers`, `execution`, call routing and binding, user methods, `request.security` |
+| `builtins/` | Constants and colour math (`mod.rs`), then one child per namespace: `alert`, `array`, `map`, `matrix`, `math`, `strings`, `number_format`, `regex_lite`, `ta`, `misc`, `scalar`, `market_values` |
+| `outputs/`, `inputs/` | Chart output types with `visuals`, `drawings`, `style_overrides`; how an `input.*` call is read |
+| `strategy/`, `footprint/`, `logs/`, `time/` | The strategy model, `broker` and `strategy.*`; `request.footprint()`; Pine Logs; calendar, time zones, sessions |
+| `debug/`, `profile/`, `tests/`, `corpus/` | The debugger, the profiler, end-to-end and benchmark tests, the corpus data |
+
+`pine_studio/`:
+
+| Directory | Holds |
+| --- | --- |
+| `ai/`, `debug/`, `profiler/` | The assistant, the debugger and the profiler: their state, host, panel, gallery pictures and `studio_tests` |
+| `editor/` | The text editor and everything that edits or reads text: `edit_ops`, `multi_cursor`, `completion`, `signature`, `symbols`, `find`, `syntax/`, `diff`, `call_sites`, `color_sites` |
+| `library/` | Where scripts live: `store`, `registry`, `sidebar`, `prefs`, `name`, `demo` and `demos/`, `unsaved`, `external/` |
+| `drawer/` | The drawer under the preview: `problems/`, `logs/`, the intro, `bottom_bar`, `tab_chrome` |
+| root | `mod.rs` (the manager), `model`, `preview`, `inputs`, `workspace`, `sheets`, `indicators/`, `theme_preview/` |
+
 ## Boundaries
 
 - `model/` and `pine/` stay pure and egui-free.

@@ -10,7 +10,7 @@
 use super::name::{self, FILE_EXTENSION, ScriptNameError};
 use super::registry::LibraryRegistry;
 use crate::pine::compiler;
-use crate::pine::token::Limits;
+use crate::pine::syntax::token::Limits;
 use crate::pine_studio::model::{
     CompileStatus, LocalScript, ScriptCompileRecord, ScriptDraft, ScriptId, ScriptType,
     ScriptVersion, now_ms,

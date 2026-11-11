@@ -17,7 +17,7 @@ log.error("Bar {0}, volume {1,number,#.##}", bar_index, volume)
   filled as `str.format()` fills it (`strings::format_template`), so `{0}`, `{1,number,#.##}`,
   `na` as `NaN`, and a `{n}` with no such argument left as written all behave as in `str.format()`.
 - The call returns `void`, never stops the script and never changes what it computes.
-- Compile errors (`PINE3052`, `pine::log_call`): no argument, or a first argument that is a literal
+- Compile errors (`PINE3052`, `pine::logs::call`): no argument, or a first argument that is a literal
   but not a string. A value computed at run time is formatted as it is.
 - Calls work anywhere code runs: blocks, loops, user functions, methods, exported library
   functions (the message comes from the library's source, see below) and `request.*()` expressions.

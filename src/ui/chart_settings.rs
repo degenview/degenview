@@ -1637,7 +1637,7 @@ mod tests {
 
     #[test]
     fn switching_a_script_on_applies_it_and_off_keeps_its_settings() {
-        use crate::pine::program::InputValue;
+        use crate::pine::compiler::program::InputValue;
         let script = Arc::new(crate::ui::script_catalog::sample(
             "abc",
             "Squeeze",

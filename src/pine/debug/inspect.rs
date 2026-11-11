@@ -6,13 +6,13 @@
 //! a reference whose script has since moved on fails as stale instead of reading something else,
 //! and a large array is only ever read a page at a time.
 
-use crate::pine::containers::Object;
-use crate::pine::fast_hash::FastMap;
-use crate::pine::footprint_call::ROW_BITS;
-use crate::pine::number_format;
-use crate::pine::runtime_types::RuntimeContext;
-use crate::pine::runtime_value::{RefKind, RuntimeValue};
-use crate::pine::session::Session;
+use crate::pine::builtins::number_format;
+use crate::pine::footprint::call::ROW_BITS;
+use crate::pine::runtime::containers::Object;
+use crate::pine::runtime::fast_hash::FastMap;
+use crate::pine::runtime::session::Session;
+use crate::pine::runtime::types::RuntimeContext;
+use crate::pine::runtime::value::{RefKind, RuntimeValue};
 
 use super::evaluate;
 use super::expression::DebugExpression;

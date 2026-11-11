@@ -121,7 +121,7 @@ script does with the candles afterwards is timed like anything else.
 * **A failure is also a problem.** A script that compiles and then fails (an unknown function, an
   index out of range) ends the profile with no data ("the script failed on bar N: …"), and the
   same error is listed in the Problems tab, counted on its badge and in the chip under the editor, and
-  underlined at the failing call, exactly as the chart's own run reports it (`pine_studio::problems`).
+  underlined at the failing call, exactly as the chart's own run reports it (`pine_studio::drawer::problems`).
   Only if the profile is of the text on screen, on the same data and settings: a failure that
   depended on an input or a candle may not happen after it changes, so it stops being listed. A
   cancelled or timed-out run is not a failure.
@@ -157,7 +157,7 @@ script does with the candles afterwards is timed like anything else.
 
 ## The AI assistant's profile
 
-The Pine Studio's assistant can call `profile` on its own draft (`pine_studio::ai_profile`, see
+The Pine Studio's assistant can call `profile` on its own draft (`pine_studio::ai::profile`, see
 [AI assistant](ai-assistant.md)). It uses the same engine, `ProfileSession`, on a frozen copy of the
 preview chart's bars, and turns the report into text with `ProfileMarks`. It is a session of its own: it
 does not use the editor's profiler state, so it never draws a column or fills the Profile tab, and a
@@ -247,11 +247,11 @@ The run's own slowdown is in the table above; nothing is subtracted from any fig
   and through the whole window: off by default and hashing nothing, turning on, editing, inputs, bars
   and scripts making a profile stale, errors and libraries, cancelling, turning it off ending the
   thread, two windows. The editor's column moves the text once and washes the hovered block.
-* `cargo test --lib pine::bench_tests -- --ignored` prints one workload per line, including the
+* `cargo test --lib pine::tests::bench -- --ignored` prints one workload per line, including the
   `profiled_*` twins.
-* Pictures: `DEGENVIEW_GALLERY_DIR=… cargo test --lib pine_studio::profiler_gallery -- --ignored`
+* Pictures: `DEGENVIEW_GALLERY_DIR=… cargo test --lib pine_studio::profiler::gallery -- --ignored`
   (off, ready, hovering, stale; wide and narrow; dark and light).
-* `cargo test --lib pine_studio::drawer_tabs_tests` draws a finished profile, current and stale (same text
+* `cargo test --lib pine_studio::drawer::tabs_tests` draws a finished profile, current and stale (same text
   and other text), at the five drawer sizes and asserts it fits; with `DEGENVIEW_GALLERY_DIR` set it
   writes the pictures.
 

@@ -17,11 +17,11 @@
 
 use crate::model::Kline;
 use crate::model::chart::look::drawn_extremes;
+use crate::pine::compiler::program::VisualOutput;
 use crate::pine::outputs::{
     DISPLAY_PANE, LabelOutput, LabelStyle, MarkerLocation, MarkerShape, PlotOutput, PlotStyle,
     TableOutput, YLocation,
 };
-use crate::pine::program::VisualOutput;
 use crate::pine::strategy::StrategyReport;
 use crate::ui::pine_geometry::{
     self as geometry, LabelGlyph, LabelShape, arrowhead, arrowheads, box_text_placement,

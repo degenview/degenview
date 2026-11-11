@@ -31,5 +31,5 @@ Scripts are file-backed (`Scripts/*.pine` plus `ScriptMetadata/`) with stable id
 attributes. The manager owns the sidebar, editor, preview split, and Inputs/Report/Problems drawer.
 Edits recompile for diagnostics. Drafts remain separate from saved source so invalid work cannot
 replace the active saved result. The editor resolves names itself for go to definition and
-rename (`pine_studio/symbols.rs`, token-based so it survives half-typed code) and supports
-Sublime-style multiple carets (`pine_studio/multi_cursor.rs`, `editor/carets.rs`).
+rename (`pine_studio/editor/symbols.rs`, token-based so it survives half-typed code) and supports
+Sublime-style multiple carets (`pine_studio/editor/multi_cursor.rs`, `editor/carets.rs`).

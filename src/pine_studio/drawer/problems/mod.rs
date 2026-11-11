@@ -11,7 +11,7 @@ pub(in crate::pine_studio) mod gallery;
 #[cfg(test)]
 pub(in crate::pine_studio) mod studio_tests;
 
-use crate::pine::token::{Diagnostic, DiagnosticSeverity};
+use crate::pine::syntax::token::{Diagnostic, DiagnosticSeverity};
 
 /// The runtime failures to show beside `compile`: what the chart's run reported, then what the
 /// profile's run reported, unless it is the same failure.
@@ -46,7 +46,7 @@ pub fn combined(compile: &[Diagnostic], runtime: &[Diagnostic]) -> Vec<Diagnosti
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pine::token::{DiagnosticCategory, SourceRange};
+    use crate::pine::syntax::token::{DiagnosticCategory, SourceRange};
 
     fn diagnostic(severity: DiagnosticSeverity, message: &str) -> Diagnostic {
         Diagnostic {

@@ -22,7 +22,7 @@ mod workspace;
 
 use crate::model::pine::instance::{PineInstance, StoredInput};
 use crate::pine::compiler;
-use crate::pine::token::Limits;
+use crate::pine::syntax::token::Limits;
 use crate::store::SharedStore;
 use crate::ui::icons::{self, Icon};
 use crate::ui::shortcut;
@@ -109,7 +109,7 @@ pub(crate) enum Cmd {
     AddToChart(ScriptId),
     CreateAlert(ScriptId),
     Save,
-    Reveal(crate::pine::token::Diagnostic),
+    Reveal(crate::pine::syntax::token::Diagnostic),
     ToggleSidebar,
     ToggleChart,
     SetChartPosition(ChartPosition),
@@ -177,7 +177,7 @@ pub(crate) struct AlertSheet {
     pub name: String,
     pub source: String,
     pub state: crate::ui::pine_alert_editor::PineAlertEditorState,
-    pub call_sites: Vec<crate::pine::alert_call::AlertCallSite>,
+    pub call_sites: Vec<crate::pine::builtins::alert::call::AlertCallSite>,
     pub endpoints: Vec<crate::model::webhook::WebhookEndpoint>,
     pub duplicate_exists: bool,
 }
@@ -1018,7 +1018,7 @@ impl PineStudio {
             let program =
                 compiler::compile(&open.editor.source, Limits::default(), &LibraryRegistry);
             open.has_alerts = program.is_valid()
-                && !crate::pine::alert_call::call_sites(&program.statements).is_empty();
+                && !crate::pine::builtins::alert::call::call_sites(&program.statements).is_empty();
             self.debug.set_map(
                 program
                     .is_valid()
@@ -1201,7 +1201,7 @@ impl PineStudio {
         };
         let program = compiler::compile(&instance.source, Limits::default(), &LibraryRegistry);
         let call_sites = if program.is_valid() {
-            crate::pine::alert_call::call_sites(&program.statements)
+            crate::pine::builtins::alert::call::call_sites(&program.statements)
         } else {
             Vec::new()
         };

@@ -4,7 +4,9 @@
 
 use super::edit_ops::{self, CallAt};
 use super::symbols::{self, Kind, SymbolTable};
-use crate::pine::{array_builtins, map_builtins, matrix_builtins, symbol_catalog, ta_call};
+use crate::pine::{
+    builtins::array, builtins::map, builtins::matrix, builtins::ta::call, compiler::symbol_catalog,
+};
 
 /// What to show: the call, its parameters, and which one the caret is on.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -417,7 +419,7 @@ pub fn signature_of(name: &str) -> Option<(Vec<String>, &'static str)> {
     if let Some((_, params, returns)) = SIGNATURES.iter().find(|(n, _, _)| *n == name) {
         return Some((params.split(", ").map(str::to_owned).collect(), returns));
     }
-    if let Some(parameters) = ta_call::parameters(name) {
+    if let Some(parameters) = call::parameters(name) {
         let returns = if name == "ta.kc" {
             "[series float, series float, series float]"
         } else {
@@ -428,12 +430,12 @@ pub fn signature_of(name: &str) -> Option<(Vec<String>, &'static str)> {
             returns,
         ));
     }
-    let collection = if array_builtins::handles(name) {
-        array_builtins::parameters(name)
-    } else if map_builtins::handles(name) {
-        map_builtins::parameters(name)
-    } else if matrix_builtins::handles(name) {
-        matrix_builtins::parameters(name)
+    let collection = if array::handles(name) {
+        array::parameters(name)
+    } else if map::handles(name) {
+        map::parameters(name)
+    } else if matrix::handles(name) {
+        matrix::parameters(name)
     } else {
         return None;
     };

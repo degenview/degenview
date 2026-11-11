@@ -17,7 +17,7 @@ use crate::model::alert::{
 use crate::model::watchlist::quote::maximum_age_secs;
 use crate::model::webhook::WebhookDeliverySource;
 use crate::model::webhook::policy::price_event_is_sendable;
-use crate::pine::state::AlertEvent;
+use crate::pine::runtime::state::AlertEvent;
 use crate::service::keychain_webhook_secrets::KeychainWebhookSecretStore;
 use crate::service::macos_notifications::Notifier;
 use crate::service::watchlist_quotes::WatchlistQuoteBook;
@@ -443,7 +443,7 @@ fn pine_alert_dedupe_key(
     subscription: &PineAlertSubscription,
     alert: &AlertEvent,
 ) -> Option<String> {
-    (alert.frequency != crate::pine::alert_frequency::AlertFrequency::All).then(|| {
+    (alert.frequency != crate::pine::builtins::alert::frequency::AlertFrequency::All).then(|| {
         format!(
             "{}|{}|{}|{}",
             subscription.id,

@@ -20,10 +20,10 @@ pub struct PineChartTarget {
 #[derive(Clone, Debug)]
 pub struct PineRunView {
     /// The last run's failure; the chart keeps showing the previous good output meanwhile.
-    pub error: Option<crate::pine::token::Diagnostic>,
+    pub error: Option<crate::pine::syntax::token::Diagnostic>,
     pub bar_count: usize,
     /// What the script lets the user restyle (empty until it has run).
-    pub style_rows: Vec<crate::pine::style_overrides::StyleRow>,
+    pub style_rows: Vec<crate::pine::outputs::style_overrides::StyleRow>,
     pub is_strategy: bool,
     /// The backtest report, only when it was asked for (it can be large).
     pub strategy: Option<crate::pine::strategy::StrategyReport>,
@@ -199,7 +199,7 @@ impl ChartWorkspace {
         script_id: String,
         name: &str,
         source: &str,
-        inputs: &HashMap<String, crate::pine::program::InputValue>,
+        inputs: &HashMap<String, crate::pine::compiler::program::InputValue>,
         visible: bool,
     ) -> Option<u64> {
         if !self
@@ -299,7 +299,7 @@ impl ChartWorkspace {
         &mut self,
         chart_id: u64,
         instance_id: u64,
-        inputs: Option<&HashMap<String, crate::pine::program::InputValue>>,
+        inputs: Option<&HashMap<String, crate::pine::compiler::program::InputValue>>,
         visible: Option<bool>,
     ) -> Option<bool> {
         let chart = self.charts.iter().find(|chart| chart.id == chart_id)?;
@@ -481,7 +481,7 @@ mod tests {
 
     #[test]
     fn agent_script_changes_are_undoable_and_only_real_changes_take_a_step() {
-        use crate::pine::program::InputValue;
+        use crate::pine::compiler::program::InputValue;
         let ctx = egui::Context::default();
         let mut workspace = empty_workspace(7);
         let btc = InstrumentId::new(DataSource::Binance, "BTCUSDT");

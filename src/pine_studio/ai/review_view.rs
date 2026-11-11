@@ -1,7 +1,7 @@
 //! The review sheet over an assistant proposal: every change in a list on the left, and the whole
 //! file's diff on the right, with line numbers, syntax colour, the changed words marked, and
 //! unchanged stretches folded. Each change can be accepted or rejected; only accepted ones are
-//! applied. A view only: it reads the [`Review`] and reports what was pressed; `ai_host` acts on it.
+//! applied. A view only: it reads the [`Review`] and reports what was pressed; `ai::host` acts on it.
 
 use super::Proposal;
 use super::review::{Review, Row, header_row};

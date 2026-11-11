@@ -1,6 +1,6 @@
 //! A source-level debugger for Pine scripts. See `docs/pine-debugger.md`.
 //!
-//! The interpreter stays the one interpreter: a [`Session`](super::session::Session) may carry a
+//! The interpreter stays the one interpreter: a [`Session`](super::runtime::session::Session) may carry a
 //! [`DebugRuntime`], which it consults before each statement, around each user function call and at
 //! the start of each bar. Without one, none of this runs. Everything here is pure engine code with
 //! no UI types.

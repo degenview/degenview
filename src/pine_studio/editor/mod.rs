@@ -30,7 +30,7 @@ use super::profiler::marks::{LineMark, ProfileColumn};
 use self::symbols::SymbolTable;
 use self::syntax::Span;
 use crate::model::editor_theme::{SurfaceColor, SyntaxRole};
-use crate::pine::token::{Diagnostic, DiagnosticSeverity};
+use crate::pine::syntax::token::{Diagnostic, DiagnosticSeverity};
 use crate::ui::accessibility;
 use crate::ui::editor_appearance::{self, Appearance, EditorFont};
 use crate::ui::icons::{self, Icon};
@@ -2784,7 +2784,7 @@ fn status_bar(ui: &mut Ui, bar: Rect, state: &EditorState, changes: &DiffSnapsho
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pine::token::{DiagnosticCategory, SourcePosition, SourceRange};
+    use crate::pine::syntax::token::{DiagnosticCategory, SourcePosition, SourceRange};
 
     fn diagnostic(
         severity: DiagnosticSeverity,

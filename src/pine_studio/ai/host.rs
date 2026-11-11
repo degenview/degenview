@@ -1,6 +1,6 @@
 //! Connects the assistant to the Pine Studio: builds a request from the open script, applies an
 //! accepted proposal to the editor, and follows the open script around. The state and the rules
-//! about replies live in `ai`; the words sent to the model in `ai_prompt`.
+//! about replies live in `ai`; the words sent to the model in `ai::prompt`.
 
 use super::agent::AgentSetup;
 use super::history::History;
@@ -12,7 +12,7 @@ use super::review_view::{self, ReviewAction};
 use super::tools::ToolBox;
 use super::{Notice, auto_apply_check};
 use crate::pine::compiler;
-use crate::pine::token::{Diagnostic, Limits};
+use crate::pine::syntax::token::{Diagnostic, Limits};
 use crate::pine_studio::drawer;
 use crate::pine_studio::library::registry::LibraryRegistry;
 use crate::pine_studio::{PineStudio, PineStudioAction, editor};
@@ -423,7 +423,7 @@ impl PineStudio {
         let diagnostics = diagnostics_of(&merged);
         review.errors = diagnostics
             .iter()
-            .filter(|d| d.severity == crate::pine::token::DiagnosticSeverity::Error)
+            .filter(|d| d.severity == crate::pine::syntax::token::DiagnosticSeverity::Error)
             .count();
         review.warnings = diagnostics.len() - review.errors;
     }

@@ -34,8 +34,8 @@
 
 use crate::format::days_from_civil;
 use crate::model::market::kline::Kline;
-use crate::pine::calendar;
-use crate::pine::trading_session::MarketSessions;
+use crate::pine::time::calendar;
+use crate::pine::time::trading_session::MarketSessions;
 
 /// A half needs this many days before the older-versus-newer comparison is shown.
 pub const MIN_HALF_SAMPLE: usize = 10;

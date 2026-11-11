@@ -76,7 +76,7 @@ mod tests {
 mod run_tests {
     use super::*;
     use crate::model::Kline;
-    use crate::pine::program::SymbolInfo;
+    use crate::pine::compiler::program::SymbolInfo;
 
     fn bars(count: usize) -> Vec<Kline> {
         (0..count)

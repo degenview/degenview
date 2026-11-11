@@ -1,6 +1,6 @@
 use super::*;
 use crate::model::editor_theme::{SurfaceColor, SyntaxRole};
-use crate::pine::token::DiagnosticSeverity;
+use crate::pine::syntax::token::DiagnosticSeverity;
 use crate::pine_studio::editor::symbols;
 use crate::pine_studio::editor::syntax;
 use crate::ui::editor_appearance;
@@ -19,14 +19,14 @@ fn clean_sample() -> &'static str {
 fn the_sample_is_valid_pine_apart_from_its_two_marked_lines() {
     let program = crate::pine::compiler::compile(
         clean_sample(),
-        crate::pine::token::Limits::default(),
+        crate::pine::syntax::token::Limits::default(),
         &crate::pine::compiler::NoLibraries,
     );
     assert!(program.diagnostics.is_empty(), "{:?}", program.diagnostics);
     // The line the preview marks as an error really is one.
     let broken = crate::pine::compiler::compile(
         SAMPLE,
-        crate::pine::token::Limits::default(),
+        crate::pine::syntax::token::Limits::default(),
         &crate::pine::compiler::NoLibraries,
     );
     assert!(

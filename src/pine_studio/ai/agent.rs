@@ -193,7 +193,7 @@ pub fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pine::token::Diagnostic;
+    use crate::pine::syntax::token::Diagnostic;
     use crate::pine_studio::ai::prompt::Mode;
     use crate::service::llm::mock::{MockProvider, Scripted};
     use serde_json::json;

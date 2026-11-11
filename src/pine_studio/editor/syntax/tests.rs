@@ -63,7 +63,7 @@ fn a_diagnostic_in_a_crlf_script_is_found_where_it_is() {
     let source = "//@version=6\r\nindicator(\"T\")\r\n// a comment\r\n\r\n\r\nlog.hi(\"hiii\")\r\n";
     let program = crate::pine::compiler::compile(
         source,
-        crate::pine::token::Limits::default(),
+        crate::pine::syntax::token::Limits::default(),
         &crate::pine::compiler::NoLibraries,
     );
     let diagnostic = program
