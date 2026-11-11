@@ -2,8 +2,10 @@
 #![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
 
 fn main() {
+    // Before anything else: a panic in a build with no console is otherwise invisible.
+    degenview::install_panic_hook(|message| show_error("DegenView stopped unexpectedly", message));
     if let Err(error) = degenview::run_gui_with(icloud()) {
-        report_fatal(&error.to_string());
+        show_error("DegenView failed to start", &error.to_string());
         std::process::exit(1);
     }
 }
@@ -41,9 +43,9 @@ fn icloud() -> Option<std::sync::Arc<dyn degenview::TransportFactory>> {
     None
 }
 
-/// A GUI-subsystem build has no console, so a startup failure would vanish; show it in a dialog.
+/// A GUI-subsystem build has no console, so a startup failure or a panic would vanish; show it in a dialog.
 #[cfg(windows)]
-fn report_fatal(message: &str) {
+fn show_error(title: &str, message: &str) {
     use std::os::windows::ffi::OsStrExt;
 
     #[link(name = "user32")]
@@ -59,12 +61,12 @@ fn report_fatal(message: &str) {
             .collect::<Vec<u16>>()
     };
     let text = wide(message);
-    let caption = wide("DegenView failed to start");
+    let caption = wide(title);
     // MB_OK | MB_ICONERROR
     unsafe { MessageBoxW(std::ptr::null_mut(), text.as_ptr(), caption.as_ptr(), 0x10) };
 }
 
 #[cfg(not(windows))]
-fn report_fatal(message: &str) {
-    eprintln!("Error: {message}");
+fn show_error(title: &str, message: &str) {
+    eprintln!("{title}: {message}");
 }
