@@ -27,7 +27,6 @@ use crate::host::broker_host::BrokerHost;
 use crate::model::broker::prefs::BrokerPrefs;
 use crate::model::broker::ticket::{self as rules, StatusTone};
 use crate::trading::model::AccountStats;
-use crate::ui::alert::center::Tone;
 use crate::ui::icons::Icon;
 use crate::ui::paper::grid::{self as grid, Col, col};
 use crate::ui::paper::tables::empty;
@@ -270,6 +269,7 @@ fn capitalise(text: &str) -> String {
 }
 
 pub use crate::model::broker::ticket::type_label;
+use crate::ui::kit::Tone;
 
 fn tone(tone: StatusTone) -> Tone {
     match tone {

@@ -13,8 +13,8 @@ use crate::service::snapshot_providers::{
     SnapshotProvider,
 };
 use crate::service::snapshot_upload::{self, UreqTransport};
-use crate::ui::alert::center::Tone;
 use crate::ui::icons::{self, Icon};
+use crate::ui::kit::Tone;
 use crate::ui::paper::form;
 use crate::ui::settings::api_keys::{Autosave, StatusMessage, destructive_button, field};
 use crate::ui::settings::brokers::{fitted, gray_link, muted, step_row, titled_group};

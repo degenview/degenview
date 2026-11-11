@@ -11,7 +11,7 @@
 use super::{ChartCard, Projection, View};
 use crate::model::chart::canvas::COLLAPSED_PANE_HEIGHT;
 use crate::ui::chart::canvas::CanvasStyle;
-use crate::ui::replay::bar;
+use crate::ui::kit::time_text;
 use crate::ui::replay::overlay::{self, ReplayChartFrame};
 use eframe::egui::{
     self, Align2, Color32, FontId, Id, Painter, Pos2, Rect, Response, Stroke, Vec2,
@@ -47,11 +47,11 @@ fn candle_x(index: usize, plot: Rect, view: &View) -> f32 {
 
 /// "Oct 9, 14:03 – 14:45", or "Oct 9, 14:03" for one bar.
 fn span_text(from_ms: i64, to_ms: i64) -> String {
-    let from = bar::compact_text(from_ms);
+    let from = time_text::compact_text(from_ms);
     if from_ms == to_ms {
         return from;
     }
-    let to = bar::compact_text(to_ms);
+    let to = time_text::compact_text(to_ms);
     match (from.split_once(", "), to.split_once(", ")) {
         (Some((day, _)), Some((other, time))) if day == other => format!("{from} – {time}"),
         _ => format!("{from} – {to}"),

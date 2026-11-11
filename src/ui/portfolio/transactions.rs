@@ -10,9 +10,12 @@ use crate::model::DataSource;
 use crate::model::portfolio::format::{PortfolioValueFormatter, QuantitySign};
 use crate::model::portfolio::{PortfolioAsset, PortfolioTransaction, PortfolioTransactionType};
 use crate::ui::accessibility;
-use crate::ui::alert::center::clock_time;
 use crate::ui::icons::Icon;
-use crate::ui::kit::{self, MEDIUM, REGULAR, SEMIBOLD};
+use crate::ui::kit::time_text::date_time_text;
+use crate::ui::kit::{
+    self, MEDIUM, REGULAR, SEMIBOLD,
+    time_text::{clock_time, date_text},
+};
 use crate::ui::portfolio::charts;
 use crate::ui::portfolio::empty;
 use crate::ui::portfolio::grid::{
@@ -20,7 +23,6 @@ use crate::ui::portfolio::grid::{
 };
 use crate::ui::portfolio::overview::{activity_caption, lift};
 use crate::ui::portfolio::table;
-use crate::ui::replay::bar::date_text;
 use crate::ui::theme;
 use eframe::egui::{self, Align2, Color32, Rect, Sense, Stroke, pos2, vec2};
 use std::cmp::Ordering;
@@ -279,15 +281,6 @@ pub fn asset_choices(ledger: &[PortfolioTransaction]) -> Vec<(String, String)> {
         .collect();
     choices.sort_by_key(|(_, ticker)| ticker.to_lowercase());
     choices
-}
-
-/// "Oct 9, 2026 14:03" in the viewer's time zone.
-pub fn date_time_text(ms: i64, utc_offset_secs: i64) -> String {
-    format!(
-        "{} {}",
-        date_text(ms + utc_offset_secs * 1_000),
-        clock_time(ms, utc_offset_secs)
-    )
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -1512,11 +1505,7 @@ mod tests {
     }
 
     #[test]
-    fn dates_read_in_the_viewers_zone() {
-        // 2024-01-15 23:30 UTC is already the 16th in UTC+2.
-        let ms = 1_705_361_400_000;
-        assert_eq!(date_time_text(ms, 0), "Jan 15, 2024 23:30");
-        assert_eq!(date_time_text(ms, 2 * 3_600), "Jan 16, 2024 01:30");
+    fn the_columns_are_titled_in_the_portfolio_currency() {
         assert_eq!(TransactionColumn::Price.title("USD"), "Price (USD)");
         assert_eq!(TransactionColumn::Fee.title("USD"), "Fee");
     }

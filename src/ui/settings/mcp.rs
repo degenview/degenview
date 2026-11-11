@@ -11,8 +11,8 @@ use crate::model::mcp::{
     BindMode, Cidr, MAX_CIDRS, MAX_CLIENT_NAME_LEN, McpAction, McpAuditEntry, McpClient,
     McpSettings, Permission, PermissionSet,
 };
-use crate::ui::alert::center::{Tone, relative_time};
 use crate::ui::icons::{self, Icon};
+use crate::ui::kit::{Tone, time_text::relative_time};
 use crate::ui::mcp::activity::{self, ActivityInput, ActivityState};
 use crate::ui::settings::window::{card, divider, section, status_badge, status_message};
 use crate::ui::{

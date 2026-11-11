@@ -15,6 +15,8 @@ use crate::model::alert::{
 };
 use crate::ui::alert::script_list::{self, ScriptAlertRow};
 use crate::ui::icons::{self, Icon};
+use crate::ui::kit::Tone;
+use crate::ui::kit::time_text::{clock_time, relative_time};
 use crate::ui::{accessibility, kit, theme};
 use eframe::egui::{self, Color32, Id, Pos2, Rect, Sense, Stroke, Vec2};
 use std::collections::HashMap;
@@ -221,8 +223,6 @@ pub fn last_fired_by_rule(history: &[AlertTriggerEvent]) -> HashMap<AlertId, &Al
     latest
 }
 
-pub use crate::ui::kit::Tone;
-
 /// `(text, tone, help)` for a rule's status badge.
 pub fn status(alert: &PriceAlert, quote_is_fresh: bool) -> (&'static str, Tone, &'static str) {
     match alert.state {
@@ -314,34 +314,6 @@ pub fn secondary_text(
     } else {
         format!("{away:.0}% away")
     })
-}
-
-/// Abbreviated relative time: "now", "5 min. ago", "3 hr. ago", "2 days ago".
-pub fn relative_time(now_ms: i64, then_ms: i64) -> String {
-    let secs = (now_ms - then_ms) / 1_000;
-    if secs < 0 {
-        return "in the future".to_owned();
-    }
-    let (value, unit) = match secs {
-        0..=4 => return "now".to_owned(),
-        5..=59 => (secs, "sec."),
-        60..=3_599 => (secs / 60, "min."),
-        3_600..=86_399 => (secs / 3_600, "hr."),
-        86_400..=604_799 => (
-            secs / 86_400,
-            if secs / 86_400 == 1 { "day" } else { "days" },
-        ),
-        604_800..=2_591_999 => (secs / 604_800, "wk."),
-        2_592_000..=31_535_999 => (secs / 2_592_000, "mo."),
-        _ => (secs / 31_536_000, "yr."),
-    };
-    format!("{value} {unit} ago")
-}
-
-/// "14:03" in the viewer's time zone.
-pub fn clock_time(ms: i64, utc_offset_secs: i64) -> String {
-    let seconds = (ms.div_euclid(1_000) + utc_offset_secs).rem_euclid(86_400);
-    format!("{:02}:{:02}", seconds / 3_600, seconds % 3_600 / 60)
 }
 
 /// What an alert waits for as `(glyph, label, bullish)`: "Crosses above", "Falls 5%".
@@ -1548,39 +1520,6 @@ mod tests {
             secondary_text(&triggered, Some(&fired), Some(95.0), 0),
             None
         );
-    }
-
-    #[test]
-    fn relative_times_are_abbreviated() {
-        let now = 100_000_000_000;
-        for (ago_secs, expected) in [
-            (0, "now"),
-            (4, "now"),
-            (30, "30 sec. ago"),
-            (120, "2 min. ago"),
-            (3 * 3_600, "3 hr. ago"),
-            (86_400, "1 day ago"),
-            (3 * 86_400, "3 days ago"),
-            (14 * 86_400, "2 wk. ago"),
-            (90 * 86_400, "3 mo. ago"),
-            (800 * 86_400, "2 yr. ago"),
-        ] {
-            assert_eq!(
-                relative_time(now, now - ago_secs * 1_000),
-                expected,
-                "{ago_secs}"
-            );
-        }
-        assert_eq!(relative_time(now, now + 5_000), "in the future");
-    }
-
-    #[test]
-    fn clock_times_follow_the_viewers_zone() {
-        // 2024-01-15 15:00 UTC.
-        assert_eq!(clock_time(1_705_330_800_000, 0), "15:00");
-        assert_eq!(clock_time(1_705_330_800_000, 2 * 3_600), "17:00");
-        assert_eq!(clock_time(1_705_330_800_000, -8 * 3_600), "07:00");
-        assert_eq!(clock_time(1_705_330_800_000 + 90_000, 0), "15:01");
     }
 
     #[test]

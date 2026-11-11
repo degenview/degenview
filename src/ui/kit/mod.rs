@@ -8,11 +8,13 @@ pub mod date_picker;
 pub mod dialog;
 pub mod error_notice;
 pub mod header_controls;
+pub mod keycap;
 pub mod markdown_view;
 pub mod popover;
 pub mod sheet;
 pub mod source_logo;
 pub mod split;
+pub mod time_text;
 
 use crate::model::DataSource;
 use crate::ui::icons::{self, Icon};

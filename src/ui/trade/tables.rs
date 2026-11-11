@@ -8,8 +8,8 @@ use degenview_brokers::{Decimal, Side};
 use eframe::egui;
 
 use crate::trading::model::{OrderRow, RowStatus, Tone};
-use crate::ui::alert::center::Tone as BadgeTone;
 use crate::ui::icons::{self, Icon};
+use crate::ui::kit::Tone as BadgeTone;
 use crate::ui::paper::grid::{self as grid, Col, col};
 use crate::ui::paper::tables::empty;
 use crate::ui::{kit, theme};
