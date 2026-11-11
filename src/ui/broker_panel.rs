@@ -15,24 +15,25 @@ use std::time::{Duration, Instant};
 
 use degenview_brokers::model::orders::{
     CancelOutcome, CancelResult, EditOutcome, EditPreview, FillFilter, HistoryFilter, OrderChange,
-    Page, PlacedOrder,
+    OrderFingerprint, Page, PlacedOrder,
 };
 use degenview_brokers::{
-    Broker, BrokerId, BrokerSnapshot, Capabilities, ClientOrderId, Decimal, LiveFill, LiveOrder,
-    MarketRef, OrderId, OrderKind, OrderSize, OrderStatus, OrderType, Pending, PendingState,
-    ProductResolution, Side, Status,
+    BrokerId, BrokerSnapshot, ClientOrderId, Decimal, LiveFill, LiveOrder, OrderId, OrderSize,
+    OrderStatus, OrderType, Pending, Side, Status,
 };
 use eframe::egui::{self, Color32, Id};
 
 use crate::host::broker_host::BrokerHost;
 use crate::model::broker_prefs::BrokerPrefs;
-use crate::model::broker_ticket::{self as rules, StatusTone, TicketDraft};
-use crate::model::trading_venue::TradingVenue;
+use crate::model::broker_ticket::{self as rules, StatusTone};
+use crate::trading::model::AccountStats;
 use crate::ui::alert_center::Tone;
-use crate::ui::broker_ticket::{self, TicketEvent, TicketState};
-use crate::ui::icons::{self, Icon};
+use crate::ui::icons::Icon;
 use crate::ui::paper_grid::{self as grid, Col, col};
 use crate::ui::paper_tables::empty;
+use crate::ui::trade::panel_header::{self, Chip, Header, HeaderEvent, PanelEvent, VenueBar};
+use crate::ui::trade::tables::{self, OrderAction};
+use crate::ui::trade::{notice, stats_strip};
 use crate::ui::{broker_badge, dialog, kit, sheet, theme};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -41,6 +42,27 @@ pub enum BrokerTab {
     History,
     Fills,
     Balances,
+}
+
+impl BrokerTab {
+    fn title(self) -> &'static str {
+        match self {
+            Self::Orders => "Orders",
+            Self::History => "History",
+            Self::Fills => "Fills",
+            Self::Balances => "Balances",
+        }
+    }
+
+    fn icon(self) -> crate::ui::icons::Icon {
+        use crate::ui::icons::Icon;
+        match self {
+            Self::Orders => Icon::List,
+            Self::History => Icon::Clock,
+            Self::Fills => Icon::Exchange,
+            Self::Balances => Icon::Banknote,
+        }
+    }
 }
 
 /// Which finished orders the History tab lists.
@@ -126,7 +148,8 @@ struct CancelAsk {
 
 enum EditStage {
     Editing,
-    Confirming(OrderChange),
+    /// The change, and the broker's preview of exactly it.
+    Confirming(OrderChange, Box<EditPreview>),
     Sending(Pending<EditOutcome>),
 }
 
@@ -139,10 +162,27 @@ pub struct EditState {
     preview_for: Option<String>,
     preview_pending: Option<(String, Pending<EditPreview>)>,
     preview_error: Option<String>,
+    /// When the broker's answer arrived: an old answer is asked for again.
+    preview_at: Option<Instant>,
     seen: String,
     changed_at: Instant,
     stage: EditStage,
     error: Option<String>,
+    /// Whether the Review button was enabled in the last frame.
+    #[cfg(test)]
+    review_enabled: bool,
+}
+
+impl EditState {
+    /// Asks the broker again, at once. Reached by the "Try again" button.
+    fn retry_preview(&mut self) {
+        self.preview_error = None;
+        self.preview_for = None;
+        self.preview_at = None;
+        self.changed_at = Instant::now()
+            .checked_sub(Duration::from_millis(450))
+            .unwrap_or_else(Instant::now);
+    }
 }
 
 pub struct BrokerPanelState {
@@ -151,7 +191,6 @@ pub struct BrokerPanelState {
     history: Paged<LiveOrder>,
     history_choice: HistoryChoice,
     fills_more: Paged<LiveFill>,
-    ticket: Option<TicketState>,
     edit: Option<EditState>,
     cancel_ask: Option<CancelAsk>,
     flights: Vec<Flight>,
@@ -168,7 +207,6 @@ impl Default for BrokerPanelState {
             history: Paged::default(),
             history_choice: HistoryChoice::All,
             fills_more: Paged::default(),
-            ticket: None,
             edit: None,
             cancel_ask: None,
             flights: Vec::new(),
@@ -177,12 +215,6 @@ impl Default for BrokerPanelState {
             force_edit_review: false,
         }
     }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PanelAction {
-    Close,
-    OpenSettings,
 }
 
 // ---- Rules (pure) --------------------------------------------------------------------------------
@@ -205,6 +237,10 @@ pub fn cancel_summary(results: &[CancelResult]) -> (String, bool) {
                 problems.push("one is being edited; try again in a moment".to_owned());
             }
             CancelOutcome::Rejected(text) => problems.push(text.clone()),
+            CancelOutcome::Unknown(_) => problems.push(
+                "one did not get an answer: it may or may not be cancelled, and is being read again"
+                    .to_owned(),
+            ),
         }
     }
     let asked = match requested {
@@ -229,41 +265,7 @@ fn capitalise(text: &str) -> String {
     })
 }
 
-/// Why an order cannot be edited, or `None` when it can.
-pub fn edit_blocker(
-    order: &LiveOrder,
-    caps: Option<&Capabilities>,
-    cancelling: bool,
-) -> Option<&'static str> {
-    if order.status != OrderStatus::Open {
-        return Some("Only open orders can be edited.");
-    }
-    if cancelling {
-        return Some("A cancel is in progress for this order.");
-    }
-    if !matches!(order.order_type, OrderType::Limit | OrderType::StopLimit) {
-        return Some("This type of order cannot be edited.");
-    }
-    if matches!(order.size, Some(OrderSize::Quote(_))) || order.size.is_none() {
-        return Some("Orders sized by an amount to spend cannot be edited.");
-    }
-    match caps {
-        Some(caps) if caps.native_edit => None,
-        Some(_) => Some("This broker does not support editing this market's orders."),
-        None => Some("The market's rules have not been read yet."),
-    }
-}
-
-/// The type column.
-pub fn type_label(order: &LiveOrder) -> String {
-    match order.order_type {
-        OrderType::Market => "Market".to_owned(),
-        OrderType::Limit if order.post_only => "Limit, post-only".to_owned(),
-        OrderType::Limit => "Limit".to_owned(),
-        OrderType::StopLimit => "Stop-limit".to_owned(),
-        OrderType::Other => "Other".to_owned(),
-    }
-}
+pub use crate::model::broker_ticket::type_label;
 
 fn tone(tone: StatusTone) -> Tone {
     match tone {
@@ -290,16 +292,6 @@ fn time_text(ms: Option<i64>) -> String {
     format!("{:02}:{:02}:{:02}", day / 3600, day % 3600 / 60, day % 60)
 }
 
-fn price_of(order: &LiveOrder, snapshot: &BrokerSnapshot) -> String {
-    let Some(price) = order.marker_price() else {
-        return "Market".to_owned();
-    };
-    snapshot.product(&order.product).map_or_else(
-        || rules::display(price),
-        |spec| rules::price_display(price, spec),
-    )
-}
-
 fn size_text(order: &LiveOrder) -> String {
     match order.size {
         Some(OrderSize::Base(size)) => rules::display(size),
@@ -310,52 +302,48 @@ fn size_text(order: &LiveOrder) -> String {
 
 // ---- The panel -----------------------------------------------------------------------------------
 
-/// Chooses the venue of a tab. Shown only when a broker is saved or connected, so a user with
-/// paper trading alone sees no change. Returns true when the venue changed.
-pub fn venue_switch(ui: &mut egui::Ui, venue: &mut TradingVenue, host: &BrokerHost) -> bool {
-    let mut options: Vec<(TradingVenue, String)> = vec![(TradingVenue::Paper, "Paper".to_owned())];
-    for broker in host.brokers() {
-        let id = broker.descriptor().id;
-        let present = !matches!(
-            host.connection(id),
-            crate::host::broker_host::Connection::NotConfigured
-        );
-        if present || *venue == TradingVenue::Broker(id) {
-            options.push((
-                TradingVenue::Broker(id),
-                broker.descriptor().display_name.to_owned(),
-            ));
-        }
-    }
-    if options.len() == 1 {
-        return false;
-    }
-    let before = *venue;
-    ui.horizontal(|ui| {
-        ui.add_space(12.0);
-        ui.spacing_mut().item_spacing.x = 10.0;
-        ui.label(kit::text(
-            "Trade on",
-            kit::size::CAPTION + 0.5,
-            kit::MEDIUM,
-            theme::text_secondary(),
-        ));
-        let labelled: Vec<(TradingVenue, &str)> = options
-            .iter()
-            .map(|(v, name)| (*v, name.as_str()))
-            .collect();
-        kit::segmented(ui, Id::new("broker-venue"), &labelled, venue);
-    });
-    ui.add_space(6.0);
-    *venue != before
-}
-
-pub struct PanelInput {
-    /// The focused chart's market, if it is a market chart.
-    pub market: Option<MarketRef>,
+/// The edit sheet and the cancel question, drawn when the panel itself is not (an edit started from
+/// a chart's line, with the panel closed).
+pub fn dialogs_only(
+    ctx: &egui::Context,
+    state: &mut BrokerPanelState,
+    host: &BrokerHost,
+    broker_id: BrokerId,
+) {
+    let Some(snapshot) = host.snapshot(broker_id) else {
+        // The connection is gone: so are the questions about it.
+        state.edit = None;
+        state.cancel_ask = None;
+        return;
+    };
+    poll_flights(state);
+    dialogs(ctx, state, host, broker_id, &snapshot);
 }
 
 impl BrokerPanelState {
+    /// Whether any question is open (the workspace keeps drawing them while the panel is closed).
+    pub fn has_dialog(&self) -> bool {
+        self.edit.is_some() || self.cancel_ask.is_some()
+    }
+
+    /// The message the panel last showed, if it is still fresh: what a closed panel cannot show.
+    pub fn take_notice(&mut self) -> Option<(String, bool)> {
+        self.notice.take().map(|(text, error, _)| (text, error))
+    }
+
+    /// Closes the edit sheet: a replay started, and no order may be changed from one.
+    pub fn close_order_entry(&mut self) -> bool {
+        let open = self.edit.is_some();
+        self.edit = None;
+        open
+    }
+
+    /// Asks to cancel one order (a chart's ✕), following the user's confirmation choice.
+    pub fn cancel_one(&mut self, host: &BrokerHost, broker: BrokerId, id: OrderId) {
+        let confirm = host.prefs(broker).confirm_single_cancel;
+        request_cancel(self, host, broker, vec![id], confirm);
+    }
+
     /// Shows `tab`. The pictures and tests use it; the user does through the tab bar.
     #[cfg(test)]
     pub(crate) fn set_tab(&mut self, tab: BrokerTab) {
@@ -381,15 +369,36 @@ impl BrokerPanelState {
     #[cfg(test)]
     pub(crate) fn edit_ready(&self) -> bool {
         self.edit.as_ref().is_some_and(|e| {
-            e.preview_for.is_some() && e.preview_for.as_deref() == Some(e.seen.as_str())
+            e.preview_for.is_some()
+                && e.preview_for.as_deref() == Some(e.seen.as_str())
+                && e.preview.as_ref().is_some_and(EditPreview::is_acceptable)
         })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn edit_review_enabled(&self) -> bool {
+        self.edit.as_ref().is_some_and(|e| e.review_enabled)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn edit_preview_failed(&self) -> bool {
+        self.edit
+            .as_ref()
+            .is_some_and(|e| e.preview_error.is_some())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn retry_edit_preview(&mut self) {
+        if let Some(edit) = self.edit.as_mut() {
+            edit.retry_preview();
+        }
     }
 
     #[cfg(test)]
     pub(crate) fn edit_confirming(&self) -> bool {
         self.edit
             .as_ref()
-            .is_some_and(|e| matches!(e.stage, EditStage::Confirming(_)))
+            .is_some_and(|e| matches!(e.stage, EditStage::Confirming(..)))
     }
 
     #[cfg(test)]
@@ -397,20 +406,20 @@ impl BrokerPanelState {
         self.edit.is_some()
     }
 
+    /// The filled size of the order the sheet shows, as it shows it.
+    #[cfg(test)]
+    pub(crate) fn edit_filled_size(&self) -> Option<Decimal> {
+        self.edit.as_ref().map(|e| e.order.filled_size)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn edit_error_text(&self) -> Option<&str> {
+        self.edit.as_ref().and_then(|e| e.error.as_deref())
+    }
+
     #[cfg(test)]
     pub(crate) fn press_edit_review(&mut self) {
         self.force_edit_review = true;
-    }
-
-    /// Opens the ticket for `product` with `draft` already filled (a click on the chart, say).
-    #[allow(dead_code)] // The chart's menu and order buttons open it next.
-    pub fn open_ticket(
-        &mut self,
-        broker: BrokerId,
-        product: degenview_brokers::ProductId,
-        draft: TicketDraft,
-    ) {
-        self.ticket = Some(TicketState::new(broker, product, draft));
     }
 
     fn say(&mut self, text: impl Into<String>, error: bool) {
@@ -436,10 +445,13 @@ impl BrokerPanelState {
             preview_for: None,
             preview_pending: None,
             preview_error: None,
+            preview_at: None,
             seen: String::new(),
             changed_at: Instant::now(),
             stage: EditStage::Editing,
             error: None,
+            #[cfg(test)]
+            review_enabled: false,
         });
     }
 }
@@ -449,26 +461,19 @@ pub fn ui(
     state: &mut BrokerPanelState,
     host: &BrokerHost,
     broker_id: BrokerId,
-    input: &PanelInput,
-) -> Vec<PanelAction> {
+    bar: &VenueBar,
+    stats: Option<&AccountStats>,
+) -> Vec<PanelEvent> {
     let mut actions = Vec::new();
-    let Some(broker) = degenview_brokers::registry::by_id(broker_id) else {
+    if degenview_brokers::registry::by_id(broker_id).is_none() {
         return actions;
-    };
+    }
     ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
     broker_badge::rule(ui);
     let snapshot = host.snapshot(broker_id);
     let prefs = host.prefs(broker_id);
 
-    header(
-        ui,
-        state,
-        host,
-        broker,
-        snapshot.as_deref(),
-        input,
-        &mut actions,
-    );
+    header(ui, state, bar, snapshot.as_deref(), &mut actions);
     divider(ui);
 
     let Some(snapshot) = snapshot else {
@@ -478,7 +483,7 @@ pub fn ui(
             "Connect this broker in Settings ▸ Brokers to trade here."
         };
         if empty_with_settings(ui, message) {
-            actions.push(PanelAction::OpenSettings);
+            actions.push(PanelEvent::OpenSettings);
         }
         return actions;
     };
@@ -492,7 +497,7 @@ pub fn ui(
         }
     }
     poll_flights(state);
-    tab_row(ui, state, &snapshot);
+    stats_strip::show(ui, stats);
     divider(ui);
 
     match state.tab {
@@ -500,6 +505,14 @@ pub fn ui(
         BrokerTab::History => history_tab(ui, state, host, broker_id),
         BrokerTab::Fills => fills_tab(ui, state, host, broker_id, &snapshot),
         BrokerTab::Balances => balances_tab(ui, &snapshot),
+    }
+    // The tables leave room for the orders footer, which only the Orders tab draws. Whatever is
+    // left is taken, so the panel's content is as tall as the room it was given: a resizable panel
+    // sizes itself to its content, and one that is short by a footer shrinks every frame, so a
+    // drag of its edge never sticks.
+    let rest = ui.available_height();
+    if rest > 0.0 {
+        ui.allocate_exact_size(egui::vec2(ui.available_width(), rest), egui::Sense::hover());
     }
 
     dialogs(ui.ctx(), state, host, broker_id, &snapshot);
@@ -517,137 +530,79 @@ fn empty_with_settings(ui: &mut egui::Ui, message: &str) -> bool {
 }
 
 fn divider(ui: &mut egui::Ui) {
-    let (line, _) =
-        ui.allocate_exact_size(egui::vec2(ui.available_width(), 1.0), egui::Sense::hover());
-    ui.painter().rect_filled(line, 0.0, theme::separator());
+    notice::divider(ui);
 }
 
 fn note(ui: &mut egui::Ui, text: &str, error: bool) {
-    let tint = if error {
-        kit::RED
-    } else {
-        theme::text_secondary()
-    };
-    egui::Frame::new()
-        .fill(theme::with_alpha(tint, 0.1))
-        .inner_margin(egui::Margin::symmetric(12, 7))
-        .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.add(
-                egui::Label::new(kit::text(
-                    text,
-                    kit::size::CAPTION + 0.5,
-                    kit::REGULAR,
-                    tint,
-                ))
-                .wrap(),
-            );
-        });
+    notice::note(ui, text, error);
 }
 
+/// The shared header: the venue pill, the portfolio, the sections with the working-order count and
+/// the panel's buttons.
 fn header(
     ui: &mut egui::Ui,
     state: &mut BrokerPanelState,
-    host: &BrokerHost,
-    broker: &'static dyn Broker,
+    bar: &VenueBar,
     snapshot: Option<&BrokerSnapshot>,
-    input: &PanelInput,
-    actions: &mut Vec<PanelAction>,
+    actions: &mut Vec<PanelEvent>,
 ) {
-    let descriptor = broker.descriptor();
-    egui::Frame::new()
-        .inner_margin(egui::Margin::symmetric(12, 9))
-        .show(ui, |ui| {
-            ui.set_width(ui.available_width());
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing.x = 10.0;
-                broker_badge::badge(ui, descriptor.display_name);
-                if let Some(snapshot) = snapshot {
-                    let (text, tone) =
-                        crate::ui::settings_brokers::status_badge_for(&snapshot.status);
-                    kit::status_badge(ui, &text, tone);
-                    if let Some(account) =
-                        snapshot.session.as_ref().and_then(|s| s.accounts.first())
-                    {
-                        ui.label(kit::text(
-                            &account.label,
-                            kit::size::BODY,
-                            kit::REGULAR,
-                            theme::text_secondary(),
-                        ));
-                    }
-                }
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if icons::button(
-                        ui,
-                        Icon::Gear,
-                        22.0,
-                        theme::text_secondary(),
-                        "Brokers settings",
-                    )
-                    .clicked()
-                    {
-                        actions.push(PanelAction::OpenSettings);
-                    }
-                    if icons::button(
-                        ui,
-                        Icon::Xmark,
-                        22.0,
-                        theme::text_secondary(),
-                        "Close panel",
-                    )
-                    .clicked()
-                    {
-                        actions.push(PanelAction::Close);
-                    }
-                    let can_trade = snapshot.is_some_and(|s| {
-                        s.is_live() && s.session.as_ref().is_some_and(|x| x.permissions.can_trade)
-                    });
-                    if kit::sheet_button(ui, "New order", true, can_trade).clicked() {
-                        new_order(state, host, broker, input);
-                    }
-                });
-            });
-        });
-}
-
-/// Opens a ticket for the focused chart's market, if that chart is a market this broker trades.
-fn new_order(
-    state: &mut BrokerPanelState,
-    host: &BrokerHost,
-    broker: &'static dyn Broker,
-    input: &PanelInput,
-) {
-    let descriptor = broker.descriptor();
-    let Some(market) = &input.market else {
-        state.say(
-            "Focus a market chart first: the order is for the chart's market.",
-            true,
-        );
-        return;
+    let working = snapshot.map_or(0, |snapshot| {
+        snapshot
+            .orders
+            .iter()
+            .filter(|v| v.order.status.is_working())
+            .count()
+            + snapshot.pending.len()
+    });
+    let tabs: Vec<kit::TabItem<BrokerTab>> = [
+        BrokerTab::Orders,
+        BrokerTab::History,
+        BrokerTab::Fills,
+        BrokerTab::Balances,
+    ]
+    .into_iter()
+    .map(|tab| kit::TabItem {
+        value: tab,
+        title: tab.title(),
+        icon: tab.icon(),
+        count: if tab == BrokerTab::Orders { working } else { 0 },
+    })
+    .collect();
+    let account = snapshot
+        .and_then(|snapshot| snapshot.session.as_ref())
+        .and_then(|session| session.accounts.first())
+        .map(|account| account.label.clone());
+    let chip = Chip {
+        label: account.unwrap_or_default(),
+        sub: None,
+        tip: "The account orders go to".to_owned(),
+        rows: Vec::new(),
+        add: None,
     };
-    match broker.resolve_market(market) {
-        ProductResolution::Market(product) => {
-            let prefs = host.prefs(descriptor.id);
-            let mut draft = TicketDraft::new(Side::Buy);
-            draft.spend_in_quote = prefs.spend_in_quote_by_default;
-            state.ticket = Some(TicketState::new(descriptor.id, product, draft));
+    let can_order = snapshot.is_some_and(|s| {
+        s.can_send_orders() && s.session.as_ref().is_some_and(|x| x.permissions.can_trade)
+    });
+    let events = panel_header::show(
+        ui,
+        &Header {
+            bar,
+            chip: &chip,
+            tabs: &tabs,
+            overlay: None,
+            can_order,
+            more: &[],
+            settings_tip: "Brokers settings",
+        },
+        &mut state.tab,
+    );
+    for event in events {
+        if let HeaderEvent::Panel(event) = event {
+            actions.push(event);
         }
-        ProductResolution::OtherSource { .. } => state.say(
-            format!(
-                "This chart's data does not come from {name}, so it is not a {name} market. Open the market's {name} chart to trade it.",
-                name = descriptor.display_name
-            ),
-            true,
-        ),
-        ProductResolution::Unrecognised => state.say(
-            format!("{} is not a market {} can trade.", market.symbol, descriptor.display_name),
-            true,
-        ),
     }
 }
 
-fn banners(ui: &mut egui::Ui, snapshot: &BrokerSnapshot, actions: &mut Vec<PanelAction>) {
+fn banners(ui: &mut egui::Ui, snapshot: &BrokerSnapshot, actions: &mut Vec<PanelEvent>) {
     match &snapshot.status {
         Status::Failed(error) => {
             note(
@@ -674,6 +629,12 @@ fn banners(ui: &mut egui::Ui, snapshot: &BrokerSnapshot, actions: &mut Vec<Panel
                     false,
                 );
             }
+            if let Some(error) = &snapshot.journal_error {
+                note(ui, &error.to_string(), true);
+            }
+            if snapshot.held_elsewhere > 0 {
+                note(ui, &held_elsewhere_text(snapshot.held_elsewhere), false);
+            }
             if let Some(error) = &snapshot.last_error {
                 note(ui, error, true);
             }
@@ -681,48 +642,16 @@ fn banners(ui: &mut egui::Ui, snapshot: &BrokerSnapshot, actions: &mut Vec<Panel
     }
 }
 
-fn tab_row(ui: &mut egui::Ui, state: &mut BrokerPanelState, snapshot: &BrokerSnapshot) {
-    let working = snapshot
-        .orders
-        .iter()
-        .filter(|v| v.order.status.is_working())
-        .count()
-        + snapshot.pending.len();
-    egui::Frame::new()
-        .inner_margin(egui::Margin::symmetric(12, 8))
-        .show(ui, |ui| {
-            kit::tab_bar_slim(
-                ui,
-                Id::new("broker-tabs"),
-                &[
-                    kit::TabItem {
-                        value: BrokerTab::Orders,
-                        title: "Orders",
-                        icon: Icon::List,
-                        count: working,
-                    },
-                    kit::TabItem {
-                        value: BrokerTab::History,
-                        title: "History",
-                        icon: Icon::List,
-                        count: 0,
-                    },
-                    kit::TabItem {
-                        value: BrokerTab::Fills,
-                        title: "Fills",
-                        icon: Icon::List,
-                        count: 0,
-                    },
-                    kit::TabItem {
-                        value: BrokerTab::Balances,
-                        title: "Balances",
-                        icon: Icon::List,
-                        count: 0,
-                    },
-                ],
-                &mut state.tab,
-            );
-        });
+/// Said when the journal holds unconfirmed orders that are not this account's.
+fn held_elsewhere_text(count: usize) -> String {
+    if count == 1 {
+        "1 unconfirmed order belongs to a different account. It is left untouched here and checked when that account is connected."
+            .to_owned()
+    } else {
+        format!(
+            "{count} unconfirmed orders belong to a different account. They are left untouched here and checked when that account is connected."
+        )
+    }
 }
 
 fn poll_flights(state: &mut BrokerPanelState) {
@@ -767,166 +696,46 @@ fn orders_tab(
     snapshot: &BrokerSnapshot,
     prefs: &BrokerPrefs,
 ) {
-    enum Row<'a> {
-        Pending(&'a degenview_brokers::PendingView),
-        Order(&'a degenview_brokers::model::reducer::OrderView),
-    }
-    let rows: Vec<Row> = snapshot
-        .pending
+    let rows = crate::trading::broker_backend::order_rows(snapshot);
+    let mut selected: BTreeSet<String> = state
+        .selected
         .iter()
-        .map(Row::Pending)
-        .chain(snapshot.orders.iter().map(Row::Order))
+        .map(|id| id.as_str().to_owned())
         .collect();
-    if rows.is_empty() {
-        empty(
-            ui,
-            Icon::List,
-            "No orders",
-            "Working orders rest here until they fill or are cancelled.",
-        );
-        return;
-    }
-    const COLS: [Col; 9] = [
-        col("", 30.0, 0.0, false),
-        col("Market", 110.0, 1.2, false),
-        col("Side", 64.0, 0.0, false),
-        col("Type", 120.0, 1.0, false),
-        col("Price", 110.0, 1.0, true),
-        col("Filled / Size", 130.0, 1.0, true),
-        col("Status", 120.0, 0.0, false),
-        col("Time", 80.0, 0.0, true),
-        col("", 76.0, 0.0, true),
-    ];
-    let mut cancel_one: Option<OrderId> = None;
-    let mut edit_one: Option<LiveOrder> = None;
-    let mut retry: Option<ClientOrderId> = None;
-    let mut toggled: Option<OrderId> = None;
-    grid::show(ui, "broker-orders", &COLS, rows.len(), |ui, row, column| {
-        let weak = theme::text_secondary();
-        let primary = theme::text_primary();
-        match &rows[row] {
-            Row::Pending(pending) => match column {
-                1 => grid::text_cell(ui, pending.draft.product.as_str(), primary),
-                2 => grid::tag(
-                    ui,
-                    if pending.draft.side == Side::Buy {
-                        "BUY"
-                    } else {
-                        "SELL"
-                    },
-                    side_color(pending.draft.side),
-                ),
-                3 => grid::text_cell(ui, pending_type(&pending.draft.kind), weak),
-                4 => grid::figure(ui, &pending_price(&pending.draft.kind), primary),
-                5 => grid::figure(ui, &pending_size(&pending.draft.kind), primary),
-                6 => {
-                    let (label, tone) = match pending.state {
-                        PendingState::Sending => ("Sending…", Tone::Neutral),
-                        PendingState::Unknown => ("Unconfirmed", Tone::Warning),
-                    };
-                    kit::status_badge(ui, label, tone);
-                }
-                7 => grid::figure(ui, &time_text(Some(pending.created_ms)), weak),
-                8 if pending.state == PendingState::Unknown => {
-                    let clicked = kit::sheet_button(ui, "Check", false, true)
-                        .on_hover_text(
-                            "Look the order up at the broker; sends it again only if it is not there",
-                        )
-                        .clicked();
-                    if clicked {
-                        retry = Some(pending.client_id.clone());
-                    }
-                }
-                _ => {}
-            },
-            Row::Order(view) => {
-                let order = &view.order;
-                let working = order.status.is_working();
-                let dim = if working { primary } else { weak };
-                match column {
-                    0 if working => {
-                        let mut on = state.selected.contains(&order.id);
-                        if ui
-                            .add(egui::Checkbox::without_text(&mut on))
-                            .on_hover_text("Select to cancel several orders at once")
-                            .changed()
-                        {
-                            toggled = Some(order.id.clone());
-                        }
-                    }
-                    1 => grid::text_cell(ui, order.product.as_str(), dim),
-                    2 => grid::tag(
-                        ui,
-                        if order.side == Side::Buy {
-                            "BUY"
-                        } else {
-                            "SELL"
-                        },
-                        side_color(order.side),
-                    ),
-                    3 => grid::text_cell(ui, &type_label(order), weak),
-                    4 => grid::figure(ui, &price_of(order, snapshot), dim),
-                    5 => grid::figure(
-                        ui,
-                        &format!(
-                            "{} / {}",
-                            rules::display(order.filled_size),
-                            size_text(order)
-                        ),
-                        dim,
-                    ),
-                    6 => {
-                        let (label, status_tone) = if view.overlay.is_some() && working {
-                            match view.overlay.map(|o| o.kind) {
-                                Some(
-                                    degenview_brokers::model::reducer::OverlayKind::CancelRequested,
-                                ) => ("Cancel requested", StatusTone::Warning),
-                                _ => ("Edit requested", StatusTone::Warning),
-                            }
-                        } else {
-                            rules::status_label(order.status)
-                        };
-                        kit::status_badge(ui, label, tone(status_tone));
-                    }
-                    7 => grid::figure(ui, &time_text(order.created_ms), weak),
-                    8 if working => {
-                        let caps = snapshot.capabilities_of(&order.product);
-                        let blocker = edit_blocker(order, caps, view.overlay.is_some());
-                        let pencil = ui
-                            .add_enabled_ui(blocker.is_none(), |ui| {
-                                icons::button(
-                                    ui,
-                                    Icon::Pencil,
-                                    20.0,
-                                    theme::text_secondary(),
-                                    blocker.unwrap_or("Edit price or size"),
-                                )
-                            })
-                            .inner;
-                        if pencil.clicked() {
-                            edit_one = Some(order.clone());
-                        }
-                        let can_cancel = view.overlay.is_none();
-                        let cross = ui
-                            .add_enabled_ui(can_cancel, |ui| {
-                                icons::button(ui, Icon::Xmark, 20.0, kit::RED, "Cancel order")
-                            })
-                            .inner;
-                        if cross.clicked() {
-                            cancel_one = Some(order.id.clone());
-                        }
-                    }
-                    _ => {}
+    let actions = tables::orders(ui, "broker-orders", &rows, &mut selected, true);
+    state.selected = selected.into_iter().map(OrderId::new).collect();
+
+    for action in actions {
+        match action {
+            OrderAction::Check(id) => {
+                // For the account on screen: a record of another account is not this one's to look up.
+                if let (Some(runtime), Some(account)) = (host.runtime(broker_id), &snapshot.account)
+                {
+                    state.flights.push(Flight::Retry(
+                        runtime.retry(ClientOrderId(id), account.id.clone()),
+                    ));
+                    state.say("Looking the order up at the broker…", false);
                 }
             }
+            OrderAction::Edit(id) => {
+                if let Some(view) = snapshot
+                    .orders
+                    .iter()
+                    .find(|view| view.order.id.as_str() == id)
+                {
+                    state.begin_edit(broker_id, view.order.clone(), None);
+                }
+            }
+            OrderAction::Cancel(id) => request_cancel(
+                state,
+                host,
+                broker_id,
+                vec![OrderId::new(id)],
+                prefs.confirm_single_cancel,
+            ),
         }
-    });
-
-    if let Some(id) = toggled
-        && !state.selected.remove(&id)
-    {
-        state.selected.insert(id);
     }
+
     // Selection only ever holds orders that are still working.
     let working_ids: BTreeSet<OrderId> = snapshot
         .orders
@@ -936,103 +745,15 @@ fn orders_tab(
         .collect();
     state.selected.retain(|id| working_ids.contains(id));
 
-    if let Some(client_id) = retry
-        && let Some(runtime) = host.runtime(broker_id)
-    {
-        state.flights.push(Flight::Retry(runtime.retry(client_id)));
-        state.say("Looking the order up at the broker…", false);
-    }
-    if let Some(order) = edit_one {
-        state.begin_edit(broker_id, order, None);
-    }
-    if let Some(id) = cancel_one {
-        request_cancel(
-            state,
-            host,
-            broker_id,
-            vec![id],
-            prefs.confirm_single_cancel,
-        );
-    }
-
-    // The bar under the table.
-    let selected = state.selected.len();
-    let open = working_ids.len();
-    let mut cancel_selected = false;
-    let mut cancel_all = false;
-    let (bar, _) = ui.allocate_exact_size(
-        egui::vec2(ui.available_width(), grid::FOOTER_HEIGHT),
-        egui::Sense::hover(),
-    );
-    ui.painter().rect_filled(bar, 0.0, kit::window());
-    ui.painter().hline(
-        bar.x_range(),
-        bar.top(),
-        egui::Stroke::new(1.0, theme::separator()),
-    );
-    let mut row = ui.new_child(
-        egui::UiBuilder::new()
-            .max_rect(bar.shrink2(egui::vec2(20.0, 0.0)))
-            .layout(egui::Layout::right_to_left(egui::Align::Center)),
-    );
-    row.spacing_mut().item_spacing.x = 10.0;
-    if kit::sheet_button(&mut row, &format!("Cancel all ({open})"), false, open > 0).clicked() {
-        cancel_all = true;
-    }
-    if kit::sheet_button(
-        &mut row,
-        &format!("Cancel selected ({selected})"),
-        false,
-        selected > 0,
-    )
-    .clicked()
-    {
-        cancel_selected = true;
-    }
-    row.label(kit::text(
-        format!("{open} working"),
-        kit::size::CAPTION + 0.5,
-        kit::REGULAR,
-        theme::text_secondary(),
-    ));
-    if cancel_selected {
+    let bar = tables::orders_bar(ui, working_ids.len(), state.selected.len());
+    if bar.cancel_selected {
         let ids: Vec<OrderId> = state.selected.iter().cloned().collect();
         request_cancel(state, host, broker_id, ids, true);
     }
-    if cancel_all {
+    if bar.cancel_all {
         // Always asks, and says which orders: what is cancelled is what is shown now.
         let ids: Vec<OrderId> = working_ids.into_iter().collect();
         request_cancel(state, host, broker_id, ids, true);
-    }
-}
-
-fn pending_type(kind: &OrderKind) -> &'static str {
-    match kind {
-        OrderKind::Market { .. } => "Market",
-        OrderKind::Limit { .. } => "Limit",
-        OrderKind::StopLimit { .. } => "Stop-limit",
-    }
-}
-
-fn pending_price(kind: &OrderKind) -> String {
-    match kind {
-        OrderKind::Market { .. } => "Market".to_owned(),
-        OrderKind::Limit { price, .. } => rules::display(*price),
-        OrderKind::StopLimit { stop_price, .. } => rules::display(*stop_price),
-    }
-}
-
-fn pending_size(kind: &OrderKind) -> String {
-    match kind {
-        OrderKind::Market {
-            size: OrderSize::Base(s),
-        } => rules::display(*s),
-        OrderKind::Market {
-            size: OrderSize::Quote(a),
-        } => format!("{} (spend)", rules::display(*a)),
-        OrderKind::Limit { base_size, .. } | OrderKind::StopLimit { base_size, .. } => {
-            rules::display(*base_size)
-        }
     }
 }
 
@@ -1348,7 +1069,7 @@ fn balances_tab(ui: &mut egui::Ui, snapshot: &BrokerSnapshot) {
     );
 }
 
-// ---- Dialogs: the ticket, the edit, the cancel question -----------------------------------------------
+// ---- Dialogs: the edit, the cancel question -----------------------------------------------
 
 fn dialogs(
     ctx: &egui::Context,
@@ -1357,27 +1078,6 @@ fn dialogs(
     broker_id: BrokerId,
     snapshot: &BrokerSnapshot,
 ) {
-    if let Some(ticket) = &mut state.ticket {
-        match broker_ticket::show(ctx, ticket, host) {
-            TicketEvent::Open => {}
-            TicketEvent::Closed => state.ticket = None,
-            TicketEvent::Placed => {
-                state.ticket = None;
-                state.say(
-                    "Order sent. It appears under Orders as the broker confirms it.",
-                    false,
-                );
-            }
-            TicketEvent::Unconfirmed(text) => {
-                state.ticket = None;
-                state.tab = BrokerTab::Orders;
-                state.say(
-                    format!("{text} It is listed as Unconfirmed until the broker is asked."),
-                    true,
-                );
-            }
-        }
-    }
     if let Some(ask) = &state.cancel_ask {
         let count = ask.ids.len();
         let mut spec = dialog::Dialog::new(
@@ -1467,6 +1167,21 @@ fn edit_sheet(
         state.say("The order is no longer open, so it was not edited.", true);
         return;
     }
+    let Some(account) = snapshot.account.as_ref().map(|account| account.id.clone()) else {
+        state.edit = None;
+        state.say(
+            "The broker is not connected, so the order was not edited.",
+            true,
+        );
+        return;
+    };
+    // Every figure below (what changed, the filled size, the old values in the question) is the
+    // order as it is now, not as it was when the sheet opened: a fill or an edit made elsewhere
+    // meanwhile must show, and must not leave a review standing that describes the old order.
+    if let Some(order) = &live {
+        edit.order = order.clone();
+    }
+    let fingerprint = OrderFingerprint::of(&account, &edit.order);
     let change = |edit: &EditState| -> Result<OrderChange, String> {
         let price = rules::parse_decimal(&edit.price_text)
             .map_err(|()| "The price is not a number.".to_owned())?;
@@ -1523,7 +1238,12 @@ fn edit_sheet(
     let valid = typed.is_ok() && problems.is_empty();
     // Preview the exact change once typing pauses.
     let signature = if valid {
-        format!("{:?}", typed.as_ref().ok())
+        // The order's own state and the connection are part of what was asked about.
+        format!(
+            "{:?}|{fingerprint:?}|{}",
+            typed.as_ref().ok(),
+            snapshot.generation
+        )
     } else {
         String::new()
     };
@@ -1534,6 +1254,20 @@ fn edit_sheet(
         edit.preview_error = None;
         edit.preview_for = None;
         edit.preview_pending = None;
+        edit.preview_at = None;
+    }
+    // An answer older than a minute is a statement about an older market: it is asked for again.
+    if edit
+        .preview_at
+        .is_some_and(|at| at.elapsed() > rules::PREVIEW_FRESH)
+        && matches!(edit.stage, EditStage::Editing)
+    {
+        edit.preview = None;
+        edit.preview_for = None;
+        edit.preview_at = None;
+        edit.changed_at = Instant::now()
+            .checked_sub(Duration::from_millis(450))
+            .unwrap_or_else(Instant::now);
     }
     if let Some((sig, pending)) = &edit.preview_pending
         && let Some(answer) = pending.poll()
@@ -1542,8 +1276,14 @@ fn edit_sheet(
         edit.preview_pending = None;
         if sig == edit.seen {
             match answer {
-                Ok(preview) => edit.preview = Some(preview),
-                Err(error) => edit.preview_error = Some(error.to_string()),
+                Ok(preview) => {
+                    edit.preview = Some(preview);
+                    edit.preview_at = Some(Instant::now());
+                }
+                Err(error) => {
+                    edit.preview_error = Some(error.to_string());
+                    edit.preview_at = None;
+                }
             }
             edit.preview_for = Some(sig);
         }
@@ -1589,8 +1329,26 @@ fn edit_sheet(
         }
     }
 
+    // A review stands only while the order is the one it was worked out for, and the answer is
+    // recent: otherwise the sheet goes back to editing, and asks again.
+    if let EditStage::Confirming(_, preview) = &edit.stage {
+        let same_order = preview.base.as_ref() == Some(&fingerprint);
+        let recent = edit
+            .preview_at
+            .is_some_and(|at| at.elapsed() <= rules::PREVIEW_FRESH);
+        if !same_order || !recent {
+            edit.stage = EditStage::Editing;
+            edit.error = Some(if same_order {
+                "The broker's check of this change is out of date. Review it again.".to_owned()
+            } else {
+                "The order changed while you were reviewing it. Nothing was sent. Review it again."
+                    .to_owned()
+            });
+        }
+    }
+
     // The approval.
-    if let EditStage::Confirming(change) = &edit.stage {
+    if let EditStage::Confirming(change, preview) = &edit.stage {
         let order = &edit.order;
         let message = "This changes the order at the broker. A new price may lose your place in the queue, and the order can fill at its old terms until the change is applied.";
         let mut dialog_spec = dialog::Dialog::new(
@@ -1603,6 +1361,7 @@ fn edit_sheet(
         dialog_spec.dismiss = "Back";
         dialog_spec.cautious = true;
         let change = *change;
+        let base = preview.base.clone();
         let outcome = dialog::show(ctx, Id::new("broker-edit-confirm"), &dialog_spec, |ui| {
             ui.add_space(12.0);
             let mut line = |name: &str, value: String| {
@@ -1654,12 +1413,27 @@ fn edit_sheet(
                     format!("{} → {}", size_text(order), rules::display(new)),
                 );
             }
+            // The broker's figures for the changed order, from a preview of exactly this change.
+            if let Some(total) = preview.order_total {
+                line("Total (broker's estimate)", rules::display(total));
+            }
+            if let Some(fee) = preview.fees {
+                line("Fee (broker's estimate)", rules::display(fee));
+            }
         });
         match outcome {
             Some(dialog::Outcome::Accepted) => {
                 edit.error = None;
                 let id = edit.order.id.clone();
-                edit.stage = EditStage::Sending(runtime.amend(id, change));
+                match base {
+                    // Sent against the order that was reviewed, which the broker's worker checks
+                    // again before anything leaves.
+                    Some(base) => edit.stage = EditStage::Sending(runtime.amend(id, change, base)),
+                    None => {
+                        edit.error = Some("This change has not been checked.".to_owned());
+                        edit.stage = EditStage::Editing;
+                    }
+                }
             }
             Some(_) => edit.stage = EditStage::Editing,
             None => {}
@@ -1669,7 +1443,24 @@ fn edit_sheet(
 
     let mut close = false;
     let mut review = false;
-    let blocked = edit.preview.as_ref().is_some_and(|p| !p.is_acceptable());
+    // Review is possible only on the broker's fresh answer that it would accept this exact change.
+    let answer = if !valid || edit.preview_for.as_deref() != Some(signature.as_str()) {
+        rules::PreviewAnswer::Waiting
+    } else {
+        match (&edit.preview, &edit.preview_error) {
+            (Some(preview), _) if preview.is_acceptable() => rules::PreviewAnswer::Accepted,
+            (Some(_), _) => rules::PreviewAnswer::Problems,
+            (None, Some(error)) => rules::PreviewAnswer::Failed(error.clone()),
+            (None, None) => rules::PreviewAnswer::Waiting,
+        }
+    };
+    let gate = rules::preview_gate(answer, edit.preview_at.map(|at| at.elapsed()));
+    let can_review = valid && gate.allows_review();
+    #[cfg(test)]
+    {
+        edit.review_enabled = can_review;
+    }
+    let mut retry_preview = false;
     let sending = matches!(edit.stage, EditStage::Sending(_));
     sheet::show(ctx, Id::new("broker-edit"), 440.0, |ui| {
         broker_badge::rule(ui);
@@ -1756,9 +1547,22 @@ fn edit_sheet(
                     ));
                 }
             }
-            if let Some(error) = &edit.preview_error {
+            if let rules::PreviewGate::Failed(error) = &gate {
                 ui.label(kit::text(
-                    format!("The preview is unavailable: {error}"),
+                    format!(
+                        "The broker could not preview this change ({error}). It cannot be sent without that."
+                    ),
+                    kit::size::CAPTION + 0.5,
+                    kit::REGULAR,
+                    kit::RED,
+                ));
+                ui.add_space(4.0);
+                if kit::push_button(ui, None, "Try again", true).clicked() {
+                    retry_preview = true;
+                }
+            } else if gate == rules::PreviewGate::Waiting && valid {
+                ui.label(kit::text(
+                    "Asking the broker to check this change…",
                     kit::size::CAPTION + 0.5,
                     kit::REGULAR,
                     theme::text_tertiary(),
@@ -1780,9 +1584,7 @@ fn edit_sheet(
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if sending {
                         ui.spinner();
-                    } else if kit::sheet_button(ui, "Review change", true, valid && !blocked)
-                        .clicked()
-                    {
+                    } else if kit::sheet_button(ui, "Review change", true, can_review).clicked() {
                         review = true;
                     }
                     if kit::sheet_button(ui, "Cancel", false, !sending).clicked() {
@@ -1794,24 +1596,31 @@ fn edit_sheet(
         });
     });
     #[cfg(test)]
-    if std::mem::take(&mut state.force_edit_review) && valid && !blocked {
+    if std::mem::take(&mut state.force_edit_review) && can_review {
         review = true;
+    }
+    if retry_preview {
+        edit.retry_preview();
     }
     if ctx.input(|i| i.key_pressed(egui::Key::Escape)) && !sending {
         close = true;
     }
     if close {
         state.edit = None;
-    } else if review && let Ok(change) = typed {
-        edit.stage = EditStage::Confirming(change);
+    } else if review
+        && can_review
+        && let Ok(change) = typed
+        && let Some(preview) = edit.preview.clone()
+    {
+        edit.stage = EditStage::Confirming(change, Box::new(preview));
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::broker_ticket::TicketKind;
-    use degenview_brokers::{OrderStatus, ProductId, TifKind, Tradability};
+    use crate::model::broker_ticket::edit_blocker;
+    use degenview_brokers::{Capabilities, OrderStatus, ProductId, TifKind, Tradability};
     use std::str::FromStr;
 
     fn d(text: &str) -> Decimal {
@@ -1997,13 +1806,6 @@ mod tests {
             "25 (spend)"
         );
         assert_eq!(time_text(None), "—");
-        assert_eq!(
-            pending_price(&OrderKind::Market {
-                size: OrderSize::Base(d("1"))
-            }),
-            "Market"
-        );
-        assert_eq!(TicketKind::Market.label(), "Market");
         assert_eq!(short_id("abcdefghijkl"), "abcdefgh");
     }
 }

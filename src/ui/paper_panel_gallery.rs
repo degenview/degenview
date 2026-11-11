@@ -10,7 +10,7 @@ use crate::ui::paper_header::{
     self, AccountChoice, PaperFooterState, PaperHeaderInput, PaperHeaderState,
 };
 use crate::ui::paper_tables::{
-    self, Context, FooterFacts, OrdersInput, PaperTab, PositionsInput, PositionsState,
+    self, Context, FooterFacts, PaperTab, PositionsInput, PositionsState,
 };
 use crate::ui::render_tests::Screen;
 use crate::ui::theme;
@@ -122,7 +122,7 @@ fn gallery_of_the_panel() {
             1_240.0,
             300.0,
             false,
-            Some(egui::pos2(130.0, 24.0)),
+            Some(egui::pos2(142.0, 24.0)),
         ),
         (
             "menu-more",
@@ -130,7 +130,7 @@ fn gallery_of_the_panel() {
             1_240.0,
             300.0,
             false,
-            Some(egui::pos2(1_184.0, 24.0)),
+            Some(egui::pos2(1_154.0, 24.0)),
         ),
         (
             "menu-row",
@@ -180,29 +180,51 @@ fn gallery_of_the_panel() {
                         .exact_size(height)
                         .frame(egui::Frame::new().fill(crate::ui::kit::window()))
                         .show(ui, |ui| {
-                            paper_header::header(
+                            let input = PaperHeaderInput {
+                                accounts: &accounts,
+                                selected: Some(1),
+                                currency: Some(PaperCurrency::Usd),
+                                position_count: shown_positions.len(),
+                                working_order_count: shown_orders.len(),
+                                show_trading_on_charts: true,
+                            };
+                            let parts = paper_header::header_parts(&input);
+                            let bar = crate::ui::trade::panel_header::sample_bar(
+                                crate::model::trading_venue::TradingVenue::Paper,
+                                crate::trading::model::VenueKind::Simulated,
+                                "Paper",
+                            );
+                            crate::ui::trade::panel_header::show(
                                 ui,
-                                &mut header_state,
-                                &PaperHeaderInput {
-                                    accounts: &accounts,
-                                    selected: Some(1),
-                                    currency: Some(PaperCurrency::Usd),
-                                    position_count: shown_positions.len(),
-                                    working_order_count: shown_orders.len(),
-                                    show_trading_on_charts: true,
+                                &crate::ui::trade::panel_header::Header {
+                                    bar: &bar,
+                                    chip: &parts.chip,
+                                    tabs: &parts.tabs,
+                                    overlay: Some(true),
+                                    can_order: true,
+                                    more: &parts.more,
+                                    settings_tip: "Paper trading settings",
                                 },
+                                &mut header_state.tab,
                             );
                             divider(ui);
-                            paper_tables::metrics_strip(ui, Some(&metrics()), PaperCurrency::Usd);
+                            crate::ui::trade::stats_strip::show(
+                                ui,
+                                Some(&paper_tables::stats(Some(&metrics()), PaperCurrency::Usd)),
+                            );
                             divider(ui);
                             match tab {
                                 PaperTab::Orders => {
-                                    paper_tables::orders_table(
+                                    let rows: Vec<crate::trading::model::OrderRow> = shown_orders
+                                        .iter()
+                                        .map(crate::trading::paper_backend::order_row)
+                                        .collect();
+                                    crate::ui::trade::tables::orders(
                                         ui,
-                                        &OrdersInput {
-                                            orders: shown_orders,
-                                            ctx: context,
-                                        },
+                                        "paper-orders",
+                                        &rows,
+                                        &mut Default::default(),
+                                        false,
                                     );
                                 }
                                 _ => {
@@ -234,6 +256,7 @@ fn gallery_of_the_panel() {
                                     journal_entries: 0,
                                     currency: PaperCurrency::Usd,
                                 },
+                                0,
                             );
                         });
                 }));
@@ -249,9 +272,7 @@ fn gallery_of_the_panel() {
 #[test]
 #[ignore = "writes pictures"]
 fn gallery_of_the_sheets() {
-    use crate::model::paper_ticket::TicketDraft;
     use crate::ui::paper_account_sheet::{self, PaperAccountSheetState};
-    use crate::ui::paper_order_ticket::{self, PaperTicketInput, PaperTicketState};
     let _restore = theme::RestoreDefaultTheme;
     for light in [false, true] {
         let tag = if light { "light" } else { "dark" };
@@ -260,12 +281,7 @@ fn gallery_of_the_sheets() {
         } else {
             egui::ThemePreference::Dark
         };
-        for (name, kind) in [
-            ("create", 0),
-            ("reset", 3),
-            ("ticket-market", 1),
-            ("ticket-limit", 2),
-        ] {
+        for (name, kind) in [("create", 0), ("reset", 3)] {
             let mut screen = Screen::new(Vec2::new(760.0, 900.0));
             screen.ctx.set_theme(theme_pref);
             let mut sheet = if kind == 3 {
@@ -275,20 +291,6 @@ fn gallery_of_the_sheets() {
             } else {
                 PaperAccountSheetState::create()
             };
-            let mut draft = TicketDraft::opening(
-                instrument("BTCUSDT", "Bitcoin", DataSource::Binance, 0.01),
-                Some(61_250.0),
-                PaperOrderSide::Buy,
-            );
-            draft.bid = Some(61_249.5);
-            draft.ask = Some(61_250.5);
-            draft.last = Some(61_250.0);
-            draft.available_funds = Some(9_120.0);
-            draft.leverage = 1.0;
-            if kind == 2 {
-                draft.kind = PaperOrderType::Limit;
-            }
-            let mut ticket = PaperTicketState::new(draft);
             let mut last = None;
             for _ in 0..4 {
                 last = Some(screen.run(vec![], |ui| {
@@ -296,19 +298,7 @@ fn gallery_of_the_sheets() {
                     ui.painter()
                         .rect_filled(ui.max_rect(), 0.0, theme::background());
                     let ctx = ui.ctx().clone();
-                    if kind == 0 || kind == 3 {
-                        paper_account_sheet::show(&ctx, &mut sheet);
-                    } else {
-                        paper_order_ticket::show(
-                            &ctx,
-                            &mut ticket,
-                            &PaperTicketInput {
-                                account_id: Some(1),
-                                currency: PaperCurrency::Usd,
-                                error: None,
-                            },
-                        );
-                    }
+                    paper_account_sheet::show(&ctx, &mut sheet);
                 }));
             }
             screen.save(&format!("sheet-{name}-{tag}"), last.expect("ran"));

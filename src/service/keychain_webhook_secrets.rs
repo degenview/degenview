@@ -98,7 +98,8 @@ impl WebhookSecretStore for KeychainWebhookSecretStore {
         if is_disabled() {
             return self.memory.remove(endpoint);
         }
-        platform::delete(WEBHOOKS, &account(endpoint));
+        // Best effort: the webhook store has no way to report it; a leftover is ignored at use.
+        let _ = platform::delete(WEBHOOKS, &account(endpoint));
     }
 }
 
@@ -454,13 +455,20 @@ pub(crate) mod platform {
         }
     }
 
-    pub fn delete(scope: Scope, account: &str) {
-        let Some(query) = Query::new(scope, account) else {
-            return;
-        };
-        if let Some(key) = query.dictionary(&[]) {
-            // SAFETY: `key` is a valid query dictionary.
-            let _ = unsafe { SecItemDelete(key.as_raw()) };
+    /// Removes the item. Not finding it is success; any other status is an error, because the item
+    /// is then still in the Keychain.
+    pub fn delete(scope: Scope, account: &str) -> Result<(), SecretStoreError> {
+        let fail = |reason: &str| SecretStoreError(reason.to_owned());
+        let query = Query::new(scope, account).ok_or_else(|| fail("Keychain unavailable"))?;
+        let key = query
+            .dictionary(&[])
+            .ok_or_else(|| fail("Keychain unavailable"))?;
+        // SAFETY: `key` is a valid query dictionary.
+        let status = unsafe { SecItemDelete(key.as_raw()) };
+        if status == ERR_SEC_SUCCESS || status == ERR_SEC_ITEM_NOT_FOUND {
+            Ok(())
+        } else {
+            Err(SecretStoreError(format!("Keychain error {status}")))
         }
     }
 }
@@ -487,7 +495,9 @@ pub(crate) mod platform {
     pub fn write(_: Scope, _: &str, _: &str) -> Result<(), SecretStoreError> {
         Err(SecretStoreError("no Keychain on this platform".to_owned()))
     }
-    pub fn delete(_: Scope, _: &str) {}
+    pub fn delete(_: Scope, _: &str) -> Result<(), SecretStoreError> {
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -541,7 +551,7 @@ mod tests {
                 shared_group: false,
             },
         ] {
-            platform::delete(scope, &account);
+            platform::delete(scope, &account).unwrap();
             assert!(!platform::exists(scope, &account));
             platform::write(scope, &account, "s3cret ünï/😀").unwrap();
             assert!(platform::exists(scope, &account));
@@ -551,7 +561,7 @@ mod tests {
             );
             platform::write(scope, &account, "replaced").unwrap();
             assert_eq!(platform::read(scope, &account).as_deref(), Some("replaced"));
-            platform::delete(scope, &account);
+            platform::delete(scope, &account).unwrap();
             assert_eq!(platform::read(scope, &account), None);
         }
     }

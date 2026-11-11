@@ -224,7 +224,13 @@ impl ChartWorkspace {
             .last()
             .map(|candle| candle.close);
         let instrument = Self::paper_instrument(chart);
-        let paper = Self::paper_access(chart);
+        let live = self.live_facts(chart);
+        // On a live venue the menu offers live orders, not paper ones.
+        let paper = if live.is_some() {
+            PaperAccess::Unsupported
+        } else {
+            Self::paper_access(chart)
+        };
         let quantity = if paper == PaperAccess::Unsupported {
             String::new()
         } else {
@@ -246,6 +252,7 @@ impl ChartWorkspace {
             replay: self.replay.is_active() || self.replay.status == ReplayStatus::SelectingStart,
             alerts_supported: chart.is_market() && ui::supports_alerts(chart.source),
             paper,
+            live,
             quantity,
             drawings: chart.drawings.iter().filter(|d| is_lockable(d)).count(),
             // The compared markets count as indicators here, and go with them.
@@ -534,6 +541,7 @@ impl ChartWorkspace {
                 }
             }
             Command::DeleteAlert(id) => actions.push(WorkspaceAction::DeleteAlert(id)),
+            Command::LiveOrder(request) => self.open_live_ticket(index, request),
             Command::CancelOrder(id) => {
                 let failures = Self::apply_paper_overlay_actions(
                     host,
@@ -560,7 +568,10 @@ impl ChartWorkspace {
                     self.paper_panel.report_messages(&failures);
                 }
             }
-            Command::ShowPaperPanel => self.paper_panel_visible = true,
+            Command::ShowPaperPanel => {
+                self.paper_panel_visible = true;
+                self.trade_sheet_visible = true;
+            }
         }
         actions
     }
@@ -598,11 +609,11 @@ impl ChartWorkspace {
         });
     }
 
-    /// Opens the paper ticket for the user to review. `pending` is the side and type a price
-    /// suggests; without it the ticket opens as a market order on the usual side.
+    /// Starts an order in the sheet at a price on the chart, for the user to review. `pending` is the
+    /// side and type the price suggests; without it the order starts as a market order.
     fn open_ticket(
         &mut self,
-        host: &mut PaperHost,
+        _host: &mut PaperHost,
         index: usize,
         pending: Option<(PaperOrderSide, PaperOrderType)>,
         price: f64,
@@ -616,22 +627,29 @@ impl ChartWorkspace {
             self.say("Paper trading is not available for this chart.", true);
             return;
         }
-        // The first order on paper creates the default account, as opening the panel would.
-        if let Err(error) = host.ensure_default_account() {
-            self.say(error.message(), true);
-            return;
-        }
-        let instrument = Self::paper_instrument(chart);
-        self.paper_panel_visible = true;
+        let price = price
+            .is_finite()
+            .then(|| price.to_string().parse::<degenview_brokers::Decimal>().ok())
+            .flatten();
+        let side = |side: PaperOrderSide| match side {
+            PaperOrderSide::Buy => degenview_brokers::Side::Buy,
+            PaperOrderSide::Sell => degenview_brokers::Side::Sell,
+        };
         match pending {
-            Some((side, kind)) => {
-                self.paper_panel
-                    .open_pending_ticket(host, instrument, side, kind, price);
+            Some((order_side, kind)) => {
+                let class = match kind {
+                    PaperOrderType::Market => crate::trading::model::OrderClass::Market,
+                    PaperOrderType::Limit => crate::trading::model::OrderClass::Limit,
+                    PaperOrderType::Stop => crate::trading::model::OrderClass::Stop,
+                    PaperOrderType::StopLimit => crate::trading::model::OrderClass::StopLimit,
+                };
+                self.start_order(side(order_side), Some(class), price);
             }
-            None => {
-                self.paper_panel
-                    .open_ticket(host, instrument, Some(price), PaperOrderSide::Buy);
-            }
+            None => self.start_order(
+                degenview_brokers::Side::Buy,
+                Some(crate::trading::model::OrderClass::Market),
+                None,
+            ),
         }
     }
 

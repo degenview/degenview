@@ -107,7 +107,8 @@ impl AiKeyStore {
     }
 
     pub fn remove(&self, kind: ProviderKind) {
-        self.backend.delete(SCOPE, &account(kind));
+        // Best effort: nothing on the AI keys page can show a failed removal yet. (Broker keys do.)
+        let _ = self.backend.delete(SCOPE, &account(kind));
         let mut cache = self.lock();
         cache.keys.insert(kind, None);
         cache.exists.remove(&kind);
@@ -160,7 +161,9 @@ mod tests {
         fn write(&self, _: Scope, _: &str, _: &str) -> Result<(), SecretStoreError> {
             Err(SecretStoreError("no Keychain on this platform".to_owned()))
         }
-        fn delete(&self, _: Scope, _: &str) {}
+        fn delete(&self, _: Scope, _: &str) -> Result<(), SecretStoreError> {
+            Ok(())
+        }
     }
 
     #[test]

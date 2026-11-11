@@ -66,7 +66,9 @@ impl ChartWorkspace {
                     self.set_all_locked(!all_locked);
                 }
                 ToolSidebarAction::TogglePaper => {
+                    // The orders and the order sheet open and close together.
                     self.paper_panel_visible = !self.paper_panel_visible;
+                    self.trade_sheet_visible = self.paper_panel_visible;
                 }
                 ToolSidebarAction::OpenAlerts => actions.push(WorkspaceAction::OpenAlerts),
                 ToolSidebarAction::SetSync(sync) => self.set_sync(sync),

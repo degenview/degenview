@@ -811,11 +811,7 @@ fn show_tab(
             workspace.set_card_env(&env.card_env);
             workspace.set_snapshots(&env.snapshots);
             workspace.set_link_host(&env.tab_link);
-            let actions = env
-                .paper_host
-                .lock()
-                .map(|mut host| workspace.ui(ui, &mut host))
-                .unwrap_or_default();
+            let actions = workspace.ui(ui, &env.paper_host);
             if workspace.has_link_signals() {
                 // The root window collects them; it only draws when asked.
                 ui.ctx().request_repaint_of(egui::ViewportId::ROOT);
@@ -965,7 +961,13 @@ impl DegenViewApp {
         // credentials connects now (on its own thread), so an account is live when it is wanted.
         let broker_host = crate::host::broker_host::BrokerHost::install(store.clone());
         broker_host.attach(&creation.egui_ctx);
-        broker_host.connect_all_saved();
+        // The venues the user chose: connects every saved key and each chosen broker that needs none.
+        let trading_hub = crate::host::trading_hub::TradingHub::install(
+            broker_host.clone(),
+            paper.clone(),
+            store.clone(),
+        );
+        trading_hub.connect_enabled();
         let snapshots = SnapshotHost::load(store.clone());
         let tab_title_host = TabTitleHost::load(store.clone());
         let tab_link_host = TabLinkHost::load(store.clone());
@@ -3649,6 +3651,7 @@ impl eframe::App for DegenViewApp {
         self.tick_editor_themes();
         self.tick_tab_quotes(ctx);
         self.tick_broker_notices();
+        self.broker_host.tick_quotes();
         self.tick_tab_links(ctx);
         self.tab_host
             .restore_frames(ctx, native_bridge::screen_layout(), now_ms().max(0) as u64);

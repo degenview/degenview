@@ -305,13 +305,23 @@ mod seam {
         }
     }
 
-    pub fn delete(scope: Scope, account: &str) {
+    pub fn delete(scope: Scope, account: &str) -> Result<(), SecretStoreError> {
         let Some(name) = target_name(scope.service, account) else {
-            return;
+            return Err(SecretStoreError(
+                "That credential name cannot be used on Windows.".to_owned(),
+            ));
         };
         match os::remove(&wide(&name)) {
-            Ok(()) => cache().set(&name, false, Instant::now()),
-            Err(_) => cache().forget(&name),
+            Ok(()) => {
+                cache().set(&name, false, Instant::now());
+                Ok(())
+            }
+            Err(code) => {
+                cache().forget(&name);
+                Err(SecretStoreError(format!(
+                    "Windows Credential Manager error {code}"
+                )))
+            }
         }
     }
 }
@@ -422,7 +432,7 @@ mod tests {
         struct Cleanup(Scope, String);
         impl Drop for Cleanup {
             fn drop(&mut self) {
-                delete(self.0, &self.1);
+                let _ = delete(self.0, &self.1);
             }
         }
 
@@ -433,7 +443,7 @@ mod tests {
         let account = format!("test-{}", std::process::id());
         let _cleanup = Cleanup(scope, account.clone());
 
-        delete(scope, &account);
+        delete(scope, &account).unwrap();
         assert!(!exists(scope, &account));
         assert_eq!(read(scope, &account), None);
 
@@ -452,10 +462,10 @@ mod tests {
         // A refused write leaves the old value alone.
         assert_eq!(read(scope, &account).map(|v| v.len()), Some(MAX_BLOB_BYTES));
 
-        delete(scope, &account);
+        delete(scope, &account).unwrap();
         assert!(!exists(scope, &account));
         assert_eq!(read(scope, &account), None);
         // Deleting what is not there is fine.
-        delete(scope, &account);
+        delete(scope, &account).unwrap();
     }
 }

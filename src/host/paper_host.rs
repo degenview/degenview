@@ -7,13 +7,12 @@
 
 use crate::model::paper::{
     PaperAccount, PaperAccountMetrics, PaperAccountSettings, PaperClosedTrade, PaperCurrency,
-    PaperInstrument, PaperJournalEntry, PaperOrder, PaperOrderChanges, PaperOrderEvent,
-    PaperOrderRequest, PaperOrderSide, PaperOrderType, PaperPosition, PaperQuote, PaperTimeInForce,
-    PaperTradingError, PaperTradingSnapshot,
+    PaperJournalEntry, PaperOrder, PaperOrderChanges, PaperOrderEvent, PaperOrderRequest,
+    PaperOrderSide, PaperOrderType, PaperPosition, PaperQuote, PaperTimeInForce, PaperTradingError,
+    PaperTradingSnapshot,
 };
 use crate::model::paper_engine::PaperTradingEngine;
 use crate::model::paper_export;
-use crate::model::paper_ticket::TicketDraft;
 use crate::store::SharedStore;
 use crate::store::sync::Elsewhere;
 use crate::ui::icons::{self, Icon};
@@ -24,13 +23,12 @@ use crate::ui::paper_header::{
     self, AccountChoice, PaperFooterAction, PaperFooterState, PaperHeaderAction, PaperHeaderInput,
     PaperHeaderState,
 };
-use crate::ui::paper_order_ticket::{
-    PaperTicketAction, PaperTicketInput, PaperTicketState, show as show_ticket,
-};
 use crate::ui::paper_tables::{
-    self, Context as TableContext, FooterFacts, OrdersInput, PaperTab, PaperTableAction,
-    PositionsInput, PositionsState,
+    self, Context as TableContext, FooterFacts, PaperTab, PaperTableAction, PositionsInput,
+    PositionsState,
 };
+use crate::ui::trade::panel_header::{self, ChipPick, Header, HeaderEvent, PanelEvent, VenueBar};
+use crate::ui::trade::stats_strip;
 use eframe::egui;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -592,11 +590,6 @@ impl PaperHost {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PaperPanelAction {
-    Close,
-}
-
 /// What a finished export tells the panel: the folder it wrote to, or why it did not.
 type ExportOutcome = Result<Option<(std::path::PathBuf, String)>, String>;
 
@@ -702,10 +695,11 @@ pub struct PaperPanel {
     header: PaperHeaderState,
     footer: PaperFooterState,
     positions: PositionsState,
+    /// The working orders ticked in the table, by id.
+    selected_orders: std::collections::BTreeSet<String>,
     account_sheet: Option<PaperAccountSheetState>,
     /// The account whose deletion is waiting for confirmation.
     pending_delete: Option<u64>,
-    ticket: Option<PaperTicketState>,
     show_trading_on_charts: bool,
     notice: Option<PanelNotice>,
     /// The lists the panel shows for the selected account, rebuilt only when the host's data
@@ -723,9 +717,9 @@ impl Default for PaperPanel {
             header: PaperHeaderState::default(),
             footer: PaperFooterState::default(),
             positions: PositionsState::default(),
+            selected_orders: std::collections::BTreeSet::new(),
             account_sheet: None,
             pending_delete: None,
-            ticket: None,
             show_trading_on_charts: true,
             notice: None,
             cached_view: None,
@@ -744,47 +738,14 @@ impl PaperPanel {
         self.show_trading_on_charts
     }
 
-    pub fn open_ticket(
+    pub fn ui(
         &mut self,
+        ui: &mut egui::Ui,
         host: &mut PaperHost,
-        instrument: PaperInstrument,
-        reference_price: Option<f64>,
-        side: PaperOrderSide,
-    ) {
-        host.clear_error();
-        self.ticket = Some(PaperTicketState::new(TicketDraft::opening(
-            instrument,
-            reference_price,
-            side,
-        )));
-    }
-
-    /// The draft the open ticket holds, for tests of what opened it.
-    #[cfg(test)]
-    pub fn ticket_draft(&self) -> Option<&TicketDraft> {
-        self.ticket.as_ref().map(|ticket| &ticket.draft)
-    }
-
-    /// Opens the ticket on a pending order (a limit or stop) at `price`, for the user to review
-    /// and submit. Nothing is placed by opening it.
-    pub fn open_pending_ticket(
-        &mut self,
-        host: &mut PaperHost,
-        instrument: PaperInstrument,
-        side: PaperOrderSide,
-        kind: PaperOrderType,
-        price: f64,
-    ) {
-        host.clear_error();
-        self.ticket = Some(PaperTicketState::new(TicketDraft::pending(
-            instrument, side, kind, price,
-        )));
-    }
-
-    pub fn ui(&mut self, ui: &mut egui::Ui, host: &mut PaperHost) -> Vec<PaperPanelAction> {
+        bar: &VenueBar,
+    ) -> Vec<PanelEvent> {
         let mut panel_actions = Vec::new();
         ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
-        let _ = host.ensure_default_account();
         let view = self.view(host);
         let account_id = view.account_id;
         let account = view.account.as_ref();
@@ -801,18 +762,48 @@ impl PaperPanel {
             .map(|position| host.unrealized_pnl(position))
             .sum();
 
-        let header_actions = paper_header::header(
+        let input = PaperHeaderInput {
+            accounts,
+            selected: account_id,
+            currency: account.map(|account| account.base_currency),
+            position_count: positions.len(),
+            working_order_count: working_orders.len(),
+            show_trading_on_charts: self.show_trading_on_charts,
+        };
+        let parts = paper_header::header_parts(&input);
+        let header_events = panel_header::show(
             ui,
-            &mut self.header,
-            &PaperHeaderInput {
-                accounts,
-                selected: account_id,
-                currency: account.map(|account| account.base_currency),
-                position_count: positions.len(),
-                working_order_count: working_orders.len(),
-                show_trading_on_charts: self.show_trading_on_charts,
+            &Header {
+                bar,
+                chip: &parts.chip,
+                tabs: &parts.tabs,
+                overlay: Some(self.show_trading_on_charts),
+                can_order: account.is_some(),
+                more: &parts.more,
+                settings_tip: "Paper trading settings",
             },
+            &mut self.header.tab,
         );
+        let mut header_actions = Vec::new();
+        for event in header_events {
+            match event {
+                HeaderEvent::Panel(event) => panel_actions.push(event),
+                HeaderEvent::Chip(ChipPick::Row(index)) => {
+                    if let Some(choice) = accounts.get(index) {
+                        header_actions.push(PaperHeaderAction::SelectAccount(choice.id));
+                    }
+                }
+                HeaderEvent::Chip(ChipPick::Add) => {
+                    header_actions.push(PaperHeaderAction::NewAccount)
+                }
+                HeaderEvent::ToggleOverlay => {
+                    header_actions.push(PaperHeaderAction::ToggleShowOnCharts);
+                }
+                HeaderEvent::More(index) => {
+                    header_actions.extend(parts.more_actions.get(index).cloned())
+                }
+            }
+        }
         divider(ui);
         self.poll_export(ui.ctx());
         self.show_notice(ui);
@@ -830,7 +821,8 @@ impl PaperPanel {
                 self.account_sheet = Some(PaperAccountSheetState::create());
             }
         } else {
-            paper_tables::metrics_strip(ui, metrics.as_ref(), currency);
+            let strip = crate::trading::paper_stats::stats(metrics.as_ref(), currency);
+            stats_strip::show(ui, Some(&strip));
             divider(ui);
             let context = TableContext {
                 currency,
@@ -855,13 +847,26 @@ impl PaperPanel {
                     );
                 }
                 PaperTab::Orders => {
-                    table_actions = paper_tables::orders_table(
+                    let rows: Vec<crate::trading::model::OrderRow> = working_orders
+                        .iter()
+                        .map(crate::trading::paper_backend::order_row)
+                        .collect();
+                    let asked = crate::ui::trade::tables::orders(
                         ui,
-                        &OrdersInput {
-                            orders: working_orders,
-                            ctx: context,
-                        },
+                        "paper-orders",
+                        &rows,
+                        &mut self.selected_orders,
+                        false,
                     );
+                    table_actions = asked
+                        .into_iter()
+                        .filter_map(|action| match action {
+                            crate::ui::trade::tables::OrderAction::Cancel(id) => {
+                                id.parse().ok().map(PaperTableAction::CancelOrder)
+                            }
+                            _ => None,
+                        })
+                        .collect();
                 }
                 PaperTab::History => paper_tables::history_table(ui, events, context),
                 PaperTab::Trades => paper_tables::trades_table(ui, trades, context),
@@ -880,6 +885,7 @@ impl PaperPanel {
                     journal_entries: journal.len(),
                     currency,
                 },
+                self.selected_orders.len(),
             );
         }
 
@@ -891,7 +897,6 @@ impl PaperPanel {
         }
         self.show_account_sheet(ui.ctx(), host, account_id);
         self.show_delete_confirm(ui.ctx(), host);
-        self.show_ticket(ui.ctx(), host, currency);
         panel_actions
     }
 
@@ -1069,7 +1074,7 @@ impl PaperPanel {
         actions: Vec<PaperHeaderAction>,
         host: &mut PaperHost,
         account: Option<&crate::model::paper::PaperAccount>,
-        panel_actions: &mut Vec<PaperPanelAction>,
+        panel_actions: &mut Vec<PanelEvent>,
     ) {
         for action in actions {
             match action {
@@ -1093,7 +1098,7 @@ impl PaperPanel {
                 PaperHeaderAction::ToggleShowOnCharts => {
                     self.show_trading_on_charts = !self.show_trading_on_charts;
                 }
-                PaperHeaderAction::Close => panel_actions.push(PaperPanelAction::Close),
+                PaperHeaderAction::Close => panel_actions.push(PanelEvent::Close),
             }
         }
     }
@@ -1138,6 +1143,15 @@ impl PaperPanel {
                         self.notice = Some(PanelNotice::error(text));
                         host.clear_error();
                     }
+                }
+                (PaperFooterAction::CancelSelectedOrders, _) => {
+                    let ids = std::mem::take(&mut self.selected_orders);
+                    let failures: Vec<PaperHostError> = ids
+                        .iter()
+                        .filter_map(|id| id.parse::<u64>().ok())
+                        .filter_map(|id| host.cancel(id).err())
+                        .collect();
+                    self.report_failures(host, &failures);
                 }
                 (PaperFooterAction::Export, _) => self.export_requested = true,
                 _ => {}
@@ -1213,74 +1227,6 @@ impl PaperPanel {
             }
             Some(crate::ui::kit::ConfirmOutcome::Cancelled) => self.pending_delete = None,
             None => {}
-        }
-    }
-
-    fn show_ticket(
-        &mut self,
-        context: &egui::Context,
-        host: &mut PaperHost,
-        currency: PaperCurrency,
-    ) {
-        let Some(ticket) = self.ticket.as_mut() else {
-            return;
-        };
-        let account_id = host.snapshot().selected_account_id;
-        let instrument_key = ticket.draft.instrument.key.clone();
-        let quote = host.snapshot().quotes.get(&instrument_key).cloned();
-        let existing = host
-            .snapshot()
-            .positions
-            .iter()
-            .find(|position| {
-                Some(position.account_id) == account_id && position.instrument.key == instrument_key
-            })
-            .map_or(0.0, |position| position.signed_quantity);
-        let available = account_id.map(|id| host.metrics(id).available_funds);
-        if let Some(account) = account_id.and_then(|id| {
-            host.snapshot()
-                .accounts
-                .iter()
-                .find(|account| account.id == id)
-        }) {
-            ticket.draft.leverage = account
-                .settings
-                .leverage
-                .leverage(ticket.draft.instrument.asset_class);
-            ticket.draft.commission = account.settings.commission;
-        }
-        ticket.refresh_market(
-            quote.as_ref().and_then(|quote| quote.bid),
-            quote.as_ref().and_then(|quote| quote.ask),
-            quote.as_ref().and_then(|quote| quote.last),
-            available,
-            existing,
-        );
-        let error = host.last_error().map(PaperHostError::message);
-        let actions = show_ticket(
-            context,
-            ticket,
-            &PaperTicketInput {
-                account_id,
-                currency,
-                error: error.as_deref(),
-            },
-        );
-        for action in actions {
-            match action {
-                PaperTicketAction::Submit(request) => match host.submit(*request) {
-                    Ok(_) => self.ticket = None,
-                    Err(_) => {
-                        if let Some(ticket) = &mut self.ticket {
-                            ticket.finish();
-                        }
-                    }
-                },
-                PaperTicketAction::Cancel => {
-                    host.clear_error();
-                    self.ticket = None;
-                }
-            }
         }
     }
 }
@@ -1934,7 +1880,15 @@ mod tests {
                             .exact_size(260.0)
                             .frame(egui::Frame::new().fill(crate::ui::kit::window()))
                             .show(ui, |ui| {
-                                panel.ui(ui, &mut host);
+                                panel.ui(
+                                    ui,
+                                    &mut host,
+                                    &crate::ui::trade::panel_header::sample_bar(
+                                        crate::model::trading_venue::TradingVenue::Paper,
+                                        crate::trading::model::VenueKind::Simulated,
+                                        "Paper",
+                                    ),
+                                );
                             });
                     }));
                 }

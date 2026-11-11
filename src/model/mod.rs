@@ -6,6 +6,7 @@ pub mod alert_message;
 pub mod alert_notification;
 mod appearance;
 pub mod bars_pattern;
+pub mod broker_chart;
 pub mod broker_prefs;
 pub mod broker_ticket;
 pub mod canvas;

@@ -240,13 +240,16 @@ impl Client {
         Ok(())
     }
 
-    fn delete(&self, id: ItemId) {
+    fn delete(&self, id: ItemId) -> Result<(), SecretStoreError> {
         self.forget(&id);
-        if self
-            .ask(QUICK, |reply| Request::Delete(id.clone(), reply))
-            .is_ok()
-        {
-            self.remember(&id, false);
+        match self.ask(QUICK, |reply| Request::Delete(id.clone(), reply)) {
+            Ok(()) => {
+                self.remember(&id, false);
+                Ok(())
+            }
+            Err(reason) => Err(SecretStoreError(format!(
+                "Could not remove it from the keyring: {reason}"
+            ))),
         }
     }
 }
@@ -354,7 +357,7 @@ pub fn write(scope: Scope, account: &str, secret: &str) -> Result<(), SecretStor
 }
 
 #[cfg(target_os = "linux")]
-pub fn delete(scope: Scope, account: &str) {
+pub fn delete(scope: Scope, account: &str) -> Result<(), SecretStoreError> {
     client().delete(ItemId::new(scope, account))
 }
 
@@ -420,7 +423,7 @@ mod tests {
         assert_eq!(client.read(id("a")).as_deref(), Some("s3cret ünï/😀"));
         client.write(id("a"), "replaced").unwrap();
         assert_eq!(client.read(id("a")).as_deref(), Some("replaced"));
-        client.delete(id("a"));
+        client.delete(id("a")).unwrap();
         assert_eq!(client.read(id("a")), None);
     }
 
@@ -433,7 +436,7 @@ mod tests {
         assert_eq!(shelf.lock().unwrap().calls.load(Ordering::SeqCst), 1);
         client.write(id("a"), "x").unwrap();
         assert!(client.exists(id("a")));
-        client.delete(id("a"));
+        client.delete(id("a")).unwrap();
         assert!(!client.exists(id("a")));
         // The writes and the delete updated the answer; none of them cost another question.
         assert_eq!(shelf.lock().unwrap().calls.load(Ordering::SeqCst), 1);
@@ -477,7 +480,9 @@ mod tests {
         assert!(!client.exists(id("a")));
         let error = client.write(id("a"), "x").unwrap_err();
         assert!(error.0.contains("no Secret Service"), "{}", error.0);
-        client.delete(id("a"));
+        // A delete that could not reach the keyring says so: the item may still be there.
+        let error = client.delete(id("a")).unwrap_err();
+        assert!(error.0.contains("keyring"), "{}", error.0);
         // The failure was believed, not retried for each of the four calls.
         assert_eq!(opens.load(Ordering::SeqCst), 1);
     }

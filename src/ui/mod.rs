@@ -9,10 +9,10 @@ mod alert_lines;
 mod annotation_geometry;
 mod art;
 pub mod broker_badge;
+pub mod broker_chart_trading;
 pub mod broker_panel;
 #[cfg(test)]
 mod broker_panel_gallery;
-pub mod broker_ticket;
 #[cfg(test)]
 mod bundled_fonts_tests;
 pub mod canvas_render;
@@ -63,7 +63,6 @@ pub mod paper_chart_trading;
 pub mod paper_form;
 pub mod paper_grid;
 pub mod paper_header;
-pub mod paper_order_ticket;
 #[cfg(test)]
 mod paper_panel_gallery;
 pub mod paper_tables;
@@ -129,6 +128,7 @@ pub mod tab_bar;
 pub mod tab_link_menu;
 pub mod theme;
 pub mod tool_sidebar;
+pub mod trade;
 pub mod update_indicator;
 pub mod watchlist_rows;
 pub mod watchlist_sidebar;

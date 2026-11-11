@@ -21,6 +21,7 @@ pub(super) struct LiveOverlays<'a> {
     pub alert_toggled: Vec<crate::model::alert::AlertId>,
     pub alert_deleted: Vec<crate::model::alert::AlertId>,
     pub paper: (Vec<PaperOverlayAction>, Option<MarkerMenu>),
+    pub live: Vec<crate::ui::broker_chart_trading::BrokerOverlayAction>,
     pub navigation: Option<chart_buttons::NavAction>,
     pub scale_mode: Option<PriceScaleMode>,
     pub overlay_action: Option<chart_indicator_strip::Action>,
@@ -146,6 +147,10 @@ impl Overlays for LiveOverlays<'_> {
         self.paper = self
             .card
             .paper
+            .show_markers(self.ui, self.card.below_header(plot), scale);
+        self.live = self
+            .card
+            .live
             .show_markers(self.ui, self.card.below_header(plot), scale);
         if !self.replay.selecting
             && let Some(action) = chart_buttons::navigation(

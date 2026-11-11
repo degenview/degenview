@@ -9,16 +9,13 @@ use std::time::{Duration, Instant};
 use degenview_brokers::coinbase::fake::{CoinbaseExchange, credentials, generate_key_pem};
 use degenview_brokers::testing::conformance::Exchange as _;
 use degenview_brokers::{
-    BrokerId, ClientOrderId, Env, MemorySecretStore, OrderDraft, OrderKind, ProductId, Side,
-    Status, TimeInForce,
+    BrokerId, Env, MemorySecretStore, OrderDraft, OrderKind, ProductId, Side, Status, TimeInForce,
 };
 use eframe::egui::{self, Vec2};
 
-use crate::host::broker_host::{BrokerHost, StoreJournal};
-use crate::model::broker_ticket::{TicketDraft, TicketKind};
+use crate::host::broker_host::{BrokerHost, StoreJournal, account_of};
 use crate::store::Store;
-use crate::ui::broker_panel::{self, BrokerPanelState, BrokerTab, PanelInput};
-use crate::ui::broker_ticket::{self, TicketState};
+use crate::ui::broker_panel::{self, BrokerPanelState, BrokerTab};
 use crate::ui::render_tests::Screen;
 use crate::ui::{settings_brokers, theme};
 
@@ -27,6 +24,7 @@ const ID: BrokerId = BrokerId::new("coinbase");
 struct Rig {
     exchange: CoinbaseExchange,
     host: Arc<BrokerHost>,
+    hub: Arc<crate::host::trading_hub::TradingHub>,
 }
 
 fn rig() -> Rig {
@@ -40,11 +38,19 @@ fn rig() -> Rig {
     let host = BrokerHost::new(
         Arc::new(MemorySecretStore::new()),
         Arc::new(StoreJournal::new(store.clone())),
-        Some(store),
+        Some(store.clone()),
         env,
         |config| config.fast(),
     );
-    Rig { exchange, host }
+    let paper = Arc::new(Mutex::new(crate::host::paper_host::PaperHost::load(
+        store.clone(),
+    )));
+    let hub = crate::host::trading_hub::TradingHub::new(host.clone(), paper, Some(store));
+    Rig {
+        exchange,
+        host,
+        hub,
+    }
 }
 
 fn wait(what: &str, mut ready: impl FnMut() -> bool) {
@@ -76,6 +82,7 @@ fn live_rig() -> Rig {
     let rig = rig();
     rig.host
         .adopt(ID, credentials(&generate_key_pem()))
+        .wait()
         .unwrap();
     wait("live", || {
         rig.host
@@ -84,15 +91,18 @@ fn live_rig() -> Rig {
     });
     let runtime = rig.host.runtime(ID).unwrap();
     runtime
-        .submit(limit(Side::Buy, "0.002", "89000.00"))
+        .submit(limit(Side::Buy, "0.002", "89000.00"), account_of(&runtime))
         .wait()
         .unwrap();
     runtime
-        .submit(limit(Side::Sell, "0.0015", "93000.00"))
+        .submit(
+            limit(Side::Sell, "0.0015", "93000.00"),
+            account_of(&runtime),
+        )
         .wait()
         .unwrap();
     let third = runtime
-        .submit(limit(Side::Buy, "0.001", "88000.00"))
+        .submit(limit(Side::Buy, "0.001", "88000.00"), account_of(&runtime))
         .wait()
         .unwrap();
     rig.exchange
@@ -127,10 +137,27 @@ fn shapes(output: &egui::FullOutput) -> usize {
     output.shapes.len()
 }
 
+/// The panel as the workspace draws it: the shared header's venue and the account strip.
+fn draw(
+    ui: &mut egui::Ui,
+    state: &mut BrokerPanelState,
+    host: &Arc<BrokerHost>,
+) -> Vec<crate::ui::trade::panel_header::PanelEvent> {
+    use crate::trading::backend::TradingBackend;
+    let broker = degenview_brokers::registry::by_id(ID).expect("coinbase");
+    let stats = crate::trading::broker_backend::BrokerBackend::new(host.clone(), broker).stats();
+    let bar = crate::ui::trade::panel_header::sample_bar(
+        crate::model::trading_venue::TradingVenue::Broker(ID),
+        crate::trading::model::VenueKind::Live,
+        "Coinbase",
+    );
+    broker_panel::ui(ui, state, host, ID, &bar, stats.as_ref())
+}
+
 fn show_panel(
     screen: &mut Screen,
     state: &mut BrokerPanelState,
-    host: &BrokerHost,
+    host: &Arc<BrokerHost>,
     height: f32,
 ) -> egui::FullOutput {
     frames(screen, 3, |ui| {
@@ -138,18 +165,7 @@ fn show_panel(
             .exact_size(height)
             .frame(egui::Frame::new().fill(crate::ui::kit::window()))
             .show(ui, |ui| {
-                broker_panel::ui(
-                    ui,
-                    state,
-                    host,
-                    ID,
-                    &PanelInput {
-                        market: Some(degenview_brokers::MarketRef {
-                            source: "coinbase".to_owned(),
-                            symbol: "BTC-USD".to_owned(),
-                        }),
-                    },
-                );
+                draw(ui, state, host);
             });
     })
 }
@@ -171,25 +187,12 @@ fn every_live_trading_surface_draws() {
         assert!(shapes(&output) > 20, "{tab:?}");
     }
 
-    // The ticket.
-    let mut ticket = TicketState::new(ID, ProductId::new("BTC-USD"), {
-        let mut draft = TicketDraft::new(Side::Buy);
-        draft.size_text = "0.001".to_owned();
-        draft.price_text = "90000.00".to_owned();
-        draft
-    });
-    let mut tall = Screen::new(Vec2::new(900.0, 900.0));
-    let output = frames(&mut tall, 40, |ui| {
-        let _ = broker_ticket::show(ui.ctx(), &mut ticket, &rig.host);
-    });
-    assert!(shapes(&output) > 40, "the ticket");
-
     // The Brokers settings page, with a connected card.
     let mut page_state = settings_brokers::BrokersState::default();
     let mut page = Screen::new(Vec2::new(600.0, 900.0));
     let output = frames(&mut page, 3, |ui| {
         egui::CentralPanel::default().show(ui, |ui| {
-            settings_brokers::body(ui, &mut page_state, Some(rig.host.clone()));
+            settings_brokers::body(ui, &mut page_state, Some(rig.hub.clone()));
         });
     });
     assert!(shapes(&output) > 20, "the settings page");
@@ -201,7 +204,7 @@ fn every_live_trading_surface_draws() {
             settings_brokers::body(
                 ui,
                 &mut settings_brokers::BrokersState::default(),
-                Some(idle.host.clone()),
+                Some(idle.hub.clone()),
             );
         });
     });
@@ -211,8 +214,6 @@ fn every_live_trading_surface_draws() {
     let mut state = BrokerPanelState::default();
     let output = show_panel(&mut screen, &mut state, &idle.host, 380.0);
     assert!(shapes(&output) > 5);
-    let _ = ClientOrderId::new("x");
-    let _ = TicketKind::Limit;
 }
 
 fn key(key: egui::Key) -> Vec<egui::Event> {
@@ -226,83 +227,6 @@ fn key(key: egui::Key) -> Vec<egui::Event> {
             modifiers: egui::Modifiers::NONE,
         })
         .collect()
-}
-
-/// The whole path through the screen: fill in an order, review it, see that nothing has been sent,
-/// approve it with the keyboard, and find the order at the exchange and in the panel.
-#[test]
-fn an_order_is_confirmed_before_it_is_sent_and_then_appears_everywhere() {
-    let _restore = theme::RestoreDefaultTheme;
-    let rig = rig();
-    rig.host
-        .adopt(ID, credentials(&generate_key_pem()))
-        .unwrap();
-    wait("live", || {
-        rig.host
-            .snapshot(ID)
-            .is_some_and(|s| s.status == Status::Live)
-    });
-    let mut ticket = TicketState::new(ID, ProductId::new("BTC-USD"), {
-        let mut draft = TicketDraft::new(Side::Buy);
-        draft.size_text = "0.001".to_owned();
-        draft.price_text = "90000.00".to_owned();
-        draft
-    });
-    let mut screen = Screen::new(Vec2::new(900.0, 900.0));
-    let mut run = |events: Vec<egui::Event>, ticket: &mut TicketState| {
-        screen.run(events, |ui| {
-            theme::sync(ui.ctx());
-            let _ = broker_ticket::show(ui.ctx(), ticket, &rig.host);
-        })
-    };
-    let deadline = Instant::now() + Duration::from_secs(8);
-    while !ticket.ready_to_review() {
-        assert!(
-            Instant::now() < deadline,
-            "the broker's preview should arrive"
-        );
-        run(vec![], &mut ticket);
-        std::thread::sleep(Duration::from_millis(20));
-    }
-
-    // Review: the order is shown for approval and nothing has been sent.
-    ticket.press_review();
-    run(vec![], &mut ticket);
-    run(vec![], &mut ticket);
-    assert!(
-        ticket.confirming(),
-        "pressing Review opens the confirmation"
-    );
-    assert_eq!(
-        rig.exchange.order_posts(),
-        0,
-        "nothing is sent before approval"
-    );
-    assert_eq!(rig.host.snapshot(ID).unwrap().working_orders().count(), 0);
-
-    // A stray Enter approves nothing: the dialog starts with no button focused.
-    run(key(egui::Key::Enter), &mut ticket);
-    assert!(ticket.confirming());
-    assert_eq!(rig.exchange.order_posts(), 0);
-
-    // Tab to "Back", Tab to "Place order", Enter.
-    for events in [key(egui::Key::Tab), key(egui::Key::Tab)] {
-        run(events, &mut ticket);
-    }
-    run(key(egui::Key::Enter), &mut ticket);
-    let deadline = Instant::now() + Duration::from_secs(8);
-    while rig.exchange.order_posts() == 0 {
-        assert!(Instant::now() < deadline, "approving should send the order");
-        run(vec![], &mut ticket);
-        std::thread::sleep(Duration::from_millis(20));
-    }
-    assert_eq!(rig.exchange.order_posts(), 1, "sent exactly once");
-    wait("the order in the panel's snapshot", || {
-        rig.host
-            .snapshot(ID)
-            .is_some_and(|s| s.working_orders().count() == 1)
-    });
-    assert_eq!(rig.exchange.orders_created(), 1);
 }
 
 #[test]
@@ -370,7 +294,7 @@ fn an_edit_is_previewed_confirmed_and_sent_as_an_edit_never_a_cancel_and_replace
             egui::Panel::bottom(egui::Id::new("edit-gallery"))
                 .exact_size(300.0)
                 .show(ui, |ui| {
-                    broker_panel::ui(ui, state, &rig.host, ID, &PanelInput { market: None });
+                    draw(ui, state, &rig.host);
                 });
         })
     };
@@ -464,46 +388,536 @@ fn gallery_of_live_trading() {
             screen.save(&format!("live-panel-{name}-{suffix}"), output);
         }
 
-        let mut tall = Screen::new(Vec2::new(720.0, 880.0));
-        tall.ctx.set_theme(theme_pref);
-        let mut ticket = TicketState::new(ID, ProductId::new("BTC-USD"), {
-            let mut draft = TicketDraft::new(Side::Buy);
-            draft.size_text = "0.001".to_owned();
-            draft.price_text = "90000.00".to_owned();
-            draft
-        });
-        let output = frames(&mut tall, 40, |ui| {
-            let _ = broker_ticket::show(ui.ctx(), &mut ticket, &rig.host);
-        });
-        tall.save(&format!("live-ticket-{suffix}"), output);
-
-        let mut problem = TicketState::new(ID, ProductId::new("BTC-USD"), {
-            let mut draft = TicketDraft::new(Side::Buy);
-            draft.size_text = "50".to_owned();
-            draft.price_text = "90000.005".to_owned();
-            draft
-        });
-        let output = frames(&mut tall, 40, |ui| {
-            let _ = broker_ticket::show(ui.ctx(), &mut problem, &rig.host);
-        });
-        tall.save(&format!("live-ticket-problems-{suffix}"), output);
-
-        let mut page_state = settings_brokers::BrokersState::default();
-        let mut page = Screen::new(Vec2::new(620.0, 980.0));
-        page.ctx.set_theme(theme_pref);
-        let output = frames(&mut page, 3, |ui| {
-            egui::CentralPanel::default().show(ui, |ui| {
-                settings_brokers::body(ui, &mut page_state, Some(rig.host.clone()));
-            });
-        });
-        page.save(&format!("live-settings-connected-{suffix}"), output);
         let idle = self::rig();
-        let mut idle_state = settings_brokers::BrokersState::default();
-        let output = frames(&mut page, 3, |ui| {
+        for (name, width, height, connected, open) in [
+            ("connected", 620.0, 980.0, true, true),
+            ("idle", 620.0, 980.0, false, true),
+            ("folded", 620.0, 300.0, true, false),
+            ("narrow", 300.0, 1500.0, true, true),
+            ("narrow-idle", 300.0, 1500.0, false, true),
+        ] {
+            let hub = if connected {
+                rig.hub.clone()
+            } else {
+                idle.hub.clone()
+            };
+            let mut page_state = settings_brokers::BrokersState::default();
+            if open {
+                page_state.open_for_test("coinbase");
+                page_state.open_for_test("coinbase-sandbox");
+            }
+            let mut page = Screen::new(Vec2::new(width, height));
+            page.ctx.set_theme(theme_pref);
+            // The logos are images: they decode on a loader's thread, over a few frames.
+            egui_extras::install_image_loaders(&page.ctx);
+            let mut draw = |page: &mut Screen| {
+                frames(page, 3, |ui| {
+                    egui::CentralPanel::default().show(ui, |ui| {
+                        settings_brokers::body(ui, &mut page_state, Some(hub.clone()));
+                    });
+                })
+            };
+            draw(&mut page);
+            std::thread::sleep(Duration::from_millis(400));
+            let output = draw(&mut page);
+            page.save(&format!("live-settings-{name}-{suffix}"), output);
+        }
+    }
+
+    // The record of unconfirmed orders cannot be read: the panel says so and orders are paused.
+    let broken = live_rig();
+    broken.host.corrupt_pending_record_for_test();
+    wait("the unreadable record to be noticed", || {
+        broken
+            .host
+            .snapshot(ID)
+            .is_some_and(|s| s.journal_error.is_some())
+    });
+    let mut screen = Screen::new(Vec2::new(1_100.0, 400.0));
+    let mut state = BrokerPanelState::default();
+    let output = show_panel(&mut screen, &mut state, &broken.host, 380.0);
+    screen.save("live-panel-journal-unreadable-dark", output);
+}
+
+fn posts(rig: &Rig, suffix: &str) -> usize {
+    rig.exchange.rest.with_state(|s| {
+        s.requests_seen
+            .iter()
+            .filter(|r| r.starts_with("POST") && r.ends_with(suffix))
+            .count()
+    })
+}
+
+#[test]
+fn an_edit_cannot_be_reviewed_before_or_without_the_brokers_preview() {
+    let _restore = theme::RestoreDefaultTheme;
+    let rig = live_rig();
+    let snapshot = rig.host.snapshot(ID).unwrap();
+    let order = snapshot
+        .working_orders()
+        .find(|v| v.order.side == Side::Sell)
+        .map(|v| v.order.clone())
+        .unwrap();
+    rig.exchange.rest.with_state(|s| s.fail_preview = true);
+    let mut state = BrokerPanelState::default();
+    state.begin_edit(ID, order, Some("92500.00".parse().unwrap()));
+    let mut screen = Screen::new(Vec2::new(900.0, 700.0));
+    let mut run = |events: Vec<egui::Event>, state: &mut BrokerPanelState| {
+        screen.run(events, |ui| {
+            theme::sync(ui.ctx());
+            egui::Panel::bottom(egui::Id::new("edit-gate"))
+                .exact_size(300.0)
+                .show(ui, |ui| {
+                    draw(ui, state, &rig.host);
+                });
+        })
+    };
+    // Before any answer exists (the preview is asked for after typing pauses): not reviewable.
+    run(vec![], &mut state);
+    assert!(
+        !state.edit_review_enabled(),
+        "the Review button is off before the preview"
+    );
+    state.press_edit_review();
+    run(vec![], &mut state);
+    assert!(!state.edit_confirming(), "no review before the preview");
+
+    // The preview fails: still not reviewable, and the edit is never sent.
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while !state.edit_preview_failed() {
+        assert!(Instant::now() < deadline, "the preview should fail");
+        run(vec![], &mut state);
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(
+        !state.edit_review_enabled(),
+        "the Review button is off when the broker could not preview"
+    );
+    state.press_edit_review();
+    run(vec![], &mut state);
+    run(vec![], &mut state);
+    assert!(
+        !state.edit_confirming(),
+        "no review without the broker's answer"
+    );
+    assert_eq!(posts(&rig, "/orders/edit"), 0, "nothing was sent");
+
+    // Once the broker can preview and is asked again, the review opens.
+    rig.exchange.rest.with_state(|s| s.fail_preview = false);
+    state.retry_edit_preview();
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while !state.edit_ready() {
+        assert!(
+            Instant::now() < deadline,
+            "the second preview should arrive"
+        );
+        run(vec![], &mut state);
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    run(vec![], &mut state);
+    assert!(state.edit_review_enabled(), "and on again once it did");
+    state.press_edit_review();
+    run(vec![], &mut state);
+    run(vec![], &mut state);
+    assert!(state.edit_confirming());
+    assert_eq!(posts(&rig, "/orders/edit"), 0, "approval is still to come");
+}
+
+/// The change the user approved was worked out for the order as it was. A partial fill that lands
+/// while the dialog is open means those figures describe another order: the review is dropped,
+/// nothing is sent, and the sheet shows the order as it is now.
+#[test]
+fn a_review_of_an_edit_does_not_survive_the_order_changing_under_it() {
+    let _restore = theme::RestoreDefaultTheme;
+    let rig = live_rig();
+    let snapshot = rig.host.snapshot(ID).unwrap();
+    let order = snapshot
+        .working_orders()
+        .find(|v| v.order.side == Side::Sell)
+        .map(|v| v.order.clone())
+        .unwrap();
+    let mut state = BrokerPanelState::default();
+    state.begin_edit(ID, order.clone(), Some("92500.00".parse().unwrap()));
+    let mut screen = Screen::new(Vec2::new(900.0, 700.0));
+    let mut run = |events: Vec<egui::Event>, state: &mut BrokerPanelState| {
+        screen.run(events, |ui| {
+            theme::sync(ui.ctx());
+            egui::Panel::bottom(egui::Id::new("edit-changes"))
+                .exact_size(300.0)
+                .show(ui, |ui| {
+                    draw(ui, state, &rig.host);
+                });
+        })
+    };
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while !state.edit_ready() {
+        assert!(Instant::now() < deadline, "the preview should arrive");
+        run(vec![], &mut state);
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    state.press_edit_review();
+    run(vec![], &mut state);
+    run(vec![], &mut state);
+    assert!(state.edit_confirming(), "the change is shown for approval");
+    assert_eq!(
+        state.edit_filled_size(),
+        Some(degenview_brokers::Decimal::ZERO)
+    );
+
+    // A partial fill arrives while the dialog is open.
+    rig.exchange
+        .change_order(order.id.as_str(), "OPEN", "0.0004", true);
+    wait("the review to be dropped", || {
+        run(vec![], &mut state);
+        !state.edit_confirming()
+    });
+    assert!(state.edit_open(), "the sheet stays, for a new review");
+    assert_eq!(
+        state.edit_filled_size(),
+        Some("0.0004".parse().unwrap()),
+        "it shows the order as it is now"
+    );
+    assert!(
+        state
+            .edit_error_text()
+            .is_some_and(|text| text.contains("order changed")),
+        "{:?}",
+        state.edit_error_text()
+    );
+    assert_eq!(posts(&rig, "/orders/edit"), 0, "nothing was sent");
+}
+
+/// Typing a key and pressing Connect must never stall a frame: the check and the save happen off
+/// the interface thread or are quick, and the page after connecting draws at once.
+#[test]
+fn connecting_a_key_from_the_settings_page_never_stalls_a_frame() {
+    let rig = rig();
+    let broker = degenview_brokers::registry::by_id(ID).expect("coinbase");
+    let key = credentials(&generate_key_pem());
+    let mut state = settings_brokers::BrokersState::default();
+    let mut screen = Screen::new(Vec2::new(600.0, 900.0));
+    let mut slowest = Duration::ZERO;
+    let mut draw = |state: &mut settings_brokers::BrokersState| {
+        let start = Instant::now();
+        frames(&mut screen, 1, |ui| {
             egui::CentralPanel::default().show(ui, |ui| {
-                settings_brokers::body(ui, &mut idle_state, Some(idle.host.clone()));
+                settings_brokers::body(ui, state, Some(rig.hub.clone()));
             });
         });
-        page.save(&format!("live-settings-idle-{suffix}"), output);
+        slowest = slowest.max(start.elapsed() - Duration::from_millis(15));
+    };
+    draw(&mut state);
+    state.connect_for_test(
+        &rig.host,
+        broker,
+        &[
+            ("name", key.get("name").unwrap()),
+            ("private_key", key.get("private_key").unwrap()),
+        ],
+    );
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while Instant::now() < deadline {
+        draw(&mut state);
+        if rig
+            .host
+            .snapshot(ID)
+            .is_some_and(|s| s.status == Status::Live)
+        {
+            break;
+        }
+    }
+    for _ in 0..20 {
+        draw(&mut state);
+    }
+    assert!(rig.host.snapshot(ID).is_some(), "connected");
+    assert!(
+        slowest < Duration::from_millis(250),
+        "a frame took {slowest:?}"
+    );
+}
+
+/// A base64 secret (Coinbase's Ed25519 form) typed or pasted into the secret box, character by
+/// character and at once, draws every frame quickly.
+#[test]
+fn typing_a_base64_secret_never_stalls_a_frame() {
+    let rig = rig();
+    let broker = degenview_brokers::registry::by_id(ID).expect("coinbase");
+    let label = broker.descriptor().credential_fields[1].label;
+    let secret = "M".repeat(86) + "==";
+    let mut state = settings_brokers::BrokersState::default();
+    state.open_for_test("coinbase");
+    let mut screen = Screen::new(Vec2::new(600.0, 900.0));
+    let ctx = screen.ctx.clone();
+    let slowest = std::cell::Cell::new(Duration::ZERO);
+    let mut step = |events: Vec<egui::Event>, state: &mut settings_brokers::BrokersState| {
+        let start = Instant::now();
+        screen.run(events, |ui| {
+            theme::sync(ui.ctx());
+            egui::CentralPanel::default().show(ui, |ui| {
+                settings_brokers::body(ui, state, Some(rig.hub.clone()));
+            });
+        });
+        slowest.set(slowest.get().max(start.elapsed()));
+    };
+    step(vec![], &mut state);
+    let id = egui::Id::new(("broker-secret", label));
+    // One by one, as a person types (focus is kept as long as the box stays).
+    for (index, ch) in secret.chars().enumerate() {
+        if index == 0 {
+            ctx.memory_mut(|m| m.request_focus(id));
+        }
+        step(vec![egui::Event::Text(ch.to_string())], &mut state);
+    }
+    for _ in 0..10 {
+        step(vec![], &mut state);
+    }
+    assert_eq!(
+        state.typed_for_test("coinbase", "private_key").as_deref(),
+        Some(secret.as_str()),
+        "every typed character reaches the form"
+    );
+    assert!(
+        slowest.get() < Duration::from_millis(250),
+        "a frame took {:?}",
+        slowest.get()
+    );
+    // And all at once.
+    let mut state = settings_brokers::BrokersState::default();
+    state.open_for_test("coinbase");
+    step(vec![], &mut state);
+    ctx.memory_mut(|m| m.request_focus(id));
+    step(vec![egui::Event::Paste(secret.clone())], &mut state);
+    for _ in 0..10 {
+        step(vec![], &mut state);
+    }
+    assert!(
+        slowest.get() < Duration::from_millis(250),
+        "a frame took {:?}",
+        slowest.get()
+    );
+}
+
+/// The header of a chart with live SELL and BUY pills and long prices: both pills are inside the
+/// header and can be pressed, and the star stays at the right edge with the pills to its left.
+#[test]
+fn the_live_pills_can_be_pressed_and_the_star_stays_at_the_right_edge() {
+    use crate::model::{DataSource, IndicatorConfig};
+    use crate::ui::chart_card::{ChartCard, ChartCardAction};
+
+    let _restore = theme::RestoreDefaultTheme;
+    let width = 520.0;
+    let mut card = ChartCard::default();
+    card.live.order_entry = Some(Ok(()));
+    card.live.broker_name = "Coinbase".to_owned();
+    card.live.bid = Some("74,380.32".to_owned());
+    card.live.ask = Some("74,396.74".to_owned());
+    let mut screen = Screen::new(Vec2::new(width, 60.0));
+    let indicators = IndicatorConfig::default();
+
+    // Presses at `x` along the header's middle and reports what the header said.
+    let mut press = |x: f32| -> ChartCardAction {
+        let at = egui::pos2(x, 22.0);
+        let mut said = ChartCardAction::default();
+        for (events, last) in [
+            (
+                vec![
+                    egui::Event::PointerMoved(at),
+                    egui::Event::PointerButton {
+                        pos: at,
+                        button: egui::PointerButton::Primary,
+                        pressed: true,
+                        modifiers: egui::Modifiers::NONE,
+                    },
+                ],
+                false,
+            ),
+            (
+                vec![egui::Event::PointerButton {
+                    pos: at,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: egui::Modifiers::NONE,
+                }],
+                true,
+            ),
+        ] {
+            let mut action = ChartCardAction::default();
+            screen.run(events, |ui| {
+                theme::sync(ui.ctx());
+                egui::CentralPanel::default()
+                    .frame(egui::Frame::NONE)
+                    .show(ui, |ui| {
+                        card.header(
+                            ui,
+                            "BTC-USD",
+                            DataSource::Coinbase,
+                            &indicators,
+                            &[],
+                            false,
+                            false,
+                            &[],
+                            &mut action,
+                            1,
+                        );
+                    });
+            });
+            if last {
+                said = action;
+            }
+        }
+        said
+    };
+
+    let (mut sell, mut buy, mut star) = (Vec::new(), Vec::new(), Vec::new());
+    let mut x = 2.0;
+    while x < width {
+        let said = press(x);
+        match said.live_trade {
+            Some(degenview_brokers::Side::Sell) => sell.push(x),
+            Some(degenview_brokers::Side::Buy) => buy.push(x),
+            None => {}
+        }
+        if said.toggle_favorite {
+            star.push(x);
+        }
+        x += 4.0;
+    }
+    assert!(!sell.is_empty(), "SELL can be pressed");
+    assert!(!buy.is_empty(), "BUY can be pressed");
+    assert!(!star.is_empty(), "the star can be pressed");
+    let leftmost_star = star.iter().copied().fold(f32::MAX, f32::min);
+    let rightmost_pill = sell.iter().chain(&buy).copied().fold(0.0, f32::max);
+    assert!(
+        rightmost_pill < leftmost_star,
+        "the pills are left of the star: pills end {rightmost_pill}, star starts {leftmost_star}"
+    );
+    assert!(
+        star.iter().copied().fold(0.0, f32::max) > width - 60.0,
+        "the star is at the right edge"
+    );
+}
+
+/// The sandbox connects from the Settings page with no key at all, shows its canned account, and
+/// is a broker of its own beside the real one.
+#[test]
+fn the_sandbox_connects_without_a_key_and_is_listed_beside_coinbase() {
+    use degenview_brokers::coinbase::SANDBOX_ID;
+
+    let rig = rig();
+    let ids: Vec<_> = rig
+        .host
+        .brokers()
+        .iter()
+        .map(|b| b.descriptor().id)
+        .collect();
+    assert_eq!(ids, vec![ID, SANDBOX_ID]);
+    let sandbox = degenview_brokers::registry::by_id(SANDBOX_ID).expect("the sandbox");
+    assert!(sandbox.descriptor().credential_fields.is_empty());
+
+    let mut state = settings_brokers::BrokersState::default();
+    let mut screen = Screen::new(Vec2::new(600.0, 1200.0));
+    state.connect_for_test(&rig.host, sandbox, &[]);
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while Instant::now() < deadline {
+        frames(&mut screen, 1, |ui| {
+            egui::CentralPanel::default().show(ui, |ui| {
+                settings_brokers::body(ui, &mut state, Some(rig.hub.clone()));
+            });
+        });
+        if rig
+            .host
+            .snapshot(SANDBOX_ID)
+            .is_some_and(|s| s.status == Status::Live)
+        {
+            break;
+        }
+    }
+    let snapshot = rig.host.snapshot(SANDBOX_ID).expect("connected");
+    assert_eq!(snapshot.status, Status::Live);
+    assert!(snapshot.session.as_ref().unwrap().permissions.can_trade);
+    assert!(
+        rig.host.snapshot(ID).is_none(),
+        "the real broker is untouched"
+    );
+}
+
+/// The trading panel's top edge can be dragged to make it taller on every tab, whether the account
+/// holds orders or nothing: a panel whose content is a footer short of the room it was given
+/// shrinks back every frame and cannot be resized.
+#[test]
+fn the_trading_panel_can_be_resized_on_every_tab_with_and_without_orders() {
+    let _restore = theme::RestoreDefaultTheme;
+    let mut results = Vec::new();
+    for (name, rig) in [("no orders", self::rig()), ("with orders", live_rig())] {
+        if name == "no orders" {
+            rig.host
+                .adopt(ID, credentials(&generate_key_pem()))
+                .wait()
+                .unwrap();
+            wait("live", || {
+                rig.host
+                    .snapshot(ID)
+                    .is_some_and(|s| s.status == Status::Live)
+            });
+        }
+        for tab in [
+            BrokerTab::Orders,
+            BrokerTab::History,
+            BrokerTab::Fills,
+            BrokerTab::Balances,
+        ] {
+            let mut screen = Screen::new(Vec2::new(1_100.0, 760.0));
+            let mut state = BrokerPanelState::default();
+            state.set_tab(tab);
+            let height = std::cell::Cell::new(0.0_f32);
+            let mut draw = |screen: &mut Screen, events: Vec<egui::Event>| {
+                screen.run(events, |ui| {
+                    theme::sync(ui.ctx());
+                    let shown = egui::Panel::bottom(egui::Id::new("resize-gallery"))
+                        .resizable(true)
+                        .default_size(340.0)
+                        .min_size(280.0)
+                        .frame(egui::Frame::new().fill(crate::ui::kit::window()))
+                        .show(ui, |ui| {
+                            draw(ui, &mut state, &rig.host);
+                        });
+                    height.set(shown.response.rect.height());
+                });
+            };
+            for _ in 0..6 {
+                draw(
+                    &mut screen,
+                    vec![egui::Event::PointerMoved(egui::pos2(600.0, 100.0))],
+                );
+                std::thread::sleep(Duration::from_millis(15));
+            }
+            let before = height.get();
+            let edge = 760.0 - before;
+            let button = |pos, pressed| egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed,
+                modifiers: egui::Modifiers::NONE,
+            };
+            let start = egui::pos2(600.0, edge);
+            draw(&mut screen, vec![egui::Event::PointerMoved(start)]);
+            draw(&mut screen, vec![button(start, true)]);
+            for step in 1..=8 {
+                let at = egui::pos2(600.0, edge - 10.0 * step as f32);
+                draw(&mut screen, vec![egui::Event::PointerMoved(at)]);
+            }
+            let end = egui::pos2(600.0, edge - 80.0);
+            draw(&mut screen, vec![button(end, false)]);
+            for _ in 0..3 {
+                draw(&mut screen, vec![egui::Event::PointerMoved(end)]);
+            }
+            results.push((name, tab, before, height.get()));
+        }
+    }
+    for (name, tab, before, after) in &results {
+        assert!(
+            *after > *before + 40.0,
+            "{name} / {tab:?}: dragging the top edge up by 80 should make the panel taller: {before} -> {after} ({results:?})"
+        );
     }
 }

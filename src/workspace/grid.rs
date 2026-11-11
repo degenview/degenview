@@ -328,6 +328,8 @@ impl ChartWorkspace {
         let mut drawing_escape = false;
         let mut paper_actions = Vec::new();
         let mut quick_trade = None;
+        let mut live_actions = Vec::new();
+        let mut live_trade = None;
         let mut context_request: Option<(u64, ui::ContextRequest)> = None;
         let (favorites, watchlist_memberships): (HashSet<String>, Vec<_>) = {
             let store = self.watchlist.lock().expect("watchlist lock poisoned");
@@ -722,6 +724,10 @@ impl ChartWorkspace {
                                     quick_trade = Some((chart_id, side, reference_price));
                                 }
                                 paper_actions.append(&mut self.charts[index].chart.paper.actions);
+                                live_actions.append(&mut self.charts[index].chart.live.actions);
+                                if let Some(side) = drawn.inner.inner.live_trade {
+                                    live_trade = Some((chart_id, side));
+                                }
                                 zones.cards.push((column.id, chart_id, drawn.response.rect));
                             }
                         }
@@ -869,14 +875,30 @@ impl ChartWorkspace {
         for (chart_id, drawing) in drawing_commands {
             self.apply_drawing_commands(chart_id, drawing);
         }
+        self.apply_broker_overlay_actions(live_actions);
+        if let Some((chart_id, side)) = live_trade
+            && let Some(index) = self.chart_index(chart_id)
+        {
+            self.open_live_ticket(
+                index,
+                crate::model::chart_context::LiveOrderRequest {
+                    side,
+                    kind: crate::model::broker_ticket::TicketKind::Market,
+                    price: None,
+                },
+            );
+        }
         let paper_failures = Self::apply_paper_overlay_actions(paper_host, paper_actions);
         self.paper_panel.report_messages(&paper_failures);
-        if let Some((chart_id, side, reference_price)) = quick_trade
-            && let Some(chart) = self.charts.iter().find(|chart| chart.id == chart_id)
-        {
-            let instrument = Self::paper_instrument(chart);
-            self.paper_panel
-                .open_ticket(paper_host, instrument, reference_price, side);
+        if let Some((_, side, _)) = quick_trade {
+            self.start_order(
+                match side {
+                    crate::model::paper::PaperOrderSide::Buy => degenview_brokers::Side::Buy,
+                    crate::model::paper::PaperOrderSide::Sell => degenview_brokers::Side::Sell,
+                },
+                Some(crate::trading::model::OrderClass::Market),
+                None,
+            );
         }
         if let Some((chart_id, select)) = drawing_select {
             self.selected_drawing = (!select.is_empty()).then_some((chart_id, select));

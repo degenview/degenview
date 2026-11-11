@@ -87,7 +87,8 @@ impl SnapshotTokenStore {
     }
 
     pub fn remove(&self) {
-        self.backend.delete(SCOPE, ACCOUNT);
+        // Best effort: the token is also forgotten here, and a new one replaces it on the next share.
+        let _ = self.backend.delete(SCOPE, ACCOUNT);
         *self.cache.lock().unwrap_or_else(|e| e.into_inner()) = Cache {
             loaded: true,
             token: None,

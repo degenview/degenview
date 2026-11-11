@@ -542,7 +542,7 @@ pub fn show(
                     crate::ui::settings_brokers::body(
                         ui,
                         &mut state.brokers,
-                        crate::host::broker_host::BrokerHost::global(),
+                        crate::host::trading_hub::TradingHub::global(),
                     )
                 },
             );

@@ -351,6 +351,10 @@ mod tests {
             // the choices about how to trade there. Another Mac must never act on either.
             "broker.pending",
             "broker.prefs",
+            // Which trading venues are switched on here, and the one last used: what is connected
+            // on this Mac is not another Mac's business.
+            "trading.enabled",
+            "trading.venue",
             "portfolio.privacyMode",
             // A channel is chosen per Mac: syncing it would move every other Mac onto it.
             "update.channel",

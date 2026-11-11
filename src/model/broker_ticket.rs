@@ -9,6 +9,8 @@
 
 use std::str::FromStr;
 
+use std::time::Duration;
+
 use degenview_brokers::model::orders::FeeSummary;
 use degenview_brokers::model::reducer::{Notice, NoticeKind};
 use degenview_brokers::validate::{self, Field};
@@ -24,37 +26,10 @@ pub enum TicketKind {
     StopLimit,
 }
 
-impl TicketKind {
-    pub fn order_type(self) -> OrderType {
-        match self {
-            Self::Market => OrderType::Market,
-            Self::Limit => OrderType::Limit,
-            Self::StopLimit => OrderType::StopLimit,
-        }
-    }
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Market => "Market",
-            Self::Limit => "Limit",
-            Self::StopLimit => "Stop-limit",
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub enum TicketTif {
     GoodTilCancelled,
     FillOrKill,
-}
-
-impl TicketTif {
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::GoodTilCancelled => "Good til cancelled",
-            Self::FillOrKill => "Fill or kill",
-        }
-    }
 }
 
 /// Which input a problem belongs to.
@@ -363,12 +338,6 @@ impl TicketDraft {
             fee: notional.zip(rate).map(|(notional, rate)| notional * rate),
         }
     }
-
-    /// Whether this order needs the user to confirm it. A market order always does, whatever the
-    /// settings say.
-    pub fn needs_confirmation(&self, confirm_resting: bool) -> bool {
-        self.kind == TicketKind::Market || confirm_resting
-    }
 }
 
 /// What an order would cost, estimated from the fee schedule.
@@ -437,115 +406,52 @@ fn display_keep_zeros(value: Decimal) -> String {
     }
 }
 
-/// The lines of the confirmation: what is about to be sent, in the words of the ticket.
-pub fn confirmation_lines(
-    draft: &OrderDraft,
-    spec: &ProductSpec,
-    estimate: &Estimate,
-    account: &str,
-) -> Vec<(&'static str, String)> {
-    let mut lines = vec![
-        ("Account", account.to_owned()),
-        ("Market", spec.display_name.clone()),
-        (
-            "Action",
-            match draft.side {
-                Side::Buy => "Buy".to_owned(),
-                Side::Sell => "Sell".to_owned(),
-            },
-        ),
-    ];
-    match &draft.kind {
-        OrderKind::Market { size } => {
-            lines.push(("Type", "Market".to_owned()));
-            match size {
-                OrderSize::Base(size) => {
-                    lines.push(("Size", format!("{} {}", display(*size), spec.base)))
-                }
-                OrderSize::Quote(amount) => {
-                    lines.push(("Spend", format!("{} {}", display(*amount), spec.quote)));
-                }
-            }
-            lines.push(("Price", "At the best available price".to_owned()));
-        }
-        OrderKind::Limit {
-            base_size,
-            price,
-            tif,
-            post_only,
-        } => {
-            lines.push((
-                "Type",
-                if *post_only {
-                    "Limit, post-only"
-                } else {
-                    "Limit"
-                }
-                .to_owned(),
-            ));
-            lines.push(("Size", format!("{} {}", display(*base_size), spec.base)));
-            lines.push((
-                "Price",
-                format!("{} {}", price_display(*price, spec), spec.quote),
-            ));
-            lines.push(("Time in force", tif_label(*tif).to_owned()));
-        }
-        OrderKind::StopLimit {
-            base_size,
-            stop_price,
-            limit_price,
-            direction,
-            ..
-        } => {
-            lines.push(("Type", "Stop-limit".to_owned()));
-            lines.push(("Size", format!("{} {}", display(*base_size), spec.base)));
-            lines.push((
-                "Stop",
-                format!(
-                    "{} {} (triggers when the price {} it)",
-                    price_display(*stop_price, spec),
-                    spec.quote,
-                    match direction {
-                        StopDirection::Up => "rises to",
-                        StopDirection::Down => "falls to",
-                    }
-                ),
-            ));
-            lines.push((
-                "Limit",
-                format!("{} {}", price_display(*limit_price, spec), spec.quote),
-            ));
-        }
-    }
-    if let Some(notional) = estimate.notional {
-        lines.push((
-            "Estimated value",
-            format!("{} {}", display(notional.round_dp(8)), spec.quote),
-        ));
-    }
-    if let Some(fee) = estimate.fee {
-        lines.push((
-            "Estimated fee",
-            format!(
-                "{} {}{}",
-                display(fee.round_dp(8)),
-                spec.quote,
-                estimate.fee_rate.map_or(String::new(), |rate| format!(
-                    " ({}%)",
-                    display((rate * Decimal::ONE_HUNDRED).round_dp(4))
-                ))
-            ),
-        ));
-    }
-    lines
+/// How long the broker's answer to a preview may be acted on. A preview is a statement about the
+/// market a moment ago; after this it is asked for again.
+pub const PREVIEW_FRESH: Duration = Duration::from_secs(60);
+
+/// What the broker has said about the order as it stands, from the ticket's or the edit sheet's
+/// point of view.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PreviewAnswer {
+    /// Not asked yet, or asked and not answered.
+    Waiting,
+    /// The question could not be answered (the connection, a refusal of the preview itself).
+    Failed(String),
+    /// The broker answered that it would refuse the order.
+    Problems,
+    /// The broker answered that it would accept the order.
+    Accepted,
 }
 
-fn tif_label(tif: TimeInForce) -> &'static str {
-    match tif {
-        TimeInForce::GoodTilCancelled => "Good til cancelled",
-        TimeInForce::GoodTilDate(_) => "Good til date",
-        TimeInForce::ImmediateOrCancel => "Immediate or cancel",
-        TimeInForce::FillOrKill => "Fill or kill",
+/// Whether the order may be reviewed. **Only a fresh, accepting answer from the broker allows it**:
+/// no answer, a failed answer and an old answer do not. (The broker's create endpoint does not
+/// require a preview, so this is this application's rule, not the broker's.)
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PreviewGate {
+    Waiting,
+    Failed(String),
+    Blocked,
+    Stale,
+    Ready,
+}
+
+impl PreviewGate {
+    pub fn allows_review(&self) -> bool {
+        *self == Self::Ready
+    }
+}
+
+/// `age` is how long ago the accepting answer arrived.
+pub fn preview_gate(answer: PreviewAnswer, age: Option<Duration>) -> PreviewGate {
+    match answer {
+        PreviewAnswer::Waiting => PreviewGate::Waiting,
+        PreviewAnswer::Failed(text) => PreviewGate::Failed(text),
+        PreviewAnswer::Problems => PreviewGate::Blocked,
+        PreviewAnswer::Accepted => match age {
+            Some(age) if age <= PREVIEW_FRESH => PreviewGate::Ready,
+            _ => PreviewGate::Stale,
+        },
     }
 }
 
@@ -635,6 +541,42 @@ pub enum StatusTone {
     Warning,
     Bad,
     Neutral,
+}
+
+/// Why an order cannot be edited, or `None` when it can.
+pub fn edit_blocker(
+    order: &LiveOrder,
+    caps: Option<&Capabilities>,
+    cancelling: bool,
+) -> Option<&'static str> {
+    if order.status != OrderStatus::Open {
+        return Some("Only open orders can be edited.");
+    }
+    if cancelling {
+        return Some("A cancel is in progress for this order.");
+    }
+    if !matches!(order.order_type, OrderType::Limit | OrderType::StopLimit) {
+        return Some("This type of order cannot be edited.");
+    }
+    if matches!(order.size, Some(OrderSize::Quote(_))) || order.size.is_none() {
+        return Some("Orders sized by an amount to spend cannot be edited.");
+    }
+    match caps {
+        Some(caps) if caps.native_edit => None,
+        Some(_) => Some("This broker does not support editing this market's orders."),
+        None => Some("The market's rules have not been read yet."),
+    }
+}
+
+/// The type column.
+pub fn type_label(order: &LiveOrder) -> String {
+    match order.order_type {
+        OrderType::Market => "Market".to_owned(),
+        OrderType::Limit if order.post_only => "Limit, post-only".to_owned(),
+        OrderType::Limit => "Limit".to_owned(),
+        OrderType::StopLimit => "Stop-limit".to_owned(),
+        OrderType::Other => "Other".to_owned(),
+    }
 }
 
 #[cfg(test)]
@@ -880,42 +822,46 @@ mod tests {
     }
 
     #[test]
-    fn a_market_order_always_asks_and_a_resting_one_asks_when_told_to() {
-        let mut ticket = limit("1", "1");
-        assert!(!ticket.needs_confirmation(false));
-        assert!(ticket.needs_confirmation(true));
-        ticket.kind = TicketKind::Market;
-        assert!(
-            ticket.needs_confirmation(false),
-            "whatever the settings say"
+    fn only_a_fresh_accepting_answer_from_the_broker_allows_a_review() {
+        let fresh = Some(Duration::from_secs(5));
+        assert_eq!(
+            preview_gate(PreviewAnswer::Waiting, None),
+            PreviewGate::Waiting
         );
-    }
-
-    #[test]
-    fn the_confirmation_says_everything_that_is_about_to_be_sent() {
-        with(|ctx| {
-            let ticket = limit("0.001", "90000.00");
-            let draft = ticket.build(ctx).unwrap();
-            let lines =
-                confirmation_lines(&draft, ctx.spec, &ticket.estimate(ctx), "Default portfolio");
-            let text: Vec<String> = lines.iter().map(|(k, v)| format!("{k}: {v}")).collect();
-            for expected in [
-                "Account: Default portfolio",
-                "Market: BTC-USD",
-                "Action: Buy",
-                "Type: Limit",
-                "Size: 0.001 BTC",
-                "Price: 90,000.00 USD",
-                "Time in force: Good til cancelled",
-                "Estimated value: 90 USD",
-                "Estimated fee: 0.54 USD (0.6%)",
-            ] {
-                assert!(
-                    text.iter().any(|line| line == expected),
-                    "missing {expected} in {text:?}"
-                );
-            }
-        });
+        assert_eq!(
+            preview_gate(PreviewAnswer::Failed("down".to_owned()), None),
+            PreviewGate::Failed("down".to_owned())
+        );
+        assert_eq!(
+            preview_gate(PreviewAnswer::Problems, fresh),
+            PreviewGate::Blocked
+        );
+        assert_eq!(
+            preview_gate(PreviewAnswer::Accepted, fresh),
+            PreviewGate::Ready
+        );
+        assert_eq!(
+            preview_gate(
+                PreviewAnswer::Accepted,
+                Some(PREVIEW_FRESH + Duration::from_secs(1))
+            ),
+            PreviewGate::Stale,
+            "an old answer is not an answer"
+        );
+        assert_eq!(
+            preview_gate(PreviewAnswer::Accepted, None),
+            PreviewGate::Stale,
+            "an answer of unknown age is not fresh"
+        );
+        for gate in [
+            PreviewGate::Waiting,
+            PreviewGate::Failed("x".to_owned()),
+            PreviewGate::Blocked,
+            PreviewGate::Stale,
+        ] {
+            assert!(!gate.allows_review(), "{gate:?}");
+        }
+        assert!(PreviewGate::Ready.allows_review());
     }
 
     #[test]

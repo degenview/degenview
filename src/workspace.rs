@@ -1,4 +1,4 @@
-use crate::host::paper_host::{PaperHost, PaperPanel, PaperPanelAction};
+use crate::host::paper_host::{PaperHost, PaperPanel};
 use crate::host::portfolio_card_host::PortfolioCardEnv;
 use crate::model::alert::{AlertCurrency, PriceAlert};
 use crate::model::chart_sync::SyncHub;
@@ -48,6 +48,7 @@ pub const MAX_CUSTOM_TITLE_CHARS: usize = 60;
 
 mod alerts;
 mod autosave;
+mod broker;
 mod chart;
 mod charts;
 mod content;
@@ -73,6 +74,7 @@ mod tab_link;
 mod test_support;
 mod tool_rail;
 mod toolbar;
+mod trade_sheet;
 mod undo;
 mod watchlist;
 
@@ -256,6 +258,9 @@ pub struct ChartWorkspace {
     watchlist_error: Option<crate::model::watchlist::WatchlistNotice>,
     watchlist_file_result: Option<Receiver<Result<(), String>>>,
     paper_panel_visible: bool,
+    /// The order sheet beside the chart. Open and closed with the trading panel, and by its own ✕.
+    trade_sheet_visible: bool,
+    trade_sheet: crate::ui::trade::order_sheet::SheetState,
     /// Where this tab's trading happens: paper, or a connected broker with real money. Not
     /// saved: a tab always starts on paper.
     trading_venue: crate::model::trading_venue::TradingVenue,
@@ -434,6 +439,8 @@ impl ChartWorkspace {
             watchlist_error: None,
             watchlist_file_result: None,
             paper_panel_visible: false,
+            trade_sheet_visible: false,
+            trade_sheet: crate::ui::trade::order_sheet::SheetState::default(),
             trading_venue: crate::model::trading_venue::TradingVenue::default(),
             broker_panel: crate::ui::broker_panel::BrokerPanelState::default(),
             new_alert_request: None,
@@ -686,7 +693,15 @@ impl ChartWorkspace {
 
     // MARK: Grid
 
-    pub fn ui(&mut self, ui: &mut egui::Ui, paper_host: &mut PaperHost) -> Vec<WorkspaceAction> {
+    /// Draws the workspace. The paper host is passed as its shared handle and locked only around
+    /// the parts that edit it: the order sheet and the venue pill read it through the trading hub,
+    /// which locks the same mutex, so a guard held across the whole frame would deadlock them.
+    pub fn ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        paper: &std::sync::Arc<std::sync::Mutex<PaperHost>>,
+    ) -> Vec<WorkspaceAction> {
+        let lock = || paper.lock().unwrap_or_else(|e| e.into_inner());
         let ctx = ui.ctx().clone();
         let timeframe = self.timeframe;
         for chart in &mut self.charts {
@@ -704,8 +719,12 @@ impl ChartWorkspace {
         self.tick_link_probation(&ctx);
         self.tick_overlays(&ctx);
         self.update_live_feed(&ctx);
-        self.sync_paper_quotes(paper_host);
-        self.configure_paper_cards(paper_host);
+        {
+            let mut host = lock();
+            self.sync_paper_quotes(&mut host);
+            self.configure_paper_cards(&host);
+        }
+        self.configure_broker_cards();
         self.handle_keyboard(ui);
         self.handle_clipboard(ui);
         self.tick_content(&ctx);
@@ -765,56 +784,59 @@ impl ChartWorkspace {
             self.suspend_watchlist_demand();
         }
 
+        if self.trade_sheet_visible {
+            let sheet_actions = egui::Panel::right(egui::Id::new(("trade_sheet", self.id)))
+                .resizable(true)
+                .default_size(340.0)
+                .min_size(300.0)
+                .max_size(460.0)
+                .frame(
+                    egui::Frame::new()
+                        .fill(ui::kit::window())
+                        .inner_margin(egui::Margin::ZERO),
+                )
+                .show(ui, |ui| self.show_trade_sheet(ui))
+                .inner;
+            actions.extend(sheet_actions);
+        }
+
         if self.paper_panel_visible {
-            let market = self
-                .focused_market_chart()
-                .map(|chart| degenview_brokers::MarketRef {
-                    source: chart.source.watchlist_slug().to_lowercase(),
-                    symbol: chart.symbol.clone(),
-                });
             let broker_host = crate::host::broker_host::BrokerHost::global();
-            let mut venue = self.trading_venue;
-            let mut broker_actions = Vec::new();
-            let paper_actions = egui::Panel::bottom(egui::Id::new(("paper_panel", self.id)))
+            let mut panel_actions: Vec<WorkspaceAction> = Vec::new();
+            let events = egui::Panel::bottom(egui::Id::new(("paper_panel", self.id)))
                 .resizable(true)
                 .default_size(340.0)
                 .min_size(280.0)
                 .frame(egui::Frame::new().fill(ui::kit::window()))
                 .show(ui, |ui| {
-                    if let Some(host) = &broker_host {
-                        crate::ui::broker_panel::venue_switch(ui, &mut venue, host);
-                    }
+                    let Some((venue, bar)) = self.panel_venue(ui, &mut panel_actions) else {
+                        return Vec::new();
+                    };
                     match (venue.broker(), &broker_host) {
                         (Some(id), Some(host)) => {
-                            broker_actions = crate::ui::broker_panel::ui(
+                            let stats = crate::host::trading_hub::TradingHub::global()
+                                .and_then(|hub| hub.backend(venue))
+                                .and_then(|backend| backend.stats());
+                            crate::ui::broker_panel::ui(
                                 ui,
                                 &mut self.broker_panel,
                                 host,
                                 id,
-                                &crate::ui::broker_panel::PanelInput { market },
-                            );
-                            Vec::new()
+                                &bar,
+                                stats.as_ref(),
+                            )
                         }
-                        _ => self.paper_panel.ui(ui, paper_host),
+                        _ => self.paper_panel.ui(ui, &mut lock(), &bar),
                     }
                 })
                 .inner;
-            self.trading_venue = venue;
-            for action in paper_actions {
-                match action {
-                    PaperPanelAction::Close => self.paper_panel_visible = false,
-                }
-            }
-            for action in broker_actions {
-                match action {
-                    crate::ui::broker_panel::PanelAction::Close => self.paper_panel_visible = false,
-                    crate::ui::broker_panel::PanelAction::OpenSettings => {
-                        actions.push(WorkspaceAction::OpenBrokerSettings);
-                    }
-                }
+            actions.extend(panel_actions);
+            for event in events {
+                self.apply_panel_event(event, &mut actions);
             }
         }
 
+        self.show_broker_dialogs(&ctx);
         self.sync_context_panels();
         if self.context.tree_chart.is_some() {
             egui::Panel::right(egui::Id::new(("object_tree", self.id)))
@@ -870,7 +892,7 @@ impl ChartWorkspace {
                     .fill(ui::theme::background())
                     .inner_margin(egui::Margin::same(10)),
             )
-            .show(ui, |ui| self.render_grid(ui, paper_host));
+            .show(ui, |ui| self.render_grid(ui, &mut lock()));
         if let Some(item) = self.open_new_tab_request.take() {
             actions.push(WorkspaceAction::OpenWatchlistInNewTab(item));
         }
@@ -963,7 +985,7 @@ impl ChartWorkspace {
             self.confirm_chart_removal(&ctx, chart_id);
         }
         actions.extend(self.show_alert_editor(&ctx));
-        actions.extend(self.show_context_ui(&ctx, paper_host));
+        actions.extend(self.show_context_ui(&ctx, &mut lock()));
         actions.extend(self.take_logs_actions());
         if self.date_sheet.is_open() {
             let timeline = self.replay_timeline();

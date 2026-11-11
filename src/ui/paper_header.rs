@@ -7,38 +7,11 @@
 #![allow(dead_code)]
 
 use crate::model::paper::PaperCurrency;
-use crate::ui::accessibility;
-use crate::ui::icons::{self, Icon};
+use crate::ui::icons::Icon;
 use crate::ui::kit::{self, Confirm, ConfirmOutcome};
 use crate::ui::paper_tables::{self, FooterFacts, PaperTab, footer_note};
-use crate::ui::theme;
-use eframe::egui::{self, Id, Sense, Vec2, pos2, vec2};
-
-/// Width below which the tabs drop to a second row instead of being cut off.
-pub const COMPACT_WIDTH: f32 = 900.0;
-
-/// Every control in the header (badge, account switcher, tab bar, icon buttons) is this tall, so
-/// a row of them shares one top and one bottom edge.
-pub const CONTROL_HEIGHT: f32 = 28.0;
-/// The corner radius they share. The tab bar's track is this too (`kit::tab_bar_slim`).
-const CONTROL_RADIUS: f32 = 9.0;
-
-/// The quiet plate behind the switcher: the tab bar track's fill and hairline, lifted a step on
-/// hover and while the menu is open.
-fn plate(painter: &egui::Painter, rect: egui::Rect, hovered: bool, down: bool) {
-    painter.rect_filled(rect, CONTROL_RADIUS, theme::quaternary(0.6));
-    if down {
-        painter.rect_filled(rect, CONTROL_RADIUS, kit::primary(0.1));
-    } else if hovered {
-        painter.rect_filled(rect, CONTROL_RADIUS, kit::primary(0.05));
-    }
-    painter.rect_stroke(
-        rect,
-        CONTROL_RADIUS,
-        egui::Stroke::new(1.0, kit::hairline()),
-        egui::StrokeKind::Inside,
-    );
-}
+use crate::ui::trade::panel_header::{Chip, ChipRow, MoreItem};
+use eframe::egui::{self, Id};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct AccountChoice {
@@ -128,76 +101,6 @@ pub fn eye_label(showing: bool) -> &'static str {
     }
 }
 
-/// The one "PAPER" marker, so simulated money is never mistaken for the real thing.
-pub fn badge(ui: &mut egui::Ui) {
-    let galley = kit::galley(ui, "PAPER", 10.5, kit::BOLD, kit::ACCENT, f32::INFINITY);
-    let size = vec2(10.0 + 10.0 + 5.0 + galley.size().x + 11.0, CONTROL_HEIGHT);
-    let (rect, response) = ui.allocate_exact_size(size, Sense::hover());
-    let painter = ui.painter();
-    painter.rect_filled(rect, CONTROL_RADIUS, theme::with_alpha(kit::ACCENT, 0.14));
-    painter.rect_stroke(
-        rect,
-        CONTROL_RADIUS,
-        egui::Stroke::new(1.0, theme::with_alpha(kit::ACCENT, 0.22)),
-        egui::StrokeKind::Inside,
-    );
-    icons::paint(
-        painter,
-        egui::Rect::from_center_size(pos2(rect.left() + 15.0, rect.center().y), Vec2::splat(10.0)),
-        Icon::DocText,
-        kit::ACCENT,
-    );
-    painter.galley(
-        pos2(rect.left() + 25.0, rect.center().y - galley.size().y / 2.0),
-        galley,
-        kit::ACCENT,
-    );
-    accessibility::label_as(response, egui::WidgetType::Label, "Paper trading")
-        .on_hover_text("Paper trading");
-}
-
-/// An icon button the height of the header's other controls: it lights up on hover and, when
-/// `active`, sits on a raised plate.
-fn glyph_response(
-    ui: &mut egui::Ui,
-    id: Id,
-    icon: Icon,
-    active: bool,
-    label: &str,
-) -> egui::Response {
-    let (rect, _) = ui.allocate_exact_size(Vec2::splat(CONTROL_HEIGHT), Sense::hover());
-    let response = ui
-        .interact(rect, id, Sense::click())
-        .on_hover_cursor(egui::CursorIcon::PointingHand);
-    let response = accessibility::label(response, label);
-    let fill = if active {
-        theme::selected_tint(false)
-    } else if response.is_pointer_button_down_on() {
-        kit::primary(0.12)
-    } else if response.hovered() {
-        kit::primary(0.08)
-    } else {
-        egui::Color32::TRANSPARENT
-    };
-    ui.painter().rect_filled(rect, CONTROL_RADIUS, fill);
-    icons::paint(
-        ui.painter(),
-        egui::Rect::from_center_size(rect.center(), Vec2::splat(14.0)),
-        icon,
-        if active {
-            theme::text_primary()
-        } else {
-            theme::text_secondary()
-        },
-    );
-    response.on_hover_text(label)
-}
-
-/// An icon-only button; `label` is its tooltip.
-pub fn icon_button(ui: &mut egui::Ui, icon: Icon, label: &str, active: bool) -> egui::Response {
-    glyph_response(ui, Id::new(("paper-icon", label)), icon, active, label)
-}
-
 /// The Swift tab glyphs.
 pub fn tab_icon(tab: PaperTab) -> Icon {
     match tab {
@@ -209,153 +112,17 @@ pub fn tab_icon(tab: PaperTab) -> Icon {
     }
 }
 
-pub fn header(
-    ui: &mut egui::Ui,
-    state: &mut PaperHeaderState,
-    input: &PaperHeaderInput,
-) -> Vec<PaperHeaderAction> {
-    let mut actions = Vec::new();
-    let compact = ui.available_width() < COMPACT_WIDTH;
-    egui::Frame::new()
-        .inner_margin(egui::Margin::symmetric(12, 9))
-        .show(ui, |ui| {
-            ui.spacing_mut().item_spacing = vec2(12.0, 0.0);
-            if compact {
-                row(ui, CONTROL_HEIGHT, |ui| {
-                    identity(ui, input, &mut actions);
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        buttons(ui, input, &mut actions);
-                    });
-                });
-                ui.add_space(8.0);
-                egui::ScrollArea::horizontal()
-                    .id_salt("paper-tabs")
-                    .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
-                    .show(ui, |ui| tabs(ui, state, input));
-            } else {
-                row(ui, CONTROL_HEIGHT, |ui| {
-                    identity(ui, input, &mut actions);
-                    rule(ui);
-                    tabs(ui, state, input);
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        buttons(ui, input, &mut actions);
-                    });
-                });
-            }
-        });
-    actions
+/// What the shared header is given for the paper account: its sections with their counts, the
+/// account switcher, and the `⋯` menu with the actions each entry stands for.
+pub struct HeaderParts {
+    pub tabs: Vec<kit::TabItem<PaperTab>>,
+    pub chip: Chip,
+    pub more: Vec<MoreItem>,
+    pub more_actions: Vec<PaperHeaderAction>,
 }
 
-/// A hairline between the account and the sections it holds, shorter than the controls.
-fn rule(ui: &mut egui::Ui) {
-    let (rect, _) = ui.allocate_exact_size(vec2(1.0, 16.0), Sense::hover());
-    ui.painter().rect_filled(rect, 0.0, theme::separator());
-}
-
-/// One header row, `height` tall, its children centred on it.
-fn row(ui: &mut egui::Ui, height: f32, add: impl FnOnce(&mut egui::Ui)) {
-    let size = vec2(ui.available_width(), height);
-    ui.allocate_ui_with_layout(size, egui::Layout::left_to_right(egui::Align::Center), add);
-}
-
-fn identity(ui: &mut egui::Ui, input: &PaperHeaderInput, actions: &mut Vec<PaperHeaderAction>) {
-    ui.spacing_mut().item_spacing.x = 8.0;
-    badge(ui);
-    account_menu(ui, input, actions);
-}
-
-/// The account switcher: a quiet pill with the name, the currency and a chevron.
-fn account_menu(ui: &mut egui::Ui, input: &PaperHeaderInput, actions: &mut Vec<PaperHeaderAction>) {
-    let name = kit::galley(
-        ui,
-        account_name(input),
-        13.0,
-        kit::SEMIBOLD,
-        theme::text_primary(),
-        170.0,
-    );
-    let currency = input.currency.map(|currency| {
-        kit::galley(
-            ui,
-            currency.code(),
-            10.0,
-            kit::SEMIBOLD,
-            theme::text_secondary(),
-            f32::INFINITY,
-        )
-    });
-    let width = 11.0
-        + name.size().x
-        + currency.as_ref().map_or(0.0, |code| 7.0 + code.size().x)
-        + 7.0
-        + 9.0
-        + 10.0;
-    let (rect, response) = ui.allocate_exact_size(vec2(width, CONTROL_HEIGHT), Sense::click());
-    let response = accessibility::label(response, "Paper account");
-    let open = egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&response));
-    plate(
-        ui.painter(),
-        rect,
-        response.hovered(),
-        open || response.is_pointer_button_down_on(),
-    );
-    let response = response.on_hover_cursor(egui::CursorIcon::PointingHand);
-    let mut x = rect.left() + 11.0;
-    let name_width = name.size().x;
-    ui.painter().galley(
-        pos2(x, rect.center().y - name.size().y / 2.0),
-        name,
-        theme::text_primary(),
-    );
-    x += name_width;
-    if let Some(code) = currency {
-        x += 7.0;
-        let code_width = code.size().x;
-        ui.painter().galley(
-            pos2(x, rect.center().y - code.size().y / 2.0),
-            code,
-            theme::text_secondary(),
-        );
-        x += code_width;
-    }
-    icons::paint(
-        ui.painter(),
-        egui::Rect::from_center_size(pos2(x + 7.0 + 4.5, rect.center().y), Vec2::splat(9.0)),
-        Icon::ChevronDown,
-        theme::text_secondary(),
-    );
-    let response = response.on_hover_text("Switch paper account");
-    let labels: Vec<&str> = input
-        .accounts
-        .iter()
-        .map(|account| account.name.as_str())
-        .chain(["New Account\u{2026}"])
-        .collect();
-    kit::fitted_menu(
-        ui,
-        &response,
-        egui::RectAlign::BOTTOM_START,
-        &labels,
-        |ui| {
-            for account in input.accounts {
-                let selected = input.selected == Some(account.id);
-                if kit::menu_item_marked(ui, Icon::Check, &account.name, selected) {
-                    actions.push(PaperHeaderAction::SelectAccount(account.id));
-                    ui.close();
-                }
-            }
-            kit::menu_separator(ui);
-            if kit::menu_item(ui, Icon::Plus, "New Account\u{2026}", true, false) {
-                actions.push(PaperHeaderAction::NewAccount);
-                ui.close();
-            }
-        },
-    );
-}
-
-/// The section tabs: Swift's compact `IconTabBar`, with the live counts.
-fn tabs(ui: &mut egui::Ui, state: &mut PaperHeaderState, input: &PaperHeaderInput) {
-    let items: Vec<kit::TabItem<PaperTab>> = PaperTab::ALL
+pub fn header_parts(input: &PaperHeaderInput) -> HeaderParts {
+    let tabs = PaperTab::ALL
         .into_iter()
         .map(|tab| kit::TabItem {
             value: tab,
@@ -364,64 +131,52 @@ fn tabs(ui: &mut egui::Ui, state: &mut PaperHeaderState, input: &PaperHeaderInpu
             count: tab_count(tab, input).unwrap_or(0),
         })
         .collect();
-    kit::tab_bar_slim(ui, Id::new("paper-tab-bar"), &items, &mut state.tab);
-}
-
-fn buttons(ui: &mut egui::Ui, input: &PaperHeaderInput, actions: &mut Vec<PaperHeaderAction>) {
-    ui.spacing_mut().item_spacing.x = 2.0;
-    // Right-to-left, so the last one added sits leftmost.
-    if icon_button(ui, Icon::Xmark, "Close Paper Trading panel", false).clicked() {
-        actions.push(PaperHeaderAction::Close);
-    }
-    let more = glyph_response(
-        ui,
-        Id::new("paper-more"),
-        Icon::Ellipsis,
-        false,
-        "Account actions",
-    );
-    kit::fitted_menu(
-        ui,
-        &more,
-        egui::RectAlign::BOTTOM_END,
-        &[
-            "New Account\u{2026}",
-            "Export Trading Data\u{2026}",
-            "Reset Account\u{2026}",
-            "Delete Account\u{2026}",
-        ],
-        |ui| {
-            if kit::menu_item(ui, Icon::Plus, "New Account\u{2026}", true, false) {
-                actions.push(PaperHeaderAction::NewAccount);
-                ui.close();
-            }
-            kit::menu_separator(ui);
-            if kit::menu_item(
-                ui,
-                Icon::ShareUp,
-                "Export Trading Data\u{2026}",
-                true,
-                false,
-            ) {
-                actions.push(PaperHeaderAction::ExportData);
-                ui.close();
-            }
-            if kit::menu_item(ui, Icon::Undo, "Reset Account\u{2026}", true, true) {
-                actions.push(PaperHeaderAction::ResetAccount);
-                ui.close();
-            }
-            if can_delete_account(input)
-                && kit::menu_item(ui, Icon::Trash, "Delete Account\u{2026}", true, true)
-            {
-                actions.push(PaperHeaderAction::DeleteAccount);
-                ui.close();
-            }
+    let chip = Chip {
+        label: account_name(input).to_owned(),
+        sub: input.currency.map(|currency| currency.code().to_owned()),
+        tip: "Switch paper account".to_owned(),
+        rows: input
+            .accounts
+            .iter()
+            .map(|choice| ChipRow {
+                label: choice.name.clone(),
+                selected: input.selected == Some(choice.id),
+            })
+            .collect(),
+        add: Some("New Account\u{2026}".to_owned()),
+    };
+    let mut more = vec![
+        MoreItem {
+            icon: Icon::ShareUp,
+            label: "Export Trading Data\u{2026}".to_owned(),
+            danger: false,
+            rule_above: false,
         },
-    );
-    let showing = input.show_trading_on_charts;
-    let icon = if showing { Icon::Eye } else { Icon::EyeSlash };
-    if icon_button(ui, icon, eye_label(showing), showing).clicked() {
-        actions.push(PaperHeaderAction::ToggleShowOnCharts);
+        MoreItem {
+            icon: Icon::Undo,
+            label: "Reset Account\u{2026}".to_owned(),
+            danger: true,
+            rule_above: false,
+        },
+    ];
+    let mut more_actions = vec![
+        PaperHeaderAction::ExportData,
+        PaperHeaderAction::ResetAccount,
+    ];
+    if can_delete_account(input) {
+        more.push(MoreItem {
+            icon: Icon::Trash,
+            label: "Delete Account\u{2026}".to_owned(),
+            danger: true,
+            rule_above: false,
+        });
+        more_actions.push(PaperHeaderAction::DeleteAccount);
+    }
+    HeaderParts {
+        tabs,
+        chip,
+        more,
+        more_actions,
     }
 }
 
@@ -432,6 +187,8 @@ fn buttons(ui: &mut egui::Ui, input: &PaperHeaderInput, actions: &mut Vec<PaperH
 pub enum PaperFooterAction {
     CloseAllPositions,
     CancelAllOrders,
+    /// The orders ticked in the table; the panel knows which.
+    CancelSelectedOrders,
     Export,
 }
 
@@ -494,8 +251,22 @@ pub fn footer(
     state: &mut PaperFooterState,
     tab: PaperTab,
     facts: &FooterFacts,
+    selected_orders: usize,
 ) -> Vec<PaperFooterAction> {
     let mut actions = Vec::new();
+    if tab == PaperTab::Orders {
+        // The orders bar is the same for every venue: how many are working, and the two ways to
+        // cancel several.
+        let bar = crate::ui::trade::tables::orders_bar(ui, facts.working_orders, selected_orders);
+        if bar.cancel_all {
+            state.pending = Some(PaperFooterConfirm::CancelAll);
+        }
+        if bar.cancel_selected {
+            actions.push(PaperFooterAction::CancelSelectedOrders);
+        }
+        confirm_dialog(ui.ctx(), state, facts, &mut actions);
+        return actions;
+    }
     let export = matches!(
         tab,
         PaperTab::History | PaperTab::Trades | PaperTab::Journal

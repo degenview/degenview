@@ -17,5 +17,8 @@ pub mod sync_host;
 pub mod tab_link_host;
 pub mod tab_title_host;
 pub mod tab_window_host;
+pub mod trading_hub;
+#[cfg(test)]
+mod trading_hub_tests;
 pub mod update_host;
 pub mod webhook_host;

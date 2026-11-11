@@ -144,6 +144,12 @@ pub enum Icon {
     SpeakerWave,
     MacWindow,
     InfoCircle,
+    /// A ring around a dot: where a take-profit sits.
+    Target,
+    /// A shield outline: a stop loss protects the position.
+    Shield,
+    /// A hexagon outline, a stop sign: the Stop order type.
+    StopSign,
     LockFill,
     SplitColumns,
     Tag,
@@ -2285,6 +2291,32 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
             closed(&capsule(11.7, 4.3, 1.5, 2.2, -45.0));
             line(&[p(5.2, 5.2), p(10.8, 10.8)]);
         }
+        Icon::Target => {
+            circle(p(8.0, 8.0), 6.2, false);
+            circle(p(8.0, 8.0), 3.0, false);
+            circle(p(8.0, 8.0), 0.9, true);
+        }
+        Icon::Shield => {
+            closed(&[
+                p(8.0, 1.8),
+                p(13.2, 3.6),
+                p(13.0, 8.2),
+                p(11.4, 11.4),
+                p(8.0, 14.2),
+                p(4.6, 11.4),
+                p(3.0, 8.2),
+                p(2.8, 3.6),
+            ]);
+        }
+        Icon::StopSign => {
+            let hexagon: Vec<Pos2> = (0..6)
+                .map(|k| {
+                    let a = (-90.0 + k as f32 * 60.0_f32).to_radians();
+                    p(8.0 + 6.4 * a.cos(), 8.0 + 6.4 * a.sin())
+                })
+                .collect();
+            closed(&hexagon);
+        }
         Icon::DocText => {
             closed(&[
                 p(3.0, 1.8),
@@ -2473,6 +2505,9 @@ mod tests {
             SpeakerWave,
             MacWindow,
             InfoCircle,
+            Target,
+            Shield,
+            StopSign,
             LockFill,
             SplitColumns,
             Tag,

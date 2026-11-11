@@ -118,7 +118,11 @@ impl SecretStore for BrokerSecrets {
 
     fn delete(&self, broker: BrokerId, profile: &str) -> Result<(), SecretStoreError> {
         let key = account(broker, profile);
-        self.backend.delete(SCOPE, &key);
+        // Forgotten in memory only once the Keychain has let go of it: a secret that could not be
+        // removed is still stored, comes back at the next start, and must not be reported as gone.
+        self.backend
+            .delete(SCOPE, &key)
+            .map_err(|error| SecretStoreError(error.0))?;
         let mut cache = self.lock();
         cache.credentials.insert(key.clone(), None);
         cache.exists.remove(&key);
@@ -199,6 +203,48 @@ mod tests {
         store.save(ID, "default", &credentials()).unwrap();
         store.delete(ID, "default").unwrap();
         assert_eq!(store.revision(), start + 2);
+    }
+
+    use crate::service::webhook_delivery::SecretStoreError as BackendError;
+
+    /// A backend whose removals the system refuses.
+    struct Stubborn(MemoryBackend);
+
+    impl KeyBackend for Stubborn {
+        fn read(&self, scope: Scope, account: &str) -> Option<String> {
+            self.0.read(scope, account)
+        }
+        fn exists(&self, scope: Scope, account: &str) -> bool {
+            self.0.exists(scope, account)
+        }
+        fn write(&self, scope: Scope, account: &str, value: &str) -> Result<(), BackendError> {
+            self.0.write(scope, account, value)
+        }
+        fn delete(&self, _: Scope, _: &str) -> Result<(), BackendError> {
+            Err(BackendError("Keychain error -25293".to_owned()))
+        }
+    }
+
+    /// A key the system would not let go of is still stored: it is an error, and nothing in memory
+    /// pretends otherwise, so a restart cannot bring back something that was reported as gone.
+    #[test]
+    fn a_removal_the_system_refused_is_an_error_and_forgets_nothing() {
+        let store = BrokerSecrets::with_backend(Box::new(Stubborn(MemoryBackend::default())));
+        store.save(ID, "default", &credentials()).unwrap();
+        let start = store.revision();
+        let error = store.delete(ID, "default").unwrap_err();
+        assert!(error.0.contains("-25293"), "{}", error.0);
+        assert!(store.is_configured(ID, "default"), "still stored");
+        assert!(store.load(ID, "default").unwrap().is_some());
+        assert_eq!(store.revision(), start, "nothing changed");
+    }
+
+    /// Removing what is not there is not a failure.
+    #[test]
+    fn removing_a_key_that_is_not_stored_succeeds() {
+        let store = store();
+        store.delete(ID, "default").unwrap();
+        assert!(!store.is_configured(ID, "default"));
     }
 
     /// The items live in the app-only group, never the one the alert agent can read.

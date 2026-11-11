@@ -13,6 +13,7 @@ mod platform;
 mod service;
 mod store;
 mod sync;
+mod trading;
 mod ui;
 mod workspace;
 

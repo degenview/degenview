@@ -274,7 +274,7 @@ fn add_alert_is_refused_for_a_market_without_alerts() {
 }
 
 #[test]
-fn a_quick_order_opens_the_ticket_and_places_no_order() {
+fn a_quick_order_starts_the_order_in_the_sheet_and_places_no_order() {
     let mut rig = Rig::new().with_account();
     let chart = rig.chart("BTCUSDT", 100.0);
     let context = rig.open(chart, 120.0);
@@ -286,10 +286,11 @@ fn a_quick_order_opens_the_ticket_and_places_no_order() {
         }),
     );
     assert!(rig.workspace.paper_panel_visible, "the panel opens for it");
-    let draft = rig.workspace.paper_panel.ticket_draft().expect("ticket");
-    assert_eq!(draft.side, PaperOrderSide::Sell);
-    assert_eq!(draft.kind, PaperOrderType::Limit);
-    assert_eq!(draft.limit_price(), Some(120.0));
+    assert!(rig.workspace.trade_sheet_visible, "and so does the sheet");
+    let draft = &rig.workspace.trade_sheet.draft;
+    assert_eq!(draft.side, degenview_brokers::Side::Sell);
+    assert_eq!(draft.class, crate::trading::model::OrderClass::Limit);
+    assert_eq!(draft.price_text, "120");
     assert!(
         rig.host.snapshot().orders.is_empty(),
         "nothing is submitted"
@@ -302,17 +303,17 @@ fn add_order_suggests_the_type_the_price_implies() {
     let chart = rig.chart("BTCUSDT", 100.0);
     let context = rig.open(chart, 90.0);
     rig.run(context, Command::AddOrder);
-    let draft = rig.workspace.paper_panel.ticket_draft().expect("ticket");
-    assert_eq!(draft.side, PaperOrderSide::Buy);
-    assert_eq!(draft.kind, PaperOrderType::Limit);
-    assert_eq!(draft.limit_price(), Some(90.0));
+    let draft = &rig.workspace.trade_sheet.draft;
+    assert_eq!(draft.side, degenview_brokers::Side::Buy);
+    assert_eq!(draft.class, crate::trading::model::OrderClass::Limit);
+    assert_eq!(draft.price_text, "90");
     assert!(rig.host.snapshot().orders.is_empty());
 }
 
 #[test]
 fn order_entries_work_before_any_paper_account_exists() {
-    // The default account is only made when the paper panel first draws; the menu must not wait
-    // for that, or its order entries would be dead until the panel had been opened once.
+    // Paper is switched on by the user, so no account exists yet; the menu must not wait for one,
+    // or its order entries would be dead until the sheet had been opened once.
     let mut rig = Rig::new();
     let chart = rig.chart("BTCUSDT", 100.0);
     assert!(rig.host.snapshot().accounts.is_empty());
@@ -340,12 +341,12 @@ fn order_entries_work_before_any_paper_account_exists() {
     );
     assert!(rig.workspace.paper_panel_visible, "the panel opens for it");
     assert!(
-        rig.host.snapshot().selected_account_id.is_some(),
-        "the default account was created"
+        rig.host.snapshot().selected_account_id.is_none(),
+        "no account is made behind the user's back"
     );
-    let draft = rig.workspace.paper_panel.ticket_draft().expect("ticket");
-    assert_eq!(draft.side, PaperOrderSide::Sell);
-    assert_eq!(draft.kind, PaperOrderType::Limit);
+    let draft = &rig.workspace.trade_sheet.draft;
+    assert_eq!(draft.side, degenview_brokers::Side::Sell);
+    assert_eq!(draft.class, crate::trading::model::OrderClass::Limit);
     assert!(
         rig.host.snapshot().orders.is_empty(),
         "nothing is submitted"
@@ -353,14 +354,14 @@ fn order_entries_work_before_any_paper_account_exists() {
 }
 
 #[test]
-fn add_order_creates_the_account_and_opens_the_panel_too() {
+fn add_order_opens_the_panel_and_the_sheet_and_makes_no_account() {
     let mut rig = Rig::new();
     let chart = rig.chart("BTCUSDT", 100.0);
     let context = rig.open(chart, 90.0);
     rig.run(context, Command::AddOrder);
     assert!(rig.workspace.paper_panel_visible);
-    assert!(rig.host.snapshot().selected_account_id.is_some());
-    assert!(rig.workspace.paper_panel.ticket_draft().is_some());
+    assert!(rig.workspace.trade_sheet_visible);
+    assert!(rig.host.snapshot().selected_account_id.is_none());
     assert!(rig.host.snapshot().orders.is_empty());
 }
 
@@ -378,7 +379,10 @@ fn replay_blocks_alerts_and_orders() {
     rig.run(context.clone(), Command::AddAlert);
     rig.run(context, Command::AddOrder);
     assert!(rig.workspace.new_alert_request.is_none());
-    assert!(rig.workspace.paper_panel.ticket_draft().is_none());
+    assert!(
+        !rig.workspace.trade_sheet_visible,
+        "no order starts in a replay"
+    );
 }
 
 #[test]
