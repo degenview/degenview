@@ -109,6 +109,14 @@ impl SnapshotProvider for SelfHosted {
         host_of(settings).map_or_else(String::new, |host| host.authority())
     }
 
+    fn consent_note(&self, _: &FieldValues, present: &SecretPresence) -> Option<String> {
+        // The token is for the host the user set it up with: a changed address would send it
+        // somewhere new, so the question says it goes along.
+        present
+            .has(TOKEN)
+            .then(|| "Your saved access token is sent with it.".to_owned())
+    }
+
     fn status_line(&self, settings: &FieldValues) -> String {
         host_of(settings).map_or_else(
             || DESCRIPTOR.summary.to_owned(),

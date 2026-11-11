@@ -22,7 +22,7 @@ use crate::ui::settings_snapshots::SnapshotsAction;
 use crate::ui::settings_window::{divider, status_message};
 use crate::ui::{kit, theme};
 use eframe::egui::{self, vec2};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, TryRecvError};
 
@@ -42,20 +42,33 @@ pub struct CardInput<'a> {
 pub struct ProviderForm {
     /// The fields as typed: text and choices as they are saved, and secrets until they are.
     values: BTreeMap<String, String>,
-    loaded: bool,
+    /// The fields the user has changed and that are not saved yet. Only these are ever sent: a
+    /// field left alone must not overwrite what another Mac has since synced in.
+    dirty: BTreeSet<String>,
+    /// The saved settings the fields were last filled from.
+    loaded_from: Option<FieldValues>,
     autosave: Autosave,
     test: Option<Receiver<Result<(), String>>>,
-    /// What the last test or save said.
+    /// What the last test said.
+    test_status: Option<StatusMessage>,
+    /// What the last save said.
     pub status: Option<StatusMessage>,
 }
 
 impl ProviderForm {
-    /// Puts what is saved in the fields, once.
-    fn load(&mut self, descriptor: &ProviderDescriptor, settings: &FieldValues) {
-        if self.loaded {
+    /// Puts what is saved in the fields: when the row is first drawn, and again when what is saved
+    /// changes under it (iCloud Sync) while the user has nothing of their own half typed.
+    fn sync_with(&mut self, descriptor: &ProviderDescriptor, settings: &FieldValues) {
+        let unchanged = self.loaded_from.as_ref() == Some(settings);
+        let editing = !self.dirty.is_empty() || self.autosave.is_pending();
+        if unchanged || (self.loaded_from.is_some() && editing) {
+            if !unchanged {
+                // What the user is typing stays; it is compared with the new saved value.
+                self.loaded_from = Some(settings.clone());
+            }
             return;
         }
-        self.loaded = true;
+        self.loaded_from = Some(settings.clone());
         for field in descriptor.fields.iter().filter(|field| !field.is_secret()) {
             let value = match field.kind {
                 FieldKind::Choice(_) => field
@@ -87,14 +100,21 @@ impl ProviderForm {
             .any(|field| self.problem(field).is_some())
     }
 
-    /// The non-secret fields that differ from what is saved.
+    /// The non-secret fields the user changed that are right and differ from what is saved. One
+    /// that is wrong stays out (its problem is under it) without keeping the others from being
+    /// saved.
     fn changed_fields(
         &self,
         descriptor: &ProviderDescriptor,
         settings: &FieldValues,
     ) -> BTreeMap<String, String> {
         let mut changed = BTreeMap::new();
-        for field in descriptor.fields.iter().filter(|field| !field.is_secret()) {
+        for field in descriptor
+            .fields
+            .iter()
+            .filter(|field| !field.is_secret() && self.dirty.contains(field.key))
+            .filter(|field| self.problem(field).is_none())
+        {
             let typed = self.typed(field.key).trim();
             let saved = settings.get(field.key).map_or("", String::as_str);
             let unchanged = match field.kind {
@@ -111,10 +131,11 @@ impl ProviderForm {
         changed
     }
 
-    /// The secrets typed and not yet saved.
+    /// The secrets typed and not yet saved (a wrong one is left in its field with its problem).
     fn typed_secrets(&self, descriptor: &ProviderDescriptor) -> BTreeMap<String, String> {
         descriptor
             .secret_fields()
+            .filter(|field| self.problem(field).is_none())
             .filter_map(|field| {
                 let typed = self.typed(field.key).trim();
                 (!typed.is_empty()).then(|| (field.key.to_owned(), typed.to_owned()))
@@ -180,7 +201,7 @@ impl ProviderForm {
         let typed = self.typed_secrets(descriptor);
         let store = Arc::clone(secrets);
         let (sender, receiver) = std::sync::mpsc::channel();
-        self.status = None;
+        self.test_status = None;
         self.test = Some(receiver);
         std::thread::spawn(move || {
             // Read here, on the worker: the secure storage may prompt.
@@ -205,7 +226,7 @@ impl ProviderForm {
             Err(TryRecvError::Disconnected) => Err("The test stopped unexpectedly.".to_owned()),
         };
         self.test = None;
-        self.status = Some(match outcome {
+        self.test_status = Some(match outcome {
             Ok(()) => StatusMessage::ok(format!("{label} accepted a test image.")),
             Err(message) => StatusMessage::error(message),
         });
@@ -237,7 +258,7 @@ pub fn provider_card(
 ) {
     let descriptor = provider.descriptor();
     let settings = input.prefs.settings_of(descriptor.id);
-    form.load(descriptor, &settings);
+    form.sync_with(descriptor, &settings);
     form.poll_test(&provider.label(&settings));
     if form.is_testing() {
         ui.ctx()
@@ -280,9 +301,13 @@ pub fn provider_card(
     if form.autosave.due(ui.ctx()) {
         let fields = form.changed_fields(descriptor, &settings);
         let secrets = form.typed_secrets(descriptor);
-        if form.has_problem(descriptor) || (fields.is_empty() && secrets.is_empty()) {
+        if fields.is_empty() && secrets.is_empty() {
+            // Nothing that is right to save (what was typed is wrong, or is what is saved).
             form.autosave.cancel();
         } else {
+            for key in fields.keys() {
+                form.dirty.remove(key);
+            }
             actions.push(SnapshotsAction::Save {
                 provider: descriptor.id,
                 fields,
@@ -329,6 +354,9 @@ fn body(
                     form.values.entry(spec.key.to_owned()).or_default(),
                     false,
                 );
+                if response.changed() {
+                    form.dirty.insert(spec.key.to_owned());
+                }
                 form.autosave.watch(&response, false);
                 if let Some(problem) = form.problem(spec) {
                     problem_line(ui, problem);
@@ -353,6 +381,7 @@ fn body(
             FieldKind::Choice(choices) => {
                 let value = form.values.entry(spec.key.to_owned()).or_default();
                 if choice_field(ui, spec, choices, value) {
+                    form.dirty.insert(spec.key.to_owned());
                     form.autosave.touch();
                 }
             }
@@ -365,7 +394,7 @@ fn body(
         ui.add_space(4.0);
         actions_row(ui, provider, input, form, settings, present, actions);
     }
-    if let Some(status) = &form.status {
+    for status in [&form.test_status, &form.status].into_iter().flatten() {
         status_message(ui, &status.text, status.is_error);
     }
 }
@@ -388,7 +417,7 @@ fn actions_row(
             let testing = form.is_testing();
             let can_test = !testing && form.ready_as_typed(provider, settings, present.clone());
             if kit::sheet_button(ui, "Test", false, can_test)
-                .on_hover_text("Uploads a one-pixel image to check the settings.")
+                .on_hover_text("Sends a one-pixel test image to check the settings.")
                 .clicked()
             {
                 form.start_test(provider, settings, input.secrets);
@@ -502,10 +531,16 @@ fn header(
         vec2(ui.available_width(), HEADER_HEIGHT),
         egui::Sense::click(),
     );
+    // Said in words as well: at a narrow width the state is only a coloured dot.
+    let state = match (enabled, readiness) {
+        (false, _) => "off",
+        (true, Readiness::Ready) => "on",
+        (true, Readiness::Needs(_)) => "on, setup needed",
+    };
     let response = crate::ui::accessibility::label(
         response,
         format!(
-            "{}, {}",
+            "{}, {state}, {}",
             descriptor.name,
             if open { "expanded" } else { "collapsed" }
         ),
@@ -628,13 +663,15 @@ mod tests {
         self_hosted::SELF_HOSTED_PROVIDER.descriptor()
     }
 
+    /// A form whose fields hold `pairs`, all of them typed by the user.
     fn form(pairs: &[(&str, &str)]) -> ProviderForm {
         ProviderForm {
             values: pairs
                 .iter()
                 .map(|(k, v)| ((*k).to_owned(), (*v).to_owned()))
                 .collect(),
-            loaded: true,
+            dirty: pairs.iter().map(|(k, _)| (*k).to_owned()).collect(),
+            loaded_from: Some(FieldValues::new()),
             ..ProviderForm::default()
         }
     }
@@ -649,18 +686,77 @@ mod tests {
     #[test]
     fn the_fields_start_with_what_is_saved_and_a_choice_with_its_default() {
         let mut empty = ProviderForm::default();
-        empty.load(imgbb_descriptor(), &FieldValues::new());
+        empty.sync_with(imgbb_descriptor(), &FieldValues::new());
         assert_eq!(empty.typed("expiry"), "30d");
         assert_eq!(empty.typed("key"), "", "a secret is never loaded");
         let mut kept = ProviderForm::default();
-        kept.load(imgbb_descriptor(), &saved(&[("expiry", "7d")]));
+        kept.sync_with(imgbb_descriptor(), &saved(&[("expiry", "7d")]));
         assert_eq!(kept.typed("expiry"), "7d");
         let mut host = ProviderForm::default();
-        host.load(
+        host.sync_with(
             host_descriptor(),
             &saved(&[("host", "https://s.example/up")]),
         );
         assert_eq!(host.typed("host"), "https://s.example/up");
+    }
+
+    #[test]
+    fn a_field_the_user_did_not_touch_is_never_sent() {
+        // The expiry shown is only a default, or a value another version saved that this one
+        // does not know: neither may be written back because the user typed a key.
+        let imgbb = imgbb_descriptor();
+        let mut untouched = ProviderForm::default();
+        untouched.sync_with(imgbb, &saved(&[("expiry", "365d")]));
+        assert_eq!(untouched.typed("expiry"), "30d", "shown as the default");
+        untouched
+            .values
+            .insert("key".to_owned(), "abc123".to_owned());
+        assert!(
+            untouched
+                .changed_fields(imgbb, &saved(&[("expiry", "365d")]))
+                .is_empty(),
+            "nothing of the saved settings is rewritten"
+        );
+        assert!(untouched.typed_secrets(imgbb).contains_key("key"));
+    }
+
+    #[test]
+    fn what_syncs_in_while_nothing_is_being_typed_reaches_the_fields() {
+        let descriptor = imgbb_descriptor();
+        let mut form = ProviderForm::default();
+        form.sync_with(descriptor, &saved(&[("expiry", "30d")]));
+        assert_eq!(form.typed("expiry"), "30d");
+        // Another Mac changed it.
+        form.sync_with(descriptor, &saved(&[("expiry", "7d")]));
+        assert_eq!(form.typed("expiry"), "7d");
+        // The user is in the middle of changing it: their choice stands, and is the one saved.
+        form.values.insert("expiry".to_owned(), "1d".to_owned());
+        form.dirty.insert("expiry".to_owned());
+        form.sync_with(descriptor, &saved(&[("expiry", "90d")]));
+        assert_eq!(form.typed("expiry"), "1d");
+        assert_eq!(
+            form.changed_fields(descriptor, &saved(&[("expiry", "90d")]))
+                .get("expiry")
+                .map(String::as_str),
+            Some("1d")
+        );
+    }
+
+    #[test]
+    fn a_wrong_field_does_not_stop_a_right_one_from_being_saved() {
+        let descriptor = imgbb_descriptor();
+        // A key with a space is wrong; the new lifetime is a choice and fine.
+        let form = form(&[("key", "has space"), ("expiry", "7d")]);
+        assert!(
+            form.typed_secrets(descriptor).is_empty(),
+            "the wrong key stays in its field"
+        );
+        let changed = form.changed_fields(descriptor, &FieldValues::new());
+        assert_eq!(changed.get("expiry").map(String::as_str), Some("7d"));
+        assert!(
+            form.has_problem(descriptor),
+            "and its problem is still shown"
+        );
     }
 
     #[test]

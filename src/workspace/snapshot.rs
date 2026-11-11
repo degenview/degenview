@@ -99,6 +99,12 @@ impl ChartWorkspace {
             || self.snapshot.retry.is_some()
     }
 
+    /// Whether an image is being drawn, saved or uploaded right now (not waiting for the user's
+    /// answer to a question): what the camera's spinner says.
+    pub(super) fn snapshot_working(&self) -> bool {
+        self.snapshot.running.is_some()
+    }
+
     /// What the camera menu needs to know about hosting.
     pub(super) fn snapshot_hosting(&self) -> Hosting {
         self.snapshots.as_ref().map_or_else(
@@ -396,12 +402,23 @@ impl ChartWorkspace {
     /// The upload's progress, and the questions it may stop to ask.
     pub(super) fn show_snapshot_sheets(&mut self, ctx: &Context) {
         if let Some(text) = self.progress_notice() {
-            ui::chart_notice::show_progress(ctx, Id::new(("snapshot-progress", self.id)), &text);
+            // A result still on screen (an error that came with the start, say) keeps its place;
+            // the progress sits over it instead of under it.
+            ui::chart_notice::show_progress(
+                ctx,
+                Id::new(("snapshot-progress", self.id)),
+                &text,
+                self.context.notice.is_some(),
+            );
         }
         if let Some(waiting) = &self.snapshot.consent {
+            let note = waiting
+                .destination
+                .note()
+                .map_or_else(String::new, |note| format!(" {note}"));
             let message = format!(
-                "To share this chart, DegenView uploads its image to {}. {} Saving or copying an \
-                 image never uploads anything.",
+                "To share this chart, DegenView uploads its image to {}. {}{note} Saving or \
+                 copying an image never uploads anything.",
                 waiting.destination.label(),
                 waiting.destination.notice()
             );
@@ -421,13 +438,16 @@ impl ChartWorkspace {
             match outcome {
                 Some(kit::ConfirmOutcome::Confirmed) => {
                     if let Some(waiting) = self.snapshot.consent.take() {
-                        if let Some(host) = &self.snapshots
-                            && let Err(error) =
-                                host.consent(None, &waiting.destination.consent_key())
-                        {
+                        let consented = self
+                            .snapshots
+                            .as_ref()
+                            .map(|host| host.consent(None, &waiting.destination.consent_key()));
+                        self.start_snapshot(ctx, waiting.request, Some(waiting.destination));
+                        // After the start, which clears the last result: this is news about the
+                        // answer just given (it is asked again next time), so it must show.
+                        if let Some(Err(error)) = consented {
                             self.say(error, true);
                         }
-                        self.start_snapshot(ctx, waiting.request, Some(waiting.destination));
                     }
                 }
                 Some(kit::ConfirmOutcome::Cancelled) => self.snapshot.consent = None,
@@ -699,6 +719,56 @@ mod tests {
             assert!(error && text.contains("Settings"), "{text}");
         }
         assert_eq!(*rig.fake.uploads.lock().unwrap(), 0);
+    }
+
+    #[test]
+    fn the_camera_spins_while_work_is_done_and_not_while_a_question_waits() {
+        let mut rig = rig();
+        rig.share_to("https://snap.example.com/up", false);
+        assert!(!rig.workspace.snapshot_working());
+        // The first upload asks first: the menu is busy (nothing else can start), but nothing is
+        // being done yet, so nothing turns.
+        rig.workspace
+            .begin_snapshot(&rig.ctx, rig.chart_id, SnapshotAction::CopyLink);
+        assert!(rig.workspace.snapshot_busy());
+        assert!(
+            !rig.workspace.snapshot_working(),
+            "waiting for the user is not work"
+        );
+        rig.workspace.snapshot.consent = None;
+        rig.host.consent(None, "snap.example.com").unwrap();
+        rig.fake
+            .answers
+            .lock()
+            .unwrap()
+            .push(link("https://s.example/a.png"));
+        rig.workspace
+            .begin_snapshot(&rig.ctx, rig.chart_id, SnapshotAction::CopyLink);
+        assert!(rig.workspace.snapshot_working());
+        rig.finish();
+        assert!(!rig.workspace.snapshot_working());
+    }
+
+    #[test]
+    fn a_host_with_a_saved_token_names_it_in_the_question_asked_before_the_first_upload() {
+        let mut rig = rig();
+        rig.share_to("https://snap.example.com/up", false);
+        rig.workspace
+            .begin_snapshot(&rig.ctx, rig.chart_id, SnapshotAction::CopyLink);
+        let without = rig.workspace.snapshot.consent.as_ref().expect("asks");
+        assert_eq!(without.destination.note(), None);
+        rig.workspace.snapshot.consent = None;
+        rig.host
+            .save_secret(SELF_HOSTED, "token", "tok123")
+            .unwrap();
+        rig.workspace
+            .begin_snapshot(&rig.ctx, rig.chart_id, SnapshotAction::CopyLink);
+        let with = rig.workspace.snapshot.consent.as_ref().expect("asks");
+        assert!(
+            with.destination
+                .note()
+                .is_some_and(|note| note.contains("access token"))
+        );
     }
 
     #[test]

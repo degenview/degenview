@@ -468,8 +468,13 @@ impl From<StoredPrefs> for SnapshotPrefs {
         };
         // An older save: nobody who set a host loses it. Once the provider is written (even as
         // off) a stray `host`, such as one an older Mac syncs in, is ignored.
+        // Only a host that is still a valid one: an address with a password in it, or plain
+        // http to somewhere else, would not have been accepted by the page that saved it, and a
+        // value that is not shared on must not be copied into the synced settings either.
         if stored.provider.is_none()
-            && let Some(host) = stored.host.filter(|host| !host.trim().is_empty())
+            && let Some(host) = stored
+                .host
+                .filter(|host| SnapshotHost::parse(host.trim()).is_ok())
         {
             prefs.provider = Some(SELF_HOSTED.to_owned());
             prefs
@@ -847,6 +852,16 @@ mod tests {
         assert!(prefs.include_trading);
         assert_eq!(prefs.scale, SnapshotScale::X1);
         assert!(prefs.has_consented("s.example"));
+        // An address the page would not have accepted is not carried over, and not synced.
+        for bad in [
+            "https://u:p@s.example/up",
+            "http://remote.example/up",
+            "s.example",
+        ] {
+            let prefs = read(&format!(r#"{{"host":"{bad}"}}"#));
+            assert_eq!(prefs.provider, None, "{bad}");
+            assert!(prefs.providers.is_empty(), "{bad}");
+        }
         // An older save that never set a host shares to nothing.
         assert_eq!(read(r#"{"host":null,"scale":"X1"}"#).provider, None);
         assert_eq!(read(r#"{"host":"  "}"#).provider, None);

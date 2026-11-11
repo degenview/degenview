@@ -86,8 +86,12 @@ impl SnapshotHost {
             );
         };
         let settings = prefs.settings_of(id);
-        match provider.readiness(&settings, &self.secrets.presence(provider)) {
-            Readiness::Ready => Hosting::Ready(Destination::new(provider, settings)),
+        let present = self.secrets.presence(provider);
+        match provider.readiness(&settings, &present) {
+            Readiness::Ready => {
+                let note = provider.consent_note(&settings, &present);
+                Hosting::Ready(Destination::new(provider, settings).with_note(note))
+            }
             Readiness::Needs(what) => Hosting::Unavailable(what),
         }
     }
@@ -101,6 +105,11 @@ impl SnapshotHost {
         change: impl FnOnce(&mut SnapshotPrefs),
     ) -> Result<(), String> {
         let mut prefs = self.prefs.lock().unwrap_or_else(|e| e.into_inner());
+        // What is stored is the truth, not what was read at launch: iCloud Sync may have applied
+        // another Mac's change since, and writing the old copy back would undo it there.
+        if let Some(stored) = self.stored(held) {
+            *prefs = stored;
+        }
         change(&mut prefs);
         let write = |store: &Store| {
             store
@@ -117,6 +126,31 @@ impl SnapshotHost {
             .lock()
             .map_err(|_| "The settings database is unavailable.".to_owned())?;
         write(&store)
+    }
+
+    /// The saved choices, read again (`None` when there is nothing readable to read).
+    fn stored(&self, held: Option<&Store>) -> Option<SnapshotPrefs> {
+        let read = |store: &Store| {
+            store
+                .setting_strict::<SnapshotPrefs>(SnapshotPrefs::KEY)
+                .ok()
+                .flatten()
+        };
+        match held {
+            Some(store) => read(store),
+            None => self
+                .store
+                .as_ref()
+                .and_then(|shared| shared.lock().ok().and_then(|store| read(&store))),
+        }
+    }
+
+    /// Takes what is saved now, for a window that shows it: a change synced from another Mac
+    /// reaches the page and the camera menu this way. Not for every frame: it reads the database.
+    pub fn refresh(&self, held: Option<&Store>) {
+        if let Some(stored) = self.stored(held) {
+            *self.prefs.lock().unwrap_or_else(|e| e.into_inner()) = stored;
+        }
     }
 
     pub fn set_include_trading(&self, held: Option<&Store>, include: bool) -> Result<(), String> {
@@ -456,6 +490,84 @@ mod tests {
         assert_eq!(
             stored["providers"]["self_hosted"]["host"],
             "https://snap.example.com/up"
+        );
+    }
+
+    #[test]
+    fn a_change_synced_in_since_launch_is_not_undone_by_the_next_setting_changed_here() {
+        let shared = store();
+        let host = host_with(shared.clone());
+        assert_eq!(host.prefs().provider, None);
+        // Another Mac turned ImgBB on and iCloud Sync applied it to the database, which this
+        // running window was never told about.
+        shared
+            .lock()
+            .unwrap()
+            .set_setting(
+                SnapshotPrefs::KEY,
+                &serde_json::json!({
+                    "provider": "imgbb", "providers": {"imgbb": {"expiry": "7d"}},
+                    "include_trading": false, "scale": "X2", "consented": []
+                }),
+            )
+            .unwrap();
+        host.set_include_trading(None, true).unwrap();
+        let prefs = host.prefs();
+        assert_eq!(
+            prefs.provider.as_deref(),
+            Some("imgbb"),
+            "the synced choice stands"
+        );
+        assert_eq!(
+            prefs.settings_of("imgbb").get("expiry").map(String::as_str),
+            Some("7d")
+        );
+        assert!(prefs.include_trading, "and the change made here is made");
+        let saved = host_with(shared).prefs();
+        assert_eq!(saved.provider.as_deref(), Some("imgbb"));
+    }
+
+    #[test]
+    fn a_window_can_take_what_sync_applied() {
+        let shared = store();
+        let host = host_with(shared.clone());
+        shared
+            .lock()
+            .unwrap()
+            .set_setting(
+                SnapshotPrefs::KEY,
+                &serde_json::json!({"provider": null, "providers": {}, "scale": "X1"}),
+            )
+            .unwrap();
+        assert_eq!(host.prefs().scale, SnapshotScale::X2, "not yet");
+        {
+            let store = shared.lock().unwrap();
+            host.refresh(Some(&store));
+        }
+        assert_eq!(host.prefs().scale, SnapshotScale::X1);
+    }
+
+    #[test]
+    fn a_host_with_a_saved_token_says_so_before_the_first_upload() {
+        let host = host_with(store());
+        host.set_provider(None, Some(SELF_HOSTED)).unwrap();
+        host.set_fields(
+            None,
+            SELF_HOSTED,
+            &fields(&[("host", "https://snap.example.com/up")]),
+        )
+        .unwrap();
+        let Hosting::Ready(without) = host.hosting() else {
+            panic!("an address was set");
+        };
+        assert_eq!(without.note(), None);
+        host.save_secret(SELF_HOSTED, "token", "tok123").unwrap();
+        let Hosting::Ready(with) = host.hosting() else {
+            panic!("ready");
+        };
+        assert!(
+            with.note()
+                .is_some_and(|note| note.contains("access token"))
         );
     }
 

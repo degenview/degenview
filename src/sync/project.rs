@@ -153,10 +153,17 @@ pub fn project_setting(key: &str, value: &str) -> Option<Projected> {
     if key == "snapshot.prefs" {
         // Which provider to upload to and how it is set up (never a secret: those stay in each
         // Mac's secure storage), but never which destinations this Mac consented to send images to.
-        value = keep_fields(
-            &value,
-            &["provider", "providers", "include_trading", "scale"],
-        );
+        // A value that has not been written since this version came (no `provider` yet) is still
+        // in the shape an older version wrote, a top-level `host`, and goes out as it is stored:
+        // reading it as this version does would make a Mac that merely received it send it back
+        // as a new edit, over what another Mac chose since. A value that names its provider (or
+        // none, as an explicit `null`) is the new shape, and a leftover `host` in it is not sent.
+        let fields: &[&str] = if value.get("provider").is_some() {
+            &["provider", "providers", "include_trading", "scale"]
+        } else {
+            &["host", "include_trading", "scale"]
+        };
+        value = keep_fields(&value, fields);
     }
     Some(Projected::new(
         EntityKind::Setting,
@@ -625,11 +632,37 @@ mod tests {
                 .unwrap();
         assert!(body["provider"].is_null());
         assert!(body.as_object().unwrap().contains_key("provider"));
-        // A leftover `host` from before providers is not sent on.
-        let legacy = json!({"host": "https://old.example/up", "provider": null}).to_string();
+        // A leftover `host` beside a provider that was chosen (or turned off) is not sent on.
+        let stray = json!({"host": "https://old.example/up", "provider": null}).to_string();
         let body: Value =
-            serde_json::from_slice(&project_setting("snapshot.prefs", &legacy).unwrap().payload)
+            serde_json::from_slice(&project_setting("snapshot.prefs", &stray).unwrap().payload)
                 .unwrap();
         assert!(body.get("host").is_none());
+    }
+
+    #[test]
+    fn a_snapshot_host_nobody_has_rewritten_since_the_update_still_goes_out_as_it_is_stored() {
+        // Nothing has changed the setting since the update, so it is still a top-level `host`.
+        // Another Mac must still learn where to upload, and a Mac that only received it must not
+        // read it back as a new edit (the echo would be the same record, byte for byte).
+        let legacy = json!({
+            "host": "https://snaps.example/up", "include_trading": false, "scale": "X1",
+            "consented": ["snaps.example"]
+        })
+        .to_string();
+        let sent = project_setting("snapshot.prefs", &legacy).unwrap();
+        let body: Value = serde_json::from_slice(&sent.payload).unwrap();
+        assert_eq!(body["host"], "https://snaps.example/up", "{body}");
+        assert!(body.get("provider").is_none() && body.get("consented").is_none());
+        // What an older Mac sent is what this Mac stores, and projects to the same record.
+        let received = json!({
+            "host": "https://snaps.example/up", "include_trading": false, "scale": "X1",
+            "consented": []
+        })
+        .to_string();
+        assert_eq!(
+            project_setting("snapshot.prefs", &received).unwrap().hash,
+            sent.hash
+        );
     }
 }

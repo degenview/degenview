@@ -21,20 +21,27 @@ pub fn show(ctx: &Context, id: Id, text: &str, error: bool) {
     } else {
         Lead::Icon(Icon::Check, theme::text_secondary())
     };
-    area(ctx, id, text, lead);
+    area(ctx, id, text, lead, 0.0);
 }
+
+/// How far above the bottom a notice sits, and how much higher a progress notice goes when a
+/// result is shown too, so the two are read together rather than one over the other.
+const BOTTOM: f32 = 32.0;
+const RAISED: f32 = 52.0;
 
 /// A notice for work that is still going on: a spinner, so it is never taken for a result. It
 /// keeps the window repainting for as long as it is shown, so the spinner turns smoothly.
-pub fn show_progress(ctx: &Context, id: Id, text: &str) {
-    area(ctx, id, text, Lead::Spinner);
+/// `above_a_notice`: a result is on screen as well, and this sits over it.
+pub fn show_progress(ctx: &Context, id: Id, text: &str, above_a_notice: bool) {
+    let lift = if above_a_notice { RAISED } else { 0.0 };
+    area(ctx, id, text, Lead::Spinner, lift);
     ctx.request_repaint();
 }
 
-fn area(ctx: &Context, id: Id, text: &str, lead: Lead) {
+fn area(ctx: &Context, id: Id, text: &str, lead: Lead, lift: f32) {
     egui::Area::new(id)
         .order(Order::Foreground)
-        .anchor(Align2::CENTER_BOTTOM, vec2(0.0, -32.0))
+        .anchor(Align2::CENTER_BOTTOM, vec2(0.0, -(BOTTOM + lift)))
         .interactable(false)
         .show(ctx, |ui| {
             kit::menu_frame()
@@ -116,7 +123,7 @@ mod tests {
 
     #[test]
     fn a_progress_notice_keeps_the_window_painting_so_the_spinner_turns() {
-        let delay = settled_repaint(|ctx| show_progress(ctx, id(), "Uploading to ImgBB…"));
+        let delay = settled_repaint(|ctx| show_progress(ctx, id(), "Uploading to ImgBB…", false));
         assert!(delay < std::time::Duration::from_millis(100), "{delay:?}");
     }
 
@@ -132,7 +139,9 @@ mod tests {
     #[test]
     fn a_progress_notice_leaves_the_pointer_to_the_window_below() {
         let ctx = Context::default();
-        frame(&ctx, |ctx| show_progress(ctx, id(), "Uploading to ImgBB…"));
+        frame(&ctx, |ctx| {
+            show_progress(ctx, id(), "Uploading to ImgBB…", false)
+        });
         // Where the notice sits, the pointer is still the window's.
         let rect = ctx.memory(|memory| memory.area_rect(id())).expect("drawn");
         assert!(
@@ -154,15 +163,17 @@ mod tests {
             return;
         }
         let _restore = theme::RestoreDefaultTheme;
-        let cases: [(&str, fn(&Context)); 4] = [
+        type Notice = fn(&Context);
+        let cases: [(&str, Notice); 4] = [
             ("notice-progress", |ctx| {
-                show_progress(ctx, Id::new("n"), "Uploading to ImgBB…");
+                show_progress(ctx, Id::new("n"), "Uploading to ImgBB…", false);
             }),
             ("notice-progress-slow", |ctx| {
                 show_progress(
                     ctx,
                     Id::new("n"),
                     "Still uploading to ImgBB… a slow connection can take a while",
+                    false,
                 );
             }),
             ("notice-result", |ctx| {

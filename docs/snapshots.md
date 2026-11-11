@@ -89,7 +89,7 @@ Two providers ship (`src/service/snapshot_providers/`, listed in that order):
 
 | Provider | Id | What it needs | Notes |
 | --- | --- | --- | --- |
-| ImgBB | `imgbb` | The user's own ImgBB API key (secret), and how long ImgBB keeps an image (1 day to 180 days, or never; default **30 days**) | Free account; the link is the image's direct URL. Has a **Test** button |
+| ImgBB | `imgbb` | The user's own ImgBB API key (secret), and how long ImgBB keeps an image (1 day to 180 days, or never; default **30 days**) | The link is the image's direct URL. Has a **Test** button |
 | Host your own | `self_hosted` | The upload address, and an optional access token (secret) | Speaks the protocol below. <https://github.com/degenview/snapshots> is a server that does |
 
 ### A provider is data and two pure functions
@@ -117,11 +117,21 @@ a PNG, sends the provider's request once with no redirects, and hands the answer
 
 Saved shape (`snapshot.prefs`): `provider` (the id that is on, or an explicit `null` for off),
 `providers` (each provider's non-secret settings by id), `include_trading`, `scale`, `consented`.
-A save from before providers has one top-level `host`: it reads as `provider = self_hosted` with
-that address, so nobody loses their setup, and the next change writes the new shape. A `host` that
+A save from before providers has one top-level `host`: if it is still a valid address it reads as
+`provider = self_hosted` with that address, so nobody loses their setup, and the next change writes
+the new shape (an address the page would not have accepted is not carried over). A `host` that
 arrives later (an older Mac syncing) is ignored once a provider has been written, so it cannot turn
-a provider off or back on. An id this build does not know is kept, inactive, and the menu says to
-choose another.
+a provider off or back on. An id this build does not know is kept, inactive; the camera menu says
+to choose another, and so does a badge on the page.
+
+**Sync.** `provider` and `providers` sync; consent and secrets never do. A record is applied per
+provider (a Mac that never set a provider up cannot erase this Mac's settings for it), and a value
+nobody has rewritten since the update still goes out in the shape an older Mac wrote, a top-level
+`host`, exactly as stored: reading it as this version does would make a Mac that merely received
+it send it back as a new edit. The running window holds the choices in memory, so every change is
+made on what is stored (a change synced in meanwhile is not undone by it) and the Settings page
+reads them again each second; the camera menu of a window that has not opened Settings or changed a
+setting shows a synced provider after the next launch.
 
 ### ImgBB
 
@@ -131,7 +141,9 @@ in a multipart form to `https://api.imgbb.com/1/upload`, with the `key` and `exp
 key is therefore in the URL: it travels over TLS, and the app never prints, logs or shows a request
 URL (transport errors are an enum, not text). The answer's `data.url` is shared (its direct image
 link), with `data.delete_url` and, when ImgBB reports a lifetime, when it expires. **Test** uploads a
-one-pixel image with `expiration=60`, so a check leaves nothing behind.
+one-pixel image asking for `expiration=60`, the shortest life ImgBB allows (whether ImgBB then
+forgets it is not verified; the image is public until it does). It asks nothing first, and works
+while the provider is off: the click is the request.
 
 Verified against ImgBB's documentation: the endpoint, the parameters and their ranges, the success
 answer's fields. **Not stated by it and so assumed**: the error answer's shape (read as
@@ -153,7 +165,8 @@ User-Agent: DegenView/<version>
 <PNG bytes, at most 24 MiB>
 ```
 
-Answer `200` or `201` with at most 16 KiB of JSON:
+Answer `200` or `201` with at most 16 KiB of JSON (a longer answer is no link; a failure page of any
+size is still the failure its status names):
 
 ```json
 { "url": "https://…", "delete_url": "https://…", "expires_at": "2027-01-01T00:00:00Z" }
@@ -179,9 +192,12 @@ ships no server; its tests use a mock server on this computer.
 - The first upload to a destination asks ("To share this chart, DegenView uploads its image to
   {label}. {the provider's notice}"). The answer is remembered per **consent key** (`api.imgbb.com`,
   or `host[:port]` for a host of the user's own) in the `snapshot.prefs` setting, never synced, and
-  can be forgotten. Agreeing to one destination is not agreeing to another.
+  can be forgotten. Agreeing to one destination is not agreeing to another. A host of the user's
+  own with a saved access token says that the token goes with the image, because the token is not
+  tied to the address and a changed address would send it somewhere new.
 - Hosted rows are disabled, with the reason, until a provider is on and set up. Nothing is uploaded
-  to any default.
+  to any default. The one upload that is not a chart is a provider's **Test** button, which sends a
+  one-pixel image when the user clicks it.
 - A provider's secrets are in the system's secure storage (`es.nico.degenview.snapshots`, account
   `"{provider}.{field}-v1"`; the self-hosted token keeps its older `host-token-v1`), read only on
   the upload's worker thread, or the field's environment variable (`DEGENVIEW_IMGBB_KEY`,

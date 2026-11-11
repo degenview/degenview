@@ -503,7 +503,7 @@ fn right_items(input: &ToolbarInput) -> Vec<Item> {
     let mut snapshot = Button::new("snapshot", "Take a snapshot")
         .icon(Icon::Camera)
         .enabled(input.chart.is_some())
-        .busy(input.snapshot.busy);
+        .busy(input.snapshot.working);
     snapshot.menu = Some(Menu::Snapshot);
 
     let watchlist_tip = if input.watchlist_visible {
@@ -964,6 +964,7 @@ mod tests {
             can_replay: focused,
             snapshot: crate::ui::snapshot_menu::SnapshotMenu {
                 busy: false,
+                working: false,
                 hosting_unavailable: None,
                 shortcut: &|_| None,
             },
@@ -1021,7 +1022,7 @@ mod tests {
     fn the_camera_turns_while_a_snapshot_is_made_and_the_bar_is_quiet_otherwise() {
         let layouts = vec![(1, "Morning".to_owned())];
         let mut busy = input(&layouts, true);
-        busy.snapshot.busy = true;
+        busy.snapshot.working = true;
         assert!(
             settled_repaint(&busy) < std::time::Duration::from_millis(100),
             "a spinner only turns if the window keeps painting"
@@ -1250,7 +1251,7 @@ mod tests {
             (
                 "toolbar-snapshot-busy",
                 1400.0,
-                |input| input.snapshot.busy = true,
+                |input| input.snapshot.working = true,
                 None,
             ),
         ];

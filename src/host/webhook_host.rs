@@ -64,6 +64,8 @@ pub struct WebhookHost {
     /// The saved assistant settings, read from the store when Settings first needs them.
     ai_prefs: Option<AiPrefs>,
     ai_prefs_read_at: Option<std::time::Instant>,
+    /// When the snapshot choices were last read again, for what iCloud Sync applied meanwhile.
+    snapshots_read_at: Option<std::time::Instant>,
     state: SettingsState,
     storage_events: StorageEvents,
     /// Shared with the threads that run Test, so a slow endpoint never blocks the UI.
@@ -151,6 +153,14 @@ impl WebhookHost {
         // The page fills the native Settings window itself: no egui window inside it, which
         // drew a second title bar and let the page be dragged around within its own window.
         let endpoints = store.webhook_endpoints();
+        // Read again every second, like the assistant's: a change another Mac made reaches the page.
+        if self
+            .snapshots_read_at
+            .is_none_or(|at| at.elapsed() > Duration::from_secs(1))
+        {
+            self.snapshots.refresh(Some(store));
+            self.snapshots_read_at = Some(std::time::Instant::now());
+        }
         let snapshot_prefs = self.snapshots.prefs();
         // Read again every second: the assistant panel changes these too, in another window.
         if self.ai_prefs.is_none()

@@ -30,7 +30,7 @@ impl Form {
         let mut random = [0u8; 24];
         if getrandom::fill(&mut random).is_err() {
             // Without a random source the boundary is still unique enough for one request: the
-            // clock and the address of this value differ between forms.
+            // clock differs between forms (and the rest is zeros).
             let nanos = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_or(0, |elapsed| elapsed.as_nanos());

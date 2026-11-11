@@ -82,13 +82,22 @@ impl SnapshotTransport for UreqTransport {
             .and_then(|value| value.to_str().ok())
             .and_then(|value| value.trim().parse::<u64>().ok());
         let status = response.status().as_u16();
-        // A host that sends more than a link is talking about something else: read what fits.
-        let body = response
+        // The most a host may say is MAX_RESPONSE_BYTES: one more byte is read to tell "exactly
+        // that" from "more", because the reader stops with an error at its limit. More than a link
+        // is a host talking about something else: no body, so no link, while the status still
+        // says what happened (a long failure page is still a 503). A body that stalls is a
+        // timeout, worth another try, and a connection that drops is the network.
+        let body = match response
             .body_mut()
             .with_config()
-            .limit(MAX_RESPONSE_BYTES as u64)
+            .limit(MAX_RESPONSE_BYTES as u64 + 1)
             .read_to_vec()
-            .unwrap_or_default();
+        {
+            Ok(body) if body.len() <= MAX_RESPONSE_BYTES => body,
+            Ok(_) | Err(ureq::Error::BodyExceedsLimit(_)) => Vec::new(),
+            Err(ureq::Error::Timeout(_)) => return Err(TransportError::Timeout),
+            Err(_) => return Err(TransportError::Network),
+        };
         Ok(HostResponse {
             status,
             retry_after,
@@ -589,5 +598,85 @@ mod tests {
             ),
             Err(UploadError::Unauthorized)
         );
+    }
+
+    // MARK: What a host's answer may be
+
+    /// A host on this computer that answers with `status` and then `body`, whole.
+    fn host_answering(status: u16, body: Vec<u8>) -> (SnapshotHost, std::thread::JoinHandle<()>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let host =
+            SnapshotHost::parse(&format!("http://{}/up", listener.local_addr().unwrap())).unwrap();
+        let thread = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let _ = read_request(&mut stream);
+            let _ = write!(
+                stream,
+                "HTTP/1.1 {status} X\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            );
+            let _ = stream.write_all(&body);
+        });
+        (host, thread)
+    }
+
+    /// `{"url":…}` padded with spaces to exactly `size` bytes.
+    fn json_of(size: usize) -> Vec<u8> {
+        let mut body = br#"{"url":"https://s.example/a.png"}"#.to_vec();
+        body.resize(size, b' ');
+        body
+    }
+
+    #[test]
+    fn an_answer_of_exactly_the_most_a_host_may_say_is_read() {
+        let (host, thread) = host_answering(200, json_of(MAX_RESPONSE_BYTES));
+        let shared = upload_to(&UreqTransport::default(), &host, None, &png());
+        thread.join().unwrap();
+        assert_eq!(
+            shared.map(|shared| shared.url),
+            Ok("https://s.example/a.png".to_owned()),
+            "16 KiB is within \"at most 16 KiB\""
+        );
+    }
+
+    #[test]
+    fn an_answer_longer_than_that_is_no_link_and_the_status_still_says_what_happened() {
+        let (host, thread) = host_answering(200, json_of(MAX_RESPONSE_BYTES + 1));
+        assert_eq!(
+            upload_to(&UreqTransport::default(), &host, None, &png()),
+            Err(UploadError::BadResponse)
+        );
+        thread.join().unwrap();
+        // A failure page of any size is still the failure its status names.
+        let (host, thread) = host_answering(503, vec![b'x'; 200_000]);
+        assert_eq!(
+            upload_to(&UreqTransport::default(), &host, None, &png()),
+            Err(UploadError::Server(503))
+        );
+        thread.join().unwrap();
+    }
+
+    #[test]
+    fn a_host_that_stops_in_the_middle_of_its_answer_is_a_timeout_not_a_bad_answer() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let host =
+            SnapshotHost::parse(&format!("http://{}/up", listener.local_addr().unwrap())).unwrap();
+        let thread = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let _ = read_request(&mut stream);
+            // Promises 100 bytes, sends a few, and goes quiet.
+            let _ = write!(
+                stream,
+                "HTTP/1.1 200 X\r\nContent-Length: 100\r\n\r\n{{\"url\":"
+            );
+            std::thread::sleep(Duration::from_millis(500));
+        });
+        let transport = UreqTransport::with_timeout(Duration::from_millis(150));
+        assert_eq!(
+            upload_to(&transport, &host, None, &png()),
+            Err(UploadError::Timeout),
+            "worth trying again, unlike an answer that is wrong"
+        );
+        thread.join().unwrap();
     }
 }

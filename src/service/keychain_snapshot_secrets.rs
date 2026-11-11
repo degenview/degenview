@@ -92,33 +92,56 @@ impl SnapshotSecrets {
         clean(field.env.and_then(|name| (self.env)(name)))
     }
 
-    /// The saved secret, else the environment's. The first read may prompt for access.
+    /// The saved secret, else the environment's. The first read may prompt for access: the lock on
+    /// the cache is never held while it does, because the window asks which secrets exist on
+    /// every frame and must not wait for the user to answer a prompt for an upload.
     pub fn value(&self, provider: &str, field: &FieldSpec) -> Option<String> {
         let account = account(provider, field);
-        let saved = {
-            let mut slots = self.slots();
-            let slot = slots.entry(account.clone()).or_default();
-            if !slot.loaded {
-                slot.loaded = true;
-                slot.value = clean(self.backend.read(SCOPE, &account));
+        let cached = self
+            .slots()
+            .get(&account)
+            .filter(|slot| slot.loaded)
+            .map(|slot| slot.value.clone());
+        let saved = match cached {
+            Some(value) => value,
+            None => {
+                let read = clean(self.backend.read(SCOPE, &account));
+                let mut slots = self.slots();
+                let slot = slots.entry(account).or_default();
+                if slot.loaded {
+                    // Another thread (or a save) got there first: what it left stands.
+                    slot.value.clone()
+                } else {
+                    slot.loaded = true;
+                    slot.value = read.clone();
+                    read
+                }
             }
-            slot.value.clone()
         };
         saved.or_else(|| self.environment(field))
     }
 
-    /// Whether a secret is saved, without reading it (so without a prompt).
+    /// Whether a secret is saved, without reading it (so without a prompt). Asks the storage only
+    /// once per secret, and never with the cache locked.
     fn is_saved(&self, provider: &str, field: &FieldSpec) -> bool {
         let account = account(provider, field);
+        {
+            let slots = self.slots();
+            if let Some(slot) = slots.get(&account) {
+                if slot.loaded {
+                    return slot.value.is_some();
+                }
+                if let Some(exists) = slot.exists {
+                    return exists;
+                }
+            }
+        }
+        let found = self.backend.exists(SCOPE, &account);
         let mut slots = self.slots();
-        let slot = slots.entry(account.clone()).or_default();
+        let slot = slots.entry(account).or_default();
         if slot.loaded {
             return slot.value.is_some();
         }
-        if let Some(exists) = slot.exists {
-            return exists;
-        }
-        let found = self.backend.exists(SCOPE, &account);
         slot.exists = Some(found);
         found
     }
@@ -299,6 +322,69 @@ mod tests {
             !store
                 .presence(&self_hosted::SELF_HOSTED_PROVIDER)
                 .has("token")
+        );
+    }
+
+    /// A secure storage whose first read waits for the user (a Keychain prompt).
+    struct Prompting {
+        release: Mutex<std::sync::mpsc::Receiver<()>>,
+        asked: std::sync::mpsc::SyncSender<()>,
+    }
+
+    impl KeyBackend for Prompting {
+        fn read(&self, _: Scope, _: &str) -> Option<String> {
+            let _ = self.asked.send(());
+            let _ = self.release.lock().unwrap().recv();
+            Some("secret".to_owned())
+        }
+        fn exists(&self, _: Scope, _: &str) -> bool {
+            true
+        }
+        fn write(&self, _: Scope, _: &str, _: &str) -> Result<(), SecretStoreError> {
+            Ok(())
+        }
+        fn delete(&self, _: Scope, _: &str) -> Result<(), SecretStoreError> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn the_window_is_not_kept_waiting_while_a_prompt_is_open_on_the_upload_thread() {
+        // The camera menu asks which secrets exist on every frame, on the UI thread; an upload
+        // reads one on a worker, and the secure storage may be showing a prompt for it. The
+        // window must not wait for the user to answer.
+        let (release, released) = std::sync::mpsc::channel();
+        let (asked, was_asked) = std::sync::mpsc::sync_channel(1);
+        let store = Arc::new(SnapshotSecrets::with(
+            Box::new(Prompting {
+                release: Mutex::new(released),
+                asked,
+            }),
+            Box::new(|_| None),
+        ));
+        let worker = {
+            let store = Arc::clone(&store);
+            std::thread::spawn(move || store.value("imgbb", imgbb_key()))
+        };
+        was_asked
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("the worker reached the prompt");
+        let (done, finished) = std::sync::mpsc::channel();
+        let ui = {
+            let store = Arc::clone(&store);
+            std::thread::spawn(move || {
+                let state = store.state("imgbb", imgbb_key());
+                let presence = store.presence(&imgbb::IMGBB).has("key");
+                let _ = done.send((state, presence));
+            })
+        };
+        let answered = finished.recv_timeout(std::time::Duration::from_secs(2));
+        release.send(()).unwrap();
+        assert_eq!(worker.join().unwrap().as_deref(), Some("secret"));
+        ui.join().unwrap();
+        assert!(
+            answered.is_ok(),
+            "the UI thread waited for a secure-storage prompt it has nothing to do with"
         );
     }
 }

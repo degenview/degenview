@@ -243,6 +243,12 @@ pub trait SnapshotProvider: Send + Sync {
     /// host's `host[:port]`. Two settings with the same key share one consent.
     fn consent_key(&self, settings: &FieldValues) -> String;
 
+    /// What else the user should be told before the first upload, given the secrets that exist:
+    /// anything that is sent along with the image besides the image itself.
+    fn consent_note(&self, _settings: &FieldValues, _present: &SecretPresence) -> Option<String> {
+        None
+    }
+
     /// The line under the name while the provider is on and ready.
     fn status_line(&self, _settings: &FieldValues) -> String {
         self.descriptor().summary.to_owned()
@@ -305,11 +311,27 @@ pub fn provider(id: &str) -> Option<&'static dyn SnapshotProvider> {
 pub struct Destination {
     provider: &'static dyn SnapshotProvider,
     settings: FieldValues,
+    /// What the consent question adds to the provider's notice.
+    note: Option<String>,
 }
 
 impl Destination {
     pub fn new(provider: &'static dyn SnapshotProvider, settings: FieldValues) -> Self {
-        Self { provider, settings }
+        Self {
+            provider,
+            settings,
+            note: None,
+        }
+    }
+
+    pub fn with_note(mut self, note: Option<String>) -> Self {
+        self.note = note;
+        self
+    }
+
+    /// Anything besides the image that goes with it, which the consent question names.
+    pub fn note(&self) -> Option<&str> {
+        self.note.as_deref()
     }
 
     pub fn provider(&self) -> &'static dyn SnapshotProvider {

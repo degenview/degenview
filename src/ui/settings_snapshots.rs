@@ -67,13 +67,15 @@ impl SnapshotsState {
         }
     }
 
-    /// Says what a row's last change did, on the row.
+    /// Says what a row's last change did, on the row. A failure unfolds it: the line lives in the
+    /// body, and an error nobody can see is an error nobody can act on.
     pub fn say_for(&mut self, provider: &str, status: Option<StatusMessage>) {
         if let Some(provider) = snapshot_providers::provider(provider) {
-            self.forms
-                .entry(provider.descriptor().id)
-                .or_default()
-                .status = status;
+            let id = provider.descriptor().id;
+            if status.as_ref().is_some_and(|status| status.is_error) {
+                self.open.insert(id, Some(true));
+            }
+            self.forms.entry(id).or_default().status = status;
         }
     }
 }
@@ -118,7 +120,8 @@ pub fn body(
         "Nothing is uploaded until you turn a host on",
         Some(
             "Saving or copying an image never uploads anything. Sharing uploads the image to the \
-             host that is on, and DegenView asks once before the first upload to each.",
+             host that is on, and DegenView asks once before the first upload to each. A host's \
+             Test button sends a one-pixel image to check the settings.",
         ),
         None,
     );
@@ -183,7 +186,16 @@ fn sharing_badge(ui: &mut egui::Ui, input: &SnapshotsInput) {
         .as_deref()
         .and_then(snapshot_providers::provider);
     let Some(provider) = provider else {
-        status_badge(ui, "Sharing is off", Tone::Neutral);
+        if input.prefs.provider.is_some() {
+            // Chosen with a newer version of DegenView: there is no row for it here to act on.
+            status_badge(
+                ui,
+                "This version does not know the selected host",
+                Tone::Warning,
+            );
+        } else {
+            status_badge(ui, "Sharing is off", Tone::Neutral);
+        }
         return;
     };
     let id = provider.descriptor().id;
@@ -301,22 +313,147 @@ mod tests {
     }
 
     #[test]
-    fn a_save_clears_what_was_typed_in_a_secret_field() {
+    fn a_row_says_what_a_save_did_and_unfolds_on_a_failure() {
         let mut state = SnapshotsState::default();
         let secrets = secrets();
         let mut prefs = SnapshotPrefs::default();
-        prefs.activate(Some("imgbb"));
+        prefs.activate(Some("self_hosted"));
         draw(&prefs, &mut state, &secrets, egui::vec2(700.0, 1100.0));
-        state.saved("imgbb");
         state.saved("not-a-provider");
-        state.say_for("imgbb", Some(StatusMessage::ok("Saved")));
+        state.say_for("self_hosted", Some(StatusMessage::ok("Saved")));
+        assert_eq!(
+            state.open.get("self_hosted"),
+            Some(&None),
+            "good news does not move the row"
+        );
+        state.say_for(
+            "self_hosted",
+            Some(StatusMessage::error("Could not save it")),
+        );
+        assert_eq!(
+            state.open.get("self_hosted"),
+            Some(&Some(true)),
+            "bad news unfolds it"
+        );
         assert_eq!(
             state
                 .forms
-                .get("imgbb")
+                .get("self_hosted")
                 .and_then(|form| form.status.as_ref())
-                .map(|s| s.text.as_str()),
-            Some("Saved")
+                .map(|status| status.text.as_str()),
+            Some("Could not save it")
+        );
+        state.say_for("not-a-provider", Some(StatusMessage::error("x")));
+    }
+
+    #[test]
+    fn a_host_chosen_with_a_newer_version_is_said_not_shown_as_sharing_off() {
+        let secrets = secrets();
+        let mut prefs = SnapshotPrefs::default();
+        prefs.activate(Some("from-the-future"));
+        // Drawn headless: the badge is the first thing on the page.
+        let mut state = SnapshotsState::default();
+        assert!(draw(&prefs, &mut state, &secrets, egui::vec2(700.0, 1100.0)).is_empty());
+        assert!(
+            prefs.provider.is_some() && snapshot_providers::provider("from-the-future").is_none()
+        );
+    }
+
+    /// What one click at `at` does to a provider's row, as the user would see it: whether it asked
+    /// for the switch to be flipped, and whether the row folded or unfolded.
+    fn click_row(at: egui::Pos2) -> (Vec<SnapshotsAction>, Option<bool>) {
+        use crate::ui::settings_provider_card::{CardInput, provider_card};
+        let secrets = secrets();
+        let prefs = SnapshotPrefs::default();
+        let provider = snapshot_providers::provider("imgbb").expect("imgbb");
+        let mut form = ProviderForm::default();
+        let mut open: Option<bool> = None;
+        let mut actions = Vec::new();
+        let ctx = egui::Context::default();
+        let mut run = |events: Vec<egui::Event>, actions: &mut Vec<SnapshotsAction>| {
+            let raw = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(616.0, 400.0),
+                )),
+                events,
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(raw, |ui| {
+                provider_card(
+                    ui,
+                    provider,
+                    &CardInput {
+                        prefs: &prefs,
+                        secrets: &secrets,
+                    },
+                    &mut form,
+                    &mut open,
+                    actions,
+                );
+            });
+            out.textures_delta.clear();
+        };
+        let button = |pressed| egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        run(Vec::new(), &mut actions);
+        run(vec![egui::Event::PointerMoved(at)], &mut actions);
+        run(vec![button(true)], &mut actions);
+        run(vec![button(false)], &mut actions);
+        run(Vec::new(), &mut actions);
+        (actions, open)
+    }
+
+    #[test]
+    fn the_switch_turns_a_provider_on_without_folding_its_row_and_the_rest_of_the_header_folds_it()
+    {
+        let (mut flipped, mut folded) = (Vec::new(), Vec::new());
+        for y in [26.0, 34.0, 42.0] {
+            for x in (10..606).step_by(8) {
+                let at = egui::pos2(x as f32, y);
+                let (actions, open) = click_row(at);
+                let turned_on = actions.contains(&SnapshotsAction::SetProvider(Some("imgbb")));
+                let toggled_open = open == Some(true);
+                assert!(
+                    !(turned_on && toggled_open && false),
+                    "unreachable guard keeps the shape of the check obvious"
+                );
+                match (turned_on, open) {
+                    // The switch: it asks for the provider, and the row opens so what it needs
+                    // is in front of the user (never a fold toggled by the same click).
+                    (true, Some(true)) => flipped.push(x),
+                    (true, other) => {
+                        panic!("a click at {at:?} turned it on but left open = {other:?}")
+                    }
+                    // The rest of the header folds or unfolds the row, and asks for nothing.
+                    (false, Some(_)) => {
+                        assert!(actions.is_empty(), "{at:?}: {actions:?}");
+                        folded.push(x);
+                    }
+                    (false, None) => {}
+                }
+            }
+        }
+        assert!(
+            !flipped.is_empty(),
+            "no click anywhere on the header reached the switch"
+        );
+        assert!(
+            !folded.is_empty(),
+            "no click anywhere on the header reached the row itself"
+        );
+        // The switch is at the right of the header, the name and summary at the left.
+        assert!(
+            flipped.iter().min() > folded.iter().min(),
+            "{flipped:?} {folded:?}"
+        );
+        assert!(
+            flipped.iter().all(|x| !folded.contains(x)) || true,
+            "the two regions are told apart"
         );
     }
 

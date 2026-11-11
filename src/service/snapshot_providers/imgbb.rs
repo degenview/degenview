@@ -35,7 +35,8 @@ pub const KEY_ENV: &str = "DEGENVIEW_IMGBB_KEY";
 
 /// The shortest time ImgBB keeps an image that is to be deleted.
 const TEST_SECONDS: u64 = 60;
-/// The longest an API key is taken to be (they are 32 characters).
+/// The longest an API key is taken to be: far more than any key is likely to be, so a typo of
+/// pasted text is caught without refusing a key ImgBB might issue longer.
 const MAX_KEY_CHARS: usize = 128;
 
 const DAY: u64 = 24 * 60 * 60;
@@ -89,13 +90,13 @@ fn logo() -> egui::ImageSource<'static> {
 fn key_problem(text: &str) -> Option<&'static str> {
     let text = text.trim();
     (text.chars().count() > MAX_KEY_CHARS || !text.chars().all(|c| c.is_ascii_graphic()))
-        .then_some("An API key has no spaces and only plain letters and digits.")
+        .then_some("An API key has no spaces and is at most 128 plain characters.")
 }
 
 static DESCRIPTOR: ProviderDescriptor = ProviderDescriptor {
     id: ID,
     name: "ImgBB",
-    summary: "Free image hosting, nothing to run",
+    summary: "Image hosting with your own API key",
     logo: Logo::Image(logo),
     setup_steps: &[
         "Sign in to ImgBB, or create a free account.",
@@ -116,7 +117,7 @@ static DESCRIPTOR: ProviderDescriptor = ProviderDescriptor {
             url: "https://imgbb.com/privacy",
         },
     ],
-    notice: "Images are uploaded to ImgBB under your account. Anyone who has the link can open the image, and ImgBB's terms apply. It deletes the image after the time you choose, or never.",
+    notice: "Images are uploaded to ImgBB with your API key. Anyone who has the link can open the image, and ImgBB's terms apply. ImgBB is asked to delete the image after the time you choose; with Never it keeps it.",
     fields: &[
         FieldSpec {
             key: KEY,
@@ -135,7 +136,7 @@ static DESCRIPTOR: ProviderDescriptor = ProviderDescriptor {
         FieldSpec {
             key: EXPIRY,
             title: "Keep images for",
-            hint: "ImgBB deletes the image after this time. The link stops working then.",
+            hint: "ImgBB is asked to delete the image after this time, and the link stops working then.",
             placeholder: "",
             kind: FieldKind::Choice(&EXPIRIES),
             required: false,
@@ -246,7 +247,7 @@ impl SnapshotProvider for ImgBb {
             .filter(|key| !key.is_empty() && key_problem(key).is_none())
             .ok_or(UploadError::Unauthorized)?;
         let expiration = match purpose {
-            // A check leaves nothing behind: the shortest life ImgBB allows.
+            // A check asks for the shortest life ImgBB allows, so it is not left behind.
             Purpose::Test => Some(TEST_SECONDS),
             Purpose::Share => expiry_seconds(
                 DESCRIPTOR

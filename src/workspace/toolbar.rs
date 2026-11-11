@@ -76,6 +76,7 @@ impl ChartWorkspace {
                 .any(|chart| chart.is_market() && chart.source != DataSource::CoinMarketCap),
             snapshot: crate::ui::snapshot_menu::SnapshotMenu {
                 busy: self.snapshot_busy(),
+                working: self.snapshot_working(),
                 hosting_unavailable: hosting_note.as_deref(),
                 shortcut: &snapshot_shortcut,
             },

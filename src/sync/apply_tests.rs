@@ -545,7 +545,7 @@ fn snapshot_preferences_never_overwrite_this_macs_consented_hosts() {
 
 #[test]
 fn a_mac_from_before_providers_does_not_turn_this_macs_provider_off() {
-    let (_cloud, mut a, mut b) = pair();
+    let (cloud, mut a, mut b) = pair();
     a.core.start();
     b.core.start();
     b.store
@@ -556,16 +556,18 @@ fn a_mac_from_before_providers_does_not_turn_this_macs_provider_off() {
             &json!({"provider": "imgbb", "providers": {"imgbb": {"expiry": "1d"}}, "include_trading": false, "scale": "X1", "consented": []}),
         )
         .unwrap();
-    std::thread::sleep(std::time::Duration::from_millis(3));
-    // The older Mac knows only a `host`, and changes the scale.
-    a.store
-        .lock()
-        .unwrap()
-        .set_setting(
-            "snapshot.prefs",
-            &json!({"host": "https://old.example/up", "include_trading": false, "scale": "X2", "consented": []}),
-        )
-        .unwrap();
+    // A Mac still on the old version writes the one `host` it knows, and changes the scale. Its
+    // record is the later one and carries the shape this version no longer writes.
+    cloud.put_from_elsewhere(
+        raw(
+            "setting.snapshot.prefs",
+            &json!({"host": "https://old.example/up", "include_trading": false, "scale": "X2"}),
+            9,
+            4_000_000_000_000,
+            "Z",
+        ),
+        "Z",
+    );
     settle(&mut a, &mut b);
     let prefs = b
         .store
@@ -581,6 +583,45 @@ fn a_mac_from_before_providers_does_not_turn_this_macs_provider_off() {
     );
     let read: crate::model::snapshot::SnapshotPrefs = serde_json::from_value(prefs).unwrap();
     assert_eq!(read.provider.as_deref(), Some("imgbb"));
+    assert_eq!(
+        read.settings_of("imgbb").get("expiry").map(String::as_str),
+        Some("1d")
+    );
+}
+
+#[test]
+fn a_mac_from_before_providers_gives_a_new_mac_its_host() {
+    let (cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    cloud.put_from_elsewhere(
+        raw(
+            "setting.snapshot.prefs",
+            &json!({"host": "https://old.example/up", "include_trading": true, "scale": "X1"}),
+            9,
+            4_000_000_000_000,
+            "Z",
+        ),
+        "Z",
+    );
+    settle(&mut a, &mut b);
+    let prefs = b
+        .store
+        .lock()
+        .unwrap()
+        .raw_setting("snapshot.prefs")
+        .unwrap()
+        .unwrap();
+    let read: crate::model::snapshot::SnapshotPrefs = serde_json::from_value(prefs).unwrap();
+    assert_eq!(read.provider.as_deref(), Some("self_hosted"));
+    assert_eq!(
+        read.settings_of("self_hosted")
+            .get("host")
+            .map(String::as_str),
+        Some("https://old.example/up")
+    );
+    assert!(read.include_trading);
+    assert!(read.consented.is_empty());
 }
 
 #[test]
@@ -2627,4 +2668,61 @@ fn an_alert_made_through_the_apps_host_reaches_the_other_macs_host() {
         "B's host holds the alert"
     );
     assert_eq!(alerts_on(&b).len(), 1);
+}
+
+#[test]
+fn a_mac_that_never_set_a_provider_up_does_not_erase_this_macs_settings_for_it() {
+    let (cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    b.store
+        .lock()
+        .unwrap()
+        .set_setting(
+            "snapshot.prefs",
+            &json!({
+                "provider": "self_hosted",
+                "providers": {
+                    "self_hosted": {"host": "https://mine.example/up"},
+                    "imgbb": {"expiry": "1d"}
+                },
+                "include_trading": false, "scale": "X1", "consented": ["mine.example"]
+            }),
+        )
+        .unwrap();
+    // The other Mac only ever set ImgBB up, turned it on, and changed the scale.
+    cloud.put_from_elsewhere(
+        raw(
+            "setting.snapshot.prefs",
+            &json!({
+                "provider": "imgbb", "providers": {"imgbb": {"expiry": "7d"}},
+                "include_trading": false, "scale": "X2"
+            }),
+            9,
+            4_000_000_000_000,
+            "Z",
+        ),
+        "Z",
+    );
+    settle(&mut a, &mut b);
+    let prefs = b
+        .store
+        .lock()
+        .unwrap()
+        .raw_setting("snapshot.prefs")
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        prefs["provider"], "imgbb",
+        "the later choice of which is on"
+    );
+    assert_eq!(
+        prefs["providers"]["imgbb"]["expiry"], "7d",
+        "and its settings"
+    );
+    assert_eq!(
+        prefs["providers"]["self_hosted"]["host"], "https://mine.example/up",
+        "while what this Mac has for the other one stays"
+    );
+    assert_eq!(prefs["consented"], json!(["mine.example"]));
 }

@@ -1818,9 +1818,21 @@ fn compose_setting(key: &str, synced: &Value, existing: Option<&Value>) -> Value
         .unwrap_or_default();
     if let Some(remote) = synced.as_object() {
         for field in ["host", "provider", "providers", "include_trading", "scale"] {
-            if let Some(value) = remote.get(field) {
-                prefs.insert(field.into(), value.clone());
+            let Some(value) = remote.get(field) else {
+                continue;
+            };
+            // Each provider's settings are taken by provider: a Mac that never set one up must not
+            // erase what this Mac has for it by sending a map without it.
+            if field == "providers"
+                && let (Some(theirs), Some(Value::Object(ours))) =
+                    (value.as_object(), prefs.get_mut(field))
+            {
+                for (id, settings) in theirs {
+                    ours.insert(id.clone(), settings.clone());
+                }
+                continue;
             }
+            prefs.insert(field.into(), value.clone());
         }
     }
     prefs
