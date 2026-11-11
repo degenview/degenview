@@ -28,6 +28,7 @@ pub fn paint(ui: &Ui, rect: Rect, tab: AlertTab) {
         painter: ui.painter(),
         tint: tint(tab),
         centre: rect.center(),
+        flat: false,
     };
     match tab {
         AlertTab::Active => art.watching(false, false),

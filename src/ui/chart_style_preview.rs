@@ -91,7 +91,7 @@ pub fn preview_bars(
 /// Draws the preview card for `chart_type`.
 pub fn show(ui: &mut Ui, appearance: &ChartAppearance, chart_type: ChartType) {
     let width = ui.available_width();
-    let card = kit::card_frame(false).show(ui, |ui| {
+    kit::card_frame(false).show(ui, |ui| {
         ui.set_width(width - 28.0 - 2.0);
         ui.spacing_mut().item_spacing.y = 8.0;
         ui.label(kit::text(
@@ -104,7 +104,6 @@ pub fn show(ui: &mut Ui, appearance: &ChartAppearance, chart_type: ChartType) {
         kit::paint_well(ui, well, 10.0);
         paint(ui, well.shrink(10.0), appearance, chart_type);
     });
-    kit::paint_card_highlight(ui, card.response.rect);
 }
 
 fn paint(ui: &Ui, plot: Rect, appearance: &ChartAppearance, chart_type: ChartType) {

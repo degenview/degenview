@@ -24,9 +24,9 @@ use crate::ui::webhook_settings::{
 use crate::ui::{kit, settings_card, theme};
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 
-pub const SIDEBAR_WIDTH: f32 = 200.0;
-/// The window the Swift app gives Settings.
-pub const WINDOW_SIZE: Vec2 = Vec2::new(800.0, 580.0);
+pub const SIDEBAR_WIDTH: f32 = 224.0;
+/// The Settings window: the sidebar and a 616-point page.
+pub const WINDOW_SIZE: Vec2 = Vec2::new(840.0, 600.0);
 
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 pub enum SettingsSection {
@@ -670,7 +670,7 @@ pub fn show(
     actions
 }
 
-/// The rows of badge-and-title sections, as in the system Settings app.
+/// The rows of icon-and-title sections: flat, the selected one lightly filled.
 fn sidebar(ui: &mut egui::Ui, state: &mut SettingsState) {
     let area = ui.max_rect();
     let mut y = area.top() + 10.0;
@@ -695,38 +695,31 @@ fn sidebar(ui: &mut egui::Ui, state: &mut SettingsState) {
         } else if response.hovered() {
             painter.rect_filled(rect, 6.0, kit::primary(0.06));
         }
-        let badge = Rect::from_center_size(
-            Pos2::new(rect.left() + 8.0 + 12.0, rect.center().y),
-            Vec2::splat(24.0),
-        );
-        // The tint as a soft top-to-bottom gradient, like `.gradient`.
-        painter.rect_filled(badge, 6.0, section.tint());
-        painter.rect_filled(
-            Rect::from_min_max(badge.min, Pos2::new(badge.max.x, badge.center().y)),
-            egui::CornerRadius {
-                nw: 6,
-                ne: 6,
-                sw: 0,
-                se: 0,
-            },
-            Color32::from_white_alpha(28),
+        // A plain icon, no tile or colour behind it: the selected row says which page is open.
+        let icon = Rect::from_center_size(
+            Pos2::new(rect.left() + 12.0 + 8.0, rect.center().y),
+            Vec2::splat(16.0),
         );
         icons::paint(
             painter,
-            Rect::from_center_size(badge.center(), Vec2::splat(13.0)),
+            icon,
             section.icon(),
-            Color32::WHITE,
+            if selected {
+                theme::text_primary()
+            } else {
+                theme::text_secondary()
+            },
         );
         let title = kit::galley(
             ui,
             section.title(),
             kit::size::BODY,
-            kit::REGULAR,
+            if selected { kit::MEDIUM } else { kit::REGULAR },
             theme::text_primary(),
-            rect.width() - 44.0,
+            rect.width() - 52.0,
         );
         ui.painter().galley(
-            Pos2::new(badge.right() + 10.0, rect.center().y - title.size().y / 2.0),
+            Pos2::new(icon.right() + 12.0, rect.center().y - title.size().y / 2.0),
             title,
             Color32::WHITE,
         );
@@ -798,7 +791,7 @@ pub(super) fn page_header(ui: &mut egui::Ui, section: SettingsSection, subtitle:
     let title = kit::galley(
         ui,
         title,
-        kit::size::TITLE2 + 1.0,
+        kit::size::TITLE2 + 3.0,
         kit::SEMIBOLD,
         theme::text_primary(),
         width,
@@ -854,12 +847,11 @@ pub(super) fn section(
 
 /// The quiet rounded card settings content sits in.
 pub(super) fn card(ui: &mut egui::Ui, content: impl FnOnce(&mut egui::Ui)) {
-    let card = kit::card_frame(false).show(ui, |ui| {
+    kit::card_frame(false).show(ui, |ui| {
         ui.set_width(ui.available_width());
         ui.spacing_mut().item_spacing.y = 12.0;
         content(ui);
     });
-    kit::paint_card_highlight(ui, card.response.rect);
 }
 
 pub(super) fn divider(ui: &mut egui::Ui) {

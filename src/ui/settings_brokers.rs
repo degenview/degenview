@@ -293,8 +293,7 @@ fn broker_card(
         }
     }
     prepared.frame = kit::card_frame(head.hovered());
-    let response = prepared.end(ui);
-    kit::paint_card_highlight(ui, response.rect);
+    prepared.end(ui);
 
     if form.confirming_disconnect {
         let dialog_id = egui::Id::new(("broker-disconnect", id.as_str()));

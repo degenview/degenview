@@ -2296,8 +2296,8 @@ pub fn value_chip(ui: &mut Ui, label: &str, selected: bool) -> egui::Response {
 /// Corner radius of a settings card.
 pub const CARD_RADIUS: f32 = 10.0;
 
-/// The frame of a settings card: a faint fill, a hairline, and (once painted with
-/// [`paint_card_highlight`]) a lit top edge. `hovered` lifts the fill and the hairline.
+/// The frame of a settings card: flat, a faint fill and a hairline, no highlight or shadow.
+/// `hovered` lifts the fill and the hairline.
 pub fn card_frame(hovered: bool) -> egui::Frame {
     egui::Frame::new()
         .fill(theme::card_fill(hovered))
@@ -2306,31 +2306,12 @@ pub fn card_frame(hovered: bool) -> egui::Frame {
         .inner_margin(egui::Margin::symmetric(14, 12))
 }
 
-/// The 1px line along the top edge of a card at `rect`, inset by its corner radius, that reads as
-/// light falling on it from above.
-pub fn paint_card_highlight(ui: &Ui, rect: Rect) {
-    let y = rect.top() + 1.0;
-    let inset = CARD_RADIUS * 0.8;
-    ui.painter().hline(
-        (rect.left() + inset)..=(rect.right() - inset),
-        y,
-        Stroke::new(1.0, theme::card_highlight()),
-    );
-}
-
-/// The tile at the left of a settings card: neutral, so colour is kept for the switch and the
-/// selected states.
+/// The icon at the left of a settings card: plain and neutral, with no tile, disc or circle
+/// behind it, so colour is kept for the switch and the selected states.
 pub fn paint_card_badge(ui: &Ui, badge: Rect, icon: Icon) {
-    ui.painter().rect_filled(badge, 8.0, theme::ink(10));
-    ui.painter().rect_stroke(
-        badge,
-        8.0,
-        Stroke::new(1.0, theme::ink(14)),
-        StrokeKind::Inside,
-    );
     icons::paint(
         ui.painter(),
-        Rect::from_center_size(badge.center(), Vec2::splat(15.0)),
+        Rect::from_center_size(badge.center(), Vec2::splat(18.0)),
         icon,
         theme::text_secondary(),
     );

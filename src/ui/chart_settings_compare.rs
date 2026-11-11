@@ -477,8 +477,7 @@ fn overlay_card(
     }
     let hovered = ui.rect_contains_pointer(prepared.content_ui.min_rect().expand(12.0));
     prepared.frame = kit::card_frame(hovered);
-    let response = prepared.end(ui);
-    kit::paint_card_highlight(ui, response.rect);
+    prepared.end(ui);
     action
 }
 
