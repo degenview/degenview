@@ -339,7 +339,19 @@ fn header(
         egui::pos2(rect.left(), rect.center().y - 15.0),
         vec2(30.0, 30.0),
     );
-    kit::paint_card_badge(ui, tile, Icon::ArrowLeftRight);
+    match crate::model::DataSource::from_watchlist_slug(descriptor.market_source) {
+        // The broker's own mark, the logo its markets already wear on charts.
+        Some(source) => {
+            crate::ui::source_logo::paint(ui, source, tile);
+            ui.painter().rect_stroke(
+                tile,
+                tile.width() * 0.22,
+                egui::Stroke::new(1.0, theme::ink(14)),
+                egui::StrokeKind::Inside,
+            );
+        }
+        None => kit::paint_card_badge(ui, tile, Icon::ArrowLeftRight),
+    }
     let chevron = egui::Rect::from_center_size(
         egui::pos2(rect.right() - 8.0, rect.center().y),
         vec2(16.0, 16.0),
@@ -367,6 +379,18 @@ fn header(
     } else {
         kit::paint_status_badge(ui, right, rect.center().y, &label, tone).left()
     };
+    // A test environment wears a chip, so it is not taken for the real account.
+    let chip = (!descriptor.real_money).then(|| {
+        kit::galley(
+            ui,
+            "Test",
+            kit::size::CAPTION,
+            kit::SEMIBOLD,
+            theme::text_secondary(),
+            f32::INFINITY,
+        )
+    });
+    let chip_room = chip.as_ref().map_or(0.0, |chip| chip.size().x + 14.0 + 8.0);
     let room = state_left - 12.0 - left;
     let name = fitted(
         ui,
@@ -374,7 +398,7 @@ fn header(
         kit::size::HEADLINE,
         kit::SEMIBOLD,
         theme::text_primary(),
-        room,
+        room - chip_room,
     );
     let summary = fitted(
         ui,
@@ -386,8 +410,21 @@ fn header(
     );
     let top = rect.center().y - (name.size().y + 2.0 + summary.size().y) / 2.0;
     let name_height = name.size().y;
+    let name_width = name.size().x;
     ui.painter()
         .galley(egui::pos2(left, top), name, theme::text_primary());
+    if let Some(chip) = chip {
+        let pill = egui::Rect::from_min_size(
+            egui::pos2(left + name_width + 8.0, top + name_height / 2.0 - 8.0),
+            vec2(chip.size().x + 14.0, 16.0),
+        );
+        ui.painter().rect_filled(pill, 8.0, theme::ink(10));
+        ui.painter().galley(
+            egui::pos2(pill.left() + 7.0, pill.center().y - chip.size().y / 2.0),
+            chip,
+            theme::text_secondary(),
+        );
+    }
     ui.painter().galley(
         egui::pos2(left, top + name_height + 2.0),
         summary,

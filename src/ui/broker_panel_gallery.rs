@@ -395,11 +395,18 @@ fn gallery_of_live_trading() {
             }
             let mut page = Screen::new(Vec2::new(width, height));
             page.ctx.set_theme(theme_pref);
-            let output = frames(&mut page, 3, |ui| {
-                egui::CentralPanel::default().show(ui, |ui| {
-                    settings_brokers::body(ui, &mut page_state, Some(host.clone()));
-                });
-            });
+            // The logos are images: they decode on a loader's thread, over a few frames.
+            egui_extras::install_image_loaders(&page.ctx);
+            let mut draw = |page: &mut Screen| {
+                frames(page, 3, |ui| {
+                    egui::CentralPanel::default().show(ui, |ui| {
+                        settings_brokers::body(ui, &mut page_state, Some(host.clone()));
+                    });
+                })
+            };
+            draw(&mut page);
+            std::thread::sleep(Duration::from_millis(400));
+            let output = draw(&mut page);
             page.save(&format!("live-settings-{name}-{suffix}"), output);
         }
     }
