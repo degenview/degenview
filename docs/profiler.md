@@ -108,9 +108,9 @@ Relevant areas may include:
     src/pine_studio/model.rs
     src/pine_studio/library/store.rs
 
-    src/ui/pine_report.rs
-    src/ui/pine_settings_popover.rs
-    src/ui/pine_style_view.rs
+    src/ui/pine/report.rs
+    src/ui/pine/settings_popover.rs
+    src/ui/pine/style_view.rs
 
     src/workspace.rs
     src/ui/chart_card.rs

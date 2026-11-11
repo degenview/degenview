@@ -5,7 +5,7 @@ use super::{ChartWorkspace, WorkspaceAction};
 use crate::model::DataSource;
 use crate::model::alert::{AlertAsset, AlertCurrency};
 use crate::model::watchlist::now_ms;
-use crate::ui::alert_editor::{self, PriceAlertEditorOutcome, PriceAlertEditorState};
+use crate::ui::alert::editor::{self, PriceAlertEditorOutcome, PriceAlertEditorState};
 use eframe::egui;
 use std::collections::HashMap;
 
@@ -50,7 +50,7 @@ impl ChartWorkspace {
 
     /// Keeps the open sheet's market priced: it asks for the quote for as long as it is open.
     pub(super) fn show_alert_editor(&mut self, ctx: &egui::Context) -> Vec<WorkspaceAction> {
-        let owner = alert_editor::quote_owner(self.id);
+        let owner = editor::quote_owner(self.id);
         if let Some(request) = self.new_alert_request.take() {
             let mut editor = PriceAlertEditorState::new(request.asset, None, None);
             // A chart point prefills the level and the way to cross it; the user still reviews
@@ -60,9 +60,9 @@ impl ChartWorkspace {
                 editor.direction =
                     match crate::model::chart::context::alert_side(price, request.last) {
                         Some(crate::model::chart::context::AlertSide::Below) => {
-                            alert_editor::Direction::Below
+                            editor::Direction::Below
                         }
-                        _ => alert_editor::Direction::Above,
+                        _ => editor::Direction::Above,
                     };
             }
             self.alert_editor = Some(editor);
@@ -80,7 +80,7 @@ impl ChartWorkspace {
             .unwrap_or_default();
         let mut actions = Vec::new();
         let mut finished = false;
-        match alert_editor::show(ctx, state, &endpoints, now_ms()) {
+        match editor::show(ctx, state, &endpoints, now_ms()) {
             Some(PriceAlertEditorOutcome::Save(alert)) => {
                 actions.push(WorkspaceAction::SavePriceAlert {
                     alert,

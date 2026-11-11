@@ -16,13 +16,13 @@ use crate::store::SharedStore;
 use crate::store::drawing_template::{DrawingPrefs, DrawingTemplateStore};
 use crate::store::watchlist::WatchlistStore;
 use crate::ui::add_chart_sheet::{AddChartAction, AddChartSheet};
-use crate::ui::alert_editor::{self, PriceAlertEditorState};
+use crate::ui::alert::editor::{self, PriceAlertEditorState};
 use crate::ui::chart_settings::{self, ChartSettingsState};
 use crate::ui::drawing_properties::DrawingProperties;
 use crate::ui::indicator_picker::{self, IndicatorPicker};
 use crate::ui::overlay_settings_popover::OverlaySettingsPopover;
 use crate::ui::paper::chart_trading::PaperOverlayAction;
-use crate::ui::pine_settings_popover::PineSettingsPopover;
+use crate::ui::pine::settings_popover::PineSettingsPopover;
 use crate::ui::replay::date_sheet::{self, ReplayDateSheetState};
 use crate::ui::symbol_picker::SymbolPicker;
 use crate::ui::watchlist::sidebar::WatchlistSidebarState;
@@ -1003,8 +1003,7 @@ impl ChartWorkspace {
 impl Drop for ChartWorkspace {
     fn drop(&mut self) {
         self.quote_coordinator.release(self.id);
-        self.quote_coordinator
-            .release(alert_editor::quote_owner(self.id));
+        self.quote_coordinator.release(editor::quote_owner(self.id));
         self.quote_coordinator
             .release(crate::ui::symbol_picker::quote_owner(self.id));
     }

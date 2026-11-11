@@ -4,7 +4,7 @@
 
 use crate::pine_studio::Cmd;
 use crate::ui::icons::Icon;
-use crate::ui::pine_logs_view::{centered, intro, step};
+use crate::ui::pine::logs_view::{centered, intro, step};
 use crate::ui::{kit, theme};
 use eframe::egui::{
     self, Color32, CursorIcon, FontId, Rect, Sense, Stroke, StrokeKind, Ui, pos2,

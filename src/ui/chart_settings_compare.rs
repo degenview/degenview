@@ -11,7 +11,7 @@ use super::chart_card::ChartCard;
 use super::chart_settings::ChartSettingsAction;
 use super::icons::{self, Icon};
 use super::overlay_settings::{self, rgb};
-use super::{kit, settings_card, theme};
+use super::{kit, settings::card, theme};
 use crate::model::chart::kind::LineDash;
 use crate::model::chart::price_scale::PriceScaleMode;
 use crate::model::overlay::feed::OverlayStatus;
@@ -56,7 +56,7 @@ pub fn page(
     input: &CompareInput,
 ) -> Option<ChartSettingsAction> {
     let mut action = None;
-    settings_card::section_title(
+    card::section_title(
         ui,
         "Compare",
         Some("Draw other markets on this chart, on the same time axis."),

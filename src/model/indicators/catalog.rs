@@ -251,7 +251,7 @@ pub fn search(entries: &[CatalogEntry], query: &str) -> Vec<CatalogEntry> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ui::script_catalog::sample;
+    use crate::ui::pine::script_catalog::sample;
 
     fn scripts() -> Vec<Arc<LocalScript>> {
         vec![Arc::new(sample(

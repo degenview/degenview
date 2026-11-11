@@ -124,15 +124,15 @@ Relevant files:
 - `src/model/indicators/mod.rs`
 - `src/ui/chart_indicator_strip.rs`
 - `src/pine_host.rs`
-- `src/ui/pine_chart_render.rs`
+- `src/ui/pine/chart_render.rs`
 - `src/model/pine/instance.rs`
 
 ### Alerts
 
 - `src/model/alert/mod.rs`
 - `src/alert_host.rs`
-- `src/ui/alert_editor.rs`
-- `src/ui/alert_center.rs`
+- `src/ui/alert/editor.rs`
+- `src/ui/alert/center.rs`
 
 ### Paper trading
 

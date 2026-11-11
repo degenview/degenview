@@ -18,7 +18,7 @@ use crate::ui::chart_style_settings::{number_field, number_field_sized, picker_r
 use crate::ui::date_picker;
 use crate::ui::icons::Icon;
 use crate::ui::workspace::tool_sidebar::tool_icon;
-use crate::ui::{kit, series_render, settings_card, sheet, theme};
+use crate::ui::{kit, series_render, settings::card, sheet, theme};
 use eframe::egui::{
     self, Color32, Context, Id, Key, Sense, Stroke, Ui, color_picker::Alpha, pos2, vec2,
 };
@@ -881,7 +881,7 @@ impl DrawingProperties {
         }
         if caps.has(Caps::WIDTH) {
             let max = crate::model::drawings::style::MAX_STROKE_WIDTH as f64;
-            if let Some(width) = settings_card::card(ui, Icon::Sliders, "Thickness", None, |ui| {
+            if let Some(width) = card::card(ui, Icon::Sliders, "Thickness", None, |ui| {
                 number_field(
                     ui,
                     Id::new("drawing-width"),
@@ -930,30 +930,28 @@ impl DrawingProperties {
             } else {
                 "Background"
             };
-            settings_card::card(ui, Icon::RectFill, title, None, |ui| {
+            card::card(ui, Icon::RectFill, title, None, |ui| {
                 color_well(ui, "Fill color", &mut style.fill.color);
-                settings_card::switch(ui, &mut style.fill.enabled);
+                card::switch(ui, &mut style.fill.enabled);
             });
         }
         if boxed {
-            settings_card::card(ui, Icon::RectDashed, "Border", None, |ui| {
+            card::card(ui, Icon::RectDashed, "Border", None, |ui| {
                 color_well(ui, "Border color", &mut style.border.color);
-                settings_card::switch(ui, &mut style.border.enabled);
+                card::switch(ui, &mut style.border.enabled);
             });
             if style.border.enabled {
                 let max = crate::model::drawings::style::MAX_STROKE_WIDTH as f64;
-                if let Some(width) =
-                    settings_card::card(ui, Icon::Sliders, "Border thickness", None, |ui| {
-                        number_field(
-                            ui,
-                            Id::new("drawing-border-width"),
-                            f64::from(style.border.width),
-                            1.0,
-                            1.0..=max,
-                            0,
-                        )
-                    })
-                {
+                if let Some(width) = card::card(ui, Icon::Sliders, "Border thickness", None, |ui| {
+                    number_field(
+                        ui,
+                        Id::new("drawing-border-width"),
+                        f64::from(style.border.width),
+                        1.0,
+                        1.0..=max,
+                        0,
+                    )
+                }) {
                     style.border.width = width as f32;
                 }
                 dash_card(ui, "Border style", &mut style.border.dash);
@@ -989,9 +987,9 @@ impl DrawingProperties {
             }
         }
         if caps.has(Caps::MIDDLE_LINE) {
-            settings_card::card(ui, Icon::Minus, "Middle line", None, |ui| {
+            card::card(ui, Icon::Minus, "Middle line", None, |ui| {
                 color_well(ui, "Middle line color", &mut style.middle_line.color);
-                settings_card::switch(ui, &mut style.middle_line.enabled);
+                card::switch(ui, &mut style.middle_line.enabled);
             });
             if style.middle_line.enabled {
                 dash_card(ui, "Middle line style", &mut style.middle_line.dash);
@@ -1234,7 +1232,7 @@ impl DrawingProperties {
                 &mut regression.lower_dev,
             ),
         ] {
-            if let Some(picked) = settings_card::card(ui, Icon::Hash, title, Some(hint), |ui| {
+            if let Some(picked) = card::card(ui, Icon::Hash, title, Some(hint), |ui| {
                 number_field(ui, Id::new(id), f64::from(*value), 0.1, -max..=max, 2)
             }) {
                 *value = picked as f32;
@@ -1357,7 +1355,7 @@ impl DrawingProperties {
         let before = style;
         page.section(ui, "Font", None);
         color_card(ui, Icon::Palette, "Text color", None, &mut style.text.color);
-        if let Some(size) = settings_card::card(ui, Icon::TextFormat, "Size", None, |ui| {
+        if let Some(size) = card::card(ui, Icon::TextFormat, "Size", None, |ui| {
             number_field(
                 ui,
                 Id::new("drawing-text-size"),
@@ -1437,18 +1435,16 @@ impl DrawingProperties {
             );
             if style.wrap {
                 use crate::model::drawings::style::{MAX_BOX_WIDTH, MIN_BOX_WIDTH};
-                if let Some(width) =
-                    settings_card::card(ui, Icon::ArrowLeftRight, "Width", None, |ui| {
-                        number_field(
-                            ui,
-                            Id::new("drawing-box-width"),
-                            f64::from(style.wrapped_width()),
-                            10.0,
-                            f64::from(MIN_BOX_WIDTH)..=f64::from(MAX_BOX_WIDTH),
-                            0,
-                        )
-                    })
-                {
+                if let Some(width) = card::card(ui, Icon::ArrowLeftRight, "Width", None, |ui| {
+                    number_field(
+                        ui,
+                        Id::new("drawing-box-width"),
+                        f64::from(style.wrapped_width()),
+                        10.0,
+                        f64::from(MIN_BOX_WIDTH)..=f64::from(MAX_BOX_WIDTH),
+                        0,
+                    )
+                }) {
                     style.box_width = width as f32;
                 }
             }
@@ -1489,7 +1485,7 @@ impl DrawingProperties {
             ("Horizontal", "table-pin-x", &mut edited.x),
             ("Vertical", "table-pin-y", &mut edited.y),
         ] {
-            if let Some(percent) = settings_card::card(
+            if let Some(percent) = card::card(
                 ui,
                 Icon::ArrowLeftRight,
                 title,
@@ -1533,7 +1529,7 @@ impl DrawingProperties {
             let step = 10f64.powi(-(decimals as i32));
             let price_id = Id::new(("drawing-price", self.draft.id(), index));
             if reads_price
-                && let Some(price) = settings_card::card(ui, Icon::Tag, "Price", None, |ui| {
+                && let Some(price) = card::card(ui, Icon::Tag, "Price", None, |ui| {
                     number_field_sized(
                         ui,
                         price_id,
@@ -1620,7 +1616,7 @@ impl DrawingProperties {
         let mut opacity = image.opacity;
         let mut keep_aspect = image.keep_aspect;
         let (low, high) = crate::model::annotation::image_content::OPACITY_RANGE;
-        if let Some(percent) = settings_card::card(ui, Icon::Sliders, "Opacity (%)", None, |ui| {
+        if let Some(percent) = card::card(ui, Icon::Sliders, "Opacity (%)", None, |ui| {
             number_field(
                 ui,
                 Id::new("drawing-image-opacity"),
@@ -1704,7 +1700,7 @@ impl DrawingProperties {
             (0, "Width", "drawing-card-width"),
             (1, "Height", "drawing-card-height"),
         ] {
-            if let Some(value) = settings_card::card(ui, Icon::Sliders, title, None, |ui| {
+            if let Some(value) = card::card(ui, Icon::Sliders, title, None, |ui| {
                 number_field(
                     ui,
                     Id::new(id),
@@ -1803,7 +1799,7 @@ impl DrawingProperties {
 
 /// The headings of one page. Every card of a page sits `CARD_SPACING` apart; a heading adds
 /// `SECTION_GAP` above itself (except the first) and hands the card spacing back to the cards
-/// below it, because `settings_card::section_title` tightens it for its own subtitle.
+/// below it, because `card::section_title` tightens it for its own subtitle.
 struct Page {
     titled: bool,
     started: bool,
@@ -1831,7 +1827,7 @@ impl Page {
             ui.add_space(SECTION_GAP);
         }
         self.started = true;
-        settings_card::section_title(ui, title, subtitle);
+        card::section_title(ui, title, subtitle);
         ui.spacing_mut().item_spacing.y = CARD_SPACING;
     }
 }
@@ -1850,15 +1846,15 @@ fn level_cards(ui: &mut Ui, page: &mut Page, id: (&'static str, usize), level: &
 }
 
 fn line_cards_with_ratio(ui: &mut Ui, id: (&'static str, usize), level: &mut Level) {
-    settings_card::card(ui, Icon::Eye, "Show", None, |ui| {
+    card::card(ui, Icon::Eye, "Show", None, |ui| {
         color_well(ui, "Level color", &mut level.line.color);
-        settings_card::switch(ui, &mut level.line.enabled);
+        card::switch(ui, &mut level.line.enabled);
     });
     if !level.line.enabled {
         return;
     }
     let max = f64::from(crate::model::drawings::style::MAX_LEVEL_RATIO);
-    if let Some(ratio) = settings_card::card(ui, Icon::Hash, "Ratio", None, |ui| {
+    if let Some(ratio) = card::card(ui, Icon::Hash, "Ratio", None, |ui| {
         number_field(
             ui,
             Id::new(("drawing-level-ratio", id)),
@@ -1875,9 +1871,9 @@ fn line_cards_with_ratio(ui: &mut Ui, id: (&'static str, usize), level: &mut Lev
 
 /// The cards of a line with its own look: shown or not with its colour, then thickness and style.
 fn line_cards(ui: &mut Ui, id: &'static str, line: &mut MiddleLine) {
-    settings_card::card(ui, Icon::Eye, "Show", None, |ui| {
+    card::card(ui, Icon::Eye, "Show", None, |ui| {
         color_well(ui, "Line color", &mut line.color);
-        settings_card::switch(ui, &mut line.enabled);
+        card::switch(ui, &mut line.enabled);
     });
     if line.enabled {
         thickness_and_style(ui, Id::new(("drawing-line-width", id)), line);
@@ -1886,7 +1882,7 @@ fn line_cards(ui: &mut Ui, id: &'static str, line: &mut MiddleLine) {
 
 fn thickness_and_style(ui: &mut Ui, id: Id, line: &mut MiddleLine) {
     let max = f64::from(crate::model::drawings::style::MAX_STROKE_WIDTH);
-    if let Some(width) = settings_card::card(ui, Icon::Sliders, "Thickness", None, |ui| {
+    if let Some(width) = card::card(ui, Icon::Sliders, "Thickness", None, |ui| {
         number_field(ui, id, f64::from(line.width), 1.0, 1.0..=max, 0)
     }) {
         line.width = width as f32;
@@ -1897,8 +1893,8 @@ fn thickness_and_style(ui: &mut Ui, id: Id, line: &mut MiddleLine) {
 /// A card with a switch; an empty `hint` is no hint at all, so the title centres on its badge.
 fn toggle_row(ui: &mut Ui, icon: Icon, title: &str, hint: &str, value: &mut bool) {
     let hint = Some(hint).filter(|hint| !hint.is_empty());
-    settings_card::card(ui, icon, title, hint, |ui| {
-        settings_card::switch(ui, value);
+    card::card(ui, icon, title, hint, |ui| {
+        card::switch(ui, value);
     });
 }
 
@@ -1974,7 +1970,7 @@ fn color_well(ui: &mut Ui, title: &str, color: &mut Rgba) {
 }
 
 fn color_card(ui: &mut Ui, icon: Icon, title: &str, hint: Option<&str>, color: &mut Rgba) {
-    settings_card::card(ui, icon, title, hint, |ui| color_well(ui, title, color));
+    card::card(ui, icon, title, hint, |ui| color_well(ui, title, color));
 }
 
 fn dash_card(ui: &mut Ui, title: &str, dash: &mut LineDash) {
@@ -2002,7 +1998,7 @@ fn price_decimals(price: f64) -> usize {
 /// The time of one anchor, UTC: a field that opens a calendar and a time stepper. The text only
 /// changes when the user picks, so an anchor nobody touched keeps its exact time.
 fn time_row(ui: &mut Ui, id: Id, state: &mut CoordinateText) -> Option<i64> {
-    settings_card::card_reserving(
+    card::card_reserving(
         ui,
         Icon::Clock,
         "Time (UTC)",
@@ -2228,8 +2224,8 @@ mod tests {
             toggle_row(ui, Icon::Eye, "Title", "", &mut on);
             with_empty = ui.cursor().top() - top;
             let top = ui.cursor().top();
-            settings_card::card(ui, Icon::Eye, "Title", None, |ui| {
-                settings_card::switch(ui, &mut on);
+            card::card(ui, Icon::Eye, "Title", None, |ui| {
+                card::switch(ui, &mut on);
             });
             without = ui.cursor().top() - top;
         });

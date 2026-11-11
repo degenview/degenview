@@ -10,7 +10,7 @@ use super::{ChartCard, PriceScale};
 use crate::model::Anchor;
 use crate::model::chart::context::Target;
 use crate::model::chart::price_scale::PriceScaleMode;
-use crate::ui::alert_lines;
+use crate::ui::alert::lines;
 use crate::ui::drawing_layer::DrawingFrame;
 use crate::ui::drawing_layer::Projection;
 use eframe::egui::{self, Pos2, Rect};
@@ -138,16 +138,16 @@ impl ChartCard {
     /// A tag dropped on `price`, as the pointer would report it, for tests.
     #[cfg(test)]
     pub fn queue_alert_move(&mut self, id: u64, price: f64) {
-        self.alert_moves.push(alert_lines::AlertMove { id, price });
+        self.alert_moves.push(lines::AlertMove { id, price });
     }
 
     /// Sets the market the alert tags are dragged on: the last price, which decides the side a
     /// moved alert then watches, and the tick a drop lands on.
     pub fn set_alert_market(&mut self, last: Option<f64>, tick: f64) {
-        self.alert_market = alert_lines::Market {
+        self.alert_market = lines::Market {
             last,
             tick,
-            ..alert_lines::Market::default()
+            ..lines::Market::default()
         };
     }
 
@@ -162,7 +162,7 @@ impl ChartCard {
     }
 
     /// The alert tags dropped on a new level since the last call.
-    pub fn take_alert_moves(&mut self) -> Vec<alert_lines::AlertMove> {
+    pub fn take_alert_moves(&mut self) -> Vec<lines::AlertMove> {
         std::mem::take(&mut self.alert_moves)
     }
 

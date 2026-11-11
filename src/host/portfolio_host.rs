@@ -28,20 +28,20 @@ use crate::store::{SharedStore, Store};
 use crate::ui::header_controls;
 use crate::ui::icons::Icon;
 use crate::ui::kit::{self, Confirm, ConfirmOutcome};
-use crate::ui::portfolio_asset_detail::{self, AssetDetailAction, AssetDetailInput};
-use crate::ui::portfolio_asset_picker::{self, AssetPickerOutcome, AssetPickerState};
-use crate::ui::portfolio_empty;
-use crate::ui::portfolio_holdings::{self, HoldingsAction, HoldingsInput, HoldingsState};
-use crate::ui::portfolio_overview::{
+use crate::ui::portfolio::asset_detail::{self, AssetDetailAction, AssetDetailInput};
+use crate::ui::portfolio::asset_picker::{self, AssetPickerOutcome, AssetPickerState};
+use crate::ui::portfolio::empty;
+use crate::ui::portfolio::holdings::{self, HoldingsAction, HoldingsInput, HoldingsState};
+use crate::ui::portfolio::overview::{
     self, OverviewAction, OverviewInput, OverviewState, PriceStatus, StatisticsInput,
 };
-use crate::ui::portfolio_sheets::{
+use crate::ui::portfolio::sheets::{
     self, CreateOutcome, CreateState, ManageAction, ManageInput, ManageRow, ManageState,
 };
-use crate::ui::portfolio_transaction_editor::{
+use crate::ui::portfolio::transaction_editor::{
     self, EditorMode, TransactionEditorOutcome, TransactionEditorState,
 };
-use crate::ui::portfolio_transactions::{
+use crate::ui::portfolio::transactions::{
     self, Projection, TransactionAction, TransactionsInput, TransactionsState,
 };
 use crate::ui::sheet;
@@ -490,12 +490,12 @@ impl PortfolioSection {
     }
 
     /// The picture and words the page shows while the portfolio has no transactions.
-    fn empty_scene(self) -> portfolio_empty::Scene {
+    fn empty_scene(self) -> empty::Scene {
         match self {
-            Self::Overview => portfolio_empty::Scene::Overview,
-            Self::Holdings => portfolio_empty::Scene::Holdings,
-            Self::Transactions => portfolio_empty::Scene::Transactions,
-            Self::Statistics => portfolio_empty::Scene::Statistics,
+            Self::Overview => empty::Scene::Overview,
+            Self::Holdings => empty::Scene::Holdings,
+            Self::Transactions => empty::Scene::Transactions,
+            Self::Statistics => empty::Scene::Statistics,
         }
     }
 
@@ -576,7 +576,7 @@ pub struct PortfolioTab {
     new_asset: Option<PortfolioAsset>,
     /// The asset whose detail sheet is open.
     detail_key: Option<String>,
-    detail: portfolio_asset_detail::AssetDetailState,
+    detail: asset_detail::AssetDetailState,
     notice: Option<String>,
 }
 
@@ -604,7 +604,7 @@ impl PortfolioTab {
             remap: None,
             new_asset: None,
             detail_key: None,
-            detail: portfolio_asset_detail::AssetDetailState::default(),
+            detail: asset_detail::AssetDetailState::default(),
             notice: None,
         }
     }
@@ -677,7 +677,7 @@ impl PortfolioTab {
             .show(ui, |ui| {
                 capped(ui, |ui| {
                     if scope.is_empty() {
-                        portfolio_empty::page(ui, portfolio_empty::Scene::Portfolios, |ui| {
+                        empty::page(ui, empty::Scene::Portfolios, |ui| {
                             if header_controls::prominent_button(ui, Icon::Plus, "Create Portfolio")
                                 .clicked()
                             {
@@ -687,7 +687,7 @@ impl PortfolioTab {
                         return;
                     }
                     if !has_transactions {
-                        portfolio_empty::page(ui, self.section.empty_scene(), |ui| {
+                        empty::page(ui, self.section.empty_scene(), |ui| {
                             if header_controls::prominent_button(ui, Icon::Plus, "Add Transaction")
                                 .clicked()
                             {
@@ -1033,7 +1033,7 @@ impl PortfolioTab {
                 .find(|portfolio| portfolio.id == id)
         });
         let formatter = PortfolioValueFormatter::new(self.reporting_currency, self.privacy);
-        let subtitle = crate::ui::portfolio_transactions::asset_subtitle;
+        let subtitle = crate::ui::portfolio::transactions::asset_subtitle;
         let net_contributions = net_contributions(&transactions, &portfolio_ids, None);
         let total_value: f64 = holding_values
             .iter()
@@ -1045,7 +1045,7 @@ impl PortfolioTab {
             .as_deref()
             .filter(|_| self.section != PortfolioSection::Transactions);
         if let Some(message) = blocked {
-            crate::ui::portfolio_table::empty_state(
+            crate::ui::portfolio::table::empty_state(
                 ui,
                 "These Transactions Can't Be Valued",
                 &format!("{message} Review them in the Transactions tab."),
@@ -1053,7 +1053,7 @@ impl PortfolioTab {
         } else {
             match self.section {
                 PortfolioSection::Overview => {
-                    let actions = portfolio_overview::show_overview(
+                    let actions = overview::show_overview(
                         ui,
                         &mut self.overview,
                         &OverviewInput {
@@ -1090,7 +1090,7 @@ impl PortfolioTab {
                         .map_or(PortfolioHoldingsSort::CurrentValue, |portfolio| {
                             portfolio.sort
                         });
-                    let actions = portfolio_holdings::show(
+                    let actions = holdings::show(
                         ui,
                         &mut self.holdings,
                         &HoldingsInput {
@@ -1137,7 +1137,7 @@ impl PortfolioTab {
                         })
                         .collect();
                     let projection = |id: u64| projections.get(&id).copied();
-                    let actions = portfolio_transactions::show(
+                    let actions = transactions::show(
                         ui,
                         &mut self.transactions,
                         &TransactionsInput {
@@ -1163,7 +1163,7 @@ impl PortfolioTab {
                         }
                     }
                 }
-                PortfolioSection::Statistics => portfolio_overview::show_statistics(
+                PortfolioSection::Statistics => overview::show_statistics(
                     ui,
                     &StatisticsInput {
                         holdings: &holding_values,
@@ -1180,7 +1180,7 @@ impl PortfolioTab {
 
         if let Some(key) = self.detail_key.clone() {
             let ledger: Vec<&PortfolioTransaction> =
-                portfolio_asset_detail::asset_transactions(&snapshot.transactions, &key)
+                asset_detail::asset_transactions(&snapshot.transactions, &key)
                     .into_iter()
                     .filter(|transaction| portfolio_ids.contains(&transaction.portfolio_id))
                     .collect();
@@ -1202,7 +1202,7 @@ impl PortfolioTab {
                     .copied()
                     .unwrap_or(transaction.price)
             };
-            let actions = portfolio_asset_detail::show(
+            let actions = asset_detail::show(
                 ui.ctx(),
                 &mut self.detail,
                 &AssetDetailInput {
@@ -1319,7 +1319,7 @@ impl PortfolioTab {
                 .iter()
                 .map(|portfolio| portfolio.name.clone())
                 .collect();
-            if let Some(outcome) = portfolio_sheets::show_create(ctx, state, &names) {
+            if let Some(outcome) = sheets::show_create(ctx, state, &names) {
                 match outcome {
                     CreateOutcome::Create { name, currency } => {
                         if host.create_portfolio(&name, currency).is_ok() {
@@ -1356,7 +1356,7 @@ impl PortfolioTab {
                 rows: &rows,
                 current: snapshot.selected_portfolio_id,
             };
-            let actions = portfolio_sheets::show_manage(
+            let actions = sheets::show_manage(
                 ctx,
                 self.manage.as_mut().expect("manage state exists"),
                 &input,
@@ -1390,7 +1390,7 @@ impl PortfolioTab {
         }
 
         if let Some(picker) = &mut self.picker {
-            match portfolio_asset_picker::show(ctx, picker, host.store()) {
+            match asset_picker::show(ctx, picker, host.store()) {
                 Some(AssetPickerOutcome::Choose(result)) => {
                     self.new_asset = Some(asset_from_search_result(&result));
                     self.picker = None;
@@ -1401,7 +1401,7 @@ impl PortfolioTab {
         }
 
         if let Some((key, picker)) = &mut self.remap {
-            match portfolio_asset_picker::show(ctx, picker, host.store()) {
+            match asset_picker::show(ctx, picker, host.store()) {
                 Some(AssetPickerOutcome::Choose(result)) => {
                     let scope = portfolio_scope(host.snapshot());
                     let destination = asset_from_search_result(&result);
@@ -1417,7 +1417,7 @@ impl PortfolioTab {
         self.import.show(ctx, host, local_offset());
 
         if let Some(editor) = &mut self.editor {
-            match portfolio_transaction_editor::show(ctx, editor) {
+            match transaction_editor::show(ctx, editor) {
                 Some(TransactionEditorOutcome::Save { transaction, mode }) => {
                     let saved = if mode == EditorMode::Edit {
                         host.update_transaction(*transaction)

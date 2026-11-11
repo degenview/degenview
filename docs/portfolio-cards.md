@@ -22,7 +22,7 @@ same card when kind and portfolio match; adding one that exists focuses it. The 
   does; each card has a `CardRuntime` (its own quote feed and demand owner).
 - `service/portfolio_performers.rs`: `PerformerFeed`, start prices from hourly (ranges up to 36 h)
   or daily candles, cached in memory (5 min fresh, 1 min retry after a failure).
-- `ui/portfolio_cards/`: `mod.rs` (header, controls, states, shared painting) and one file per kind.
+- `ui/portfolio/cards/`: `mod.rs` (header, controls, states, shared painting) and one file per kind.
   Geometry that can be tested without a window (`bars`, `layout`, `visible_rows`, `plot_rect`) is
   pure and has unit tests.
 

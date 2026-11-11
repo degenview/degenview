@@ -2,7 +2,7 @@
 //! popover on a chart's overlay card: colour, line, price, scale and the last-value tag, each
 //! answered with the [`OverlayCommand`] that makes the change.
 
-use super::{kit, settings_card, theme};
+use super::{kit, settings::card, theme};
 use crate::model::chart::kind::{LineDash, PriceSource};
 use crate::model::chart::price_scale::PriceScaleMode;
 use crate::model::editor_theme::Rgba;
@@ -220,7 +220,7 @@ pub fn body(
                 ui.vertical(|ui| {
                     ui.spacing_mut().item_spacing.y = 4.0;
                     let mut shown = overlay.show_label;
-                    if settings_card::switch(ui, &mut shown) {
+                    if card::switch(ui, &mut shown) {
                         send(OverlayCommand::SetLabel(id, shown));
                     }
                     hint(ui, "A label at the end of the line with its latest value.");
@@ -240,7 +240,7 @@ pub fn body(
                 theme::text_secondary(),
             ));
             let mut shown = overlay.show_label;
-            if settings_card::switch(ui, &mut shown) {
+            if card::switch(ui, &mut shown) {
                 action = Some(OverlayCommand::SetLabel(id, shown));
             }
         });

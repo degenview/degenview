@@ -129,7 +129,7 @@ existing reconcile, and Undo brings the instance (same id) back.
 
 ## Price alerts on the chart: the arrow, the pill and dragging
 
-`ui::alert_lines` draws each alert as a dashed line ending in a small tab with a triangle, against
+`ui::alert::lines` draws each alert as a dashed line ending in a small tab with a triangle, against
 the right edge of the plot. That tab is all a line shows by default: a chart with several alerts
 stays readable. It is modelled on TradingView's small white arrow, from a screenshot of it; what
 TradingView does on hover, with many alerts close together, or after a restart is not known, and

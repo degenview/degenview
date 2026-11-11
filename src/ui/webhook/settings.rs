@@ -9,7 +9,7 @@ use crate::model::webhook::{
     EndpointId, WebhookDeliveryError, WebhookDeliveryResult, WebhookEndpoint,
 };
 use crate::ui::icons::{self, Icon};
-use crate::ui::settings_window::{card, section};
+use crate::ui::settings::window::{card, section};
 use crate::ui::webhook::editor::{
     self, WebhookEditorOutcome, WebhookEditorResult, WebhookEditorState,
 };
@@ -286,7 +286,7 @@ pub fn body(
                     state.editor = Some(WebhookEditorState::new_blank());
                 }
                 if let Some(failure) = &state.failure {
-                    crate::ui::settings_window::status_message(ui, failure, true);
+                    crate::ui::settings::window::status_message(ui, failure, true);
                 }
             });
         },

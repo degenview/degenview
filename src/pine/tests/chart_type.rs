@@ -266,7 +266,7 @@ fn a_strategy_on_a_price_based_chart_says_its_fills_are_constructed_prices() {
     let on_renko = run(source, &bricks, ChartKind::Renko, None);
     let report = on_renko.strategy.expect("a strategy report");
     assert_eq!(report.chart, ChartKind::Renko);
-    assert!(crate::ui::pine_report::synthetic_fill_notice(report.chart)
+    assert!(crate::ui::pine::report::synthetic_fill_notice(report.chart)
         .is_some_and(|notice| notice.contains("Renko") && notice.contains("constructed prices")));
     // On the market's own candles there is nothing to caveat.
     let on_candles = run(source, &real, ChartKind::Standard, None);
@@ -274,5 +274,5 @@ fn a_strategy_on_a_price_based_chart_says_its_fills_are_constructed_prices() {
         on_candles.strategy.expect("report").chart,
         ChartKind::Standard
     );
-    assert!(crate::ui::pine_report::synthetic_fill_notice(ChartKind::Standard).is_none());
+    assert!(crate::ui::pine::report::synthetic_fill_notice(ChartKind::Standard).is_none());
 }

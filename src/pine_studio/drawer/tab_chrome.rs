@@ -2,7 +2,7 @@
 //! beside them: a toolbar row with a rounded state field, a hairline under it, cards of rows, and
 //! a body that spends the width before the height and scrolls rather than clips.
 //!
-//! The Logs tab lives in `ui::pine_logs_view`, which the chart workspace shares, so it keeps its
+//! The Logs tab lives in `ui::pine::logs_view`, which the chart workspace shares, so it keeps its
 //! own copies of the toolbar constants; keep `TOOLBAR_HEIGHT`, `MARGIN` and `BUTTON` equal to its.
 
 use crate::ui::kit;

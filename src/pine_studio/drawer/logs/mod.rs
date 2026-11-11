@@ -1,7 +1,7 @@
 //! The Logs tab of the Pine Studio's drawer, under the preview chart: what the script in the
 //! editor wrote on the preview chart, next to the code that wrote it.
 //!
-//! It is the chart workspace's pane (`ui::pine_logs_view`, without its title) over the preview's
+//! It is the chart workspace's pane (`ui::pine::logs_view`, without its title) over the preview's
 //! run, so its filters and rows are the same. "Source code" lands in the editor, and "Scroll to
 //! bar" moves the preview chart, which only holds the candles it fetched.
 
@@ -9,7 +9,7 @@ use crate::model::pine::logs_view::{LogsPrefs, SourceTarget};
 use crate::pine::logs::LogHistory;
 use crate::pine_studio::{Cmd, PineStudio};
 use crate::store::SharedStore;
-use crate::ui::pine_logs_view::{self as view, Feed, LogsAction, LogsState, ScriptEntry};
+use crate::ui::pine::logs_view::{self as view, Feed, LogsAction, LogsState, ScriptEntry};
 use crate::ui::{PREVIEW_INSTANCE, Scrolled};
 use eframe::egui::Ui;
 use std::cell::RefCell;

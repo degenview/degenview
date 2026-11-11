@@ -387,7 +387,7 @@ fn paint_logo(
 ) {
     if let Some(card) = &item.card {
         let painter = painter.clone();
-        crate::ui::portfolio_cards::paint_badge(&painter, logo, card.kind);
+        crate::ui::portfolio::cards::paint_badge(&painter, logo, card.kind);
         return;
     }
     let base = icon_base_symbol(item);

@@ -174,7 +174,7 @@ mod tests {
     use super::*;
     use crate::model::indicators::catalog::all;
     use crate::pine_studio::model::{LocalScript, ScriptType};
-    use crate::ui::script_catalog::sample;
+    use crate::ui::pine::script_catalog::sample;
     use std::sync::Arc;
 
     fn catalog() -> Vec<CatalogEntry> {

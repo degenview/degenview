@@ -72,8 +72,8 @@ src/host/alert_host.rs
 src/model/alert/mod.rs
 src/model/alert/engine.rs
 src/store/alert.rs
-src/ui/alert_center.rs
-src/ui/alert_editor.rs
+src/ui/alert/center.rs
+src/ui/alert/editor.rs
 ```
 
 ### Pine Script
@@ -91,9 +91,9 @@ src/pine/compiler/program.rs
 src/pine/outputs/mod.rs
 src/pine/strategy/broker.rs
 src/pine_studio/
-src/ui/pine_report.rs
-src/ui/pine_settings_popover.rs
-src/ui/pine_style_view.rs
+src/ui/pine/report.rs
+src/ui/pine/settings_popover.rs
+src/ui/pine/style_view.rs
 ```
 
 ### Persistence and settings
@@ -103,8 +103,8 @@ src/store/mod.rs
 src/store/pine.rs
 src/pine_studio/library/store.rs
 src/pine_studio/model.rs
-src/ui/settings_window.rs
-src/ui/settings_card.rs
+src/ui/settings/window.rs
+src/ui/settings/card.rs
 src/service/keychain_api_keys.rs
 src/service/keychain_webhook_secrets.rs
 ```
@@ -596,7 +596,7 @@ src/
 ├── model/mcp/mod.rs
 ├── store/mcp.rs
 ├── service/keychain_mcp.rs
-└── ui/settings_mcp.rs
+└── ui/settings/mcp.rs
 ```
 
 Adapt this to the existing repository.
@@ -1439,8 +1439,8 @@ Inspect:
 pine::compiler::program
 pine::outputs::visuals
 pine::outputs::style_overrides
-ui::pine_style_view
-ui::pine_settings_popover
+ui::pine::style_view
+ui::pine::settings_popover
 ```
 
 Return style options actually supported by the application.
@@ -1552,7 +1552,7 @@ Inspect:
 pine::strategy::broker
 pine::strategy
 pine::outputs
-ui::pine_report
+ui::pine::report
 pine_studio::preview
 pine_studio::drawer
 ```

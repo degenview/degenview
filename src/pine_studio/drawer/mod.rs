@@ -18,7 +18,7 @@ use crate::pine::runtime::state::AlertEvent;
 use crate::pine::strategy::{StrategyReport, Trade};
 use crate::pine::syntax::token::{Diagnostic, DiagnosticSeverity};
 use crate::ui::icons::{self, Icon};
-use crate::ui::pine_report::{self, PineReportFormat};
+use crate::ui::pine::report::{self, PineReportFormat};
 use crate::ui::{kit, theme};
 use eframe::egui::{
     self, Align2, Color32, CursorIcon, FontId, Id, Rect, RichText, Sense, Ui, Vec2, pos2, vec2,
@@ -585,7 +585,7 @@ pub fn report(ui: &mut Ui, visual: Option<&VisualOutput>) {
         let (dot, trailing) = match strategy {
             Some(report) => {
                 let net = report.net_profit();
-                let tint = pine_report::tint(net, neutral);
+                let tint = report::tint(net, neutral);
                 let text = format!(
                     "{}  {}",
                     PineReportFormat::signed_money(net),
@@ -643,7 +643,7 @@ pub fn report(ui: &mut Ui, visual: Option<&VisualOutput>) {
 
 /// The strategy's headline figures and its equity curve.
 fn figures_card(ui: &mut Ui, report: &StrategyReport) {
-    if let Some(notice) = pine_report::synthetic_fill_notice(report.chart) {
+    if let Some(notice) = report::synthetic_fill_notice(report.chart) {
         chrome::banner(ui, &notice);
     }
     let padded = egui::Margin::symmetric(12, 10);
@@ -651,7 +651,7 @@ fn figures_card(ui: &mut Ui, report: &StrategyReport) {
     card(ui, |ui| {
         egui::Frame::new().inner_margin(padded).show(ui, |ui| {
             ui.set_width(ui.available_width());
-            pine_report::metric_grid(ui, report, theme::text_primary());
+            report::metric_grid(ui, report, theme::text_primary());
         });
     });
     if report.equity.len() > 1 {
@@ -660,7 +660,7 @@ fn figures_card(ui: &mut Ui, report: &StrategyReport) {
         card(ui, |ui| {
             egui::Frame::new().inner_margin(padded).show(ui, |ui| {
                 ui.set_width(ui.available_width());
-                pine_report::equity_curve(
+                report::equity_curve(
                     ui,
                     &report.equity,
                     report.settings.initial_capital,
@@ -736,7 +736,7 @@ fn trade_row(ui: &mut Ui, trade: &Trade) {
     let profit = painter.layout_no_wrap(
         PineReportFormat::signed_money(trade.profit),
         FontId::monospace(10.5),
-        pine_report::tint(trade.profit, theme::text_primary()),
+        report::tint(trade.profit, theme::text_primary()),
     );
     let profit_x = rect.right() - PAD_X - profit.size().x;
     painter.galley(
@@ -765,7 +765,7 @@ fn trade_row(ui: &mut Ui, trade: &Trade) {
             theme::text_secondary(),
         );
     }
-    response.on_hover_text(crate::ui::pine_report::trade_summary(trade));
+    response.on_hover_text(crate::ui::pine::report::trade_summary(trade));
 }
 
 /// The alerts the script raised, newest first, with how many were live.
@@ -848,7 +848,7 @@ pub fn report_content(ui: &mut Ui, visual: Option<&VisualOutput>) {
     let strategy = visual.and_then(|v| v.strategy.as_ref());
     let alerts: &[AlertEvent] = visual.map_or(&[], |v| v.alerts.as_slice());
     ui.spacing_mut().item_spacing.y = 12.0;
-    pine_report::show(ui, strategy);
+    report::show(ui, strategy);
     if !alerts.is_empty() {
         alerts_section(ui, alerts);
     }
@@ -858,7 +858,7 @@ pub fn report_content(ui: &mut Ui, visual: Option<&VisualOutput>) {
 /// problem), newest first when open.
 fn alerts_section(ui: &mut Ui, alerts: &[AlertEvent]) {
     let (live, historical) = alert_summary(alerts);
-    pine_report::report_box(ui, |ui| {
+    report::report_box(ui, |ui| {
         let id = ui.make_persistent_id("pine-alerts-section");
         egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, false)
             .show_header(ui, |ui| {

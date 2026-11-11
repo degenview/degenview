@@ -11,7 +11,7 @@ mod sections;
 use super::chart_indicator_strip::Action;
 use super::icons::{self, Icon};
 use super::kit::{self, MEDIUM, SEMIBOLD, size};
-use super::script_catalog;
+use super::pine::script_catalog;
 use super::theme;
 use crate::model::indicators::catalog::{self, CatalogEntry, EntryKey, Family, Origin};
 use crate::model::{DataSource, IndicatorConfig};

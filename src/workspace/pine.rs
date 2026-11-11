@@ -2,7 +2,7 @@
 
 use super::ChartWorkspace;
 use crate::model::{BuiltIn, EMA_PERIODS, IndicatorConfig, InstrumentId, Kline, Timeframe};
-use crate::ui::pine_settings_popover::{self, PineSettingsPopover};
+use crate::ui::pine::settings_popover::{self, PineSettingsPopover};
 use crate::ui::{self};
 use eframe::egui;
 use std::collections::HashMap;
@@ -452,17 +452,17 @@ impl ChartWorkspace {
             return;
         }
         match popover.show(ctx) {
-            pine_settings_popover::Outcome::Open => {
+            settings_popover::Outcome::Open => {
                 ui::chart_indicator_strip::set_open_script_popover(
                     ctx,
                     Some((chart_id, instance_id)),
                 );
                 self.script_popover = Some(popover);
             }
-            pine_settings_popover::Outcome::Cancel => {
+            settings_popover::Outcome::Cancel => {
                 ui::chart_indicator_strip::set_open_script_popover(ctx, None);
             }
-            pine_settings_popover::Outcome::Apply { inputs, style } => {
+            settings_popover::Outcome::Apply { inputs, style } => {
                 ui::chart_indicator_strip::set_open_script_popover(ctx, None);
                 if let Some(chart) = self.charts.iter_mut().find(|chart| chart.id == chart_id) {
                     chart.chart.set_pine_instance_inputs(instance_id, &inputs);

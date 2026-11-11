@@ -59,7 +59,7 @@ use crate::service::keychain_mcp_seal::{KeyState, SealKey, SealKeyStore};
 use crate::service::watchlist_quotes::WatchlistQuoteBook;
 use crate::store::SharedStore;
 use crate::store::watchlist::{ListChanges, ListEdit, Place, WatchlistStore};
-use crate::ui::alert_editor::{Direction, PriceAlertEditorState};
+use crate::ui::alert::editor::{Direction, PriceAlertEditorState};
 use crate::workspace::{
     ChartSummary, ChartTypeError, ChartWorkspace, IndicatorError, IndicatorOutcome,
     PineInstanceView, RemoveOutcome, ReplayCommand, ReplayError,

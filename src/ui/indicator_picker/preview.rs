@@ -7,7 +7,7 @@ use crate::model::{BuiltIn, Kline, bollinger, ema, rsi, supertrend_flips};
 use crate::pine::compiler::program::SymbolInfo;
 use crate::pine::outputs::{MarkerLocation, PlotStyle};
 use crate::pine_studio::indicators;
-use crate::ui::pine_geometry::rgba;
+use crate::ui::pine::geometry::rgba;
 use crate::ui::theme;
 use eframe::egui::{self, Color32, Painter, Pos2, Rect, Shape, Stroke, pos2};
 use std::collections::HashMap;
@@ -160,7 +160,7 @@ pub fn pine(source: &str) -> Option<Preview> {
         ..Preview::default()
     };
     for plot in &output.plots {
-        if plot.force_overlay || !crate::ui::pine_geometry::is_visible(plot.color) {
+        if plot.force_overlay || !crate::ui::pine::geometry::is_visible(plot.color) {
             continue;
         }
         let mut values = plot.values.clone();

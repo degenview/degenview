@@ -1224,7 +1224,7 @@ impl AddChartSheet {
                             if choice_card(
                                 ui,
                                 width,
-                                crate::ui::portfolio_cards::icon(*kind),
+                                crate::ui::portfolio::cards::icon(*kind),
                                 kind.title(),
                                 kind.summary(),
                                 self.card_kind == index,

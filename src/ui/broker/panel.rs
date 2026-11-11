@@ -27,7 +27,7 @@ use crate::host::broker_host::BrokerHost;
 use crate::model::broker::prefs::BrokerPrefs;
 use crate::model::broker::ticket::{self as rules, StatusTone};
 use crate::trading::model::AccountStats;
-use crate::ui::alert_center::Tone;
+use crate::ui::alert::center::Tone;
 use crate::ui::icons::Icon;
 use crate::ui::paper::grid::{self as grid, Col, col};
 use crate::ui::paper::tables::empty;
@@ -1495,7 +1495,7 @@ fn edit_sheet(
             } else {
                 "Limit price"
             };
-            crate::ui::settings_api_keys::field(
+            crate::ui::settings::api_keys::field(
                 ui,
                 price_title,
                 None,
@@ -1504,7 +1504,7 @@ fn edit_sheet(
                 false,
             );
             ui.add_space(12.0);
-            crate::ui::settings_api_keys::field(ui, "Size", None, "0", &mut edit.size_text, false);
+            crate::ui::settings::api_keys::field(ui, "Size", None, "0", &mut edit.size_text, false);
             ui.add_space(8.0);
             if let Err(text) = &typed
                 && !text.starts_with("Nothing")
