@@ -3,33 +3,44 @@
 //! settings host applies them.
 //!
 //! DegenView hosts nothing itself. Copy link, Open in new tab and Tweet image upload the image to
-//! the host set here, so the page says so plainly and the app asks once per host before the
-//! first upload.
+//! the provider turned on here (one at a time, none until the user turns one on), and the app asks
+//! once per destination before the first upload. The providers are rows drawn from their
+//! descriptors (`service::snapshot_providers`), so this page does not change for a new one.
 
-use crate::model::snapshot::{SnapshotHost, SnapshotPrefs, SnapshotScale};
-use crate::service::snapshot_upload::token_is_valid;
+use crate::model::snapshot::{SnapshotPrefs, SnapshotScale};
+use crate::service::keychain_snapshot_secrets::SnapshotSecrets;
+use crate::service::snapshot_providers::{self, Readiness};
 use crate::ui::alert_center::Tone;
 use crate::ui::icons::Icon;
-use crate::ui::settings_api_keys::{Autosave, StatusMessage, destructive_button, field};
-use crate::ui::settings_window::{card, section, status_badge, status_message};
+use crate::ui::settings_api_keys::StatusMessage;
+use crate::ui::settings_provider_card::{CardInput, ProviderForm, provider_card};
+use crate::ui::settings_window::{section, status_badge, status_message};
 use crate::ui::{kit, settings_card, theme};
 use eframe::egui;
+use std::collections::{BTreeMap, HashMap};
+use std::sync::Arc;
 
 /// What the page shows.
 pub struct SnapshotsInput<'a> {
     pub prefs: &'a SnapshotPrefs,
-    /// A token is in the Keychain (or the environment gives one).
-    pub token_saved: bool,
+    /// Where the providers' secrets are kept: asked which are saved, never for their values.
+    pub secrets: &'a Arc<SnapshotSecrets>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum SnapshotsAction {
-    /// Save the host's address and, if one was typed, the token.
+    /// Turn a provider on (which turns the one that was on off), or sharing off.
+    SetProvider(Option<&'static str>),
+    /// Save what was entered for a provider: its changed settings and any secrets typed.
     Save {
-        host: String,
-        token: Option<String>,
+        provider: &'static str,
+        fields: BTreeMap<String, String>,
+        secrets: BTreeMap<String, String>,
     },
-    RemoveToken,
+    RemoveSecret {
+        provider: &'static str,
+        field: &'static str,
+    },
     IncludeTrading(bool),
     Scale(SnapshotScale),
     ForgetConsent,
@@ -37,56 +48,33 @@ pub enum SnapshotsAction {
 
 #[derive(Default)]
 pub struct SnapshotsState {
-    host: String,
-    token: String,
-    loaded: bool,
-    /// What the last save said; the settings host sets it.
+    forms: HashMap<&'static str, ProviderForm>,
+    /// Which rows the user folded or unfolded; a row never touched is folded unless it needs
+    /// something.
+    open: HashMap<&'static str, Option<bool>>,
+    /// What the last change said, when it is not about one row.
     pub status: Option<StatusMessage>,
-    autosave: Autosave,
 }
 
 impl SnapshotsState {
-    /// Puts the saved address in its field, once.
-    fn load(&mut self, prefs: &SnapshotPrefs) {
-        if !self.loaded {
-            self.loaded = true;
-            self.host = prefs.host.clone().unwrap_or_default();
+    /// A save went through: what was typed in a provider's secret fields is the secure storage's
+    /// now, not the field's.
+    pub fn saved(&mut self, provider: &str) {
+        if let Some(provider) = snapshot_providers::provider(provider)
+            && let Some(form) = self.forms.get_mut(provider.descriptor().id)
+        {
+            form.saved(provider.descriptor());
         }
     }
 
-    /// What is wrong with the address in the field, if anything. Empty is fine: it clears it.
-    pub fn host_problem(&self) -> Option<&'static str> {
-        let text = self.host.trim();
-        (!text.is_empty())
-            .then(|| SnapshotHost::parse(text).err().map(|error| error.message()))
-            .flatten()
-    }
-
-    pub fn token_problem(&self) -> Option<&'static str> {
-        let token = self.token.trim();
-        (!token.is_empty() && !token_is_valid(token))
-            .then_some("A token has no spaces and only plain letters, digits and symbols.")
-    }
-
-    pub fn can_save(&self, prefs: &SnapshotPrefs) -> bool {
-        self.host_problem().is_none()
-            && self.token_problem().is_none()
-            && (self.host.trim() != prefs.host.as_deref().unwrap_or_default()
-                || !self.token.trim().is_empty())
-    }
-
-    /// What saving the page means.
-    pub fn save_action(&self) -> SnapshotsAction {
-        let token = self.token.trim();
-        SnapshotsAction::Save {
-            host: self.host.trim().to_owned(),
-            token: (!token.is_empty()).then(|| token.to_owned()),
+    /// Says what a row's last change did, on the row.
+    pub fn say_for(&mut self, provider: &str, status: Option<StatusMessage>) {
+        if let Some(provider) = snapshot_providers::provider(provider) {
+            self.forms
+                .entry(provider.descriptor().id)
+                .or_default()
+                .status = status;
         }
-    }
-
-    /// A save went through: the token is the Keychain's now, not the field's.
-    pub fn saved_token(&mut self) {
-        self.token.clear();
     }
 }
 
@@ -96,84 +84,41 @@ pub fn body(
     input: &SnapshotsInput,
     actions: &mut Vec<SnapshotsAction>,
 ) {
-    state.load(input.prefs);
-    match input.prefs.host() {
-        Some(host) => status_badge(ui, &format!("Sharing to {}", host.authority()), Tone::Good),
-        None => status_badge(ui, "Sharing not set up", Tone::Neutral),
-    }
+    sharing_badge(ui, input);
     ui.add_space(18.0);
 
     section(
         ui,
-        "Sharing",
-        Some("Where Copy link, Open in new tab and Tweet image upload a snapshot."),
+        "Hosting",
+        Some(
+            "Where Copy link, Open in new tab and Tweet image upload a snapshot. Turn one on to \
+             share; only one is used at a time.",
+        ),
         |ui| {
-            card(ui, |ui| {
-                let host = ui
-                    .vertical(|ui| {
-                        field(
-                            ui,
-                            "Snapshot host",
-                            Some(
-                                "An https:// address that takes the image and answers with a link.",
-                            ),
-                            "https://snapshots.example.com/v1/snapshots",
-                            &mut state.host,
-                            false,
-                        )
-                    })
-                    .inner;
-                state.autosave.watch(&host, false);
-                if let Some(problem) = state.host_problem() {
-                    problem_line(ui, problem);
-                }
-                let token = ui
-                    .vertical(|ui| {
-                        let hint = if input.token_saved {
-                            "A token is saved. Type a new one to replace it."
-                        } else {
-                            "Sent as a bearer token, if the host asks for one."
-                        };
-                        field(
-                            ui,
-                            "Access token (optional)",
-                            Some(hint),
-                            "",
-                            &mut state.token,
-                            true,
-                        )
-                    })
-                    .inner;
-                state.autosave.watch(&token, true);
-                if let Some(problem) = state.token_problem() {
-                    problem_line(ui, problem);
-                }
-                if input.token_saved && destructive_button(ui, "Remove Token").clicked() {
-                    actions.push(SnapshotsAction::RemoveToken);
-                }
-            });
+            let card_input = CardInput {
+                prefs: input.prefs,
+                secrets: input.secrets,
+            };
+            for provider in snapshot_providers::registry() {
+                let id = provider.descriptor().id;
+                let form = state.forms.entry(id).or_default();
+                let open = state.open.entry(id).or_default();
+                provider_card(ui, *provider, &card_input, form, open, actions);
+                ui.add_space(10.0);
+            }
             if let Some(status) = &state.status {
-                ui.add_space(8.0);
                 status_message(ui, &status.text, status.is_error);
             }
         },
     );
-    // Saved as it is typed: the address when typing pauses, a token when its field is left.
-    if state.autosave.due(ui.ctx()) {
-        if state.can_save(input.prefs) {
-            actions.push(state.save_action());
-        } else {
-            state.autosave.cancel();
-        }
-    }
     kit::notice_card(
         ui,
         Icon::InfoCircle,
         theme::text_secondary(),
-        "DegenView does not host snapshots",
+        "Nothing is uploaded until you turn a host on",
         Some(
-            "Sharing uploads the image to the host above, which you run or trust. Saving or \
-             copying an image never uploads anything.",
+            "Saving or copying an image never uploads anything. Sharing uploads the image to the \
+             host that is on, and DegenView asks once before the first upload to each.",
         ),
         None,
     );
@@ -219,8 +164,8 @@ pub fn body(
         settings_card::card(
             ui,
             Icon::LockFill,
-            "Approved hosts",
-            Some(&approved_hosts_hint(&input.prefs.consented)),
+            "Approved destinations",
+            Some(&approved_hint(&input.prefs.consented)),
             |ui| {
                 if kit::sheet_button(ui, "Forget", false, count > 0).clicked() {
                     actions.push(SnapshotsAction::ForgetConsent);
@@ -230,8 +175,35 @@ pub fn body(
     });
 }
 
-/// The privacy card's words: which hosts the user has agreed to upload to.
-fn approved_hosts_hint(consented: &[String]) -> String {
+/// The line at the top of the page: where sharing goes now.
+fn sharing_badge(ui: &mut egui::Ui, input: &SnapshotsInput) {
+    let provider = input
+        .prefs
+        .provider
+        .as_deref()
+        .and_then(snapshot_providers::provider);
+    let Some(provider) = provider else {
+        status_badge(ui, "Sharing is off", Tone::Neutral);
+        return;
+    };
+    let id = provider.descriptor().id;
+    let settings = input.prefs.settings_of(id);
+    match provider.readiness(&settings, &input.secrets.presence(provider)) {
+        Readiness::Ready => status_badge(
+            ui,
+            &format!("Sharing to {}", provider.label(&settings)),
+            Tone::Good,
+        ),
+        Readiness::Needs(_) => status_badge(
+            ui,
+            &format!("{} needs setting up", provider.descriptor().name),
+            Tone::Warning,
+        ),
+    }
+}
+
+/// The privacy card's words: which destinations the user has agreed to upload to.
+fn approved_hint(consented: &[String]) -> String {
     if consented.is_empty() {
         "DegenView asks before the first upload to a host, and never uploads on its own.".to_owned()
     } else {
@@ -242,129 +214,219 @@ fn approved_hosts_hint(consented: &[String]) -> String {
     }
 }
 
-fn problem_line(ui: &mut egui::Ui, problem: &str) {
-    ui.label(kit::text(
-        problem,
-        kit::size::CAPTION + 0.5,
-        kit::REGULAR,
-        kit::RED,
-    ));
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::snapshot::SELF_HOSTED;
+    use crate::service::keychain_api_keys::MemoryBackend;
 
-    fn state(host: &str, token: &str) -> SnapshotsState {
-        SnapshotsState {
-            host: host.to_owned(),
-            token: token.to_owned(),
-            loaded: true,
-            status: None,
-            autosave: Autosave::default(),
+    pub(crate) fn secrets() -> Arc<SnapshotSecrets> {
+        Arc::new(SnapshotSecrets::with(
+            Box::new(MemoryBackend::default()),
+            Box::new(|_| None),
+        ))
+    }
+
+    fn draw(
+        prefs: &SnapshotPrefs,
+        state: &mut SnapshotsState,
+        secrets: &Arc<SnapshotSecrets>,
+        size: egui::Vec2,
+    ) -> Vec<SnapshotsAction> {
+        let ctx = egui::Context::default();
+        let mut actions = Vec::new();
+        let raw = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+            ..Default::default()
+        };
+        let mut out = ctx.run_ui(raw, |ui| {
+            body(ui, state, &SnapshotsInput { prefs, secrets }, &mut actions);
+        });
+        out.textures_delta.clear();
+        actions
+    }
+
+    #[test]
+    fn the_privacy_card_names_the_destinations_agreed_to() {
+        assert!(approved_hint(&[]).contains("asks before the first upload"));
+        let hint = approved_hint(&["api.imgbb.com".into(), "b.example:8443".into()]);
+        assert!(hint.contains("api.imgbb.com, b.example:8443"));
+    }
+
+    #[test]
+    fn the_page_draws_with_nothing_on_and_asks_for_nothing() {
+        let secrets = secrets();
+        let mut state = SnapshotsState::default();
+        let actions = draw(
+            &SnapshotPrefs::default(),
+            &mut state,
+            &secrets,
+            egui::vec2(700.0, 1100.0),
+        );
+        assert!(actions.is_empty(), "drawing a page asks for nothing");
+        // One row per provider, none unfolded while nothing needs anything.
+        assert_eq!(state.forms.len(), snapshot_providers::registry().len());
+        assert!(state.open.values().all(|open| open.is_none()));
+    }
+
+    #[test]
+    fn the_page_draws_every_state_without_asking_for_anything() {
+        let secrets = secrets();
+        for provider in [
+            None,
+            Some("imgbb"),
+            Some(SELF_HOSTED),
+            Some("from-the-future"),
+        ] {
+            let mut prefs = SnapshotPrefs::default();
+            prefs.activate(provider);
+            prefs.set_field(SELF_HOSTED, "host", "https://s.example/up");
+            let mut state = SnapshotsState::default();
+            // Narrow and wide: the header's state moves to a dot.
+            for size in [egui::vec2(420.0, 1100.0), egui::vec2(700.0, 1100.0)] {
+                assert!(draw(&prefs, &mut state, &secrets, size).is_empty());
+            }
         }
     }
 
     #[test]
-    fn a_host_is_checked_as_it_is_typed() {
-        assert_eq!(state("", "").host_problem(), None, "empty clears the host");
-        assert_eq!(state("https://s.example/up", "").host_problem(), None);
-        assert!(state("s.example", "").host_problem().is_some());
-        assert!(
-            state("http://s.example/up", "")
-                .host_problem()
-                .unwrap()
-                .contains("https://")
-        );
-        assert!(
-            state("https://u:p@s.example/up", "")
-                .host_problem()
-                .is_some()
-        );
+    fn a_provider_that_is_on_and_not_ready_starts_unfolded() {
+        let secrets = secrets();
+        let mut prefs = SnapshotPrefs::default();
+        prefs.activate(Some("imgbb"));
+        let mut state = SnapshotsState::default();
+        draw(&prefs, &mut state, &secrets, egui::vec2(700.0, 1100.0));
+        // Nothing is recorded: the row simply opens because it needs something.
+        assert_eq!(state.open.get("imgbb"), Some(&None));
     }
 
     #[test]
-    fn a_token_that_cannot_ride_in_a_header_is_refused() {
-        assert_eq!(state("", "abc123").token_problem(), None);
-        assert_eq!(state("", "").token_problem(), None);
-        assert!(state("", "has space").token_problem().is_some());
-        assert!(state("", "é").token_problem().is_some());
-    }
-
-    #[test]
-    fn save_needs_a_change_and_nothing_wrong() {
-        let prefs = SnapshotPrefs {
-            host: Some("https://s.example/up".into()),
-            ..SnapshotPrefs::default()
-        };
-        assert!(
-            !state("https://s.example/up", "").can_save(&prefs),
-            "no change"
-        );
-        assert!(state("https://other.example/up", "").can_save(&prefs));
-        assert!(state("https://s.example/up", "new-token").can_save(&prefs));
-        assert!(
-            state("", "").can_save(&prefs),
-            "clearing the host is a change"
-        );
-        assert!(!state("nonsense", "").can_save(&prefs));
-        assert!(!state("https://s.example/up", "bad token").can_save(&prefs));
-        assert!(
-            !state("", "").can_save(&SnapshotPrefs::default()),
-            "nothing to save"
-        );
-    }
-
-    #[test]
-    fn save_sends_the_trimmed_address_and_only_a_typed_token() {
+    fn a_save_clears_what_was_typed_in_a_secret_field() {
+        let mut state = SnapshotsState::default();
+        let secrets = secrets();
+        let mut prefs = SnapshotPrefs::default();
+        prefs.activate(Some("imgbb"));
+        draw(&prefs, &mut state, &secrets, egui::vec2(700.0, 1100.0));
+        state.saved("imgbb");
+        state.saved("not-a-provider");
+        state.say_for("imgbb", Some(StatusMessage::ok("Saved")));
         assert_eq!(
-            state("  https://s.example/up ", "").save_action(),
-            SnapshotsAction::Save {
-                host: "https://s.example/up".into(),
-                token: None
-            }
-        );
-        assert_eq!(
-            state("https://s.example/up", " tok ").save_action(),
-            SnapshotsAction::Save {
-                host: "https://s.example/up".into(),
-                token: Some("tok".into())
-            }
+            state
+                .forms
+                .get("imgbb")
+                .and_then(|form| form.status.as_ref())
+                .map(|s| s.text.as_str()),
+            Some("Saved")
         );
     }
 
+    /// The page in each state, in both themes, at the Settings window's width and at its
+    /// narrowest. Run by hand to look at it:
+    /// `DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib gallery_of_the_snapshots_page -- --ignored`.
     #[test]
-    fn the_privacy_card_names_the_hosts_agreed_to() {
-        assert!(approved_hosts_hint(&[]).contains("asks before the first upload"));
-        let hint = approved_hosts_hint(&["a.example".into(), "b.example:8443".into()]);
-        assert!(hint.contains("a.example, b.example:8443"));
-    }
-
-    #[test]
-    fn the_page_draws_and_reports_a_switch() {
-        let ctx = egui::Context::default();
-        let prefs = SnapshotPrefs::default();
-        let mut page = SnapshotsState::default();
-        let mut actions = Vec::new();
-        let raw = egui::RawInput {
-            screen_rect: Some(egui::Rect::from_min_size(
-                egui::Pos2::ZERO,
-                egui::vec2(700.0, 900.0),
-            )),
-            ..Default::default()
-        };
-        let mut out = ctx.run_ui(raw, |ui| {
-            body(
-                ui,
-                &mut page,
-                &SnapshotsInput {
-                    prefs: &prefs,
-                    token_saved: false,
-                },
-                &mut actions,
+    #[ignore = "writes pictures"]
+    fn gallery_of_the_snapshots_page() {
+        use crate::ui::render_tests::Screen;
+        use crate::ui::settings_window::{SettingsSection, page_shell};
+        use crate::ui::theme::{self, AppTheme};
+        let _restore = theme::RestoreDefaultTheme;
+        let secrets = secrets();
+        let key = snapshot_providers::provider("imgbb")
+            .and_then(|provider| provider.descriptor().field("key"))
+            .expect("the key field");
+        secrets
+            .save("imgbb", key, "0123456789abcdef0123456789abcdef")
+            .unwrap();
+        let with_key = |provider: Option<&str>| {
+            let mut prefs = SnapshotPrefs::default();
+            prefs.activate(provider);
+            prefs.set_field(
+                SELF_HOSTED,
+                "host",
+                "https://snaps.example.com/v1/snapshots",
             );
-        });
-        out.textures_delta.clear();
-        assert!(actions.is_empty(), "drawing a page asks for nothing");
+            prefs.set_field("imgbb", "expiry", "7d");
+            prefs
+        };
+        let bare = SnapshotsInput {
+            prefs: &SnapshotPrefs::default(),
+            secrets: &self::secrets(),
+        };
+        let _ = bare;
+        let cases: Vec<(&str, SnapshotPrefs, Arc<SnapshotSecrets>, &[&str])> = vec![
+            ("off", SnapshotPrefs::default(), self::secrets(), &[]),
+            (
+                "imgbb-needs-a-key",
+                with_key(Some("imgbb")),
+                self::secrets(),
+                &[],
+            ),
+            (
+                "imgbb-active",
+                with_key(Some("imgbb")),
+                secrets.clone(),
+                &["imgbb"],
+            ),
+            (
+                "self-hosted",
+                with_key(Some(SELF_HOSTED)),
+                secrets.clone(),
+                &[SELF_HOSTED],
+            ),
+            (
+                "both-open",
+                with_key(Some("imgbb")),
+                secrets.clone(),
+                &["imgbb", SELF_HOSTED],
+            ),
+        ];
+        for app_theme in [AppTheme::Dark, AppTheme::Light] {
+            let suffix = if app_theme == AppTheme::Dark {
+                "dark"
+            } else {
+                "light"
+            };
+            for (name, prefs, secrets, open) in &cases {
+                for (width, tag) in [(616.0, "wide"), (330.0, "narrow")] {
+                    let mut state = SnapshotsState::default();
+                    for id in *open {
+                        if let Some(provider) = snapshot_providers::provider(id) {
+                            state.open.insert(provider.descriptor().id, Some(true));
+                        }
+                    }
+                    let mut screen = Screen::new(egui::vec2(width, 1_700.0));
+                    theme::apply(&screen.ctx, app_theme);
+                    // The logo is an image: it decodes on a loader's thread, over a few frames.
+                    egui_extras::install_image_loaders(&screen.ctx);
+                    let mut last = None;
+                    for frame in 0..4 {
+                        if frame == 3 {
+                            std::thread::sleep(std::time::Duration::from_millis(400));
+                        }
+                        last = Some(screen.run(Vec::new(), |ui| {
+                            let mut page =
+                                ui.new_child(egui::UiBuilder::new().max_rect(ui.max_rect()));
+                            page_shell(
+                                &mut page,
+                                SettingsSection::Snapshots,
+                                "Share a picture of a chart, and choose what it shows.",
+                                |ui| {
+                                    body(
+                                        ui,
+                                        &mut state,
+                                        &SnapshotsInput { prefs, secrets },
+                                        &mut Vec::new(),
+                                    );
+                                },
+                            );
+                        }));
+                    }
+                    screen.save(
+                        &format!("snapshots-page-{name}-{tag}-{suffix}"),
+                        last.expect("a frame"),
+                    );
+                }
+            }
+        }
     }
 }

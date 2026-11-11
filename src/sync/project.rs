@@ -151,8 +151,12 @@ pub fn project_setting(key: &str, value: &str) -> Option<Projected> {
     }
     let mut value = serde_json::from_str::<Value>(value).ok()?;
     if key == "snapshot.prefs" {
-        // Where to upload and how, but never which hosts this Mac consented to send images to.
-        value = keep_fields(&value, &["host", "include_trading", "scale"]);
+        // Which provider to upload to and how it is set up (never a secret: those stay in each
+        // Mac's secure storage), but never which destinations this Mac consented to send images to.
+        value = keep_fields(
+            &value,
+            &["provider", "providers", "include_trading", "scale"],
+        );
     }
     Some(Projected::new(
         EntityKind::Setting,
@@ -584,21 +588,48 @@ mod tests {
     #[test]
     fn snapshot_prefs_never_carry_consented_hosts() {
         let value = json!({
-            "host": "snaps.example", "include_trading": true, "scale": "X2",
+            "provider": "self_hosted",
+            "providers": {"self_hosted": {"host": "https://snaps.example/up"}},
+            "include_trading": true, "scale": "X2",
             "consented": ["evil.example"]
         })
         .to_string();
         let projected = project_setting("snapshot.prefs", &value).unwrap();
         let body: Value = serde_json::from_slice(&projected.payload).unwrap();
         assert!(body.get("consented").is_none());
-        assert_eq!(body["host"], "snaps.example");
+        assert_eq!(body["provider"], "self_hosted");
+        assert_eq!(
+            body["providers"]["self_hosted"]["host"],
+            "https://snaps.example/up"
+        );
         let other = json!({
-            "host": "snaps.example", "include_trading": true, "scale": "X2", "consented": []
+            "provider": "self_hosted",
+            "providers": {"self_hosted": {"host": "https://snaps.example/up"}},
+            "include_trading": true, "scale": "X2", "consented": []
         })
         .to_string();
         assert_eq!(
             project_setting("snapshot.prefs", &other).unwrap().hash,
             projected.hash
         );
+    }
+
+    #[test]
+    fn snapshot_prefs_carry_a_provider_that_is_off_and_never_a_stray_host() {
+        // Off is an explicit `null`, and syncs as one.
+        let off =
+            json!({"provider": null, "providers": {}, "scale": "X2", "include_trading": false})
+                .to_string();
+        let body: Value =
+            serde_json::from_slice(&project_setting("snapshot.prefs", &off).unwrap().payload)
+                .unwrap();
+        assert!(body["provider"].is_null());
+        assert!(body.as_object().unwrap().contains_key("provider"));
+        // A leftover `host` from before providers is not sent on.
+        let legacy = json!({"host": "https://old.example/up", "provider": null}).to_string();
+        let body: Value =
+            serde_json::from_slice(&project_setting("snapshot.prefs", &legacy).unwrap().payload)
+                .unwrap();
+        assert!(body.get("host").is_none());
     }
 }

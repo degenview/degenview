@@ -10,13 +10,12 @@
 
 use super::content::snapshot_images;
 use super::*;
-use crate::host::snapshot_host::{Hosting, SnapshotHost};
-use crate::model::snapshot::{
-    self, SnapshotAction, SnapshotDimensions, SnapshotHost as HostAddress, SnapshotRequest,
-};
+use crate::host::snapshot_host::{Hosting, SnapshotHost, TURN_ON_A_HOST};
+use crate::model::snapshot::{self, SnapshotAction, SnapshotDimensions, SnapshotRequest};
 use crate::service::snapshot_job::{self, Outcome, Retry, SystemBackend};
+use crate::service::snapshot_providers::Destination;
 use crate::service::snapshot_raster;
-use crate::service::{keychain_snapshot_token, timezone, work_queue};
+use crate::service::{timezone, work_queue};
 use crate::ui::SnapshotInput;
 use crate::ui::icons::Icon;
 use crate::ui::kit;
@@ -32,13 +31,14 @@ struct Running {
     /// What the post says when the snapshot is shared on X.
     title: String,
     timeframe: String,
-    host: Option<HostAddress>,
+    /// Where the image went: only a hosted action has one.
+    destination: Option<Destination>,
 }
 
 /// A hosted action that waits for the user to agree to the upload.
 struct AwaitingConsent {
     request: SnapshotRequest,
-    host: HostAddress,
+    destination: Destination,
 }
 
 /// An upload that failed in a way that may pass, waiting for the user's answer.
@@ -47,7 +47,7 @@ struct AwaitingRetry {
     message: String,
     title: String,
     timeframe: String,
-    host: HostAddress,
+    destination: Destination,
 }
 
 /// What a workspace keeps of its snapshots between frames.
@@ -86,9 +86,10 @@ impl ChartWorkspace {
 
     /// What the camera menu needs to know about hosting.
     pub(super) fn snapshot_hosting(&self) -> Hosting {
-        self.snapshots
-            .as_ref()
-            .map_or(Hosting::NotConfigured, SnapshotHost::hosting)
+        self.snapshots.as_ref().map_or_else(
+            || Hosting::Unavailable(TURN_ON_A_HOST.to_owned()),
+            SnapshotHost::hosting,
+        )
     }
 
     /// Takes the snapshot `action` asks for of chart `chart_id`.
@@ -116,17 +117,20 @@ impl ChartWorkspace {
             self.start_snapshot(ctx, request, None);
             return;
         }
-        let Some(host) = prefs.host() else {
-            self.say(
-                "Set a snapshot host in Settings ▸ Snapshots to share.",
-                true,
-            );
-            return;
+        let destination = match self.snapshot_hosting() {
+            Hosting::Ready(destination) => destination,
+            Hosting::Unavailable(reason) => {
+                self.say(reason, true);
+                return;
+            }
         };
-        if prefs.has_consented(&host) {
-            self.start_snapshot(ctx, request, Some(host));
+        if prefs.has_consented(&destination.consent_key()) {
+            self.start_snapshot(ctx, request, Some(destination));
         } else {
-            self.snapshot.consent = Some(AwaitingConsent { request, host });
+            self.snapshot.consent = Some(AwaitingConsent {
+                request,
+                destination,
+            });
         }
     }
 
@@ -211,7 +215,7 @@ impl ChartWorkspace {
         &mut self,
         ctx: &Context,
         request: SnapshotRequest,
-        host: Option<HostAddress>,
+        destination: Option<Destination>,
     ) {
         let SnapshotRequest {
             chart_id,
@@ -242,10 +246,10 @@ impl ChartWorkspace {
             timezone::local_utc_offset_secs(now),
         );
         let (sender, receiver) = mpsc::channel();
-        let (worker_ctx, worker_host) = (ctx.clone(), host.clone());
+        let (worker_ctx, worker_destination) = (ctx.clone(), destination.clone());
         let stand_in = self.snapshot.backend.clone();
         work_queue::SNAPSHOTS.submit(move || {
-            let backend = stand_in.unwrap_or_else(|| system_backend(worker_host));
+            let backend = stand_in.unwrap_or_else(|| system_backend(worker_destination));
             let outcome = snapshot_job::run(action, &scene, &name, &*backend);
             let _ = sender.send(outcome);
             worker_ctx.request_repaint();
@@ -255,18 +259,19 @@ impl ChartWorkspace {
             receiver,
             title,
             timeframe,
-            host,
+            destination,
         });
     }
 
     /// Uploads a kept image again.
     fn retry_snapshot(&mut self, ctx: &Context, waiting: AwaitingRetry) {
         let (sender, receiver) = mpsc::channel();
-        let (worker_ctx, host, retry) = (ctx.clone(), waiting.host.clone(), waiting.retry);
+        let (worker_ctx, destination, retry) =
+            (ctx.clone(), waiting.destination.clone(), waiting.retry);
         let action = retry.action;
         let stand_in = self.snapshot.backend.clone();
         work_queue::SNAPSHOTS.submit(move || {
-            let backend = stand_in.unwrap_or_else(|| system_backend(Some(host)));
+            let backend = stand_in.unwrap_or_else(|| system_backend(Some(destination)));
             let _ = sender.send(snapshot_job::retry(retry, &*backend));
             worker_ctx.request_repaint();
         });
@@ -275,7 +280,7 @@ impl ChartWorkspace {
             receiver,
             title: waiting.title,
             timeframe: waiting.timeframe,
-            host: Some(waiting.host),
+            destination: Some(waiting.destination),
         });
     }
 
@@ -338,13 +343,13 @@ impl ChartWorkspace {
             Outcome::Failed {
                 message,
                 retry: Some(retry),
-            } if running.host.is_some() => {
-                self.snapshot.retry = running.host.map(|host| AwaitingRetry {
+            } if running.destination.is_some() => {
+                self.snapshot.retry = running.destination.map(|destination| AwaitingRetry {
                     retry,
                     message,
                     title: running.title,
                     timeframe: running.timeframe,
-                    host,
+                    destination,
                 });
             }
             Outcome::Failed { message, .. } => self.say(message, true),
@@ -365,9 +370,10 @@ impl ChartWorkspace {
         }
         if let Some(waiting) = &self.snapshot.consent {
             let message = format!(
-                "To share this chart, DegenView uploads its image to {}. Anyone who has the link \
-                 can open it. Saving or copying an image never uploads anything.",
-                waiting.host.authority()
+                "To share this chart, DegenView uploads its image to {}. {} Saving or copying an \
+                 image never uploads anything.",
+                waiting.destination.label(),
+                waiting.destination.notice()
             );
             let outcome = kit::alert(
                 ctx,
@@ -386,11 +392,12 @@ impl ChartWorkspace {
                 Some(kit::ConfirmOutcome::Confirmed) => {
                     if let Some(waiting) = self.snapshot.consent.take() {
                         if let Some(host) = &self.snapshots
-                            && let Err(error) = host.consent(None, &waiting.host)
+                            && let Err(error) =
+                                host.consent(None, &waiting.destination.consent_key())
                         {
                             self.say(error, true);
                         }
-                        self.start_snapshot(ctx, waiting.request, Some(waiting.host));
+                        self.start_snapshot(ctx, waiting.request, Some(waiting.destination));
                     }
                 }
                 Some(kit::ConfirmOutcome::Cancelled) => self.snapshot.consent = None,
@@ -424,17 +431,20 @@ impl ChartWorkspace {
     }
 }
 
-/// The real backend for a job, with the token read here, on the worker: a Keychain prompt must
-/// never stop the window.
-fn system_backend(host: Option<HostAddress>) -> Arc<dyn snapshot_job::Backend> {
-    Arc::new(SystemBackend::new(host, keychain_snapshot_token::token()))
+/// The real backend for a job. It reads the provider's secrets itself, on the worker: a
+/// Keychain prompt must never stop the window.
+fn system_backend(destination: Option<Destination>) -> Arc<dyn snapshot_job::Backend> {
+    Arc::new(SystemBackend::new(destination))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::model::Kline;
+    use crate::model::snapshot::SELF_HOSTED;
     use crate::model::snapshot::{SharedSnapshot, UploadError};
+    use crate::service::keychain_api_keys::MemoryBackend;
+    use crate::service::keychain_snapshot_secrets::SnapshotSecrets;
     use crate::service::snapshot_export::ExportError;
     use crate::store::SharedStore;
     use std::path::{Path, PathBuf};
@@ -508,7 +518,14 @@ mod tests {
         workspace.charts[index]
             .chart
             .set_snapshot_size_for_tests(egui::vec2(640.0, 400.0));
-        let host = SnapshotHost::load(store);
+        // Secure storage of its own: tests do not share a key.
+        let host = SnapshotHost::load_with(
+            store,
+            Arc::new(SnapshotSecrets::with(
+                Box::new(MemoryBackend::default()),
+                Box::new(|_| None),
+            )),
+        );
         workspace.set_snapshots(&host);
         let fake = Arc::new(Fake::default());
         workspace.snapshot.backend = Some(fake.clone());
@@ -523,11 +540,28 @@ mod tests {
 
     impl Rig {
         fn share_to(&self, address: &str, consented: bool) {
-            self.host.set_host(None, address).unwrap();
+            self.host.set_provider(None, Some(SELF_HOSTED)).unwrap();
+            self.host
+                .set_fields(
+                    None,
+                    SELF_HOSTED,
+                    &std::collections::BTreeMap::from([("host".to_owned(), address.to_owned())]),
+                )
+                .unwrap();
             if consented {
-                self.host
-                    .consent(None, &self.host.prefs().host().expect("a host"))
-                    .unwrap();
+                let Hosting::Ready(destination) = self.host.hosting() else {
+                    panic!("a host was set");
+                };
+                self.host.consent(None, &destination.consent_key()).unwrap();
+            }
+        }
+
+        /// Turns ImgBB on with a key saved.
+        fn share_to_imgbb(&self, consented: bool) {
+            self.host.set_provider(None, Some("imgbb")).unwrap();
+            self.host.save_secret("imgbb", "key", "abc123").unwrap();
+            if consented {
+                self.host.consent(None, "api.imgbb.com").unwrap();
             }
         }
 
@@ -635,6 +669,58 @@ mod tests {
             assert!(error && text.contains("Settings"), "{text}");
         }
         assert_eq!(*rig.fake.uploads.lock().unwrap(), 0);
+    }
+
+    #[test]
+    fn imgbb_turned_on_without_a_key_says_so_and_uploads_nothing() {
+        let mut rig = rig();
+        rig.host.set_provider(None, Some("imgbb")).unwrap();
+        rig.workspace
+            .begin_snapshot(&rig.ctx, rig.chart_id, SnapshotAction::CopyLink);
+        assert!(!rig.workspace.snapshot_busy());
+        let (text, error) = rig.notice().expect("a reason");
+        assert!(error && text.contains("ImgBB API key"), "{text}");
+        assert!(matches!(
+            rig.workspace.snapshot_hosting(),
+            Hosting::Unavailable(reason) if reason.contains("ImgBB")
+        ));
+        assert_eq!(*rig.fake.uploads.lock().unwrap(), 0);
+    }
+
+    #[test]
+    fn the_first_upload_to_imgbb_asks_by_name_and_remembers_the_answer_for_the_service() {
+        let mut rig = rig();
+        rig.share_to_imgbb(false);
+        rig.workspace
+            .begin_snapshot(&rig.ctx, rig.chart_id, SnapshotAction::CopyLink);
+        let waiting = rig.workspace.snapshot.consent.as_ref().expect("asks first");
+        assert_eq!(waiting.destination.label(), "ImgBB");
+        assert_eq!(waiting.destination.consent_key(), "api.imgbb.com");
+        assert!(waiting.destination.notice().contains("ImgBB's terms"));
+        assert_eq!(*rig.fake.uploads.lock().unwrap(), 0);
+        // After the user agrees, the next one goes straight out.
+        rig.workspace.snapshot.consent = None;
+        rig.host.consent(None, "api.imgbb.com").unwrap();
+        rig.fake
+            .answers
+            .lock()
+            .unwrap()
+            .push(link("https://i.ibb.co/a/b.png"));
+        rig.workspace
+            .begin_snapshot(&rig.ctx, rig.chart_id, SnapshotAction::CopyLink);
+        assert!(rig.workspace.snapshot.consent.is_none());
+        rig.finish();
+        assert_eq!(*rig.fake.uploads.lock().unwrap(), 1);
+    }
+
+    #[test]
+    fn agreeing_to_a_host_of_your_own_is_not_agreeing_to_imgbb() {
+        let mut rig = rig();
+        rig.share_to("https://snap.example.com/up", true);
+        rig.share_to_imgbb(false);
+        rig.workspace
+            .begin_snapshot(&rig.ctx, rig.chart_id, SnapshotAction::CopyLink);
+        assert!(rig.workspace.snapshot.consent.is_some());
     }
 
     #[test]
@@ -780,7 +866,7 @@ mod tests {
         assert!(commands.is_empty());
         assert!(rig.workspace.snapshot.retry.is_none());
         let (text, error) = rig.notice().expect("a message");
-        assert!(error && text.contains("refused the token"), "{text}");
+        assert!(error && text.contains("refused the credentials"), "{text}");
     }
 
     #[test]

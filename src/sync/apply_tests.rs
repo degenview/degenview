@@ -512,7 +512,7 @@ fn snapshot_preferences_never_overwrite_this_macs_consented_hosts() {
         .unwrap()
         .set_setting(
             "snapshot.prefs",
-            &json!({"host": null, "include_trading": false, "scale": "X1", "consented": ["trusted.example"]}),
+            &json!({"provider": null, "providers": {}, "include_trading": false, "scale": "X1", "consented": ["trusted.example"]}),
         )
         .unwrap();
     // The later edit wins; two edits in one millisecond would be decided by random device ids.
@@ -522,7 +522,11 @@ fn snapshot_preferences_never_overwrite_this_macs_consented_hosts() {
         .unwrap()
         .set_setting(
             "snapshot.prefs",
-            &json!({"host": "snaps.example", "include_trading": true, "scale": "X2", "consented": ["evil.example"]}),
+            &json!({
+                "provider": "imgbb",
+                "providers": {"imgbb": {"expiry": "7d"}},
+                "include_trading": true, "scale": "X2", "consented": ["evil.example"]
+            }),
         )
         .unwrap();
     settle(&mut a, &mut b);
@@ -533,9 +537,50 @@ fn snapshot_preferences_never_overwrite_this_macs_consented_hosts() {
         .raw_setting("snapshot.prefs")
         .unwrap()
         .unwrap();
-    assert_eq!(prefs["host"], "snaps.example");
+    assert_eq!(prefs["provider"], "imgbb");
+    assert_eq!(prefs["providers"]["imgbb"]["expiry"], "7d");
     assert_eq!(prefs["include_trading"], true);
     assert_eq!(prefs["consented"], json!(["trusted.example"]));
+}
+
+#[test]
+fn a_mac_from_before_providers_does_not_turn_this_macs_provider_off() {
+    let (_cloud, mut a, mut b) = pair();
+    a.core.start();
+    b.core.start();
+    b.store
+        .lock()
+        .unwrap()
+        .set_setting(
+            "snapshot.prefs",
+            &json!({"provider": "imgbb", "providers": {"imgbb": {"expiry": "1d"}}, "include_trading": false, "scale": "X1", "consented": []}),
+        )
+        .unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(3));
+    // The older Mac knows only a `host`, and changes the scale.
+    a.store
+        .lock()
+        .unwrap()
+        .set_setting(
+            "snapshot.prefs",
+            &json!({"host": "https://old.example/up", "include_trading": false, "scale": "X2", "consented": []}),
+        )
+        .unwrap();
+    settle(&mut a, &mut b);
+    let prefs = b
+        .store
+        .lock()
+        .unwrap()
+        .raw_setting("snapshot.prefs")
+        .unwrap()
+        .unwrap();
+    assert_eq!(prefs["scale"], "X2", "what the older Mac changed is taken");
+    assert_eq!(
+        prefs["provider"], "imgbb",
+        "the provider chosen here is kept"
+    );
+    let read: crate::model::snapshot::SnapshotPrefs = serde_json::from_value(prefs).unwrap();
+    assert_eq!(read.provider.as_deref(), Some("imgbb"));
 }
 
 #[test]

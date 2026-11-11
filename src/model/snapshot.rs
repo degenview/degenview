@@ -6,6 +6,7 @@
 use crate::format;
 use crate::model::webhook_policy::{self, ParsedUrl};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 /// The longest side of a snapshot, in pixels.
 pub const MAX_SIDE_PX: u32 = 8192;
@@ -290,7 +291,8 @@ impl SnapshotHost {
         }
     }
 
-    fn loopback(&self) -> bool {
+    /// Whether the host is this computer, where plain `http://` is accepted (for development).
+    pub fn loopback(&self) -> bool {
         is_loopback(&self.parsed.host)
     }
 }
@@ -313,15 +315,15 @@ struct HostAnswer {
     expires_at: Option<serde_json::Value>,
 }
 
-/// A link a host hands back is something the user will open and send on: HTTPS (or this
-/// computer, for a host that is), no credentials, no spaces, a sane length.
-fn checked_link(link: &str, host: &SnapshotHost) -> Option<String> {
+/// A link a host hands back is something the user will open and send on: HTTPS (or plain HTTP
+/// when `allow_http`, for a host on this computer), no credentials, no spaces, a sane length.
+pub fn checked_link(link: &str, allow_http: bool) -> Option<String> {
     let link = link.trim();
     if link.is_empty() || link.chars().count() > MAX_LINK_CHARS {
         return None;
     }
     let parsed = webhook_policy::parse_url(link)?;
-    let allowed = parsed.scheme == "https" || (host.loopback() && parsed.scheme == "http");
+    let allowed = parsed.scheme == "https" || (allow_http && parsed.scheme == "http");
     (allowed && parsed.userinfo.is_none() && !parsed.host.is_empty()).then(|| link.to_owned())
 }
 
@@ -335,14 +337,14 @@ pub fn parse_upload_response(
     let url = answer
         .url
         .as_deref()
-        .and_then(|link| checked_link(link, host))
+        .and_then(|link| checked_link(link, host.loopback()))
         .ok_or(UploadError::BadResponse)?;
     Ok(SharedSnapshot {
         url,
         delete_url: answer
             .delete_url
             .as_deref()
-            .and_then(|link| checked_link(link, host)),
+            .and_then(|link| checked_link(link, host.loopback())),
         expires_at: answer.expires_at.and_then(|value| match value {
             serde_json::Value::String(text) => Some(text.chars().take(64).collect()),
             serde_json::Value::Number(number) => Some(number.to_string()),
@@ -373,13 +375,14 @@ pub enum UploadError {
 }
 
 impl UploadError {
-    pub fn message(&self) -> String {
+    /// What to tell the user. `label` is where the image was going ("ImgBB", "snap.example.com").
+    pub fn message(&self, label: &str) -> String {
         match self {
             Self::TooLarge => "The image is too large to upload.".to_owned(),
-            Self::Offline => "Could not reach the snapshot host. Check your connection.".to_owned(),
-            Self::Timeout => "The snapshot host took too long to answer.".to_owned(),
+            Self::Offline => format!("Could not reach {label}. Check your connection."),
+            Self::Timeout => format!("{label} took too long to answer."),
             Self::Unauthorized => {
-                "The snapshot host refused the token. Check Settings ▸ Snapshots.".to_owned()
+                format!("{label} refused the credentials. Check Settings ▸ Snapshots.")
             }
             Self::RateLimited {
                 retry_after: Some(seconds),
@@ -387,9 +390,9 @@ impl UploadError {
             Self::RateLimited { retry_after: None } => {
                 "Too many uploads. Try again in a moment.".to_owned()
             }
-            Self::RejectedAsTooLarge => "The snapshot host says the image is too large.".to_owned(),
-            Self::Server(code) => format!("The snapshot host failed (HTTP {code})."),
-            Self::BadResponse => "The snapshot host did not return a link.".to_owned(),
+            Self::RejectedAsTooLarge => format!("{label} says the image is too large."),
+            Self::Server(code) => format!("{label} failed (HTTP {code})."),
+            Self::BadResponse => format!("{label} did not return a link."),
         }
     }
 
@@ -404,26 +407,84 @@ impl UploadError {
 
 // MARK: Settings
 
+/// A provider's non-secret settings: its fields' keys and the values the user gave. Secrets are
+/// never here; they live in the system's secure storage.
+pub type FieldValues = BTreeMap<String, String>;
+
 /// What the user chose about snapshots, saved as one setting.
-#[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(default)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(from = "StoredPrefs")]
 pub struct SnapshotPrefs {
-    /// Where hosted snapshots are uploaded; none until the user sets one.
-    pub host: Option<String>,
+    /// The host hosted snapshots are uploaded to (a provider's id); none until the user turns one
+    /// on, and only one at a time. An id this build does not know is kept, and inactive.
+    pub provider: Option<String>,
+    /// Each provider's settings, by provider id. Kept for a provider that is off, so turning it
+    /// back on finds what was entered.
+    pub providers: BTreeMap<String, FieldValues>,
     /// Orders, positions and their stops on the chart. Off: they show the account's holdings.
     pub include_trading: bool,
     pub scale: SnapshotScale,
-    /// The hosts (`host[:port]`) the user agreed to send images to.
+    /// What the user agreed to send images to: one entry per destination, as the provider names
+    /// it (`host[:port]` for a host of their own).
     pub consented: Vec<String>,
+}
+
+/// The id of the provider that speaks DegenView's own protocol: what the one `host` of an older
+/// save becomes.
+pub const SELF_HOSTED: &str = "self_hosted";
+
+/// How the setting is read: also the shape older versions wrote, where the one host was a
+/// top-level `host` and sharing was on whenever it was set.
+#[derive(Default, Deserialize)]
+#[serde(default)]
+struct StoredPrefs {
+    host: Option<String>,
+    /// `None` when the key is missing (an older save), `Some(None)` when it is `null` (every
+    /// provider turned off on purpose).
+    #[serde(deserialize_with = "present")]
+    provider: Option<Option<String>>,
+    providers: BTreeMap<String, FieldValues>,
+    include_trading: bool,
+    scale: SnapshotScale,
+    consented: Vec<String>,
+}
+
+fn present<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer).map(Some)
+}
+
+impl From<StoredPrefs> for SnapshotPrefs {
+    fn from(stored: StoredPrefs) -> Self {
+        let mut prefs = Self {
+            provider: stored.provider.clone().flatten(),
+            providers: stored.providers,
+            include_trading: stored.include_trading,
+            scale: stored.scale,
+            consented: stored.consented,
+        };
+        // An older save: nobody who set a host loses it. Once the provider is written (even as
+        // off) a stray `host`, such as one an older Mac syncs in, is ignored.
+        if stored.provider.is_none()
+            && let Some(host) = stored.host.filter(|host| !host.trim().is_empty())
+        {
+            prefs.provider = Some(SELF_HOSTED.to_owned());
+            prefs
+                .providers
+                .entry(SELF_HOSTED.to_owned())
+                .or_default()
+                .entry("host".to_owned())
+                .or_insert(host);
+        }
+        prefs
+    }
 }
 
 impl SnapshotPrefs {
     pub const KEY: &'static str = "snapshot.prefs";
-
-    /// The configured host, if it is a valid one.
-    pub fn host(&self) -> Option<SnapshotHost> {
-        SnapshotHost::parse(self.host.as_deref()?).ok()
-    }
 
     pub fn options(&self) -> SnapshotOptions {
         SnapshotOptions {
@@ -432,13 +493,41 @@ impl SnapshotPrefs {
         }
     }
 
-    pub fn has_consented(&self, host: &SnapshotHost) -> bool {
-        self.consented.contains(&host.authority())
+    /// What a provider has been given (nothing, for one never set up).
+    pub fn settings_of(&self, provider: &str) -> FieldValues {
+        self.providers.get(provider).cloned().unwrap_or_default()
     }
 
-    pub fn consent(&mut self, host: &SnapshotHost) {
-        if !self.has_consented(host) {
-            self.consented.push(host.authority());
+    /// Turns `provider` on, which turns the one that was on off; `None` turns sharing off.
+    pub fn activate(&mut self, provider: Option<&str>) {
+        self.provider = provider.map(str::to_owned);
+    }
+
+    /// Sets one of a provider's fields; an empty value clears it.
+    pub fn set_field(&mut self, provider: &str, key: &str, value: &str) {
+        let value = value.trim();
+        if value.is_empty() {
+            if let Some(fields) = self.providers.get_mut(provider) {
+                fields.remove(key);
+                if fields.is_empty() {
+                    self.providers.remove(provider);
+                }
+            }
+        } else {
+            self.providers
+                .entry(provider.to_owned())
+                .or_default()
+                .insert(key.to_owned(), value.to_owned());
+        }
+    }
+
+    pub fn has_consented(&self, destination: &str) -> bool {
+        self.consented.iter().any(|entry| entry == destination)
+    }
+
+    pub fn consent(&mut self, destination: &str) {
+        if !self.has_consented(destination) {
+            self.consented.push(destination.to_owned());
         }
     }
 }
@@ -702,37 +791,144 @@ mod tests {
             UploadError::RateLimited {
                 retry_after: Some(7)
             }
-            .message(),
+            .message("ImgBB"),
             "Too many uploads. Try again in 7 s."
         );
     }
 
     #[test]
-    fn the_defaults_share_nothing_and_include_no_trading() {
-        let prefs = SnapshotPrefs::default();
-        assert_eq!(prefs.host(), None);
-        assert!(!prefs.include_trading);
-        assert_eq!(prefs.scale, SnapshotScale::X2);
-        // An older or partial save still reads.
-        let read: SnapshotPrefs =
-            serde_json::from_str(r#"{"host":"https://s.example/up"}"#).unwrap();
-        assert!(read.host().is_some());
-        assert!(!read.include_trading);
+    fn what_went_wrong_names_where_the_image_was_going() {
+        assert_eq!(
+            UploadError::Unauthorized.message("ImgBB"),
+            "ImgBB refused the credentials. Check Settings ▸ Snapshots."
+        );
+        assert_eq!(
+            UploadError::Offline.message("snap.example.com"),
+            "Could not reach snap.example.com. Check your connection."
+        );
+        assert_eq!(
+            UploadError::Server(502).message("ImgBB"),
+            "ImgBB failed (HTTP 502)."
+        );
+        assert_eq!(
+            UploadError::BadResponse.message("ImgBB"),
+            "ImgBB did not return a link."
+        );
+    }
+
+    fn read(json: &str) -> SnapshotPrefs {
+        serde_json::from_str(json).expect("prefs")
     }
 
     #[test]
-    fn consent_is_per_host() {
+    fn the_defaults_share_nothing_and_include_no_trading() {
+        let prefs = SnapshotPrefs::default();
+        assert_eq!(prefs.provider, None);
+        assert!(prefs.providers.is_empty());
+        assert!(!prefs.include_trading);
+        assert_eq!(prefs.scale, SnapshotScale::X2);
+        // Nothing saved reads as the defaults.
+        assert_eq!(read("{}"), prefs);
+    }
+
+    #[test]
+    fn a_save_from_before_providers_keeps_its_host_and_keeps_sharing_to_it() {
+        let prefs = read(
+            r#"{"host":"https://s.example/up","include_trading":true,"scale":"X1","consented":["s.example"]}"#,
+        );
+        assert_eq!(prefs.provider.as_deref(), Some(SELF_HOSTED));
+        assert_eq!(
+            prefs
+                .settings_of(SELF_HOSTED)
+                .get("host")
+                .map(String::as_str),
+            Some("https://s.example/up")
+        );
+        assert!(prefs.include_trading);
+        assert_eq!(prefs.scale, SnapshotScale::X1);
+        assert!(prefs.has_consented("s.example"));
+        // An older save that never set a host shares to nothing.
+        assert_eq!(read(r#"{"host":null,"scale":"X1"}"#).provider, None);
+        assert_eq!(read(r#"{"host":"  "}"#).provider, None);
+    }
+
+    #[test]
+    fn once_the_provider_is_written_a_stray_host_is_ignored() {
+        // Turned off on purpose: the `null` is a choice, not a missing key.
+        let off = read(r#"{"provider":null,"host":"https://s.example/up"}"#);
+        assert_eq!(off.provider, None);
+        assert!(off.providers.is_empty());
+        // Another provider is on: an older Mac's host does not replace it.
+        let other = read(r#"{"provider":"imgbb","host":"https://s.example/up"}"#);
+        assert_eq!(other.provider.as_deref(), Some("imgbb"));
+        assert!(other.providers.is_empty());
+    }
+
+    #[test]
+    fn a_migrated_save_is_written_in_the_new_shape_and_reads_back_the_same() {
+        let migrated = read(r#"{"host":"https://s.example/up"}"#);
+        let json = serde_json::to_value(&migrated).unwrap();
+        assert!(json.get("host").is_none(), "{json}");
+        assert_eq!(json["provider"], SELF_HOSTED);
+        assert_eq!(
+            serde_json::from_value::<SnapshotPrefs>(json).unwrap(),
+            migrated
+        );
+        // Off is written as an explicit null so it is not migrated back on.
+        let off = SnapshotPrefs::default();
+        let json = serde_json::to_value(&off).unwrap();
+        assert!(json["provider"].is_null());
+        assert!(json.as_object().unwrap().contains_key("provider"));
+    }
+
+    #[test]
+    fn a_provider_this_build_does_not_know_is_kept() {
+        let prefs = read(r#"{"provider":"cloudinary","providers":{"cloudinary":{"cloud":"x"}}}"#);
+        assert_eq!(prefs.provider.as_deref(), Some("cloudinary"));
+        let back = serde_json::to_value(&prefs).unwrap();
+        assert_eq!(back["providers"]["cloudinary"]["cloud"], "x");
+    }
+
+    #[test]
+    fn turning_a_provider_on_turns_the_other_off_and_keeps_what_it_was_given() {
         let mut prefs = SnapshotPrefs::default();
-        let a = SnapshotHost::parse("https://a.example/up").unwrap();
-        let b = SnapshotHost::parse("https://b.example/up").unwrap();
-        assert!(!prefs.has_consented(&a));
-        prefs.consent(&a);
-        prefs.consent(&a);
-        assert!(prefs.has_consented(&a) && !prefs.has_consented(&b));
+        prefs.set_field("imgbb", "expiry", "7d");
+        prefs.activate(Some("imgbb"));
+        prefs.activate(Some(SELF_HOSTED));
+        assert_eq!(prefs.provider.as_deref(), Some(SELF_HOSTED));
+        assert_eq!(
+            prefs.settings_of("imgbb").get("expiry").map(String::as_str),
+            Some("7d"),
+            "the one switched off keeps its settings"
+        );
+        prefs.activate(None);
+        assert_eq!(prefs.provider, None);
+    }
+
+    #[test]
+    fn a_field_is_trimmed_and_an_empty_one_clears_it() {
+        let mut prefs = SnapshotPrefs::default();
+        prefs.set_field(SELF_HOSTED, "host", "  https://s.example/up ");
+        assert_eq!(
+            prefs
+                .settings_of(SELF_HOSTED)
+                .get("host")
+                .map(String::as_str),
+            Some("https://s.example/up")
+        );
+        prefs.set_field(SELF_HOSTED, "host", "   ");
+        assert!(prefs.providers.is_empty(), "nothing left, nothing kept");
+        prefs.set_field("never-set", "x", "");
+        assert!(prefs.providers.is_empty());
+    }
+
+    #[test]
+    fn consent_is_per_destination() {
+        let mut prefs = SnapshotPrefs::default();
+        assert!(!prefs.has_consented("a.example"));
+        prefs.consent("a.example");
+        prefs.consent("a.example");
+        assert!(prefs.has_consented("a.example") && !prefs.has_consented("b.example"));
         assert_eq!(prefs.consented.len(), 1);
-        // The same host on another path is the same consent; another port is not.
-        let moved = SnapshotHost::parse("https://a.example/other").unwrap();
-        let other_port = SnapshotHost::parse("https://a.example:8443/up").unwrap();
-        assert!(prefs.has_consented(&moved) && !prefs.has_consented(&other_port));
     }
 }

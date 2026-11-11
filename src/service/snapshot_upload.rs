@@ -1,14 +1,12 @@
-//! Uploads a snapshot to the host the user configured and returns the link it made.
+//! Uploads a snapshot to the provider the user turned on and returns the link it made.
 //!
-//! The protocol is small on purpose (it is written down in `docs/snapshots.md`): one `POST` of the
-//! PNG as `image/png`, an optional bearer token, and `{"url": "https://…"}` back. One call is one
-//! attempt with no redirects, so the address the user approved is the only one the image is sent
-//! to; trying again is the caller's choice.
+//! What differs between providers (the request they want, the answer they give) is theirs, in
+//! `snapshot_providers`; what is the same lives here: the size and PNG checks, one attempt with no
+//! redirects (so the address the user agreed to is the only one the image is sent to; trying
+//! again is the caller's choice), a time limit, and what the common HTTP statuses mean.
 
-use crate::model::snapshot::{
-    MAX_RESPONSE_BYTES, MAX_UPLOAD_BYTES, SharedSnapshot, SnapshotHost, UploadError,
-    parse_upload_response,
-};
+use crate::model::snapshot::{MAX_RESPONSE_BYTES, MAX_UPLOAD_BYTES, SharedSnapshot, UploadError};
+use crate::service::snapshot_providers::{Destination, Purpose, Request, Secrets};
 use std::time::Duration;
 
 /// How long a host may take, connecting, taking the image and answering.
@@ -32,16 +30,9 @@ pub enum TransportError {
     Network,
 }
 
-/// What goes on the wire.
-pub struct Post<'a> {
-    pub url: &'a str,
-    pub token: Option<&'a str>,
-    pub png: &'a [u8],
-}
-
 /// The network seam: sends one request. Tests put a local server behind it.
 pub trait SnapshotTransport: Send + Sync {
-    fn post(&self, post: &Post) -> Result<HostResponse, TransportError>;
+    fn send(&self, request: &Request<'_>) -> Result<HostResponse, TransportError>;
 }
 
 pub struct UreqTransport {
@@ -69,19 +60,19 @@ impl UreqTransport {
 }
 
 impl SnapshotTransport for UreqTransport {
-    fn post(&self, post: &Post) -> Result<HostResponse, TransportError> {
-        let mut request = self
+    fn send(&self, request: &Request<'_>) -> Result<HostResponse, TransportError> {
+        let mut call = self
             .agent
-            .post(post.url)
-            .header("Content-Type", "image/png")
+            .post(&request.url)
+            .header("Content-Type", &request.content_type)
             .header(
                 "User-Agent",
                 concat!("DegenView/", env!("CARGO_PKG_VERSION")),
             );
-        if let Some(token) = post.token {
-            request = request.header("Authorization", format!("Bearer {token}"));
+        for (name, value) in &request.headers {
+            call = call.header(*name, value);
         }
-        let mut response = request.send(post.png).map_err(|error| match error {
+        let mut response = call.send(&request.body[..]).map_err(|error| match error {
             ureq::Error::Timeout(_) => TransportError::Timeout,
             _ => TransportError::Network,
         })?;
@@ -117,12 +108,13 @@ fn is_png(bytes: &[u8]) -> bool {
     bytes.starts_with(b"\x89PNG\r\n\x1a\n")
 }
 
-/// Uploads `png` to `host` and returns the snapshot it stored.
+/// Uploads `png` to `destination` and returns the snapshot it stored.
 pub fn upload(
     transport: &dyn SnapshotTransport,
-    host: &SnapshotHost,
-    token: Option<&str>,
+    destination: &Destination,
+    secrets: &Secrets,
     png: &[u8],
+    purpose: Purpose,
 ) -> Result<SharedSnapshot, UploadError> {
     if png.len() > MAX_UPLOAD_BYTES {
         return Err(UploadError::TooLarge);
@@ -131,35 +123,40 @@ pub fn upload(
         // Whatever this is, it is not what the host was promised.
         return Err(UploadError::BadResponse);
     }
-    if token.is_some_and(|token| !token_is_valid(token)) {
-        return Err(UploadError::Unauthorized);
-    }
-    let response = transport
-        .post(&Post {
-            url: host.endpoint(),
-            token,
-            png,
-        })
-        .map_err(|error| match error {
-            TransportError::Timeout => UploadError::Timeout,
-            TransportError::Network => UploadError::Offline,
-        })?;
+    let provider = destination.provider();
+    let request = provider.request(destination.settings(), secrets, png, purpose)?;
+    let response = transport.send(&request).map_err(|error| match error {
+        TransportError::Timeout => UploadError::Timeout,
+        TransportError::Network => UploadError::Offline,
+    })?;
     match response.status {
-        200 | 201 => parse_upload_response(&response.body, host),
-        401 | 403 => Err(UploadError::Unauthorized),
-        413 => Err(UploadError::RejectedAsTooLarge),
-        429 => Err(UploadError::RateLimited {
-            retry_after: response.retry_after,
-        }),
+        200 | 201 => provider.parse(destination.settings(), &response.body),
         // A redirect is never followed: the image goes to the address the user approved only.
-        300..=399 => Err(UploadError::BadResponse),
-        other => Err(UploadError::Server(other)),
+        _ => Err(provider.classify_failure(&response)),
     }
+}
+
+/// A one-pixel image, to check a provider's settings with.
+fn test_png() -> Result<Vec<u8>, UploadError> {
+    let image = eframe::egui::ColorImage::filled([1, 1], eframe::egui::Color32::WHITE);
+    crate::service::snapshot_export::encode_png(&image).map_err(|_| UploadError::BadResponse)
+}
+
+/// Checks `destination` with a real upload of a one-pixel image that the provider does not keep.
+pub fn test(
+    transport: &dyn SnapshotTransport,
+    destination: &Destination,
+    secrets: &Secrets,
+) -> Result<(), UploadError> {
+    upload(transport, destination, secrets, &test_png()?, Purpose::Test).map(|_| ())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::snapshot::{FieldValues, SnapshotHost};
+    use crate::service::snapshot_providers::imgbb::ImgBb;
+    use crate::service::snapshot_providers::self_hosted::SELF_HOSTED_PROVIDER;
     use std::io::{Read, Write};
     use std::net::TcpListener;
     use std::sync::{Arc, Mutex};
@@ -252,6 +249,27 @@ mod tests {
         (host, seen, thread)
     }
 
+    /// An upload to a host of the user's own, as the camera menu makes one.
+    fn upload_to(
+        transport: &dyn SnapshotTransport,
+        host: &SnapshotHost,
+        token: Option<&str>,
+        png: &[u8],
+    ) -> Result<SharedSnapshot, UploadError> {
+        let settings = FieldValues::from([("host".to_owned(), host.endpoint().to_owned())]);
+        let mut secrets = Secrets::default();
+        if let Some(token) = token {
+            secrets.insert("token", token.to_owned());
+        }
+        upload(
+            transport,
+            &Destination::new(&SELF_HOSTED_PROVIDER, settings),
+            &secrets,
+            png,
+            Purpose::Share,
+        )
+    }
+
     fn png() -> Vec<u8> {
         let mut bytes = b"\x89PNG\r\n\x1a\n".to_vec();
         bytes.extend_from_slice(&[7; 64]);
@@ -263,7 +281,7 @@ mod tests {
     #[test]
     fn an_upload_posts_the_png_with_its_token_and_returns_the_link() {
         let (host, seen, thread) = serve(vec![(201, "", LINK)]);
-        let shared = upload(
+        let shared = upload_to(
             &UreqTransport::default(),
             &host,
             Some("s3cret-token"),
@@ -288,7 +306,7 @@ mod tests {
     #[test]
     fn without_a_token_no_authorization_is_sent() {
         let (host, seen, thread) = serve(vec![(200, "", LINK)]);
-        upload(&UreqTransport::default(), &host, None, &png()).expect("uploaded");
+        upload_to(&UreqTransport::default(), &host, None, &png()).expect("uploaded");
         thread.join().unwrap();
         assert_eq!(seen.lock().unwrap()[0].header("authorization"), None);
     }
@@ -322,7 +340,7 @@ mod tests {
         for ((status, headers, body), expected) in cases {
             let (host, _, thread) = serve(vec![(status, headers, body)]);
             assert_eq!(
-                upload(&UreqTransport::default(), &host, None, &png()),
+                upload_to(&UreqTransport::default(), &host, None, &png()),
                 Err(expected),
                 "{status} {body}"
             );
@@ -338,7 +356,7 @@ mod tests {
             "",
         )]);
         assert_eq!(
-            upload(&UreqTransport::default(), &host, None, &png()),
+            upload_to(&UreqTransport::default(), &host, None, &png()),
             Err(UploadError::BadResponse)
         );
         thread.join().unwrap();
@@ -358,7 +376,7 @@ mod tests {
         };
         let host = SnapshotHost::parse(&format!("http://{closed}/up")).unwrap();
         assert_eq!(
-            upload(&UreqTransport::default(), &host, None, &png()),
+            upload_to(&UreqTransport::default(), &host, None, &png()),
             Err(UploadError::Offline)
         );
     }
@@ -375,7 +393,7 @@ mod tests {
         });
         let transport = UreqTransport::with_timeout(Duration::from_millis(100));
         assert_eq!(
-            upload(&transport, &host, None, &png()),
+            upload_to(&transport, &host, None, &png()),
             Err(UploadError::Timeout)
         );
         thread.join().unwrap();
@@ -385,7 +403,7 @@ mod tests {
     fn nothing_is_sent_that_the_host_would_not_take() {
         struct Never;
         impl SnapshotTransport for Never {
-            fn post(&self, _: &Post) -> Result<HostResponse, TransportError> {
+            fn send(&self, _: &Request<'_>) -> Result<HostResponse, TransportError> {
                 panic!("nothing should be sent");
             }
         }
@@ -396,16 +414,16 @@ mod tests {
             bytes
         };
         assert_eq!(
-            upload(&Never, &host, None, &huge),
+            upload_to(&Never, &host, None, &huge),
             Err(UploadError::TooLarge)
         );
         assert_eq!(
-            upload(&Never, &host, None, b"GIF89a not a png"),
+            upload_to(&Never, &host, None, b"GIF89a not a png"),
             Err(UploadError::BadResponse)
         );
         for token in ["has space", "new\nline", "", "tab\t"] {
             assert_eq!(
-                upload(&Never, &host, Some(token), &png()),
+                upload_to(&Never, &host, Some(token), &png()),
                 Err(UploadError::Unauthorized),
                 "{token:?}"
             );
@@ -425,10 +443,151 @@ mod tests {
     fn a_failure_is_not_repeated_by_itself() {
         let (host, seen, thread) = serve(vec![(503, "", "")]);
         assert_eq!(
-            upload(&UreqTransport::default(), &host, None, &png()),
+            upload_to(&UreqTransport::default(), &host, None, &png()),
             Err(UploadError::Server(503))
         );
         thread.join().unwrap();
         assert_eq!(seen.lock().unwrap().len(), 1);
+    }
+
+    // MARK: ImgBB, against a server on this computer
+
+    /// ImgBB's provider pointed at a server that answers each connection with the next answer.
+    fn imgbb_at(
+        answers: Vec<(u16, &'static str, &'static str)>,
+    ) -> (
+        Destination,
+        Arc<Mutex<Vec<Seen>>>,
+        std::thread::JoinHandle<()>,
+    ) {
+        let (host, seen, thread) = serve(answers);
+        // `serve` listens on `/v1/snapshots`; only the address matters here.
+        let endpoint: &'static str = Box::leak(
+            host.endpoint()
+                .replace("/v1/snapshots", "/1/upload")
+                .into_boxed_str(),
+        );
+        let provider: &'static ImgBb = Box::leak(Box::new(ImgBb::at(endpoint)));
+        (Destination::new(provider, FieldValues::new()), seen, thread)
+    }
+
+    fn imgbb_secrets(key: &str) -> Secrets {
+        let mut secrets = Secrets::default();
+        secrets.insert("key", key.to_owned());
+        secrets
+    }
+
+    const IMGBB_ANSWER: &str = r#"{"data":{"url":"https://i.ibb.co/a/b.png","delete_url":"https://ibb.co/a/del","time":"1552042565","expiration":"2592000"},"success":true,"status":200}"#;
+
+    #[test]
+    fn imgbb_gets_a_multipart_form_with_the_key_and_lifetime_in_the_query() {
+        let (destination, seen, thread) = imgbb_at(vec![(200, "", IMGBB_ANSWER)]);
+        let shared = upload(
+            &UreqTransport::default(),
+            &destination,
+            &imgbb_secrets("abc123"),
+            &png(),
+            Purpose::Share,
+        )
+        .expect("uploaded");
+        thread.join().unwrap();
+        assert_eq!(shared.url, "https://i.ibb.co/a/b.png");
+        assert_eq!(shared.delete_url.as_deref(), Some("https://ibb.co/a/del"));
+        let seen = seen.lock().unwrap();
+        assert_eq!(
+            seen[0].request_line,
+            "POST /1/upload?key=abc123&expiration=2592000 HTTP/1.1"
+        );
+        let content_type = seen[0].header("content-type").unwrap();
+        assert!(
+            content_type.starts_with("multipart/form-data; boundary="),
+            "{content_type}"
+        );
+        assert_eq!(seen[0].header("authorization"), None);
+        assert!(
+            seen[0]
+                .header("user-agent")
+                .unwrap()
+                .starts_with("DegenView/")
+        );
+        let body = &seen[0].body;
+        let text = String::from_utf8_lossy(body);
+        assert!(
+            text.contains("name=\"image\"; filename=\"snapshot.png\""),
+            "{text}"
+        );
+        assert!(!text.contains("abc123"), "the key is not in the body");
+        // The PNG's bytes are in the body as they are, not encoded.
+        assert!(
+            body.windows(png().len())
+                .any(|window| window == png().as_slice())
+        );
+    }
+
+    #[test]
+    fn a_check_uploads_a_tiny_image_that_expires_at_once() {
+        let (destination, seen, thread) = imgbb_at(vec![(200, "", IMGBB_ANSWER)]);
+        test(
+            &UreqTransport::default(),
+            &destination,
+            &imgbb_secrets("abc123"),
+        )
+        .expect("checked");
+        thread.join().unwrap();
+        let seen = seen.lock().unwrap();
+        assert_eq!(
+            seen[0].request_line,
+            "POST /1/upload?key=abc123&expiration=60 HTTP/1.1"
+        );
+        assert!(seen[0].body.len() < 1_000, "a one-pixel image, not a chart");
+    }
+
+    #[test]
+    fn imgbb_refusing_the_key_is_told_apart_from_its_other_failures() {
+        let bad_key = r#"{"status_code":400,"error":{"message":"Invalid API v1 key.","code":100}}"#;
+        for (status, body, expected) in [
+            (400, bad_key, UploadError::Unauthorized),
+            (429, "", UploadError::RateLimited { retry_after: None }),
+            (500, "", UploadError::Server(500)),
+            (200, "not json", UploadError::BadResponse),
+        ] {
+            let (destination, _, thread) = imgbb_at(vec![(status, "", body)]);
+            assert_eq!(
+                upload(
+                    &UreqTransport::default(),
+                    &destination,
+                    &imgbb_secrets("k"),
+                    &png(),
+                    Purpose::Share
+                ),
+                Err(expected),
+                "{status} {body}"
+            );
+            thread.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn without_a_key_nothing_is_sent_to_imgbb() {
+        struct Never;
+        impl SnapshotTransport for Never {
+            fn send(&self, _: &Request<'_>) -> Result<HostResponse, TransportError> {
+                panic!("nothing should be sent");
+            }
+        }
+        let destination = Destination::new(
+            &crate::service::snapshot_providers::imgbb::IMGBB,
+            FieldValues::new(),
+        );
+        assert_eq!(
+            upload(
+                &Never,
+                &destination,
+                &Secrets::default(),
+                &png(),
+                Purpose::Share
+            ),
+            Err(UploadError::Unauthorized)
+        );
     }
 }

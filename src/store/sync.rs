@@ -2840,7 +2840,7 @@ mod hook_tests {
     #[test]
     fn consenting_to_a_snapshot_host_does_not_sync() {
         let store = store(true);
-        let prefs = |consented: Vec<&str>| json!({"host": "h.example", "include_trading": false, "scale": "X2", "consented": consented});
+        let prefs = |consented: Vec<&str>| json!({"provider": "self_hosted", "providers": {"self_hosted": {"host": "https://h.example/up"}}, "include_trading": false, "scale": "X2", "consented": consented});
         store.set_setting("snapshot.prefs", &prefs(vec![])).unwrap();
         store
             .connection

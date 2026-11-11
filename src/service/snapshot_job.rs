@@ -4,8 +4,10 @@
 //! handed back as an [`Outcome`] for the window to carry out, so the app never reports a copy or
 //! an open that did not happen.
 
-use crate::model::snapshot::{SharedSnapshot, SnapshotAction, SnapshotHost, UploadError};
+use crate::model::snapshot::{SharedSnapshot, SnapshotAction, UploadError};
+use crate::service::keychain_snapshot_secrets::SnapshotSecrets;
 use crate::service::snapshot_export::{self, ExportError};
+use crate::service::snapshot_providers::{Destination, Purpose};
 use crate::service::snapshot_raster::{self, Scene};
 use crate::service::snapshot_upload::{self, SnapshotTransport, UreqTransport};
 use eframe::egui::ColorImage;
@@ -18,20 +20,26 @@ pub trait Backend: Send + Sync {
     fn choose_destination(&self, name: &str) -> Result<Option<PathBuf>, ExportError>;
     fn write(&self, path: &Path, png: &[u8]) -> Result<(), ExportError>;
     fn upload(&self, png: &[u8]) -> Result<SharedSnapshot, UploadError>;
+    /// Where uploads go, as the user reads it, for what is said when one fails.
+    fn label(&self) -> String {
+        "the snapshot host".to_owned()
+    }
 }
 
-/// The real thing: the system's save panel, the file system and the user's host.
+/// The real thing: the system's save panel, the file system and the provider the user turned on.
 pub struct SystemBackend {
-    pub host: Option<SnapshotHost>,
-    pub token: Option<String>,
+    pub destination: Option<Destination>,
+    /// Read on the worker, when an upload needs them: a secure-storage prompt must never stop
+    /// the window.
+    pub secrets: Arc<SnapshotSecrets>,
     pub transport: Arc<dyn SnapshotTransport>,
 }
 
 impl SystemBackend {
-    pub fn new(host: Option<SnapshotHost>, token: Option<String>) -> Self {
+    pub fn new(destination: Option<Destination>) -> Self {
         Self {
-            host,
-            token,
+            destination,
+            secrets: SnapshotSecrets::shared(),
             transport: Arc::new(UreqTransport::default()),
         }
     }
@@ -47,10 +55,17 @@ impl Backend for SystemBackend {
     }
 
     fn upload(&self, png: &[u8]) -> Result<SharedSnapshot, UploadError> {
-        let Some(host) = &self.host else {
+        let Some(destination) = &self.destination else {
             return Err(UploadError::Offline);
         };
-        snapshot_upload::upload(&*self.transport, host, self.token.as_deref(), png)
+        let secrets = self.secrets.read_all(destination.provider());
+        snapshot_upload::upload(&*self.transport, destination, &secrets, png, Purpose::Share)
+    }
+
+    fn label(&self) -> String {
+        self.destination
+            .as_ref()
+            .map_or_else(|| "the snapshot host".to_owned(), Destination::label)
     }
 }
 
@@ -102,7 +117,7 @@ fn host(action: SnapshotAction, png: Arc<Vec<u8>>, backend: &dyn Backend) -> Out
     match backend.upload(&png) {
         Ok(shared) => Outcome::Hosted { action, shared },
         Err(error) => Outcome::Failed {
-            message: error.message(),
+            message: error.message(&backend.label()),
             retry: error.retryable().then_some(Retry { action, png }),
         },
     }
