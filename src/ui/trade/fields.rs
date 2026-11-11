@@ -72,7 +72,7 @@ pub fn market_hero(ui: &mut Ui, hero: &Hero) {
         let price = kit::galley(
             ui,
             price,
-            18.0,
+            kit::size::TITLE2,
             kit::SEMIBOLD,
             theme::text_primary(),
             f32::INFINITY,
@@ -80,7 +80,14 @@ pub fn market_hero(ui: &mut Ui, hero: &Hero) {
         let change = hero.change.as_ref().map(|(text, up)| {
             let tint = if *up { theme::UP } else { theme::DOWN };
             (
-                kit::galley(ui, text, 12.0, kit::MEDIUM, tint, f32::INFINITY),
+                kit::galley(
+                    ui,
+                    text,
+                    kit::size::SUBHEADLINE,
+                    kit::MEDIUM,
+                    tint,
+                    f32::INFINITY,
+                ),
                 tint,
             )
         });
@@ -106,15 +113,21 @@ pub fn market_hero(ui: &mut Ui, hero: &Hero) {
     let symbol = kit::galley(
         ui,
         hero.symbol,
-        16.0,
+        kit::size::BODY + 1.0,
         kit::SEMIBOLD,
         theme::text_primary(),
         room,
     );
-    let subtitle = hero
-        .subtitle
-        .as_ref()
-        .map(|text| kit::galley(ui, text, 12.0, kit::REGULAR, theme::text_secondary(), room));
+    let subtitle = hero.subtitle.as_ref().map(|text| {
+        kit::galley(
+            ui,
+            text,
+            kit::size::SUBHEADLINE,
+            kit::REGULAR,
+            theme::text_secondary(),
+            room,
+        )
+    });
     let block = symbol.size().y + subtitle.as_ref().map_or(0.0, |g| g.size().y + 1.0);
     let mut y = rect.center().y - block / 2.0;
     let symbol_height = symbol.size().y;
@@ -132,17 +145,17 @@ pub fn label_row(ui: &mut Ui, label: &str, hint: Option<&str>) {
     ui.horizontal(|ui| {
         ui.label(kit::text(
             label,
-            kit::size::CAPTION + 2.0,
+            kit::size::SUBHEADLINE,
             kit::MEDIUM,
-            theme::text_primary(),
+            theme::text_secondary(),
         ));
         if let Some(hint) = hint {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.label(kit::text(
                     hint,
-                    kit::size::CAPTION + 2.0,
+                    kit::size::SUBHEADLINE,
                     kit::REGULAR,
-                    theme::text_secondary(),
+                    theme::text_tertiary(),
                 ));
             });
         }
@@ -186,7 +199,7 @@ pub fn number_field(
     step: Option<Decimal>,
     start: Option<Decimal>,
 ) -> Edit {
-    const SIZE: f32 = 16.0;
+    const SIZE: f32 = 14.0;
     let id = Id::new(("trade-number-field", salt));
     let focused = ui.memory(|memory| memory.has_focus(id));
     let (rect, background) =
@@ -245,7 +258,7 @@ pub fn number_field(
         6.0 + kit::galley(
             ui,
             unit,
-            13.0,
+            kit::size::CAPTION + 1.0,
             kit::REGULAR,
             theme::text_secondary(),
             f32::INFINITY,
@@ -289,7 +302,12 @@ pub fn number_field(
     );
     if !unit.is_empty() {
         inner.add_space(6.0);
-        inner.label(kit::text(unit, 13.0, kit::REGULAR, theme::text_secondary()));
+        inner.label(kit::text(
+            unit,
+            kit::size::CAPTION + 1.0,
+            kit::REGULAR,
+            theme::text_secondary(),
+        ));
     }
     if edit == Edit::None && *text != before {
         edit = Edit::Typed;
@@ -304,9 +322,9 @@ pub fn labelled_icon(ui: &mut Ui, icon: Icon, tint: Color32, label: &str) {
         icons::inline(ui, icon, 14.0, tint);
         ui.label(kit::text(
             label,
-            kit::size::CAPTION + 2.0,
+            kit::size::SUBHEADLINE,
             kit::MEDIUM,
-            theme::text_primary(),
+            theme::text_secondary(),
         ));
     });
     ui.add_space(6.0);
@@ -354,7 +372,14 @@ pub fn side_tabs(ui: &mut Ui, side: &mut Side) {
         } else {
             theme::text_primary()
         };
-        let galley = kit::galley(ui, label, 16.0, kit::SEMIBOLD, color, f32::INFINITY);
+        let galley = kit::galley(
+            ui,
+            label,
+            kit::size::BODY + 1.0,
+            kit::SEMIBOLD,
+            color,
+            f32::INFINITY,
+        );
         ui.painter()
             .galley(tab.center() - galley.size() / 2.0, galley, color);
         if response.clicked() {
@@ -427,7 +452,14 @@ pub fn class_tiles(
             class_icon(*value),
             color,
         );
-        let galley = kit::galley(ui, label, 13.0, kit::MEDIUM, color, tile.width() - 6.0);
+        let galley = kit::galley(
+            ui,
+            label,
+            kit::size::CAPTION + 1.0,
+            kit::MEDIUM,
+            color,
+            tile.width() - 6.0,
+        );
         ui.painter().galley(
             pos2(tile.center().x - galley.size().x / 2.0, tile.top() + 26.0),
             galley,
@@ -471,7 +503,7 @@ pub fn percent_row(ui: &mut Ui) -> Option<u32> {
         let galley = kit::galley(
             ui,
             &label,
-            13.0,
+            kit::size::CAPTION + 1.0,
             kit::SEMIBOLD,
             theme::text_primary(),
             f32::INFINITY,
@@ -517,9 +549,9 @@ pub fn summary_card(ui: &mut Ui, rows: &[SummaryRow]) {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 6.0;
                     let (size, weight, color) = if row.strong {
-                        (15.0, kit::SEMIBOLD, theme::text_primary())
+                        (kit::size::BODY, kit::SEMIBOLD, theme::text_primary())
                     } else {
-                        (14.0, kit::REGULAR, theme::text_secondary())
+                        (kit::size::BODY, kit::REGULAR, theme::text_secondary())
                     };
                     ui.label(kit::text(&row.label, size, weight, color));
                     if let Some(info) = row.info {

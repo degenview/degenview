@@ -2157,8 +2157,8 @@ pub fn cta_button(
         ButtonLook {
             tint,
             label: label_color,
-            height: 46.0,
-            size: size::BODY + 3.0,
+            height: 40.0,
+            size: size::BODY + 1.0,
             radius: 10.0,
         },
         enabled,

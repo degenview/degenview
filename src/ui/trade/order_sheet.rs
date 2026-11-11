@@ -1011,7 +1011,7 @@ fn available_line(ui: &mut egui::Ui, backend: &dyn TradingBackend, market: &Mark
     let label = kit::galley(
         ui,
         "Available",
-        kit::size::CAPTION + 2.0,
+        kit::size::CAPTION + 1.0,
         kit::REGULAR,
         theme::text_secondary(),
         f32::INFINITY,
@@ -1023,7 +1023,7 @@ fn available_line(ui: &mut egui::Ui, backend: &dyn TradingBackend, market: &Mark
             crate::model::broker_ticket::display(funds.value),
             funds.asset
         ),
-        kit::size::CAPTION + 2.0,
+        kit::size::CAPTION + 1.0,
         kit::SEMIBOLD,
         theme::text_primary(),
         f32::INFINITY,
@@ -1201,7 +1201,7 @@ fn open_orders(ui: &mut egui::Ui, state: &mut SheetState, backend: &dyn TradingB
     let title = kit::galley(
         ui,
         "Open orders",
-        kit::size::BODY + 1.0,
+        kit::size::BODY,
         kit::SEMIBOLD,
         theme::text_primary(),
         f32::INFINITY,
@@ -1215,7 +1215,7 @@ fn open_orders(ui: &mut egui::Ui, state: &mut SheetState, backend: &dyn TradingB
     let count = kit::galley(
         ui,
         &rows.len().to_string(),
-        kit::size::BODY + 1.0,
+        kit::size::BODY,
         kit::REGULAR,
         theme::text_secondary(),
         f32::INFINITY,
