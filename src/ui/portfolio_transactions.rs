@@ -20,7 +20,7 @@ use crate::ui::portfolio_grid::{
 };
 use crate::ui::portfolio_overview::{activity_caption, lift};
 use crate::ui::portfolio_table as table;
-use crate::ui::replay_bar::date_text;
+use crate::ui::replay::bar::date_text;
 use crate::ui::theme;
 use eframe::egui::{self, Align2, Color32, Rect, Sense, Stroke, pos2, vec2};
 use std::cmp::Ordering;

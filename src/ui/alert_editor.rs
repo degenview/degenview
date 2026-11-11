@@ -16,7 +16,7 @@ use crate::model::webhook::{EndpointId, WebhookEndpoint};
 use crate::service::watchlist_quotes::WatchlistQuoteBook;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, SEMIBOLD, size};
-use crate::ui::{theme, webhook_picker};
+use crate::ui::{theme, webhook::picker};
 use eframe::egui::{self, Color32, Id, Pos2, Rect, Sense, Stroke, Vec2};
 use std::collections::HashMap;
 
@@ -669,7 +669,7 @@ fn form(
 
     let context = state.example_context(now_ms);
     let mut message = std::mem::take(&mut state.webhook_message);
-    let open_settings = webhook_picker::send_section(
+    let open_settings = picker::send_section(
         ui,
         Id::new("price-alert-webhooks"),
         &mut state.sends_to_webhooks,

@@ -16,12 +16,12 @@
 use degenview_brokers::{Decimal, OrderId, Side};
 use eframe::egui::{self, Color32, FontId, Pos2, Rect, Sense, Vec2};
 
-use super::chart_card::PriceScale;
-use super::paper_chart_trading::{Drag, Pill, marker};
 use crate::model::broker::chart::{Unavailable, snap_to_increment};
 use crate::model::broker::ticket::display;
 use crate::ui::accessibility;
-use crate::ui::broker_badge::LIVE;
+use crate::ui::broker::badge::LIVE;
+use crate::ui::chart_card::PriceScale;
+use crate::ui::paper::chart_trading::{Drag, Pill, marker};
 use crate::ui::theme;
 
 /// One working order, as a line.
@@ -79,7 +79,7 @@ impl BrokerCardState {
         self.order_entry.is_some()
     }
 
-    pub(super) fn show_markers(
+    pub(in crate::ui) fn show_markers(
         &self,
         ui: &mut egui::Ui,
         plot: Rect,

@@ -600,7 +600,7 @@ fn link_tile(
     actions: &mut Vec<ToolSidebarAction>,
 ) {
     let linked = input.sync.is_linked();
-    let tip = crate::ui::link_charts::summary(input.sync);
+    let tip = crate::ui::workspace::link_charts::summary(input.sync);
     let response = tile_button(
         ui,
         rect,
@@ -629,7 +629,9 @@ fn link_tile(
         .align_alternatives(&[RectAlign::RIGHT_END])
         .gap(10.0)
         .show(|ui| {
-            if let Some(next) = crate::ui::link_charts::show(ui, input.sync, &input.unlinkable) {
+            if let Some(next) =
+                crate::ui::workspace::link_charts::show(ui, input.sync, &input.unlinkable)
+            {
                 actions.push(ToolSidebarAction::SetSync(next));
             }
         });

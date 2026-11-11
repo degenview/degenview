@@ -4,7 +4,7 @@
 //! strip draws minimize / maximize / close at its right end (`trailing_inset`) and, where the
 //! window system does not provide resize borders, [`edge_at`] finds the edge under the pointer.
 
-use super::theme;
+use crate::ui::theme;
 use eframe::egui::{
     self, Color32, CursorIcon, Id, Pos2, Rect, Sense, Stroke, Ui, Vec2, ViewportBuilder, pos2,
     vec2, viewport::ResizeDirection,
@@ -35,7 +35,7 @@ pub fn app_icon() -> std::sync::Arc<egui::IconData> {
     use std::sync::{Arc, OnceLock};
     static ICON: OnceLock<Arc<egui::IconData>> = OnceLock::new();
     Arc::clone(ICON.get_or_init(|| {
-        let bytes = include_bytes!("../../assets/brand/DegenView-512-rounded.png");
+        let bytes = include_bytes!("../../../assets/brand/DegenView-512-rounded.png");
         Arc::new(eframe::icon_data::from_png_bytes(bytes).expect("the bundled icon decodes"))
     }))
 }
@@ -103,8 +103,8 @@ pub fn paint_rounded_corners(ctx: &egui::Context) {
             viewport.fullscreen == Some(true),
         )
     });
-    if super::window_corners::corners_wanted(rounded_corners(), maximized, fullscreen) {
-        super::window_corners::erase(ctx, super::window_corners::WINDOW_CORNER_RADIUS);
+    if super::corners::corners_wanted(rounded_corners(), maximized, fullscreen) {
+        super::corners::erase(ctx, super::corners::WINDOW_CORNER_RADIUS);
     }
 }
 
@@ -169,7 +169,7 @@ pub fn window_controls(ui: &mut Ui, strip: Rect, maximized: bool) -> Option<Cont
             vec2(CONTROL_WIDTH, strip.height() - 1.0),
         );
         let response = ui.interact(rect, Id::new(("window-control", name)), Sense::click());
-        let response = super::accessibility::label(response, name).on_hover_text(name);
+        let response = crate::ui::accessibility::label(response, name).on_hover_text(name);
         let danger = control == Control::Close;
         if response.hovered() {
             painter.rect_filled(

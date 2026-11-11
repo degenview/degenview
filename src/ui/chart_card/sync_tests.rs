@@ -5,7 +5,7 @@ use super::*;
 use crate::model::chart::sync::{ChartSyncSettings, SyncHub, TimeAxis};
 use crate::model::chart::viewport::{DEFAULT_VISIBLE, HorizontalViewport};
 use crate::model::{ChartType, IndicatorConfig, Tool};
-use crate::ui::replay_overlay::ReplayChartFrame;
+use crate::ui::replay::overlay::ReplayChartFrame;
 use eframe::egui::Modifiers;
 
 const MINUTE: i64 = 60_000;

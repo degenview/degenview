@@ -12,7 +12,7 @@ use crate::model::webhook::{EndpointId, WebhookEndpoint};
 use crate::pine::builtins::alert::call::AlertCallSite;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, REGULAR, SEMIBOLD, size};
-use crate::ui::{sheet, theme, webhook_picker};
+use crate::ui::{sheet, theme, webhook::picker};
 use eframe::egui::{self, Id, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2};
 
 /// More call sites than this scroll instead of growing the sheet.
@@ -224,7 +224,7 @@ fn form(ui: &mut Ui, state: &mut PineAlertEditorState, input: &PineAlertEditorIn
     note_field(ui, state);
     ui.add_space(GAP);
 
-    let open_settings = webhook_picker::send_section(
+    let open_settings = picker::send_section(
         ui,
         Id::new("pine-alert-webhooks"),
         &mut state.sends_to_webhooks,
@@ -591,7 +591,7 @@ pub fn show_webhooks(
                 theme::text_primary(),
             );
             ui.add_space(GAP);
-            if webhook_picker::endpoint_picker(
+            if picker::endpoint_picker(
                 ui,
                 Id::new("pine-alert-webhook-list"),
                 &mut state.selection,

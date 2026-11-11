@@ -7,7 +7,7 @@ use super::undo::{Snapshot, UndoEntry};
 use super::{ChartWorkspace, PersistedChart, PersistedWorkspace};
 use crate::model::watchlist::{new_id, now_ms};
 use crate::model::{ChartColumn, ChartConfig, Drawing, LayoutSnapshot, SavedView};
-use crate::ui::layout_prompts::{self, NameOutcome, NamePrompt, UnsavedChoice};
+use crate::ui::workspace::layout_prompts::{self, NameOutcome, NamePrompt, UnsavedChoice};
 use eframe::egui;
 
 impl ChartWorkspace {

@@ -10,7 +10,7 @@ use crate::model::chart::kind::LineDash;
 use crate::model::chart::viewport::MIN_VISIBLE as MIN_VISIBLE_CANDLES;
 use crate::model::{ChartCanvas, IndicatorConfig, SmallPrices};
 use crate::ui::chart_buttons::NavAction;
-use crate::ui::replay_overlay::ReplayChartFrame;
+use crate::ui::replay::overlay::ReplayChartFrame;
 use eframe::egui::epaint::ClippedShape;
 use eframe::egui::vec2;
 

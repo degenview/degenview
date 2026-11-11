@@ -2,7 +2,7 @@
 
 use super::ChartWorkspace;
 use crate::model::{ClockCommand, ReplayInterval, ReplaySpeed, ReplayStatus, ReplayView};
-use crate::ui::replay_bar::{self, ReplayBarAction, ReplayBarInput};
+use crate::ui::replay::bar::{self, ReplayBarAction, ReplayBarInput};
 use eframe::egui;
 use std::time::{Duration, Instant};
 
@@ -223,7 +223,7 @@ impl ChartWorkspace {
             resolved_interval: None,
             available_intervals: &available,
         };
-        let actions = replay_bar::show(ui, &input);
+        let actions = bar::show(ui, &input);
         self.apply_replay_actions(actions);
     }
 

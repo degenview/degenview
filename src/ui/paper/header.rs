@@ -9,7 +9,7 @@
 use crate::model::paper::PaperCurrency;
 use crate::ui::icons::Icon;
 use crate::ui::kit::{self, Confirm, ConfirmOutcome};
-use crate::ui::paper_tables::{self, FooterFacts, PaperTab, footer_note};
+use crate::ui::paper::tables::{self, FooterFacts, PaperTab, footer_note};
 use crate::ui::trade::panel_header::{Chip, ChipRow, MoreItem};
 use eframe::egui::{self, Id};
 
@@ -340,7 +340,7 @@ pub const NO_ACCOUNT_MESSAGE: &str = "Create one to practise trading with simula
 
 /// What the panel shows when there is no account yet; true when "Create Account" was clicked.
 pub fn no_account_state(ui: &mut egui::Ui) -> bool {
-    paper_tables::empty_with_action(
+    tables::empty_with_action(
         ui,
         Icon::DocText,
         NO_ACCOUNT_TITLE,

@@ -11,7 +11,7 @@ use crate::ui::portfolio_charts::{
     axis_label_indices, date_label, empty_message, hover_index, is_profit, prepared_points,
     profit_runs, value_bounds,
 };
-use crate::ui::replay_bar::date_text;
+use crate::ui::replay::bar::date_text;
 use crate::ui::theme;
 use eframe::egui::{Align2, Color32, Id, Pos2, Rect, Stroke, Ui, Vec2};
 

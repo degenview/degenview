@@ -28,7 +28,7 @@ use crate::trading::model::{
 use crate::trading::preview::PreviewSlot;
 use crate::trading::task::Task;
 use crate::ui::icons::{self, Icon};
-use crate::ui::{broker_badge, dialog, kit, paper_form, theme};
+use crate::ui::{broker::badge, dialog, kit, paper::form, theme};
 
 /// How long what is typed must stay the same before the venue is asked about it.
 const DEBOUNCE: Duration = Duration::from_millis(450);
@@ -232,7 +232,7 @@ pub fn show(ui: &mut egui::Ui, state: &mut SheetState, input: &SheetInput) -> Ve
         return actions;
     };
     if info.kind.is_real_money() {
-        broker_badge::rule(ui);
+        badge::rule(ui);
     }
     let bstate = backend.state();
     egui::ScrollArea::vertical()
@@ -769,7 +769,7 @@ fn number(
         step,
         start,
     );
-    paper_form::field_footer(ui, error.as_ref(), None);
+    form::field_footer(ui, error.as_ref(), None);
     edit
 }
 
@@ -880,12 +880,12 @@ fn options(ui: &mut egui::Ui, state: &mut SheetState, rules: &MarketRules, check
             .iter()
             .position(|tif| *tif == state.draft.tif)
             .unwrap_or(0);
-        let look = paper_form::DropdownLook {
+        let look = form::DropdownLook {
             leading: Some(Icon::Clock),
             height: fields::FIELD_HEIGHT,
             chevron: Icon::ChevronDown,
         };
-        if let Some(index) = paper_form::dropdown_field_with(ui, &labels, selected, true, look) {
+        if let Some(index) = form::dropdown_field_with(ui, &labels, selected, true, look) {
             state.draft.tif = caps.time_in_force[index];
         }
         ui.add_space(14.0);
@@ -1150,7 +1150,7 @@ fn review_dialog(
     );
     let mut spec = dialog::Dialog::new(
         Icon::ArrowLeftRight,
-        broker_badge::LIVE,
+        badge::LIVE,
         "Place live order?",
         &message,
         "Place order",

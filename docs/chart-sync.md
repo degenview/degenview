@@ -5,7 +5,7 @@ implements is the "Linked Chart Zoom and Horizontal Position" document; this fil
 built, what is verified, and what is not.
 
 Code: `model::chart::sync` (pure model and tests), `ui/chart_card/sync.rs` (a chart's side),
-`ui/link_charts.rs` (the popover), the tool-strip tile in `ui/tool_sidebar.rs`, and the loop in
+`ui/workspace/link_charts.rs` (the popover), the tool-strip tile in `ui/workspace/tool_sidebar.rs`, and the loop in
 `workspace::ChartWorkspace::render_grid`. Tests: `model/chart/sync/tests.rs` and
 `ui/chart_card/sync_tests.rs` (several charts through egui's real pointer pipeline).
 

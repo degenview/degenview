@@ -5,7 +5,7 @@ use crate::model::DataSource;
 use crate::model::watchlist::WatchlistInstrument;
 use crate::service::SearchResult;
 use crate::ui::add_chart_sheet;
-use crate::ui::empty_state::{self, EmptyStateAction};
+use crate::ui::workspace::empty_state::{self, EmptyStateAction};
 use eframe::egui;
 use std::time::Duration;
 

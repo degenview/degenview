@@ -4,7 +4,7 @@
 use super::frame::{FrameData, FrameLayout, Overlays, PaneSlot, paint_pane_title};
 use super::overlays::OverlayFrame;
 use super::*;
-use crate::ui::paper_chart_trading::{MarkerMenu, PaperOverlayAction};
+use crate::ui::paper::chart_trading::{MarkerMenu, PaperOverlayAction};
 use crate::ui::scale_menu;
 use crate::ui::{kit, theme};
 
@@ -21,7 +21,7 @@ pub(super) struct LiveOverlays<'a> {
     pub alert_toggled: Vec<crate::model::alert::AlertId>,
     pub alert_deleted: Vec<crate::model::alert::AlertId>,
     pub paper: (Vec<PaperOverlayAction>, Option<MarkerMenu>),
-    pub live: Vec<crate::ui::broker_chart_trading::BrokerOverlayAction>,
+    pub live: Vec<crate::ui::broker::chart_trading::BrokerOverlayAction>,
     pub navigation: Option<chart_buttons::NavAction>,
     pub scale_mode: Option<PriceScaleMode>,
     pub overlay_action: Option<chart_indicator_strip::Action>,
@@ -74,7 +74,7 @@ impl Overlays for LiveOverlays<'_> {
             );
         }
         if self.replay.active {
-            replay_overlay::paint_active(main_painter, self.card.below_header(layout.plot));
+            overlay::paint_active(main_painter, self.card.below_header(layout.plot));
         }
         self.card.paint_zoom(self.ui, main_painter, layout.plot);
     }

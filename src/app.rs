@@ -51,7 +51,7 @@ use crate::ui::script_alert_list::ScriptAlertRow;
 use crate::ui::settings_mcp::McpSettingsInput;
 use crate::ui::settings_window;
 use crate::ui::shortcut;
-use crate::ui::tab_bar::{self, TabBar, TabView, WindowChoice};
+use crate::ui::window::tab_bar::{self, TabBar, TabView, WindowChoice};
 use crate::workspace::{ChartWorkspace, PersistedWorkspace, WorkspaceAction};
 use eframe::egui;
 use serde::{Deserialize, Serialize};
@@ -574,8 +574,8 @@ fn show_window(
     let Some(window) = env.host.window(window_id) else {
         return;
     };
-    crate::ui::window_chrome::handle_resize_edges(&ctx);
-    crate::ui::window_chrome::paint_rounded_corners(&ctx);
+    crate::ui::window::chrome::handle_resize_edges(&ctx);
+    crate::ui::window::chrome::paint_rounded_corners(&ctx);
     native_bridge::center_traffic_lights(tab_bar::HEIGHT);
     let focused = ui.input(|input| input.viewport().focused == Some(true));
     if focused {
@@ -738,14 +738,14 @@ fn show_mcp_confirmation(ctx: &egui::Context, host: &Mutex<ConfirmationHost>) {
         .lock()
         .map(|host| host.pending(now))
         .unwrap_or_default();
-    let answer = crate::ui::mcp_confirmation::show(ctx, &pending);
+    let answer = crate::ui::mcp::confirmation::show(ctx, &pending);
     let Some(answer) = answer else {
         return;
     };
     if let Ok(mut host) = host.lock() {
         match answer {
-            crate::ui::mcp_confirmation::Answer::Allow(id) => host.approve(now, id),
-            crate::ui::mcp_confirmation::Answer::Deny(id) => host.deny(now, id),
+            crate::ui::mcp::confirmation::Answer::Allow(id) => host.approve(now, id),
+            crate::ui::mcp::confirmation::Answer::Deny(id) => host.deny(now, id),
         }
     }
 }
@@ -931,10 +931,10 @@ impl DegenViewApp {
         );
         crate::service::cache_control::launch(&creation.egui_ctx);
         native_bridge::install(&creation.egui_ctx);
-        if crate::ui::window_chrome::rounded_corners()
+        if crate::ui::window::chrome::rounded_corners()
             && let Some(render_state) = creation.wgpu_render_state.as_ref()
         {
-            crate::ui::window_corners::install(render_state);
+            crate::ui::window::corners::install(render_state);
         }
 
         let watchlist = Arc::new(Mutex::new(WatchlistStore::new(store.clone())));
@@ -3033,7 +3033,7 @@ impl DegenViewApp {
             } else {
                 [960.0, 620.0]
             };
-            let mut builder = crate::ui::window_chrome::apply(
+            let mut builder = crate::ui::window::chrome::apply(
                 egui::ViewportBuilder::default()
                     .with_title(title)
                     .with_inner_size(placement.size)
@@ -3077,7 +3077,7 @@ impl DegenViewApp {
         let updates = self.updates.clone();
         let sync = self.sync.clone();
         let mcp_confirmations = Arc::clone(&self.mcp_confirmations);
-        let builder = crate::ui::window_chrome::branded(
+        let builder = crate::ui::window::chrome::branded(
             egui::ViewportBuilder::default()
                 .with_title("Settings")
                 .with_inner_size(settings_window::WINDOW_SIZE)
@@ -3262,7 +3262,7 @@ impl DegenViewApp {
         let notifier = Arc::clone(&self.notifier);
         let background_service = Arc::clone(&self.background_service);
         let runtime_control = Arc::clone(&self.alert_runtime_control);
-        let builder = crate::ui::window_chrome::branded(
+        let builder = crate::ui::window::chrome::branded(
             egui::ViewportBuilder::default()
                 .with_title("Alerts")
                 .with_inner_size([880.0, 600.0])
@@ -3635,9 +3635,9 @@ impl DegenViewApp {
 }
 
 impl eframe::App for DegenViewApp {
-    /// Clear where windows round their corners (`ui::window_corners`); otherwise eframe's default.
+    /// Clear where windows round their corners (`ui::window::corners`); otherwise eframe's default.
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
-        if crate::ui::window_chrome::rounded_corners() {
+        if crate::ui::window::chrome::rounded_corners() {
             [0.0; 4]
         } else {
             egui::Color32::from_rgba_unmultiplied(12, 12, 12, 180).to_normalized_gamma_f32()

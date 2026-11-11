@@ -29,12 +29,12 @@ use crate::model::broker::ticket::{self as rules, StatusTone};
 use crate::trading::model::AccountStats;
 use crate::ui::alert_center::Tone;
 use crate::ui::icons::Icon;
-use crate::ui::paper_grid::{self as grid, Col, col};
-use crate::ui::paper_tables::empty;
+use crate::ui::paper::grid::{self as grid, Col, col};
+use crate::ui::paper::tables::empty;
 use crate::ui::trade::panel_header::{self, Chip, Header, HeaderEvent, PanelEvent, VenueBar};
 use crate::ui::trade::tables::{self, OrderAction};
 use crate::ui::trade::{notice, stats_strip};
-use crate::ui::{broker_badge, dialog, kit, sheet, theme};
+use crate::ui::{broker::badge, dialog, kit, sheet, theme};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BrokerTab {
@@ -469,7 +469,7 @@ pub fn ui(
         return actions;
     }
     ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
-    broker_badge::rule(ui);
+    badge::rule(ui);
     let snapshot = host.snapshot(broker_id);
     let prefs = host.prefs(broker_id);
 
@@ -520,7 +520,7 @@ pub fn ui(
 }
 
 fn empty_with_settings(ui: &mut egui::Ui, message: &str) -> bool {
-    crate::ui::paper_tables::empty_with_action(
+    crate::ui::paper::tables::empty_with_action(
         ui,
         Icon::ArrowLeftRight,
         "Live trading",
@@ -1353,7 +1353,7 @@ fn edit_sheet(
         let message = "This changes the order at the broker. A new price may lose your place in the queue, and the order can fill at its old terms until the change is applied.";
         let mut dialog_spec = dialog::Dialog::new(
             Icon::Pencil,
-            broker_badge::LIVE,
+            badge::LIVE,
             "Change live order?",
             message,
             "Change order",
@@ -1463,7 +1463,7 @@ fn edit_sheet(
     let mut retry_preview = false;
     let sending = matches!(edit.stage, EditStage::Sending(_));
     sheet::show(ctx, Id::new("broker-edit"), 440.0, |ui| {
-        broker_badge::rule(ui);
+        badge::rule(ui);
         sheet::inset(ui, |ui| {
             ui.add_space(20.0);
             ui.label(kit::text(

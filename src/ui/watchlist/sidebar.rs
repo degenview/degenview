@@ -20,8 +20,8 @@ use crate::ui::kit::{self, Confirm, ConfirmOutcome};
 use crate::ui::sheet;
 use crate::ui::source_logo;
 use crate::ui::theme;
-use crate::ui::watchlist_rows::{self, RowStyle};
-use crate::ui::watchlist_style::{self as style, LEADING_INSET, TRAILING_INSET};
+use crate::ui::watchlist::rows::{self, RowStyle};
+use crate::ui::watchlist::style::{self as style, LEADING_INSET, TRAILING_INSET};
 use eframe::egui::{self, Align, Color32, Id, Layout, Pos2, Rect, RichText, Sense, Stroke, Vec2};
 use std::sync::mpsc::{self, Receiver};
 
@@ -973,7 +973,7 @@ fn content(
         return;
     }
 
-    if let Some(key) = watchlist_rows::column_header(ui, &list.display) {
+    if let Some(key) = rows::column_header(ui, &list.display) {
         let sort = list.display.sort.after_clicking(key);
         actions.push(WatchlistAction::SetSort {
             list: list.id,
@@ -996,8 +996,7 @@ fn content(
                 let dragged = state.drag.as_ref().is_some_and(|drag| drag.index == index);
                 let response = match row {
                     Row::Section { section, count } => {
-                        let response =
-                            watchlist_rows::section_row(ui, section, *count, index == 0, dragged);
+                        let response = rows::section_row(ui, section, *count, index == 0, dragged);
                         if response.clicked() {
                             actions.push(WatchlistAction::SetSectionCollapsed {
                                 list: list.id,
@@ -1028,7 +1027,7 @@ fn content(
                             selected: state.selected_entry == Some(item.id),
                             dragged,
                         };
-                        let response = watchlist_rows::instrument_row(ui, item, &style);
+                        let response = rows::instrument_row(ui, item, &style);
                         let more_rect = Rect::from_center_size(
                             Pos2::new(
                                 response.rect.right() - TRAILING_INSET - 11.0,
@@ -1072,7 +1071,7 @@ fn content(
                             .show(|ui| instrument_menu(ui, state, input, list, item, actions));
                         response
                     }
-                    Row::EmptySection { .. } => watchlist_rows::empty_section_row(ui),
+                    Row::EmptySection { .. } => rows::empty_section_row(ui),
                 };
                 rects.push(response.rect);
 
