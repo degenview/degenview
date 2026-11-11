@@ -18,11 +18,10 @@ use crate::model::portfolio::{
 };
 use crate::ui::accessibility;
 use crate::ui::icons::{self, Icon};
-use crate::ui::kit::{self, MEDIUM, REGULAR, SEMIBOLD};
+use crate::ui::kit::{self, MEDIUM, REGULAR, SEMIBOLD, time_text::date_text};
 use crate::ui::portfolio::charts::{self, HistoryInput};
 use crate::ui::portfolio::empty;
 use crate::ui::portfolio::table::{self, tone_color, tone_option};
-use crate::ui::replay::bar::date_text;
 use crate::ui::theme;
 use eframe::egui::{
     self, Align2, Color32, CursorIcon, Galley, Margin, Pos2, Rect, Sense, Shape, Stroke, Ui,

@@ -8,9 +8,11 @@ use crate::service::keychain_ai_keys::{self, AiKeyStore};
 use crate::service::llm::prefs::AiPrefs;
 use crate::service::llm::report::ErrorReport;
 use crate::service::llm::{HttpProvider, LlmError, LlmProvider, ProviderKind, validate_base_url};
-use crate::ui::alert::center::Tone;
 use crate::ui::icons::Icon;
-use crate::ui::kit::error_notice::{self, ErrorEvent, ErrorNotice};
+use crate::ui::kit::{
+    Tone,
+    error_notice::{self, ErrorEvent, ErrorNotice},
+};
 use crate::ui::settings::api_keys::{
     Autosave, StatusMessage, destructive_button, field, open_button,
 };

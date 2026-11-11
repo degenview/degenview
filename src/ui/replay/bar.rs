@@ -2,11 +2,11 @@
 //! resolution, the timeline, the cursor's clock and the way back to live. Pure view:
 //! it reads the engine and returns `ReplayBarAction`s for the workspace to apply.
 
-use crate::format::civil_from_days;
 use crate::model::{ReplayEngine, ReplayInterval, ReplaySpeed, ReplayStatus};
 use crate::service::timezone::local_utc_offset_secs;
 use crate::ui::accessibility;
 use crate::ui::icons::{self, Icon};
+use crate::ui::kit::time_text::{compact_text, date_text, time_text};
 use crate::ui::kit::{self, MEDIUM, REGULAR, SEMIBOLD};
 use crate::ui::theme;
 use eframe::egui::{
@@ -17,9 +17,6 @@ use eframe::egui::{
 const WIDE_ROW_MIN_WIDTH: f32 = 1_040.0;
 /// Below this width the start options collapse into one menu.
 const START_OPTIONS_MIN_WIDTH: f32 = 330.0;
-const MONTHS: [&str; 12] = [
-    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-];
 
 /// Corner radius of every control: the toolbar's, so the two bars read as one.
 const RADIUS: f32 = 6.0;
@@ -167,35 +164,6 @@ fn can_toggle(engine: &ReplayEngine, preparing: bool) -> bool {
             engine.status,
             ReplayStatus::Paused | ReplayStatus::Playing | ReplayStatus::Completed
         )
-}
-
-fn split_utc(epoch_ms: i64) -> (i64, i64, i64, i64, i64, i64) {
-    let seconds = epoch_ms.div_euclid(1_000);
-    let (year, month, day) = civil_from_days(seconds.div_euclid(86_400));
-    let rest = seconds.rem_euclid(86_400);
-    (year, month, day, rest / 3_600, rest % 3_600 / 60, rest % 60)
-}
-
-/// "Oct 9, 2026"
-pub fn date_text(epoch_ms: i64) -> String {
-    let (year, month, day, ..) = split_utc(epoch_ms);
-    format!("{} {day}, {year}", MONTHS[(month - 1) as usize])
-}
-
-/// "14:03:07"
-pub fn time_text(epoch_ms: i64) -> String {
-    let (_, _, _, hour, minute, second) = split_utc(epoch_ms);
-    format!("{hour:02}:{minute:02}:{second:02}")
-}
-
-/// "Oct 9, 14:03"
-pub fn compact_text(epoch_ms: i64) -> String {
-    let local_ms = epoch_ms + local_utc_offset_secs(epoch_ms) * 1_000;
-    let (_, month, day, hour, minute, _) = split_utc(local_ms);
-    format!(
-        "{} {day}, {hour:02}:{minute:02}",
-        MONTHS[(month - 1) as usize]
-    )
 }
 
 fn interval_text(engine: &ReplayEngine, resolved: Option<ReplayInterval>) -> String {
@@ -389,7 +357,7 @@ fn selecting_row(ui: &mut egui::Ui, input: &ReplayBarInput, actions: &mut Vec<Re
             divider(ui);
             start_options(ui, actions, true);
             if ui.available_width() > 130.0 {
-                keycap(ui, "Esc");
+                kit::keycap::keycap(ui, "Esc");
                 ui.label(kit::text(
                     "to cancel",
                     kit::size::SUBHEADLINE + 0.5,
@@ -493,69 +461,6 @@ fn state_pill(ui: &mut egui::Ui, status: ReplayStatus, preparing: bool) {
 fn divider(ui: &mut egui::Ui) {
     let (rect, _) = ui.allocate_exact_size(Vec2::new(1.0, 14.0), Sense::hover());
     ui.painter().rect_filled(rect, 0.0, kit::primary(0.14));
-}
-
-/// A key as it is named in a hint.
-/// The arrows a keycap draws as shapes. Their font glyphs (↑ ↓ ↵) are in no font the app is
-/// sure to have: macOS has them in its system fonts, a Linux machine shows tofu squares.
-fn keycap_icon(key: &str) -> Option<Icon> {
-    match key {
-        "\u{2191}" => Some(Icon::ArrowUp),
-        "\u{2193}" => Some(Icon::ArrowDown),
-        "\u{21b5}" => Some(Icon::Return),
-        _ => None,
-    }
-}
-
-/// How wide [`keycap`] draws `key`.
-pub(crate) fn keycap_width(ui: &egui::Ui, key: &str) -> f32 {
-    if keycap_icon(key).is_some() {
-        return 24.0;
-    }
-    kit::galley(
-        ui,
-        key,
-        kit::size::CAPTION + 0.5,
-        MEDIUM,
-        theme::text_secondary(),
-        f32::INFINITY,
-    )
-    .size()
-    .x + 12.0
-}
-
-pub(crate) fn keycap(ui: &mut egui::Ui, key: &str) {
-    let width = keycap_width(ui, key);
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(width, 18.0), Sense::hover());
-    ui.painter().rect_filled(rect, 5.0, kit::primary(0.07));
-    ui.painter().rect_stroke(
-        rect,
-        5.0,
-        Stroke::new(1.0, kit::primary(0.12)),
-        egui::StrokeKind::Inside,
-    );
-    if let Some(icon) = keycap_icon(key) {
-        icons::paint(
-            ui.painter(),
-            Rect::from_center_size(rect.center(), Vec2::splat(11.0)),
-            icon,
-            theme::text_secondary(),
-        );
-        return;
-    }
-    let text = kit::galley(
-        ui,
-        key,
-        kit::size::CAPTION + 0.5,
-        MEDIUM,
-        theme::text_secondary(),
-        f32::INFINITY,
-    );
-    ui.painter().galley(
-        rect.center() - text.size() / 2.0,
-        text,
-        theme::text_secondary(),
-    );
 }
 
 /// A sliver sweeping along the bottom edge while history loads.
@@ -1590,16 +1495,6 @@ mod tests {
         assert_eq!(tint(ReplayStatus::Playing, false), theme::UP);
         assert_eq!(tint(ReplayStatus::Paused, false), theme::REPLAY);
         assert_eq!(tint(ReplayStatus::Playing, true), Color32::from_gray(150));
-    }
-
-    #[test]
-    fn utc_date_and_time_text() {
-        // 2023-11-14 22:13:20 UTC
-        let ms = 1_700_000_000_000;
-        assert_eq!(date_text(ms), "Nov 14, 2023");
-        assert_eq!(time_text(ms), "22:13:20");
-        assert_eq!(compact_text(ms), "Nov 14, 22:13");
-        assert_eq!(date_text(0), "Jan 1, 1970");
     }
 
     #[test]

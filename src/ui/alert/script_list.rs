@@ -2,10 +2,11 @@
 //! Pause / Re-arm / Delete. A port of `PineAlertListView` (the "Fired" history half needs a stored
 //! script-notification log the Rust app does not keep yet).
 
-use super::center::{self, AlertCenterAction, Tone};
+use super::center::{self, AlertCenterAction};
 use crate::model::DataSource;
 use crate::model::alert::pine::{PineAlertState, PineAlertSubscription};
 use crate::ui::icons::{self, Icon};
+use crate::ui::kit::Tone;
 use crate::ui::{kit, theme};
 use eframe::egui::{self, Id, Pos2, Rect, Sense, Vec2};
 

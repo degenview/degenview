@@ -9,11 +9,12 @@ use crate::model::portfolio::format::PortfolioValueFormatter;
 use crate::model::portfolio::statistics::PortfolioHistoryRange;
 use crate::model::portfolio::{PortfolioCurrency, PortfolioHolding, PortfolioSnapshot};
 use crate::ui::accessibility;
-use crate::ui::alert::center::clock_time;
 use crate::ui::icons::{self, Icon};
-use crate::ui::kit;
+use crate::ui::kit::{
+    self,
+    time_text::{clock_time, date_text},
+};
 use crate::ui::portfolio::empty;
-use crate::ui::replay::bar::date_text;
 use crate::ui::theme;
 use eframe::egui::{self, Align2, Color32, FontId, Mesh, Pos2, Rect, Sense, Shape, Stroke, Vec2};
 use std::f32::consts::{PI, TAU};

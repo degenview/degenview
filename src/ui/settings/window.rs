@@ -13,8 +13,8 @@ use crate::model::alert::{
 use crate::model::mcp::McpAction;
 use crate::platform;
 use crate::service::keychain_api_keys::{AlpacaCredentialsStore, CoinMarketCapKeyStore};
-use crate::ui::alert::center::{Tone, relative_time};
 use crate::ui::icons::{self, Icon};
+use crate::ui::kit::{Tone, time_text::relative_time};
 use crate::ui::settings::api_keys::{self, ApiKeysState};
 use crate::ui::settings::mcp::{self, McpSettingsInput, McpSettingsState};
 use crate::ui::settings::storage::{self, StorageAction, StorageState};

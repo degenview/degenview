@@ -10,9 +10,12 @@ use crate::sync::account::AccountChoice;
 use crate::sync::core::{PauseReason, Phase};
 use crate::sync::initial::{Counts, JoinMode, JoinSummary};
 use crate::sync::transport::ErrorKind;
-use crate::ui::alert::center::{Tone, relative_time};
 use crate::ui::icons::Icon;
-use crate::ui::kit::dialog::{self, Dialog};
+use crate::ui::kit::{
+    Tone,
+    dialog::{self, Dialog},
+    time_text::relative_time,
+};
 use crate::ui::settings::window::{card, divider, row, section, status_badge, status_message};
 use crate::ui::{kit, settings::card, theme};
 use eframe::egui;

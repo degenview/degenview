@@ -4,14 +4,15 @@
 
 use super::{area_under, axis_text, dashed_h, dashed_v, loading_pill, reveal, tone_color, tooltip};
 use crate::model::portfolio::card::{CardData, PortfolioCard};
-use crate::ui::alert::center::clock_time;
 use crate::ui::icons::Icon;
-use crate::ui::kit;
+use crate::ui::kit::{
+    self,
+    time_text::{clock_time, date_text},
+};
 use crate::ui::portfolio::charts::{
     axis_label_indices, date_label, empty_message, hover_index, is_profit, prepared_points,
     profit_runs, value_bounds,
 };
-use crate::ui::replay::bar::date_text;
 use crate::ui::theme;
 use eframe::egui::{Align2, Color32, Id, Pos2, Rect, Stroke, Ui, Vec2};
 

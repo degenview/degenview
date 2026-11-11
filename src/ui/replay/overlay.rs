@@ -1,6 +1,7 @@
 //! What a chart plot draws while a replay is open: the start-picker marker and the
 //! "this chart is time-travelled" border and badge.
 
+use crate::ui::kit::time_text;
 use crate::ui::{replay::bar, theme};
 use eframe::egui::{Align2, Color32, FontId, Painter, Pos2, Rect, Stroke, Vec2};
 
@@ -75,7 +76,7 @@ pub(in crate::ui) fn paint_selection(
         [Pos2::new(x, plot.top()), Pos2::new(x, plot.bottom())],
         Stroke::new(1.5, accent),
     );
-    let text = format!("{words} · {}", bar::compact_text(open_time_ms));
+    let text = format!("{words} · {}", time_text::compact_text(open_time_ms));
     let font = FontId::monospace(10.5);
     let galley = painter.layout_no_wrap(text.clone(), font.clone(), Color32::WHITE);
     let size = galley.size() + Vec2::new(16.0, 6.0);
