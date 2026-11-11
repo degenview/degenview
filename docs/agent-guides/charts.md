@@ -99,6 +99,10 @@ Read [chart overlays](../chart-overlays.md) first. The short rules:
   apply-to-all changes before applying any, so type changes pass through `set_chart_type`.
   `ChartTemplateStore` re-reads before writes and refuses to overwrite undecodable rows.
 
+## Order-flow chart types
+
+The volume footprint (and the TPO and session-profile types that follow it) draws over the provider's own candles: `DataClass::StandardOhlc`, never constructed, so scripts, indicators, drawings, alerts and replay are unchanged. Read [Market profiles](../market-profiles.md) first. The card never fetches or computes: `workspace/profiles.rs` asks the `ProfileHub`, computes the set on the work queue and hands the card a `ProfileFeed` (`ChartCard::set_profile_feed`); the painter (`series_render/footprint.rs`) and the snapshot only draw it, and with no feed both draw the same candles and a loading line. Never hold the shared trade/candle lock on the UI thread (the hub uses `try_lock`), never build a bar from trades *and* candles, never compute imbalances for a bar that is not trade-derived, and label every estimate.
+
 ## Drawings
 
 - A drawing is pinned to time+price. The brush and the ruler have variants of their

@@ -94,7 +94,7 @@ pub struct SetChartTypeParams {
     pub chart_id: String,
     /// One of: candles, hollow_candles, bars, high_low_bars, volume_candles, line,
     /// line_with_markers, step_line, area, hlc_area, baseline, columns, heikin_ashi, renko,
-    /// line_break, kagi, point_and_figure, range.
+    /// line_break, kagi, point_and_figure, range, volume_footprint.
     #[schemars(length(min = 1, max = 32))]
     pub chart_type: String,
 }
@@ -156,7 +156,7 @@ impl DegenViewMcp {
 
     #[tool(
         name = "degenview_set_chart_type",
-        description = "Switch a market chart to another chart type, as its type menu does: candles, hollow candles, bars, lines, areas, Heikin Ashi, Renko and the rest. Each type keeps the settings it had. A market drawn as a line (prediction markets, CoinMarketCap) and a source with no volume for volume candles refuse with UNSUPPORTED. Price-based types (Heikin Ashi, Renko, Kagi, Line Break, Point & Figure, Range) draw bars built from the candles; degenview_get_candles still returns the market's own. Answers `unchanged` when the chart already draws it.",
+        description = "Switch a market chart to another chart type, as its type menu does: candles, hollow candles, bars, lines, areas, Heikin Ashi, Renko and the rest. Each type keeps the settings it had. A market drawn as a line (prediction markets, CoinMarketCap), a source with no volume for volume candles, and a source with no intraday candles for the volume footprint (only Binance, Coinbase and DEX markets have it) refuse with UNSUPPORTED. The volume footprint draws the market's own candles with the volume at each price beside them; scripts and indicators keep reading the real candles. Price-based types (Heikin Ashi, Renko, Kagi, Line Break, Point & Figure, Range) draw bars built from the candles; degenview_get_candles still returns the market's own. Answers `unchanged` when the chart already draws it.",
         annotations(
             read_only_hint = false,
             destructive_hint = false,

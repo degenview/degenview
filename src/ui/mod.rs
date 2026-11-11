@@ -103,6 +103,8 @@ pub mod scale_menu;
 pub mod script_alert_list;
 pub mod script_catalog;
 mod series_render;
+#[cfg(test)]
+pub(crate) use series_render::paint_gallery_for_tests;
 pub mod session_stats_view;
 pub mod settings_about;
 pub mod settings_ai;

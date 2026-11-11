@@ -495,3 +495,20 @@ fn the_apply_to_all_message_counts_and_explains() {
     );
     assert_eq!(skipped.steps.len(), 2);
 }
+
+#[test]
+fn colours_and_canvas_keep_what_a_footprint_is_built_from_and_take_the_look() {
+    let mut target = ChartAppearance::default();
+    target.style.chart_type = ChartType::VolumeFootprint;
+    target.style.footprint.ticks_per_row = 25;
+    target.style.footprint.imbalance_percent = 450;
+    let mut template = ChartAppearance::default();
+    template.style.footprint.ticks_per_row = 3;
+    template.style.footprint.imbalance_percent = 200;
+    template.style.footprint.buy_color = Some([5, 6, 7, 255]);
+    let merged = ApplyScope::ColorsAndCanvas.merge(&target, &template);
+    assert_eq!(merged.style.chart_type, ChartType::VolumeFootprint);
+    assert_eq!(merged.style.footprint.ticks_per_row, 25);
+    assert_eq!(merged.style.footprint.imbalance_percent, 450);
+    assert_eq!(merged.style.footprint.buy_color, Some([5, 6, 7, 255]));
+}

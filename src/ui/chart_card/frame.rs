@@ -129,6 +129,9 @@ pub(super) trait Overlays {
     /// The tooltip a script gave the label or table cell under the pointer.
     fn pine_tooltip(&mut self, _target: &HoverTarget) {}
 
+    /// The tooltip of the order-flow cell under the pointer (a snapshot has no pointer, so none).
+    fn profile_tooltip(&mut self, _target: &HoverTarget) {}
+
     /// Last, over the whole plot: alert lines, trading markers, the navigation pill.
     fn finish(
         &mut self,
@@ -414,6 +417,7 @@ impl ChartCard {
             price_scale::reference_from(shown[0].close),
         );
         self.paint_overlay_lines(&clipped, &overlay_frame, view, &x_for);
+        let mut profile_hover: Option<HoverTarget> = None;
         if line && self.series.is_empty() {
             self.draw_line(&clipped, shown, &x_for, scale);
         } else if line {
@@ -428,7 +432,7 @@ impl ChartCard {
             };
             let bar_color: Option<&dyn Fn(usize) -> Option<Color32>> =
                 (!layout.bar_color_outputs.is_empty()).then_some(&recolour);
-            series_render::paint(&SeriesFrame {
+            let series_frame = SeriesFrame {
                 painter: &clipped,
                 plot,
                 bars: shown,
@@ -443,7 +447,12 @@ impl ChartCard {
                 chart_type,
                 recolor: bar_color,
                 price_format: self.appearance.price_format(),
-            });
+                profiles: self.profile_feed.as_ref(),
+            };
+            series_render::paint(&series_frame);
+            profile_hover = overlays
+                .pointer()
+                .and_then(|pointer| series_render::footprint_hover(&series_frame, pointer));
         }
 
         let drawn_indicators = data.indicators.drawn();
@@ -577,6 +586,8 @@ impl ChartCard {
 
         if let Some(target) = &tooltip {
             overlays.pine_tooltip(target);
+        } else if let Some(target) = &profile_hover {
+            overlays.profile_tooltip(target);
         }
 
         if decor.time_lock {

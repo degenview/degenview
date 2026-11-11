@@ -2,6 +2,8 @@
 //! the selected type only. Each type keeps its own, so a switch never loses what was set, and a
 //! setting that means nothing for the type on screen is not offered.
 
+mod footprint_rows;
+
 use super::chart_card::ChartCard;
 use super::icons::Icon;
 use super::kit;
@@ -50,6 +52,9 @@ pub fn show(
         ChartGroup::PriceBased => {
             "Builds its own bars from the market's. Scripts and indicators run over those bars."
         }
+        ChartGroup::OrderFlow => {
+            "Draws volume at each price beside the market's candles. Scripts and indicators still read the real OHLC."
+        }
     };
     if let Some(index) = settings_card::card(ui, Icon::BarChart, "Style", Some(hint), |ui| {
         kit::menu_picker(ui, 170.0, &labels, selected, true)
@@ -88,6 +93,9 @@ pub fn show(
         ChartType::HlcArea => hlc_area_rows(ui, id, &mut style.hlc_area, palette),
         ChartType::Baseline => baseline_rows(ui, id, &mut style.baseline, palette),
         ChartType::Columns => column_rows(ui, &mut style.columns, palette),
+        ChartType::VolumeFootprint => {
+            footprint_rows::rows(ui, id, &mut style.footprint, palette, source);
+        }
         ChartType::Renko => {
             size_rows(
                 ui,

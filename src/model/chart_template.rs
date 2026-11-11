@@ -80,6 +80,8 @@ impl ApplyScope {
                 style.point_figure.reversal = own.point_figure.reversal;
                 style.point_figure.source = own.point_figure.source;
                 style.range.size = own.range.size;
+                // What a footprint is built from stays the target's too.
+                style.footprint.keep_shape_of(&own.footprint);
                 ChartAppearance {
                     style,
                     axis_decimals: target.axis_decimals,

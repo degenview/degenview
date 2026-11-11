@@ -12,6 +12,8 @@ use eframe::egui::{
 };
 
 const ROW_HEIGHT: f32 = 26.0;
+/// Room kept above and below the menu when it has to scroll, in points.
+const MENU_MARGIN: f32 = 120.0;
 const MENU_WIDTH: f32 = 214.0;
 const GLYPH: f32 = 15.0;
 
@@ -62,41 +64,62 @@ pub fn menu(
             let matching = matching_types(&query);
             let enter = filter.has_focus() && ui.input(|input| input.key_pressed(Key::Enter));
             let mut shown_any = false;
-            for group in ChartGroup::ALL {
-                let rows: Vec<ChartType> = matching
-                    .iter()
-                    .copied()
-                    .filter(|kind| kind.group() == group)
-                    .collect();
-                if rows.is_empty() {
-                    continue;
-                }
-                shown_any = true;
-                ui.add_space(3.0);
-                ui.label(
-                    egui::RichText::new(group.label().to_uppercase())
-                        .size(9.5)
-                        .strong()
-                        .color(theme::text_tertiary()),
-                );
-                ui.add_space(2.0);
-                for kind in rows {
-                    let reason = kind.unsupported_reason(source);
-                    let (clicked, response) = row(ui, kind, kind == current, reason.is_none());
-                    if let Some(reason) = reason {
-                        response.on_hover_text(reason);
+            // The list scrolls only when the window is shorter than it, so the menu never runs off
+            // the screen and a menu that fits is not a scroll area at all.
+            let room = (ui.ctx().content_rect().height() - MENU_MARGIN).max(160.0);
+            let height_id = query_id.with("height");
+            let known: f32 = ui.data(|data| data.get_temp(height_id)).unwrap_or(0.0);
+            let mut rows = |ui: &mut egui::Ui| {
+                for group in ChartGroup::ALL {
+                    let rows: Vec<ChartType> = matching
+                        .iter()
+                        .copied()
+                        .filter(|kind| kind.group() == group)
+                        .collect();
+                    if rows.is_empty() {
+                        continue;
                     }
-                    let first_match = enter
-                        && matching
-                            .iter()
-                            .find(|k| k.unsupported_reason(source).is_none())
-                            == Some(&kind);
-                    if (clicked || first_match) && reason.is_none() {
-                        picked = Some(kind);
-                        ui.close();
+                    shown_any = true;
+                    ui.add_space(3.0);
+                    ui.label(
+                        egui::RichText::new(group.label().to_uppercase())
+                            .size(9.5)
+                            .strong()
+                            .color(theme::text_tertiary()),
+                    );
+                    ui.add_space(2.0);
+                    for kind in rows {
+                        let reason = kind.unsupported_reason(source);
+                        let (clicked, response) = row(ui, kind, kind == current, reason.is_none());
+                        if let Some(reason) = reason {
+                            response.on_hover_text(reason);
+                        }
+                        let first_match = enter
+                            && matching
+                                .iter()
+                                .find(|k| k.unsupported_reason(source).is_none())
+                                == Some(&kind);
+                        if (clicked || first_match) && reason.is_none() {
+                            picked = Some(kind);
+                            ui.close();
+                        }
                     }
                 }
-            }
+            };
+            let used = if known > room {
+                ui.set_max_height(room);
+                egui::ScrollArea::vertical()
+                    .max_height(room)
+                    .auto_shrink([true, true])
+                    .show(ui, |ui| rows(ui))
+                    .content_size
+                    .y
+            } else {
+                let top = ui.cursor().top();
+                rows(ui);
+                ui.cursor().top() - top
+            };
+            ui.data_mut(|data| data.insert_temp(height_id, used));
             if !shown_any {
                 ui.label(
                     egui::RichText::new("No matching chart type")
@@ -316,6 +339,13 @@ pub fn glyph(painter: &egui::Painter, rect: Rect, kind: ChartType, ink: Color32)
                     0.0,
                     ink,
                 );
+            }
+        }
+        ChartType::VolumeFootprint => {
+            // A thin hollow candle with its price rows beside it, longest where most traded.
+            candle(0.17, 0.25, 0.72, 0.1, 0.92, 0.09, true);
+            for (y, end) in [(0.2, 0.78), (0.4, 0.95), (0.6, 0.85), (0.8, 0.7)] {
+                painter.line_segment([at(0.42, y), at(end, y)], thin);
             }
         }
         ChartType::HeikinAshi => {

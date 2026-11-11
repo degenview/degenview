@@ -1242,7 +1242,7 @@ mod tests {
             pressed,
             modifiers: Default::default(),
         };
-        let mut screen = Screen::new(vec2(width, 540.0));
+        let mut screen = Screen::new(vec2(width, 900.0));
         let mut last = None;
         for events in [
             vec![egui::Event::PointerMoved(at)],

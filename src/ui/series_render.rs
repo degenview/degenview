@@ -10,6 +10,8 @@
 //! Everything here is the *main series*. A script's `plotcandle()` and `plotbar()` are drawn by
 //! `pine_chart_render` as their own layer and are unaffected by the chart type.
 
+mod footprint;
+
 use super::chart_card::PriceScale;
 use super::theme;
 use crate::model::chart_look::{
@@ -19,6 +21,7 @@ use crate::model::chart_look::{
 use crate::model::chart_type::{
     ChartStyle, ChartType, LineDash, LineSettings, PriceSource, RangeLook, Rgba,
 };
+use crate::model::market_profile::feed::ProfileFeed;
 use crate::model::synthetic::{BarShape, SyntheticBar};
 use crate::model::{Kline, PriceFormat};
 use eframe::egui::{
@@ -28,6 +31,16 @@ use eframe::egui::{
 
 /// How far a bar that can still change is faded.
 const UNCONFIRMED_ALPHA: f32 = 0.55;
+
+/// The tooltip for the footprint cell under `pointer`, when the chart is a footprint.
+pub fn footprint_hover(
+    frame: &SeriesFrame,
+    pointer: Pos2,
+) -> Option<super::pine_chart_render::HoverTarget> {
+    (frame.chart_type == ChartType::VolumeFootprint)
+        .then(|| footprint::hover(frame, pointer))
+        .flatten()
+}
 
 pub struct SeriesFrame<'a> {
     pub painter: &'a Painter,
@@ -51,6 +64,8 @@ pub struct SeriesFrame<'a> {
     pub recolor: Option<&'a dyn Fn(usize) -> Option<Color32>>,
     /// How the chart writes a price (the high and low markers).
     pub price_format: PriceFormat,
+    /// What the order-flow types draw from (`None` for every other type, and until it arrives).
+    pub profiles: Option<&'a ProfileFeed>,
 }
 
 pub fn color(rgba: Rgba) -> Color32 {
@@ -116,6 +131,7 @@ pub fn paint(frame: &SeriesFrame) {
         ChartType::Columns => columns(&frame),
         ChartType::Kagi => kagi(&frame),
         ChartType::PointAndFigure => point_figure(&frame),
+        ChartType::VolumeFootprint => footprint::paint(&frame),
     }
 }
 
@@ -759,6 +775,62 @@ fn point_figure(frame: &SeriesFrame) {
     }
 }
 
+/// Draws `bars` with `set` as a footprint into a picture named `name` in the gallery folder (the
+/// live tests' way of showing what real data looks like). Does nothing without `DEGENVIEW_GALLERY_DIR`.
+#[cfg(test)]
+pub(crate) fn paint_gallery_for_tests(
+    name: &str,
+    bars: &[Kline],
+    set: &std::sync::Arc<crate::model::market_profile::footprint::FootprintSet>,
+) {
+    use crate::ui::render_tests::{Screen, gallery_dir};
+    if gallery_dir().is_none() || bars.is_empty() {
+        return;
+    }
+    let feed = ProfileFeed {
+        footprint: Some(set.clone()),
+        ..ProfileFeed::default()
+    };
+    let slot = 130.0;
+    let (width, height) = (slot * bars.len() as f32, 620.0);
+    let (low, high) = bars.iter().fold((f64::MAX, f64::MIN), |(l, h), bar| {
+        (l.min(bar.low), h.max(bar.high))
+    });
+    let pad = (high - low) * 0.08;
+    let style = ChartStyle {
+        chart_type: ChartType::VolumeFootprint,
+        ..ChartStyle::default()
+    };
+    let mut screen = Screen::new(Vec2::new(width, height));
+    let mut last = None;
+    for _ in 0..2 {
+        last = Some(screen.run(Vec::new(), |ui| {
+            let plot = Rect::from_min_size(Pos2::ZERO, Vec2::new(width, height));
+            ui.painter().rect_filled(plot, 0.0, theme::chrome());
+            let scale = PriceScale::linear(low - pad, high + pad, 0.0, height);
+            let x_for = |index: usize| slot * (index as f32 + 0.5);
+            paint(&SeriesFrame {
+                painter: ui.painter(),
+                plot,
+                bars,
+                synthetic: None,
+                box_size: None,
+                previous_close: None,
+                slot_width: slot,
+                x_for: &x_for,
+                scale: &scale,
+                palette: Palette::new([38, 166, 154], [239, 83, 80]),
+                style: &style,
+                chart_type: ChartType::VolumeFootprint,
+                recolor: None,
+                price_format: PriceFormat::AUTO,
+                profiles: Some(&feed),
+            });
+        }));
+    }
+    screen.save(name, last.expect("a frame"));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -829,6 +901,7 @@ mod tests {
                 chart_type,
                 recolor: None,
                 price_format: PriceFormat::AUTO,
+                profiles: None,
             });
         });
         count += output.shapes.len();
