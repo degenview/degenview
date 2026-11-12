@@ -73,6 +73,10 @@ struct Venue {
 }
 
 impl EditVenue for Venue {
+    fn world(&self, _: &OrderId) -> EditWorld {
+        EditWorld::default()
+    }
+
     fn preview_edit(&self, _: OrderId, change: OrderChange) -> EditAnswer<EditPreview> {
         self.previews.borrow_mut().push(change);
         match self.preview.borrow().clone() {

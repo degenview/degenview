@@ -184,6 +184,7 @@ pub enum Connection {
 
 impl Connection {
     /// Credentials are saved but no connection is up (yet).
+    #[cfg(test)]
     pub fn is_saved(&self) -> bool {
         matches!(self, Self::Saved)
     }

@@ -130,6 +130,8 @@ pub(crate) fn order_row(order: &PaperOrder) -> OrderRow {
             }),
         },
         unconfirmed: false,
+        pending: false,
+        fees: Decimal::ZERO,
     }
 }
 

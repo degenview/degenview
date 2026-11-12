@@ -17,32 +17,28 @@ transition with a test in `trading/edit/tests.rs`. Left as it was (a decision, n
 sheet closes when the account goes away even while an amend is in flight, and the amend is checked by
 the runtime on the order fingerprint (account included) but not on the connection generation.
 
-### 2. The venue layer is not the only path (P2): commands done, reads open
+### 2. The venue layer is not the only path (P2): fixed for the panel and the chart
 
-Done: everything the screens *ask* a broker goes through `trading::broker_commands::BrokerCommands`
-(retry, cancel, paged history and fills, and the edit as `EditVenue`), reached with
-`TradingBackend::broker_commands()`. The screens no longer hold a runtime; a guard test
-(`the_screens_never_hold_a_brokers_runtime`) fails if `ui/` or `workspace/` name `BrokerRuntime` or
-`host.runtime(`. `BrokerHost::runtime` stays `pub(crate)` because `trading/` and the tests use it.
+Done: the orders panel and the chart's order lines draw from the venue only. What the screens *ask* a
+broker goes through `trading::broker_commands::BrokerCommands` (retry, cancel, paged history and
+fills, and the edit as `EditVenue`); what they *read* goes through `TradingBackend`: `orders()` for
+the Orders tab, the header's working count and the cancel question, `notes()` for the banners,
+`can_order()`, `recent_fills()`, `balances()`, `chart_unavailable()` and `chart_lines()` for the chart,
+and `quote()` for the pills. History and fills pages arrive as neutral `OrderRow`/`FillRow` pages. A
+guard test (`the_screens_never_hold_a_brokers_runtime`) fails if `ui/` or `workspace/` name
+`BrokerRuntime` or `host.runtime(`, or if drawing code under `ui/` (all but Settings ▸ Brokers) names
+`BrokerHost` or `BrokerSnapshot`.
 
-**Still open.** What the screens *read* is still the host's snapshot and preferences, in the crate's
-types:
+Changed on the way: the panel's account chip now reads like the order sheet's (the label with the last
+characters of the account id), and a chart's order lines are drawn from `chart_lines()` whether or not
+orders are possible at that moment (as before).
 
-* The panel draws `BrokerSnapshot` for its header, banners, History (`LiveOrder`), Fills (`LiveFill`)
-  and Balances, and the cancel question; the Orders tab already reads venue rows
-  (`broker_backend::order_rows`, called directly instead of `TradingBackend::orders()`).
-* The chart's order lines and header pills (`workspace/broker.rs::configure_broker_cards`) read the
-  snapshot, `chart_trading(..)`, `BrokerHost::quote/want_quote` and the preferences.
-* Settings reads `BrokerHost` for cards and preferences.
-
-Proposed: venue-neutral `HistoryRow`, `FillRow`, `BalanceRow` and a `Page<T>` in `trading::model`
-(`OrderRow` gains `average_price`, `fees`, the stop-limit marker price), a `notes()` read for the
-banners (view-only key, orders held elsewhere, last error: not in `BackendState` today), prefs through
-`hub.prefs(venue)`, and chart lines from `backend.market()/quote()/orders()` with replay layered on top
-by the workspace. Extend `UnavailableKind` first: `MarketNotOffered` draws a greyed pill on the chart
-today and `unavailable()` would map it to "no pill". Then split `configure_broker_cards` into a pure
-`card_views(..)` and an apply step (`want_quote`, `say`, `close_review`), and add a guard for
-`BrokerHost` in `ui/`.
+**Still open.** Settings ▸ Brokers reads `BrokerHost` for connection cards and preferences (it manages
+connections, so it legitimately holds the host); the workspace asks the host for the user's
+preferences (`show_on_charts`, `confirm_single_cancel`, `spend_in_quote_by_default`); the edit
+sheet's world (`EditVenue::world`) is still in the crate's types (`LiveOrder`, `ProductSpec`), because
+editing in place is a broker-only feature. Preferences could move to `hub.prefs(venue)`; a `VenueInfo`
+revision could cache the per-frame projections.
 
 ### 3. Process-wide service locators (P2): fixed
 
@@ -82,9 +78,8 @@ item 2 move.
 
 ## Suggested order
 
-1. Neutral reads for the panel and the chart lines (item 2, open part), one PR each; delete
-   `order_rows` as a direct call.
-2. Crate moves (below), one release.
+1. Crate moves (below), one release.
+2. Preferences through the hub, and a revision for the per-frame projections (item 2, open part).
 3. Item 5 as needed.
 
 Each step keeps the safety rules intact: an order is previewed and sent against one account and connection
@@ -112,8 +107,8 @@ Later and larger: the connection manager and its secrets queue.
 
 ## Fixed since
 
-* The edit-order state machine, the commands path and the injected hub (items 1, 2 (commands) and 3
-  above), and the order sheet's argument structs and split (item 4).
+* The edit-order state machine, the commands and reads path for the panel and chart, and the injected
+  hub (items 1, 2 and 3 above), and the order sheet's argument structs and split (item 4).
 
 ## Fixed in #457 (for contrast)
 

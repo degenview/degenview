@@ -13,7 +13,7 @@
 //!   ticket, the edit sheet or the cancel question, each of which shows what will be sent.
 //! * Live orders are never drawn into a shared snapshot of the chart.
 
-use degenview_brokers::{Decimal, OrderId, Side};
+use degenview_brokers::{Decimal, Side};
 use eframe::egui::{self, Color32, FontId, Pos2, Rect, Sense, Vec2};
 
 use crate::model::broker::chart::{Unavailable, snap_to_increment};
@@ -27,7 +27,7 @@ use crate::ui::theme;
 /// One working order, as a line.
 #[derive(Clone, Debug, PartialEq)]
 pub struct OrderLine {
-    pub id: OrderId,
+    pub id: String,
     pub side: Side,
     /// `LMT`, `STP-LMT`...
     pub tag: String,
@@ -48,11 +48,11 @@ pub struct OrderLine {
 #[derive(Clone, Debug, PartialEq)]
 pub enum BrokerOverlayAction {
     /// ✕: ask to cancel the order.
-    Cancel(OrderId),
+    Cancel(String),
     /// A line was dropped on a new price: propose the change (nothing is sent yet).
-    ProposeEdit { id: OrderId, price: Decimal },
+    ProposeEdit { id: String, price: Decimal },
     /// A line was clicked: show the order.
-    Open(OrderId),
+    Open(String),
 }
 
 /// Everything a chart card needs for live trading, and what the user did to it. The workspace
@@ -271,7 +271,7 @@ mod tests {
 
     fn line() -> OrderLine {
         OrderLine {
-            id: OrderId::new("o1"),
+            id: "o1".to_owned(),
             side: Side::Buy,
             tag: "LMT".to_owned(),
             price: 100.0,
@@ -401,7 +401,7 @@ mod tests {
         assert_eq!(
             asked,
             vec![BrokerOverlayAction::ProposeEdit {
-                id: OrderId::new("o1"),
+                id: "o1".to_owned(),
                 price: d("125")
             }]
         );
@@ -447,7 +447,7 @@ mod tests {
         ];
         assert_eq!(
             drive(&state(), click),
-            vec![BrokerOverlayAction::Open(OrderId::new("o1"))]
+            vec![BrokerOverlayAction::Open("o1".to_owned())]
         );
     }
 
@@ -463,7 +463,7 @@ mod tests {
         ];
         assert_eq!(
             drive(&state(), click.clone()),
-            vec![BrokerOverlayAction::Cancel(OrderId::new("o1"))]
+            vec![BrokerOverlayAction::Cancel("o1".to_owned())]
         );
         let mut cancelling = state();
         cancelling.lines[0].can_cancel = false;
@@ -489,7 +489,7 @@ mod tests {
                     ..line()
                 },
                 OrderLine {
-                    id: OrderId::new("o2"),
+                    id: "o2".to_owned(),
                     side: Side::Sell,
                     tint: theme::DOWN,
                     price: 60.0,
