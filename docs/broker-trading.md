@@ -61,7 +61,7 @@ starts on paper). On a live venue the panel is `ui/broker/panel.rs`, with an amb
 paper trading never uses. The paper account is only created while the venue is Paper, and paper
 overlays on charts are hidden while it is live.
 
-It draws `BrokerHost::snapshot()` and nothing else, so every window shows the same state.
+It draws what the venue last said (`TradingBackend`) and nothing else, so every window shows the same state.
 
 * **Orders**: working orders and the ones that just finished (dimmed), plus *unconfirmed* sends. Pick
   rows to cancel several at once. A cancel marks the row "Cancel requested" and leaves it listed until
@@ -208,13 +208,13 @@ request descriptions for the checklist.
 
 ## Not done yet / not verified
 
-* **The venue layer is not the only path for reads yet.** What the screens *ask* a broker goes through
-  `TradingBackend` (order entry) and `BrokerCommands` (`trading/broker_commands.rs`: retry, cancel, paged
-  history and fills, and the edit as `trading::edit::EditSession`); a test fails if `ui/` or `workspace/`
-  name a broker's runtime. What they *read* is still `BrokerHost`'s snapshot and preferences: the orders
-  panel's header, banners, History, Fills and Balances, the chart's order lines and Settings. The hub is
-  handed to each window (`WindowEnv`), not read from a global. `trading/` does not import `ui` (a test
-  checks). The findings, evidence and proposed fixes are in
+* **The venue layer is the path for the panel and the chart.** What the screens *ask* a broker goes
+  through `BrokerCommands` (`trading/broker_commands.rs`: retry, cancel, paged history and fills, and
+  the edit as `trading::edit::EditSession`); what they *read* goes through `TradingBackend`; a test
+  fails if `ui/` or `workspace/` name a broker's runtime, or drawing code under `ui/` names the host.
+  Still on `BrokerHost`: Settings ▸ Brokers (it manages connections) and the user's preferences, which
+  the workspace reads. The hub is handed to each window (`WindowEnv`), not read from a global.
+  `trading/` does not import `ui` (a test checks). The findings, evidence and proposed fixes are in
   [reviews/broker-architecture-follow-ups.md](reviews/broker-architecture-follow-ups.md).
 
 * Two Coinbase portfolios have not been tried together against the real service. The account id is

@@ -804,7 +804,6 @@ impl ChartWorkspace {
         }
 
         if self.paper_panel_visible {
-            let broker_host = self.trading_hub.as_ref().map(|hub| hub.brokers().clone());
             let mut panel_actions: Vec<WorkspaceAction> = Vec::new();
             let events = egui::Panel::bottom(egui::Id::new(("paper_panel", self.id)))
                 .resizable(true)
@@ -815,17 +814,19 @@ impl ChartWorkspace {
                     let Some((venue, bar)) = self.panel_venue(ui, &mut panel_actions) else {
                         return Vec::new();
                     };
-                    match (venue.broker(), &broker_host) {
-                        (Some(id), Some(host)) => {
-                            let backend =
-                                self.trading_hub.as_ref().and_then(|hub| hub.backend(venue));
-                            let stats = backend.as_deref().and_then(|backend| backend.stats());
+                    let hub = self.trading_hub.clone();
+                    let context = self.broker_panel_context();
+                    match (venue.broker(), hub, context) {
+                        (Some(_), Some(hub), Some(context)) => {
+                            let Some(backend) = hub.backend(venue) else {
+                                return Vec::new();
+                            };
+                            let stats = backend.stats();
                             crate::ui::broker::panel::ui(
                                 ui,
                                 &mut self.broker_panel,
-                                host,
-                                backend.as_deref().and_then(|b| b.broker_commands()),
-                                id,
+                                &*backend,
+                                context,
                                 &bar,
                                 stats.as_ref(),
                             )

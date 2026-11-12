@@ -574,7 +574,7 @@ pub fn type_label(order: &LiveOrder) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use degenview_brokers::{ProductId, Restrictions, TifKind, Tradability};
+    use degenview_brokers::{OrderId, ProductId, Restrictions, Side, TifKind, Tradability};
 
     fn d(text: &str) -> Decimal {
         Decimal::from_str(text).unwrap()
@@ -966,5 +966,119 @@ mod tests {
             assert!(!status_label(status).0.is_empty());
         }
         assert_eq!(status_label(OrderStatus::CancelQueued).0, "Cancelling");
+    }
+
+    fn live_order(status: OrderStatus, kind: OrderType, size: Option<OrderSize>) -> LiveOrder {
+        LiveOrder {
+            id: OrderId::new("o"),
+            client_id: None,
+            product: ProductId::new("BTC-USD"),
+            side: Side::Buy,
+            order_type: kind,
+            status,
+            tif: None,
+            size,
+            limit_price: Some(d("100")),
+            stop_price: None,
+            stop_direction: None,
+            post_only: false,
+            filled_size: d("0"),
+            filled_value: d("0"),
+            average_price: None,
+            fees: d("0"),
+            created_ms: Some(0),
+            updated_ms: None,
+            reason: None,
+            stop_triggered: false,
+        }
+    }
+
+    fn edit_caps(native_edit: bool) -> Capabilities {
+        Capabilities {
+            tradable: Tradability::Yes,
+            order_types: vec![OrderType::Limit],
+            tif: vec![TifKind::GoodTilCancelled],
+            stop_limit_tif: vec![],
+            post_only: false,
+            quote_sized_market: false,
+            native_edit,
+            atomic_replace: false,
+            brackets: false,
+        }
+    }
+
+    #[test]
+    fn only_an_open_priced_base_sized_order_with_native_edit_can_be_edited() {
+        let open = live_order(
+            OrderStatus::Open,
+            OrderType::Limit,
+            Some(OrderSize::Base(d("1"))),
+        );
+        assert_eq!(edit_blocker(&open, Some(&edit_caps(true)), false), None);
+        assert!(
+            edit_blocker(&open, Some(&edit_caps(false)), false)
+                .unwrap()
+                .contains("does not support")
+        );
+        assert!(
+            edit_blocker(&open, None, false)
+                .unwrap()
+                .contains("not been read")
+        );
+        assert!(
+            edit_blocker(&open, Some(&edit_caps(true)), true)
+                .unwrap()
+                .contains("cancel is in progress")
+        );
+        let queued = live_order(
+            OrderStatus::CancelQueued,
+            OrderType::Limit,
+            Some(OrderSize::Base(d("1"))),
+        );
+        assert!(
+            edit_blocker(&queued, Some(&edit_caps(true)), false)
+                .unwrap()
+                .contains("Only open")
+        );
+        let market = live_order(
+            OrderStatus::Open,
+            OrderType::Other,
+            Some(OrderSize::Base(d("1"))),
+        );
+        assert!(
+            edit_blocker(&market, Some(&edit_caps(true)), false)
+                .unwrap()
+                .contains("type of order")
+        );
+        let spend = live_order(
+            OrderStatus::Open,
+            OrderType::Limit,
+            Some(OrderSize::Quote(d("10"))),
+        );
+        assert!(
+            edit_blocker(&spend, Some(&edit_caps(true)), false)
+                .unwrap()
+                .contains("amount to spend")
+        );
+    }
+
+    #[test]
+    fn rows_say_what_they_are() {
+        let mut order = live_order(
+            OrderStatus::Open,
+            OrderType::Limit,
+            Some(OrderSize::Base(d("0.5"))),
+        );
+        order.post_only = true;
+        assert_eq!(type_label(&order), "Limit, post-only");
+        assert_eq!(size_text(&order), "0.5");
+        assert_eq!(
+            size_text(&live_order(
+                OrderStatus::Open,
+                OrderType::Market,
+                Some(OrderSize::Quote(d("25")))
+            )),
+            "25 (spend)"
+        );
     }
 }

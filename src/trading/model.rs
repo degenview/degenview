@@ -342,6 +342,79 @@ pub struct OrderRow {
     pub tag: Option<RowStatus>,
     /// Sent, and the answer was lost: it may or may not be live. `id` is then the key to look it up.
     pub unconfirmed: bool,
+    /// Sent, and the venue has not listed it yet (being sent, or unconfirmed): not an order the
+    /// venue can be asked to cancel.
+    pub pending: bool,
+    /// What the order has cost so far, in the quote asset.
+    pub fees: Decimal,
+}
+
+/// One page of a list read from a venue, and where the next one starts.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Page<T> {
+    pub items: Vec<T>,
+    pub next: Option<String>,
+}
+
+/// One execution of an order.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FillRow {
+    pub id: String,
+    pub time_ms: i64,
+    pub market: String,
+    pub side: Side,
+    /// In the market's price step.
+    pub price: String,
+    pub size: Decimal,
+    pub fee: Decimal,
+    /// The order it executed, as the venue names it.
+    pub order: String,
+}
+
+/// What the account holds of one asset.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BalanceRow {
+    pub asset: String,
+    pub available: Decimal,
+    /// Reserved by open orders.
+    pub held: Decimal,
+}
+
+impl BalanceRow {
+    pub fn total(&self) -> Decimal {
+        self.available + self.held
+    }
+}
+
+/// A sentence the panel shows about the connection.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Note {
+    pub text: String,
+    pub error: bool,
+}
+
+/// A working order as a chart's line shows it.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ChartOrder {
+    pub id: String,
+    pub side: Side,
+    /// The short type on the line's tag ("LMT", "STP-LMT", "MKT").
+    pub tag: &'static str,
+    /// Where the line sits: a stop-limit rests at its stop until it triggers.
+    pub price: Decimal,
+    pub price_text: String,
+    pub remaining_text: String,
+    /// What is pending on the order ("cancel requested", "edit requested").
+    pub note: Option<&'static str>,
+    pub can_edit: bool,
+    pub can_cancel: bool,
+}
+
+/// What a chart draws for one market of a venue: the price step and the working orders.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ChartLines {
+    pub price_increment: Option<Decimal>,
+    pub orders: Vec<ChartOrder>,
 }
 
 #[cfg(test)]

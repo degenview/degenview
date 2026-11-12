@@ -158,7 +158,10 @@ fn draw(
         crate::trading::model::VenueKind::Live,
         "Coinbase",
     );
-    panel::ui(ui, state, host, Some(&backend), ID, &bar, stats.as_ref())
+    let context = panel::PanelContext {
+        confirm_single_cancel: host.prefs(ID).confirm_single_cancel,
+    };
+    panel::ui(ui, state, &backend, context, &bar, stats.as_ref())
 }
 
 fn show_panel(
@@ -254,12 +257,16 @@ fn cancelling_asks_first_for_many_and_a_requested_cancel_leaves_the_order_listed
     let mut state = BrokerPanelState::default();
     // Two orders: always asks, and nothing is sent until the user says so.
     let backend = commands(&rig.host);
-    state.request_cancel_for_test(Some(&backend), ids[..2].to_vec(), false);
+    state.request_cancel_for_test(
+        Some(&backend),
+        ids[..2].iter().map(|id| id.as_str().to_owned()).collect(),
+        false,
+    );
     assert!(state.cancel_ask_open());
     assert_eq!(cancels(&rig), 0);
     // One order with the question turned off: sent at once, and the order stays until the broker says.
     let mut single = BrokerPanelState::default();
-    single.request_cancel_for_test(Some(&backend), vec![ids[2].clone()], false);
+    single.request_cancel_for_test(Some(&backend), vec![ids[2].as_str().to_owned()], false);
     assert!(!single.cancel_ask_open());
     wait("the cancel to reach the exchange", || cancels(&rig) == 1);
     wait("the broker's answer", || {
@@ -290,7 +297,11 @@ fn an_edit_is_previewed_confirmed_and_sent_as_an_edit_never_a_cancel_and_replace
         .map(|v| v.order.clone())
         .unwrap();
     let mut state = BrokerPanelState::default();
-    state.begin_edit(order.clone(), Some("92500.00".parse().unwrap()));
+    assert!(state.begin_edit(
+        Some(&commands(&rig.host)),
+        order.id.as_str(),
+        Some("92500.00".parse().unwrap())
+    ));
     let mut screen = Screen::new(Vec2::new(900.0, 700.0));
     let mut run = |events: Vec<egui::Event>, state: &mut BrokerPanelState| {
         screen.run(events, |ui| {
@@ -464,7 +475,11 @@ fn an_edit_cannot_be_reviewed_before_or_without_the_brokers_preview() {
         .unwrap();
     rig.exchange.rest.with_state(|s| s.fail_preview = true);
     let mut state = BrokerPanelState::default();
-    state.begin_edit(order, Some("92500.00".parse().unwrap()));
+    assert!(state.begin_edit(
+        Some(&commands(&rig.host)),
+        order.id.as_str(),
+        Some("92500.00".parse().unwrap())
+    ));
     let mut screen = Screen::new(Vec2::new(900.0, 700.0));
     let mut run = |events: Vec<egui::Event>, state: &mut BrokerPanelState| {
         screen.run(events, |ui| {
@@ -541,7 +556,11 @@ fn a_review_of_an_edit_does_not_survive_the_order_changing_under_it() {
         .map(|v| v.order.clone())
         .unwrap();
     let mut state = BrokerPanelState::default();
-    state.begin_edit(order.clone(), Some("92500.00".parse().unwrap()));
+    assert!(state.begin_edit(
+        Some(&commands(&rig.host)),
+        order.id.as_str(),
+        Some("92500.00".parse().unwrap())
+    ));
     let mut screen = Screen::new(Vec2::new(900.0, 700.0));
     let mut run = |events: Vec<egui::Event>, state: &mut BrokerPanelState| {
         screen.run(events, |ui| {

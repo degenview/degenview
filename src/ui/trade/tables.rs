@@ -30,7 +30,7 @@ pub struct BarAction {
     pub cancel_all: bool,
 }
 
-fn badge_tone(tone: Tone) -> BadgeTone {
+pub fn badge_tone(tone: Tone) -> BadgeTone {
     match tone {
         Tone::Good => BadgeTone::Good,
         Tone::Warning => BadgeTone::Warning,
@@ -343,6 +343,8 @@ mod tests {
             edit_hint: None,
             source: None,
             tag: None,
+            pending: false,
+            fees: Decimal::ZERO,
             unconfirmed: false,
         }
     }

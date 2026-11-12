@@ -68,13 +68,6 @@ pub enum ChartTrading {
 }
 
 impl ChartTrading {
-    pub fn product(&self) -> Option<&ProductId> {
-        match self {
-            Self::Ready { product } => Some(product),
-            Self::Unavailable(_) => None,
-        }
-    }
-
     pub fn reason(&self) -> Option<Unavailable> {
         match self {
             Self::Ready { .. } => None,

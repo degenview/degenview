@@ -7,11 +7,13 @@
 
 use degenview_brokers::{Decimal, MarketRef, Side};
 
+use crate::model::broker::chart::Unavailable as ChartUnavailable;
+
 use super::broker_commands::BrokerCommands;
 use super::draft::{CancelResult, DraftCheck, PreviewResult, SubmitResult, TradeDraft};
 use super::model::{
-    AccountStats, AccountStrip, Amount, BackendState, Binding, MarketAccess, OrderRow, QuoteView,
-    VenueInfo,
+    AccountStats, AccountStrip, Amount, BackendState, BalanceRow, Binding, ChartLines, FillRow,
+    MarketAccess, Note, OrderRow, QuoteView, VenueInfo,
 };
 use super::task::Task;
 
@@ -70,6 +72,43 @@ pub trait TradingBackend: Send + Sync {
         draft: &TradeDraft,
         binding: &Binding,
     ) -> Task<SubmitResult>;
+
+    /// Sentences about the connection the orders panel shows above its tables (a key that can only
+    /// view, orders held for another account, the last error). Empty when there is nothing to say.
+    fn notes(&self) -> Vec<Note> {
+        Vec::new()
+    }
+
+    /// Whether the panel offers a new order: the venue is ready and the credential may trade.
+    fn can_order(&self) -> bool {
+        self.state().is_ready()
+    }
+
+    /// The most recent executions the venue holds, in no particular order.
+    fn recent_fills(&self) -> Vec<FillRow> {
+        Vec::new()
+    }
+
+    /// What the account holds, one row per asset it holds any of.
+    fn balances(&self) -> Vec<BalanceRow> {
+        Vec::new()
+    }
+
+    /// Why a chart of `market` offers no order entry here, or `None` when it does. `replay` is
+    /// whether the chart is a replay, whose prices are history.
+    fn chart_unavailable(
+        &self,
+        _market: Option<&MarketRef>,
+        _replay: bool,
+    ) -> Option<ChartUnavailable> {
+        Some(ChartUnavailable::NotAMarket)
+    }
+
+    /// What a chart of `market` draws: the price step and a line for each working order. `None`
+    /// when the market is not one of this venue's or nothing has been read yet.
+    fn chart_lines(&self, _market: &MarketRef) -> Option<ChartLines> {
+        None
+    }
 
     /// What a connected broker can be asked beyond taking an order (cancel several, look one up,
     /// read older orders and fills, edit one in place). A venue that has none answers `None`.

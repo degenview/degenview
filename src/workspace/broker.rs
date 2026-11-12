@@ -8,37 +8,38 @@
 
 use std::sync::Arc;
 
-use degenview_brokers::{
-    Broker, BrokerId, BrokerSnapshot, Decimal, MarketRef, OrderStatus, OrderType, Side,
-};
+use degenview_brokers::{BrokerId, Decimal, MarketRef, Side};
 use eframe::egui;
 
 use super::ChartWorkspace;
 use super::chart::Chart;
 use crate::host::broker_host::BrokerHost;
-use crate::model::broker::chart::{ChartTrading, Unavailable, chart_trading};
+use crate::model::broker::chart::Unavailable;
 use crate::model::broker::ticket::{self as rules, TicketKind};
 use crate::model::chart::context::{LiveFacts, LiveOrderRequest};
 use crate::model::chart::kind::ChartType;
 use crate::trading::backend::TradingBackend;
 use crate::trading::broker_backend::BrokerBackend;
-use crate::trading::model::OrderClass;
+use crate::trading::model::{MarketAccess, OrderClass};
 use crate::ui::broker::chart_trading::{BrokerOverlayAction, OrderLine};
-use crate::ui::broker::panel;
+use crate::ui::broker::panel::{self, PanelContext};
 use crate::ui::theme;
 
 impl ChartWorkspace {
-    /// The broker this tab trades at, if the venue is a broker and the host knows it.
-    fn active_broker(&self) -> Option<(BrokerId, &'static dyn Broker, Arc<BrokerHost>)> {
+    /// The broker this tab trades at, as a venue, and the host that holds the user's choices for it.
+    fn active_broker(&self) -> Option<(BrokerId, BrokerBackend, Arc<BrokerHost>)> {
         let id = self.trading_venue.broker()?;
         let broker = degenview_brokers::registry::by_id(id)?;
-        Some((id, broker, self.trading_hub.as_ref()?.brokers().clone()))
+        let host = self.trading_hub.as_ref()?.brokers().clone();
+        Some((id, BrokerBackend::new(host.clone(), broker), host))
     }
 
-    /// The venue backend of the broker this tab trades at.
-    fn broker_backend(&self) -> Option<BrokerBackend> {
-        let (_, broker, host) = self.active_broker()?;
-        Some(BrokerBackend::new(host, broker))
+    /// What the orders panel is told about the tab's broker besides the venue itself.
+    pub(super) fn broker_panel_context(&self) -> Option<PanelContext> {
+        let (id, _, host) = self.active_broker()?;
+        Some(PanelContext {
+            confirm_single_cancel: host.prefs(id).confirm_single_cancel,
+        })
     }
 
     /// A replay's prices are history: no live order may be started, changed or sent from one.
@@ -63,7 +64,7 @@ impl ChartWorkspace {
     /// Fills each chart card's live inputs: the header pills, the broker's bid and ask, and a line for
     /// each working order. Runs every frame; costs nothing when the tab is on paper.
     pub(super) fn configure_broker_cards(&mut self) {
-        let Some((id, broker, host)) = self.active_broker() else {
+        let Some((id, backend, host)) = self.active_broker() else {
             for chart in &mut self.charts {
                 let live = &mut chart.chart.live;
                 if live.show_lines || live.order_entry.is_some() {
@@ -76,8 +77,8 @@ impl ChartWorkspace {
             }
             return;
         };
-        let snapshot = host.snapshot(id);
-        let prefs = host.prefs(id);
+        let show_lines = host.prefs(id).show_on_charts;
+        let broker_name = backend.info().name;
         let replay = self.replay_blocks_trading();
         let review_closed = replay && self.trade_sheet.close_review();
         if (replay && self.broker_panel.close_order_entry()) || review_closed {
@@ -88,89 +89,62 @@ impl ChartWorkspace {
         }
         for chart in &mut self.charts {
             let market = Self::broker_market(chart);
-            let trading = chart_trading(broker, market.as_ref(), snapshot.as_deref(), replay);
-            let resolved = market
+            let reason = backend.chart_unavailable(market.as_ref(), replay);
+            let lines = market
                 .as_ref()
-                .and_then(|market| match broker.resolve_market(market) {
-                    degenview_brokers::ProductResolution::Market(product) => Some(product),
-                    _ => None,
-                });
+                .and_then(|market| backend.chart_lines(market));
             let live = &mut chart.chart.live;
-            live.broker_name = broker.descriptor().display_name.to_owned();
+            live.broker_name.clone_from(&broker_name);
             // Pills appear on the broker's own markets, greyed with the reason when orders are not
             // possible right now; a chart of anything else is left alone.
-            live.order_entry = match trading.reason() {
+            live.order_entry = match reason {
                 None => Some(Ok(())),
                 Some(
                     Unavailable::NotAMarket | Unavailable::OtherSource | Unavailable::UnknownMarket,
                 ) => None,
                 Some(reason) => Some(Err(reason)),
             };
-            let (Some(product), Some(snapshot)) = (resolved, snapshot.as_deref()) else {
+            let (Some(market), Some(lines)) = (market.as_ref(), lines) else {
                 live.show_lines = false;
                 live.lines.clear();
                 live.bid = None;
                 live.ask = None;
                 continue;
             };
-            let spec = snapshot.product(&product).cloned();
-            live.price_increment = spec.as_ref().map(|spec| spec.price_increment);
+            live.price_increment = lines.price_increment;
             let format = |price: Decimal| {
-                spec.as_ref().map_or_else(
+                lines.price_increment.map_or_else(
                     || rules::display(price),
-                    |spec| rules::price_display(price, spec),
+                    |increment| rules::price_at(price, increment),
                 )
             };
             if live.order_entry.is_some() {
-                host.want_quote(id, &product);
-                let quote = host.quote(id, &product);
+                let quote = backend.quote(market);
                 live.bid = quote.as_ref().and_then(|q| q.bid).map(format);
                 live.ask = quote.as_ref().and_then(|q| q.ask).map(format);
             } else {
                 live.bid = None;
                 live.ask = None;
             }
-            live.show_lines = prefs.show_on_charts;
-            live.lines = snapshot
+            live.show_lines = show_lines;
+            live.lines = lines
                 .orders
-                .iter()
-                .filter(|view| view.order.product == product && view.order.status.is_working())
-                .filter_map(|view| {
-                    let order = &view.order;
-                    let price = order.marker_price()?;
-                    let caps = snapshot.capabilities_of(&order.product);
-                    let editable =
-                        rules::edit_blocker(order, caps, view.overlay.is_some()).is_none();
-                    let note = match (view.overlay.map(|o| o.kind), order.status) {
-                        (
-                            Some(degenview_brokers::model::reducer::OverlayKind::CancelRequested),
-                            _,
-                        )
-                        | (_, OrderStatus::CancelQueued) => Some("cancel requested"),
-                        (Some(_), _) | (_, OrderStatus::EditQueued) => Some("edit requested"),
-                        _ => None,
-                    };
+                .into_iter()
+                .filter_map(|order| {
                     Some(OrderLine {
-                        id: order.id.clone(),
+                        price: order.price.to_string().parse().ok()?,
+                        id: order.id,
                         side: order.side,
-                        tag: match order.order_type {
-                            OrderType::StopLimit => "STP-LMT".to_owned(),
-                            OrderType::Market => "MKT".to_owned(),
-                            _ => "LMT".to_owned(),
-                        },
-                        price: price.to_string().parse().ok()?,
-                        price_text: format(price),
-                        remaining_text: order
-                            .remaining_base()
-                            .map_or_else(|| "—".to_owned(), rules::display),
+                        tag: order.tag.to_owned(),
+                        price_text: order.price_text,
+                        remaining_text: order.remaining_text,
                         tint: match order.side {
                             Side::Buy => theme::UP,
                             Side::Sell => theme::DOWN,
                         },
-                        note,
-                        can_edit: editable,
-                        can_cancel: view.overlay.is_none()
-                            && order.status != OrderStatus::CancelQueued,
+                        note: order.note,
+                        can_edit: order.can_edit,
+                        can_cancel: order.can_cancel,
                     })
                 })
                 .collect();
@@ -179,40 +153,23 @@ impl ChartWorkspace {
 
     /// What the context menu needs to offer live orders on this chart, when a broker is active.
     pub(super) fn live_facts(&self, chart: &Chart) -> Option<LiveFacts> {
-        let (id, broker, host) = self.active_broker()?;
-        let snapshot = host.snapshot(id);
+        let (_, backend, _) = self.active_broker()?;
         let market = Self::broker_market(chart);
-        let trading = chart_trading(
-            broker,
-            market.as_ref(),
-            snapshot.as_deref(),
-            self.replay_blocks_trading(),
-        );
-        let caps = trading.product().and_then(|product| {
-            snapshot
-                .as_deref()
-                .and_then(|s| s.capabilities_of(product))
-                .cloned()
-        });
-        let spec = trading.product().and_then(|product| {
-            snapshot
-                .as_deref()
-                .and_then(|s| s.product(product))
-                .cloned()
-        });
+        let unavailable = backend.chart_unavailable(market.as_ref(), self.replay_blocks_trading());
+        let rules = market
+            .as_ref()
+            .and_then(|market| match backend.market(market) {
+                MarketAccess::Ready(rules) => Some(*rules),
+                MarketAccess::Unavailable(_) => None,
+            });
+        let allows = |class| rules.as_ref().is_none_or(|rules| rules.caps.allows(class));
         Some(LiveFacts {
-            broker_name: broker.descriptor().display_name.to_owned(),
-            unavailable: trading.reason(),
-            price_increment: spec.map(|spec| spec.price_increment),
-            market: caps
-                .as_ref()
-                .is_none_or(|caps| caps.allows(OrderType::Market)),
-            limit: caps
-                .as_ref()
-                .is_none_or(|caps| caps.allows(OrderType::Limit)),
-            stop_limit: caps
-                .as_ref()
-                .is_none_or(|caps| caps.allows(OrderType::StopLimit)),
+            broker_name: backend.info().name,
+            unavailable,
+            price_increment: rules.as_ref().map(|rules| rules.price_increment),
+            market: allows(OrderClass::Market),
+            limit: allows(OrderClass::Limit),
+            stop_limit: allows(OrderClass::StopLimit),
             constructed: Self::prices_are_constructed(chart),
         })
     }
@@ -220,20 +177,14 @@ impl ChartWorkspace {
     /// Starts an order in the sheet for this chart's market, filled in as the menu or a pill asks.
     /// Refused, with the reason, whenever an order could not be placed from this chart.
     pub(super) fn open_live_ticket(&mut self, chart_index: usize, request: LiveOrderRequest) {
-        let Some((id, broker, host)) = self.active_broker() else {
+        let Some((id, backend, host)) = self.active_broker() else {
             self.say("Choose a broker in the trading panel first.", true);
             return;
         };
-        let chart = &self.charts[chart_index];
-        let market = Self::broker_market(chart);
-        let snapshot = host.snapshot(id);
-        let trading = chart_trading(
-            broker,
-            market.as_ref(),
-            snapshot.as_deref(),
-            self.replay_blocks_trading(),
-        );
-        if let ChartTrading::Unavailable(reason) = trading {
+        let market = Self::broker_market(&self.charts[chart_index]);
+        if let Some(reason) =
+            backend.chart_unavailable(market.as_ref(), self.replay_blocks_trading())
+        {
             self.say(reason.text(), true);
             return;
         }
@@ -251,64 +202,47 @@ impl ChartWorkspace {
     /// Acts on what the charts' live lines reported: ask to cancel, or open the edit sheet. Neither
     /// changes anything until the user has confirmed it there.
     pub(super) fn apply_broker_overlay_actions(&mut self, actions: Vec<BrokerOverlayAction>) {
-        let Some((id, _, host)) = self.active_broker() else {
-            return;
-        };
-        let Some(snapshot) = host.snapshot(id) else {
+        let Some((id, backend, host)) = self.active_broker() else {
             return;
         };
         for action in actions {
             match action {
                 BrokerOverlayAction::Cancel(order) => {
-                    let backend = self.broker_backend();
                     self.broker_panel.cancel_one(
-                        backend.as_ref().and_then(|b| b.broker_commands()),
+                        backend.broker_commands(),
                         host.prefs(id).confirm_single_cancel,
                         order,
                     );
                 }
                 BrokerOverlayAction::ProposeEdit { id: order, price } => {
-                    self.begin_broker_edit(&snapshot, &order, Some(price));
+                    self.begin_broker_edit(&backend, &order, Some(price));
                 }
-                BrokerOverlayAction::Open(order) => self.begin_broker_edit(&snapshot, &order, None),
+                BrokerOverlayAction::Open(order) => self.begin_broker_edit(&backend, &order, None),
             }
         }
     }
 
-    fn begin_broker_edit(
-        &mut self,
-        snapshot: &BrokerSnapshot,
-        order: &degenview_brokers::OrderId,
-        price: Option<Decimal>,
-    ) {
+    fn begin_broker_edit(&mut self, backend: &BrokerBackend, order: &str, price: Option<Decimal>) {
         if self.replay_blocks_trading() {
             self.say(Unavailable::InReplay.text(), true);
             return;
         }
-        match snapshot.orders.iter().find(|view| &view.order.id == order) {
-            Some(view) => self.broker_panel.begin_edit(view.order.clone(), price),
-            None => self.say("That order is no longer working.", true),
+        if !self
+            .broker_panel
+            .begin_edit(backend.broker_commands(), order, price)
+        {
+            self.say("That order is no longer working.", true);
         }
     }
 
     /// Draws the ticket, the edit sheet and the cancel question when the panel (which normally does)
     /// is closed, and passes on what it has to say.
     pub(super) fn show_broker_dialogs(&mut self, ctx: &egui::Context) {
-        let Some(id) = self.trading_venue.broker() else {
-            return;
-        };
-        let Some(host) = self.trading_hub.as_ref().map(|hub| hub.brokers().clone()) else {
+        let Some((_, backend, _)) = self.active_broker() else {
             return;
         };
         if !self.paper_panel_visible && self.broker_panel.has_dialog() {
-            let backend = self.broker_backend();
-            panel::dialogs_only(
-                ctx,
-                &mut self.broker_panel,
-                &host,
-                backend.as_ref().and_then(|b| b.broker_commands()),
-                id,
-            );
+            panel::dialogs_only(ctx, &mut self.broker_panel, &backend);
         }
         // The panel shows its own message; with it closed the tab's notice does.
         if !self.paper_panel_visible
@@ -455,7 +389,7 @@ mod tests {
         let line = coinbase
             .lines
             .iter()
-            .find(|l| l.id == placed.order_id)
+            .find(|l| l.id == placed.order_id.as_str())
             .expect("the order is a line");
         assert_eq!(line.price_text, "87,654.32");
         assert_eq!(line.remaining_text, "0.001");
@@ -502,7 +436,9 @@ mod tests {
         );
         // Editing from a line is refused too.
         let order = OrderId::new("anything");
-        workspace.apply_broker_overlay_actions(vec![BrokerOverlayAction::Open(order)]);
+        workspace.apply_broker_overlay_actions(vec![BrokerOverlayAction::Open(
+            order.as_str().to_owned(),
+        )]);
         assert!(!workspace.broker_panel.has_dialog());
     }
 
@@ -547,7 +483,7 @@ mod tests {
 
         // Dragging a line proposes: the edit sheet opens and nothing is sent.
         workspace.apply_broker_overlay_actions(vec![BrokerOverlayAction::ProposeEdit {
-            id: placed.order_id.clone(),
+            id: placed.order_id.as_str().to_owned(),
             price: "99000.00".parse().unwrap(),
         }]);
         assert!(
@@ -563,7 +499,7 @@ mod tests {
 
         // ✕ cancels (single cancels do not ask by default): the request goes out, the line stays.
         workspace.apply_broker_overlay_actions(vec![BrokerOverlayAction::Cancel(
-            placed.order_id.clone(),
+            placed.order_id.as_str().to_owned(),
         )]);
         wait("the cancel request", || cancels() == before_cancels + 1);
         wait("the broker's answer", || {
@@ -578,7 +514,7 @@ mod tests {
             .live
             .lines
             .iter()
-            .find(|l| l.id == placed.order_id)
+            .find(|l| l.id == placed.order_id.as_str())
             .expect("the line stays until the broker confirms");
         assert_eq!(line.note, Some("cancel requested"));
         assert!(

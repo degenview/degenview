@@ -408,8 +408,8 @@ fn rust_files(dir: &Path, out: &mut Vec<(String, String)>) {
 }
 
 /// The screens never hold a broker's runtime: what a connected broker is asked goes through
-/// `trading::broker_commands::BrokerCommands`, whose answers they poll. (They still read the
-/// host's snapshots and preferences.)
+/// `trading::broker_commands::BrokerCommands`, whose answers they poll, and what it says is read
+/// through `TradingBackend`. (The workspace still asks the host for the user's preferences.)
 #[test]
 fn the_screens_never_hold_a_brokers_runtime() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
@@ -430,6 +430,16 @@ fn the_screens_never_hold_a_brokers_runtime() {
                 !production.contains(needle),
                 "{name} names `{needle}`: ask the broker through `BrokerCommands`"
             );
+        }
+        // Drawing code reads a venue through `TradingBackend`; only Settings ▸ Brokers manages
+        // connections, so only it holds the host.
+        if name.contains("/src/ui/") && !name.ends_with("settings/brokers.rs") {
+            for needle in ["BrokerHost", "BrokerSnapshot"] {
+                assert!(
+                    !production.contains(needle),
+                    "{name} names `{needle}`: read the venue through `TradingBackend`"
+                );
+            }
         }
     }
 }
