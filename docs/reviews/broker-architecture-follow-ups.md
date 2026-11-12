@@ -53,10 +53,10 @@ item 2 move.
 
 ### 4. Remaining size and signature smells (P2)
 
-* `order_sheet::form` (`ui/trade/order_sheet.rs:473`) and `number` (`:750`) suppress `clippy::too_many_arguments`.
-  Group the arguments into a `FormContext` (market, binding, quote, check) and an input struct for `number`.
-* Hotspots after #457: `ui/broker_panel.rs` 1811 lines, `ui/trade/order_sheet.rs` 1382, `trading/broker_backend.rs` 780.
-  Items 1 and 2 shrink the panel; split `order_sheet.rs` into `form`, `review` and `state` modules when it is next touched.
+* Done: `order_sheet::form` and `number` take a `FormContext` and a `fields::NumberInput`, and
+  `ui/trade/order_sheet.rs` is the `order_sheet/` directory (`state`, `form`, `status`, `review`,
+  `open_orders`). Hotspots after #457 that remain: `ui/broker_panel.rs` 1811 lines,
+  `trading/broker_backend.rs` 780. Items 1 and 2 shrink the panel.
 * `configure_broker_cards` (`workspace/broker.rs`, not Settings) mixes broker projection with mutation;
   see item 2.
 * `VenueInfo` strings and row projections are rebuilt every frame and ignore a revision. Add a cheap
