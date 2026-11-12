@@ -75,6 +75,18 @@ pub fn line_default() -> Rgba {
     }
 }
 
+/// The grey the HLC Area's close line defaults to: it sits between the high and low lines.
+pub fn neutral_line() -> Rgba {
+    if theme::is_light() {
+        [120, 126, 138, 255]
+    } else {
+        [160, 166, 178, 255]
+    }
+}
+
+/// How strong the HLC Area's fills are against the line they follow.
+pub const HLC_FILL_ALPHA: f32 = 0.18;
+
 fn with_alpha(rgba: Rgba, alpha: f32) -> Rgba {
     [
         rgba[0],
@@ -510,29 +522,37 @@ fn hlc_area(frame: &SeriesFrame) {
     let settings = frame.style.hlc_area;
     let high_line = settings.high_line.unwrap_or(frame.palette.up);
     let low_line = settings.low_line.unwrap_or(frame.palette.down);
-    let close_line = settings.close_line.unwrap_or_else(line_default);
-    let fill = color(
+    let close_line = settings.close_line.unwrap_or_else(neutral_line);
+    let high_fill = color(
         settings
-            .fill
-            .unwrap_or_else(|| with_alpha(close_line, 0.16)),
+            .high_fill
+            .unwrap_or_else(|| with_alpha(high_line, HLC_FILL_ALPHA)),
+    );
+    let low_fill = color(
+        settings
+            .low_fill
+            .unwrap_or_else(|| with_alpha(low_line, HLC_FILL_ALPHA)),
     );
     let highs = value_points(frame, PriceSource::High);
     let lows = value_points(frame, PriceSource::Low);
     let closes = value_points(frame, PriceSource::Close);
+    let (high_runs, low_runs, close_runs) = (runs(&highs), runs(&lows), runs(&closes));
     let mut mesh = Mesh::default();
-    for (high_run, low_run) in runs(&highs).iter().zip(runs(&lows).iter()) {
-        strip(&mut mesh, high_run, low_run, fill, fill);
+    for ((high_run, low_run), close_run) in high_runs.iter().zip(&low_runs).zip(&close_runs) {
+        strip(&mut mesh, high_run, close_run, high_fill, high_fill);
+        strip(&mut mesh, close_run, low_run, low_fill, low_fill);
     }
     frame.painter.add(Shape::mesh(mesh));
     let width = f32::from(settings.width);
-    for (points, tint, stroke_width) in [
-        (&highs, high_line, width),
-        (&lows, low_line, width),
-        (&closes, close_line, width),
+    // The close line last: it sits between the other two and stays readable where they meet.
+    for (runs, tint) in [
+        (&high_runs, high_line),
+        (&low_runs, low_line),
+        (&close_runs, close_line),
     ] {
-        let stroke = Stroke::new(stroke_width, color(tint));
-        for run in runs(points) {
-            stroke_line(frame.painter, &run, stroke, LineDash::Solid);
+        let stroke = Stroke::new(width, color(tint));
+        for run in runs {
+            stroke_line(frame.painter, run, stroke, LineDash::Solid);
         }
     }
 }
@@ -878,6 +898,64 @@ mod tests {
         let gap_shapes = shapes(ChartType::Line, &style, &with_gap, &with_gap);
         let solid = shapes(ChartType::Line, &style, &market()[..3], &market()[..3]);
         assert!(gap_shapes >= 2 && solid >= 1);
+    }
+
+    /// The colours of every vertex the HLC Area's fills put on a headless frame.
+    fn hlc_fill_colours(style: &ChartStyle, bars: &[Kline]) -> Vec<Color32> {
+        let ctx = egui::Context::default();
+        let plot = Rect::from_min_max(pos2(0.0, 0.0), pos2(400.0, 200.0));
+        let scale = PriceScale::linear(80.0, 120.0, 0.0, 200.0);
+        let slot = plot.width() / bars.len().max(1) as f32;
+        let mut colours = Vec::new();
+        let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
+            let x_for = |index: usize| slot * (index as f32 + 0.5);
+            paint(&SeriesFrame {
+                painter: ui.painter(),
+                plot,
+                bars,
+                synthetic: None,
+                box_size: None,
+                previous_close: None,
+                slot_width: slot,
+                x_for: &x_for,
+                scale: &scale,
+                palette: Palette::new([0, 200, 0], [200, 0, 0]),
+                style,
+                chart_type: ChartType::HlcArea,
+                recolor: None,
+                price_format: PriceFormat::AUTO,
+            });
+        });
+        for clipped in &output.shapes {
+            if let Shape::Mesh(mesh) = &clipped.shape {
+                colours.extend(mesh.vertices.iter().map(|vertex| vertex.color));
+            }
+        }
+        output.textures_delta.clear();
+        colours
+    }
+
+    #[test]
+    fn the_hlc_area_fills_above_and_below_the_close_line_in_their_own_colours() {
+        let candles = market();
+        let style = styled(ChartType::HlcArea);
+        let colours = hlc_fill_colours(&style, &candles);
+        let up = color(with_alpha([0, 200, 0, 255], HLC_FILL_ALPHA));
+        let down = color(with_alpha([200, 0, 0, 255], HLC_FILL_ALPHA));
+        assert!(colours.contains(&up), "no fill above the close line");
+        assert!(colours.contains(&down), "no fill below the close line");
+        assert!(
+            colours
+                .iter()
+                .all(|colour| *colour == up || *colour == down)
+        );
+
+        let mut custom = style;
+        custom.hlc_area.high_fill = Some([10, 20, 30, 60]);
+        custom.hlc_area.low_fill = Some([40, 50, 60, 70]);
+        let colours = hlc_fill_colours(&custom, &candles);
+        assert!(colours.contains(&color([10, 20, 30, 60])));
+        assert!(colours.contains(&color([40, 50, 60, 70])));
     }
 
     #[test]

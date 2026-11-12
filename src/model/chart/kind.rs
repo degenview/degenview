@@ -525,8 +525,10 @@ pub struct HlcAreaSettings {
     pub high_line: Option<Rgba>,
     pub low_line: Option<Rgba>,
     pub close_line: Option<Rgba>,
-    /// The fill between the high and low lines.
-    pub fill: Option<Rgba>,
+    /// The fill between the high and close lines; `None` follows the high line.
+    pub high_fill: Option<Rgba>,
+    /// The fill between the close and low lines; `None` follows the low line.
+    pub low_fill: Option<Rgba>,
     pub width: u8,
 }
 
@@ -536,7 +538,8 @@ impl Default for HlcAreaSettings {
             high_line: None,
             low_line: None,
             close_line: None,
-            fill: None,
+            high_fill: None,
+            low_fill: None,
             width: 2,
         }
     }
@@ -1007,6 +1010,22 @@ mod tests {
         assert_eq!(partial.chart_type, ChartType::Renko);
         assert_eq!(partial.renko.size.amount, 10.0);
         assert_eq!(partial.renko.size.atr_length, 14);
+    }
+
+    #[test]
+    fn hlc_area_fills_are_stored_apart_and_a_removed_field_is_ignored() {
+        let partial: ChartStyle = serde_json::from_str(
+            r#"{"chart_type":"hlc_area","hlc_area":{"fill":[1,2,3,40],"high_fill":[4,5,6,50]}}"#,
+        )
+        .unwrap();
+        assert_eq!(partial.hlc_area.high_fill, Some([4, 5, 6, 50]));
+        assert_eq!(partial.hlc_area.low_fill, None);
+        assert_eq!(partial.hlc_area.width, 2);
+        let encoded = serde_json::to_string(&partial).unwrap();
+        assert_eq!(
+            serde_json::from_str::<ChartStyle>(&encoded).unwrap(),
+            partial
+        );
     }
 
     #[test]

@@ -34,7 +34,7 @@ Pine visuals (plotcandle, plotbar, barcolor, plots …) are layers of their own 
 ## Colours
 
 Each type has its own up/down colours (candles: up/down body, border and wick; bars, columns,
-Kagi, P&F: up/down; Baseline and HLC Area: their two lines). The chart's saved bullish/bearish
+Kagi, P&F: up/down; Baseline: its two lines; HLC Area: its high and low lines). The chart's saved bullish/bearish
 palette is no longer edited anywhere for these charts: it is only what an unset colour follows, so
 charts saved with custom colours look the same and the wells show them. What the chart draws beside
 its bars (volume bars, the last-price tag, trend-flip markers) follows the up/down colours of the
@@ -54,7 +54,7 @@ sample prices (a price-based type's box/reversal/range size is replaced by one t
 | Volume Candles | Standard | standard OHLC | real OHLC | candle settings; width follows volume |
 | Line / Line with Markers / Step Line | Lines & Areas | standard line | real OHLC | source, colour, width, dash, marker size |
 | Area | Lines & Areas | standard line | real OHLC | source, line, fill at the line and at the foot |
-| HLC Area | Lines & Areas | standard line | real OHLC | high, low, close line colours, fill |
+| HLC Area | Lines & Areas | standard line | real OHLC | high, low, close line colours, fill above and below the close line |
 | Baseline | Lines & Areas | standard line | real OHLC | source, base level (% of height), line and fill colours |
 | Columns | Lines & Areas | standard line | real OHLC | source, up/down colours, colour by previous value |
 | Heikin Ashi | Price-based | constructed | HA OHLC | candle settings |
@@ -63,6 +63,12 @@ sample prices (a price-based type's box/reversal/range size is replaced by one t
 | Kagi | Price-based | constructed | segment OHLC | reversal (traditional / ATR / %), source, colours, width |
 | Point & Figure | Price-based | constructed | column OHLC | box size, reversal boxes, source, colours, outlines |
 | Range | Price-based | constructed | range-bar OHLC | range (traditional / ATR / %), candles or bars |
+
+HLC Area draws the high line (the up colour), the low line (the down colour) and a grey close line
+between them. The band between high and close is filled with the up colour and the band between close
+and low with the down colour, each at 18 % opacity unless a fill colour is set. This follows
+TradingView's look as seen on a screenshot; its exact colours and opacity are not documented, so they
+are this app's choice.
 
 Switching Candles ⇄ Line ⇄ Bars never changes what scripts and indicators receive. Switching to or
 from a price-based type rebuilds them against the other series. A source that draws a line
