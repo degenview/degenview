@@ -42,7 +42,7 @@ impl ChartWorkspace {
 
     pub(super) fn show_trade_sheet(&mut self, ui: &mut egui::Ui) -> Vec<WorkspaceAction> {
         let mut actions = Vec::new();
-        let Some(hub) = TradingHub::global() else {
+        let Some(hub) = self.trading_hub.clone() else {
             return actions;
         };
         let all: Vec<VenueInfo> = hub.infos();
@@ -126,7 +126,7 @@ impl ChartWorkspace {
         ui: &mut egui::Ui,
         actions: &mut Vec<WorkspaceAction>,
     ) -> Option<(TradingVenue, VenueBar)> {
-        let Some(hub) = TradingHub::global() else {
+        let Some(hub) = self.trading_hub.clone() else {
             return Some((
                 TradingVenue::Paper,
                 VenueBar {
@@ -193,7 +193,7 @@ impl ChartWorkspace {
             PanelEvent::NewOrder => self.start_order(degenview_brokers::Side::Buy, None, None),
             PanelEvent::OpenSettings => actions.push(WorkspaceAction::OpenBrokerSettings),
             PanelEvent::Venue(action) => {
-                let Some(hub) = TradingHub::global() else {
+                let Some(hub) = self.trading_hub.clone() else {
                     return;
                 };
                 let all = hub.infos();
@@ -241,13 +241,7 @@ mod tests {
             |config| config.fast(),
         );
         let paper = Arc::new(Mutex::new(PaperHost::load(store.clone())));
-        let hub = TradingHub::set_global_for_tests(TradingHub::new(
-            brokers,
-            paper.clone(),
-            Some(store.clone()),
-        ));
-        // The process-wide hub is the first one a test installed; the frame must lock its paper host.
-        let paper = hub.paper_for_tests();
+        let hub = TradingHub::new(brokers, paper.clone(), Some(store.clone()));
         paper
             .lock()
             .unwrap()
@@ -258,6 +252,7 @@ mod tests {
         let (done, finished) = mpsc::channel();
         std::thread::spawn(move || {
             let mut workspace = empty_workspace(1);
+            workspace.set_trading_hub(&hub);
             workspace.trading_venue = TradingVenue::Paper;
             workspace.trade_sheet_visible = true;
             workspace.paper_panel_visible = true;

@@ -141,6 +141,7 @@ impl WebhookHost {
         mcp: crate::ui::settings::mcp::McpSettingsInput,
         updates: &crate::host::update_host::UpdateHost,
         sync: &crate::host::sync_host::SyncHost,
+        trading_hub: &std::sync::Arc<crate::host::trading_hub::TradingHub>,
         now_ms: i64,
         reference_count: &dyn Fn(EndpointId) -> usize,
     ) -> Vec<WebhookHostAction> {
@@ -190,6 +191,7 @@ impl WebhookHost {
             ai: crate::ui::settings::ai::AiSettingsInput { prefs: &ai_prefs },
             updates,
             sync,
+            trading_hub,
             editor_themes: &self.editor_themes,
             tab_title_style: self.tab_titles.style(),
             now_ms,
