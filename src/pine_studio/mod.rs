@@ -116,7 +116,7 @@ pub(crate) enum Cmd {
     SetDrawerTab(DrawerTab),
     ToggleDrawer,
     /// Something chosen in the Logs tab.
-    Logs(crate::ui::pine_logs_view::LogsAction),
+    Logs(crate::ui::pine::logs_view::LogsAction),
     /// A debugger command from the toolbar or the keyboard.
     Debug(crate::pine::debug::DebugCommand),
     /// Something the debug panel asked for.
@@ -176,7 +176,7 @@ pub(crate) struct AlertSheet {
     pub instance: PineInstance,
     pub name: String,
     pub source: String,
-    pub state: crate::ui::pine_alert_editor::PineAlertEditorState,
+    pub state: crate::ui::alert::pine_editor::PineAlertEditorState,
     pub call_sites: Vec<crate::pine::builtins::alert::call::AlertCallSite>,
     pub endpoints: Vec<crate::model::webhook::WebhookEndpoint>,
     pub duplicate_exists: bool,

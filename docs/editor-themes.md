@@ -314,7 +314,7 @@ size in both appearances, keyboard navigation, the sheets, delete and reset conf
 export results); the real editor painting each surface and role colour, and repainting on a change
 without touching text, caret or span cache; the gutter and line height at 9 and 32 points.
 
-Pictures: `DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib -- settings_pine_studio::tests::gallery
+Pictures: `DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib -- settings::pine_studio::tests::gallery
 settings_theme_editor::tests::gallery --ignored` writes the page and every tab of the editor at three
 sizes in both appearances; they were looked at, and the layout was changed for what they showed (the
 tile miniatures, a preview that left no room for the colours, tabs that ran into the search at 320

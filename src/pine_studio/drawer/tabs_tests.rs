@@ -18,7 +18,7 @@ use crate::pine::syntax::token::{
 use crate::pine_studio::drawer;
 use crate::pine_studio::profiler::Status;
 use crate::pine_studio::profiler::ui::{self, TabView};
-use crate::ui::pine_logs_view::{self, Feed, LogsState, ScriptEntry};
+use crate::ui::pine::logs_view::{self, Feed, LogsState, ScriptEntry};
 use crate::ui::render_tests::{Screen, gallery_dir};
 
 const SIZES: [(f32, f32); 5] = [
@@ -378,7 +378,7 @@ fn logs_fit_the_drawer() {
                     history,
                     logging,
                 };
-                pine_logs_view::show(ui, &mut view, &scripts, Some(feed));
+                logs_view::show(ui, &mut view, &scripts, Some(feed));
             });
         }
     }

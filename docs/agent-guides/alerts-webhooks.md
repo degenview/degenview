@@ -10,12 +10,12 @@
   `AlertEngine::set_muted`): defined, not polled or evaluated, so one Mac notifies. Keep runtime
   fields out of `sync::project`'s alert projection.
 - Unseen count comes from `alerts.lastSeenAt`, never an event flag (snapshot replacement rewrites
-  events). `ui::alert_banner` shows over every workspace.
+  events). `ui::alert::banner` shows over every workspace.
 - New-alert sheets opened from charts/watchlists belong to the requesting `ChartWorkspace` and send
   save/webhook actions back as `WorkspaceAction`s; only Alerts-window edits host the sheet there.
 - An open sheet holds `alert_editor::quote_owner` demand and gets the current quote each frame,
   converted by app FX for non-USD currencies.
-- The Create Script Alert and script alert webhooks sheets (`ui::pine_alert_editor`) follow the
+- The Create Script Alert and script alert webhooks sheets (`ui::alert::pine_editor`) follow the
   price alert sheet's layout: header, armed-item card, row cards, `webhook_picker` for endpoints
   (`send_section` without message for a script alert, `endpoint_picker` alone), hairline,
   summary + Cancel/Create footer. Neutral controls only (`kit::sheet_button`, gray badges). "Add in

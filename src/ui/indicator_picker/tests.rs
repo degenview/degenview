@@ -1,8 +1,8 @@
 use super::*;
 use crate::model::BuiltIn;
 use crate::pine_studio::model::ScriptType;
+use crate::ui::pine::script_catalog::sample;
 use crate::ui::render_tests::{Screen, gallery_dir};
-use crate::ui::script_catalog::sample;
 use std::sync::{Arc, Mutex};
 
 fn press(key: Key, modifiers: Modifiers) -> egui::Event {

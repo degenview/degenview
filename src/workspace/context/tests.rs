@@ -238,7 +238,7 @@ fn add_alert_prefills_the_editor_and_creates_nothing() {
     );
     let editor = rig.workspace.alert_editor.as_ref().expect("editor open");
     assert_eq!(editor.target, "118150.99");
-    assert_eq!(editor.direction, alert_editor::Direction::Above);
+    assert_eq!(editor.direction, crate::ui::alert::editor::Direction::Above);
     assert_eq!(editor.asset().symbol, "BTC");
 }
 
@@ -253,7 +253,7 @@ fn an_alert_below_the_market_crosses_downward() {
     });
     output.textures_delta.clear();
     let editor = rig.workspace.alert_editor.as_ref().expect("editor open");
-    assert_eq!(editor.direction, alert_editor::Direction::Below);
+    assert_eq!(editor.direction, crate::ui::alert::editor::Direction::Below);
     assert_eq!(editor.target, "80.00");
 }
 

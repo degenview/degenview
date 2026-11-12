@@ -3,7 +3,7 @@
 //! example of what it will hold.
 
 use crate::ui::icons::{self, Icon};
-use crate::ui::pine_logs_view::{centered, intro, step};
+use crate::ui::pine::logs_view::{centered, intro, step};
 use crate::ui::{kit, theme};
 use eframe::egui::{
     self, Color32, FontId, Rect, RichText, Sense, Stroke, StrokeKind, Ui, pos2,

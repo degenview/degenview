@@ -11,10 +11,10 @@ use crate::service::keychain_webhook_secrets::KeychainWebhookSecretStore;
 use crate::service::llm::prefs::AiPrefs;
 use crate::service::webhook_delivery::{self, Mode, UreqTransport, WebhookSecretStore};
 use crate::store::Store;
-use crate::ui::settings_api_keys::StatusMessage;
-use crate::ui::settings_snapshots::SnapshotsAction;
-use crate::ui::settings_storage::StorageAction;
-use crate::ui::settings_window::{self, SettingsAction, SettingsInput, SettingsState};
+use crate::ui::settings::api_keys::StatusMessage;
+use crate::ui::settings::snapshots::SnapshotsAction;
+use crate::ui::settings::storage::StorageAction;
+use crate::ui::settings::window::{self, SettingsAction, SettingsInput, SettingsState};
 use crate::ui::webhook::settings::{WebhookSettingsAction, WebhookSettingsInput};
 use eframe::egui;
 use std::sync::Arc;
@@ -100,31 +100,31 @@ impl WebhookHost {
 
     /// Opens Settings on the Alpaca page (the Pine Studio's "Open Settings").
     pub fn open_alpaca(&mut self) {
-        self.state.section = crate::ui::settings_window::SettingsSection::Alpaca;
+        self.state.section = crate::ui::settings::window::SettingsSection::Alpaca;
         self.open = true;
     }
 
     /// Opens Settings on the Brokers page (the live trading panel's "Open Settings").
     pub fn open_brokers(&mut self) {
-        self.state.section = crate::ui::settings_window::SettingsSection::Brokers;
+        self.state.section = crate::ui::settings::window::SettingsSection::Brokers;
         self.open = true;
     }
 
     /// Opens Settings on the AI Assistant page (the assistant panel's "Open Settings").
     pub fn open_ai(&mut self) {
-        self.state.section = crate::ui::settings_window::SettingsSection::Ai;
+        self.state.section = crate::ui::settings::window::SettingsSection::Ai;
         self.open = true;
     }
 
     /// Opens Settings on the Snapshots page (the chart camera menu's "Configure Snapshots…").
     pub fn open_snapshots(&mut self) {
-        self.state.section = crate::ui::settings_window::SettingsSection::Snapshots;
+        self.state.section = crate::ui::settings::window::SettingsSection::Snapshots;
         self.open = true;
     }
 
     /// Opens Settings on the Webhooks page (an alert editor's "Add in Settings").
     pub fn open_webhooks(&mut self) {
-        self.state.section = crate::ui::settings_window::SettingsSection::Webhooks;
+        self.state.section = crate::ui::settings::window::SettingsSection::Webhooks;
         self.open = true;
     }
 
@@ -138,7 +138,7 @@ impl WebhookHost {
         store: &Store,
         notifications: &AlertNotificationSettings,
         health: &AlertRuntimeHealth,
-        mcp: crate::ui::settings_mcp::McpSettingsInput,
+        mcp: crate::ui::settings::mcp::McpSettingsInput,
         updates: &crate::host::update_host::UpdateHost,
         sync: &crate::host::sync_host::SyncHost,
         now_ms: i64,
@@ -183,25 +183,25 @@ impl WebhookHost {
                 load_failed: false,
             },
             mcp,
-            snapshots: crate::ui::settings_snapshots::SnapshotsInput {
+            snapshots: crate::ui::settings::snapshots::SnapshotsInput {
                 prefs: &snapshot_prefs,
                 secrets: self.snapshots.secrets(),
             },
-            ai: crate::ui::settings_ai::AiSettingsInput { prefs: &ai_prefs },
+            ai: crate::ui::settings::ai::AiSettingsInput { prefs: &ai_prefs },
             updates,
             sync,
             editor_themes: &self.editor_themes,
             tab_title_style: self.tab_titles.style(),
             now_ms,
         };
-        for action in settings_window::show(ui, &mut self.state, &input) {
+        for action in window::show(ui, &mut self.state, &input) {
             match action {
                 SettingsAction::Webhook(action) => {
                     self.apply_webhook(action, store, &endpoints, now_ms, &mut out);
                 }
                 SettingsAction::Storage(action) => self.apply_storage(action, ui.ctx()),
                 SettingsAction::Snapshots(action) => self.apply_snapshots(action, store),
-                SettingsAction::Ai(crate::ui::settings_ai::AiAction::SavePrefs(prefs)) => {
+                SettingsAction::Ai(crate::ui::settings::ai::AiAction::SavePrefs(prefs)) => {
                     if let Err(error) = prefs.save(store) {
                         self.state.ai.status = Some(StatusMessage::error(format!(
                             "Could not save the settings: {error}"
@@ -210,7 +210,7 @@ impl WebhookHost {
                     self.ai_prefs = Some(prefs);
                     self.ai_prefs_read_at = Some(std::time::Instant::now());
                 }
-                SettingsAction::Ai(crate::ui::settings_ai::AiAction::ClearHistory) => {
+                SettingsAction::Ai(crate::ui::settings::ai::AiAction::ClearHistory) => {
                     use crate::pine_studio::ai::history::History;
                     let mut history = History::load(store);
                     history.clear();

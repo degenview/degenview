@@ -6,7 +6,7 @@ use super::chart_card::ChartCard;
 use super::icons::Icon;
 use super::kit;
 use super::series_render::{color as paint_color, line_default};
-use super::settings_card;
+use super::settings::card;
 use crate::model::DataSource;
 use crate::model::chart::kind::{
     AreaSettings, BarSettings, BaselineSettings, CandleSettings, ChartGroup, ChartType,
@@ -29,7 +29,7 @@ pub fn show(
     let appearance = card.appearance();
     let palette: Pair = (opaque(appearance.bullish), opaque(appearance.bearish));
     let current = card.effective_chart_type(source);
-    settings_card::section_title(
+    card::section_title(
         ui,
         "Chart type",
         Some("How the price is drawn. Each type remembers its own settings."),
@@ -51,7 +51,7 @@ pub fn show(
             "Builds its own bars from the market's. Scripts and indicators run over those bars."
         }
     };
-    if let Some(index) = settings_card::card(ui, Icon::BarChart, "Style", Some(hint), |ui| {
+    if let Some(index) = card::card(ui, Icon::BarChart, "Style", Some(hint), |ui| {
         kit::menu_picker(ui, 170.0, &labels, selected, true)
     }) {
         card.set_chart_type(types[index]);
@@ -249,8 +249,8 @@ fn opaque([r, g, b]: [u8; 3]) -> Rgba {
 // MARK: Rows
 
 pub(super) fn switch_row(ui: &mut Ui, icon: Icon, title: &str, hint: &str, value: &mut bool) {
-    settings_card::card(ui, icon, title, Some(hint), |ui| {
-        settings_card::switch(ui, value);
+    card::card(ui, icon, title, Some(hint), |ui| {
+        card::switch(ui, value);
     });
 }
 
@@ -263,7 +263,7 @@ pub(super) fn color_row(
     slot: &mut Option<Rgba>,
     default: Rgba,
 ) {
-    settings_card::card(ui, icon, title, hint, |ui| {
+    card::card(ui, icon, title, hint, |ui| {
         color_control(ui, title, slot, default);
     });
 }
@@ -295,7 +295,7 @@ pub(super) fn picker_row<T: Copy + PartialEq>(
         .iter()
         .position(|(option, _)| option == value)
         .unwrap_or(0);
-    if let Some(index) = settings_card::card(ui, icon, title, hint, |ui| {
+    if let Some(index) = card::card(ui, icon, title, hint, |ui| {
         kit::menu_picker(ui, 130.0, &labels, selected, true)
     }) {
         *value = options[index].0;
@@ -351,7 +351,7 @@ pub(super) fn int_row(
     range: std::ops::RangeInclusive<i64>,
 ) -> bool {
     let mut changed = false;
-    settings_card::card(ui, icon, title, hint, |ui| {
+    card::card(ui, icon, title, hint, |ui| {
         let bounds = *range.start() as f64..=*range.end() as f64;
         if let Some(next) = number_field(ui, id, *value as f64, 1.0, bounds, 0) {
             *value = next.round() as i64;
@@ -440,7 +440,7 @@ fn float_row(
     range: std::ops::RangeInclusive<f64>,
     decimals: usize,
 ) {
-    settings_card::card(ui, icon, title, hint, |ui| {
+    card::card(ui, icon, title, hint, |ui| {
         if let Some(next) = number_field(ui, id, *value, step, range, decimals) {
             *value = next;
         }

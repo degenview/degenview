@@ -11,10 +11,10 @@ use crate::model::mcp::activity::{
 };
 use crate::model::mcp::{McpAction, McpAuditEntry, McpAuditKind};
 use crate::model::portfolio::editor::{date_text, parse_date_text};
-use crate::ui::alert_center::{Tone, relative_time};
+use crate::ui::alert::center::{Tone, relative_time};
 use crate::ui::icons::{self, Icon};
-use crate::ui::settings_mcp::capsule;
-use crate::ui::settings_window::{card, divider, section};
+use crate::ui::settings::mcp::capsule;
+use crate::ui::settings::window::{card, divider, section};
 use crate::ui::{date_picker, kit, replay::bar, sheet, theme};
 use eframe::egui::{self, Align, Color32, Id, Layout, Sense, Stroke, StrokeKind, Ui, vec2};
 

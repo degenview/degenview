@@ -1,7 +1,7 @@
 # UI style
 
 Default look and controls of every window, sheet, panel and card. Reference: the Settings window
-(`src/ui/settings_window.rs`) beside the main window. New UI follows it. Existing UI is not audited:
+(`src/ui/settings/window.rs`) beside the main window. New UI follows it. Existing UI is not audited:
 do not restyle screens you were not asked to touch, and do not copy their older habits.
 
 ## Rules
@@ -53,7 +53,7 @@ content they act on.
 
 ## Sidebar and page layout
 
-Use the `settings_window.rs` helpers, not hand-built pages:
+Use the `settings/window.rs` helpers, not hand-built pages:
 
 | Need | Use |
 | --- | --- |

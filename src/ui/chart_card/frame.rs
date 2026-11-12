@@ -10,7 +10,7 @@
 use super::overlays::OverlayFrame;
 use super::*;
 use crate::model::chart::canvas::PaneHeights;
-use crate::ui::pine_chart_render::{hover_targets_in_order, target_at};
+use crate::ui::pine::chart_render::{hover_targets_in_order, target_at};
 
 /// A script's output, how it is ordered against the chart, and the instance it belongs to.
 pub(super) type Placed = (Arc<VisualOutput>, VisualOrder, u64);
@@ -423,9 +423,10 @@ impl ChartCard {
             // The first script that recolours a bar wins it, in the order the scripts were
             // applied.
             let recolour = |index: usize| {
-                layout.bar_color_outputs.iter().find_map(|pine| {
-                    pine_chart_render::bar_color_at(pine, shown.len(), tail, index)
-                })
+                layout
+                    .bar_color_outputs
+                    .iter()
+                    .find_map(|pine| chart_render::bar_color_at(pine, shown.len(), tail, index))
             };
             let bar_color: Option<&dyn Fn(usize) -> Option<Color32>> =
                 (!layout.bar_color_outputs.is_empty()).then_some(&recolour);

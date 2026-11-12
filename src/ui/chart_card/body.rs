@@ -21,8 +21,8 @@ pub(super) struct BodyArgs<'a> {
 /// What the live overlays collected while painting, for the card to apply once the paint is over.
 pub(super) struct OverlayResults {
     pub pane_actions: Vec<(u64, PaneAction)>,
-    pub alert_menu: Option<alert_lines::LineMenu>,
-    pub alert_moves: Vec<alert_lines::AlertMove>,
+    pub alert_menu: Option<lines::LineMenu>,
+    pub alert_moves: Vec<lines::AlertMove>,
     pub alert_toggled: Vec<crate::model::alert::AlertId>,
     pub alert_deleted: Vec<crate::model::alert::AlertId>,
     pub paper: (Vec<PaperOverlayAction>, Option<MarkerMenu>),

@@ -179,7 +179,7 @@ Read [chart overlays](../chart-overlays.md) first. Short rules:
 - Pine logs pane: also a view, reads `ChartCard::pine_logs` (run's messages, never saved or
   templated), dropped with its chart. Only level and search options persist (local
   `pineLogs.prefs`).
-- Saved scripts reach a chart two ways, both via `ui::script_catalog` (saved indicators/strategies
+- Saved scripts reach a chart two ways, both via `ui::pine::script_catalog` (saved indicators/strategies
   by name, re-read at most every 2 s, only while a menu or the Scripts page is open; never call
   `ScriptStore::all_scripts` per frame):
   - Toolbar Indicators picker (card header has no "+") reports `Action::AddScript`; workspace

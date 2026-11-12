@@ -211,7 +211,7 @@
 ## Drawer tabs
 
 - Report, Problems, Profile share `pine_studio::drawer::tab_chrome`: 46px toolbar with a
-  `state_field`, hairline, cards of rows. Logs (`ui::pine_logs_view`, shared with the chart
+  `state_field`, hairline, cards of rows. Logs (`ui::pine::logs_view`, shared with the chart
   workspace) mirrors it; keep `TOOLBAR_HEIGHT`, `MARGIN`, `BUTTON` equal.
 - Width before height: `chrome::wide` (520pt) puts parts in `chrome::columns`;
   `pine_logs_view::intro` puts a picture beside its steps. Nothing outside a scroll area may exceed
