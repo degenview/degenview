@@ -9,12 +9,14 @@
 use crate::pine_studio::library::store::ScriptStore;
 use crate::store::SharedStore;
 use crate::store::sync::ConflictSummary;
-use crate::sync::account::{self, AccountChoice};
-use crate::sync::apply::{ApplyCtx, ApplyReport, apply_batch};
-use crate::sync::core::{Effect, PauseReason, Phase, RemoteBatch, SyncCore};
-use crate::sync::initial::{JoinMode, JoinSummary, finish_join, summarize};
-use crate::sync::policy::Category;
-use crate::sync::scripts::{NoScripts, ScriptCache, ScriptSink, StoreScriptSink, scan_scripts};
+use crate::sync::engine::account::{self, AccountChoice};
+use crate::sync::engine::apply::{ApplyCtx, ApplyReport, apply_batch};
+use crate::sync::engine::core::{Effect, PauseReason, Phase, RemoteBatch, SyncCore};
+use crate::sync::engine::initial::{JoinMode, JoinSummary, finish_join, summarize};
+use crate::sync::record::policy::Category;
+use crate::sync::record::scripts::{
+    NoScripts, ScriptCache, ScriptSink, StoreScriptSink, scan_scripts,
+};
 use crate::sync::transport::{SyncTransport, TransportEvent};
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -659,7 +661,7 @@ impl SyncHost {
                 drop(store);
                 if on {
                     // Records held back while it was off, and script changes made meanwhile.
-                    let empty = crate::sync::core::RemoteBatch {
+                    let empty = crate::sync::engine::core::RemoteBatch {
                         id: 0,
                         records: Vec::new(),
                         deletions: Vec::new(),

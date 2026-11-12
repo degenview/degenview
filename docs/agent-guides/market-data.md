@@ -81,7 +81,7 @@ watchlists.
   spellings collapse and re-key on load. Chain is metadata; ticker text is not identity. CoinMarketCap
   portfolio cards are not instruments.
 - Flags: global per market in `watchlist.flags`, synced by the Watchlists switch (not Preferences),
-  merged per key; `sync::policy::category_of` / `merge_of` decide per setting key. Sort/filter is
+  merged per key; `sync::record::policy::category_of` / `merge_of` decide per setting key. Sort/filter is
   presentation-only, within sections, via `watchlist_layout`.
 - Quotes are transient. `WatchlistQuoteCoordinator` merges demand by `InstrumentId`, batches per
   source, shares Coinbase's socket, backs off per source, fills `WatchlistQuoteBook`; never persists

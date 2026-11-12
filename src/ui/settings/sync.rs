@@ -6,9 +6,9 @@
 
 use crate::host::sync_host::{SyncAction, SyncHost, SyncNotice, SyncPrompt, SyncView};
 use crate::store::sync::ConflictSummary;
-use crate::sync::account::AccountChoice;
-use crate::sync::core::{PauseReason, Phase};
-use crate::sync::initial::{Counts, JoinMode, JoinSummary};
+use crate::sync::engine::account::AccountChoice;
+use crate::sync::engine::core::{PauseReason, Phase};
+use crate::sync::engine::initial::{Counts, JoinMode, JoinSummary};
 use crate::sync::transport::ErrorKind;
 use crate::ui::icons::Icon;
 use crate::ui::kit::{

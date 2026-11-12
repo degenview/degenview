@@ -132,7 +132,7 @@ mod tests {
         PaperTimeInForce,
     };
     use crate::store::sync::{Load, OutboxOp, OutboxState};
-    use crate::sync::policy::EntityKind;
+    use crate::sync::record::policy::EntityKind;
 
     fn syncing_store() -> Store {
         let store = Store::open_in_memory().expect("open");
@@ -236,7 +236,9 @@ mod tests {
             ids.to_global(accounts[0])
         );
         assert_eq!(bundle["fills"][0]["order_id"], bundle["orders"][0]["id"]);
-        assert!(bundle["orders"][0]["id"].as_u64().unwrap() >= crate::sync::ids::GLOBAL_BASE);
+        assert!(
+            bundle["orders"][0]["id"].as_u64().unwrap() >= crate::sync::record::ids::GLOBAL_BASE
+        );
         // The tables keep the small ids.
         assert_eq!(store.paper_trading().unwrap().accounts[0].id, accounts[0]);
     }
@@ -340,7 +342,7 @@ mod tests {
     fn the_paper_trading_switch_stops_tracking() {
         let store = syncing_store();
         store
-            .set_category_enabled(crate::sync::policy::Category::PaperTrading, false)
+            .set_category_enabled(crate::sync::record::policy::Category::PaperTrading, false)
             .unwrap();
         let (snapshot, _) = traded(&["Paper"]);
         store.save_paper_trading(&snapshot).unwrap();

@@ -134,8 +134,8 @@ mod tests {
         prefs.save(&store).unwrap();
         assert_eq!(AiPrefs::load(&store), prefs);
         assert_eq!(
-            crate::sync::policy::setting_policy(AiPrefs::KEY),
-            crate::sync::policy::SettingPolicy::Local
+            crate::sync::record::policy::setting_policy(AiPrefs::KEY),
+            crate::sync::record::policy::SettingPolicy::Local
         );
     }
 }

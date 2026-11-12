@@ -243,7 +243,7 @@ follow from how it works:
   like the other templates).
 * Deleting a theme here deletes it everywhere; a mass delete is held for confirmation by the usual rule.
 
-Tested on the two-Mac harness (`sync/theme_tests.rs`): themes arriving whole and not echoing back, rename,
+Tested on the two-Mac harness (`sync/tests/theme.rs`): themes arriving whole and not echoing back, rename,
 edit and delete, the later edit winning, records that are not themes kept not applied, future fields
 surviving, the choices with a missing font, and a choice that arrives before its theme. **Not run against
 real CloudKit**, like the rest of sync (see [iCloud Sync](icloud-sync.md#what-is-not-verified)). A change to

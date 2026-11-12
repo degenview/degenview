@@ -84,7 +84,7 @@ impl Store {
 
     /// Forgets every MCP setting, credential and the seal, undecodable rows included. For the
     /// user's explicit "reset MCP access" when the saved state cannot be trusted. These tables
-    /// are device-local (`sync::policy`), so nothing needs queuing for upload.
+    /// are device-local (`sync::record::policy`), so nothing needs queuing for upload.
     pub fn clear_mcp_state(&self) -> rusqlite::Result<()> {
         self.connection.execute_batch("SAVEPOINT clear_mcp_state")?;
         let result = (|| {

@@ -179,8 +179,8 @@ fn the_panes_options_are_remembered_on_this_machine_but_not_its_messages() {
 #[test]
 fn the_options_are_never_synced() {
     assert_eq!(
-        crate::sync::policy::setting_policy(PREFS_KEY),
-        crate::sync::policy::SettingPolicy::Local
+        crate::sync::record::policy::setting_policy(PREFS_KEY),
+        crate::sync::record::policy::SettingPolicy::Local
     );
 }
 

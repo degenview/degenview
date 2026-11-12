@@ -22,7 +22,7 @@ use eframe::egui;
 
 pub use crash_report::install_panic_hook;
 pub use host::sync_host::{EventSink, TransportFactory};
-pub use sync::native::{CloudKitFactory, NativeApi};
+pub use sync::transport::native::{CloudKitFactory, NativeApi};
 
 pub fn run_gui() -> Result<(), Box<dyn std::error::Error>> {
     run_gui_with(None)

@@ -8,13 +8,15 @@
 use super::Store;
 
 mod paper;
-use crate::sync::ids::IdSpace;
-use crate::sync::policy::{
+use crate::sync::record::ids::IdSpace;
+use crate::sync::record::policy::{
     Category, EntityKind, SettingPolicy, TablePolicy, category_of, setting_policy, table_policy,
 };
 #[cfg(test)]
-use crate::sync::project::project_row;
-use crate::sync::project::{Projected, project_row_in, project_setting, project_transaction};
+use crate::sync::record::project::project_row;
+use crate::sync::record::project::{
+    Projected, project_row_in, project_setting, project_transaction,
+};
 pub use paper::Elsewhere;
 use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
@@ -51,7 +53,7 @@ pub struct SyncState {
     /// Reserved: not written at runtime; the live error is in `SyncCore::status`.
     pub last_error: Option<String>,
     /// 31 random bits that namespace this database's counter ids when they cross into a synced
-    /// record (see `sync::ids`). Kept by a copied database so a lineage keeps meaning the same ids.
+    /// record (see `sync::record::ids`). Kept by a copied database so a lineage keeps meaning the same ids.
     pub id_tag: u32,
 }
 
@@ -213,8 +215,9 @@ impl Store {
             return Ok(());
         }
         let (low, high) = (
-            crate::sync::ids::GLOBAL_BASE as i64,
-            (crate::sync::ids::GLOBAL_BASE | (crate::sync::ids::LEGACY_LIMIT - 1)) as i64,
+            crate::sync::record::ids::GLOBAL_BASE as i64,
+            (crate::sync::record::ids::GLOBAL_BASE | (crate::sync::record::ids::LEGACY_LIMIT - 1))
+                as i64,
         );
         for table in ["sync_entity", "sync_outbox", "sync_inbox"] {
             let key = if table == "sync_inbox" {
@@ -461,7 +464,7 @@ fn now_ms() -> i64 {
 impl Store {
     /// The current rows of `table`, only when they will need diffing: sync is on and the table
     /// syncs. Read inside the write's savepoint, before the rows are replaced.
-    /// This database's id space; see `sync::ids`.
+    /// This database's id space; see `sync::record::ids`.
     pub(crate) fn id_space(&self) -> IdSpace {
         let tag: Option<u32> = self
             .connection
@@ -943,7 +946,7 @@ impl Store {
             EntityKind::PaperAccount => {
                 let local = ids.to_local_string(sync_id);
                 self.paper_parts(&local)?
-                    .and_then(|parts| crate::sync::paper::project(ids, parts))
+                    .and_then(|parts| crate::sync::record::paper::project(ids, parts))
             }
             EntityKind::Portfolio => {
                 let local = ids.to_local_string(sync_id);
@@ -2172,8 +2175,8 @@ mod tests {
     fn a_database_that_enabled_sync_before_the_tag_existed_gets_one_when_it_opens() {
         let store = Store::open_in_memory().unwrap();
         store.ensure_sync_state("Mac", "hw").unwrap();
-        let zero_tagged = crate::sync::ids::GLOBAL_BASE | 1;
-        let other_macs = crate::sync::ids::GLOBAL_BASE | (7 << 24) | 1;
+        let zero_tagged = crate::sync::record::ids::GLOBAL_BASE | 1;
+        let other_macs = crate::sync::record::ids::GLOBAL_BASE | (7 << 24) | 1;
         for (kind, id) in [
             ("paperaccount", zero_tagged),
             ("paperaccount", other_macs),
@@ -2971,12 +2974,14 @@ mod hook_tests {
     }
 
     fn script(id: &str, source: &str) -> Projected {
-        crate::sync::project::project_script(&crate::sync::project::ScriptSnapshot {
-            id: id.into(),
-            name: format!("Script {id}"),
-            source: source.into(),
-            is_favorite: false,
-        })
+        crate::sync::record::project::project_script(
+            &crate::sync::record::project::ScriptSnapshot {
+                id: id.into(),
+                name: format!("Script {id}"),
+                source: source.into(),
+                is_favorite: false,
+            },
+        )
     }
 
     #[test]

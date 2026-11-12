@@ -43,7 +43,7 @@ client → 127.0.0.1:<port>/mcp → bearer/Host/Origin/size checks
   either end open), and pages it 25 rows at a time (`model::mcp::activity`, pure: the filter runs
   over the in-memory rows every frame, so there is no query and no cache to invalidate). The
   table keeps 1,000 rows,
-  is local to this Mac (`sync::policy`), and Clear writes one "cleared" row. A row holds the tool,
+  is local to this Mac (`sync::record::policy`), and Clear writes one "cleared" row. A row holds the tool,
   client, outcome, an error *code*, duration, the client's request id, and up to four ids from a
   fixed list of argument names, kept only if they look like ids (digits or a hex hash). Never a
   token, a script, a note, a message or any other argument value. Rate-limited calls are counted into

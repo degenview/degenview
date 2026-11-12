@@ -1,7 +1,7 @@
 //! The MCP activity log: what agents asked DegenView to do and how each call ended.
 //!
 //! One append-only table, newest rows kept. It is local to this Mac on purpose (see
-//! `sync::policy`): it describes what happened *here*, and no other device should inherit or
+//! `sync::record::policy`): it describes what happened *here*, and no other device should inherit or
 //! rewrite it. Reads skip a row this version cannot decode, because one unreadable row must not
 //! hide the rest of the history (or stop the server from starting): nothing writes the log back
 //! from what it read.

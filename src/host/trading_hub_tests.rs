@@ -391,7 +391,7 @@ fn choosing_a_venue_while_the_caller_holds_the_store_does_not_wait_for_it() {
 
 #[test]
 fn the_settings_that_hold_the_choices_stay_on_this_mac() {
-    use crate::sync::policy::{SettingPolicy, setting_policy};
+    use crate::sync::record::policy::{SettingPolicy, setting_policy};
     for key in [ENABLED_KEY, super::trading_hub::LAST_USED_KEY] {
         assert_eq!(setting_policy(key), SettingPolicy::Local, "{key}");
     }

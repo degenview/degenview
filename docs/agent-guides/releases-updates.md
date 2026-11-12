@@ -18,7 +18,7 @@ final `0.6.0` is a new tag rebuilt from the last commit, never a promoted RC bin
 ```
 
 - Channels: chosen in Settings ▸ About, saved per Mac in local-only `update.channel` (never in
-  `sync::policy`). **Stable** = tags with no prerelease part; **Release Candidate** = those plus `rc`
+  `sync::record::policy`). **Stable** = tags with no prerelease part; **Release Candidate** = those plus `rc`
   tags (so it moves on to `0.6.0`). Nothing saved: a build starts on its own channel.
 - `update::check::check` reads `releases?per_page=30`, up to three pages (`/releases/latest` omits
   prereleases; the list is ordered by creation, so RCs can push the newest stable past page one).

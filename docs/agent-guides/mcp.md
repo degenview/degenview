@@ -45,7 +45,7 @@
   value or `McpError::message()`. `McpHost::tick` writes the log, not request threads; Settings and
   the activity sheet read `McpHost::activity()`, never SQLite. Filtering/paging: `model::mcp::activity`
   (pure, tested); a new outcome or row kind needs a `McpActivityStatus` there. `mcp_audit` is
-  local-only in `sync::policy`.
+  local-only in `sync::record::policy`.
 - Rate limits: `mcp/limits.rs`, applied in `require_bearer`. Bad tokens may get 429; a valid token
   is never refused for others' failures. `transport::serve` (not `axum::serve`) accepts connections
   so header, time and connection limits hold; add limits there.

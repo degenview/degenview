@@ -1585,7 +1585,7 @@ fn a_card_that_already_has_its_preview_or_is_not_a_card_is_left_alone() {
 
 #[test]
 fn the_choice_to_allow_previews_stays_on_this_mac() {
-    use crate::sync::policy::{SettingPolicy, setting_policy};
+    use crate::sync::record::policy::{SettingPolicy, setting_policy};
     assert_eq!(
         setting_policy(crate::model::annotation::link_card::ContentPrefs::KEY),
         SettingPolicy::Local

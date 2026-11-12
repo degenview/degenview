@@ -222,6 +222,6 @@ Read [chart overlays](../chart-overlays.md) first. Short rules:
   provider, controls display/open/export. Opening focuses or adds the card, never replaces the
   focused chart's market.
 - `portfolio_id` and its derived key are translated to shared ids on layout/watchlist sync
-  (`sync::ids::map_card`); any new place storing a portfolio id must join that translation.
+  (`sync::record::ids::map_card`); any new place storing a portfolio id must join that translation.
 - Top Performers ranks each market's candles without FX, scales today's value by return, assuming
   unchanged quantity.

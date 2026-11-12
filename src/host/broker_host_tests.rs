@@ -384,8 +384,8 @@ fn the_pending_journal_survives_a_restart_and_never_forgets_on_a_bad_record() {
 fn pending_orders_and_broker_choices_never_sync_between_macs() {
     for key in [PENDING_KEY, "broker.prefs"] {
         assert_eq!(
-            crate::sync::policy::setting_policy(key),
-            crate::sync::policy::SettingPolicy::Local,
+            crate::sync::record::policy::setting_policy(key),
+            crate::sync::record::policy::SettingPolicy::Local,
             "{key} must stay on this Mac"
         );
     }

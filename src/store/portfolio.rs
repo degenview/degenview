@@ -321,8 +321,8 @@ mod tests {
     // MARK: Sync tracking
 
     use crate::store::sync::Load;
-    use crate::sync::ids::{GLOBAL_BASE, IdSpace};
-    use crate::sync::policy::EntityKind;
+    use crate::sync::record::ids::{GLOBAL_BASE, IdSpace};
+    use crate::sync::record::policy::EntityKind;
 
     fn syncing_store() -> Store {
         let store = Store::open_in_memory().expect("open");
@@ -531,7 +531,7 @@ mod tests {
     fn the_portfolios_switch_stops_tracking() {
         let store = syncing_store();
         store
-            .set_category_enabled(crate::sync::policy::Category::Portfolios, false)
+            .set_category_enabled(crate::sync::record::policy::Category::Portfolios, false)
             .unwrap();
         store
             .save_portfolio_ledger(&ledger(&[1], &[(2, 1)]))

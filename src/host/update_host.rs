@@ -19,7 +19,7 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// The commit this build came from (`-dirty` when it had uncommitted changes), set by `build.rs`.
 /// Shown in Settings ▸ About for bug reports; nothing reads it.
 pub const BUILD_ID: &str = env!("DEGENVIEW_BUILD_ID");
-/// The `setting` key holding the chosen update channel. Local to this Mac: not in `sync::policy`.
+/// The `setting` key holding the chosen update channel. Local to this Mac: not in `sync::record::policy`.
 pub const CHANNEL_KEY: &str = "update.channel";
 
 /// How long after launch the first check waits, so it never competes with startup.

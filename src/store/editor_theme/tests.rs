@@ -148,7 +148,7 @@ fn choices_from_a_newer_version_survive_a_save() {
 
 #[test]
 fn themes_and_choices_are_classified_for_sync() {
-    use crate::sync::policy::{
+    use crate::sync::record::policy::{
         EntityKind, Merge, SettingPolicy, TablePolicy, setting_policy, table_policy,
     };
     assert_eq!(

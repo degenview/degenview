@@ -2,8 +2,8 @@
 
 use super::*;
 use crate::store::Store;
-use crate::sync::mock::{MockCloud, MockTransport};
 use crate::sync::transport::TransportCommand;
+use crate::sync::transport::mock::{MockCloud, MockTransport};
 use serde_json::{Value, json};
 
 /// A transport that delivers the mock's events as soon as a command produces them, the way the
@@ -481,7 +481,7 @@ fn a_failed_deletion_leaves_sync_on_and_reports_why() {
     let a = rig(&cloud, "Mac A");
     a.put_watchlist(10, "Mine");
     a.set_up(JoinMode::Merge);
-    cloud.inject(crate::sync::mock::Fault::DeleteZone(
+    cloud.inject(crate::sync::transport::mock::Fault::DeleteZone(
         crate::sync::transport::ErrorKind::Network,
     ));
     a.host.act(SyncAction::DeleteCloudData);

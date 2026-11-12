@@ -2,7 +2,7 @@
 //! the entitlement raises an Objective-C exception that Swift cannot catch, so the answer comes
 //! from the signature first and CloudKit is never touched when it is "no".
 
-use crate::sync::account::CONTAINER;
+use crate::sync::engine::account::CONTAINER;
 
 /// What a signed entitlement holds. Only the macOS reader constructs `Text` and `List`.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]

@@ -1,7 +1,7 @@
 //! Moving a database to another Mac without two Macs sharing one id space.
 //!
 //! Portfolios, paper accounts and everything inside them are numbered by a per-Mac counter and sync
-//! under `GLOBAL_BASE | tag << 24 | id` (`sync::ids`). A database copied to a second Mac (Migration
+//! under `GLOBAL_BASE | tag << 24 | id` (`sync::record::ids`). A database copied to a second Mac (Migration
 //! Assistant, a restored backup) would keep minting the same tagged ids as the original, and the two
 //! Macs would overwrite each other's records. So when a database finds itself on different hardware it
 //! gets a new tag, and everything it already holds under counter ids is rewritten *to the old tagged
@@ -9,10 +9,10 @@
 //! the same portfolio, and counters minted from now on belong to the new tag.
 
 use super::Store;
-use crate::sync::ids::{Direction, IdSpace, map_fields_with};
-use crate::sync::paper::{COLLECTIONS, map_collection_row};
-use crate::sync::policy::EntityKind;
-use crate::sync::project::{map_chart_cards, map_entry_cards};
+use crate::sync::record::ids::{Direction, IdSpace, map_fields_with};
+use crate::sync::record::paper::{COLLECTIONS, map_collection_row};
+use crate::sync::record::policy::EntityKind;
+use crate::sync::record::project::{map_chart_cards, map_entry_cards};
 use rusqlite::params;
 use serde_json::Value;
 
@@ -212,7 +212,7 @@ mod tests {
         PortfolioSource, PortfolioTransaction, PortfolioTransactionType,
     };
     use crate::store::sync::Load;
-    use crate::sync::ids::GLOBAL_BASE;
+    use crate::sync::record::ids::GLOBAL_BASE;
     use std::collections::HashMap;
 
     fn syncing_store() -> Store {

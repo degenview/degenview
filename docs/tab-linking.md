@@ -85,7 +85,7 @@ Vertical scales are never carried.
 `PersistedWorkspace.link` (`"orange"`, ...), skipped when none, so old rows decode and a row from a
 newer build with a colour this one does not know reads as not linked rather than failing the whole
 `tab` table. The switches are the `tab.link_toggles` setting. The `tab` table and that key are
-both local to the Mac (`sync::policy`), so nothing here reaches CloudKit, and the colour is not in
+both local to the Mac (`sync::record::policy`), so nothing here reaches CloudKit, and the colour is not in
 a saved layout.
 
 ## UI

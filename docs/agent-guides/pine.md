@@ -49,7 +49,7 @@
 - Builtin variables read with `[]` (`hlcc4[1]`, `ta.tr[1]`) are recorded by `read_history_builtins`
   at each confirmed bar's end; names found once by `history_builtin_names`. Not inside
   `request.security`.
-- Breakpoints and watches: local `scriptDebug.state` setting (never synced; in `sync::policy`'s local
+- Breakpoints and watches: local `scriptDebug.state` setting (never synced; in `sync::record::policy`'s local
   keys).
 - `once` finished flag: `RuntimeState::once_finished` (by site key), deliberately in working state:
   a rolled-back unconfirmed realtime tick keeps the structure active until the block runs on a
@@ -305,7 +305,7 @@ failures with original code; never copy corpus scripts into the repository.
 
 ## iCloud Sync
 
-User scripts sync as files via `sync::scripts::ScriptSink` (`StoreScriptSink` over `ScriptStore`).
+User scripts sync as files via `sync::record::scripts::ScriptSink` (`StoreScriptSink` over `ScriptStore`).
 Drafts and revisions never sync; unmodified bundled examples are neither uploaded nor kept over an
 incoming same-name script; text being typed is never overwritten (incoming waits in the sync inbox).
 Two edits to one script keep both; the loser becomes a conflict-copy script. Sync code writes script

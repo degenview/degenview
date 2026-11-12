@@ -206,7 +206,7 @@ Every `every_tool_…` loop in `ui/drawing/layer/tests.rs` runs over all 45 grou
 included (through `Drawing::sample` and `sample_content`): placement in one gesture and one undo step,
 select, move, delete, every handle, save and reopen, the toolbar. Per-area suites:
 `drawing_layer/tests/{note,table,image,card}_tests.rs`, `service/annotation/ingest.rs`,
-`sync/asset_tests.rs` (on `MockCloud`), `service/annotation/link_fetch.rs` (parsers on fixtures),
+`sync/tests/asset.rs` (on `MockCloud`), `service/annotation/link_fetch.rs` (parsers on fixtures),
 `ui/drawing/content/card.rs`, `workspace/context/tests.rs` (paste, consent, fetch results). Galleries that
 write PNGs for a person to look at:
 
