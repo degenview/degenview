@@ -3,6 +3,7 @@
 use super::ChartWorkspace;
 use super::chart::{Chart, displayed_candles};
 use crate::host::portfolio_card_host::PortfolioCardEnv;
+use crate::host::trading_hub::TradingHub;
 use crate::model::chart::price_scale::PriceScaleMode;
 use crate::model::portfolio::card::PortfolioCard;
 use crate::model::watchlist::WatchlistInstrument;
@@ -11,6 +12,7 @@ use crate::model::{
 };
 use crate::service::SearchResult;
 use eframe::egui;
+use std::sync::Arc;
 
 /// Why [`ChartWorkspace::set_chart_type_for_mcp`] refused.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -405,6 +407,13 @@ impl ChartWorkspace {
     pub fn set_card_env(&mut self, env: &PortfolioCardEnv) {
         if self.card_env.is_none() {
             self.card_env = Some(env.clone());
+        }
+    }
+
+    /// Gives this tab the venues it can trade on. Cheap to call every frame.
+    pub fn set_trading_hub(&mut self, hub: &Arc<TradingHub>) {
+        if self.trading_hub.is_none() {
+            self.trading_hub = Some(Arc::clone(hub));
         }
     }
 

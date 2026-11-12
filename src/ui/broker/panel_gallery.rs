@@ -199,7 +199,7 @@ fn every_live_trading_surface_draws() {
     let mut page = Screen::new(Vec2::new(600.0, 900.0));
     let output = frames(&mut page, 3, |ui| {
         egui::CentralPanel::default().show(ui, |ui| {
-            brokers::body(ui, &mut page_state, Some(rig.hub.clone()));
+            brokers::body(ui, &mut page_state, &rig.hub);
         });
     });
     assert!(shapes(&output) > 20, "the settings page");
@@ -208,11 +208,7 @@ fn every_live_trading_surface_draws() {
     let idle = self::rig();
     let output = frames(&mut page, 3, |ui| {
         egui::CentralPanel::default().show(ui, |ui| {
-            brokers::body(
-                ui,
-                &mut brokers::BrokersState::default(),
-                Some(idle.hub.clone()),
-            );
+            brokers::body(ui, &mut brokers::BrokersState::default(), &idle.hub);
         });
     });
     assert!(shapes(&output) > 20, "the page before connecting");
@@ -421,7 +417,7 @@ fn gallery_of_live_trading() {
             let mut draw = |page: &mut Screen| {
                 frames(page, 3, |ui| {
                     egui::CentralPanel::default().show(ui, |ui| {
-                        brokers::body(ui, &mut page_state, Some(hub.clone()));
+                        brokers::body(ui, &mut page_state, &hub);
                     });
                 })
             };
@@ -609,7 +605,7 @@ fn connecting_a_key_from_the_settings_page_never_stalls_a_frame() {
         let start = Instant::now();
         frames(&mut screen, 1, |ui| {
             egui::CentralPanel::default().show(ui, |ui| {
-                brokers::body(ui, state, Some(rig.hub.clone()));
+                brokers::body(ui, state, &rig.hub);
             });
         });
         slowest = slowest.max(start.elapsed() - Duration::from_millis(15));
@@ -662,7 +658,7 @@ fn typing_a_base64_secret_never_stalls_a_frame() {
         screen.run(events, |ui| {
             theme::sync(ui.ctx());
             egui::CentralPanel::default().show(ui, |ui| {
-                brokers::body(ui, state, Some(rig.hub.clone()));
+                brokers::body(ui, state, &rig.hub);
             });
         });
         slowest.set(slowest.get().max(start.elapsed()));
@@ -829,7 +825,7 @@ fn the_sandbox_connects_without_a_key_and_is_listed_beside_coinbase() {
     while Instant::now() < deadline {
         frames(&mut screen, 1, |ui| {
             egui::CentralPanel::default().show(ui, |ui| {
-                brokers::body(ui, &mut state, Some(rig.hub.clone()));
+                brokers::body(ui, &mut state, &rig.hub);
             });
         });
         if rig

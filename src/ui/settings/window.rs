@@ -166,6 +166,7 @@ pub struct SettingsInput<'a> {
     pub ai: crate::ui::settings::ai::AiSettingsInput<'a>,
     pub updates: &'a crate::host::update_host::UpdateHost,
     pub sync: &'a crate::host::sync_host::SyncHost,
+    pub trading_hub: &'a std::sync::Arc<crate::host::trading_hub::TradingHub>,
     pub editor_themes: &'a crate::host::editor_theme_host::EditorThemeHost,
     pub tab_title_style: crate::model::tab::title::TabTitleStyle,
     pub now_ms: i64,
@@ -469,13 +470,7 @@ pub fn show(
                 &mut page,
                 section,
                 "Connect a broker to trade for real from your charts. Paper trading is separate.",
-                |ui| {
-                    crate::ui::settings::brokers::body(
-                        ui,
-                        &mut state.brokers,
-                        crate::host::trading_hub::TradingHub::global(),
-                    )
-                },
+                |ui| crate::ui::settings::brokers::body(ui, &mut state.brokers, input.trading_hub),
             );
         }
         SettingsSection::CoinMarketCap => {
