@@ -84,7 +84,7 @@ rounded**. The broker's own preview (fees, total, warnings, refusals) replaces t
 arrives.
 
 **The broker's preview is required.** Review is enabled only on a *fresh, accepting* preview of the
-order exactly as it stands (`model/broker/ticket::preview_gate`): no answer yet, a failed preview, a
+order exactly as it stands (the crate's `model::preview::preview_gate`): no answer yet, a failed preview, a
 preview that lists problems, or one older than a minute all leave it off. A failed preview says so
 and offers "Try again". The broker's create endpoint does not require a preview, so this is this
 application's rule, not Coinbase's. Orders are also paused while the record of unconfirmed orders
@@ -212,7 +212,7 @@ request descriptions for the checklist.
 
 * **The venue layer is the path for the panel and the chart.** What the screens *ask* a broker goes
   through `BrokerCommands` (`trading/broker_commands.rs`: retry, cancel, paged history and fills, and
-  the edit as `trading::edit::EditSession`); what they *read* goes through `TradingBackend`; a test
+  the edit: the crate's `edit_session::EditSession`, worded by `trading/edit/`); what they *read* goes through `TradingBackend`; a test
   fails if `ui/` or `workspace/` name a broker's runtime or the host (Settings ▸ Brokers excepted).
   Still on `BrokerHost`: Settings ▸ Brokers (it manages connections). The user's choices are
   `TradingHub::prefs`. The hub is handed to each window (`WindowEnv`), not read from a global.

@@ -11,9 +11,10 @@ Read [Live trading](../broker-trading.md) first. Line numbers are those of `9206
 
 ### 1. The edit-order state machine lives in a render function (P1): fixed
 
-Done: `trading::edit::EditSession` (pure, time as a parameter, venue answers as polled tasks behind
-`EditVenue`) holds every rule; the panel draws its `EditView` and returns `EditEvent`s. Each rule is a
-transition with a test in `trading/edit/tests.rs`. Left as it was (a decision, not an oversight): the
+Done: the crate's `edit_session::EditSession` (pure, time as a parameter, the broker's answers as polled
+`Pending`s behind `EditSource`) holds every rule and reports a typed state; `trading/edit/` words it and
+the panel draws its `EditView` and returns `EditEvent`s. Each rule is a transition with a test in the
+crate's `edit_session`; the words are tested in `trading/edit/tests.rs`. Left as it was (a decision, not an oversight): the
 sheet closes when the account goes away even while an amend is in flight, and the amend is checked by
 the runtime on the order fingerprint (account included) but not on the connection generation.
 
@@ -98,7 +99,6 @@ is published. Still to move:
 
 | Move | From | Why it belongs there |
 | --- | --- | --- |
-| Edit rules: `EditSession`, `issues`, `edit_blocker`, `PreviewGate` and `PREVIEW_FRESH` | `trading/edit/`, `model/broker/ticket.rs` | The crate already owns `OrderFingerprint`, `OrderChange`, `EditPreview` and the runtime's refusal of a changed order; the rules could be tested against the mock exchange. Needs the crate's `Pending` where the app uses `Task` |
 | Ticket text to order, issues, estimate | `model/broker/ticket.rs` | About 70% of it is `validate_draft` already; what is left imports only the crate |
 
 Stays in the app: `TradingBackend` and its adapters (the paper account is the second implementation and
@@ -117,6 +117,10 @@ Later and larger: the connection manager and its secrets queue.
   tradable) and the clicked-price snap is `validate::snap_to_increment`, both from 0.3.1;
   `model/broker/chart.rs` keeps only the chart's own questions (is it a market of this broker, replay)
   and the sentences.
+* The edit rules are the crate's from 0.3.1: `model::edit` (`edit_block`, `edit_issues`),
+  `model::preview` (`PREVIEW_FRESH`, `PREVIEW_DEBOUNCE`, `PreviewGate`) and `edit_session::EditSession`
+  over `EditSource` (`BrokerRuntime` implements it; so does `BrokerBackend` for the app's own routing).
+  The app keeps the two text boxes, every sentence and the `EditView`.
 * Account valuation (`valuation_currency`, `value`, `Quote::mark`) is the crate's `model::valuation`
   from 0.3.1; the app keeps only how money and rates are written (`trading/money.rs`).
 * The edit-order state machine, the commands and reads path for the panel and chart, and the injected

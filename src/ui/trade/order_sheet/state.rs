@@ -7,13 +7,13 @@ use degenview_brokers::{Decimal, MarketRef, Side};
 #[cfg(test)]
 use eframe::egui;
 
-use crate::model::broker::ticket::PreviewGate;
 use crate::model::broker::venue::TradingVenue;
 use crate::trading::backend::TradingBackend;
 use crate::trading::draft::{CancelResult, SubmitResult, TradeDraft};
 use crate::trading::model::{Binding, OrderClass};
 use crate::trading::preview::PreviewSlot;
 use crate::trading::task::Task;
+use degenview_brokers::model::preview::PreviewGate;
 
 pub(super) enum Stage {
     Editing,

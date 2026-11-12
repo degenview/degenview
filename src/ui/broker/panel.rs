@@ -1017,7 +1017,7 @@ fn draw_form(ctx: &egui::Context, session: &mut EditSession, form: &EditForm) ->
                     theme::text_secondary(),
                 ));
             }
-            if let rules::PreviewGate::Failed(error) = &form.gate {
+            if let degenview_brokers::model::preview::PreviewGate::Failed(error) = &form.gate {
                 red(
                     ui,
                     &format!(

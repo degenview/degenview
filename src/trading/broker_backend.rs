@@ -12,9 +12,10 @@ use degenview_brokers::model::orders::{
 use degenview_brokers::model::reducer::{OrderView, OverlayKind};
 use degenview_brokers::model::valuation;
 use degenview_brokers::{
-    AccountId, Broker, BrokerSnapshot, Capabilities, ClientOrderId, Decimal, ErrorKind, LiveFill,
-    LiveOrder, MarketRef, OrderId, OrderKind, OrderSize, OrderStatus, OrderType, Pending,
-    PendingState, PendingView, ProductResolution, ProductSpec, Quote, Side, Status, TifKind,
+    AccountId, Broker, BrokerError, BrokerSnapshot, Capabilities, ClientOrderId, Decimal,
+    ErrorKind, LiveFill, LiveOrder, MarketRef, OrderId, OrderKind, OrderSize, OrderStatus,
+    OrderType, Pending, PendingState, PendingView, ProductResolution, ProductSpec, Quote, Side,
+    Status, TifKind,
 };
 
 use super::backend::TradingBackend;
@@ -23,7 +24,7 @@ use super::draft::{
     CancelResult, DraftCheck, DraftField, DraftIssue, Estimate, PreviewResult, SubmitResult,
     Submitted, TradeDraft, floor_to_increment,
 };
-use super::edit::{EditAnswer, EditError, EditVenue};
+use super::edit::EditVenue;
 use super::model::{
     AccountStats, AccountStrip, Amount, BackendState, BalanceRow, Binding, ChartLines, ChartOrder,
     FillRow, Hero, HeroNote, MarketAccess, MarketRules, Note, OrderClass, OrderRow, Page,
@@ -39,6 +40,7 @@ use crate::model::broker::ticket::{
     self as rules, StatusTone, TicketContext, TicketDraft, TicketField, TicketKind, TicketTif,
 };
 use crate::model::broker::venue::TradingVenue;
+use degenview_brokers::edit_session::EditSource;
 
 /// Rows asked for at a time when a list is read from the broker.
 const PAGE: u32 = 100;
@@ -53,18 +55,6 @@ where
         pending
             .poll()
             .map(|answer| answer.map(&map).map_err(|error| error.to_string()))
-    })
-}
-
-/// A request to change an order, with whether the broker may have acted when it failed.
-fn edit_answer<T: Clone + Send + 'static>(pending: Pending<T>) -> EditAnswer<T> {
-    Task::new(move || {
-        pending.poll().map(|answer| {
-            answer.map_err(|error| EditError {
-                outcome_unknown: error.kind == ErrorKind::OutcomeUnknown,
-                text: error.to_string(),
-            })
-        })
     })
 }
 
@@ -125,19 +115,11 @@ impl BrokerBackend {
     }
 }
 
-impl EditVenue for BrokerBackend {
-    fn world(&self, order: &OrderId) -> EditWorld {
-        self.snapshot()
-            .map_or_else(EditWorld::default, |snapshot| snapshot.edit_world(order))
-    }
-
-    fn preview_edit(&self, order: OrderId, change: OrderChange) -> EditAnswer<EditPreview> {
+impl EditSource for BrokerBackend {
+    fn preview_edit(&self, order: OrderId, change: OrderChange) -> Pending<EditPreview> {
         match self.host.runtime(self.id()) {
-            Some(runtime) => edit_answer(runtime.preview_edit(order, change)),
-            None => Task::ready(Err(EditError {
-                text: NOT_CONNECTED.to_owned(),
-                outcome_unknown: false,
-            })),
+            Some(runtime) => runtime.preview_edit(order, change),
+            None => Pending::ready(Err(not_connected())),
         }
     }
 
@@ -146,15 +128,23 @@ impl EditVenue for BrokerBackend {
         order: OrderId,
         change: OrderChange,
         base: OrderFingerprint,
-    ) -> EditAnswer<EditOutcome> {
+    ) -> Pending<EditOutcome> {
         match self.host.runtime(self.id()) {
-            Some(runtime) => edit_answer(runtime.amend(order, change, base)),
-            None => Task::ready(Err(EditError {
-                text: NOT_CONNECTED.to_owned(),
-                outcome_unknown: false,
-            })),
+            Some(runtime) => runtime.amend(order, change, base),
+            None => Pending::ready(Err(not_connected())),
         }
     }
+}
+
+impl EditVenue for BrokerBackend {
+    fn world(&self, order: &OrderId) -> EditWorld {
+        self.snapshot()
+            .map_or_else(EditWorld::default, |snapshot| snapshot.edit_world(order))
+    }
+}
+
+fn not_connected() -> BrokerError {
+    BrokerError::new(ErrorKind::Invalid, NOT_CONNECTED)
 }
 
 impl BrokerCommands for BrokerBackend {

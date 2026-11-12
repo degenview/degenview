@@ -6,11 +6,11 @@ use std::time::{Duration, Instant};
 use eframe::egui;
 
 use super::state::SheetState;
-use crate::model::broker::ticket::PreviewGate;
 use crate::trading::draft::{DraftCheck, DraftField};
 use crate::trading::model::VenueInfo;
 use crate::ui::icons::{self, Icon};
 use crate::ui::{kit, theme};
+use degenview_brokers::model::preview::PreviewGate;
 
 /// How long a message stays under the button.
 const NOTICE_FOR: Duration = Duration::from_secs(10);
