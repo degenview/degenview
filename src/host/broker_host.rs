@@ -16,11 +16,10 @@
 //! Nothing here names a particular broker (a guard test checks); the list comes from the crate's
 //! registry. Live trading has no path to Pine scripts, alerts, webhooks or MCP.
 
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex, OnceLock};
-use std::time::{Duration, Instant};
 
 use degenview_brokers::model::pending::{
     JournalError, PendingJournal, PendingSubmission, SubmissionOutcome,
@@ -28,8 +27,7 @@ use degenview_brokers::model::pending::{
 use degenview_brokers::model::reducer::Notice;
 use degenview_brokers::{
     AccountId, Broker, BrokerError, BrokerId, BrokerRuntime, BrokerSnapshot, ClientOrderId,
-    Credentials, Env, NoticeSink, Pending, ProductId, Quote, RuntimeConfig, SecretStore, Session,
-    Waker,
+    Credentials, Env, NoticeSink, ProductId, Quote, RuntimeConfig, SecretStore, Session, Waker,
 };
 
 use crate::model::broker;
@@ -190,13 +188,6 @@ impl Connection {
     }
 }
 
-/// How often a market's best prices are read while something is drawing them.
-const QUOTE_EVERY: Duration = Duration::from_secs(2);
-/// A market nobody has asked for lately is no longer read.
-const QUOTE_WANTED_FOR: Duration = Duration::from_secs(4);
-/// A price older than this is not shown as a price.
-const QUOTE_FRESH_FOR: Duration = Duration::from_secs(10);
-
 /// The running connections, and which connection the user currently wants of each broker.
 ///
 /// Starting a connection takes time (a Keychain prompt, the store's lock, the network), and the user
@@ -243,15 +234,6 @@ struct SavedKeys {
     asked: std::collections::BTreeSet<BrokerId>,
 }
 
-/// The best prices of one market at one broker, read for the charts and tickets that show them.
-#[derive(Default)]
-struct QuoteEntry {
-    quote: Option<(Quote, Instant)>,
-    pending: Option<Pending<Quote>>,
-    asked_at: Option<Instant>,
-    wanted_at: Option<Instant>,
-}
-
 pub struct BrokerHost {
     secrets: Arc<dyn SecretStore>,
     journal: Arc<dyn PendingJournal>,
@@ -267,7 +249,6 @@ pub struct BrokerHost {
     jobs: Mutex<Sender<Job>>,
     /// Whether a key is saved, as the secret store last said. `connection()` reads only this.
     saved: Arc<Mutex<SavedKeys>>,
-    quotes: Mutex<HashMap<(BrokerId, ProductId), QuoteEntry>>,
     waker: Arc<AppWaker>,
     notices: Arc<NoticeQueue>,
     /// Bumped on connect and disconnect (runtime changes arrive through the waker).
@@ -309,7 +290,6 @@ impl BrokerHost {
             epochs: AtomicU64::new(1),
             jobs: Mutex::new(jobs),
             saved: Arc::new(Mutex::new(SavedKeys::default())),
-            quotes: Mutex::new(HashMap::new()),
             waker: Arc::new(AppWaker::default()),
             notices: Arc::new(NoticeQueue::default()),
             changes: AtomicU64::new(0),
@@ -377,68 +357,28 @@ impl BrokerHost {
     }
 
     /// Says that something on screen wants this market's best prices. Cheap; call it every frame
-    /// the prices are drawn. They are read every couple of seconds for as long as this goes on, and
-    /// not at all once it stops: nothing polls for a chart nobody is looking at.
+    /// the prices are drawn. The connection reads them every couple of seconds for as long as this
+    /// goes on, and not at all once it stops: nothing polls for a chart nobody is looking at.
     pub fn want_quote(&self, id: BrokerId, product: &ProductId) {
-        let mut quotes = self.quotes.lock().unwrap_or_else(|e| e.into_inner());
-        quotes.entry((id, product.clone())).or_default().wanted_at = Some(Instant::now());
+        if let Some(runtime) = self.runtime(id) {
+            runtime.want_quote(product);
+        }
     }
 
     /// The market's best prices, when they are fresh. A price that is too old is `None`, never
-    /// shown as if it were current.
+    /// shown as if it were current. (The rule is the crate's: `model::quotes`.)
     pub fn quote(&self, id: BrokerId, product: &ProductId) -> Option<Quote> {
-        let quotes = self.quotes.lock().unwrap_or_else(|e| e.into_inner());
-        let (quote, at) = quotes.get(&(id, product.clone()))?.quote.as_ref()?;
-        // Both clocks must agree it is fresh: how long it has sat here, and how old the exchange
-        // says it already was when it arrived. A price delayed on the way is not new.
-        (at.elapsed() < QUOTE_FRESH_FOR && !self.quote_is_old(quote)).then(|| quote.clone())
-    }
-
-    /// Whether the exchange's own time on `quote` is further back than a price may be. A time in
-    /// the future (this computer's clock is behind) is not old: skew must not hide every price.
-    fn quote_is_old(&self, quote: &Quote) -> bool {
-        let age_ms = self.env.clock.now_ms().saturating_sub(quote.time_ms);
-        age_ms > i64::try_from(QUOTE_FRESH_FOR.as_millis()).unwrap_or(i64::MAX)
+        self.runtime(id)?.fresh_quote(product)
     }
 
     /// Takes the prices that arrived and asks for the ones wanted, once a frame, from the app.
     /// Never waits: a request is a message to the runtime and its answer is picked up next time.
     pub fn tick_quotes(&self) {
-        let mut quotes = self.quotes.lock().unwrap_or_else(|e| e.into_inner());
+        let runtimes: Vec<Arc<BrokerRuntime>> = self.lock().running.values().cloned().collect();
         let mut changed = false;
-        for ((broker, product), entry) in quotes.iter_mut() {
-            if let Some(pending) = &entry.pending
-                && let Some(answer) = pending.poll()
-            {
-                entry.pending = None;
-                // An answer that was already old when it came is dropped, not stamped as new.
-                if let Ok(quote) = answer
-                    && !self.quote_is_old(&quote)
-                {
-                    entry.quote = Some((quote, Instant::now()));
-                    changed = true;
-                }
-            }
-            let wanted = entry
-                .wanted_at
-                .is_some_and(|at| at.elapsed() < QUOTE_WANTED_FOR);
-            if wanted
-                && entry.pending.is_none()
-                && entry.asked_at.is_none_or(|at| at.elapsed() >= QUOTE_EVERY)
-                && let Some(runtime) = self.runtime(*broker)
-                && runtime.snapshot().is_live()
-            {
-                entry.asked_at = Some(Instant::now());
-                entry.pending = Some(runtime.quote(product.clone()));
-            }
+        for runtime in runtimes {
+            changed |= runtime.tick_quotes();
         }
-        quotes.retain(|_, entry| {
-            entry.pending.is_some()
-                || entry
-                    .wanted_at
-                    .is_some_and(|at| at.elapsed() < Duration::from_secs(30))
-        });
-        drop(quotes);
         if changed {
             self.waker.wake();
         }
@@ -666,16 +606,7 @@ impl BrokerHost {
             // Replacing a running connection drops the old one, which stops it without waiting.
             slots.running.insert(id, runtime);
         }
-        self.forget_quotes(id);
         self.changed();
-    }
-
-    /// Prices read through a connection that is gone say nothing about the next one.
-    fn forget_quotes(&self, id: BrokerId) {
-        self.quotes
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .retain(|(broker, _), _| *broker != id);
     }
 
     /// Stops the connection now and removes the saved credentials from this Mac. It does **not**
@@ -694,7 +625,6 @@ impl BrokerHost {
             slots.running.remove(&id)
         };
         drop(stopped);
-        self.forget_quotes(id);
         self.changed();
         let (answer, receiver) = mpsc::channel();
         let host = Arc::clone(self);

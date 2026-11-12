@@ -145,7 +145,9 @@ left alone, and the menu says why instead of trading a similar market. The rules
 (`model/broker/chart.rs`); `workspace/broker.rs` fills each card each frame.
 
 * **Header SELL / BUY** show the broker's own best bid and ask (read for as long as a card shows them,
-  every two seconds, never for a chart nobody is looking at: `BrokerHost::want_quote`), never the
+  every two seconds, never for a chart nobody is looking at: `BrokerHost::want_quote`, which hands it to
+  the connection's `BrokerRuntime::want_quote`; the cache and the freshness rule are the crate's
+  `model::quotes`), never the
   chart's last price, which is another feed's. A price is shown only if it is fresh both here (ten
   seconds since it arrived) and by the exchange's own time on it: a price that sat on the way is not
   stamped as new (a time in the future, from a clock that is behind, is not hidden; a price with no
