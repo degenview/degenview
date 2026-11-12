@@ -15,7 +15,7 @@ use crate::ui::settings_api_keys::StatusMessage;
 use crate::ui::settings_snapshots::SnapshotsAction;
 use crate::ui::settings_storage::StorageAction;
 use crate::ui::settings_window::{self, SettingsAction, SettingsInput, SettingsState};
-use crate::ui::webhook_settings::{WebhookSettingsAction, WebhookSettingsInput};
+use crate::ui::webhook::settings::{WebhookSettingsAction, WebhookSettingsInput};
 use eframe::egui;
 use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
@@ -437,7 +437,7 @@ impl WebhookHost {
     /// (Swift parity).
     fn save(
         &mut self,
-        result: crate::ui::webhook_editor::WebhookEditorResult,
+        result: crate::ui::webhook::editor::WebhookEditorResult,
         store: &Store,
         endpoints: &[WebhookEndpoint],
         now_ms: i64,
@@ -496,7 +496,7 @@ impl WebhookHost {
 mod tests {
     use super::*;
     use crate::model::webhook::WebhookHttpMethod;
-    use crate::ui::webhook_settings::WebhookTestState;
+    use crate::ui::webhook::settings::WebhookTestState;
     use std::time::Instant;
 
     #[test]

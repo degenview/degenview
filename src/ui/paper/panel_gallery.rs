@@ -6,10 +6,10 @@ use crate::model::paper::{
     PaperAccountMetrics, PaperCurrency, PaperInstrument, PaperOrder, PaperOrderRole,
     PaperOrderSide, PaperOrderStatus, PaperOrderType, PaperPosition,
 };
-use crate::ui::paper_header::{
+use crate::ui::paper::header::{
     self, AccountChoice, PaperFooterState, PaperHeaderInput, PaperHeaderState,
 };
-use crate::ui::paper_tables::{
+use crate::ui::paper::tables::{
     self, Context, FooterFacts, PaperTab, PositionsInput, PositionsState,
 };
 use crate::ui::render_tests::Screen;
@@ -188,7 +188,7 @@ fn gallery_of_the_panel() {
                                 working_order_count: shown_orders.len(),
                                 show_trading_on_charts: true,
                             };
-                            let parts = paper_header::header_parts(&input);
+                            let parts = header::header_parts(&input);
                             let bar = crate::ui::trade::panel_header::sample_bar(
                                 crate::model::broker::venue::TradingVenue::Paper,
                                 crate::trading::model::VenueKind::Simulated,
@@ -210,7 +210,7 @@ fn gallery_of_the_panel() {
                             divider(ui);
                             crate::ui::trade::stats_strip::show(
                                 ui,
-                                Some(&paper_tables::stats(Some(&metrics()), PaperCurrency::Usd)),
+                                Some(&tables::stats(Some(&metrics()), PaperCurrency::Usd)),
                             );
                             divider(ui);
                             match tab {
@@ -228,7 +228,7 @@ fn gallery_of_the_panel() {
                                     );
                                 }
                                 _ => {
-                                    paper_tables::positions_table(
+                                    tables::positions_table(
                                         ui,
                                         &mut positions_state,
                                         &PositionsInput {
@@ -243,7 +243,7 @@ fn gallery_of_the_panel() {
                                     );
                                 }
                             }
-                            paper_header::footer(
+                            header::footer(
                                 ui,
                                 &mut footer_state,
                                 tab,
@@ -272,7 +272,7 @@ fn gallery_of_the_panel() {
 #[test]
 #[ignore = "writes pictures"]
 fn gallery_of_the_sheets() {
-    use crate::ui::paper_account_sheet::{self, PaperAccountSheetState};
+    use crate::ui::paper::account_sheet::{self, PaperAccountSheetState};
     let _restore = theme::RestoreDefaultTheme;
     for light in [false, true] {
         let tag = if light { "light" } else { "dark" };
@@ -298,7 +298,7 @@ fn gallery_of_the_sheets() {
                     ui.painter()
                         .rect_filled(ui.max_rect(), 0.0, theme::background());
                     let ctx = ui.ctx().clone();
-                    paper_account_sheet::show(&ctx, &mut sheet);
+                    account_sheet::show(&ctx, &mut sheet);
                 }));
             }
             screen.save(&format!("sheet-{name}-{tag}"), last.expect("ran"));

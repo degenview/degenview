@@ -17,7 +17,7 @@ use crate::store::drawing_template::DrawingTemplateStore;
 use crate::ui::chart_style_settings::{number_field, number_field_sized, picker_row};
 use crate::ui::date_picker;
 use crate::ui::icons::Icon;
-use crate::ui::tool_sidebar::tool_icon;
+use crate::ui::workspace::tool_sidebar::tool_icon;
 use crate::ui::{kit, series_render, settings_card, sheet, theme};
 use eframe::egui::{
     self, Color32, Context, Id, Key, Sense, Stroke, Ui, color_picker::Alpha, pos2, vec2,

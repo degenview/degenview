@@ -12,7 +12,7 @@ use crate::model::paper::{
 };
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, Confirm, ConfirmOutcome};
-use crate::ui::paper_grid::{self as grid, Col, col};
+use crate::ui::paper::grid::{self as grid, Col, col};
 use crate::ui::theme;
 use eframe::egui::{self, Color32};
 

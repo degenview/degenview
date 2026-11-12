@@ -15,7 +15,7 @@ use crate::ui::alert_center::{Tone, relative_time};
 use crate::ui::icons::{self, Icon};
 use crate::ui::settings_mcp::capsule;
 use crate::ui::settings_window::{card, divider, section};
-use crate::ui::{date_picker, kit, replay_bar, sheet, theme};
+use crate::ui::{date_picker, kit, replay::bar, sheet, theme};
 use eframe::egui::{self, Align, Color32, Id, Layout, Sense, Stroke, StrokeKind, Ui, vec2};
 
 /// Rows the page itself shows; the sheet has the rest.
@@ -283,7 +283,7 @@ fn stamp(ms: i64, utc_offset_secs: i64) -> String {
     let seconds = (ms.div_euclid(1_000) + utc_offset_secs).rem_euclid(86_400);
     format!(
         "{} {:02}:{:02}:{:02}",
-        replay_bar::date_text(ms + utc_offset_secs * 1_000),
+        bar::date_text(ms + utc_offset_secs * 1_000),
         seconds / 3_600,
         seconds % 3_600 / 60,
         seconds % 60

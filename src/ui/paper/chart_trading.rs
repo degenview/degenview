@@ -9,7 +9,6 @@
 // Transient: the chart card hosts these once paper trading is wired.
 #![allow(dead_code)]
 
-use super::chart_card::PriceScale;
 use crate::model::chart::context::Target;
 use crate::model::paper::format::{self as fmt, pnl_tone};
 use crate::model::paper::ticket::rounded_to_tick;
@@ -17,7 +16,8 @@ use crate::model::paper::{
     PaperCurrency, PaperOrder, PaperOrderRole, PaperOrderSide, PaperOrderType, PaperPosition,
 };
 use crate::ui::accessibility;
-use crate::ui::paper_tables::{pnl_color, position_tint, side_tint};
+use crate::ui::chart_card::PriceScale;
+use crate::ui::paper::tables::{pnl_color, position_tint, side_tint};
 use crate::ui::theme;
 use eframe::egui::{self, Align2, Color32, FontId, Pos2, Rect, Sense, Stroke, Vec2};
 use std::sync::Arc;
@@ -142,7 +142,7 @@ pub fn marker_price(order: &PaperOrder) -> Option<f64> {
 
 /// Where a dragged order lands: the pointer's price on the chart scale, on the instrument's tick.
 /// None for a price that would not be positive.
-pub(super) fn dropped_price(scale: &PriceScale, y: f32, order: &PaperOrder) -> Option<f64> {
+pub(in crate::ui) fn dropped_price(scale: &PriceScale, y: f32, order: &PaperOrder) -> Option<f64> {
     let price = rounded_to_tick(scale.price(y), &order.instrument);
     (price > 0.0 && price.is_finite()).then_some(price)
 }
@@ -184,7 +184,7 @@ pub struct MarkerMenu {
 
 /// Draws the markers over `plot` and returns what the user did to them, and the marker they
 /// right-clicked, if any.
-pub(super) fn show(
+pub(in crate::ui) fn show(
     ui: &mut egui::Ui,
     plot: Rect,
     scale: &PriceScale,
@@ -260,19 +260,19 @@ pub(super) fn show(
     (actions, menu)
 }
 
-pub(super) enum Drag {
+pub(in crate::ui) enum Drag {
     None,
     Moving(f32),
     Dropped(f32),
 }
 
-pub(super) struct MarkerResult {
-    pub(super) closed: bool,
-    pub(super) drag: Drag,
+pub(in crate::ui) struct MarkerResult {
+    pub(in crate::ui) closed: bool,
+    pub(in crate::ui) drag: Drag,
     /// Where the pill was right-clicked.
-    pub(super) secondary: Option<Pos2>,
+    pub(in crate::ui) secondary: Option<Pos2>,
     /// The pill's body was clicked (not dragged, not its close mark).
-    pub(super) clicked: bool,
+    pub(in crate::ui) clicked: bool,
 }
 
 /// A marker's pill, measured and placed.
@@ -390,7 +390,7 @@ fn paint_pill(painter: &egui::Painter, layout: PillLayout, pill: &Pill, hot: boo
 }
 
 /// A dashed rule across the plot at `y`, ending in the pill against the right edge.
-pub(super) fn marker(
+pub(in crate::ui) fn marker(
     ui: &mut egui::Ui,
     plot: Rect,
     y: f32,
@@ -458,7 +458,7 @@ pub(super) fn marker(
 }
 
 /// Draws the markers as they rest, with nothing to point at: what a snapshot shows.
-pub(super) fn paint_markers(
+pub(in crate::ui) fn paint_markers(
     painter: &egui::Painter,
     plot: Rect,
     scale: &PriceScale,
@@ -515,7 +515,7 @@ pub struct PaperCardState {
 impl PaperCardState {
     /// Draws the markers when they are on and there is something to mark, and returns what the
     /// user did to them and the marker they right-clicked, if any.
-    pub(super) fn show_markers(
+    pub(in crate::ui) fn show_markers(
         &self,
         ui: &mut egui::Ui,
         plot: Rect,
@@ -541,7 +541,7 @@ impl PaperCardState {
     }
 
     /// What a snapshot of the chart shows of the account: the markers, when the chart shows them.
-    pub(super) fn paint_markers(
+    pub(in crate::ui) fn paint_markers(
         &self,
         painter: &egui::Painter,
         plot: Rect,

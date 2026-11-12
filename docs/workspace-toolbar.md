@@ -1,6 +1,6 @@
 # Workspace toolbar
 
-`src/ui/workspace_toolbar.rs` draws the bar above a tab's charts; `src/workspace/toolbar.rs` builds its
+`src/ui/workspace/toolbar.rs` draws the bar above a tab's charts; `src/workspace/toolbar.rs` builds its
 input and applies what it asks for. It is flat like TradingView's and LuxAlgo's: no capsules, a
 faint tint on hover, hairline separators between groups, small corner radius.
 
@@ -22,7 +22,7 @@ snapshot menu, chart settings | layout menu.
   bar with the layout menu measures 975 points, 910 before the separators and the compare button; at 960 the layout menu is the one that drops, and every other button is tested there).
 - The colours are neutral (`kit::primary` tints, `text_primary` / `text_secondary` /
   `text_tertiary`); the only colour is Replay's orange while a replay is open (state, not a control).
-- `replay_bar.rs` (the strip under the toolbar while a replay is open) uses the same flat style: its
+- `replay/bar.rs` (the strip under the toolbar while a replay is open) uses the same flat style: its
   `flat_tint` is the toolbar's hover/pressed tint at the same radius. Its one solid control, the
   start row's main action, is still inked like the label colour.
 

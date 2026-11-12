@@ -56,8 +56,8 @@ removed). Removing a key that is not stored counts as removed.
 
 The Paper Trading panel is the trading panel: when a broker is connected, a "Trade on" switch
 (Paper | Coinbase...) appears above it, per tab (`ChartWorkspace::trading_venue`, never saved: a tab
-starts on paper). On a live venue the panel is `ui/broker_panel.rs`, with an amber rule and a
-`LIVE · NAME` badge (`ui/broker_badge.rs`; amber is not the buy/sell colour and never blue) that
+starts on paper). On a live venue the panel is `ui/broker/panel.rs`, with an amber rule and a
+`LIVE · NAME` badge (`ui/broker/badge.rs`; amber is not the buy/sell colour and never blue) that
 paper trading never uses. The paper account is only created while the venue is Paper, and paper
 overlays on charts are hidden while it is live.
 
@@ -209,7 +209,7 @@ request descriptions for the checklist.
 ## Not done yet / not verified
 
 * **The venue layer is not the only path yet.** `TradingBackend` covers order entry (the order sheet): account,
-  rules, prices, check, preview, submit, cancel. The live orders panel (`ui/broker_panel.rs`: history and fills
+  rules, prices, check, preview, submit, cancel. The live orders panel (`ui/broker/panel.rs`: history and fills
   paging, retry, the edit sheet and its fingerprint/preview state machine), the chart's order lines
   (`workspace/broker.rs`) and the Settings cards still read `BrokerHost` snapshots and `BrokerRuntime`
   directly, and `BrokerHost::global()` / `TradingHub::global()` are process-wide. Moving the edit sheet into a

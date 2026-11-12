@@ -6,7 +6,7 @@ Tab Linking is between tabs and only ever touches the chart the user is working 
 
 Code: `model::tab::link` (pure model, hub and tests), `host::tab_link_host` (the switches, saved),
 `workspace/tab_link.rs` (a tab's side), `DegenViewApp::tick_tab_links` in `app.rs` (the tick),
-`ui/tab_link_menu.rs` (the menu section), and the underline and the right-click menu in `ui/tab_bar.rs`.
+`ui/window/tab_link_menu/mod.rs` (the menu section), and the underline and the right-click menu in `ui/window/tab_bar.rs`.
 
 ## What TradingView says, and what is ours
 

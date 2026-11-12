@@ -16,14 +16,14 @@ use crate::model::paper::{
 use crate::store::SharedStore;
 use crate::store::sync::Elsewhere;
 use crate::ui::icons::{self, Icon};
-use crate::ui::paper_account_sheet::{
+use crate::ui::paper::account_sheet::{
     AccountSheetOutcome, PaperAccountSheetState, show as show_account_sheet,
 };
-use crate::ui::paper_header::{
+use crate::ui::paper::header::{
     self, AccountChoice, PaperFooterAction, PaperFooterState, PaperHeaderAction, PaperHeaderInput,
     PaperHeaderState,
 };
-use crate::ui::paper_tables::{
+use crate::ui::paper::tables::{
     self, Context as TableContext, FooterFacts, PaperTab, PaperTableAction, PositionsInput,
     PositionsState,
 };
@@ -770,7 +770,7 @@ impl PaperPanel {
             working_order_count: working_orders.len(),
             show_trading_on_charts: self.show_trading_on_charts,
         };
-        let parts = paper_header::header_parts(&input);
+        let parts = header::header_parts(&input);
         let header_events = panel_header::show(
             ui,
             &Header {
@@ -817,7 +817,7 @@ impl PaperPanel {
         let mut table_actions = Vec::new();
         let mut footer_actions = Vec::new();
         if account.is_none() {
-            if paper_header::no_account_state(ui) {
+            if header::no_account_state(ui) {
                 self.account_sheet = Some(PaperAccountSheetState::create());
             }
         } else {
@@ -834,7 +834,7 @@ impl PaperPanel {
             };
             match self.header.tab {
                 PaperTab::Positions => {
-                    table_actions = paper_tables::positions_table(
+                    table_actions = tables::positions_table(
                         ui,
                         &mut self.positions,
                         &PositionsInput {
@@ -868,11 +868,11 @@ impl PaperPanel {
                         })
                         .collect();
                 }
-                PaperTab::History => paper_tables::history_table(ui, events, context),
-                PaperTab::Trades => paper_tables::trades_table(ui, trades, context),
-                PaperTab::Journal => paper_tables::journal_table(ui, journal, context),
+                PaperTab::History => tables::history_table(ui, events, context),
+                PaperTab::Trades => tables::trades_table(ui, trades, context),
+                PaperTab::Journal => tables::journal_table(ui, journal, context),
             }
-            footer_actions = paper_header::footer(
+            footer_actions = header::footer(
                 ui,
                 &mut self.footer,
                 self.header.tab,
@@ -1218,7 +1218,7 @@ impl PaperPanel {
             self.pending_delete = None;
             return;
         };
-        match crate::ui::paper_header::delete_confirm(context, &name) {
+        match crate::ui::paper::header::delete_confirm(context, &name) {
             Some(crate::ui::kit::ConfirmOutcome::Confirmed) => {
                 self.pending_delete = None;
                 if let Err(error) = host.delete_account(id) {

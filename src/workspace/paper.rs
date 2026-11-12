@@ -6,7 +6,7 @@ use crate::host::paper_host::PaperHost;
 use crate::model::DataSource;
 use crate::model::paper::{PaperCurrency, PaperInstrument, PaperQuote};
 use crate::model::watchlist::quote::{Freshness, evaluate_freshness};
-use crate::ui::paper_chart_trading::PaperOverlayAction;
+use crate::ui::paper::chart_trading::PaperOverlayAction;
 use std::time::{Duration, Instant};
 
 const PAPER_QUOTE_FLUSH_INTERVAL: Duration = Duration::from_millis(500);

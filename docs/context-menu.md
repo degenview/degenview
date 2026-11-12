@@ -117,7 +117,7 @@ Relevant files:
 - `src/model/drawings/mod.rs`
 - `src/ui/drawing_layer.rs`
 - `src/ui/drawing_render.rs`
-- `src/ui/tool_sidebar.rs`
+- `src/ui/workspace/tool_sidebar.rs`
 
 ### Indicators and Pine
 
@@ -141,7 +141,7 @@ Relevant files:
 - `src/model/paper/engine.rs`
 - `src/paper_host.rs`
 - `src/ui/paper_order_ticket.rs`
-- `src/ui/paper_chart_trading.rs`
+- `src/ui/paper/chart_trading.rs`
 
 ### Chart templates and layouts
 

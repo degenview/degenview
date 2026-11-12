@@ -15,7 +15,7 @@ use crate::service::snapshot_providers::{
 use crate::service::snapshot_upload::{self, UreqTransport};
 use crate::ui::alert_center::Tone;
 use crate::ui::icons::{self, Icon};
-use crate::ui::paper_form;
+use crate::ui::paper::form;
 use crate::ui::settings_api_keys::{Autosave, StatusMessage, destructive_button, field};
 use crate::ui::settings_brokers::{fitted, gray_link, muted, step_row, titled_group};
 use crate::ui::settings_snapshots::SnapshotsAction;
@@ -500,7 +500,7 @@ fn choice_field(
                 .position(|choice| choice.value == spec.default)
         })
         .unwrap_or(0);
-    let picked = paper_form::dropdown_field(ui, &labels, selected, true);
+    let picked = form::dropdown_field(ui, &labels, selected, true);
     if !spec.hint.is_empty() {
         ui.add_space(6.0);
         ui.label(kit::text(

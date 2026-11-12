@@ -11,8 +11,8 @@
 use super::{ChartCard, Projection, View};
 use crate::model::chart::canvas::COLLAPSED_PANE_HEIGHT;
 use crate::ui::canvas_render::CanvasStyle;
-use crate::ui::replay_bar;
-use crate::ui::replay_overlay::{self, ReplayChartFrame};
+use crate::ui::replay::bar;
+use crate::ui::replay::overlay::{self, ReplayChartFrame};
 use eframe::egui::{
     self, Align2, Color32, FontId, Id, Painter, Pos2, Rect, Response, Stroke, Vec2,
 };
@@ -47,11 +47,11 @@ fn candle_x(index: usize, plot: Rect, view: &View) -> f32 {
 
 /// "Oct 9, 14:03 – 14:45", or "Oct 9, 14:03" for one bar.
 fn span_text(from_ms: i64, to_ms: i64) -> String {
-    let from = replay_bar::compact_text(from_ms);
+    let from = bar::compact_text(from_ms);
     if from_ms == to_ms {
         return from;
     }
-    let to = replay_bar::compact_text(to_ms);
+    let to = bar::compact_text(to_ms);
     match (from.split_once(", "), to.split_once(", ")) {
         (Some((day, _)), Some((other, time))) if day == other => format!("{from} – {time}"),
         _ => format!("{from} – {to}"),
@@ -115,7 +115,7 @@ impl ChartCard {
         replay: &mut ReplayChartFrame,
     ) {
         let anchor_id = Id::new(("logs-range-anchor", response.id));
-        let accent = replay_overlay::range_accent();
+        let accent = overlay::range_accent();
         let pointer = response
             .hover_pos()
             .or_else(|| ui.input(|input| input.pointer.latest_pos()));
@@ -199,7 +199,7 @@ impl ChartCard {
         if !(left.is_finite() && right.is_finite()) || right < plot.left() || left > plot.right() {
             return;
         }
-        let accent = replay_overlay::range_accent();
+        let accent = overlay::range_accent();
         let mut spans = Vec::new();
         if main_visible {
             spans.push((plot.top(), plot.bottom()));

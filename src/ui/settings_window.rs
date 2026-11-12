@@ -18,7 +18,7 @@ use crate::ui::icons::{self, Icon};
 use crate::ui::settings_api_keys::{self, ApiKeysState};
 use crate::ui::settings_mcp::{self, McpSettingsInput, McpSettingsState};
 use crate::ui::settings_storage::{self, StorageAction, StorageState};
-use crate::ui::webhook_settings::{
+use crate::ui::webhook::settings::{
     self, WebhookSettingsAction, WebhookSettingsInput, WebhookSettingsState,
 };
 use crate::ui::{kit, settings_card, theme};
@@ -565,10 +565,7 @@ pub fn show(
                 &mut page,
                 section,
                 "Send alert messages to external HTTP endpoints, such as a trading bot or a chat channel.",
-                |ui| {
-                    webhook_actions =
-                        webhook_settings::body(ui, &mut state.webhooks, &input.webhooks)
-                },
+                |ui| webhook_actions = settings::body(ui, &mut state.webhooks, &input.webhooks),
             );
             actions.extend(webhook_actions.into_iter().map(SettingsAction::Webhook));
         }

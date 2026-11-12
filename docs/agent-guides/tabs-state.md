@@ -54,13 +54,13 @@
 ## Windows and tabs
 
 - Tabs are app-owned on every OS; native automatic tabbing off. Each deferred viewport renders one
-  `TabWindow` with `ui::tab_bar` as title bar. The coordinator window stays hidden.
+  `TabWindow` with `ui::window::tab_bar` as title bar. The coordinator window stays hidden.
 - macOS: transparent full-size content, traffic-light `leading_inset` (zero fullscreen).
   Windows/Linux: undecorated, `trailing_inset` for controls; Linux draws resize edges.
   `TabBarOutput::strip` excludes both. Empty strip drags; double-click maximizes. Strip height
   `tab_bar::HEIGHT` (40); recenter macOS traffic lights in it each frame. Settings/Alerts keep
   native title bars.
-- Linux tab windows round their own corners (`ui::window_corners`; macOS uses AppKit's; Windows not
+- Linux tab windows round their own corners (`ui::window::corners`; macOS uses AppKit's; Windows not
   done, needs DWM's corner preference). egui only blends, so windows are transparent
   (`window_chrome::rounded_corners` on the root viewport, setting the shared surface's alpha mode,
   and each tab window; `App::clear_color` clear) and `show_window` finishes with a paint callback

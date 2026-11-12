@@ -4,9 +4,9 @@
 //! the focused chart. A row that cannot work says why instead of doing nothing: the hosted
 //! ones need a host in Settings, and every row waits while a snapshot is being made.
 
-use super::icons::Icon;
-use super::kit;
 use crate::model::chart::snapshot::SnapshotAction;
+use crate::ui::icons::Icon;
+use crate::ui::kit;
 use eframe::egui::{self, Vec2};
 
 /// What the menu needs to know besides the chart.

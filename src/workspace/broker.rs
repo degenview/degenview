@@ -21,8 +21,8 @@ use crate::model::broker::ticket::{self as rules, TicketKind};
 use crate::model::chart::context::{LiveFacts, LiveOrderRequest};
 use crate::model::chart::kind::ChartType;
 use crate::trading::model::OrderClass;
-use crate::ui::broker_chart_trading::{BrokerOverlayAction, OrderLine};
-use crate::ui::broker_panel;
+use crate::ui::broker::chart_trading::{BrokerOverlayAction, OrderLine};
+use crate::ui::broker::panel;
 use crate::ui::theme;
 
 impl ChartWorkspace {
@@ -293,7 +293,7 @@ impl ChartWorkspace {
             return;
         };
         if !self.paper_panel_visible && self.broker_panel.has_dialog() {
-            broker_panel::dialogs_only(ctx, &mut self.broker_panel, &host, id);
+            panel::dialogs_only(ctx, &mut self.broker_panel, &host, id);
         }
         // The panel shows its own message; with it closed the tab's notice does.
         if !self.paper_panel_visible

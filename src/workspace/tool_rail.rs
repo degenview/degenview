@@ -4,7 +4,7 @@ use super::chart::Chart;
 use super::{ChartWorkspace, WorkspaceAction};
 use crate::model::{DataSource, Tool};
 use crate::ui::ViewMove;
-use crate::ui::tool_sidebar::{self, ToolSidebarAction};
+use crate::ui::workspace::tool_sidebar::{self, ToolSidebarAction};
 use eframe::egui;
 
 impl ChartWorkspace {

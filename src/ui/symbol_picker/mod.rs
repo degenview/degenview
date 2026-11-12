@@ -858,7 +858,7 @@ impl SymbolPicker {
             let keys: f32 = hint
                 .0
                 .iter()
-                .map(|key| crate::ui::replay_bar::keycap_width(ui, key) + 6.0)
+                .map(|key| crate::ui::replay::bar::keycap_width(ui, key) + 6.0)
                 .sum();
             keys + label.size().x + 6.0 + 10.0
         };
@@ -877,7 +877,7 @@ impl SymbolPicker {
         row.spacing_mut().item_spacing.x = 6.0;
         for (keys, label) in &hints {
             for key in *keys {
-                crate::ui::replay_bar::keycap(&mut row, key);
+                crate::ui::replay::bar::keycap(&mut row, key);
             }
             row.label(kit::text(label, 13.0, REGULAR, theme::text_secondary()));
             row.add_space(10.0);

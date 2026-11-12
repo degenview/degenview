@@ -20,14 +20,14 @@ use crate::ui::alert_editor::{self, PriceAlertEditorState};
 use crate::ui::chart_settings::{self, ChartSettingsState};
 use crate::ui::drawing_properties::DrawingProperties;
 use crate::ui::indicator_picker::{self, IndicatorPicker};
-use crate::ui::layout_prompts::NamePrompt;
 use crate::ui::overlay_settings_popover::OverlaySettingsPopover;
-use crate::ui::paper_chart_trading::PaperOverlayAction;
+use crate::ui::paper::chart_trading::PaperOverlayAction;
 use crate::ui::pine_settings_popover::PineSettingsPopover;
-use crate::ui::replay_date_sheet::{self, ReplayDateSheetState};
+use crate::ui::replay::date_sheet::{self, ReplayDateSheetState};
 use crate::ui::symbol_picker::SymbolPicker;
-use crate::ui::watchlist_sidebar::WatchlistSidebarState;
-use crate::ui::{self, CrosshairInfo, replay_bar, tool_sidebar, workspace_toolbar};
+use crate::ui::watchlist::sidebar::WatchlistSidebarState;
+use crate::ui::workspace::layout_prompts::NamePrompt;
+use crate::ui::{self, CrosshairInfo, replay::bar, workspace::tool_sidebar};
 use alerts::AlertRequest;
 use autosave::AutosaveState;
 use chart::{Chart, displayed_candles};
@@ -264,7 +264,7 @@ pub struct ChartWorkspace {
     /// Where this tab's trading happens: paper, or a connected broker with real money. Not
     /// saved: a tab always starts on paper.
     trading_venue: crate::model::broker::venue::TradingVenue,
-    broker_panel: crate::ui::broker_panel::BrokerPanelState,
+    broker_panel: crate::ui::broker::panel::BrokerPanelState,
     /// A chart's bell (or a watchlist row's menu) asked for a price alert this frame; `ui`
     /// opens the sheet on it.
     new_alert_request: Option<AlertRequest>,
@@ -302,7 +302,7 @@ pub struct ChartWorkspace {
     layout_error: Option<String>,
     autosave: AutosaveState,
     /// The chart drag in progress over the grid: where it would land, and the new-column preview.
-    grid_drag: ui::grid_drop::GridDrag,
+    grid_drag: ui::workspace::grid_drop::GridDrag,
     /// Choosing what a content tool places: the picture that waits, the sheet, the worker.
     content: content::ContentFlow,
 }
@@ -442,7 +442,7 @@ impl ChartWorkspace {
             trade_sheet_visible: false,
             trade_sheet: crate::ui::trade::order_sheet::SheetState::default(),
             trading_venue: crate::model::broker::venue::TradingVenue::default(),
-            broker_panel: crate::ui::broker_panel::BrokerPanelState::default(),
+            broker_panel: crate::ui::broker::panel::BrokerPanelState::default(),
             new_alert_request: None,
             context: ContextState::default(),
             snapshot: SnapshotState::default(),
@@ -467,7 +467,7 @@ impl ChartWorkspace {
             drawings_version: 0,
             saved_drawings_version: 0,
             saved_drawings: HashMap::new(),
-            grid_drag: ui::grid_drop::GridDrag::default(),
+            grid_drag: ui::workspace::grid_drop::GridDrag::default(),
             content: content::ContentFlow::default(),
         }
     }
@@ -735,14 +735,14 @@ impl ChartWorkspace {
         ctx.request_repaint_after(Duration::from_millis(250));
 
         let mut actions = egui::Panel::top("workspace_toolbar")
-            .exact_size(workspace_toolbar::HEIGHT)
+            .exact_size(ui::workspace::toolbar::HEIGHT)
             .frame(egui::Frame::new().fill(ui::theme::chrome()))
             .show(ui, |ui| self.show_toolbar(ui, &ctx))
             .inner;
 
         if self.replay.is_bar_visible() {
             egui::Panel::top("replay_bar")
-                .exact_size(replay_bar::preferred_height(
+                .exact_size(bar::preferred_height(
                     self.replay.status,
                     ui.available_width(),
                     false,
@@ -817,7 +817,7 @@ impl ChartWorkspace {
                             let stats = crate::host::trading_hub::TradingHub::global()
                                 .and_then(|hub| hub.backend(venue))
                                 .and_then(|backend| backend.stats());
-                            crate::ui::broker_panel::ui(
+                            crate::ui::broker::panel::ui(
                                 ui,
                                 &mut self.broker_panel,
                                 host,
@@ -989,8 +989,8 @@ impl ChartWorkspace {
         actions.extend(self.take_logs_actions());
         if self.date_sheet.is_open() {
             let timeline = self.replay_timeline();
-            if let Some(replay_date_sheet::ReplayDateSheetResult::Start(ms)) =
-                replay_date_sheet::show(&ctx, &mut self.date_sheet, &timeline)
+            if let Some(date_sheet::ReplayDateSheetResult::Start(ms)) =
+                date_sheet::show(&ctx, &mut self.date_sheet, &timeline)
             {
                 let (symbol, timeline) = self.focused_chart_data();
                 self.replay.start(ms, &symbol, timeline);

@@ -10,7 +10,7 @@ use crate::model::webhook::{
 };
 use crate::ui::icons::{self, Icon};
 use crate::ui::settings_window::{card, section};
-use crate::ui::webhook_editor::{
+use crate::ui::webhook::editor::{
     self, WebhookEditorOutcome, WebhookEditorResult, WebhookEditorState,
 };
 use crate::ui::{kit, theme};
@@ -286,7 +286,7 @@ pub fn body(
                     state.editor = Some(WebhookEditorState::new_blank());
                 }
                 if let Some(failure) = &state.failure {
-                    super::settings_window::status_message(ui, failure, true);
+                    crate::ui::settings_window::status_message(ui, failure, true);
                 }
             });
         },
@@ -328,7 +328,7 @@ pub fn body(
     );
 
     if let Some(editor) = &mut state.editor {
-        match webhook_editor::show(ui.ctx(), editor) {
+        match editor::show(ui.ctx(), editor) {
             Some(WebhookEditorOutcome::Save(result)) => {
                 actions.push(WebhookSettingsAction::Save(result));
             }

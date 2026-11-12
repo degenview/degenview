@@ -5,7 +5,7 @@
 use super::*;
 use crate::model::drawings::style::Visibility;
 use crate::model::{Anchor, ChartType, Drawing, IndicatorConfig, Placement, Tool};
-use crate::ui::replay_overlay::ReplayChartFrame;
+use crate::ui::replay::overlay::ReplayChartFrame;
 use eframe::egui::epaint::ClippedShape;
 
 const HOUR: i64 = 3_600_000;

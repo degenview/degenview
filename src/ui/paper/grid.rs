@@ -3,8 +3,8 @@
 //! SwiftUI's inset `Table` does. Rows are virtualised; a table narrower than its columns' minimum
 //! widths scrolls sideways instead of clipping.
 
-use super::kit::{self, BOLD, MEDIUM, SEMIBOLD, size};
-use super::theme;
+use crate::ui::kit::{self, BOLD, MEDIUM, SEMIBOLD, size};
+use crate::ui::theme;
 use eframe::egui::{
     self, Align, Color32, CornerRadius, Layout, Rect, ScrollArea, Sense, Stroke, Ui, UiBuilder,
     pos2, vec2,

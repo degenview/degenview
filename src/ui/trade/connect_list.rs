@@ -5,7 +5,7 @@ use eframe::egui;
 
 use crate::model::broker::venue::TradingVenue;
 use crate::trading::model::{VenueInfo, VenueKind};
-use crate::ui::broker_badge::LIVE;
+use crate::ui::broker::badge::LIVE;
 use crate::ui::kit::{self, Tone};
 use crate::ui::theme;
 

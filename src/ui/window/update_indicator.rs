@@ -1,9 +1,9 @@
 //! The update mark at the right end of the tab strip, and the progress bar painter Settings ▸
 //! About shares with it. Everything here draws an `UpdateView`; the host runs the update.
 
-use super::icons::{self, Icon};
-use super::{kit, theme};
 use crate::host::update_host::{Phase, UpdateView};
+use crate::ui::icons::{self, Icon};
+use crate::ui::{kit, theme};
 use eframe::egui::{
     self, Color32, CornerRadius, Galley, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2,
 };
@@ -191,7 +191,7 @@ pub fn show(ui: &mut Ui, layout: &Layout, right: f32, top: f32, height: f32) -> 
         Sense::hover()
     };
     let response = ui.interact(rect, egui::Id::new("update-indicator"), sense);
-    let response = super::accessibility::label(response, &look.tooltip)
+    let response = crate::ui::accessibility::label(response, &look.tooltip)
         .on_hover_text(&look.tooltip)
         .on_hover_cursor(if look.clickable {
             egui::CursorIcon::PointingHand
