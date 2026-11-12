@@ -11,11 +11,14 @@
 //!
 //! Nothing here names a particular venue: the brokers come from the crate's registry.
 
+#[cfg(test)]
+mod tests;
+
 use std::collections::BTreeSet;
 use std::sync::{Arc, Mutex};
 
-use super::broker_host::{BrokerHost, Connection, Operation};
-use super::paper_host::PaperHost;
+use super::broker::{BrokerHost, Connection, Operation};
+use super::paper::PaperHost;
 use crate::model::broker::prefs::BrokerPrefs;
 use crate::model::broker::venue::TradingVenue;
 use crate::store::SharedStore;

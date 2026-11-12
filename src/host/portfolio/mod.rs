@@ -3,9 +3,13 @@
 //! Mutations are copy-on-write: validate against a candidate ledger, persist its complete
 //! snapshot, and publish it only after SQLite succeeds. A failed initial load permanently blocks
 //! writes for this host instance so corrupt data can never be replaced by an empty snapshot.
+
 #![allow(dead_code)]
 
-use crate::host::portfolio_import_flow::PortfolioImportFlow;
+pub mod card;
+pub mod import_flow;
+
+use crate::host::portfolio::import_flow::PortfolioImportFlow;
 use crate::model::portfolio;
 use crate::model::portfolio::accounting::{holdings_and_closed, net_contributions};
 use crate::model::portfolio::format::{PORTFOLIO_CURRENCIES, PortfolioValueFormatter};
@@ -909,7 +913,7 @@ impl PortfolioTab {
                     self.import.begin_export(
                         &ctx,
                         text,
-                        crate::host::portfolio_import_flow::CSV_FILENAME,
+                        crate::host::portfolio::import_flow::CSV_FILENAME,
                     );
                 }
                 if header_controls::action(ui, Icon::ShareUp, "Export Current Holdings\u{2026}") {
@@ -1019,11 +1023,11 @@ impl PortfolioTab {
                             .map_or("All Portfolios", |portfolio| portfolio.name.as_str()),
                         now_ms,
                     ),
-                    crate::host::portfolio_import_flow::HOLDINGS_FILENAME,
+                    crate::host::portfolio::import_flow::HOLDINGS_FILENAME,
                 ),
                 PendingExport::History => (
                     portfolio::csv::export_history(history),
-                    crate::host::portfolio_import_flow::HISTORY_FILENAME,
+                    crate::host::portfolio::import_flow::HISTORY_FILENAME,
                 ),
             };
             self.import.begin_export(ui.ctx(), text, name);

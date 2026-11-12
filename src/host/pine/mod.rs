@@ -1,7 +1,10 @@
 //! Minimal Pine runtime host: compiles a script and runs it over a series of bars, returning the
 //! chart `VisualOutput` the renderer consumes. Input resolution and library imports are wired
 //! incrementally; the session itself owns the per-bar state machine.
+
 #![allow(dead_code)] // transient until the chart wires this
+
+pub mod subscription;
 
 use crate::model::chart::synthetic::ticker;
 use crate::model::{DataSource, Kline};

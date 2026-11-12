@@ -1,7 +1,7 @@
 //! Paper-trading accounts across two Macs: one Mac runs an account, the other mirrors it.
 
 use super::core::{Mac, mac};
-use crate::host::paper_host::PaperHost;
+use crate::host::paper::PaperHost;
 use crate::model::paper::{
     PaperAccountSettings, PaperCurrency, PaperInstrument, PaperOrderRequest, PaperOrderSide,
     PaperOrderStatus, PaperOrderType, PaperQuote, PaperTimeInForce,

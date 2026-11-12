@@ -2,7 +2,7 @@
 
 use super::apply::{outbox_len, pair, rows, settle};
 use super::core::{Raw, raw};
-use crate::host::editor_theme_host::{EditorThemeHost, FontStatus};
+use crate::host::editor_theme::{EditorThemeHost, FontStatus};
 use crate::model::editor_theme::prefs::KEY;
 use crate::model::editor_theme::{
     BuiltInTheme, EditorPrefs, EditorTheme, ThemeSelection, TypographyOverride,

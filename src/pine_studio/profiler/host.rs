@@ -123,7 +123,7 @@ impl PineStudio {
         config.visible_range = feed.visible_range;
         config.theme = Some(feed.theme);
         config.libraries = Box::new(LibraryRegistry);
-        config.security_data = Some(Box::new(crate::host::pine_host::KlineSecurityDataProvider));
+        config.security_data = Some(Box::new(crate::host::pine::KlineSecurityDataProvider));
         let ctx = ctx.clone();
         let wake: Arc<dyn Fn() + Send + Sync> = Arc::new(move || ctx.request_repaint());
         // A refusal to start is kept by the profiler and shown in its place.

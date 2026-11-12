@@ -8,9 +8,9 @@ use degenview_brokers::coinbase::SANDBOX_ID;
 use degenview_brokers::coinbase::fake::{CoinbaseExchange, credentials, generate_key_pem};
 use degenview_brokers::{BrokerId, Env, MemorySecretStore, SecretStore, Status};
 
-use super::broker_host::{BrokerHost, store_journal};
-use super::paper_host::PaperHost;
-use super::trading_hub::{ENABLED_KEY, TradingHub};
+use super::{ENABLED_KEY, TradingHub};
+use crate::host::broker::{BrokerHost, store_journal};
+use crate::host::paper::PaperHost;
 use crate::model::broker::venue::TradingVenue;
 use crate::model::paper::{PaperAccountSettings, PaperCurrency};
 use crate::store::{SharedStore, Store};
@@ -392,7 +392,7 @@ fn choosing_a_venue_while_the_caller_holds_the_store_does_not_wait_for_it() {
 #[test]
 fn the_settings_that_hold_the_choices_stay_on_this_mac() {
     use crate::sync::record::policy::{SettingPolicy, setting_policy};
-    for key in [ENABLED_KEY, super::trading_hub::LAST_USED_KEY] {
+    for key in [ENABLED_KEY, super::LAST_USED_KEY] {
         assert_eq!(setting_policy(key), SettingPolicy::Local, "{key}");
     }
 }

@@ -9,7 +9,7 @@ use super::{
     AccountChange, AccountStatus, ErrorKind, RawRecord, SendFailure, SentDeleted, SentSaved,
     StagedChange, StagedOp, SyncTransport, TransportCommand, TransportEvent, ZoneEvent,
 };
-use crate::host::sync_host::{EventSink, TransportFactory};
+use crate::host::sync::{EventSink, TransportFactory};
 use crate::service::system::entitlements::{icloud_environment, read_self};
 use crate::sync::record::{RecordName, SyncRecord};
 use serde_json::{Value, json};

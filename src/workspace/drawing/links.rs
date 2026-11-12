@@ -266,7 +266,7 @@ impl ChartWorkspace {
         let store = self.store.clone();
         work_queue::LINKS.submit(move || {
             let result =
-                link_fetch::fetch(&link, crate::host::alert_runtime::now_ms()).map(|preview| {
+                link_fetch::fetch(&link, crate::host::alert::runtime::now_ms()).map(|preview| {
                     // The author's picture is kept like any other: stored once by its hash, named
                     // on the preview. If it cannot be stored the preview simply has none.
                     let avatar = preview.avatar.and_then(|picture| {

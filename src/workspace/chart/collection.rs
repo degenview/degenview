@@ -1,8 +1,8 @@
 //! The workspace's charts as a collection: adding, finding, replacing, removing and describing them.
 
 use super::{Chart, displayed_candles};
-use crate::host::portfolio_card_host::PortfolioCardEnv;
-use crate::host::trading_hub::TradingHub;
+use crate::host::portfolio::card::PortfolioCardEnv;
+use crate::host::trading::TradingHub;
 use crate::model::chart::price_scale::PriceScaleMode;
 use crate::model::portfolio::card::PortfolioCard;
 use crate::model::watchlist::WatchlistInstrument;
@@ -774,7 +774,7 @@ mod tests {
 
     #[test]
     fn indicator_readings_use_the_bars_a_constructed_chart_draws() {
-        use crate::host::mcp_host::indicator_readings;
+        use crate::host::mcp::indicator_readings;
         use crate::mcp::indicator::{Reading, ReadingRequest};
         use crate::model::{RSI_PERIOD, rsi};
         use crate::workspace::replay::{ReplayCommand, ReplayStart};

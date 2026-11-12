@@ -2,7 +2,7 @@
 //! values, client credentials (name, permissions, token verifier) an ordered document table.
 //!
 //! Every read is strict. A value this version cannot decode is an error, never an empty
-//! default: the caller (`mcp_host`) then refuses to start the server instead of running with
+//! default: the caller (`host::mcp`) then refuses to start the server instead of running with
 //! credentials or permissions it silently lost.
 
 pub mod audit;

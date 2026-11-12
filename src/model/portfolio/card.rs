@@ -117,7 +117,7 @@ impl PortfolioCard {
     }
 }
 
-/// Everything a card paints, gathered by `portfolio_card_host` so the painters stay pure.
+/// Everything a card paints, gathered by `host::portfolio::card` so the painters stay pure.
 #[derive(Clone, Debug, PartialEq)]
 pub struct CardData {
     /// False when there is no portfolio to show (none exist, or all are archived).

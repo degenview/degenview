@@ -48,7 +48,7 @@ client → 127.0.0.1:<port>/mcp → bearer/Host/Origin/size checks
   fixed list of argument names, kept only if they look like ids (digits or a hex hash). Never a
   token, a script, a note, a message or any other argument value. Rate-limited calls are counted into
   one row per client per minute; bad tokens and `tools/list` are not rows.
-- Confirmation (`mcp::confirm`, `host::mcp_confirmation`, `ui::mcp::confirmation`): with "Ask before
+- Confirmation (`mcp::confirm`, `host::mcp::confirmation`, `ui::mcp::confirmation`): with "Ask before
   high-impact requests" on (`McpSettings.require_confirmation`, default on, also for settings saved
   before it existed; published to `McpShared` so the app thread reads it without the host lock),
   these commands wait for the user: delete alert / watchlist / drawings, remove chart or script
@@ -70,7 +70,7 @@ client → 127.0.0.1:<port>/mcp → bearer/Host/Origin/size checks
   user reads the whole summary. A question lives 120 s, an approval 120 s
   after it is given, a "no" 300 s (the agent gets `CONFIRMATION_DENIED`, not another question); a
   client may have 8 open and the app 32 (`RESOURCE_LIMIT` beyond). The summary the user reads is
-  built by the app from what it knows of the target (`host::mcp_confirmation::delete_alert` and
+  built by the app from what it knows of the target (`host::mcp::confirmation::delete_alert` and
   the others; a target that does not exist is refused with its own error, unasked), never from
   agent text, and is cut to one clean line. Revoking a client drops what it had open; turning the setting off, or stopping and starting
   the server (off and on, a new port: `McpShared::generation` moved), drops everything, and the

@@ -604,7 +604,7 @@ impl DebugPanel {
         config.inputs = feed.inputs;
         config.theme = Some(feed.theme);
         config.libraries = libraries;
-        config.security_data = Some(Box::new(crate::host::pine_host::KlineSecurityDataProvider));
+        config.security_data = Some(Box::new(crate::host::pine::KlineSecurityDataProvider));
         config.breakpoints = self.state.specs();
         config.watches = self.state.watches.clone();
         config.stop_on_entry = mode == StartMode::Entry;

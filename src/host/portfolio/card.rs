@@ -5,7 +5,7 @@
 //! The ledger and quote feed are app-wide; only the per-card selection and demand live here, one
 //! `CardRuntime` per card. A runtime releases its demand when the card goes away.
 
-use crate::host::portfolio_host::{PortfolioHost, local_offset, now_ms};
+use crate::host::portfolio::{PortfolioHost, local_offset, now_ms};
 use crate::model::portfolio::accounting::{holdings, net_contributions};
 use crate::model::portfolio::card::{CardData, CardKind, Performance, PortfolioCard, performance};
 use crate::model::portfolio::format::PortfolioValueFormatter;

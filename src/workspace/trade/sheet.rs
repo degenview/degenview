@@ -4,7 +4,7 @@
 use degenview_brokers::{Decimal, MarketRef, Side};
 use eframe::egui;
 
-use crate::host::trading_hub::TradingHub;
+use crate::host::trading::TradingHub;
 use crate::model::broker::venue::TradingVenue;
 use crate::trading::model::{OrderClass, VenueInfo};
 use crate::ui::trade::order_sheet::{self, MarketFace, SheetAction, SheetInput};
@@ -221,9 +221,9 @@ mod tests {
     use degenview_brokers::{Env, MemorySecretStore};
     use eframe::egui;
 
-    use crate::host::broker_host::{BrokerHost, store_journal};
-    use crate::host::paper_host::PaperHost;
-    use crate::host::trading_hub::TradingHub;
+    use crate::host::broker::{BrokerHost, store_journal};
+    use crate::host::paper::PaperHost;
+    use crate::host::trading::TradingHub;
     use crate::model::broker::venue::TradingVenue;
     use crate::store::{SharedStore, Store};
     use crate::workspace::test_support::empty_workspace;

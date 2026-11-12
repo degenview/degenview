@@ -12,7 +12,7 @@ use degenview_brokers::{
     ProductId, SecretStore, Side, Status, TimeInForce,
 };
 
-use super::broker_host::{BrokerHost, Connection, PENDING_KEY, PROFILE, store_journal};
+use super::{BrokerHost, Connection, PENDING_KEY, PROFILE, store_journal};
 use crate::store::{SharedStore, Store};
 
 const ID: BrokerId = BrokerId::new("coinbase");
@@ -331,7 +331,7 @@ fn a_placed_order_is_visible_to_everyone_sharing_the_host() {
     let window_a = host.runtime(ID).unwrap();
     let window_b = host.runtime(ID).unwrap();
     window_a
-        .submit(draft(), super::broker_host::account_of(&window_a))
+        .submit(draft(), super::account_of(&window_a))
         .wait()
         .expect("placed");
     // The other window reads the same snapshot: the order is there, once.
@@ -473,10 +473,10 @@ fn nothing_that_scripts_or_agents_reach_can_touch_a_broker() {
         }
     }
     for file in [
-        "host/alert_host.rs",
-        "host/alert_runtime.rs",
-        "host/webhook_host.rs",
-        "host/mcp_host.rs",
+        "host/alert/mod.rs",
+        "host/alert/runtime.rs",
+        "host/webhook/mod.rs",
+        "host/mcp/mod.rs",
     ] {
         let text = std::fs::read_to_string(root.join(file)).unwrap();
         assert!(
@@ -492,8 +492,8 @@ fn nothing_that_scripts_or_agents_reach_can_touch_a_broker() {
 fn the_applications_broker_layers_name_no_broker() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     for file in [
-        "host/broker_host.rs",
-        "host/trading_hub.rs",
+        "host/broker/mod.rs",
+        "host/trading/mod.rs",
         "service/keychain/broker_secrets.rs",
         "trading/backend.rs",
         "trading/broker_backend.rs",

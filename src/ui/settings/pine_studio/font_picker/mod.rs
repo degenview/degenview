@@ -7,7 +7,7 @@
 //! preview instead. A font that is chosen but not installed here stays in the list, marked, so it
 //! is never silently dropped.
 
-use crate::host::editor_theme_host::FontStatus;
+use crate::host::editor_theme::FontStatus;
 use crate::model::editor_theme::{BUNDLED_FONT, SYSTEM_FONT};
 use crate::ui::icons::{self, Icon};
 use crate::ui::{kit, theme};

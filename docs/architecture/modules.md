@@ -10,15 +10,15 @@ inventory.
 | `main.rs`, `lib.rs` | Binary entry, and the library root: store opening, native options, and app startup |
 | `app.rs` | Hidden coordinator, tabs, session, hosts, and native-window actions |
 | `workspace/mod.rs` | One chart tab: grid, charts, drawings, fetches, and replay |
-| `host/tab_window_host.rs` | Window grouping, active tabs, drag/reorder/detach |
+| `host/tab/window.rs` | Window grouping, active tabs, drag/reorder/detach |
 | `native_bridge.rs` | AppKit menus, window behavior, cursor, Keychain/accessibility boundaries |
-| `host/update_host.rs` | Update checks, install progress, and restart state |
-| `host/portfolio_import_flow.rs` | CSV/CoinMarketCap import orchestration |
+| `host/update/mod.rs` | Update checks, install progress, and restart state |
+| `host/portfolio/import_flow.rs` | CSV/CoinMarketCap import orchestration |
 | `format.rs`, `platform.rs` | Leaf helpers every layer imports: number/price text and per-platform wording |
 
-Feature hosts in `host/` (`alert_host`, `paper_host`, `pine_host`, `pine_subscription_host`,
-`portfolio_host`, `portfolio_card_host`, `webhook_host`, `snapshot_host`, `mcp_host`, `sync_host`)
-bridge pure engines, persistence, workers, and UI. `host/alert_runtime.rs` is the alert loop shared
+Feature hosts in `host/` (`host::alert`, `host::paper`, `host::pine`, `host::pine::subscription`,
+`host::portfolio`, `host::portfolio::card`, `host::webhook`, `host::snapshot`, `host::mcp`, `host::sync`)
+bridge pure engines, persistence, workers, and UI. `host/alert/runtime.rs` is the alert loop shared
 by the GUI fallback and the login-item agent (`bin/degenview-alert-agent.rs`).
 
 ## Inside a workspace

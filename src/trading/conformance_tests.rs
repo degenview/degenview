@@ -12,9 +12,9 @@ use super::backend::TradingBackend;
 use super::draft::{DraftField, TradeDraft};
 use super::model::{BackendState, MarketAccess, OrderClass, UnavailableKind, VenueKind};
 use super::task::Task;
-use crate::host::broker_host::{BrokerHost, store_journal};
-use crate::host::paper_host::PaperHost;
-use crate::host::trading_hub::TradingHub;
+use crate::host::broker::{BrokerHost, store_journal};
+use crate::host::paper::PaperHost;
+use crate::host::trading::TradingHub;
 use crate::model::broker::venue::TradingVenue;
 use crate::store::{SharedStore, Store};
 

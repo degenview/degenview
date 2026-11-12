@@ -33,7 +33,7 @@ use super::model::{
 };
 use super::money;
 use super::task::Task;
-use crate::host::broker_host::{BrokerHost, Connection};
+use crate::host::broker::{BrokerHost, Connection};
 use crate::model::broker;
 use crate::model::broker::chart::ChartTrading;
 use crate::model::broker::ticket::{self as rules, StatusTone};

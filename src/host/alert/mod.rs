@@ -2,6 +2,8 @@
 //! queue, and exposes the evaluated snapshot. The exclusive runtime owner may be either the GUI
 //! fallback or the embedded login-item agent.
 
+pub mod runtime;
+
 use crate::model::alert::engine::AlertEngine;
 use crate::model::alert::feed::UnseenAlerts;
 use crate::model::alert::message::render_for_event;

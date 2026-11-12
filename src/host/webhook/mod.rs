@@ -56,11 +56,11 @@ impl Default for StorageEvents {
 #[derive(Default)]
 pub struct WebhookHost {
     /// The snapshot choices the Snapshots page edits.
-    snapshots: crate::host::snapshot_host::SnapshotHost,
+    snapshots: crate::host::snapshot::SnapshotHost,
     /// The editor's themes and typography, which the Pine Studio page edits.
-    editor_themes: crate::host::editor_theme_host::EditorThemeHost,
+    editor_themes: crate::host::editor_theme::EditorThemeHost,
     /// How chart tabs name themselves, which the Appearance page edits.
-    tab_titles: crate::host::tab_title_host::TabTitleHost,
+    tab_titles: crate::host::tab::title::TabTitleHost,
     /// The saved assistant settings, read from the store when Settings first needs them.
     ai_prefs: Option<AiPrefs>,
     ai_prefs_read_at: Option<std::time::Instant>,
@@ -78,9 +78,9 @@ pub struct WebhookHost {
 
 impl WebhookHost {
     pub fn new(
-        snapshots: crate::host::snapshot_host::SnapshotHost,
-        editor_themes: crate::host::editor_theme_host::EditorThemeHost,
-        tab_titles: crate::host::tab_title_host::TabTitleHost,
+        snapshots: crate::host::snapshot::SnapshotHost,
+        editor_themes: crate::host::editor_theme::EditorThemeHost,
+        tab_titles: crate::host::tab::title::TabTitleHost,
     ) -> Self {
         Self {
             snapshots,
@@ -139,9 +139,9 @@ impl WebhookHost {
         notifications: &AlertNotificationSettings,
         health: &AlertRuntimeHealth,
         mcp: crate::ui::settings::mcp::McpSettingsInput,
-        updates: &crate::host::update_host::UpdateHost,
-        sync: &crate::host::sync_host::SyncHost,
-        trading_hub: &std::sync::Arc<crate::host::trading_hub::TradingHub>,
+        updates: &crate::host::update::UpdateHost,
+        sync: &crate::host::sync::SyncHost,
+        trading_hub: &std::sync::Arc<crate::host::trading::TradingHub>,
         now_ms: i64,
         reference_count: &dyn Fn(EndpointId) -> usize,
     ) -> Vec<WebhookHostAction> {
@@ -580,7 +580,7 @@ mod tests {
     /// theme with Automatic before the first frame.
     #[test]
     fn building_the_host_leaves_the_editors_theme_alone() {
-        use crate::host::editor_theme_host::EditorThemeHost;
+        use crate::host::editor_theme::EditorThemeHost;
         use crate::model::editor_theme::{BuiltInTheme, EditorPrefs, ThemeSelection};
         use crate::service::editor_theme::fonts::FontCatalog;
         use crate::ui::editor_appearance::{RestorePublished, current, of_built_in};
@@ -611,7 +611,7 @@ mod tests {
         let shared: crate::store::SharedStore = Arc::new(std::sync::Mutex::new(
             Store::open_in_memory().expect("a store"),
         ));
-        let snapshots = crate::host::snapshot_host::SnapshotHost::load(shared.clone());
+        let snapshots = crate::host::snapshot::SnapshotHost::load(shared.clone());
         let mut host = WebhookHost::new(snapshots.clone(), Default::default(), Default::default());
         let (done, finished) = mpsc::channel();
         let worker_store = shared.clone();

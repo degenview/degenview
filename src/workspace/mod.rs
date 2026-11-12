@@ -1,5 +1,5 @@
-use crate::host::paper_host::{PaperHost, PaperPanel};
-use crate::host::portfolio_card_host::PortfolioCardEnv;
+use crate::host::paper::{PaperHost, PaperPanel};
+use crate::host::portfolio::card::PortfolioCardEnv;
 use crate::model::alert::{AlertCurrency, PriceAlert};
 use crate::model::chart::sync::SyncHub;
 use crate::model::tab::link::LinkColor;
@@ -179,7 +179,7 @@ pub struct ChartWorkspace {
     /// How portfolio cards reach the app's portfolios; set by the window that draws this tab.
     card_env: Option<PortfolioCardEnv>,
     /// The venues this tab can trade on, handed in by the window each frame.
-    trading_hub: Option<Arc<crate::host::trading_hub::TradingHub>>,
+    trading_hub: Option<Arc<crate::host::trading::TradingHub>>,
     live_feed: Option<BinanceLiveFeed>,
     /// The candles of every overlay market on this workspace's charts, fetched once per market.
     overlay_hub: overlay::OverlayHub,
@@ -261,7 +261,7 @@ pub struct ChartWorkspace {
     /// The snapshot being made, and what it waits for.
     snapshot: SnapshotState,
     /// The snapshot settings all windows share (set by the app).
-    snapshots: Option<crate::host::snapshot_host::SnapshotHost>,
+    snapshots: Option<crate::host::snapshot::SnapshotHost>,
     /// The "Create Price Alert" sheet, over this tab's window.
     alert_editor: Option<PriceAlertEditorState>,
     /// USD → currency rates for the sheet's currency menu, pushed in by the app.

@@ -163,7 +163,7 @@
   - Font: `editor_appearance::editor_font()` (size, line height, `editor-code` family, default
     built-in JetBrains Mono: `theme::bundled_editor_font`, OFL, see `assets/fonts/README.md`); layout
     constants follow it (`gutter_width`, `chrome_scale`). No 13-point assumption.
-  - Theme and font owned by `host::editor_theme_host` (saved after a pause, never while Settings
+  - Theme and font owned by `host::editor_theme` (saved after a pause, never while Settings
     draws); change through it so all windows repaint. See [Editor themes](../editor-themes.md).
 - Completion never compiles, runs, re-lexes or touches network/storage. Builtins from the symbol
   catalog, signatures from `pine_studio::editor::signature`: add new builtins to both. `array.*`/`map.*`

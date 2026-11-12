@@ -7,7 +7,7 @@
 //! a comparison of values.
 
 use super::ChartWorkspace;
-use crate::host::tab_link_host::TabLinkHost;
+use crate::host::tab::link::TabLinkHost;
 use crate::model::InstrumentId;
 use crate::model::chart::sync::{ChartSyncSettings, SyncHub};
 use crate::model::tab::link::{LinkKind, LinkOutbox, LinkSignal, Member};

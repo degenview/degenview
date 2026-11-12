@@ -6,7 +6,7 @@
 //! The page works on the host directly (as the iCloud and updates pages do on theirs): there is
 //! nothing here to apply later and nothing to store, so it returns no actions.
 
-use crate::host::editor_theme_host::{CustomTheme, EditorThemeHost, FontStatus, View};
+use crate::host::editor_theme::{CustomTheme, EditorThemeHost, FontStatus, View};
 use crate::model::editor_theme::{
     BuiltInTheme, LineHeight, MAX_FONT_SIZE, MAX_NAME_CHARS, MIN_FONT_SIZE, Palette, SurfaceColor,
     SyntaxRole, ThemeId, ThemeSelection, ThemeSource, clamp_size,

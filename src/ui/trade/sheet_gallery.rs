@@ -11,9 +11,9 @@ use degenview_brokers::{BrokerId, Env, MarketRef, MemorySecretStore, Side, Statu
 use eframe::egui::{self, Vec2};
 
 use super::order_sheet::{self, SheetAction, SheetInput, SheetState};
-use crate::host::broker_host::{BrokerHost, store_journal};
-use crate::host::paper_host::PaperHost;
-use crate::host::trading_hub::TradingHub;
+use crate::host::broker::{BrokerHost, store_journal};
+use crate::host::paper::PaperHost;
+use crate::host::trading::TradingHub;
 use crate::model::broker::venue::TradingVenue;
 use crate::store::{SharedStore, Store};
 use crate::trading::model::{OrderClass, VenueInfo};
@@ -548,7 +548,7 @@ fn an_unreadable_record_of_unconfirmed_orders_stops_new_orders_at_the_sheet() {
                     post_only: false,
                 },
             },
-            crate::host::broker_host::account_of(&runtime),
+            crate::host::broker::account_of(&runtime),
         )
         .wait()
         .unwrap_err();

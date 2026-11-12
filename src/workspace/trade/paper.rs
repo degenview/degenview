@@ -1,6 +1,6 @@
 //! Paper trading on charts: quotes handed to the paper host, portfolio cards and chart orders.
 
-use crate::host::paper_host::PaperHost;
+use crate::host::paper::PaperHost;
 use crate::model::DataSource;
 use crate::model::paper::{PaperCurrency, PaperInstrument, PaperQuote};
 use crate::model::watchlist::quote::{Freshness, evaluate_freshness};

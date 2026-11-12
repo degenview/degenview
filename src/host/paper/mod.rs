@@ -1831,7 +1831,7 @@ mod tests {
         assert!(!error.expired());
     }
 
-    /// The notice line, as pictures: `DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib paper_host::tests::gallery -- --ignored`.
+    /// The notice line, as pictures: `DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib host::paper::tests::gallery -- --ignored`.
     #[test]
     #[ignore = "writes pictures"]
     fn gallery_of_the_notice() {

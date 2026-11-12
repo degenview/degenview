@@ -7,7 +7,7 @@
 // Transient: reached through the Portfolio tab's Import or Export menu.
 #![allow(dead_code)]
 
-use crate::host::portfolio_host::PortfolioHost;
+use crate::host::portfolio::PortfolioHost;
 use crate::model::portfolio;
 use crate::model::portfolio::csv::{CmcPreview, CsvPreview, Mint};
 use crate::model::portfolio::{PortfolioAsset, PortfolioCurrency, PortfolioTransaction};

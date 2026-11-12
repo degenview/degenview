@@ -5,9 +5,11 @@
 //! permission snapshot equal to what is on disk, and hands queued tool requests to the app.
 //! Persist first, then publish: a write that fails changes nothing the server can see.
 
-use crate::host::alert_host::AlertHost;
-use crate::host::paper_host::{PaperHost, PaperHostError, owner_text};
-use crate::host::portfolio_host::PortfolioHost;
+pub mod confirmation;
+
+use crate::host::alert::AlertHost;
+use crate::host::paper::{PaperHost, PaperHostError, owner_text};
+use crate::host::portfolio::PortfolioHost;
 use crate::mcp::bridge::{
     self, AlertCommandOutcome, AlertUpdate, BridgeClient, BridgeInbox, McpError, NewAlert, Request,
 };
@@ -5658,7 +5660,7 @@ mod tests {
 
     #[test]
     fn confirmation_summaries_name_the_alert_the_chart_the_drawings_and_the_script() {
-        use crate::host::mcp_confirmation as describe;
+        use crate::host::mcp::confirmation as describe;
         const SOURCE: &str = "//@version=6\nindicator(\"My script\")\nplot(close)\n";
 
         let (_store, host, id) = seeded();

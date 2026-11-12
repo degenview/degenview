@@ -1,6 +1,6 @@
 //! What the market and watchlist tools return, and the pure parts of building it: search hits,
 //! quotes and watchlists as typed values. Free of egui and HTTP; the app-thread projections that
-//! need the store live in `host::mcp_host`.
+//! need the store live in `host::mcp`.
 
 pub mod tools;
 

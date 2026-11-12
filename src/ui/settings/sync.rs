@@ -4,7 +4,7 @@
 //! iCloud or the store itself. Anything that moves data between Apple Accounts or discards a
 //! copy of this Mac's data is a button the user presses, with the consequence written next to it.
 
-use crate::host::sync_host::{SyncAction, SyncHost, SyncNotice, SyncPrompt, SyncView};
+use crate::host::sync::{SyncAction, SyncHost, SyncNotice, SyncPrompt, SyncView};
 use crate::store::sync::ConflictSummary;
 use crate::sync::engine::account::AccountChoice;
 use crate::sync::engine::core::{PauseReason, Phase};

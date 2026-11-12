@@ -21,7 +21,7 @@ use app::DegenViewApp;
 use eframe::egui;
 
 pub use crash_report::install_panic_hook;
-pub use host::sync_host::{EventSink, TransportFactory};
+pub use host::sync::{EventSink, TransportFactory};
 pub use sync::transport::native::{CloudKitFactory, NativeApi};
 
 pub fn run_gui() -> Result<(), Box<dyn std::error::Error>> {
@@ -38,7 +38,7 @@ pub fn run_gui_with(
     service::update::install::wait_for_predecessor()?;
     let store = store::open_default()?;
     // A database copied from another Mac becomes this Mac's own before anything reads its ids.
-    host::sync_host::adopt_this_mac(&store);
+    host::sync::adopt_this_mac(&store);
     // A finished update leaves the previous app in a hidden folder until the new one has started.
     service::work_queue::submit(service::update::install::cleanup_stale);
     service::work_queue::submit(service::update::install::sync_installed_version);
@@ -77,7 +77,7 @@ pub fn run_gui_with(
 }
 
 pub fn run_alert_agent() -> Result<(), Box<dyn std::error::Error>> {
-    host::alert_runtime::run_alert_agent()
+    host::alert::runtime::run_alert_agent()
 }
 
 /// Fraction of the canvas the icon art fills. AppKit draws `applicationIconImage` as-is, so the

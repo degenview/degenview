@@ -77,7 +77,7 @@ pub struct ChartFeed {
     pub symbol_key: String,
     pub timeframe: String,
     pub bars: Vec<Kline>,
-    pub run: crate::host::pine_subscription_host::ChartRun,
+    pub run: crate::host::pine::subscription::ChartRun,
     pub instances: Vec<crate::model::pine::instance::PineInstance>,
 }
 

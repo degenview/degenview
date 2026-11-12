@@ -6,7 +6,7 @@ cards are a separate surface: see [portfolio cards](portfolio-cards.md).
 
 ## Where things live
 
-- `host/portfolio_host.rs`: the tab (`PortfolioTab::ui`), the header, the section bar, the centred
+- `host/portfolio/mod.rs`: the tab (`PortfolioTab::ui`), the header, the section bar, the centred
   column (`capped`), and the figures handed to the views.
 - `service/portfolio/quotes.rs`: `PortfolioQuoteFeed`, the valuation the views read.
 - `ui/portfolio/overview.rs`: Overview (hero, key figures, charts, lists) and Statistics.

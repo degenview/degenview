@@ -13,7 +13,7 @@ use degenview_brokers::{
 };
 use eframe::egui::{self, Vec2};
 
-use crate::host::broker_host::{BrokerHost, account_of, store_journal};
+use crate::host::broker::{BrokerHost, account_of, store_journal};
 use crate::store::Store;
 use crate::ui::broker::panel::{self, BrokerPanelState, BrokerTab};
 use crate::ui::render_tests::Screen;
@@ -24,7 +24,7 @@ const ID: BrokerId = BrokerId::new("coinbase");
 struct Rig {
     exchange: CoinbaseExchange,
     host: Arc<BrokerHost>,
-    hub: Arc<crate::host::trading_hub::TradingHub>,
+    hub: Arc<crate::host::trading::TradingHub>,
 }
 
 fn rig() -> Rig {
@@ -42,10 +42,10 @@ fn rig() -> Rig {
         env,
         |config| config.fast(),
     );
-    let paper = Arc::new(Mutex::new(crate::host::paper_host::PaperHost::load(
+    let paper = Arc::new(Mutex::new(crate::host::paper::PaperHost::load(
         store.clone(),
     )));
-    let hub = crate::host::trading_hub::TradingHub::new(host.clone(), paper, Some(store));
+    let hub = crate::host::trading::TradingHub::new(host.clone(), paper, Some(store));
     Rig {
         exchange,
         host,

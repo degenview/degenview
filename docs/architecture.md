@@ -16,7 +16,7 @@ architecture index; use the topic documents for detail.
 | `ui/` | Immediate-mode egui rendering |
 | `pine/` | Pure Pine compiler, interpreter, strategy broker, debugger, profiler, and outputs |
 | `pine_studio/` | Script library, editor, preview, assistant, debugger and profiler panels |
-| `mcp/`, `host/mcp_host.rs` | Local MCP transport and app-thread bridge |
+| `mcp/`, `host/mcp/mod.rs` | Local MCP transport and app-thread bridge |
 | `bin/` | The login-item alert agent (`degenview-alert-agent`) |
 
 ## Topic map

@@ -8,7 +8,7 @@
 //! window's to drive, so they run here, when the outcome arrives, and a message only says what
 //! has happened.
 
-use crate::host::snapshot_host::{Hosting, SnapshotHost, TURN_ON_A_HOST};
+use crate::host::snapshot::{Hosting, SnapshotHost, TURN_ON_A_HOST};
 use crate::model::chart::snapshot::{self, SnapshotAction, SnapshotDimensions, SnapshotRequest};
 use crate::service::snapshot::job::{self, Outcome, Retry, SystemBackend};
 use crate::service::snapshot::providers::Destination;

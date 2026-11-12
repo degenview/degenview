@@ -19,7 +19,7 @@ use super::model::{
     UnavailableKind, VenueInfo, VenueKind,
 };
 use super::task::Task;
-use crate::host::paper_host::PaperHost;
+use crate::host::paper::PaperHost;
 use crate::model::DataSource;
 use crate::model::broker::ticket::display;
 use crate::model::broker::venue::TradingVenue;

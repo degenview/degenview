@@ -1,24 +1,13 @@
-pub mod alert_host;
-pub mod alert_runtime;
-pub mod broker_host;
-#[cfg(test)]
-mod broker_host_tests;
-pub mod editor_theme_host;
-pub mod mcp_confirmation;
-pub mod mcp_host;
-pub mod paper_host;
-pub mod pine_host;
-pub mod pine_subscription_host;
-pub mod portfolio_card_host;
-pub mod portfolio_host;
-pub mod portfolio_import_flow;
-pub mod snapshot_host;
-pub mod sync_host;
-pub mod tab_link_host;
-pub mod tab_title_host;
-pub mod tab_window_host;
-pub mod trading_hub;
-#[cfg(test)]
-mod trading_hub_tests;
-pub mod update_host;
-pub mod webhook_host;
+pub mod alert;
+pub mod broker;
+pub mod editor_theme;
+pub mod mcp;
+pub mod paper;
+pub mod pine;
+pub mod portfolio;
+pub mod snapshot;
+pub mod sync;
+pub mod tab;
+pub mod trading;
+pub mod update;
+pub mod webhook;

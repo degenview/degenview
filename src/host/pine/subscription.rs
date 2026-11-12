@@ -4,7 +4,7 @@
 //! already owns the webhook + notification services.
 #![allow(dead_code)] // transient until the app threads it
 
-use crate::host::pine_host::KlineSecurityDataProvider;
+use crate::host::pine::KlineSecurityDataProvider;
 use crate::model::Kline;
 use crate::model::alert::pine::{PineAlertState, PineAlertSubscription};
 use crate::model::chart::synthetic::Construction;

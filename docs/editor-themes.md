@@ -146,7 +146,7 @@ replaces what every editor in the process draws: `WebhookHost::new` fills the fi
 although Dracula was selected (and Settings, reading the real host, still showed Dracula); picking any
 theme again published from the real host and healed it. Tests hold both halves
 (`a_placeholder_host_never_undoes_the_real_hosts_choice`,
-`webhook_host::tests::building_the_host_leaves_the_editors_theme_alone`). Any new code that builds
+`host::webhook::tests::building_the_host_leaves_the_editors_theme_alone`). Any new code that builds
 a host outside `DegenViewApp::new` must use `default()`, never `new()`.
 
 The preview's sample (`pine_studio::theme_preview`) is editable. It is compiled with the real Pine

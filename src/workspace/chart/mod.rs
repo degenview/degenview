@@ -8,7 +8,7 @@ pub(in crate::workspace) mod snapshot;
 pub(in crate::workspace) mod symbol_picker;
 
 use super::PersistedChart;
-use crate::host::portfolio_card_host::CardRuntime;
+use crate::host::portfolio::card::CardRuntime;
 use crate::model::chart::price_scale::PriceScaleMode;
 use crate::model::market;
 use crate::model::market::history::OlderHistory;

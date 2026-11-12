@@ -327,7 +327,7 @@ mod summaries {
     //! What the user is shown, built from the app's own data about the target.
 
     use super::super::Harness;
-    use crate::host::mcp_confirmation as describe;
+    use crate::host::mcp::confirmation as describe;
     use crate::mcp::bridge::McpError;
     use crate::model::DataSource;
     use crate::model::paper::{

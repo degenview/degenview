@@ -40,7 +40,7 @@
   `pointer.x - strip.left() + scroll`, the strip draws the dragged tab at `left - scroll`.
 - Custom title (`PersistedWorkspace::custom_title`, context menu Rename Tab…) replaces symbol and
   price; symbol/layout changes never touch it. App-wide style (symbol+price+layout, symbol only,
-  layout name only): `tab.title_style` (`host::tab_title_host`, Settings ▸ Appearance ▸ Tabs). Both
+  layout name only): `tab.title_style` (`host::tab::title`, Settings ▸ Appearance ▸ Tabs). Both
   device-local: the `tab` table and that key never sync.
 - Hairline (`theme::separator()`, `paint_separators`) only between two neighbours at rest: not the
   showing, dragged or hovered tab, not across an incoming-tab gap. It follows animated tab rects.
@@ -112,6 +112,6 @@
 - New/first-launch tabs are empty (`ChartWorkspace::empty`); only opening a watchlist market seeds a
   chart. Cache empty-page database/Keychain reads per visit, not per frame.
 - Snapshot choices (`snapshot.prefs` in the `setting` table: host, trading overlays, scale, approved
-  hosts) are app-wide in `snapshot_host::SnapshotHost`, shared by all windows and Settings. An
+  hosts) are app-wide in `host::snapshot::SnapshotHost`, shared by all windows and Settings. An
   in-flight snapshot belongs to its workspace; closing the tab drops its result (a sent upload
   cannot be recalled). Token in the Keychain.

@@ -16,6 +16,9 @@
 //! Nothing here names a particular broker (a guard test checks); the list comes from the crate's
 //! registry. Live trading has no path to Pine scripts, alerts, webhooks or MCP.
 
+#[cfg(test)]
+mod tests;
+
 use std::collections::{BTreeMap, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};

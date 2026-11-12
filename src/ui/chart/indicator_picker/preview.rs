@@ -150,7 +150,7 @@ pub fn native(kind: BuiltIn) -> Preview {
 /// `None` when it fails to run.
 pub fn pine(source: &str) -> Option<Preview> {
     let (output, failure) =
-        crate::host::pine_host::run_script_checked(source, bars(), &symbol(), &HashMap::new());
+        crate::host::pine::run_script_checked(source, bars(), &symbol(), &HashMap::new());
     if failure.is_some() {
         return None;
     }

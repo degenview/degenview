@@ -68,7 +68,7 @@ src/ui/chart/add/sheet.rs
 ### Alerts
 
 ```text
-src/host/alert_host.rs
+src/host/alert/mod.rs
 src/model/alert/mod.rs
 src/model/alert/engine.rs
 src/store/alert.rs
@@ -79,8 +79,8 @@ src/ui/alert/editor.rs
 ### Pine Script
 
 ```text
-src/host/pine_host.rs
-src/host/pine_subscription_host.rs
+src/host/pine/mod.rs
+src/host/pine/subscription.rs
 src/model/pine/instance.rs
 src/model/alert/pine.rs
 src/pine/compiler/mod.rs
@@ -592,7 +592,7 @@ src/
 │   │   ├── alerts.rs
 │   │   └── pine.rs
 │   └── resources.rs
-├── host/mcp_host.rs
+├── host/mcp/mod.rs
 ├── model/mcp/mod.rs
 ├── store/mcp/mod.rs
 ├── service/keychain_mcp.rs
@@ -1483,7 +1483,7 @@ Do not conflate script identity with instance identity.
 DegenView supports Pine alert subscriptions through:
 
 ```text
-pine_subscription_host
+host::pine::subscription
 model::alert::pine
 store::pine
 ```

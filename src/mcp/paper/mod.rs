@@ -1,7 +1,7 @@
 //! What the paper-trading tools return: accounts with their metrics, positions, working orders,
 //! fills and closed trades, as typed values built from the paper-trading model. Read-only: no
 //! tool here places, changes or cancels an order. Free of egui and HTTP; the app-thread glue that
-//! reads the `PaperHost` is in `host::mcp_host`.
+//! reads the `PaperHost` is in `host::mcp`.
 
 pub mod tools;
 

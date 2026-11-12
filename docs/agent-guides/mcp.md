@@ -3,7 +3,7 @@
 ## Threads and authorization
 
 - Only `src/mcp/` may use async: one current-thread Tokio runtime on the `mcp-server` thread for
-  rmcp/axum. Keep it egui-free; `host/mcp_host.rs` bridges stateful workspace access.
+  rmcp/axum. Keep it egui-free; `host/mcp/mod.rs` bridges stateful workspace access.
 - Tools validate and enqueue `mcp::bridge::Request`; `DegenViewApp::tick_mcp` runs it via workspace
   methods on the app thread. Tool/HTTP threads never lock `TabSlot`/`ChartWorkspace` or write SQLite.
 - Authorize each call from fresh `McpShared` state. New tool: add a `Permission`, map it in
@@ -53,7 +53,7 @@
 ## Confirmation
 
 - Classify each new mutating `McpCommand` in `mcp::confirm::gate` (exhaustive match). If it asks:
-  describe it in `App::confirmation_summary` / `host::mcp_confirmation` from what the app knows of
+  describe it in `App::confirmation_summary` / `host::mcp::confirmation` from what the app knows of
   the target, never agent text (missing target: own error, unasked); add its tool to
   `confirm::GATED_TOOLS`; say so in the tool description.
 - The gate runs on the app thread before dispatch, never waits: it answers `CONFIRMATION_REQUIRED`
@@ -70,7 +70,7 @@
 
 ## Tools
 
-- Price alerts: plan against `AlertHost` in `host/mcp_host.rs`, enqueue `AlertRuntimeCommand`; never
+- Price alerts: plan against `AlertHost` in `host/mcp/mod.rs`, enqueue `AlertRuntimeCommand`; never
   write alert tables or reimplement `PriceAlertEditorState`. The snapshot is up to 1 s old and
   shared per frame, so commands carry an `AlertPrecondition` (`Create`: id free, below the cap, no
   identical alert; `Unchanged`: alert still matches the planned base) checked by
@@ -99,9 +99,9 @@
   bridge and `WatchlistStore::edit_list`; never write watchlist rows from a tool thread. Second
   permissions (`get_watchlist` with `include_quotes`): `McpShared::allows`.
 - Live trading is unreachable: nothing under `src/mcp/` may mention `degenview_brokers` or
-  `broker_host` (`host::broker_host_tests` fails the build). A tool reaching a real broker needs its
+  `host::broker` (`host::broker::tests` fails the build). A tool reaching a real broker needs its
   own design, permission and confirmation, not a new arm here. See [Live trading](../broker-trading.md).
-- Paper writes (`mcp/paper/tools.rs`, `mcp_host::place_paper_order` and friends): only via
+- Paper writes (`mcp/paper/tools.rs`, `host::mcp::place_paper_order` and friends): only via
   `PaperHost::{submit,modify,cancel,close_position}`, `tradable_account` checked first (another
   Mac's account is never changed over MCP), each new write behind its own off-by-default permission.
   A paper `request_id` is bound to its order (another order under it: `CONFLICT`).

@@ -277,9 +277,9 @@ mod tests {
     use eframe::egui;
 
     use super::*;
-    use crate::host::broker_host::{BrokerHost, store_journal};
-    use crate::host::paper_host::PaperHost;
-    use crate::host::trading_hub::TradingHub;
+    use crate::host::broker::{BrokerHost, store_journal};
+    use crate::host::paper::PaperHost;
+    use crate::host::trading::TradingHub;
     use crate::model::broker::venue::TradingVenue;
     use crate::model::{DataSource, InstrumentId};
     use crate::workspace::test_support::empty_workspace;
@@ -379,7 +379,7 @@ mod tests {
         let placed = runtime
             .submit(
                 limit(Side::Buy, "87654.32"),
-                crate::host::broker_host::account_of(&runtime),
+                crate::host::broker::account_of(&runtime),
             )
             .wait()
             .unwrap();
@@ -464,7 +464,7 @@ mod tests {
         let placed = runtime
             .submit(
                 limit(Side::Sell, "99999.00"),
-                crate::host::broker_host::account_of(&runtime),
+                crate::host::broker::account_of(&runtime),
             )
             .wait()
             .unwrap();
