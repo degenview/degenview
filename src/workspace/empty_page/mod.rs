@@ -43,7 +43,6 @@ const EMPTY_PAGE_REVEAL_GAP: Duration = Duration::from_millis(900);
 pub(super) struct EmptyPageData {
     recents: Vec<sheet::RecentMarket>,
     layouts: Vec<empty_state::LayoutSummary>,
-    offers_stocks: bool,
 }
 
 impl ChartWorkspace {
@@ -83,19 +82,12 @@ impl ChartWorkspace {
             .into_iter()
             .take(empty_state::ITEM_LIMIT)
             .collect();
-        let recents: Vec<sheet::RecentMarket> = page
-            .recents
-            .iter()
-            .take(empty_state::ITEM_LIMIT)
-            .cloned()
-            .collect();
         let trends = self.empty_page.trends.snapshot();
         let input = empty_state::EmptyStateInput {
             favorites: &favorites,
             hidden_favorites,
-            recents: &recents,
+            recents: &page.recents,
             layouts: &page.layouts,
-            offers_stocks: page.offers_stocks,
             trends: &trends,
         };
         let output = empty_state::show(ui, &input, &mut self.empty_page.state);
@@ -107,7 +99,7 @@ impl ChartWorkspace {
                     self.add_chart_from_instrument(&favorites[index], &ctx);
                 }
                 EmptyStateAction::OpenRecent(index) => {
-                    self.add_from_search(&recents[index].result(), &ctx);
+                    self.add_from_search(&page.recents[index].result(), &ctx);
                 }
                 EmptyStateAction::OpenLayout(id) => self.request_open_saved_view(id, &ctx),
                 EmptyStateAction::OpenSuggestion(source, symbol, display) => {
@@ -163,11 +155,7 @@ impl ChartWorkspace {
                     .collect(),
             })
             .collect();
-        EmptyPageData {
-            recents,
-            layouts,
-            offers_stocks: crate::service::keychain::api_keys::alpaca_credentials().is_some(),
-        }
+        EmptyPageData { recents, layouts }
     }
 
     fn store_recents(&self, recents: &[sheet::RecentMarket]) {

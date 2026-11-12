@@ -28,14 +28,17 @@ pub struct Frame<'a> {
     pub actions: Vec<EmptyStateAction>,
     /// Markets drawn this frame, for the caller to fetch a week of closes for.
     pub wanted: Vec<InstrumentId>,
+    /// The bottom of the page, so a long list can take the room left under it.
+    pub page_bottom: f32,
 }
 
 impl<'a> Frame<'a> {
-    pub fn new(trends: &'a HashMap<String, Trend>) -> Self {
+    pub fn new(trends: &'a HashMap<String, Trend>, page_bottom: f32) -> Self {
         Self {
             trends,
             actions: Vec::new(),
             wanted: Vec::new(),
+            page_bottom,
         }
     }
 
@@ -260,33 +263,97 @@ pub fn market_row(ui: &mut Ui, rect: Rect, id: Id, market: Market, frame: &mut F
     response
 }
 
-/// A card holding rows, with a hairline between them.
+/// A card holding rows, with a hairline between them. Taller than `max_height` it scrolls, and
+/// only the rows in view are drawn (so only they are asked for).
 pub fn list_card(
     ui: &mut Ui,
     rows: usize,
     row_height: f32,
+    max_height: f32,
     mut row: impl FnMut(&mut Ui, usize, Rect),
 ) {
+    let total = rows as f32 * row_height;
     let (rect, _) = ui.allocate_exact_size(
-        vec2(ui.available_width(), rows as f32 * row_height),
+        vec2(ui.available_width(), total.min(max_height)),
         Sense::hover(),
     );
     surface(ui, rect, kit::CARD_RADIUS, false);
-    for index in 0..rows {
-        let top = rect.top() + index as f32 * row_height;
-        if index > 0 {
-            ui.painter().hline(
-                rect.left() + 18.0..=rect.right() - 18.0,
-                top,
-                Stroke::new(1.0, kit::hairline()),
-            );
-        }
-        row(
-            ui,
-            index,
-            Rect::from_min_size(pos2(rect.left(), top), vec2(rect.width(), row_height)),
-        );
-    }
+    let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(rect.shrink(1.0)));
+    egui::ScrollArea::vertical()
+        .id_salt("empty-state-list")
+        .auto_shrink([false, false])
+        .show_viewport(&mut inner, |ui, view| {
+            let (content, _) =
+                ui.allocate_exact_size(vec2(ui.available_width(), total), Sense::hover());
+            let first = (view.top() / row_height).floor().max(0.0) as usize;
+            let last = ((view.bottom() / row_height).ceil() as usize).min(rows);
+            for index in first..last {
+                let top = content.top() + index as f32 * row_height;
+                if index > 0 {
+                    ui.painter().hline(
+                        content.left() + 17.0..=content.right() - 17.0,
+                        top,
+                        Stroke::new(1.0, kit::hairline()),
+                    );
+                }
+                row(
+                    ui,
+                    index,
+                    Rect::from_min_size(
+                        pos2(content.left(), top),
+                        vec2(content.width(), row_height),
+                    ),
+                );
+            }
+        });
+}
+
+/// The tile that ends a capped list of favorites: how many did not fit, and a way to see them.
+pub fn more_tile(ui: &mut Ui, rect: Rect, hidden: usize) -> Response {
+    let response = tile(
+        ui,
+        rect,
+        Id::new("empty-favorites-more"),
+        "Show every favorite in the watchlist",
+    );
+    let response = crate::ui::accessibility::label(response, format!("{hidden} more favorites"));
+    let bounds = rect.shrink2(vec2(14.0, 0.0));
+    icons::paint(
+        ui.painter(),
+        Rect::from_center_size(
+            pos2(bounds.left() + 15.0, rect.center().y),
+            Vec2::splat(18.0),
+        ),
+        Icon::Ellipsis,
+        theme::text_secondary(),
+    );
+    let left = bounds.left() + 42.0;
+    let title = kit::galley(
+        ui,
+        &format!("{hidden} more"),
+        size::BODY + 1.0,
+        SEMIBOLD,
+        theme::text_primary(),
+        bounds.right() - left,
+    );
+    let subtitle = kit::galley(
+        ui,
+        "Open watchlist",
+        size::CAPTION + 1.0,
+        REGULAR,
+        theme::text_secondary(),
+        bounds.right() - left,
+    );
+    let top = rect.center().y - (title.size().y + 2.0 + subtitle.size().y) / 2.0;
+    let title_height = title.size().y;
+    ui.painter()
+        .galley(pos2(left, top), title, theme::text_primary());
+    ui.painter().galley(
+        pos2(left, top + title_height + 2.0),
+        subtitle,
+        theme::text_secondary(),
+    );
+    response
 }
 
 /// One saved layout: its name, what is in it, and its first few markets as artwork.

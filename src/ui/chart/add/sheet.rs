@@ -36,7 +36,8 @@ const RESULT_ROW_HEIGHT: f32 = 38.0;
 const RESULT_COUNT_HEIGHT: f32 = 18.0;
 const RESULT_COUNT_MIN_WIDTH: f32 = 30.0;
 const SEARCH_DEBOUNCE: Duration = Duration::from_millis(300);
-const RECENT_LIMIT: usize = 10;
+/// Markets remembered as recent: Add Chart and the new-tab page both list them, and both scroll.
+pub(crate) const RECENT_LIMIT: usize = 24;
 /// Events listed under "Trending", and how long that list is reused (as in the Swift app).
 const TRENDING_LIMIT: usize = 8;
 const TRENDING_TTL: Duration = Duration::from_secs(600);

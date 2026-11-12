@@ -15,6 +15,10 @@ const MARKET_TILE_HEIGHT: f32 = 64.0;
 const LAYOUT_CARD_WIDTH: f32 = 230.0;
 const LAYOUT_CARD_HEIGHT: f32 = 72.0;
 const ROW_HEIGHT: f32 = 58.0;
+/// Under the recent list: the gap, the "Clear" link and the page's bottom margin.
+const CLEAR_ROOM: f32 = 70.0;
+/// Shortest the recent list gets before the page itself scrolls instead.
+const MIN_LIST_HEIGHT: f32 = 4.0 * ROW_HEIGHT;
 
 /// Starter crypto markets: ticker and name.
 const CRYPTO: [(&str, &str); 10] = [
@@ -91,7 +95,7 @@ pub fn show(ui: &mut Ui, tab: Tab, input: &EmptyStateInput, frame: &mut Frame) {
     match tab {
         Tab::Recent => recent(ui, input, frame),
         Tab::Favorites => favorites(ui, input, frame),
-        Tab::Suggestions => suggestions(ui, input.offers_stocks, frame),
+        Tab::Suggestions => suggestions(ui, frame),
         Tab::Layouts => layouts(ui, input, frame),
     }
 }
@@ -101,36 +105,44 @@ fn recent(ui: &mut Ui, input: &EmptyStateInput, frame: &mut Frame) {
         tiles::note(ui, Icon::ClockArrow, "Markets you open will show up here.");
         return;
     }
+    // The list takes the room the page has left under it, never fewer than a few rows.
+    let room = (frame.page_bottom - ui.cursor().top() - CLEAR_ROOM).max(MIN_LIST_HEIGHT);
+    tiles::list_card(
+        ui,
+        input.recents.len(),
+        ROW_HEIGHT,
+        room,
+        |ui, index, rect| {
+            let market = &input.recents[index];
+            let response = tiles::market_row(
+                ui,
+                rect,
+                Id::new(("empty-recent", index)),
+                Market {
+                    icon_symbol: &market.symbol,
+                    api_symbol: &market.full_symbol,
+                    source: market.source,
+                    title: &market.symbol,
+                    subtitle: Some(market.source.display_name()),
+                    badged: true,
+                },
+                frame,
+            );
+            kit::fitted_context_menu(ui, &response, &[("Remove from Recent", None)], |ui| {
+                if kit::menu_item(ui, Icon::Trash, "Remove from Recent", true, false) {
+                    frame.actions.push(EmptyStateAction::RemoveRecent(index));
+                    ui.close();
+                }
+            });
+            if response.clicked() {
+                frame.actions.push(EmptyStateAction::OpenRecent(index));
+            }
+        },
+    );
+    ui.add_space(12.0);
     if tiles::link_row(ui, "Clear") {
         frame.actions.push(EmptyStateAction::ClearRecents);
     }
-    ui.add_space(8.0);
-    tiles::list_card(ui, input.recents.len(), ROW_HEIGHT, |ui, index, rect| {
-        let market = &input.recents[index];
-        let response = tiles::market_row(
-            ui,
-            rect,
-            Id::new(("empty-recent", index)),
-            Market {
-                icon_symbol: &market.symbol,
-                api_symbol: &market.full_symbol,
-                source: market.source,
-                title: &market.symbol,
-                subtitle: Some(market.source.display_name()),
-                badged: true,
-            },
-            frame,
-        );
-        kit::fitted_context_menu(ui, &response, &[("Remove from Recent", None)], |ui| {
-            if kit::menu_item(ui, Icon::Trash, "Remove from Recent", true, false) {
-                frame.actions.push(EmptyStateAction::RemoveRecent(index));
-                ui.close();
-            }
-        });
-        if response.clicked() {
-            frame.actions.push(EmptyStateAction::OpenRecent(index));
-        }
-    });
 }
 
 fn favorites(ui: &mut Ui, input: &EmptyStateInput, frame: &mut Frame) {
@@ -142,14 +154,20 @@ fn favorites(ui: &mut Ui, input: &EmptyStateInput, frame: &mut Frame) {
         );
         return;
     }
+    let more = input.hidden_favorites > 0;
     tiles::grid(
         ui,
-        input.favorites.len(),
+        input.favorites.len() + usize::from(more),
         MARKET_TILE_WIDTH,
         MAX_COLUMNS,
         MARKET_TILE_HEIGHT,
         |ui, index, rect| {
-            let item = &input.favorites[index];
+            let Some(item) = input.favorites.get(index) else {
+                if tiles::more_tile(ui, rect, input.hidden_favorites).clicked() {
+                    frame.actions.push(EmptyStateAction::ShowFavorites);
+                }
+                return;
+            };
             if tiles::market_tile(
                 ui,
                 rect,
@@ -170,25 +188,14 @@ fn favorites(ui: &mut Ui, input: &EmptyStateInput, frame: &mut Frame) {
             }
         },
     );
-    if input.hidden_favorites > 0 {
-        ui.add_space(12.0);
-        if tiles::link_row(ui, &format!("Show {} more", input.hidden_favorites)) {
-            frame.actions.push(EmptyStateAction::ShowFavorites);
-        }
-    }
 }
 
-fn suggestions(ui: &mut Ui, offers_stocks: bool, frame: &mut Frame) {
-    if offers_stocks {
-        tiles::caption(ui, "Crypto");
-    }
+fn suggestions(ui: &mut Ui, frame: &mut Frame) {
+    tiles::caption(ui, "Crypto");
     starters(ui, &CRYPTO, DataSource::Binance, "empty-crypto", frame);
-    // Stocks need an Alpaca feed, so their tiles would go nowhere without one.
-    if offers_stocks {
-        ui.add_space(20.0);
-        tiles::caption(ui, "Stocks and ETFs");
-        starters(ui, &STOCKS, DataSource::Alpaca, "empty-stock", frame);
-    }
+    ui.add_space(20.0);
+    tiles::caption(ui, "Stocks and ETFs");
+    starters(ui, &STOCKS, DataSource::Alpaca, "empty-stock", frame);
 }
 
 /// A grid of starter markets from one provider: crypto is quoted in USDT, stocks by ticker.
@@ -320,7 +327,6 @@ mod tests {
             hidden_favorites: 0,
             recents: &recents,
             layouts: &layouts,
-            offers_stocks: false,
             trends: &HashMap::new(),
         })
     }

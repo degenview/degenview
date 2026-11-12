@@ -43,11 +43,9 @@ pub struct EmptyStateInput<'a> {
     pub favorites: &'a [WatchlistInstrument],
     /// Favorites that did not fit.
     pub hidden_favorites: usize,
-    /// Newest first, already capped at `ITEM_LIMIT`.
+    /// Newest first, every one remembered.
     pub recents: &'a [RecentMarket],
     pub layouts: &'a [LayoutSummary],
-    /// Stocks need an Alpaca feed, so their tiles would go nowhere without one.
-    pub offers_stocks: bool,
     /// The last week of markets that have been read, by `InstrumentId::key()`. A market that is
     /// not in it is still loading.
     pub trends: &'a HashMap<String, Trend>,
@@ -82,7 +80,7 @@ pub struct EmptyStateOutput {
 pub fn show(ui: &mut Ui, input: &EmptyStateInput, state: &mut EmptyStateState) -> EmptyStateOutput {
     let area = ui.max_rect();
     backdrop::show(ui, area);
-    let mut frame = tiles::Frame::new(input.trends);
+    let mut frame = tiles::Frame::new(input.trends, area.bottom());
     let mut tab = state.tab.unwrap_or_else(|| tabs::default_tab(input));
     egui::ScrollArea::vertical()
         .id_salt("empty-state")
@@ -270,7 +268,6 @@ mod tests {
                     hidden_favorites: usize::from(returning) * 2,
                     recents: if returning { &recents } else { &[] },
                     layouts: if returning { &layouts } else { &[] },
-                    offers_stocks: true,
                     trends: &trends,
                 };
                 let mut state = EmptyStateState { tab: Some(tab) };
@@ -290,29 +287,67 @@ mod tests {
         }
     }
 
-    #[test]
-    fn suggestions_offer_stocks_only_with_a_feed() {
-        let trends = HashMap::new();
+    /// The markets whose tiles one frame of a 1000 x 700 page drew.
+    fn wanted(input: &EmptyStateInput, tab: Tab) -> usize {
         let ctx = egui::Context::default();
-        let wanted = |offers_stocks| {
-            let input = EmptyStateInput {
-                favorites: &[],
-                hidden_favorites: 0,
-                recents: &[],
-                layouts: &[],
-                offers_stocks,
-                trends: &trends,
-            };
-            let mut state = EmptyStateState::default();
-            let mut count = 0;
-            let mut output = ctx.run_ui(egui::RawInput::default(), |ui| {
-                count = show(ui, &input, &mut state).wanted.len();
-            });
-            output.textures_delta.clear();
-            count
+        let mut state = EmptyStateState { tab: Some(tab) };
+        let mut count = 0;
+        let raw = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(1000.0, 700.0),
+            )),
+            ..Default::default()
         };
-        assert_eq!(wanted(false), 10);
-        assert_eq!(wanted(true), 20);
+        let mut output = ctx.run_ui(raw, |ui| {
+            count = show(ui, input, &mut state).wanted.len();
+        });
+        output.textures_delta.clear();
+        count
+    }
+
+    #[test]
+    fn suggestions_always_include_stocks() {
+        let trends = HashMap::new();
+        let input = EmptyStateInput {
+            favorites: &[],
+            hidden_favorites: 0,
+            recents: &[],
+            layouts: &[],
+            trends: &trends,
+        };
+        assert_eq!(wanted(&input, Tab::Suggestions), 20);
+    }
+
+    #[test]
+    fn a_long_recent_list_draws_and_asks_for_only_the_rows_in_view() {
+        let trends = HashMap::new();
+        let recents: Vec<RecentMarket> = (0..24).map(|n| recent(&format!("C{n}USDT"))).collect();
+        let input = EmptyStateInput {
+            favorites: &[],
+            hidden_favorites: 0,
+            recents: &recents,
+            layouts: &[],
+            trends: &trends,
+        };
+        let drawn = wanted(&input, Tab::Recent);
+        assert!((4..24).contains(&drawn), "{drawn} rows drawn of 24");
+    }
+
+    #[test]
+    fn capped_favorites_end_in_a_tile_that_opens_the_rest() {
+        let trends = HashMap::new();
+        let favorites = [favorite("BTCUSDT"), favorite("ETHUSDT")];
+        let input = |hidden| EmptyStateInput {
+            favorites: &favorites,
+            hidden_favorites: hidden,
+            recents: &[],
+            layouts: &[],
+            trends: &trends,
+        };
+        // The "more" tile is not a market, so it asks for no week.
+        assert_eq!(wanted(&input(3), Tab::Favorites), 2);
+        assert_eq!(wanted(&input(0), Tab::Favorites), 2);
     }
 
     /// Pictures of the page for a person to look at. Run by hand:
@@ -334,9 +369,8 @@ mod tests {
                 ..favorite(symbol)
             })
             .collect();
-        let recents: Vec<RecentMarket> = ["DOGEUSDT", "AVAXUSDT", "LINKUSDT"]
-            .into_iter()
-            .map(recent)
+        let recents: Vec<RecentMarket> = (0..24)
+            .map(|n| recent(["DOGEUSDT", "AVAXUSDT", "LINKUSDT", "XRPUSDT"][n % 4]))
             .collect();
         let layouts = [
             layout(),
@@ -378,10 +412,9 @@ mod tests {
                     crate::ui::theme::apply(&screen.ctx, app_theme);
                     let input = EmptyStateInput {
                         favorites: if returning { &favorites } else { &[] },
-                        hidden_favorites: 0,
+                        hidden_favorites: usize::from(returning) * 4,
                         recents: if returning { &recents } else { &[] },
                         layouts: if returning { &layouts } else { &[] },
-                        offers_stocks: false,
                         trends: &trends,
                     };
                     let mut state = EmptyStateState { tab: Some(tab) };
