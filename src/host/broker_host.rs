@@ -273,8 +273,6 @@ pub struct BrokerHost {
     changes: AtomicU64,
 }
 
-static GLOBAL: OnceLock<Arc<BrokerHost>> = OnceLock::new();
-
 impl BrokerHost {
     pub fn new(
         secrets: Arc<dyn SecretStore>,
@@ -317,28 +315,17 @@ impl BrokerHost {
         })
     }
 
-    /// The host every window and Settings share, created on first use with the app's store.
-    pub fn install(store: SharedStore) -> Arc<Self> {
-        Arc::clone(GLOBAL.get_or_init(|| {
-            Self::new(
-                Arc::new(SharedSecrets),
-                Arc::new(StoreJournal::new(store.clone())),
-                Some(store),
-                production_env(),
-                |config| config,
-            )
-        }))
-    }
-
-    /// Makes `host` the shared host for tests of the windows that read it. The first one stays.
-    #[cfg(test)]
-    pub(crate) fn set_global_for_tests(host: Arc<Self>) -> Arc<Self> {
-        Arc::clone(GLOBAL.get_or_init(|| host))
-    }
-
-    /// The shared host, once [`BrokerHost::install`] has run.
-    pub fn global() -> Option<Arc<Self>> {
-        GLOBAL.get().cloned()
+    /// The host the application runs on: the operating system's secret store, the real exchange
+    /// addresses and the app's store for the journal and the choices. One per process; every window
+    /// reaches it through the trading hub.
+    pub fn production(store: SharedStore) -> Arc<Self> {
+        Self::new(
+            Arc::new(SharedSecrets),
+            Arc::new(StoreJournal::new(store.clone())),
+            Some(store),
+            production_env(),
+            |config| config,
+        )
     }
 
     /// Lets runtimes ask for a frame. Called once, with the application's context.

@@ -14,6 +14,7 @@ use super::fields::{self, Edit, Hero};
 use super::figures;
 use super::venue_pill::{self, PillAction};
 use crate::model::DataSource;
+use crate::model::broker::ticket::PREVIEW_DEBOUNCE;
 use crate::model::broker::ticket::{PreviewGate, parse_decimal};
 use crate::model::broker::venue::TradingVenue;
 use crate::trading::backend::TradingBackend;
@@ -35,8 +36,6 @@ use crate::ui::{
     theme,
 };
 
-/// How long what is typed must stay the same before the venue is asked about it.
-const DEBOUNCE: Duration = Duration::from_millis(450);
 /// How long a message stays under the button.
 const NOTICE_FOR: Duration = Duration::from_secs(10);
 
@@ -676,7 +675,7 @@ fn form(
     let debounce = if info.kind == crate::trading::model::VenueKind::Simulated {
         Duration::ZERO
     } else {
-        DEBOUNCE
+        PREVIEW_DEBOUNCE
     };
     let ready = bstate.is_ready();
     let waiting = {

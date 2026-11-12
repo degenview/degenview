@@ -202,23 +202,12 @@ pub fn card_summary(descriptor: &Descriptor, connection: &Connection) -> String 
     }
 }
 
-pub fn body(ui: &mut egui::Ui, state: &mut BrokersState, hub: Option<std::sync::Arc<TradingHub>>) {
-    let Some(hub) = hub else {
-        kit::notice_card(
-            ui,
-            Icon::InfoCircle,
-            theme::text_secondary(),
-            "Live trading is not available",
-            Some("The broker connections did not start in this session."),
-            None,
-        );
-        return;
-    };
+pub fn body(ui: &mut egui::Ui, state: &mut BrokersState, hub: &std::sync::Arc<TradingHub>) {
     for broker in hub.brokers().brokers() {
         let descriptor = broker.descriptor();
         let form = state.forms.entry(descriptor.id.as_str()).or_default();
         let open = state.open.entry(descriptor.id.as_str()).or_default();
-        broker_card(ui, &hub, broker, form, open);
+        broker_card(ui, hub, broker, form, open);
         ui.add_space(10.0);
     }
     ui.add_space(4.0);

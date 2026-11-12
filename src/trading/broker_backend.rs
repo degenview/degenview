@@ -5,19 +5,24 @@
 
 use std::sync::Arc;
 
-use degenview_brokers::model::orders::CancelOutcome;
+use degenview_brokers::model::orders::{
+    CancelOutcome, EditOutcome, EditPreview, FillFilter, HistoryFilter, OrderChange,
+    OrderFingerprint, Page,
+};
 use degenview_brokers::model::reducer::{OrderView, OverlayKind};
 use degenview_brokers::{
-    AccountId, Broker, BrokerSnapshot, Capabilities, Decimal, MarketRef, OrderId, OrderKind,
-    OrderSize, OrderType, PendingState, PendingView, ProductResolution, ProductSpec, Quote, Side,
-    Status, TifKind,
+    AccountId, Broker, BrokerSnapshot, Capabilities, ClientOrderId, Decimal, ErrorKind, LiveFill,
+    LiveOrder, MarketRef, OrderId, OrderKind, OrderSize, OrderStatus, OrderType, Pending,
+    PendingState, PendingView, ProductResolution, ProductSpec, Quote, Side, Status, TifKind,
 };
 
 use super::backend::TradingBackend;
+use super::broker_commands::{Answer, BrokerCommands, CancelReport, cancel_report};
 use super::draft::{
     CancelResult, DraftCheck, DraftField, DraftIssue, Estimate, PreviewResult, SubmitResult,
     Submitted, TradeDraft, floor_to_increment,
 };
+use super::edit::{EditAnswer, EditError, EditVenue};
 use super::model::{
     AccountStats, AccountStrip, Amount, BackendState, Binding, Hero, HeroNote, MarketAccess,
     MarketRules, OrderClass, OrderRow, QuoteView, RowStatus, StatCell, StatTone, TicketCaps,
@@ -32,6 +37,36 @@ use crate::model::broker::ticket::{
     self as rules, StatusTone, TicketContext, TicketDraft, TicketField, TicketKind, TicketTif,
 };
 use crate::model::broker::venue::TradingVenue;
+
+/// Rows asked for at a time when a list is read from the broker.
+const PAGE: u32 = 100;
+
+/// A request to the broker's runtime, as a task the screens poll.
+fn answer<T, U>(pending: Pending<T>, map: impl Fn(T) -> U + Send + 'static) -> Answer<U>
+where
+    T: Send + 'static,
+    U: Clone + Send + 'static,
+{
+    Task::new(move || {
+        pending
+            .poll()
+            .map(|answer| answer.map(&map).map_err(|error| error.to_string()))
+    })
+}
+
+/// A request to change an order, with whether the broker may have acted when it failed.
+fn edit_answer<T: Clone + Send + 'static>(pending: Pending<T>) -> EditAnswer<T> {
+    Task::new(move || {
+        pending.poll().map(|answer| {
+            answer.map_err(|error| EditError {
+                outcome_unknown: error.kind == ErrorKind::OutcomeUnknown,
+                text: error.to_string(),
+            })
+        })
+    })
+}
+
+const NOT_CONNECTED: &str = "The broker is not connected.";
 
 pub struct BrokerBackend {
     host: Arc<BrokerHost>,
@@ -84,6 +119,86 @@ impl BrokerBackend {
         match self.broker.resolve_market(market) {
             ProductResolution::Market(product) => Some(product),
             _ => None,
+        }
+    }
+}
+
+impl EditVenue for BrokerBackend {
+    fn preview_edit(&self, order: OrderId, change: OrderChange) -> EditAnswer<EditPreview> {
+        match self.host.runtime(self.id()) {
+            Some(runtime) => edit_answer(runtime.preview_edit(order, change)),
+            None => Task::ready(Err(EditError {
+                text: NOT_CONNECTED.to_owned(),
+                outcome_unknown: false,
+            })),
+        }
+    }
+
+    fn amend(
+        &self,
+        order: OrderId,
+        change: OrderChange,
+        base: OrderFingerprint,
+    ) -> EditAnswer<EditOutcome> {
+        match self.host.runtime(self.id()) {
+            Some(runtime) => edit_answer(runtime.amend(order, change, base)),
+            None => Task::ready(Err(EditError {
+                text: NOT_CONNECTED.to_owned(),
+                outcome_unknown: false,
+            })),
+        }
+    }
+}
+
+impl BrokerCommands for BrokerBackend {
+    fn retry(&self, client_id: ClientOrderId, account: AccountId) -> Answer<()> {
+        match self.host.runtime(self.id()) {
+            Some(runtime) => answer(runtime.retry(client_id, account), |_| ()),
+            None => Task::ready(Err(NOT_CONNECTED.to_owned())),
+        }
+    }
+
+    fn cancel(&self, orders: Vec<OrderId>) -> Answer<CancelReport> {
+        match self.host.runtime(self.id()) {
+            Some(runtime) => answer(runtime.cancel(orders), |results| cancel_report(&results)),
+            None => Task::ready(Err(NOT_CONNECTED.to_owned())),
+        }
+    }
+
+    fn history(
+        &self,
+        statuses: Vec<OrderStatus>,
+        cursor: Option<String>,
+    ) -> Answer<Page<LiveOrder>> {
+        match self.host.runtime(self.id()) {
+            Some(runtime) => answer(
+                runtime.history(
+                    HistoryFilter {
+                        statuses,
+                        limit: PAGE,
+                        ..HistoryFilter::default()
+                    },
+                    cursor,
+                ),
+                |page| page,
+            ),
+            None => Task::ready(Err(NOT_CONNECTED.to_owned())),
+        }
+    }
+
+    fn fills(&self, cursor: Option<String>) -> Answer<Page<LiveFill>> {
+        match self.host.runtime(self.id()) {
+            Some(runtime) => answer(
+                runtime.fills(
+                    FillFilter {
+                        limit: PAGE,
+                        ..FillFilter::default()
+                    },
+                    cursor,
+                ),
+                |page| page,
+            ),
+            None => Task::ready(Err(NOT_CONNECTED.to_owned())),
         }
     }
 }
@@ -742,6 +857,10 @@ impl TradingBackend for BrokerBackend {
                     .map_err(|error| error.to_string())
             })
         })
+    }
+
+    fn broker_commands(&self) -> Option<&dyn BrokerCommands> {
+        Some(self)
     }
 
     fn cancel(&self, order_id: &str) -> Task<CancelResult> {

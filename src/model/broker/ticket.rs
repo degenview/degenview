@@ -259,13 +259,6 @@ impl TicketDraft {
                         Field::TimeInForce => TicketField::TimeInForce,
                         Field::Type | Field::Product => TicketField::Type,
                     };
-                    // A stop-limit's limit price is typed in the price box.
-                    let field =
-                        if self.kind == TicketKind::StopLimit && field == TicketField::LimitPrice {
-                            TicketField::LimitPrice
-                        } else {
-                            field
-                        };
                     TicketIssue {
                         field,
                         text: found.to_string(),
@@ -353,46 +346,33 @@ pub struct Estimate {
 
 /// A figure for people: grouped thousands, no trailing zeros.
 pub fn display(value: Decimal) -> String {
-    let text = value.normalize().to_string();
-    let (sign, rest) = text
-        .strip_prefix('-')
-        .map_or(("", text.as_str()), |r| ("-", r));
-    let (whole, fraction) = rest
-        .split_once('.')
-        .map_or((rest, None), |(w, f)| (w, Some(f)));
-    let mut grouped = String::new();
-    for (index, digit) in whole.chars().enumerate() {
-        if index > 0 && (whole.len() - index) % 3 == 0 {
-            grouped.push(',');
-        }
-        grouped.push(digit);
-    }
-    match fraction {
-        Some(fraction) => format!("{sign}{grouped}.{fraction}"),
-        None => format!("{sign}{grouped}"),
-    }
+    group_thousands(&value.normalize().to_string())
 }
 
 /// A price with at least the market's price precision (`90,000.00`, not `90,000`), never fewer
-/// digits than were typed.
-pub fn price_display(value: Decimal, spec: &ProductSpec) -> String {
+/// digits than the value carries.
+pub fn price_at(value: Decimal, increment: Decimal) -> String {
     let mut shown = value;
-    let places = spec.price_increment.normalize().scale();
+    let places = increment.normalize().scale();
     if shown.scale() < places {
         shown.rescale(places);
     }
-    display_keep_zeros(shown)
+    group_thousands(&shown.to_string())
 }
 
-/// `display`, but keeping the trailing zeros the value carries.
-fn display_keep_zeros(value: Decimal) -> String {
-    let text = value.to_string();
+/// [`price_at`] in a market's price step.
+pub fn price_display(value: Decimal, spec: &ProductSpec) -> String {
+    price_at(value, spec.price_increment)
+}
+
+/// Groups the whole part of a plain decimal in thousands, keeping every digit it carries.
+fn group_thousands(text: &str) -> String {
     let (sign, rest) = text
         .strip_prefix('-')
-        .map_or(("", text.as_str()), |r| ("-", r));
+        .map_or(("", text), |rest| ("-", rest));
     let (whole, fraction) = rest
         .split_once('.')
-        .map_or((rest, None), |(w, f)| (w, Some(f)));
+        .map_or((rest, None), |(whole, fraction)| (whole, Some(fraction)));
     let mut grouped = String::new();
     for (index, digit) in whole.chars().enumerate() {
         if index > 0 && (whole.len() - index) % 3 == 0 {
@@ -409,6 +389,9 @@ fn display_keep_zeros(value: Decimal) -> String {
 /// How long the broker's answer to a preview may be acted on. A preview is a statement about the
 /// market a moment ago; after this it is asked for again.
 pub const PREVIEW_FRESH: Duration = Duration::from_secs(60);
+
+/// How long typing must pause before the broker is asked to preview what is typed.
+pub const PREVIEW_DEBOUNCE: Duration = Duration::from_millis(450);
 
 /// What the broker has said about the order as it stands, from the ticket's or the edit sheet's
 /// point of view.
@@ -565,6 +548,15 @@ pub fn edit_blocker(
         Some(caps) if caps.native_edit => None,
         Some(_) => Some("This broker does not support editing this market's orders."),
         None => Some("The market's rules have not been read yet."),
+    }
+}
+
+/// An order's size as the lists show it: the base amount, or the amount to spend.
+pub fn size_text(order: &LiveOrder) -> String {
+    match order.size {
+        Some(OrderSize::Base(size)) => display(size),
+        Some(OrderSize::Quote(amount)) => format!("{} (spend)", display(amount)),
+        None => "—".to_owned(),
     }
 }
 
