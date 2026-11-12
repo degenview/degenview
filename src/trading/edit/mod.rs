@@ -10,11 +10,12 @@
 use std::time::Instant;
 
 use degenview_brokers::edit_session::{
-    self as session, Closing, EditNote, EditSource, Entry, NotAChange, NotANumber,
+    self as session, Closing, EditNote, EditSource, Entry, NotAChange,
 };
 use degenview_brokers::model::edit::EditIssue;
 use degenview_brokers::model::orders::{EditPreview, EditWorld};
 use degenview_brokers::model::preview::PreviewGate;
+use degenview_brokers::model::ticket::NotANumber;
 use degenview_brokers::{
     AccountId, Decimal, LiveOrder, OrderId, OrderSize, OrderType, ProductSpec, Side,
 };
