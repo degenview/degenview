@@ -1,7 +1,7 @@
 //! Small runtime support types: the result, execution rejection, security keys/providers, dataset
 //! identity and the flattened library linkage. Ported from `Pine/Runtime/*`.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use super::fast_hash::FastMap;
 use super::types::RuntimeFunction;

@@ -4,7 +4,6 @@
 //! `call` does the rest.
 
 use std::cmp::Ordering;
-use std::collections::HashMap;
 
 use super::number_format;
 use crate::pine::runtime::state::RuntimeState;

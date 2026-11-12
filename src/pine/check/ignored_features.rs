@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use crate::pine::syntax::ast::{Argument, Expression, Literal, Statement};
+use crate::pine::syntax::ast::{Expression, Literal, Statement};
 use crate::pine::syntax::traversal::{
     for_each_call_with_args, for_each_identifier, for_each_string_literal,
 };

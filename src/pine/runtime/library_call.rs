@@ -8,10 +8,7 @@
 //! `resolve_identifier` (so `alias.constant` and `alias.Enum.member` resolve). The compiled linkage
 //! (`LibraryLinkage`) is already built by `Session::new`.
 
-use std::collections::HashSet;
-
 use super::session::Session;
-use super::support::LibraryLinkage;
 use super::types::{RuntimeContext, RuntimeFunction};
 use super::value::RuntimeValue;
 use crate::pine::syntax::token::{Diagnostic, DiagnosticCategory, SourceRange};

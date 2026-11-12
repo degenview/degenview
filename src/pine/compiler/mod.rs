@@ -19,7 +19,6 @@ use super::runtime::session::Session;
 use super::runtime::value::RuntimeValue;
 use super::strategy::StrategySettings;
 use super::syntax::ast::{Argument, BinaryOperator, EnumMember, Expression, Statement};
-use super::time::calendar;
 use program::{
     CompiledProgram, DeclarationMetadata, Import, InputDefinition, InputSchema, InputValue,
     ScriptType,
