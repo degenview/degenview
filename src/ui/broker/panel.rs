@@ -13,18 +13,17 @@
 use std::collections::BTreeSet;
 use std::time::{Duration, Instant};
 
-use degenview_brokers::model::orders::{
-    CancelOutcome, CancelResult, FillFilter, HistoryFilter, Page, PlacedOrder,
-};
+use degenview_brokers::model::orders::Page;
 use degenview_brokers::{
     BrokerId, BrokerSnapshot, ClientOrderId, Decimal, LiveFill, LiveOrder, OrderId, OrderStatus,
-    Pending, Side, Status,
+    Side, Status,
 };
 use eframe::egui::{self, Color32, Id};
 
 use crate::host::broker_host::BrokerHost;
 use crate::model::broker::prefs::BrokerPrefs;
 use crate::model::broker::ticket::{self as rules, StatusTone, size_text};
+use crate::trading::broker_commands::{Answer, BrokerCommands, CancelReport};
 use crate::trading::edit::{
     EditEvent, EditForm, EditFrame, EditSession, EditVenue, EditView, ReviewLine, Step,
 };
@@ -101,7 +100,7 @@ impl HistoryChoice {
 struct Paged<T> {
     items: Vec<T>,
     cursor: Option<String>,
-    pending: Option<Pending<Page<T>>>,
+    pending: Option<Answer<Page<T>>>,
     loaded: bool,
     error: Option<String>,
 }
@@ -118,15 +117,19 @@ impl<T> Default for Paged<T> {
     }
 }
 
-impl<T> Paged<T> {
+impl<T: Clone> Paged<T> {
     fn reset(&mut self) {
         *self = Self::default();
     }
 
     /// Takes a page that arrived.
     fn poll(&mut self) {
-        let Some(pending) = &self.pending else { return };
-        let Some(answer) = pending.poll() else { return };
+        let Some(pending) = &mut self.pending else {
+            return;
+        };
+        let Some(answer) = pending.poll().cloned() else {
+            return;
+        };
         self.pending = None;
         self.loaded = true;
         match answer {
@@ -135,14 +138,14 @@ impl<T> Paged<T> {
                 self.cursor = page.next_cursor;
                 self.error = None;
             }
-            Err(error) => self.error = Some(error.to_string()),
+            Err(error) => self.error = Some(error),
         }
     }
 }
 
 enum Flight {
-    Cancel(Pending<Vec<CancelResult>>),
-    Retry(Pending<PlacedOrder>),
+    Cancel(Answer<CancelReport>),
+    Retry(Answer<()>),
 }
 
 struct CancelAsk {
@@ -151,9 +154,8 @@ struct CancelAsk {
     message: String,
 }
 
-/// An edit that is open: the broker it is on, and the whole life of the edit.
+/// An edit that is open: the whole life of the edit.
 pub struct OpenEdit {
-    broker: BrokerId,
     session: EditSession,
 }
 
@@ -192,52 +194,6 @@ impl Default for BrokerPanelState {
 
 // ---- Rules (pure) --------------------------------------------------------------------------------
 
-/// What a set of cancel answers says, in one sentence, and whether it is a problem.
-pub fn cancel_summary(results: &[CancelResult]) -> (String, bool) {
-    let requested = results
-        .iter()
-        .filter(|r| r.outcome == CancelOutcome::Requested)
-        .count();
-    let mut problems: Vec<String> = Vec::new();
-    for result in results {
-        match &result.outcome {
-            CancelOutcome::Requested => {}
-            CancelOutcome::AlreadyFilled => problems.push("one had already filled".to_owned()),
-            CancelOutcome::NotFound => {
-                problems.push("one could not be found (it may already be finished)".to_owned());
-            }
-            CancelOutcome::BeingReplaced => {
-                problems.push("one is being edited; try again in a moment".to_owned());
-            }
-            CancelOutcome::Rejected(text) => problems.push(text.clone()),
-            CancelOutcome::Unknown(_) => problems.push(
-                "one did not get an answer: it may or may not be cancelled, and is being read again"
-                    .to_owned(),
-            ),
-        }
-    }
-    let asked = match requested {
-        0 => String::new(),
-        1 => "Cancel requested. The order stays until the broker confirms.".to_owned(),
-        n => format!("{n} cancels requested. The orders stay until the broker confirms."),
-    };
-    if problems.is_empty() {
-        (asked, false)
-    } else if asked.is_empty() {
-        let text = problems.join("; ");
-        (capitalise(&text), true)
-    } else {
-        (format!("{asked} But {}.", problems.join("; ")), true)
-    }
-}
-
-fn capitalise(text: &str) -> String {
-    let mut chars = text.chars();
-    chars.next().map_or_else(String::new, |c| {
-        c.to_uppercase().collect::<String>() + chars.as_str()
-    })
-}
-
 pub use crate::model::broker::ticket::type_label;
 use crate::ui::kit::Tone;
 
@@ -274,6 +230,7 @@ pub fn dialogs_only(
     ctx: &egui::Context,
     state: &mut BrokerPanelState,
     host: &BrokerHost,
+    commands: Option<&dyn BrokerCommands>,
     broker_id: BrokerId,
 ) {
     let Some(snapshot) = host.snapshot(broker_id) else {
@@ -283,7 +240,7 @@ pub fn dialogs_only(
         return;
     };
     poll_flights(state);
-    dialogs(ctx, state, host, broker_id, &snapshot);
+    dialogs(ctx, state, commands, &snapshot);
 }
 
 impl BrokerPanelState {
@@ -305,9 +262,13 @@ impl BrokerPanelState {
     }
 
     /// Asks to cancel one order (a chart's ✕), following the user's confirmation choice.
-    pub fn cancel_one(&mut self, host: &BrokerHost, broker: BrokerId, id: OrderId) {
-        let confirm = host.prefs(broker).confirm_single_cancel;
-        request_cancel(self, host, broker, vec![id], confirm);
+    pub fn cancel_one(
+        &mut self,
+        commands: Option<&dyn BrokerCommands>,
+        confirm: bool,
+        id: OrderId,
+    ) {
+        request_cancel(self, commands, vec![id], confirm);
     }
 
     /// Shows `tab`. The pictures and tests use it; the user does through the tab bar.
@@ -324,12 +285,11 @@ impl BrokerPanelState {
     #[cfg(test)]
     pub(crate) fn request_cancel_for_test(
         &mut self,
-        host: &BrokerHost,
-        broker: BrokerId,
+        commands: Option<&dyn BrokerCommands>,
         ids: Vec<OrderId>,
         confirm: bool,
     ) {
-        request_cancel(self, host, broker, ids, confirm);
+        request_cancel(self, commands, ids, confirm);
     }
 
     #[cfg(test)]
@@ -388,9 +348,8 @@ impl BrokerPanelState {
     }
 
     /// Starts editing `order` (it must be eligible).
-    pub fn begin_edit(&mut self, broker: BrokerId, order: LiveOrder, price: Option<Decimal>) {
+    pub fn begin_edit(&mut self, order: LiveOrder, price: Option<Decimal>) {
         self.edit = Some(OpenEdit {
-            broker,
             session: EditSession::new(order, price, Instant::now()),
         });
     }
@@ -400,6 +359,7 @@ pub fn ui(
     ui: &mut egui::Ui,
     state: &mut BrokerPanelState,
     host: &BrokerHost,
+    commands: Option<&dyn BrokerCommands>,
     broker_id: BrokerId,
     bar: &VenueBar,
     stats: Option<&AccountStats>,
@@ -441,9 +401,9 @@ pub fn ui(
     divider(ui);
 
     match state.tab {
-        BrokerTab::Orders => orders_tab(ui, state, host, broker_id, &snapshot, &prefs),
-        BrokerTab::History => history_tab(ui, state, host, broker_id),
-        BrokerTab::Fills => fills_tab(ui, state, host, broker_id, &snapshot),
+        BrokerTab::Orders => orders_tab(ui, state, commands, &snapshot, &prefs),
+        BrokerTab::History => history_tab(ui, state, commands),
+        BrokerTab::Fills => fills_tab(ui, state, commands, &snapshot),
         BrokerTab::Balances => balances_tab(ui, &snapshot),
     }
     // The tables leave room for the orders footer, which only the Orders tab draws. Whatever is
@@ -455,7 +415,7 @@ pub fn ui(
         ui.allocate_exact_size(egui::vec2(ui.available_width(), rest), egui::Sense::hover());
     }
 
-    dialogs(ui.ctx(), state, host, broker_id, &snapshot);
+    dialogs(ui.ctx(), state, commands, &snapshot);
     actions
 }
 
@@ -596,32 +556,27 @@ fn held_elsewhere_text(count: usize) -> String {
 
 fn poll_flights(state: &mut BrokerPanelState) {
     let mut done = Vec::new();
-    for (index, flight) in state.flights.iter().enumerate() {
-        match flight {
-            Flight::Cancel(pending) => {
-                if let Some(answer) = pending.poll() {
-                    done.push((index, Some(answer.map(|r| cancel_summary(&r)))));
-                }
-            }
-            Flight::Retry(pending) => {
-                if let Some(answer) = pending.poll() {
-                    done.push((
-                        index,
-                        Some(
-                            answer
-                                .map(|_| ("The order was found and is placed.".to_owned(), false)),
-                        ),
-                    ));
-                }
-            }
+    for (index, flight) in state.flights.iter_mut().enumerate() {
+        let said = match flight {
+            Flight::Cancel(task) => task
+                .poll()
+                .map(|answer| answer.clone().map(|report| (report.text, report.error))),
+            Flight::Retry(task) => task.poll().map(|answer| {
+                answer
+                    .clone()
+                    .map(|()| ("The order was found and is placed.".to_owned(), false))
+            }),
+        };
+        if let Some(said) = said {
+            done.push((index, said));
         }
     }
-    for (index, answer) in done.into_iter().rev() {
+    for (index, said) in done.into_iter().rev() {
         state.flights.remove(index);
-        match answer {
-            Some(Ok((text, error))) if !text.is_empty() => state.say(text, error),
-            Some(Err(error)) => state.say(error.to_string(), true),
-            _ => {}
+        match said {
+            Ok((text, error)) if !text.is_empty() => state.say(text, error),
+            Err(error) => state.say(error, true),
+            Ok(_) => {}
         }
     }
 }
@@ -631,8 +586,7 @@ fn poll_flights(state: &mut BrokerPanelState) {
 fn orders_tab(
     ui: &mut egui::Ui,
     state: &mut BrokerPanelState,
-    host: &BrokerHost,
-    broker_id: BrokerId,
+    commands: Option<&dyn BrokerCommands>,
     snapshot: &BrokerSnapshot,
     prefs: &BrokerPrefs,
 ) {
@@ -649,10 +603,9 @@ fn orders_tab(
         match action {
             OrderAction::Check(id) => {
                 // For the account on screen: a record of another account is not this one's to look up.
-                if let (Some(runtime), Some(account)) = (host.runtime(broker_id), &snapshot.account)
-                {
+                if let (Some(commands), Some(account)) = (commands, &snapshot.account) {
                     state.flights.push(Flight::Retry(
-                        runtime.retry(ClientOrderId(id), account.id.clone()),
+                        commands.retry(ClientOrderId(id), account.id.clone()),
                     ));
                     state.say("Looking the order up at the broker…", false);
                 }
@@ -663,13 +616,12 @@ fn orders_tab(
                     .iter()
                     .find(|view| view.order.id.as_str() == id)
                 {
-                    state.begin_edit(broker_id, view.order.clone(), None);
+                    state.begin_edit(view.order.clone(), None);
                 }
             }
             OrderAction::Cancel(id) => request_cancel(
                 state,
-                host,
-                broker_id,
+                commands,
                 vec![OrderId::new(id)],
                 prefs.confirm_single_cancel,
             ),
@@ -688,20 +640,19 @@ fn orders_tab(
     let bar = tables::orders_bar(ui, working_ids.len(), state.selected.len());
     if bar.cancel_selected {
         let ids: Vec<OrderId> = state.selected.iter().cloned().collect();
-        request_cancel(state, host, broker_id, ids, true);
+        request_cancel(state, commands, ids, true);
     }
     if bar.cancel_all {
         // Always asks, and says which orders: what is cancelled is what is shown now.
         let ids: Vec<OrderId> = working_ids.into_iter().collect();
-        request_cancel(state, host, broker_id, ids, true);
+        request_cancel(state, commands, ids, true);
     }
 }
 
 /// Cancels `ids`, asking first when `confirm` (always for more than one).
 fn request_cancel(
     state: &mut BrokerPanelState,
-    host: &BrokerHost,
-    broker: BrokerId,
+    commands: Option<&dyn BrokerCommands>,
     ids: Vec<OrderId>,
     confirm: bool,
 ) {
@@ -709,7 +660,7 @@ fn request_cancel(
         return;
     }
     if !confirm && ids.len() == 1 {
-        send_cancel(state, host, broker, ids);
+        send_cancel(state, commands, ids);
         return;
     }
     let many = ids.len();
@@ -727,17 +678,16 @@ fn request_cancel(
 
 fn send_cancel(
     state: &mut BrokerPanelState,
-    host: &BrokerHost,
-    broker: BrokerId,
+    commands: Option<&dyn BrokerCommands>,
     ids: Vec<OrderId>,
 ) {
-    let Some(runtime) = host.runtime(broker) else {
+    let Some(commands) = commands else {
         return;
     };
     for id in &ids {
         state.selected.remove(id);
     }
-    state.flights.push(Flight::Cancel(runtime.cancel(ids)));
+    state.flights.push(Flight::Cancel(commands.cancel(ids)));
     state.say("Asking the broker to cancel…", false);
 }
 
@@ -746,8 +696,7 @@ fn send_cancel(
 fn history_tab(
     ui: &mut egui::Ui,
     state: &mut BrokerPanelState,
-    host: &BrokerHost,
-    broker_id: BrokerId,
+    commands: Option<&dyn BrokerCommands>,
 ) {
     state.history.poll();
     let before = state.history_choice;
@@ -773,16 +722,9 @@ fn history_tab(
     if !state.history.loaded
         && state.history.pending.is_none()
         && state.history.error.is_none()
-        && let Some(runtime) = host.runtime(broker_id)
+        && let Some(commands) = commands
     {
-        state.history.pending = Some(runtime.history(
-            HistoryFilter {
-                statuses: state.history_choice.statuses(),
-                limit: 100,
-                ..HistoryFilter::default()
-            },
-            None,
-        ));
+        state.history.pending = Some(commands.history(state.history_choice.statuses(), None));
     }
     if state.history.pending.is_some() {
         ui.ctx().request_repaint_after(Duration::from_millis(120));
@@ -869,25 +811,17 @@ fn history_tab(
     let more = state.history.cursor.is_some();
     if more
         && kit::sheet_button(ui, "Load more", false, state.history.pending.is_none()).clicked()
-        && let Some(runtime) = host.runtime(broker_id)
+        && let Some(commands) = commands
     {
         let cursor = state.history.cursor.clone();
-        state.history.pending = Some(runtime.history(
-            HistoryFilter {
-                statuses: state.history_choice.statuses(),
-                limit: 100,
-                ..HistoryFilter::default()
-            },
-            cursor,
-        ));
+        state.history.pending = Some(commands.history(state.history_choice.statuses(), cursor));
     }
 }
 
 fn fills_tab(
     ui: &mut egui::Ui,
     state: &mut BrokerPanelState,
-    host: &BrokerHost,
-    broker_id: BrokerId,
+    commands: Option<&dyn BrokerCommands>,
     snapshot: &BrokerSnapshot,
 ) {
     state.fills_more.poll();
@@ -952,16 +886,10 @@ fn fills_tab(
         state.fills_more.pending.is_none(),
     )
     .clicked()
-        && let Some(runtime) = host.runtime(broker_id)
+        && let Some(commands) = commands
     {
         let cursor = state.fills_more.cursor.clone();
-        state.fills_more.pending = Some(runtime.fills(
-            FillFilter {
-                limit: 100,
-                ..FillFilter::default()
-            },
-            cursor,
-        ));
+        state.fills_more.pending = Some(commands.fills(cursor));
     }
 }
 
@@ -1014,8 +942,7 @@ fn balances_tab(ui: &mut egui::Ui, snapshot: &BrokerSnapshot) {
 fn dialogs(
     ctx: &egui::Context,
     state: &mut BrokerPanelState,
-    host: &BrokerHost,
-    broker_id: BrokerId,
+    commands: Option<&dyn BrokerCommands>,
     snapshot: &BrokerSnapshot,
 ) {
     if let Some(ask) = &state.cancel_ask {
@@ -1073,27 +1000,27 @@ fn dialogs(
         match outcome {
             Some(dialog::Outcome::Accepted) => {
                 state.cancel_ask = None;
-                send_cancel(state, host, broker_id, ids);
+                send_cancel(state, commands, ids);
             }
             Some(_) => state.cancel_ask = None,
             None => {}
         }
     }
-    edit_sheet(ctx, state, host, snapshot);
+    edit_sheet(ctx, state, commands, snapshot);
 }
 
 fn edit_sheet(
     ctx: &egui::Context,
     state: &mut BrokerPanelState,
-    host: &BrokerHost,
+    commands: Option<&dyn BrokerCommands>,
     snapshot: &BrokerSnapshot,
 ) {
     let Some(open) = &mut state.edit else { return };
-    let Some(runtime) = host.runtime(open.broker) else {
+    let Some(commands) = commands else {
         state.edit = None;
         return;
     };
-    let venue: &dyn EditVenue = &*runtime;
+    let venue: &dyn EditVenue = commands;
     let now = Instant::now();
     let session = &mut open.session;
     let order = session.order();
@@ -1340,52 +1267,6 @@ mod tests {
             atomic_replace: false,
             brackets: false,
         }
-    }
-
-    #[test]
-    fn a_cancel_request_is_described_as_a_request_never_as_done() {
-        let requested = |id: &str| CancelResult {
-            order_id: OrderId::new(id),
-            outcome: CancelOutcome::Requested,
-        };
-        let (text, error) = cancel_summary(&[requested("a")]);
-        assert!(text.contains("requested") && text.contains("until the broker confirms"));
-        assert!(!error);
-        assert!(
-            cancel_summary(&[requested("a"), requested("b")])
-                .0
-                .starts_with("2 cancels requested")
-        );
-    }
-
-    #[test]
-    fn cancels_that_lost_a_race_or_were_refused_are_called_problems() {
-        let result = |outcome| CancelResult {
-            order_id: OrderId::new("a"),
-            outcome,
-        };
-        let (text, error) = cancel_summary(&[result(CancelOutcome::AlreadyFilled)]);
-        assert!(error && text.contains("already filled"), "{text}");
-        let (text, error) = cancel_summary(&[
-            result(CancelOutcome::Requested),
-            result(CancelOutcome::Rejected(
-                "This order cannot be cancelled.".to_owned(),
-            )),
-        ]);
-        assert!(
-            error && text.contains("Cancel requested") && text.contains("cannot be cancelled"),
-            "{text}"
-        );
-        assert!(
-            cancel_summary(&[result(CancelOutcome::NotFound)])
-                .0
-                .contains("could not be found")
-        );
-        assert!(
-            cancel_summary(&[result(CancelOutcome::BeingReplaced)])
-                .0
-                .contains("edited")
-        );
     }
 
     #[test]

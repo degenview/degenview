@@ -3,7 +3,7 @@
 
 use degenview_brokers::{Decimal, Side};
 
-use crate::trading::confirm;
+use crate::model::broker::ticket::price_at;
 
 /// How many places a price of this size needs to read well, whatever the market allows.
 fn places_for(value: Decimal) -> u32 {
@@ -42,7 +42,7 @@ pub fn price_label(value: Decimal, increment: Option<Decimal>) -> String {
     match increment {
         Some(increment) => {
             let places = increment.normalize().scale().min(places_for(value));
-            confirm::price_text(value.round_dp(places), Decimal::new(1, places))
+            price_at(value.round_dp(places), Decimal::new(1, places))
         }
         None => crate::model::broker::ticket::display(value.normalize()),
     }

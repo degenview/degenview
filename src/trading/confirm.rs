@@ -2,29 +2,9 @@
 //! what the order is and, where the venue has said so, what it will cost: the venue's own figures
 //! from its preview, labelled as estimates, never the sheet's guess.
 
-use degenview_brokers::Decimal;
-
 use super::draft::{Estimate, PreviewResult, TradeDraft};
 use super::model::{MarketRules, OrderClass, VenueKind};
-use crate::model::broker::ticket::display;
-
-/// A price with at least the market's precision (`90,000.00`, not `90,000`).
-pub fn price_text(value: Decimal, increment: Decimal) -> String {
-    let mut shown = value;
-    let places = increment.normalize().scale();
-    if shown.scale() < places {
-        shown.rescale(places);
-    }
-    let text = shown.to_string();
-    let (whole, fraction) = text
-        .split_once('.')
-        .map_or((text.as_str(), None), |(w, f)| (w, Some(f)));
-    let digits = display(whole.parse::<Decimal>().unwrap_or_default());
-    match fraction {
-        Some(fraction) => format!("{digits}.{fraction}"),
-        None => digits,
-    }
-}
+use crate::model::broker::ticket::{display, price_at};
 
 /// Whether an order must be reviewed before it is sent. Only an order that costs real money is: a
 /// market order always, whatever the settings say, and a resting one (limit, stop) when the user
@@ -65,7 +45,7 @@ pub fn lines(
                 |value| {
                     format!(
                         "{} {}",
-                        price_text(value, rules.price_increment),
+                        price_at(value, rules.price_increment),
                         rules.quote_asset
                     )
                 },
@@ -115,7 +95,7 @@ pub fn lines(
 mod tests {
     use super::*;
     use crate::trading::model::TicketCaps;
-    use degenview_brokers::Side;
+    use degenview_brokers::{Decimal, Side};
 
     fn rules() -> MarketRules {
         MarketRules {
@@ -142,10 +122,10 @@ mod tests {
     #[test]
     fn a_price_has_the_markets_precision_and_grouped_thousands() {
         let inc: Decimal = "0.01".parse().unwrap();
-        assert_eq!(price_text("90000".parse().unwrap(), inc), "90,000.00");
-        assert_eq!(price_text("90000.5".parse().unwrap(), inc), "90,000.50");
-        assert_eq!(price_text("0.12345".parse().unwrap(), inc), "0.12345");
-        assert_eq!(price_text("7".parse().unwrap(), "1".parse().unwrap()), "7");
+        assert_eq!(price_at("90000".parse().unwrap(), inc), "90,000.00");
+        assert_eq!(price_at("90000.5".parse().unwrap(), inc), "90,000.50");
+        assert_eq!(price_at("0.12345".parse().unwrap(), inc), "0.12345");
+        assert_eq!(price_at("7".parse().unwrap(), "1".parse().unwrap()), "7");
     }
 
     #[test]

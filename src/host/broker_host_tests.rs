@@ -407,6 +407,33 @@ fn rust_files(dir: &Path, out: &mut Vec<(String, String)>) {
     }
 }
 
+/// The screens never hold a broker's runtime: what a connected broker is asked goes through
+/// `trading::broker_commands::BrokerCommands`, whose answers they poll. (They still read the
+/// host's snapshots and preferences.)
+#[test]
+fn the_screens_never_hold_a_brokers_runtime() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut files = Vec::new();
+    rust_files(&root.join("ui"), &mut files);
+    rust_files(&root.join("workspace"), &mut files);
+    files.push((
+        "workspace.rs".to_owned(),
+        std::fs::read_to_string(root.join("workspace.rs")).unwrap(),
+    ));
+    for (name, text) in files {
+        if name.contains("gallery") || name.contains("test_support") || name.ends_with("tests.rs") {
+            continue;
+        }
+        let production = text.split("\n#[cfg(test)]\nmod ").next().unwrap_or(&text);
+        for needle in ["BrokerRuntime", "host.runtime("] {
+            assert!(
+                !production.contains(needle),
+                "{name} names `{needle}`: ask the broker through `BrokerCommands`"
+            );
+        }
+    }
+}
+
 /// Live trading has no path to scripts, alerts, webhooks or MCP: nothing in them may name the
 /// broker crate or its host. A future automated-trading feature needs its own design and its own
 /// permission, not a side door through one of these.

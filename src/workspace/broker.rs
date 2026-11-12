@@ -20,6 +20,8 @@ use crate::model::broker::chart::{ChartTrading, Unavailable, chart_trading};
 use crate::model::broker::ticket::{self as rules, TicketKind};
 use crate::model::chart::context::{LiveFacts, LiveOrderRequest};
 use crate::model::chart::kind::ChartType;
+use crate::trading::backend::TradingBackend;
+use crate::trading::broker_backend::BrokerBackend;
 use crate::trading::model::OrderClass;
 use crate::ui::broker::chart_trading::{BrokerOverlayAction, OrderLine};
 use crate::ui::broker::panel;
@@ -30,7 +32,13 @@ impl ChartWorkspace {
     fn active_broker(&self) -> Option<(BrokerId, &'static dyn Broker, Arc<BrokerHost>)> {
         let id = self.trading_venue.broker()?;
         let broker = degenview_brokers::registry::by_id(id)?;
-        Some((id, broker, BrokerHost::global()?))
+        Some((id, broker, self.trading_hub.as_ref()?.brokers().clone()))
+    }
+
+    /// The venue backend of the broker this tab trades at.
+    fn broker_backend(&self) -> Option<BrokerBackend> {
+        let (_, broker, host) = self.active_broker()?;
+        Some(BrokerBackend::new(host, broker))
     }
 
     /// A replay's prices are history: no live order may be started, changed or sent from one.
@@ -252,21 +260,23 @@ impl ChartWorkspace {
         for action in actions {
             match action {
                 BrokerOverlayAction::Cancel(order) => {
-                    self.broker_panel.cancel_one(&host, id, order)
+                    let backend = self.broker_backend();
+                    self.broker_panel.cancel_one(
+                        backend.as_ref().and_then(|b| b.broker_commands()),
+                        host.prefs(id).confirm_single_cancel,
+                        order,
+                    );
                 }
                 BrokerOverlayAction::ProposeEdit { id: order, price } => {
-                    self.begin_broker_edit(id, &snapshot, &order, Some(price));
+                    self.begin_broker_edit(&snapshot, &order, Some(price));
                 }
-                BrokerOverlayAction::Open(order) => {
-                    self.begin_broker_edit(id, &snapshot, &order, None)
-                }
+                BrokerOverlayAction::Open(order) => self.begin_broker_edit(&snapshot, &order, None),
             }
         }
     }
 
     fn begin_broker_edit(
         &mut self,
-        broker: BrokerId,
         snapshot: &BrokerSnapshot,
         order: &degenview_brokers::OrderId,
         price: Option<Decimal>,
@@ -276,9 +286,7 @@ impl ChartWorkspace {
             return;
         }
         match snapshot.orders.iter().find(|view| &view.order.id == order) {
-            Some(view) => self
-                .broker_panel
-                .begin_edit(broker, view.order.clone(), price),
+            Some(view) => self.broker_panel.begin_edit(view.order.clone(), price),
             None => self.say("That order is no longer working.", true),
         }
     }
@@ -289,11 +297,18 @@ impl ChartWorkspace {
         let Some(id) = self.trading_venue.broker() else {
             return;
         };
-        let Some(host) = BrokerHost::global() else {
+        let Some(host) = self.trading_hub.as_ref().map(|hub| hub.brokers().clone()) else {
             return;
         };
         if !self.paper_panel_visible && self.broker_panel.has_dialog() {
-            panel::dialogs_only(ctx, &mut self.broker_panel, &host, id);
+            let backend = self.broker_backend();
+            panel::dialogs_only(
+                ctx,
+                &mut self.broker_panel,
+                &host,
+                backend.as_ref().and_then(|b| b.broker_commands()),
+                id,
+            );
         }
         // The panel shows its own message; with it closed the tab's notice does.
         if !self.paper_panel_visible
@@ -317,6 +332,8 @@ mod tests {
 
     use super::*;
     use crate::host::broker_host::StoreJournal;
+    use crate::host::paper_host::PaperHost;
+    use crate::host::trading_hub::TradingHub;
     use crate::model::broker::venue::TradingVenue;
     use crate::model::{DataSource, InstrumentId};
     use crate::workspace::test_support::empty_workspace;
@@ -326,10 +343,11 @@ mod tests {
     /// One mock exchange and one host for every test here (the host is process-wide by design),
     /// so the tests take turns.
     fn shared() -> (
-        &'static (Arc<BrokerHost>, CoinbaseExchange),
+        &'static (Arc<BrokerHost>, CoinbaseExchange, Arc<TradingHub>),
         std::sync::MutexGuard<'static, ()>,
     ) {
-        static HOST: OnceLock<(Arc<BrokerHost>, CoinbaseExchange)> = OnceLock::new();
+        static HOST: OnceLock<(Arc<BrokerHost>, CoinbaseExchange, Arc<TradingHub>)> =
+            OnceLock::new();
         static TURN: Mutex<()> = Mutex::new(());
         let turn = TURN.lock().unwrap_or_else(|e| e.into_inner());
         let pair = HOST.get_or_init(|| {
@@ -343,15 +361,16 @@ mod tests {
             let host = BrokerHost::new(
                 Arc::new(MemorySecretStore::new()),
                 Arc::new(StoreJournal::new(store.clone())),
-                Some(store),
+                Some(store.clone()),
                 env,
                 |config| config.fast(),
             );
             host.adopt(ID, credentials(&generate_key_pem()))
                 .wait()
                 .unwrap();
-            let host = BrokerHost::set_global_for_tests(host);
-            (host, exchange)
+            let paper = Arc::new(Mutex::new(PaperHost::load(store.clone())));
+            let hub = TradingHub::new(host.clone(), paper, Some(store));
+            (host, exchange, hub)
         });
         wait("live", || {
             pair.0
@@ -386,19 +405,20 @@ mod tests {
     }
 
     /// A workspace with a broker's chart and another source's, trading at the broker.
-    fn workspace() -> ChartWorkspace {
+    fn workspace(hub: &Arc<TradingHub>) -> ChartWorkspace {
         let ctx = egui::Context::default();
         let mut workspace = empty_workspace(1);
         workspace.add_chart_for(&InstrumentId::new(DataSource::Coinbase, "BTC-USD"), &ctx);
         workspace.add_chart_for(&InstrumentId::new(DataSource::Binance, "BTCUSDT"), &ctx);
         workspace.trading_venue = TradingVenue::Broker(ID);
+        workspace.set_trading_hub(hub);
         workspace
     }
 
     #[test]
     fn a_tab_on_paper_draws_no_live_trading_and_a_live_tab_draws_only_its_brokers_markets() {
-        let ((host, _), _turn) = shared();
-        let mut workspace = workspace();
+        let ((host, _, hub), _turn) = shared();
+        let mut workspace = workspace(hub);
         workspace.trading_venue = TradingVenue::Paper;
         workspace.configure_broker_cards();
         assert!(
@@ -449,8 +469,8 @@ mod tests {
 
     #[test]
     fn a_replay_greys_the_pills_refuses_a_ticket_and_closes_one_that_is_open() {
-        let ((_, _), _turn) = shared();
-        let mut workspace = workspace();
+        let ((_, _, hub), _turn) = shared();
+        let mut workspace = workspace(hub);
         workspace.configure_broker_cards();
         assert_eq!(workspace.charts[0].chart.live.order_entry, Some(Ok(())));
         let request = || LiveOrderRequest {
@@ -490,8 +510,8 @@ mod tests {
 
     #[test]
     fn a_line_cancelled_or_dragged_asks_first_and_the_line_stays_until_the_broker_answers() {
-        let ((host, exchange), _turn) = shared();
-        let mut workspace = workspace();
+        let ((host, exchange, hub), _turn) = shared();
+        let mut workspace = workspace(hub);
         let runtime = host.runtime(ID).unwrap();
         let placed = runtime
             .submit(
@@ -569,8 +589,8 @@ mod tests {
 
     #[test]
     fn the_menu_sees_live_facts_only_on_a_live_tab() {
-        let ((_, _), _turn) = shared();
-        let mut workspace = workspace();
+        let ((_, _, hub), _turn) = shared();
+        let mut workspace = workspace(hub);
         workspace.trading_venue = TradingVenue::Paper;
         assert!(workspace.live_facts(&workspace.charts[0]).is_none());
         workspace.trading_venue = TradingVenue::Broker(ID);

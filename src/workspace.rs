@@ -192,6 +192,8 @@ pub struct ChartWorkspace {
     unseen_alerts: usize,
     /// How portfolio cards reach the app's portfolios; set by the window that draws this tab.
     card_env: Option<PortfolioCardEnv>,
+    /// The venues this tab can trade on, handed in by the window each frame.
+    trading_hub: Option<Arc<crate::host::trading_hub::TradingHub>>,
     live_feed: Option<BinanceLiveFeed>,
     /// The candles of every overlay market on this workspace's charts, fetched once per market.
     overlay_hub: overlays::OverlayHub,
@@ -398,6 +400,7 @@ impl ChartWorkspace {
             add_to_watchlist: None,
             unseen_alerts: 0,
             card_env: None,
+            trading_hub: None,
             live_feed: None,
             overlay_hub: overlays::OverlayHub::new(),
             settings_chart: None,
@@ -801,7 +804,7 @@ impl ChartWorkspace {
         }
 
         if self.paper_panel_visible {
-            let broker_host = crate::host::broker_host::BrokerHost::global();
+            let broker_host = self.trading_hub.as_ref().map(|hub| hub.brokers().clone());
             let mut panel_actions: Vec<WorkspaceAction> = Vec::new();
             let events = egui::Panel::bottom(egui::Id::new(("paper_panel", self.id)))
                 .resizable(true)
@@ -814,13 +817,14 @@ impl ChartWorkspace {
                     };
                     match (venue.broker(), &broker_host) {
                         (Some(id), Some(host)) => {
-                            let stats = crate::host::trading_hub::TradingHub::global()
-                                .and_then(|hub| hub.backend(venue))
-                                .and_then(|backend| backend.stats());
+                            let backend =
+                                self.trading_hub.as_ref().and_then(|hub| hub.backend(venue));
+                            let stats = backend.as_deref().and_then(|backend| backend.stats());
                             crate::ui::broker::panel::ui(
                                 ui,
                                 &mut self.broker_panel,
                                 host,
+                                backend.as_deref().and_then(|b| b.broker_commands()),
                                 id,
                                 &bar,
                                 stats.as_ref(),

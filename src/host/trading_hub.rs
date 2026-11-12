@@ -12,7 +12,7 @@
 //! Nothing here names a particular venue: the brokers come from the crate's registry.
 
 use std::collections::BTreeSet;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 
 use super::broker_host::{BrokerHost, Connection, Operation};
 use super::paper_host::PaperHost;
@@ -57,8 +57,6 @@ pub struct TradingHub {
     /// frame.
     backends: Vec<(TradingVenue, Arc<dyn TradingBackend>)>,
 }
-
-static GLOBAL: OnceLock<Arc<TradingHub>> = OnceLock::new();
 
 /// Whether the paper account holds anything the user made: orders, fills, positions, more than one
 /// account, or an account they renamed or funded differently.
@@ -113,29 +111,6 @@ impl TradingHub {
             hub.save_enabled();
         }
         hub
-    }
-
-    /// The hub every window and Settings share, created on first use.
-    pub fn install(
-        brokers: Arc<BrokerHost>,
-        paper: Arc<Mutex<PaperHost>>,
-        store: SharedStore,
-    ) -> Arc<Self> {
-        Arc::clone(GLOBAL.get_or_init(|| Self::new(brokers, paper, Some(store))))
-    }
-
-    pub fn global() -> Option<Arc<Self>> {
-        GLOBAL.get().cloned()
-    }
-
-    #[cfg(test)]
-    pub(crate) fn set_global_for_tests(hub: Arc<Self>) -> Arc<Self> {
-        Arc::clone(GLOBAL.get_or_init(|| hub))
-    }
-
-    #[cfg(test)]
-    pub(crate) fn paper_for_tests(&self) -> Arc<Mutex<PaperHost>> {
-        Arc::clone(&self.paper)
     }
 
     pub fn brokers(&self) -> &Arc<BrokerHost> {

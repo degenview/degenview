@@ -137,6 +137,12 @@ fn shapes(output: &egui::FullOutput) -> usize {
     output.shapes.len()
 }
 
+/// The broker's commands, as the workspace hands them to the panel.
+fn commands(host: &Arc<BrokerHost>) -> crate::trading::broker_backend::BrokerBackend {
+    let broker = degenview_brokers::registry::by_id(ID).expect("coinbase");
+    crate::trading::broker_backend::BrokerBackend::new(host.clone(), broker)
+}
+
 /// The panel as the workspace draws it: the shared header's venue and the account strip.
 fn draw(
     ui: &mut egui::Ui,
@@ -145,13 +151,14 @@ fn draw(
 ) -> Vec<crate::ui::trade::panel_header::PanelEvent> {
     use crate::trading::backend::TradingBackend;
     let broker = degenview_brokers::registry::by_id(ID).expect("coinbase");
-    let stats = crate::trading::broker_backend::BrokerBackend::new(host.clone(), broker).stats();
+    let backend = crate::trading::broker_backend::BrokerBackend::new(host.clone(), broker);
+    let stats = backend.stats();
     let bar = crate::ui::trade::panel_header::sample_bar(
         crate::model::broker::venue::TradingVenue::Broker(ID),
         crate::trading::model::VenueKind::Live,
         "Coinbase",
     );
-    panel::ui(ui, state, host, ID, &bar, stats.as_ref())
+    panel::ui(ui, state, host, Some(&backend), ID, &bar, stats.as_ref())
 }
 
 fn show_panel(
@@ -192,7 +199,7 @@ fn every_live_trading_surface_draws() {
     let mut page = Screen::new(Vec2::new(600.0, 900.0));
     let output = frames(&mut page, 3, |ui| {
         egui::CentralPanel::default().show(ui, |ui| {
-            brokers::body(ui, &mut page_state, Some(rig.hub.clone()));
+            brokers::body(ui, &mut page_state, &rig.hub);
         });
     });
     assert!(shapes(&output) > 20, "the settings page");
@@ -201,11 +208,7 @@ fn every_live_trading_surface_draws() {
     let idle = self::rig();
     let output = frames(&mut page, 3, |ui| {
         egui::CentralPanel::default().show(ui, |ui| {
-            brokers::body(
-                ui,
-                &mut brokers::BrokersState::default(),
-                Some(idle.hub.clone()),
-            );
+            brokers::body(ui, &mut brokers::BrokersState::default(), &idle.hub);
         });
     });
     assert!(shapes(&output) > 20, "the page before connecting");
@@ -250,12 +253,13 @@ fn cancelling_asks_first_for_many_and_a_requested_cancel_leaves_the_order_listed
 
     let mut state = BrokerPanelState::default();
     // Two orders: always asks, and nothing is sent until the user says so.
-    state.request_cancel_for_test(&rig.host, ID, ids[..2].to_vec(), false);
+    let backend = commands(&rig.host);
+    state.request_cancel_for_test(Some(&backend), ids[..2].to_vec(), false);
     assert!(state.cancel_ask_open());
     assert_eq!(cancels(&rig), 0);
     // One order with the question turned off: sent at once, and the order stays until the broker says.
     let mut single = BrokerPanelState::default();
-    single.request_cancel_for_test(&rig.host, ID, vec![ids[2].clone()], false);
+    single.request_cancel_for_test(Some(&backend), vec![ids[2].clone()], false);
     assert!(!single.cancel_ask_open());
     wait("the cancel to reach the exchange", || cancels(&rig) == 1);
     wait("the broker's answer", || {
@@ -286,7 +290,7 @@ fn an_edit_is_previewed_confirmed_and_sent_as_an_edit_never_a_cancel_and_replace
         .map(|v| v.order.clone())
         .unwrap();
     let mut state = BrokerPanelState::default();
-    state.begin_edit(ID, order.clone(), Some("92500.00".parse().unwrap()));
+    state.begin_edit(order.clone(), Some("92500.00".parse().unwrap()));
     let mut screen = Screen::new(Vec2::new(900.0, 700.0));
     let mut run = |events: Vec<egui::Event>, state: &mut BrokerPanelState| {
         screen.run(events, |ui| {
@@ -413,7 +417,7 @@ fn gallery_of_live_trading() {
             let mut draw = |page: &mut Screen| {
                 frames(page, 3, |ui| {
                     egui::CentralPanel::default().show(ui, |ui| {
-                        brokers::body(ui, &mut page_state, Some(hub.clone()));
+                        brokers::body(ui, &mut page_state, &hub);
                     });
                 })
             };
@@ -460,7 +464,7 @@ fn an_edit_cannot_be_reviewed_before_or_without_the_brokers_preview() {
         .unwrap();
     rig.exchange.rest.with_state(|s| s.fail_preview = true);
     let mut state = BrokerPanelState::default();
-    state.begin_edit(ID, order, Some("92500.00".parse().unwrap()));
+    state.begin_edit(order, Some("92500.00".parse().unwrap()));
     let mut screen = Screen::new(Vec2::new(900.0, 700.0));
     let mut run = |events: Vec<egui::Event>, state: &mut BrokerPanelState| {
         screen.run(events, |ui| {
@@ -537,7 +541,7 @@ fn a_review_of_an_edit_does_not_survive_the_order_changing_under_it() {
         .map(|v| v.order.clone())
         .unwrap();
     let mut state = BrokerPanelState::default();
-    state.begin_edit(ID, order.clone(), Some("92500.00".parse().unwrap()));
+    state.begin_edit(order.clone(), Some("92500.00".parse().unwrap()));
     let mut screen = Screen::new(Vec2::new(900.0, 700.0));
     let mut run = |events: Vec<egui::Event>, state: &mut BrokerPanelState| {
         screen.run(events, |ui| {
@@ -601,7 +605,7 @@ fn connecting_a_key_from_the_settings_page_never_stalls_a_frame() {
         let start = Instant::now();
         frames(&mut screen, 1, |ui| {
             egui::CentralPanel::default().show(ui, |ui| {
-                brokers::body(ui, state, Some(rig.hub.clone()));
+                brokers::body(ui, state, &rig.hub);
             });
         });
         slowest = slowest.max(start.elapsed() - Duration::from_millis(15));
@@ -654,7 +658,7 @@ fn typing_a_base64_secret_never_stalls_a_frame() {
         screen.run(events, |ui| {
             theme::sync(ui.ctx());
             egui::CentralPanel::default().show(ui, |ui| {
-                brokers::body(ui, state, Some(rig.hub.clone()));
+                brokers::body(ui, state, &rig.hub);
             });
         });
         slowest.set(slowest.get().max(start.elapsed()));
@@ -821,7 +825,7 @@ fn the_sandbox_connects_without_a_key_and_is_listed_beside_coinbase() {
     while Instant::now() < deadline {
         frames(&mut screen, 1, |ui| {
             egui::CentralPanel::default().show(ui, |ui| {
-                brokers::body(ui, &mut state, Some(rig.hub.clone()));
+                brokers::body(ui, &mut state, &rig.hub);
             });
         });
         if rig
