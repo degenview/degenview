@@ -38,8 +38,21 @@ pub struct EditError {
 
 pub type EditAnswer<T> = Task<Result<T, EditError>>;
 
+/// The order and what an edit of it is read against, as the venue has them now.
+#[derive(Clone, Debug, Default)]
+pub struct EditWorld {
+    /// The order; `None` once it is gone.
+    pub live: Option<LiveOrder>,
+    pub account: Option<AccountId>,
+    pub generation: u64,
+    pub spec: Option<ProductSpec>,
+}
+
 /// What the venue does for an edit. Implemented by a connected broker.
 pub trait EditVenue {
+    /// The order with this id and the account, connection and market rules around it.
+    fn world(&self, order: &OrderId) -> EditWorld;
+
     /// Asks what the change would do, without applying it.
     fn preview_edit(&self, order: OrderId, change: OrderChange) -> EditAnswer<EditPreview>;
 

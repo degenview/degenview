@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use degenview_brokers::model::orders::{
     CancelOutcome, EditOutcome, EditPreview, FillFilter, HistoryFilter, OrderChange,
-    OrderFingerprint, Page,
+    OrderFingerprint,
 };
 use degenview_brokers::model::reducer::{OrderView, OverlayKind};
 use degenview_brokers::{
@@ -17,16 +17,17 @@ use degenview_brokers::{
 };
 
 use super::backend::TradingBackend;
-use super::broker_commands::{Answer, BrokerCommands, CancelReport, cancel_report};
+use super::broker_commands::{Answer, BrokerCommands, CancelReport, HistoryChoice, cancel_report};
 use super::draft::{
     CancelResult, DraftCheck, DraftField, DraftIssue, Estimate, PreviewResult, SubmitResult,
     Submitted, TradeDraft, floor_to_increment,
 };
-use super::edit::{EditAnswer, EditError, EditVenue};
+use super::edit::{EditAnswer, EditError, EditVenue, EditWorld};
 use super::model::{
-    AccountStats, AccountStrip, Amount, BackendState, Binding, Hero, HeroNote, MarketAccess,
-    MarketRules, OrderClass, OrderRow, QuoteView, RowStatus, StatCell, StatTone, TicketCaps,
-    TimeInForce, Tone, Trend, Unavailable, UnavailableKind, VenueInfo, VenueKind,
+    AccountStats, AccountStrip, Amount, BackendState, BalanceRow, Binding, ChartLines, ChartOrder,
+    FillRow, Hero, HeroNote, MarketAccess, MarketRules, Note, OrderClass, OrderRow, Page,
+    QuoteView, RowStatus, StatCell, StatTone, TicketCaps, TimeInForce, Tone, Trend, Unavailable,
+    UnavailableKind, VenueInfo, VenueKind,
 };
 use super::task::Task;
 use super::valuation::{self, Holding};
@@ -124,6 +125,26 @@ impl BrokerBackend {
 }
 
 impl EditVenue for BrokerBackend {
+    fn world(&self, order: &OrderId) -> EditWorld {
+        let Some(snapshot) = self.snapshot() else {
+            return EditWorld::default();
+        };
+        let live = snapshot
+            .orders
+            .iter()
+            .find(|view| &view.order.id == order)
+            .map(|view| view.order.clone());
+        EditWorld {
+            spec: live
+                .as_ref()
+                .and_then(|order| snapshot.product(&order.product))
+                .cloned(),
+            live,
+            account: snapshot.account.as_ref().map(|account| account.id.clone()),
+            generation: snapshot.generation,
+        }
+    }
+
     fn preview_edit(&self, order: OrderId, change: OrderChange) -> EditAnswer<EditPreview> {
         match self.host.runtime(self.id()) {
             Some(runtime) => edit_answer(runtime.preview_edit(order, change)),
@@ -151,55 +172,161 @@ impl EditVenue for BrokerBackend {
 }
 
 impl BrokerCommands for BrokerBackend {
-    fn retry(&self, client_id: ClientOrderId, account: AccountId) -> Answer<()> {
-        match self.host.runtime(self.id()) {
-            Some(runtime) => answer(runtime.retry(client_id, account), |_| ()),
-            None => Task::ready(Err(NOT_CONNECTED.to_owned())),
+    fn retry(&self, id: &str) -> Answer<()> {
+        let account = self
+            .snapshot()
+            .and_then(|snapshot| snapshot.account.as_ref().map(|account| account.id.clone()));
+        match (self.host.runtime(self.id()), account) {
+            (Some(runtime), Some(account)) => {
+                answer(runtime.retry(ClientOrderId(id.to_owned()), account), |_| ())
+            }
+            _ => Task::ready(Err(NOT_CONNECTED.to_owned())),
         }
     }
 
-    fn cancel(&self, orders: Vec<OrderId>) -> Answer<CancelReport> {
-        match self.host.runtime(self.id()) {
-            Some(runtime) => answer(runtime.cancel(orders), |results| cancel_report(&results)),
-            None => Task::ready(Err(NOT_CONNECTED.to_owned())),
-        }
-    }
-
-    fn history(
-        &self,
-        statuses: Vec<OrderStatus>,
-        cursor: Option<String>,
-    ) -> Answer<Page<LiveOrder>> {
+    fn cancel(&self, orders: Vec<String>) -> Answer<CancelReport> {
         match self.host.runtime(self.id()) {
             Some(runtime) => answer(
-                runtime.history(
-                    HistoryFilter {
-                        statuses,
-                        limit: PAGE,
-                        ..HistoryFilter::default()
-                    },
-                    cursor,
-                ),
-                |page| page,
+                runtime.cancel(orders.into_iter().map(OrderId::new).collect()),
+                |results| cancel_report(&results),
             ),
             None => Task::ready(Err(NOT_CONNECTED.to_owned())),
         }
     }
 
-    fn fills(&self, cursor: Option<String>) -> Answer<Page<LiveFill>> {
-        match self.host.runtime(self.id()) {
-            Some(runtime) => answer(
-                runtime.fills(
-                    FillFilter {
-                        limit: PAGE,
-                        ..FillFilter::default()
-                    },
-                    cursor,
-                ),
-                |page| page,
+    fn history(&self, choice: HistoryChoice, cursor: Option<String>) -> Answer<Page<OrderRow>> {
+        let Some(runtime) = self.host.runtime(self.id()) else {
+            return Task::ready(Err(NOT_CONNECTED.to_owned()));
+        };
+        let source = source_of(self.id());
+        answer(
+            runtime.history(
+                HistoryFilter {
+                    statuses: statuses_of(choice),
+                    limit: PAGE,
+                    ..HistoryFilter::default()
+                },
+                cursor,
             ),
-            None => Task::ready(Err(NOT_CONNECTED.to_owned())),
-        }
+            move |page| Page {
+                items: page
+                    .items
+                    .iter()
+                    .map(|order| history_row(order, source))
+                    .collect(),
+                next: page.next_cursor,
+            },
+        )
+    }
+
+    fn fills(&self, cursor: Option<String>) -> Answer<Page<FillRow>> {
+        let Some(runtime) = self.host.runtime(self.id()) else {
+            return Task::ready(Err(NOT_CONNECTED.to_owned()));
+        };
+        let host = Arc::clone(&self.host);
+        let id = self.id();
+        answer(
+            runtime.fills(
+                FillFilter {
+                    limit: PAGE,
+                    ..FillFilter::default()
+                },
+                cursor,
+            ),
+            move |page| {
+                let snapshot = host.snapshot(id);
+                Page {
+                    items: page
+                        .items
+                        .iter()
+                        .map(|fill| fill_row(fill, snapshot.as_deref()))
+                        .collect(),
+                    next: page.next_cursor,
+                }
+            },
+        )
+    }
+}
+
+/// The finished orders a History filter lists.
+fn statuses_of(choice: HistoryChoice) -> Vec<OrderStatus> {
+    match choice {
+        HistoryChoice::All => vec![
+            OrderStatus::Filled,
+            OrderStatus::Cancelled,
+            OrderStatus::Expired,
+            OrderStatus::Failed,
+        ],
+        HistoryChoice::Filled => vec![OrderStatus::Filled],
+        HistoryChoice::Cancelled => vec![OrderStatus::Cancelled],
+        HistoryChoice::Expired => vec![OrderStatus::Expired],
+        HistoryChoice::Rejected => vec![OrderStatus::Failed],
+    }
+}
+
+/// A finished order as the History tab shows it: its price is what it filled at, if it did.
+fn history_row(order: &LiveOrder, source: Option<crate::model::DataSource>) -> OrderRow {
+    let (size, spend) = match order.size {
+        Some(OrderSize::Base(size)) => (Some(size), None),
+        Some(OrderSize::Quote(amount)) => (None, Some(amount)),
+        None => (None, None),
+    };
+    let (label, status_tone) = rules::status_label(order.status);
+    OrderRow {
+        id: order.id.as_str().to_owned(),
+        market: order.product.as_str().to_owned(),
+        side: order.side,
+        kind: rules::type_label(order),
+        price: order.average_price.or(order.limit_price),
+        trigger: None,
+        filled: order.filled_size,
+        size,
+        spend,
+        status: RowStatus {
+            label,
+            tone: tone(status_tone),
+        },
+        created_ms: order.created_ms,
+        working: false,
+        can_cancel: false,
+        can_edit: false,
+        note: order.reason.clone(),
+        edit_hint: None,
+        source,
+        tag: None,
+        unconfirmed: false,
+        pending: false,
+        fees: order.fees,
+    }
+}
+
+fn fill_row(fill: &LiveFill, snapshot: Option<&BrokerSnapshot>) -> FillRow {
+    FillRow {
+        id: fill.id.clone(),
+        time_ms: fill.time_ms,
+        market: fill.product.as_str().to_owned(),
+        side: fill.side,
+        price: snapshot
+            .and_then(|snapshot| snapshot.product(&fill.product))
+            .map_or_else(
+                || rules::display(fill.price),
+                |spec| rules::price_display(fill.price, spec),
+            ),
+        size: fill.size,
+        fee: fill.fee,
+        order: fill.order_id.as_str().to_owned(),
+    }
+}
+
+/// Said when the journal holds unconfirmed orders that are not this account's.
+fn held_elsewhere_text(count: usize) -> String {
+    if count == 1 {
+        "1 unconfirmed order belongs to a different account. It is left untouched here and checked when that account is connected."
+            .to_owned()
+    } else {
+        format!(
+            "{count} unconfirmed orders belong to a different account. They are left untouched here and checked when that account is connected."
+        )
     }
 }
 
@@ -328,6 +455,8 @@ fn order_row(view: &OrderView, snapshot: &BrokerSnapshot) -> OrderRow {
         source: source_of(snapshot.broker),
         tag: None,
         unconfirmed: false,
+        pending: false,
+        fees: order.fees,
     }
 }
 
@@ -404,6 +533,8 @@ fn pending_row(pending: &PendingView, broker: degenview_brokers::BrokerId) -> Or
         source: source_of(broker),
         tag: None,
         unconfirmed,
+        pending: true,
+        fees: Decimal::ZERO,
     }
 }
 
@@ -859,6 +990,148 @@ impl TradingBackend for BrokerBackend {
         })
     }
 
+    fn notes(&self) -> Vec<Note> {
+        let Some(snapshot) = self.snapshot() else {
+            return Vec::new();
+        };
+        let note = |text: String, error: bool| Note { text, error };
+        match &snapshot.status {
+            Status::Failed(error) => {
+                vec![note(
+                    format!("{error} Open Settings to enter a new key."),
+                    true,
+                )]
+            }
+            Status::Reconnecting { reason, .. } => vec![note(
+                format!(
+                    "Reconnecting ({reason}) What is shown may be out of date, and new orders are paused."
+                ),
+                false,
+            )],
+            _ => {
+                let mut notes = Vec::new();
+                if snapshot
+                    .session
+                    .as_ref()
+                    .is_some_and(|session| !session.permissions.can_trade)
+                {
+                    notes.push(note(
+                        "This key can view but not trade. Create a key with the Trade permission to place orders."
+                            .to_owned(),
+                        false,
+                    ));
+                }
+                if let Some(error) = &snapshot.journal_error {
+                    notes.push(note(error.to_string(), true));
+                }
+                if snapshot.held_elsewhere > 0 {
+                    notes.push(note(held_elsewhere_text(snapshot.held_elsewhere), false));
+                }
+                if let Some(error) = &snapshot.last_error {
+                    notes.push(note(error.clone(), true));
+                }
+                notes
+            }
+        }
+    }
+
+    fn can_order(&self) -> bool {
+        self.snapshot().is_some_and(|snapshot| {
+            snapshot.can_send_orders()
+                && snapshot
+                    .session
+                    .as_ref()
+                    .is_some_and(|session| session.permissions.can_trade)
+        })
+    }
+
+    fn recent_fills(&self) -> Vec<FillRow> {
+        self.snapshot().map_or_else(Vec::new, |snapshot| {
+            snapshot
+                .fills
+                .iter()
+                .map(|fill| fill_row(fill, Some(&snapshot)))
+                .collect()
+        })
+    }
+
+    fn balances(&self) -> Vec<BalanceRow> {
+        let Some(snapshot) = self.snapshot() else {
+            return Vec::new();
+        };
+        let mut rows: Vec<BalanceRow> = snapshot
+            .balances
+            .iter()
+            .filter(|balance| !balance.total().is_zero())
+            .map(|balance| BalanceRow {
+                asset: balance.asset.clone(),
+                available: balance.available,
+                held: balance.held,
+            })
+            .collect();
+        rows.sort_by(|a, b| a.asset.cmp(&b.asset));
+        rows
+    }
+
+    fn chart_unavailable(
+        &self,
+        market: Option<&MarketRef>,
+        replay: bool,
+    ) -> Option<broker::chart::Unavailable> {
+        broker::chart::chart_trading(self.broker, market, self.snapshot().as_deref(), replay)
+            .reason()
+    }
+
+    fn chart_lines(&self, market: &MarketRef) -> Option<ChartLines> {
+        let snapshot = self.snapshot()?;
+        let product = self.product(market)?;
+        let spec = snapshot.product(&product);
+        let format = |price: Decimal| {
+            spec.map_or_else(
+                || rules::display(price),
+                |spec| rules::price_display(price, spec),
+            )
+        };
+        let orders = snapshot
+            .orders
+            .iter()
+            .filter(|view| view.order.product == product && view.order.status.is_working())
+            .filter_map(|view| {
+                let order = &view.order;
+                let price = order.marker_price()?;
+                let caps = snapshot.capabilities_of(&order.product);
+                let note = match (view.overlay.map(|overlay| overlay.kind), order.status) {
+                    (Some(OverlayKind::CancelRequested), _) | (_, OrderStatus::CancelQueued) => {
+                        Some("cancel requested")
+                    }
+                    (Some(_), _) | (_, OrderStatus::EditQueued) => Some("edit requested"),
+                    _ => None,
+                };
+                Some(ChartOrder {
+                    id: order.id.as_str().to_owned(),
+                    side: order.side,
+                    tag: match order.order_type {
+                        OrderType::StopLimit => "STP-LMT",
+                        OrderType::Market => "MKT",
+                        _ => "LMT",
+                    },
+                    price,
+                    price_text: format(price),
+                    remaining_text: order
+                        .remaining_base()
+                        .map_or_else(|| "—".to_owned(), rules::display),
+                    note,
+                    can_edit: rules::edit_blocker(order, caps, view.overlay.is_some()).is_none(),
+                    can_cancel: view.overlay.is_none() && order.status != OrderStatus::CancelQueued,
+                })
+            })
+            .collect();
+        Some(ChartLines {
+            price_increment: spec.map(|spec| spec.price_increment),
+            orders,
+        })
+    }
+
     fn broker_commands(&self) -> Option<&dyn BrokerCommands> {
         Some(self)
     }
@@ -896,5 +1169,30 @@ fn account_label(label: &str, id: &str) -> String {
         format!("{label} · …{tail}")
     } else {
         label.to_owned()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn history_filters_ask_for_finished_statuses_only() {
+        for choice in [
+            HistoryChoice::All,
+            HistoryChoice::Filled,
+            HistoryChoice::Cancelled,
+            HistoryChoice::Expired,
+            HistoryChoice::Rejected,
+        ] {
+            assert!(
+                statuses_of(choice).iter().all(|s| s.is_terminal()),
+                "{choice:?}"
+            );
+        }
+        assert_eq!(
+            statuses_of(HistoryChoice::Rejected),
+            vec![OrderStatus::Failed]
+        );
     }
 }

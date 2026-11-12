@@ -1,38 +1,32 @@
 //! The live trading panel: the account, its working orders, its history, its fills and balances,
 //! and the actions on them (a new order, cancel, edit).
 //!
-//! It draws what the broker last said (`BrokerSnapshot`) and nothing else: no order is added or
-//! removed because a button was pressed. Asking to cancel marks an order "Cancelling" until the
-//! broker confirms; sending an order shows it as "Unconfirmed" until the broker lists it. Every
-//! request goes to the broker's runtime on its own thread, and its answer is polled on later frames,
-//! so the panel never waits on the network.
+//! It draws what the venue last said and nothing else: no order is added or removed because a
+//! button was pressed. Asking to cancel marks an order "Cancel requested" until the broker
+//! confirms; sending an order shows it as "Unconfirmed" until the broker lists it. It knows the
+//! broker only through [`TradingBackend`] (what to read) and [`BrokerCommands`] (what to ask); every
+//! request is a task polled on later frames, so the panel never waits on the network.
 //!
-//! The panel is shared by every window by construction: it reads the host's snapshot, which all
-//! windows read.
+//! The panel is shared by every window by construction: the venue's reads are the same in all of them.
 
 use std::collections::BTreeSet;
 use std::time::{Duration, Instant};
 
-use degenview_brokers::model::orders::Page;
-use degenview_brokers::{
-    BrokerId, BrokerSnapshot, ClientOrderId, Decimal, LiveFill, LiveOrder, OrderId, OrderStatus,
-    Side, Status,
-};
+use degenview_brokers::{Decimal, OrderId, Side};
 use eframe::egui::{self, Color32, Id};
 
-use crate::host::broker_host::BrokerHost;
-use crate::model::broker::prefs::BrokerPrefs;
-use crate::model::broker::ticket::{self as rules, StatusTone, size_text};
-use crate::trading::broker_commands::{Answer, BrokerCommands, CancelReport};
+use crate::model::broker::ticket::{self as rules};
+use crate::trading::backend::TradingBackend;
+use crate::trading::broker_commands::{Answer, BrokerCommands, CancelReport, HistoryChoice};
 use crate::trading::edit::{
     EditEvent, EditForm, EditFrame, EditSession, EditVenue, EditView, ReviewLine, Step,
 };
-use crate::trading::model::AccountStats;
+use crate::trading::model::{AccountStats, BackendState, FillRow, OrderRow, Page};
 use crate::ui::icons::Icon;
 use crate::ui::paper::grid::{self as grid, Col, col};
 use crate::ui::paper::tables::empty;
 use crate::ui::trade::panel_header::{self, Chip, Header, HeaderEvent, PanelEvent, VenueBar};
-use crate::ui::trade::tables::{self, OrderAction};
+use crate::ui::trade::tables::{self, OrderAction, badge_tone};
 use crate::ui::trade::{notice, stats_strip};
 use crate::ui::{
     broker::badge,
@@ -65,33 +59,6 @@ impl BrokerTab {
             Self::History => Icon::Clock,
             Self::Fills => Icon::Exchange,
             Self::Balances => Icon::Banknote,
-        }
-    }
-}
-
-/// Which finished orders the History tab lists.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum HistoryChoice {
-    All,
-    Filled,
-    Cancelled,
-    Expired,
-    Rejected,
-}
-
-impl HistoryChoice {
-    pub fn statuses(self) -> Vec<OrderStatus> {
-        match self {
-            Self::All => vec![
-                OrderStatus::Filled,
-                OrderStatus::Cancelled,
-                OrderStatus::Expired,
-                OrderStatus::Failed,
-            ],
-            Self::Filled => vec![OrderStatus::Filled],
-            Self::Cancelled => vec![OrderStatus::Cancelled],
-            Self::Expired => vec![OrderStatus::Expired],
-            Self::Rejected => vec![OrderStatus::Failed],
         }
     }
 }
@@ -135,7 +102,7 @@ impl<T: Clone> Paged<T> {
         match answer {
             Ok(page) => {
                 self.items.extend(page.items);
-                self.cursor = page.next_cursor;
+                self.cursor = page.next;
                 self.error = None;
             }
             Err(error) => self.error = Some(error),
@@ -149,7 +116,7 @@ enum Flight {
 }
 
 struct CancelAsk {
-    ids: Vec<OrderId>,
+    ids: Vec<String>,
     title: String,
     message: String,
 }
@@ -159,12 +126,19 @@ pub struct OpenEdit {
     session: EditSession,
 }
 
+/// What the panel is told by the window that draws it, besides the venue.
+#[derive(Clone, Copy, Debug)]
+pub struct PanelContext {
+    /// Whether cancelling a single order asks first (the user's choice, Settings ▸ Brokers).
+    pub confirm_single_cancel: bool,
+}
+
 pub struct BrokerPanelState {
     tab: BrokerTab,
-    selected: BTreeSet<OrderId>,
-    history: Paged<LiveOrder>,
+    selected: BTreeSet<String>,
+    history: Paged<OrderRow>,
     history_choice: HistoryChoice,
-    fills_more: Paged<LiveFill>,
+    fills_more: Paged<FillRow>,
     edit: Option<OpenEdit>,
     cancel_ask: Option<CancelAsk>,
     flights: Vec<Flight>,
@@ -192,25 +166,15 @@ impl Default for BrokerPanelState {
     }
 }
 
-// ---- Rules (pure) --------------------------------------------------------------------------------
-
-pub use crate::model::broker::ticket::type_label;
-use crate::ui::kit::Tone;
-
-fn tone(tone: StatusTone) -> Tone {
-    match tone {
-        StatusTone::Good => Tone::Good,
-        StatusTone::Warning => Tone::Warning,
-        StatusTone::Bad => Tone::Bad,
-        StatusTone::Neutral => Tone::Neutral,
-    }
-}
-
 fn side_color(side: Side) -> Color32 {
     match side {
         Side::Buy => theme::UP,
         Side::Sell => theme::DOWN,
     }
+}
+
+fn side_word(side: Side) -> &'static str {
+    if side == Side::Buy { "Buy" } else { "Sell" }
 }
 
 fn time_text(ms: Option<i64>) -> String {
@@ -222,6 +186,15 @@ fn time_text(ms: Option<i64>) -> String {
     format!("{:02}:{:02}:{:02}", day / 3600, day % 3600 / 60, day % 60)
 }
 
+/// The size column: the base amount, or "25 (spend)" for a market buy sized by an amount to spend.
+fn size_text(row: &OrderRow) -> String {
+    match (row.size, row.spend) {
+        (Some(size), _) => rules::display(size),
+        (None, Some(spend)) => format!("{} (spend)", rules::display(spend)),
+        (None, None) => "—".to_owned(),
+    }
+}
+
 // ---- The panel -----------------------------------------------------------------------------------
 
 /// The edit sheet and the cancel question, drawn when the panel itself is not (an edit started from
@@ -229,18 +202,16 @@ fn time_text(ms: Option<i64>) -> String {
 pub fn dialogs_only(
     ctx: &egui::Context,
     state: &mut BrokerPanelState,
-    host: &BrokerHost,
-    commands: Option<&dyn BrokerCommands>,
-    broker_id: BrokerId,
+    backend: &dyn TradingBackend,
 ) {
-    let Some(snapshot) = host.snapshot(broker_id) else {
+    if backend.state() == BackendState::NotConnected {
         // The connection is gone: so are the questions about it.
         state.edit = None;
         state.cancel_ask = None;
         return;
-    };
+    }
     poll_flights(state);
-    dialogs(ctx, state, commands, &snapshot);
+    dialogs(ctx, state, backend);
 }
 
 impl BrokerPanelState {
@@ -262,12 +233,7 @@ impl BrokerPanelState {
     }
 
     /// Asks to cancel one order (a chart's ✕), following the user's confirmation choice.
-    pub fn cancel_one(
-        &mut self,
-        commands: Option<&dyn BrokerCommands>,
-        confirm: bool,
-        id: OrderId,
-    ) {
+    pub fn cancel_one(&mut self, commands: Option<&dyn BrokerCommands>, confirm: bool, id: String) {
         request_cancel(self, commands, vec![id], confirm);
     }
 
@@ -286,7 +252,7 @@ impl BrokerPanelState {
     pub(crate) fn request_cancel_for_test(
         &mut self,
         commands: Option<&dyn BrokerCommands>,
-        ids: Vec<OrderId>,
+        ids: Vec<String>,
         confirm: bool,
     ) {
         request_cancel(self, commands, ids, confirm);
@@ -347,37 +313,46 @@ impl BrokerPanelState {
         self.notice = Some((text.into(), error, Instant::now()));
     }
 
-    /// Starts editing `order` (it must be eligible).
-    pub fn begin_edit(&mut self, order: LiveOrder, price: Option<Decimal>) {
+    /// Starts editing the order with this id, as the venue has it now; `price` is where a dragged
+    /// line was dropped, if it was. `false` when the order is not there (any more).
+    pub fn begin_edit(
+        &mut self,
+        commands: Option<&dyn BrokerCommands>,
+        id: &str,
+        price: Option<Decimal>,
+    ) -> bool {
+        let Some(order) = commands.and_then(|commands| commands.world(&OrderId::new(id)).live)
+        else {
+            return false;
+        };
         self.edit = Some(OpenEdit {
             session: EditSession::new(order, price, Instant::now()),
         });
+        true
     }
 }
 
 pub fn ui(
     ui: &mut egui::Ui,
     state: &mut BrokerPanelState,
-    host: &BrokerHost,
-    commands: Option<&dyn BrokerCommands>,
-    broker_id: BrokerId,
+    backend: &dyn TradingBackend,
+    context: PanelContext,
     bar: &VenueBar,
     stats: Option<&AccountStats>,
 ) -> Vec<PanelEvent> {
     let mut actions = Vec::new();
-    if degenview_brokers::registry::by_id(broker_id).is_none() {
-        return actions;
-    }
     ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
     badge::rule(ui);
-    let snapshot = host.snapshot(broker_id);
-    let prefs = host.prefs(broker_id);
+    let rows = backend.orders();
 
-    header(ui, state, bar, snapshot.as_deref(), &mut actions);
+    header(ui, state, bar, backend, &rows, &mut actions);
     divider(ui);
 
-    let Some(snapshot) = snapshot else {
-        let message = if host.connection(broker_id).is_saved() {
+    let connection = backend.state();
+    if connection == BackendState::NotConnected
+        || (connection == BackendState::Connecting && backend.account().is_none())
+    {
+        let message = if connection == BackendState::Connecting {
             "Connecting…"
         } else {
             "Connect this broker in Settings ▸ Brokers to trade here."
@@ -386,9 +361,11 @@ pub fn ui(
             actions.push(PanelEvent::OpenSettings);
         }
         return actions;
-    };
+    }
 
-    banners(ui, &snapshot, &mut actions);
+    for note_line in backend.notes() {
+        note(ui, &note_line.text, note_line.error);
+    }
     if let Some((text, error, at)) = &state.notice {
         if at.elapsed() < Duration::from_secs(12) {
             note(ui, text, *error);
@@ -400,11 +377,12 @@ pub fn ui(
     stats_strip::show(ui, stats);
     divider(ui);
 
+    let commands = backend.broker_commands();
     match state.tab {
-        BrokerTab::Orders => orders_tab(ui, state, commands, &snapshot, &prefs),
+        BrokerTab::Orders => orders_tab(ui, state, commands, &rows, context),
         BrokerTab::History => history_tab(ui, state, commands),
-        BrokerTab::Fills => fills_tab(ui, state, commands, &snapshot),
-        BrokerTab::Balances => balances_tab(ui, &snapshot),
+        BrokerTab::Fills => fills_tab(ui, state, commands, backend.recent_fills()),
+        BrokerTab::Balances => balances_tab(ui, backend),
     }
     // The tables leave room for the orders footer, which only the Orders tab draws. Whatever is
     // left is taken, so the panel's content is as tall as the room it was given: a resizable panel
@@ -415,7 +393,7 @@ pub fn ui(
         ui.allocate_exact_size(egui::vec2(ui.available_width(), rest), egui::Sense::hover());
     }
 
-    dialogs(ui.ctx(), state, commands, &snapshot);
+    dialogs_with(ui.ctx(), state, commands, &rows);
     actions
 }
 
@@ -443,17 +421,11 @@ fn header(
     ui: &mut egui::Ui,
     state: &mut BrokerPanelState,
     bar: &VenueBar,
-    snapshot: Option<&BrokerSnapshot>,
+    backend: &dyn TradingBackend,
+    rows: &[OrderRow],
     actions: &mut Vec<PanelEvent>,
 ) {
-    let working = snapshot.map_or(0, |snapshot| {
-        snapshot
-            .orders
-            .iter()
-            .filter(|v| v.order.status.is_working())
-            .count()
-            + snapshot.pending.len()
-    });
+    let working = rows.iter().filter(|row| row.working).count();
     let tabs: Vec<kit::TabItem<BrokerTab>> = [
         BrokerTab::Orders,
         BrokerTab::History,
@@ -468,20 +440,16 @@ fn header(
         count: if tab == BrokerTab::Orders { working } else { 0 },
     })
     .collect();
-    let account = snapshot
-        .and_then(|snapshot| snapshot.session.as_ref())
-        .and_then(|session| session.accounts.first())
-        .map(|account| account.label.clone());
     let chip = Chip {
-        label: account.unwrap_or_default(),
+        label: backend
+            .account()
+            .map(|account| account.label)
+            .unwrap_or_default(),
         sub: None,
         tip: "The account orders go to".to_owned(),
         rows: Vec::new(),
         add: None,
     };
-    let can_order = snapshot.is_some_and(|s| {
-        s.can_send_orders() && s.session.as_ref().is_some_and(|x| x.permissions.can_trade)
-    });
     let events = panel_header::show(
         ui,
         &Header {
@@ -489,7 +457,7 @@ fn header(
             chip: &chip,
             tabs: &tabs,
             overlay: None,
-            can_order,
+            can_order: backend.can_order(),
             more: &[],
             settings_tip: "Brokers settings",
         },
@@ -499,58 +467,6 @@ fn header(
         if let HeaderEvent::Panel(event) = event {
             actions.push(event);
         }
-    }
-}
-
-fn banners(ui: &mut egui::Ui, snapshot: &BrokerSnapshot, actions: &mut Vec<PanelEvent>) {
-    match &snapshot.status {
-        Status::Failed(error) => {
-            note(
-                ui,
-                &format!("{error} Open Settings to enter a new key."),
-                true,
-            );
-            let _ = actions;
-        }
-        Status::Reconnecting { reason, .. } => note(
-            ui,
-            &format!(
-                "Reconnecting ({reason}) What is shown may be out of date, and new orders are paused."
-            ),
-            false,
-        ),
-        _ => {
-            if let Some(session) = &snapshot.session
-                && !session.permissions.can_trade
-            {
-                note(
-                    ui,
-                    "This key can view but not trade. Create a key with the Trade permission to place orders.",
-                    false,
-                );
-            }
-            if let Some(error) = &snapshot.journal_error {
-                note(ui, &error.to_string(), true);
-            }
-            if snapshot.held_elsewhere > 0 {
-                note(ui, &held_elsewhere_text(snapshot.held_elsewhere), false);
-            }
-            if let Some(error) = &snapshot.last_error {
-                note(ui, error, true);
-            }
-        }
-    }
-}
-
-/// Said when the journal holds unconfirmed orders that are not this account's.
-fn held_elsewhere_text(count: usize) -> String {
-    if count == 1 {
-        "1 unconfirmed order belongs to a different account. It is left untouched here and checked when that account is connected."
-            .to_owned()
-    } else {
-        format!(
-            "{count} unconfirmed orders belong to a different account. They are left untouched here and checked when that account is connected."
-        )
     }
 }
 
@@ -587,64 +503,46 @@ fn orders_tab(
     ui: &mut egui::Ui,
     state: &mut BrokerPanelState,
     commands: Option<&dyn BrokerCommands>,
-    snapshot: &BrokerSnapshot,
-    prefs: &BrokerPrefs,
+    rows: &[OrderRow],
+    context: PanelContext,
 ) {
-    let rows = crate::trading::broker_backend::order_rows(snapshot);
-    let mut selected: BTreeSet<String> = state
-        .selected
-        .iter()
-        .map(|id| id.as_str().to_owned())
-        .collect();
-    let actions = tables::orders(ui, "broker-orders", &rows, &mut selected, true);
-    state.selected = selected.into_iter().map(OrderId::new).collect();
+    let mut selected = state.selected.clone();
+    let actions = tables::orders(ui, "broker-orders", rows, &mut selected, true);
+    state.selected = selected;
 
     for action in actions {
         match action {
             OrderAction::Check(id) => {
-                // For the account on screen: a record of another account is not this one's to look up.
-                if let (Some(commands), Some(account)) = (commands, &snapshot.account) {
-                    state.flights.push(Flight::Retry(
-                        commands.retry(ClientOrderId(id), account.id.clone()),
-                    ));
+                if let Some(commands) = commands {
+                    state.flights.push(Flight::Retry(commands.retry(&id)));
                     state.say("Looking the order up at the broker…", false);
                 }
             }
             OrderAction::Edit(id) => {
-                if let Some(view) = snapshot
-                    .orders
-                    .iter()
-                    .find(|view| view.order.id.as_str() == id)
-                {
-                    state.begin_edit(view.order.clone(), None);
-                }
+                state.begin_edit(commands, &id, None);
             }
-            OrderAction::Cancel(id) => request_cancel(
-                state,
-                commands,
-                vec![OrderId::new(id)],
-                prefs.confirm_single_cancel,
-            ),
+            OrderAction::Cancel(id) => {
+                request_cancel(state, commands, vec![id], context.confirm_single_cancel);
+            }
         }
     }
 
     // Selection only ever holds orders that are still working.
-    let working_ids: BTreeSet<OrderId> = snapshot
-        .orders
+    let working_ids: BTreeSet<String> = rows
         .iter()
-        .filter(|v| v.order.status.is_working())
-        .map(|v| v.order.id.clone())
+        .filter(|row| row.working && !row.pending)
+        .map(|row| row.id.clone())
         .collect();
     state.selected.retain(|id| working_ids.contains(id));
 
     let bar = tables::orders_bar(ui, working_ids.len(), state.selected.len());
     if bar.cancel_selected {
-        let ids: Vec<OrderId> = state.selected.iter().cloned().collect();
+        let ids: Vec<String> = state.selected.iter().cloned().collect();
         request_cancel(state, commands, ids, true);
     }
     if bar.cancel_all {
         // Always asks, and says which orders: what is cancelled is what is shown now.
-        let ids: Vec<OrderId> = working_ids.into_iter().collect();
+        let ids: Vec<String> = working_ids.into_iter().collect();
         request_cancel(state, commands, ids, true);
     }
 }
@@ -653,7 +551,7 @@ fn orders_tab(
 fn request_cancel(
     state: &mut BrokerPanelState,
     commands: Option<&dyn BrokerCommands>,
-    ids: Vec<OrderId>,
+    ids: Vec<String>,
     confirm: bool,
 ) {
     if ids.is_empty() {
@@ -679,7 +577,7 @@ fn request_cancel(
 fn send_cancel(
     state: &mut BrokerPanelState,
     commands: Option<&dyn BrokerCommands>,
-    ids: Vec<OrderId>,
+    ids: Vec<String>,
 ) {
     let Some(commands) = commands else {
         return;
@@ -724,7 +622,7 @@ fn history_tab(
         && state.history.error.is_none()
         && let Some(commands) = commands
     {
-        state.history.pending = Some(commands.history(state.history_choice.statuses(), None));
+        state.history.pending = Some(commands.history(state.history_choice, None));
     }
     if state.history.pending.is_some() {
         ui.ctx().request_repaint_after(Duration::from_millis(120));
@@ -772,7 +670,7 @@ fn history_tab(
             let weak = theme::text_secondary();
             match column {
                 0 => grid::figure(ui, &time_text(order.created_ms), weak),
-                1 => grid::text_cell(ui, order.product.as_str(), primary),
+                1 => grid::text_cell(ui, &order.market, primary),
                 2 => grid::tag(
                     ui,
                     if order.side == Side::Buy {
@@ -782,27 +680,19 @@ fn history_tab(
                     },
                     side_color(order.side),
                 ),
-                3 => grid::text_cell(ui, &type_label(order), weak),
+                3 => grid::text_cell(ui, &order.kind, weak),
                 4 => grid::figure(
                     ui,
-                    &order
-                        .average_price
-                        .or(order.limit_price)
-                        .map_or("—".to_owned(), rules::display),
+                    &order.price.map_or("—".to_owned(), rules::display),
                     primary,
                 ),
                 5 => grid::figure(
                     ui,
-                    &format!(
-                        "{} / {}",
-                        rules::display(order.filled_size),
-                        size_text(order)
-                    ),
+                    &format!("{} / {}", rules::display(order.filled), size_text(order)),
                     primary,
                 ),
                 6 => {
-                    let (label, status_tone) = rules::status_label(order.status);
-                    kit::status_badge(ui, label, tone(status_tone));
+                    kit::status_badge(ui, order.status.label, badge_tone(order.status.tone));
                 }
                 _ => grid::figure(ui, &rules::display(order.fees), weak),
             }
@@ -814,7 +704,7 @@ fn history_tab(
         && let Some(commands) = commands
     {
         let cursor = state.history.cursor.clone();
-        state.history.pending = Some(commands.history(state.history_choice.statuses(), cursor));
+        state.history.pending = Some(commands.history(state.history_choice, cursor));
     }
 }
 
@@ -822,14 +712,10 @@ fn fills_tab(
     ui: &mut egui::Ui,
     state: &mut BrokerPanelState,
     commands: Option<&dyn BrokerCommands>,
-    snapshot: &BrokerSnapshot,
+    recent: Vec<FillRow>,
 ) {
     state.fills_more.poll();
-    let mut all: Vec<&LiveFill> = snapshot
-        .fills
-        .iter()
-        .chain(state.fills_more.items.iter())
-        .collect();
+    let mut all: Vec<&FillRow> = recent.iter().chain(state.fills_more.items.iter()).collect();
     all.sort_by_key(|fill| std::cmp::Reverse(fill.time_ms));
     all.dedup_by(|a, b| a.id == b.id);
     if all.is_empty() {
@@ -856,7 +742,7 @@ fn fills_tab(
         let weak = theme::text_secondary();
         match column {
             0 => grid::figure(ui, &time_text(Some(fill.time_ms)), weak),
-            1 => grid::text_cell(ui, fill.product.as_str(), primary),
+            1 => grid::text_cell(ui, &fill.market, primary),
             2 => grid::tag(
                 ui,
                 if fill.side == Side::Buy {
@@ -866,17 +752,10 @@ fn fills_tab(
                 },
                 side_color(fill.side),
             ),
-            3 => grid::figure(
-                ui,
-                &snapshot.product(&fill.product).map_or_else(
-                    || rules::display(fill.price),
-                    |spec| rules::price_display(fill.price, spec),
-                ),
-                primary,
-            ),
+            3 => grid::figure(ui, &fill.price, primary),
             4 => grid::figure(ui, &rules::display(fill.size), primary),
             5 => grid::figure(ui, &rules::display(fill.fee), weak),
-            _ => grid::figure(ui, &short_id(fill.order_id.as_str()), weak),
+            _ => grid::figure(ui, &short_id(&fill.order), weak),
         }
     });
     if kit::sheet_button(
@@ -897,13 +776,8 @@ fn short_id(id: &str) -> String {
     id.chars().take(8).collect()
 }
 
-fn balances_tab(ui: &mut egui::Ui, snapshot: &BrokerSnapshot) {
-    let mut rows: Vec<&degenview_brokers::Balance> = snapshot
-        .balances
-        .iter()
-        .filter(|b| !b.total().is_zero())
-        .collect();
-    rows.sort_by(|a, b| a.asset.cmp(&b.asset));
+fn balances_tab(ui: &mut egui::Ui, backend: &dyn TradingBackend) {
+    let rows = backend.balances();
     if rows.is_empty() {
         empty(
             ui,
@@ -925,7 +799,7 @@ fn balances_tab(ui: &mut egui::Ui, snapshot: &BrokerSnapshot) {
         &COLS,
         rows.len(),
         |ui, row, column| {
-            let balance = rows[row];
+            let balance = &rows[row];
             let primary = theme::text_primary();
             match column {
                 0 => grid::text_cell(ui, &balance.asset, primary),
@@ -939,11 +813,15 @@ fn balances_tab(ui: &mut egui::Ui, snapshot: &BrokerSnapshot) {
 
 // ---- Dialogs: the edit, the cancel question -----------------------------------------------
 
-fn dialogs(
+fn dialogs(ctx: &egui::Context, state: &mut BrokerPanelState, backend: &dyn TradingBackend) {
+    dialogs_with(ctx, state, backend.broker_commands(), &backend.orders());
+}
+
+fn dialogs_with(
     ctx: &egui::Context,
     state: &mut BrokerPanelState,
     commands: Option<&dyn BrokerCommands>,
-    snapshot: &BrokerSnapshot,
+    rows: &[OrderRow],
 ) {
     if let Some(ask) = &state.cancel_ask {
         let count = ask.ids.len();
@@ -964,19 +842,8 @@ fn dialogs(
         let preview: Vec<String> = ids
             .iter()
             .take(8)
-            .filter_map(|id| snapshot.orders.iter().find(|v| &v.order.id == id))
-            .map(|v| {
-                format!(
-                    "{} {} {}",
-                    if v.order.side == Side::Buy {
-                        "Buy"
-                    } else {
-                        "Sell"
-                    },
-                    size_text(&v.order),
-                    v.order.product
-                )
-            })
+            .filter_map(|id| rows.iter().find(|row| &row.id == id))
+            .map(|row| format!("{} {} {}", side_word(row.side), size_text(row), row.market))
             .collect();
         let outcome = dialog::show(ctx, Id::new("broker-cancel-ask"), &spec, |ui| {
             ui.add_space(10.0);
@@ -1006,14 +873,13 @@ fn dialogs(
             None => {}
         }
     }
-    edit_sheet(ctx, state, commands, snapshot);
+    edit_sheet(ctx, state, commands);
 }
 
 fn edit_sheet(
     ctx: &egui::Context,
     state: &mut BrokerPanelState,
     commands: Option<&dyn BrokerCommands>,
-    snapshot: &BrokerSnapshot,
 ) {
     let Some(open) = &mut state.edit else { return };
     let Some(commands) = commands else {
@@ -1023,19 +889,13 @@ fn edit_sheet(
     let venue: &dyn EditVenue = commands;
     let now = Instant::now();
     let session = &mut open.session;
-    let order = session.order();
-    let spec = snapshot.product(&order.product);
-    let live = snapshot
-        .orders
-        .iter()
-        .find(|v| v.order.id == order.id)
-        .map(|v| &v.order);
+    let world = venue.world(&session.order().id);
     let frame = EditFrame {
         now,
-        live,
-        account: snapshot.account.as_ref().map(|account| &account.id),
-        generation: snapshot.generation,
-        spec,
+        live: world.live.as_ref(),
+        account: world.account.as_ref(),
+        generation: world.generation,
+        spec: world.spec.as_ref(),
     };
     let mut step = session.update(&frame, Some(venue));
     if matches!(step, Step::Open) {
@@ -1220,148 +1080,9 @@ fn draw_form(ctx: &egui::Context, session: &mut EditSession, form: &EditForm) ->
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::broker::ticket::edit_blocker;
-    use degenview_brokers::{
-        Capabilities, OrderSize, OrderStatus, OrderType, ProductId, TifKind, Tradability,
-    };
-    use std::str::FromStr;
-
-    fn d(text: &str) -> Decimal {
-        Decimal::from_str(text).unwrap()
-    }
-
-    fn order(status: OrderStatus, kind: OrderType, size: Option<OrderSize>) -> LiveOrder {
-        LiveOrder {
-            id: OrderId::new("o"),
-            client_id: None,
-            product: ProductId::new("BTC-USD"),
-            side: Side::Buy,
-            order_type: kind,
-            status,
-            tif: None,
-            size,
-            limit_price: Some(d("100")),
-            stop_price: None,
-            stop_direction: None,
-            post_only: false,
-            filled_size: d("0"),
-            filled_value: d("0"),
-            average_price: None,
-            fees: d("0"),
-            created_ms: Some(0),
-            updated_ms: None,
-            reason: None,
-            stop_triggered: false,
-        }
-    }
-
-    fn caps(native_edit: bool) -> Capabilities {
-        Capabilities {
-            tradable: Tradability::Yes,
-            order_types: vec![OrderType::Limit],
-            tif: vec![TifKind::GoodTilCancelled],
-            stop_limit_tif: vec![],
-            post_only: false,
-            quote_sized_market: false,
-            native_edit,
-            atomic_replace: false,
-            brackets: false,
-        }
-    }
 
     #[test]
-    fn only_an_open_priced_base_sized_order_with_native_edit_can_be_edited() {
-        let open = order(
-            OrderStatus::Open,
-            OrderType::Limit,
-            Some(OrderSize::Base(d("1"))),
-        );
-        assert_eq!(edit_blocker(&open, Some(&caps(true)), false), None);
-        assert!(
-            edit_blocker(&open, Some(&caps(false)), false)
-                .unwrap()
-                .contains("does not support")
-        );
-        assert!(
-            edit_blocker(&open, None, false)
-                .unwrap()
-                .contains("not been read")
-        );
-        assert!(
-            edit_blocker(&open, Some(&caps(true)), true)
-                .unwrap()
-                .contains("cancel is in progress")
-        );
-        let queued = order(
-            OrderStatus::CancelQueued,
-            OrderType::Limit,
-            Some(OrderSize::Base(d("1"))),
-        );
-        assert!(
-            edit_blocker(&queued, Some(&caps(true)), false)
-                .unwrap()
-                .contains("Only open")
-        );
-        let market = order(
-            OrderStatus::Open,
-            OrderType::Other,
-            Some(OrderSize::Base(d("1"))),
-        );
-        assert!(
-            edit_blocker(&market, Some(&caps(true)), false)
-                .unwrap()
-                .contains("type of order")
-        );
-        let spend = order(
-            OrderStatus::Open,
-            OrderType::Limit,
-            Some(OrderSize::Quote(d("10"))),
-        );
-        assert!(
-            edit_blocker(&spend, Some(&caps(true)), false)
-                .unwrap()
-                .contains("amount to spend")
-        );
-    }
-
-    #[test]
-    fn history_filters_ask_for_finished_statuses_only() {
-        for choice in [
-            HistoryChoice::All,
-            HistoryChoice::Filled,
-            HistoryChoice::Cancelled,
-            HistoryChoice::Expired,
-            HistoryChoice::Rejected,
-        ] {
-            assert!(
-                choice.statuses().iter().all(|s| s.is_terminal()),
-                "{choice:?}"
-            );
-        }
-        assert_eq!(
-            HistoryChoice::Rejected.statuses(),
-            vec![OrderStatus::Failed]
-        );
-    }
-
-    #[test]
-    fn rows_say_what_they_are() {
-        let mut o = order(
-            OrderStatus::Open,
-            OrderType::Limit,
-            Some(OrderSize::Base(d("0.5"))),
-        );
-        o.post_only = true;
-        assert_eq!(type_label(&o), "Limit, post-only");
-        assert_eq!(size_text(&o), "0.5");
-        assert_eq!(
-            size_text(&order(
-                OrderStatus::Open,
-                OrderType::Market,
-                Some(OrderSize::Quote(d("25")))
-            )),
-            "25 (spend)"
-        );
+    fn times_and_ids_are_short() {
         assert_eq!(time_text(None), "—");
         assert_eq!(short_id("abcdefghijkl"), "abcdefgh");
     }

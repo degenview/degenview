@@ -4,10 +4,10 @@
 //! The screens hold this trait, never the broker's runtime: every call is a [`Task`] they poll on
 //! later frames, and a call made while the broker is not connected answers with an error at once.
 
-use degenview_brokers::model::orders::{CancelOutcome, CancelResult, Page};
-use degenview_brokers::{AccountId, ClientOrderId, LiveFill, LiveOrder, OrderId, OrderStatus};
+use degenview_brokers::model::orders::{CancelOutcome, CancelResult};
 
 use super::edit::EditVenue;
+use super::model::{FillRow, OrderRow, Page};
 use super::task::Task;
 
 /// A request that answers once, in words when it fails.
@@ -21,23 +21,31 @@ pub struct CancelReport {
     pub error: bool,
 }
 
+/// Which finished orders the History tab lists.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum HistoryChoice {
+    All,
+    Filled,
+    Cancelled,
+    Expired,
+    Rejected,
+}
+
 pub trait BrokerCommands: EditVenue {
-    /// Looks an unconfirmed order up at the broker, for the account on screen: a record of another
-    /// account is not this one's to look up. It is placed if the broker never saw it.
-    fn retry(&self, client_id: ClientOrderId, account: AccountId) -> Answer<()>;
+    /// Looks an unconfirmed order up at the broker (`id` is its row's id), for the account on
+    /// screen: a record of another account is not this one's to look up. It is placed if the broker
+    /// never saw it.
+    fn retry(&self, id: &str) -> Answer<()>;
 
-    /// Asks the broker to cancel `orders`. An order stays listed until the broker confirms.
-    fn cancel(&self, orders: Vec<OrderId>) -> Answer<CancelReport>;
+    /// Asks the broker to cancel the orders with these ids. An order stays listed until the broker
+    /// confirms.
+    fn cancel(&self, orders: Vec<String>) -> Answer<CancelReport>;
 
-    /// One page of finished orders with one of `statuses`, newest first; `cursor` continues a list.
-    fn history(
-        &self,
-        statuses: Vec<OrderStatus>,
-        cursor: Option<String>,
-    ) -> Answer<Page<LiveOrder>>;
+    /// One page of finished orders, newest first; `cursor` continues a list.
+    fn history(&self, choice: HistoryChoice, cursor: Option<String>) -> Answer<Page<OrderRow>>;
 
     /// One page of fills, newest first; `cursor` continues a list.
-    fn fills(&self, cursor: Option<String>) -> Answer<Page<LiveFill>>;
+    fn fills(&self, cursor: Option<String>) -> Answer<Page<FillRow>>;
 }
 
 /// What a set of cancel answers says, in one sentence, and whether it is a problem.
@@ -89,6 +97,7 @@ fn capitalise(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use degenview_brokers::OrderId;
 
     fn result(outcome: CancelOutcome) -> CancelResult {
         CancelResult {
