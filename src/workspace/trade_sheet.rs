@@ -66,10 +66,9 @@ impl ChartWorkspace {
             last: chart.candles.last().map(|candle| candle.close),
             change: chart.chart.visible_move(&chart.candles),
         });
-        let confirm_resting = match venue {
-            Some(TradingVenue::Broker(id)) => hub.brokers().prefs(id).confirm_resting_orders,
-            _ => false,
-        };
+        let confirm_resting = venue
+            .and_then(|venue| hub.prefs(venue))
+            .is_some_and(|prefs| prefs.confirm_resting_orders);
         let input = SheetInput {
             enabled: &enabled,
             all: &all,

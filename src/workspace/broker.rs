@@ -8,37 +8,35 @@
 
 use std::sync::Arc;
 
-use degenview_brokers::{BrokerId, Decimal, MarketRef, Side};
+use degenview_brokers::{Decimal, MarketRef, Side};
 use eframe::egui;
 
 use super::ChartWorkspace;
 use super::chart::Chart;
-use crate::host::broker_host::BrokerHost;
 use crate::model::broker::chart::Unavailable;
+use crate::model::broker::prefs::BrokerPrefs;
 use crate::model::broker::ticket::{self as rules, TicketKind};
 use crate::model::chart::context::{LiveFacts, LiveOrderRequest};
 use crate::model::chart::kind::ChartType;
 use crate::trading::backend::TradingBackend;
-use crate::trading::broker_backend::BrokerBackend;
 use crate::trading::model::{MarketAccess, OrderClass};
 use crate::ui::broker::chart_trading::{BrokerOverlayAction, OrderLine};
 use crate::ui::broker::panel::{self, PanelContext};
 use crate::ui::theme;
 
 impl ChartWorkspace {
-    /// The broker this tab trades at, as a venue, and the host that holds the user's choices for it.
-    fn active_broker(&self) -> Option<(BrokerId, BrokerBackend, Arc<BrokerHost>)> {
-        let id = self.trading_venue.broker()?;
-        let broker = degenview_brokers::registry::by_id(id)?;
-        let host = self.trading_hub.as_ref()?.brokers().clone();
-        Some((id, BrokerBackend::new(host.clone(), broker), host))
+    /// The venue of the broker this tab trades at, and how the user trades there.
+    fn active_broker(&self) -> Option<(Arc<dyn TradingBackend>, BrokerPrefs)> {
+        let hub = self.trading_hub.as_ref()?;
+        let prefs = hub.prefs(self.trading_venue)?;
+        Some((hub.backend(self.trading_venue)?, prefs))
     }
 
     /// What the orders panel is told about the tab's broker besides the venue itself.
     pub(super) fn broker_panel_context(&self) -> Option<PanelContext> {
-        let (id, _, host) = self.active_broker()?;
+        let (_, prefs) = self.active_broker()?;
         Some(PanelContext {
-            confirm_single_cancel: host.prefs(id).confirm_single_cancel,
+            confirm_single_cancel: prefs.confirm_single_cancel,
         })
     }
 
@@ -64,7 +62,7 @@ impl ChartWorkspace {
     /// Fills each chart card's live inputs: the header pills, the broker's bid and ask, and a line for
     /// each working order. Runs every frame; costs nothing when the tab is on paper.
     pub(super) fn configure_broker_cards(&mut self) {
-        let Some((id, backend, host)) = self.active_broker() else {
+        let Some((backend, prefs)) = self.active_broker() else {
             for chart in &mut self.charts {
                 let live = &mut chart.chart.live;
                 if live.show_lines || live.order_entry.is_some() {
@@ -77,7 +75,7 @@ impl ChartWorkspace {
             }
             return;
         };
-        let show_lines = host.prefs(id).show_on_charts;
+        let show_lines = prefs.show_on_charts;
         let broker_name = backend.info().name;
         let replay = self.replay_blocks_trading();
         let review_closed = replay && self.trade_sheet.close_review();
@@ -153,7 +151,7 @@ impl ChartWorkspace {
 
     /// What the context menu needs to offer live orders on this chart, when a broker is active.
     pub(super) fn live_facts(&self, chart: &Chart) -> Option<LiveFacts> {
-        let (_, backend, _) = self.active_broker()?;
+        let (backend, _) = self.active_broker()?;
         let market = Self::broker_market(chart);
         let unavailable = backend.chart_unavailable(market.as_ref(), self.replay_blocks_trading());
         let rules = market
@@ -177,7 +175,7 @@ impl ChartWorkspace {
     /// Starts an order in the sheet for this chart's market, filled in as the menu or a pill asks.
     /// Refused, with the reason, whenever an order could not be placed from this chart.
     pub(super) fn open_live_ticket(&mut self, chart_index: usize, request: LiveOrderRequest) {
-        let Some((id, backend, host)) = self.active_broker() else {
+        let Some((backend, prefs)) = self.active_broker() else {
             self.say("Choose a broker in the trading panel first.", true);
             return;
         };
@@ -195,14 +193,14 @@ impl ChartWorkspace {
         };
         self.start_order(request.side, Some(class), request.price);
         if request.kind == TicketKind::Market && request.side == Side::Buy {
-            self.trade_sheet.draft.spend_in_quote = host.prefs(id).spend_in_quote_by_default;
+            self.trade_sheet.draft.spend_in_quote = prefs.spend_in_quote_by_default;
         }
     }
 
     /// Acts on what the charts' live lines reported: ask to cancel, or open the edit sheet. Neither
     /// changes anything until the user has confirmed it there.
     pub(super) fn apply_broker_overlay_actions(&mut self, actions: Vec<BrokerOverlayAction>) {
-        let Some((id, backend, host)) = self.active_broker() else {
+        let Some((backend, prefs)) = self.active_broker() else {
             return;
         };
         for action in actions {
@@ -210,19 +208,24 @@ impl ChartWorkspace {
                 BrokerOverlayAction::Cancel(order) => {
                     self.broker_panel.cancel_one(
                         backend.broker_commands(),
-                        host.prefs(id).confirm_single_cancel,
+                        prefs.confirm_single_cancel,
                         order,
                     );
                 }
                 BrokerOverlayAction::ProposeEdit { id: order, price } => {
-                    self.begin_broker_edit(&backend, &order, Some(price));
+                    self.begin_broker_edit(&*backend, &order, Some(price));
                 }
-                BrokerOverlayAction::Open(order) => self.begin_broker_edit(&backend, &order, None),
+                BrokerOverlayAction::Open(order) => self.begin_broker_edit(&*backend, &order, None),
             }
         }
     }
 
-    fn begin_broker_edit(&mut self, backend: &BrokerBackend, order: &str, price: Option<Decimal>) {
+    fn begin_broker_edit(
+        &mut self,
+        backend: &dyn TradingBackend,
+        order: &str,
+        price: Option<Decimal>,
+    ) {
         if self.replay_blocks_trading() {
             self.say(Unavailable::InReplay.text(), true);
             return;
@@ -238,11 +241,11 @@ impl ChartWorkspace {
     /// Draws the ticket, the edit sheet and the cancel question when the panel (which normally does)
     /// is closed, and passes on what it has to say.
     pub(super) fn show_broker_dialogs(&mut self, ctx: &egui::Context) {
-        let Some((_, backend, _)) = self.active_broker() else {
+        let Some((backend, _)) = self.active_broker() else {
             return;
         };
         if !self.paper_panel_visible && self.broker_panel.has_dialog() {
-            panel::dialogs_only(ctx, &mut self.broker_panel, &backend);
+            panel::dialogs_only(ctx, &mut self.broker_panel, &*backend);
         }
         // The panel shows its own message; with it closed the tab's notice does.
         if !self.paper_panel_visible
@@ -265,7 +268,7 @@ mod tests {
     use eframe::egui;
 
     use super::*;
-    use crate::host::broker_host::StoreJournal;
+    use crate::host::broker_host::{BrokerHost, StoreJournal};
     use crate::host::paper_host::PaperHost;
     use crate::host::trading_hub::TradingHub;
     use crate::model::broker::venue::TradingVenue;
