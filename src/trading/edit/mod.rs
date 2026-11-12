@@ -18,7 +18,9 @@
 
 use std::time::{Duration, Instant};
 
-use degenview_brokers::model::orders::{EditOutcome, EditPreview, OrderChange, OrderFingerprint};
+use degenview_brokers::model::orders::{
+    EditOutcome, EditPreview, EditWorld, OrderChange, OrderFingerprint,
+};
 use degenview_brokers::{
     AccountId, Decimal, LiveOrder, OrderId, OrderSize, OrderStatus, OrderType, ProductSpec, Side,
 };
@@ -37,16 +39,6 @@ pub struct EditError {
 }
 
 pub type EditAnswer<T> = Task<Result<T, EditError>>;
-
-/// The order and what an edit of it is read against, as the venue has them now.
-#[derive(Clone, Debug, Default)]
-pub struct EditWorld {
-    /// The order; `None` once it is gone.
-    pub live: Option<LiveOrder>,
-    pub account: Option<AccountId>,
-    pub generation: u64,
-    pub spec: Option<ProductSpec>,
-}
 
 /// What the venue does for an edit. Implemented by a connected broker.
 pub trait EditVenue {
