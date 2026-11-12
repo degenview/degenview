@@ -97,7 +97,6 @@ exact crates.io version, and a half-moved rule would be written twice.
 
 | Move | From | Why it belongs there |
 | --- | --- | --- |
-| Quote cache and freshness (local age plus the exchange's own time) | `host/broker_host.rs` (`want_quote`, `quote`, `tick_quotes`) | A "never show a stale price as fresh" rule; testable with the crate's `ManualClock`, on one clock |
 | Edit rules: `EditSession`, `issues`, `edit_blocker`, `PreviewGate` and `PREVIEW_FRESH` | `trading/edit/`, `model/broker/ticket.rs` | The crate already owns `OrderFingerprint`, `OrderChange`, `EditPreview` and the runtime's refusal of a changed order; the rules could be tested against the mock exchange. Needs the crate's `Pending` where the app uses `Task` |
 | Ticket text to order, issues, estimate | `model/broker/ticket.rs` | About 70% of it is `validate_draft` already; what is left imports only the crate |
 | Pending-order journal over a two-method storage trait | `host/broker_host.rs::StoreJournal` | `MemoryJournal` repeats the same key and "unreadable is an error" logic |
@@ -109,6 +108,9 @@ Later and larger: the connection manager and its secrets queue.
 
 ## Fixed since
 
+* The quote cache and its freshness rule are the crate's `model::quotes` (`QuoteBoard`) and
+  `BrokerRuntime::{want_quote, fresh_quote, tick_quotes}` from 0.3.1; `BrokerHost` only delegates, and a
+  replaced connection can no longer show the old one's prices because the cache lives in the runtime.
 * Account valuation (`valuation_currency`, `value`, `Quote::mark`) is the crate's `model::valuation`
   from 0.3.1; the app keeps only how money and rates are written (`trading/money.rs`).
 * The edit-order state machine, the commands and reads path for the panel and chart, and the injected
