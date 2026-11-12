@@ -14,8 +14,7 @@ use super::fields::{self, Edit, Hero};
 use super::figures;
 use super::venue_pill::{self, PillAction};
 use crate::model::DataSource;
-use crate::model::broker::ticket::PREVIEW_DEBOUNCE;
-use crate::model::broker::ticket::{PreviewGate, parse_decimal};
+use crate::model::broker::ticket::parse_decimal;
 use crate::model::broker::venue::TradingVenue;
 use crate::trading::backend::TradingBackend;
 use crate::trading::confirm;
@@ -35,6 +34,7 @@ use crate::ui::{
     paper::form,
     theme,
 };
+use degenview_brokers::model::preview::{PREVIEW_DEBOUNCE, PreviewGate};
 
 /// How long a message stays under the button.
 const NOTICE_FOR: Duration = Duration::from_secs(10);

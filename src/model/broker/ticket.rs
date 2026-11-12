@@ -9,8 +9,7 @@
 
 use std::str::FromStr;
 
-use std::time::Duration;
-
+use degenview_brokers::model::edit::{EditBlock, edit_block};
 use degenview_brokers::model::orders::FeeSummary;
 use degenview_brokers::model::reducer::{Notice, NoticeKind};
 use degenview_brokers::validate::{self, Field};
@@ -386,58 +385,6 @@ fn group_thousands(text: &str) -> String {
     }
 }
 
-/// How long the broker's answer to a preview may be acted on. A preview is a statement about the
-/// market a moment ago; after this it is asked for again.
-pub const PREVIEW_FRESH: Duration = Duration::from_secs(60);
-
-/// How long typing must pause before the broker is asked to preview what is typed.
-pub const PREVIEW_DEBOUNCE: Duration = Duration::from_millis(450);
-
-/// What the broker has said about the order as it stands, from the ticket's or the edit sheet's
-/// point of view.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum PreviewAnswer {
-    /// Not asked yet, or asked and not answered.
-    Waiting,
-    /// The question could not be answered (the connection, a refusal of the preview itself).
-    Failed(String),
-    /// The broker answered that it would refuse the order.
-    Problems,
-    /// The broker answered that it would accept the order.
-    Accepted,
-}
-
-/// Whether the order may be reviewed. **Only a fresh, accepting answer from the broker allows it**:
-/// no answer, a failed answer and an old answer do not. (The broker's create endpoint does not
-/// require a preview, so this is this application's rule, not the broker's.)
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum PreviewGate {
-    Waiting,
-    Failed(String),
-    Blocked,
-    Stale,
-    Ready,
-}
-
-impl PreviewGate {
-    pub fn allows_review(&self) -> bool {
-        *self == Self::Ready
-    }
-}
-
-/// `age` is how long ago the accepting answer arrived.
-pub fn preview_gate(answer: PreviewAnswer, age: Option<Duration>) -> PreviewGate {
-    match answer {
-        PreviewAnswer::Waiting => PreviewGate::Waiting,
-        PreviewAnswer::Failed(text) => PreviewGate::Failed(text),
-        PreviewAnswer::Problems => PreviewGate::Blocked,
-        PreviewAnswer::Accepted => match age {
-            Some(age) if age <= PREVIEW_FRESH => PreviewGate::Ready,
-            _ => PreviewGate::Stale,
-        },
-    }
-}
-
 /// What the user is told when something happens to an order.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NoticeText {
@@ -526,29 +473,21 @@ pub enum StatusTone {
     Neutral,
 }
 
-/// Why an order cannot be edited, or `None` when it can.
+/// Why an order cannot be edited, or `None` when it can. The rule is the crate's
+/// (`model::edit::edit_block`); these are the words.
 pub fn edit_blocker(
     order: &LiveOrder,
     caps: Option<&Capabilities>,
     cancelling: bool,
 ) -> Option<&'static str> {
-    if order.status != OrderStatus::Open {
-        return Some("Only open orders can be edited.");
-    }
-    if cancelling {
-        return Some("A cancel is in progress for this order.");
-    }
-    if !matches!(order.order_type, OrderType::Limit | OrderType::StopLimit) {
-        return Some("This type of order cannot be edited.");
-    }
-    if matches!(order.size, Some(OrderSize::Quote(_))) || order.size.is_none() {
-        return Some("Orders sized by an amount to spend cannot be edited.");
-    }
-    match caps {
-        Some(caps) if caps.native_edit => None,
-        Some(_) => Some("This broker does not support editing this market's orders."),
-        None => Some("The market's rules have not been read yet."),
-    }
+    edit_block(order, caps, cancelling).map(|block| match block {
+        EditBlock::NotOpen => "Only open orders can be edited.",
+        EditBlock::Cancelling => "A cancel is in progress for this order.",
+        EditBlock::TypeNotEditable => "This type of order cannot be edited.",
+        EditBlock::SizedByAmount => "Orders sized by an amount to spend cannot be edited.",
+        EditBlock::NotSupported => "This broker does not support editing this market's orders.",
+        EditBlock::RulesNotRead => "The market's rules have not been read yet.",
+    })
 }
 
 /// An order's size as the lists show it: the base amount, or the amount to spend.
@@ -811,49 +750,6 @@ mod tests {
             // Nothing is guessed from a ticket that does not parse yet.
             assert_eq!(limit("", "").estimate(ctx), Estimate::default());
         });
-    }
-
-    #[test]
-    fn only_a_fresh_accepting_answer_from_the_broker_allows_a_review() {
-        let fresh = Some(Duration::from_secs(5));
-        assert_eq!(
-            preview_gate(PreviewAnswer::Waiting, None),
-            PreviewGate::Waiting
-        );
-        assert_eq!(
-            preview_gate(PreviewAnswer::Failed("down".to_owned()), None),
-            PreviewGate::Failed("down".to_owned())
-        );
-        assert_eq!(
-            preview_gate(PreviewAnswer::Problems, fresh),
-            PreviewGate::Blocked
-        );
-        assert_eq!(
-            preview_gate(PreviewAnswer::Accepted, fresh),
-            PreviewGate::Ready
-        );
-        assert_eq!(
-            preview_gate(
-                PreviewAnswer::Accepted,
-                Some(PREVIEW_FRESH + Duration::from_secs(1))
-            ),
-            PreviewGate::Stale,
-            "an old answer is not an answer"
-        );
-        assert_eq!(
-            preview_gate(PreviewAnswer::Accepted, None),
-            PreviewGate::Stale,
-            "an answer of unknown age is not fresh"
-        );
-        for gate in [
-            PreviewGate::Waiting,
-            PreviewGate::Failed("x".to_owned()),
-            PreviewGate::Blocked,
-            PreviewGate::Stale,
-        ] {
-            assert!(!gate.allows_review(), "{gate:?}");
-        }
-        assert!(PreviewGate::Ready.allows_review());
     }
 
     #[test]

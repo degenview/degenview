@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 use super::draft::PreviewResult;
 use super::task::Task;
-use crate::model::broker::ticket::{PREVIEW_FRESH, PreviewAnswer, PreviewGate, preview_gate};
+use degenview_brokers::model::preview::{PREVIEW_FRESH, PreviewAnswer, PreviewGate, preview_gate};
 
 type Answer = Result<PreviewResult, String>;
 
