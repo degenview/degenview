@@ -321,7 +321,7 @@ impl BrokerPanelState {
         id: &str,
         price: Option<Decimal>,
     ) -> bool {
-        let Some(order) = commands.and_then(|commands| commands.world(&OrderId::new(id)).live)
+        let Some(order) = commands.and_then(|commands| commands.world(&OrderId::new(id)).order)
         else {
             return false;
         };
@@ -892,7 +892,7 @@ fn edit_sheet(
     let world = venue.world(&session.order().id);
     let frame = EditFrame {
         now,
-        live: world.live.as_ref(),
+        live: world.order.as_ref(),
         account: world.account.as_ref(),
         generation: world.generation,
         spec: world.spec.as_ref(),

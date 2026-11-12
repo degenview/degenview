@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
 
-use degenview_brokers::model::orders::Problem;
+use degenview_brokers::model::orders::{EditWorld, Problem};
 use degenview_brokers::{OrderStatus, ProductId, Restrictions};
 
 use super::*;
