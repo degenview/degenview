@@ -26,7 +26,7 @@ pub enum TabTitleStyle {
 }
 
 impl TabTitleStyle {
-    /// The `setting` row the choice is stored under. Local to the Mac (see `sync::policy`).
+    /// The `setting` row the choice is stored under. Local to the Mac (see `sync::record::policy`).
     pub const KEY: &'static str = "tab.title_style";
 
     pub const ALL: [Self; 3] = [Self::Full, Self::SymbolOnly, Self::LayoutOnly];

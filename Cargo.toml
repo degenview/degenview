@@ -18,7 +18,7 @@ alloc-count = []
 # Off by default so developers without the entitlements or a Swift toolchain are unaffected.
 icloud = []
 # `dev-unsealed-mcp` lets a developer's `--release` binary honour DEGENVIEW_NO_KEYCHAIN for the MCP
-# credential seal (src/mcp/seal.rs), so MCP rows can be seeded into a scratch HOME. Debug builds
+# credential seal (src/mcp/transport/seal.rs), so MCP rows can be seeded into a scratch HOME. Debug builds
 # honour it without the feature. Never enable it for a build that is distributed: the variable
 # would then let any process that can write the database launch the app with the seal off.
 dev-unsealed-mcp = []
@@ -61,10 +61,10 @@ http = "1.5.0"
 tokio-util = "0.7.20"
 tower = { version = "0.5.3", features = ["limit"] }
 similar = { version = "3.2.0", default-features = false, features = ["std"] }
-# Windows self-update unpacks the release zip in-process (`update_archive::extract_exe`); macOS uses
+# Windows self-update unpacks the release zip in-process (`update::archive::extract_exe`); macOS uses
 # ditto. Inflate only: no compression, no zopfli.
 zip = { version = "9.2.2", default-features = false, features = ["deflate-flate2"] }
-# Linux self-update unpacks the release tarball in-process (`update_archive::extract_tar_gz_binary`).
+# Linux self-update unpacks the release tarball in-process (`update::archive::extract_tar_gz_binary`).
 # No xattr support: nothing but the one binary is ever written.
 tar = { version = "0.4.46", default-features = false }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "logging", "tls12"] }
@@ -88,8 +88,8 @@ rfd = { version = "0.17", default-features = false, features = ["xdg-portal"] }
 # protocol only.
 x11rb = { version = "0.14", default-features = false }
 
-# Secret storage on Windows: Credential Manager (`service::windows_credentials`) and DPAPI for the MCP
-# TLS key file (`mcp::tls_protect`). Already in the tree (eframe, mio, tokio); generated bindings,
+# Secret storage on Windows: Credential Manager (`service::keychain::windows_credentials`) and DPAPI for the MCP
+# TLS key file (`mcp::transport::tls_protect`). Already in the tree (eframe, mio, tokio); generated bindings,
 # no dependencies of its own.
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.61.2", default-features = false, features = ["Win32_Foundation", "Win32_Security_Credentials", "Win32_Security_Cryptography"] }

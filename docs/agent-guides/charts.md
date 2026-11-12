@@ -153,7 +153,7 @@ Read [chart overlays](../chart-overlays.md) first. Short rules:
   `Projection.measure` (painting context), never guess. Nothing painted at the click spot → needs
   `Screen.hit`. Screen-fixed tools (pinned table) have no anchors, move via `edit::translate`.
   Content is named, never carried: a picture's hash or a link; new pictures go through
-  `service::image_ingest` on a worker, never the UI thread. Only a Post card's Preview button
+  `service::annotation::ingest` on a worker, never the UI thread. Only a Post card's Preview button
   contacts a service, after a one-time allow.
 - `Drawing::sample`, `sample_content` (tests) build any tool; every-tool loops must cover content
   tools, not skip them.
@@ -161,7 +161,7 @@ Read [chart overlays](../chart-overlays.md) first. Short rules:
 ## Context menus
 
 - One menu per right-click: drawing's (`ui::drawing::layer::menu`), else chart's
-  (`model::chart::context` builds, `ui::chart::context_menu` draws, `workspace/context.rs` runs).
+  (`model::chart::context` builds, `ui::chart::context_menu` draws, `workspace/chart/context/mod.rs` runs).
   New entry: a `Command`, a row in the model's `menu`, an arm in `run_context_command`. Menus never
   mutate.
 - Click captured once as `ChartContext` (chart, market, time, price, target) via the card's
@@ -171,7 +171,7 @@ Read [chart overlays](../chart-overlays.md) first. Short rules:
   alert editor for review.
 - Chart-moving and drawing drags/clicks are primary-button only.
 - Alert tags drag to a new level: the card only reports `AlertMove`, the workspace makes
-  `WorkspaceAction::MoveAlert` (`workspace/context.rs`); the card never edits a `PriceAlert`.
+  `WorkspaceAction::MoveAlert` (`workspace/chart/context/mod.rs`); the card never edits a `PriceAlert`.
   Percentage alerts and replays never drag.
 - Cursor time lock, Table view feed, alert lines: card state, never saved, never in a template or
   linked navigation. Table and Object Tree read what the chart already draws; the tree is a view
@@ -222,6 +222,6 @@ Read [chart overlays](../chart-overlays.md) first. Short rules:
   provider, controls display/open/export. Opening focuses or adds the card, never replaces the
   focused chart's market.
 - `portfolio_id` and its derived key are translated to shared ids on layout/watchlist sync
-  (`sync::ids::map_card`); any new place storing a portfolio id must join that translation.
+  (`sync::record::ids::map_card`); any new place storing a portfolio id must join that translation.
 - Top Performers ranks each market's candles without FX, scales today's value by return, assuming
   unchanged quantity.

@@ -13,7 +13,7 @@ use super::prompt::Mode;
 use super::tools::ToolBox;
 use crate::pine_studio::debug::studio_tests::Rig;
 use crate::pine_studio::*;
-use crate::service::keychain_ai_keys::AiKeyStore;
+use crate::service::keychain::ai_keys::AiKeyStore;
 use crate::service::llm::mock::{MockProvider, Scripted};
 use crate::service::llm::{ChatMessage, ChatRequest, Done, LlmError, LlmProvider, ProviderKind};
 

@@ -29,7 +29,7 @@
 [Setup]
 ; The installer's identity, and the key under Settings > Installed apps. NEVER change it: a new id
 ; makes the next installer install beside the old one instead of over it. The app writes the same
-; id (`INSTALLER_APP_ID` in src/service/self_update/installed_version.rs, kept in step by a test) to keep
+; id (`INSTALLER_APP_ID` in src/service/update/install/installed_version.rs, kept in step by a test) to keep
 ; the displayed version current after a self-update.
 AppId={{79717C79-2D1E-4206-B25A-F3E626438640}
 AppName=DegenView

@@ -73,7 +73,7 @@ jobs:
           ! otool -L target/debug/degenview-alert-agent | grep -q libswift
           otool -L target/debug/degenview | grep -q libswiftCloudKit
 
-  # The Windows self-updater (`service::self_update::portable_binary`) only runs there, and the full
+  # The Windows self-updater (`service::update::install::portable_binary`) only runs there, and the full
   # suite has never been run on Windows, so this job runs the update tests and no more. It also
   # proves the whole crate still compiles for Windows, which the release build otherwise finds out.
   # Two runners: x64, and native ARM64, which is where `ring`, the bundled SQLite and the windowing
@@ -115,4 +115,4 @@ jobs:
         shell: bash
         env:
           DEGENVIEW_NO_KEYCHAIN: "1"
-        run: cargo test --locked --lib -- self_update update_archive update_check update_host windows_credentials tls_protect
+        run: cargo test --locked --lib -- update::install update::archive update::check host::update windows_credentials tls_protect

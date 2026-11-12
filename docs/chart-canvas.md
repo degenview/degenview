@@ -6,7 +6,7 @@ built. Companion to [chart-types.md](chart-types.md) (Appearance ▸ chart types
 The model is `src/model/chart/canvas/mod.rs` (`ChartCanvas`, kept in `ChartAppearance::canvas`), the
 painting is `src/ui/chart/canvas.rs` and `ChartCard::body`, the page is
 `src/ui/chart/settings/canvas.rs`, and templates are `src/model/chart/template/mod.rs`,
-`src/store/chart_template.rs` and `src/ui/chart/settings/templates/mod.rs`.
+`src/store/chart/template/mod.rs` and `src/ui/chart/settings/templates/mod.rs`.
 
 ## What is verified against TradingView, and what is not
 

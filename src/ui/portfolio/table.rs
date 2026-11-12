@@ -95,8 +95,8 @@ pub fn paint_asset_icon(ui: &egui::Ui, rect: egui::Rect, asset: &PortfolioAsset)
     let looked_up =
         !asset.source.is_prediction_market() && asset.source != DataSource::CoinMarketCap;
     if looked_up {
-        let market = service::portfolio_history::market_symbol(asset);
-        if let Some(url) = service::icon::get_url(asset.source, &market) {
+        let market = service::portfolio::history::market_symbol(asset);
+        if let Some(url) = service::image::icon::get_url(asset.source, &market) {
             egui::Image::new(url)
                 .fit_to_exact_size(rect.size())
                 .corner_radius(egui::CornerRadius::same((size / 2.0) as u8))
@@ -109,7 +109,7 @@ pub fn paint_asset_icon(ui: &egui::Ui, rect: egui::Rect, asset: &PortfolioAsset)
             );
             return;
         }
-        service::icon::request_with_base(asset.source, &market, &ticker);
+        service::image::icon::request_with_base(asset.source, &market, &ticker);
     }
     let seed = ticker
         .to_uppercase()

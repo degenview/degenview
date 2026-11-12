@@ -585,9 +585,9 @@ mod tests {
             ("paper", include_str!("../paper/mod.rs")),
             ("alert_engine", include_str!("../alert/engine.rs")),
             ("alert", include_str!("../alert/mod.rs")),
-            ("paper_host", include_str!("../../host/paper_host.rs")),
-            ("alert_host", include_str!("../../host/alert_host.rs")),
-            ("alert_runtime", include_str!("../../host/alert_runtime.rs")),
+            ("paper_host", include_str!("../../host/paper/mod.rs")),
+            ("alert_host", include_str!("../../host/alert/mod.rs")),
+            ("alert_runtime", include_str!("../../host/alert/runtime.rs")),
         ];
         for (name, source) in sources {
             for word in [

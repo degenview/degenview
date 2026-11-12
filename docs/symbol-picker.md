@@ -3,7 +3,7 @@
 `src/ui/chart/symbol_picker/` is the modal that changes the market of the focused chart. It opens from the
 symbol button at the left of the toolbar (`workspace/toolbar.rs`, `ToolbarAction::OpenSymbolSearch`)
 or with ⌘K / Ctrl+K (`shortcut::SYMBOL_SEARCH`, handled in `workspace/input.rs`). The workspace side
-(`src/workspace/symbol_picker.rs`) opens it, keeps the highlighted market priced and applies a pick.
+(`src/workspace/chart/symbol_picker.rs`) opens it, keeps the highlighted market priced and applies a pick.
 
 ## What it does
 
@@ -52,7 +52,7 @@ stays.
 
 ## Ranking
 
-`service/search_rank.rs` is the one rule, used inside each provider and across all of them
+`service/market/search_rank.rs` is the one rule, used inside each provider and across all of them
 (`merge_ranked`). A query is normalised to letters and digits, so `btc/usd`, `BTC-USD` and `BTC USD`
 are one query, and Binance and Coinbase match it against their own lists the same way (`BTC-USDT`
 finds Binance's `BTCUSDT` and Coinbase's `BTC-USDT`). Tiers:

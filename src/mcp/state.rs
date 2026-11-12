@@ -5,8 +5,8 @@
 //! effect on the very next request. Nothing here knows about HTTP or egui.
 
 use crate::mcp::audit::AuditQueue;
-use crate::mcp::cancel::CallRegistry;
-use crate::mcp::limits::{RateLimiter, RateLimits};
+use crate::mcp::transport::cancel::CallRegistry;
+use crate::mcp::transport::limits::{RateLimiter, RateLimits};
 use crate::model::DataSource;
 use crate::model::InstrumentId;
 use crate::model::mcp::{McpClient, Peer, Permission, PermissionSet};
@@ -289,14 +289,14 @@ impl McpShared {
         peer: Option<Peer>,
         between: impl FnOnce(),
     ) -> Option<ClientIdentity> {
-        let presented = crate::mcp::auth::verifier_hex(token);
+        let presented = crate::mcp::transport::auth::verifier_hex(token);
         let mut matched: Option<String> = None;
         {
             let config = self.read();
             // Every verifier is compared, with no early exit, so timing does not reveal
             // which one matched.
             for client in &config.clients {
-                if crate::mcp::auth::verifiers_match(&client.verifier, &presented) {
+                if crate::mcp::transport::auth::verifiers_match(&client.verifier, &presented) {
                     matched = Some(client.id.clone());
                 }
             }
@@ -305,7 +305,8 @@ impl McpShared {
         between();
         let mut config = self.write();
         let client = config.clients.iter_mut().find(|client| {
-            client.id == id && crate::mcp::auth::verifiers_match(&client.verifier, &presented)
+            client.id == id
+                && crate::mcp::transport::auth::verifiers_match(&client.verifier, &presented)
         })?;
         // After the verifier, so the order of checks is not an oracle for which tokens exist;
         // before any use is recorded, so a refused address leaves no trace on the client.
@@ -486,7 +487,7 @@ impl McpShared {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mcp::auth::verifier_hex;
+    use crate::mcp::transport::auth::verifier_hex;
 
     fn client(id: &str, token: &str, permissions: &[Permission]) -> McpClient {
         McpClient {

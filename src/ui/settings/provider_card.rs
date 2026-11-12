@@ -7,12 +7,12 @@
 //! needs no code on this page.
 
 use crate::model::chart::snapshot::{FieldValues, SnapshotPrefs};
-use crate::service::keychain_snapshot_secrets::{SecretState, SnapshotSecrets};
-use crate::service::snapshot_providers::{
+use crate::service::keychain::snapshot_secrets::{SecretState, SnapshotSecrets};
+use crate::service::snapshot::providers::{
     Destination, FieldKind, FieldSpec, Glyph, Logo, ProviderDescriptor, Readiness, SecretPresence,
     SnapshotProvider,
 };
-use crate::service::snapshot_upload::{self, UreqTransport};
+use crate::service::snapshot::upload::{self, UreqTransport};
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::Tone;
 use crate::ui::paper::form;
@@ -210,7 +210,7 @@ impl ProviderForm {
                 secrets.insert(&key, value);
             }
             let label = destination.label();
-            let result = snapshot_upload::test(&UreqTransport::default(), &destination, &secrets)
+            let result = upload::test(&UreqTransport::default(), &destination, &secrets)
                 .map_err(|error| error.message(&label));
             let _ = sender.send(result);
         });
@@ -476,7 +476,7 @@ fn secret_hint(spec: &FieldSpec, state: SecretState) -> String {
 fn choice_field(
     ui: &mut egui::Ui,
     spec: &FieldSpec,
-    choices: &[crate::service::snapshot_providers::Choice],
+    choices: &[crate::service::snapshot::providers::Choice],
     value: &mut String,
 ) -> bool {
     ui.spacing_mut().item_spacing.y = 0.0;
@@ -666,7 +666,7 @@ fn paint_logo(ui: &egui::Ui, logo: Logo, tile: egui::Rect) {
 mod tests {
     use super::*;
     use crate::model::chart::snapshot::SELF_HOSTED;
-    use crate::service::snapshot_providers::{imgbb, self_hosted};
+    use crate::service::snapshot::providers::{imgbb, self_hosted};
 
     fn imgbb_descriptor() -> &'static ProviderDescriptor {
         imgbb::IMGBB.descriptor()
@@ -918,7 +918,7 @@ mod tests {
 
     #[test]
     fn every_secret_can_be_removed_and_says_so() {
-        for provider in crate::service::snapshot_providers::registry() {
+        for provider in crate::service::snapshot::providers::registry() {
             let descriptor = provider.descriptor();
             for field in descriptor.secret_fields() {
                 assert!(

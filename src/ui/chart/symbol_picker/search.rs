@@ -3,11 +3,11 @@
 //! One search asks every provider of the chosen scope at once, each on its own thread, and keeps
 //! each answer under `(query, provider)`. Moving between scopes or venues therefore re-reads what
 //! was already fetched and asks only for what is missing. The answers are merged by
-//! `service::search_rank`, so "btc" lists every dollar market for BTC on every exchange before
+//! `service::market::search_rank`, so "btc" lists every dollar market for BTC on every exchange before
 //! BTC priced in lira.
 
 use crate::model::DataSource;
-use crate::service::search_rank::{self, is_dollar_quote};
+use crate::service::market::search_rank::{self, is_dollar_quote};
 use crate::service::{self, SearchResult};
 use crate::ui::chart::add::sheet::{CRYPTO_SUGGESTIONS, STOCK_SUGGESTIONS};
 use eframe::egui;

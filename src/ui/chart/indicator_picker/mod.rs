@@ -24,7 +24,7 @@ use preview::Previews;
 use sections::{Block, Section};
 use std::collections::HashSet;
 
-/// Where the favorites list is kept (`sync::policy` lists it as a portable setting).
+/// Where the favorites list is kept (`sync::record::policy` lists it as a portable setting).
 pub const FAVORITES_KEY: &str = "indicatorPicker.favorites";
 
 const SIZE: egui::Vec2 = vec2(1040.0, 680.0);

@@ -3,12 +3,12 @@
 ## Alerts
 
 - `AlertHost` owns in-app price alerts: loads persistence, drains `alert_command`, exposes the
-  evaluated snapshot. The embedded login-item alert agent (`host/alert_runtime.rs`) runs the same
+  evaluated snapshot. The embedded login-item alert agent (`host/alert/runtime.rs`) runs the same
   host while the app is closed; exactly one process owns evaluation (a file lock).
 - iCloud Sync: only an alert's definition syncs; remote changes arrive as `alert_command`s, never
   table writes. An alert synced from another Mac is *muted* here (`price_alert_local`,
   `AlertEngine::set_muted`): defined, not polled or evaluated, so one Mac notifies. Keep runtime
-  fields out of `sync::project`'s alert projection.
+  fields out of `sync::record::project`'s alert projection.
 - Unseen count comes from `alerts.lastSeenAt`, never an event flag (snapshot replacement rewrites
   events). `ui::alert::banner` shows over every workspace.
 - New-alert sheets opened from charts/watchlists belong to the requesting `ChartWorkspace` and send
@@ -29,7 +29,7 @@
   typed. Logs and any text not the user's own configuration go through `webhook_policy::redact`.
 - The single Keychain secret enters only at `{{secret}}`: percent-encoded in URLs, raw in headers,
   never in hostnames or bodies. Never log or persist resolved URLs or headers.
-- `service::webhook_delivery` is the only transport (currently osascript-backed). Claim the delivery
+- `service::webhook::delivery` is the only transport (currently osascript-backed). Claim the delivery
   row before sending so each trigger reaches each endpoint once. No retries or redirects.
 - Persisted alert/webhook fields need serde defaults for missing older fields: undecodable alert
   rows are dropped when the snapshot is rewritten.

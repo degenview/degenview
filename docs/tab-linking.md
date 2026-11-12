@@ -4,8 +4,8 @@ Tabs tagged with the same colour keep chosen parts of their chart in step, in an
 not [Link charts](chart-sync.md), which carries a pan or zoom between the charts of one layout;
 Tab Linking is between tabs and only ever touches the chart the user is working in.
 
-Code: `model::tab::link` (pure model, hub and tests), `host::tab_link_host` (the switches, saved),
-`workspace/tab_link.rs` (a tab's side), `DegenViewApp::tick_tab_links` in `app.rs` (the tick),
+Code: `model::tab::link` (pure model, hub and tests), `host::tab::link` (the switches, saved),
+`workspace/tab_link/mod.rs` (a tab's side), `DegenViewApp::tick_tab_links` in `app.rs` (the tick),
 `ui/window/tab_link_menu/mod.rs` (the menu section), and the underline and the right-click menu in `ui/window/tab_bar.rs`.
 
 ## What TradingView says, and what is ours
@@ -85,7 +85,7 @@ Vertical scales are never carried.
 `PersistedWorkspace.link` (`"orange"`, ...), skipped when none, so old rows decode and a row from a
 newer build with a colour this one does not know reads as not linked rather than failing the whole
 `tab` table. The switches are the `tab.link_toggles` setting. The `tab` table and that key are
-both local to the Mac (`sync::policy`), so nothing here reaches CloudKit, and the colour is not in
+both local to the Mac (`sync::record::policy`), so nothing here reaches CloudKit, and the colour is not in
 a saved layout.
 
 ## UI

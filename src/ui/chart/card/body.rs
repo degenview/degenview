@@ -85,8 +85,10 @@ impl ChartCard {
         if args.candles.is_empty() {
             return true;
         }
-        if args.source == DataSource::CoinMarketCap && crate::service::cmc::is_latest(args.symbol) {
-            if let Some(reading) = crate::service::cmc::latest_reading(args.symbol) {
+        if args.source == DataSource::CoinMarketCap
+            && crate::service::market::cmc::is_latest(args.symbol)
+        {
+            if let Some(reading) = crate::service::market::cmc::latest_reading(args.symbol) {
                 let description =
                     crate::ui::chart::cmc_gauge::paint(ui, painter, rect, args.symbol, &reading);
                 response.widget_info(|| {

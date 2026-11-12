@@ -1461,7 +1461,7 @@ fn detail_panel(
         |timestamp| {
             crate::model::paper::format::timestamp(
                 timestamp,
-                crate::service::timezone::local_utc_offset_secs(timestamp),
+                crate::service::system::timezone::local_utc_offset_secs(timestamp),
             )
         },
     );
@@ -2099,17 +2099,18 @@ fn import_window(
                     let (sender, receiver) = mpsc::channel();
                     state.import_picker = Some(receiver);
                     std::thread::spawn(move || {
-                        let result =
-                            crate::service::file_dialog::choose_csv("Choose watchlist symbols")
-                                .and_then(|path| {
-                                    path.map(|path| {
-                                        crate::service::file_dialog::read_text_up_to(
-                                            &path,
-                                            crate::model::watchlist::text::MAX_IMPORT_BYTES,
-                                        )
-                                    })
-                                    .transpose()
-                                });
+                        let result = crate::service::system::file_dialog::choose_csv(
+                            "Choose watchlist symbols",
+                        )
+                        .and_then(|path| {
+                            path.map(|path| {
+                                crate::service::system::file_dialog::read_text_up_to(
+                                    &path,
+                                    crate::model::watchlist::text::MAX_IMPORT_BYTES,
+                                )
+                            })
+                            .transpose()
+                        });
                         let _ = sender.send(result);
                     });
                 }

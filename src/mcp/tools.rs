@@ -10,28 +10,28 @@ use crate::mcp::bridge::{
     AlertCommandOutcome, AlertUpdate, BridgeClient, McpCommand, McpError, McpReply, NewAlert,
     REQUEST_TIMEOUT,
 };
-use crate::mcp::chart_control::{REMOVE_CHART, SET_CHART_TYPE, SET_TIMEFRAME};
-use crate::mcp::chart_data::{DEFAULT_CANDLES, MAX_CANDLES};
-use crate::mcp::drawings::{
+use crate::mcp::chart::control::{REMOVE_CHART, SET_CHART_TYPE, SET_TIMEFRAME};
+use crate::mcp::chart::data::{DEFAULT_CANDLES, MAX_CANDLES};
+use crate::mcp::chart::drawings::{
     AnchorArg, DrawingEdit, MAX_DELETES_PER_CALL, MAX_DRAWINGS_PER_CALL, McpDash, NewDrawingArg,
     StylePatch, TimeArg, parse_drawing_id, parse_time,
 };
-use crate::mcp::indicator_tools::{GET_INDICATOR_VALUES, REMOVE_INDICATOR};
-use crate::mcp::market_tools::{
+use crate::mcp::indicator::tools::{GET_INDICATOR_VALUES, REMOVE_INDICATOR};
+use crate::mcp::market::tools::{
     CREATE_WATCHLIST, DELETE_WATCHLIST, GET_MARKET_CANDLES, GET_QUOTES, GET_WATCHLIST,
     LIST_WATCHLISTS, SEARCH_SYMBOLS, UPDATE_WATCHLIST,
 };
-use crate::mcp::paper_tools::{
+use crate::mcp::paper::tools::{
     CANCEL_PAPER_ORDERS, CLOSE_PAPER_POSITIONS, GET_PAPER_ACCOUNT, LIST_PAPER_ACCOUNTS,
     LIST_PAPER_FILLS, LIST_PAPER_TRADES, MODIFY_PAPER_ORDER, PLACE_PAPER_ORDER,
 };
 use crate::mcp::pine::{self, InputArgs, Target, Version};
-use crate::mcp::portfolio_tools::{
+use crate::mcp::portfolio::tools::{
     GET_PORTFOLIO_HOLDINGS, LIST_PORTFOLIO_TRANSACTIONS, LIST_PORTFOLIOS,
 };
-use crate::mcp::replay_tools::{CONTROL_REPLAY, GET_REPLAY};
-use crate::mcp::session_stats_tools::GET_SESSION_STATS;
-use crate::mcp::snapshot_tools::GET_CHART_SNAPSHOT;
+use crate::mcp::replay::{CONTROL_REPLAY, GET_REPLAY};
+use crate::mcp::session_stats::tools::GET_SESSION_STATS;
+use crate::mcp::snapshot::GET_CHART_SNAPSHOT;
 use crate::mcp::state::{ClientIdentity, McpShared};
 use crate::mcp::types::{
     AddChartResult, AddIndicatorResult, AlertChangeResult, AlertInfo, AlertsResult,
@@ -2269,7 +2269,7 @@ impl DegenViewMcp {
 /// The Keychain read stays off the async worker.
 pub(super) async fn alpaca_configured() -> bool {
     tokio::task::spawn_blocking(|| {
-        crate::service::keychain_api_keys::AlpacaCredentialsStore::shared().is_configured()
+        crate::service::keychain::api_keys::AlpacaCredentialsStore::shared().is_configured()
     })
     .await
     .unwrap_or(false)

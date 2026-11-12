@@ -12,9 +12,9 @@ use super::backend::TradingBackend;
 use super::draft::{DraftField, TradeDraft};
 use super::model::{BackendState, MarketAccess, OrderClass, UnavailableKind, VenueKind};
 use super::task::Task;
-use crate::host::broker_host::{BrokerHost, store_journal};
-use crate::host::paper_host::PaperHost;
-use crate::host::trading_hub::TradingHub;
+use crate::host::broker::{BrokerHost, store_journal};
+use crate::host::paper::PaperHost;
+use crate::host::trading::TradingHub;
 use crate::model::broker::venue::TradingVenue;
 use crate::store::{SharedStore, Store};
 
@@ -198,7 +198,7 @@ fn the_paper_account_answers_as_a_venue() {
         .ensure_default_account()
         .unwrap()
         .expect("an account");
-    let backend = super::paper_backend::PaperBackend::new(paper);
+    let backend = super::paper::backend::PaperBackend::new(paper);
     check(&backend, VenueKind::Simulated, &|_| {});
 }
 

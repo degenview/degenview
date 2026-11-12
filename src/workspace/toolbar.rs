@@ -37,8 +37,8 @@ impl ChartWorkspace {
             .focused_market_chart()
             .map(super::chart::Chart::display_title);
         let hosting_note = match self.snapshot_hosting() {
-            crate::host::snapshot_host::Hosting::Ready(_) => None,
-            crate::host::snapshot_host::Hosting::Unavailable(reason) => Some(reason),
+            crate::host::snapshot::Hosting::Ready(_) => None,
+            crate::host::snapshot::Hosting::Unavailable(reason) => Some(reason),
         };
         let snapshot_shortcut =
             |action| crate::ui::shortcut::snapshot(action).map(|shortcut| shortcut.label());

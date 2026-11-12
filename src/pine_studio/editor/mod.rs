@@ -17,18 +17,16 @@ pub(in crate::pine_studio) mod signature;
 pub mod symbols;
 pub mod syntax;
 
-use self::color_sites::ColorMap;
-use self::completion::Completion;
-use self::diff::{ChangeKind, DiffHunk, DiffSnapshot};
-use self::diff_view::PreviewEvent;
-use self::edit_ops::{Context, Edit};
-use self::find::{FindEvent, FindState};
 use super::debug::marks::{BreakpointMark, DebugMarks, GutterEvent, MarkKind, StopMark};
 use super::model::CompileStatus;
 use super::profiler::marks::{LineMark, ProfileColumn};
+use color_sites::ColorMap;
+use completion::Completion;
+use diff::{ChangeKind, DiffHunk, DiffSnapshot};
+use diff_view::PreviewEvent;
+use edit_ops::{Context, Edit};
+use find::{FindEvent, FindState};
 
-use self::symbols::SymbolTable;
-use self::syntax::Span;
 use crate::model::editor_theme::{SurfaceColor, SyntaxRole};
 use crate::pine::syntax::token::{Diagnostic, DiagnosticSeverity};
 use crate::ui::accessibility;
@@ -48,6 +46,8 @@ use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use symbols::SymbolTable;
+use syntax::Span;
 
 mod carets;
 mod navigation;

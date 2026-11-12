@@ -9,7 +9,6 @@
 
 pub mod linalg;
 
-use self::linalg::Dense;
 use super::array::{self, Bound, new_array};
 use crate::pine::runtime::containers::Matrix;
 use crate::pine::runtime::operators;
@@ -17,6 +16,7 @@ use crate::pine::runtime::state::RuntimeState;
 use crate::pine::runtime::value::{RefKind, RuntimeValue};
 use crate::pine::syntax::ast::BinaryOperator;
 use crate::pine::syntax::token::{Diagnostic, DiagnosticCategory, SourceRange};
+use linalg::Dense;
 
 /// Parameter names per operation (by member name, after `matrix.`), in positional order.
 pub fn parameters(name: &str) -> &'static [&'static str] {

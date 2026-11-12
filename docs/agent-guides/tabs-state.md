@@ -10,7 +10,7 @@
 - Layout dirty state is a `LayoutSnapshot` fingerprint, not a flag: timeframe, chart configs,
   columns; not zoom, drawings, replay, market data. Autosave layouts also write on drawing-only
   edits (`ChartWorkspace::drawings_dirty`) so drawings reach iCloud Sync; the toolbar's unsaved
-  state ignores them. `store::saved_view` owns the library, the workspace the active layout. Named
+  state ignores them. `store::chart::saved_view` owns the library, the workspace the active layout. Named
   layouts autosave after two seconds and flush before switch/quit; Unnamed never autosaves.
 - A tab saves its layout id (`PersistedWorkspace::active_view`); the name is looked up on restore,
   a deleted layout restores as Unnamed. The dirty baseline is the restored state, so changes
@@ -40,7 +40,7 @@
   `pointer.x - strip.left() + scroll`, the strip draws the dragged tab at `left - scroll`.
 - Custom title (`PersistedWorkspace::custom_title`, context menu Rename Tab…) replaces symbol and
   price; symbol/layout changes never touch it. App-wide style (symbol+price+layout, symbol only,
-  layout name only): `tab.title_style` (`host::tab_title_host`, Settings ▸ Appearance ▸ Tabs). Both
+  layout name only): `tab.title_style` (`host::tab::title`, Settings ▸ Appearance ▸ Tabs). Both
   device-local: the `tab` table and that key never sync.
 - Hairline (`theme::separator()`, `paint_separators`) only between two neighbours at rest: not the
   showing, dragged or hovered tab, not across an incoming-tab gap. It follows animated tab rects.
@@ -112,6 +112,6 @@
 - New/first-launch tabs are empty (`ChartWorkspace::empty`); only opening a watchlist market seeds a
   chart. Cache empty-page database/Keychain reads per visit, not per frame.
 - Snapshot choices (`snapshot.prefs` in the `setting` table: host, trading overlays, scale, approved
-  hosts) are app-wide in `snapshot_host::SnapshotHost`, shared by all windows and Settings. An
+  hosts) are app-wide in `host::snapshot::SnapshotHost`, shared by all windows and Settings. An
   in-flight snapshot belongs to its workspace; closing the tab drops its result (a sent upload
   cannot be recalled). Token in the Keychain.

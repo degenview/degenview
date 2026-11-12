@@ -43,7 +43,7 @@ Never synced: market and icon caches, portfolio valuation history, which paper a
 portfolio is selected, live paper quotes, webhook endpoints and their Keychain secrets, API keys, **live trading** (broker credentials, orders sent and not yet confirmed, and how to trade: a Mac must never act on another Mac's live orders, and a trading credential never leaves the Mac it was entered on), MCP clients/tokens/port and the MCP activity log, Pine alert subscriptions
 (they bind device-local chart ids), the open tabs and windows, alert runtime state and history,
 snapshot consent and the snapshot providers' API keys and tokens, and `content.prefs` (whether a Post card may fetch a preview from X). Every document table and `setting` key is classified in
-`src/sync/policy.rs`, and a test fails when one is added without a decision; unclassified means
+`src/sync/record/policy.rs`, and a test fails when one is added without a decision; unclassified means
 local.
 
 The decision applies in both directions: a `setting.<key>` record for a key this version keeps local
@@ -61,16 +61,16 @@ SettingsPage ← SyncView ← SyncHost (app thread: apply, actions)   ──mpsc
 ```
 
 * **Outbox.** `Store::replace_documents` and `set_setting` queue the upload intent in the *same
-  SAVEPOINT* as the write (`src/store/sync.rs`). A change can never commit without it, and a crash
+  SAVEPOINT* as the write (`src/store/sync/mod.rs`). A change can never commit without it, and a crash
   right after a save still uploads after restart. Rows are projected to sync entities first
-  (`src/sync/project.rs`): alert runtime fields, per-Mac layout fields and snapshot consent are
+  (`src/sync/record/project.rs`): alert runtime fields, per-Mac layout fields and snapshot consent are
   dropped, drawings are split out of layouts. That equality is what makes the alert engine's
   once-a-second rewrite and the apply of a remote change queue nothing.
-* **Core** (`src/sync/core.rs`) has no threads or network. It stages due outbox entries in bounded
+* **Core** (`src/sync/engine/core.rs`) has no threads or network. It stages due outbox entries in bounded
   batches tagged with the account they belong to, clears an entry only when the cloud accepted
   that exact `seq`, retries with backoff per failure kind (honouring server retry-after), and
   saves the engine checkpoint only after a fetched batch was applied.
-* **Apply** (`src/sync/apply.rs`) writes one fetched batch in one transaction. Each remote row is
+* **Apply** (`src/sync/engine/apply/mod.rs`) writes one fetched batch in one transaction. Each remote row is
   checked against this version's own model first; a table holding a row this version cannot read
   is never rewritten; what cannot be applied is kept in `sync_inbox`, never dropped.
   A batch that cannot be saved at all (a full disk, a locked or damaged database) is **not
@@ -86,7 +86,7 @@ SettingsPage ← SyncView ← SyncHost (app thread: apply, actions)   ──mpsc
   empty queue. The host acts on a user's choice (turn off, agree to an account, categories, switching
   accounts, deleting iCloud data) only after it was written, and says why when it was not. Upload
   acknowledgements and retry bookkeeping stay best effort: the entry remains queued and is sent again.
-* **Bridge** (`native/swift`, `src/sync/native.rs`) moves records between `CKSyncEngine` and the
+* **Bridge** (`native/swift`, `src/sync/transport/native/mod.rs`) moves records between `CKSyncEngine` and the
   core as JSON over a four-function C interface. It never throws across the boundary and refuses
   to stage data for any account other than the one the data is bound to.
 * **Linking.** `build.rs` compiles the Swift only with `--features icloud` and only for macOS
@@ -143,9 +143,9 @@ drawing record stays small and a layout never embeds pixels. The picture is its 
 (`EntityKind::DrawingAsset`, prefix `drawingasset`, category Layouts, table `drawing_asset`),
 `{ id, mime, width, height, data }` with the bytes base64 in `data`.
 
-* **Limits.** A stored picture is at most 600 000 bytes (`image_ingest` re-encodes and shrinks until it
+* **Limits.** A stored picture is at most 600 000 bytes (`annotation::ingest` re-encodes and shrinks until it
   fits), so its record stays under `MAX_PAYLOAD_BYTES` (900 000) after base64. No `CKAsset` is used.
-* **Validation** (`sync/validate.rs`): a record is accepted only if its name is 64 lower-case hex
+* **Validation** (`sync/record/validate.rs`): a record is accepted only if its name is 64 lower-case hex
   digits, the mime is PNG or JPEG, the bytes are within the limit, start with that format's signature
   and hash to the name. A record that is anything else is refused, not stored.
 * **Merge.** A picture is immutable (its name is its hash), so there is nothing to merge: last writer
@@ -165,9 +165,9 @@ drawing record stays small and a layout never embeds pixels. The picture is its 
 * **Writes** go through `Store::put_asset` (idempotent, one outbox entry in its own savepoint); a picture
   that arrived from iCloud is written with `put_asset_from_cloud` (no entry back).
 
-Tested on `MockCloud` (`sync/asset_tests.rs`: upload, a second device receiving it, a picture arriving
+Tested on `MockCloud` (`sync/tests/asset.rs`: upload, a second device receiving it, a picture arriving
 after its drawing, a remote delete, a layout that stops using a picture, and all twelve text, note and
-content drawings reaching the other Mac exactly as drawn; `sync/validate.rs`: damaged and oversize
+content drawings reaching the other Mac exactly as drawn; `sync/record/validate.rs`: damaged and oversize
 records). Not verified: a real CloudKit transfer of a
 picture, and a record near the size limit.
 
@@ -210,7 +210,7 @@ a logarithmic chart logarithmic; a Percent or Indexed chart opens as Regular the
 Mac on its own, so every Mac has a "portfolio 1" and an "order 1". Nothing local is renumbered.
 At the sync boundary a counter id below 2^24 is tagged with a random 31-bit number stored once in
 `sync_state.id_tag` (`2^55 | tag << 24 | id`), and the tag is stripped again when this database's
-own record comes back (`src/sync/ids.rs`, a pure function with no table to lose). Ids at or above
+own record comes back (`src/sync/record/ids.rs`, a pure function with no table to lose). Ids at or above
 2^24 (nanosecond ids, other Macs' tagged ids) pass through. The engines mint counters from ids
 below 2^24 only, so a record that arrived from another Mac never moves the counter into the shared
 range. Portfolio cards in layouts and watchlists (`card.portfolio_id` and the `portfolio:<kind>:<id>`
@@ -418,7 +418,7 @@ The results of the manual scenarios live in the
 ## Performance
 
 Measured in a release build on an Apple Silicon Mac with an in-memory database
-(`cargo test --release --lib sync::perf_tests -- --ignored --nocapture`; ignored by default as
+(`cargo test --release --lib sync::tests::perf -- --ignored --nocapture`; ignored by default as
 timings are machine-specific). The write hook only projects rows whose text changed.
 
 | Operation | Sync off | Sync on | Added |

@@ -484,7 +484,7 @@ pub enum McpAction {
 /// Which network interface the server listens on.
 ///
 /// Loopback is the default and the only mode that needs no certificate. A named interface is
-/// reachable from other machines, so it is served over TLS only: see `mcp::tls`. There is no
+/// reachable from other machines, so it is served over TLS only: see `mcp::transport::tls`. There is no
 /// "all interfaces" mode: the user names the one address to listen on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum BindMode {

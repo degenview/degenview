@@ -13,16 +13,14 @@ use std::time::Duration;
 
 pub mod alert;
 pub mod asset_store;
-pub mod chart_template;
+pub mod chart;
 pub mod drawing_template;
 pub mod editor_theme;
 pub mod identity;
 pub mod mcp;
-pub mod mcp_audit;
 pub mod paper;
 pub mod pine;
 pub mod portfolio;
-pub mod saved_view;
 pub mod sync;
 pub mod watchlist;
 pub mod webhook;
@@ -124,7 +122,7 @@ pub struct Store {
     connection: Connection,
     /// The saved-layout index the toolbar reads every frame, rebuilt only when the database
     /// changed (see `Store::layout_index`).
-    layout_index: std::cell::RefCell<Option<saved_view::CachedLayoutIndex>>,
+    layout_index: std::cell::RefCell<Option<chart::saved_view::CachedLayoutIndex>>,
 }
 
 impl Store {
@@ -272,7 +270,7 @@ impl Store {
         )?;
 
         // The MCP activity log: one row per tool call an agent made, local to this Mac (it is not
-        // a document table and never synced). Bounded by `store::mcp_audit`.
+        // a document table and never synced). Bounded by `store::mcp::audit`.
         self.connection.execute_batch(
             "CREATE TABLE IF NOT EXISTS mcp_audit (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,

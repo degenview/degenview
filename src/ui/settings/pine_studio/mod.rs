@@ -6,13 +6,13 @@
 //! The page works on the host directly (as the iCloud and updates pages do on theirs): there is
 //! nothing here to apply later and nothing to store, so it returns no actions.
 
-use crate::host::editor_theme_host::{CustomTheme, EditorThemeHost, FontStatus, View};
+use crate::host::editor_theme::{CustomTheme, EditorThemeHost, FontStatus, View};
 use crate::model::editor_theme::{
     BuiltInTheme, LineHeight, MAX_FONT_SIZE, MAX_NAME_CHARS, MIN_FONT_SIZE, Palette, SurfaceColor,
     SyntaxRole, ThemeId, ThemeSelection, ThemeSource, clamp_size,
 };
 use crate::pine_studio::theme_preview::ThemePreview;
-use crate::service::theme_files;
+use crate::service::editor_theme::files;
 use crate::ui::icons::{self, Icon};
 use crate::ui::settings::window::{SettingsSection, page_shell, section, status_message};
 use crate::ui::{
@@ -1072,7 +1072,7 @@ fn import_flow(ctx: &egui::Context) -> Flow {
     let (sender, receiver) = channel();
     let ctx = ctx.clone();
     std::thread::spawn(move || {
-        let _ = sender.send(theme_files::choose_and_read(MAX_IMPORT_BYTES));
+        let _ = sender.send(files::choose_and_read(MAX_IMPORT_BYTES));
         ctx.request_repaint();
     });
     Flow::Import(receiver)
@@ -1084,7 +1084,7 @@ fn export_flow(stem: &str, text: String) -> Flow {
     // The dialog is asked from the frame that clicked, so the repaint comes from the thread.
     let stem = stem.to_owned();
     std::thread::spawn(move || {
-        let _ = sender.send(theme_files::save(&stem, &text));
+        let _ = sender.send(files::save(&stem, &text));
     });
     Flow::Export(receiver, name)
 }

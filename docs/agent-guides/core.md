@@ -6,7 +6,7 @@ Read for every task, plus the matching topic guides from the root `AGENTS.md` (U
 
 DegenView is a GPL-3.0-only Rust market dashboard on `eframe`/`egui`. A small `objc2` AppKit bridge handles native macOS windows, menus, Keychain and accessibility. Keep the coordinator/workspace architecture on other platforms; gate AppKit code with `#[cfg(target_os = "macos")]`.
 
-Store secrets only through `keychain_webhook_secrets::platform` (macOS Keychain, Linux Secret Service, Windows Credential Manager). Never in SQLite, files or logs.
+Store secrets only through `service::keychain::webhook_secrets::platform` (macOS Keychain, Linux Secret Service, Windows Credential Manager). Never in SQLite, files or logs.
 
 Read [Architecture](../architecture.md) before changing module boundaries or data flow.
 
@@ -18,7 +18,7 @@ Read [Architecture](../architecture.md) before changing module boundaries or dat
 
 ## Architecture
 
-- **Modules, not MVVM.** `model/` pure domain logic; `service/` providers/networking; `ui/` egui rendering; `store/` SQLite; `host/*_host.rs` bridges stateful components; `workspace.rs` chart workspaces; `app.rs` coordinates.
+- **Modules, not MVVM.** `model/` pure domain logic; `service/` providers/networking; `ui/` egui rendering; `store/` SQLite; `host/` (one directory per domain) bridges stateful components; `workspace/mod.rs` chart workspaces; `app.rs` coordinates.
 - **Immediate-mode UI.** Pass state into views; never add observed view models. Render charts with `egui::Painter`, not a chart library.
 - **Background work.** Outside `src/mcp/`, threads and `std::sync::mpsc`, no async runtimes. Shared state `Arc<Mutex<...>>`; keep locks short.
 - **Frame performance.** Code reached from `update`/`ui` must never parse JSON, make blocking system calls (XPC, `SMAppService`), or query SQLite beyond cheap change checks. Cache by change signal (e.g. `Store::layout_index`) or run on a thread and poll (e.g. `AlertRuntimeControl::poll_service_status`).
@@ -45,12 +45,15 @@ Finder-launchable app: `./tools/bundle.sh`, then open `target/DegenView.app`. Bi
 ## Naming
 
 - Snake-case modules; one concern per file.
-- **Group modules in directories, never in prefixes.** `model/`, `pine/`, `pine_studio/` and `ui/` hold one
-  directory per domain and only `mod.rs` at the root (`pine_studio/` also keeps a few single-purpose
-  files such as `workspace.rs`; `ui/` keeps `icons`, `shortcut` and `accessibility`). A new module goes in its domain's directory; a new domain gets a
-  directory. Name the child without the directory's name: `model/paper/engine.rs`
-  (`model::paper::engine`), not `model/paper_engine.rs`. Three or more files sharing a prefix
-  (`alert_*`, `ai_*`, `ta_*`, `settings_*`) belong in a directory.
+- **Group modules in directories, never in prefixes.** `model/`, `pine/`, `pine_studio/`, `ui/`,
+  `host/`, `service/`, `mcp/`, `sync/`, `workspace/` and `trading/` hold one directory per domain and
+  few files at the root (`mod.rs`, plus single-purpose files such as `service/work_queue.rs`,
+  `ui/icons`, `workspace/grid`, `pine_studio/workspace.rs`; `store/` keeps one file per single-table store). Use the domain names
+  `model/` and `ui/` already use (`alert`, `chart`, `paper`, `portfolio`, `mcp`, ...). A new module goes
+  in its domain's directory; a new domain gets a directory. Name the child without the directory's
+  name: `model/paper/engine.rs` (`model::paper::engine`), not `model/paper_engine.rs`; `host::paper`,
+  not `host::paper_host`. Three or more files sharing a prefix (`alert_*`, `ai_*`, `ta_*`,
+  `settings_*`) belong in a directory. `layout_tests.rs` enforces this and the next rule.
 - **`mod.rs`, not `foo.rs` + `foo/`.** A module with children or tests is `foo/mod.rs`, tests in
   `foo/tests.rs`. If the parent already has an inline `mod tests`, name end-to-end tests `studio_tests` or
   `integration_tests`. Never leave a `foo.rs` beside a `foo/`.
@@ -58,6 +61,6 @@ Finder-launchable app: `./tools/bundle.sh`, then open `target/DegenView.app`. Bi
   moved file's `super::` now points one level lower: use `crate::...` for items in the old parent and
   `pub(in crate::<parent>)` where it was `pub(super)`. Update `include_str!` paths, doc references
   (`docs/`, `AGENTS.md`, `tools/`) and the layout tables in [Modules](../architecture/modules.md).
-- Services: `service/*service.rs`, except provider-named modules.
+- Services: grouped by domain under `service/` (`market/`, `keychain/`, `update/`, ...); a provider's module is named after the provider.
 - UI: `*_view.rs` or role suffixes such as `*_sheet.rs`, `*_editor.rs`.
-- Stores: `store/*_store.rs`; `Store` implementation in `store/mod.rs`.
+- Stores: one file per store in `store/` (a directory once a store has a second file); the `Store` implementation is in `store/mod.rs`.

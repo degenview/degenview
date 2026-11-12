@@ -106,7 +106,7 @@ into cells within the limits and never grows the grid past them.
 
 ### Images
 
-* **Ingest** (`service/image_ingest.rs`, on `work_queue::ASSETS`, never the UI thread): PNG or JPEG
+* **Ingest** (`service/annotation/ingest.rs`, on `work_queue::ASSETS`, never the UI thread): PNG or JPEG
   only, by signature. At most 10 MiB read, at most 8192 px a side and 32 Mpx, decided from the header
   before decoding. The picture is scaled to at most 2000 px, re-encoded (which drops every piece of
   metadata), as PNG when it really has transparency and JPEG otherwise, and squeezed (quality, then
@@ -122,7 +122,7 @@ into cells within the limits and never grows the grid past them.
   (at most 480 × 360, and at most 40 % of the plot's width and half its height where it is placed).
   The eight box handles resize it (keeping its shape by default; the corner stays a chart point and
   the new size is stored in pixels), opacity is 5 to 100 %.
-* **Painting** (`service/asset_host.rs`): decoded once on a worker, uploaded as a texture once and
+* **Painting** (`service/annotation/asset_host.rs`): decoded once on a worker, uploaded as a texture once and
   dropped when nothing shows it. A picture that is loading, not in the store (it may be on its way from
   another Mac, and is asked for again every two seconds while it is visible) or damaged is painted as
   a placeholder that says which.
@@ -205,9 +205,9 @@ exposed.
 Every `every_tool_…` loop in `ui/drawing/layer/tests.rs` runs over all 45 grouped tools, content tools
 included (through `Drawing::sample` and `sample_content`): placement in one gesture and one undo step,
 select, move, delete, every handle, save and reopen, the toolbar. Per-area suites:
-`drawing_layer/tests/{note,table,image,card}_tests.rs`, `service/image_ingest.rs`,
-`sync/asset_tests.rs` (on `MockCloud`), `service/link_fetch.rs` (parsers on fixtures),
-`ui/drawing/content/card.rs`, `workspace/context/tests.rs` (paste, consent, fetch results). Galleries that
+`drawing_layer/tests/{note,table,image,card}_tests.rs`, `service/annotation/ingest.rs`,
+`sync/tests/asset.rs` (on `MockCloud`), `service/annotation/link_fetch.rs` (parsers on fixtures),
+`ui/drawing/content/card.rs`, `workspace/chart/context/tests.rs` (paste, consent, fetch results). Galleries that
 write PNGs for a person to look at:
 
 ```

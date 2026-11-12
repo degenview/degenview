@@ -1,7 +1,7 @@
 //! The update mark at the right end of the tab strip, and the progress bar painter Settings ▸
 //! About shares with it. Everything here draws an `UpdateView`; the host runs the update.
 
-use crate::host::update_host::{Phase, UpdateView};
+use crate::host::update::{Phase, UpdateView};
 use crate::ui::icons::{self, Icon};
 use crate::ui::{kit, theme};
 use eframe::egui::{
@@ -362,7 +362,7 @@ pub fn paint_progress(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::service::self_update::{Progress, Stage};
+    use crate::service::update::install::{Progress, Stage};
     use std::time::Duration;
 
     fn view(phase: Phase) -> UpdateView {

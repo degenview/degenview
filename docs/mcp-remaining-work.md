@@ -1,6 +1,6 @@
 # MCP server — remaining work
 
-Status of the local MCP server (`src/mcp/`, `src/host/mcp_host.rs`; design in
+Status of the local MCP server (`src/mcp/`, `src/host/mcp/mod.rs`; design in
 [architecture/mcp.md](architecture/mcp.md)) and what is still planned. Ordered by what I would do
 next. Items below are not started unless they say otherwise.
 
@@ -146,7 +146,7 @@ Reading candles and drawing are done (phase 7, widened by the drawing-tools PR).
 
 ## 6. On-demand backtests
 
-`pine_host::run_script_checked` can run a script headlessly; today reports come only from a chart's
+`host::pine::run_script_checked` can run a script headlessly; today reports come only from a chart's
 own run, and a chart that has not drawn the script has none.
 
 - Run on a worker with the existing limits plus: max bars, wall-clock deadline (already 10 s per run),
@@ -232,7 +232,7 @@ cancellation on disconnect (see [architecture/mcp.md](architecture/mcp.md)). Lef
 
 ## 12. Cleanup
 
-- `src/host/mcp_host.rs` has grown to ~2,500 lines (host, chart/alert/Pine projections, tests). Split the
+- `src/host/mcp/mod.rs` has grown to ~2,500 lines (host, chart/alert/Pine projections, tests). Split the
   projections into `mcp/projection/{charts,alerts,pine}.rs` and keep the host to lifecycle and
   credentials.
 - `mcp/tools.rs` (~1,500 lines) could split per domain the same way.
@@ -263,4 +263,4 @@ real-client acceptance run.
   own seal is detected.
 - ~~Windows has no secret store behind `KeyBackend`~~ Done: Windows Credential Manager holds the
   key (see [Windows secret storage](flatpak.md#windows-secret-storage)). The remote-access TLS key
-  `mcp-tls.pem` is DPAPI-encrypted there too (`mcp::tls_protect`); on Unix it is a `0600` file.
+  `mcp-tls.pem` is DPAPI-encrypted there too (`mcp::transport::tls_protect`); on Unix it is a `0600` file.

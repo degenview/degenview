@@ -66,7 +66,7 @@ Details: [UI style](docs/agent-guides/ui-style.md).
 
 Nothing reaches a release that was not reviewed, pinned and built from a signed tag on `main`.
 When touching `.github/`, `tools/`, `packaging/`, `build.rs`, `Cargo.toml`/`Cargo.lock` or the
-updater (`src/service/update_*`, `tag_signature`, `self_update`): pin every `uses:` to a commit,
+updater (`src/service/update/`): pin every `uses:` to a commit,
 keep job permissions minimal, never run third-party code on a macOS release job after the signing
 certificate is imported, use `--locked`, add no git or non-crates.io dependency, keep
 `cargo deny check` clean. Never ask for, store or use a GitHub token with `admin:ssh_signing_key`,

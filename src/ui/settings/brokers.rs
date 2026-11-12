@@ -21,8 +21,8 @@ use degenview_brokers::{
 };
 use eframe::egui::{self, vec2};
 
-use crate::host::broker_host::{BrokerHost, Connection, Operation};
-use crate::host::trading_hub::TradingHub;
+use crate::host::broker::{BrokerHost, Connection, Operation};
+use crate::host::trading::TradingHub;
 use crate::ui::icons::Icon;
 use crate::ui::kit::Tone;
 use crate::ui::settings::api_keys::{StatusMessage, destructive_button, field};

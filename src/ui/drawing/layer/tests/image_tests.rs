@@ -2,7 +2,7 @@
 
 use super::*;
 use crate::model::annotation::image_content::{Content, ImageContent, ImageData};
-use crate::service::asset_host::{FrozenAssets, freeze};
+use crate::service::annotation::asset_host::{FrozenAssets, freeze};
 use menu::ImageOp;
 
 fn picture_of(rig: &Rig) -> ImageData {

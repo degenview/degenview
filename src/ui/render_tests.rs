@@ -2,7 +2,7 @@
 //! a person would. They are `#[ignore]`d and only write when `DEGENVIEW_GALLERY_DIR` names a
 //! folder, so a normal test run neither needs nor leaves anything.
 
-use crate::service::{snapshot_export, snapshot_raster};
+use crate::service::snapshot::{export, raster};
 use eframe::egui::{self, TexturesDelta, Vec2};
 use std::path::PathBuf;
 
@@ -59,15 +59,15 @@ impl Screen {
             return;
         };
         let ppp = output.pixels_per_point;
-        let scene = snapshot_raster::Scene::new(
+        let scene = raster::Scene::new(
             self.ctx.tessellate(output.shapes, ppp),
             self.textures.clone(),
             ppp,
             ((self.size.x * ppp) as u32, (self.size.y * ppp) as u32),
             crate::ui::theme::chrome(),
         );
-        let image = snapshot_raster::rasterize(&scene).expect("drawn");
-        let png = snapshot_export::encode_png(&image).expect("encoded");
+        let image = raster::rasterize(&scene).expect("drawn");
+        let png = export::encode_png(&image).expect("encoded");
         std::fs::write(dir.join(format!("{name}.png")), png).expect("written");
     }
 }

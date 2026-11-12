@@ -1,7 +1,7 @@
 //! The CoinMarketCap "Latest" charts: the Fear & Greed semicircle gauge and the Altcoin Season
 //! scale, drawn from the cached reading instead of a price series.
 
-use crate::service::cmc::{self, LatestReading};
+use crate::service::market::cmc::{self, LatestReading};
 use crate::ui::kit::{self, BOLD, MEDIUM, REGULAR, SEMIBOLD};
 use crate::ui::theme;
 use eframe::egui::{

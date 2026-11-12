@@ -5,7 +5,7 @@
 use super::chrome::{self, Control};
 use super::tab_link_menu::{self, TabLinkEdit};
 use super::update_indicator;
-use crate::host::update_host::UpdateView;
+use crate::host::update::UpdateView;
 use crate::model::InstrumentId;
 use crate::model::tab;
 use crate::model::tab::title::{Detail, Segments, TabChart, TabTitleStyle};
@@ -1844,7 +1844,7 @@ mod tests {
 
     #[test]
     fn the_strip_gives_way_to_an_update_mark_only_while_there_is_one() {
-        use crate::host::update_host::Phase;
+        use crate::host::update::Phase;
         let view = |phase| UpdateView {
             phase,
             checking: false,

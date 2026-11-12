@@ -10,7 +10,6 @@ pub(in crate::pine_studio) mod tab_chrome;
 #[cfg(test)]
 pub(in crate::pine_studio) mod tabs_tests;
 
-use self::tab_chrome::{self as chrome, BUTTON, card, hairline};
 use super::library::prefs::DrawerTab;
 use crate::model::alert::pine::frequency_name;
 use crate::pine::compiler::program::VisualOutput;
@@ -24,6 +23,7 @@ use eframe::egui::{
     self, Align2, Color32, CursorIcon, FontId, Id, Rect, RichText, Sense, Ui, Vec2, pos2, vec2,
 };
 use std::time::{Duration, Instant};
+use tab_chrome::{self as chrome, BUTTON, card, hairline};
 
 pub const BAR_HEIGHT: f32 = bottom_bar::HEIGHT;
 
@@ -524,7 +524,7 @@ pub fn alert_time(ms: i64) -> String {
     const MONTHS: [&str; 12] = [
         "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
     ];
-    let local = ms + crate::service::timezone::local_utc_offset_secs(ms) * 1000;
+    let local = ms + crate::service::system::timezone::local_utc_offset_secs(ms) * 1000;
     let secs = local.div_euclid(1000);
     let (_, month, day) = super::inputs::civil_from_days(secs.div_euclid(86_400));
     let rem = secs.rem_euclid(86_400);

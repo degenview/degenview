@@ -112,7 +112,7 @@ and nothing else changes it.
 
 ## Pine logs
 
-A docked panel on the right (beside the Object tree, `workspace/pine_logs.rs`, `ui/pine/logs_view`),
+A docked panel on the right (beside the Object tree, `workspace/pine/logs/mod.rs`, `ui/pine/logs_view`),
 opened from a script's chip menu or pane menu, "Pine logs". It reads the messages the chart card
 keeps for each script's run and owns none of them. Hovering a row offers Source code and Scroll to
 bar. See [Pine Logs](pine-logs.md).

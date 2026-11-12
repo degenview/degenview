@@ -18,14 +18,14 @@ client → 127.0.0.1:<port>/mcp → bearer/Host/Origin/size checks
 - Effective permissions are client grants intersected with the global cap, both read per call.
   New clients get `charts.read`; the cap defaults read-only. `tools/list` filters and `call_tool`
   rechecks.
-- Limits (constants in `mcp/limits.rs` and `mcp/transport.rs`): 64 requests in flight before
+- Limits (constants in `mcp/transport/limits.rs` and `mcp/transport/mod.rs`): 64 requests in flight before
   authentication and 16 after; bad tokens share a bucket of 20 refilled at 2/s, past which they get
   429 with `Retry-After` (a valid token is never affected); each client has a bucket of 60 refilled
   at 20/s; a request head may have 64 headers and 16 KiB (431 beyond), a client has 10 s to send it
   (which also closes idle keep-alive connections), and 128 connections may be open (more are closed
   on arrival); the body is capped at 256 KiB. A client that hangs up drops its tool call: queued work
   does not run, work the app already started keeps its outcome. A `notifications/cancelled` cancels the
-  same way. Stateless mode serves it as its own POST, so `mcp/cancel.rs` keeps the tool calls in
+  same way. Stateless mode serves it as its own POST, so `mcp/transport/cancel.rs` keeps the tool calls in
   flight by client and request id, and a layer reads the notification before rmcp, cancels that
   client's matching calls (all of them, if a client reuses an id) and answers 202 itself. The layer
   sits outside the 16-request cap, so a cancel gets through while the calls it cancels hold every
@@ -43,12 +43,12 @@ client → 127.0.0.1:<port>/mcp → bearer/Host/Origin/size checks
   either end open), and pages it 25 rows at a time (`model::mcp::activity`, pure: the filter runs
   over the in-memory rows every frame, so there is no query and no cache to invalidate). The
   table keeps 1,000 rows,
-  is local to this Mac (`sync::policy`), and Clear writes one "cleared" row. A row holds the tool,
+  is local to this Mac (`sync::record::policy`), and Clear writes one "cleared" row. A row holds the tool,
   client, outcome, an error *code*, duration, the client's request id, and up to four ids from a
   fixed list of argument names, kept only if they look like ids (digits or a hex hash). Never a
   token, a script, a note, a message or any other argument value. Rate-limited calls are counted into
   one row per client per minute; bad tokens and `tools/list` are not rows.
-- Confirmation (`mcp::confirm`, `host::mcp_confirmation`, `ui::mcp::confirmation`): with "Ask before
+- Confirmation (`mcp::confirm`, `host::mcp::confirmation`, `ui::mcp::confirmation`): with "Ask before
   high-impact requests" on (`McpSettings.require_confirmation`, default on, also for settings saved
   before it existed; published to `McpShared` so the app thread reads it without the host lock),
   these commands wait for the user: delete alert / watchlist / drawings, remove chart or script
@@ -70,7 +70,7 @@ client → 127.0.0.1:<port>/mcp → bearer/Host/Origin/size checks
   user reads the whole summary. A question lives 120 s, an approval 120 s
   after it is given, a "no" 300 s (the agent gets `CONFIRMATION_DENIED`, not another question); a
   client may have 8 open and the app 32 (`RESOURCE_LIMIT` beyond). The summary the user reads is
-  built by the app from what it knows of the target (`host::mcp_confirmation::delete_alert` and
+  built by the app from what it knows of the target (`host::mcp::confirmation::delete_alert` and
   the others; a target that does not exist is refused with its own error, unasked), never from
   agent text, and is cut to one clean line. Revoking a client drops what it had open; turning the setting off, or stopping and starting
   the server (off and on, a new port: `McpShared::generation` moved), drops everything, and the
@@ -146,12 +146,12 @@ Delete and saved-source writes require their own grants.
   `[time, open, high, low, close, volume]` under named `columns`; times are ISO-8601 UTC to the
   second and prices plain JSON numbers (so a tiny DEX price is `2.78e-7`, not a subscript). Pages
   are the newest `limit` bars (max 1000), paged back with `before`; volume is `null` for a
-  provider that reports none. `mcp::chart_data` builds it from plain values, with no workspace.
-- Drawing tools plan on the app thread (`mcp::chart_data::plan_add/plan_edit/plan_remove`) from
+  provider that reports none. `mcp::chart::data` builds it from plain values, with no workspace.
+- Drawing tools plan on the app thread (`mcp::chart::data::plan_add/plan_edit/plan_remove`) from
   `ChartWorkspace::chart_data`, then commit with `apply_planned_drawings` → `apply_drawing_commands`,
   so a batch is one undo step. Points are `{time, price}` or `{time, price_from}`; a time inside the
   candles snaps to its bar's open (the pointer magnet's rule), one outside is kept, `price_from`
-  reads that bar. Arguments are checked on the tool thread (`mcp::drawings`); everything is all or
+  reads that bar. Arguments are checked on the tool thread (`mcp::chart::drawings`); everything is all or
   none. Ids come from `next_free_id` (the counter, but never one already stored). A locked drawing
   is never edited or removed, a chart holds at most 500 drawings, and a call carries at most 25
   (add) or 50 (delete). Writable tools are `McpDrawingTool::ALL`: trend line, rectangle, ray, extended
@@ -160,7 +160,7 @@ Delete and saved-source writes require their own grants.
   (`McpDrawingTool::points`/`check_patch`): fill is for rectangles, text for rectangles and labels
   (a label needs it), extension flags for trend lines and rectangles. Every other tool is listed
   read-only and deletable. The Fibonacci retracement is drawn with the app's default levels.
-- Portfolio tools (`mcp::portfolio`, `mcp::portfolio_tools`) are read-only. Holdings come from
+- Portfolio tools (`mcp::portfolio`, `mcp::portfolio::tools`) are read-only. Holdings come from
   `model::portfolio::accounting::holdings_and_closed` on the app thread (the app's own weighted-average
   accounting, so a sale realizes profit against the average cost and a position sold to nothing still
   counts in `closed_positions_realized_pnl`). They are then valued on the tool thread from the quote
@@ -170,7 +170,7 @@ Delete and saved-source writes require their own grants.
   and value but no profit, return or allocation (`currency_mismatch`) and is left out of `totals`,
   and totals are per currency, never summed across them. Privacy mode only hides amounts on screen;
   a client with `portfolio.read` gets the figures (and `list_portfolios` reports the mode).
-- Paper-trading tools (`mcp::paper`, `mcp::paper_tools`) read and write the app's `PaperHost` on the
+- Paper-trading tools (`mcp::paper`, `mcp::paper::tools`) read and write the app's `PaperHost` on the
   app thread. Reads: accounts with the engine's own metrics, positions marked the way the panel marks
   them (bid for a long, ask for a short, last as fallback; no quote → null mark and no profit
   figure), orders that can still fill, fills and closed trades newest first. Writes go through the
@@ -189,7 +189,7 @@ Delete and saved-source writes require their own grants.
   chart is refused for lack of a price, and a working order fills only while the app runs; replay
   does not hold orders back. With confirmation on, each write waits for the user's approval (next
   bullet).
-- Chart control (`mcp::chart_control`) calls the workspace's own methods: `set_timeframe` is the
+- Chart control (`mcp::chart::control`) calls the workspace's own methods: `set_timeframe` is the
   toolbar's timeframe change (`ChartWorkspace::reload_for_timeframe`, shared with the toolbar) and
   moves every chart in the workspace, since the timeframe belongs to the workspace; it reloads, so
   charts read `loading` for a moment. `set_chart_type` uses `ChartCard::set_chart_type` after
@@ -198,7 +198,7 @@ Delete and saved-source writes require their own grants.
   chart's drawings go with it; it has its own permission (`charts.delete`) and is refused for a
   portfolio card. The first two need `charts.view.write`. All three answer `unchanged` where they can,
   so a retry is harmless (not `remove_chart`: the second call is `NOT_FOUND`).
-- `get_chart_snapshot` (`mcp::snapshot_tools`, `charts.snapshot.read`) returns the chart as the app's
+- `get_chart_snapshot` (`mcp::snapshot`, `charts.snapshot.read`) returns the chart as the app's
   camera would draw it, as an MCP image block (PNG, base64) plus a text block with its size. It is the
   same renderer (`ChartCard::snapshot_scene`, frozen on the UI thread in one frame by
   `ChartWorkspace::capture_scene`, then rasterized and encoded on the snapshot worker), so it holds
@@ -209,9 +209,9 @@ Delete and saved-source writes require their own grants.
   four, forgotten after 120 s unless collected) and the tool polls `PollSnapshot` every 100 ms for up
   to 45 s. Default 1x (smaller to send), 2x on request; a chart too large for the scale is drawn
   smaller. The chart must have been drawn on screen once, so a window that has never shown it has no
-  size and answers `CONFLICT`. Base64 is a small local encoder (`snapshot_tools::base64`, tested against
+  size and answers `CONFLICT`. Base64 is a small local encoder (`mcp::snapshot::base64`, tested against
   the RFC 4648 vectors) so no dependency is added.
-- Replay (`mcp::replay_tools`) drives the workspace's one `ReplayEngine`, the clock behind the
+- Replay (`mcp::replay`) drives the workspace's one `ReplayEngine`, the clock behind the
   replay bar, through `ChartWorkspace::replay_command` (`start` on a chart's bars, then
   `model::ClockCommand`s: play, pause, step, restart, seek by time, speed, stop). Replay is
   workspace-wide and runs on one chart's candles, so `start` focuses the chart it names. While it
@@ -222,20 +222,20 @@ Delete and saved-source writes require their own grants.
   the chosen speed. Each action accepts only its own arguments. Paper orders still fill at live
   prices during replay (the unresolved question in `docs/agent-guides/market-data.md`), which the
   tool description says.
-- `get_indicator_values` (`mcp::indicator_tools`, pure part in `mcp::indicator_values`) computes RSI 14,
+- `get_indicator_values` (`mcp::indicator::tools`, pure part in `mcp::indicator`) computes RSI 14,
   an EMA of any length 2 to 400, Bollinger (20, 2) and Supertrend flips with `model::indicators`,
   the functions the chart draws with, over every candle the chart holds (the market's own, cut at
   the replay position), then returns the newest `limit` bars as columns aligned with `times` and
   `closes`. Values are warm at the first returned bar; `null` is warm-up (or, for `trend_flip`, no
   flip, and the newest bar's flip is never reported). It needs `charts.candles.read` and the
-  indicator need not be applied. `get_session_stats` (`mcp::session_stats_tools`, result in
+  indicator need not be applied. `get_session_stats` (`mcp::session_stats::tools`, result in
   `mcp::session_stats`, counting in `model::session_stats`; see [Session statistics](../session-stats.md))
   counts an outcome over the days of the same candles with its sample size and a 95% interval; it
   is a read under `charts.candles.read`, refuses bars longer than a day, and never reads a
   constructed type's bars. `remove_indicator` is `ChartWorkspace::remove_indicator`
   (`charts.indicators.write`); removing one that is not there answers `not_applied`.
-- Markets and watchlists live in `mcp::market_tools` (a second `tool_router`, merged in
-  `DegenViewMcp::new`) and `mcp::markets` (result types and pure projections). `search_symbols`
+- Markets and watchlists live in `mcp::market::tools` (a second `tool_router`, merged in
+  `DegenViewMcp::new`) and `mcp::market` (result types and pure projections). `search_symbols`
   runs `service::search` for each named provider side by side on a blocking worker (at most four
   searches at once, 20 s ceiling), keeps only hits of the provider asked, and reports a failing
   provider in `source_errors` while the others answer; the search function is

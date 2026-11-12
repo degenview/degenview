@@ -29,7 +29,7 @@ a portfolio card is not a target) through `apply_indicator_action`, so undo is o
   native other than Volume, is blocked with the reason shown; blocked entries are dimmed and Return
   does nothing.
 - **Favorites** are `native:rsi` / `bundled:macd` / `script:<id>` strings in the
-  `indicatorPicker.favorites` setting (portable, last writer wins, see `sync::policy`); a key this
+  `indicatorPicker.favorites` setting (portable, last writer wins, see `sync::record::policy`); a key this
   build no longer knows is dropped on load. Not verified against real CloudKit.
 
 Pictures: `DEGENVIEW_GALLERY_DIR=<dir> cargo test --lib indicator_picker::tests::gallery -- --ignored`

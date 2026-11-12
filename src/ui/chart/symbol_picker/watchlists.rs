@@ -4,7 +4,7 @@
 use super::search::PROVIDERS;
 use crate::model::DataSource;
 use crate::model::watchlist::{Watchlist, WatchlistInstrument};
-use crate::service::{NAME_SEPARATOR, SearchResult, search_rank::normalize};
+use crate::service::{NAME_SEPARATOR, SearchResult, market::search_rank::normalize};
 
 /// One watchlist and the markets of it the picker can open.
 #[derive(Clone, Debug, PartialEq)]

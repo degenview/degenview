@@ -1727,7 +1727,7 @@ impl DrawingProperties {
 
     /// The picture, fitted in a box as wide as the page, or what stands in for it.
     fn preview_picture(&mut self, ui: &mut Ui, asset: &str, aspect: f32, opacity: f32) {
-        use crate::service::asset_host::{AssetImage, lookup};
+        use crate::service::annotation::asset_host::{AssetImage, lookup};
         const BOX_HEIGHT: f32 = 150.0;
         let width = ui.available_width();
         let (rect, _) = ui.allocate_exact_size(vec2(width, BOX_HEIGHT), Sense::hover());

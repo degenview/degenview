@@ -8,7 +8,6 @@ pub mod frequency;
 
 use std::collections::HashSet;
 
-use self::frequency::AlertFrequency;
 use super::number_format;
 use crate::model::Kline;
 use crate::model::alert::message::{AlertMessageContext, render};
@@ -18,6 +17,7 @@ use crate::pine::runtime::state::{AlertEvent, RuntimeState};
 use crate::pine::runtime::types::BarFlags;
 use crate::pine::runtime::value::RuntimeValue;
 use crate::pine::syntax::token::{Diagnostic, DiagnosticCategory, SourceRange};
+use frequency::AlertFrequency;
 
 const ALERT_LIMIT: usize = 200;
 

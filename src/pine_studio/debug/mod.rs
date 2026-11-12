@@ -31,8 +31,8 @@ use crate::pine::logs::LogHistory;
 use crate::pine::{Diagnostic, DiagnosticSeverity};
 use crate::store::SharedStore;
 
-use self::marks::{BreakpointMark, DebugMarks, GutterEvent, MarkKind, StopMark};
-use self::state::{DebugStates, KEY, ScriptDebugState, StoredBreakpoint};
+use marks::{BreakpointMark, DebugMarks, GutterEvent, MarkKind, StopMark};
+use state::{DebugStates, KEY, ScriptDebugState, StoredBreakpoint};
 
 /// What a session is started on: the preview chart's bars as they are now.
 pub struct DebugFeed {
@@ -604,7 +604,7 @@ impl DebugPanel {
         config.inputs = feed.inputs;
         config.theme = Some(feed.theme);
         config.libraries = libraries;
-        config.security_data = Some(Box::new(crate::host::pine_host::KlineSecurityDataProvider));
+        config.security_data = Some(Box::new(crate::host::pine::KlineSecurityDataProvider));
         config.breakpoints = self.state.specs();
         config.watches = self.state.watches.clone();
         config.stop_on_entry = mode == StartMode::Entry;

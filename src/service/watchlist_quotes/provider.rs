@@ -107,9 +107,10 @@ impl QuoteProvider for LiveProvider {
 
 /// A GET that maps HTTP failures onto `QuoteFailure`.
 fn get(source: DataSource, url: &str, headers: &[(&str, &str)]) -> Result<String, QuoteFailure> {
-    match crate::service::http::get_text(url, headers, crate::service::http::Retry::Never) {
+    match crate::service::net::http::get_text(url, headers, crate::service::net::http::Retry::Never)
+    {
         Ok(body) => Ok(body),
-        Err(crate::service::http::Error::Status(code)) => Err(classify_status(source, code)),
+        Err(crate::service::net::http::Error::Status(code)) => Err(classify_status(source, code)),
         Err(error) => Err(QuoteFailure::Failed(format!("Network error: {error}"))),
     }
 }
@@ -166,7 +167,7 @@ fn coinbase(requests: &[QuoteRequest]) -> Outcome {
         if index > 0 {
             std::thread::sleep(Duration::from_millis(125));
         }
-        let id = crate::service::coinbase::product_id(&request.symbol);
+        let id = crate::service::market::coinbase::product_id(&request.symbol);
         match get(
             DataSource::Coinbase,
             &format!("{COINBASE_URL}/products/{id}/stats"),
@@ -214,7 +215,7 @@ fn coingecko(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, 
         .collect::<Vec<_>>()
         .join(",");
     // One `/coins/markets` call prices every coin id, costing the limiter a single slot.
-    super::super::rate_limit::coingecko().wait_for_slot();
+    super::super::net::rate_limit::coingecko().wait_for_slot();
     let url = format!(
         "https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids={ids}\
          &sparkline=false&price_change_percentage=24h&per_page={}",
@@ -261,7 +262,7 @@ fn dexscreener(requests: &[QuoteRequest]) -> Outcome {
 }
 
 fn alpaca(requests: &[QuoteRequest]) -> Result<HashMap<String, SourceQuote>, QuoteFailure> {
-    let Some((key, secret)) = crate::service::keychain_api_keys::alpaca_credentials() else {
+    let Some((key, secret)) = crate::service::keychain::api_keys::alpaca_credentials() else {
         return Err(QuoteFailure::CredentialsMissing);
     };
     let symbols = requests

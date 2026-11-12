@@ -19,7 +19,7 @@ click / shortcut ─► ChartWorkspace::begin_snapshot(chart_id, action)        
     ctx.tessellate ─► Scene { meshes, textures }                               (one frame, 6–13 ms)
         │
         ▼ work_queue::SNAPSHOTS (worker, no workspace or store lock)
-    snapshot_job::run
+    snapshot::job::run
       Download   choose destination ─► rasterize ─► PNG ─► atomic write
       Copy image rasterize ─► Outcome::CopyImage
       hosted     rasterize ─► PNG ─► upload ─► Outcome::Hosted
@@ -38,7 +38,7 @@ click / shortcut ─► ChartWorkspace::begin_snapshot(chart_id, action)        
   workspace. Live candles arriving later do not change an image already drawn.
 - **Read-only.** `paint_snapshot` takes `&self`: it reads each script's last run (never reruns
   Pine), builds constructed bars without caching them, and moves no viewport, pane or replay state.
-- **Rasterizer.** `service/snapshot_raster.rs` draws egui's tessellated meshes on the CPU the way
+- **Rasterizer.** `service/snapshot/raster.rs` draws egui's tessellated meshes on the CPU the way
   the wgpu shader does (gamma-space premultiplied blending, bilinear/nearest texture sampling,
   top-left fill rule, 8-bit rounding per draw). No window, GPU or readback is involved, so it works
   anywhere, at any scale, in tests. Text and lines are laid out at the image's scale: 2× is drawn
@@ -85,7 +85,7 @@ chevron) that folds its setup. **None is on by default**; turning one on turns t
 provider that is on but not set up (no key yet) says what is missing in the camera menu and opens
 unfolded. Turning a provider off keeps what was entered for it.
 
-Two providers ship (`src/service/snapshot_providers/`, listed in that order):
+Two providers ship (`src/service/snapshot/providers/`, listed in that order):
 
 | Provider | Id | What it needs | Notes |
 | --- | --- | --- | --- |
@@ -111,8 +111,8 @@ flow:
    `classify_failure` (a provider's own error body; the default maps what every host says).
 3. Add it to `registry()`.
 
-`service::multipart::Form` builds a `multipart/form-data` body for hosts that want one. The
-transport (`snapshot_upload`) knows nothing of providers: it checks the size and that the bytes are
+`service::net::multipart::Form` builds a `multipart/form-data` body for hosts that want one. The
+transport (`snapshot::upload`) knows nothing of providers: it checks the size and that the bytes are
 a PNG, sends the provider's request once with no redirects, and hands the answer back.
 
 Saved shape (`snapshot.prefs`): `provider` (the id that is on, or an explicit `null` for off),

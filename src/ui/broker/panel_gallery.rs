@@ -13,7 +13,7 @@ use degenview_brokers::{
 };
 use eframe::egui::{self, Vec2};
 
-use crate::host::broker_host::{BrokerHost, account_of, store_journal};
+use crate::host::broker::{BrokerHost, account_of, store_journal};
 use crate::store::Store;
 use crate::ui::broker::panel::{self, BrokerPanelState, BrokerTab};
 use crate::ui::render_tests::Screen;
@@ -24,7 +24,7 @@ const ID: BrokerId = BrokerId::new("coinbase");
 struct Rig {
     exchange: CoinbaseExchange,
     host: Arc<BrokerHost>,
-    hub: Arc<crate::host::trading_hub::TradingHub>,
+    hub: Arc<crate::host::trading::TradingHub>,
 }
 
 fn rig() -> Rig {
@@ -42,10 +42,10 @@ fn rig() -> Rig {
         env,
         |config| config.fast(),
     );
-    let paper = Arc::new(Mutex::new(crate::host::paper_host::PaperHost::load(
+    let paper = Arc::new(Mutex::new(crate::host::paper::PaperHost::load(
         store.clone(),
     )));
-    let hub = crate::host::trading_hub::TradingHub::new(host.clone(), paper, Some(store));
+    let hub = crate::host::trading::TradingHub::new(host.clone(), paper, Some(store));
     Rig {
         exchange,
         host,
@@ -138,9 +138,9 @@ fn shapes(output: &egui::FullOutput) -> usize {
 }
 
 /// The broker's commands, as the workspace hands them to the panel.
-fn commands(host: &Arc<BrokerHost>) -> crate::trading::broker_backend::BrokerBackend {
+fn commands(host: &Arc<BrokerHost>) -> crate::trading::broker::backend::BrokerBackend {
     let broker = degenview_brokers::registry::by_id(ID).expect("coinbase");
-    crate::trading::broker_backend::BrokerBackend::new(host.clone(), broker)
+    crate::trading::broker::backend::BrokerBackend::new(host.clone(), broker)
 }
 
 /// The panel as the workspace draws it: the shared header's venue and the account strip.
@@ -151,7 +151,7 @@ fn draw(
 ) -> Vec<crate::ui::trade::panel_header::PanelEvent> {
     use crate::trading::backend::TradingBackend;
     let broker = degenview_brokers::registry::by_id(ID).expect("coinbase");
-    let backend = crate::trading::broker_backend::BrokerBackend::new(host.clone(), broker);
+    let backend = crate::trading::broker::backend::BrokerBackend::new(host.clone(), broker);
     let stats = backend.stats();
     let bar = crate::ui::trade::panel_header::sample_bar(
         crate::model::broker::venue::TradingVenue::Broker(ID),

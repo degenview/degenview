@@ -60,7 +60,7 @@ fn format_report(
     format!(
         "--- DegenView {} ({}) on {} {}, unix {at}\nthread: {thread}\npanic: {message}\nat: {}\n{backtrace}\n\n",
         env!("CARGO_PKG_VERSION"),
-        crate::host::update_host::BUILD_ID,
+        crate::host::update::BUILD_ID,
         std::env::consts::OS,
         std::env::consts::ARCH,
         location.unwrap_or("unknown location"),

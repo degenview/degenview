@@ -146,7 +146,7 @@ replaces what every editor in the process draws: `WebhookHost::new` fills the fi
 although Dracula was selected (and Settings, reading the real host, still showed Dracula); picking any
 theme again published from the real host and healed it. Tests hold both halves
 (`a_placeholder_host_never_undoes_the_real_hosts_choice`,
-`webhook_host::tests::building_the_host_leaves_the_editors_theme_alone`). Any new code that builds
+`host::webhook::tests::building_the_host_leaves_the_editors_theme_alone`). Any new code that builds
 a host outside `DegenViewApp::new` must use `default()`, never `new()`.
 
 The preview's sample (`pine_studio::theme_preview`) is editable. It is compiled with the real Pine
@@ -183,7 +183,7 @@ starts with the built-in font (`theme::install_fonts`), so a context that never 
 snapshot, a test) draws the default too; the host (`EditorThemeHost`) changes it when the choice changes.
 egui compares fonts byte for byte when they are set, so that happens on a change and not every frame.
 
-Other fonts: the picker (`service::font_catalog`) offers the installed monospaced fonts. The system's font
+Other fonts: the picker (`service::editor_theme::fonts`) offers the installed monospaced fonts. The system's font
 folders are walked on a background thread, reading from each file only its table directory and the `name`,
 `OS/2` and `post` tables (kilobytes, not the font), and a family is listed once, by its regular face, when it
 declares itself monospaced **and has scalable outlines**: a bitmap-only font (GB18030 Bitmap, on a Mac)
@@ -243,7 +243,7 @@ follow from how it works:
   like the other templates).
 * Deleting a theme here deletes it everywhere; a mass delete is held for confirmation by the usual rule.
 
-Tested on the two-Mac harness (`sync/theme_tests.rs`): themes arriving whole and not echoing back, rename,
+Tested on the two-Mac harness (`sync/tests/theme.rs`): themes arriving whole and not echoing back, rename,
 edit and delete, the later edit winning, records that are not themes kept not applied, future fields
 surviving, the choices with a missing font, and a choice that arrives before its theme. **Not run against
 real CloudKit**, like the rest of sync (see [iCloud Sync](icloud-sync.md#what-is-not-verified)). A change to
@@ -251,7 +251,7 @@ the synced records is a release-candidate change under `AGENTS.md`.
 
 ## The file format
 
-`degenview-editor-theme`, version 1, JSON (`model/editor_theme/codec.rs`):
+`degenview-editor-theme`, version 1, JSON (`model/editor_theme/codec/mod.rs`):
 
 ```json
 {

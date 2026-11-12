@@ -179,7 +179,7 @@ pub struct LinkTable {
 }
 
 impl LinkTable {
-    /// The `setting` row the table is stored under. Local to the Mac (see `sync::policy`).
+    /// The `setting` row the table is stored under. Local to the Mac (see `sync::record::policy`).
     pub const KEY: &'static str = "tab.link_toggles";
 
     pub fn toggles(&self, color: LinkColor) -> LinkToggles {

@@ -2,7 +2,7 @@
 
 use super::ChartWorkspace;
 use super::chart::displayed_candles;
-use crate::host::paper_host::PaperHost;
+use crate::host::paper::PaperHost;
 use crate::model::watchlist::WatchlistError;
 use crate::model::{
     ChartColumn, ChartLayout, Drawing, DrawingCommand, DrawingStyle, InstrumentId, ReplayStatus,

@@ -1,4 +1,4 @@
-//! Paper-trading accounts as sync bundles (see `sync::paper`).
+//! Paper-trading accounts as sync bundles (see `sync::record::paper`).
 //!
 //! A bundle is rebuilt from the whole snapshot on every save, so what keeps this cheap is
 //! remembering the hash of the last bundle looked at (`sync_entity.local_hash`): a save that
@@ -6,7 +6,7 @@
 
 use super::*;
 use crate::model::paper::PaperTradingSnapshot;
-use crate::sync::paper::{COLLECTIONS, Parts, project};
+use crate::sync::record::paper::{COLLECTIONS, Parts, project};
 use serde::Serialize;
 
 /// How long a changed account waits before it uploads, so a burst of fills sends once.
@@ -66,7 +66,7 @@ impl Store {
             if owner == own {
                 continue;
             }
-            let paused = owner == crate::sync::paper::PAUSED;
+            let paused = owner == crate::sync::record::paper::PAUSED;
             let name = self.device_name(&owner)?.unwrap_or_default();
             elsewhere.insert(account, Elsewhere { name, paused });
         }
@@ -274,7 +274,7 @@ impl Store {
         };
         if self
             .disabled_categories()
-            .contains(&crate::sync::policy::Category::PaperTrading)
+            .contains(&crate::sync::record::policy::Category::PaperTrading)
         {
             return Ok(());
         }

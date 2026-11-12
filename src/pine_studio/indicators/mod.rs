@@ -343,7 +343,7 @@ mod tests {
         ];
         for (id, title, low, high) in ranges {
             let indicator = find(id).unwrap();
-            let (output, _) = crate::host::pine_host::run_script_checked(
+            let (output, _) = crate::host::pine::run_script_checked(
                 indicator.source,
                 &bars(400),
                 &symbol(),
@@ -377,7 +377,7 @@ mod tests {
     fn every_indicator_runs_to_the_end_and_draws_something() {
         let mut problems = Vec::new();
         for indicator in &ALL {
-            let (output, failure) = crate::host::pine_host::run_script_checked(
+            let (output, failure) = crate::host::pine::run_script_checked(
                 indicator.source,
                 &bars(300),
                 &symbol(),

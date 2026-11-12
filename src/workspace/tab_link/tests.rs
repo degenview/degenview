@@ -387,7 +387,7 @@ fn a_view_delivered_while_the_tab_is_hidden_waits_for_its_next_draw_even_if_the_
     let ctx = egui::Context::default();
     let mut workspace = empty_workspace(1);
     chart_with_drawings(&mut workspace, "BTCUSDT", &[]);
-    let host = crate::host::tab_link_host::TabLinkHost::default();
+    let host = crate::host::tab::link::TabLinkHost::default();
     workspace.set_link_host(&host);
     workspace.set_link(Some(LinkColor::Orange));
     let change = HorizontalChange {

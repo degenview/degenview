@@ -217,7 +217,7 @@ fn gallery_of_the_panel() {
                                 PaperTab::Orders => {
                                     let rows: Vec<crate::trading::model::OrderRow> = shown_orders
                                         .iter()
-                                        .map(crate::trading::paper_backend::order_row)
+                                        .map(crate::trading::paper::backend::order_row)
                                         .collect();
                                     crate::ui::trade::tables::orders(
                                         ui,

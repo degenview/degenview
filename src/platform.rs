@@ -77,7 +77,7 @@ pub const fn file_manager() -> &'static str {
     }
 }
 
-/// Whether open and save panels exist (`service::file_dialog`). Where they do not, exports go to
+/// Whether open and save panels exist (`service::system::file_dialog`). Where they do not, exports go to
 /// the downloads folder under a free name.
 pub const fn has_file_dialogs() -> bool {
     cfg!(any(target_os = "macos", target_os = "linux"))

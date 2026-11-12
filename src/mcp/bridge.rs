@@ -119,12 +119,12 @@ pub enum McpCommand {
     AddDrawings {
         workspace_id: u64,
         chart_id: u64,
-        drawings: Vec<crate::mcp::drawings::NewDrawing>,
+        drawings: Vec<crate::mcp::chart::drawings::NewDrawing>,
     },
     EditDrawing {
         workspace_id: u64,
         chart_id: u64,
-        edit: Box<crate::mcp::drawings::DrawingEdit>,
+        edit: Box<crate::mcp::chart::drawings::DrawingEdit>,
     },
     RemoveDrawings {
         workspace_id: u64,
@@ -148,7 +148,7 @@ pub enum McpCommand {
     GetIndicatorValues {
         workspace_id: u64,
         chart_id: u64,
-        request: crate::mcp::indicator_values::ReadingRequest,
+        request: crate::mcp::indicator::ReadingRequest,
     },
     /// Session statistics over a chart's candles.
     GetSessionStats {
@@ -299,10 +299,10 @@ pub enum McpReply {
     Drawings(Box<DrawingsResult>),
     DrawingsChanged(Box<DrawingsChangeResult>),
     PineEdit(Box<crate::mcp::types::PineEditResult>),
-    IndicatorValues(Box<crate::mcp::indicator_values::IndicatorValuesResult>),
+    IndicatorValues(Box<crate::mcp::indicator::IndicatorValuesResult>),
     SessionStats(Box<crate::mcp::session_stats::SessionStatsResult>),
-    Timeframe(crate::mcp::chart_control::TimeframeResult),
-    ChartChanged(Box<crate::mcp::chart_control::ChartChangeResult>),
+    Timeframe(crate::mcp::chart::control::TimeframeResult),
+    ChartChanged(Box<crate::mcp::chart::control::ChartChangeResult>),
     PaperAccounts(crate::mcp::paper::PaperAccountsResult),
     PaperAccount(Box<crate::mcp::paper::PaperAccountDetail>),
     PaperFills(Box<crate::mcp::paper::PaperFillsResult>),
@@ -312,12 +312,12 @@ pub enum McpReply {
     Portfolios(crate::mcp::portfolio::PortfoliosResult),
     PortfolioHoldings(Box<crate::mcp::portfolio::HoldingsBase>),
     PortfolioTransactions(Box<crate::mcp::portfolio::TransactionsResult>),
-    SnapshotStarted(crate::mcp::snapshot_tools::SnapshotStarted),
-    SnapshotProgress(crate::mcp::snapshot_tools::SnapshotProgress),
-    Replay(crate::mcp::replay_tools::ReplayResult),
-    Watchlists(crate::mcp::markets::WatchlistsResult),
-    Watchlist(Box<crate::mcp::markets::WatchlistPage>),
-    WatchlistChanged(Box<crate::mcp::markets::WatchlistChangeResult>),
+    SnapshotStarted(crate::mcp::snapshot::SnapshotStarted),
+    SnapshotProgress(crate::mcp::snapshot::SnapshotProgress),
+    Replay(crate::mcp::replay::ReplayResult),
+    Watchlists(crate::mcp::market::WatchlistsResult),
+    Watchlist(Box<crate::mcp::market::WatchlistPage>),
+    WatchlistChanged(Box<crate::mcp::market::WatchlistChangeResult>),
 }
 
 /// The alert runtime applies queued commands on its own schedule and may refuse one whose
@@ -610,7 +610,7 @@ pub fn channel(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mcp::auth::verifier_hex;
+    use crate::mcp::transport::auth::verifier_hex;
     use crate::model::mcp::{McpClient, PermissionSet};
     use std::sync::atomic::AtomicUsize;
 

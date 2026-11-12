@@ -52,7 +52,7 @@ Audit these modules first:
 ```text
 src/main.rs
 src/app.rs
-src/workspace.rs
+src/workspace/mod.rs
 src/workspace/
 src/native_bridge.rs
 src/model/chart/layout.rs
@@ -68,7 +68,7 @@ src/ui/chart/add/sheet.rs
 ### Alerts
 
 ```text
-src/host/alert_host.rs
+src/host/alert/mod.rs
 src/model/alert/mod.rs
 src/model/alert/engine.rs
 src/store/alert.rs
@@ -79,8 +79,8 @@ src/ui/alert/editor.rs
 ### Pine Script
 
 ```text
-src/host/pine_host.rs
-src/host/pine_subscription_host.rs
+src/host/pine/mod.rs
+src/host/pine/subscription.rs
 src/model/pine/instance.rs
 src/model/alert/pine.rs
 src/pine/compiler/mod.rs
@@ -105,8 +105,8 @@ src/pine_studio/library/store.rs
 src/pine_studio/model.rs
 src/ui/settings/window.rs
 src/ui/settings/card.rs
-src/service/keychain_api_keys.rs
-src/service/keychain_webhook_secrets.rs
+src/service/keychain/api_keys.rs
+src/service/keychain/webhook_secrets.rs
 ```
 
 Inspect actual APIs and invariants rather than assuming the names or example signatures below already exist.
@@ -232,7 +232,7 @@ that expects OAuth discovery will not work with it.
 - Anything but loopback is served over TLS 1.3 only. `McpServer::start_listening` refuses it without
   a certificate, and with one made for a different address, before binding.
 - The certificate is self-signed for that address, made on first use and kept in `mcp-tls.pem` in the
-  data directory (owner-only on Unix; on Windows encrypted with DPAPI for the signed-in user, `mcp::tls_protect`, and a file that is not in that form is refused, never read as plain text). A new address
+  data directory (owner-only on Unix; on Windows encrypted with DPAPI for the signed-in user, `mcp::transport::tls_protect`, and a file that is not in that form is refused, never read as plain text). A new address
   means a new certificate, so a new fingerprint to pin. A file that cannot be read is an error, not a
   reason to replace it. The address a file records about itself is checked against the certificate's
   own names (a mismatch is an error). The key is not in the credential seal. Replacing the file lets
@@ -266,7 +266,7 @@ that expects OAuth discovery will not work with it.
   machine is no stronger when used on it. That is simpler and safer than judging each call, at the cost
   that a remote-enabled client is also held to the ceiling when used locally. Create a second,
   local-only credential for that.
-- Both are sealed, and stored only when not default (see `mcp::seal`).
+- Both are sealed, and stored only when not default (see `mcp::transport::seal`).
 - Settings. The "Remote connections" row of the Security card is the switch; once it is on, rows of the
   same card hold the interface (an address typed or filled in by "Detect", which asks the system
   which address reaches the local network and sends nothing), the certificate fingerprint with a copy
@@ -592,9 +592,9 @@ src/
 │   │   ├── alerts.rs
 │   │   └── pine.rs
 │   └── resources.rs
-├── host/mcp_host.rs
+├── host/mcp/mod.rs
 ├── model/mcp/mod.rs
-├── store/mcp.rs
+├── store/mcp/mod.rs
 ├── service/keychain_mcp.rs
 └── ui/settings/mcp.rs
 ```
@@ -1483,7 +1483,7 @@ Do not conflate script identity with instance identity.
 DegenView supports Pine alert subscriptions through:
 
 ```text
-pine_subscription_host
+host::pine::subscription
 model::alert::pine
 store::pine
 ```
@@ -2301,7 +2301,7 @@ can write `degenview.sqlite` can pick a token, store its hash with every permiss
 server, and connect after the next launch. The database is an ordinary file in the user's data
 directory, so "can write the file" is a much weaker position than "can read the Keychain".
 
-**What is sealed.** An HMAC-SHA-256 (`mcp::seal`, domain `degenview.mcp.seal.v1`) over the JSON of
+**What is sealed.** An HMAC-SHA-256 (`mcp::transport::seal`, domain `degenview.mcp.seal.v1`) over the JSON of
 `enabled`, `port`, `require_confirmation`, the global cap and, in stored order, each client's `id`, `name`, `verifier`,
 `permissions` and `created_at_ms`. Not `last_used_ms`: it changes every half minute and decides
 nothing. The key is 32 random bytes in the Keychain (`es.nico.degenview.mcp`, `seal-key-v1`), created

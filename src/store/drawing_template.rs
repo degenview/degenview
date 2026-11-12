@@ -2,7 +2,7 @@
 //! each tool's default style (the `drawing.defaults` setting) and the strip's drawing options
 //! (the `drawing.prefs` setting).
 //!
-//! [`DrawingTemplateStore`] mirrors [`ChartTemplateStore`](super::chart_template): every change
+//! [`DrawingTemplateStore`] mirrors [`ChartTemplateStore`](super::chart::template): every change
 //! reads the table again first so a second window cannot overwrite a stale list, validates,
 //! writes in one transaction and only then shows the result, and a table that cannot be read is
 //! never written. None of it holds a drawing's coordinates.

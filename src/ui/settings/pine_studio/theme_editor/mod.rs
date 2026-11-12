@@ -7,7 +7,7 @@
 //! *Themes* button leaves. There is no bar under the page. A colour's own
 //! reset gives back its base theme's colour, not a fixed default.
 
-use crate::host::editor_theme_host::{EditorThemeHost, View};
+use crate::host::editor_theme::{EditorThemeHost, View};
 use crate::model::editor_theme::contrast::low_contrast;
 use crate::model::editor_theme::{
     ColorKey, EditorTheme, Palette, Rgba, SYSTEM_FONT, SurfaceColor, SurfaceGroup, SyntaxGroup,

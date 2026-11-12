@@ -50,7 +50,7 @@ has the keyboard.
 
 A right-click on a chart is answered by the drawing's own menu or by the chart menu
 (`model::chart::context` builds it from a click snapshot and the chart's facts,
-`ui::chart::context_menu` draws it, `workspace/context.rs` owns the open menu and runs the chosen
+`ui::chart::context_menu` draws it, `workspace/chart/context/mod.rs` owns the open menu and runs the chosen
 command). The same module hosts Table view (`model::chart::table`, fed by the card from the bars it
 draws), the Object Tree (`model::chart::object_tree`), the drawing clipboard (`model::chart::clipboard`),
 the cursor time lock, and the alert lines (`model::alert::line`). See

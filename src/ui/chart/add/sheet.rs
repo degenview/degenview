@@ -66,7 +66,7 @@ pub(crate) const PREDICTION_TOPICS: [(&str, &str, Icon); 10] = [
     ("Super Bowl", "super bowl", Icon::SportsCourt),
     ("Weather", "temperature", Icon::CloudSun),
 ];
-/// Icon and description per entry of `service::cmc::CHART_TYPES`, in the same order.
+/// Icon and description per entry of `service::market::cmc::CHART_TYPES`, in the same order.
 const CMC_DETAILS: [(Icon, &str); 4] = [
     (Icon::ChartLine, "Historical 0–100 index chart"),
     (Icon::GaugeHigh, "Current Bitcoin/Altcoin season reading"),
@@ -694,7 +694,7 @@ impl AddChartSheet {
             Tab::Predictions => self.predictions.selected.clone(),
             Tab::Portfolio => None,
             Tab::CoinMarketCap => {
-                let (key, title) = service::cmc::CHART_TYPES[self.cmc_index];
+                let (key, title) = service::market::cmc::CHART_TYPES[self.cmc_index];
                 Some(SearchResult {
                     symbol: title.into(),
                     full_symbol: key.into(),
@@ -719,7 +719,7 @@ impl AddChartSheet {
     /// Validates and hands `result` to the host, recording it as recent.
     fn commit(&mut self, result: SearchResult) -> Option<AddChartAction> {
         if result.source == DataSource::Alpaca
-            && service::keychain_api_keys::alpaca_credentials().is_none()
+            && service::keychain::api_keys::alpaca_credentials().is_none()
         {
             self.needs_alpaca_setup = true;
             return None;
@@ -1023,7 +1023,7 @@ impl AddChartSheet {
                             });
                             // Only search when there is a feed to ask: the text would hide the
                             // chips, leaving an empty pane.
-                            if service::keychain_api_keys::alpaca_credentials().is_some() {
+                            if service::keychain::api_keys::alpaca_credentials().is_some() {
                                 self.stocks.search_now(symbol);
                             }
                         }
@@ -1116,7 +1116,7 @@ impl AddChartSheet {
                 ui.add_space(10.0);
                 let columns = if ui.available_width() < 650.0 { 1 } else { 2 };
                 let width = (ui.available_width() - 10.0 * (columns - 1) as f32) / columns as f32;
-                for row in 0..service::cmc::CHART_TYPES.len().div_ceil(columns) {
+                for row in 0..service::market::cmc::CHART_TYPES.len().div_ceil(columns) {
                     if row > 0 {
                         ui.add_space(10.0);
                     }
@@ -1124,10 +1124,10 @@ impl AddChartSheet {
                         ui.spacing_mut().item_spacing.x = 10.0;
                         for column in 0..columns {
                             let index = row * columns + column;
-                            if index >= service::cmc::CHART_TYPES.len() {
+                            if index >= service::market::cmc::CHART_TYPES.len() {
                                 break;
                             }
-                            let (_, title) = service::cmc::CHART_TYPES[index];
+                            let (_, title) = service::market::cmc::CHART_TYPES[index];
                             let (icon, subtitle) = CMC_DETAILS[index];
                             if choice_card(
                                 ui,
@@ -1832,7 +1832,7 @@ fn suggestion_chip(ui: &mut Ui, item: &Chip, width: f32) -> egui::Response {
 /// shared icon cache resolves one.
 fn ticker_icon(ui: &Ui, rect: Rect, symbol: &str, source: DataSource, market: &str) {
     let lookup = supports_ticker_icon_lookup(source);
-    if lookup && let Some(url) = service::icon::get_url(source, market) {
+    if lookup && let Some(url) = service::image::icon::get_url(source, market) {
         egui::Image::new(url)
             .fit_to_exact_size(rect.size())
             .corner_radius(CornerRadius::same((rect.width() / 2.0) as u8))
@@ -1840,7 +1840,7 @@ fn ticker_icon(ui: &Ui, rect: Rect, symbol: &str, source: DataSource, market: &s
         return;
     }
     if lookup {
-        service::icon::request_with_base(source, market, symbol);
+        service::image::icon::request_with_base(source, market, symbol);
     }
     monogram(ui, rect, symbol);
 }

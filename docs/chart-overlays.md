@@ -17,13 +17,13 @@ id, and nothing a script, alert, drawing or paper order reads looks at them: tho
 | Candles onto the chart's bars (midpoint rule) | `src/model/overlay/align.rs` |
 | Rebase onto the main series, own-scale fit, legend value | `src/model/overlay/scale.rs` |
 | What the card is told about a market's data (`OverlayFeed`, `OverlayStatus`) | `src/model/overlay/feed.rs` |
-| Data: one fetch per market, shared, scheduled | `src/workspace/overlays.rs` (`OverlayHub`) |
-| Add, edit, remove as undo steps; Regular → Percent on the first add | `src/workspace/overlay_actions.rs` |
+| Data: one fetch per market, shared, scheduled | `src/workspace/overlay/mod.rs` (`OverlayHub`) |
+| Add, edit, remove as undo steps; Regular → Percent on the first add | `src/workspace/overlay/actions.rs` |
 | Resolve against the bars in view, lines, tags, crosshair rows | `src/ui/chart/card/overlays.rs` |
 | The overlay card: rows, eye / settings / remove, right-click menu | `src/ui/chart/card/overlay_card.rs` |
-| Settings of one market (shared body) and its popover | `src/ui/chart/settings/overlay.rs`, `src/ui/chart/settings/overlay_popover.rs`, `src/workspace/overlay_actions.rs` |
+| Settings of one market (shared body) and its popover | `src/ui/chart/settings/overlay.rs`, `src/ui/chart/settings/overlay_popover.rs`, `src/workspace/overlay/actions.rs` |
 | Settings page | `src/ui/chart/settings/mod.rs` (`Tab::Overlays`, "Compare") |
-| Object tree section "Compared symbols" | `src/model/chart/object_tree.rs` (`Key::Overlay`), `src/workspace/context.rs` (`apply_tree_action`) |
+| Object tree section "Compared symbols" | `src/model/chart/object_tree.rs` (`Key::Overlay`), `src/workspace/chart/context/mod.rs` (`apply_tree_action`) |
 | Picker mode | `src/ui/chart/symbol_picker/` (`PickMode`, `Output::Overlay`) |
 
 ## Behaviour

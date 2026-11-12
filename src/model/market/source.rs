@@ -96,7 +96,7 @@ impl DataSource {
         let raw = symbol.trim();
         match self {
             Self::Binance | Self::Coinbase | Self::CoinGecko | Self::Alpaca => raw.to_uppercase(),
-            Self::CoinMarketCap => crate::service::cmc::title(raw).to_owned(),
+            Self::CoinMarketCap => crate::service::market::cmc::title(raw).to_owned(),
             _ => raw.to_owned(),
         }
     }

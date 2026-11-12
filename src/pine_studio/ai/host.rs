@@ -16,7 +16,7 @@ use crate::pine::syntax::token::{Diagnostic, Limits};
 use crate::pine_studio::drawer;
 use crate::pine_studio::library::registry::LibraryRegistry;
 use crate::pine_studio::{PineStudio, PineStudioAction, editor};
-use crate::service::keychain_ai_keys::{self, AiKeyStore};
+use crate::service::keychain::ai_keys::{self, AiKeyStore};
 use crate::service::llm::prefs::AiPrefs;
 use crate::service::llm::{ChatRequest, HttpProvider, ProviderKind};
 use crate::ui::theme;
@@ -218,11 +218,7 @@ impl PineStudio {
         ) {
             return;
         }
-        let provider = HttpProvider::new(
-            kind,
-            self.ai.prefs.base_url(kind),
-            keychain_ai_keys::key(kind),
-        );
+        let provider = HttpProvider::new(kind, self.ai.prefs.base_url(kind), ai_keys::key(kind));
         match provider {
             Ok(provider) => {
                 let repaint = ctx.clone();
@@ -298,17 +294,14 @@ impl PineStudio {
         self.ai_reload_prefs();
         let kind = self.ai.prefs.provider;
         // Reading the key is where the Keychain may ask; the user just pressed Send.
-        let provider = match HttpProvider::new(
-            kind,
-            self.ai.prefs.base_url(kind),
-            keychain_ai_keys::key(kind),
-        ) {
-            Ok(provider) => provider,
-            Err(error) => {
-                self.ai.notice = Some(Notice::failure(error.report()));
-                return;
-            }
-        };
+        let provider =
+            match HttpProvider::new(kind, self.ai.prefs.base_url(kind), ai_keys::key(kind)) {
+                Ok(provider) => provider,
+                Err(error) => {
+                    self.ai.notice = Some(Notice::failure(error.report()));
+                    return;
+                }
+            };
         // Compiled now, not read from the editor, which may still be waiting out its typing pause.
         let diagnostics = diagnostics_of(&source);
         let mode = self.ai.mode;

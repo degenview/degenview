@@ -140,7 +140,7 @@ neutral by the app's no-blue rule); that Keep drawing does not apply; no keyboar
 undo button turned on after a zoom, nothing more was checked); behaviour on log scales and in indicator panes.
 
 Tests: `model/chart/viewport/tests.rs` (`zoom_to_a_rectangle`), `chart_card/navigation_tests.rs` (`zoom_in`),
-`sync_tests.rs`, `workspace/tool_rail.rs`, `workspace/tool_sidebar.rs`. Pictures: `gallery_of_zoom_in` (strip and chart)
+`sync_tests.rs`, `workspace/drawing/tool_rail.rs`, `workspace/tool_sidebar.rs`. Pictures: `gallery_of_zoom_in` (strip and chart)
 and `gallery_of_the_zoom_icons`, run by hand with `DEGENVIEW_GALLERY_DIR`.
 
 ## Price range

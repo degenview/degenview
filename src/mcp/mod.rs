@@ -9,31 +9,18 @@
 //! current-thread tokio runtime; the rest of the app stays on threads and channels.
 
 pub mod audit;
-pub mod auth;
 pub mod bridge;
-pub mod cancel;
-pub mod chart_control;
-pub mod chart_data;
+pub mod chart;
 pub mod confirm;
-pub mod drawings;
-pub mod indicator_tools;
-pub mod indicator_values;
-pub mod limits;
-pub mod market_tools;
-pub mod markets;
+pub mod indicator;
+pub mod market;
 pub mod paper;
-pub mod paper_tools;
 pub mod pine;
 pub mod portfolio;
-pub mod portfolio_tools;
-pub mod replay_tools;
-pub mod seal;
+pub mod replay;
 pub mod session_stats;
-pub mod session_stats_tools;
-pub mod snapshot_tools;
+pub mod snapshot;
 pub mod state;
-pub mod tls;
-mod tls_protect;
 pub mod tools;
 pub mod transport;
 pub mod types;
@@ -43,7 +30,7 @@ mod tests;
 
 use crate::mcp::bridge::BridgeClient;
 use crate::mcp::state::{McpShared, McpStatus};
-use crate::mcp::tls::TlsIdentity;
+use crate::mcp::transport::tls::TlsIdentity;
 use crate::model::mcp::BindMode;
 use std::net::{SocketAddr, TcpListener};
 use std::sync::Arc;

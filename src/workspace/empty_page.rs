@@ -147,7 +147,7 @@ impl ChartWorkspace {
         EmptyPageData {
             recents,
             layouts,
-            offers_stocks: crate::service::keychain_api_keys::alpaca_credentials().is_some(),
+            offers_stocks: crate::service::keychain::api_keys::alpaca_credentials().is_some(),
         }
     }
 

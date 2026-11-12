@@ -17,7 +17,7 @@ use eframe::egui::{self, Color32, Id};
 
 use crate::model::broker::ticket::{self as rules};
 use crate::trading::backend::TradingBackend;
-use crate::trading::broker_commands::{Answer, BrokerCommands, CancelReport, HistoryChoice};
+use crate::trading::broker::commands::{Answer, BrokerCommands, CancelReport, HistoryChoice};
 use crate::trading::edit::{
     EditEvent, EditForm, EditFrame, EditSession, EditVenue, EditView, ReviewLine, Step,
 };
@@ -181,7 +181,7 @@ fn time_text(ms: Option<i64>) -> String {
     let Some(ms) = ms else {
         return "—".to_owned();
     };
-    let secs = ms.div_euclid(1000) + crate::service::timezone::local_utc_offset_secs(ms);
+    let secs = ms.div_euclid(1000) + crate::service::system::timezone::local_utc_offset_secs(ms);
     let day = secs.rem_euclid(86_400);
     format!("{:02}:{:02}:{:02}", day / 3600, day % 3600 / 60, day % 60)
 }

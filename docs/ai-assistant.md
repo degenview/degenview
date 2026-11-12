@@ -55,7 +55,7 @@ completions API: OpenRouter, Ollama, LM Studio, Groq, ...).
   the write still fails (no Secret Service running), the store keeps the key for the session and the
   page says it is not saved for later.
 - **`ai.prefs`** (provider, models, compatible server URL, and the Manual/Auto switch) is a local `setting`; it is in the
-  never-sync test in `sync::policy` because it names the user's own account and server.
+  never-sync test in `sync::record::policy` because it names the user's own account and server.
 - **Base URLs** must be `https://`, or `http://` to `localhost`, `127.0.0.1` or `::1`
   (`validate_base_url`). A user name in the URL is rejected so `http://localhost@evil.example`
   cannot pass.

@@ -16,8 +16,8 @@ price an order trades at) and [iCloud Sync](icloud-sync.md) (nothing here syncs)
 * **The exchange is the source of truth.** Balances, orders and fills are what the broker last
   said. Nothing in the app invents or removes one: a cancel is a *request*, an order leaves the
   working set only when the broker reports it finished.
-* **No broker is named in the app's broker layers.** `host/broker_host.rs`,
-  `service/keychain_broker_secrets.rs` and `ui/settings/brokers.rs` draw everything from the
+* **No broker is named in the app's broker layers.** `host/broker/mod.rs`,
+  `service/keychain/broker_secrets.rs` and `ui/settings/brokers.rs` draw everything from the
   crate's registry and each broker's descriptor; a test fails if one names an exchange. Adding a
   broker is a change to the crate (see its `docs/adding-a-broker.md`), plus enabling its Cargo
   feature here.
@@ -31,11 +31,11 @@ price an order trades at) and [iCloud Sync](icloud-sync.md) (nothing here syncs)
 
 | Piece | Where |
 | --- | --- |
-| Credentials | Operating system secret store, app-only group `es.nico.degenview.broker`: `service/keychain_broker_secrets.rs` (the crate's `SecretStore`). Read when connecting, never at startup for a user who has none. **Every read, write and removal runs on one secrets thread owned by `BrokerHost`** (a queue, so a save followed by a removal cannot swap), never on the interface thread: the OS store may prompt or hang. `connection()` reads only what that thread last learned (a key shows as saved once the store has answered). A removal waits behind an unanswered Keychain prompt on the same queue; the connection itself stops at once. Never SQLite, never iCloud, never a log. |
-| Unconfirmed orders | Local-only setting `broker.pending` (`host/broker_host.rs::store_journal`: the crate's `BlobJournal` over that one setting): written **before** an order is sent, so a restart cannot lose an order that may be live. An unreadable record is an error, never "nothing pending". Every record carries the **account** (the portfolio) that sent it and is keyed by `(broker, account, client order id)`; only a session on that account shows, looks up, settles, retries or deletes it. Records of another account, and records from before they carried one, are left untouched and counted ("1 unconfirmed order belongs to a different account"); they are checked when that account connects again. |
+| Credentials | Operating system secret store, app-only group `es.nico.degenview.broker`: `service/keychain/broker_secrets.rs` (the crate's `SecretStore`). Read when connecting, never at startup for a user who has none. **Every read, write and removal runs on one secrets thread owned by `BrokerHost`** (a queue, so a save followed by a removal cannot swap), never on the interface thread: the OS store may prompt or hang. `connection()` reads only what that thread last learned (a key shows as saved once the store has answered). A removal waits behind an unanswered Keychain prompt on the same queue; the connection itself stops at once. Never SQLite, never iCloud, never a log. |
+| Unconfirmed orders | Local-only setting `broker.pending` (`host/broker/mod.rs::store_journal`: the crate's `BlobJournal` over that one setting): written **before** an order is sent, so a restart cannot lose an order that may be live. An unreadable record is an error, never "nothing pending". Every record carries the **account** (the portfolio) that sent it and is keyed by `(broker, account, client order id)`; only a session on that account shows, looks up, settles, retries or deletes it. Records of another account, and records from before they carried one, are left untouched and counted ("1 unconfirmed order belongs to a different account"); they are checked when that account connects again. |
 | Choices about trading | Local-only setting `broker.prefs`. |
-| Connections | `host/broker_host.rs::BrokerHost`: one per process, shared by every window, **outside the paper-trading lock**. Each connection's runtime runs on its own thread and publishes `Arc` snapshots; the UI never calls the network. Every request for a connection (a new key, the saved key at startup, Disconnect) takes a number, and a start may publish its runtime only if its number is still the broker's current one, so a Disconnect, or a newer key, always has the last word over a start that was still waiting on the Keychain prompt or the store. |
-| Which venues are on | `host/trading_hub.rs::TradingHub` is the **only owner of a venue's lifecycle**: `enable`, `connect(id, credentials)` (save the key, connect, remember the venue as enabled) and `disable` (forget the choice, stop the connection, remove the key). Settings calls these, not `BrokerHost`: disconnecting only the host left a key-less broker (the sandbox) in `trading.enabled`, so it reconnected at the next start. `connect` and `disable` return a polled `Operation` (the answer of the secret store), shown as "Saving the key…" / "Removing the key…". |
+| Connections | `host/broker/mod.rs::BrokerHost`: one per process, shared by every window, **outside the paper-trading lock**. Each connection's runtime runs on its own thread and publishes `Arc` snapshots; the UI never calls the network. Every request for a connection (a new key, the saved key at startup, Disconnect) takes a number, and a start may publish its runtime only if its number is still the broker's current one, so a Disconnect, or a newer key, always has the last word over a start that was still waiting on the Keychain prompt or the store. |
+| Which venues are on | `host/trading/mod.rs::TradingHub` is the **only owner of a venue's lifecycle**: `enable`, `connect(id, credentials)` (save the key, connect, remember the venue as enabled) and `disable` (forget the choice, stop the connection, remove the key). Settings calls these, not `BrokerHost`: disconnecting only the host left a key-less broker (the sandbox) in `trading.enabled`, so it reconnected at the next start. `connect` and `disable` return a polled `Operation` (the answer of the secret store), shown as "Saving the key…" / "Removing the key…". |
 | Redraws | `BrokerHost::revision()` is compared once a frame in `DegenViewApp::tick_tab_quotes`, which repaints every tab window. |
 | Settings | Settings ▸ Brokers (`ui/settings/brokers.rs`): connect (the key is checked with reads only, then saved), permissions, Disconnect. |
 
@@ -142,7 +142,7 @@ orders already open when a connection starts are not announced). Settings ▸ Br
 With a broker as the tab's venue, a chart whose data comes from **that broker's own source** (the
 descriptor's `market_source`: a Coinbase chart for Coinbase) gets live controls; every other chart is
 left alone, and the menu says why instead of trading a similar market. The rules are pure
-(`model/broker/chart.rs`); `workspace/broker.rs` fills each card each frame.
+(`model/broker/chart.rs`); `workspace/trade/broker.rs` fills each card each frame.
 
 * **Header SELL / BUY** show the broker's own best bid and ask (read for as long as a card shows them,
   every two seconds, never for a chart nobody is looking at: `BrokerHost::want_quote`, which hands it to
@@ -211,7 +211,7 @@ request descriptions for the checklist.
 ## Not done yet / not verified
 
 * **The venue layer is the path for the panel and the chart.** What the screens *ask* a broker goes
-  through `BrokerCommands` (`trading/broker_commands.rs`: retry, cancel, paged history and fills, and
+  through `BrokerCommands` (`trading/broker/commands.rs`: retry, cancel, paged history and fills, and
   the edit: the crate's `edit_session::EditSession`, worded by `trading/edit/`); what they *read* goes through `TradingBackend`; a test
   fails if `ui/` or `workspace/` name a broker's runtime or the host (Settings ▸ Brokers excepted).
   Still on `BrokerHost`: Settings ▸ Brokers (it manages connections). The user's choices are

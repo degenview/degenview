@@ -396,7 +396,7 @@ fn paint_logo(
     let url = if let Some(url) = item.image_url.as_deref() {
         Some(url)
     } else {
-        fallback_url = crate::service::icon::get_url(source, &item.instrument.symbol);
+        fallback_url = crate::service::image::icon::get_url(source, &item.instrument.symbol);
         fallback_url.as_deref()
     };
     if let Some(url) = url {
@@ -407,7 +407,7 @@ fn paint_logo(
             .paint_at(ui, logo);
         return;
     }
-    crate::service::icon::request(source, &item.instrument.symbol);
+    crate::service::image::icon::request(source, &item.instrument.symbol);
     painter.circle_filled(
         logo.center(),
         LOGO_SIZE / 2.0,

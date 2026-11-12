@@ -342,8 +342,8 @@ mod tests {
         history.save(&store).unwrap();
         assert_eq!(History::load(&store).get("s"), history.get("s"));
         assert_eq!(
-            crate::sync::policy::setting_policy(KEY),
-            crate::sync::policy::SettingPolicy::Local
+            crate::sync::record::policy::setting_policy(KEY),
+            crate::sync::record::policy::SettingPolicy::Local
         );
     }
 

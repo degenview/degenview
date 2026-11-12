@@ -1,5 +1,5 @@
 use super::*;
-use crate::host::editor_theme_host::EditorThemeHost;
+use crate::host::editor_theme::EditorThemeHost;
 use crate::model::editor_theme::{BuiltInTheme, LineHeight, ThemeSource, TypographyOverride};
 use crate::ui::editor_appearance::RestorePublished;
 use crate::ui::render_tests::{Screen, gallery_dir};
