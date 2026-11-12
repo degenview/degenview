@@ -259,13 +259,6 @@ impl TicketDraft {
                         Field::TimeInForce => TicketField::TimeInForce,
                         Field::Type | Field::Product => TicketField::Type,
                     };
-                    // A stop-limit's limit price is typed in the price box.
-                    let field =
-                        if self.kind == TicketKind::StopLimit && field == TicketField::LimitPrice {
-                            TicketField::LimitPrice
-                        } else {
-                            field
-                        };
                     TicketIssue {
                         field,
                         text: found.to_string(),
@@ -353,46 +346,33 @@ pub struct Estimate {
 
 /// A figure for people: grouped thousands, no trailing zeros.
 pub fn display(value: Decimal) -> String {
-    let text = value.normalize().to_string();
-    let (sign, rest) = text
-        .strip_prefix('-')
-        .map_or(("", text.as_str()), |r| ("-", r));
-    let (whole, fraction) = rest
-        .split_once('.')
-        .map_or((rest, None), |(w, f)| (w, Some(f)));
-    let mut grouped = String::new();
-    for (index, digit) in whole.chars().enumerate() {
-        if index > 0 && (whole.len() - index) % 3 == 0 {
-            grouped.push(',');
-        }
-        grouped.push(digit);
-    }
-    match fraction {
-        Some(fraction) => format!("{sign}{grouped}.{fraction}"),
-        None => format!("{sign}{grouped}"),
-    }
+    group_thousands(&value.normalize().to_string())
 }
 
 /// A price with at least the market's price precision (`90,000.00`, not `90,000`), never fewer
-/// digits than were typed.
-pub fn price_display(value: Decimal, spec: &ProductSpec) -> String {
+/// digits than the value carries.
+pub fn price_at(value: Decimal, increment: Decimal) -> String {
     let mut shown = value;
-    let places = spec.price_increment.normalize().scale();
+    let places = increment.normalize().scale();
     if shown.scale() < places {
         shown.rescale(places);
     }
-    display_keep_zeros(shown)
+    group_thousands(&shown.to_string())
 }
 
-/// `display`, but keeping the trailing zeros the value carries.
-fn display_keep_zeros(value: Decimal) -> String {
-    let text = value.to_string();
+/// [`price_at`] in a market's price step.
+pub fn price_display(value: Decimal, spec: &ProductSpec) -> String {
+    price_at(value, spec.price_increment)
+}
+
+/// Groups the whole part of a plain decimal in thousands, keeping every digit it carries.
+fn group_thousands(text: &str) -> String {
     let (sign, rest) = text
         .strip_prefix('-')
-        .map_or(("", text.as_str()), |r| ("-", r));
+        .map_or(("", text), |rest| ("-", rest));
     let (whole, fraction) = rest
         .split_once('.')
-        .map_or((rest, None), |(w, f)| (w, Some(f)));
+        .map_or((rest, None), |(whole, fraction)| (whole, Some(fraction)));
     let mut grouped = String::new();
     for (index, digit) in whole.chars().enumerate() {
         if index > 0 && (whole.len() - index) % 3 == 0 {
