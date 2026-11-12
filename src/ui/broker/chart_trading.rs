@@ -13,10 +13,10 @@
 //!   ticket, the edit sheet or the cancel question, each of which shows what will be sent.
 //! * Live orders are never drawn into a shared snapshot of the chart.
 
-use degenview_brokers::{Decimal, Side};
+use degenview_brokers::{Decimal, Side, validate};
 use eframe::egui::{self, Color32, FontId, Pos2, Rect, Sense, Vec2};
 
-use crate::model::broker::chart::{Unavailable, snap_to_increment};
+use crate::model::broker::chart::Unavailable;
 use crate::model::broker::ticket::display;
 use crate::ui::accessibility;
 use crate::ui::broker::badge::LIVE;
@@ -151,12 +151,12 @@ impl BrokerCardState {
     /// Where a dragged line would land: the pointer's price on the chart's scale, on the market's
     /// increment. `None` without a price step (so nothing is proposed that could not be valid).
     fn landing_price(&self, scale: &PriceScale, y: f32) -> Option<Decimal> {
-        snap_to_increment(scale.price(y), self.price_increment?)
+        validate::snap_to_increment(scale.price(y), self.price_increment?)
     }
 }
 
 fn price_of(line: &OrderLine) -> Option<Decimal> {
-    snap_to_increment(line.price, Decimal::new(1, 8))
+    validate::snap_to_increment(line.price, Decimal::new(1, 8))
 }
 
 /// What a line's pill says.
