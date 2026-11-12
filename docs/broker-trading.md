@@ -76,8 +76,8 @@ It draws what the venue last said (`TradingBackend`) and nothing else, so every 
 
 **New order** opens the ticket for the focused chart's market, if the chart's data source is the
 broker's: `Broker::resolve_market` maps it, and a chart whose data comes from anywhere else is
-refused with a sentence, never traded on a similar market. The order sheet (`ui/trade/order_sheet.rs`, rules in
-`model/broker/ticket.rs`) takes the market's rules and the best bid and ask from the broker, not the
+refused with a sentence, never traded on a similar market. The order sheet (`ui/trade/order_sheet.rs`, rules in the crate's
+`model::ticket`, words in `model/broker/ticket.rs`) takes the market's rules and the best bid and ask from the broker, not the
 chart, and says so. It offers only what the market allows. Text is parsed exactly (`0.001` stays
 `0.001`); a value off the market's increment is reported with the nearest valid value and **never
 rounded**. The broker's own preview (fees, total, warnings, refusals) replaces the estimate when it

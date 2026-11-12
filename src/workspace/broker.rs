@@ -15,7 +15,7 @@ use super::ChartWorkspace;
 use super::chart::Chart;
 use crate::model::broker::chart::Unavailable;
 use crate::model::broker::prefs::BrokerPrefs;
-use crate::model::broker::ticket::{self as rules, TicketKind};
+use crate::model::broker::ticket::{self as rules};
 use crate::model::chart::context::{LiveFacts, LiveOrderRequest};
 use crate::model::chart::kind::ChartType;
 use crate::trading::backend::TradingBackend;
@@ -23,6 +23,7 @@ use crate::trading::model::{MarketAccess, OrderClass};
 use crate::ui::broker::chart_trading::{BrokerOverlayAction, OrderLine};
 use crate::ui::broker::panel::{self, PanelContext};
 use crate::ui::theme;
+use degenview_brokers::model::ticket::TicketKind;
 
 impl ChartWorkspace {
     /// The venue of the broker this tab trades at, and how the user trades there.

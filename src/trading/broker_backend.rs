@@ -36,11 +36,12 @@ use super::task::Task;
 use crate::host::broker_host::{BrokerHost, Connection};
 use crate::model::broker;
 use crate::model::broker::chart::ChartTrading;
-use crate::model::broker::ticket::{
-    self as rules, StatusTone, TicketContext, TicketDraft, TicketField, TicketKind, TicketTif,
-};
+use crate::model::broker::ticket::{self as rules, StatusTone};
 use crate::model::broker::venue::TradingVenue;
 use degenview_brokers::edit_session::EditSource;
+use degenview_brokers::model::ticket::{
+    TicketContext, TicketDraft, TicketField, TicketKind, TicketTif,
+};
 
 /// Rows asked for at a time when a list is read from the broker.
 const PAGE: u32 = 100;
@@ -817,7 +818,7 @@ impl TradingBackend for BrokerBackend {
         let issues = ticket
             .issues(&context)
             .into_iter()
-            .map(|issue| DraftIssue::new(field_of(issue.field), issue.text))
+            .map(|issue| DraftIssue::new(field_of(issue.field), rules::issue_text(&issue)))
             .filter(|issue| !missing.contains(&issue.field))
             .collect();
         let estimate = ticket.estimate(&context);
@@ -891,7 +892,7 @@ impl TradingBackend for BrokerBackend {
             Err(issues) => {
                 let text = issues.first().map_or_else(
                     || "The order is not complete.".to_owned(),
-                    |i| i.text.clone(),
+                    rules::issue_text,
                 );
                 return Task::ready(Err(text));
             }
@@ -932,7 +933,7 @@ impl TradingBackend for BrokerBackend {
             Err(issues) => {
                 let text = issues.first().map_or_else(
                     || "The order is not complete.".to_owned(),
-                    |i| i.text.clone(),
+                    rules::issue_text,
                 );
                 return Task::ready(Err(text));
             }

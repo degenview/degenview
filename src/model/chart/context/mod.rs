@@ -9,11 +9,11 @@
 
 use crate::model::alert::{AlertId, AlertState};
 use crate::model::broker::chart::Unavailable as LiveUnavailable;
-use crate::model::broker::ticket::TicketKind;
 use crate::model::chart::price_scale::PriceScaleMode;
 use crate::model::paper::{PaperOrderSide, PaperOrderType};
 use crate::model::pine::instance::VisualOrder;
 use crate::model::{DataSource, PriceFormat};
+use degenview_brokers::model::ticket::TicketKind;
 
 /// What the right-click landed on. Drawings keep their own menu (`drawing_layer`), which opens
 /// first when a drawing is under the pointer.
