@@ -10,6 +10,7 @@ use crate::pine_studio::editor::diff_view;
 use crate::service::llm::ProviderKind;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::error_notice::{self, ErrorEvent, ErrorNotice};
+use crate::ui::kit::loading::LoadingIndicator;
 use crate::ui::kit::markdown_view;
 use crate::ui::{kit, theme};
 use eframe::egui::{
@@ -18,6 +19,8 @@ use eframe::egui::{
 };
 use std::time::{Duration, Instant};
 
+/// The loading indicator beside "Thinking…" and "Writing the script…".
+const INDICATOR: f32 = 28.0;
 const HEADER_HEIGHT: f32 = 38.0;
 /// The composer (the box and its controls) and the line under it.
 const BOTTOM_HEIGHT: f32 = 128.0;
@@ -278,11 +281,7 @@ fn model_menu(ui: &mut Ui, ai: &mut Assistant, setup: &Setup, actions: &mut Vec<
         ModelList::Unloaded | ModelList::Loading => {
             ui.horizontal(|ui| {
                 ui.add_space(MENU_TEXT_INSET);
-                ui.add(
-                    egui::Spinner::new()
-                        .size(12.0)
-                        .color(theme::text_secondary()),
-                );
+                ui.add(LoadingIndicator::new().size(12.0));
                 ui.label(kit::text(
                     "  Loading models…",
                     kit::size::SUBHEADLINE,
@@ -617,11 +616,7 @@ fn tool_step(ui: &mut Ui, id: Id, step: &ToolStep, running: bool) {
             ui.spacing_mut().item_spacing.x = 6.0;
             match &step.outcome {
                 None if running => {
-                    ui.add(
-                        egui::Spinner::new()
-                            .size(12.0)
-                            .color(theme::text_secondary()),
-                    );
+                    ui.add(LoadingIndicator::new().size(12.0));
                 }
                 None => {
                     icons::inline(ui, Icon::Xmark, 12.0, theme::text_tertiary());
@@ -678,11 +673,7 @@ fn tool_step(ui: &mut Ui, id: Id, step: &ToolStep, running: bool) {
 
 fn thinking(ui: &mut Ui) {
     ui.horizontal(|ui| {
-        ui.add(
-            egui::Spinner::new()
-                .size(12.0)
-                .color(theme::text_secondary()),
-        );
+        ui.add(LoadingIndicator::new().size(INDICATOR));
         ui.label(kit::text(
             "Thinking…",
             kit::size::BODY,
@@ -725,11 +716,7 @@ fn assistant_message(ui: &mut Ui, id: Id, text: &str, mode: Mode, done: bool) {
                     theme::text_secondary(),
                 ));
             } else {
-                ui.add(
-                    egui::Spinner::new()
-                        .size(12.0)
-                        .color(theme::text_secondary()),
-                );
+                ui.add(LoadingIndicator::new().size(INDICATOR));
                 ui.label(kit::text(
                     format!(
                         "Writing the script… {} lines so far",

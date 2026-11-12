@@ -12,6 +12,7 @@
 //! A pasted private key is never left on screen: once entered the field shows only its length.
 //! Rules are plain functions; the egui code only draws them.
 
+use crate::ui::kit::loading::LoadingIndicator;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::mpsc::{Receiver, TryRecvError};
 
@@ -628,11 +629,7 @@ fn setup_body(
             start_check(host, descriptor, form);
         }
         if checking || busy.is_some() {
-            ui.add(
-                egui::Spinner::new()
-                    .size(14.0)
-                    .color(theme::text_secondary()),
-            );
+            ui.add(LoadingIndicator::new().size(14.0));
             muted(
                 ui,
                 match busy {

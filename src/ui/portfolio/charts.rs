@@ -10,6 +10,7 @@ use crate::model::portfolio::statistics::PortfolioHistoryRange;
 use crate::model::portfolio::{PortfolioCurrency, PortfolioHolding, PortfolioSnapshot};
 use crate::ui::accessibility;
 use crate::ui::icons::{self, Icon};
+use crate::ui::kit::loading;
 use crate::ui::kit::{
     self,
     time_text::{clock_time, date_text},
@@ -523,40 +524,7 @@ pub fn show_history(ui: &mut egui::Ui, input: &HistoryInput, height: f32) {
     );
 
     if input.is_loading {
-        let label = kit::galley(
-            ui,
-            input.loading_message,
-            12.0,
-            kit::REGULAR,
-            theme::text_primary(),
-            rect.width() - 80.0,
-        );
-        let pill = Rect::from_center_size(
-            rect.center(),
-            Vec2::new(14.0 + 8.0 + label.size().x + 28.0, label.size().y + 20.0),
-        );
-        painter.rect_filled(pill, 10.0, theme::ink(14));
-        painter.rect_stroke(
-            pill,
-            10.0,
-            Stroke::new(1.0, theme::separator().gamma_multiply(0.5)),
-            egui::StrokeKind::Inside,
-        );
-        egui::Spinner::new().size(14.0).paint_at(
-            ui,
-            Rect::from_center_size(
-                Pos2::new(pill.left() + 14.0 + 7.0, pill.center().y),
-                Vec2::splat(14.0),
-            ),
-        );
-        painter.galley(
-            Pos2::new(
-                pill.left() + 14.0 + 14.0 + 8.0,
-                pill.center().y - label.size().y / 2.0,
-            ),
-            label,
-            Color32::PLACEHOLDER,
-        );
+        loading::message(ui, rect, input.loading_message);
         return;
     }
     if input.privacy {

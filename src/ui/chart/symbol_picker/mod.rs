@@ -18,6 +18,7 @@ use crate::model::{DataSource, InstrumentId};
 use crate::service::{self, SearchResult};
 use crate::store::SharedStore;
 use crate::ui::icons::{self, Icon};
+use crate::ui::kit::loading::LoadingIndicator;
 use crate::ui::kit::{self, MEDIUM, REGULAR, SEMIBOLD};
 use crate::ui::theme;
 use eframe::egui::{self, Color32, Id, Key, Modifiers, Rect, Sense, Stroke, Ui, Vec2, pos2, vec2};
@@ -778,10 +779,8 @@ impl SymbolPicker {
         } else if listing.searching {
             let rect = ui.available_rect_before_wrap();
             ui.put(
-                Rect::from_center_size(rect.center(), Vec2::splat(22.0)),
-                egui::Spinner::new()
-                    .size(20.0)
-                    .color(theme::text_secondary()),
+                Rect::from_center_size(rect.center(), Vec2::splat(40.0)),
+                LoadingIndicator::new().size(40.0),
             );
         } else if let Some((source, message)) = listing
             .errors

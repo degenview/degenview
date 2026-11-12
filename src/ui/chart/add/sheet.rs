@@ -10,7 +10,12 @@ use crate::model::portfolio::card::{CardKind, PortfolioCard};
 use crate::service::{self, EventInfo, SearchResult};
 use crate::store::SharedStore;
 use crate::ui::icons::{self, Icon};
-use crate::ui::{chart::add::art, kit::source_logo, theme};
+use crate::ui::kit::loading::LoadingIndicator;
+use crate::ui::{
+    chart::add::art,
+    kit::{loading, source_logo},
+    theme,
+};
 use eframe::egui::{
     self, Color32, CornerRadius, FontId, Galley, Id, Rect, RichText, Sense, Stroke, StrokeKind, Ui,
     Vec2, pos2, text::LayoutJob, vec2,
@@ -24,6 +29,8 @@ use std::time::{Duration, Instant};
 /// Fixed rather than content-hugging, so switching sections never changes the sheet's size.
 pub(crate) const SHEET_SIZE: Vec2 = vec2(900.0, 620.0);
 pub(crate) const PADDING: f32 = 24.0;
+/// The room the trending list's loading state takes.
+const TRENDING_LOADING_HEIGHT: f32 = 120.0;
 const SEARCH_FIELD_HEIGHT: f32 = 36.0;
 const RESULT_ROW_HEIGHT: f32 = 38.0;
 const RESULT_COUNT_HEIGHT: f32 = 18.0;
@@ -1051,18 +1058,11 @@ impl AddChartSheet {
         let selected = &mut self.predictions.selected;
         let Some(events) = self.trending.events_for(provider) else {
             if self.trending.is_loading() {
-                ui.add_space(16.0);
-                ui.horizontal(|ui| {
-                    ui.add_space(4.0);
-                    ui.spacing_mut().item_spacing.x = 8.0;
-                    ui.add(egui::Spinner::new().size(14.0));
-                    ui.label(text(
-                        "Loading trending markets…",
-                        size::CAPTION,
-                        400.0,
-                        theme::text_secondary(),
-                    ));
-                });
+                let (area, _) = ui.allocate_exact_size(
+                    vec2(ui.available_width(), TRENDING_LOADING_HEIGHT),
+                    Sense::hover(),
+                );
+                loading::message(ui, area, "Loading trending markets…");
             }
             return;
         };
@@ -1615,11 +1615,7 @@ pub(crate) fn search_box(
         response.request_focus();
     }
     if searching {
-        inner.add(
-            egui::Spinner::new()
-                .size(13.0)
-                .color(theme::text_secondary()),
-        );
+        inner.add(LoadingIndicator::new().size(13.0));
     }
     if !query.is_empty()
         && icons::button(

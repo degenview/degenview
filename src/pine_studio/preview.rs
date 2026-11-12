@@ -19,6 +19,7 @@ use crate::pine::syntax::token::{DiagnosticSeverity, Limits};
 use crate::service::{self, SearchResult};
 use crate::store::SharedStore;
 use crate::ui::icons::{self, Icon};
+use crate::ui::kit::loading::LoadingIndicator;
 use crate::ui::theme;
 use crate::ui::{ChartCard, DrawingFrame, PREVIEW_INSTANCE, ReplayChartFrame};
 use crate::ui::{
@@ -1336,7 +1337,7 @@ fn picker_ui(ui: &mut Ui, preview: &mut PreviewState) -> Option<PreviewMarket> {
                 text_changed = field.changed();
                 submitted = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
                 if searching {
-                    ui.add(egui::Spinner::new().size(13.0));
+                    ui.add(LoadingIndicator::new().size(13.0));
                 } else if !picker.text().is_empty()
                     && icons::button(
                         ui,
@@ -1444,8 +1445,8 @@ fn picker_ui(ui: &mut Ui, preview: &mut PreviewState) -> Option<PreviewMarket> {
                 let (rect, _) =
                     ui.allocate_exact_size(vec2(rows_width, BODY_HEIGHT), Sense::hover());
                 ui.put(
-                    Rect::from_center_size(rect.center(), Vec2::splat(18.0)),
-                    egui::Spinner::new().size(18.0),
+                    Rect::from_center_size(rect.center(), Vec2::splat(40.0)),
+                    LoadingIndicator::new().size(40.0),
                 );
             } else {
                 body_message(

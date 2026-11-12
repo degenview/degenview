@@ -9,6 +9,7 @@ use crate::service::llm::prefs::AiPrefs;
 use crate::service::llm::report::ErrorReport;
 use crate::service::llm::{HttpProvider, LlmError, LlmProvider, ProviderKind, validate_base_url};
 use crate::ui::icons::Icon;
+use crate::ui::kit::loading::LoadingIndicator;
 use crate::ui::kit::{
     Tone,
     error_notice::{self, ErrorEvent, ErrorNotice},
@@ -307,11 +308,7 @@ pub fn body(
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 10.0;
                 if state.is_testing() {
-                    ui.add(
-                        egui::Spinner::new()
-                            .size(14.0)
-                            .color(theme::text_secondary()),
-                    );
+                    ui.add(LoadingIndicator::new().size(14.0));
                 } else if kit::sheet_button(ui, "Test Connection", false, state.can_save())
                     .clicked()
                 {

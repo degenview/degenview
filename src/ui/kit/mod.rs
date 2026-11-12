@@ -9,6 +9,7 @@ pub mod dialog;
 pub mod error_notice;
 pub mod header_controls;
 pub mod keycap;
+pub mod loading;
 pub mod markdown_view;
 pub mod popover;
 pub mod sheet;
@@ -16,6 +17,7 @@ pub mod source_logo;
 pub mod split;
 pub mod time_text;
 
+use self::loading::LoadingIndicator;
 use crate::model::DataSource;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::dialog::Dialog;
@@ -2229,7 +2231,7 @@ fn button_in_tint(
     let content = text.size().x + spinner;
     let mut x = rect.center().x - content / 2.0;
     if busy {
-        egui::Spinner::new().size(14.0).color(color).paint_at(
+        LoadingIndicator::new().size(14.0).color(color).paint_at(
             ui,
             Rect::from_center_size(pos2(x + 7.0, rect.center().y), Vec2::splat(14.0)),
         );

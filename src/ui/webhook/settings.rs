@@ -9,6 +9,7 @@ use crate::model::webhook::{
     EndpointId, WebhookDeliveryError, WebhookDeliveryResult, WebhookEndpoint,
 };
 use crate::ui::icons::{self, Icon};
+use crate::ui::kit::loading::LoadingIndicator;
 use crate::ui::settings::window::{card, section};
 use crate::ui::webhook::editor::{
     self, WebhookEditorOutcome, WebhookEditorResult, WebhookEditorState,
@@ -516,11 +517,7 @@ fn test_button(
     actions: &mut Vec<WebhookSettingsAction>,
 ) {
     if test == WebhookTestState::Testing {
-        ui.add(
-            egui::Spinner::new()
-                .size(14.0)
-                .color(theme::text_secondary()),
-        );
+        ui.add(LoadingIndicator::new().size(14.0));
     } else if kit::push_button(ui, None, "Test", true)
         .on_hover_text("Send the test payload to this webhook, even if it is disabled")
         .clicked()

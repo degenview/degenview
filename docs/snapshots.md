@@ -33,6 +33,9 @@ click / shortcut ─► ChartWorkspace::begin_snapshot(chart_id, action)        
   has (drawing selection toolbar, pane buttons, interactive alert tags and paper markers, the
   navigation pill, replay picking) is the `Overlays` hook, called at the same points, so layering
   is unchanged. A snapshot is the live frame minus everything a pointer can reach.
+- **Progress.** A hosted action in flight shows a notice over the bottom of the window: the candle
+  indicator (`kit::loading`) above "Uploading to {provider}…" (`ui/chart/notice.rs`), and the camera
+  button runs a small one. A result replaces it.
 - **Consistent frame.** The chart is painted from the card's own state and the workspace's data in
   one UI-thread pass, so no part can come from another moment. The slow work never touches the
   workspace. Live candles arriving later do not change an image already drawn.

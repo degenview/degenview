@@ -12,6 +12,7 @@ use crate::service::keychain::api_keys::{
 use crate::service::llm::report::ErrorReport;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::Tone;
+use crate::ui::kit::loading::LoadingIndicator;
 use crate::ui::settings::window::{card, section, status_badge, status_message};
 use crate::ui::{kit, theme};
 use eframe::egui;
@@ -529,11 +530,7 @@ pub fn alpaca_body(ui: &mut egui::Ui, state: &mut ApiKeysState, store: &AlpacaCr
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 10.0;
                 if form.is_testing() {
-                    ui.add(
-                        egui::Spinner::new()
-                            .size(14.0)
-                            .color(theme::text_secondary()),
-                    );
+                    ui.add(LoadingIndicator::new().size(14.0));
                 } else if kit::sheet_button(ui, "Test Connection", false, form.can_save()).clicked()
                 {
                     form.start_test(|key_id, secret| {
@@ -602,11 +599,7 @@ pub fn coinmarketcap_body(
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 10.0;
                 if form.is_testing() {
-                    ui.add(
-                        egui::Spinner::new()
-                            .size(14.0)
-                            .color(theme::text_secondary()),
-                    );
+                    ui.add(LoadingIndicator::new().size(14.0));
                 } else if kit::sheet_button(ui, "Test Connection", false, true).clicked() {
                     form.start_test(crate::service::market::cmc::test_connection);
                 }
