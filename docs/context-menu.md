@@ -155,7 +155,7 @@ Relevant files:
 ### Persistence and application
 
 - `src/store/mod.rs`
-- `src/app.rs`
+- `src/app/mod.rs`
 - `src/native_bridge.rs`
 
 Use the actual repository as the source of truth.

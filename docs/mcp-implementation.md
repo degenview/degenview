@@ -51,7 +51,7 @@ Audit these modules first:
 
 ```text
 src/main.rs
-src/app.rs
+src/app/mod.rs
 src/workspace/mod.rs
 src/workspace/
 src/native_bridge.rs

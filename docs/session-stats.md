@@ -22,7 +22,7 @@ finds, and a small sample says little; below 30 qualifying days the panel says t
 | The engine: sessions, outcomes, filters, Wilson interval, halves, per-year, timing | `model/session_stats/mod.rs` (pure, tests in `model/session_stats/tests.rs`) |
 | The panel | `ui/chart/session_stats_view/mod.rs` (state, header, question, conditions), `session_stats_view/result.rs` (the answer cards), `parts.rs` (painted rows and bars), `text.rs` (numbers, times, the copied text) |
 | Opening it | `Command::ToggleSessionStats` (`model/chart/context/mod.rs`), `workspace/chart/context/mod.rs` (`show_stats_panel`), docked in `workspace/mod.rs` |
-| The MCP tool | `mcp/session_stats/tools.rs` (arguments), `mcp/session_stats/mod.rs` (result), `host/mcp/mod.rs::session_statistics` |
+| The MCP tool | `mcp/session_stats/tools.rs` (arguments), `mcp/session_stats/mod.rs` (result), `host/mcp/chart.rs::session_statistics` |
 
 ## The panel
 

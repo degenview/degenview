@@ -18,7 +18,7 @@ Read [Architecture](../architecture.md) before changing module boundaries or dat
 
 ## Architecture
 
-- **Modules, not MVVM.** `model/` pure domain logic; `service/` providers/networking; `ui/` egui rendering; `store/` SQLite; `host/` (one directory per domain) bridges stateful components; `workspace/mod.rs` chart workspaces; `app.rs` coordinates.
+- **Modules, not MVVM.** `model/` pure domain logic; `service/` providers/networking; `ui/` egui rendering; `store/` SQLite; `host/` (one directory per domain) bridges stateful components; `workspace/mod.rs` chart workspaces; `app/` coordinates.
 - **Immediate-mode UI.** Pass state into views; never add observed view models. Render charts with `egui::Painter`, not a chart library.
 - **Background work.** Outside `src/mcp/`, threads and `std::sync::mpsc`, no async runtimes. Shared state `Arc<Mutex<...>>`; keep locks short.
 - **Frame performance.** Code reached from `update`/`ui` must never parse JSON, make blocking system calls (XPC, `SMAppService`), or query SQLite beyond cheap change checks. Cache by change signal (e.g. `Store::layout_index`) or run on a thread and poll (e.g. `AlertRuntimeControl::poll_service_status`).

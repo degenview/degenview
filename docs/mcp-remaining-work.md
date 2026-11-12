@@ -232,10 +232,7 @@ cancellation on disconnect (see [architecture/mcp.md](architecture/mcp.md)). Lef
 
 ## 12. Cleanup
 
-- `src/host/mcp/mod.rs` has grown to ~2,500 lines (host, chart/alert/Pine projections, tests). Split the
-  projections into `mcp/projection/{charts,alerts,pine}.rs` and keep the host to lifecycle and
-  credentials.
-- `mcp/tools.rs` (~1,500 lines) could split per domain the same way.
+- `mcp/tools.rs` (~1,500 lines) could split per domain the same way (`host/mcp/` already has).
 - Add the 2026-07-28-style `server/discover` check to the integration tests if a client uses it.
 
 ## 13. Spec items still to verify before calling it complete

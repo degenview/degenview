@@ -7,7 +7,7 @@ architecture index; use the topic documents for detail.
 
 | Layer | Responsibility |
 | --- | --- |
-| `app.rs`, `workspace/mod.rs`, `workspace/`, `host/` | Stateful coordination: the app, one chart tab (`workspace/` holds its concerns), and one host per feature |
+| `app/`, `workspace/mod.rs`, `workspace/`, `host/` | Stateful coordination: the app, one chart tab (`workspace/` holds its concerns), and one host per feature |
 | `model/` | Pure domain values and engines, one directory per domain |
 | `service/` | Providers, network, caches, Keychain, and OS services |
 | `store/` | SQLite persistence and Swift import |
@@ -16,7 +16,7 @@ architecture index; use the topic documents for detail.
 | `ui/` | Immediate-mode egui rendering |
 | `pine/` | Pure Pine compiler, interpreter, strategy broker, debugger, profiler, and outputs |
 | `pine_studio/` | Script library, editor, preview, assistant, debugger and profiler panels |
-| `mcp/`, `host/mcp/mod.rs` | Local MCP transport and app-thread bridge |
+| `mcp/`, `host/mcp/` | Local MCP transport and app-thread bridge |
 | `bin/` | The login-item alert agent (`degenview-alert-agent`) |
 
 ## Topic map

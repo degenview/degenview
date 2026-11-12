@@ -5,7 +5,7 @@ not [Link charts](chart-sync.md), which carries a pan or zoom between the charts
 Tab Linking is between tabs and only ever touches the chart the user is working in.
 
 Code: `model::tab::link` (pure model, hub and tests), `host::tab::link` (the switches, saved),
-`workspace/tab_link/mod.rs` (a tab's side), `DegenViewApp::tick_tab_links` in `app.rs` (the tick),
+`workspace/tab_link/mod.rs` (a tab's side), `DegenViewApp::tick_tab_links` in `app/tabs.rs` (the tick),
 `ui/window/tab_link_menu/mod.rs` (the menu section), and the underline and the right-click menu in `ui/window/tab_bar.rs`.
 
 ## What TradingView says, and what is ours
