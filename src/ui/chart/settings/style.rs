@@ -9,7 +9,7 @@ use crate::model::chart::kind::{
     RangeLook, Rgba, SizeMethod, SizeRule,
 };
 use crate::ui::chart::card::ChartCard;
-use crate::ui::chart::series::{color as paint_color, line_default};
+use crate::ui::chart::series::{HLC_FILL_ALPHA, color as paint_color, line_default, neutral_line};
 use crate::ui::icons::Icon;
 use crate::ui::kit;
 use crate::ui::settings::card;
@@ -724,7 +724,6 @@ fn area_rows(ui: &mut Ui, id: Id, settings: &mut AreaSettings) {
 }
 
 fn hlc_area_rows(ui: &mut Ui, id: Id, settings: &mut HlcAreaSettings, palette: Pair) {
-    let close = line_default();
     color_row(
         ui,
         Icon::ArrowUpRight,
@@ -747,16 +746,25 @@ fn hlc_area_rows(ui: &mut Ui, id: Id, settings: &mut HlcAreaSettings, palette: P
         "Close line",
         None,
         &mut settings.close_line,
-        close,
+        neutral_line(),
     );
-    let fill = fade(settings.close_line.unwrap_or(close), 0.16);
+    let high = settings.high_line.unwrap_or(palette.0);
+    let low = settings.low_line.unwrap_or(palette.1);
     color_row(
         ui,
         Icon::Palette,
-        "Fill between high and low",
+        "Fill above close",
         Some("Its opacity sets how strong the fill is."),
-        &mut settings.fill,
-        fill,
+        &mut settings.high_fill,
+        fade(high, HLC_FILL_ALPHA),
+    );
+    color_row(
+        ui,
+        Icon::Palette,
+        "Fill below close",
+        None,
+        &mut settings.low_fill,
+        fade(low, HLC_FILL_ALPHA),
     );
     width_row(ui, id, &mut settings.width);
 }
