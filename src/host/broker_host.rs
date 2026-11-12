@@ -22,12 +22,12 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use degenview_brokers::model::pending::{
-    JournalError, PendingJournal, PendingSubmission, SubmissionOutcome,
+    BlobJournal, JournalError, JournalStorage, PendingJournal, PendingSubmission,
 };
 use degenview_brokers::model::reducer::Notice;
 use degenview_brokers::{
-    AccountId, Broker, BrokerError, BrokerId, BrokerRuntime, BrokerSnapshot, ClientOrderId,
-    Credentials, Env, NoticeSink, ProductId, Quote, RuntimeConfig, SecretStore, Session, Waker,
+    Broker, BrokerError, BrokerId, BrokerRuntime, BrokerSnapshot, Credentials, Env, NoticeSink,
+    ProductId, Quote, RuntimeConfig, SecretStore, Session, Waker,
 };
 
 use crate::model::broker;
@@ -41,24 +41,14 @@ pub const PENDING_KEY: &str = "broker.pending";
 /// The one credential profile in use. A broker that supports several keys at once would add more.
 pub const PROFILE: &str = "default";
 
-/// Orders sent and not yet settled, kept in the local database so a restart cannot lose them.
-pub struct StoreJournal {
-    store: SharedStore,
-    /// One writer at a time: read-modify-write of one setting.
-    gate: Mutex<()>,
-}
+/// Where the journal's list of unresolved orders is kept: one setting in the local database, so a
+/// restart cannot lose them.
+pub struct StoreStorage(SharedStore);
 
-impl StoreJournal {
-    pub fn new(store: SharedStore) -> Self {
-        Self {
-            store,
-            gate: Mutex::new(()),
-        }
-    }
-
-    fn read(&self) -> Result<Vec<PendingSubmission>, JournalError> {
+impl JournalStorage for StoreStorage {
+    fn load(&self) -> Result<Vec<PendingSubmission>, JournalError> {
         let store = self
-            .store
+            .0
             .lock()
             .map_err(|_| JournalError("the store is unavailable".to_owned()))?;
         // An undecodable record is an error, never "nothing pending": that would forget an order.
@@ -68,9 +58,9 @@ impl StoreJournal {
             .map_err(|error| JournalError(format!("pending orders could not be read: {error}")))
     }
 
-    fn write(&self, entries: &[PendingSubmission]) -> Result<(), JournalError> {
+    fn save(&self, entries: &[PendingSubmission]) -> Result<(), JournalError> {
         let store = self
-            .store
+            .0
             .lock()
             .map_err(|_| JournalError("the store is unavailable".to_owned()))?;
         store
@@ -79,51 +69,15 @@ impl StoreJournal {
     }
 }
 
-impl PendingJournal for StoreJournal {
-    fn record(&self, entry: &PendingSubmission) -> Result<(), JournalError> {
-        let _gate = self.gate.lock().unwrap_or_else(|e| e.into_inner());
-        let mut entries = self.read()?;
-        // Keyed by account too: the same client id in two portfolios is two orders.
-        entries.retain(|e| {
-            !(e.broker == entry.broker
-                && e.account == entry.account
-                && e.client_id == entry.client_id)
-        });
-        entries.push(entry.clone());
-        self.write(&entries)
-    }
-
-    fn resolve(
-        &self,
-        broker: BrokerId,
-        account: &AccountId,
-        client_id: &ClientOrderId,
-        _outcome: &SubmissionOutcome,
-    ) -> Result<(), JournalError> {
-        let _gate = self.gate.lock().unwrap_or_else(|e| e.into_inner());
-        let mut entries = self.read()?;
-        let before = entries.len();
-        entries.retain(|e| {
-            !(e.broker == broker && &e.account == account && &e.client_id == client_id)
-        });
-        if entries.len() == before {
-            return Ok(());
-        }
-        self.write(&entries)
-    }
-
-    fn unresolved(&self, broker: BrokerId) -> Result<Vec<PendingSubmission>, JournalError> {
-        Ok(self
-            .read()?
-            .into_iter()
-            .filter(|entry| entry.broker == broker)
-            .collect())
-    }
+/// Orders sent and not yet settled, kept in the local database. The rules (records keyed by
+/// account, one writer, an unreadable list is an error) are the crate's `BlobJournal`.
+pub fn store_journal(store: SharedStore) -> BlobJournal<StoreStorage> {
+    BlobJournal::new(StoreStorage(store))
 }
 
 /// The account a connected runtime trades in, for tests that place orders through it.
 #[cfg(test)]
-pub(crate) fn account_of(runtime: &BrokerRuntime) -> AccountId {
+pub(crate) fn account_of(runtime: &BrokerRuntime) -> degenview_brokers::AccountId {
     runtime
         .snapshot()
         .account
@@ -302,7 +256,7 @@ impl BrokerHost {
     pub fn production(store: SharedStore) -> Arc<Self> {
         Self::new(
             Arc::new(SharedSecrets),
-            Arc::new(StoreJournal::new(store.clone())),
+            Arc::new(store_journal(store.clone())),
             Some(store),
             production_env(),
             |config| config,

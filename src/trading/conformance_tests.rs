@@ -12,7 +12,7 @@ use super::backend::TradingBackend;
 use super::draft::{DraftField, TradeDraft};
 use super::model::{BackendState, MarketAccess, OrderClass, UnavailableKind, VenueKind};
 use super::task::Task;
-use crate::host::broker_host::{BrokerHost, StoreJournal};
+use crate::host::broker_host::{BrokerHost, store_journal};
 use crate::host::paper_host::PaperHost;
 use crate::host::trading_hub::TradingHub;
 use crate::model::broker::venue::TradingVenue;
@@ -213,7 +213,7 @@ fn a_connected_broker_answers_as_a_venue() {
         .with_request_gap(Duration::from_millis(2));
     let brokers = BrokerHost::new(
         Arc::new(MemorySecretStore::new()),
-        Arc::new(StoreJournal::new(store.clone())),
+        Arc::new(store_journal(store.clone())),
         Some(store.clone()),
         env,
         |config| config.fast(),

@@ -11,7 +11,7 @@ use degenview_brokers::{BrokerId, Env, MarketRef, MemorySecretStore, Side, Statu
 use eframe::egui::{self, Vec2};
 
 use super::order_sheet::{self, SheetAction, SheetInput, SheetState};
-use crate::host::broker_host::{BrokerHost, StoreJournal};
+use crate::host::broker_host::{BrokerHost, store_journal};
 use crate::host::paper_host::PaperHost;
 use crate::host::trading_hub::TradingHub;
 use crate::model::broker::venue::TradingVenue;
@@ -54,7 +54,7 @@ fn rig() -> Rig {
         .with_request_gap(Duration::from_millis(2));
     let brokers = BrokerHost::new(
         Arc::new(MemorySecretStore::new()),
-        Arc::new(StoreJournal::new(store.clone())),
+        Arc::new(store_journal(store.clone())),
         Some(store.clone()),
         env,
         |config| config.fast(),
