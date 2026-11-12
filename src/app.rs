@@ -331,6 +331,9 @@ pub struct DegenViewApp {
     paper: Arc<Mutex<PaperHost>>,
     /// Live broker connections, shared by every window (never reachable from MCP or scripts).
     broker_host: Arc<crate::host::broker_host::BrokerHost>,
+    /// The venues the user trades on (paper and each connected broker), shared by every window and
+    /// Settings: the one owner of a venue's lifecycle.
+    trading_hub: Arc<crate::host::trading_hub::TradingHub>,
     /// The broker host's revision the tab windows were last repainted for.
     broker_revision: u64,
     /// Orders placed over MCP by `request_id`, so a retried call places nothing twice.
@@ -472,6 +475,7 @@ struct WindowEnv {
     portfolio_host: Arc<Mutex<PortfolioHost>>,
     card_env: PortfolioCardEnv,
     paper_host: Arc<Mutex<PaperHost>>,
+    trading_hub: Arc<crate::host::trading_hub::TradingHub>,
     alert_host: Arc<Mutex<AlertHost>>,
     alert_fx_shared: Arc<Mutex<std::collections::HashMap<AlertCurrency, f64>>>,
     app_actions: Arc<Mutex<Vec<AppAction>>>,
@@ -809,6 +813,7 @@ fn show_tab(
                 workspace.set_alert_fx_rates(&rates);
             }
             workspace.set_card_env(&env.card_env);
+            workspace.set_trading_hub(&env.trading_hub);
             workspace.set_snapshots(&env.snapshots);
             workspace.set_link_host(&env.tab_link);
             let actions = workspace.ui(ui, &env.paper_host);
@@ -959,13 +964,13 @@ impl DegenViewApp {
         let paper = Arc::new(Mutex::new(PaperHost::load(store.clone())));
         // Live trading: shared by every window, outside the paper lock. A broker with saved
         // credentials connects now (on its own thread), so an account is live when it is wanted.
-        let broker_host = crate::host::broker_host::BrokerHost::install(store.clone());
+        let broker_host = crate::host::broker_host::BrokerHost::production(store.clone());
         broker_host.attach(&creation.egui_ctx);
         // The venues the user chose: connects every saved key and each chosen broker that needs none.
-        let trading_hub = crate::host::trading_hub::TradingHub::install(
+        let trading_hub = crate::host::trading_hub::TradingHub::new(
             broker_host.clone(),
             paper.clone(),
-            store.clone(),
+            Some(store.clone()),
         );
         trading_hub.connect_enabled();
         let snapshots = SnapshotHost::load(store.clone());
@@ -1159,6 +1164,7 @@ impl DegenViewApp {
             portfolio,
             paper,
             broker_host,
+            trading_hub,
             broker_revision: 0,
             mcp_orders: Mutex::new(mcp_host::OrderMemory::default()),
             mcp_snapshots: Mutex::new(mcp_host::SnapshotJobs::default()),
@@ -3004,6 +3010,7 @@ impl DegenViewApp {
             portfolio_host: Arc::clone(&self.portfolio),
             card_env: self.card_env.clone(),
             paper_host: Arc::clone(&self.paper),
+            trading_hub: Arc::clone(&self.trading_hub),
             alert_host: Arc::clone(&self.alert_host),
             alert_fx_shared: Arc::clone(&self.alert_fx_shared),
             app_actions: Arc::clone(&self.actions),
@@ -3077,6 +3084,7 @@ impl DegenViewApp {
         let updates = self.updates.clone();
         let sync = self.sync.clone();
         let mcp_confirmations = Arc::clone(&self.mcp_confirmations);
+        let trading_hub = Arc::clone(&self.trading_hub);
         let builder = crate::ui::window::chrome::branded(
             egui::ViewportBuilder::default()
                 .with_title("Settings")
@@ -3158,6 +3166,7 @@ impl DegenViewApp {
                     mcp_input,
                     &updates,
                     &sync,
+                    &trading_hub,
                     now,
                     &reference_count,
                 );
