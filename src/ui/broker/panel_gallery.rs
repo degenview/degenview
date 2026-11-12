@@ -13,7 +13,7 @@ use degenview_brokers::{
 };
 use eframe::egui::{self, Vec2};
 
-use crate::host::broker_host::{BrokerHost, StoreJournal, account_of};
+use crate::host::broker_host::{BrokerHost, account_of, store_journal};
 use crate::store::Store;
 use crate::ui::broker::panel::{self, BrokerPanelState, BrokerTab};
 use crate::ui::render_tests::Screen;
@@ -37,7 +37,7 @@ fn rig() -> Rig {
         .with_request_gap(Duration::from_millis(2));
     let host = BrokerHost::new(
         Arc::new(MemorySecretStore::new()),
-        Arc::new(StoreJournal::new(store.clone())),
+        Arc::new(store_journal(store.clone())),
         Some(store.clone()),
         env,
         |config| config.fast(),

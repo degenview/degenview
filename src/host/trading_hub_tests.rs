@@ -8,7 +8,7 @@ use degenview_brokers::coinbase::SANDBOX_ID;
 use degenview_brokers::coinbase::fake::{CoinbaseExchange, credentials, generate_key_pem};
 use degenview_brokers::{BrokerId, Env, MemorySecretStore, SecretStore, Status};
 
-use super::broker_host::{BrokerHost, StoreJournal};
+use super::broker_host::{BrokerHost, store_journal};
 use super::paper_host::PaperHost;
 use super::trading_hub::{ENABLED_KEY, TradingHub};
 use crate::model::broker::venue::TradingVenue;
@@ -57,7 +57,7 @@ impl Rig {
             .with_request_gap(Duration::from_millis(2));
         let brokers = BrokerHost::new(
             secrets.clone(),
-            Arc::new(StoreJournal::new(store.clone())),
+            Arc::new(store_journal(store.clone())),
             Some(store.clone()),
             env,
             |config| config.fast(),
@@ -317,7 +317,7 @@ fn saving_a_key_through_the_hub_enables_the_broker_and_a_failed_removal_is_repor
         .with_request_gap(Duration::from_millis(2));
     let brokers = BrokerHost::new(
         Arc::new(Refusing(MemorySecretStore::new())),
-        Arc::new(StoreJournal::new(store.clone())),
+        Arc::new(store_journal(store.clone())),
         Some(store.clone()),
         env,
         |config| config.fast(),

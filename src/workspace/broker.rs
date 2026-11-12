@@ -268,7 +268,7 @@ mod tests {
     use eframe::egui;
 
     use super::*;
-    use crate::host::broker_host::{BrokerHost, StoreJournal};
+    use crate::host::broker_host::{BrokerHost, store_journal};
     use crate::host::paper_host::PaperHost;
     use crate::host::trading_hub::TradingHub;
     use crate::model::broker::venue::TradingVenue;
@@ -297,7 +297,7 @@ mod tests {
                 .with_request_gap(Duration::from_millis(2));
             let host = BrokerHost::new(
                 Arc::new(MemorySecretStore::new()),
-                Arc::new(StoreJournal::new(store.clone())),
+                Arc::new(store_journal(store.clone())),
                 Some(store.clone()),
                 env,
                 |config| config.fast(),

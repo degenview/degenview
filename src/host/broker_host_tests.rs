@@ -12,7 +12,7 @@ use degenview_brokers::{
     ProductId, SecretStore, Side, Status, TimeInForce,
 };
 
-use super::broker_host::{BrokerHost, Connection, PENDING_KEY, PROFILE, StoreJournal};
+use super::broker_host::{BrokerHost, Connection, PENDING_KEY, PROFILE, store_journal};
 use crate::store::{SharedStore, Store};
 
 const ID: BrokerId = BrokerId::new("coinbase");
@@ -43,7 +43,7 @@ fn host_over(
         .with_request_gap(Duration::from_millis(2));
     BrokerHost::new(
         secrets,
-        Arc::new(StoreJournal::new(store.clone())),
+        Arc::new(store_journal(store.clone())),
         Some(store.clone()),
         env,
         |config| config.fast(),
@@ -342,7 +342,7 @@ fn a_placed_order_is_visible_to_everyone_sharing_the_host() {
 #[test]
 fn the_pending_journal_survives_a_restart_and_never_forgets_on_a_bad_record() {
     let store = store();
-    let first = StoreJournal::new(store.clone());
+    let first = store_journal(store.clone());
     let entry = PendingSubmission {
         broker: ID,
         account: AccountId::new("pf-1"),
@@ -353,7 +353,7 @@ fn the_pending_journal_survives_a_restart_and_never_forgets_on_a_bad_record() {
     first.record(&entry).unwrap();
     first.record(&entry).unwrap(); // recording twice keeps one
     // A new process: a new journal over the same database.
-    let second = StoreJournal::new(store.clone());
+    let second = store_journal(store.clone());
     assert_eq!(second.unresolved(ID).unwrap(), vec![entry.clone()]);
     assert!(
         second
@@ -377,7 +377,7 @@ fn the_pending_journal_survives_a_restart_and_never_forgets_on_a_bad_record() {
         .unwrap()
         .set_setting(PENDING_KEY, &"garbage")
         .unwrap();
-    assert!(StoreJournal::new(store).unresolved(ID).is_err());
+    assert!(store_journal(store).unresolved(ID).is_err());
 }
 
 #[test]
@@ -669,7 +669,7 @@ fn a_key_that_could_not_be_removed_says_so_and_comes_back_at_the_next_start() {
 
 #[test]
 fn the_same_client_id_in_two_accounts_is_two_records_in_the_store() {
-    let journal = StoreJournal::new(store());
+    let journal = store_journal(store());
     let mut mine = PendingSubmission {
         broker: ID,
         account: AccountId::new("portfolio-a"),
@@ -705,7 +705,7 @@ fn the_same_client_id_in_two_accounts_is_two_records_in_the_store() {
         .unwrap()
         .set_setting(PENDING_KEY, &legacy)
         .unwrap();
-    let journal = StoreJournal::new(store);
+    let journal = store_journal(store);
     let records = journal.unresolved(ID).unwrap();
     assert_eq!(records.len(), 1);
     assert!(records[0].account.as_str().is_empty());
@@ -775,7 +775,7 @@ fn an_unconfirmed_order_of_another_account_is_held_not_shown_or_settled() {
         draft: draft(),
         created_ms: 1_000,
     };
-    StoreJournal::new(store.clone()).record(&theirs).unwrap();
+    store_journal(store.clone()).record(&theirs).unwrap();
 
     let (host, _) = host(&exchange, &store);
     host.adopt(ID, credentials(&generate_key_pem()))
@@ -790,7 +790,7 @@ fn an_unconfirmed_order_of_another_account_is_held_not_shown_or_settled() {
         "it is not this account's order"
     );
     assert_eq!(
-        StoreJournal::new(store).unresolved(ID).unwrap(),
+        store_journal(store).unresolved(ID).unwrap(),
         vec![theirs],
         "and nothing deleted it"
     );
