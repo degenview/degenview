@@ -91,9 +91,10 @@ account, and nothing here reaches scripts, alerts or MCP.
 
 ## What would move to the `degenview-brokers` crate
 
-Pure and egui-free now, so each is a file lift followed by a crate release (0.4.0 if an existing type
-changes, 0.3.x if only modules are added) and a version bump here. Nothing was moved: the app pins an
-exact crates.io version, and a half-moved rule would be written twice.
+What is listed here is pure and egui-free, so each is a file lift followed by a crate release (0.4.0 if an
+existing type changes, 0.3.x if only modules are added) and a version bump here. The app pins an exact
+crates.io version, so the moves that are done (see "Fixed since") wait on 0.3.1 and are draft PRs until it
+is published. Still to move:
 
 | Move | From | Why it belongs there |
 | --- | --- | --- |
