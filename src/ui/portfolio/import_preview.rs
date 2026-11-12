@@ -10,6 +10,7 @@ use crate::model::portfolio::csv::CsvPreview;
 use crate::model::portfolio::format::{PortfolioValueFormatter, QuantitySign};
 use crate::model::portfolio::{PortfolioCurrency, PortfolioTransaction};
 use crate::ui::icons::Icon;
+use crate::ui::kit::loading::LoadingIndicator;
 use crate::ui::kit::sheet;
 use crate::ui::portfolio::empty;
 use crate::ui::portfolio::grid::{self, Col, Navigation, RowContext, TableSpec};
@@ -461,7 +462,7 @@ fn preview_row(
 fn status(ui: &mut Ui, importing: bool, preview: &CsvPreview) {
     ui.spacing_mut().item_spacing.x = 6.0;
     if importing {
-        ui.add(egui::Spinner::new().size(14.0));
+        ui.add(LoadingIndicator::new().size(14.0));
         ui.label(kit::text(
             "Validating and importing\u{2026}",
             kit::size::BODY,

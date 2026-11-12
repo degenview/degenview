@@ -10,6 +10,7 @@ use crate::model::portfolio::card::{CardKind, PortfolioCard};
 use crate::service::{self, EventInfo, SearchResult};
 use crate::store::SharedStore;
 use crate::ui::icons::{self, Icon};
+use crate::ui::kit::loading::LoadingIndicator;
 use crate::ui::{
     chart::add::art,
     kit::{loading, source_logo},
@@ -1614,11 +1615,7 @@ pub(crate) fn search_box(
         response.request_focus();
     }
     if searching {
-        inner.add(
-            egui::Spinner::new()
-                .size(13.0)
-                .color(theme::text_secondary()),
-        );
+        inner.add(LoadingIndicator::new().size(13.0));
     }
     if !query.is_empty()
         && icons::button(

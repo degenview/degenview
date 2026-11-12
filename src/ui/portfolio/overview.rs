@@ -18,6 +18,7 @@ use crate::model::portfolio::{
 };
 use crate::ui::accessibility;
 use crate::ui::icons::{self, Icon};
+use crate::ui::kit::loading::LoadingIndicator;
 use crate::ui::kit::{self, MEDIUM, REGULAR, SEMIBOLD, time_text::date_text};
 use crate::ui::portfolio::charts::{self, HistoryInput};
 use crate::ui::portfolio::empty;
@@ -513,7 +514,7 @@ fn hero(
     if input.is_loading_initial {
         // Painted, not `put`: `put` would move the cursor back up to the spinner, and the cards
         // below would start under the hero.
-        egui::Spinner::new().size(16.0).paint_at(
+        LoadingIndicator::new().size(16.0).paint_at(
             ui,
             Rect::from_center_size(pos2(inner.left() + 8.0, balance_middle), Vec2::splat(16.0)),
         );

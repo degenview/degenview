@@ -24,15 +24,14 @@ do not restyle screens you were not asked to touch, and do not copy their older 
   in-window title bar, gear-and-title header or close button in a window that has one.
 - **Finished.** Design ships complete: every state (empty, loading, error, hover, disabled, long text) is designed, spacing and alignment are exact, and you have looked at it in a picture before pushing.
 - **Busy states use the candle indicator.** `kit::loading::LoadingIndicator` (a scrolling mini
-  candle chart), not `egui::Spinner`, for new work-in-progress UI. `.size(n)` is the side of a
+  candle chart), never `egui::Spinner`, for any work-in-progress UI. `.size(n)` is the side of a
   square: below 20 it is 3 candles, from 20 it has wicks, from 28 it takes `theme::UP`/`DOWN`;
   smaller it is `theme::text_secondary()`. `.color(c)` forces one colour at any size (a button's
   text colour). `.paint_at(ui, rect)` mirrors `Spinner::paint_at`. It repaints itself while shown.
   A pane with nothing to show yet uses `kit::loading::message(ui, area, text)` (a 40 indicator over
   its text, centred); a progress toast puts a 48 one above its text, as the snapshot notice does.
-  Large sites already use it (update check, symbol pickers, portfolio panes, Add chart trending,
-  the assistant); small inline `egui::Spinner`s (Test buttons, busy buttons, field adornments) are
-  not migrated yet: swap one when you touch it.
+  Every busy state in the app uses it: the large ones above, and the small inline ones (Test
+  buttons, busy buttons, field adornments, import rows) at 10-16.
 - **One scale of text.** Page title `kit::size::TITLE2 + 3`, section heading `HEADLINE` bold, body
   `BODY`, hints `CAPTION` in `text_secondary`. Sizes only from `kit::size`.
 

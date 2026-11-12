@@ -10,6 +10,7 @@
 use crate::model::portfolio::csv::{CmcPreview, CmcRow, CsvPreview, Mint};
 use crate::model::portfolio::{PortfolioAsset, PortfolioCurrency, PortfolioTransaction};
 use crate::ui::icons::{self, Icon};
+use crate::ui::kit::loading::LoadingIndicator;
 use crate::ui::kit::sheet;
 use crate::ui::portfolio::grid;
 use crate::ui::portfolio::import_preview::{plural, warning_title};
@@ -602,7 +603,7 @@ fn section_heading(ui: &mut Ui, title: &str, detail: &str, busy: Option<&str>) {
             label,
             Color32::PLACEHOLDER,
         );
-        egui::Spinner::new().size(13.0).paint_at(
+        LoadingIndicator::new().size(13.0).paint_at(
             ui,
             Rect::from_center_size(pos2(left - 14.0, row.center().y), Vec2::splat(13.0)),
         );
@@ -869,7 +870,7 @@ fn token_row(
     let room = (right - 14.0 - target).max(60.0);
     match &status {
         TokenStatus::Resolving => {
-            egui::Spinner::new().size(14.0).paint_at(
+            LoadingIndicator::new().size(14.0).paint_at(
                 ui,
                 Rect::from_center_size(pos2(target + 7.0, middle), Vec2::splat(14.0)),
             );

@@ -3,6 +3,7 @@
 //! reads as one family. Empty pages reuse the prominent action and a menu button for their calls
 //! to action, so a pair there matches the header.
 
+use super::loading::LoadingIndicator;
 use crate::ui::accessibility;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, REGULAR, SEMIBOLD};
@@ -103,7 +104,7 @@ pub fn menu_button(
     if busy {
         ui.put(
             Rect::from_center_size(tail, Vec2::splat(10.0)),
-            egui::Spinner::new().size(10.0),
+            LoadingIndicator::new().size(10.0),
         );
     } else {
         icons::paint(

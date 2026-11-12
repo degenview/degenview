@@ -15,6 +15,7 @@ use crate::service::snapshot_providers::{
 use crate::service::snapshot_upload::{self, UreqTransport};
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::Tone;
+use crate::ui::kit::loading::LoadingIndicator;
 use crate::ui::paper::form;
 use crate::ui::settings::api_keys::{Autosave, StatusMessage, destructive_button, field};
 use crate::ui::settings::brokers::{fitted, gray_link, muted, step_row, titled_group};
@@ -436,11 +437,7 @@ fn actions_row(
                 form.start_test(provider, settings, input.secrets);
             }
             if testing {
-                ui.add(
-                    egui::Spinner::new()
-                        .size(14.0)
-                        .color(theme::text_secondary()),
-                );
+                ui.add(LoadingIndicator::new().size(14.0));
                 muted(ui, "Checking…");
             }
         }

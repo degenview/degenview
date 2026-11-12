@@ -1337,7 +1337,7 @@ fn picker_ui(ui: &mut Ui, preview: &mut PreviewState) -> Option<PreviewMarket> {
                 text_changed = field.changed();
                 submitted = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
                 if searching {
-                    ui.add(egui::Spinner::new().size(13.0));
+                    ui.add(LoadingIndicator::new().size(13.0));
                 } else if !picker.text().is_empty()
                     && icons::button(
                         ui,

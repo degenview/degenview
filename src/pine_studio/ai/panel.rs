@@ -281,11 +281,7 @@ fn model_menu(ui: &mut Ui, ai: &mut Assistant, setup: &Setup, actions: &mut Vec<
         ModelList::Unloaded | ModelList::Loading => {
             ui.horizontal(|ui| {
                 ui.add_space(MENU_TEXT_INSET);
-                ui.add(
-                    egui::Spinner::new()
-                        .size(12.0)
-                        .color(theme::text_secondary()),
-                );
+                ui.add(LoadingIndicator::new().size(12.0));
                 ui.label(kit::text(
                     "  Loading models…",
                     kit::size::SUBHEADLINE,
@@ -620,11 +616,7 @@ fn tool_step(ui: &mut Ui, id: Id, step: &ToolStep, running: bool) {
             ui.spacing_mut().item_spacing.x = 6.0;
             match &step.outcome {
                 None if running => {
-                    ui.add(
-                        egui::Spinner::new()
-                            .size(12.0)
-                            .color(theme::text_secondary()),
-                    );
+                    ui.add(LoadingIndicator::new().size(12.0));
                 }
                 None => {
                     icons::inline(ui, Icon::Xmark, 12.0, theme::text_tertiary());

@@ -11,6 +11,7 @@ use crate::sync::core::{PauseReason, Phase};
 use crate::sync::initial::{Counts, JoinMode, JoinSummary};
 use crate::sync::transport::ErrorKind;
 use crate::ui::icons::Icon;
+use crate::ui::kit::loading::LoadingIndicator;
 use crate::ui::kit::{
     Tone,
     dialog::{self, Dialog},
@@ -332,7 +333,7 @@ fn delete_section(ui: &mut egui::Ui, sync: &SyncHost, view: &SyncView) {
                                 kit::REGULAR,
                                 theme::text_secondary(),
                             ));
-                            ui.add(egui::Spinner::new().size(14.0));
+                            ui.add(LoadingIndicator::new().size(14.0));
                         } else if offer == DeleteOffer::Ready {
                             let label = if view.delete_error.is_some() {
                                 "Try Again…"
