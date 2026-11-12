@@ -289,7 +289,7 @@ impl DegenViewMcp {
     }
 }
 
-#[tool_router(router = paper_router, vis = "pub(super)")]
+#[tool_router(router = paper_router, vis = "pub(in crate::mcp)")]
 impl DegenViewMcp {
     #[tool(
         name = "degenview_list_paper_accounts",

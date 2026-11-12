@@ -3,7 +3,7 @@
 //! Everything here is a pure function of the arguments, so a request with a bad time, price,
 //! colour or id is refused on the tool thread and never reaches the app. What needs the chart's
 //! candles (snapping a time to its bar, reading a bar's high or low) is left as a spec and
-//! resolved on the app thread by `mcp::chart_data`.
+//! resolved on the app thread by `mcp::chart::data`.
 
 use crate::format::parse_timestamp;
 use crate::mcp::bridge::McpError;

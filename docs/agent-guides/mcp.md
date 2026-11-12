@@ -19,13 +19,13 @@
 ## Sealed trust state
 
 - `mcp.settings`, `mcp.permissions` and every `mcp_client` row are HMAC-sealed under a Keychain key
-  (`mcp::seal`, `keychain::mcp_seal`); a bare verifier would let anyone who can write the SQLite file
+  (`mcp::transport::seal`, `keychain::mcp_seal`); a bare verifier would let anyone who can write the SQLite file
   add a credential.
 - Write them only via `McpHost::persist` (`Store::save_mcp_state`: all three plus `mcp.seal` in one
   savepoint, rewritten from memory, never patched). Never `set_mcp_settings`,
   `set_mcp_global_permissions` or `replace_mcp_clients` for a trust change. `last_used_ms` is
   unsealed on purpose, so the usage save may use `replace_mcp_clients`.
-- New access-deciding field: add to `mcp::seal::Sealed` plus a case in `every_trust_field_is_covered`.
+- New access-deciding field: add to `mcp::transport::seal::Sealed` plus a case in `every_trust_field_is_covered`.
 - Sealing is off in tests, every debug build (new code identity per rebuild = Keychain prompt every
   launch), and `--release --features dev-unsealed-mcp` builds started with `DEGENVIEW_NO_KEYCHAIN`;
   other release builds ignore that variable, never rely on it there. Test with
@@ -46,7 +46,7 @@
   the activity sheet read `McpHost::activity()`, never SQLite. Filtering/paging: `model::mcp::activity`
   (pure, tested); a new outcome or row kind needs a `McpActivityStatus` there. `mcp_audit` is
   local-only in `sync::record::policy`.
-- Rate limits: `mcp/limits.rs`, applied in `require_bearer`. Bad tokens may get 429; a valid token
+- Rate limits: `mcp/transport/limits.rs`, applied in `require_bearer`. Bad tokens may get 429; a valid token
   is never refused for others' failures. `transport::serve` (not `axum::serve`) accepts connections
   so header, time and connection limits hold; add limits there.
 
@@ -88,20 +88,20 @@
   from a worker. Saves compare the file with what the editor last read
   (`PineStudio::open_disk_state`, `ScriptStore::save_if_unchanged`) and are refused during an
   unresolved external-change conflict; never `ScriptStore::save` from MCP.
-- Drawings: plan from `ChartWorkspace::chart_data` with `mcp::chart_data`, commit via
+- Drawings: plan from `ChartWorkspace::chart_data` with `mcp::chart::data`, commit via
   `apply_planned_drawings` (pointer's path, one undo step); tool threads never read `Chart.drawings`
-  or `Chart.candles`. Validate in `mcp::drawings` before queueing; never edit a locked drawing.
+  or `Chart.candles`. Validate in `mcp::chart::drawings` before queueing; never edit a locked drawing.
 - `degenview_get_candles` returns the market's own candles, not constructed bars. Indicator readings
   use the drawn bars (`ChartWorkspace::constructed_bars` for Heikin Ashi, Renko etc.), never raw
   candles.
-- Search/quotes (`mcp/market_tools.rs`) run on tool threads, no bridge: `McpShared::market_search`;
+- Search/quotes (`mcp/market/tools.rs`) run on tool threads, no bridge: `McpShared::market_search`;
   a `QuoteLease` on the app's quote feed (`attach_quotes`), released on drop. Watchlist tools use the
   bridge and `WatchlistStore::edit_list`; never write watchlist rows from a tool thread. Second
   permissions (`get_watchlist` with `include_quotes`): `McpShared::allows`.
 - Live trading is unreachable: nothing under `src/mcp/` may mention `degenview_brokers` or
   `broker_host` (`host::broker_host_tests` fails the build). A tool reaching a real broker needs its
   own design, permission and confirmation, not a new arm here. See [Live trading](../broker-trading.md).
-- Paper writes (`mcp/paper_tools.rs`, `mcp_host::place_paper_order` and friends): only via
+- Paper writes (`mcp/paper/tools.rs`, `mcp_host::place_paper_order` and friends): only via
   `PaperHost::{submit,modify,cancel,close_position}`, `tradable_account` checked first (another
   Mac's account is never changed over MCP), each new write behind its own off-by-default permission.
   A paper `request_id` is bound to its order (another order under it: `CONFLICT`).
@@ -117,8 +117,8 @@
   would refuse (the variant can be built directly), a missing certificate, or one for another
   address. Never add a bind path around it. `bind` is sealed but written only when not loopback, so
   old seals keep verifying.
-- Certificate: `mcp::tls` (`mcp-tls.pem` in the data directory; owner-only on Unix, DPAPI on Windows
-  via `mcp::tls_protect`). Only through `AtRest`: repaired on load, written via a fresh temp file,
+- Certificate: `mcp::transport::tls` (`mcp-tls.pem` in the data directory; owner-only on Unix, DPAPI on Windows
+  via `mcp::transport::tls_protect`). Only through `AtRest`: repaired on load, written via a fresh temp file,
   held to naming its recorded address, created under the `mcp-tls.lock` lock so processes share one
   identity; new steps go inside `load_or_create_locked`. `Host` list: `BindMode::allowed_hosts`, not
   the port. See "Remote access" in [implementation](../mcp-implementation.md).

@@ -2,9 +2,9 @@
 
 use crate::host::mcp_host;
 use crate::mcp::McpServer;
-use crate::mcp::auth::verifier_hex;
 use crate::mcp::bridge::{self, McpCommand, McpError, McpReply};
 use crate::mcp::state::McpShared;
+use crate::mcp::transport::auth::verifier_hex;
 use crate::mcp::types::{
     AddChartResult, AddIndicatorResult, AlertChangeResult, AlertInfo, AlertsResult,
     AppliedPineDetail, AppliedPineInfo, AppliedPineList, ChartsResult, CreateAlertResult,
@@ -145,9 +145,9 @@ fn stub_drawings_changed(stub: &Stub, status: &str, ids: &[u64]) -> McpReply {
             .drawings
             .iter()
             .filter(|drawing| ids.contains(&drawing.id()))
-            .filter_map(crate::mcp::chart_data::drawing_info)
+            .filter_map(crate::mcp::chart::data::drawing_info)
             .collect(),
-        total_drawings: crate::mcp::chart_data::counted(&chart.drawings),
+        total_drawings: crate::mcp::chart::data::counted(&chart.drawings),
     }))
 }
 
@@ -409,7 +409,7 @@ fn stub_app(
             let factor = scale.factor() as u32;
             stub.snapshot_polls.lock().unwrap().insert(7, 0);
             Ok(McpReply::SnapshotStarted(
-                crate::mcp::snapshot_tools::SnapshotStarted {
+                crate::mcp::snapshot::SnapshotStarted {
                     job_id: 7,
                     width: 640 * factor,
                     height: 400 * factor,
@@ -424,12 +424,12 @@ fn stub_app(
             *seen += 1;
             if *seen < 2 {
                 return Ok(McpReply::SnapshotProgress(
-                    crate::mcp::snapshot_tools::SnapshotProgress::Pending,
+                    crate::mcp::snapshot::SnapshotProgress::Pending,
                 ));
             }
             polls.remove(&job_id);
             Ok(McpReply::SnapshotProgress(
-                crate::mcp::snapshot_tools::SnapshotProgress::Ready {
+                crate::mcp::snapshot::SnapshotProgress::Ready {
                     png: Arc::new(STUB_PNG.to_vec()),
                     width: 640,
                     height: 400,
@@ -441,7 +441,7 @@ fn stub_app(
                 return Err(McpError::NotFound("No such workspace".into()));
             }
             let engine = stub.replay.lock().unwrap();
-            Ok(McpReply::Replay(crate::mcp::replay_tools::replay_result(
+            Ok(McpReply::Replay(crate::mcp::replay::replay_result(
                 1,
                 "1D",
                 &engine.view(false),
@@ -474,7 +474,7 @@ fn stub_app(
                         ReplayStart::At(time) => time,
                     };
                     engine.start(requested, "BTCUSDT", timeline);
-                    return Ok(McpReply::Replay(crate::mcp::replay_tools::replay_result(
+                    return Ok(McpReply::Replay(crate::mcp::replay::replay_result(
                         1,
                         "1D",
                         &engine.view(false),
@@ -492,7 +492,7 @@ fn stub_app(
             if !engine.apply(clock) {
                 return Err(McpError::Conflict("No replay is running".into()));
             }
-            Ok(McpReply::Replay(crate::mcp::replay_tools::replay_result(
+            Ok(McpReply::Replay(crate::mcp::replay::replay_result(
                 1,
                 "1D",
                 &engine.view(false),
@@ -820,7 +820,7 @@ fn stub_app(
             stub.draw_calls.lock().unwrap().push("candles".into());
             stub_chart_known(workspace_id, chart_id)?;
             let chart = stub.chart.lock().unwrap();
-            let meta = crate::mcp::chart_data::CandleMeta {
+            let meta = crate::mcp::chart::data::CandleMeta {
                 workspace_id,
                 chart_id,
                 instrument: InstrumentId::new(crate::model::DataSource::Binance, "BTCUSDT"),
@@ -831,7 +831,7 @@ fn stub_app(
                 now_ms: T0 + 30 * DAY - 1_000,
             };
             Ok(McpReply::Candles(Box::new(
-                crate::mcp::chart_data::candles_result(&meta, &chart.candles, limit, before),
+                crate::mcp::chart::data::candles_result(&meta, &chart.candles, limit, before),
             )))
         }
         McpCommand::ListDrawings {
@@ -842,7 +842,7 @@ fn stub_app(
             stub_chart_known(workspace_id, chart_id)?;
             let chart = stub.chart.lock().unwrap();
             Ok(McpReply::Drawings(Box::new(
-                crate::mcp::chart_data::drawings_result(workspace_id, chart_id, &chart.drawings),
+                crate::mcp::chart::data::drawings_result(workspace_id, chart_id, &chart.drawings),
             )))
         }
         McpCommand::AddDrawings {
@@ -854,7 +854,7 @@ fn stub_app(
             stub_chart_known(workspace_id, chart_id)?;
             let ids = {
                 let mut chart = stub.chart.lock().unwrap();
-                let planned = crate::mcp::chart_data::plan_add(
+                let planned = crate::mcp::chart::data::plan_add(
                     &chart.drawings,
                     &chart.candles,
                     chart.next_id,
@@ -877,7 +877,7 @@ fn stub_app(
             let changed = {
                 let mut chart = stub.chart.lock().unwrap();
                 let command =
-                    crate::mcp::chart_data::plan_edit(&chart.drawings, &chart.candles, &edit)?;
+                    crate::mcp::chart::data::plan_edit(&chart.drawings, &chart.candles, &edit)?;
                 if let Some(crate::model::DrawingCommand::Replace { id, drawing }) = command {
                     if let Some(slot) = chart.drawings.iter_mut().find(|d| d.id() == id) {
                         *slot = drawing;
@@ -902,7 +902,7 @@ fn stub_app(
             stub_chart_known(workspace_id, chart_id)?;
             let removed: Vec<u64> = {
                 let mut chart = stub.chart.lock().unwrap();
-                let commands = crate::mcp::chart_data::plan_remove(&chart.drawings, &drawing_ids)?;
+                let commands = crate::mcp::chart::data::plan_remove(&chart.drawings, &drawing_ids)?;
                 let removed: Vec<u64> = commands
                     .iter()
                     .filter_map(|command| match command {
@@ -1048,7 +1048,7 @@ fn stub_app(
                 .unwrap()
                 .push(format!("timeframe:{}", timeframe.label()));
             Ok(McpReply::Timeframe(
-                crate::mcp::chart_control::TimeframeResult {
+                crate::mcp::chart::control::TimeframeResult {
                     workspace_id: "1".into(),
                     timeframe: timeframe.label().into(),
                     previous_timeframe: "1D".into(),
@@ -1068,7 +1068,7 @@ fn stub_app(
                 .unwrap()
                 .push(format!("chart_type:{}", chart_type.slug()));
             Ok(McpReply::ChartChanged(Box::new(
-                crate::mcp::chart_control::ChartChangeResult {
+                crate::mcp::chart::control::ChartChangeResult {
                     workspace_id: "1".into(),
                     chart_id: "2".into(),
                     status: "changed".into(),
@@ -1084,7 +1084,7 @@ fn stub_app(
             stub_chart_known(workspace_id, chart_id)?;
             stub.draw_calls.lock().unwrap().push("remove_chart".into());
             Ok(McpReply::ChartChanged(Box::new(
-                crate::mcp::chart_control::ChartChangeResult {
+                crate::mcp::chart::control::ChartChangeResult {
                     workspace_id: "1".into(),
                     chart_id: "2".into(),
                     status: "removed".into(),
@@ -1125,7 +1125,7 @@ fn stub_app(
         } => {
             stub_chart_known(workspace_id, chart_id)?;
             let chart = stub.chart.lock().unwrap();
-            let meta = crate::mcp::indicator_values::ReadingMeta {
+            let meta = crate::mcp::indicator::ReadingMeta {
                 workspace_id,
                 chart_id,
                 instrument: "BINANCE:BTCUSDT".into(),
@@ -1136,7 +1136,7 @@ fn stub_app(
                 now_ms: i64::MAX,
             };
             Ok(McpReply::IndicatorValues(Box::new(
-                crate::mcp::indicator_values::indicator_values(&meta, &chart.candles, &request),
+                crate::mcp::indicator::indicator_values(&meta, &chart.candles, &request),
             )))
         }
         McpCommand::GetSessionStats {
@@ -3256,7 +3256,7 @@ fn with(mut base: Value, extra: Value) -> Value {
 }
 
 fn time_of_day(day: i64) -> String {
-    crate::mcp::chart_data::iso(T0 + day * DAY)
+    crate::mcp::chart::data::iso(T0 + day * DAY)
 }
 
 #[test]
@@ -3743,16 +3743,16 @@ fn tool_schemas_use_only_standard_formats() {
     assert!(reply.body.contains("\"minimum\":0"), "{}", reply.body);
 }
 
-mod audit_tests;
-mod chart_control_tests;
-mod confirmation_tests;
-mod drawing_tools_tests;
-mod hardening_tests;
-mod indicator_tests;
-mod market_tests;
-mod paper_tests;
-mod portfolio_tests;
-mod replay_tests;
-mod session_stats_tests;
-mod snapshot_tests;
-mod tls_tests;
+mod audit;
+mod chart_control;
+mod confirmation;
+mod drawing_tools;
+mod hardening;
+mod indicator;
+mod market;
+mod paper;
+mod portfolio;
+mod replay;
+mod session_stats;
+mod snapshot;
+mod tls;

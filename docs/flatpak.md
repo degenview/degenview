@@ -136,7 +136,7 @@ Credential Manager > Windows Credentials, where the user can remove them.
   temporary buffers that held a secret are overwritten before they are freed (best effort).
 - The MCP remote-access TLS key (`mcp-tls.pem`) is not an item here: it is a certificate and key in
   one file, so on Windows the whole file is encrypted with DPAPI for the signed-in user
-  (`mcp::tls_protect`, `CryptProtectData`, current-user scope, no UI). Windows normally lets only
+  (`mcp::transport::tls_protect`, `CryptProtectData`, current-user scope, no UI). Windows normally lets only
   that user, on that computer, decrypt it, so a copy, a backup or a disk image is not readable
   without the user's Windows credentials. That is the usual case, not a guarantee: a roaming profile
   lets the same user decrypt on another computer. Any process of the same user can decrypt it (the

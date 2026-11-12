@@ -14,7 +14,7 @@ use crate::host::alert_host::AlertHost;
 use crate::host::mcp_host::{self, find_alert, require_loaded};
 use crate::host::paper_host::PaperHost;
 use crate::mcp::bridge::{McpCommand, McpError};
-use crate::mcp::chart_data;
+use crate::mcp::chart::data;
 use crate::mcp::confirm::{
     ConfirmationBook, OpenError, PendingInfo, PendingView, Settled, Settlement, Summary, Verdict,
 };
@@ -315,7 +315,7 @@ pub fn remove_drawings(
         .chart_data(chart_id)
         .ok_or_else(|| mcp_host::no_chart(workspace, chart_id))?;
     // The same check the removal makes: unknown or locked drawings are refused here, unasked.
-    let commands = chart_data::plan_remove(data.drawings, ids)?;
+    let commands = data::plan_remove(data.drawings, ids)?;
     Ok(Summary::new(
         format!("Delete {}", plural(commands.len(), "drawing", "drawings")),
         format!("on {label}"),

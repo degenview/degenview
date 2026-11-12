@@ -1,7 +1,7 @@
 //! Rate limits, connection and header limits, and cancellation, over real loopback sockets.
 
 use super::{BOTH, Harness, READ, call, connect_local, raw_request, rpc, status_line};
-use crate::mcp::limits::RateLimits;
+use crate::mcp::transport::limits::RateLimits;
 use crate::mcp::transport::{ConnectionLimits, serve};
 use serde_json::json;
 use std::io::{Read, Write};
@@ -270,9 +270,9 @@ fn every_request_carries_the_address_of_the_socket_it_arrived_on() {
 
 #[test]
 fn the_bearer_guard_judges_the_recorded_peer_not_anything_in_the_request() {
-    use crate::mcp::auth::require_bearer;
     use crate::mcp::state::McpShared;
     use crate::mcp::transport::PeerAddr;
+    use crate::mcp::transport::auth::require_bearer;
     use tower::Service;
 
     let shared = McpShared::new();
@@ -320,10 +320,10 @@ fn the_bearer_guard_judges_the_recorded_peer_not_anything_in_the_request() {
 
 #[test]
 fn one_remote_address_guessing_tokens_is_cut_off_without_slowing_this_machine() {
-    use crate::mcp::auth::require_bearer;
-    use crate::mcp::limits::PEER_FAILED_BURST;
     use crate::mcp::state::McpShared;
     use crate::mcp::transport::PeerAddr;
+    use crate::mcp::transport::auth::require_bearer;
+    use crate::mcp::transport::limits::PEER_FAILED_BURST;
     use tower::Service;
 
     let shared = McpShared::new();
@@ -379,9 +379,9 @@ fn one_remote_address_guessing_tokens_is_cut_off_without_slowing_this_machine() 
 
 #[test]
 fn a_peer_the_server_recorded_as_this_machine_is_this_machine_whatever_its_address() {
-    use crate::mcp::auth::require_bearer;
     use crate::mcp::state::McpShared;
     use crate::mcp::transport::PeerAddr;
+    use crate::mcp::transport::auth::require_bearer;
     use crate::model::mcp::Peer;
     use tower::Service;
 

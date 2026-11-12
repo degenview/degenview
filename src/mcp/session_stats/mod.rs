@@ -2,6 +2,8 @@
 //! tool returns it. The counting is `model::session_stats`; this turns its answer into the
 //! result a client reads, and decides what an answer that cannot be given is called.
 
+pub mod tools;
+
 use crate::mcp::bridge::McpError;
 use crate::model::Kline;
 use crate::model::session_stats::{

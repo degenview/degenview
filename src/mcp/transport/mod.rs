@@ -9,11 +9,18 @@
 //! a connection may send before a request exists: [`serve`] caps the number of headers, their
 //! size, the time a client may take to send them, and the number of open connections.
 
-use crate::mcp::auth::require_bearer;
+pub mod auth;
+pub mod cancel;
+pub mod limits;
+pub mod seal;
+pub mod tls;
+pub(in crate::mcp) mod tls_protect;
+
 use crate::mcp::bridge::BridgeClient;
-use crate::mcp::cancel::honour_cancellations;
 use crate::mcp::state::McpShared;
 use crate::mcp::tools::DegenViewMcp;
+use crate::mcp::transport::auth::require_bearer;
+use crate::mcp::transport::cancel::honour_cancellations;
 use crate::model::mcp::Peer;
 use axum::Router;
 use axum::extract::Request;

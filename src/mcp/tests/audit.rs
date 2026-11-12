@@ -1,9 +1,7 @@
 //! The activity log over real loopback requests: every way a call can end leaves one row, and
 //! no row holds anything a client sent beyond a few ids.
 
-use super::hardening_tests::{
-    add_chart_call, cancel_message, head, limits, start_call, wait_for_calls,
-};
+use super::hardening::{add_chart_call, cancel_message, head, limits, start_call, wait_for_calls};
 use super::{BOTH, Harness, READ, call, connect_local, error_code, raw_request, rpc};
 use crate::model::mcp::{McpAuditEntry, McpAuditKind, McpAuditOutcome};
 use serde_json::json;

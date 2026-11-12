@@ -6,7 +6,7 @@
 //! they go through the bridge and run on the app thread like every other mutation.
 
 use crate::mcp::bridge::{McpCommand, McpError, McpReply, REQUEST_TIMEOUT};
-use crate::mcp::markets::{
+use crate::mcp::market::{
     MAX_EDIT_MARKETS, MAX_ENTRY_PAGE, MAX_QUOTE_MARKETS, QuoteInfo, QuotesResult,
     SearchSourceError, SymbolSearchResult, WatchlistChangeResult, WatchlistDetail,
     WatchlistsResult, quote_info, source_id, symbol_hit,
@@ -107,7 +107,7 @@ pub struct MarketCandlesParams {
     #[schemars(length(min = 1, max = 128))]
     pub symbol: String,
     /// The bar length.
-    pub timeframe: crate::mcp::chart_control::McpTimeframe,
+    pub timeframe: crate::mcp::chart::control::McpTimeframe,
     /// How many of the newest bars to return, 1 to 1000. Default 200. A provider may hold fewer.
     #[schemars(range(min = 1, max = 1000))]
     pub limit: Option<u32>,
@@ -403,7 +403,7 @@ fn is_settled(quote: Option<&WatchlistQuote>) -> bool {
     })
 }
 
-pub(super) fn quote_wait(seconds: Option<u32>) -> Result<Duration, CallToolResult> {
+pub(in crate::mcp) fn quote_wait(seconds: Option<u32>) -> Result<Duration, CallToolResult> {
     match seconds {
         None => Ok(DEFAULT_QUOTE_WAIT),
         Some(seconds) if seconds <= MAX_QUOTE_WAIT_SECS => {
@@ -466,7 +466,7 @@ fn search_all(
     })
 }
 
-#[tool_router(router = market_router, vis = "pub(super)")]
+#[tool_router(router = market_router, vis = "pub(in crate::mcp)")]
 impl DegenViewMcp {
     #[tool(
         name = "degenview_search_symbols",
@@ -605,8 +605,8 @@ impl DegenViewMcp {
         &self,
         Extension(parts): Extension<http::request::Parts>,
         Parameters(params): Parameters<MarketCandlesParams>,
-    ) -> Result<Json<crate::mcp::markets::MarketCandlesResult>, CallToolResult> {
-        use crate::mcp::chart_data::{CandleMeta, DEFAULT_CANDLES, MAX_CANDLES, candles_result};
+    ) -> Result<Json<crate::mcp::market::MarketCandlesResult>, CallToolResult> {
+        use crate::mcp::chart::data::{CandleMeta, DEFAULT_CANDLES, MAX_CANDLES, candles_result};
         let client = client_of(&parts)?;
         let limit = params.limit.map_or(DEFAULT_CANDLES, |limit| limit as usize);
         if !(1..=MAX_CANDLES).contains(&limit) {
@@ -670,7 +670,7 @@ impl DegenViewMcp {
         if candles.is_empty() {
             notes.push("The provider returned no candles for this market and timeframe.".into());
         }
-        Ok(Json(crate::mcp::markets::MarketCandlesResult {
+        Ok(Json(crate::mcp::market::MarketCandlesResult {
             instrument: instrument.key(),
             source: source_id(source).to_owned(),
             symbol: instrument.symbol,
@@ -890,7 +890,7 @@ impl DegenViewMcp {
 
     /// Holds a demand on the quote feed for `markets` and waits up to `wait` for them to settle.
     /// The demand ends when this returns or is cancelled. One entry per market, in order.
-    pub(super) async fn wait_for_quotes(
+    pub(in crate::mcp) async fn wait_for_quotes(
         &self,
         markets: &[InstrumentId],
         wait: Duration,

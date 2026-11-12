@@ -8,7 +8,9 @@
 //! therefore gets no profit figure (`currency_mismatch`), and totals are kept per currency
 //! instead of being added across them.
 
-use crate::mcp::chart_data::iso;
+pub mod tools;
+
+use crate::mcp::chart::data::iso;
 use crate::model::portfolio::{
     Portfolio, PortfolioCurrency, PortfolioHolding, PortfolioTransaction, PortfolioTransactionType,
 };
@@ -202,7 +204,7 @@ pub fn value_holdings(
         rows.push((
             HoldingInfo {
                 asset: holding.asset.key.clone(),
-                source: crate::mcp::markets::source_id(holding.asset.source).to_owned(),
+                source: crate::mcp::market::source_id(holding.asset.source).to_owned(),
                 symbol: entry.instrument.symbol.clone(),
                 name: holding
                     .asset

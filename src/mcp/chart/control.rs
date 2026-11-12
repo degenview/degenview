@@ -116,7 +116,7 @@ pub fn chart_type_named(slug: &str) -> Option<ChartType> {
     ChartType::ALL.into_iter().find(|kind| kind.slug() == slug)
 }
 
-#[tool_router(router = chart_control_router, vis = "pub(super)")]
+#[tool_router(router = chart_control_router, vis = "pub(in crate::mcp)")]
 impl DegenViewMcp {
     #[tool(
         name = "degenview_set_timeframe",

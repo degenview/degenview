@@ -3,7 +3,7 @@
 
 use crate::mcp::bridge::McpError;
 use crate::mcp::bridge::{McpCommand, McpReply, REQUEST_TIMEOUT};
-use crate::mcp::market_tools::quote_wait;
+use crate::mcp::market::tools::quote_wait;
 use crate::mcp::portfolio::{
     DEFAULT_TRANSACTION_PAGE, HoldingsResult, MAX_PRICED_HOLDINGS, MAX_TRANSACTION_PAGE,
     PortfoliosResult, TransactionsResult, value_holdings,
@@ -64,7 +64,7 @@ fn portfolio_id(raw: Option<&str>) -> Result<Option<u64>, CallToolResult> {
     .transpose()
 }
 
-#[tool_router(router = portfolio_router, vis = "pub(super)")]
+#[tool_router(router = portfolio_router, vis = "pub(in crate::mcp)")]
 impl DegenViewMcp {
     #[tool(
         name = "degenview_list_portfolios",
@@ -218,7 +218,7 @@ impl DegenViewMcp {
 
 impl DegenViewMcp {
     /// Fails when `client` lost `permission` while the call was waiting.
-    pub(super) fn still_allowed(
+    pub(in crate::mcp) fn still_allowed(
         &self,
         client: &ClientIdentity,
         permission: Permission,

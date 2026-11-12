@@ -1,7 +1,7 @@
 //! The read-only portfolio tools over a real loopback socket, against the real portfolio host
 //! (in-memory database) and a recorded quote provider.
 
-use super::market_tests::feed;
+use super::market::feed;
 use super::{Harness, call, error_code, rpc, tool_names};
 use crate::model::DataSource;
 use crate::model::mcp::Permission;

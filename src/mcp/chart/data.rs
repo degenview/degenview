@@ -6,7 +6,7 @@
 
 use crate::format::civil_from_days;
 use crate::mcp::bridge::McpError;
-use crate::mcp::drawings::{
+use crate::mcp::chart::drawings::{
     AnchorSpec, DrawingEdit, MAX_DRAWINGS_PER_CHART, McpDrawingTool, NewDrawing, PriceField,
     PriceSpec, StylePatch,
 };
@@ -539,7 +539,7 @@ pub fn plan_remove(existing: &[Drawing], ids: &[u64]) -> Result<Vec<DrawingComma
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mcp::drawings::StylePatch;
+    use crate::mcp::chart::drawings::StylePatch;
     use crate::model::DataSource;
 
     const DAY: i64 = 86_400_000;
@@ -586,9 +586,9 @@ mod tests {
         assert_eq!(iso(T0 + 3_661_000), "2025-10-20T01:01:01Z");
         assert_eq!(iso(0), "1970-01-01T00:00:00Z");
         assert_eq!(
-            crate::mcp::drawings::parse_time(&crate::mcp::drawings::TimeArg::Text(iso(
-                T0 + 3_661_000
-            )))
+            crate::mcp::chart::drawings::parse_time(&crate::mcp::chart::drawings::TimeArg::Text(
+                iso(T0 + 3_661_000)
+            ))
             .unwrap(),
             T0 + 3_661_000
         );

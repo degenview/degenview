@@ -3,7 +3,9 @@
 //! tool here places, changes or cancels an order. Free of egui and HTTP; the app-thread glue that
 //! reads the `PaperHost` is in `host::mcp_host`.
 
-use crate::mcp::chart_data::iso;
+pub mod tools;
+
+use crate::mcp::chart::data::iso;
 use crate::model::paper::{
     PaperAccount, PaperAccountMetrics, PaperClosedTrade, PaperCurrency, PaperFill, PaperOrder,
     PaperOrderRole, PaperOrderSide, PaperOrderStatus, PaperOrderType, PaperPosition,

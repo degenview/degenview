@@ -1,4 +1,4 @@
-//! The key that seals the MCP trust state (`mcp::seal`), kept in the Keychain so that editing
+//! The key that seals the MCP trust state (`mcp::transport::seal`), kept in the Keychain so that editing
 //! the SQLite file is not enough to add a credential. It is created on first use from the OS
 //! random source and never leaves this process.
 //!
@@ -6,7 +6,7 @@
 //! lived in memory would be new on every launch and lock the user out of their own credentials.
 //! On Linux without a Secret Service the key cannot be created, and the host runs unsealed.
 
-use crate::mcp::seal::{KEY_BYTES, hex, key_from_hex};
+use crate::mcp::transport::seal::{KEY_BYTES, hex, key_from_hex};
 use crate::service::keychain::api_keys::{KeyBackend, KeychainBackend};
 use crate::service::keychain::webhook_secrets::Scope;
 use crate::service::webhook::delivery::SecretStoreError;

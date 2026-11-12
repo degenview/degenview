@@ -5,11 +5,11 @@
 //! with a certificate made for 127.0.0.1; the refusals are checked with an address from the
 //! documentation range, which would fail to bind if the check did not come first.
 
-use super::hardening_tests::head;
+use super::hardening::head;
 use super::{READ, client};
 use crate::mcp::bridge;
 use crate::mcp::state::{McpShared, McpStatus};
-use crate::mcp::tls::TlsIdentity;
+use crate::mcp::transport::tls::TlsIdentity;
 use crate::mcp::transport::{ConnectionLimits, serve_with};
 use crate::mcp::{Listen, McpServer};
 use crate::model::mcp::{BindMode, Permission, PermissionSet};

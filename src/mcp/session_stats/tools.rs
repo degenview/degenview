@@ -134,7 +134,7 @@ fn query(params: &SessionStatsParams) -> Result<Query, CallToolResult> {
     })
 }
 
-#[tool_router(router = session_stats_router, vis = "pub(super)")]
+#[tool_router(router = session_stats_router, vis = "pub(in crate::mcp)")]
 impl DegenViewMcp {
     #[tool(
         name = "degenview_get_session_stats",

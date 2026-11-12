@@ -4,9 +4,9 @@
 //! the token itself is shown once when the credential is created. Tokens are accepted from the
 //! `Authorization` header only — never a URL — and are never logged.
 
-use crate::mcp::limits::retry_after_secs;
 use crate::mcp::state::McpShared;
 use crate::mcp::transport::PeerAddr;
+use crate::mcp::transport::limits::retry_after_secs;
 use axum::extract::{Request, State};
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::middleware::Next;

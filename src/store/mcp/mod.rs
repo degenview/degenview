@@ -12,7 +12,7 @@ use crate::store::{Document, Store};
 
 pub const SETTINGS_KEY: &str = "mcp.settings";
 pub const GLOBAL_PERMISSIONS_KEY: &str = "mcp.permissions";
-/// The keyed seal over the three values above and the client rows (see `mcp::seal`).
+/// The keyed seal over the three values above and the client rows (see `mcp::transport::seal`).
 pub const SEAL_KEY: &str = "mcp.seal";
 
 impl Document for McpClient {

@@ -8,17 +8,14 @@
 use crate::host::alert_host::AlertHost;
 use crate::host::paper_host::{PaperHost, PaperHostError, owner_text};
 use crate::host::portfolio_host::PortfolioHost;
-use crate::mcp::auth::{generate_token, verifier_hex};
 use crate::mcp::bridge::{
     self, AlertCommandOutcome, AlertUpdate, BridgeClient, BridgeInbox, McpError, NewAlert, Request,
 };
-use crate::mcp::chart_control::{ChartChangeResult, TimeframeResult};
-use crate::mcp::chart_data;
-use crate::mcp::drawings::{DrawingEdit, NewDrawing};
-use crate::mcp::indicator_values::{
-    IndicatorValuesResult, ReadingMeta, ReadingRequest, indicator_values,
-};
-use crate::mcp::markets::{self, WatchlistChangeResult, WatchlistPage, WatchlistsResult};
+use crate::mcp::chart::control::{ChartChangeResult, TimeframeResult};
+use crate::mcp::chart::data;
+use crate::mcp::chart::drawings::{DrawingEdit, NewDrawing};
+use crate::mcp::indicator::{IndicatorValuesResult, ReadingMeta, ReadingRequest, indicator_values};
+use crate::mcp::market::{self, WatchlistChangeResult, WatchlistPage, WatchlistsResult};
 use crate::mcp::paper::{
     self, PaperAccountDetail, PaperAccountInfo, PaperAccountsResult, PaperChangeResult,
     PaperFillsResult, PaperOrderResult, PaperTradesResult,
@@ -27,11 +24,12 @@ use crate::mcp::pine::{InputArgs, ScriptToApply};
 use crate::mcp::portfolio::{
     self, HoldingBase, HoldingsBase, PortfolioInfo, PortfoliosResult, TransactionsResult,
 };
-use crate::mcp::replay_tools::{self, ReplayResult};
-use crate::mcp::seal;
-use crate::mcp::snapshot_tools::{SnapshotProgress, SnapshotStarted};
+use crate::mcp::replay::{self, ReplayResult};
+use crate::mcp::snapshot::{SnapshotProgress, SnapshotStarted};
 use crate::mcp::state::{McpShared, McpStatus};
-use crate::mcp::tls::{self, TlsIdentity};
+use crate::mcp::transport::auth::{generate_token, verifier_hex};
+use crate::mcp::transport::seal;
+use crate::mcp::transport::tls::{self, TlsIdentity};
 use crate::mcp::types::{
     AddChartResult, AddIndicatorResult, AlertInfo, AlertsResult, AppliedPineDetail,
     AppliedPineInfo, AppliedPineList, CandlesResult, ChartInfo, ChartsResult, DrawingsChangeResult,
@@ -1218,7 +1216,7 @@ pub fn chart_candles(
     let data = workspace
         .chart_data(chart_id)
         .ok_or_else(|| no_chart(workspace, chart_id))?;
-    let meta = chart_data::CandleMeta {
+    let meta = data::CandleMeta {
         workspace_id: workspace.id(),
         chart_id,
         older_supported: data
@@ -1231,12 +1229,7 @@ pub fn chart_candles(
         replay_ms: data.replay_ms,
         now_ms: now_ms(),
     };
-    Ok(chart_data::candles_result(
-        &meta,
-        data.candles,
-        limit,
-        before,
-    ))
+    Ok(data::candles_result(&meta, data.candles, limit, before))
 }
 
 pub fn chart_drawings(
@@ -1246,7 +1239,7 @@ pub fn chart_drawings(
     let data = workspace
         .chart_data(chart_id)
         .ok_or_else(|| no_chart(workspace, chart_id))?;
-    Ok(chart_data::drawings_result(
+    Ok(data::drawings_result(
         workspace.id(),
         chart_id,
         data.drawings,
@@ -1272,9 +1265,9 @@ fn drawings_changed(
             .drawings
             .iter()
             .filter(|drawing| ids.contains(&drawing.id()))
-            .filter_map(chart_data::drawing_info)
+            .filter_map(data::drawing_info)
             .collect(),
-        total_drawings: chart_data::counted(data.drawings),
+        total_drawings: data::counted(data.drawings),
     })
 }
 
@@ -1288,8 +1281,8 @@ pub fn add_drawings(
     let data = workspace
         .chart_data(chart_id)
         .ok_or_else(|| no_chart(workspace, chart_id))?;
-    let first_id = chart_data::next_free_id(data.drawings, data.next_drawing_id);
-    let drawings = chart_data::plan_add(data.drawings, data.candles, first_id, specs)?;
+    let first_id = data::next_free_id(data.drawings, data.next_drawing_id);
+    let drawings = data::plan_add(data.drawings, data.candles, first_id, specs)?;
     let ids: Vec<u64> = drawings.iter().map(Drawing::id).collect();
     // `plan_add` already refused a range that does not fit.
     let next_free = first_id.saturating_add(ids.len() as u64);
@@ -1306,7 +1299,7 @@ pub fn edit_drawing(
     let data = workspace
         .chart_data(chart_id)
         .ok_or_else(|| no_chart(workspace, chart_id))?;
-    let command = chart_data::plan_edit(data.drawings, data.candles, edit)?;
+    let command = data::plan_edit(data.drawings, data.candles, edit)?;
     let status = if command.is_some() {
         "updated"
     } else {
@@ -1326,7 +1319,7 @@ pub fn remove_drawings(
     let data = workspace
         .chart_data(chart_id)
         .ok_or_else(|| no_chart(workspace, chart_id))?;
-    let commands = chart_data::plan_remove(data.drawings, ids)?;
+    let commands = data::plan_remove(data.drawings, ids)?;
     let removed: Vec<u64> = commands
         .iter()
         .filter_map(|command| match command {
@@ -2202,7 +2195,7 @@ impl SnapshotJobs {
 // MARK: Replay (run on the app thread)
 
 pub fn replay_state(workspace: &ChartWorkspace) -> ReplayResult {
-    replay_tools::replay_result(
+    replay::replay_result(
         workspace.id(),
         workspace.timeframe().label(),
         &workspace.replay_view(),
@@ -2229,7 +2222,7 @@ pub fn control_replay(
         ),
     }
         })?;
-    Ok(replay_tools::replay_result(
+    Ok(replay::replay_result(
         workspace.id(),
         workspace.timeframe().label(),
         &view,
@@ -2837,7 +2830,7 @@ pub fn list_watchlists(store: &WatchlistStore) -> Result<WatchlistsResult, McpEr
     Ok(WatchlistsResult {
         watchlists: readable_watchlists(store)?
             .iter()
-            .map(markets::watchlist_summary)
+            .map(market::watchlist_summary)
             .collect(),
     })
 }
@@ -2850,8 +2843,8 @@ pub fn get_watchlist(
 ) -> Result<WatchlistPage, McpError> {
     let list = watchlist_by_id(store, id)?;
     Ok(WatchlistPage {
-        detail: markets::watchlist_detail(list, offset, limit, None),
-        markets: markets::page_markets(list, offset, limit),
+        detail: market::watchlist_detail(list, offset, limit, None),
+        markets: market::page_markets(list, offset, limit),
     })
 }
 
@@ -2869,7 +2862,7 @@ fn change_result(
             .renamed
             .then(|| list.map(|list| list.name.clone()))
             .flatten(),
-        watchlist: list.map(markets::watchlist_summary),
+        watchlist: list.map(market::watchlist_summary),
         added: key(edit.added),
         already_present: key(edit.already_present),
         removed: key(edit.removed),
@@ -2928,7 +2921,7 @@ pub fn delete_watchlist(
     store: &mut WatchlistStore,
     id: u64,
 ) -> Result<WatchlistChangeResult, McpError> {
-    let summary = markets::watchlist_summary(watchlist_by_id(store, id)?);
+    let summary = market::watchlist_summary(watchlist_by_id(store, id)?);
     if summary.is_favorites {
         return Err(McpError::Conflict(
             "Favorites cannot be deleted; remove its markets or rename it instead".into(),
@@ -3411,7 +3404,7 @@ mod tests {
         host.apply(McpAction::SetBind(lan()));
         let before = host.tls_fingerprint().expect("a fingerprint").to_owned();
 
-        std::fs::remove_file(dir.join(crate::mcp::tls::FILE_NAME)).unwrap();
+        std::fs::remove_file(dir.join(crate::mcp::transport::tls::FILE_NAME)).unwrap();
         // The stale value is still what the page has until something loads an identity.
         assert_eq!(host.tls_fingerprint(), Some(before.as_str()));
         // `start_server` is what loads it for the listener (the address cannot be bound here, so
@@ -3419,7 +3412,7 @@ mod tests {
         host.settings.enabled = true;
         host.start_server();
         let shown = host.tls_fingerprint().expect("a fingerprint").to_owned();
-        let served = crate::mcp::tls::load_or_create(&dir, "192.0.2.1".parse().unwrap())
+        let served = crate::mcp::transport::tls::load_or_create(&dir, "192.0.2.1".parse().unwrap())
             .unwrap()
             .fingerprint();
         assert_ne!(shown, before, "a new certificate was made");
@@ -3435,7 +3428,7 @@ mod tests {
         host.tls_dir = Some(dir.clone());
         host.apply(McpAction::SetBind(lan()));
         assert!(host.tls_fingerprint().is_some());
-        std::fs::write(dir.join(crate::mcp::tls::FILE_NAME), "damaged").unwrap();
+        std::fs::write(dir.join(crate::mcp::transport::tls::FILE_NAME), "damaged").unwrap();
         assert!(host.tls_identity().is_err());
         assert_eq!(host.tls_fingerprint(), None, "nothing stale is shown");
         let _ = std::fs::remove_dir_all(&dir);
@@ -3475,7 +3468,7 @@ mod tests {
         );
         let again = host.tls_identity().unwrap().expect("the same certificate");
         assert_eq!(first.fingerprint(), again.fingerprint());
-        assert!(dir.join(crate::mcp::tls::FILE_NAME).exists());
+        assert!(dir.join(crate::mcp::transport::tls::FILE_NAME).exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -10,7 +10,7 @@
 //! What the seal does not cover: `last_used_ms` (bookkeeping the app rewrites every half minute),
 //! and a replay of an older database copy together with its own seal. Pure values only.
 
-use crate::mcp::auth::verifiers_match;
+use crate::mcp::transport::auth::verifiers_match;
 use crate::model::mcp::{
     BindMode, Cidr, McpClient, McpSettings, PermissionSet, default_global_permissions,
     default_remote_ceiling,
@@ -140,7 +140,7 @@ pub fn key_from_hex(text: &str) -> Option<[u8; KEY_BYTES]> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mcp::auth::verifier_hex;
+    use crate::mcp::transport::auth::verifier_hex;
     use crate::model::mcp::Permission;
 
     const KEY: [u8; KEY_BYTES] = [7; KEY_BYTES];

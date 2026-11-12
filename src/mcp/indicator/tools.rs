@@ -3,8 +3,8 @@
 //! is in `degenview_list_charts`.
 
 use crate::mcp::bridge::{McpCommand, McpReply, REQUEST_TIMEOUT};
-use crate::mcp::drawings::{TimeArg, parse_time};
-use crate::mcp::indicator_values::{
+use crate::mcp::chart::drawings::{TimeArg, parse_time};
+use crate::mcp::indicator::{
     IndicatorValuesResult, MAX_EMA_PERIOD, MIN_EMA_PERIOD, Reading, ReadingRequest,
 };
 use crate::mcp::tools::{
@@ -23,7 +23,7 @@ pub const GET_INDICATOR_VALUES: &str = "degenview_get_indicator_values";
 pub const REMOVE_INDICATOR: &str = "degenview_remove_indicator";
 
 const DEFAULT_BARS: usize = 100;
-const MAX_BARS: usize = crate::mcp::chart_data::MAX_CANDLES;
+const MAX_BARS: usize = crate::mcp::chart::data::MAX_CANDLES;
 const DEFAULT_EMA_PERIOD: usize = crate::model::EMA_DEFAULT_PERIOD;
 
 /// The indicators whose values can be read (volume is a column of `degenview_get_candles`).
@@ -120,7 +120,7 @@ fn reading_request(params: &IndicatorValuesParams) -> Result<ReadingRequest, Cal
     })
 }
 
-#[tool_router(router = indicator_router, vis = "pub(super)")]
+#[tool_router(router = indicator_router, vis = "pub(in crate::mcp)")]
 impl DegenViewMcp {
     #[tool(
         name = "degenview_get_indicator_values",

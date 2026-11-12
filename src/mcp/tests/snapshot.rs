@@ -2,7 +2,7 @@
 //! and then hands out a small fixed PNG.
 
 use super::{Harness, STUB_PNG, call, error_code, rpc, tool_names};
-use crate::mcp::snapshot_tools::base64;
+use crate::mcp::snapshot::base64;
 use crate::model::mcp::Permission;
 use serde_json::{Value, json};
 

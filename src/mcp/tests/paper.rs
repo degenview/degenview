@@ -600,9 +600,9 @@ fn an_account_another_mac_runs_is_not_changed_over_mcp() {
         "still not this Mac's"
     );
     // Mine still works.
-    let own = super::paper_tests::place(&url, "tok", mine, json!({}));
+    let own = super::paper::place(&url, "tok", mine, json!({}));
     assert_eq!(own["structuredContent"]["status"], "placed");
-    let missing = super::paper_tests::place(&url, "tok", 424_242, json!({}));
+    let missing = super::paper::place(&url, "tok", 424_242, json!({}));
     assert_eq!(error_code(&missing), "NOT_FOUND");
 }
 

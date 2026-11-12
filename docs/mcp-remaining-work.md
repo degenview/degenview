@@ -263,4 +263,4 @@ real-client acceptance run.
   own seal is detected.
 - ~~Windows has no secret store behind `KeyBackend`~~ Done: Windows Credential Manager holds the
   key (see [Windows secret storage](flatpak.md#windows-secret-storage)). The remote-access TLS key
-  `mcp-tls.pem` is DPAPI-encrypted there too (`mcp::tls_protect`); on Unix it is a `0600` file.
+  `mcp-tls.pem` is DPAPI-encrypted there too (`mcp::transport::tls_protect`); on Unix it is a `0600` file.

@@ -281,7 +281,9 @@ mod tests {
 
     #[test]
     fn drawings_planned_for_mcp_are_one_undo_step_and_keep_their_style_on_save() {
-        use crate::mcp::drawings::{AnchorSpec, McpDrawingTool, NewDrawing, PriceField, PriceSpec};
+        use crate::mcp::chart::drawings::{
+            AnchorSpec, McpDrawingTool, NewDrawing, PriceField, PriceSpec,
+        };
         use crate::model::chart::kind::LineDash;
         let mut workspace = empty_workspace(9);
         assert!(workspace.chart_data(404).is_none());
@@ -298,7 +300,7 @@ mod tests {
         let data = workspace.chart_data(chart_id).expect("market chart");
         assert_eq!(data.candles.len(), 20);
         // The counter lags the stored drawing (the fixture bypassed it); minting still avoids it.
-        let first_id = crate::mcp::chart_data::next_free_id(data.drawings, data.next_drawing_id);
+        let first_id = crate::mcp::chart::data::next_free_id(data.drawings, data.next_drawing_id);
         assert_eq!(first_id, 2);
         let anchor = |index: i64, price: PriceSpec| AnchorSpec {
             time_ms: 1_000_000 + index * minute + 5,
@@ -320,7 +322,7 @@ mod tests {
             patch: Default::default(),
         };
         let planned =
-            crate::mcp::chart_data::plan_add(data.drawings, data.candles, first_id, &[line, zone])
+            crate::mcp::chart::data::plan_add(data.drawings, data.candles, first_id, &[line, zone])
                 .unwrap();
         let commands: Vec<DrawingCommand> =
             planned.iter().cloned().map(DrawingCommand::Add).collect();
