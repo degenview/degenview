@@ -84,7 +84,7 @@ rounded**. The broker's own preview (fees, total, warnings, refusals) replaces t
 arrives.
 
 **The broker's preview is required.** Review is enabled only on a *fresh, accepting* preview of the
-order exactly as it stands (`model/broker_ticket::preview_gate`): no answer yet, a failed preview, a
+order exactly as it stands (`model/broker/ticket::preview_gate`): no answer yet, a failed preview, a
 preview that lists problems, or one older than a minute all leave it off. A failed preview says so
 and offers "Try again". The broker's create endpoint does not require a preview, so this is this
 application's rule, not Coinbase's. Orders are also paused while the record of unconfirmed orders

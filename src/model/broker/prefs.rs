@@ -3,7 +3,7 @@
 //!
 //! Safety first: the defaults ask. Turning a confirmation off is allowed for resting orders and
 //! single cancels only; a market order, an edit and "cancel all" always ask (see
-//! [`crate::model::broker::ticket::TicketDraft::needs_confirmation`]), whatever is stored here.
+//! [`crate::trading::confirm::needs_review`]), whatever is stored here.
 
 use std::collections::BTreeMap;
 
