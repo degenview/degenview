@@ -16,6 +16,7 @@ use std::sync::{Arc, Mutex};
 
 use super::broker_host::{BrokerHost, Connection, Operation};
 use super::paper_host::PaperHost;
+use crate::model::broker::prefs::BrokerPrefs;
 use crate::model::broker::venue::TradingVenue;
 use crate::store::SharedStore;
 use crate::trading::backend::TradingBackend;
@@ -111,6 +112,19 @@ impl TradingHub {
             hub.save_enabled();
         }
         hub
+    }
+
+    /// How the user trades at a venue: confirmations, notifications, chart overlays. `None` for a
+    /// venue that has no such choices (paper).
+    pub fn prefs(&self, venue: TradingVenue) -> Option<BrokerPrefs> {
+        venue.broker().map(|id| self.brokers.prefs(id))
+    }
+
+    /// Applies and saves the choices for a venue; a venue with none ignores it.
+    pub fn set_prefs(&self, venue: TradingVenue, prefs: BrokerPrefs) {
+        if let Some(id) = venue.broker() {
+            self.brokers.set_prefs(id, prefs);
+        }
     }
 
     pub fn brokers(&self) -> &Arc<BrokerHost> {
