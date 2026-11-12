@@ -288,5 +288,4 @@ impl Fork {
 }
 
 #[cfg(test)]
-#[path = "line_geometry_tests.rs"]
 mod tests;

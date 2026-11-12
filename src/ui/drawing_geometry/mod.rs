@@ -982,5 +982,4 @@ pub fn stroke_mesh(points: &[Pos2], width: f32, color: Color32, feather: f32) ->
 }
 
 #[cfg(test)]
-#[path = "drawing_geometry_tests.rs"]
 mod tests;
