@@ -9,6 +9,7 @@ pub mod dialog;
 pub mod error_notice;
 pub mod header_controls;
 pub mod keycap;
+pub mod loading;
 pub mod markdown_view;
 pub mod popover;
 pub mod sheet;

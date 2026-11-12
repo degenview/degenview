@@ -2,17 +2,29 @@
 //! that something is still going on. It never takes the pointer, and the workspace that raised it
 //! drops it after a few seconds (a progress notice stays for as long as the work does).
 
+use crate::ui::accessibility;
 use crate::ui::icons::{self, Icon};
+use crate::ui::kit::loading::LoadingIndicator;
 use crate::ui::kit::{self, REGULAR, size};
 use crate::ui::theme;
-use eframe::egui::{self, Align2, Context, Id, Margin, Order, Ui, vec2};
+use eframe::egui::{
+    self, Align, Align2, Context, Id, Margin, Order, Sense, Ui, WidgetType,
+    epaint::text::LayoutJob, pos2, vec2,
+};
 
 /// What leads the message.
 enum Lead {
     Icon(Icon, egui::Color32),
-    /// An animated spinner: work is in progress.
-    Spinner,
+    /// The candle indicator over the message: work is in progress.
+    Progress,
 }
+
+/// The side of the candle indicator in a progress notice, and the room between it and the text.
+const INDICATOR: f32 = 48.0;
+const INDICATOR_GAP: f32 = 10.0;
+/// A progress message wraps at this width, so the slow-connection one does not run across the
+/// window.
+const PROGRESS_TEXT_WIDTH: f32 = 280.0;
 
 /// A notice for what a chart command did (a check) or why it did not (a warning).
 pub fn show(ctx: &Context, id: Id, text: &str, error: bool) {
@@ -29,12 +41,13 @@ pub fn show(ctx: &Context, id: Id, text: &str, error: bool) {
 const BOTTOM: f32 = 32.0;
 const RAISED: f32 = 52.0;
 
-/// A notice for work that is still going on: a spinner, so it is never taken for a result. It
-/// keeps the window repainting for as long as it is shown, so the spinner turns smoothly.
+/// A notice for work that is still going on: the candle indicator over the message, so it is
+/// never taken for a result. It keeps the window repainting for as long as it is shown, so the
+/// candles scroll smoothly.
 /// `above_a_notice`: a result is on screen as well, and this sits over it.
 pub fn show_progress(ctx: &Context, id: Id, text: &str, above_a_notice: bool) {
     let lift = if above_a_notice { RAISED } else { 0.0 };
-    area(ctx, id, text, Lead::Spinner, lift);
+    area(ctx, id, text, Lead::Progress, lift);
     ctx.request_repaint();
 }
 
@@ -44,29 +57,56 @@ fn area(ctx: &Context, id: Id, text: &str, lead: Lead, lift: f32) {
         .anchor(Align2::CENTER_BOTTOM, vec2(0.0, -(BOTTOM + lift)))
         .interactable(false)
         .show(ctx, |ui| {
+            let margin = match lead {
+                Lead::Icon(..) => Margin::symmetric(14, 9),
+                Lead::Progress => Margin::symmetric(22, 16),
+            };
             kit::menu_frame()
-                .inner_margin(Margin::symmetric(14, 9))
-                .show(ui, |ui| content(ui, text, lead));
+                .inner_margin(margin)
+                .show(ui, |ui| match lead {
+                    Lead::Icon(icon, color) => result(ui, text, icon, color),
+                    Lead::Progress => progress(ui, text),
+                });
         });
 }
 
-fn content(ui: &mut Ui, text: &str, lead: Lead) {
+/// One line: an icon, then what happened.
+fn result(ui: &mut Ui, text: &str, icon: Icon, color: egui::Color32) {
     ui.horizontal(|ui| {
-        match lead {
-            Lead::Icon(icon, color) => {
-                icons::inline(ui, icon, 12.0, color);
-            }
-            Lead::Spinner => {
-                ui.add(
-                    egui::Spinner::new()
-                        .size(12.0)
-                        .color(theme::text_secondary()),
-                );
-            }
-        }
+        icons::inline(ui, icon, 12.0, color);
         let response = ui.label(kit::text(text, size::BODY, REGULAR, theme::text_primary()));
         response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, text));
     });
+}
+
+/// The candle indicator with the message centred under it, the card only as wide as the text.
+fn progress(ui: &mut Ui, text: &str) {
+    let mut job = LayoutJob::simple(
+        text.to_owned(),
+        egui::FontId::proportional(size::BODY),
+        theme::text_primary(),
+        PROGRESS_TEXT_WIDTH,
+    );
+    job.halign = Align::Center;
+    let galley = ui.painter().layout_job(job);
+    let width = galley.size().x.max(INDICATOR);
+    let (rect, response) = ui.allocate_exact_size(
+        vec2(width, INDICATOR + INDICATOR_GAP + galley.size().y),
+        Sense::hover(),
+    );
+    LoadingIndicator::new().size(INDICATOR).paint_at(
+        ui,
+        egui::Rect::from_center_size(
+            pos2(rect.center().x, rect.top() + INDICATOR / 2.0),
+            vec2(INDICATOR, INDICATOR),
+        ),
+    );
+    ui.painter().galley(
+        pos2(rect.center().x, rect.top() + INDICATOR + INDICATOR_GAP),
+        galley,
+        theme::text_primary(),
+    );
+    accessibility::label_as(response, WidgetType::Label, text);
 }
 
 #[cfg(test)]
@@ -122,7 +162,7 @@ mod tests {
     }
 
     #[test]
-    fn a_progress_notice_keeps_the_window_painting_so_the_spinner_turns() {
+    fn a_progress_notice_keeps_the_window_painting_so_the_candles_scroll() {
         let delay = settled_repaint(|ctx| show_progress(ctx, id(), "Uploading to ImgBB…", false));
         assert!(delay < std::time::Duration::from_millis(100), "{delay:?}");
     }
