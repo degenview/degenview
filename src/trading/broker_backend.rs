@@ -10,6 +10,7 @@ use degenview_brokers::model::orders::{
     OrderFingerprint,
 };
 use degenview_brokers::model::reducer::{OrderView, OverlayKind};
+use degenview_brokers::model::valuation;
 use degenview_brokers::{
     AccountId, Broker, BrokerSnapshot, Capabilities, ClientOrderId, Decimal, ErrorKind, LiveFill,
     LiveOrder, MarketRef, OrderId, OrderKind, OrderSize, OrderStatus, OrderType, Pending,
@@ -29,8 +30,8 @@ use super::model::{
     QuoteView, RowStatus, StatCell, StatTone, TicketCaps, TimeInForce, Tone, Trend, Unavailable,
     UnavailableKind, VenueInfo, VenueKind,
 };
+use super::money;
 use super::task::Task;
-use super::valuation::{self, Holding};
 use crate::host::broker_host::{BrokerHost, Connection};
 use crate::model::broker;
 use crate::model::broker::chart::ChartTrading;
@@ -637,31 +638,18 @@ impl TradingBackend for BrokerBackend {
 
     fn stats(&self) -> Option<AccountStats> {
         let snapshot = self.snapshot()?;
-        let holdings: Vec<Holding> = snapshot
-            .balances
-            .iter()
-            .map(|balance| Holding {
-                asset: balance.asset.clone(),
-                available: balance.available,
-                held: balance.held,
-            })
-            .collect();
-        let currency = valuation::valuation_currency(&holdings);
+        let currency = valuation::valuation_currency(&snapshot.balances);
         // Prices come from the market that pairs the asset with the valuation currency. Asking is
         // cheap and only done while the strip is drawn, and only for assets actually held.
-        let valuation = valuation::value(&holdings, &currency, |asset| {
+        let valuation = valuation::value(&snapshot.balances, &currency, |asset| {
             let spec = snapshot
                 .products
                 .iter()
                 .find(|spec| spec.base == asset && spec.quote == currency)?;
             self.host.want_quote(self.id(), &spec.id);
-            let quote = self.host.quote(self.id(), &spec.id)?;
-            match (quote.bid, quote.ask) {
-                (Some(bid), Some(ask)) => Some((bid + ask) / Decimal::TWO),
-                _ => quote.last,
-            }
+            self.host.quote(self.id(), &spec.id)?.mark()
         });
-        let money = |value| valuation::money(value, &currency);
+        let money = |value| money::money(value, &currency);
         let working = snapshot
             .orders
             .iter()
@@ -726,11 +714,7 @@ impl TradingBackend for BrokerBackend {
         {
             cells.push(StatCell {
                 title: "Fees".to_owned(),
-                value: format!(
-                    "{} / {}",
-                    valuation::percent(maker),
-                    valuation::percent(taker)
-                ),
+                value: format!("{} / {}", money::percent(maker), money::percent(taker)),
                 tone: StatTone::Neutral,
                 help: format!("Maker / taker, {}", fees.tier),
             });
