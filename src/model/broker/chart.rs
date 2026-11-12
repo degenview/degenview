@@ -7,11 +7,8 @@
 //! on one must never become a live order).
 
 use degenview_brokers::{
-    Broker, BrokerSnapshot, Decimal, MarketRef, ProductId, ProductResolution, Status,
+    Broker, BrokerSnapshot, MarketRef, OrderBlock, ProductId, ProductResolution,
 };
-
-/// Said when the broker marks a market untradable without saying why.
-const NOT_TRADABLE: &str = "Trading is not available in this market right now.";
 
 /// Why a chart cannot place live orders. The sentences are shown to the user.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -98,36 +95,18 @@ pub fn chart_trading(
     let Some(snapshot) = snapshot else {
         return ChartTrading::Unavailable(Unavailable::NotConnected);
     };
-    match &snapshot.status {
-        Status::Live => {}
-        Status::Failed(_) => return ChartTrading::Unavailable(Unavailable::NeedsAttention),
-        _ => return ChartTrading::Unavailable(Unavailable::NotLive),
-    }
-    if snapshot.journal_error.is_some() {
-        return ChartTrading::Unavailable(Unavailable::JournalUnreadable);
-    }
-    if !snapshot
-        .session
-        .as_ref()
-        .is_some_and(|session| session.permissions.can_trade)
-    {
-        return ChartTrading::Unavailable(Unavailable::ViewOnly);
-    }
-    match snapshot.capabilities_of(&product) {
-        // Not read yet is different from not on the list: once the market list is loaded, a market
-        // missing from it never will be, so it must not read as "reading" for ever.
-        None if snapshot.capabilities.is_empty() => {
-            return ChartTrading::Unavailable(Unavailable::RulesNotRead);
-        }
-        None => return ChartTrading::Unavailable(Unavailable::MarketNotOffered),
-        Some(caps) if !caps.is_tradable() => {
-            let reason = snapshot
-                .product(&product)
-                .and_then(|spec| spec.restrictions.blocked_reason())
-                .unwrap_or(NOT_TRADABLE);
-            return ChartTrading::Unavailable(Unavailable::MarketNotTradable(reason));
-        }
-        Some(_) => {}
+    // The connection, the record of unconfirmed orders, the key's permission and the market's
+    // rules are the crate's ladder; the first thing wrong is the reason.
+    if let Some(block) = snapshot.order_block(&product) {
+        return ChartTrading::Unavailable(match block {
+            OrderBlock::NotLive => Unavailable::NotLive,
+            OrderBlock::NeedsAttention => Unavailable::NeedsAttention,
+            OrderBlock::JournalUnreadable => Unavailable::JournalUnreadable,
+            OrderBlock::ViewOnly => Unavailable::ViewOnly,
+            OrderBlock::RulesNotRead => Unavailable::RulesNotRead,
+            OrderBlock::MarketNotOffered => Unavailable::MarketNotOffered,
+            OrderBlock::MarketNotTradable(reason) => Unavailable::MarketNotTradable(reason),
+        });
     }
     if replay {
         return ChartTrading::Unavailable(Unavailable::InReplay);
@@ -135,50 +114,10 @@ pub fn chart_trading(
     ChartTrading::Ready { product }
 }
 
-/// A clicked price as an exact decimal on the market's increment: the *nearest* valid price (a click
-/// has no precision to preserve). `None` for a price that is not positive and finite.
-pub fn snap_to_increment(price: f64, increment: Decimal) -> Option<Decimal> {
-    if !price.is_finite() || price <= 0.0 {
-        return None;
-    }
-    // Through text, so 0.1 stays 0.1 and not 0.1000000000000000055.
-    let exact: Decimal = format!("{price}").parse().ok()?;
-    let snapped = if increment.is_zero() {
-        exact
-    } else {
-        (exact / increment).round() * increment
-    };
-    (snapped > Decimal::ZERO).then_some(snapped.normalize())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use degenview_brokers::registry;
-    use std::str::FromStr;
-
-    fn d(text: &str) -> Decimal {
-        Decimal::from_str(text).unwrap()
-    }
-
-    #[test]
-    fn a_click_snaps_to_the_nearest_valid_price_and_stays_exact() {
-        assert_eq!(snap_to_increment(90_000.004, d("0.01")), Some(d("90000")));
-        assert_eq!(
-            snap_to_increment(90_000.006, d("0.01")),
-            Some(d("90000.01"))
-        );
-        assert_eq!(snap_to_increment(0.1, d("0.1")), Some(d("0.1")));
-        assert_eq!(
-            snap_to_increment(123.456, Decimal::ZERO),
-            Some(d("123.456"))
-        );
-        for bad in [0.0, -1.0, f64::NAN, f64::INFINITY] {
-            assert_eq!(snap_to_increment(bad, d("0.01")), None, "{bad}");
-        }
-        // Rounds to nothing: not a price.
-        assert_eq!(snap_to_increment(0.001, d("1")), None);
-    }
+    use degenview_brokers::{Status, registry};
 
     fn market(source: &str, symbol: &str) -> MarketRef {
         MarketRef {
@@ -217,7 +156,7 @@ mod tests {
             Unavailable::ViewOnly,
             Unavailable::RulesNotRead,
             Unavailable::MarketNotOffered,
-            Unavailable::MarketNotTradable(NOT_TRADABLE),
+            Unavailable::MarketNotTradable(degenview_brokers::runtime::NOT_TRADABLE),
             Unavailable::InReplay,
         ] {
             assert!(
