@@ -83,14 +83,42 @@ fn candle_count(size: f32) -> usize {
     }
 }
 
+/// How far in from the right edge, in slots, a new candle takes to finish forming.
+const GROW_SLOTS: f32 = 1.5;
+
 /// One candle on its way across the picture.
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Placed {
+    /// The candle as it ends up; its colour is decided by this, so it never flips while forming.
     candle: Candle,
     /// Where its centre is, as a fraction of the picture's width.
     x: f32,
     /// `0.0` when it is entering or leaving at an edge, `1.0` once it is in.
     alpha: f32,
+    /// How much of the candle has formed: `0.0` as it enters, `1.0` once it is done.
+    progress: f32,
+}
+
+impl Placed {
+    /// The candle as drawn now. A new one opens at the previous close as a dot, then its body
+    /// grows up or down to its close and the wicks reach out, quickly at first and then settling,
+    /// like a live candle ticking toward where it closes.
+    fn shown(self) -> Candle {
+        let eased = 1.0 - (1.0 - self.progress).powi(3);
+        let Candle {
+            open,
+            close,
+            high,
+            low,
+        } = self.candle;
+        let close_now = open + (close - open) * eased;
+        Candle {
+            open,
+            close: close_now,
+            high: open.max(close_now) + (high - open.max(close)) * eased,
+            low: open.min(close_now) - (open.min(close) - low) * eased,
+        }
+    }
 }
 
 /// The candles on screen `time` seconds in. The slots move continuously, so a candle that leaves
@@ -103,13 +131,15 @@ fn placed(count: usize, time: f64) -> Vec<Placed> {
     (0..=count)
         .map(|k| {
             let x = (k as f32 + 0.5 - fraction) * slot;
-            // Over the outer slot a candle fades, so none pops in or out.
-            let edge = x.min(1.0 - x) / slot;
+            // A candle fades out over the slot at the left edge and in over half a slot at the
+            // right, so none pops in or out and a new one is seen forming.
+            let edge = (x / slot).min((1.0 - x) / (slot * 0.5));
             let alpha = edge.clamp(0.0, 1.0);
             Placed {
                 candle: candle(base + k as i64),
                 x,
                 alpha: alpha * alpha * (3.0 - 2.0 * alpha),
+                progress: ((1.0 - x) / (slot * GROW_SLOTS)).clamp(0.0, 1.0),
             }
         })
         .filter(|placed| (0.0..=1.0).contains(&placed.x))
@@ -163,19 +193,17 @@ fn paint(painter: &Painter, rect: Rect, time: f64, tint: Tint) {
     let y = |value: f32| plot.bottom() - value * plot.height();
     for placed in placed(count, time) {
         let color = tint.of(placed.candle).gamma_multiply(placed.alpha);
+        let shown = placed.shown();
         let x = plot.left() + placed.x * plot.width();
         if size >= WICKS_FROM {
             painter.line_segment(
-                [
-                    pos2(x, y(placed.candle.high)),
-                    pos2(x, y(placed.candle.low)),
-                ],
+                [pos2(x, y(shown.high)), pos2(x, y(shown.low))],
                 Stroke::new(wick_width, color),
             );
         }
         let (top, bottom) = (
-            y(placed.candle.open.max(placed.candle.close)),
-            y(placed.candle.open.min(placed.candle.close)),
+            y(shown.open.max(shown.close)),
+            y(shown.open.min(shown.close)),
         );
         let middle = (top + bottom) / 2.0;
         let half = ((bottom - top) / 2.0).max(MIN_BODY / 2.0);
@@ -313,6 +341,71 @@ mod tests {
                 "{before:?} then {after:?}"
             );
         }
+    }
+
+    #[test]
+    fn a_candle_grows_from_its_open_to_its_close_as_it_comes_in() {
+        let mut grew = false;
+        for count in [3, 4, 5] {
+            for step in 0..600 {
+                let time = f64::from(step) * 0.023;
+                for placed in placed(count, time) {
+                    let shown = placed.shown();
+                    let done = placed.candle;
+                    assert_eq!(shown.open, done.open, "{placed:?}");
+                    assert!(
+                        shown.high >= shown.open.max(shown.close) - 1e-6,
+                        "{placed:?}"
+                    );
+                    assert!(
+                        shown.low <= shown.open.min(shown.close) + 1e-6,
+                        "{placed:?}"
+                    );
+                    // Never past where it finishes, on either side.
+                    assert!(shown.high <= done.high + 1e-6 && shown.low >= done.low - 1e-6);
+                    assert!(
+                        (shown.close - done.open).abs() <= (done.close - done.open).abs() + 1e-6,
+                        "{placed:?}"
+                    );
+                    if placed.progress >= 1.0 {
+                        for (a, b) in [
+                            (shown.close, done.close),
+                            (shown.high, done.high),
+                            (shown.low, done.low),
+                        ] {
+                            assert!((a - b).abs() < 1e-5, "{placed:?}");
+                        }
+                    } else if placed.progress > 0.2 && placed.progress < 0.6 {
+                        grew = true;
+                    }
+                }
+            }
+        }
+        assert!(grew, "some candle is seen part way");
+    }
+
+    #[test]
+    fn a_new_candle_starts_as_a_dot_at_the_previous_close() {
+        let fresh = Placed {
+            candle: candle(7),
+            x: 1.0,
+            alpha: 0.0,
+            progress: 0.0,
+        };
+        let shown = fresh.shown();
+        assert_eq!(shown.close, shown.open);
+        assert_eq!(shown.high, shown.open);
+        assert_eq!(shown.low, shown.open);
+        assert_eq!(shown.open, candle(6).close);
+    }
+
+    #[test]
+    fn the_rightmost_candles_are_the_ones_still_forming() {
+        let candles = placed(4, 0.2);
+        let newest = candles.last().expect("candles");
+        let oldest = candles.first().expect("candles");
+        assert!(newest.progress < 1.0);
+        assert_eq!(oldest.progress, 1.0);
     }
 
     #[test]
