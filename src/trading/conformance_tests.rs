@@ -198,7 +198,7 @@ fn the_paper_account_answers_as_a_venue() {
         .ensure_default_account()
         .unwrap()
         .expect("an account");
-    let backend = super::paper_backend::PaperBackend::new(paper);
+    let backend = super::paper::backend::PaperBackend::new(paper);
     check(&backend, VenueKind::Simulated, &|_| {});
 }
 

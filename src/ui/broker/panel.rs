@@ -17,7 +17,7 @@ use eframe::egui::{self, Color32, Id};
 
 use crate::model::broker::ticket::{self as rules};
 use crate::trading::backend::TradingBackend;
-use crate::trading::broker_commands::{Answer, BrokerCommands, CancelReport, HistoryChoice};
+use crate::trading::broker::commands::{Answer, BrokerCommands, CancelReport, HistoryChoice};
 use crate::trading::edit::{
     EditEvent, EditForm, EditFrame, EditSession, EditVenue, EditView, ReviewLine, Step,
 };

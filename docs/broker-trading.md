@@ -211,7 +211,7 @@ request descriptions for the checklist.
 ## Not done yet / not verified
 
 * **The venue layer is the path for the panel and the chart.** What the screens *ask* a broker goes
-  through `BrokerCommands` (`trading/broker_commands.rs`: retry, cancel, paged history and fills, and
+  through `BrokerCommands` (`trading/broker/commands.rs`: retry, cancel, paged history and fills, and
   the edit: the crate's `edit_session::EditSession`, worded by `trading/edit/`); what they *read* goes through `TradingBackend`; a test
   fails if `ui/` or `workspace/` name a broker's runtime or the host (Settings ▸ Brokers excepted).
   Still on `BrokerHost`: Settings ▸ Brokers (it manages connections). The user's choices are

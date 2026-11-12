@@ -408,7 +408,7 @@ fn rust_files(dir: &Path, out: &mut Vec<(String, String)>) {
 }
 
 /// The screens never hold a broker's runtime: what a connected broker is asked goes through
-/// `trading::broker_commands::BrokerCommands`, whose answers they poll, and what it says is read
+/// `trading::broker::commands::BrokerCommands`, whose answers they poll, and what it says is read
 /// through `TradingBackend` and `TradingHub::prefs`.
 #[test]
 fn the_screens_never_hold_a_brokers_runtime() {
@@ -496,9 +496,9 @@ fn the_applications_broker_layers_name_no_broker() {
         "host/trading/mod.rs",
         "service/keychain/broker_secrets.rs",
         "trading/backend.rs",
-        "trading/broker_backend.rs",
+        "trading/broker/backend.rs",
         "trading/model.rs",
-        "trading/paper_backend.rs",
+        "trading/paper/backend.rs",
         "ui/settings/brokers.rs",
     ] {
         let text = std::fs::read_to_string(root.join(file))

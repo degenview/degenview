@@ -4,6 +4,8 @@ mod app;
 mod crash_report;
 mod format;
 mod host;
+#[cfg(test)]
+mod layout_tests;
 mod mcp;
 mod model;
 mod native_bridge;

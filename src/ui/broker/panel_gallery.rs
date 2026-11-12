@@ -138,9 +138,9 @@ fn shapes(output: &egui::FullOutput) -> usize {
 }
 
 /// The broker's commands, as the workspace hands them to the panel.
-fn commands(host: &Arc<BrokerHost>) -> crate::trading::broker_backend::BrokerBackend {
+fn commands(host: &Arc<BrokerHost>) -> crate::trading::broker::backend::BrokerBackend {
     let broker = degenview_brokers::registry::by_id(ID).expect("coinbase");
-    crate::trading::broker_backend::BrokerBackend::new(host.clone(), broker)
+    crate::trading::broker::backend::BrokerBackend::new(host.clone(), broker)
 }
 
 /// The panel as the workspace draws it: the shared header's venue and the account strip.
@@ -151,7 +151,7 @@ fn draw(
 ) -> Vec<crate::ui::trade::panel_header::PanelEvent> {
     use crate::trading::backend::TradingBackend;
     let broker = degenview_brokers::registry::by_id(ID).expect("coinbase");
-    let backend = crate::trading::broker_backend::BrokerBackend::new(host.clone(), broker);
+    let backend = crate::trading::broker::backend::BrokerBackend::new(host.clone(), broker);
     let stats = backend.stats();
     let bar = crate::ui::trade::panel_header::sample_bar(
         crate::model::broker::venue::TradingVenue::Broker(ID),

@@ -821,7 +821,7 @@ impl PaperPanel {
                 self.account_sheet = Some(PaperAccountSheetState::create());
             }
         } else {
-            let strip = crate::trading::paper_stats::stats(metrics.as_ref(), currency);
+            let strip = crate::trading::paper::stats::stats(metrics.as_ref(), currency);
             stats_strip::show(ui, Some(&strip));
             divider(ui);
             let context = TableContext {
@@ -849,7 +849,7 @@ impl PaperPanel {
                 PaperTab::Orders => {
                     let rows: Vec<crate::trading::model::OrderRow> = working_orders
                         .iter()
-                        .map(crate::trading::paper_backend::order_row)
+                        .map(crate::trading::paper::backend::order_row)
                         .collect();
                     let asked = crate::ui::trade::tables::orders(
                         ui,

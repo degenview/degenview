@@ -9,7 +9,7 @@ use degenview_brokers::{Decimal, MarketRef, Side};
 
 use crate::model::broker::chart::Unavailable as ChartUnavailable;
 
-use super::broker_commands::BrokerCommands;
+use super::broker::commands::BrokerCommands;
 use super::draft::{CancelResult, DraftCheck, PreviewResult, SubmitResult, TradeDraft};
 use super::model::{
     AccountStats, AccountStrip, Amount, BackendState, BalanceRow, Binding, ChartLines, FillRow,

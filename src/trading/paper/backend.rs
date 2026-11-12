@@ -8,17 +8,6 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use degenview_brokers::{Decimal, MarketRef, Side};
 
-use super::backend::TradingBackend;
-use super::draft::{
-    CancelResult, DraftCheck, DraftField, DraftIssue, Estimate, PreviewResult, SubmitResult,
-    Submitted, TradeDraft,
-};
-use super::model::{
-    AccountStats, AccountStrip, Amount, BackendState, Binding, MarketAccess, MarketRules,
-    OrderClass, OrderRow, QuoteView, RowStatus, TicketCaps, TimeInForce, Tone, Unavailable,
-    UnavailableKind, VenueInfo, VenueKind,
-};
-use super::task::Task;
 use crate::host::paper::PaperHost;
 use crate::model::DataSource;
 use crate::model::broker::ticket::display;
@@ -28,6 +17,17 @@ use crate::model::paper::{
     PaperCurrency, PaperInstrument, PaperOrder, PaperOrderRole, PaperOrderSide, PaperOrderStatus,
     PaperOrderType, PaperTimeInForce,
 };
+use crate::trading::backend::TradingBackend;
+use crate::trading::draft::{
+    CancelResult, DraftCheck, DraftField, DraftIssue, Estimate, PreviewResult, SubmitResult,
+    Submitted, TradeDraft,
+};
+use crate::trading::model::{
+    AccountStats, AccountStrip, Amount, BackendState, Binding, MarketAccess, MarketRules,
+    OrderClass, OrderRow, QuoteView, RowStatus, TicketCaps, TimeInForce, Tone, Unavailable,
+    UnavailableKind, VenueInfo, VenueKind,
+};
+use crate::trading::task::Task;
 
 pub struct PaperBackend {
     host: Arc<Mutex<PaperHost>>,
@@ -273,10 +273,7 @@ impl TradingBackend for PaperBackend {
             .and_then(|id| snapshot.accounts.iter().find(|a| a.id == id))
             .or_else(|| snapshot.accounts.first())?;
         let metrics = host.metrics(account.id);
-        Some(super::paper_stats::stats(
-            Some(&metrics),
-            account.base_currency,
-        ))
+        Some(super::stats::stats(Some(&metrics), account.base_currency))
     }
 
     fn available(&self, _market: &MarketRef, _side: Side) -> Option<Amount> {

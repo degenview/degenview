@@ -23,9 +23,9 @@ use crate::model::broker::prefs::BrokerPrefs;
 use crate::model::broker::venue::TradingVenue;
 use crate::store::SharedStore;
 use crate::trading::backend::TradingBackend;
-use crate::trading::broker_backend::BrokerBackend;
+use crate::trading::broker::backend::BrokerBackend;
 use crate::trading::model::VenueInfo;
-use crate::trading::paper_backend::PaperBackend;
+use crate::trading::paper::backend::PaperBackend;
 use crate::trading::task::Task;
 
 /// The venues the user enabled, as their ids (`paper`, or a broker's id).

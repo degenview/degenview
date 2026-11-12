@@ -45,12 +45,15 @@ Finder-launchable app: `./tools/bundle.sh`, then open `target/DegenView.app`. Bi
 ## Naming
 
 - Snake-case modules; one concern per file.
-- **Group modules in directories, never in prefixes.** `model/`, `pine/`, `pine_studio/` and `ui/` hold one
-  directory per domain and only `mod.rs` at the root (`pine_studio/` also keeps a few single-purpose
-  files such as `workspace/mod.rs`; `ui/` keeps `icons`, `shortcut` and `accessibility`). A new module goes in its domain's directory; a new domain gets a
-  directory. Name the child without the directory's name: `model/paper/engine.rs`
-  (`model::paper::engine`), not `model/paper_engine.rs`. Three or more files sharing a prefix
-  (`alert_*`, `ai_*`, `ta_*`, `settings_*`) belong in a directory.
+- **Group modules in directories, never in prefixes.** `model/`, `pine/`, `pine_studio/`, `ui/`,
+  `host/`, `service/`, `mcp/`, `sync/`, `workspace/` and `trading/` hold one directory per domain and
+  few files at the root (`mod.rs`, plus single-purpose files such as `service/work_queue.rs`,
+  `ui/icons`, `workspace/grid`, `pine_studio/workspace.rs`; `store/` keeps one file per single-table store). Use the domain names
+  `model/` and `ui/` already use (`alert`, `chart`, `paper`, `portfolio`, `mcp`, ...). A new module goes
+  in its domain's directory; a new domain gets a directory. Name the child without the directory's
+  name: `model/paper/engine.rs` (`model::paper::engine`), not `model/paper_engine.rs`; `host::paper`,
+  not `host::paper_host`. Three or more files sharing a prefix (`alert_*`, `ai_*`, `ta_*`,
+  `settings_*`) belong in a directory. `layout_tests.rs` enforces this and the next rule.
 - **`mod.rs`, not `foo.rs` + `foo/`.** A module with children or tests is `foo/mod.rs`, tests in
   `foo/tests.rs`. If the parent already has an inline `mod tests`, name end-to-end tests `studio_tests` or
   `integration_tests`. Never leave a `foo.rs` beside a `foo/`.
@@ -58,6 +61,6 @@ Finder-launchable app: `./tools/bundle.sh`, then open `target/DegenView.app`. Bi
   moved file's `super::` now points one level lower: use `crate::...` for items in the old parent and
   `pub(in crate::<parent>)` where it was `pub(super)`. Update `include_str!` paths, doc references
   (`docs/`, `AGENTS.md`, `tools/`) and the layout tables in [Modules](../architecture/modules.md).
-- Services: `service/*service.rs`, except provider-named modules.
+- Services: grouped by domain under `service/` (`market/`, `keychain/`, `update/`, ...); a provider's module is named after the provider.
 - UI: `*_view.rs` or role suffixes such as `*_sheet.rs`, `*_editor.rs`.
-- Stores: `store/*_store.rs`; `Store` implementation in `store/mod.rs`.
+- Stores: one file per store in `store/` (a directory once a store has a second file); the `Store` implementation is in `store/mod.rs`.

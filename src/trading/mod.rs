@@ -8,15 +8,13 @@
 //! broker host's snapshots directly (`docs/broker-trading.md` lists what is not migrated).
 
 pub mod backend;
-pub mod broker_backend;
-pub mod broker_commands;
+pub mod broker;
 pub mod confirm;
 pub mod draft;
 pub mod edit;
 pub mod model;
 pub mod money;
-pub mod paper_backend;
-pub mod paper_stats;
+pub mod paper;
 pub mod preview;
 pub mod task;
 

@@ -16,37 +16,27 @@ inventory.
 | `host/portfolio/import_flow.rs` | CSV/CoinMarketCap import orchestration |
 | `format.rs`, `platform.rs` | Leaf helpers every layer imports: number/price text and per-platform wording |
 
-Feature hosts in `host/` (`host::alert`, `host::paper`, `host::pine`, `host::pine::subscription`,
-`host::portfolio`, `host::portfolio::card`, `host::webhook`, `host::snapshot`, `host::mcp`, `host::sync`)
-bridge pure engines, persistence, workers, and UI. `host/alert/runtime.rs` is the alert loop shared
-by the GUI fallback and the login-item agent (`bin/degenview-alert-agent.rs`).
+Feature hosts in `host/` (one directory per domain, see `host/` layout below) bridge pure engines,
+persistence, workers, and UI. `host/alert/runtime.rs` is the alert loop shared by the GUI fallback and
+the login-item agent (`bin/degenview-alert-agent.rs`).
 
 ## Inside a workspace
 
 `workspace/mod.rs` keeps `ChartWorkspace`'s state, constructors and the per-frame `ui` entry point.
 Every other concern is a child module in `workspace/` that adds an `impl ChartWorkspace` block; a
-child sees the root's private fields, and anything another child calls is `pub(super)`.
+child sees the root's private fields, and anything another child calls is `pub(in crate::workspace)`.
+The children are grouped by domain, like `model/` and `ui/`:
 
-| Module | Owns |
+| Directory | Owns |
 | --- | --- |
-| `chart` | One chart's market data: fetching, refresh cadence, older-history paging |
-| `charts` | The chart collection: add, replace, focus, remove, summaries for MCP |
-| `grid` | The column grid: drawing cards, drag between columns, applying what a pass collected |
-| `drawings` | Drawing properties, templates, locking, merging another Mac's drawings |
-| `undo` | Undo/redo of drawing and indicator edits; restyle bursts as one step |
-| `tool_rail` | The drawing tool rail and its grouped tiles |
-| `pine` | Scripts and indicators on a chart, and the views the app and MCP take |
-| `layouts` | Saved layouts: persisted form, dirty state, open/save/rename/delete |
-| `autosave` | The autosave debounce |
-| `replay` | The replay bar, timeline and stepping |
-| `live` | The live Binance feed |
-| `paper` | Paper quotes, portfolio cards and chart orders |
-| `alerts` | The price-alert request and editor sheet |
-| `watchlist` | The watchlist sidebar and what it reports |
-| `empty_page` | The page a tab shows before it has a chart |
-| `toolbar`, `settings`, `input` | The toolbar, the chart settings window, keyboard shortcuts |
-| `content`, `context`, `links`, `snapshot` | Content tools, chart menus, Post cards, chart snapshots |
-| `test_support` | Fixtures the module tests share (test builds only) |
+| `chart/` | `mod.rs`: one chart's market data, fetching, refresh cadence, older-history paging; `collection` (add, replace, focus, remove, summaries for MCP), `live` (the live Binance feed), `settings` (the chart settings window), `symbol_picker`, `snapshot`, `context/` (the right-click menu) |
+| `overlay/` | Compared markets: their candles fetched once per market (`mod.rs`) and the undoable add, edit and remove (`actions`) |
+| `drawing/` | `mod.rs`: drawing properties, templates, locking, merging another Mac's drawings; `content` (where a placed picture comes from), `links` (Post cards), `tool_rail` (the tool rail and its grouped tiles) |
+| `layout/` | Saved layouts: persisted form, dirty state, open/save/rename/delete (`mod.rs`), and the autosave debounce (`autosave`) |
+| `trade/` | The tab's trading side: `broker`, `paper` (quotes, portfolio cards, chart orders) and `sheet` (the order sheet's venue and actions) |
+| `pine/` | Scripts and indicators on a chart, and the views the app and MCP take (`mod.rs`); the Pine Logs pane (`logs/`) |
+| `tab_link/` | A tab's side of Tab Linking |
+| root | `grid` (the column grid), `undo` (drawing and indicator edits as steps), `replay`, `alerts`, `watchlist`, `empty_page`, `toolbar`, `input` (shortcuts), `test_support` (test fixtures) |
 
 ## Feature directories
 
@@ -55,8 +45,8 @@ child sees the root's private fields, and anything another child calls is `pub(s
 | `model/` | Alerts, charts/canvas/types, drawings, indicators, instruments, layouts, paper/portfolio engines, replay, tabs, watchlists, and webhooks |
 | `pine/` | Lexer → parser → compiler → session, builtins, strategies, alerts, drawings, libraries, `request.*`, and corpus tests |
 | `pine_studio/` | File-backed scripts, editor operations/diff/completion/symbols/multi-cursor, preview, inputs, reports, preferences, and demos |
-| `host/` | The stateful seams: one host per feature, bridging engines, stores, workers, and views |
-| `service/` | Market providers, HTTP/WebSocket work, updater, caches, images/icons, FX, notifications, files, Keychain, quotes, webhooks, and login-item registration |
+| `host/` | The stateful seams: one host per feature, bridging engines, stores, workers, and views (one directory per domain, see below) |
+| `service/` | Market providers, HTTP/WebSocket work, updater, caches, images/icons, FX, notifications, files, Keychain, quotes, webhooks, and login-item registration (see the layout below) |
 | `store/` | Schema/helpers plus watchlist, layout/template, portfolio, paper, alert, Pine, and webhook persistence |
 | `ui/` | egui screens, one directory per domain (see `ui/` layout below), plus the shared `kit/`, `theme/` and `icons` |
 | `mcp/` | Loopback HTTP transport, auth, shared permission state, app bridge, tools, and wire types |
@@ -84,6 +74,58 @@ name: `model::paper::engine`, not `model::paper_engine`. The domain's own types 
 
 Flat re-exports for the most used types are in `model/mod.rs` (`model::Kline`, `model::ChartType`).
 A new module goes in the matching directory; a new domain gets its own directory and a row here.
+
+## `service/`, `host/`, `store/`, `sync/`, `mcp/`, `workspace/` and `trading/` layout
+
+They follow the rule `model/` does: a directory per domain, children named without the directory's
+name, `foo/mod.rs` and never `foo.rs` beside `foo/`, no three files with one prefix. The domains reuse
+the names `model/` and `ui/` already use (`alert`, `webhook`, `portfolio`, `paper`, `broker`, `chart`,
+`market`, `annotation`, `editor_theme`, `mcp`, `pine`, `tab`, `sync`); only plumbing gets a new word
+(`net`, `cache`, `keychain`, `system`). `layout_tests.rs` fails the build on the two mechanical
+mistakes.
+
+`service/` (external I/O; root: `mod.rs` with `MarketSource`, `SearchResult` and `fetch_*`, and `work_queue`):
+
+| Directory | Holds |
+| --- | --- |
+| `market/` | Every provider (`alpaca binance cmc coinbase coingecko dexscreener geckoterminal kalshi polymarket`), `live` feed, `candles` shaping, symbol `catalog`, `search_rank`, `fx_rates` |
+| `net/` | Shared transport: `http`, `rate_limit`, `ws`, `multipart` |
+| `cache/` | `mod.rs` the candle cache; `disk`, `lookup` and `control` (what Settings ▸ Storage does) |
+| `annotation/` | What drawings' pictures and Post cards need: `asset_host`, `ingest`, `link_fetch` |
+| `image/` | Artwork: `icon` resolver and the remote-image `loader` |
+| `keychain/` | Secrets by kind (`ai_keys api_keys broker_secrets mcp_seal snapshot_secrets webhook_secrets`) and the platform stores (`secret_service`, `windows_credentials`) |
+| `update/` | `check`, `download`, `archive`, `tag_signature`, `code_signature`, and `install/` (the per-platform self-update) |
+| `snapshot/` | `export`, `job`, `raster`, `upload` and `providers/` |
+| `portfolio/`, `webhook/`, `alert/`, `editor_theme/` | Portfolio history, performers, quotes and ticker mapping; webhook delivery; macOS notifications and the login item; theme files and the font catalog (`fonts/`) |
+| `system/` | `entitlements`, `file_dialog`, `sandbox`, `timezone` |
+| `llm/`, `watchlist_quotes/` | The AI providers; the shared quote stream |
+
+`host/` has only `mod.rs` at its root. One directory per domain, the host in `mod.rs` and its helpers
+beside it: `alert/` (with `runtime`), `broker/`, `editor_theme/`, `mcp/` (with `confirmation`), `paper/`,
+`pine/` (with `subscription`), `portfolio/` (with `card` and `import_flow`), `snapshot/`, `sync/`,
+`tab/` (`window`, `title`, `link`), `trading/` (the hub), `update/`, `webhook/`.
+
+`store/` has one file per single-table domain store (`alert`, `asset_store`, `drawing_template`,
+`identity`, `paper`, `pine`, `portfolio`, `watchlist`, `webhook`) and a directory once a store has a
+second file: `chart/` (`template/`, `saved_view`), `editor_theme/`, `mcp/` (with `audit`), `sync/`.
+
+`sync/`:
+
+| Directory | Holds |
+| --- | --- |
+| `engine/` | The state machine and what it does: `core`, `initial` merge, `merge`, `outbox`, `apply/`, `account` |
+| `record/` | What goes over the wire: `mod.rs` the envelope; `ids`, `policy`, `project`, `validate`, `paper`, `scripts` |
+| `transport/` | The CloudKit boundary: `mod.rs` the trait and events, `native/` (the Swift bridge), `mock` (tests) |
+| `tests/` | End-to-end sync tests, one file per concern |
+
+`mcp/` keeps `mod.rs`, `bridge`, `state`, `types`, `confirm`, `audit`, `tools` (the chart tools and the
+router), `pine`, `replay`, `snapshot` and `tests/` at its root. Tools are grouped by domain: `chart/`
+(`control`, `data`, `drawings`), `indicator/`, `market/`, `paper/`, `portfolio/`, `session_stats/`, where
+`mod.rs` holds the pure result types and `tools.rs` the tool router. `transport/` holds the HTTP surface
+and what guards it: `auth`, `cancel`, `limits`, `seal`, `tls`, `tls_protect`.
+
+`trading/` keeps the trait, drafts and previews at its root and one directory per backend family:
+`broker/` (`backend`, `commands`) and `paper/` (`backend`, `stats`).
 
 ## `pine/` and `pine_studio/` layout
 

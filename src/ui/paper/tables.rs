@@ -117,7 +117,7 @@ pub enum PaperTableAction {
 // MARK: Metrics strip
 
 #[cfg(test)]
-pub use crate::trading::paper_stats::stats;
+pub use crate::trading::paper::stats::stats;
 
 // MARK: Table plumbing
 
