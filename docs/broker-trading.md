@@ -208,13 +208,13 @@ request descriptions for the checklist.
 
 ## Not done yet / not verified
 
-* **The venue layer is not the only path yet.** `TradingBackend` covers order entry (the order sheet): account,
-  rules, prices, check, preview, submit, cancel. The live orders panel (`ui/broker/panel.rs`: history and fills
-  paging, retry, the edit sheet and its fingerprint/preview state machine), the chart's order lines
-  (`workspace/broker.rs`) and the Settings cards still read `BrokerHost` snapshots and `BrokerRuntime`
-  directly, and `BrokerHost::global()` / `TradingHub::global()` are process-wide. Moving the edit sheet into a
-  state machine outside the drawing code, migrating the panel and chart onto the venue layer, and handing
-  `Arc<TradingHub>` to each window are separate changes. `trading/` does not import `ui` (a test checks). The findings, evidence and proposed fixes are in
+* **The venue layer is not the only path for reads yet.** What the screens *ask* a broker goes through
+  `TradingBackend` (order entry) and `BrokerCommands` (`trading/broker_commands.rs`: retry, cancel, paged
+  history and fills, and the edit as `trading::edit::EditSession`); a test fails if `ui/` or `workspace/`
+  name a broker's runtime. What they *read* is still `BrokerHost`'s snapshot and preferences: the orders
+  panel's header, banners, History, Fills and Balances, the chart's order lines and Settings. The hub is
+  handed to each window (`WindowEnv`), not read from a global. `trading/` does not import `ui` (a test
+  checks). The findings, evidence and proposed fixes are in
   [reviews/broker-architecture-follow-ups.md](reviews/broker-architecture-follow-ups.md).
 
 * Two Coinbase portfolios have not been tried together against the real service. The account id is
