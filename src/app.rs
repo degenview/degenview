@@ -337,9 +337,9 @@ pub struct DegenViewApp {
     /// The broker host's revision the tab windows were last repainted for.
     broker_revision: u64,
     /// Orders placed over MCP by `request_id`, so a retried call places nothing twice.
-    mcp_orders: Mutex<mcp::OrderMemory>,
+    mcp_orders: Mutex<mcp::paper::OrderMemory>,
     /// Chart pictures being made for MCP clients.
-    mcp_snapshots: Mutex<mcp::SnapshotJobs>,
+    mcp_snapshots: Mutex<mcp::snapshot::SnapshotJobs>,
     webhook_host: Arc<Mutex<WebhookHost>>,
     /// What the user chose about chart snapshots, shared by every window and Settings.
     snapshots: SnapshotHost,
@@ -1166,8 +1166,8 @@ impl DegenViewApp {
             broker_host,
             trading_hub,
             broker_revision: 0,
-            mcp_orders: Mutex::new(mcp::OrderMemory::default()),
-            mcp_snapshots: Mutex::new(mcp::SnapshotJobs::default()),
+            mcp_orders: Mutex::new(mcp::paper::OrderMemory::default()),
+            mcp_snapshots: Mutex::new(mcp::snapshot::SnapshotJobs::default()),
             webhook_host,
             tab_title_host,
             tab_link_host,
@@ -2034,24 +2034,27 @@ impl DegenViewApp {
                         continue;
                     };
                     if let TabContent::Chart(workspace) = &*content {
-                        workspaces.push(mcp::workspace_info(workspace, workspace.id() == active));
+                        workspaces.push(mcp::chart::workspace_info(
+                            workspace,
+                            workspace.id() == active,
+                        ));
                     }
                 }
                 Ok(McpReply::Workspaces(workspaces))
             }
             McpCommand::ListCharts { workspace_id } => self
                 .with_mcp_workspace(workspace_id, |workspace| {
-                    Ok(McpReply::Charts(mcp::charts_result(workspace)))
+                    Ok(McpReply::Charts(mcp::chart::charts_result(workspace)))
                 }),
             McpCommand::ListAlerts { only } => {
                 let host = self.alert_host.lock().map_err(|_| alerts_unavailable())?;
-                Ok(McpReply::Alerts(mcp::list_alerts(&host, only)))
+                Ok(McpReply::Alerts(mcp::alert::list_alerts(&host, only)))
             }
             McpCommand::CreateAlert(request) => {
                 let now = now_ms();
                 let plan = {
                     let host = self.alert_host.lock().map_err(|_| alerts_unavailable())?;
-                    mcp::plan_create_alert(
+                    mcp::alert::plan_create_alert(
                         &host,
                         &self.quote_book,
                         &self.alert_fx_rates,
@@ -2060,15 +2063,15 @@ impl DegenViewApp {
                     )?
                 };
                 match plan {
-                    mcp::CreatePlan::Existing(alert) => {
+                    mcp::alert::CreatePlan::Existing(alert) => {
                         Ok(McpReply::AlertCreated(CreateAlertResult {
                             status: "already_exists".into(),
                             alert: *alert,
                             command_id: None,
                         }))
                     }
-                    mcp::CreatePlan::New { alert, baseline } => {
-                        let info = mcp::alert_info(&alert, None);
+                    mcp::alert::CreatePlan::New { alert, baseline } => {
+                        let info = mcp::alert::alert_info(&alert, None);
                         let store = self.store.lock().map_err(|_| alerts_unavailable())?;
                         // The same commit the price-alert sheet's Save does, but a save that
                         // never reached the queue is an error here, not a "queued".
@@ -2082,7 +2085,7 @@ impl DegenViewApp {
                             // Other requests in this frame planned against the same snapshot:
                             // the runtime decides again (duplicate, cap) when it applies.
                             Some(AlertPrecondition::Create {
-                                max_alerts: mcp::MAX_ALERTS,
+                                max_alerts: mcp::alert::MAX_ALERTS,
                             }),
                             now,
                         )
@@ -2100,7 +2103,7 @@ impl DegenViewApp {
             }
             McpCommand::AlertCommandOutcome { command_id } => {
                 let host = self.alert_host.lock().map_err(|_| alerts_unavailable())?;
-                Ok(McpReply::AlertCommand(mcp::alert_command_outcome(
+                Ok(McpReply::AlertCommand(mcp::alert::alert_command_outcome(
                     &host, command_id,
                 )))
             }
@@ -2108,7 +2111,7 @@ impl DegenViewApp {
                 let now = now_ms();
                 let plan = {
                     let host = self.alert_host.lock().map_err(|_| alerts_unavailable())?;
-                    mcp::plan_update_alert(
+                    mcp::alert::plan_update_alert(
                         &host,
                         &self.quote_book,
                         &self.alert_fx_rates,
@@ -2117,19 +2120,19 @@ impl DegenViewApp {
                     )?
                 };
                 match plan {
-                    mcp::UpdatePlan::Unchanged(alert) => {
+                    mcp::alert::UpdatePlan::Unchanged(alert) => {
                         Ok(McpReply::AlertUpdated(UpdateAlertResult {
                             status: "unchanged".into(),
                             alert: *alert,
                             command_id: None,
                         }))
                     }
-                    mcp::UpdatePlan::Change {
+                    mcp::alert::UpdatePlan::Change {
                         alert,
                         base,
                         baseline,
                     } => {
-                        let info = mcp::alert_info(&alert, None);
+                        let info = mcp::alert::alert_info(&alert, None);
                         // Planned from a snapshot other requests may also have planned from:
                         // the runtime applies it only to the alert it was planned from.
                         let command_id = self.queue_alert_command(
@@ -2148,12 +2151,12 @@ impl DegenViewApp {
             McpCommand::SetAlertPaused { alert_id, paused } => {
                 let plan = {
                     let host = self.alert_host.lock().map_err(|_| alerts_unavailable())?;
-                    mcp::plan_pause_alert(&host, alert_id, paused)?
+                    mcp::alert::plan_pause_alert(&host, alert_id, paused)?
                 };
                 let status = match plan {
-                    mcp::StatePlan::Already if paused => "already_paused",
-                    mcp::StatePlan::Already => "already_active",
-                    mcp::StatePlan::Change { id, state } => {
+                    mcp::alert::StatePlan::Already if paused => "already_paused",
+                    mcp::alert::StatePlan::Already => "already_active",
+                    mcp::alert::StatePlan::Change { id, state } => {
                         self.queue_alert_command(
                             ctx,
                             AlertRuntimeCommandPayload::SetState {
@@ -2174,7 +2177,7 @@ impl DegenViewApp {
             McpCommand::DeleteAlert { alert_id } => {
                 let id = {
                     let host = self.alert_host.lock().map_err(|_| alerts_unavailable())?;
-                    mcp::plan_delete_alert(&host, alert_id)?
+                    mcp::alert::plan_delete_alert(&host, alert_id)?
                 };
                 self.queue_alert_command(ctx, AlertRuntimeCommandPayload::Delete(id), None)?;
                 Ok(McpReply::AlertChanged(AlertChangeResult {
@@ -2186,14 +2189,14 @@ impl DegenViewApp {
                 workspace_id,
                 chart_id,
             } => self.with_mcp_workspace(workspace_id, |workspace| {
-                mcp::list_chart_pine(workspace, chart_id).map(McpReply::ChartPine)
+                mcp::pine::list_chart_pine(workspace, chart_id).map(McpReply::ChartPine)
             }),
             McpCommand::GetChartPine {
                 workspace_id,
                 chart_id,
                 instance_id,
             } => self.with_mcp_workspace(workspace_id, |workspace| {
-                mcp::chart_pine_detail(workspace, chart_id, instance_id)
+                mcp::pine::chart_pine_detail(workspace, chart_id, instance_id)
                     .map(McpReply::ChartPineDetail)
             }),
             McpCommand::GetPineStyles {
@@ -2201,7 +2204,7 @@ impl DegenViewApp {
                 chart_id,
                 instance_id,
             } => self.with_mcp_workspace(workspace_id, |workspace| {
-                mcp::pine_styles(workspace, chart_id, instance_id).map(McpReply::PineStyles)
+                mcp::pine::pine_styles(workspace, chart_id, instance_id).map(McpReply::PineStyles)
             }),
             McpCommand::GetPineReport {
                 workspace_id,
@@ -2211,7 +2214,7 @@ impl DegenViewApp {
                 limit,
                 include_equity,
             } => self.with_mcp_workspace(workspace_id, |workspace| {
-                mcp::pine_report(
+                mcp::pine::pine_report(
                     workspace,
                     chart_id,
                     instance_id,
@@ -2223,11 +2226,11 @@ impl DegenViewApp {
             }),
             McpCommand::ListPaperAccounts => {
                 let host = self.paper.lock().map_err(|_| paper_unavailable())?;
-                mcp::list_paper_accounts(&host).map(McpReply::PaperAccounts)
+                mcp::paper::list_paper_accounts(&host).map(McpReply::PaperAccounts)
             }
             McpCommand::GetPaperAccount { account_id } => {
                 let host = self.paper.lock().map_err(|_| paper_unavailable())?;
-                mcp::get_paper_account(&host, account_id)
+                mcp::paper::get_paper_account(&host, account_id)
                     .map(|detail| McpReply::PaperAccount(Box::new(detail)))
             }
             McpCommand::ListPaperHistory {
@@ -2238,10 +2241,10 @@ impl DegenViewApp {
             } => {
                 let host = self.paper.lock().map_err(|_| paper_unavailable())?;
                 if closed_trades {
-                    mcp::paper_trades(&host, account_id, offset, limit)
+                    mcp::paper::paper_trades(&host, account_id, offset, limit)
                         .map(|result| McpReply::PaperTrades(Box::new(result)))
                 } else {
-                    mcp::paper_fills(&host, account_id, offset, limit)
+                    mcp::paper::paper_fills(&host, account_id, offset, limit)
                         .map(|result| McpReply::PaperFills(Box::new(result)))
                 }
             }
@@ -2252,7 +2255,7 @@ impl DegenViewApp {
             } => {
                 let mut host = self.paper.lock().map_err(|_| paper_unavailable())?;
                 let mut memory = self.mcp_orders.lock().map_err(|_| paper_unavailable())?;
-                let result = mcp::place_paper_order(
+                let result = mcp::paper::place_paper_order(
                     &mut host,
                     &mut memory,
                     *request,
@@ -2264,7 +2267,7 @@ impl DegenViewApp {
             }
             McpCommand::ModifyPaperOrder { order_id, changes } => {
                 let mut host = self.paper.lock().map_err(|_| paper_unavailable())?;
-                let result = mcp::modify_paper_order(&mut host, order_id, changes)?;
+                let result = mcp::paper::modify_paper_order(&mut host, order_id, changes)?;
                 ctx.request_repaint();
                 Ok(McpReply::PaperChange(Box::new(result)))
             }
@@ -2273,7 +2276,8 @@ impl DegenViewApp {
                 order_ids,
             } => {
                 let mut host = self.paper.lock().map_err(|_| paper_unavailable())?;
-                let result = mcp::cancel_paper_orders(&mut host, account_id, order_ids.as_deref())?;
+                let result =
+                    mcp::paper::cancel_paper_orders(&mut host, account_id, order_ids.as_deref())?;
                 ctx.request_repaint();
                 Ok(McpReply::PaperChange(Box::new(result)))
             }
@@ -2282,18 +2286,21 @@ impl DegenViewApp {
                 instrument_key,
             } => {
                 let mut host = self.paper.lock().map_err(|_| paper_unavailable())?;
-                let result =
-                    mcp::close_paper_positions(&mut host, account_id, instrument_key.as_deref())?;
+                let result = mcp::paper::close_paper_positions(
+                    &mut host,
+                    account_id,
+                    instrument_key.as_deref(),
+                )?;
                 ctx.request_repaint();
                 Ok(McpReply::PaperChange(Box::new(result)))
             }
             McpCommand::ListPortfolios => {
                 let host = self.portfolio.lock().map_err(|_| portfolio_unavailable())?;
-                mcp::list_portfolios(&host).map(McpReply::Portfolios)
+                mcp::portfolio::list_portfolios(&host).map(McpReply::Portfolios)
             }
             McpCommand::GetPortfolioHoldings { portfolio_id } => {
                 let host = self.portfolio.lock().map_err(|_| portfolio_unavailable())?;
-                mcp::portfolio_holdings_base(&host, portfolio_id, now_ms())
+                mcp::portfolio::portfolio_holdings_base(&host, portfolio_id, now_ms())
                     .map(|base| McpReply::PortfolioHoldings(Box::new(base)))
             }
             McpCommand::ListPortfolioTransactions {
@@ -2303,15 +2310,21 @@ impl DegenViewApp {
                 limit,
             } => {
                 let host = self.portfolio.lock().map_err(|_| portfolio_unavailable())?;
-                mcp::portfolio_transactions(&host, portfolio_id, asset.as_deref(), offset, limit)
-                    .map(|result| McpReply::PortfolioTransactions(Box::new(result)))
+                mcp::portfolio::portfolio_transactions(
+                    &host,
+                    portfolio_id,
+                    asset.as_deref(),
+                    offset,
+                    limit,
+                )
+                .map(|result| McpReply::PortfolioTransactions(Box::new(result)))
             }
             McpCommand::ListWatchlists => {
                 let store = self
                     .watchlist
                     .lock()
                     .map_err(|_| watchlists_unavailable())?;
-                mcp::list_watchlists(&store).map(McpReply::Watchlists)
+                mcp::watchlist::list_watchlists(&store).map(McpReply::Watchlists)
             }
             McpCommand::GetWatchlist {
                 watchlist_id,
@@ -2322,7 +2335,7 @@ impl DegenViewApp {
                     .watchlist
                     .lock()
                     .map_err(|_| watchlists_unavailable())?;
-                mcp::get_watchlist(&store, watchlist_id, offset, limit)
+                mcp::watchlist::get_watchlist(&store, watchlist_id, offset, limit)
                     .map(|page| McpReply::Watchlist(Box::new(page)))
             }
             McpCommand::CreateWatchlist { name, markets } => {
@@ -2330,7 +2343,7 @@ impl DegenViewApp {
                     .watchlist
                     .lock()
                     .map_err(|_| watchlists_unavailable())?;
-                let result = mcp::create_watchlist(&mut store, &name, markets)?;
+                let result = mcp::watchlist::create_watchlist(&mut store, &name, markets)?;
                 ctx.request_repaint();
                 Ok(McpReply::WatchlistChanged(Box::new(result)))
             }
@@ -2342,7 +2355,7 @@ impl DegenViewApp {
                     .watchlist
                     .lock()
                     .map_err(|_| watchlists_unavailable())?;
-                let result = mcp::update_watchlist(&mut store, watchlist_id, *changes)?;
+                let result = mcp::watchlist::update_watchlist(&mut store, watchlist_id, *changes)?;
                 ctx.request_repaint();
                 Ok(McpReply::WatchlistChanged(Box::new(result)))
             }
@@ -2351,7 +2364,7 @@ impl DegenViewApp {
                     .watchlist
                     .lock()
                     .map_err(|_| watchlists_unavailable())?;
-                let result = mcp::delete_watchlist(&mut store, watchlist_id)?;
+                let result = mcp::watchlist::delete_watchlist(&mut store, watchlist_id)?;
                 ctx.request_repaint();
                 Ok(McpReply::WatchlistChanged(Box::new(result)))
             }
@@ -2364,7 +2377,7 @@ impl DegenViewApp {
                 .map(|result| McpReply::PineEdit(Box::new(result))),
             McpCommand::ListPineAlerts => {
                 let store = self.store.lock().map_err(|_| alerts_unavailable())?;
-                Ok(McpReply::PineAlerts(mcp::pine_alerts(
+                Ok(McpReply::PineAlerts(mcp::pine::pine_alerts(
                     &store.pine_subscriptions(),
                 )))
             }
@@ -2374,14 +2387,14 @@ impl DegenViewApp {
                 limit,
                 before,
             } => self.with_mcp_workspace(workspace_id, |workspace| {
-                mcp::chart_candles(workspace, chart_id, limit, before)
+                mcp::chart::chart_candles(workspace, chart_id, limit, before)
                     .map(|result| McpReply::Candles(Box::new(result)))
             }),
             McpCommand::ListDrawings {
                 workspace_id,
                 chart_id,
             } => self.with_mcp_workspace(workspace_id, |workspace| {
-                mcp::chart_drawings(workspace, chart_id)
+                mcp::chart::chart_drawings(workspace, chart_id)
                     .map(|result| McpReply::Drawings(Box::new(result)))
             }),
             McpCommand::AddDrawings {
@@ -2389,7 +2402,7 @@ impl DegenViewApp {
                 chart_id,
                 drawings,
             } => self.with_mcp_workspace(workspace_id, |workspace| {
-                mcp::add_drawings(workspace, chart_id, &drawings)
+                mcp::chart::add_drawings(workspace, chart_id, &drawings)
                     .map(|result| McpReply::DrawingsChanged(Box::new(result)))
             }),
             McpCommand::EditDrawing {
@@ -2397,7 +2410,7 @@ impl DegenViewApp {
                 chart_id,
                 edit,
             } => self.with_mcp_workspace(workspace_id, |workspace| {
-                mcp::edit_drawing(workspace, chart_id, &edit)
+                mcp::chart::edit_drawing(workspace, chart_id, &edit)
                     .map(|result| McpReply::DrawingsChanged(Box::new(result)))
             }),
             McpCommand::RemoveDrawings {
@@ -2405,7 +2418,7 @@ impl DegenViewApp {
                 chart_id,
                 drawing_ids,
             } => self.with_mcp_workspace(workspace_id, |workspace| {
-                mcp::remove_drawings(workspace, chart_id, &drawing_ids)
+                mcp::chart::remove_drawings(workspace, chart_id, &drawing_ids)
                     .map(|result| McpReply::DrawingsChanged(Box::new(result)))
             }),
             McpCommand::AddPineInstance {
@@ -2414,7 +2427,7 @@ impl DegenViewApp {
                 script,
                 visible,
             } => self.with_mcp_workspace(workspace_id, |workspace| {
-                mcp::add_pine_instance(workspace, chart_id, &script, visible)
+                mcp::pine::add_pine_instance(workspace, chart_id, &script, visible)
                     .map(|result| McpReply::PineInstanceChanged(Box::new(result)))
             }),
             McpCommand::UpdatePineInstance {
@@ -2426,7 +2439,7 @@ impl DegenViewApp {
             } => {
                 let alerts = self.pine_subscriptions_for_mcp()?;
                 self.with_mcp_workspace(workspace_id, |workspace| {
-                    mcp::update_pine_instance(
+                    mcp::pine::update_pine_instance(
                         workspace,
                         chart_id,
                         instance_id,
@@ -2444,7 +2457,7 @@ impl DegenViewApp {
             } => {
                 let alerts = self.pine_subscriptions_for_mcp()?;
                 self.with_mcp_workspace(workspace_id, |workspace| {
-                    mcp::remove_pine_instance(workspace, chart_id, instance_id, &alerts)
+                    mcp::pine::remove_pine_instance(workspace, chart_id, instance_id, &alerts)
                         .map(|result| McpReply::PineInstanceChanged(Box::new(result)))
                 })
             }
@@ -2454,14 +2467,14 @@ impl DegenViewApp {
                 indicator,
                 ema_period,
             } => self.with_mcp_workspace(workspace_id, |workspace| {
-                mcp::apply_indicator(workspace, chart_id, indicator, ema_period)
+                mcp::chart::apply_indicator(workspace, chart_id, indicator, ema_period)
                     .map(McpReply::IndicatorApplied)
             }),
             McpCommand::SetTimeframe {
                 workspace_id,
                 timeframe,
             } => self.with_mcp_workspace(workspace_id, |workspace| {
-                Ok(McpReply::Timeframe(mcp::set_timeframe(
+                Ok(McpReply::Timeframe(mcp::chart::set_timeframe(
                     workspace, timeframe, ctx,
                 )))
             }),
@@ -2470,14 +2483,14 @@ impl DegenViewApp {
                 chart_id,
                 chart_type,
             } => self.with_mcp_workspace(workspace_id, |workspace| {
-                mcp::set_chart_type(workspace, chart_id, chart_type)
+                mcp::chart::set_chart_type(workspace, chart_id, chart_type)
                     .map(|result| McpReply::ChartChanged(Box::new(result)))
             }),
             McpCommand::RemoveChart {
                 workspace_id,
                 chart_id,
             } => self.with_mcp_workspace(workspace_id, |workspace| {
-                mcp::remove_chart(workspace, chart_id)
+                mcp::chart::remove_chart(workspace, chart_id)
                     .map(|result| McpReply::ChartChanged(Box::new(result)))
             }),
             McpCommand::BeginSnapshot {
@@ -2503,20 +2516,20 @@ impl DegenViewApp {
             }
             McpCommand::GetReplay { workspace_id } => self
                 .with_mcp_workspace(workspace_id, |workspace| {
-                    Ok(McpReply::Replay(mcp::replay_state(workspace)))
+                    Ok(McpReply::Replay(mcp::replay::replay_state(workspace)))
                 }),
             McpCommand::ControlReplay {
                 workspace_id,
                 command,
             } => self.with_mcp_workspace(workspace_id, |workspace| {
-                mcp::control_replay(workspace, command).map(McpReply::Replay)
+                mcp::replay::control_replay(workspace, command).map(McpReply::Replay)
             }),
             McpCommand::RemoveIndicator {
                 workspace_id,
                 chart_id,
                 indicator,
             } => self.with_mcp_workspace(workspace_id, |workspace| {
-                mcp::remove_indicator(workspace, chart_id, indicator)
+                mcp::chart::remove_indicator(workspace, chart_id, indicator)
                     .map(McpReply::IndicatorApplied)
             }),
             McpCommand::GetIndicatorValues {
@@ -2524,7 +2537,7 @@ impl DegenViewApp {
                 chart_id,
                 request,
             } => self.with_mcp_workspace(workspace_id, |workspace| {
-                mcp::indicator_readings(workspace, chart_id, &request)
+                mcp::chart::indicator_readings(workspace, chart_id, &request)
                     .map(|result| McpReply::IndicatorValues(Box::new(result)))
             }),
             McpCommand::GetSessionStats {
@@ -2532,14 +2545,14 @@ impl DegenViewApp {
                 chart_id,
                 query,
             } => self.with_mcp_workspace(workspace_id, |workspace| {
-                mcp::session_statistics(workspace, chart_id, &query)
+                mcp::chart::session_statistics(workspace, chart_id, &query)
                     .map(|result| McpReply::SessionStats(Box::new(result)))
             }),
             McpCommand::AddChart {
                 workspace_id,
                 instrument,
             } => self.with_mcp_workspace(workspace_id, |workspace| {
-                Ok(McpReply::ChartAdded(mcp::add_chart(
+                Ok(McpReply::ChartAdded(mcp::chart::add_chart(
                     workspace,
                     &instrument,
                     ctx,
