@@ -28,8 +28,11 @@ do not restyle screens you were not asked to touch, and do not copy their older 
   square: below 20 it is 3 candles, from 20 it has wicks, from 28 it takes `theme::UP`/`DOWN`;
   smaller it is `theme::text_secondary()`. `.color(c)` forces one colour at any size (a button's
   text colour). `.paint_at(ui, rect)` mirrors `Spinner::paint_at`. It repaints itself while shown.
-  A progress message gets a large one (40) above its text, as the snapshot notice does. Existing
-  `egui::Spinner` sites are not migrated yet; swap one when you touch it.
+  A pane with nothing to show yet uses `kit::loading::message(ui, area, text)` (a 40 indicator over
+  its text, centred); a progress toast puts a 48 one above its text, as the snapshot notice does.
+  Large sites already use it (update check, symbol pickers, portfolio panes, Add chart trending,
+  the assistant); small inline `egui::Spinner`s (Test buttons, busy buttons, field adornments) are
+  not migrated yet: swap one when you touch it.
 - **One scale of text.** Page title `kit::size::TITLE2 + 3`, section heading `HEADLINE` bold, body
   `BODY`, hints `CAPTION` in `text_secondary`. Sizes only from `kit::size`.
 

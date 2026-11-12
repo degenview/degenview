@@ -10,6 +10,7 @@
 //! no state is kept between frames, and any two indicators on screen show the same market.
 
 use crate::ui::accessibility;
+use crate::ui::kit::{self, REGULAR};
 use crate::ui::theme;
 use eframe::egui::{
     Color32, Painter, Rect, Response, Sense, Stroke, Ui, Vec2, Widget, WidgetType, pos2, vec2,
@@ -257,6 +258,39 @@ impl LoadingIndicator {
         paint(ui.painter(), rect, ui.input(|input| input.time), tint);
         ui.ctx().request_repaint();
     }
+}
+
+/// The side of the indicator in [`message`].
+const MESSAGE_INDICATOR: f32 = 40.0;
+const MESSAGE_GAP: f32 = 10.0;
+
+/// A large indicator with `text` under it, both centred in `area`: the loading state of a pane
+/// that has nothing else to show yet. Painted, so it takes no room from the layout.
+pub fn message(ui: &Ui, area: Rect, text: &str) {
+    let label = kit::galley(
+        ui,
+        text,
+        12.0,
+        REGULAR,
+        theme::text_secondary(),
+        area.width(),
+    );
+    let top = area.center().y - (MESSAGE_INDICATOR + MESSAGE_GAP + label.size().y) / 2.0;
+    LoadingIndicator::new().size(MESSAGE_INDICATOR).paint_at(
+        ui,
+        Rect::from_center_size(
+            pos2(area.center().x, top + MESSAGE_INDICATOR / 2.0),
+            Vec2::splat(MESSAGE_INDICATOR),
+        ),
+    );
+    ui.painter().galley(
+        pos2(
+            area.center().x - label.size().x / 2.0,
+            top + MESSAGE_INDICATOR + MESSAGE_GAP,
+        ),
+        label,
+        Color32::PLACEHOLDER,
+    );
 }
 
 impl Default for LoadingIndicator {

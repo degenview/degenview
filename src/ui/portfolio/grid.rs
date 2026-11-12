@@ -4,6 +4,7 @@
 
 use crate::ui::accessibility;
 use crate::ui::icons::{self, Icon};
+use crate::ui::kit::loading;
 use crate::ui::kit::{self, REGULAR, SEMIBOLD};
 use crate::ui::theme;
 use eframe::egui::{
@@ -742,27 +743,9 @@ pub fn allocate_table(ui: &mut Ui) -> Rect {
     )
 }
 
-/// A spinner and `message` in the middle of `area`.
+/// The loading indicator and `message` in the middle of `area`.
 pub fn loading_message(ui: &mut Ui, area: Rect, message: &str) {
-    let label = kit::galley(
-        ui,
-        message,
-        12.0,
-        REGULAR,
-        theme::text_secondary(),
-        area.width(),
-    );
-    let width = 16.0 + 8.0 + label.size().x;
-    let left = area.center().x - width / 2.0;
-    egui::Spinner::new().size(16.0).paint_at(
-        ui,
-        Rect::from_center_size(pos2(left + 8.0, area.center().y), Vec2::splat(16.0)),
-    );
-    ui.painter().galley(
-        pos2(left + 24.0, area.center().y - label.size().y / 2.0),
-        label,
-        Color32::PLACEHOLDER,
-    );
+    loading::message(ui, area, message);
 }
 
 #[cfg(test)]

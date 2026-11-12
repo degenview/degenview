@@ -5,6 +5,7 @@ use crate::format::civil_from_days;
 use crate::host::update_host::{BUILD_ID, Phase, UpdateHost, UpdateView};
 use crate::service::update_check::Channel;
 use crate::ui::icons::{self, Icon};
+use crate::ui::kit::loading::LoadingIndicator;
 use crate::ui::{kit, theme, window::update_indicator};
 use eframe::egui::{self, Color32, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2};
 use std::time::{Duration, UNIX_EPOCH};
@@ -444,7 +445,8 @@ fn badge_glyph(ui: &mut Ui, card: &Card) {
         Glyph::Spinner => {
             ui.scope_builder(egui::UiBuilder::new().max_rect(badge), |ui| {
                 ui.centered_and_justified(|ui| {
-                    ui.spinner();
+                    // White, like the glyphs the other states put on this disc.
+                    ui.add(LoadingIndicator::new().size(26.0).color(Color32::WHITE));
                 });
             });
         }
