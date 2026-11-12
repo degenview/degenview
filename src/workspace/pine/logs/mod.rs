@@ -5,24 +5,24 @@
 //! the view. The pane's options (levels, search flags) are remembered in the `pineLogs.prefs`
 //! setting, local to the machine; the messages themselves are never stored or synced.
 
-use super::*;
 use crate::model::pine::instance::PineInstance;
 use crate::model::pine::logs_view::{LogsPrefs, SourceTarget};
 use crate::pine::logs::{LogEvent, LogHistory};
 use crate::ui::Scrolled;
 use crate::ui::pine::logs_view::{self as logs_view, Feed, LogsAction, ScriptEntry};
+use crate::workspace::*;
 
 const PREFS_KEY: &str = "pineLogs.prefs";
 
 /// What the pane keeps between frames.
 #[derive(Default)]
-pub(super) struct PineLogsPane {
+pub(in crate::workspace) struct PineLogsPane {
     /// The chart the pane shows, when open.
-    pub(super) chart: Option<u64>,
-    pub(super) view: logs_view::LogsState,
+    pub(in crate::workspace) chart: Option<u64>,
+    pub(in crate::workspace) view: logs_view::LogsState,
     /// The pane's chart is waiting for a drag over the bars to list (`ReplayChartFrame::selecting`
     /// with `PickKind::LogsRange`). Never together with a replay's "click a candle".
-    pub(super) picking: bool,
+    pub(in crate::workspace) picking: bool,
     prefs_loaded: bool,
     prefs_saved: LogsPrefs,
     /// What the pane asks of the app (open the Pine Studio), handed on with the frame's actions.
@@ -31,7 +31,7 @@ pub(super) struct PineLogsPane {
 
 /// The scripts the pane can pick: each instance by name, the later ones of a repeated name
 /// numbered so two copies of one script can be told apart.
-pub(super) fn script_entries(instances: &[PineInstance]) -> Vec<ScriptEntry> {
+pub(in crate::workspace) fn script_entries(instances: &[PineInstance]) -> Vec<ScriptEntry> {
     let mut seen: HashMap<&str, usize> = HashMap::new();
     instances
         .iter()
@@ -81,7 +81,7 @@ fn source_target(instance: &PineInstance, event: &LogEvent) -> Result<SourceTarg
 impl ChartWorkspace {
     /// Opens the pane on `chart_id`, on `instance` when one is named. An open pane is only
     /// pointed elsewhere, never opened twice.
-    pub(super) fn open_pine_logs(&mut self, chart_id: u64, instance: Option<u64>) {
+    pub(in crate::workspace) fn open_pine_logs(&mut self, chart_id: u64, instance: Option<u64>) {
         self.load_logs_prefs();
         self.context.logs.chart = Some(chart_id);
         if let Some(instance) = instance {
@@ -117,7 +117,7 @@ impl ChartWorkspace {
         }
     }
 
-    pub(super) fn show_logs_panel(&mut self, ui: &mut egui::Ui) {
+    pub(in crate::workspace) fn show_logs_panel(&mut self, ui: &mut egui::Ui) {
         let Some(chart_id) = self.context.logs.chart else {
             return;
         };
@@ -240,7 +240,7 @@ impl ChartWorkspace {
         }
     }
 
-    pub(super) fn take_logs_actions(&mut self) -> Vec<WorkspaceAction> {
+    pub(in crate::workspace) fn take_logs_actions(&mut self) -> Vec<WorkspaceAction> {
         std::mem::take(&mut self.context.logs.outbox)
     }
 }

@@ -1,12 +1,12 @@
 //! The live Binance feed: keeping it on the workspace's charts and folding its candles in.
 
-use super::ChartWorkspace;
 use crate::model::{DataSource, Timeframe};
 use crate::service::market::live::BinanceLiveFeed;
+use crate::workspace::ChartWorkspace;
 use eframe::egui;
 
 impl ChartWorkspace {
-    pub(super) fn update_live_feed(&mut self, ctx: &egui::Context) {
+    pub(in crate::workspace) fn update_live_feed(&mut self, ctx: &egui::Context) {
         let mut symbols: Vec<String> = self
             .charts
             .iter()

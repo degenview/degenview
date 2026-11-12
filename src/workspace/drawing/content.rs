@@ -9,7 +9,6 @@
 //! the picture of a drawing being replaced. Nothing is created until the picture is stored, so a
 //! refused picture leaves no drawing, no undo step and nothing to sync.
 
-use super::ChartWorkspace;
 use crate::model::Tool;
 use crate::model::annotation::image_content::{Content, ImageContent, MAX_NAME_CHARS};
 use crate::service::annotation::asset_host;
@@ -18,12 +17,13 @@ use crate::service::{system::file_dialog, work_queue};
 use crate::store::SharedStore;
 use crate::store::asset_store::StoredAsset;
 use crate::ui::drawing::content::sheet::{self, ImageSheet, ImageSheetAction};
+use crate::workspace::ChartWorkspace;
 use eframe::egui::{self, ColorImage};
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver};
 
 /// Where a picture comes from.
-pub(super) enum Source {
+pub(in crate::workspace) enum Source {
     /// The system's file panel.
     Panel,
     Clipboard,
@@ -33,7 +33,7 @@ pub(super) enum Source {
 
 /// What the picture that is being read is for.
 #[derive(Clone, Copy)]
-pub(super) enum Target {
+pub(in crate::workspace) enum Target {
     /// To be placed: by the next click, or at once (a drop or a paste).
     Place { at_once: bool },
     /// To replace the picture of this drawing.
@@ -52,7 +52,7 @@ enum Outcome {
 }
 
 #[derive(Default)]
-pub(super) struct ContentFlow {
+pub(in crate::workspace) struct ContentFlow {
     /// What waits to be placed by a click while its tool is armed.
     pub pending: Option<Content>,
     /// The waiting picture arrived by a drop or a paste: place it without a click.
@@ -62,7 +62,7 @@ pub(super) struct ContentFlow {
     /// The sheet is open.
     sheet: bool,
     /// The tool the last frame had, to notice a content tool being armed.
-    pub(super) last_tool: Tool,
+    pub(in crate::workspace) last_tool: Tool,
     inbox: Option<Receiver<Outcome>>,
     target: Option<Target>,
     /// Why the last picture was refused, for the sheet.
@@ -73,7 +73,7 @@ pub(super) struct ContentFlow {
 
 /// What the chart frames are told about content this frame: a copy taken before they run, so
 /// they need nothing of the workspace while they draw.
-pub(super) struct PictureWork {
+pub(in crate::workspace) struct PictureWork {
     pending: Option<Content>,
     place_now: bool,
     focused: Option<u64>,
@@ -83,7 +83,7 @@ pub(super) struct PictureWork {
 impl PictureWork {
     /// What chart `chart_id` is told: the waiting picture, whether to place it now (only on the
     /// focused chart), and a picture to swap into one of its drawings.
-    pub(super) fn for_chart(
+    pub(in crate::workspace) fn for_chart(
         &self,
         chart_id: u64,
     ) -> (Option<Content>, bool, Option<(u64, ImageContent)>) {
@@ -100,7 +100,7 @@ impl PictureWork {
 }
 
 impl ContentFlow {
-    pub(super) fn work_snapshot(&self, focused: Option<u64>) -> PictureWork {
+    pub(in crate::workspace) fn work_snapshot(&self, focused: Option<u64>) -> PictureWork {
         PictureWork {
             pending: self.pending.clone(),
             place_now: self.place_now,
@@ -109,7 +109,7 @@ impl ContentFlow {
         }
     }
 
-    pub(super) fn sheet_open(&self) -> bool {
+    pub(in crate::workspace) fn sheet_open(&self) -> bool {
         self.sheet || self.links.open()
     }
 
@@ -121,7 +121,7 @@ impl ContentFlow {
 /// The decoded pictures the drawings show, as far as they are loaded: what a snapshot is handed,
 /// frozen on the UI thread, since it has no store to ask. A picture not loaded is painted as the
 /// chart paints it, as a placeholder.
-pub(super) fn snapshot_images(
+pub(in crate::workspace) fn snapshot_images(
     ctx: &egui::Context,
     drawings: &[crate::model::Drawing],
 ) -> std::collections::HashMap<String, std::sync::Arc<ColorImage>> {
@@ -143,7 +143,7 @@ pub(super) fn snapshot_images(
 }
 
 /// A picture's name for lists: the file's name without its extension, cut to what a name may be.
-pub(super) fn display_name(file_name: &str) -> String {
+pub(in crate::workspace) fn display_name(file_name: &str) -> String {
     let stem = std::path::Path::new(file_name)
         .file_stem()
         .and_then(|stem| stem.to_str())
@@ -197,7 +197,12 @@ fn work(source: Source, store: &SharedStore) -> Outcome {
 
 impl ChartWorkspace {
     /// Starts reading a picture on a worker, for `target`. One at a time.
-    pub(super) fn start_picture(&mut self, ctx: &egui::Context, source: Source, target: Target) {
+    pub(in crate::workspace) fn start_picture(
+        &mut self,
+        ctx: &egui::Context,
+        source: Source,
+        target: Target,
+    ) {
         if self.content.working() {
             return;
         }
@@ -213,7 +218,7 @@ impl ChartWorkspace {
     }
 
     /// Asks for a picture to replace the one drawing `drawing_id` of chart `chart_id` shows.
-    pub(super) fn replace_picture_request(
+    pub(in crate::workspace) fn replace_picture_request(
         &mut self,
         ctx: &egui::Context,
         chart_id: u64,
@@ -230,7 +235,7 @@ impl ChartWorkspace {
     }
 
     /// Everything the content tools need each frame: the sheet, what was read, drops.
-    pub(super) fn tick_content(&mut self, ctx: &egui::Context) {
+    pub(in crate::workspace) fn tick_content(&mut self, ctx: &egui::Context) {
         self.take_picture(ctx);
         let tool = self.active_tool;
         let content_tool = matches!(tool, Tool::Image | Tool::Post);
@@ -359,19 +364,19 @@ impl ChartWorkspace {
     }
 
     /// A chart said its waiting picture was placed.
-    pub(super) fn picture_used(&mut self) {
+    pub(in crate::workspace) fn picture_used(&mut self) {
         self.content.pending = None;
         self.content.place_now = false;
     }
 
     /// A frame has run: a replacement offered to the chart has been seen by it.
-    pub(super) fn picture_work_done(&mut self) {
+    pub(in crate::workspace) fn picture_work_done(&mut self) {
         self.content.replace_with = None;
         self.content.place_now = false;
     }
 
     /// Copies the picture named `asset` to the clipboard, when it is loaded.
-    pub(super) fn copy_picture(&mut self, ctx: &egui::Context, asset: &str) {
+    pub(in crate::workspace) fn copy_picture(&mut self, ctx: &egui::Context, asset: &str) {
         match asset_host::host(ctx).and_then(|host| host.ready(asset)) {
             Some(pixels) => {
                 ctx.copy_image((*pixels).clone());

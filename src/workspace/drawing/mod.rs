@@ -1,5 +1,9 @@
 //! Drawings on a chart: what is saved, the properties dialog, templates and defaults, locking, and merging another Mac's edits.
 
+pub(in crate::workspace) mod content;
+pub(in crate::workspace) mod links;
+pub(in crate::workspace) mod tool_rail;
+
 use super::ChartWorkspace;
 use crate::model::{Drawing, DrawingCommand};
 use crate::store::drawing_template::{DrawingPrefs, DrawingTemplateStore};

@@ -1,17 +1,17 @@
 //! Adding, editing and removing the markets compared on a chart, as undoable steps.
 
-use super::ChartWorkspace;
-use super::undo::{RESTYLE_WINDOW, Snapshot, UndoEntry};
 use crate::model::InstrumentId;
 use crate::model::chart::price_scale::PriceScaleMode;
 use crate::model::overlay::{AddOutcome, OverlayCommand, OverlayId, OverlayScale};
 use crate::ui::chart::settings::overlay_popover::{self, OverlaySettingsPopover};
+use crate::workspace::ChartWorkspace;
+use crate::workspace::undo::{RESTYLE_WINDOW, Snapshot, UndoEntry};
 use eframe::egui;
 use std::time::Instant;
 
 /// The axes that only compared markets call for: with none left they go back to Regular.
 /// (Logarithmic is a choice of its own and stays.)
-pub(super) fn reverts_to_regular(mode: PriceScaleMode) -> bool {
+pub(in crate::workspace) fn reverts_to_regular(mode: PriceScaleMode) -> bool {
     matches!(mode, PriceScaleMode::Percent | PriceScaleMode::IndexedTo100)
 }
 
@@ -34,7 +34,7 @@ impl ChartWorkspace {
     }
 
     /// Whether `chart_id` is a chart another market can be drawn on.
-    pub(super) fn can_compare(&self, chart_id: u64) -> bool {
+    pub(in crate::workspace) fn can_compare(&self, chart_id: u64) -> bool {
         self.charts
             .iter()
             .find(|chart| chart.id == chart_id)
@@ -54,7 +54,7 @@ impl ChartWorkspace {
     /// rebased line reads as a comparison (TradingView's "Same % scale" does the same). Only the
     /// first: once the chart compares something, the axis the user picked is theirs. The switch is
     /// part of the add's undo step.
-    pub(super) fn add_overlay(
+    pub(in crate::workspace) fn add_overlay(
         &mut self,
         chart_id: u64,
         instrument: InstrumentId,
@@ -87,7 +87,7 @@ impl ChartWorkspace {
 
     /// Opens the settings of one compared market beside `anchor` (its row on the overlay card), or
     /// puts them away when they are already up for it.
-    pub(super) fn toggle_overlay_popover(
+    pub(in crate::workspace) fn toggle_overlay_popover(
         &mut self,
         chart_id: u64,
         overlay_id: OverlayId,
@@ -115,7 +115,7 @@ impl ChartWorkspace {
 
     /// Draws the open overlay popover, if any, and applies the edit it returns. It goes when its
     /// market (or chart) does.
-    pub(super) fn show_overlay_popover(&mut self, ctx: &egui::Context) {
+    pub(in crate::workspace) fn show_overlay_popover(&mut self, ctx: &egui::Context) {
         let Some(popover) = self.overlay_popover.take() else {
             overlay_popover::set_open(ctx, None);
             return;
@@ -154,7 +154,11 @@ impl ChartWorkspace {
 
     /// Applies an edit to `chart_id`'s overlays as one undo step. Returns whether it changed
     /// anything; an edit that changes nothing leaves no step.
-    pub(super) fn apply_overlay_command(&mut self, chart_id: u64, command: OverlayCommand) -> bool {
+    pub(in crate::workspace) fn apply_overlay_command(
+        &mut self,
+        chart_id: u64,
+        command: OverlayCommand,
+    ) -> bool {
         let Some(chart) = self.charts.iter().find(|chart| chart.id == chart_id) else {
             return false;
         };
@@ -205,12 +209,12 @@ impl ChartWorkspace {
 
 #[cfg(test)]
 mod tests {
-    use super::super::overlays::{OverlayBackend, OverlayHub};
-    use super::super::test_support::{candle, chart_with_drawings, empty_workspace};
+    use super::super::{OverlayBackend, OverlayHub};
     use super::*;
     use crate::model::overlay::feed::OverlayStatus;
     use crate::model::overlay::{OverlayScale, ScaleChoice};
     use crate::model::{DataSource, Kline, Timeframe};
+    use crate::workspace::test_support::{candle, chart_with_drawings, empty_workspace};
     use eframe::egui;
     use std::sync::Arc;
 
@@ -230,7 +234,7 @@ mod tests {
             .collect()
     }
 
-    fn chart(workspace: &ChartWorkspace, chart_id: u64) -> &super::super::chart::Chart {
+    fn chart(workspace: &ChartWorkspace, chart_id: u64) -> &crate::workspace::chart::Chart {
         workspace
             .charts
             .iter()
@@ -392,11 +396,14 @@ mod tests {
         workspace.apply_overlay_command(a, OverlayCommand::SetScale(first, ScaleChoice::Own));
         let saved = workspace.persisted();
         let json = serde_json::to_string(&saved).unwrap();
-        let restored: super::super::PersistedWorkspace = serde_json::from_str(&json).unwrap();
+        let restored: crate::workspace::PersistedWorkspace = serde_json::from_str(&json).unwrap();
         assert_eq!(restored.charts[0].overlays, chart(&workspace, a).overlays);
         let ctx = egui::Context::default();
-        let reopened =
-            super::super::chart::Chart::restored(restored.charts[0].clone(), Timeframe::Day, &ctx);
+        let reopened = crate::workspace::chart::Chart::restored(
+            restored.charts[0].clone(),
+            Timeframe::Day,
+            &ctx,
+        );
         assert_eq!(reopened.overlays, chart(&workspace, a).overlays);
         assert_eq!(
             reopened.overlays.get(first).unwrap().scale,

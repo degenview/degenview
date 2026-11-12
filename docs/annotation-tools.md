@@ -207,7 +207,7 @@ included (through `Drawing::sample` and `sample_content`): placement in one gest
 select, move, delete, every handle, save and reopen, the toolbar. Per-area suites:
 `drawing_layer/tests/{note,table,image,card}_tests.rs`, `service/annotation/ingest.rs`,
 `sync/tests/asset.rs` (on `MockCloud`), `service/annotation/link_fetch.rs` (parsers on fixtures),
-`ui/drawing/content/card.rs`, `workspace/context/tests.rs` (paste, consent, fetch results). Galleries that
+`ui/drawing/content/card.rs`, `workspace/chart/context/tests.rs` (paste, consent, fetch results). Galleries that
 write PNGs for a person to look at:
 
 ```

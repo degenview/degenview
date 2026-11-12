@@ -2,7 +2,7 @@
 
 use super::ChartWorkspace;
 use super::chart::Chart;
-use super::drawings::is_ruler;
+use super::drawing::is_ruler;
 use crate::model::{Drawing, DrawingCommand, IndicatorConfig};
 use crate::ui::{ViewMove, ViewStep};
 use std::time::{Duration, Instant};

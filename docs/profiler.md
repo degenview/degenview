@@ -112,7 +112,7 @@ Relevant areas may include:
     src/ui/pine/settings_popover.rs
     src/ui/pine/style_view.rs
 
-    src/workspace.rs
+    src/workspace/mod.rs
     src/ui/chart/card/mod.rs
     src/ui/theme.rs
     src/ui/kit.rs

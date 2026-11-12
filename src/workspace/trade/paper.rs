@@ -1,12 +1,12 @@
 //! Paper trading on charts: quotes handed to the paper host, portfolio cards and chart orders.
 
-use super::ChartWorkspace;
-use super::chart::{Chart, REFRESH_INTERVAL};
 use crate::host::paper_host::PaperHost;
 use crate::model::DataSource;
 use crate::model::paper::{PaperCurrency, PaperInstrument, PaperQuote};
 use crate::model::watchlist::quote::{Freshness, evaluate_freshness};
 use crate::ui::paper::chart_trading::PaperOverlayAction;
+use crate::workspace::ChartWorkspace;
+use crate::workspace::chart::{Chart, REFRESH_INTERVAL};
 use std::time::{Duration, Instant};
 
 const PAPER_QUOTE_FLUSH_INTERVAL: Duration = Duration::from_millis(500);
@@ -16,7 +16,7 @@ impl ChartWorkspace {
     /// Trading panel is open, so a working order keeps filling while any chart for its instrument
     /// is on screen. With the panel closed only instruments the host holds an order or a position
     /// on are sent. Nothing runs while the app is quit, asleep or showing no such chart.
-    pub(super) fn sync_paper_quotes(&mut self, host: &mut PaperHost) {
+    pub(in crate::workspace) fn sync_paper_quotes(&mut self, host: &mut PaperHost) {
         let now = Instant::now();
         let wall_clock = crate::model::watchlist::now_ms();
         for chart in &mut self.charts {
@@ -52,7 +52,7 @@ impl ChartWorkspace {
         }
     }
 
-    pub(super) fn configure_paper_cards(&mut self, host: &PaperHost) {
+    pub(in crate::workspace) fn configure_paper_cards(&mut self, host: &PaperHost) {
         let account_id = host.snapshot().selected_account_id;
         let account = account_id.and_then(|id| {
             host.snapshot()
@@ -98,7 +98,7 @@ impl ChartWorkspace {
         }
     }
 
-    pub(super) fn paper_instrument(chart: &Chart) -> PaperInstrument {
+    pub(in crate::workspace) fn paper_instrument(chart: &Chart) -> PaperInstrument {
         PaperInstrument::chart(
             &chart.symbol,
             chart.source.display_symbol(&chart.symbol),
@@ -106,13 +106,13 @@ impl ChartWorkspace {
         )
     }
 
-    pub(super) fn supports_paper_trading(source: DataSource) -> bool {
+    pub(in crate::workspace) fn supports_paper_trading(source: DataSource) -> bool {
         source != DataSource::CoinMarketCap
     }
 
     /// Runs what the chart overlay asked for and returns why any of it failed, for the panel to
     /// show: the host keeps only its last error, which a following success would clear.
-    pub(super) fn apply_paper_overlay_actions(
+    pub(in crate::workspace) fn apply_paper_overlay_actions(
         host: &mut PaperHost,
         actions: Vec<PaperOverlayAction>,
     ) -> Vec<String> {

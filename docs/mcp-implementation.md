@@ -52,7 +52,7 @@ Audit these modules first:
 ```text
 src/main.rs
 src/app.rs
-src/workspace.rs
+src/workspace/mod.rs
 src/workspace/
 src/native_bridge.rs
 src/model/chart/layout.rs

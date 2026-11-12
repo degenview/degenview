@@ -7,7 +7,7 @@ architecture index; use the topic documents for detail.
 
 | Layer | Responsibility |
 | --- | --- |
-| `app.rs`, `workspace.rs`, `workspace/`, `host/` | Stateful coordination: the app, one chart tab (`workspace/` holds its concerns), and one host per feature |
+| `app.rs`, `workspace/mod.rs`, `workspace/`, `host/` | Stateful coordination: the app, one chart tab (`workspace/` holds its concerns), and one host per feature |
 | `model/` | Pure domain values and engines, one directory per domain |
 | `service/` | Providers, network, caches, Keychain, and OS services |
 | `store/` | SQLite persistence and Swift import |

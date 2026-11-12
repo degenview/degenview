@@ -8,8 +8,6 @@
 //! window's to drive, so they run here, when the outcome arrives, and a message only says what
 //! has happened.
 
-use super::content::snapshot_images;
-use super::*;
 use crate::host::snapshot_host::{Hosting, SnapshotHost, TURN_ON_A_HOST};
 use crate::model::chart::snapshot::{self, SnapshotAction, SnapshotDimensions, SnapshotRequest};
 use crate::service::snapshot::job::{self, Outcome, Retry, SystemBackend};
@@ -19,6 +17,8 @@ use crate::service::{system::timezone, work_queue};
 use crate::ui::SnapshotInput;
 use crate::ui::icons::Icon;
 use crate::ui::kit;
+use crate::workspace::drawing::content::snapshot_images;
+use crate::workspace::*;
 use eframe::egui::{Context, Id};
 
 /// The PNG of a picture made for an agent, or why it could not be made.
@@ -67,14 +67,14 @@ struct AwaitingRetry {
 
 /// What a workspace keeps of its snapshots between frames.
 #[derive(Default)]
-pub(super) struct SnapshotState {
+pub(in crate::workspace) struct SnapshotState {
     running: Option<Running>,
     consent: Option<AwaitingConsent>,
     retry: Option<AwaitingRetry>,
     /// Stands in for the save panel, the file system and the network under test.
     backend: Option<Arc<dyn job::Backend>>,
     /// The camera menu asked for the Snapshots page of Settings; the app takes it this frame.
-    pub(super) settings_requested: bool,
+    pub(in crate::workspace) settings_requested: bool,
 }
 
 impl ChartWorkspace {
@@ -93,7 +93,7 @@ impl ChartWorkspace {
     }
 
     /// Whether a snapshot is being made: the menu offers nothing meanwhile.
-    pub(super) fn snapshot_busy(&self) -> bool {
+    pub(in crate::workspace) fn snapshot_busy(&self) -> bool {
         self.snapshot.running.is_some()
             || self.snapshot.consent.is_some()
             || self.snapshot.retry.is_some()
@@ -101,12 +101,12 @@ impl ChartWorkspace {
 
     /// Whether an image is being drawn, saved or uploaded right now (not waiting for the user's
     /// answer to a question): what the camera's spinner says.
-    pub(super) fn snapshot_working(&self) -> bool {
+    pub(in crate::workspace) fn snapshot_working(&self) -> bool {
         self.snapshot.running.is_some()
     }
 
     /// What the camera menu needs to know about hosting.
-    pub(super) fn snapshot_hosting(&self) -> Hosting {
+    pub(in crate::workspace) fn snapshot_hosting(&self) -> Hosting {
         self.snapshots.as_ref().map_or_else(
             || Hosting::Unavailable(TURN_ON_A_HOST.to_owned()),
             SnapshotHost::hosting,
@@ -114,7 +114,12 @@ impl ChartWorkspace {
     }
 
     /// Takes the snapshot `action` asks for of chart `chart_id`.
-    pub(super) fn begin_snapshot(&mut self, ctx: &Context, chart_id: u64, action: SnapshotAction) {
+    pub(in crate::workspace) fn begin_snapshot(
+        &mut self,
+        ctx: &Context,
+        chart_id: u64,
+        action: SnapshotAction,
+    ) {
         if self.snapshot_busy() {
             self.say("A snapshot is already being made.", true);
             return;
@@ -313,7 +318,7 @@ impl ChartWorkspace {
     }
 
     /// Carries out what a finished snapshot asks of the window.
-    pub(super) fn poll_snapshot(&mut self, ctx: &Context) {
+    pub(in crate::workspace) fn poll_snapshot(&mut self, ctx: &Context) {
         let Some(running) = &self.snapshot.running else {
             return;
         };
@@ -417,7 +422,7 @@ impl ChartWorkspace {
     }
 
     /// The upload's progress, and the questions it may stop to ask.
-    pub(super) fn show_snapshot_sheets(&mut self, ctx: &Context) {
+    pub(in crate::workspace) fn show_snapshot_sheets(&mut self, ctx: &Context) {
         if let Some(text) = self.progress_notice() {
             // A result still on screen (an error that came with the start, say) keeps its place;
             // the progress sits over it instead of under it.

@@ -1,5 +1,12 @@
 //! One chart's market data: what it holds, how it fetches, and how older history is paged in.
 
+pub(in crate::workspace) mod collection;
+pub(in crate::workspace) mod context;
+pub(in crate::workspace) mod live;
+pub(in crate::workspace) mod settings;
+pub(in crate::workspace) mod snapshot;
+pub(in crate::workspace) mod symbol_picker;
+
 use super::PersistedChart;
 use crate::host::portfolio_card_host::CardRuntime;
 use crate::model::chart::price_scale::PriceScaleMode;

@@ -1,26 +1,26 @@
 //! The symbol picker on a workspace: opening it on the focused chart, keeping the highlighted
 //! market priced while it is open, and what a pick does to the charts.
 
-use super::{ChartWorkspace, WorkspaceAction};
 use crate::model::InstrumentId;
 use crate::model::watchlist::WatchlistInstrument;
 use crate::service::SearchResult;
 use crate::ui::chart::symbol_picker::{self, Env, Output};
+use crate::workspace::{ChartWorkspace, WorkspaceAction};
 use eframe::egui;
 
 impl ChartWorkspace {
     /// Opens the picker searching for the focused chart's market (nothing with no chart).
-    pub(super) fn open_symbol_picker(&mut self) {
+    pub(in crate::workspace) fn open_symbol_picker(&mut self) {
         let current = self
             .focused_market_chart()
-            .map(super::chart::Chart::picker_query)
+            .map(super::Chart::picker_query)
             .unwrap_or_default();
         self.symbol_picker.open(&current);
     }
 
     /// Opens the picker to compare markets on the focused chart. Does nothing for a chart that
     /// cannot take another market (a line-only source, a price-based chart type).
-    pub(super) fn open_compare_picker(&mut self) {
+    pub(in crate::workspace) fn open_compare_picker(&mut self) {
         if let Some(chart) = self.focused_market_chart()
             && self.can_compare(chart.id)
         {
@@ -29,7 +29,10 @@ impl ChartWorkspace {
     }
 
     /// Draws the picker while it is open and applies what it picked.
-    pub(super) fn show_symbol_picker(&mut self, ctx: &egui::Context) -> Vec<WorkspaceAction> {
+    pub(in crate::workspace) fn show_symbol_picker(
+        &mut self,
+        ctx: &egui::Context,
+    ) -> Vec<WorkspaceAction> {
         let owner = symbol_picker::quote_owner(self.id);
         if !self.symbol_picker.is_open() {
             return Vec::new();
@@ -53,9 +56,7 @@ impl ChartWorkspace {
             .filter(|chart| chart.is_market())
             .map(Self::chart_instrument)
             .collect();
-        let replacing = self
-            .focused_market_chart()
-            .map(super::chart::Chart::display_title);
+        let replacing = self.focused_market_chart().map(super::Chart::display_title);
         // The focused chart's own market and what is compared on it, which cannot be drawn again.
         let overlaid: Vec<InstrumentId> = self
             .focused_market_chart()
@@ -93,7 +94,7 @@ impl ChartWorkspace {
     }
 
     /// Draws `result` over the focused chart.
-    pub(super) fn overlay_from_search(&mut self, result: &SearchResult) {
+    pub(in crate::workspace) fn overlay_from_search(&mut self, result: &SearchResult) {
         let Some(chart_id) = self.focused_market_chart().map(|chart| chart.id) else {
             return;
         };
@@ -106,7 +107,11 @@ impl ChartWorkspace {
 
     /// Shows `result` on the focused market chart, keeping the chart's settings, indicators and
     /// drawings; with no market chart focused it adds one instead.
-    pub(super) fn replace_focused_market(&mut self, result: &SearchResult, ctx: &egui::Context) {
+    pub(in crate::workspace) fn replace_focused_market(
+        &mut self,
+        result: &SearchResult,
+        ctx: &egui::Context,
+    ) {
         let Some(chart_id) = self.focused_market_chart().map(|chart| chart.id) else {
             self.add_from_search(result, ctx);
             return;
@@ -120,9 +125,9 @@ impl ChartWorkspace {
 
 #[cfg(test)]
 mod tests {
-    use super::super::test_support::{chart_with_drawings, empty_workspace};
     use crate::model::DataSource;
     use crate::service::SearchResult;
+    use crate::workspace::test_support::{chart_with_drawings, empty_workspace};
     use eframe::egui;
 
     fn pair(source: DataSource, symbol: &str, base: &str, quote: &str) -> SearchResult {

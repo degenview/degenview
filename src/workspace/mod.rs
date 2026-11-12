@@ -29,14 +29,14 @@ use crate::ui::watchlist::sidebar::WatchlistSidebarState;
 use crate::ui::workspace::layout_prompts::NamePrompt;
 use crate::ui::{self, CrosshairInfo, replay::bar, workspace::tool_sidebar};
 use alerts::AlertRequest;
-use autosave::AutosaveState;
+use chart::context::ContextState;
+use chart::snapshot::SnapshotState;
 use chart::{Chart, displayed_candles};
-use context::ContextState;
-use drawings::is_lockable;
+use drawing::is_lockable;
 use eframe::egui;
 use empty_page::EmptyPageCache;
+use layout::autosave::AutosaveState;
 use serde::{Deserialize, Serialize};
-use snapshot::SnapshotState;
 use std::collections::HashMap;
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
@@ -47,38 +47,24 @@ use undo::{Snapshot, UndoEntry};
 pub const MAX_CUSTOM_TITLE_CHARS: usize = 60;
 
 mod alerts;
-mod autosave;
-mod broker;
 mod chart;
-mod charts;
-mod content;
-mod context;
-mod drawings;
+mod drawing;
 mod empty_page;
 mod grid;
 mod input;
-mod layouts;
-mod links;
-mod live;
-mod overlay_actions;
-mod overlays;
-mod paper;
+mod layout;
+mod overlay;
 mod pine;
-mod pine_logs;
 mod replay;
-mod settings;
-mod snapshot;
-mod symbol_picker;
 mod tab_link;
 #[cfg(test)]
 mod test_support;
-mod tool_rail;
 mod toolbar;
-mod trade_sheet;
+mod trade;
 mod undo;
 mod watchlist;
 
-pub use charts::{ChartSummary, ChartTypeError};
+pub use chart::collection::{ChartSummary, ChartTypeError};
 pub use pine::{
     IndicatorError, IndicatorOutcome, PineChartTarget, PineInstanceView, RemoveOutcome,
 };
@@ -196,7 +182,7 @@ pub struct ChartWorkspace {
     trading_hub: Option<Arc<crate::host::trading_hub::TradingHub>>,
     live_feed: Option<BinanceLiveFeed>,
     /// The candles of every overlay market on this workspace's charts, fetched once per market.
-    overlay_hub: overlays::OverlayHub,
+    overlay_hub: overlay::OverlayHub,
     settings_chart: Option<u64>,
     /// The Inputs and Style popover of an applied script, up beside its chip or settings row.
     script_popover: Option<PineSettingsPopover>,
@@ -306,7 +292,7 @@ pub struct ChartWorkspace {
     /// The chart drag in progress over the grid: where it would land, and the new-column preview.
     grid_drag: ui::workspace::grid_drop::GridDrag,
     /// Choosing what a content tool places: the picture that waits, the sheet, the worker.
-    content: content::ContentFlow,
+    content: drawing::content::ContentFlow,
 }
 
 impl ChartWorkspace {
@@ -402,7 +388,7 @@ impl ChartWorkspace {
             card_env: None,
             trading_hub: None,
             live_feed: None,
-            overlay_hub: overlays::OverlayHub::new(),
+            overlay_hub: overlay::OverlayHub::new(),
             settings_chart: None,
             script_popover: None,
             overlay_popover: None,
@@ -471,7 +457,7 @@ impl ChartWorkspace {
             saved_drawings_version: 0,
             saved_drawings: HashMap::new(),
             grid_drag: ui::workspace::grid_drop::GridDrag::default(),
-            content: content::ContentFlow::default(),
+            content: drawing::content::ContentFlow::default(),
         }
     }
 

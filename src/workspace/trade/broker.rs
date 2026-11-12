@@ -11,8 +11,6 @@ use std::sync::Arc;
 use degenview_brokers::{Decimal, MarketRef, Side};
 use eframe::egui;
 
-use super::ChartWorkspace;
-use super::chart::Chart;
 use crate::model::broker::chart::Unavailable;
 use crate::model::broker::prefs::BrokerPrefs;
 use crate::model::broker::ticket::{self as rules};
@@ -23,6 +21,8 @@ use crate::trading::model::{MarketAccess, OrderClass};
 use crate::ui::broker::chart_trading::{BrokerOverlayAction, OrderLine};
 use crate::ui::broker::panel::{self, PanelContext};
 use crate::ui::theme;
+use crate::workspace::ChartWorkspace;
+use crate::workspace::chart::Chart;
 use degenview_brokers::model::ticket::TicketKind;
 
 impl ChartWorkspace {
@@ -34,7 +34,7 @@ impl ChartWorkspace {
     }
 
     /// What the orders panel is told about the tab's broker besides the venue itself.
-    pub(super) fn broker_panel_context(&self) -> Option<PanelContext> {
+    pub(in crate::workspace) fn broker_panel_context(&self) -> Option<PanelContext> {
         let (_, prefs) = self.active_broker()?;
         Some(PanelContext {
             confirm_single_cancel: prefs.confirm_single_cancel,
@@ -42,8 +42,9 @@ impl ChartWorkspace {
     }
 
     /// A replay's prices are history: no live order may be started, changed or sent from one.
-    pub(super) fn replay_blocks_trading(&self) -> bool {
-        self.replay.is_active() || self.replay.status == super::ReplayStatus::SelectingStart
+    pub(in crate::workspace) fn replay_blocks_trading(&self) -> bool {
+        self.replay.is_active()
+            || self.replay.status == crate::workspace::ReplayStatus::SelectingStart
     }
 
     fn broker_market(chart: &Chart) -> Option<MarketRef> {
@@ -62,7 +63,7 @@ impl ChartWorkspace {
 
     /// Fills each chart card's live inputs: the header pills, the broker's bid and ask, and a line for
     /// each working order. Runs every frame; costs nothing when the tab is on paper.
-    pub(super) fn configure_broker_cards(&mut self) {
+    pub(in crate::workspace) fn configure_broker_cards(&mut self) {
         let Some((backend, prefs)) = self.active_broker() else {
             for chart in &mut self.charts {
                 let live = &mut chart.chart.live;
@@ -151,7 +152,7 @@ impl ChartWorkspace {
     }
 
     /// What the context menu needs to offer live orders on this chart, when a broker is active.
-    pub(super) fn live_facts(&self, chart: &Chart) -> Option<LiveFacts> {
+    pub(in crate::workspace) fn live_facts(&self, chart: &Chart) -> Option<LiveFacts> {
         let (backend, _) = self.active_broker()?;
         let market = Self::broker_market(chart);
         let unavailable = backend.chart_unavailable(market.as_ref(), self.replay_blocks_trading());
@@ -175,7 +176,11 @@ impl ChartWorkspace {
 
     /// Starts an order in the sheet for this chart's market, filled in as the menu or a pill asks.
     /// Refused, with the reason, whenever an order could not be placed from this chart.
-    pub(super) fn open_live_ticket(&mut self, chart_index: usize, request: LiveOrderRequest) {
+    pub(in crate::workspace) fn open_live_ticket(
+        &mut self,
+        chart_index: usize,
+        request: LiveOrderRequest,
+    ) {
         let Some((backend, prefs)) = self.active_broker() else {
             self.say("Choose a broker in the trading panel first.", true);
             return;
@@ -200,7 +205,10 @@ impl ChartWorkspace {
 
     /// Acts on what the charts' live lines reported: ask to cancel, or open the edit sheet. Neither
     /// changes anything until the user has confirmed it there.
-    pub(super) fn apply_broker_overlay_actions(&mut self, actions: Vec<BrokerOverlayAction>) {
+    pub(in crate::workspace) fn apply_broker_overlay_actions(
+        &mut self,
+        actions: Vec<BrokerOverlayAction>,
+    ) {
         let Some((backend, prefs)) = self.active_broker() else {
             return;
         };
@@ -241,7 +249,7 @@ impl ChartWorkspace {
 
     /// Draws the ticket, the edit sheet and the cancel question when the panel (which normally does)
     /// is closed, and passes on what it has to say.
-    pub(super) fn show_broker_dialogs(&mut self, ctx: &egui::Context) {
+    pub(in crate::workspace) fn show_broker_dialogs(&mut self, ctx: &egui::Context) {
         let Some((backend, _)) = self.active_broker() else {
             return;
         };

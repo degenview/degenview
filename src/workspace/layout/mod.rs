@@ -1,8 +1,10 @@
 //! Saved layouts: the workspace's persisted form, its dirty state, and opening, saving, renaming and deleting layouts.
 
-use super::autosave::AutosaveState;
+pub(in crate::workspace) mod autosave;
+
 use super::chart::Chart;
-use super::drawings::{is_ruler, merge_remote_drawings, plain_drawings};
+use super::drawing::{is_ruler, merge_remote_drawings, plain_drawings};
+use super::layout::autosave::AutosaveState;
 use super::undo::{Snapshot, UndoEntry};
 use super::{ChartWorkspace, PersistedChart, PersistedWorkspace};
 use crate::model::watchlist::{new_id, now_ms};

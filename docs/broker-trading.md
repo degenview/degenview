@@ -142,7 +142,7 @@ orders already open when a connection starts are not announced). Settings ▸ Br
 With a broker as the tab's venue, a chart whose data comes from **that broker's own source** (the
 descriptor's `market_source`: a Coinbase chart for Coinbase) gets live controls; every other chart is
 left alone, and the menu says why instead of trading a similar market. The rules are pure
-(`model/broker/chart.rs`); `workspace/broker.rs` fills each card each frame.
+(`model/broker/chart.rs`); `workspace/trade/broker.rs` fills each card each frame.
 
 * **Header SELL / BUY** show the broker's own best bid and ask (read for as long as a card shows them,
   every two seconds, never for a chart nobody is looking at: `BrokerHost::want_quote`, which hands it to

@@ -1,7 +1,7 @@
 //! Autosave: the debounce that writes a named layout once it has sat unchanged.
 
-use super::ChartWorkspace;
 use crate::model::LayoutSnapshot;
+use crate::workspace::ChartWorkspace;
 use eframe::egui;
 use std::time::{Duration, Instant};
 
@@ -20,11 +20,11 @@ enum AutosaveStep {
 /// The debounce behind autosave. `armed` is the last layout seen dirty; `due` is when it gets
 /// written, or `None` once it has been tried, so an unchanged layout is never retried in a loop.
 #[derive(Default)]
-pub(super) struct AutosaveState {
+pub(in crate::workspace) struct AutosaveState {
     armed: Option<LayoutSnapshot>,
     due: Option<Instant>,
     /// The last autosave did not reach disk; the layout is still dirty.
-    pub(super) failed: bool,
+    pub(in crate::workspace) failed: bool,
 }
 
 impl AutosaveState {
@@ -59,12 +59,12 @@ impl AutosaveState {
 }
 
 impl ChartWorkspace {
-    pub(super) fn autosave_enabled(&self) -> bool {
+    pub(in crate::workspace) fn autosave_enabled(&self) -> bool {
         self.active_view()
             .is_some_and(|view| view.autosave == Some(true))
     }
 
-    pub(super) fn set_autosave(&mut self, enabled: bool) {
+    pub(in crate::workspace) fn set_autosave(&mut self, enabled: bool) {
         match self.update_active_view(|view| view.autosave = enabled.then_some(true)) {
             Ok(()) => self.autosave = AutosaveState::default(),
             Err(error) => {
@@ -75,7 +75,12 @@ impl ChartWorkspace {
 
     /// Runs once a frame: arms the debounce while an autosave layout has unsaved edits, and
     /// writes it once it has sat unchanged for [`AUTOSAVE_DELAY`].
-    pub(super) fn tick_autosave(&mut self, ctx: &egui::Context, dirty: bool, enabled: bool) {
+    pub(in crate::workspace) fn tick_autosave(
+        &mut self,
+        ctx: &egui::Context,
+        dirty: bool,
+        enabled: bool,
+    ) {
         let mut state = std::mem::take(&mut self.autosave);
         let step = state.step(dirty, enabled, || self.layout_snapshot(), Instant::now());
         self.autosave = state;

@@ -15,6 +15,8 @@
 //! The pieces are the chart's own: `service::fetch_klines`, `fetch_klines_range`, the same merge
 //! rules for a live bar, the same `OlderHistory` paging gate.
 
+pub(in crate::workspace) mod actions;
+
 use super::chart::{CANDLE_LIMIT, merge_fetched_candles};
 use crate::model::market;
 use crate::model::market::history::OlderHistory;

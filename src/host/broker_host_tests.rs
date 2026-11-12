@@ -417,8 +417,8 @@ fn the_screens_never_hold_a_brokers_runtime() {
     rust_files(&root.join("ui"), &mut files);
     rust_files(&root.join("workspace"), &mut files);
     files.push((
-        "workspace.rs".to_owned(),
-        std::fs::read_to_string(root.join("workspace.rs")).unwrap(),
+        "workspace/mod.rs".to_owned(),
+        std::fs::read_to_string(root.join("workspace/mod.rs")).unwrap(),
     ));
     for (name, text) in files {
         if name.contains("gallery") || name.contains("test_support") || name.ends_with("tests.rs") {
@@ -434,8 +434,9 @@ fn the_screens_never_hold_a_brokers_runtime() {
         // Drawing code and the workspace read a venue through `TradingBackend` and the user's
         // choices through the hub; only Settings ▸ Brokers manages connections, so only it holds
         // the host.
-        let is_screen =
-            name.contains("/src/ui/") || name.contains("/src/workspace") || name == "workspace.rs";
+        let is_screen = name.contains("/src/ui/")
+            || name.contains("/src/workspace")
+            || name == "workspace/mod.rs";
         if is_screen && !name.ends_with("settings/brokers.rs") {
             for needle in ["BrokerHost", "BrokerSnapshot"] {
                 assert!(

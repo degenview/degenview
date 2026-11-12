@@ -1,14 +1,17 @@
 //! The chart settings window and applying one chart's appearance to the others.
 
-use super::{ChartWorkspace, WorkspaceAction};
 use crate::model::DataSource;
 use crate::ui::chart::settings::{self, ChartSettingsAction, ChartSettingsContext};
+use crate::workspace::{ChartWorkspace, WorkspaceAction};
 use eframe::egui;
 
 impl ChartWorkspace {
     /// The chart settings sheet over the focused window; returns what the workspace's host should
     /// do (opening the Pine Studio).
-    pub(super) fn show_settings_window(&mut self, ctx: &egui::Context) -> Vec<WorkspaceAction> {
+    pub(in crate::workspace) fn show_settings_window(
+        &mut self,
+        ctx: &egui::Context,
+    ) -> Vec<WorkspaceAction> {
         let Some(chart_id) = self.settings_chart else {
             return Vec::new();
         };

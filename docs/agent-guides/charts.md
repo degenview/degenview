@@ -161,7 +161,7 @@ Read [chart overlays](../chart-overlays.md) first. Short rules:
 ## Context menus
 
 - One menu per right-click: drawing's (`ui::drawing::layer::menu`), else chart's
-  (`model::chart::context` builds, `ui::chart::context_menu` draws, `workspace/context.rs` runs).
+  (`model::chart::context` builds, `ui::chart::context_menu` draws, `workspace/chart/context/mod.rs` runs).
   New entry: a `Command`, a row in the model's `menu`, an arm in `run_context_command`. Menus never
   mutate.
 - Click captured once as `ChartContext` (chart, market, time, price, target) via the card's
@@ -171,7 +171,7 @@ Read [chart overlays](../chart-overlays.md) first. Short rules:
   alert editor for review.
 - Chart-moving and drawing drags/clicks are primary-button only.
 - Alert tags drag to a new level: the card only reports `AlertMove`, the workspace makes
-  `WorkspaceAction::MoveAlert` (`workspace/context.rs`); the card never edits a `PriceAlert`.
+  `WorkspaceAction::MoveAlert` (`workspace/chart/context/mod.rs`); the card never edits a `PriceAlert`.
   Percentage alerts and replays never drag.
 - Cursor time lock, Table view feed, alert lines: card state, never saved, never in a template or
   linked navigation. Table and Object Tree read what the chart already draws; the tree is a view

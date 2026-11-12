@@ -4,13 +4,13 @@
 use degenview_brokers::{Decimal, MarketRef, Side};
 use eframe::egui;
 
-use super::{ChartWorkspace, WorkspaceAction};
 use crate::host::trading_hub::TradingHub;
 use crate::model::broker::venue::TradingVenue;
 use crate::trading::model::{OrderClass, VenueInfo};
 use crate::ui::trade::order_sheet::{self, MarketFace, SheetAction, SheetInput};
 use crate::ui::trade::panel_header::{PanelEvent, VenueBar};
 use crate::ui::trade::venue_pill::PillAction;
+use crate::workspace::{ChartWorkspace, WorkspaceAction};
 
 impl ChartWorkspace {
     /// The venue this tab trades on: the one it chose while that is still enabled, else the one
@@ -29,7 +29,7 @@ impl ChartWorkspace {
 
     /// Opens the sheet (and the orders under it) with an order started: its side, its type and a
     /// price where something was clicked.
-    pub(super) fn start_order(
+    pub(in crate::workspace) fn start_order(
         &mut self,
         side: Side,
         class: Option<OrderClass>,
@@ -40,7 +40,10 @@ impl ChartWorkspace {
         self.trade_sheet.start(side, class, price);
     }
 
-    pub(super) fn show_trade_sheet(&mut self, ui: &mut egui::Ui) -> Vec<WorkspaceAction> {
+    pub(in crate::workspace) fn show_trade_sheet(
+        &mut self,
+        ui: &mut egui::Ui,
+    ) -> Vec<WorkspaceAction> {
         let mut actions = Vec::new();
         let Some(hub) = self.trading_hub.clone() else {
             return actions;
@@ -120,7 +123,7 @@ impl ChartWorkspace {
     /// What the trading panel needs to know about its venue: the venue it trades on and the
     /// pieces the shared header draws. When nothing is enabled the list to choose from is drawn
     /// instead and there is nothing else to show: `None`.
-    pub(super) fn panel_venue(
+    pub(in crate::workspace) fn panel_venue(
         &mut self,
         ui: &mut egui::Ui,
         actions: &mut Vec<WorkspaceAction>,
@@ -182,7 +185,7 @@ impl ChartWorkspace {
     }
 
     /// Applies what the panel's header asked for, whichever venue drew it.
-    pub(super) fn apply_panel_event(
+    pub(in crate::workspace) fn apply_panel_event(
         &mut self,
         event: PanelEvent,
         actions: &mut Vec<WorkspaceAction>,

@@ -101,7 +101,7 @@ Relevant files:
 ### Chart and interaction
 
 - `src/ui/chart/card/mod.rs`
-- `src/workspace.rs`
+- `src/workspace/mod.rs`
 - `src/model/chart/canvas/mod.rs`
 - `src/ui/chart/canvas.rs`
 - `src/ui/chart/buttons.rs`

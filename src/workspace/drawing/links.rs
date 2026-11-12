@@ -5,7 +5,6 @@
 //! nothing is contacted until the user presses Preview on a card and, once, agrees to it. Opening a link is always a deliberate click. The fetch runs on a worker of its own and
 //! its answer is written to the card as one undoable change, so it syncs like any edit.
 
-use super::ChartWorkspace;
 use crate::model::annotation::image_content::Content;
 use crate::model::annotation::link_card::{ContentPrefs, Link, LinkCard, LinkMeta};
 use crate::model::{DrawingCommand, Geometry, Tool};
@@ -13,24 +12,25 @@ use crate::service::annotation::link_fetch::{self, FetchError};
 use crate::service::work_queue;
 use crate::ui::LinkRequest;
 use crate::ui::drawing::content::sheet::{self, ConsentAction, LinkSheet, LinkSheetAction};
+use crate::workspace::ChartWorkspace;
 use eframe::egui;
 use std::sync::mpsc::{self, Receiver};
 
 /// The sheet that asks for a link: what is typed, and which card it is for.
-pub(super) struct Sheet {
+pub(in crate::workspace) struct Sheet {
     text: String,
     /// The card whose link is being replaced: `(chart, drawing)`.
     replace: Option<(u64, u64)>,
 }
 
 /// A preview waiting for the user's agreement to contact X.
-pub(super) struct Ask {
+pub(in crate::workspace) struct Ask {
     chart_id: u64,
     drawing_id: u64,
 }
 
 /// What a fetch found, with the card it was for.
-pub(super) struct Fetched {
+pub(in crate::workspace) struct Fetched {
     pub chart_id: u64,
     pub drawing_id: u64,
     pub link: Link,
@@ -38,24 +38,24 @@ pub(super) struct Fetched {
 }
 
 #[derive(Default)]
-pub(super) struct LinkFlow {
-    pub(super) sheet: Option<Sheet>,
-    pub(super) consent: Option<Ask>,
-    pub(super) inbox: Option<Receiver<Fetched>>,
+pub(in crate::workspace) struct LinkFlow {
+    pub(in crate::workspace) sheet: Option<Sheet>,
+    pub(in crate::workspace) consent: Option<Ask>,
+    pub(in crate::workspace) inbox: Option<Receiver<Fetched>>,
 }
 
 impl LinkFlow {
-    pub(super) fn open(&self) -> bool {
+    pub(in crate::workspace) fn open(&self) -> bool {
         self.sheet.is_some() || self.consent.is_some()
     }
 
-    pub(super) fn close_sheet(&mut self) {
+    pub(in crate::workspace) fn close_sheet(&mut self) {
         self.sheet = None;
     }
 
     /// Drops the sheet that asks for a new post, leaving one that replaces a card's link: that
     /// one is opened from the Cursor and has no tool to keep it alive.
-    pub(super) fn close_new_sheet(&mut self) {
+    pub(in crate::workspace) fn close_new_sheet(&mut self) {
         if self
             .sheet
             .as_ref()
@@ -65,7 +65,7 @@ impl LinkFlow {
         }
     }
 
-    pub(super) fn start(&mut self) {
+    pub(in crate::workspace) fn start(&mut self) {
         self.sheet = Some(Sheet {
             text: String::new(),
             replace: None,
@@ -75,7 +75,7 @@ impl LinkFlow {
 
 impl ChartWorkspace {
     /// The sheets, and the answer of a fetch that finished.
-    pub(super) fn tick_links(&mut self, ctx: &egui::Context) {
+    pub(in crate::workspace) fn tick_links(&mut self, ctx: &egui::Context) {
         self.take_fetched();
         if let Some(mut sheet) = self.content.links.sheet.take() {
             let action = sheet::show_link(
@@ -108,7 +108,7 @@ impl ChartWorkspace {
     }
 
     /// A link was accepted: a new card waits for a click, or an existing card takes it.
-    pub(super) fn link_chosen(&mut self, link: Link, replace: Option<(u64, u64)>) {
+    pub(in crate::workspace) fn link_chosen(&mut self, link: Link, replace: Option<(u64, u64)>) {
         let Some((chart_id, drawing_id)) = replace else {
             self.content.pending = Some(Content::Link(LinkCard::new(link)));
             self.content.place_now = false;
@@ -134,7 +134,7 @@ impl ChartWorkspace {
     }
 
     /// A link pasted on a chart: a card for it is placed in the middle of the focused chart.
-    pub(super) fn place_pasted_link(&mut self, link: Link) {
+    pub(in crate::workspace) fn place_pasted_link(&mut self, link: Link) {
         self.content.pending = Some(Content::Link(LinkCard::new(link)));
         self.content.place_now = true;
         self.active_tool = Tool::Post;
@@ -160,7 +160,7 @@ impl ChartWorkspace {
     /// placement selected, and only when it has no preview yet, so painting, opening a layout or
     /// a card arriving from another Mac never contacts X. The first time, the one-time question
     /// comes first.
-    pub(super) fn preview_placed_card(&mut self, ctx: &egui::Context) {
+    pub(in crate::workspace) fn preview_placed_card(&mut self, ctx: &egui::Context) {
         let Some((chart_id, ids)) = self.selected_drawing.clone() else {
             return;
         };
@@ -180,7 +180,7 @@ impl ChartWorkspace {
     }
 
     /// What the user asked of a card: open its link, copy it, choose another, fetch a preview.
-    pub(super) fn link_requested(
+    pub(in crate::workspace) fn link_requested(
         &mut self,
         ctx: &egui::Context,
         chart_id: u64,
@@ -224,7 +224,7 @@ impl ChartWorkspace {
         }
     }
 
-    pub(super) fn previews_allowed(&self) -> bool {
+    pub(in crate::workspace) fn previews_allowed(&self) -> bool {
         self.store
             .lock()
             .ok()
@@ -232,7 +232,7 @@ impl ChartWorkspace {
             .is_some_and(|prefs| prefs.previews)
     }
 
-    pub(super) fn allow_previews(&mut self) {
+    pub(in crate::workspace) fn allow_previews(&mut self) {
         let saved = self
             .store
             .lock()
@@ -291,7 +291,7 @@ impl ChartWorkspace {
     }
 
     /// The answer of a fetch, written to the card it was for if that card still has that link.
-    pub(super) fn take_fetched(&mut self) {
+    pub(in crate::workspace) fn take_fetched(&mut self) {
         let Some(inbox) = &self.content.links.inbox else {
             return;
         };

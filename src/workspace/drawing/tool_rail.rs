@@ -1,14 +1,17 @@
 //! The drawing tool rail beside the charts and which tool each of its grouped tiles shows.
 
-use super::chart::Chart;
-use super::{ChartWorkspace, WorkspaceAction};
 use crate::model::{DataSource, Tool};
 use crate::ui::ViewMove;
 use crate::ui::workspace::tool_sidebar::{self, ToolSidebarAction};
+use crate::workspace::chart::Chart;
+use crate::workspace::{ChartWorkspace, WorkspaceAction};
 use eframe::egui;
 
 impl ChartWorkspace {
-    pub(super) fn show_tool_rail(&mut self, ui: &mut egui::Ui) -> Vec<WorkspaceAction> {
+    pub(in crate::workspace) fn show_tool_rail(
+        &mut self,
+        ui: &mut egui::Ui,
+    ) -> Vec<WorkspaceAction> {
         // The strip shows the remembered options, so they are read before it is drawn.
         let _ = self.drawing_templates();
         let (has_drawings, all_locked) = self.drawing_lock_state();
@@ -80,7 +83,7 @@ impl ChartWorkspace {
 
     /// Arms the Zoom In mode, or puts it down when it is armed. It takes the pointer from any
     /// drawing tool, as a drawing tool takes it from Zoom In.
-    pub(super) fn toggle_zoom_in(&mut self) {
+    pub(in crate::workspace) fn toggle_zoom_in(&mut self) {
         self.zoom_armed = !self.zoom_armed;
         if self.zoom_armed {
             self.active_tool = Tool::Cursor;
@@ -90,7 +93,7 @@ impl ChartWorkspace {
 
     /// Zoom out on the focused chart: back to the view its last zoom came from. It is an undo
     /// step, so Undo puts the zoom back.
-    pub(super) fn zoom_out_focused(&mut self) {
+    pub(in crate::workspace) fn zoom_out_focused(&mut self) {
         let focused = self.focused;
         let left = self
             .charts
@@ -103,7 +106,7 @@ impl ChartWorkspace {
     }
 
     /// Arms `tool`, or goes back to the crosshair when it is already armed (or is the crosshair).
-    pub(super) fn toggle_tool(&mut self, tool: Tool) {
+    pub(in crate::workspace) fn toggle_tool(&mut self, tool: Tool) {
         if tool == Tool::Cursor {
             self.zoom_armed = false;
         }
@@ -138,8 +141,8 @@ impl ChartWorkspace {
 
 #[cfg(test)]
 mod tests {
-    use super::super::test_support::empty_workspace;
     use crate::model::Tool;
+    use crate::workspace::test_support::empty_workspace;
 
     #[test]
     fn zoom_in_and_a_drawing_tool_are_one_choice() {

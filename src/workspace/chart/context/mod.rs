@@ -9,8 +9,6 @@
 //! snapshot is checked against the live workspace first, and a stale one is refused with a
 //! message.
 
-use super::overlay_actions::reverts_to_regular;
-use super::*;
 use crate::model::alert::AlertCondition;
 use crate::model::chart;
 use crate::model::chart::clipboard::DrawingClip;
@@ -29,12 +27,14 @@ use crate::ui::chart::object_tree::{self as tree_view, TreeAction, TreeState};
 use crate::ui::chart::session_stats_view::{self, StatsViewState};
 use crate::ui::chart::settings::templates::{self, TemplateState};
 use crate::ui::chart::table_view::{self, TableAction, TableViewState};
+use crate::workspace::overlay::actions::reverts_to_regular;
+use crate::workspace::*;
 use eframe::egui::{Context, Id, Pos2};
 
 /// How long a message stays up.
 const NOTICE_LIFETIME: Duration = Duration::from_secs(4);
 
-pub(super) struct OpenMenu {
+pub(in crate::workspace) struct OpenMenu {
     context: ChartContext,
     at: Pos2,
     state: MenuState,
@@ -43,32 +43,32 @@ pub(super) struct OpenMenu {
     templates: Vec<TemplateRow>,
 }
 
-pub(super) struct Notice {
-    pub(super) text: String,
-    pub(super) error: bool,
+pub(in crate::workspace) struct Notice {
+    pub(in crate::workspace) text: String,
+    pub(in crate::workspace) error: bool,
     at: Instant,
 }
 
 /// Everything the chart menus keep between frames.
 #[derive(Default)]
-pub(super) struct ContextState {
+pub(in crate::workspace) struct ContextState {
     menu: Option<OpenMenu>,
     serial: u64,
-    pub(super) notice: Option<Notice>,
+    pub(in crate::workspace) notice: Option<Notice>,
     /// The chart a Table view or Object Tree shows, when open.
-    pub(super) table_chart: Option<u64>,
-    pub(super) tree_chart: Option<u64>,
+    pub(in crate::workspace) table_chart: Option<u64>,
+    pub(in crate::workspace) tree_chart: Option<u64>,
     /// The chart the Session statistics panel reads, when open.
-    pub(super) stats_chart: Option<u64>,
+    pub(in crate::workspace) stats_chart: Option<u64>,
     /// The Pine logs pane: the chart it shows and what it keeps between frames.
-    pub(super) logs: super::pine_logs::PineLogsPane,
+    pub(in crate::workspace) logs: crate::workspace::pine::logs::PineLogsPane,
     /// A bulk indicator removal waiting for its confirmation.
     confirm_remove_indicators: Option<u64>,
     /// The template dialogs opened from the menu, and the chart they act on.
     templates: TemplateState,
     templates_chart: Option<u64>,
     /// The price alerts the app holds, for the chart's alert lines and their menu.
-    pub(super) alerts: Vec<PriceAlert>,
+    pub(in crate::workspace) alerts: Vec<PriceAlert>,
     /// The last time and price the pointer was over a chart's plot, where a pasted copy lands.
     hover: Option<(u64, crate::model::Anchor)>,
     table: TableViewState,
@@ -89,7 +89,11 @@ impl ChartWorkspace {
     // MARK: Opening
 
     /// Opens the menu for a right-click a chart reported.
-    pub(super) fn open_context_menu(&mut self, chart_id: u64, request: ContextRequest) {
+    pub(in crate::workspace) fn open_context_menu(
+        &mut self,
+        chart_id: u64,
+        request: ContextRequest,
+    ) {
         let Some(chart) = self.charts.iter().find(|chart| chart.id == chart_id) else {
             return;
         };
@@ -135,12 +139,16 @@ impl ChartWorkspace {
     }
 
     /// Whether a chart menu is up, so Escape closes it before it disarms a tool.
-    pub(super) fn context_menu_open(&self) -> bool {
+    pub(in crate::workspace) fn context_menu_open(&self) -> bool {
         self.context.menu.is_some()
     }
 
     /// Remembers where the pointer is on a chart, for a keyboard paste.
-    pub(super) fn note_hover(&mut self, chart_id: u64, anchor: Option<crate::model::Anchor>) {
+    pub(in crate::workspace) fn note_hover(
+        &mut self,
+        chart_id: u64,
+        anchor: Option<crate::model::Anchor>,
+    ) {
         if let Some(anchor) = anchor {
             self.context.hover = Some((chart_id, anchor));
         }
@@ -160,7 +168,7 @@ impl ChartWorkspace {
         self.say(text, error);
     }
 
-    pub(super) fn say(&mut self, text: impl Into<String>, error: bool) {
+    pub(in crate::workspace) fn say(&mut self, text: impl Into<String>, error: bool) {
         self.context.notice = Some(Notice {
             text: text.into(),
             error,
@@ -190,11 +198,11 @@ impl ChartWorkspace {
 
     // MARK: Facts
 
-    pub(super) fn chart_index(&self, chart_id: u64) -> Option<usize> {
+    pub(in crate::workspace) fn chart_index(&self, chart_id: u64) -> Option<usize> {
         self.charts.iter().position(|chart| chart.id == chart_id)
     }
 
-    pub(super) fn replay_cut(&self) -> Option<i64> {
+    pub(in crate::workspace) fn replay_cut(&self) -> Option<i64> {
         if self.replay.is_active() {
             self.replay.current_ms()
         } else {
@@ -335,7 +343,7 @@ impl ChartWorkspace {
     // MARK: Drawing the menu
 
     /// Draws the open menu and the dialogs it leads to, and runs what was chosen.
-    pub(super) fn show_context_ui(
+    pub(in crate::workspace) fn show_context_ui(
         &mut self,
         ctx: &Context,
         host: &mut PaperHost,
@@ -656,7 +664,7 @@ impl ChartWorkspace {
     // MARK: Clipboard
 
     /// Copy and Paste from the keyboard: the platform reports them as events, not keys.
-    pub(super) fn handle_clipboard(&mut self, ui: &egui::Ui) {
+    pub(in crate::workspace) fn handle_clipboard(&mut self, ui: &egui::Ui) {
         let ctx = ui.ctx();
         // A selected table cell takes the clipboard keys for itself; the chart's draw this frame
         // handles them.
@@ -688,7 +696,7 @@ impl ChartWorkspace {
         }
     }
 
-    pub(super) fn copy_selection(&mut self, ctx: &Context) {
+    pub(in crate::workspace) fn copy_selection(&mut self, ctx: &Context) {
         let Some((chart_id, ids)) = self.selected_drawing.clone() else {
             return;
         };
@@ -810,7 +818,7 @@ impl ChartWorkspace {
     // MARK: Panels
 
     /// Keeps the open panels honest: each follows its chart, and only that chart builds a feed.
-    pub(super) fn sync_context_panels(&mut self) {
+    pub(in crate::workspace) fn sync_context_panels(&mut self) {
         for panel in [
             &mut self.context.table_chart,
             &mut self.context.tree_chart,
@@ -957,7 +965,7 @@ impl ChartWorkspace {
         })
     }
 
-    pub(super) fn show_table_panel(&mut self, ui: &mut egui::Ui) {
+    pub(in crate::workspace) fn show_table_panel(&mut self, ui: &mut egui::Ui) {
         let Some(chart_id) = self.context.table_chart else {
             return;
         };
@@ -976,7 +984,7 @@ impl ChartWorkspace {
 
     /// The Session statistics panel: the bars the chart draws (its market's own candles, cut at the
     /// replay position, never a constructed type's bars) put to the panel's question.
-    pub(super) fn show_stats_panel(&mut self, ui: &mut egui::Ui) {
+    pub(in crate::workspace) fn show_stats_panel(&mut self, ui: &mut egui::Ui) {
         let Some(chart_id) = self.context.stats_chart else {
             return;
         };
@@ -1005,7 +1013,7 @@ impl ChartWorkspace {
         }
     }
 
-    pub(super) fn show_tree_panel(&mut self, ui: &mut egui::Ui) {
+    pub(in crate::workspace) fn show_tree_panel(&mut self, ui: &mut egui::Ui) {
         let Some(chart_id) = self.context.tree_chart else {
             return;
         };
@@ -1146,7 +1154,7 @@ impl ChartWorkspace {
     // MARK: Removing indicators
 
     /// Puts the chart's indicators and scripts on the undo stack before they change.
-    pub(super) fn remember_indicators(&mut self, chart_id: u64) {
+    pub(in crate::workspace) fn remember_indicators(&mut self, chart_id: u64) {
         let Some(chart) = self.charts.iter().find(|chart| chart.id == chart_id) else {
             return;
         };

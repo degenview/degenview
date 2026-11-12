@@ -1,7 +1,7 @@
 //! The Pine Studio window: file-backed Pine script library, editor, preview chart and drawer.
 //! A port of DegenView's `PineStudioView` and its view models.
 //!
-//! Layout (see `workspace.rs`): a sidebar with the script list, and for the selected script a
+//! Layout (see `workspace/mod.rs`): a sidebar with the script list, and for the selected script a
 //! split between the code editor and the preview chart, with the Inputs / Report / Problems
 //! drawer under the chart.
 #![allow(dead_code)] // transient: phase-2 pieces (completion, find bar) are not wired yet

@@ -1,7 +1,6 @@
 //! The workspace's charts as a collection: adding, finding, replacing, removing and describing them.
 
-use super::ChartWorkspace;
-use super::chart::{Chart, displayed_candles};
+use super::{Chart, displayed_candles};
 use crate::host::portfolio_card_host::PortfolioCardEnv;
 use crate::host::trading_hub::TradingHub;
 use crate::model::chart::price_scale::PriceScaleMode;
@@ -11,6 +10,7 @@ use crate::model::{
     ChartType, DataSource, Drawing, IndicatorConfig, InstrumentId, Kline, Timeframe,
 };
 use crate::service::SearchResult;
+use crate::workspace::ChartWorkspace;
 use eframe::egui;
 use std::sync::Arc;
 
@@ -63,7 +63,7 @@ pub struct AddChartOutcome {
 
 impl ChartWorkspace {
     /// How many charts show a market: the ones that can be linked (cards show no time axis).
-    pub(super) fn market_charts(&self) -> usize {
+    pub(in crate::workspace) fn market_charts(&self) -> usize {
         self.charts.iter().filter(|chart| chart.is_market()).count()
     }
 
@@ -185,7 +185,7 @@ impl ChartWorkspace {
         }
     }
 
-    pub(super) fn fresh_id(&mut self) -> u64 {
+    pub(in crate::workspace) fn fresh_id(&mut self) -> u64 {
         let id = self.next_id;
         self.next_id += 1;
         id
@@ -204,7 +204,7 @@ impl ChartWorkspace {
         }
     }
 
-    pub(super) fn resolved_focused_id(&self) -> Option<u64> {
+    pub(in crate::workspace) fn resolved_focused_id(&self) -> Option<u64> {
         if let Some(id) = self.focused
             && self.charts.iter().any(|chart| chart.id == id)
         {
@@ -221,7 +221,11 @@ impl ChartWorkspace {
         self.focused = Some(id);
     }
 
-    pub(super) fn add_from_search(&mut self, result: &SearchResult, ctx: &egui::Context) {
+    pub(in crate::workspace) fn add_from_search(
+        &mut self,
+        result: &SearchResult,
+        ctx: &egui::Context,
+    ) {
         let instrument = InstrumentId::new(result.source, &result.full_symbol);
         let outcome = self.add_chart_for(&instrument, ctx);
         if result.source == DataSource::DexScreener
@@ -269,7 +273,11 @@ impl ChartWorkspace {
     }
 
     /// The macOS-style alert behind a header ✕.
-    pub(super) fn confirm_chart_removal(&mut self, ctx: &egui::Context, chart_id: u64) {
+    pub(in crate::workspace) fn confirm_chart_removal(
+        &mut self,
+        ctx: &egui::Context,
+        chart_id: u64,
+    ) {
         let Some(chart) = self.charts.iter().find(|chart| chart.id == chart_id) else {
             self.removing_chart = None;
             return;
@@ -295,7 +303,11 @@ impl ChartWorkspace {
 
     /// Puts every chart on `timeframe` and reloads its candles: what the toolbar's timeframe
     /// buttons do. Replay re-bases and rulers (which measure bars of the old timeframe) go.
-    pub(super) fn reload_for_timeframe(&mut self, timeframe: Timeframe, ctx: &egui::Context) {
+    pub(in crate::workspace) fn reload_for_timeframe(
+        &mut self,
+        timeframe: Timeframe,
+        ctx: &egui::Context,
+    ) {
         self.timeframe = timeframe;
         self.replay_rebase |= self.replay.session.is_some();
         self.drop_rulers();
@@ -357,7 +369,7 @@ impl ChartWorkspace {
         true
     }
 
-    pub(super) fn remove_chart(&mut self, chart_id: u64) {
+    pub(in crate::workspace) fn remove_chart(&mut self, chart_id: u64) {
         self.sync_hub.forget(chart_id);
         self.overlay_hub.forget_chart(chart_id);
         self.charts.retain(|chart| chart.id != chart_id);
@@ -370,7 +382,7 @@ impl ChartWorkspace {
         self.columns.retain(|column| !column.chart_ids.is_empty());
     }
 
-    pub(super) fn focus_chart(&mut self, chart_id: u64) {
+    pub(in crate::workspace) fn focus_chart(&mut self, chart_id: u64) {
         if self.focused == Some(chart_id) {
             return;
         }
@@ -379,7 +391,7 @@ impl ChartWorkspace {
         }
     }
 
-    pub(super) fn switch_chart(
+    pub(in crate::workspace) fn switch_chart(
         &mut self,
         chart_id: u64,
         item: &WatchlistInstrument,
@@ -418,7 +430,7 @@ impl ChartWorkspace {
     }
 
     /// The identity a chart has in a watchlist: its market, or its card's placeholder.
-    pub(super) fn chart_instrument(chart: &Chart) -> InstrumentId {
+    pub(in crate::workspace) fn chart_instrument(chart: &Chart) -> InstrumentId {
         chart.card.as_ref().map_or_else(
             || InstrumentId::new(chart.source, &chart.symbol),
             PortfolioCard::instrument_id,
@@ -426,7 +438,7 @@ impl ChartWorkspace {
     }
 
     /// The watchlist row that stands for `chart`.
-    pub(super) fn favorite_item(&self, chart: &Chart) -> WatchlistInstrument {
+    pub(in crate::workspace) fn favorite_item(&self, chart: &Chart) -> WatchlistInstrument {
         if let Some(card) = chart.card {
             let scope = self
                 .card_env

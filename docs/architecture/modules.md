@@ -9,7 +9,7 @@ inventory.
 | --- | --- |
 | `main.rs`, `lib.rs` | Binary entry, and the library root: store opening, native options, and app startup |
 | `app.rs` | Hidden coordinator, tabs, session, hosts, and native-window actions |
-| `workspace.rs` | One chart tab: grid, charts, drawings, fetches, and replay |
+| `workspace/mod.rs` | One chart tab: grid, charts, drawings, fetches, and replay |
 | `host/tab_window_host.rs` | Window grouping, active tabs, drag/reorder/detach |
 | `native_bridge.rs` | AppKit menus, window behavior, cursor, Keychain/accessibility boundaries |
 | `host/update_host.rs` | Update checks, install progress, and restart state |
@@ -23,7 +23,7 @@ by the GUI fallback and the login-item agent (`bin/degenview-alert-agent.rs`).
 
 ## Inside a workspace
 
-`workspace.rs` keeps `ChartWorkspace`'s state, constructors and the per-frame `ui` entry point.
+`workspace/mod.rs` keeps `ChartWorkspace`'s state, constructors and the per-frame `ui` entry point.
 Every other concern is a child module in `workspace/` that adds an `impl ChartWorkspace` block; a
 child sees the root's private fields, and anything another child calls is `pub(super)`.
 

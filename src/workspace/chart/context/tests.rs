@@ -1600,7 +1600,7 @@ fn a_fetched_preview_is_written_to_its_card_as_one_undo_step() {
     let (sender, receiver) = std::sync::mpsc::channel();
     rig.workspace.content.links.inbox = Some(receiver);
     sender
-        .send(links::Fetched {
+        .send(crate::workspace::drawing::links::Fetched {
             chart_id: chart,
             drawing_id: 1,
             link: crate::model::annotation::link_card::Link::parse(POST_LINK).unwrap(),
@@ -1626,7 +1626,7 @@ fn a_preview_for_a_link_the_card_no_longer_has_is_dropped() {
     let (sender, receiver) = std::sync::mpsc::channel();
     rig.workspace.content.links.inbox = Some(receiver);
     sender
-        .send(links::Fetched {
+        .send(crate::workspace::drawing::links::Fetched {
             chart_id: chart,
             drawing_id: 1,
             link: crate::model::annotation::link_card::Link::parse(
@@ -1650,7 +1650,7 @@ fn a_failed_fetch_says_why_and_leaves_the_card_alone() {
     let (sender, receiver) = std::sync::mpsc::channel();
     rig.workspace.content.links.inbox = Some(receiver);
     sender
-        .send(links::Fetched {
+        .send(crate::workspace::drawing::links::Fetched {
             chart_id: chart,
             drawing_id: 1,
             link: crate::model::annotation::link_card::Link::parse(POST_LINK).unwrap(),

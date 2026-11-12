@@ -1,5 +1,7 @@
 //! Pine scripts and built-in indicators on a chart: the views the app and MCP take, and applying, changing and removing them.
 
+pub(in crate::workspace) mod logs;
+
 use super::ChartWorkspace;
 use crate::model::{BuiltIn, EMA_PERIODS, IndicatorConfig, InstrumentId, Kline, Timeframe};
 use crate::ui::pine::settings_popover::{self, PineSettingsPopover};

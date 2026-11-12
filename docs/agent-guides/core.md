@@ -18,7 +18,7 @@ Read [Architecture](../architecture.md) before changing module boundaries or dat
 
 ## Architecture
 
-- **Modules, not MVVM.** `model/` pure domain logic; `service/` providers/networking; `ui/` egui rendering; `store/` SQLite; `host/*_host.rs` bridges stateful components; `workspace.rs` chart workspaces; `app.rs` coordinates.
+- **Modules, not MVVM.** `model/` pure domain logic; `service/` providers/networking; `ui/` egui rendering; `store/` SQLite; `host/*_host.rs` bridges stateful components; `workspace/mod.rs` chart workspaces; `app.rs` coordinates.
 - **Immediate-mode UI.** Pass state into views; never add observed view models. Render charts with `egui::Painter`, not a chart library.
 - **Background work.** Outside `src/mcp/`, threads and `std::sync::mpsc`, no async runtimes. Shared state `Arc<Mutex<...>>`; keep locks short.
 - **Frame performance.** Code reached from `update`/`ui` must never parse JSON, make blocking system calls (XPC, `SMAppService`), or query SQLite beyond cheap change checks. Cache by change signal (e.g. `Store::layout_index`) or run on a thread and poll (e.g. `AlertRuntimeControl::poll_service_status`).
@@ -47,7 +47,7 @@ Finder-launchable app: `./tools/bundle.sh`, then open `target/DegenView.app`. Bi
 - Snake-case modules; one concern per file.
 - **Group modules in directories, never in prefixes.** `model/`, `pine/`, `pine_studio/` and `ui/` hold one
   directory per domain and only `mod.rs` at the root (`pine_studio/` also keeps a few single-purpose
-  files such as `workspace.rs`; `ui/` keeps `icons`, `shortcut` and `accessibility`). A new module goes in its domain's directory; a new domain gets a
+  files such as `workspace/mod.rs`; `ui/` keeps `icons`, `shortcut` and `accessibility`). A new module goes in its domain's directory; a new domain gets a
   directory. Name the child without the directory's name: `model/paper/engine.rs`
   (`model::paper::engine`), not `model/paper_engine.rs`. Three or more files sharing a prefix
   (`alert_*`, `ai_*`, `ta_*`, `settings_*`) belong in a directory.

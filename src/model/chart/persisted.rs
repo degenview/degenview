@@ -1,4 +1,4 @@
-//! The per-chart state a saved layout restores. Lives in `model/` (not `workspace.rs`) so the
+//! The per-chart state a saved layout restores. Lives in `model/` (not `workspace/mod.rs`) so the
 //! `SavedView` model can reference it without depending on the workspace.
 
 use crate::model::chart::price_scale::PriceScaleMode;
