@@ -11,7 +11,7 @@
 //! changed) is refused with the error the command itself would give, without asking anyone.
 
 use crate::host::alert::AlertHost;
-use crate::host::mcp::{self, find_alert, require_loaded};
+use crate::host::mcp::alert::{find_alert, require_loaded};
 use crate::host::paper::PaperHost;
 use crate::mcp::bridge::{McpCommand, McpError};
 use crate::mcp::chart::data;
@@ -250,7 +250,7 @@ fn plural(count: usize, one: &str, many: &str) -> String {
 
 pub fn delete_alert(host: &AlertHost, id: AlertId) -> Result<Summary, McpError> {
     require_loaded(host)?;
-    let info = mcp::alert_info(find_alert(host, id)?, None);
+    let info = super::alert::alert_info(find_alert(host, id)?, None);
     let condition = match info.condition.as_str() {
         "crosses_above" => "crosses above",
         "crosses_below" => "crosses below",
@@ -271,7 +271,7 @@ pub fn delete_alert(host: &AlertHost, id: AlertId) -> Result<Summary, McpError> 
 }
 
 pub fn delete_watchlist(store: &WatchlistStore, id: u64) -> Result<Summary, McpError> {
-    let list = mcp::watchlist_by_id(store, id)?;
+    let list = super::watchlist::watchlist_by_id(store, id)?;
     if list.is_favorites {
         return Err(McpError::Conflict(
             "Favorites cannot be deleted; remove its markets or rename it instead".into(),
@@ -293,7 +293,7 @@ fn chart_label(workspace: &ChartWorkspace, chart_id: u64) -> Result<String, McpE
         .into_iter()
         .find(|chart| chart.id == chart_id)
         .map(|chart| chart.display_symbol)
-        .ok_or_else(|| mcp::no_chart(workspace, chart_id))
+        .ok_or_else(|| super::chart::no_chart(workspace, chart_id))
 }
 
 pub fn remove_chart(workspace: &ChartWorkspace, chart_id: u64) -> Result<Summary, McpError> {
@@ -313,7 +313,7 @@ pub fn remove_drawings(
     let label = chart_label(workspace, chart_id)?;
     let data = workspace
         .chart_data(chart_id)
-        .ok_or_else(|| mcp::no_chart(workspace, chart_id))?;
+        .ok_or_else(|| super::chart::no_chart(workspace, chart_id))?;
     // The same check the removal makes: unknown or locked drawings are refused here, unasked.
     let commands = data::plan_remove(data.drawings, ids)?;
     Ok(Summary::new(
@@ -333,7 +333,7 @@ pub fn remove_pine_instance(
         .chart_summaries()
         .into_iter()
         .find(|chart| chart.id == chart_id)
-        .ok_or_else(|| mcp::no_chart(workspace, chart_id))?;
+        .ok_or_else(|| super::chart::no_chart(workspace, chart_id))?;
     let name = summary
         .pine_instances
         .iter()
@@ -344,7 +344,7 @@ pub fn remove_pine_instance(
                 "No script instance {instance_id} on chart {chart_id}"
             ))
         })?;
-    mcp::guard_armed_alerts(subscriptions, chart_id, instance_id, "removing it")?;
+    super::pine::guard_armed_alerts(subscriptions, chart_id, instance_id, "removing it")?;
     Ok(Summary::new(
         "Remove a script from a chart",
         format!("{name} on {}", summary.display_symbol),
@@ -357,7 +357,7 @@ pub fn save_script(name: &str) -> Summary {
 }
 
 pub fn place_order(host: &PaperHost, request: &PaperOrderRequest) -> Result<Summary, McpError> {
-    let account = mcp::tradable_paper_account(host, request.account_id)?;
+    let account = super::paper::tradable_paper_account(host, request.account_id)?;
     Ok(Summary::new(
         "Place a paper order",
         format!(
@@ -383,7 +383,7 @@ pub fn modify_order(
         .iter()
         .find(|order| order.id == order_id)
         .ok_or_else(|| McpError::NotFound("No such paper order".into()))?;
-    let account = mcp::tradable_paper_account(host, order.account_id)?;
+    let account = super::paper::tradable_paper_account(host, order.account_id)?;
     let mut changed = Vec::new();
     if let Some(quantity) = changes.quantity {
         changed.push(format!("quantity {}", number(quantity)));
@@ -413,7 +413,7 @@ pub fn cancel_orders(
     account_id: u64,
     order_ids: Option<&[u64]>,
 ) -> Result<Summary, McpError> {
-    let account = mcp::tradable_paper_account(host, account_id)?;
+    let account = super::paper::tradable_paper_account(host, account_id)?;
     // The orders an "all" reaches, by id: the approval holds only for these.
     let mut scope = String::new();
     let target = match order_ids {
@@ -452,7 +452,7 @@ pub fn close_positions(
     account_id: u64,
     instrument_key: Option<&str>,
 ) -> Result<Summary, McpError> {
-    let account = mcp::tradable_paper_account(host, account_id)?;
+    let account = super::paper::tradable_paper_account(host, account_id)?;
     let open: Vec<&crate::model::paper::PaperPosition> = host
         .snapshot()
         .positions

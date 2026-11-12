@@ -8,7 +8,7 @@ inventory.
 | Module | Owns |
 | --- | --- |
 | `main.rs`, `lib.rs` | Binary entry, and the library root: store opening, native options, and app startup |
-| `app.rs` | Hidden coordinator, tabs, session, hosts, and native-window actions |
+| `app/` | Hidden coordinator: `mod.rs` holds `DegenViewApp`, its constructor and per-frame update; children hold the rest (see `app/` layout below) |
 | `workspace/mod.rs` | One chart tab: grid, charts, drawings, fetches, and replay |
 | `host/tab/window.rs` | Window grouping, active tabs, drag/reorder/detach |
 | `native_bridge.rs` | AppKit menus, window behavior, cursor, Keychain/accessibility boundaries |
@@ -123,6 +123,17 @@ router), `pine`, `replay`, `snapshot` and `tests/` at its root. Tools are groupe
 (`control`, `data`, `drawings`), `indicator/`, `market/`, `paper/`, `portfolio/`, `session_stats/`, where
 `mod.rs` holds the pure result types and `tools.rs` the tool router. `transport/` holds the HTTP surface
 and what guards it: `auth`, `cancel`, `limits`, `seal`, `tls`, `tls_protect`.
+
+`app/` splits `impl DegenViewApp` by concern, each child adding an `impl` block (like `workspace/`):
+`tabs` (tab registry, open, close, quotes, links), `window` (the native windows and their viewports,
+Settings and alert windows), `commands` (native menu commands, quit), `mcp` (the MCP command loop and
+confirmation), `pine` (Pine Studio and scripts), `alert` (the alert runtime), `background` (broker
+notices, editor themes, sync), `session` (the saved session) and `tests`. A helper used by one child
+stays private to it; what two children share is `pub(super)`.
+
+`host/mcp/` keeps `McpHost` (listener lifecycle, settings, credentials, activity log) in `mod.rs`. What
+the app thread runs for a tool is grouped by domain like `mcp/`: `chart`, `pine`, `alert`, `paper`,
+`portfolio`, `watchlist`, `replay`, `snapshot`, plus `confirmation`; its tests are in `tests/`.
 
 `trading/` keeps the trait, drafts and previews at its root and one directory per backend family:
 `broker/` (`backend`, `commands`) and `paper/` (`backend`, `stats`).

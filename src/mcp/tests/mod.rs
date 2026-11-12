@@ -51,7 +51,7 @@ struct Stub {
 /// The paper-trading host the stub app serves: the real host over an in-memory database.
 struct StubPaper(
     Mutex<crate::host::paper::PaperHost>,
-    Mutex<mcp::OrderMemory>,
+    Mutex<mcp::paper::OrderMemory>,
     crate::store::SharedStore,
 );
 
@@ -62,7 +62,7 @@ impl Default for StubPaper {
         ));
         Self(
             Mutex::new(crate::host::paper::PaperHost::load(shared.clone())),
-            Mutex::new(mcp::OrderMemory::default()),
+            Mutex::new(mcp::paper::OrderMemory::default()),
             shared,
         )
     }
@@ -498,11 +498,11 @@ fn stub_app(
         }
         McpCommand::ListPortfolios => {
             let host = stub.portfolio.0.lock().unwrap();
-            mcp::list_portfolios(&host).map(McpReply::Portfolios)
+            mcp::portfolio::list_portfolios(&host).map(McpReply::Portfolios)
         }
         McpCommand::GetPortfolioHoldings { portfolio_id } => {
             let host = stub.portfolio.0.lock().unwrap();
-            mcp::portfolio_holdings_base(&host, portfolio_id, 0)
+            mcp::portfolio::portfolio_holdings_base(&host, portfolio_id, 0)
                 .map(|base| McpReply::PortfolioHoldings(Box::new(base)))
         }
         McpCommand::ListPortfolioTransactions {
@@ -512,8 +512,14 @@ fn stub_app(
             limit,
         } => {
             let host = stub.portfolio.0.lock().unwrap();
-            mcp::portfolio_transactions(&host, portfolio_id, asset.as_deref(), offset, limit)
-                .map(|result| McpReply::PortfolioTransactions(Box::new(result)))
+            mcp::portfolio::portfolio_transactions(
+                &host,
+                portfolio_id,
+                asset.as_deref(),
+                offset,
+                limit,
+            )
+            .map(|result| McpReply::PortfolioTransactions(Box::new(result)))
         }
         McpCommand::PlacePaperOrder {
             request,
@@ -522,7 +528,7 @@ fn stub_app(
         } => {
             let mut host = stub.paper.0.lock().unwrap();
             let mut memory = stub.paper.1.lock().unwrap();
-            mcp::place_paper_order(
+            mcp::paper::place_paper_order(
                 &mut host,
                 &mut memory,
                 *request,
@@ -533,7 +539,7 @@ fn stub_app(
         }
         McpCommand::ModifyPaperOrder { order_id, changes } => {
             let mut host = stub.paper.0.lock().unwrap();
-            mcp::modify_paper_order(&mut host, order_id, changes)
+            mcp::paper::modify_paper_order(&mut host, order_id, changes)
                 .map(|result| McpReply::PaperChange(Box::new(result)))
         }
         McpCommand::CancelPaperOrders {
@@ -541,7 +547,7 @@ fn stub_app(
             order_ids,
         } => {
             let mut host = stub.paper.0.lock().unwrap();
-            mcp::cancel_paper_orders(&mut host, account_id, order_ids.as_deref())
+            mcp::paper::cancel_paper_orders(&mut host, account_id, order_ids.as_deref())
                 .map(|result| McpReply::PaperChange(Box::new(result)))
         }
         McpCommand::ClosePaperPositions {
@@ -549,16 +555,16 @@ fn stub_app(
             instrument_key,
         } => {
             let mut host = stub.paper.0.lock().unwrap();
-            mcp::close_paper_positions(&mut host, account_id, instrument_key.as_deref())
+            mcp::paper::close_paper_positions(&mut host, account_id, instrument_key.as_deref())
                 .map(|result| McpReply::PaperChange(Box::new(result)))
         }
         McpCommand::ListPaperAccounts => {
             let host = stub.paper.0.lock().unwrap();
-            mcp::list_paper_accounts(&host).map(McpReply::PaperAccounts)
+            mcp::paper::list_paper_accounts(&host).map(McpReply::PaperAccounts)
         }
         McpCommand::GetPaperAccount { account_id } => {
             let host = stub.paper.0.lock().unwrap();
-            mcp::get_paper_account(&host, account_id)
+            mcp::paper::get_paper_account(&host, account_id)
                 .map(|detail| McpReply::PaperAccount(Box::new(detail)))
         }
         McpCommand::ListPaperHistory {
@@ -569,16 +575,16 @@ fn stub_app(
         } => {
             let host = stub.paper.0.lock().unwrap();
             if closed_trades {
-                mcp::paper_trades(&host, account_id, offset, limit)
+                mcp::paper::paper_trades(&host, account_id, offset, limit)
                     .map(|result| McpReply::PaperTrades(Box::new(result)))
             } else {
-                mcp::paper_fills(&host, account_id, offset, limit)
+                mcp::paper::paper_fills(&host, account_id, offset, limit)
                     .map(|result| McpReply::PaperFills(Box::new(result)))
             }
         }
         McpCommand::ListWatchlists => {
             let store = stub.watchlists.0.lock().unwrap();
-            mcp::list_watchlists(&store).map(McpReply::Watchlists)
+            mcp::watchlist::list_watchlists(&store).map(McpReply::Watchlists)
         }
         McpCommand::GetWatchlist {
             watchlist_id,
@@ -586,12 +592,12 @@ fn stub_app(
             limit,
         } => {
             let store = stub.watchlists.0.lock().unwrap();
-            mcp::get_watchlist(&store, watchlist_id, offset, limit)
+            mcp::watchlist::get_watchlist(&store, watchlist_id, offset, limit)
                 .map(|page| McpReply::Watchlist(Box::new(page)))
         }
         McpCommand::CreateWatchlist { name, markets } => {
             let mut store = stub.watchlists.0.lock().unwrap();
-            mcp::create_watchlist(&mut store, &name, markets)
+            mcp::watchlist::create_watchlist(&mut store, &name, markets)
                 .map(|result| McpReply::WatchlistChanged(Box::new(result)))
         }
         McpCommand::UpdateWatchlist {
@@ -599,12 +605,12 @@ fn stub_app(
             changes,
         } => {
             let mut store = stub.watchlists.0.lock().unwrap();
-            mcp::update_watchlist(&mut store, watchlist_id, *changes)
+            mcp::watchlist::update_watchlist(&mut store, watchlist_id, *changes)
                 .map(|result| McpReply::WatchlistChanged(Box::new(result)))
         }
         McpCommand::DeleteWatchlist { watchlist_id } => {
             let mut store = stub.watchlists.0.lock().unwrap();
-            mcp::delete_watchlist(&mut store, watchlist_id)
+            mcp::watchlist::delete_watchlist(&mut store, watchlist_id)
                 .map(|result| McpReply::WatchlistChanged(Box::new(result)))
         }
         McpCommand::ListCharts { workspace_id: 1 } => Ok(McpReply::Charts(ChartsResult {

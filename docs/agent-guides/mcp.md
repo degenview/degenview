@@ -70,7 +70,7 @@
 
 ## Tools
 
-- Price alerts: plan against `AlertHost` in `host/mcp/mod.rs`, enqueue `AlertRuntimeCommand`; never
+- Price alerts: plan against `AlertHost` in `host/mcp/alert.rs`, enqueue `AlertRuntimeCommand`; never
   write alert tables or reimplement `PriceAlertEditorState`. The snapshot is up to 1 s old and
   shared per frame, so commands carry an `AlertPrecondition` (`Create`: id free, below the cap, no
   identical alert; `Unchanged`: alert still matches the planned base) checked by
@@ -101,7 +101,7 @@
 - Live trading is unreachable: nothing under `src/mcp/` may mention `degenview_brokers` or
   `host::broker` (`host::broker::tests` fails the build). A tool reaching a real broker needs its
   own design, permission and confirmation, not a new arm here. See [Live trading](../broker-trading.md).
-- Paper writes (`mcp/paper/tools.rs`, `host::mcp::place_paper_order` and friends): only via
+- Paper writes (`mcp/paper/tools.rs`, `host::mcp::paper::place_paper_order` and friends): only via
   `PaperHost::{submit,modify,cancel,close_position}`, `tradable_account` checked first (another
   Mac's account is never changed over MCP), each new write behind its own off-by-default permission.
   A paper `request_id` is bound to its order (another order under it: `CONFLICT`).

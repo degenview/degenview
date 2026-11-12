@@ -774,7 +774,7 @@ mod tests {
 
     #[test]
     fn indicator_readings_use_the_bars_a_constructed_chart_draws() {
-        use crate::host::mcp::indicator_readings;
+        use crate::host::mcp::chart::indicator_readings;
         use crate::mcp::indicator::{Reading, ReadingRequest};
         use crate::model::{RSI_PERIOD, rsi};
         use crate::workspace::replay::{ReplayCommand, ReplayStart};
