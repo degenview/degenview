@@ -185,20 +185,30 @@ fn step_button(ui: &mut Ui, icon: Icon, hint: &str) -> bool {
     response.clicked()
 }
 
+/// How a [`number_field`] looks and steps.
+pub struct NumberInput<'a> {
+    /// Tells this field's focus apart from the others on the sheet.
+    pub scope: &'a str,
+    /// Shown while the field is empty.
+    pub placeholder: &'a str,
+    /// The asset the number is counted in; none shown when empty.
+    pub unit: &'a str,
+    /// How far one press of −/+ moves the number; no buttons without it.
+    pub step: Option<Decimal>,
+    /// Where a press starts from an empty field (the market's price, say).
+    pub start: Option<Decimal>,
+}
+
 /// A number the user types, with the asset it is counted in beside it and −/+ buttons at the end.
-/// `step` is how far one press moves it; from an empty field a press starts at `start` (the
-/// market's price, say). A red outline marks a value the sheet will not take.
-#[allow(clippy::too_many_arguments)]
-pub fn number_field(
-    ui: &mut Ui,
-    scope: &str,
-    text: &mut String,
-    placeholder: &str,
-    unit: &str,
-    is_error: bool,
-    step: Option<Decimal>,
-    start: Option<Decimal>,
-) -> Edit {
+/// A red outline marks a value the sheet will not take.
+pub fn number_field(ui: &mut Ui, text: &mut String, input: &NumberInput, is_error: bool) -> Edit {
+    let NumberInput {
+        scope,
+        placeholder,
+        unit,
+        step,
+        start,
+    } = *input;
     const SIZE: f32 = 14.0;
     let id = Id::new(("trade-number-field", scope));
     let focused = ui.memory(|memory| memory.has_focus(id));
