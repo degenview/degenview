@@ -3,7 +3,7 @@
 use super::alerts::AlertRequest;
 use super::{ChartWorkspace, WorkspaceAction};
 use crate::model::{ChartType, DataSource};
-use crate::ui::chart_settings::ChartSettingsState;
+use crate::ui::chart::settings::ChartSettingsState;
 use crate::ui::workspace::layout_prompts::NamePrompt;
 use crate::ui::workspace::toolbar::{self, ToolbarAction};
 use eframe::egui;

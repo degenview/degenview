@@ -353,7 +353,7 @@ fn header(
     match crate::model::DataSource::from_watchlist_slug(descriptor.market_source) {
         // The broker's own mark, the logo its markets already wear on charts.
         Some(source) => {
-            crate::ui::source_logo::paint(ui, source, tile);
+            crate::ui::kit::source_logo::paint(ui, source, tile);
             ui.painter().rect_stroke(
                 tile,
                 tile.width() * 0.22,

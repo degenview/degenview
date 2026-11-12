@@ -1,6 +1,6 @@
 # Symbol picker
 
-`src/ui/symbol_picker/` is the modal that changes the market of the focused chart. It opens from the
+`src/ui/chart/symbol_picker/` is the modal that changes the market of the focused chart. It opens from the
 symbol button at the left of the toolbar (`workspace/toolbar.rs`, `ToolbarAction::OpenSymbolSearch`)
 or with ⌘K / Ctrl+K (`shortcut::SYMBOL_SEARCH`, handled in `workspace/input.rs`). The workspace side
 (`src/workspace/symbol_picker.rs`) opens it, keeps the highlighted market priced and applies a pick.

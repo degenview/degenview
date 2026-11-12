@@ -2,12 +2,12 @@
 //! pages' pictures (`settings_art`). Painter code only, so it follows the theme.
 
 use crate::ui::alert::center::AlertTab;
-use crate::ui::art::{Art, ghost};
 use crate::ui::icons::Icon;
+use crate::ui::kit::art::{Art, ghost};
 use crate::ui::{kit, theme};
 use eframe::egui::{Color32, Pos2, Rect, Shape, Stroke, Ui, pos2, vec2};
 
-pub use crate::ui::art::SIZE;
+pub use crate::ui::kit::art::SIZE;
 
 /// The colour a tab's picture is drawn in.
 pub fn tint(tab: AlertTab) -> Color32 {
@@ -215,7 +215,7 @@ impl Art<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ui::art::test_support;
+    use crate::ui::kit::art::test_support;
 
     #[test]
     fn every_tab_draws_a_picture_inside_its_box() {

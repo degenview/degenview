@@ -9,13 +9,13 @@ use crate::model::portfolio::format::PORTFOLIO_CURRENCIES;
 use crate::model::portfolio::{
     MAX_NAME_LENGTH, Portfolio, PortfolioCurrency, is_duplicate_name, is_valid_name, normalize_name,
 };
+use crate::ui::chart::add::{art, sheet as add_chart_sheet};
 use crate::ui::icons::{self, Icon};
+use crate::ui::kit::sheet;
 use crate::ui::kit::{self, Confirm, ConfirmOutcome};
 use crate::ui::portfolio::empty;
 use crate::ui::portfolio::sheet_parts::{card_background, pill};
-use crate::ui::sheet;
 use crate::ui::theme;
-use crate::ui::{add_chart_art, add_chart_sheet};
 use eframe::egui::{self, Align2, Color32, Id, Sense, Stroke, Vec2};
 
 // MARK: New portfolio
@@ -104,7 +104,7 @@ pub fn show_create(
         sheet::inset(ui, |ui| {
             add_chart_sheet::header(
                 ui,
-                add_chart_art::Scene::Portfolio,
+                art::Scene::Portfolio,
                 "New Portfolio",
                 "Group transactions and track them together.",
             );
@@ -441,7 +441,7 @@ pub fn show_manage(
         sheet::inset(ui, |ui| {
             add_chart_sheet::header(
                 ui,
-                add_chart_art::Scene::Portfolio,
+                art::Scene::Portfolio,
                 "Manage Portfolios",
                 &manage_subtitle(input.rows.len()),
             );

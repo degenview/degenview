@@ -23,12 +23,12 @@ use crate::pine::outputs::{
     TableOutput, YLocation,
 };
 use crate::pine::strategy::StrategyReport;
+use crate::ui::chart::series::snap_candle;
 use crate::ui::pine::geometry::{
     self as geometry, LabelGlyph, LabelShape, arrowhead, arrowheads, box_text_placement,
     candle_index_for_bar, dash_pattern, extended_line, faded, font_size, is_visible, label_layout,
     marker_radius, polyline_points, rgba, series_index,
 };
-use crate::ui::series_render::snap_candle;
 use eframe::egui::{
     self, Align2, Color32, FontId, Painter, Pos2, Rect, Shape, Stroke, Vec2,
     epaint::{Mesh, Vertex, WHITE_UV},

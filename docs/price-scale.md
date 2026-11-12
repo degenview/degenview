@@ -95,7 +95,7 @@ logarithmic (`Navigation::logarithmic`).
 
 ## The corner button
 
-A small button sits where the price axis meets the time axis (`ui::scale_menu`): the cell right of
+A small button sits where the price axis meets the time axis (`ui::chart::scale_menu`): the cell right of
 the plot and under it, centred, 20 pt (smaller in a tight cell, absent when the cell cannot hold it,
 the chart has no plot, or the card is a script preview). It is drawn in the primary text ink instead of the muted one when the
 mode is not Regular (a control, so no accent colour). It opens a menu in the shared kit style (`kit::menu_popup`, `menu_scope`,

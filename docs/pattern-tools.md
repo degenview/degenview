@@ -146,7 +146,7 @@ are drawn.
 
 ### Curves
 
-`ui/pattern_geometry.rs` samples a curve **only over the part of the plot it crosses** and with a step
+`ui/drawing/geometry/pattern.rs` samples a curve **only over the part of the plot it crosses** and with a step
 that keeps it within 0.2 px of the true curve: an arc by the angle one chord may turn through (at
 most 256 segments, and a circle of radius 40,000 over an 800 px plot takes four), a sine by its
 sharpest bend (at least 0.5 px and at most 4 px apart, at most 6,000 points). So a zoom in or out
@@ -154,7 +154,7 @@ never shows a polygon and never costs more than a bounded amount.
 
 ## Drawing
 
-The projection is `ui/drawing_layer/pattern_shapes.rs`; the preview while placing and the finished
+The projection is `ui/drawing/layer/pattern_shapes.rs`; the preview while placing and the finished
 drawing go through the same function (`Geometry::preview` fills the pivots still to come with the
 pointer), so one never differs from the other.
 
@@ -230,7 +230,7 @@ handles.
 `model/pattern/mod.rs`, `elliott.rs` and `cycle.rs` have hand-worked fixtures (a Gartley, a Cypher, an
 ABCD and a Three drives with ratios worked on paper, bullish and mirrored, degenerate legs, negative
 and huge prices, every degree against the wiki table, repeats at fractional and negative periods and
-at the limit). `ui/pattern_geometry.rs` checks the apex, arcs and sine against the algebra, their
+at the limit). `ui/drawing/geometry/pattern.rs` checks the apex, arcs and sine against the algebra, their
 sampling error, and extreme sizes. `drawing_layer/pattern_tests.rs` projects every tool onto the
 100 px a bar, 10 px a price plot of the line tests and checks each position by hand, the preview
 against the finished drawing, the same labels on a logarithmic scale, and the off-plot and too-dense

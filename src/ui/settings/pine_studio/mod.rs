@@ -15,7 +15,11 @@ use crate::pine_studio::theme_preview::ThemePreview;
 use crate::service::theme_files;
 use crate::ui::icons::{self, Icon};
 use crate::ui::settings::window::{SettingsSection, page_shell, section, status_message};
-use crate::ui::{kit, settings::card, sheet, theme};
+use crate::ui::{
+    kit::{self, sheet},
+    settings::card,
+    theme,
+};
 use eframe::egui::{
     self, Color32, CornerRadius, Id, Key, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2,
 };
@@ -1403,7 +1407,7 @@ fn name_dialog(
             sheet::header(ui, Icon::Palette, title, subtitle, theme::ACCENT);
             ui.add_space(20.0);
             caption(ui, "Name");
-            crate::ui::chart_templates::text_field(
+            crate::ui::chart::settings::templates::text_field(
                 ui,
                 Id::new((id, "name")),
                 Icon::Tag,

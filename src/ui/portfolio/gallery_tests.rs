@@ -13,7 +13,7 @@ use crate::ui::portfolio::overview::{
 };
 use crate::ui::portfolio::transactions::{self, Projection, TransactionsInput, TransactionsState};
 use crate::ui::render_tests::Screen;
-use crate::ui::{header_controls, icons::Icon, theme};
+use crate::ui::{icons::Icon, kit::header_controls, theme};
 use eframe::egui::{self, vec2};
 use std::collections::HashMap;
 
@@ -548,7 +548,7 @@ fn portfolio_gallery_asset_picker() {
                 ("AAPL", "AAPL", DataSource::Alpaca),
                 ("SOL/USDT", "SOLUSDT", DataSource::Binance),
             ] {
-                crate::ui::add_chart_sheet::record_recent(
+                crate::ui::chart::add::sheet::record_recent(
                     &mut recents,
                     &crate::service::SearchResult {
                         symbol: symbol.into(),
@@ -561,7 +561,7 @@ fn portfolio_gallery_asset_picker() {
                     },
                 );
             }
-            crate::ui::add_chart_sheet::store_recents(&store.lock().unwrap(), &recents);
+            crate::ui::chart::add::sheet::store_recents(&store.lock().unwrap(), &recents);
         }
         both_themes(name, vec2(1000.0, 720.0), |ui| {
             show(ui.ctx(), &mut state.borrow_mut(), &store);
@@ -685,7 +685,7 @@ fn portfolio_gallery_cmc_import() {
 #[test]
 #[ignore = "writes PNGs for a person to look at"]
 fn portfolio_gallery_header_menus() {
-    use crate::ui::header_controls::{self, open_for_gallery};
+    use crate::ui::kit::header_controls::{self, open_for_gallery};
     if crate::ui::render_tests::gallery_dir().is_none() {
         return;
     }

@@ -13,9 +13,9 @@
 use super::{EditorState, UndoGesture, apply_site_text, text_hash, with_range_shifted};
 use crate::model::editor_theme::{SurfaceColor, SyntaxRole};
 use crate::pine_studio::editor::color_sites::{ColorMap, ColorSite, Picked, rewrite};
-use crate::ui::color_picker::inline::{self, Header, Style};
-use crate::ui::color_picker::{Hsv, paint_swatch_on};
 use crate::ui::editor_appearance::{Appearance, EditorFont};
+use crate::ui::kit::color_picker::inline::{self, Header, Style};
+use crate::ui::kit::color_picker::{Hsv, paint_swatch_on};
 use crate::ui::theme;
 use eframe::egui::{
     self, Color32, CursorIcon, Event, Frame, Galley, Id, Key, LayerId, Margin, Modifiers, Order,

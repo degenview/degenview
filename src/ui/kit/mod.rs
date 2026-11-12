@@ -2,10 +2,22 @@
 //! weights, the system palette, segmented section bars, status pills, ticker icons, menus,
 //! confirmation alerts and empty states.
 
+pub(in crate::ui) mod art;
+pub mod color_picker;
+pub mod date_picker;
+pub mod dialog;
+pub mod error_notice;
+pub mod header_controls;
+pub mod markdown_view;
+pub mod popover;
+pub mod sheet;
+pub mod source_logo;
+pub mod split;
+
 use crate::model::DataSource;
-use crate::ui::dialog::{self, Dialog};
 use crate::ui::icons::{self, Icon};
-use crate::ui::{source_logo, theme};
+use crate::ui::kit::dialog::Dialog;
+use crate::ui::theme;
 use eframe::egui::{
     self, Color32, CornerRadius, FontId, Galley, Id, Rect, RichText, Sense, Stroke, StrokeKind, Ui,
     Vec2, pos2, text::LayoutJob, vec2,
@@ -1577,7 +1589,7 @@ pub enum ConfirmOutcome {
     Cancelled,
 }
 
-/// A confirmation of something destructive, drawn by [`crate::ui::dialog`]: a red badge, the
+/// A confirmation of something destructive, drawn by [`crate::ui::kit::dialog`]: a red badge, the
 /// title and message, then Cancel and the red action side by side. Escape, the close button or a
 /// click outside cancels; the dialog starts on Cancel, so a stray Enter destroys nothing.
 pub fn confirm(ctx: &egui::Context, id: Id, confirm: &Confirm) -> Option<ConfirmOutcome> {
@@ -2520,7 +2532,7 @@ pub fn stepper_arrows(ui: &mut Ui, id: Id) -> Option<StepDirection> {
 }
 
 /// `ColorPicker` as the macOS well: a rounded swatch (over a checkerboard when it is translucent)
-/// that opens [`color_picker`](crate::ui::color_picker). Returns the new colour when it changed.
+/// that opens [`color_picker`](crate::ui::kit::color_picker). Returns the new colour when it changed.
 pub fn color_well(
     ui: &mut Ui,
     size: Vec2,
@@ -2531,7 +2543,7 @@ pub fn color_well(
     let (rect, response) = ui.allocate_exact_size(size, Sense::click());
     let response = crate::ui::accessibility::label(response, name)
         .on_hover_cursor(egui::CursorIcon::PointingHand);
-    crate::ui::color_picker::paint_swatch(ui.painter(), rect, color, 6.0);
+    crate::ui::kit::color_picker::paint_swatch(ui.painter(), rect, color, 6.0);
     if response.hovered() {
         ui.painter().rect_stroke(
             rect,
@@ -2545,7 +2557,7 @@ pub fn color_well(
         .frame(menu_frame().inner_margin(egui::Margin::same(12)))
         .show(|ui| {
             let mut value = color;
-            if crate::ui::color_picker::show(ui, &mut value, alpha) {
+            if crate::ui::kit::color_picker::show(ui, &mut value, alpha) {
                 picked = Some(value);
             }
         });

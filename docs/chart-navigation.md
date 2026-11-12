@@ -224,7 +224,7 @@ of its run revision. A chart with no scripts no longer hashes the series every f
 
 ## Verified and not verified
 
-Verified by tests (`model/chart/viewport/tests.rs`, `ui/chart_card/navigation_tests.rs`, `model/history`,
+Verified by tests (`model/chart/viewport/tests.rs`, `ui/chart/card/navigation_tests.rs`, `model/history`,
 `workspace`): the pan maths, fractional offsets, bounded whitespace, vertical pan on linear and log
 scales, autoscale versus manual range, axis drags and double-clicks, Escape, release outside the
 chart, drawing ownership (handle, locked drawing, tool), a drawing's anchors unchanged and no

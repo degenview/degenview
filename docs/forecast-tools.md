@@ -233,7 +233,7 @@ the wrong side, nothing NaN whatever the inputs, the first level reached and the
 the bars it is given; a VWAP and its deviation from a table of prices, no volume, a bad bar; a profile's spread, its up and
 down split, the point of control and its tie-break, a value area grown pair by pair, the row sizes, the volume conserved
 for every row count; the ghost run pinned at both ends, deterministic, never a candle that is not one; a bars pattern's
-copy, its cap, its two reflections and that they commute. `ui/drawing_layer/forecast_tests.rs` projects every tool on the
+copy, its cap, its two reflections and that they commute. `ui/drawing/layer/forecast_tests.rs` projects every tool on the
 100 px a bar, 10 px a price plot of the line tests and checks each position, label text and colour by hand, including the
 same texts on a logarithmic scale, a position's zones as its hit area, a profile's bar and the gap beside it, a range that
 starts before the loaded bars, and that a live volume change rebuilds the cached shape. The every-tool loops of the drawing

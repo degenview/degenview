@@ -3,8 +3,8 @@
 A small square in front of every constant colour in the Pine editor; a click opens a picker that
 rewrites the colour in the source. Code: `pine_studio/editor/color_sites.rs` (detection, values, rewriting;
 no egui), `pine_studio/editor/swatches.rs` (swatches, the picker's life, applying edits),
-`ui/color_picker/inline.rs` (the picker's widgets, shared painting and HSV maths with
-`ui/color_picker.rs`).
+`ui/kit/color_picker/inline.rs` (the picker's widgets, shared painting and HSV maths with
+`ui/kit/color_picker/mod.rs`).
 
 **Status.** Detection, rewriting, undo and the picker's interactions are covered by tests that drive
 the real editor with synthetic input. It has **not** been compared with TradingView side by side (see

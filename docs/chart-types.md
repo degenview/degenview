@@ -2,7 +2,7 @@
 
 How a chart draws its price data, how the price-based types construct their own bars, and what
 Pine scripts, indicators, alerts, strategies, replay and drawings see on each. This is the
-reference for `model::chart::kind`, `model::chart::synthetic`, `model::chart::look`, `ui::series_render` and
+reference for `model::chart::kind`, `model::chart::synthetic`, `model::chart::look`, `ui::chart::series` and
 the chart-type parts of the Pine engine.
 
 ## Real data, chart bars, script visuals

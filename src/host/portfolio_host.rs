@@ -25,8 +25,9 @@ use crate::service::portfolio_history::{
 use crate::service::portfolio_quotes::{PortfolioFxRates, PortfolioQuoteFeed, PortfolioQuoteState};
 use crate::service::timezone::local_utc_offset_secs;
 use crate::store::{SharedStore, Store};
-use crate::ui::header_controls;
 use crate::ui::icons::Icon;
+use crate::ui::kit::header_controls;
+use crate::ui::kit::sheet;
 use crate::ui::kit::{self, Confirm, ConfirmOutcome};
 use crate::ui::portfolio::asset_detail::{self, AssetDetailAction, AssetDetailInput};
 use crate::ui::portfolio::asset_picker::{self, AssetPickerOutcome, AssetPickerState};
@@ -44,7 +45,6 @@ use crate::ui::portfolio::transaction_editor::{
 use crate::ui::portfolio::transactions::{
     self, Projection, TransactionAction, TransactionsInput, TransactionsState,
 };
-use crate::ui::sheet;
 use crate::ui::theme;
 use eframe::egui;
 use std::collections::{HashMap, HashSet};

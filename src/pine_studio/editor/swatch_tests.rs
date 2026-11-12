@@ -1,7 +1,7 @@
 //! Colour swatches and their picker, driven through `show` with synthetic pointer and key events.
 
 use super::*;
-use crate::ui::color_picker::inline;
+use crate::ui::kit::color_picker::inline;
 use eframe::egui::PointerButton;
 
 const SCRIPT: &str = "//@version=6\nindicator(\"Color Picker Test\", overlay=true)\n\nbaseColor = input.color(color.red, \"Base Color\")\n\nratioColor1 = input.color(\n    color.new(color.rgb(128, 0, 192), 40),\n    \"Ratio 1 Color\"\n)\n\nratioColor2 = input.color(\n    color.new(#8000C0, 40),\n    \"Ratio 2 Color\"\n)\n\nplot(close, color=ratioColor1)\n";

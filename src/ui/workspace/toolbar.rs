@@ -9,7 +9,7 @@
 //! focused chart.
 
 use crate::model::{ChartType, DataSource, Timeframe};
-use crate::ui::chart_type_menu;
+use crate::ui::chart::type_menu;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{self, BOLD, MEDIUM, REGULAR, SEMIBOLD, size};
 use crate::ui::shortcut;
@@ -581,7 +581,7 @@ fn paint_slot(
         Some(Menu::ChartType) => {
             if let Some(chart) = input.chart
                 && let Some(picked) =
-                    chart_type_menu::menu(ui, &response, chart.source, chart.chart_type, chart.id)
+                    type_menu::menu(ui, &response, chart.source, chart.chart_type, chart.id)
             {
                 actions.push(ToolbarAction::SetChartType(picked));
             }
@@ -669,7 +669,7 @@ fn paint_button(ui: &mut Ui, measured: &Measured, x: f32, y: f32) -> Response {
         } else {
             match glyph {
                 Glyph::Icon(icon) => icons::paint(painter, glyph_rect, icon, color),
-                Glyph::ChartType(kind) => chart_type_menu::glyph(painter, glyph_rect, kind, color),
+                Glyph::ChartType(kind) => type_menu::glyph(painter, glyph_rect, kind, color),
             }
         }
         at += ICON

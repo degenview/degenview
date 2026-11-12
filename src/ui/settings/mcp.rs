@@ -15,7 +15,11 @@ use crate::ui::alert::center::{Tone, relative_time};
 use crate::ui::icons::{self, Icon};
 use crate::ui::mcp::activity::{self, ActivityInput, ActivityState};
 use crate::ui::settings::window::{card, divider, section, status_badge, status_message};
-use crate::ui::{kit, settings::card, sheet, theme};
+use crate::ui::{
+    kit::{self, sheet},
+    settings::card,
+    theme,
+};
 use eframe::egui::{
     self, Align, Id, Layout, Margin, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2,
 };

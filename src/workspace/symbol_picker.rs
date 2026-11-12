@@ -5,7 +5,7 @@ use super::{ChartWorkspace, WorkspaceAction};
 use crate::model::InstrumentId;
 use crate::model::watchlist::WatchlistInstrument;
 use crate::service::SearchResult;
-use crate::ui::symbol_picker::{self, Env, Output};
+use crate::ui::chart::symbol_picker::{self, Env, Output};
 use eframe::egui;
 
 impl ChartWorkspace {

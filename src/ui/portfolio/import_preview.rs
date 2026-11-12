@@ -10,6 +10,7 @@ use crate::model::portfolio::csv::CsvPreview;
 use crate::model::portfolio::format::{PortfolioValueFormatter, QuantitySign};
 use crate::model::portfolio::{PortfolioCurrency, PortfolioTransaction};
 use crate::ui::icons::Icon;
+use crate::ui::kit::sheet;
 use crate::ui::portfolio::empty;
 use crate::ui::portfolio::grid::{self, Col, Navigation, RowContext, TableSpec};
 use crate::ui::portfolio::overview::activity_caption;
@@ -18,9 +19,11 @@ use crate::ui::portfolio::transactions::{
     asset_subtitle, kind_counts, paint_asset_cell, paint_date_cell, paint_type_capsule,
     paint_type_tick, quantity_sign, type_mix, type_name,
 };
-use crate::ui::sheet;
 use crate::ui::theme;
-use crate::ui::{add_chart_art, add_chart_sheet, kit};
+use crate::ui::{
+    chart::add::{art, sheet as add_chart_sheet},
+    kit,
+};
 use eframe::egui::{self, Align2, Color32, Id, Rect, Sense, Stroke, Ui, Vec2, pos2, vec2};
 
 pub const SIZE: Vec2 = Vec2::new(720.0, 680.0);
@@ -179,7 +182,7 @@ pub fn show(
         sheet::inset(ui, |ui| {
             add_chart_sheet::header(
                 ui,
-                add_chart_art::Scene::Portfolio,
+                art::Scene::Portfolio,
                 "Import Preview",
                 subtitle(preview),
             );

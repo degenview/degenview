@@ -8,14 +8,14 @@
 
 use crate::model::portfolio::editor::{Category, EditorField, Summary, TransactionDraft};
 use crate::model::portfolio::{PortfolioCurrency, PortfolioTransaction};
-use crate::ui::date_picker;
+use crate::ui::chart::add::{art, sheet as add_chart_sheet};
 use crate::ui::icons::Icon;
+use crate::ui::kit::date_picker;
+use crate::ui::kit::sheet;
 use crate::ui::kit::{self, TabItem};
 use crate::ui::portfolio::sheet_parts::card_background;
 use crate::ui::portfolio::transactions::{asset_subtitle, type_name, type_tint};
-use crate::ui::sheet;
 use crate::ui::theme;
-use crate::ui::{add_chart_art, add_chart_sheet};
 use eframe::egui::{self, Color32, Id, Rect, RichText, Stroke, Vec2};
 
 pub const WIDTH: f32 = 500.0;
@@ -338,7 +338,7 @@ fn asset_card(ui: &mut egui::Ui, asset: &crate::model::portfolio::PortfolioAsset
         source,
         egui::Color32::PLACEHOLDER,
     );
-    crate::ui::source_logo::paint(
+    crate::ui::kit::source_logo::paint(
         ui,
         asset.source,
         Rect::from_center_size(
@@ -380,7 +380,7 @@ fn asset_card(ui: &mut egui::Ui, asset: &crate::model::portfolio::PortfolioAsset
 fn form(ui: &mut egui::Ui, state: &mut TransactionEditorState) {
     add_chart_sheet::header(
         ui,
-        add_chart_art::Scene::Portfolio,
+        art::Scene::Portfolio,
         state.mode.title(),
         state.mode.subtitle(),
     );

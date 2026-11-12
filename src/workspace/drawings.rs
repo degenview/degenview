@@ -3,7 +3,7 @@
 use super::ChartWorkspace;
 use crate::model::{Drawing, DrawingCommand};
 use crate::store::drawing_template::{DrawingPrefs, DrawingTemplateStore};
-use crate::ui::drawing_properties::{self, DrawingProperties};
+use crate::ui::drawing::properties::{self, DrawingProperties};
 use eframe::egui;
 use std::time::Instant;
 
@@ -213,9 +213,9 @@ impl ChartWorkspace {
             self.replace_picture_request(ctx, chart_id, drawing_id);
         }
         match outcome {
-            drawing_properties::Outcome::Open => self.drawing_props = Some(dialog),
-            drawing_properties::Outcome::Cancel => {}
-            drawing_properties::Outcome::Apply(drawing) => {
+            properties::Outcome::Open => self.drawing_props = Some(dialog),
+            properties::Outcome::Cancel => {}
+            properties::Outcome::Apply(drawing) => {
                 self.apply_drawing_commands(
                     chart_id,
                     vec![DrawingCommand::Replace {

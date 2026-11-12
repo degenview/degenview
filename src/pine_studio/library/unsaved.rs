@@ -4,8 +4,8 @@
 //! Studio owns the state and acts on the choice, so a failed save can keep the window open.
 
 use crate::pine_studio::model::{ScriptId, ScriptType};
-use crate::ui::dialog;
 use crate::ui::icons::{self, Icon};
+use crate::ui::kit::dialog;
 use crate::ui::kit::{self, MEDIUM, REGULAR, size};
 use crate::ui::theme;
 use eframe::egui::{self, Align, Color32, Id, Key, Layout, Modifiers, Sense, Stroke, Ui, vec2};

@@ -2,10 +2,10 @@
 //! question before switching layouts, and the error alert. Pure views: the workspace owns the
 //! state and acts on what they report.
 
-use crate::ui::dialog;
 use crate::ui::icons::{self, Icon};
+use crate::ui::kit::dialog;
+use crate::ui::kit::sheet;
 use crate::ui::kit::{self, REGULAR, size};
-use crate::ui::sheet;
 use crate::ui::theme;
 use eframe::egui::{self, Id};
 

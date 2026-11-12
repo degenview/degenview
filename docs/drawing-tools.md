@@ -63,7 +63,7 @@ regression's deviation, fitting in logs on a logarithmic scale, and the angle's 
 
 ### Geometry
 
-All of it is worked in screen space from the projected anchors (`ui::line_geometry`, pure, with
+All of it is worked in screen space from the projected anchors (`ui::drawing::geometry::line`, pure, with
 hand-worked fixtures). Lines are straight on every price scale, and midpoints, parallels and
 ratios survive the chart's zoom and offset, so a fork or a channel keeps its shape when the chart
 moves. Nothing derived is stored: a drawing holds its anchors and its style.
@@ -123,7 +123,7 @@ same text.
 The trend line carries a `DrawingStyle` like the other lines: colour, width, pattern, extend left
 and right, arrow ends, price labels, statistics and text. Its default is DegenView's own blue
 1.5 px (`DrawingStyle::trend_line()`). It is projected by the same code as the other lines
-(`ui/drawing_layer/line_shapes.rs`); the painter prolongs it to the plot edge and the hit test
+(`ui/drawing/layer/line_shapes.rs`); the painter prolongs it to the plot edge and the hit test
 follows the prolongation, and its ends can be grabbed without selecting it first. The properties
 dialog edits it through the tool's capabilities. Drawings an MCP client makes use the same model
 (see `docs/architecture/mcp.md`).
@@ -181,7 +181,7 @@ a theme switch.
   the sampled anchors rather than a projection round trip. Display smooths them (two Chaikin
   passes).
 
-All of it is pure functions on screen points in `ui/drawing_geometry.rs`, tested without a window.
+All of it is pure functions on screen points in `ui/drawing/geometry/mod.rs`, tested without a window.
 
 ## Highlighter
 
@@ -195,7 +195,7 @@ Strokes too big to hold as a map (over 12 M pixels or 60 M pixel visits) fall ba
 
 ## Interaction
 
-One controller (`ui/drawing_layer/`). A tool's `Placement` decides how anchors arrive:
+One controller (`ui/drawing/layer/`). A tool's `Placement` decides how anchors arrive:
 
 - `Freehand`: drag. A click leaves a dot.
 - `Single`: one click.
@@ -308,7 +308,7 @@ reinterpreted as a pane value.
   See [iCloud Sync](icloud-sync.md#newer-versions) for how newer data reaches an older build.
 - **Pips**, as above.
 - **Bar-index coordinate field.** The Coordinates tab edits price and a UTC date-time, the latter
-  with the calendar pop-over and hour/minute stepper of `ui/date_picker.rs` (pure egui, so the
+  with the calendar pop-over and hour/minute stepper of `ui/kit/date_picker.rs` (pure egui, so the
   same on every platform; no typed entry). A bar number is not offered.
 - **Groups and an object tree**; a multi-selection is moved, locked, hidden and deleted together
   but not grouped.

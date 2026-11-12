@@ -100,13 +100,13 @@ Relevant files:
 
 ### Chart and interaction
 
-- `src/ui/chart_card.rs`
+- `src/ui/chart/card/mod.rs`
 - `src/workspace.rs`
 - `src/model/chart/canvas/mod.rs`
-- `src/ui/canvas_render.rs`
-- `src/ui/chart_buttons.rs`
-- `src/ui/chart_settings.rs`
-- `src/ui/popover.rs`
+- `src/ui/chart/canvas.rs`
+- `src/ui/chart/buttons.rs`
+- `src/ui/chart/settings/mod.rs`
+- `src/ui/kit/popover.rs`
 - `src/ui/kit.rs`
 - `src/ui/theme.rs`
 - `src/ui/icons.rs`
@@ -115,14 +115,14 @@ Relevant files:
 ### Drawings
 
 - `src/model/drawings/mod.rs`
-- `src/ui/drawing_layer.rs`
-- `src/ui/drawing_render.rs`
+- `src/ui/drawing/layer/mod.rs`
+- `src/ui/drawing/render.rs`
 - `src/ui/workspace/tool_sidebar.rs`
 
 ### Indicators and Pine
 
 - `src/model/indicators/mod.rs`
-- `src/ui/chart_indicator_strip.rs`
+- `src/ui/chart/indicator_strip.rs`
 - `src/pine_host.rs`
 - `src/ui/pine/chart_render.rs`
 - `src/model/pine/instance.rs`
@@ -147,7 +147,7 @@ Relevant files:
 
 - `src/model/chart/template/mod.rs`
 - `src/store/chart_template.rs`
-- `src/ui/chart_templates.rs`
+- `src/ui/chart/settings/templates/mod.rs`
 - `src/model/chart/layout.rs`
 - `src/model/chart/persisted.rs`
 - `src/model/chart/saved_view.rs`
@@ -866,7 +866,7 @@ Reuse:
 
 - `model/chart/template/mod.rs`
 - `store/chart_template.rs`
-- `ui/chart_templates.rs`
+- `ui/chart/settings/templates/mod.rs`
 - Existing `ChartCard::apply_template` behavior
 
 ### Important compatibility distinction
@@ -1023,7 +1023,7 @@ Implement:
 
 This must open the existing settings sheet for the clicked chart.
 
-Reuse `ui/chart_settings.rs`.
+Reuse `ui/chart/settings/mod.rs`.
 
 The sheet already contains:
 
