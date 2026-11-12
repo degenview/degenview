@@ -476,8 +476,7 @@ const CONSTRUCTED_PRICES: &str =
 /// ticket; none places anything. Greyed, with the reason, whenever an order could not be placed
 /// from here.
 fn live_items(context: &ChartContext, facts: &Facts, live: &LiveFacts) -> Vec<Item> {
-    use crate::model::broker::chart::snap_to_increment;
-    use degenview_brokers::Side;
+    use degenview_brokers::{Side, validate::snap_to_increment};
     let symbol = &context.symbol;
     let shown = |price: f64| facts.price_format.format(price);
     let clicked = context.price();

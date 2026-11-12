@@ -91,15 +91,15 @@ account, and nothing here reaches scripts, alerts or MCP.
 
 ## What would move to the `degenview-brokers` crate
 
-Pure and egui-free now, so each is a file lift followed by a crate release (0.4.0 if an existing type
-changes, 0.3.x if only modules are added) and a version bump here. Nothing was moved: the app pins an
-exact crates.io version, and a half-moved rule would be written twice.
+What is listed here is pure and egui-free, so each is a file lift followed by a crate release (0.4.0 if an
+existing type changes, 0.3.x if only modules are added) and a version bump here. The app pins an exact
+crates.io version, so the moves that are done (see "Fixed since") wait on 0.3.1 and are draft PRs until it
+is published. Still to move:
 
 | Move | From | Why it belongs there |
 | --- | --- | --- |
 | Edit rules: `EditSession`, `issues`, `edit_blocker`, `PreviewGate` and `PREVIEW_FRESH` | `trading/edit/`, `model/broker/ticket.rs` | The crate already owns `OrderFingerprint`, `OrderChange`, `EditPreview` and the runtime's refusal of a changed order; the rules could be tested against the mock exchange. Needs the crate's `Pending` where the app uses `Task` |
 | Ticket text to order, issues, estimate | `model/broker/ticket.rs` | About 70% of it is `validate_draft` already; what is left imports only the crate |
-| Chart access ladder and nearest-increment | `model/broker/chart.rs` | Snapshot and market checks as `BrokerSnapshot::order_access`; replay and the sentences stay here |
 
 Stays in the app: `TradingBackend` and its adapters (the paper account is the second implementation and
 they speak UI vocabulary), `TradingHub`, `BrokerPrefs`, the Keychain store, the confirmation lines.
@@ -112,6 +112,11 @@ Later and larger: the connection manager and its secrets queue.
   replaced connection can no longer show the old one's prices because the cache lives in the runtime.
 * The pending-order journal's rules are the crate's `BlobJournal` over `JournalStorage { load, save }`
   from 0.3.1; the app supplies only the storage (`StoreStorage`, one setting) as `store_journal`.
+* The chart access ladder is the crate's `BrokerSnapshot::order_block` (first failure wins: not live,
+  needs attention, journal unreadable, view-only, rules not read, market not offered, market not
+  tradable) and the clicked-price snap is `validate::snap_to_increment`, both from 0.3.1;
+  `model/broker/chart.rs` keeps only the chart's own questions (is it a market of this broker, replay)
+  and the sentences.
 * Account valuation (`valuation_currency`, `value`, `Quote::mark`) is the crate's `model::valuation`
   from 0.3.1; the app keeps only how money and rates are written (`trading/money.rs`).
 * The edit-order state machine, the commands and reads path for the panel and chart, and the injected
