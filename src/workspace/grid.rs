@@ -230,7 +230,7 @@ impl ChartWorkspace {
             return;
         }
         // The next visit to the empty page starts from fresh data.
-        self.empty_page.data = None;
+        self.empty_page.reset();
 
         let available = ui.available_size();
         let column_count = self.columns.len().max(1);

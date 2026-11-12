@@ -14,6 +14,7 @@ use crate::ui::chart::add::sheet::{
     self, CRYPTO_SUGGESTIONS, Chip, PREDICTION_TOPICS, RecentMarket, STOCK_SUGGESTIONS,
 };
 use crate::ui::icons::Icon;
+use crate::ui::kit;
 use crate::ui::theme;
 use eframe::egui::{self, Color32, Id, Rect, Stroke, Ui, pos2, vec2};
 use std::sync::Arc;
@@ -415,7 +416,7 @@ fn show_body(
     sheet::header(ui, state.tab.scene(), &state.title, &state.subtitle);
     ui.add_space(16.0);
     let items = PickerTab::ALL.map(|tab| (tab, tab.title(), tab.icon()));
-    if let Some(tab) = sheet::segmented_tabs(ui, &items, state.tab) {
+    if let Some(tab) = kit::icon_tabs::icon_tabs(ui, &items, state.tab) {
         state.select_tab(tab);
         state.focus = true;
     }

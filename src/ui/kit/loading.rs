@@ -49,7 +49,7 @@ fn close_at(index: i64) -> f32 {
 }
 
 /// A number in `0.0..1.0` that looks arbitrary but is the same every time for the same inputs.
-fn hash(index: i64, salt: u64) -> f32 {
+pub(crate) fn hash(index: i64, salt: u64) -> f32 {
     let mut x = (index as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ salt;
     x ^= x >> 30;
     x = x.wrapping_mul(0xBF58_476D_1CE4_E5B9);
