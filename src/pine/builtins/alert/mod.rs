@@ -189,7 +189,7 @@ fn runtime_error(code: &str, message: String, range: SourceRange) -> Diagnostic 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use RuntimeValue::{Bool, Float, String as Str};
+    use RuntimeValue::{Bool, String as Str};
 
     fn arg(value: RuntimeValue) -> Arg {
         Arg { name: None, value }

@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 
 use super::fast_hash::FastMap;
 use super::operators;
-use super::state::{AlertEvent, RuntimeState, SecuritySite};
+use super::state::{AlertEvent, RuntimeState};
 use super::support::{ExecutionRejection, LibraryLinkage, RuntimeResult, SecurityDataProvider};
 use super::types::{BarFlags, Flow, RuntimeContext, RuntimeFunction};
 use super::user_methods::Supplied;
@@ -26,8 +26,6 @@ use crate::pine::syntax::ast::{
     AssignmentOperator, BinaryOperator, DeclarationMode, Expression, Literal, Statement, SwitchArm,
     UnaryOperator,
 };
-use crate::pine::syntax::traversal::nested_blocks;
-use crate::pine::time::calendar;
 use crate::pine::{Diagnostic, DiagnosticCategory, Limits, SourceRange};
 use crate::pine::{
     builtins::alert, builtins::array, builtins::map, builtins::market_values, builtins::math,

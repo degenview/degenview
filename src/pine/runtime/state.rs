@@ -1,8 +1,6 @@
 //! Everything a script run accumulates, plus the alert event and `request.security` site the
 //! state holds. Ported from `PineRuntimeState.swift`, `PineAlertEvent.swift`, `PineSecuritySite.swift`.
 
-use std::collections::HashMap;
-
 use super::fast_hash::FastMap;
 
 use super::containers::{Map, Matrix, Object};

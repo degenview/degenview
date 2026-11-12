@@ -94,7 +94,7 @@ impl ExecutionController {
     }
 
     /// Runs the script against a chart with this foreground and background colour.
-    pub fn with_theme(mut self, theme: crate::pine::compiler::program::ChartTheme) -> Self {
+    pub fn with_theme(mut self, theme: compiler::program::ChartTheme) -> Self {
         self.session.theme = theme;
         self
     }

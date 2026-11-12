@@ -6,7 +6,7 @@ use crate::model::chart::kind::{ConstructionSource, SizeMethod, SizeRule};
 use crate::model::chart::synthetic::ticker::{self, TickerModifier};
 use crate::model::chart::synthetic::{Construction, build_with};
 use crate::model::{ChartKind, Kline};
-use crate::pine::compiler::program::{BarEvent, BarPhase, SymbolInfo, VisualOutput};
+use crate::pine::compiler::program::{SymbolInfo, VisualOutput};
 use crate::pine::compiler::{self, NoLibraries};
 use crate::pine::runtime::execution::ExecutionController;
 use crate::pine::runtime::session::Session;
