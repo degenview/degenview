@@ -23,8 +23,8 @@ use eframe::egui::{self, vec2};
 
 use crate::host::broker_host::{BrokerHost, Connection, Operation};
 use crate::host::trading_hub::TradingHub;
-use crate::ui::alert::center::Tone;
 use crate::ui::icons::Icon;
+use crate::ui::kit::Tone;
 use crate::ui::settings::api_keys::{StatusMessage, destructive_button, field};
 use crate::ui::settings::window::{divider, status_message};
 use crate::ui::{kit, theme};

@@ -11,13 +11,13 @@ use crate::model::mcp::activity::{
 };
 use crate::model::mcp::{McpAction, McpAuditEntry, McpAuditKind};
 use crate::model::portfolio::editor::{date_text, parse_date_text};
-use crate::ui::alert::center::{Tone, relative_time};
 use crate::ui::icons::{self, Icon};
+use crate::ui::kit::time_text;
+use crate::ui::kit::{Tone, time_text::relative_time};
 use crate::ui::settings::mcp::capsule;
 use crate::ui::settings::window::{card, divider, section};
 use crate::ui::{
     kit::{self, date_picker, sheet},
-    replay::bar,
     theme,
 };
 use eframe::egui::{self, Align, Color32, Id, Layout, Sense, Stroke, StrokeKind, Ui, vec2};
@@ -287,7 +287,7 @@ fn stamp(ms: i64, utc_offset_secs: i64) -> String {
     let seconds = (ms.div_euclid(1_000) + utc_offset_secs).rem_euclid(86_400);
     format!(
         "{} {:02}:{:02}:{:02}",
-        bar::date_text(ms + utc_offset_secs * 1_000),
+        time_text::date_text(ms + utc_offset_secs * 1_000),
         seconds / 3_600,
         seconds % 3_600 / 60,
         seconds % 60

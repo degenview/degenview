@@ -12,7 +12,8 @@ use crate::model::pine::logs_view::{
 };
 use crate::pine::logs::{LogEvent, LogHistory, LogLevel};
 use crate::ui::icons::{self, Icon};
-use crate::ui::{accessibility, kit, replay::bar, theme};
+use crate::ui::kit::time_text;
+use crate::ui::{accessibility, kit, theme};
 use eframe::egui::{
     self, Align, Color32, FontId, Layout, Rect, Sense, TextFormat, Ui, epaint::text::LayoutJob,
     pos2, vec2,
@@ -437,11 +438,11 @@ fn range_label(state: &LogsState) -> String {
     let Some(range) = state.filter.range else {
         return "All bars".to_owned();
     };
-    let from = bar::compact_text(range.from_ms);
+    let from = time_text::compact_text(range.from_ms);
     if range.from_ms == range.to_ms {
         return format!("Bar {from}");
     }
-    let to = bar::compact_text(range.to_ms);
+    let to = time_text::compact_text(range.to_ms);
     // "Oct 9, 14:03 – 14:45" when both ends are on one day.
     match (from.split_once(", "), to.split_once(", ")) {
         (Some((day, _)), Some((other, time))) if day == other => format!("{from} – {time}"),

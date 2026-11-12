@@ -10,8 +10,7 @@ use crate::format::{civil_from_days, days_from_civil};
 use crate::model::portfolio::editor::{date_text, parse_date_text};
 use crate::ui::accessibility;
 use crate::ui::icons::{self, Icon};
-use crate::ui::kit::{self, MEDIUM, REGULAR, SEMIBOLD};
-use crate::ui::portfolio::transactions::date_time_text;
+use crate::ui::kit::{self, MEDIUM, REGULAR, SEMIBOLD, time_text::date_time_text};
 use crate::ui::theme;
 use eframe::egui::{
     self, Align2, Color32, CursorIcon, Id, PopupCloseBehavior, Pos2, Rect, Sense, Stroke,

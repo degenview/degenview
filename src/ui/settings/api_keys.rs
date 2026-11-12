@@ -10,8 +10,8 @@ use crate::service::keychain_api_keys::{
     AlpacaCredentials, AlpacaCredentialsStore, CoinMarketCapKeyStore,
 };
 use crate::service::llm::report::ErrorReport;
-use crate::ui::alert::center::Tone;
 use crate::ui::icons::{self, Icon};
+use crate::ui::kit::Tone;
 use crate::ui::settings::window::{card, section, status_badge, status_message};
 use crate::ui::{kit, theme};
 use eframe::egui;

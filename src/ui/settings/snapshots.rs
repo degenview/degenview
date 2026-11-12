@@ -10,8 +10,8 @@
 use crate::model::chart::snapshot::{SnapshotPrefs, SnapshotScale};
 use crate::service::keychain_snapshot_secrets::SnapshotSecrets;
 use crate::service::snapshot_providers::{self, Readiness};
-use crate::ui::alert::center::Tone;
 use crate::ui::icons::Icon;
+use crate::ui::kit::Tone;
 use crate::ui::settings::api_keys::StatusMessage;
 use crate::ui::settings::provider_card::{CardInput, ProviderForm, provider_card};
 use crate::ui::settings::window::{section, status_badge, status_message};
