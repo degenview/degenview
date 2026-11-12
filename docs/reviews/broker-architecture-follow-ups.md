@@ -39,7 +39,8 @@ workspace and the panel no longer name the host at all (the guard covers `worksp
 
 **Still open.** Settings ▸ Brokers holds `BrokerHost` for connection cards and the key check (it
 manages connections, so it legitimately does); the edit sheet's world (`EditVenue::world`) is still in
-the crate's types (`LiveOrder`, `ProductSpec`), because editing in place is a broker-only feature; a
+the crate's types (`LiveOrder`, `ProductSpec`), because editing in place is a broker-only feature (the
+`EditWorld` that carries them is the crate's own, `BrokerSnapshot::edit_world`, from 0.3.1); a
 `VenueInfo` revision could cache the per-frame projections.
 
 ### 3. Process-wide service locators (P2): fixed

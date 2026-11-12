@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use degenview_brokers::model::orders::{
-    CancelOutcome, EditOutcome, EditPreview, FillFilter, HistoryFilter, OrderChange,
+    CancelOutcome, EditOutcome, EditPreview, EditWorld, FillFilter, HistoryFilter, OrderChange,
     OrderFingerprint,
 };
 use degenview_brokers::model::reducer::{OrderView, OverlayKind};
@@ -22,7 +22,7 @@ use super::draft::{
     CancelResult, DraftCheck, DraftField, DraftIssue, Estimate, PreviewResult, SubmitResult,
     Submitted, TradeDraft, floor_to_increment,
 };
-use super::edit::{EditAnswer, EditError, EditVenue, EditWorld};
+use super::edit::{EditAnswer, EditError, EditVenue};
 use super::model::{
     AccountStats, AccountStrip, Amount, BackendState, BalanceRow, Binding, ChartLines, ChartOrder,
     FillRow, Hero, HeroNote, MarketAccess, MarketRules, Note, OrderClass, OrderRow, Page,
@@ -126,23 +126,8 @@ impl BrokerBackend {
 
 impl EditVenue for BrokerBackend {
     fn world(&self, order: &OrderId) -> EditWorld {
-        let Some(snapshot) = self.snapshot() else {
-            return EditWorld::default();
-        };
-        let live = snapshot
-            .orders
-            .iter()
-            .find(|view| &view.order.id == order)
-            .map(|view| view.order.clone());
-        EditWorld {
-            spec: live
-                .as_ref()
-                .and_then(|order| snapshot.product(&order.product))
-                .cloned(),
-            live,
-            account: snapshot.account.as_ref().map(|account| account.id.clone()),
-            generation: snapshot.generation,
-        }
+        self.snapshot()
+            .map_or_else(EditWorld::default, |snapshot| snapshot.edit_world(order))
     }
 
     fn preview_edit(&self, order: OrderId, change: OrderChange) -> EditAnswer<EditPreview> {
