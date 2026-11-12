@@ -53,8 +53,9 @@ pub fn trend(time: f64, count: usize) -> Vec<f32> {
             let swing = noise(time * SPEED + across * CELLS, 11);
             let ripple = noise(time * SPEED * 1.9 + across * CELLS * 2.7 + 40.0, 29);
             let level = 0.74 * swing + 0.26 * ripple;
-            // Averaging pulls everything toward the middle; spread it back out.
-            (0.5 + (level - 0.5) * 1.5).clamp(0.0, 1.0)
+            // Averaging pulls everything toward the middle; spread it back out, softly, so a
+            // peak is rounded off instead of running flat along the top.
+            (0.5 + 0.5 * (3.0 * (level - 0.5)).tanh()).clamp(0.0, 1.0)
         })
         .collect()
 }

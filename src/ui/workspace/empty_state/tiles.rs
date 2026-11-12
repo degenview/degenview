@@ -17,9 +17,10 @@ const PREVIEW_LIMIT: usize = 3;
 /// The sparkline's size on a tile and on a list row.
 const TILE_SPARK: Vec2 = vec2(88.0, 28.0);
 const ROW_SPARK: Vec2 = vec2(112.0, 28.0);
-/// A tile or row narrower than this has no room for a sparkline beside its name.
-const SPARK_MIN_TILE: f32 = 150.0;
-const ROW_SPARK_MIN: f32 = 320.0;
+/// Narrowest a sparkline is drawn; narrower says nothing.
+const SPARK_MIN: f32 = 36.0;
+/// Room the name keeps before the sparkline gives way to it.
+const NAME_MIN: f32 = 50.0;
 
 /// What the page collects while it draws: the clicks, and the markets it showed.
 pub struct Frame<'a> {
@@ -120,7 +121,8 @@ fn tile(ui: &mut Ui, rect: Rect, id: Id, tooltip: &str) -> Response {
 }
 
 /// Artwork, ticker, a second line and the week's sparkline, laid out inside `bounds`. The
-/// sparkline is `spark` big at the right edge; `None` leaves it out.
+/// sparkline is at most `spark` big at the right edge, as wide as the name leaves room for and
+/// left out when that is too little; `None` leaves it out.
 fn market_content(
     ui: &Ui,
     bounds: Rect,
@@ -137,13 +139,27 @@ fn market_content(
     if market.badged {
         kit::source_badge(ui, icon, market.source);
     }
-    let spark_rect = spark.map(|size| {
-        Rect::from_min_size(
-            pos2(bounds.right() - size.x, bounds.center().y - size.y / 2.0),
-            size,
-        )
-    });
     let left = icon.right() + 12.0;
+    let natural = |text: &str, font: f32, weight: f32| {
+        kit::galley(ui, text, font, weight, theme::text_primary(), f32::INFINITY)
+            .size()
+            .x
+    };
+    let name_width = natural(market.title, size::BODY + 1.0, SEMIBOLD).max(
+        market
+            .subtitle
+            .map_or(0.0, |text| natural(text, size::CAPTION + 1.0, REGULAR)),
+    );
+    let room = bounds.right() - left - 10.0;
+    let spark_rect = spark.and_then(|size| {
+        let width = (room - name_width).clamp(SPARK_MIN, size.x);
+        (room - width >= NAME_MIN).then(|| {
+            Rect::from_min_size(
+                pos2(bounds.right() - width, bounds.center().y - size.y / 2.0),
+                vec2(width, size.y),
+            )
+        })
+    });
     let right = spark_rect.map_or(bounds.right(), |rect| rect.left() - 10.0);
     let title = kit::galley(
         ui,
@@ -191,15 +207,13 @@ pub fn market_tile(ui: &mut Ui, rect: Rect, id: Id, market: Market, frame: &mut 
         ),
     );
     let trend = frame.trend(&market);
-    let spark = (rect.width() >= SPARK_MIN_TILE)
-        .then(|| vec2(TILE_SPARK.x.min(rect.width() * 0.3), TILE_SPARK.y));
     market_content(
         ui,
         rect.shrink2(vec2(14.0, 0.0)),
         &market,
         trend,
         30.0,
-        spark,
+        Some(TILE_SPARK),
     );
     response
 }
@@ -232,7 +246,6 @@ pub fn market_row(ui: &mut Ui, rect: Rect, id: Id, market: Market, frame: &mut F
         Icon::ChevronRight,
         theme::text_tertiary(),
     );
-    let spark = (rect.width() >= ROW_SPARK_MIN).then_some(ROW_SPARK);
     market_content(
         ui,
         Rect::from_min_max(
@@ -242,7 +255,7 @@ pub fn market_row(ui: &mut Ui, rect: Rect, id: Id, market: Market, frame: &mut F
         &market,
         trend,
         30.0,
-        spark,
+        Some(ROW_SPARK),
     );
     response
 }
