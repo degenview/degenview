@@ -7,7 +7,7 @@ use eframe::egui::{self, vec2};
 
 use super::state::{SheetState, Stage};
 use super::{open_orders, review, status};
-use crate::model::broker::ticket::{self, parse_decimal};
+use crate::model::broker::ticket::{self};
 use crate::trading::backend::TradingBackend;
 use crate::trading::confirm;
 use crate::trading::draft::{DraftCheck, DraftField, floor_to_increment};
@@ -17,6 +17,7 @@ use crate::ui::trade::fields::{self, Edit, NumberInput};
 use crate::ui::trade::{figures, notice};
 use crate::ui::{kit, paper, theme};
 use degenview_brokers::model::preview::PREVIEW_DEBOUNCE;
+use degenview_brokers::model::ticket::parse_decimal;
 
 /// Text for a price or size typed back into a field: no trailing zeros.
 fn plain(value: Decimal) -> String {

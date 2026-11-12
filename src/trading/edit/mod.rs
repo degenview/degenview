@@ -15,7 +15,7 @@ use degenview_brokers::edit_session::{
 use degenview_brokers::model::edit::EditIssue;
 use degenview_brokers::model::orders::{EditPreview, EditWorld};
 use degenview_brokers::model::preview::PreviewGate;
-use degenview_brokers::model::ticket::NotANumber;
+use degenview_brokers::model::ticket::parse_decimal;
 use degenview_brokers::{
     AccountId, Decimal, LiveOrder, OrderId, OrderSize, OrderType, ProductSpec, Side,
 };
@@ -135,7 +135,7 @@ impl EditSession {
     }
 
     fn entry(&self) -> Entry {
-        let read = |text: &str| rules::parse_decimal(text).map_err(|()| NotANumber);
+        let read = |text: &str| parse_decimal(text);
         Entry {
             price: read(&self.price_text),
             size: read(&self.size_text),

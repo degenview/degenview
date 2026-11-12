@@ -92,14 +92,9 @@ account, and nothing here reaches scripts, alerts or MCP.
 
 ## What would move to the `degenview-brokers` crate
 
-What is listed here is pure and egui-free, so each is a file lift followed by a crate release (0.4.0 if an
-existing type changes, 0.3.x if only modules are added) and a version bump here. The app pins an exact
-crates.io version, so the moves that are done (see "Fixed since") wait on 0.3.1 and are draft PRs until it
-is published. Still to move:
-
-| Move | From | Why it belongs there |
-| --- | --- | --- |
-| Ticket text to order, issues, estimate | `model/broker/ticket.rs` | About 70% of it is `validate_draft` already; what is left imports only the crate |
+Every pure rule that was listed here has moved (see "Fixed since"). The app pins an exact crates.io
+version, so those moves wait on 0.3.1 and are draft PRs until it is published (0.4.0 would only be needed
+if an existing crate type changed; none did).
 
 Stays in the app: `TradingBackend` and its adapters (the paper account is the second implementation and
 they speak UI vocabulary), `TradingHub`, `BrokerPrefs`, the Keychain store, the confirmation lines.
@@ -121,6 +116,9 @@ Later and larger: the connection manager and its secrets queue.
   `model::preview` (`PREVIEW_FRESH`, `PREVIEW_DEBOUNCE`, `PreviewGate`) and `edit_session::EditSession`
   over `EditSource` (`BrokerRuntime` implements it; so does `BrokerBackend` for the app's own routing).
   The app keeps the two text boxes, every sentence and the `EditView`.
+* The ticket's rules are the crate's `model::ticket` (`TicketDraft`, `build`, `issues`, `estimate`,
+  `parse_decimal`), from 0.3.1: every problem is a `TicketProblem` value and `model/broker/ticket.rs` keeps
+  the words (`issue_text`), the figures (`display`, `price_at`), notices and status labels.
 * Account valuation (`valuation_currency`, `value`, `Quote::mark`) is the crate's `model::valuation`
   from 0.3.1; the app keeps only how money and rates are written (`trading/money.rs`).
 * The edit-order state machine, the commands and reads path for the panel and chart, and the injected

@@ -37,7 +37,7 @@ pub fn lines(
         rows.push(("Size".to_owned(), format!("{size} {}", rules.base_asset)));
     }
     let price = |text: &str| {
-        crate::model::broker::ticket::parse_decimal(text)
+        degenview_brokers::model::ticket::parse_decimal(text)
             .ok()
             .flatten()
             .map_or_else(

@@ -613,11 +613,19 @@ fn a_live_venue_offers_live_orders_in_place_of_paper_ones_and_each_opens_the_tic
     };
     use degenview_brokers::Side;
     assert_eq!(
-        request(Side::Buy, crate::model::broker::ticket::TicketKind::Limit).price,
+        request(
+            Side::Buy,
+            degenview_brokers::model::ticket::TicketKind::Limit
+        )
+        .price,
         Some("90000".parse().unwrap())
     );
     assert_eq!(
-        request(Side::Sell, crate::model::broker::ticket::TicketKind::Market).price,
+        request(
+            Side::Sell,
+            degenview_brokers::model::ticket::TicketKind::Market
+        )
+        .price,
         None
     );
 }

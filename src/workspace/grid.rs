@@ -883,7 +883,7 @@ impl ChartWorkspace {
                 index,
                 crate::model::chart::context::LiveOrderRequest {
                     side,
-                    kind: crate::model::broker::ticket::TicketKind::Market,
+                    kind: degenview_brokers::model::ticket::TicketKind::Market,
                     price: None,
                 },
             );
