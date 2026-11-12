@@ -13,9 +13,9 @@ use crate::model::portfolio::statistics::{
     PortfolioHistoryRange, PortfolioPeriodChange, PortfolioStatistics,
 };
 use crate::model::portfolio::{Portfolio, PortfolioAsset, PortfolioLedgerSnapshot};
-use crate::service::portfolio_history::{IntradayFeed, IntradayRequest};
-use crate::service::portfolio_performers::{MoveRequest, PerformerFeed};
-use crate::service::portfolio_quotes::PortfolioQuoteFeed;
+use crate::service::portfolio::history::{IntradayFeed, IntradayRequest};
+use crate::service::portfolio::performers::{MoveRequest, PerformerFeed};
+use crate::service::portfolio::quotes::PortfolioQuoteFeed;
 use eframe::egui;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};

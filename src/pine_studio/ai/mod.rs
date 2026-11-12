@@ -22,23 +22,23 @@ pub(in crate::pine_studio) mod review_view;
 pub(in crate::pine_studio) mod studio_tests;
 pub(in crate::pine_studio) mod tools;
 
-use self::agent::{AgentSetup, Ended, Progress};
-use self::models::ModelList;
-use self::plan::Plan;
-use self::prompt::{Mode, Turn};
-use self::review::Review;
-use self::tools::Draft;
 use super::editor::diff::DiffSnapshot;
 use super::model::ScriptId;
 use crate::pine::syntax::token::{Diagnostic, DiagnosticSeverity};
 use crate::service::llm::prefs::AiPrefs;
 use crate::service::llm::report::ErrorReport;
 use crate::service::llm::{ChatRequest, LlmError, LlmProvider, ProviderKind};
+use agent::{AgentSetup, Ended, Progress};
+use models::ModelList;
+use plan::Plan;
+use prompt::{Mode, Turn};
+use review::Review;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::time::Instant;
+use tools::Draft;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Notice {

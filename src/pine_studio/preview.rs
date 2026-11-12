@@ -1122,7 +1122,7 @@ pub fn chart(
 }
 
 fn alpaca_configured() -> bool {
-    crate::service::keychain_api_keys::AlpacaCredentialsStore::shared()
+    crate::service::keychain::api_keys::AlpacaCredentialsStore::shared()
         .credentials()
         .is_configured()
 }

@@ -2269,7 +2269,7 @@ impl DegenViewMcp {
 /// The Keychain read stays off the async worker.
 pub(super) async fn alpaca_configured() -> bool {
     tokio::task::spawn_blocking(|| {
-        crate::service::keychain_api_keys::AlpacaCredentialsStore::shared().is_configured()
+        crate::service::keychain::api_keys::AlpacaCredentialsStore::shared().is_configured()
     })
     .await
     .unwrap_or(false)

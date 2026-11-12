@@ -49,7 +49,7 @@ one installed from the hosted repo below does. The app cannot tell which it is: 
 nothing about the remote in `/.flatpak-info` (upstream `flatpak-run.c` writes the instance and app
 paths, the commits, `branch`, `arch` and the version, and no origin), and an earlier version of this
 code that read an `origin` key never matched a real install. So the in-app check stays on and stays
-non-installable: `self_update::install_target` returns `sandbox::FLATPAK_UPDATE_NOTE` when
+non-installable: `update::install::install_target` returns `sandbox::FLATPAK_UPDATE_NOTE` when
 `sandbox::is_flatpak()` (`FLATPAK_ID` or `/.flatpak-info`), which names both ways to update: run
 `flatpak update`, or download the new bundle from the release page. The repo trails GitHub by up to a
 few hours, which is why the note says "if". The Linux tarball is the form that updates itself
@@ -63,7 +63,7 @@ remote to a sandboxed app. **Not built, not verified.**
 
 Releases build one Flatpak **branch per update channel**: `stable` for a final release and `beta`
 for a release candidate, a tag with `-rc.` (the form the Release Candidate channel offers). An
-`-alpha.N` or `-beta.N` tag is offered to no channel by the updater (`update_check::Version::kind`,
+`-alpha.N` or `-beta.N` tag is offered to no channel by the updater (`update::check::Version::kind`,
 `tools/release.sh` says the same), so its bundle is built on `dev`, which the repo never publishes.
 Note this is narrower than `--prerelease`, which is any hyphen. `release.yml` passes the branch to
 `flatpak.yml`'s `branch` input, which the pinned `flatpak-builder` action uses for both
@@ -97,7 +97,7 @@ onto `beta` with `flatpak build-commit-from`, an install and a `flatpak update` 
 ## Secret storage
 
 API keys (Alpaca, CoinMarketCap, AI providers), the snapshot providers' keys and tokens and webhook secrets all go
-through `keychain_webhook_secrets::platform`. On Linux that is `service::secret_service`, built on
+through `keychain::webhook_secrets::platform`. On Linux that is `service::keychain::secret_service`, built on
 the `oo7` crate: the desktop's Secret Service (GNOME Keyring, KWallet) outside a sandbox, and inside
 a Flatpak an app-private keyring file opened with a key from the Secret portal (no extra
 permission). `oo7` is async and this crate keeps async runtimes in `src/mcp/`, so the calls run on
@@ -115,7 +115,7 @@ one worker thread with a private current-thread runtime.
 
 ## Windows secret storage
 
-On Windows the same `platform::{read, exists, write, delete}` is `service::windows_credentials`: one
+On Windows the same `platform::{read, exists, write, delete}` is `service::keychain::windows_credentials`: one
 Credential Manager generic credential per item (`CredWriteW`, `CredReadW`, `CredDeleteW`, through
 `windows-sys`, which was already in the tree), target name `<service>/<account>`, persisted with
 `CRED_PERSIST_LOCAL_MACHINE`. Credential Manager encrypts the blob with the signed-in user's DPAPI
@@ -150,7 +150,7 @@ Credential Manager > Windows Credentials, where the user can remove them.
 
 ## File dialogs
 
-`service::file_dialog` (CSV and image import, portfolio export, the watchlist export, snapshot "save
+`service::system::file_dialog` (CSV and image import, portfolio export, the watchlist export, snapshot "save
 as") uses the XDG file chooser portal on Linux, through `rfd` without its GTK backend: `rfd` speaks to
 the portal itself and loads `libdbus` when a dialog opens (the Freedesktop runtime has it), falling
 back to `zenity` outside a sandbox when no portal runs. That is how a sandboxed app with no

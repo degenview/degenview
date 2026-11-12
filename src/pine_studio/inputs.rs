@@ -896,7 +896,8 @@ pub(super) fn civil_from_days(days: i64) -> (i64, i64, i64) {
 
 /// `2024-03-09 14:30` in the system time zone, like the date picker it stands in for.
 pub fn format_time(ms: i64) -> String {
-    let secs = (ms + crate::service::timezone::local_utc_offset_secs(ms) * 1000).div_euclid(1000);
+    let secs =
+        (ms + crate::service::system::timezone::local_utc_offset_secs(ms) * 1000).div_euclid(1000);
     let (y, m, d) = civil_from_days(secs.div_euclid(86_400));
     let rem = secs.rem_euclid(86_400);
     format!(
@@ -930,7 +931,7 @@ pub fn parse_time(text: &str) -> Option<i64> {
         return None;
     }
     let local_ms = (days_from_civil(y, m, day) * 86_400 + h * 3600 + min * 60) * 1000;
-    Some(local_ms - crate::service::timezone::local_utc_offset_secs(local_ms) * 1000)
+    Some(local_ms - crate::service::system::timezone::local_utc_offset_secs(local_ms) * 1000)
 }
 
 fn time_field(ui: &mut Ui, input: &InputDefinition, ms: i64) -> Option<InputValue> {

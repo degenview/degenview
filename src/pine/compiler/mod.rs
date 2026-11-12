@@ -8,10 +8,6 @@ pub mod symbol_catalog;
 
 use std::collections::{HashMap, HashSet};
 
-use self::program::{
-    CompiledProgram, DeclarationMetadata, Import, InputDefinition, InputSchema, InputValue,
-    ScriptType,
-};
 use super::builtins;
 use super::builtins::alert::frequency::AlertFrequency;
 use super::check::structure_validator;
@@ -24,6 +20,10 @@ use super::runtime::value::RuntimeValue;
 use super::strategy::StrategySettings;
 use super::syntax::ast::{Argument, BinaryOperator, EnumMember, Expression, Statement};
 use super::time::calendar;
+use program::{
+    CompiledProgram, DeclarationMetadata, Import, InputDefinition, InputSchema, InputValue,
+    ScriptType,
+};
 
 use super::syntax::traversal::assigned_names;
 use super::time::timestamp;

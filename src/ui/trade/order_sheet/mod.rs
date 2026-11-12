@@ -16,8 +16,6 @@ use std::time::Duration;
 use degenview_brokers::{Decimal, MarketRef};
 use eframe::egui::{self, vec2};
 
-use self::form::FormContext;
-pub use self::state::SheetState;
 use super::connect_list;
 use super::fields::{self, Hero};
 use super::figures;
@@ -30,6 +28,8 @@ use crate::trading::model::{
 };
 use crate::ui::icons::{self, Icon};
 use crate::ui::{broker::badge, kit, theme};
+use form::FormContext;
+pub use state::SheetState;
 
 /// What the focused chart knows of its market, for the top of the sheet: where its logo comes
 /// from, the last price, and the move the chart's own header shows (price and percent over the

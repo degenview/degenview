@@ -2,7 +2,7 @@
 
 use super::ChartWorkspace;
 use crate::model::{DataSource, Timeframe};
-use crate::service::live::BinanceLiveFeed;
+use crate::service::market::live::BinanceLiveFeed;
 use eframe::egui;
 
 impl ChartWorkspace {

@@ -217,13 +217,15 @@ impl ChartWorkspace {
                             let (sender, receiver) = mpsc::channel();
                             self.watchlist_file_result = Some(receiver);
                             std::thread::spawn(move || {
-                                let result = crate::service::file_dialog::choose_save_path(
+                                let result = crate::service::system::file_dialog::choose_save_path(
                                     "Export watchlist",
                                     &crate::model::watchlist::text::export_file_name(&name),
                                 )
                                 .and_then(|path| {
                                     path.map(|path| {
-                                        crate::service::file_dialog::write_text(&path, &text)
+                                        crate::service::system::file_dialog::write_text(
+                                            &path, &text,
+                                        )
                                     })
                                     .transpose()
                                 })

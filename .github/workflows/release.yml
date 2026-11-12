@@ -47,7 +47,7 @@ jobs:
       # that disagrees would ship a build that thinks it is out of date. Cut releases with
       # tools/release.sh, which bumps Cargo.toml before tagging.
       # In-app updates only install releases whose tag GitHub reports as verified and tagged by the
-      # maintainer (src/service/tag_signature.rs), so fail fast on anything else. GitHub verifies
+      # maintainer (src/service/update/tag_signature.rs), so fail fast on anything else. GitHub verifies
       # the signature when the tag is pushed and can lag a moment, hence the retries.
       - name: Tag must be signed by the maintainer
         id: signed
@@ -119,7 +119,7 @@ jobs:
       bundle-prefix: DegenView-${{ github.event.inputs.tag || github.ref_name }}-linux
       # The hosted Flatpak repo (docs/flatpak.md) publishes the branches `stable` (a final) and `beta`
       # (an `-rc.N`), matching the app's update channels: the updater offers an alpha or beta tag to no
-      # channel (`update_check::Version::kind`), so those build on `dev`, which nothing publishes. The tag
+      # channel (`update::check::Version::kind`), so those build on `dev`, which nothing publishes. The tag
       # is the verified one, and tools/release.sh only writes X.Y.Z or X.Y.Z-(alpha|beta|rc).N.
       branch: ${{ contains(github.event.inputs.tag || github.ref_name, '-rc.') && 'beta' || (contains(github.event.inputs.tag || github.ref_name, '-') && 'dev' || 'stable') }}
 
@@ -374,7 +374,7 @@ jobs:
             "$RUNNER_TEMP/app.provisionprofile" "$RUNNER_TEMP/helper.provisionprofile"
 
       # The in-app updater picks this zip by its `-windows-x64.zip` suffix and unpacks
-      # `degenview.exe` from its root (`update_archive::extract_exe`); keep both.
+      # `degenview.exe` from its root (`update::archive::extract_exe`); keep both.
       - name: Build Windows executable
         if: runner.os == 'Windows'
         shell: bash
@@ -398,7 +398,7 @@ jobs:
           ./tools/windows-installer.sh "$RELEASE_TAG" target/release/degenview.exe "${MATRIX_NAME#windows-}"
 
       # The in-app updater picks this tarball by its `-linux-<arch>.tar.gz` suffix and unpacks only
-      # `./degenview` from its root (`update_archive::extract_tar_gz_binary`); keep both.
+      # `./degenview` from its root (`update::archive::extract_tar_gz_binary`); keep both.
       - name: Build Linux binary
         if: runner.os == 'Linux'
         run: |
@@ -508,7 +508,7 @@ jobs:
 
       # An immutable release cannot be amended, so check the whole set while it is still only files:
       # exactly these twelve names (the updater picks its zip by exact name, see
-      # `update_check::select_asset`), nothing missing, nothing stray, nothing empty.
+      # `update::check::select_asset`), nothing missing, nothing stray, nothing empty.
       - name: Check the asset set
         run: |
           expected=$(for suffix in \

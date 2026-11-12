@@ -12,9 +12,9 @@
 use super::ChartWorkspace;
 use crate::model::Tool;
 use crate::model::annotation::image_content::{Content, ImageContent, MAX_NAME_CHARS};
-use crate::service::asset_host;
-use crate::service::image_ingest::{self, IngestError};
-use crate::service::{file_dialog, work_queue};
+use crate::service::annotation::asset_host;
+use crate::service::annotation::ingest::{self, IngestError};
+use crate::service::{system::file_dialog, work_queue};
 use crate::store::SharedStore;
 use crate::store::asset_store::StoredAsset;
 use crate::ui::drawing::content::sheet::{self, ImageSheet, ImageSheetAction};
@@ -155,7 +155,7 @@ pub(super) fn display_name(file_name: &str) -> String {
 fn work(source: Source, store: &SharedStore) -> Outcome {
     let (bytes, name) = match source {
         Source::Panel => match file_dialog::choose_image("Choose a picture") {
-            Ok(Some(path)) => match image_ingest::read_file(&path) {
+            Ok(Some(path)) => match ingest::read_file(&path) {
                 Ok(bytes) => (bytes, display_name(&path.to_string_lossy())),
                 Err(error) => return Outcome::Failed(error.message().to_owned()),
             },
@@ -166,16 +166,16 @@ fn work(source: Source, store: &SharedStore) -> Outcome {
             Some(bytes) => (bytes, "Pasted image".to_owned()),
             None => return Outcome::Failed("There is no picture on the clipboard.".to_owned()),
         },
-        Source::Path(path) => match image_ingest::read_file(&path) {
+        Source::Path(path) => match ingest::read_file(&path) {
             Ok(bytes) => (bytes, display_name(&path.to_string_lossy())),
             Err(error) => return Outcome::Failed(error.message().to_owned()),
         },
     };
-    let picture = match image_ingest::ingest(&bytes) {
+    let picture = match ingest::ingest(&bytes) {
         Ok(picture) => picture,
         Err(error) => return Outcome::Failed(error.message().to_owned()),
     };
-    let Some(pixels) = image_ingest::pixels(&picture.bytes) else {
+    let Some(pixels) = ingest::pixels(&picture.bytes) else {
         return Outcome::Failed(IngestError::Corrupt.message().to_owned());
     };
     let stored = store

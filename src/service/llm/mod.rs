@@ -1,6 +1,6 @@
 //! Chat completion against the providers a user can bring an API key for: OpenAI, Anthropic, and
 //! any host that speaks OpenAI's wire format (OpenRouter, Ollama, LM Studio, ...). The key is the
-//! user's own, read from `keychain_ai_keys`; nothing here logs a request, and every error message
+//! user's own, read from `keychain::ai_keys`; nothing here logs a request, and every error message
 //! is scrubbed of the key before it leaves.
 //!
 //! Outside `src/mcp/` there is no async runtime, so a reply streams on a worker thread: the

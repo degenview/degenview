@@ -6,8 +6,8 @@ use crate::model::alert::{
     AlertCurrency, AlertRuntimeCommandPayload, AlertRuntimeHealth, AlertRuntimeOwner,
     AlertServiceState, AlertTriggerEvent,
 };
-use crate::service::fx_rates::FxRateService;
-use crate::service::macos_notifications::{Notifier, default_notifier};
+use crate::service::alert::macos_notifications::{Notifier, default_notifier};
+use crate::service::market::fx_rates::FxRateService;
 use crate::service::watchlist_quotes::{WatchlistQuoteBook, WatchlistQuoteCoordinator};
 use crate::store::{self, SharedStore};
 use std::collections::HashMap;
@@ -179,7 +179,7 @@ pub fn run_alert_agent() -> Result<(), Box<dyn std::error::Error>> {
     let quote_coordinator = WatchlistQuoteCoordinator::new(quote_book.clone(), Arc::new(|| {}));
     let notifier = default_notifier();
     let fx = FxRateService::live(
-        crate::service::disk_cache::global().directory(crate::service::disk_cache::Kind::Fx),
+        crate::service::cache::disk::global().directory(crate::service::cache::disk::Kind::Fx),
     );
     let mut rates = HashMap::new();
     let mut rates_refreshed_at = i64::MIN / 2;
@@ -261,7 +261,7 @@ mod tests {
     use crate::model::watchlist::new_id;
     use crate::model::watchlist::quote::{Freshness, WatchlistQuote};
     use crate::model::{DataSource, InstrumentId};
-    use crate::service::macos_notifications::Notifier;
+    use crate::service::alert::macos_notifications::Notifier;
     use crate::service::watchlist_quotes::{
         Config, Outcome, QuoteFailure, QuoteProvider, QuoteRequest,
     };

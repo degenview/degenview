@@ -388,14 +388,14 @@ pub fn ticker_icon(ui: &Ui, rect: Rect, symbol: &str, source: DataSource) {
         _ => None,
     };
     if let Some((source, market)) = &lookup {
-        if let Some(url) = crate::service::icon::get_url(*source, market) {
+        if let Some(url) = crate::service::image::icon::get_url(*source, market) {
             egui::Image::new(url)
                 .fit_to_exact_size(rect.size())
                 .corner_radius(CornerRadius::same((rect.width() / 2.0) as u8))
                 .paint_at(ui, rect);
             return;
         }
-        crate::service::icon::request(*source, market);
+        crate::service::image::icon::request(*source, market);
     }
     monogram(ui, rect, &base);
 }
@@ -422,7 +422,7 @@ pub fn chart_icon_with_label(
         source_logo::paint(ui, source, rect);
         return;
     }
-    match crate::service::icon::get_url(source, symbol) {
+    match crate::service::image::icon::get_url(source, symbol) {
         Some(url) => {
             egui::Image::new(url)
                 .fit_to_exact_size(rect.size())
@@ -431,7 +431,7 @@ pub fn chart_icon_with_label(
         }
         None => {
             let base = source.base_asset(label);
-            crate::service::icon::request_with_base(source, symbol, &base);
+            crate::service::image::icon::request_with_base(source, symbol, &base);
             monogram(ui, rect, &base);
         }
     }

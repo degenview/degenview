@@ -5,11 +5,11 @@
 //! DegenView hosts nothing itself. Copy link, Open in new tab and Tweet image upload the image to
 //! the provider turned on here (one at a time, none until the user turns one on), and the app asks
 //! once per destination before the first upload. The providers are rows drawn from their
-//! descriptors (`service::snapshot_providers`), so this page does not change for a new one.
+//! descriptors (`service::snapshot::providers`), so this page does not change for a new one.
 
 use crate::model::chart::snapshot::{SnapshotPrefs, SnapshotScale};
-use crate::service::keychain_snapshot_secrets::SnapshotSecrets;
-use crate::service::snapshot_providers::{self, Readiness};
+use crate::service::keychain::snapshot_secrets::SnapshotSecrets;
+use crate::service::snapshot::providers::{self, Readiness};
 use crate::ui::icons::Icon;
 use crate::ui::kit::Tone;
 use crate::ui::settings::api_keys::StatusMessage;
@@ -60,7 +60,7 @@ impl SnapshotsState {
     /// A save went through: what was typed in a provider's secret fields is the secure storage's
     /// now, not the field's.
     pub fn saved(&mut self, provider: &str) {
-        if let Some(provider) = snapshot_providers::provider(provider)
+        if let Some(provider) = providers::provider(provider)
             && let Some(form) = self.forms.get_mut(provider.descriptor().id)
         {
             form.saved(provider.descriptor());
@@ -70,7 +70,7 @@ impl SnapshotsState {
     /// Says what a row's last change did, on the row. A failure unfolds it: the line lives in the
     /// body, and an error nobody can see is an error nobody can act on.
     pub fn say_for(&mut self, provider: &str, status: Option<StatusMessage>) {
-        if let Some(provider) = snapshot_providers::provider(provider) {
+        if let Some(provider) = providers::provider(provider) {
             let id = provider.descriptor().id;
             if status.as_ref().is_some_and(|status| status.is_error) {
                 self.open.insert(id, Some(true));
@@ -101,7 +101,7 @@ pub fn body(
                 prefs: input.prefs,
                 secrets: input.secrets,
             };
-            for provider in snapshot_providers::registry() {
+            for provider in providers::registry() {
                 let id = provider.descriptor().id;
                 let form = state.forms.entry(id).or_default();
                 let open = state.open.entry(id).or_default();
@@ -184,7 +184,7 @@ fn sharing_badge(ui: &mut egui::Ui, input: &SnapshotsInput) {
         .prefs
         .provider
         .as_deref()
-        .and_then(snapshot_providers::provider);
+        .and_then(providers::provider);
     let Some(provider) = provider else {
         if input.prefs.provider.is_some() {
             // Chosen with a newer version of DegenView: there is no row for it here to act on.
@@ -235,7 +235,7 @@ fn approved_hint(consented: &[String]) -> String {
 mod tests {
     use super::*;
     use crate::model::chart::snapshot::SELF_HOSTED;
-    use crate::service::keychain_api_keys::MemoryBackend;
+    use crate::service::keychain::api_keys::MemoryBackend;
 
     pub(crate) fn secrets() -> Arc<SnapshotSecrets> {
         Arc::new(SnapshotSecrets::with(
@@ -282,7 +282,7 @@ mod tests {
         );
         assert!(actions.is_empty(), "drawing a page asks for nothing");
         // One row per provider, none unfolded while nothing needs anything.
-        assert_eq!(state.forms.len(), snapshot_providers::registry().len());
+        assert_eq!(state.forms.len(), providers::registry().len());
         assert!(state.open.values().all(|open| open.is_none()));
     }
 
@@ -359,9 +359,7 @@ mod tests {
         // Drawn headless: the badge is the first thing on the page.
         let mut state = SnapshotsState::default();
         assert!(draw(&prefs, &mut state, &secrets, egui::vec2(700.0, 1100.0)).is_empty());
-        assert!(
-            prefs.provider.is_some() && snapshot_providers::provider("from-the-future").is_none()
-        );
+        assert!(prefs.provider.is_some() && providers::provider("from-the-future").is_none());
     }
 
     /// What one click at `at` does to a provider's row, as the user would see it: whether it asked
@@ -370,7 +368,7 @@ mod tests {
         use crate::ui::settings::provider_card::{CardInput, provider_card};
         let secrets = secrets();
         let prefs = SnapshotPrefs::default();
-        let provider = snapshot_providers::provider("imgbb").expect("imgbb");
+        let provider = providers::provider("imgbb").expect("imgbb");
         let mut form = ProviderForm::default();
         let mut open: Option<bool> = None;
         let mut actions = Vec::new();
@@ -473,7 +471,7 @@ mod tests {
         use crate::ui::theme::{self, AppTheme};
         let _restore = theme::RestoreDefaultTheme;
         let secrets = secrets();
-        let key = snapshot_providers::provider("imgbb")
+        let key = providers::provider("imgbb")
             .and_then(|provider| provider.descriptor().field("key"))
             .expect("the key field");
         secrets
@@ -532,7 +530,7 @@ mod tests {
                 for (width, tag) in [(616.0, "wide"), (330.0, "narrow")] {
                     let mut state = SnapshotsState::default();
                     for id in *open {
-                        if let Some(provider) = snapshot_providers::provider(id) {
+                        if let Some(provider) = providers::provider(id) {
                             state.open.insert(provider.descriptor().id, Some(true));
                         }
                     }

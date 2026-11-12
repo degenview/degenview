@@ -20,7 +20,7 @@ final `0.6.0` is a new tag rebuilt from the last commit, never a promoted RC bin
 - Channels: chosen in Settings ▸ About, saved per Mac in local-only `update.channel` (never in
   `sync::policy`). **Stable** = tags with no prerelease part; **Release Candidate** = those plus `rc`
   tags (so it moves on to `0.6.0`). Nothing saved: a build starts on its own channel.
-- `update_check::check` reads `releases?per_page=30`, up to three pages (`/releases/latest` omits
+- `update::check::check` reads `releases?per_page=30`, up to three pages (`/releases/latest` omits
   prereleases; the list is ordered by creation, so RCs can push the newest stable past page one).
   Stops after the first page holding an accepted release not newer than the running build; skips
   drafts and unaccepted/unparseable tags; takes the highest version. Strict SemVer: only dotted `rc.N`
@@ -94,15 +94,15 @@ version. Re-run a failed tagged build through the Release workflow dispatch.
   zip. Secrets: README. Each bundle embeds its own Developer ID provisioning profile
   (`embedded.provisionprofile`); without it macOS kills the app at launch (`keychain-access-groups` is
   restricted). Profiles expire in 2044 or with the certificate. Access group
-  `<TEAMID>.es.nico.degenview.shared`; `keychain_webhook_secrets::ACCESS_GROUP_SUFFIX` must match.
+  `<TEAMID>.es.nico.degenview.shared`; `keychain::webhook_secrets::ACCESS_GROUP_SUFFIX` must match.
 - After unpacking: `codesign --verify --deep --strict` with a Developer ID Application requirement
   pinned to the running app's Team ID (app and login item), then `spctl --assess` (`code_signature`).
   No Team ID (unsigned/ad-hoc) = not installable, **View Release**. Verified in the staging folder next
   to the app, not re-run at swap time.
 - Downloads: only HTTPS redirects on GitHub/githubusercontent hosts; bounded archive entries and size;
   unsafe paths rejected; `ditto` limited; both app/login-item bundle ids, the executable set and links
-  validated. Update `update_archive` constants when bundle layout changes.
-- The helper clears its environment. `self_update::FORWARDED_ENV` holds only non-secrets: `HOME`,
+  validated. Update `update::archive` constants when bundle layout changes.
+- The helper clears its environment. `update::install::FORWARDED_ENV` holds only non-secrets: `HOME`,
   `DEGENVIEW_CACHE_DIR`, `DEGENVIEW_NO_KEYCHAIN`, `DEGENVIEW_NO_NOTIFICATIONS`. Never forward
   credentials; helper argv is visible to other users.
 
@@ -230,9 +230,9 @@ raises the floor. Older distros (RHEL 9 and clones, glibc 2.34) use the Flatpak.
 ## Windows and Linux updates
 
 Windows x64/ARM64 (`DegenView-<tag>-windows-x64.zip`, `-windows-arm64.zip`) and Linux x64/arm64
-(`DegenView-<tag>-linux-<arch>.tar.gz`) share `service/self_update/portable_binary.rs`: replace the
+(`DegenView-<tag>-linux-<arch>.tar.gz`) share `service/update/install/portable_binary.rs`: replace the
 one executable instead of macOS's `.app` swap. Per OS only unpacking
-(`update_archive::{extract_exe, check_exe}` zip, `{extract_tar_gz_binary, check_elf}` tarball),
+(`update::archive::{extract_exe, check_exe}` zip, `{extract_tar_gz_binary, check_elf}` tarball),
 relaunch and wait differ; check, tag verification, download, digest and `UpdateHost` are shared. A
 build takes its own CPU's asset; `check_exe` matches PE machine to the running CPU (native ARM64
 refuses x64 and vice versa). An **x64 build emulated on Windows on ARM** stays x64 until the user
@@ -250,7 +250,7 @@ installs the ARM64 installer over it (same `AppId`) or unzips the ARM64 zip. Ass
   (`cargo run`) never replaces itself (paths compared without the `\\?\` prefix `canonicalize` adds).
 - **Swap**: rename the running exe into `.DegenView-update\old\`, rename the new one in, roll back if
   that fails. If roll-back fails, the error says where the old copy is and how to restore it
-  (`self_update::swap_paths`, shared); the next `prepare` won't clear staging while the app is missing
+  (`update::install::swap_paths`, shared); the next `prepare` won't clear staging while the app is missing
   and `old/` exists (`keep_only_copy`): it is the only copy. Same-named zip entries are refused
   (`has_duplicate_names`); an unreadable tree or extraction is an error, not a small size. Next start
   deletes staging (files in use wait one more start).
@@ -384,9 +384,9 @@ executables). Deploy Production's CloudKit schema before a release that changes 
   repaint only viewports that drew the state.
 - Prompt the focused window once when ready. “Later” leaves the Restart indicator; restart uses
   `AppAction::Quit` so unsaved-script checks run.
-- **Order of a restart**: "Restart Now" only *swaps* (`self_update::apply`, once; failure shows on the
+- **Order of a restart**: "Restart Now" only *swaps* (`update::install::apply`, once; failure shows on the
   tab bar) and arms the relaunch. The new version *starts* from `eframe::App::on_exit`
-  (`UpdateHost::relaunch_if_armed`, `self_update::relaunch`) when exit is certain. Never earlier: that
+  (`UpdateHost::relaunch_if_armed`, `update::install::relaunch`) when exit is certain. Never earlier: that
   put a second process beside the old one when the unsaved-script question was slow or cancelled.
   `call_off_quit` disarms it (a later ordinary quit starts nothing); a second "Restart Now" after a
   cancel skips the swap (swapping again would move the new version over the kept copy). The macOS

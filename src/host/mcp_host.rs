@@ -55,7 +55,7 @@ use crate::model::{
     BuiltIn, ChartType, DataSource, Drawing, DrawingCommand, IndicatorConfig, InstrumentId,
     Timeframe,
 };
-use crate::service::keychain_mcp_seal::{KeyState, SealKey, SealKeyStore};
+use crate::service::keychain::mcp_seal::{KeyState, SealKey, SealKeyStore};
 use crate::service::watchlist_quotes::WatchlistQuoteBook;
 use crate::store::SharedStore;
 use crate::store::watchlist::{ListChanges, ListEdit, Place, WatchlistStore};
@@ -5195,9 +5195,9 @@ mod tests {
 
     // MARK: Sealed credentials
 
-    use crate::service::keychain_api_keys::{KeyBackend, MemoryBackend};
-    use crate::service::keychain_webhook_secrets::Scope;
-    use crate::service::webhook_delivery::SecretStoreError;
+    use crate::service::keychain::api_keys::{KeyBackend, MemoryBackend};
+    use crate::service::keychain::webhook_secrets::Scope;
+    use crate::service::webhook::delivery::SecretStoreError;
     use std::sync::atomic::{AtomicBool, Ordering};
 
     /// A Keychain two host loads can share, standing in for the real one across a restart.

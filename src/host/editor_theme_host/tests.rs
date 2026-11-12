@@ -1,6 +1,6 @@
 use super::*;
 use crate::model::editor_theme::{LineHeight, SyntaxRole};
-use crate::service::font_catalog::FontEntry;
+use crate::service::editor_theme::fonts::FontEntry;
 use crate::ui::editor_appearance::{RestorePublished, current, editor_font, of_built_in};
 use crate::ui::theme::RestoreDefaultTheme;
 

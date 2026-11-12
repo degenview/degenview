@@ -12,9 +12,9 @@ use crate::model::portfolio;
 use crate::model::portfolio::csv::{CmcPreview, CsvPreview, Mint};
 use crate::model::portfolio::{PortfolioAsset, PortfolioCurrency, PortfolioTransaction};
 use crate::model::watchlist::new_id;
-use crate::service::asset_auto_mapper::{self, asset_from_search_result};
-use crate::service::file_dialog;
-use crate::service::portfolio_quotes::PortfolioFxRates;
+use crate::service::portfolio::asset_auto_mapper::{self, asset_from_search_result};
+use crate::service::portfolio::quotes::PortfolioFxRates;
+use crate::service::system::file_dialog;
 use crate::ui::icons::Icon;
 use crate::ui::kit::sheet;
 use crate::ui::portfolio::asset_picker::{self, AssetPickerOutcome, AssetPickerState};
@@ -509,7 +509,7 @@ impl PortfolioImportFlow {
 mod tests {
     use super::*;
     use crate::model::DataSource;
-    use crate::service::fx_rates::Conversion;
+    use crate::service::market::fx_rates::Conversion;
     use std::collections::HashMap;
     use std::time::{Duration, Instant};
 

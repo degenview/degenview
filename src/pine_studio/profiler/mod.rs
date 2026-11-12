@@ -23,8 +23,8 @@ use crate::pine::profile::{
 };
 use crate::pine::syntax::token::Diagnostic;
 
-use self::marks::{ProfileColumn, ProfileMarks};
 use super::preview::RunIdentity;
+use marks::{ProfileColumn, ProfileMarks};
 
 /// How often a running profile asks for a frame, to show its progress.
 const PROGRESS_FRAME: Duration = Duration::from_millis(100);

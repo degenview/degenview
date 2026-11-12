@@ -6,7 +6,7 @@
 // Transient: reachable once the Settings window is shown.
 #![allow(dead_code)]
 
-use crate::service::keychain_api_keys::{
+use crate::service::keychain::api_keys::{
     AlpacaCredentials, AlpacaCredentialsStore, CoinMarketCapKeyStore,
 };
 use crate::service::llm::report::ErrorReport;
@@ -608,7 +608,7 @@ pub fn coinmarketcap_body(
                             .color(theme::text_secondary()),
                     );
                 } else if kit::sheet_button(ui, "Test Connection", false, true).clicked() {
-                    form.start_test(crate::service::cmc::test_connection);
+                    form.start_test(crate::service::market::cmc::test_connection);
                 }
                 open_button(ui, "Get API Key", "https://pro.coinmarketcap.com/signup/");
                 if form.configured && destructive_button(ui, "Remove Key").clicked() {
@@ -640,7 +640,7 @@ pub fn coinmarketcap_body(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::service::keychain_api_keys::MemoryBackend;
+    use crate::service::keychain::api_keys::MemoryBackend;
     use std::time::{Duration, Instant};
 
     fn alpaca_store() -> AlpacaCredentialsStore {

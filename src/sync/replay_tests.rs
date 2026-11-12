@@ -7,7 +7,7 @@ use super::core_tests::Mac;
 use super::mock::name_of;
 use super::policy::EntityKind;
 use super::record::SCHEMA_VERSION;
-use crate::service::image_ingest;
+use crate::service::annotation::ingest;
 use crate::store::asset_store::StoredAsset;
 use crate::store::sync::InboxRecord;
 
@@ -24,7 +24,7 @@ fn picture(seed: u8) -> StoredAsset {
         image::ExtendedColorType::Rgba8,
     )
     .unwrap();
-    StoredAsset::from_ingested(&image_ingest::ingest(&png).unwrap())
+    StoredAsset::from_ingested(&ingest::ingest(&png).unwrap())
 }
 
 /// A record as an inbox keeps it.

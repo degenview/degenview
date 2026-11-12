@@ -183,7 +183,7 @@ starts with the built-in font (`theme::install_fonts`), so a context that never 
 snapshot, a test) draws the default too; the host (`EditorThemeHost`) changes it when the choice changes.
 egui compares fonts byte for byte when they are set, so that happens on a change and not every frame.
 
-Other fonts: the picker (`service::font_catalog`) offers the installed monospaced fonts. The system's font
+Other fonts: the picker (`service::editor_theme::fonts`) offers the installed monospaced fonts. The system's font
 folders are walked on a background thread, reading from each file only its table directory and the `name`,
 `OS/2` and `post` tables (kilobytes, not the font), and a family is listed once, by its regular face, when it
 declares itself monospaced **and has scalable outlines**: a bitmap-only font (GB18030 Bitmap, on a Mac)

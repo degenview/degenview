@@ -5,11 +5,11 @@
 
 use crate::model::alert::{AlertNotificationSettings, AlertRuntimeHealth};
 use crate::model::webhook::{EndpointId, WebhookDeliveryResult, WebhookEndpoint};
-use crate::service::cache_control;
-use crate::service::disk_cache::{CacheStats, ClearOutcome};
-use crate::service::keychain_webhook_secrets::KeychainWebhookSecretStore;
+use crate::service::cache::control;
+use crate::service::cache::disk::{CacheStats, ClearOutcome};
+use crate::service::keychain::webhook_secrets::KeychainWebhookSecretStore;
 use crate::service::llm::prefs::AiPrefs;
-use crate::service::webhook_delivery::{self, Mode, UreqTransport, WebhookSecretStore};
+use crate::service::webhook::delivery::{self, Mode, UreqTransport, WebhookSecretStore};
 use crate::store::Store;
 use crate::ui::settings::api_keys::StatusMessage;
 use crate::ui::settings::snapshots::SnapshotsAction;
@@ -367,13 +367,13 @@ impl WebhookHost {
         let sender = self.storage_events.sender.clone();
         let repaint = ctx.clone();
         match action {
-            StorageAction::Refresh => cache_control::stats_in_background(move |stats| {
+            StorageAction::Refresh => control::stats_in_background(move |stats| {
                 let _ = sender.send(StorageEvent::Stats(stats));
                 repaint.request_repaint();
             }),
-            StorageAction::Clear => cache_control::clear_in_background(ctx, move |outcome| {
+            StorageAction::Clear => control::clear_in_background(ctx, move |outcome| {
                 let _ = sender.send(StorageEvent::Cleared(outcome));
-                let _ = sender.send(StorageEvent::Stats(cache_control::stats()));
+                let _ = sender.send(StorageEvent::Stats(control::stats()));
                 repaint.request_repaint();
             }),
         }
@@ -396,13 +396,8 @@ impl WebhookHost {
                 let transport = Arc::clone(&self.transport);
                 let secrets = Arc::clone(&self.secrets);
                 std::thread::spawn(move || {
-                    let result = webhook_delivery::deliver(
-                        &*transport,
-                        &*secrets,
-                        &message,
-                        &endpoint,
-                        Mode::Test,
-                    );
+                    let result =
+                        delivery::deliver(&*transport, &*secrets, &message, &endpoint, Mode::Test);
                     let _ = sender.send(result);
                 });
                 self.tests.push((id, receiver));
@@ -587,7 +582,7 @@ mod tests {
     fn building_the_host_leaves_the_editors_theme_alone() {
         use crate::host::editor_theme_host::EditorThemeHost;
         use crate::model::editor_theme::{BuiltInTheme, EditorPrefs, ThemeSelection};
-        use crate::service::font_catalog::FontCatalog;
+        use crate::service::editor_theme::fonts::FontCatalog;
         use crate::ui::editor_appearance::{RestorePublished, current, of_built_in};
         let _published = RestorePublished;
         let store = Store::open_in_memory().expect("a store");

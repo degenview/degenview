@@ -1,12 +1,12 @@
 //! The app's one view of "is there a newer DegenView": checks GitHub on a schedule, downloads and
 //! verifies a release when asked, and hands the result to the tab bar and Settings ▸ About.
 //!
-//! The network and install work is `service::update_check` / `service::self_update`; this is the
+//! The network and install work is `service::update::check` / `service::update::install`; this is the
 //! stateful bridge that runs them on `work_queue::UPDATES`, remembers the outcome, and exposes it
 //! as a plain `UpdateView` both UIs draw. Nothing here is persisted: a launch starts unchecked.
 
-use crate::service::self_update::{self, Prepared, Progress, Stage};
-use crate::service::update_check::{self, Channel, Release, UpdateOutcome};
+use crate::service::update::check::{self, Channel, Release, UpdateOutcome};
+use crate::service::update::install::{self, Prepared, Progress, Stage};
 use crate::service::work_queue;
 use crate::store::{SharedStore, Store};
 use eframe::egui;
@@ -181,7 +181,7 @@ impl UpdateHost {
             tag: "v9.9.9".to_owned(),
             version: "9.9.9".to_owned(),
             url: "https://example.test/release".to_owned(),
-            asset: installable.then(|| update_check::ReleaseAsset {
+            asset: installable.then(|| check::ReleaseAsset {
                 name: "DegenView-9.9.9-macos-arm64.zip".to_owned(),
                 url: "https://example.test/a.zip".to_owned(),
                 size: 10,
@@ -301,7 +301,7 @@ impl UpdateHost {
         let host = self.clone();
         let ctx = ctx.clone();
         work_queue::UPDATES.submit(move || {
-            let target = self_update::install_target();
+            let target = install::install_target();
             host.lock().target = target;
             host.repaint(&ctx);
         });
@@ -334,7 +334,7 @@ impl UpdateHost {
         let host = self.clone();
         let ctx = ctx.clone();
         work_queue::UPDATES.submit(move || {
-            host.finish_check(update_check::check(VERSION, channel), channel);
+            host.finish_check(check::check(VERSION, channel), channel);
             host.repaint(&ctx);
         });
     }
@@ -397,7 +397,7 @@ impl UpdateHost {
                 host.lock().install = Install::Working(progress);
                 host.repaint(&ctx);
             };
-            let result = self_update::prepare(&app, &release, &progress);
+            let result = install::prepare(&app, &release, &progress);
             host.finish_install(release.version, result);
             host.repaint(&ctx);
         });
@@ -434,7 +434,7 @@ impl UpdateHost {
 
     /// Swaps the prepared update in and schedules the reopen. On `Ok` the caller must quit now.
     pub fn restart(&self) -> Result<(), String> {
-        self.restart_with(self_update::apply)
+        self.restart_with(install::apply)
     }
 
     /// "Restart Now": swaps the new version in (once) and arms the relaunch, which happens when the
@@ -483,7 +483,7 @@ impl UpdateHost {
     /// the quit was not called off. A failure cannot be shown (the app is going); the new version is
     /// already in place, so the caller logs it and the user reopens the app.
     pub fn relaunch_if_armed(&self) -> Result<(), String> {
-        self.relaunch_with(self_update::relaunch)
+        self.relaunch_with(install::relaunch)
     }
 
     fn relaunch_with(
@@ -585,7 +585,7 @@ fn check_due(state: &State, now: Instant) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::service::update_check::ReleaseAsset;
+    use crate::service::update::check::ReleaseAsset;
 
     fn release(manual_only: Option<&'static str>, with_asset: bool) -> Release {
         Release {

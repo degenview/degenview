@@ -3,7 +3,7 @@
 //! The chart is frozen where the click is handled: the card paints itself onto a scratch context
 //! and the result is tessellated, all on the UI thread within one frame, from the very data the
 //! chart on screen is drawn from. Everything slow (the save panel, rasterizing, the PNG, the
-//! upload) then runs on a worker (`service::snapshot_job`) holding no workspace lock, and the
+//! upload) then runs on a worker (`service::snapshot::job`) holding no workspace lock, and the
 //! outcome comes back through a channel polled each frame. The clipboard and the browser are the
 //! window's to drive, so they run here, when the outcome arrives, and a message only says what
 //! has happened.
@@ -12,10 +12,10 @@ use super::content::snapshot_images;
 use super::*;
 use crate::host::snapshot_host::{Hosting, SnapshotHost, TURN_ON_A_HOST};
 use crate::model::chart::snapshot::{self, SnapshotAction, SnapshotDimensions, SnapshotRequest};
-use crate::service::snapshot_job::{self, Outcome, Retry, SystemBackend};
-use crate::service::snapshot_providers::Destination;
-use crate::service::snapshot_raster;
-use crate::service::{timezone, work_queue};
+use crate::service::snapshot::job::{self, Outcome, Retry, SystemBackend};
+use crate::service::snapshot::providers::Destination;
+use crate::service::snapshot::raster;
+use crate::service::{system::timezone, work_queue};
 use crate::ui::SnapshotInput;
 use crate::ui::icons::Icon;
 use crate::ui::kit;
@@ -72,7 +72,7 @@ pub(super) struct SnapshotState {
     consent: Option<AwaitingConsent>,
     retry: Option<AwaitingRetry>,
     /// Stands in for the save panel, the file system and the network under test.
-    backend: Option<Arc<dyn snapshot_job::Backend>>,
+    backend: Option<Arc<dyn job::Backend>>,
     /// The camera menu asked for the Snapshots page of Settings; the app takes it this frame.
     pub(super) settings_requested: bool,
 }
@@ -163,7 +163,7 @@ impl ChartWorkspace {
         ctx: &Context,
         chart_id: u64,
         options: snapshot::SnapshotOptions,
-    ) -> Result<(snapshot_raster::Scene, SnapshotDimensions), String> {
+    ) -> Result<(raster::Scene, SnapshotDimensions), String> {
         let index = self
             .chart_index(chart_id)
             .ok_or_else(|| "There is no such chart.".to_owned())?;
@@ -221,10 +221,10 @@ impl ChartWorkspace {
         let (scene, dimensions) = self.capture_scene(ctx, chart_id, options)?;
         let (sender, receiver) = mpsc::channel();
         work_queue::SNAPSHOTS.submit(move || {
-            let png = snapshot_raster::rasterize(&scene)
+            let png = raster::rasterize(&scene)
                 .map_err(|_| "Could not draw the image.".to_owned())
                 .and_then(|image| {
-                    crate::service::snapshot_export::encode_png(&image)
+                    crate::service::snapshot::export::encode_png(&image)
                         .map_err(|error| error.message().to_owned())
                 });
             let _ = sender.send(png);
@@ -271,7 +271,7 @@ impl ChartWorkspace {
         let stand_in = self.snapshot.backend.clone();
         work_queue::SNAPSHOTS.submit(move || {
             let backend = stand_in.unwrap_or_else(|| system_backend(worker_destination));
-            let outcome = snapshot_job::run(action, &scene, &name, &*backend);
+            let outcome = job::run(action, &scene, &name, &*backend);
             let _ = sender.send(outcome);
             worker_ctx.request_repaint();
         });
@@ -298,7 +298,7 @@ impl ChartWorkspace {
         let stand_in = self.snapshot.backend.clone();
         work_queue::SNAPSHOTS.submit(move || {
             let backend = stand_in.unwrap_or_else(|| system_backend(Some(destination)));
-            let _ = sender.send(snapshot_job::retry(retry, &*backend));
+            let _ = sender.send(job::retry(retry, &*backend));
             worker_ctx.request_repaint();
         });
         self.context.notice = None;
@@ -487,7 +487,7 @@ impl ChartWorkspace {
 
 /// The real backend for a job. It reads the provider's secrets itself, on the worker: a
 /// Keychain prompt must never stop the window.
-fn system_backend(destination: Option<Destination>) -> Arc<dyn snapshot_job::Backend> {
+fn system_backend(destination: Option<Destination>) -> Arc<dyn job::Backend> {
     Arc::new(SystemBackend::new(destination))
 }
 
@@ -497,9 +497,9 @@ mod tests {
     use crate::model::Kline;
     use crate::model::chart::snapshot::SELF_HOSTED;
     use crate::model::chart::snapshot::{SharedSnapshot, UploadError};
-    use crate::service::keychain_api_keys::MemoryBackend;
-    use crate::service::keychain_snapshot_secrets::SnapshotSecrets;
-    use crate::service::snapshot_export::ExportError;
+    use crate::service::keychain::api_keys::MemoryBackend;
+    use crate::service::keychain::snapshot_secrets::SnapshotSecrets;
+    use crate::service::snapshot::export::ExportError;
     use crate::store::SharedStore;
     use std::path::{Path, PathBuf};
 
@@ -511,7 +511,7 @@ mod tests {
         uploads: Mutex<usize>,
     }
 
-    impl snapshot_job::Backend for Fake {
+    impl job::Backend for Fake {
         fn choose_destination(&self, _: &str) -> Result<Option<PathBuf>, ExportError> {
             self.destination.lock().unwrap().remove(0)
         }

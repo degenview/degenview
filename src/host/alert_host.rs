@@ -18,10 +18,10 @@ use crate::model::watchlist::quote::maximum_age_secs;
 use crate::model::webhook::WebhookDeliverySource;
 use crate::model::webhook::policy::price_event_is_sendable;
 use crate::pine::runtime::state::AlertEvent;
-use crate::service::keychain_webhook_secrets::KeychainWebhookSecretStore;
-use crate::service::macos_notifications::Notifier;
+use crate::service::alert::macos_notifications::Notifier;
+use crate::service::keychain::webhook_secrets::KeychainWebhookSecretStore;
 use crate::service::watchlist_quotes::WatchlistQuoteBook;
-use crate::service::webhook_delivery::{self, Mode, UreqTransport};
+use crate::service::webhook::delivery::{self, Mode, UreqTransport};
 use crate::store::{SharedStore, Store};
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -243,7 +243,7 @@ impl AlertHost {
                 let handle = Arc::clone(handle);
                 let endpoint = endpoint.clone();
                 std::thread::spawn(move || {
-                    let result = webhook_delivery::deliver(
+                    let result = delivery::deliver(
                         transport.as_ref(),
                         secrets.as_ref(),
                         &message,
@@ -401,7 +401,7 @@ impl AlertHost {
                 let handle = Arc::clone(handle);
                 let endpoint = endpoint.clone();
                 std::thread::spawn(move || {
-                    let result = webhook_delivery::deliver(
+                    let result = delivery::deliver(
                         transport.as_ref(),
                         secrets.as_ref(),
                         &message,

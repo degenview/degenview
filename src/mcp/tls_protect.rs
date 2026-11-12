@@ -75,7 +75,7 @@ pub struct Dpapi;
 #[cfg(windows)]
 impl AtRest for Dpapi {
     fn wrap(&self, text: &str) -> Result<Vec<u8>, String> {
-        use crate::service::windows_credentials::{Wiped, wide};
+        use crate::service::keychain::windows_credentials::{Wiped, wide};
         use std::ptr::{null, null_mut};
         use windows_sys::Win32::Foundation::GetLastError;
         use windows_sys::Win32::Security::Cryptography::{
@@ -177,8 +177,8 @@ fn entropy_blob() -> windows_sys::Win32::Security::Cryptography::CRYPT_INTEGER_B
 #[cfg(windows)]
 fn take(
     out: windows_sys::Win32::Security::Cryptography::CRYPT_INTEGER_BLOB,
-) -> crate::service::windows_credentials::Wiped {
-    use crate::service::windows_credentials::Wiped;
+) -> crate::service::keychain::windows_credentials::Wiped {
+    use crate::service::keychain::windows_credentials::Wiped;
     use windows_sys::Win32::Foundation::LocalFree;
 
     if out.pbData.is_null() {

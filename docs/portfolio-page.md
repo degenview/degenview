@@ -8,7 +8,7 @@ cards are a separate surface: see [portfolio cards](portfolio-cards.md).
 
 - `host/portfolio_host.rs`: the tab (`PortfolioTab::ui`), the header, the section bar, the centred
   column (`capped`), and the figures handed to the views.
-- `service/portfolio_quotes.rs`: `PortfolioQuoteFeed`, the valuation the views read.
+- `service/portfolio/quotes.rs`: `PortfolioQuoteFeed`, the valuation the views read.
 - `ui/portfolio/overview.rs`: Overview (hero, key figures, charts, lists) and Statistics.
 - `ui/portfolio/holdings.rs`, `ui/portfolio/transactions.rs`, `ui/portfolio/grid.rs`: the tables.
 - `ui/portfolio/empty.rs`: the pictures and introductions for a page or panel with nothing in it.
@@ -38,7 +38,7 @@ rebuild the projection (holdings, history, cards) and flip `is_updating`, which 
   finished by then (`last_finished_bar_at`). A candle still forming is never used, so a point never
   sees a price from after its holdings. Today's point is therefore priced at yesterday's close; the
   live value covers today.
-- Local midnights follow the system time zone through `service::timezone` (`ZoneOffset`): a
+- Local midnights follow the system time zone through `service::system::timezone` (`ZoneOffset`): a
   daylight-saving day is 23 or 25 hours. Non-macOS builds and tests read UTC. The transaction
   editor still shows a past time with today's offset.
 - A rebuild carries `transactions_fingerprint` of the transactions it was computed from and is

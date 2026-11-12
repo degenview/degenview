@@ -12,7 +12,7 @@
 //! nothing until one is looked at.
 
 use super::Store;
-use crate::service::image_ingest::{self, Ingested, MAX_STORED_BYTES};
+use crate::service::annotation::ingest::{self, Ingested, MAX_STORED_BYTES};
 use crate::sync::native::{base64_decode, base64_encode};
 use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
@@ -65,10 +65,10 @@ impl StoredAsset {
         if bytes.is_empty() || bytes.len() > MAX_STORED_BYTES {
             return None;
         }
-        if image_ingest::hash(&bytes) != self.id {
+        if ingest::hash(&bytes) != self.id {
             return None;
         }
-        let (mime, width, height) = image_ingest::describe(&bytes)?;
+        let (mime, width, height) = ingest::describe(&bytes)?;
         let sane =
             (1..=MAX_STORED_SIDE).contains(&width) && (1..=MAX_STORED_SIDE).contains(&height);
         (mime == self.mime && width == self.width && height == self.height && sane).then_some(bytes)
@@ -167,7 +167,7 @@ mod tests {
             image::ExtendedColorType::Rgba8,
         )
         .unwrap();
-        image_ingest::ingest(&png).unwrap()
+        ingest::ingest(&png).unwrap()
     }
 
     #[test]

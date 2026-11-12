@@ -958,7 +958,7 @@ fn picture_on(board: &objc2_app_kit::NSPasteboard) -> Option<Vec<u8>> {
     }
     let url = board.stringForType(&NSString::from_str("public.file-url"))?;
     let path = file_url_path(&url.to_string())?;
-    crate::service::image_ingest::read_file(&path).ok()
+    crate::service::annotation::ingest::read_file(&path).ok()
 }
 
 /// The path a `file://` URL names, with its percent escapes undone. `None` for any other URL.

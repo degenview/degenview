@@ -362,7 +362,7 @@ pub fn paint_progress(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::service::self_update::{Progress, Stage};
+    use crate::service::update::install::{Progress, Stage};
     use std::time::Duration;
 
     fn view(phase: Phase) -> UpdateView {

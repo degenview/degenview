@@ -19,7 +19,7 @@ use crate::model::editor_theme::{
     ThemeError, ThemeId, ThemeSelection, ThemeSource, Typography, TypographyOverride, new_user_id,
 };
 use crate::model::watchlist::now_ms;
-use crate::service::font_catalog::{FontCatalog, check_outlines, read_font};
+use crate::service::editor_theme::fonts::{FontCatalog, check_outlines, read_font};
 use crate::store::Store;
 use crate::store::editor_theme::Loaded;
 use crate::ui::editor_appearance::{self, Appearance, EditorFont};

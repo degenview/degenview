@@ -3,7 +3,7 @@
 //! it reads the engine and returns `ReplayBarAction`s for the workspace to apply.
 
 use crate::model::{ReplayEngine, ReplayInterval, ReplaySpeed, ReplayStatus};
-use crate::service::timezone::local_utc_offset_secs;
+use crate::service::system::timezone::local_utc_offset_secs;
 use crate::ui::accessibility;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::time_text::{compact_text, date_text, time_text};

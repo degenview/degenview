@@ -19,7 +19,7 @@
 ## Sealed trust state
 
 - `mcp.settings`, `mcp.permissions` and every `mcp_client` row are HMAC-sealed under a Keychain key
-  (`mcp::seal`, `keychain_mcp_seal`); a bare verifier would let anyone who can write the SQLite file
+  (`mcp::seal`, `keychain::mcp_seal`); a bare verifier would let anyone who can write the SQLite file
   add a credential.
 - Write them only via `McpHost::persist` (`Store::save_mcp_state`: all three plus `mcp.seal` in one
   savepoint, rewritten from memory, never patched). Never `set_mcp_settings`,

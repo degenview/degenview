@@ -431,8 +431,8 @@ impl Textures {
         if let Some(texture) = self.held.get(asset) {
             return Some(texture.id());
         }
-        let crate::service::asset_host::AssetImage::Ready(pixels) =
-            crate::service::asset_host::lookup(painter.ctx(), asset)
+        let crate::service::annotation::asset_host::AssetImage::Ready(pixels) =
+            crate::service::annotation::asset_host::lookup(painter.ctx(), asset)
         else {
             return None;
         };
@@ -449,7 +449,7 @@ impl Textures {
 
 /// What a picture that cannot be shown says, and in what state it is.
 fn picture_status(painter: &Painter, asset: &str) -> &'static str {
-    use crate::service::asset_host::{AssetImage, lookup};
+    use crate::service::annotation::asset_host::{AssetImage, lookup};
     match lookup(painter.ctx(), asset) {
         AssetImage::Loading => "Loading image…",
         AssetImage::Missing => "Image unavailable (waiting to sync)",

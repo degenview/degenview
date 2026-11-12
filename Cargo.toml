@@ -61,10 +61,10 @@ http = "1.5.0"
 tokio-util = "0.7.20"
 tower = { version = "0.5.3", features = ["limit"] }
 similar = { version = "3.2.0", default-features = false, features = ["std"] }
-# Windows self-update unpacks the release zip in-process (`update_archive::extract_exe`); macOS uses
+# Windows self-update unpacks the release zip in-process (`update::archive::extract_exe`); macOS uses
 # ditto. Inflate only: no compression, no zopfli.
 zip = { version = "9.2.2", default-features = false, features = ["deflate-flate2"] }
-# Linux self-update unpacks the release tarball in-process (`update_archive::extract_tar_gz_binary`).
+# Linux self-update unpacks the release tarball in-process (`update::archive::extract_tar_gz_binary`).
 # No xattr support: nothing but the one binary is ever written.
 tar = { version = "0.4.46", default-features = false }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "logging", "tls12"] }
@@ -88,7 +88,7 @@ rfd = { version = "0.17", default-features = false, features = ["xdg-portal"] }
 # protocol only.
 x11rb = { version = "0.14", default-features = false }
 
-# Secret storage on Windows: Credential Manager (`service::windows_credentials`) and DPAPI for the MCP
+# Secret storage on Windows: Credential Manager (`service::keychain::windows_credentials`) and DPAPI for the MCP
 # TLS key file (`mcp::tls_protect`). Already in the tree (eframe, mio, tokio); generated bindings,
 # no dependencies of its own.
 [target.'cfg(windows)'.dependencies]

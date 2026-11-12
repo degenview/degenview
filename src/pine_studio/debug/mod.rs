@@ -31,8 +31,8 @@ use crate::pine::logs::LogHistory;
 use crate::pine::{Diagnostic, DiagnosticSeverity};
 use crate::store::SharedStore;
 
-use self::marks::{BreakpointMark, DebugMarks, GutterEvent, MarkKind, StopMark};
-use self::state::{DebugStates, KEY, ScriptDebugState, StoredBreakpoint};
+use marks::{BreakpointMark, DebugMarks, GutterEvent, MarkKind, StopMark};
+use state::{DebugStates, KEY, ScriptDebugState, StoredBreakpoint};
 
 /// What a session is started on: the preview chart's bars as they are now.
 pub struct DebugFeed {

@@ -35,13 +35,13 @@ pub fn run_gui_with(
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Started by an update on Windows or Linux: let the process it replaces exit before the database
     // opens, and do not open it at all if that process never does (two instances on one store).
-    service::self_update::wait_for_predecessor()?;
+    service::update::install::wait_for_predecessor()?;
     let store = store::open_default()?;
     // A database copied from another Mac becomes this Mac's own before anything reads its ids.
     host::sync_host::adopt_this_mac(&store);
     // A finished update leaves the previous app in a hidden folder until the new one has started.
-    service::work_queue::submit(service::self_update::cleanup_stale);
-    service::work_queue::submit(service::self_update::sync_installed_version);
+    service::work_queue::submit(service::update::install::cleanup_stale);
+    service::work_queue::submit(service::update::install::sync_installed_version);
     // macOS rounds and insets the square art itself (`inset_macos_icon`); elsewhere the file is
     // drawn as it is, so it comes with its corners (`tools/round-icon.py`).
     #[cfg(target_os = "macos")]

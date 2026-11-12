@@ -11,7 +11,7 @@ use super::transport::{
     StagedChange, StagedOp, SyncTransport, TransportCommand, TransportEvent, ZoneEvent,
 };
 use crate::host::sync_host::{EventSink, TransportFactory};
-use crate::service::entitlements::{icloud_environment, read_self};
+use crate::service::system::entitlements::{icloud_environment, read_self};
 use serde_json::{Value, json};
 use std::ffi::c_void;
 use std::sync::Arc;
@@ -420,7 +420,7 @@ impl SyncTransport for Inert {
 pub struct CloudKitFactory {
     api: NativeApi,
     release_build: bool,
-    read_entitlement: fn(&str) -> Option<crate::service::entitlements::EntitlementValue>,
+    read_entitlement: fn(&str) -> Option<crate::service::system::entitlements::EntitlementValue>,
 }
 
 impl CloudKitFactory {

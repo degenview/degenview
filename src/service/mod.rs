@@ -1,71 +1,26 @@
-mod alpaca;
-pub use alpaca::MISSING_KEY as ALPACA_MISSING_KEY;
-pub use alpaca::test_connection as alpaca_test_connection;
-pub mod asset_auto_mapper;
-pub mod asset_host;
-pub mod background_service;
-mod binance;
-mod cache;
-pub mod cache_control;
-mod candles;
-pub mod catalog;
-pub mod cmc;
-pub mod code_signature;
-mod coinbase;
-mod coingecko;
-mod dexscreener;
-pub mod disk_cache;
-pub mod entitlements;
-pub mod file_dialog;
-pub mod font_catalog;
-pub mod fx_rates;
-mod geckoterminal;
-mod http;
-pub mod icon;
-pub mod image_ingest;
-pub mod image_loader;
-mod kalshi;
-pub mod keychain_ai_keys;
-pub mod keychain_api_keys;
-pub mod keychain_broker_secrets;
-pub mod keychain_mcp_seal;
-pub mod keychain_snapshot_secrets;
-pub mod keychain_webhook_secrets;
-pub mod link_fetch;
-pub mod live;
+pub mod alert;
+pub mod annotation;
+pub mod cache;
+pub mod editor_theme;
+pub mod image;
+pub mod keychain;
 pub mod llm;
-pub mod lookup_cache;
-pub mod macos_notifications;
-pub mod multipart;
-mod polymarket;
-pub mod portfolio_history;
-pub mod portfolio_performers;
-pub mod portfolio_quotes;
-mod rate_limit;
-pub mod sandbox;
-pub mod search_rank;
-pub mod secret_service;
-pub mod self_update;
-pub mod snapshot_export;
-pub mod snapshot_job;
-pub mod snapshot_providers;
-pub mod snapshot_raster;
-pub mod snapshot_upload;
-pub mod tag_signature;
-pub mod theme_files;
-pub mod timezone;
-pub mod update_archive;
-pub mod update_check;
-pub mod update_download;
+pub mod market;
+pub mod net;
+pub mod portfolio;
+pub mod snapshot;
+pub mod system;
+pub mod update;
 pub mod watchlist_quotes;
-pub mod webhook_delivery;
-pub mod windows_credentials;
+pub mod webhook;
 pub mod work_queue;
-mod ws;
+
+pub use market::alpaca::MISSING_KEY as ALPACA_MISSING_KEY;
+pub use market::alpaca::test_connection as alpaca_test_connection;
 
 use crate::model::{DataSource, Kline, PmSeries};
-pub(crate) use candles::{fill_gaps, fold_calendar, next_bucket_start_ms, normalize};
-pub(crate) use search_rank::rank_results;
+pub(crate) use market::candles::{fill_gaps, fold_calendar, next_bucket_start_ms, normalize};
+pub(crate) use market::search_rank::rank_results;
 
 /// A search hit on one provider: a display label, the provider's own id, and the
 /// source it came from.
@@ -181,14 +136,14 @@ pub trait MarketSource {
 
 pub fn for_source(source: DataSource) -> &'static dyn MarketSource {
     match source {
-        DataSource::Binance => &binance::BINANCE,
-        DataSource::Coinbase => &coinbase::COINBASE,
-        DataSource::CoinGecko => &coingecko::COINGECKO,
-        DataSource::DexScreener => &dexscreener::DEXSCREENER,
-        DataSource::Alpaca => &alpaca::ALPACA,
-        DataSource::Polymarket => &polymarket::POLYMARKET,
-        DataSource::Kalshi => &kalshi::KALSHI,
-        DataSource::CoinMarketCap => &cmc::COIN_MARKET_CAP,
+        DataSource::Binance => &market::binance::BINANCE,
+        DataSource::Coinbase => &market::coinbase::COINBASE,
+        DataSource::CoinGecko => &market::coingecko::COINGECKO,
+        DataSource::DexScreener => &market::dexscreener::DEXSCREENER,
+        DataSource::Alpaca => &market::alpaca::ALPACA,
+        DataSource::Polymarket => &market::polymarket::POLYMARKET,
+        DataSource::Kalshi => &market::kalshi::KALSHI,
+        DataSource::CoinMarketCap => &market::cmc::COIN_MARKET_CAP,
     }
 }
 
@@ -268,7 +223,7 @@ pub fn supports_trending(source: DataSource) -> bool {
 /// The provider's busiest markets, or an empty list when it cannot say.
 pub fn trending(source: DataSource, limit: usize) -> Result<Vec<SearchResult>, String> {
     match source {
-        DataSource::Polymarket => polymarket::trending(limit),
+        DataSource::Polymarket => market::polymarket::trending(limit),
         _ => Ok(Vec::new()),
     }
 }

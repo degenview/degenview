@@ -153,7 +153,7 @@ Read [chart overlays](../chart-overlays.md) first. Short rules:
   `Projection.measure` (painting context), never guess. Nothing painted at the click spot → needs
   `Screen.hit`. Screen-fixed tools (pinned table) have no anchors, move via `edit::translate`.
   Content is named, never carried: a picture's hash or a link; new pictures go through
-  `service::image_ingest` on a worker, never the UI thread. Only a Post card's Preview button
+  `service::annotation::ingest` on a worker, never the UI thread. Only a Post card's Preview button
   contacts a service, after a one-time allow.
 - `Drawing::sample`, `sample_content` (tests) build any tool; every-tool loops must cover content
   tools, not skip them.

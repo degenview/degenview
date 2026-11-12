@@ -3,7 +3,7 @@
 
 use crate::format::civil_from_days;
 use crate::host::update_host::{BUILD_ID, Phase, UpdateHost, UpdateView};
-use crate::service::update_check::Channel;
+use crate::service::update::check::Channel;
 use crate::ui::icons::{self, Icon};
 use crate::ui::{kit, theme, window::update_indicator};
 use eframe::egui::{self, Color32, Rect, Sense, Stroke, StrokeKind, Ui, Vec2, pos2, vec2};
@@ -55,7 +55,7 @@ fn pick_build_time(modified: Option<i64>, compiled: Option<i64>) -> Option<i64> 
 
 /// "11 Oct 2026" in the viewer's time zone.
 pub fn date_label(ms: i64) -> String {
-    let local = ms + crate::service::timezone::local_utc_offset_secs(ms) * 1_000;
+    let local = ms + crate::service::system::timezone::local_utc_offset_secs(ms) * 1_000;
     let (year, month, day) = civil_from_days(local.div_euclid(86_400_000));
     format!(
         "{day} {} {year}",
@@ -75,7 +75,7 @@ pub fn header_subtitle(build_ms: Option<i64>) -> String {
 pub fn clipboard_summary(build_ms: Option<i64>) -> String {
     match build_ms {
         Some(ms) => {
-            let local = ms + crate::service::timezone::local_utc_offset_secs(ms) * 1_000;
+            let local = ms + crate::service::system::timezone::local_utc_offset_secs(ms) * 1_000;
             let seconds = local.div_euclid(1_000).rem_euclid(86_400);
             format!(
                 "{NAME} {VERSION} ({BUILD_ID}) · built {} at {:02}:{:02}",
@@ -996,8 +996,8 @@ mod tests {
             Phase::Unchecked,
             Phase::Checking,
             Phase::UpToDate,
-            Phase::Installing(crate::service::self_update::Progress::new(
-                crate::service::self_update::Stage::Downloading,
+            Phase::Installing(crate::service::update::install::Progress::new(
+                crate::service::update::install::Stage::Downloading,
             )),
         ] {
             assert_eq!(primary_action(&view(phase)), None);
@@ -1060,8 +1060,8 @@ mod tests {
     fn every_card_state_draws_headlessly() {
         let ctx = egui::Context::default();
         egui_extras::install_image_loaders(&ctx);
-        let progress = crate::service::self_update::Progress {
-            stage: crate::service::self_update::Stage::Downloading,
+        let progress = crate::service::update::install::Progress {
+            stage: crate::service::update::install::Stage::Downloading,
             fraction: 0.4,
         };
         for phase in [

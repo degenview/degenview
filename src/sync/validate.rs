@@ -609,7 +609,7 @@ mod tests {
             image::ExtendedColorType::Rgba8,
         )
         .unwrap();
-        let kept = crate::service::image_ingest::ingest(&png).unwrap();
+        let kept = crate::service::annotation::ingest::ingest(&png).unwrap();
         let asset = crate::store::asset_store::StoredAsset::from_ingested(&kept);
         (asset.id.clone(), serde_json::to_value(asset).unwrap())
     }

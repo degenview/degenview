@@ -24,7 +24,7 @@ watchlists.
 - Name a market as its exchange does (`BTCUSDT`, `BTC-USD`); `DataSource::display_symbol` only
   upper-cases. Never rebuild `BTC/USDT` labels. Asset: `DataSource::base_asset` /
   `SearchResult::base_asset`; pair: `SearchResult::base`/`quote`.
-- Hits are ordered by `service::search_rank`; see [Symbol picker](../symbol-picker.md).
+- Hits are ordered by `service::market::search_rank`; see [Symbol picker](../symbol-picker.md).
 
 ## Timeframes
 
@@ -55,15 +55,15 @@ watchlists.
 - `service::cache::fetch`: slow providers' candles in memory by `(source, symbol, interval)`
   (`cache::policy` lists them and TTLs); refreshes a held series with only its last `TAIL_LIMIT`
   candles; concurrent requests for one series share one call. Add a provider to `policy` only if a
-  whole fetch is slow; its `fetch_klines` must honour a small `limit` cheaply. `service::rate_limit`
+  whole fetch is slow; its `fetch_klines` must honour a small `limit` cheaply. `service::net::rate_limit`
   spaces CoinGecko and GeckoTerminal; `work_queue::submit_for` gives each its own worker; submit chart
   requests through it.
 - Regenerable slow data persists in the OS cache directory, never the data directory, via
-  `service::disk_cache`/`lookup_cache` (TTL, stale-while-revalidate, stale-on-error). Discard corrupt
-  files. New caches join `cache_control::clear`; writes use `DiskCache::write(..., generation)` so an
-  in-flight write cannot undo a clear. Tests use `disk_cache::testing::TempCache`; the global cache is
+  `service::cache::disk`/`cache::lookup` (TTL, stale-while-revalidate, stale-on-error). Discard corrupt
+  files. New caches join `cache::control::clear`; writes use `DiskCache::write(..., generation)` so an
+  in-flight write cannot undo a clear. Tests use `cache::disk::testing::TempCache`; the global cache is
   disabled in tests.
-- `service::icon` keys by `"<source>:<ticker>"`, never chart id: static CDN (unthrottled HEAD), then
+- `service::image::icon` keys by `"<source>:<ticker>"`, never chart id: static CDN (unthrottled HEAD), then
   rate-limited CoinGecko search, then a letter monogram.
 - One `BinanceLiveFeed` per workspace: updates the forming candle, reconnects with backoff. A
   current-or-newer WebSocket bar beats an older REST snapshot.

@@ -9,7 +9,7 @@ Pine: Session → PineSubscriptionHost ──────┼→ claim(trigger, e
                                            └→ webhook_delivery → result row
 
 Settings → webhook_endpoint (SQLite templates)
-         → keychain_webhook_secrets (one Keychain secret)
+         → keychain::webhook_secrets (one Keychain secret)
 ```
 
 `AlertHost` is the in-app price-alert owner: it loads the snapshot, drains `alert_command`, evaluates

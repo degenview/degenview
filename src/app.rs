@@ -32,10 +32,10 @@ use crate::native_bridge::{self, NativeCommand};
 use crate::pine_studio::editor::EditAction;
 use crate::pine_studio::library::store::hash_source;
 use crate::pine_studio::{ExitReason, PineStudio, PineStudioAction};
-use crate::service::background_service::BackgroundAlertService;
-use crate::service::fx_rates::FxRateService;
-use crate::service::macos_notifications::{self, Notifier};
-use crate::service::portfolio_quotes::PortfolioQuoteFeed;
+use crate::service::alert::background_service::BackgroundAlertService;
+use crate::service::alert::macos_notifications::{self, Notifier};
+use crate::service::market::fx_rates::FxRateService;
+use crate::service::portfolio::quotes::PortfolioQuoteFeed;
 use crate::service::watchlist_quotes::{WatchlistQuoteBook, WatchlistQuoteCoordinator};
 use crate::store::SharedStore;
 use crate::store::watchlist::WatchlistStore;
@@ -930,11 +930,11 @@ impl DegenViewApp {
             .unwrap_or_default();
         crate::ui::theme::install(&creation.egui_ctx, app_theme);
         egui_extras::install_image_loaders(&creation.egui_ctx);
-        crate::service::asset_host::install(
+        crate::service::annotation::asset_host::install(
             &creation.egui_ctx,
-            crate::service::asset_host::AssetHost::new(store.clone()),
+            crate::service::annotation::asset_host::AssetHost::new(store.clone()),
         );
-        crate::service::cache_control::launch(&creation.egui_ctx);
+        crate::service::cache::control::launch(&creation.egui_ctx);
         native_bridge::install(&creation.egui_ctx);
         if crate::ui::window::chrome::rounded_corners()
             && let Some(render_state) = creation.wgpu_render_state.as_ref()
@@ -950,7 +950,7 @@ impl DegenViewApp {
             Arc::new(move || repaint_ctx.request_repaint()),
         );
         let fx_rates = Arc::new(FxRateService::live(
-            crate::service::disk_cache::global().directory(crate::service::disk_cache::Kind::Fx),
+            crate::service::cache::disk::global().directory(crate::service::cache::disk::Kind::Fx),
         ));
         let portfolio_repaint = creation.egui_ctx.clone();
         let portfolio_quotes = PortfolioQuoteFeed::new(
@@ -990,8 +990,8 @@ impl DegenViewApp {
                 .expect("store lock poisoned")
                 .load_editor_themes();
             let repaint = creation.egui_ctx.clone();
-            let catalog = crate::service::font_catalog::FontCatalog::start(
-                crate::service::font_catalog::system_font_dirs(),
+            let catalog = crate::service::editor_theme::fonts::FontCatalog::start(
+                crate::service::editor_theme::fonts::system_font_dirs(),
                 move || repaint.request_repaint(),
             );
             let host = EditorThemeHost::new(loaded, catalog);
@@ -3156,7 +3156,7 @@ impl DegenViewApp {
                     activity_unreadable: mcp.9,
                     tls_fingerprint: mcp.10.as_deref(),
                     now_ms: now,
-                    utc_offset_secs: crate::service::timezone::local_utc_offset_secs(now),
+                    utc_offset_secs: crate::service::system::timezone::local_utc_offset_secs(now),
                 };
                 let actions = host.show(
                     ui,
@@ -3341,7 +3341,9 @@ impl DegenViewApp {
                     muted: &muted,
                     sync_enabled,
                     now_ms: now_ms(),
-                    utc_offset_secs: crate::service::timezone::local_utc_offset_secs(now_ms()),
+                    utc_offset_secs: crate::service::system::timezone::local_utc_offset_secs(
+                        now_ms(),
+                    ),
                 };
                 center::show(ui, &mut state, &input)
             } else {

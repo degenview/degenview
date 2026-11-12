@@ -2,11 +2,11 @@
 //! provider hosted snapshots go to (if any), what each was given, whether the account is drawn on
 //! them, how sharp they are and which destinations they agreed to send images to. One value behind
 //! a mutex, written to the `setting` table on every change. The secrets a provider asks for are
-//! not here: they are in the secure storage (`keychain_snapshot_secrets`).
+//! not here: they are in the secure storage (`keychain::snapshot_secrets`).
 
 use crate::model::chart::snapshot::{SnapshotPrefs, SnapshotScale};
-use crate::service::keychain_snapshot_secrets::SnapshotSecrets;
-use crate::service::snapshot_providers::{self, Destination, FieldKind, Readiness};
+use crate::service::keychain::snapshot_secrets::SnapshotSecrets;
+use crate::service::snapshot::providers::{self, Destination, FieldKind, Readiness};
 use crate::store::{SharedStore, Store};
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
@@ -78,7 +78,7 @@ impl SnapshotHost {
         let Some(id) = prefs.provider.as_deref() else {
             return Hosting::Unavailable(TURN_ON_A_HOST.to_owned());
         };
-        let Some(provider) = snapshot_providers::provider(id) else {
+        let Some(provider) = providers::provider(id) else {
             return Hosting::Unavailable(
                 "This snapshot host is not in this version of DegenView. Choose another in \
                  Settings ▸ Snapshots."
@@ -170,7 +170,7 @@ impl SnapshotHost {
     /// Turns `provider` on, which turns the one that was on off; `None` turns sharing off.
     pub fn set_provider(&self, held: Option<&Store>, provider: Option<&str>) -> Result<(), String> {
         if let Some(id) = provider
-            && snapshot_providers::provider(id).is_none()
+            && providers::provider(id).is_none()
         {
             return Err("That snapshot host is not available.".to_owned());
         }
@@ -185,7 +185,7 @@ impl SnapshotHost {
         provider: &str,
         fields: &BTreeMap<String, String>,
     ) -> Result<(), String> {
-        let descriptor = snapshot_providers::provider(provider)
+        let descriptor = providers::provider(provider)
             .ok_or_else(|| "That snapshot host is not available.".to_owned())?
             .descriptor();
         for (key, value) in fields {
@@ -242,8 +242,8 @@ impl SnapshotHost {
         &self,
         provider: &str,
         key: &str,
-    ) -> Result<(&'static str, &'static snapshot_providers::FieldSpec), String> {
-        let descriptor = snapshot_providers::provider(provider)
+    ) -> Result<(&'static str, &'static providers::FieldSpec), String> {
+        let descriptor = providers::provider(provider)
             .ok_or_else(|| "That snapshot host is not available.".to_owned())?
             .descriptor();
         descriptor
@@ -266,7 +266,7 @@ impl SnapshotHost {
 mod tests {
     use super::*;
     use crate::model::chart::snapshot::SELF_HOSTED;
-    use crate::service::keychain_api_keys::MemoryBackend;
+    use crate::service::keychain::api_keys::MemoryBackend;
     use crate::store::Store;
 
     fn store() -> SharedStore {
@@ -555,9 +555,9 @@ mod tests {
 
     #[test]
     fn while_the_secure_storage_has_not_answered_the_menu_says_so_instead_of_guessing() {
-        use crate::service::keychain_api_keys::KeyBackend;
-        use crate::service::keychain_webhook_secrets::Scope;
-        use crate::service::webhook_delivery::SecretStoreError;
+        use crate::service::keychain::api_keys::KeyBackend;
+        use crate::service::keychain::webhook_secrets::Scope;
+        use crate::service::webhook::delivery::SecretStoreError;
         struct Slow(Mutex<std::sync::mpsc::Receiver<()>>);
         impl KeyBackend for Slow {
             fn read(&self, _: Scope, _: &str) -> Option<String> {

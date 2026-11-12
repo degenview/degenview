@@ -1643,7 +1643,7 @@ fn a_preview_for_a_link_the_card_no_longer_has_is_dropped() {
 
 #[test]
 fn a_failed_fetch_says_why_and_leaves_the_card_alone() {
-    use crate::service::link_fetch::FetchError;
+    use crate::service::annotation::link_fetch::FetchError;
     let mut rig = Rig::new();
     let chart = rig.chart("BTCUSDT", 100.0);
     rig.chart_mut(chart).drawings = vec![card(Tool::Post, 1, POST_LINK)];

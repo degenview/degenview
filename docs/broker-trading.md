@@ -17,7 +17,7 @@ price an order trades at) and [iCloud Sync](icloud-sync.md) (nothing here syncs)
   said. Nothing in the app invents or removes one: a cancel is a *request*, an order leaves the
   working set only when the broker reports it finished.
 * **No broker is named in the app's broker layers.** `host/broker_host.rs`,
-  `service/keychain_broker_secrets.rs` and `ui/settings/brokers.rs` draw everything from the
+  `service/keychain/broker_secrets.rs` and `ui/settings/brokers.rs` draw everything from the
   crate's registry and each broker's descriptor; a test fails if one names an exchange. Adding a
   broker is a change to the crate (see its `docs/adding-a-broker.md`), plus enabling its Cargo
   feature here.
@@ -31,7 +31,7 @@ price an order trades at) and [iCloud Sync](icloud-sync.md) (nothing here syncs)
 
 | Piece | Where |
 | --- | --- |
-| Credentials | Operating system secret store, app-only group `es.nico.degenview.broker`: `service/keychain_broker_secrets.rs` (the crate's `SecretStore`). Read when connecting, never at startup for a user who has none. **Every read, write and removal runs on one secrets thread owned by `BrokerHost`** (a queue, so a save followed by a removal cannot swap), never on the interface thread: the OS store may prompt or hang. `connection()` reads only what that thread last learned (a key shows as saved once the store has answered). A removal waits behind an unanswered Keychain prompt on the same queue; the connection itself stops at once. Never SQLite, never iCloud, never a log. |
+| Credentials | Operating system secret store, app-only group `es.nico.degenview.broker`: `service/keychain/broker_secrets.rs` (the crate's `SecretStore`). Read when connecting, never at startup for a user who has none. **Every read, write and removal runs on one secrets thread owned by `BrokerHost`** (a queue, so a save followed by a removal cannot swap), never on the interface thread: the OS store may prompt or hang. `connection()` reads only what that thread last learned (a key shows as saved once the store has answered). A removal waits behind an unanswered Keychain prompt on the same queue; the connection itself stops at once. Never SQLite, never iCloud, never a log. |
 | Unconfirmed orders | Local-only setting `broker.pending` (`host/broker_host.rs::store_journal`: the crate's `BlobJournal` over that one setting): written **before** an order is sent, so a restart cannot lose an order that may be live. An unreadable record is an error, never "nothing pending". Every record carries the **account** (the portfolio) that sent it and is keyed by `(broker, account, client order id)`; only a session on that account shows, looks up, settles, retries or deletes it. Records of another account, and records from before they carried one, are left untouched and counted ("1 unconfirmed order belongs to a different account"); they are checked when that account connects again. |
 | Choices about trading | Local-only setting `broker.prefs`. |
 | Connections | `host/broker_host.rs::BrokerHost`: one per process, shared by every window, **outside the paper-trading lock**. Each connection's runtime runs on its own thread and publishes `Arc` snapshots; the UI never calls the network. Every request for a connection (a new key, the saved key at startup, Disconnect) takes a number, and a start may publish its runtime only if its number is still the broker's current one, so a Disconnect, or a newer key, always has the last word over a start that was still waiting on the Keychain prompt or the store. |

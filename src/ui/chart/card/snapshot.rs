@@ -13,7 +13,7 @@ use super::overlays::OverlayFrame;
 use super::*;
 use crate::model::chart::snapshot::SnapshotDimensions;
 use crate::model::{Drawing, Tool};
-use crate::service::snapshot_raster::Scene;
+use crate::service::snapshot::raster::Scene;
 
 /// What a snapshot is made from besides the card itself: the data the workspace holds.
 pub struct SnapshotInput<'a> {
@@ -159,7 +159,9 @@ impl ChartCard {
             return Err(SnapshotError::Empty);
         }
         let source = input.source;
-        if source == DataSource::CoinMarketCap && crate::service::cmc::is_latest(input.symbol) {
+        if source == DataSource::CoinMarketCap
+            && crate::service::market::cmc::is_latest(input.symbol)
+        {
             return Err(SnapshotError::Unsupported);
         }
         let style = CanvasStyle::resolve(&self.appearance.canvas);
@@ -236,9 +238,9 @@ impl ChartCard {
         let ctx = egui::Context::default();
         theme::install_offscreen(&ctx);
         if let Some(images) = input.images {
-            crate::service::asset_host::freeze(
+            crate::service::annotation::asset_host::freeze(
                 &ctx,
-                crate::service::asset_host::FrozenAssets(Arc::new(images.clone())),
+                crate::service::annotation::asset_host::FrozenAssets(Arc::new(images.clone())),
             );
         }
         let raw = egui::RawInput {

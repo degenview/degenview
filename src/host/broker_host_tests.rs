@@ -493,7 +493,7 @@ fn the_applications_broker_layers_name_no_broker() {
     for file in [
         "host/broker_host.rs",
         "host/trading_hub.rs",
-        "service/keychain_broker_secrets.rs",
+        "service/keychain/broker_secrets.rs",
         "trading/backend.rs",
         "trading/broker_backend.rs",
         "trading/model.rs",

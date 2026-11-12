@@ -32,7 +32,7 @@ use degenview_brokers::{
 
 use crate::model::broker;
 use crate::model::broker::prefs::{AllPrefs, BrokerPrefs};
-use crate::service::keychain_broker_secrets::BrokerSecrets;
+use crate::service::keychain::broker_secrets::BrokerSecrets;
 use crate::store::SharedStore;
 use crate::trading::task::Task;
 

@@ -418,7 +418,7 @@ impl SymbolPicker {
     /// Validates a pick, records it as recent and hands it to the host.
     fn commit(&mut self, result: SearchResult, kind: PickKind) -> Option<Output> {
         if result.source == DataSource::Alpaca
-            && service::keychain_api_keys::alpaca_credentials().is_none()
+            && service::keychain::api_keys::alpaca_credentials().is_none()
         {
             self.needs_alpaca = true;
             return None;

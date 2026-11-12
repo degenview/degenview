@@ -9,8 +9,8 @@ pub mod timestamp;
 pub mod timezone;
 pub mod trading_session;
 
-use self::calendar::Components;
 use super::runtime::value::RuntimeValue;
+use calendar::Components;
 
 pub const PART_NAMES: [&str; 8] = [
     "year",

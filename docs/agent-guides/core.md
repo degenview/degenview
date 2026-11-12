@@ -6,7 +6,7 @@ Read for every task, plus the matching topic guides from the root `AGENTS.md` (U
 
 DegenView is a GPL-3.0-only Rust market dashboard on `eframe`/`egui`. A small `objc2` AppKit bridge handles native macOS windows, menus, Keychain and accessibility. Keep the coordinator/workspace architecture on other platforms; gate AppKit code with `#[cfg(target_os = "macos")]`.
 
-Store secrets only through `keychain_webhook_secrets::platform` (macOS Keychain, Linux Secret Service, Windows Credential Manager). Never in SQLite, files or logs.
+Store secrets only through `service::keychain::webhook_secrets::platform` (macOS Keychain, Linux Secret Service, Windows Credential Manager). Never in SQLite, files or logs.
 
 Read [Architecture](../architecture.md) before changing module boundaries or data flow.
 

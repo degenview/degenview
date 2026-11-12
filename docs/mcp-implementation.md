@@ -105,8 +105,8 @@ src/pine_studio/library/store.rs
 src/pine_studio/model.rs
 src/ui/settings/window.rs
 src/ui/settings/card.rs
-src/service/keychain_api_keys.rs
-src/service/keychain_webhook_secrets.rs
+src/service/keychain/api_keys.rs
+src/service/keychain/webhook_secrets.rs
 ```
 
 Inspect actual APIs and invariants rather than assuming the names or example signatures below already exist.

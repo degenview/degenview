@@ -4,7 +4,7 @@
 //! rule (what may be saved, what the badge says, what a test reports) is a plain method tested
 //! against in-memory stores and a scripted provider.
 
-use crate::service::keychain_ai_keys::{self, AiKeyStore};
+use crate::service::keychain::ai_keys::{self, AiKeyStore};
 use crate::service::llm::prefs::AiPrefs;
 use crate::service::llm::report::ErrorReport;
 use crate::service::llm::{HttpProvider, LlmError, LlmProvider, ProviderKind, validate_base_url};
@@ -163,7 +163,7 @@ impl AiSettingsState {
         let kind = self.kind();
         let typed = self.key_input.trim();
         let key = if typed.is_empty() {
-            keychain_ai_keys::key_with(store, kind, env)
+            ai_keys::key_with(store, kind, env)
         } else {
             Some(typed.to_owned())
         };
@@ -400,7 +400,7 @@ fn failure_card(ui: &mut egui::Ui, state: &mut AiSettingsState) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::service::keychain_api_keys::MemoryBackend;
+    use crate::service::keychain::api_keys::MemoryBackend;
     use crate::service::llm::mock::MockProvider;
     use std::time::{Duration, Instant};
 

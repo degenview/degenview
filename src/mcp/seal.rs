@@ -3,7 +3,7 @@
 //!
 //! A client's verifier is a plain SHA-256 of its token, so anyone who can write the SQLite file
 //! can invent a token, store its hash, and be let in. The seal closes that: it is an
-//! HMAC-SHA-256 under a key that lives only in the Keychain (`keychain_mcp_seal`), checked when
+//! HMAC-SHA-256 under a key that lives only in the Keychain (`keychain::mcp_seal`), checked when
 //! the host loads. A row or setting the app did not write no longer matches, and the server stays
 //! off. The key is never in the database, so editing the file alone cannot produce a valid seal.
 //!

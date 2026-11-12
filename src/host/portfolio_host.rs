@@ -18,12 +18,14 @@ use crate::model::portfolio::{
     PortfolioTransactionType,
 };
 use crate::model::watchlist::new_id;
-use crate::service::asset_auto_mapper::asset_from_search_result;
-use crate::service::portfolio_history::{
+use crate::service::portfolio::asset_auto_mapper::asset_from_search_result;
+use crate::service::portfolio::history::{
     HistoryRebuilder, HistoryResult, IntradayFeed, IntradayRequest,
 };
-use crate::service::portfolio_quotes::{PortfolioFxRates, PortfolioQuoteFeed, PortfolioQuoteState};
-use crate::service::timezone::local_utc_offset_secs;
+use crate::service::portfolio::quotes::{
+    PortfolioFxRates, PortfolioQuoteFeed, PortfolioQuoteState,
+};
+use crate::service::system::timezone::local_utc_offset_secs;
 use crate::store::{SharedStore, Store};
 use crate::ui::icons::Icon;
 use crate::ui::kit::header_controls;
@@ -1669,7 +1671,7 @@ fn portfolio_sections(ui: &mut egui::Ui, selected: &mut PortfolioSection, id: u6
 
 /// The viewer's UTC offset now, for showing and typing dates in local time.
 pub(crate) fn local_offset() -> i64 {
-    crate::service::timezone::local_utc_offset_secs(now_ms())
+    crate::service::system::timezone::local_utc_offset_secs(now_ms())
 }
 
 pub(crate) fn now_ms() -> i64 {

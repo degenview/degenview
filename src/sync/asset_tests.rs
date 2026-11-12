@@ -3,7 +3,7 @@
 use super::apply_tests::{layout_of, outbox_len, pair, put_layouts, rows, settle};
 use super::mock::name_of;
 use super::policy::EntityKind;
-use crate::service::image_ingest::{self, Ingested};
+use crate::service::annotation::ingest::{self, Ingested};
 use crate::store::asset_store::StoredAsset;
 
 fn picture(seed: u8) -> StoredAsset {
@@ -19,7 +19,7 @@ fn picture(seed: u8) -> StoredAsset {
         image::ExtendedColorType::Rgba8,
     )
     .unwrap();
-    let kept: Ingested = image_ingest::ingest(&png).unwrap();
+    let kept: Ingested = ingest::ingest(&png).unwrap();
     StoredAsset::from_ingested(&kept)
 }
 

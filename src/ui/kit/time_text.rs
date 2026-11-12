@@ -4,7 +4,7 @@
 //! screen that prints one.
 
 use crate::format::civil_from_days;
-use crate::service::timezone::local_utc_offset_secs;
+use crate::service::system::timezone::local_utc_offset_secs;
 
 const MONTHS: [&str; 12] = [
     "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",

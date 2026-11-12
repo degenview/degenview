@@ -1,6 +1,6 @@
 //! Which provider and model the assistant uses. Saved as the local `ai.prefs` setting: it names
 //! the user's own account and server, so it never syncs. The API keys are not here; they live in
-//! the Keychain (`keychain_ai_keys`).
+//! the Keychain (`keychain::ai_keys`).
 
 use super::ProviderKind;
 use crate::store::Store;

@@ -7,7 +7,7 @@ use crate::model::editor_theme::prefs::KEY;
 use crate::model::editor_theme::{
     BuiltInTheme, EditorPrefs, EditorTheme, ThemeSelection, TypographyOverride,
 };
-use crate::service::font_catalog::FontCatalog;
+use crate::service::editor_theme::fonts::FontCatalog;
 use crate::ui::editor_appearance::RestorePublished;
 use crate::ui::theme::RestoreDefaultTheme;
 use serde_json::json;

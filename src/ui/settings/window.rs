@@ -12,7 +12,7 @@ use crate::model::alert::{
 };
 use crate::model::mcp::McpAction;
 use crate::platform;
-use crate::service::keychain_api_keys::{AlpacaCredentialsStore, CoinMarketCapKeyStore};
+use crate::service::keychain::api_keys::{AlpacaCredentialsStore, CoinMarketCapKeyStore};
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::{Tone, time_text::relative_time};
 use crate::ui::settings::api_keys::{self, ApiKeysState};
@@ -154,7 +154,7 @@ pub enum SettingsAction {
     /// An update was swapped in and a helper will reopen the app: quit now.
     QuitForUpdate,
     /// The About page chose which releases updates offer.
-    SetUpdateChannel(crate::service::update_check::Channel),
+    SetUpdateChannel(crate::service::update::check::Channel),
 }
 
 pub struct SettingsInput<'a> {
@@ -896,7 +896,7 @@ mod tests {
     /// The paragraph shows as a card, and the page has no bar under it, in both themes.
     #[test]
     fn the_ai_page_shows_a_long_error_as_a_card_and_has_no_bar_under_it() {
-        use crate::service::keychain_ai_keys::AiKeyStore;
+        use crate::service::keychain::ai_keys::AiKeyStore;
         use crate::service::llm::prefs::AiPrefs;
         use crate::ui::render_tests::{Screen, gallery_dir};
         use crate::ui::settings::ai::{self, AiSettingsInput};

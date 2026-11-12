@@ -9,7 +9,7 @@ use super::ChartWorkspace;
 use crate::model::annotation::image_content::Content;
 use crate::model::annotation::link_card::{ContentPrefs, Link, LinkCard, LinkMeta};
 use crate::model::{DrawingCommand, Geometry, Tool};
-use crate::service::link_fetch::{self, FetchError};
+use crate::service::annotation::link_fetch::{self, FetchError};
 use crate::service::work_queue;
 use crate::ui::LinkRequest;
 use crate::ui::drawing::content::sheet::{self, ConsentAction, LinkSheet, LinkSheetAction};

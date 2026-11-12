@@ -52,7 +52,7 @@ stays.
 
 ## Ranking
 
-`service/search_rank.rs` is the one rule, used inside each provider and across all of them
+`service/market/search_rank.rs` is the one rule, used inside each provider and across all of them
 (`merge_ranked`). A query is normalised to letters and digits, so `btc/usd`, `BTC-USD` and `BTC USD`
 are one query, and Binance and Coinbase match it against their own lists the same way (`BTC-USDT`
 finds Binance's `BTCUSDT` and Coinbase's `BTC-USDT`). Tiers:

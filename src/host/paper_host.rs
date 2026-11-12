@@ -828,7 +828,7 @@ impl PaperPanel {
                 currency,
                 // The offset now, as the portfolio tables use: rows from the other side of a
                 // daylight-saving change show an hour off.
-                utc_offset_secs: crate::service::timezone::local_utc_offset_secs(
+                utc_offset_secs: crate::service::system::timezone::local_utc_offset_secs(
                     crate::model::watchlist::now_ms(),
                 ),
             };
@@ -922,15 +922,16 @@ impl PaperPanel {
         let (sender, receiver) = std::sync::mpsc::channel();
         let ctx = ctx.clone();
         std::thread::spawn(move || {
-            let outcome = crate::service::file_dialog::choose_folder("Export").and_then(|folder| {
-                let Some(folder) = folder else {
-                    return Ok(None);
-                };
-                for (name, text) in export.files() {
-                    crate::service::file_dialog::write_text(&folder.join(name), text)?;
-                }
-                Ok(Some((folder, export.summary())))
-            });
+            let outcome =
+                crate::service::system::file_dialog::choose_folder("Export").and_then(|folder| {
+                    let Some(folder) = folder else {
+                        return Ok(None);
+                    };
+                    for (name, text) in export.files() {
+                        crate::service::system::file_dialog::write_text(&folder.join(name), text)?;
+                    }
+                    Ok(Some((folder, export.summary())))
+                });
             let _ = sender.send(outcome);
             ctx.request_repaint();
         });

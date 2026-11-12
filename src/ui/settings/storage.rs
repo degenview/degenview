@@ -7,7 +7,7 @@
 //! draws and returns what was asked for.
 
 use crate::platform;
-use crate::service::disk_cache::{CacheStats, ClearOutcome, Usage};
+use crate::service::cache::disk::{CacheStats, ClearOutcome, Usage};
 use crate::ui::icons::Icon;
 use crate::ui::settings::window::{card, divider, row, section, status_message};
 use crate::ui::{kit, settings::card, theme};

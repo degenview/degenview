@@ -143,7 +143,7 @@ drawing record stays small and a layout never embeds pixels. The picture is its 
 (`EntityKind::DrawingAsset`, prefix `drawingasset`, category Layouts, table `drawing_asset`),
 `{ id, mime, width, height, data }` with the bytes base64 in `data`.
 
-* **Limits.** A stored picture is at most 600 000 bytes (`image_ingest` re-encodes and shrinks until it
+* **Limits.** A stored picture is at most 600 000 bytes (`annotation::ingest` re-encodes and shrinks until it
   fits), so its record stays under `MAX_PAYLOAD_BYTES` (900 000) after base64. No `CKAsset` is used.
 * **Validation** (`sync/validate.rs`): a record is accepted only if its name is 64 lower-case hex
   digits, the mime is PNG or JPEG, the bytes are within the limit, start with that format's signature

@@ -505,7 +505,7 @@ fn the_locked_cursor_line_is_not_part_of_the_image() {
 
 // MARK: The image
 
-fn scene_of(harness: &Harness, scale: SnapshotScale) -> crate::service::snapshot_raster::Scene {
+fn scene_of(harness: &Harness, scale: SnapshotScale) -> crate::service::snapshot::raster::Scene {
     let size = harness.card.snapshot_size();
     let dimensions = SnapshotDimensions::fit(size.x, size.y, scale).expect("a size");
     harness
@@ -520,9 +520,9 @@ fn a_snapshot_is_an_image_of_the_chart_at_the_scale_asked_for() {
     settled(&mut harness);
     let size = harness.card.snapshot_size();
     assert_eq!((size.x, size.y), (760.0, 520.0), "the chart's own size");
-    let one = crate::service::snapshot_raster::rasterize(&scene_of(&harness, SnapshotScale::X1))
+    let one = crate::service::snapshot::raster::rasterize(&scene_of(&harness, SnapshotScale::X1))
         .expect("drawn");
-    let two = crate::service::snapshot_raster::rasterize(&scene_of(&harness, SnapshotScale::X2))
+    let two = crate::service::snapshot::raster::rasterize(&scene_of(&harness, SnapshotScale::X2))
         .expect("drawn");
     assert_eq!(one.size, [760, 520]);
     assert_eq!(two.size, [1520, 1040]);
@@ -555,7 +555,7 @@ fn the_backdrop_is_the_canvas() {
     canvas.background.bottom = Some([0, 0, 255, 255]);
     let mut harness = Harness::new(canvas);
     settled(&mut harness);
-    let image = crate::service::snapshot_raster::rasterize(&scene_of(&harness, SnapshotScale::X1))
+    let image = crate::service::snapshot::raster::rasterize(&scene_of(&harness, SnapshotScale::X1))
         .expect("drawn");
     let width = image.size[0];
     let top = image.pixels[2 * width + 2];
@@ -629,10 +629,10 @@ fn snapshot_cost() {
             .expect("a scene");
         let frozen = started.elapsed();
         let started = Instant::now();
-        let image = crate::service::snapshot_raster::rasterize(&scene).expect("drawn");
+        let image = crate::service::snapshot::raster::rasterize(&scene).expect("drawn");
         let rasterized = started.elapsed();
         let started = Instant::now();
-        let png = crate::service::snapshot_export::encode_png(&image).expect("encoded");
+        let png = crate::service::snapshot::export::encode_png(&image).expect("encoded");
         let encoded = started.elapsed();
         eprintln!(
             "{}×{}: freeze+tessellate {frozen:?} (UI thread), rasterize {rasterized:?}, png {encoded:?}, {} KiB png, {} MiB raw",
@@ -755,8 +755,8 @@ fn gallery_of_the_lines_channels_and_pitchforks() {
                 .card
                 .snapshot_scene(&input(&harness, false), dimensions, Color32::BLACK)
                 .expect("a scene");
-            let image = crate::service::snapshot_raster::rasterize(&scene).expect("drawn");
-            let png = crate::service::snapshot_export::encode_png(&image).expect("encoded");
+            let image = crate::service::snapshot::raster::rasterize(&scene).expect("drawn");
+            let png = crate::service::snapshot::export::encode_png(&image).expect("encoded");
             let suffix = if light { "-light" } else { "" };
             std::fs::write(dir.join(format!("{name}{suffix}.png")), png).expect("written");
         }
@@ -950,8 +950,8 @@ fn gallery_of_the_patterns_waves_and_cycles() {
                 .card
                 .snapshot_scene(&input(&harness, false), dimensions, Color32::BLACK)
                 .expect("a scene");
-            let image = crate::service::snapshot_raster::rasterize(&scene).expect("drawn");
-            let png = crate::service::snapshot_export::encode_png(&image).expect("encoded");
+            let image = crate::service::snapshot::raster::rasterize(&scene).expect("drawn");
+            let png = crate::service::snapshot::export::encode_png(&image).expect("encoded");
             let suffix = if light { "-light" } else { "" };
             std::fs::write(dir.join(format!("pattern-{name}{suffix}.png")), png).expect("written");
         }
@@ -1100,8 +1100,8 @@ fn gallery_of_the_fibonacci_and_gann_tools() {
                 .card
                 .snapshot_scene(&snapshot, dimensions, Color32::BLACK)
                 .expect("a scene");
-            let image = crate::service::snapshot_raster::rasterize(&scene).expect("drawn");
-            let png = crate::service::snapshot_export::encode_png(&image).expect("encoded");
+            let image = crate::service::snapshot::raster::rasterize(&scene).expect("drawn");
+            let png = crate::service::snapshot::export::encode_png(&image).expect("encoded");
             let suffix = match (light, mode) {
                 (true, _) => "-light",
                 (_, PriceScaleMode::Logarithmic) => "-log",
@@ -1235,8 +1235,8 @@ fn gallery_of_the_forecast_volume_and_measurement_tools() {
                 .card
                 .snapshot_scene(&input(&harness, false), dimensions, Color32::BLACK)
                 .expect("a scene");
-            let image = crate::service::snapshot_raster::rasterize(&scene).expect("drawn");
-            let png = crate::service::snapshot_export::encode_png(&image).expect("encoded");
+            let image = crate::service::snapshot::raster::rasterize(&scene).expect("drawn");
+            let png = crate::service::snapshot::export::encode_png(&image).expect("encoded");
             let suffix = if light { "-light" } else { "" };
             std::fs::write(dir.join(format!("forecast-{name}{suffix}.png")), png).expect("written");
         }
@@ -1330,8 +1330,8 @@ fn gallery_of_the_text_and_note_tools() {
                 .card
                 .snapshot_scene(&snapshot, dimensions, Color32::BLACK)
                 .expect("a scene");
-            let image = crate::service::snapshot_raster::rasterize(&scene).expect("drawn");
-            let png = crate::service::snapshot_export::encode_png(&image).expect("encoded");
+            let image = crate::service::snapshot::raster::rasterize(&scene).expect("drawn");
+            let png = crate::service::snapshot::export::encode_png(&image).expect("encoded");
             let suffix = if light { "-light" } else { "" };
             std::fs::write(dir.join(format!("{name}{suffix}.png")), png).expect("written");
         }
@@ -1452,8 +1452,8 @@ fn gallery_of_the_two_point_notes() {
                 .card
                 .snapshot_scene(&input(&harness, false), dimensions, Color32::BLACK)
                 .expect("a scene");
-            let image = crate::service::snapshot_raster::rasterize(&scene).expect("drawn");
-            let png = crate::service::snapshot_export::encode_png(&image).expect("encoded");
+            let image = crate::service::snapshot::raster::rasterize(&scene).expect("drawn");
+            let png = crate::service::snapshot::export::encode_png(&image).expect("encoded");
             let suffix = if light { "-light" } else { "" };
             std::fs::write(dir.join(format!("{name}{suffix}.png")), png).expect("written");
         }
@@ -1554,8 +1554,8 @@ fn gallery_of_the_table() {
                 .card
                 .snapshot_scene(&input(&harness, false), dimensions, Color32::BLACK)
                 .expect("a scene");
-            let image = crate::service::snapshot_raster::rasterize(&scene).expect("drawn");
-            let png = crate::service::snapshot_export::encode_png(&image).expect("encoded");
+            let image = crate::service::snapshot::raster::rasterize(&scene).expect("drawn");
+            let png = crate::service::snapshot::export::encode_png(&image).expect("encoded");
             let suffix = if light { "-light" } else { "" };
             std::fs::write(dir.join(format!("{name}{suffix}.png")), png).expect("written");
         }
@@ -1626,8 +1626,8 @@ fn gallery_of_the_image() {
             .card
             .snapshot_scene(&snapshot, dimensions, Color32::BLACK)
             .expect("a scene");
-        let image = crate::service::snapshot_raster::rasterize(&scene).expect("drawn");
-        let png = crate::service::snapshot_export::encode_png(&image).expect("encoded");
+        let image = crate::service::snapshot::raster::rasterize(&scene).expect("drawn");
+        let png = crate::service::snapshot::export::encode_png(&image).expect("encoded");
         let suffix = if light { "-light" } else { "" };
         std::fs::write(dir.join(format!("image-1{suffix}.png")), png).expect("written");
     }
@@ -1746,8 +1746,8 @@ fn gallery_of_the_cards() {
             .card
             .snapshot_scene(&snapshot, dimensions, Color32::BLACK)
             .expect("a scene");
-        let image = crate::service::snapshot_raster::rasterize(&scene).expect("drawn");
-        let png = crate::service::snapshot_export::encode_png(&image).expect("encoded");
+        let image = crate::service::snapshot::raster::rasterize(&scene).expect("drawn");
+        let png = crate::service::snapshot::export::encode_png(&image).expect("encoded");
         let suffix = if light { "-light" } else { "" };
         std::fs::write(dir.join(format!("cards-1{suffix}.png")), png).expect("written");
     }
