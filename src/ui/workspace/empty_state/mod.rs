@@ -331,7 +331,7 @@ mod tests {
             trends: &trends,
         };
         let drawn = wanted(&input, Tab::Recent);
-        assert!((4..24).contains(&drawn), "{drawn} rows drawn of 24");
+        assert!((3..24).contains(&drawn), "{drawn} rows drawn of 24");
     }
 
     #[test]

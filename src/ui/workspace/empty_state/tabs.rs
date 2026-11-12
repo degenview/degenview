@@ -17,8 +17,9 @@ const LAYOUT_CARD_HEIGHT: f32 = 72.0;
 const ROW_HEIGHT: f32 = 58.0;
 /// Under the recent list: the gap, the "Clear" link and the page's bottom margin.
 const CLEAR_ROOM: f32 = 70.0;
-/// Shortest the recent list gets before the page itself scrolls instead.
-const MIN_LIST_HEIGHT: f32 = 4.0 * ROW_HEIGHT;
+/// Rows the recent list leaves out of the room under it, and the fewest it shows.
+const SPARE_ROWS: f32 = 4.0;
+const MIN_ROWS: f32 = 3.0;
 
 /// Starter crypto markets: ticker and name.
 const CRYPTO: [(&str, &str); 10] = [
@@ -105,8 +106,10 @@ fn recent(ui: &mut Ui, input: &EmptyStateInput, frame: &mut Frame) {
         tiles::note(ui, Icon::ClockArrow, "Markets you open will show up here.");
         return;
     }
-    // The list takes the room the page has left under it, never fewer than a few rows.
-    let room = (frame.page_bottom - ui.cursor().top() - CLEAR_ROOM).max(MIN_LIST_HEIGHT);
+    // The list takes the room the page has left under it, less a few rows, never fewer than
+    // `MIN_ROWS`: a short list is easier to take in, and it scrolls for the rest.
+    let room = (frame.page_bottom - ui.cursor().top() - CLEAR_ROOM - SPARE_ROWS * ROW_HEIGHT)
+        .max(MIN_ROWS * ROW_HEIGHT);
     tiles::list_card(
         ui,
         input.recents.len(),
@@ -191,10 +194,8 @@ fn favorites(ui: &mut Ui, input: &EmptyStateInput, frame: &mut Frame) {
 }
 
 fn suggestions(ui: &mut Ui, frame: &mut Frame) {
-    tiles::caption(ui, "Crypto");
     starters(ui, &CRYPTO, DataSource::Binance, "empty-crypto", frame);
-    ui.add_space(20.0);
-    tiles::caption(ui, "Stocks and ETFs");
+    tiles::separator(ui);
     starters(ui, &STOCKS, DataSource::Alpaca, "empty-stock", frame);
 }
 

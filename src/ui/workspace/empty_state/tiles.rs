@@ -1,7 +1,7 @@
 //! The pieces the page's tabs are made of: a grid, a market tile, a list row, a layout card, and
 //! the note a tab shows when it has nothing yet.
 
-use super::sparkline::{self, Trend};
+use super::sparkline::{self, ChangeText, Trend};
 use super::{EmptyStateAction, LayoutSummary};
 use crate::model::{DataSource, InstrumentId};
 use crate::ui::icons::{self, Icon};
@@ -17,6 +17,10 @@ const PREVIEW_LIMIT: usize = 3;
 /// The sparkline's size on a tile and on a list row.
 const TILE_SPARK: Vec2 = vec2(88.0, 28.0);
 const ROW_SPARK: Vec2 = vec2(112.0, 28.0);
+/// A row narrower than this has no room for the week's change.
+const CHANGE_MIN_ROW: f32 = 520.0;
+/// The change column is at least this wide, so rows line up whatever the numbers.
+const CHANGE_MIN_WIDTH: f32 = 84.0;
 /// Narrowest a sparkline is drawn; narrower says nothing.
 const SPARK_MIN: f32 = 36.0;
 /// Room the name keeps before the sparkline gives way to it.
@@ -249,11 +253,18 @@ pub fn market_row(ui: &mut Ui, rect: Rect, id: Id, market: Market, frame: &mut F
         Icon::ChevronRight,
         theme::text_tertiary(),
     );
+    let mut right = chevron.left() - 20.0;
+    if rect.width() >= CHANGE_MIN_ROW
+        && let Some(Trend::Ready(closes)) = trend
+        && let Some(change) = sparkline::change_text(closes, !market.source.is_prediction_market())
+    {
+        right = paint_change(ui, rect, right, &change, sparkline::rising(closes)) - 18.0;
+    }
     market_content(
         ui,
         Rect::from_min_max(
             pos2(rect.left() + 18.0, rect.top()),
-            pos2(chevron.left() - 20.0, rect.bottom()),
+            pos2(right, rect.bottom()),
         ),
         &market,
         trend,
@@ -261,6 +272,50 @@ pub fn market_row(ui: &mut Ui, rect: Rect, id: Id, market: Market, frame: &mut F
         Some(ROW_SPARK),
     );
     response
+}
+
+/// The week's move, right-aligned to `right`: the share over the amount, in the colour of the
+/// direction. Returns where it starts.
+fn paint_change(ui: &Ui, row: Rect, right: f32, change: &ChangeText, up: bool) -> f32 {
+    let color = if up { theme::UP } else { theme::DOWN };
+    let percent = kit::galley(
+        ui,
+        &change.percent,
+        size::BODY,
+        MEDIUM,
+        color,
+        f32::INFINITY,
+    );
+    let amount = change.amount.as_deref().map(|text| {
+        kit::galley(
+            ui,
+            text,
+            size::CAPTION + 1.0,
+            REGULAR,
+            color.gamma_multiply(0.75),
+            f32::INFINITY,
+        )
+    });
+    let width = amount
+        .as_ref()
+        .map_or(percent.size().x, |amount| {
+            amount.size().x.max(percent.size().x)
+        })
+        .max(CHANGE_MIN_WIDTH);
+    let total = percent.size().y + amount.as_ref().map_or(0.0, |text| 2.0 + text.size().y);
+    let top = row.center().y - total / 2.0;
+    let percent_height = percent.size().y;
+    let percent_x = right - percent.size().x;
+    ui.painter().galley(pos2(percent_x, top), percent, color);
+    if let Some(amount) = amount {
+        let x = right - amount.size().x;
+        ui.painter().galley(
+            pos2(x, top + percent_height + 2.0),
+            amount,
+            color.gamma_multiply(0.75),
+        );
+    }
+    right - width
 }
 
 /// A card holding rows, with a hairline between them. Taller than `max_height` it scrolls, and
@@ -441,15 +496,16 @@ pub fn link_row(ui: &mut Ui, text: &str) -> bool {
     .inner
 }
 
-/// A line of small gray text above a group of tiles.
-pub fn caption(ui: &mut Ui, text: &str) {
-    ui.label(kit::text(
-        text,
-        size::SUBHEADLINE + 1.0,
-        MEDIUM,
-        theme::text_secondary(),
-    ));
-    ui.add_space(8.0);
+/// A hairline across the page's content, with room around it, between two groups of tiles.
+pub fn separator(ui: &mut Ui) {
+    ui.add_space(22.0);
+    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 1.0), Sense::hover());
+    ui.painter().hline(
+        rect.x_range(),
+        rect.center().y,
+        Stroke::new(1.0, kit::hairline()),
+    );
+    ui.add_space(22.0);
 }
 
 /// What a tab says when it has nothing to show yet.

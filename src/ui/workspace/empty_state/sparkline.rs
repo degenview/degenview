@@ -1,6 +1,7 @@
 //! A market's last week drawn small: a line with a soft fade under it, green when the week ended
 //! above where it began. Painter code and one pure mapping, so the shape can be tested.
 
+use crate::model::chart::price_format::PriceFormat;
 use crate::ui::theme;
 use eframe::egui::{Color32, Mesh, Painter, Pos2, Rect, Shape, Stroke, pos2};
 
@@ -45,6 +46,40 @@ pub fn points(closes: &[f32], rect: Rect) -> Vec<Pos2> {
             )
         })
         .collect()
+}
+
+/// A week's move as the page writes it: the share, and the amount when a price difference means
+/// something (a prediction market quotes probabilities, so only the share does).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ChangeText {
+    pub percent: String,
+    pub amount: Option<String>,
+}
+
+/// How far the week ended from where it began, written out; `None` without a usable first close.
+pub fn change_text(closes: &[f32], with_amount: bool) -> Option<ChangeText> {
+    let (first, last) = (f64::from(*closes.first()?), f64::from(*closes.last()?));
+    let amount = last - first;
+    let percent = amount / first * 100.0;
+    if closes.len() < 2 || !percent.is_finite() || first == 0.0 {
+        return None;
+    }
+    let flat = percent.abs() < 0.005;
+    let sign = if amount < 0.0 { "-" } else { "+" };
+    Some(ChangeText {
+        percent: if flat {
+            "0.00%".to_owned()
+        } else {
+            format!("{sign}{:.2}%", percent.abs())
+        },
+        amount: with_amount.then(|| {
+            if flat {
+                PriceFormat::AUTO.format(0.0)
+            } else {
+                format!("{sign}{}", PriceFormat::AUTO.format(amount.abs()))
+            }
+        }),
+    })
 }
 
 /// Whether the series ended where it began or higher.
@@ -130,6 +165,29 @@ mod tests {
     fn a_flat_week_runs_through_the_middle() {
         let points = points(&[4.0, 4.0, 4.0], rect());
         assert!(points.iter().all(|point| point.y == rect().center().y));
+    }
+
+    #[test]
+    fn the_change_reads_as_a_signed_amount_and_share() {
+        let up = change_text(&[100.0, 90.0, 112.5], true).expect("a change");
+        assert_eq!(up.percent, "+12.50%");
+        assert_eq!(up.amount.as_deref(), Some("+12.50"));
+        let down = change_text(&[2000.0, 1900.0], true).expect("a change");
+        assert_eq!(down.percent, "-5.00%");
+        assert_eq!(down.amount.as_deref(), Some("-100.00"));
+        let flat = change_text(&[5.0, 5.0], true).expect("a change");
+        assert_eq!(flat.percent, "0.00%");
+        assert_eq!(
+            change_text(&[0.4, 0.5], false).expect("a change").amount,
+            None
+        );
+    }
+
+    #[test]
+    fn no_change_without_a_week_or_a_first_close() {
+        assert_eq!(change_text(&[], true), None);
+        assert_eq!(change_text(&[3.0], true), None);
+        assert_eq!(change_text(&[0.0, 1.0], true), None);
     }
 
     #[test]
