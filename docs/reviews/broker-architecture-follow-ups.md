@@ -33,12 +33,14 @@ Changed on the way: the panel's account chip now reads like the order sheet's (t
 characters of the account id), and a chart's order lines are drawn from `chart_lines()` whether or not
 orders are possible at that moment (as before).
 
-**Still open.** Settings ▸ Brokers reads `BrokerHost` for connection cards and preferences (it manages
-connections, so it legitimately holds the host); the workspace asks the host for the user's
-preferences (`show_on_charts`, `confirm_single_cancel`, `spend_in_quote_by_default`); the edit
-sheet's world (`EditVenue::world`) is still in the crate's types (`LiveOrder`, `ProductSpec`), because
-editing in place is a broker-only feature. Preferences could move to `hub.prefs(venue)`; a `VenueInfo`
-revision could cache the per-frame projections.
+The user's choices (`show_on_charts`, `confirm_single_cancel`, `confirm_resting_orders`,
+`spend_in_quote_by_default`) are read and written through `TradingHub::prefs` / `set_prefs`; the
+workspace and the panel no longer name the host at all (the guard covers `workspace/` too).
+
+**Still open.** Settings ▸ Brokers holds `BrokerHost` for connection cards and the key check (it
+manages connections, so it legitimately does); the edit sheet's world (`EditVenue::world`) is still in
+the crate's types (`LiveOrder`, `ProductSpec`), because editing in place is a broker-only feature; a
+`VenueInfo` revision could cache the per-frame projections.
 
 ### 3. Process-wide service locators (P2): fixed
 
@@ -79,7 +81,7 @@ item 2 move.
 ## Suggested order
 
 1. Crate moves (below), one release.
-2. Preferences through the hub, and a revision for the per-frame projections (item 2, open part).
+2. A revision for the per-frame projections (item 2, open part).
 3. Item 5 as needed.
 
 Each step keeps the safety rules intact: an order is previewed and sent against one account and connection

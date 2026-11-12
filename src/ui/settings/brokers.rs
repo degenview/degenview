@@ -274,7 +274,7 @@ fn broker_card(
             kit::notice_card(inner, Icon::TriangleFill, tint, &title, Some(&detail), None);
         }
         match (&snapshot, failed) {
-            (Some(snapshot), false) => connected_body(inner, host, id, snapshot, form),
+            (Some(snapshot), false) => connected_body(inner, hub, id, snapshot, form),
             _ => setup_body(inner, host, broker, &connection, form),
         }
         if let Some(status) = &form.status {
@@ -473,7 +473,7 @@ pub(in crate::ui) fn fitted(
 
 fn connected_body(
     ui: &mut egui::Ui,
-    host: &std::sync::Arc<BrokerHost>,
+    hub: &std::sync::Arc<TradingHub>,
     id: degenview_brokers::BrokerId,
     snapshot: &BrokerSnapshot,
     form: &mut BrokerForm,
@@ -516,7 +516,7 @@ fn connected_body(
             None,
         );
     }
-    trading_choices(ui, host, id);
+    trading_choices(ui, hub, id);
     ui.add_space(2.0);
     ui.horizontal(|ui| {
         ui.set_min_height(28.0);
@@ -534,10 +534,11 @@ fn connected_body(
 /// (a market order, an edit, Cancel all) are not on this list because they are not optional.
 fn trading_choices(
     ui: &mut egui::Ui,
-    host: &std::sync::Arc<BrokerHost>,
+    hub: &std::sync::Arc<TradingHub>,
     id: degenview_brokers::BrokerId,
 ) {
-    let mut prefs = host.prefs(id);
+    let venue = crate::model::broker::venue::TradingVenue::Broker(id);
+    let mut prefs = hub.prefs(venue).unwrap_or_default();
     let before = prefs.clone();
     titled_group(ui, "Trading", |ui| {
         let rows: [(&str, &mut bool); 5] = [
@@ -571,7 +572,7 @@ fn trading_choices(
         "Market orders, changing an order and Cancel all always ask.",
     );
     if prefs != before {
-        host.set_prefs(id, prefs);
+        hub.set_prefs(venue, prefs);
     }
 }
 

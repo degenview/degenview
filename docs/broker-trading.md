@@ -211,9 +211,9 @@ request descriptions for the checklist.
 * **The venue layer is the path for the panel and the chart.** What the screens *ask* a broker goes
   through `BrokerCommands` (`trading/broker_commands.rs`: retry, cancel, paged history and fills, and
   the edit as `trading::edit::EditSession`); what they *read* goes through `TradingBackend`; a test
-  fails if `ui/` or `workspace/` name a broker's runtime, or drawing code under `ui/` names the host.
-  Still on `BrokerHost`: Settings ▸ Brokers (it manages connections) and the user's preferences, which
-  the workspace reads. The hub is handed to each window (`WindowEnv`), not read from a global.
+  fails if `ui/` or `workspace/` name a broker's runtime or the host (Settings ▸ Brokers excepted).
+  Still on `BrokerHost`: Settings ▸ Brokers (it manages connections). The user's choices are
+  `TradingHub::prefs`. The hub is handed to each window (`WindowEnv`), not read from a global.
   `trading/` does not import `ui` (a test checks). The findings, evidence and proposed fixes are in
   [reviews/broker-architecture-follow-ups.md](reviews/broker-architecture-follow-ups.md).
 
