@@ -61,7 +61,7 @@ SettingsPage ← SyncView ← SyncHost (app thread: apply, actions)   ──mpsc
 ```
 
 * **Outbox.** `Store::replace_documents` and `set_setting` queue the upload intent in the *same
-  SAVEPOINT* as the write (`src/store/sync.rs`). A change can never commit without it, and a crash
+  SAVEPOINT* as the write (`src/store/sync/mod.rs`). A change can never commit without it, and a crash
   right after a save still uploads after restart. Rows are projected to sync entities first
   (`src/sync/project.rs`): alert runtime fields, per-Mac layout fields and snapshot consent are
   dropped, drawings are split out of layouts. That equality is what makes the alert engine's

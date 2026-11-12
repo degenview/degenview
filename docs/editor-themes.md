@@ -251,7 +251,7 @@ the synced records is a release-candidate change under `AGENTS.md`.
 
 ## The file format
 
-`degenview-editor-theme`, version 1, JSON (`model/editor_theme/codec.rs`):
+`degenview-editor-theme`, version 1, JSON (`model/editor_theme/codec/mod.rs`):
 
 ```json
 {

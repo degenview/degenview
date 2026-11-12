@@ -594,7 +594,7 @@ src/
 │   └── resources.rs
 ├── host/mcp_host.rs
 ├── model/mcp/mod.rs
-├── store/mcp.rs
+├── store/mcp/mod.rs
 ├── service/keychain_mcp.rs
 └── ui/settings/mcp.rs
 ```

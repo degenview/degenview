@@ -11,7 +11,7 @@ use crate::model::chart::template::{
     ApplyScope, MAX_DESCRIPTION_CHARS, MAX_NAME_CHARS, TemplateEntry, TemplateId, clean_name,
 };
 use crate::store::SharedStore;
-use crate::store::chart_template::ChartTemplateStore;
+use crate::store::chart::template::ChartTemplateStore;
 use crate::ui::chart::card::ChartCard;
 use crate::ui::icons::{self, Icon};
 use crate::ui::kit::dialog;

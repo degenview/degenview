@@ -5,6 +5,8 @@
 //! default: the caller (`mcp_host`) then refuses to start the server instead of running with
 //! credentials or permissions it silently lost.
 
+pub mod audit;
+
 use crate::model::mcp::{McpClient, McpSettings, PermissionSet, default_global_permissions};
 use crate::store::{Document, Store};
 

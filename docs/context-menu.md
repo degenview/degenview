@@ -146,7 +146,7 @@ Relevant files:
 ### Chart templates and layouts
 
 - `src/model/chart/template/mod.rs`
-- `src/store/chart_template.rs`
+- `src/store/chart/template/mod.rs`
 - `src/ui/chart/settings/templates/mod.rs`
 - `src/model/chart/layout.rs`
 - `src/model/chart/persisted.rs`
@@ -865,7 +865,7 @@ DegenView already has a chart appearance/template system.
 Reuse:
 
 - `model/chart/template/mod.rs`
-- `store/chart_template.rs`
+- `store/chart/template/mod.rs`
 - `ui/chart/settings/templates/mod.rs`
 - Existing `ChartCard::apply_template` behavior
 

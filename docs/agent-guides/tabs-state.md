@@ -10,7 +10,7 @@
 - Layout dirty state is a `LayoutSnapshot` fingerprint, not a flag: timeframe, chart configs,
   columns; not zoom, drawings, replay, market data. Autosave layouts also write on drawing-only
   edits (`ChartWorkspace::drawings_dirty`) so drawings reach iCloud Sync; the toolbar's unsaved
-  state ignores them. `store::saved_view` owns the library, the workspace the active layout. Named
+  state ignores them. `store::chart::saved_view` owns the library, the workspace the active layout. Named
   layouts autosave after two seconds and flush before switch/quit; Unnamed never autosaves.
 - A tab saves its layout id (`PersistedWorkspace::active_view`); the name is looked up on restore,
   a deleted layout restores as Unnamed. The dirty baseline is the restored state, so changes

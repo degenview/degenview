@@ -175,7 +175,9 @@ impl ChartWorkspace {
     }
 
     /// The saved layouts' menu entries; cheap enough to ask every frame.
-    pub(super) fn layout_index(&self) -> std::sync::Arc<crate::store::saved_view::LayoutIndex> {
+    pub(super) fn layout_index(
+        &self,
+    ) -> std::sync::Arc<crate::store::chart::saved_view::LayoutIndex> {
         self.store
             .lock()
             .map(|store| store.layout_index())
