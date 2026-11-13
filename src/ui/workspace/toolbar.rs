@@ -1,7 +1,7 @@
 //! The chart window's toolbar, flat like TradingView's and LuxAlgo's: borderless buttons that
 //! tint on hover, hairline separators between groups and labels that fall back to icons when the
-//! window is too narrow for them. Left to right: the symbol of the focused chart, Indicators, the
-//! timeframe, the chart type, Replay and Alert (the last two icon only), Undo and Redo, in
+//! window is too narrow for them. Left to right: the symbol of the focused chart, the chart type,
+//! Indicators, the timeframe, Replay and Alert (the last two icon only), Undo and Redo, in
 //! groups divided by separators. On the right: the layout menu, chart settings, the snapshot menu,
 //! Portfolio, Pine Studio and the watchlist toggle. The replay bar under it (`replay_bar.rs`) uses the same
 //! flat style. The symbol, chart type, Indicators and chart settings act on the
@@ -412,6 +412,15 @@ fn left_items(input: &ToolbarInput) -> Vec<Item> {
             .on_click(ToolbarAction::CompareSymbol),
     ));
     items.push(Item::Separator);
+    let chart_type = input
+        .chart
+        .map_or(ChartType::Candles, |chart| chart.chart_type);
+    let mut type_button = Button::new("chart-type", format!("Chart type: {}", chart_type.label()))
+        .enabled(input.chart.is_some_and(|chart| chart.chart_types));
+    type_button.glyph = Some(Glyph::ChartType(chart_type));
+    type_button.menu = Some(Menu::ChartType);
+    items.push(Item::Button(type_button));
+    items.push(Item::Separator);
     let indicators_tip = if input.chart.is_some_and(|chart| !chart.indicators) {
         "Indicators: this chart takes none"
     } else {
@@ -440,15 +449,6 @@ fn left_items(input: &ToolbarInput) -> Vec<Item> {
     }
     items.push(Item::Separator);
 
-    let chart_type = input
-        .chart
-        .map_or(ChartType::Candles, |chart| chart.chart_type);
-    let mut type_button = Button::new("chart-type", format!("Chart type: {}", chart_type.label()))
-        .enabled(input.chart.is_some_and(|chart| chart.chart_types));
-    type_button.glyph = Some(Glyph::ChartType(chart_type));
-    type_button.menu = Some(Menu::ChartType);
-    items.push(Item::Button(type_button));
-    items.push(Item::Separator);
     let mut replay = Button::new(
         "replay",
         replay_tooltip(input.replay_open, input.can_replay),
