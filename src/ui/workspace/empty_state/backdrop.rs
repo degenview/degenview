@@ -9,7 +9,7 @@ use super::sparkline::fade_fill;
 use crate::ui::kit::loading::hash;
 use crate::ui::theme;
 use eframe::egui::epaint::PathStroke;
-use eframe::egui::{Color32, Painter, Pos2, Rect, Shape, Stroke, Ui, pos2, vec2};
+use eframe::egui::{Color32, Mesh, Painter, Pos2, Rect, Shape, Stroke, Ui, pos2, vec2};
 use std::time::Duration;
 
 /// The pause between frames while it plays (about 30 per second).
@@ -37,6 +37,16 @@ const TOOTH_EXTRA: f32 = 0.15;
 const TREND_GAIN: f32 = 1.5;
 /// How far the line stops short of the right edge, as a share of the width: the last price.
 const END_INSET: f32 = 0.07;
+/// Distance between the grid's vertical lines; they scroll with the line.
+const GRID_COLUMN: f32 = 96.0;
+/// Horizontal grid lines across the strip the line wanders in (one more than this many gaps).
+const GRID_ROWS: usize = 4;
+/// How far the grid reaches above the strip, where it fades in.
+const GRID_LEAD: f32 = 18.0;
+/// A grid line is cut into pieces this long, each end carrying its own opacity.
+const FADE_PIECE: f32 = 12.0;
+/// Opacity of the grid at its strongest, as a share of the label colour.
+const GRID_ALPHA: f32 = 0.09;
 /// Share of the width over which the left end fades in.
 const FADE_IN: f32 = 0.3;
 /// Share of the width, before the last price, over which the fill fades out.
@@ -107,6 +117,17 @@ fn level_at(points: &[(f32, f32)], x: f32) -> f32 {
     }
 }
 
+/// The x of each vertical grid line in a picture `width` wide at `time` seconds, ascending. They
+/// scroll left at the line's pace, so the grid reads as the chart the line is drawn on.
+pub fn grid_columns(time: f64, width: f32) -> Vec<f32> {
+    let offset = (time * VELOCITY).rem_euclid(f64::from(GRID_COLUMN)) as f32;
+    (0..)
+        .map(|index| index as f32 * GRID_COLUMN - offset)
+        .take_while(|&x| x <= width)
+        .filter(|&x| x >= 0.0)
+        .collect()
+}
+
 fn smoothstep(value: f32) -> f32 {
     let value = value.clamp(0.0, 1.0);
     value * value * (3.0 - 2.0 * value)
@@ -119,6 +140,67 @@ pub fn show(ui: &Ui, area: Rect) {
     let time = ui.input(|input| input.time);
     paint(&ui.painter().with_clip_rect(area), area, time);
     ui.ctx().request_repaint_after(FRAME);
+}
+
+/// The grid behind the line: faint, fading in from the left, out toward the right edge's last
+/// price and at its top and bottom, so it dissolves into the page instead of ending in a frame.
+fn paint_grid(painter: &Painter, band: Rect, time: f64) {
+    let top = band.top() + LINE_TOP - GRID_LEAD;
+    let bottom = band.top() + LINE_TOP + LINE_RANGE;
+    let (left, right) = (band.left(), band.right());
+    let color = theme::ink(255);
+    let alpha = theme::pick_value(GRID_ALPHA, GRID_ALPHA * 0.8);
+    let width = band.width();
+    let weight = move |at: Pos2| {
+        let across = smoothstep((at.x - left) / (width * FADE_IN))
+            * smoothstep((right - at.x) / (width * FADE_IN));
+        let down = smoothstep((at.y - top) / GRID_LEAD) * smoothstep((bottom - at.y) / GRID_LEAD);
+        alpha * across * down
+    };
+    for row in 0..=GRID_ROWS {
+        let y = band.top() + LINE_TOP + LINE_RANGE * row as f32 / GRID_ROWS as f32;
+        faded_line(painter, pos2(left, y), pos2(right, y), color, &weight);
+    }
+    for x in grid_columns(time, width) {
+        faded_line(
+            painter,
+            pos2(left + x, top),
+            pos2(left + x, bottom),
+            color,
+            &weight,
+        );
+    }
+}
+
+/// A one-point line from `from` to `to` (horizontal or vertical) whose opacity at each spot is
+/// `color` times `weight(spot)`: a strip of quads with a colour on every vertex.
+fn faded_line(
+    painter: &Painter,
+    from: Pos2,
+    to: Pos2,
+    color: Color32,
+    weight: &impl Fn(Pos2) -> f32,
+) {
+    let along = to - from;
+    let length = along.length();
+    if length < 1.0 {
+        return;
+    }
+    let side = vec2(-along.y, along.x) / length * 0.5;
+    let pieces = (length / FADE_PIECE).ceil() as u32;
+    let mut mesh = Mesh::default();
+    for piece in 0..=pieces {
+        let at = from + along * (piece as f32 / pieces as f32);
+        let tint = color.gamma_multiply(weight(at).clamp(0.0, 1.0));
+        mesh.colored_vertex(at - side, tint);
+        mesh.colored_vertex(at + side, tint);
+    }
+    for piece in 0..pieces {
+        let first = piece * 2;
+        mesh.add_triangle(first, first + 1, first + 2);
+        mesh.add_triangle(first + 1, first + 3, first + 2);
+    }
+    painter.add(Shape::mesh(mesh));
 }
 
 /// The picture at `time`.
@@ -138,6 +220,7 @@ pub fn paint(painter: &Painter, area: Rect, time: f64) {
     let fill_weight = move |x: f32| weight(x) * smoothstep((end - x) / (band.width() * FADE_OUT));
     let color = theme::UP;
 
+    paint_grid(painter, band, time);
     fade_fill(
         painter,
         &line,
@@ -222,6 +305,28 @@ mod tests {
             furthest < 0.01,
             "the shape is unchanged by the scroll: {furthest}"
         );
+    }
+
+    #[test]
+    fn the_grid_scrolls_with_the_line_and_stays_evenly_spaced() {
+        let columns = grid_columns(5.0, 1000.0);
+        assert!(columns.len() >= 10);
+        assert!(columns.iter().all(|x| (0.0..=1000.0).contains(x)));
+        assert!(
+            columns
+                .windows(2)
+                .all(|pair| (pair[1] - pair[0] - GRID_COLUMN).abs() < 0.01)
+        );
+        // A frame later every line has moved left by the line's own scroll.
+        let step = 1.0 / 30.0;
+        let later = grid_columns(5.0 + step, 1000.0);
+        let moved = (VELOCITY * step) as f32;
+        assert!(columns.iter().all(|&x| {
+            x < moved
+                || later
+                    .iter()
+                    .any(|&other| (other - (x - moved)).abs() < 0.01)
+        }));
     }
 
     #[test]
