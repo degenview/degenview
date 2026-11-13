@@ -495,7 +495,7 @@ fn paste_adds_new_drawings_at_the_click_as_one_undoable_step() {
     );
     assert_eq!(rig.workspace.selected_drawing, Some((target, pasted)));
     assert_eq!(rig.workspace.undo.len(), 1, "one step for the whole paste");
-    rig.workspace.undo();
+    rig.workspace.undo(&rig.ctx);
     assert!(rig.drawing_ids(target).is_empty());
 }
 
@@ -570,13 +570,13 @@ fn removing_indicators_asks_first_and_undo_brings_them_back() {
     // What the confirmation does on Remove All.
     rig.workspace.remove_all_indicators(chart);
     assert!(rig.chart_mut(chart).chart.pine_instances().is_empty());
-    rig.workspace.undo();
+    rig.workspace.undo(&rig.ctx);
     let restored = rig.chart_mut(chart);
     assert!(BuiltIn::Ema.applied(&restored.indicators));
     assert!(BuiltIn::Rsi.applied(&restored.indicators));
     assert_eq!(restored.chart.pine_instances().len(), 1);
     assert_eq!(restored.chart.pine_instances()[0].name, "My script");
-    rig.workspace.redo();
+    rig.workspace.redo(&rig.ctx);
     assert!(rig.chart_mut(chart).chart.pine_instances().is_empty());
 }
 
@@ -610,10 +610,10 @@ fn remove_indicators_counts_and_takes_the_compared_markets_in_one_undo_step() {
     assert_eq!(rig.workspace.undo.len(), steps + 1, "one step for both");
     assert!(!BuiltIn::Ema.applied(&rig.chart_mut(chart).indicators));
     assert!(rig.chart_mut(chart).overlays.is_empty());
-    rig.workspace.undo();
+    rig.workspace.undo(&rig.ctx);
     assert!(BuiltIn::Ema.applied(&rig.chart_mut(chart).indicators));
     assert_eq!(rig.chart_mut(chart).overlays.len(), 1, "the market is back");
-    rig.workspace.redo();
+    rig.workspace.redo(&rig.ctx);
     assert!(rig.chart_mut(chart).overlays.is_empty());
 }
 
@@ -626,10 +626,10 @@ fn indicator_history_and_drawing_history_share_one_stack_in_order() {
     BuiltIn::Ema.set_applied(&mut rig.chart_mut(chart).indicators, true);
     rig.workspace.remember_indicators(chart);
     BuiltIn::Ema.set_applied(&mut rig.chart_mut(chart).indicators, false);
-    rig.workspace.undo();
+    rig.workspace.undo(&rig.ctx);
     assert!(BuiltIn::Ema.applied(&rig.chart_mut(chart).indicators));
     assert_eq!(rig.drawing_ids(chart), [1], "the drawing is still there");
-    rig.workspace.undo();
+    rig.workspace.undo(&rig.ctx);
     assert!(rig.drawing_ids(chart).is_empty());
 }
 
@@ -648,7 +648,7 @@ fn a_script_picked_from_the_plus_menu_is_applied_by_id_and_undo_takes_it_off() {
     assert!(added.is_some());
     let instances = rig.chart_mut(chart).chart.pine_instances().to_vec();
     assert_eq!(instances[0].script_id.as_deref(), Some("saved-script"));
-    rig.workspace.undo();
+    rig.workspace.undo(&rig.ctx);
     assert!(rig.chart_mut(chart).chart.pine_instances().is_empty());
 }
 
@@ -667,7 +667,7 @@ fn removing_a_script_leaves_its_alert_subscriptions_and_source_alone() {
     pane.target = Target::Pane { instance: 1 };
     rig.run(pane, Command::PaneRemove(1));
     assert!(rig.chart_mut(chart).chart.pine_instances().is_empty());
-    rig.workspace.undo();
+    rig.workspace.undo(&rig.ctx);
     let restored = rig.chart_mut(chart).chart.pine_instances().to_vec();
     assert_eq!(restored[0].script_id.as_deref(), Some("saved-script"));
 }
@@ -1064,7 +1064,7 @@ fn the_tree_hides_and_shows_a_drawing_and_undo_reverts_it() {
     rig.workspace
         .apply_tree_action(chart, TreeAction::ToggleShown(TreeKey::Drawing(1)));
     assert!(!rig.chart_mut(chart).drawings[0].hidden());
-    rig.workspace.undo();
+    rig.workspace.undo(&rig.ctx);
     assert!(rig.chart_mut(chart).drawings[0].hidden());
 }
 
@@ -1094,7 +1094,7 @@ fn the_tree_deletes_a_drawing_undoably_and_never_a_locked_one() {
         Some((chart, vec![2])),
         "the deleted drawing leaves the selection"
     );
-    rig.workspace.undo();
+    rig.workspace.undo(&rig.ctx);
     assert_eq!(rig.drawing_ids(chart), [1, 2]);
 
     rig.workspace
@@ -1134,13 +1134,13 @@ fn the_tree_hides_and_removes_a_compared_market_and_undo_restores_it() {
         .apply_tree_action(chart, TreeAction::ToggleShown(TreeKey::Overlay(id)));
     assert_eq!(visible(&mut rig), Some(false));
     assert_eq!(rig.workspace.undo.len(), before + 1, "one undo step");
-    rig.workspace.undo();
+    rig.workspace.undo(&rig.ctx);
     assert_eq!(visible(&mut rig), Some(true));
 
     rig.workspace
         .apply_tree_action(chart, TreeAction::Delete(TreeKey::Overlay(id)));
     assert_eq!(visible(&mut rig), None, "removed");
-    rig.workspace.undo();
+    rig.workspace.undo(&rig.ctx);
     assert_eq!(visible(&mut rig), Some(true), "and back");
 }
 
@@ -1178,7 +1178,7 @@ fn the_tree_reorders_drawings_in_the_stack() {
     rig.workspace
         .apply_tree_action(chart, TreeAction::Reorder(1, 1));
     assert_eq!(rig.drawing_ids(chart), [2, 1]);
-    rig.workspace.undo();
+    rig.workspace.undo(&rig.ctx);
     assert_eq!(rig.drawing_ids(chart), [1, 2]);
 }
 
@@ -1214,9 +1214,9 @@ fn the_tree_hides_and_removes_indicators_and_scripts() {
         .apply_tree_action(chart, TreeAction::Delete(ema));
     assert!(!BuiltIn::Ema.applied(&rig.chart_mut(chart).indicators));
     // Both removals undo, newest first.
-    rig.workspace.undo();
+    rig.workspace.undo(&rig.ctx);
     assert!(BuiltIn::Ema.applied(&rig.chart_mut(chart).indicators));
-    rig.workspace.undo();
+    rig.workspace.undo(&rig.ctx);
     assert_eq!(rig.chart_mut(chart).chart.pine_instances().len(), 1);
 }
 
@@ -1250,7 +1250,7 @@ fn the_tree_can_delete_a_drawing_from_a_newer_version_and_nothing_else_touches_i
     rig.workspace
         .apply_tree_action(chart, TreeAction::Delete(TreeKey::Drawing(40)));
     assert_eq!(stored(&mut rig), [1, 2]);
-    rig.workspace.undo();
+    rig.workspace.undo(&rig.ctx);
     assert_eq!(stored(&mut rig), [1, 2, 40]);
     assert_eq!(
         rig.chart_mut(chart).drawings[2],
@@ -1614,7 +1614,7 @@ fn a_fetched_preview_is_written_to_its_card_as_one_undo_step() {
     );
     assert_eq!(rig.workspace.undo.len(), 1);
     assert!(rig.workspace.content.links.inbox.is_none());
-    rig.workspace.undo();
+    rig.workspace.undo(&rig.ctx);
     assert_eq!(card_of(&mut rig, chart, 1).meta, None);
 }
 

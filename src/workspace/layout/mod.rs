@@ -659,10 +659,10 @@ mod tests {
         workspace.mark_clean();
         assert!(!workspace.drawings_dirty(), "saving takes them in");
 
-        workspace.undo();
+        workspace.undo(&eframe::egui::Context::default());
         assert!(workspace.drawings_dirty(), "undo changes drawings too");
         workspace.mark_clean();
-        workspace.redo();
+        workspace.redo(&eframe::egui::Context::default());
         assert!(workspace.drawings_dirty());
     }
 

@@ -350,9 +350,9 @@ mod tests {
         assert!(restored[1].style().unwrap().extend_right);
 
         // One undo takes both away, one redo brings both back.
-        workspace.undo();
+        workspace.undo(&eframe::egui::Context::default());
         assert_eq!(drawing_ids(&workspace, chart_id), [1]);
-        workspace.redo();
+        workspace.redo(&eframe::egui::Context::default());
         assert_eq!(drawing_ids(&workspace, chart_id), [1, 2, 3]);
 
         // A chart that is not there changes nothing.
@@ -417,10 +417,10 @@ mod tests {
         assert_eq!(drawing_ids(&workspace, second), vec![7]);
         // Undo goes to the chart the edit was made on.
         workspace.apply_drawing_commands(second, vec![DrawingCommand::Add(rectangle(8, 0))]);
-        workspace.undo();
+        workspace.undo(&eframe::egui::Context::default());
         assert_eq!(drawing_ids(&workspace, second), vec![7]);
         assert_eq!(drawing_ids(&workspace, first), vec![2]);
-        workspace.undo();
+        workspace.undo(&eframe::egui::Context::default());
         assert_eq!(drawing_ids(&workspace, first), vec![1, 2]);
     }
 
@@ -440,8 +440,8 @@ mod tests {
         );
         // One undo step per chart, since history is per chart.
         assert_eq!(workspace.undo.len(), 2);
-        workspace.undo();
-        workspace.undo();
+        workspace.undo(&eframe::egui::Context::default());
+        workspace.undo(&eframe::egui::Context::default());
         assert_eq!(workspace.drawing_lock_state(), (true, false));
         workspace.set_all_locked(true);
         workspace.set_all_locked(false);

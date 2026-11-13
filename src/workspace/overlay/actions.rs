@@ -344,10 +344,10 @@ mod tests {
         assert!(overlays_of(&workspace, a).is_empty());
         assert_eq!(chart(&workspace, a).scale_mode, PriceScaleMode::Regular);
         // Undo brings the market and its axis back in one step; redo takes both off again.
-        workspace.undo();
+        workspace.undo(&eframe::egui::Context::default());
         assert_eq!(overlays_of(&workspace, a), ["SOLUSDT"]);
         assert_eq!(chart(&workspace, a).scale_mode, PriceScaleMode::Percent);
-        workspace.redo();
+        workspace.redo(&eframe::egui::Context::default());
         assert_eq!(chart(&workspace, a).scale_mode, PriceScaleMode::Regular);
     }
 
@@ -374,15 +374,15 @@ mod tests {
         let id = chart(&workspace, a).overlays.as_slice()[0].id;
         assert!(workspace.apply_overlay_command(a, OverlayCommand::SetVisible(id, false)));
         assert!(!workspace.apply_overlay_command(a, OverlayCommand::SetVisible(id, false)));
-        workspace.undo();
+        workspace.undo(&eframe::egui::Context::default());
         assert!(chart(&workspace, a).overlays.get(id).unwrap().visible);
-        workspace.undo();
+        workspace.undo(&eframe::egui::Context::default());
         assert_eq!(overlays_of(&workspace, a), ["ETHUSDT"]);
-        workspace.redo();
+        workspace.redo(&eframe::egui::Context::default());
         assert_eq!(overlays_of(&workspace, a), ["ETHUSDT", "SOLUSDT"]);
         workspace.apply_overlay_command(a, OverlayCommand::RemoveAll);
         assert!(overlays_of(&workspace, a).is_empty());
-        workspace.undo();
+        workspace.undo(&eframe::egui::Context::default());
         assert_eq!(overlays_of(&workspace, a), ["ETHUSDT", "SOLUSDT"]);
     }
 
@@ -579,17 +579,17 @@ mod tests {
         let a = chart_with_drawings(&mut workspace, "BTCUSDT", &[]);
         workspace.add_overlay(a, market("ETHUSDT"), None);
         assert_eq!(mode(&workspace, a), PriceScaleMode::Percent);
-        workspace.undo();
+        workspace.undo(&eframe::egui::Context::default());
         assert!(overlays_of(&workspace, a).is_empty());
         assert_eq!(
             mode(&workspace, a),
             PriceScaleMode::Regular,
             "the axis came back with it"
         );
-        workspace.redo();
+        workspace.redo(&eframe::egui::Context::default());
         assert_eq!(overlays_of(&workspace, a), ["ETHUSDT"]);
         assert_eq!(mode(&workspace, a), PriceScaleMode::Percent);
-        workspace.undo();
+        workspace.undo(&eframe::egui::Context::default());
         assert_eq!(mode(&workspace, a), PriceScaleMode::Regular);
     }
 
@@ -601,10 +601,10 @@ mod tests {
         let id = chart(&workspace, a).overlays.as_slice()[0].id;
         workspace.set_scale_mode(a, PriceScaleMode::IndexedTo100);
         workspace.apply_overlay_command(a, OverlayCommand::SetVisible(id, false));
-        workspace.undo();
+        workspace.undo(&eframe::egui::Context::default());
         assert!(chart(&workspace, a).overlays.get(id).unwrap().visible);
         assert_eq!(mode(&workspace, a), PriceScaleMode::IndexedTo100);
-        workspace.redo();
+        workspace.redo(&eframe::egui::Context::default());
         assert_eq!(mode(&workspace, a), PriceScaleMode::IndexedTo100);
     }
 
@@ -617,7 +617,7 @@ mod tests {
         workspace.set_scale_mode(a, PriceScaleMode::Regular);
         workspace.add_overlay(a, market("SOLUSDT"), None);
         assert_eq!(mode(&workspace, a), PriceScaleMode::Regular);
-        workspace.undo();
+        workspace.undo(&eframe::egui::Context::default());
         assert_eq!(mode(&workspace, a), PriceScaleMode::Regular);
     }
 
@@ -646,7 +646,7 @@ mod tests {
         assert_eq!(workspace.undo.len(), steps + 1);
         assert!(!workspace.apply_overlay_command(a, OverlayCommand::SetAllVisible(false)));
         assert_eq!(workspace.undo.len(), steps + 1, "nothing changed, no step");
-        workspace.undo();
+        workspace.undo(&eframe::egui::Context::default());
         assert!(chart(&workspace, a).overlays.iter().all(|o| o.visible));
     }
 
@@ -678,7 +678,7 @@ mod tests {
             chart(&workspace, a).overlays.get(eth).unwrap().color,
             Rgba::new(39, 20, 30, 255)
         );
-        workspace.undo();
+        workspace.undo(&eframe::egui::Context::default());
         assert_eq!(
             chart(&workspace, a).overlays.get(eth).unwrap().color,
             original

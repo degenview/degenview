@@ -3,7 +3,7 @@
 use super::card::ChartCard;
 pub use crate::model::BuiltIn;
 use crate::model::overlay::{OverlayCommand, OverlayId};
-use crate::model::{DataSource, EMA_PERIODS, IndicatorConfig};
+use crate::model::{EMA_PERIODS, IndicatorConfig};
 use crate::pine_studio::indicators::BundledIndicator;
 use crate::pine_studio::model::LocalScript;
 use crate::ui::icons::{self, Icon};
@@ -50,10 +50,9 @@ struct Item {
     error: bool,
 }
 
-fn items(config: &IndicatorConfig, card: &ChartCard, source: DataSource) -> Vec<Item> {
+fn items(config: &IndicatorConfig, card: &ChartCard) -> Vec<Item> {
     let mut items: Vec<Item> = BuiltIn::ALL
         .into_iter()
-        .filter(|kind| !(source.is_line_chart() && *kind == BuiltIn::Volume))
         .filter(|kind| kind.applied(config))
         .map(|kind| Item {
             kind: Kind::BuiltIn(kind),
@@ -62,18 +61,16 @@ fn items(config: &IndicatorConfig, card: &ChartCard, source: DataSource) -> Vec<
             error: false,
         })
         .collect();
-    if !source.is_line_chart() {
-        items.extend(card.pine_instances().iter().map(|instance| {
-            Item {
-                kind: Kind::Script(instance.id),
-                title: instance.name.clone(),
-                visible: instance.visible,
-                error: card
-                    .pine_status(instance.id)
-                    .is_some_and(|status| status.error.is_some()),
-            }
-        }));
-    }
+    items.extend(card.pine_instances().iter().map(|instance| {
+        Item {
+            kind: Kind::Script(instance.id),
+            title: instance.name.clone(),
+            visible: instance.visible,
+            error: card
+                .pine_status(instance.id)
+                .is_some_and(|status| status.error.is_some()),
+        }
+    }));
     items
 }
 
@@ -92,8 +89,8 @@ fn open_script_popover(ctx: &egui::Context) -> Option<(u64, u64)> {
         .flatten()
 }
 
-pub fn has_items(config: &IndicatorConfig, card: &ChartCard, source: DataSource) -> bool {
-    !items(config, card, source).is_empty()
+pub fn has_items(config: &IndicatorConfig, card: &ChartCard) -> bool {
+    !items(config, card).is_empty()
 }
 
 // MARK: View
@@ -191,10 +188,9 @@ pub fn show(
     ui: &mut Ui,
     card: &ChartCard,
     config: &IndicatorConfig,
-    source: DataSource,
     chart_id: u64,
 ) -> Option<Action> {
-    let items = items(config, card, source);
+    let items = items(config, card);
     let mut action = None;
     ui.spacing_mut().item_spacing.x = SPACING;
 
@@ -920,6 +916,7 @@ fn item_menu(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::DataSource;
 
     #[test]
     fn built_in_visibility_keeps_the_applied_chip() {
@@ -943,7 +940,7 @@ mod tests {
         };
         let mut card = ChartCard::default();
         let script_id = card.add_pine_instance(None, "My script", "plot(close)");
-        let items = items(&config, &card, DataSource::Binance);
+        let items = items(&config, &card);
         assert_eq!(items.len(), 2);
         assert_eq!(items[0].title, "EMA 20");
         assert!(!items[0].visible);
@@ -969,7 +966,7 @@ mod tests {
                     egui::Layout::left_to_right(egui::Align::Center),
                     |ui| {
                         let start = ui.cursor().left();
-                        show(ui, card, config, DataSource::Binance, 0);
+                        show(ui, card, config, 0);
                         used = ui.min_rect().right() - start;
                     },
                 );
@@ -1051,7 +1048,7 @@ mod tests {
                 ui.add_space(24.0);
                 ui.horizontal(|ui| {
                     ui.add_space(20.0);
-                    if let Some(action) = show(ui, &card, &config, DataSource::Binance, 1) {
+                    if let Some(action) = show(ui, &card, &config, 1) {
                         picked = Some(action);
                     }
                 });
@@ -1141,7 +1138,7 @@ mod tests {
                 ui.add_space(24.0);
                 ui.horizontal(|ui| {
                     ui.add_space(20.0);
-                    show(ui, &card, &config, DataSource::Binance, 1);
+                    show(ui, &card, &config, 1);
                 });
             })
         };
@@ -1211,10 +1208,7 @@ mod tests {
         let refs: Vec<&str> = symbols.iter().map(String::as_str).collect();
         let mut card = card_comparing(&refs);
         let script = card.add_pine_instance(None, "My script", "plot(close)");
-        let kinds: Vec<_> = items(&config, &card, DataSource::Binance)
-            .iter()
-            .map(|item| item.kind)
-            .collect();
+        let kinds: Vec<_> = items(&config, &card).iter().map(|item| item.kind).collect();
         assert_eq!(
             kinds,
             vec![Kind::BuiltIn(BuiltIn::Ema), Kind::Script(script)]

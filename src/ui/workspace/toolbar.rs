@@ -3,8 +3,8 @@
 //! window is too narrow for them. Left to right: the symbol of the focused chart, the timeframe,
 //! the chart type, Indicators, Replay and Alert (the last two icon only), Undo and Redo, in
 //! groups divided by separators. On the right: the layout menu, chart settings, the snapshot menu,
-//! Portfolio, Pine Studio,
-//! the watchlist toggle and Add Chart. The replay bar under it (`replay_bar.rs`) uses the same
+//! Portfolio, Pine Studio
+//! and the watchlist toggle. The replay bar under it (`replay_bar.rs`) uses the same
 //! flat style. The symbol, chart type, Indicators and chart settings act on the
 //! focused chart.
 
@@ -74,6 +74,8 @@ pub struct ToolbarChart {
     pub settings: bool,
     /// Another market can be drawn on it (not a line-only source or a price-based type).
     pub compare: bool,
+    /// The market can carry indicators (a prediction market or a gauge cannot).
+    pub indicators: bool,
 }
 
 /// What the layout menu's Autosave row shows.
@@ -104,7 +106,6 @@ pub enum ToolbarAction {
     ToggleWatchlist,
     OpenPortfolio,
     OpenPineStudio,
-    AddChart,
     /// Open the indicator picker for the focused chart.
     OpenIndicators,
     /// Open the focused chart's settings sheet.
@@ -427,7 +428,6 @@ fn left_items(input: &ToolbarInput) -> Vec<Item> {
     }
     items.push(Item::Separator);
 
-    let has_chart = input.chart.is_some();
     let chart_type = input
         .chart
         .map_or(ChartType::Candles, |chart| chart.chart_type);
@@ -437,11 +437,16 @@ fn left_items(input: &ToolbarInput) -> Vec<Item> {
     type_button.menu = Some(Menu::ChartType);
     items.push(Item::Button(type_button));
     items.push(Item::Separator);
+    let indicators_tip = if input.chart.is_some_and(|chart| !chart.indicators) {
+        "Indicators: this chart takes none"
+    } else {
+        "Indicators: add one to the focused chart"
+    };
     items.push(Item::Button(
-        Button::new("indicators", "Indicators: add one to the focused chart")
+        Button::new("indicators", indicators_tip)
             .icon(Icon::Waveform)
             .label("Indicators")
-            .enabled(has_chart)
+            .enabled(input.chart.is_some_and(|chart| chart.indicators))
             .on_click(ToolbarAction::OpenIndicators),
     ));
     items.push(Item::Separator);
@@ -537,13 +542,6 @@ fn right_items(input: &ToolbarInput) -> Vec<Item> {
                 .icon(Icon::SidebarRight)
                 .active(input.watchlist_visible)
                 .on_click(ToolbarAction::ToggleWatchlist),
-        ),
-        Item::Separator,
-        Item::Button(
-            Button::new("add-chart", "Add Chart")
-                .icon(Icon::ChartPlus)
-                .label("Add Chart")
-                .on_click(ToolbarAction::AddChart),
         ),
     ]
 }
@@ -957,6 +955,7 @@ mod tests {
                 chart_types: true,
                 settings: true,
                 compare: true,
+                indicators: true,
             }),
             can_undo: true,
             can_redo: false,
@@ -1094,13 +1093,6 @@ mod tests {
             if width >= 1600.0 {
                 assert!(labels, "a wide bar has room for the labels");
             }
-            // The minimum window keeps the layout menu and Add Chart.
-            if width >= 760.0 {
-                assert!(
-                    buttons.iter().any(|b| b.2 == Some(ToolbarAction::AddChart)),
-                    "Add Chart is kept at {width}"
-                );
-            }
         }
         assert!(!previous_labels, "760 wide has no room for labels");
     }
@@ -1140,6 +1132,17 @@ mod tests {
     }
 
     #[test]
+    fn indicators_are_off_on_a_chart_that_takes_none() {
+        let layouts = Vec::new();
+        let mut input = input(&layouts, true);
+        input.chart = input.chart.map(|chart| ToolbarChart {
+            indicators: false,
+            ..chart
+        });
+        assert!(click_on(&input, 1400.0, ToolbarAction::OpenIndicators).is_empty());
+    }
+
+    #[test]
     fn each_new_button_asks_for_its_action() {
         let layouts = Vec::new();
         let mut input = input(&layouts, true);
@@ -1154,7 +1157,6 @@ mod tests {
             ToolbarAction::OpenIndicators,
             ToolbarAction::OpenChartSettings,
             ToolbarAction::SetTimeframe(Timeframe::Week),
-            ToolbarAction::AddChart,
         ] {
             for width in [1400.0, 960.0] {
                 assert_eq!(click_on(&input, width, target), vec![target], "{target:?}");

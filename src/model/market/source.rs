@@ -89,6 +89,12 @@ impl DataSource {
         self.is_prediction_market() || matches!(self, Self::CoinMarketCap)
     }
 
+    /// Whether a chart of this source can carry indicators and scripts. A prediction market or a
+    /// CoinMarketCap gauge is a probability or an index line with no price to study.
+    pub fn takes_indicators(self) -> bool {
+        !self.is_line_chart()
+    }
+
     /// The market's name as its exchange writes it: `BTCUSDT` on Binance, `BTC-USD` on Coinbase,
     /// `AAPL` on Alpaca. Nothing is reformatted, only upper-cased where the exchange's own ids are
     /// (CoinGecko ids and Alpaca tickers). A chart, a search hit and a watchlist row all use it.

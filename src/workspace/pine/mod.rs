@@ -3,6 +3,7 @@
 pub(in crate::workspace) mod logs;
 
 use super::ChartWorkspace;
+use super::chart::Chart;
 use crate::model::{BuiltIn, EMA_PERIODS, IndicatorConfig, InstrumentId, Kline, Timeframe};
 use crate::ui::pine::settings_popover::{self, PineSettingsPopover};
 use crate::ui::{self};
@@ -61,7 +62,7 @@ pub enum IndicatorOutcome {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum IndicatorError {
     NoSuchChart,
-    /// Volume on a line chart (prediction markets, CoinMarketCap).
+    /// Any indicator on a chart that takes none (prediction markets, CoinMarketCap).
     UnsupportedOnLineChart,
     /// A period for an indicator that has none (only EMA takes one).
     NoParameters,
@@ -137,7 +138,7 @@ impl ChartWorkspace {
             .iter_mut()
             .find(|chart| chart.id == chart_id)
             .ok_or(IndicatorError::NoSuchChart)?;
-        if !kind.supports_line_charts() && chart.source.is_line_chart() {
+        if !chart.takes_indicators() {
             return Err(IndicatorError::UnsupportedOnLineChart);
         }
         if let Some(period) = ema_period {
@@ -187,14 +188,15 @@ impl ChartWorkspace {
     pub fn add_pine_on_focused(&mut self, script_id: Option<String>, name: &str, source: &str) {
         if let Some(id) = self.resolved_focused_id()
             && let Some(chart) = self.charts.iter_mut().find(|chart| chart.id == id)
+            && chart.takes_indicators()
         {
             chart.chart.add_pine_instance(script_id, name, source);
         }
     }
 
     /// Applies a saved script to a market chart for an agent, as the chart's Scripts tab does,
-    /// with the inputs it was given. Undo takes it off again. `None` when the chart is not a
-    /// market chart in this workspace.
+    /// with the inputs it was given. Undo takes it off again. `None` when the chart is not one
+    /// that takes indicators in this workspace.
     pub fn add_pine_instance_to(
         &mut self,
         chart_id: u64,
@@ -207,7 +209,7 @@ impl ChartWorkspace {
         if !self
             .charts
             .iter()
-            .any(|chart| chart.id == chart_id && chart.is_market())
+            .any(|chart| chart.id == chart_id && chart.takes_indicators())
         {
             return None;
         }
@@ -248,28 +250,35 @@ impl ChartWorkspace {
         action: &ui::chart::indicator_strip::Action,
     ) -> bool {
         use ui::chart::indicator_strip::Action;
-        // The chart's menus offer nothing a line chart (prediction markets, CoinMarketCap) cannot
-        // draw: no scripts, no volume. The picker can name them, so they are refused here too.
-        let on_line_chart = self
+        // A chart that takes no indicators (a prediction market, a gauge) can still be told to
+        // take one off, to clear what an older layout left on it; adding is refused.
+        let takes_indicators = self
             .charts
             .iter()
             .find(|chart| chart.id == chart_id)
-            .is_some_and(|chart| chart.source.is_line_chart());
+            .is_some_and(Chart::takes_indicators);
         match action {
-            Action::Add(kind) | Action::Remove(kind) => {
-                let refused = on_line_chart
-                    && matches!(action, Action::Add(_))
-                    && !kind.supports_line_charts();
-                if refused || !self.charts.iter().any(|chart| chart.id == chart_id) {
+            Action::Add(kind) => {
+                if !takes_indicators {
                     return false;
                 }
                 self.remember_indicators(chart_id);
                 if let Some(chart) = self.charts.iter_mut().find(|chart| chart.id == chart_id) {
-                    kind.set_applied(&mut chart.indicators, matches!(action, Action::Add(_)));
+                    kind.set_applied(&mut chart.indicators, true);
                 }
                 true
             }
-            Action::AddScript(_) | Action::AddBundled(_) if on_line_chart => false,
+            Action::Remove(kind) => {
+                if !self.charts.iter().any(|chart| chart.id == chart_id) {
+                    return false;
+                }
+                self.remember_indicators(chart_id);
+                if let Some(chart) = self.charts.iter_mut().find(|chart| chart.id == chart_id) {
+                    kind.set_applied(&mut chart.indicators, false);
+                }
+                true
+            }
+            Action::AddScript(_) | Action::AddBundled(_) if !takes_indicators => false,
             Action::AddScript(script) => self
                 .add_pine_instance_to(
                     chart_id,
@@ -533,12 +542,12 @@ mod tests {
         assert!(!workspace.remove_pine_instance_from(chart_id, id));
         assert!(instance(&workspace).is_empty());
 
-        workspace.undo();
+        workspace.undo(&eframe::egui::Context::default());
         assert_eq!(instance(&workspace).len(), 1);
-        workspace.undo();
+        workspace.undo(&eframe::egui::Context::default());
         assert!(!instance(&workspace)[0].visible);
         assert_eq!(instance(&workspace)[0].input_values(), inputs);
-        workspace.undo();
+        workspace.undo(&eframe::egui::Context::default());
         assert!(instance(&workspace).is_empty());
     }
 
@@ -686,24 +695,37 @@ mod tests {
     }
 
     #[test]
-    fn volume_is_refused_on_line_charts_but_others_are_not() {
+    fn a_line_chart_takes_no_indicator() {
         let ctx = egui::Context::default();
         let mut workspace = empty_workspace(6);
-        let market = workspace
-            .add_chart_for(
-                &InstrumentId::new(DataSource::Polymarket, "some-market"),
-                &ctx,
-            )
-            .chart_id;
-        assert_eq!(
-            workspace.apply_indicator(market, BuiltIn::Volume, None),
-            Err(IndicatorError::UnsupportedOnLineChart)
-        );
-        assert!(
-            workspace
-                .apply_indicator(market, BuiltIn::Ema, None)
-                .is_ok()
-        );
+        for (source, symbol) in [
+            (DataSource::Polymarket, "some-market"),
+            (DataSource::Kalshi, "some-event"),
+            (DataSource::CoinMarketCap, "fear-greed"),
+        ] {
+            let market = workspace
+                .add_chart_for(&InstrumentId::new(source, symbol), &ctx)
+                .chart_id;
+            for kind in BuiltIn::ALL {
+                assert_eq!(
+                    workspace.apply_indicator(market, kind, None),
+                    Err(IndicatorError::UnsupportedOnLineChart),
+                    "{kind:?} on {source:?}"
+                );
+            }
+            assert_eq!(
+                workspace.add_pine_instance_to(
+                    market,
+                    "s".into(),
+                    "S",
+                    "//@version=6\nindicator(\"S\")\nplot(close)",
+                    &HashMap::new(),
+                    true,
+                ),
+                None
+            );
+            assert!(workspace.undo.is_empty(), "nothing was recorded");
+        }
     }
 
     #[test]
@@ -772,7 +794,7 @@ mod tests {
         assert!(!workspace.apply_indicator_action(999, &Action::Add(BuiltIn::Rsi)));
         assert!(!workspace.apply_indicator_action(999, &Action::AddBundled(macd)));
 
-        // Scripts do not run on a line chart.
+        // A line chart takes nothing.
         let line = workspace
             .add_chart_for(
                 &InstrumentId::new(DataSource::Polymarket, "some-market"),
@@ -780,5 +802,12 @@ mod tests {
             )
             .chart_id;
         assert!(!workspace.apply_indicator_action(line, &Action::AddBundled(macd)));
+        assert!(!workspace.apply_indicator_action(line, &Action::Add(BuiltIn::Rsi)));
+        assert!(
+            !workspace
+                .charts
+                .iter()
+                .any(|c| c.id == line && c.indicators.show_rsi)
+        );
     }
 }

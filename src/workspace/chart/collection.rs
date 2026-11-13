@@ -397,25 +397,37 @@ impl ChartWorkspace {
         }
     }
 
+    /// Shows `item` on the chart, keeping its settings, drawings and place in the grid. Returns
+    /// whether the market changed; the chart already showing it is only focused.
     pub(in crate::workspace) fn switch_chart(
         &mut self,
         chart_id: u64,
         item: &WatchlistInstrument,
         ctx: &egui::Context,
-    ) {
+    ) -> bool {
         let Some(chart) = self.charts.iter_mut().find(|chart| chart.id == chart_id) else {
-            return;
+            return false;
         };
         let instrument = &item.instrument;
         let already_showing = chart.source == instrument.source
             && InstrumentId::new(chart.source, &chart.symbol).is_same_market(instrument);
         if already_showing {
             self.focus_chart(chart_id);
-            return;
+            return false;
         }
         chart.replace_market(item);
-        chart.chart.reset_view();
-        chart.fetch(self.timeframe, ctx);
+        self.market_changed(chart_id, ctx);
+        true
+    }
+
+    /// The chart shows another market than its candles: loads them, and forgets what refers to
+    /// the old ones (the views a zoom could go back to, the series Tab Linking compares).
+    pub(in crate::workspace) fn market_changed(&mut self, chart_id: u64, ctx: &egui::Context) {
+        let timeframe = self.timeframe;
+        if let Some(chart) = self.charts.iter_mut().find(|chart| chart.id == chart_id) {
+            chart.chart.reset_view();
+            chart.fetch(timeframe, ctx);
+        }
         self.link_state.series_changed();
         self.forget_views(Some(chart_id));
         self.focus_chart(chart_id);

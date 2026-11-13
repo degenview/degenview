@@ -20,7 +20,7 @@ impl ChartWorkspace {
         self.symbol_picker.open(&current);
     }
 
-    /// Opens the picker to add a chart (the toolbar's Add Chart, the new-tab page's search).
+    /// Opens the picker to add a chart (the new-tab page's search).
     pub(in crate::workspace) fn open_add_picker(&mut self) {
         self.symbol_picker.open_add();
     }
@@ -157,9 +157,10 @@ impl ChartWorkspace {
         self.add_overlay(chart_id, instrument, title);
     }
 
-    /// Shows `result` on the focused market chart, keeping the chart's settings, indicators and
-    /// drawings; with no market chart focused it adds one instead. A prediction market takes its
-    /// event's title and artwork, and the lines of the choices ticked to chart together.
+    /// Shows `result` on the focused market chart as one undo step, keeping the chart's settings
+    /// and drawings and, on a market that takes them, its indicators; with no market chart
+    /// focused it adds one instead. A prediction market takes its event's title and artwork, and
+    /// the lines of the choices ticked to chart together.
     pub(in crate::workspace) fn replace_focused_market(
         &mut self,
         result: &SearchResult,
@@ -179,7 +180,7 @@ impl ChartWorkspace {
             }
             item.image_url = event.image_url.clone();
         }
-        self.switch_chart(chart_id, &item, ctx);
+        self.replace_chart_market(chart_id, &item, ctx);
         if result
             .event
             .as_ref()

@@ -5,8 +5,9 @@ prediction market, a CoinMarketCap index or a view of the user's portfolios. It 
 
 - the symbol button at the left of the toolbar and ⌘K / Ctrl+K (`shortcut::SYMBOL_SEARCH`, handled in
   `workspace/input.rs`): **Chart** mode, a pick replaces the focused chart's market;
-- the toolbar's **Add Chart** button and the new-tab page's search launcher: **Add** mode, a pick
-  adds a chart (`ChartWorkspace::open_add_picker`);
+- the new-tab page's search launcher: **Add** mode, a pick adds a chart
+  (`ChartWorkspace::open_add_picker`); the toolbar has no Add Chart button, ⇧Return and the row's plus
+  add from Chart mode;
 - the toolbar's Compare button: **Compare** mode (below);
 - a watchlist's plus: **Watchlist** mode (below).
 
@@ -22,8 +23,11 @@ rows, search box, header art) live in `src/ui/chart/picker_kit/`.
   prediction market or a CoinMarketCap gauge. The text is selected, so typing replaces it. Add,
   Compare and Watchlist modes open empty.
 - **Return replaces** the focused chart's market (`replace_focused_market`, which is
-  `switch_chart`: the chart keeps its settings, indicators, drawings and place in the grid, and its
-  candles reload). **⇧Return or the row's plus adds** a chart instead. **Right-clicking a row** opens
+  `replace_chart_market`: the chart keeps its settings, indicators, drawings and place in the grid, and
+  its candles reload). The replacement is one undo step (`Snapshot::Market`, with the indicators when a
+  prediction market or gauge, which take none, removes them); undo reloads the old market's candles. A
+  watchlist click on the focused chart replaces the same way; Tab Linking's follow does not, as it is
+  not this tab's own edit. **⇧Return or the row's plus adds** a chart instead. **Right-clicking a row** opens
   a menu with `Replace <the chart's market>` (only in Chart mode with a chart focused) and
   `Add as new chart`, with the keys that do the same (`list.rs`, `context_menu`); the row becomes the
   highlighted one. With no market chart focused, or in Add mode, Return adds one. The footer names
@@ -76,7 +80,8 @@ rows, search box, header art) live in `src/ui/chart/picker_kit/`.
 - **Rows** show the market as its exchange names it (`BTCUSDT`, `BTC-USD`, `AAPL`), what it trades
   under it (`BTC / USDT`, the company, a prediction's event), the exchange and its kind, a check when
   the market is already on a chart of the tab, and a plus on the highlighted row.
-- **Detail panel** (hidden below 760 px of window width): artwork, price and change from the quote feed,
+- **Detail panel** (hidden below 760 px of window width): artwork, price and change from the quote feed (the percent at two decimals, with the amount
+  beside it, trimmed of trailing zeros, only while both fit),
   "Open 24/7" for crypto or the stock's market state, the exchange, and "Also trades as": the other
   dollar markets of the asset on Binance and Coinbase (`SymbolSearch::related`, read from the locally
   held exchange lists). Clicking one of them replaces the chart. A prediction market shows the event's

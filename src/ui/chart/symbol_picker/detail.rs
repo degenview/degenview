@@ -418,22 +418,15 @@ fn price_line(
         && let Some(percent) = quote.change_percent
     {
         let color = change_color(percent);
-        let text = match quote.change {
-            Some(change) => format!(
-                "{} ({})",
-                signed(change, last, source),
-                signed_percent(percent)
-            ),
-            None => signed_percent(percent),
-        };
-        let galley = kit::digits(
-            ui,
-            &text,
-            17.0,
-            MEDIUM,
-            color,
-            (width - price_width - 12.0).max(40.0),
-        );
+        let room = (width - price_width - 12.0).max(40.0);
+        let moved = quote.change.map(|change| signed(change, last, source));
+        let text = change_text(moved, &signed_percent(percent), |text| {
+            kit::digits(ui, text, 17.0, MEDIUM, color, f32::INFINITY)
+                .size()
+                .x
+                <= room
+        });
+        let galley = kit::digits(ui, &text, 17.0, MEDIUM, color, room);
         let baseline = at.y + height - galley.size().y - 6.0;
         ui.painter()
             .galley(pos2(at.x + price_width + 12.0, baseline), galley, color);
@@ -522,15 +515,33 @@ fn amount(source: DataSource, price: f64) -> String {
     }
 }
 
-/// A change with its sign, to the precision of the price it moved: `+208.12` on 76,075.70.
+/// A change with its sign and only the digits it needs: `+208.12` on 76,075.70 and `+0.00059`
+/// on 0.154960, never the price's full eight decimals.
 fn signed(change: f64, last: f64, source: DataSource) -> String {
     let sign = if change > 0.0 { "+" } else { "" };
     let text = if in_cents(source, last) && change.abs() < 1_000.0 {
         format!("{change:.2}")
     } else {
-        format::price(change)
+        trim_zeros(&format::price(change))
     };
     format!("{sign}{text}")
+}
+
+/// What is written beside the price: the amount and the percent, or the percent alone when
+/// `fits` says both are too wide. The percent is what is read, so it is never the part cut.
+fn change_text(amount: Option<String>, percent: &str, fits: impl Fn(&str) -> bool) -> String {
+    amount
+        .map(|amount| format!("{amount} ({percent})"))
+        .filter(|both| fits(both))
+        .unwrap_or_else(|| percent.to_owned())
+}
+
+/// `text` without the zeros that end its decimals, keeping two: `-12.50`, `0.00059`.
+fn trim_zeros(text: &str) -> String {
+    let Some((integer, decimals)) = text.split_once('.') else {
+        return text.to_owned();
+    };
+    format!("{integer}.{:0<2}", decimals.trim_end_matches('0'))
 }
 
 fn signed_percent(percent: f64) -> String {
@@ -546,7 +557,10 @@ mod tests {
     fn changes_carry_their_sign() {
         let coin = DataSource::Binance;
         assert_eq!(signed(208.124, 76_075.7, coin), "+208.12");
-        assert_eq!(signed(-12.5, 1.0, coin), "-12.5000");
+        assert_eq!(signed(-12.5, 1.0, coin), "-12.50");
+        assert_eq!(signed(0.00059, 0.15496, coin), "+0.00059");
+        assert_eq!(signed(-0.00123456, 0.15496, coin), "-0.00123456");
+        assert_eq!(signed(0.0, 0.15496, coin), "0.00");
         assert_eq!(signed(1_234.5, 76_075.7, coin), "+1,234.50");
         assert_eq!(signed(1.15, 228.4, DataSource::Alpaca), "+1.15");
         assert_eq!(amount(DataSource::Alpaca, 228.4), "228.40");
@@ -554,6 +568,20 @@ mod tests {
         assert_eq!(signed_percent(0.2749), "+0.27%");
         assert_eq!(signed_percent(-3.0), "-3.00%");
         assert_eq!(signed_percent(0.0), "0.00%");
+    }
+
+    #[test]
+    fn the_percent_is_kept_when_the_amount_does_not_fit() {
+        let amount = || Some("+0.00059".to_owned());
+        assert_eq!(
+            change_text(amount(), "+0.38%", |_| true),
+            "+0.00059 (+0.38%)"
+        );
+        assert_eq!(
+            change_text(amount(), "+0.38%", |text| text.len() <= 8),
+            "+0.38%"
+        );
+        assert_eq!(change_text(None, "+0.38%", |_| true), "+0.38%");
     }
 
     #[test]

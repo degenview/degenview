@@ -4,7 +4,7 @@ Markets drawn over a chart, on the chart's own canvas and time axis. TradingView
 this is the same idea. A chart can compare any number of markets: the model is a vector, nothing
 caps it, and what is bounded is the work (see [Resource use](#resource-use)).
 
-Overlays are not charts (a chart card is still added next to another with Add Chart or ⇧↵ in the
+Overlays are not charts (a chart card is still added next to another with ⇧↵ in the
 picker), not indicators, not Pine plots and not drawings. They are owned by one chart, have a stable
 id, and nothing a script, alert, drawing or paper order reads looks at them: those keep reading
 `Chart::symbol`, `source` and `candles`, and tests pin that.

@@ -25,9 +25,10 @@ a portfolio card is not a target) through `apply_indicator_action`, so undo is o
   and closes, Shift-Return adds and stays open, F stars the selected one (only when the search
   field is not focused), Esc or the Done button (bottom right) closes. Return never removes. The keys are taken before the search
   field is drawn (`read_keys`), like the chart-type menu's.
-- **Availability** (`availability`): no focused market chart, or a line chart for anything but a
-  native other than Volume, is blocked with the reason shown; blocked entries are dimmed and Return
-  does nothing.
+- **Availability** (`availability`): no focused market chart, or a chart that takes no indicators (a
+  prediction market or a CoinMarketCap gauge, `DataSource::takes_indicators`), is blocked with the
+  reason shown; blocked entries are dimmed and Return does nothing. The toolbar's Indicators button
+  is disabled on such a chart too.
 - **Favorites** are `native:rsi` / `bundled:macd` / `script:<id>` strings in the
   `indicatorPicker.favorites` setting (portable, last writer wins, see `sync::record::policy`); a key this
   build no longer knows is dropped on load. Not verified against real CloudKit.
@@ -49,11 +50,15 @@ section.
 
 The chart header's "+" menu (`ui::add_indicator_menu`) is gone: the toolbar's Indicators button opens
 the picker for the focused chart, and nothing else adds an indicator from a card. The picker lists the
-native built-ins not yet applied, the bundled indicators and the saved scripts; on a line chart only
-the natives that run there. A bundled row's tooltip is its family and summary, and it shows "On chart"
+native built-ins not yet applied, the bundled indicators and the saved scripts; a chart that takes
+none (prediction market, gauge) lists the saved scripts' place empty and blocks every row. A bundled row's tooltip is its family and summary, and it shows "On chart"
 when the chart already has an instance (a bundled indicator can be added again). A pick is an
 `Action` (`Add`, `AddScript`, `AddBundled`) that `ChartWorkspace::apply_indicator_action` applies as
-one undo step; it refuses scripts and Volume on a line chart, so any surface can call it.
+one undo step; it refuses every add on a chart that takes no indicators (taking one off is still
+allowed), so any surface can call it, as the MCP tools and Pine Studio's "Add to Chart" do through
+`apply_indicator`, `add_pine_instance_to` and `add_pine_on_focused`. Replacing a chart's market with one
+that takes none removes its indicators and scripts in the same undo step as the replacement, and a layout
+saved before this rule drops them when it opens.
 
 Families (`Family`: Trend, Momentum, Volatility, Volume & Flow, Structure) are what an indicator
 measures. Every family must have at least one entry (a test checks it). Natives get their family,
