@@ -1069,16 +1069,19 @@ impl SymbolPicker {
             theme::text_secondary(),
         );
 
-        let labels: Vec<String> = menu
+        // The chosen row keeps a check at its edge, which the width `fitted_menu_rows` gives a row
+        // does not include: an empty hint adds the little room that keeps its label whole.
+        let rows: Vec<(&str, Option<&str>)> = menu
             .entries
             .iter()
-            .map(|(_, label)| label.clone())
+            .map(|(_, label)| (label.as_str(), Some("")))
             .collect();
         let mut chosen = None;
-        kit::fitted_menu(ui, &response, egui::RectAlign::BOTTOM_END, &labels, |ui| {
+        kit::fitted_menu_rows(ui, &response, egui::RectAlign::BOTTOM_END, &rows, |ui| {
             kit::menu_scope(ui, 0.0);
             for (filter, label) in &menu.entries {
                 let mut row = kit::MenuRow::new(label);
+                row.reserve_icon = false;
                 row.current = *filter == menu.current;
                 if kit::menu_row(ui, row).clicked() {
                     chosen = Some(*filter);
@@ -1539,9 +1542,10 @@ const FILTER_GAP: f32 = 8.0;
 /// Space a tab adds around its label, from roomy to tight.
 const TAB_PADDINGS: [f32; 3] = [28.0, 20.0, 14.0];
 
-/// How wide the pull-down is with `label` written out.
+/// How wide the pull-down is with `label` written out: the icon, the label and the chevron, with
+/// as much room after the chevron as before the icon.
 fn filter_width_of(label: f32) -> f32 {
-    16.0 + 6.0 + label + 6.0 + 10.0 + 8.0
+    8.0 + 16.0 + 6.0 + label + 6.0 + 10.0 + 8.0
 }
 
 fn filter_width(ui: &Ui, label: &str) -> f32 {

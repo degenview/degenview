@@ -56,13 +56,14 @@ rows, search box, header art) live in `src/ui/chart/picker_kit/`.
   - **Predictions** (`predictions/`) searches Polymarket and Kalshi (both, or the one the filter
     names) and groups the answers by event. An event with several choices is a header row (artwork,
     title, "N choices · the likeliest", chevron, checkbox) over its choices (checkbox, label, chance);
-    a lone choice is a row like any market, indented to line up with the events' artwork. Several
+    a lone choice is a row like any market, indented to line up with the events' artwork, with its
+    chance left of the provider. Choices under an event carry no artwork of their own. Several
     events start folded, one alone starts open. Return, or a click, on a header folds it; on a choice
     it uses that choice. **Ticking** choices (the checkbox, or the header's for all of them) charts
     them together as the lines of one chart: Return on a choice of that event, or the footer's
     `Chart N choices` button, takes every tick (`event.series`, the first in the event's order leads
     the chart). Ticks live in one event only, and are dropped on another tab. The empty box lists the
-    topic chips (`PREDICTION_TOPICS`) and "Trending on Polymarket" (`predictions/trending.rs`, 10 minutes
+    topic chips (`PREDICTION_TOPICS`, on at most two lines that scroll sideways) and "Trending on Polymarket" (`predictions/trending.rs`, 10 minutes
     fresh, a failure retried after 30 seconds and shown as nothing); Kalshi cannot rank its markets,
     so with it chosen only the topics show. Predictions are never kept as recents.
   - **Dashboards** (`dashboards.rs`) is a list, not a search: "Market indices" (the four CoinMarketCap
@@ -79,7 +80,9 @@ rows, search box, header art) live in `src/ui/chart/picker_kit/`.
   "Open 24/7" for crypto or the stock's market state, the exchange, and "Also trades as": the other
   dollar markets of the asset on Binance and Coinbase (`SymbolSearch::related`, read from the locally
   held exchange lists). Clicking one of them replaces the chart. A prediction market shows the event's
-  artwork and title, its chance and the provider instead; an index or a card says what it charts.
+  artwork and title, its chance, the provider and what the provider says about the event
+  (`EventStats`: volume, 24-hour volume, liquidity, open interest, end date, category, and its
+  description under ABOUT, as many lines as fit) instead; an index or a card says what it charts.
 - **Empty box**: recent picks (shared with the new-tab page and the portfolio asset picker), else
   popular markets (`picker_kit::suggestions`).
 - **Tab bar width** (`fit_tabs`): the six tabs and the pull-down do not fit at the 520 px minimum

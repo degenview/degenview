@@ -275,7 +275,7 @@ mod tests {
             event: Some(crate::service::EventInfo {
                 title: event.into(),
                 image_url: Some("https://example.com/fed.png".into()),
-                series: Vec::new(),
+                ..crate::service::EventInfo::default()
             }),
             ..SearchResult::new(DataSource::Polymarket, label, format!("{event}/{label}"))
         }

@@ -176,18 +176,18 @@ pub fn row(
     );
     result_icon(ui, icon, result);
 
-    // A prediction market's chance sits left of the exchange.
-    let mut venue_right = content_right;
+    // The exchange sits at the right edge; a prediction market's chance is left of it.
+    let logo_left = venue_block(ui, rect, content_right, result.source);
+    let mut text_right = logo_left;
     if result.source.is_prediction_market()
         && let Some(chance) = result.price
     {
-        venue_right = chance_label(ui, rect, venue_right, chance) - 14.0;
+        text_right = chance_label(ui, rect, logo_left - 18.0, chance);
     }
-    let logo_left = venue_block(ui, rect, venue_right, result.source);
 
     // The market, as its exchange names it.
     let text_left = icon.right() + 12.0;
-    let text_width = (logo_left - 16.0 - text_left).max(40.0);
+    let text_width = (text_right - 16.0 - text_left).max(40.0);
     let title = kit::galley(
         ui,
         name(result),
@@ -227,6 +227,12 @@ pub fn paint_background(ui: &Ui, rect: Rect, highlighted: bool, hovered: bool) {
     } else if hovered {
         ui.painter().rect_filled(rect, 10.0, theme::ink(10));
     }
+}
+
+/// Where a row's own content stops at the right: left of the column that holds the plus and the
+/// check. Rows with no compare button end here, so headers and lone rows line up.
+pub fn content_right(rect: Rect) -> f32 {
+    rect.right() - PAD - MARK - 10.0
 }
 
 /// The compare button, the plus and the check at a row's right edge, as `state` shows them.

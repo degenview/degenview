@@ -65,8 +65,23 @@ fn chance(source: DataSource, event: &str, label: &str, chance: Option<f64>) -> 
         price: chance,
         event: Some(EventInfo {
             title: event.into(),
-            image_url: None,
-            series: Vec::new(),
+            stats: Box::new(if event == "Fed decision" {
+                crate::service::EventStats {
+                    volume: Some(31_625_167),
+                    volume_24h: Some(4_615_988),
+                    liquidity: Some(1_834_558),
+                    open_interest: Some(5_149_829),
+                    ends_at_ms: Some(1_796_000_000_000),
+                    category: None,
+                    about: Some(
+                        "The FED interest rates are defined in this market by the upper bound of the target federal funds range, which the Federal Open Market Committee sets at each of its meetings."
+                            .into(),
+                    ),
+                }
+            } else {
+                crate::service::EventStats::default()
+            }),
+            ..EventInfo::default()
         }),
         ..SearchResult::new(source, label, format!("{event}/{label}"))
     }
@@ -1052,7 +1067,7 @@ fn comparing_offers_only_the_tabs_whose_markets_can_be_drawn_over_a_chart() {
 fn the_tab_row_gives_up_room_in_order_and_never_asks_for_more_than_it_has() {
     // The six tab titles and the "All venues" pull-down, as they measure at 15 and 14 pt.
     let labels = [16.9, 45.5, 45.6, 74.7, 80.3, 69.3];
-    let filter = Some(153.7);
+    let filter = Some(161.7);
     let roomy = TabFit {
         padding: 28.0,
         compact: false,
@@ -1060,7 +1075,7 @@ fn the_tab_row_gives_up_room_in_order_and_never_asks_for_more_than_it_has() {
     assert_eq!(fit_tabs(&labels, filter, 900.0), roomy);
     // Tighter tabs go first, then the pull-down reduces to its icon, then the tabs tighten again.
     assert_eq!(
-        fit_tabs(&labels, filter, 620.0),
+        fit_tabs(&labels, filter, 630.0),
         TabFit {
             padding: 20.0,
             compact: false
@@ -1094,7 +1109,7 @@ fn the_tab_row_gives_up_room_in_order_and_never_asks_for_more_than_it_has() {
     let fit = fit_tabs(&labels, filter, room);
     let used: f32 = labels.iter().map(|label| label + fit.padding).sum::<f32>()
         + FILTER_GAP
-        + if fit.compact { FILTER_COMPACT } else { 153.7 };
+        + if fit.compact { FILTER_COMPACT } else { 161.7 };
     assert!(used <= room, "{fit:?} uses {used} of {room}");
 }
 
@@ -1156,7 +1171,7 @@ fn gallery_of_the_symbol_picker() {
 
     // The other tabs and modes, in both appearances.
     type Setup = fn(&mut Rig);
-    let scenes: [(&str, f32, Setup); 12] = [
+    let scenes: [(&str, f32, Setup); 13] = [
         ("symbol-picker-predictions", 1100.0, |rig| {
             rig.picker.set_scope(Scope::Predictions);
             rig.type_text("fed");
@@ -1205,6 +1220,17 @@ fn gallery_of_the_symbol_picker() {
         }),
         ("symbol-picker-narrow-all", 568.0, |rig| {
             rig.type_text("btc");
+        }),
+        ("symbol-picker-venue-menu", 1100.0, |rig| {
+            rig.picker.set_scope(Scope::Predictions);
+            rig.picker.set_venue(Some(DataSource::Polymarket));
+            rig.type_text("fed");
+            rig.settle();
+            // The pull-down at the right of the tabs.
+            let button = pos2(960.0, 138.0);
+            rig.frame(vec![egui::Event::PointerMoved(button)]);
+            rig.frame(click_at(button));
+            rig.settle();
         }),
         ("symbol-picker-add", 1100.0, |rig| {
             rig.picker.open_add();

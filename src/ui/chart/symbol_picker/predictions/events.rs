@@ -211,8 +211,7 @@ mod tests {
             price,
             event: Some(EventInfo {
                 title: event.into(),
-                image_url: None,
-                series: Vec::new(),
+                ..EventInfo::default()
             }),
             ..result(label, DataSource::Polymarket)
         }
