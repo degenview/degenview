@@ -31,8 +31,8 @@ const VELOCITY: f64 = 64.0;
 const TREND_SPAN: f64 = 0.09;
 /// How far a vertex swings above or below the trend: at least this, and up to `TOOTH_EXTRA` more
 /// (squared, so most are small and a few are sharp).
-const TOOTH_MIN: f32 = 0.03;
-const TOOTH_EXTRA: f32 = 0.3;
+const TOOTH_MIN: f32 = 0.04;
+const TOOTH_EXTRA: f32 = 0.15;
 /// How much the slow trend is stretched, so the line climbs and falls over many teeth.
 const TREND_GAIN: f32 = 1.5;
 /// How far the line stops short of the right edge, as a share of the width: the last price.
