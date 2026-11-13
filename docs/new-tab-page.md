@@ -37,7 +37,8 @@ provider id is `InstrumentId::api_symbol()`.
 ## Backdrop
 
 `backdrop.rs`: a trend line over the top of the page, behind the title, in the colour of a rising market. It is a pure
-function of the clock (smooth value noise over hashed lattice points, two octaves), scrolling left with the
+function of the clock (straight segments between hashed vertices, alternating peak and dip around a slowly drifting
+trend, so it zigzags like a price), scrolling left with the
 newest price at the right, so it keeps no state and never repeats. The page starts `PAGE_TOP` (48 pt) down; the line wanders in the 122 pt under that and the page content
 starts below it; the fade fill reaches 340 pt down. The fill is a vertex-coloured mesh, the one gradient on
 this page, asked for as decoration; cards stay flat. It asks for a frame every
